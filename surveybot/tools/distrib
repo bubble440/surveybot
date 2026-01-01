@@ -1,0 +1,13 @@
+fichier a modier avant une distribution sur d'autres appareils:
+
+    -Browser_launcher.py: emplacement et version de Brave
+
+
+
+
+
+
+  #"Email": "shoppers258@gmail.com",
+  #"Password": "P@ssw0rD",
+# Commande pour lancer le conteneur Docker avec le port 9222 exposé(a appeler depuis le terminal):
+docker run --rm -it -p 9222:9222 --shm-size=1g surveybot

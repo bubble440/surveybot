@@ -1,0 +1,17 @@
+{
+  "account_id": "topsurveys_wilfried_01",
+  "date": "2025-12-26",
+
+  "earnings_today_eur": 3.75,
+  "surveys_completed_today": 4,
+
+  "runtime_seconds_today": 12840,
+  "last_start_ts": 1735212300,
+
+  "last_gain_ts": 1735211100,
+  "last_stop_reason": "no_gain",
+
+  "cooldown_until_ts": 1735213200,
+
+  "banned": false
+}
