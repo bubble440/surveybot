@@ -1,0 +1,64 @@
+Etapes pour dockeriser et deployer une version du programme.
+
+#TOUT CECI EST A EXECUTER DANS POWERSHELL
+
+# 0) PRÉREQUIS : Docker Desktop démarré (icône baleine en bas à droite)
+#    Test rapide :
+docker version
+# 
+# 1) Variables (adapter si besoin)
+$env:AWS_REGION   = "eu-west-3"
+$env:ACCOUNT_ID   = "865626945801"
+$env:REPO         = "surveybot"
+$env:TAG          = "v77"
+
+# 2) Vérifier qu'AWS CLI est bien connecté (devrait renvoyer ton compte)
+aws sts get-caller-identity
+
+# 3) Créer le repo s’il n’existe pas (sinon, ignore l’erreur)
+aws ecr describe-repositories --repository-names $env:REPO --region $env:AWS_REGION 2>$null `|| aws ecr create-repository --repository-name $env:REPO --image-scanning-configuration scanOnPush=true --region $env:AWS_REGION
+
+# 4) Login ECR (note : pas de backslash ni de retour ligne au milieu du pipe)
+aws ecr get-login-password --region $env:AWS_REGION `
+  | docker login --username AWS --password-stdin "$($env:ACCOUNT_ID).dkr.ecr.$($env:AWS_REGION).amazonaws.com"
+
+# 5) Build local--surveybot image
+docker build -t "$($env:REPO):$($env:TAG)" ./bot_survey
+# 5-2) build scheduler image
+docker build -t surveybot-scheduler:v1 ./scheduler
+
+# 6) Tag ECR
+docker tag "$($env:REPO):$($env:TAG)" "$($env:ACCOUNT_ID).dkr.ecr.$($env:AWS_REGION).amazonaws.com/$($env:REPO):$($env:TAG)"
+# 6-2) tag scheduler
+docker tag surveybot-scheduler:v1 865626945801.dkr.ecr.eu-west-3.amazonaws.com/surveybot-scheduler:v1
+
+# 7) Push
+docker push "$($env:ACCOUNT_ID).dkr.ecr.$($env:AWS_REGION).amazonaws.com/$($env:REPO):$($env:TAG)"
+# 7-2) push scheduler
+docker push 865626945801.dkr.ecr.eu-west-3.amazonaws.com/surveybot-scheduler:v1
+
+
+# 8) Test local (optionnel)
+docker run --rm -it ^
+  -e RUN_ENV=docker ^
+  -e ACCOUNT_ID=test_account ^
+  -e SURVEY_LANG=fr-FR ^
+  surveybot:test
+
+  # test scheduler
+docker run --rm -it ^
+  -e RUN_ENV=local ^
+  scheduler:test
+
+# 9) Test avec proxy (optionnel)
+docker run --rm -it `
+-v "$PWD/test:/app/test" `
+-e PROXY_URL="geo.iproyal.com:12321" `
+-e PROXY_USER="AFe0mvVocKuoFWzq" `
+-e PROXY_PASS="ajKCpYNJXZz4DTI4_session-hVEjiTWc_lifetime-168h" `
+-e SURVEY_LANG="fr-FR" `
+surveybot:v59
+
+# wil1.freezable830@simplelogin.fr
+# birthdate:12/12/2000
+# postal:95800

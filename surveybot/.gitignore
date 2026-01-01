@@ -1,0 +1,19 @@
+# Ignorer l'environnement virtuel Python
+.venv/
+venv/
+
+# Ignorer les caches Python
+__pycache__/
+*.pyc
+
+# Ignorer les logs
+logs/
+*.log
+
+# Ignorer le dossier screenshots
+/screenshots/
+
+# Fichiers spécifiques
+last_visible_question.html
+
+/spectrumsurveys.com/
