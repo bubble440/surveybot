@@ -10,7 +10,7 @@ Objectif:
 """
 
 from __future__ import annotations
-
+from decimal import Decimal
 import json
 import os
 import time
@@ -53,6 +53,9 @@ def _default_state(account_id: str) -> Dict[str, Any]:
         "version": 0,                 # pour optimistic locking
         "banned": False,
         "cooldown_until_ts": 0,
+        "status": "idle",
+        "lock_owner": "",
+        "lock_until_ts": 0,
         "last_stop_reason": "",
         "last_heartbeat_ts": 0,
         "daily_earned": {},           # ex: {"2025-12-31": 1.23}
@@ -172,6 +175,18 @@ def load_state(account_id: str) -> Dict[str, Any]:
     with _FILE_LOCK:
         return _normalize_state(_file_load(account_id), account_id)
 
+def _to_dynamodb_compatible(value):
+    """
+    Convertit récursivement les types Python
+    vers des types compatibles DynamoDB.
+    """
+    if isinstance(value, float):
+        return Decimal(str(value))
+    if isinstance(value, dict):
+        return {k: _to_dynamodb_compatible(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_to_dynamodb_compatible(v) for v in value]
+    return value
 
 def save_state(state: Dict[str, Any]) -> None:
     """
@@ -188,7 +203,7 @@ def save_state(state: Dict[str, Any]) -> None:
         table = _get_ddb_table()
         if table is not None:
             try:
-                table.put_item(Item=st)
+                table.put_item(Item=_to_dynamodb_compatible(st))
                 return
             except Exception as e:
                 log.warning(f"[STATE] put_item failed -> fallback fichier. err={e}")
@@ -224,9 +239,11 @@ def update_state(account_id: str, fn: Callable[[Dict[str, Any]], None], max_retr
                 try:
                     # Condition: on n'écrase pas si une autre écriture a eu lieu entre temps
                     table.put_item(
-                        Item=st,
+                        Item=_to_dynamodb_compatible(st),
                         ConditionExpression="attribute_not_exists(version) OR version = :v",
-                        ExpressionAttributeValues={":v": current_version},
+                        ExpressionAttributeValues=_to_dynamodb_compatible({
+                            ":v": current_version
+                        }),
                     )
                     return st
                 except Exception as e:
