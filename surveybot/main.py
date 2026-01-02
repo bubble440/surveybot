@@ -91,6 +91,14 @@ def main():
     if not account_id:
         raise RuntimeError("ACCOUNT_ID introuvable (ENV / config / State/account_state.json)")
 
+    print(f"🚀 Démarrage surveybot pour account_id={account_id}")
+    update_state(account_id, lambda st: (
+        st.__setitem__("status", "running"),
+        st.__setitem__("lock_owner", ""),
+        st.__setitem__("lock_until_ts", 0),
+        st.__setitem__("last_boot_ts", int(time.time()))
+    ))
+
     # --- ECS SIGTERM HANDLER (après calcul account_id) -----------------
 
     def _make_sigterm_handler(aid: str):
@@ -99,7 +107,7 @@ def main():
         - On capture 'aid' via closure pour éviter les variables globales non définies.
         """
         def _handle_sigterm(signum, frame):
-            ts = time.time()
+            ts = int(time.time())
             print(f"🛑 SIGTERM reçu depuis ECS | account_id={aid}")
 
             try:
@@ -107,6 +115,9 @@ def main():
                     st.__setitem__("ecs_stop_requested", True),
                     st.__setitem__("ecs_stop_ts", ts),
                     st.__setitem__("ecs_stop_notified", False),  # reset anti-spam à chaque SIGTERM
+                    st.__setitem__("status", "idle"),
+                    st.__setitem__("lock_owner", ""),
+                    st.__setitem__("lock_until_ts", 0)
                 ))
             except Exception as e:
                 print("[SIGTERM][WARN] update_state échoué:", e)
@@ -197,7 +208,7 @@ def main():
         on_soft_restart=soft_restart,
     )
     set_guard(guard)      # ✅ rend le guard accessible partout
-    state["last_start_ts"] = time.time()
+    state["last_start_ts"] = int(time.time())
     save_state(state)
 
     guard.start()

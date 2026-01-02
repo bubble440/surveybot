@@ -5,12 +5,12 @@ Etapes pour dockeriser et deployer une version du programme.
 # 0) PRÉREQUIS : Docker Desktop démarré (icône baleine en bas à droite)
 #    Test rapide :
 docker version
-# 
+
 # 1) Variables (adapter si besoin)
 $env:AWS_REGION   = "eu-west-3"
 $env:ACCOUNT_ID   = "865626945801"
 $env:REPO         = "surveybot"
-$env:TAG          = "v77"
+$env:TAG          = "80"
 
 # 2) Vérifier qu'AWS CLI est bien connecté (devrait renvoyer ton compte)
 aws sts get-caller-identity
@@ -23,19 +23,29 @@ aws ecr get-login-password --region $env:AWS_REGION `
   | docker login --username AWS --password-stdin "$($env:ACCOUNT_ID).dkr.ecr.$($env:AWS_REGION).amazonaws.com"
 
 # 5) Build local--surveybot image
-docker build -t "$($env:REPO):$($env:TAG)" ./bot_survey
-# 5-2) build scheduler image
-docker build -t surveybot-scheduler:v1 ./scheduler
+docker build -t "$($env:REPO):$($env:TAG)" ./surveybot
 
 # 6) Tag ECR
 docker tag "$($env:REPO):$($env:TAG)" "$($env:ACCOUNT_ID).dkr.ecr.$($env:AWS_REGION).amazonaws.com/$($env:REPO):$($env:TAG)"
-# 6-2) tag scheduler
-docker tag surveybot-scheduler:v1 865626945801.dkr.ecr.eu-west-3.amazonaws.com/surveybot-scheduler:v1
 
 # 7) Push
 docker push "$($env:ACCOUNT_ID).dkr.ecr.$($env:AWS_REGION).amazonaws.com/$($env:REPO):$($env:TAG)"
-# 7-2) push scheduler
-docker push 865626945801.dkr.ecr.eu-west-3.amazonaws.com/surveybot-scheduler:v1
+
+# -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+# 8) Build, tag et push surveybot-scheduler
+$env:AWS_REGION="eu-west-3"
+$env:ACCOUNT_ID="865626945801"
+$env:SCHEDULER_REPO="surveybot-scheduler"
+$env:SCHEDULER_TAG="v3"
+# Build
+docker build -t "$($env:SCHEDULER_REPO):$($env:SCHEDULER_TAG)" ./scheduler
+# Tag
+docker tag `
+  "$($env:SCHEDULER_REPO):$($env:SCHEDULER_TAG)" `
+  "$($env:ACCOUNT_ID).dkr.ecr.$($env:AWS_REGION).amazonaws.com/$($env:SCHEDULER_REPO):$($env:SCHEDULER_TAG)"
+# Push
+docker push "$($env:ACCOUNT_ID).dkr.ecr.$($env:AWS_REGION).amazonaws.com/$($env:SCHEDULER_REPO):$($env:SCHEDULER_TAG)"
+
 
 
 # 8) Test local (optionnel)
