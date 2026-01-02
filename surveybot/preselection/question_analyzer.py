@@ -202,31 +202,87 @@ def reformulate_prompt_for_gpt(question_text, options):
     )
 
 
-def ask_assistant(prompt_text, api_key):
+# def ask_assistant(prompt_text, api_key):
+#     client = OpenAI(api_key=api_key)
+#     from Management.runtime_guard import get_guard
+#     get_guard().record_openai_call()
+#     thread = client.beta.threads.create()
+
+#     client.beta.threads.messages.create(
+#         thread_id=thread.id, role="user", content=prompt_text
+#     )
+
+#     run = client.beta.threads.runs.create(
+#         thread_id=thread.id, assistant_id=ASSISTANT_ID
+#     )
+
+#     while run.status not in ["completed", "failed"]:
+#         time.sleep(1)
+#         run = client.beta.threads.runs.retrieve(thread_id=thread.id, run_id=run.id)
+
+#     if run.status == "completed":
+#         messages = client.beta.threads.messages.list(thread_id=thread.id)
+#         raw = messages.data[0].content[0].text.value.strip()
+#         cleaned = raw.split("\n")[0].strip(" .,-–—•*➡️✅🤖⭐")
+#         return cleaned
+#     return None
+
+def ask_assistant(prompt_text, api_key, *, question=None, options=None):
+    from Utils.openai_cache import (
+        make_cache_key,
+        get_cached_answer,
+        store_answer,
+    )
+
+    # 1️⃣ Cache lookup (si possible)
+    cache_key = None
+    if question and options:
+        cache_key = make_cache_key(question, options)
+        cached = get_cached_answer(cache_key)
+        if cached:
+            print("⚡ OpenAI cache HIT")
+            return cached
+
+    # 2️⃣ Appel OpenAI normal
     client = OpenAI(api_key=api_key)
     from Management.runtime_guard import get_guard
     get_guard().record_openai_call()
-    thread = client.beta.threads.create()
 
+    thread = client.beta.threads.create()
     client.beta.threads.messages.create(
-        thread_id=thread.id, role="user", content=prompt_text
+        thread_id=thread.id,
+        role="user",
+        content=prompt_text
     )
 
     run = client.beta.threads.runs.create(
-        thread_id=thread.id, assistant_id=ASSISTANT_ID
+        thread_id=thread.id,
+        assistant_id=ASSISTANT_ID
     )
 
     while run.status not in ["completed", "failed"]:
         time.sleep(1)
-        run = client.beta.threads.runs.retrieve(thread_id=thread.id, run_id=run.id)
+        run = client.beta.threads.runs.retrieve(
+            thread_id=thread.id,
+            run_id=run.id
+        )
 
-    if run.status == "completed":
-        messages = client.beta.threads.messages.list(thread_id=thread.id)
-        raw = messages.data[0].content[0].text.value.strip()
-        cleaned = raw.split("\n")[0].strip(" .,-–—•*➡️✅🤖⭐")
-        return cleaned
-    return None
+    if run.status != "completed":
+        return None
 
+    messages = client.beta.threads.messages.list(thread_id=thread.id)
+    raw = messages.data[0].content[0].text.value.strip()
+    cleaned = raw.split("\n")[0].strip(" .,-–—•*➡️✅🤖⭐")
+
+    # 3️⃣ Store cache
+    if cache_key and cleaned:
+        store_answer(
+            cache_key,
+            cleaned,
+            model="gpt-4o-mini-ft"
+        )
+
+    return cleaned
 
 def get_response_for_question(driver, api_key):
     try:
@@ -288,7 +344,7 @@ def get_response_for_question(driver, api_key):
             f"🧠 Reformulation pour GPT :\n Question : {question}\n\nChoix : {options}"
         )
 
-        response = ask_assistant(prompt, api_key)
+        response = ask_assistant(prompt, api_key, question=question, options=options)
         print(f"🤖 Réponse proposée : {response}")
 
         def _norm(s):
