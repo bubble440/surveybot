@@ -3,7 +3,7 @@ import os
 IS_LOCAL = os.getenv("RUN_ENV", "local") == "local"
 
 from Management.runtime_guard import RuntimeGuard, set_guard, get_guard
-import base64, time, Cash.payout as payout, sys, logging, threading
+import base64, time, Cash.payout as payout, sys, logging, threading, signal, json
 from cProfile import label
 from preselection.config_loader import load_config
 from preselection.playwright_launcher import launch_browser
@@ -15,10 +15,15 @@ if not IS_LOCAL:
     from selenium.webdriver.chrome.options import Options
 from Management.idle_monitor import start_idle_gain_watch
 from Management.notifier import send_telegram
-import signal
-from State.account_state import update_state
+from State.account_state import update_state, try_acquire_proxy_lock, load_state, save_state
+from pathlib import Path
 
-# --- LOGGING DE BASE POUR CLOUDWATCH via stdout ---
+if IS_LOCAL:
+    ACCOUNT_ID = "local_debug"
+else:
+    ACCOUNT_ID = os.getenv("ACCOUNT_ID")
+    if not ACCOUNT_ID:
+        raise RuntimeError("ACCOUNT_ID manquant en environnement non-local")
 
 # 1) stdout en line-buffering si dispo (Python 3.7+)
 if hasattr(sys.stdout, "reconfigure"):
@@ -54,9 +59,6 @@ log.info("BOOT: surveybot starting")  # ✅ maintenant log est défini
 
 def main():
     config = load_config()
-    from State.account_state import load_state, update_state, save_state
-    from pathlib import Path
-    import json
 
     def _read_account_id_from_state_file() -> str | None:
         """
@@ -197,47 +199,79 @@ def main():
     api_key = config.get("openai_api_key")
     payout_name = config.get("payout_name")
     payout_revolut_tag = config.get("payout_revolut_tag")
-    guard = RuntimeGuard(
-        account_id=account_id,
-        idle_timeout_sec=120,
-        restart_cooldown_sec=900,
-        max_errors_in_row=5,
-        max_runtime_sec=2 * 3600,
-        daily_target_eur=5.0,
-        notify_fn=_notify,
-        on_soft_restart=soft_restart,
-    )
-    set_guard(guard)      # ✅ rend le guard accessible partout
-    state["last_start_ts"] = int(time.time())
-    save_state(state)
 
-    guard.start()
+    if IS_LOCAL:
+        print("🧪 MODE LOCAL — account_state désactivé")
+    else:
+        # ici seulement on accepte que le state soit utilisé
+        guard = RuntimeGuard(
+            account_id=account_id,
+            idle_timeout_sec=120,
+            restart_cooldown_sec=60,
+            max_errors_in_row=5,
+            max_runtime_sec=2 * 3600,
+            daily_target_eur=5.0,
+            notify_fn=_notify,
+            on_soft_restart=soft_restart,
+        )
+        set_guard(guard)      # ✅ rend le guard accessible partout
+        guard.start()
+        state["last_start_ts"] = int(time.time())
+        save_state(state)
+
+        PROXY_ID = os.getenv("PROXY_ID")  # ex: iproyal_res_17
+        ACCOUNT_ID = os.getenv("ACCOUNT_ID")
+
+        LOCK_TTL = 2 * 3600  # 3 heures
+
+        if not try_acquire_proxy_lock(PROXY_ID, ACCOUNT_ID, LOCK_TTL):
+            print(f"[LOCK] Proxy {PROXY_ID} déjà utilisé → exit")
+            time.sleep(60)
+            raise SystemExit("proxy_locked")
 
     # ✅ maintenant seulement, on démarre le heartbeat
     threading.Thread(target=_heartbeat, name="heartbeat", daemon=True).start()
 
     try:
         driver = launch_browser()
-        get_guard().attach_driver(driver)
+        if driver is None:
+            raise RuntimeError("launch_browser() a retourné None")
+        if IS_LOCAL:
+            pass
+        else:
+            get_guard().attach_driver(driver)
     except Exception as e:
         import traceback
-        print("[LAUNCH][ERROR]", e)
+        print("[LAUNCH][FATAL] Impossible de lancer le navigateur :", e)
         traceback.print_exc()
-        time.sleep(300)  # laisse la tâche vivante pour ECS Exec/diagnostic
+
+        if not IS_LOCAL:
+        # 🔴 état propre pour le scheduler
+            update_state(account_id, lambda st: (
+                st.__setitem__("status", "idle"),
+                st.__setitem__("lock_owner", ""),
+                st.__setitem__("lock_until_ts", 0),
+                st.__setitem__("last_stop_reason", "browser_launch_failed"),
+            ))
+
+        raise SystemExit("browser_launch_failed")
 
     def safe_get(driver, url):
         """
-        Navigation sécurisée : s'assure qu'un handle valide existe.
+        Navigation sécurisée : s'assure qu'un driver valide existe.
         """
+        if driver is None:
+            raise RuntimeError("SAFE_GET appelé avec driver=None")
+
         try:
-            if not driver.window_handles:
+            if not hasattr(driver, "window_handles") or not driver.window_handles:
                 raise RuntimeError("Aucune fenêtre active")
             driver.switch_to.window(driver.window_handles[-1])
             driver.get(url)
         except Exception as e:
             print(f"[SAFE_GET] Navigation impossible vers {url}: {e}")
             raise
-    
+
     safe_get(driver, "https://www.topsurveys.app")
 
     print(f"[DEBUG] DISPLAY={os.environ.get('DISPLAY')}")

@@ -1,3 +1,6 @@
+from __future__ import annotations
+import os
+
 # State/account_state.py
 """
 Stockage d'état "prod-first" pour 100+ bots.
@@ -9,10 +12,13 @@ Objectif:
 - Update atomique via "optimistic locking" (champ version).
 """
 
-from __future__ import annotations
+# State/account_state.py
+
+RUN_ENV = os.getenv("RUN_ENV", "local").lower()
+IS_LOCAL = RUN_ENV == "local"
+
 from decimal import Decimal
 import json
-import os
 import time
 import logging
 from dataclasses import dataclass
@@ -56,6 +62,10 @@ def _default_state(account_id: str) -> Dict[str, Any]:
         "status": "idle",
         "lock_owner": "",
         "lock_until_ts": 0,
+        "proxy_id": "",          # identifiant du proxy
+        "proxy_lock_owner": "",  # account_id du bot actif
+        "proxy_lock_until_ts": 0,
+
         "last_stop_reason": "",
         "last_heartbeat_ts": 0,
         "daily_earned": {},           # ex: {"2025-12-31": 1.23}
@@ -150,6 +160,9 @@ def load_state(account_id: str) -> Dict[str, Any]:
     """
     Charge l'état depuis DynamoDB (prod) ou fallback fichier.
     """
+    if IS_LOCAL:
+        return {}
+    
     account_id = (account_id or "").strip()
     if not account_id:
         raise ValueError("account_id vide")
@@ -163,7 +176,7 @@ def load_state(account_id: str) -> Dict[str, Any]:
                 if not item:
                     st = _default_state(account_id)
                     # on crée l'item au premier passage (idempotent)
-                    table.put_item(Item=st)
+                    table.put_item(Item=_to_dynamodb_compatible(st))
                     return st
                 # conversion Decimal -> JSON friendly
                 normalized = {k: _json_safe(v) for k, v in item.items()}
@@ -193,6 +206,9 @@ def save_state(state: Dict[str, Any]) -> None:
     Sauvegarde directe (rarement utile).
     En prod on préfère update_state().
     """
+    if IS_LOCAL:
+        return {}
+
     account_id = state.get("account_id", "").strip()
     if not account_id:
         raise ValueError("state sans account_id")
@@ -212,7 +228,7 @@ def save_state(state: Dict[str, Any]) -> None:
         _file_save(st)
 
 
-def update_state(account_id: str, fn: Callable[[Dict[str, Any]], None], max_retries: int = 5) -> Dict[str, Any]:
+def update_state(account_id: str, fn: Callable[[Dict[str, Any]], None], max_retries: int = 5):
     """
     Update atomique:
     - charge l'état
@@ -220,6 +236,10 @@ def update_state(account_id: str, fn: Callable[[Dict[str, Any]], None], max_retr
     - écrit avec contrôle de version (optimistic locking)
     - retry si concurrence (scheduler + bot peuvent toucher le même item)
     """
+    # 🧪 LOCAL MODE : no-op volontaire
+    if IS_LOCAL:
+        return {}
+    
     account_id = (account_id or "").strip()
     if not account_id:
         raise ValueError("account_id vide")
@@ -262,3 +282,24 @@ def update_state(account_id: str, fn: Callable[[Dict[str, Any]], None], max_retr
         st["version"] = int(st.get("version", 0) or 0) + 1
         _file_save(st)
         return st
+
+def try_acquire_proxy_lock(proxy_id: str, account_id: str, ttl_sec: int) -> bool:
+    now = int(time.time())
+
+    def _lock(st):
+        # si verrou libre ou expiré
+        if not st.get("proxy_lock_owner") or st.get("proxy_lock_until_ts", 0) < now:
+            st["proxy_lock_owner"] = account_id
+            st["proxy_lock_until_ts"] = now + ttl_sec
+            return True
+        return False
+
+    success = False
+
+    def _apply(st):
+        nonlocal success
+        if _lock(st):
+            success = True
+
+    update_state(account_id, _apply)
+    return success

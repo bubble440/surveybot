@@ -1,8 +1,8 @@
 # scheduler/ecs.py
 
-import os
-import time
+import os, time, boto3
 from typing import Optional
+from account_loader import load_account
 
 # Détection environnement
 IS_PROD = bool(
@@ -54,8 +54,6 @@ def _start_task_ecs(account_id: str):
     Lance une task ECS surveybot.
     """
 
-    import boto3
-
     if not ECS_CLUSTER or not ECS_TASK_DEFINITION:
         raise RuntimeError(
             "ECS_CLUSTER ou ECS_SURVEYBOT_TASK_DEF manquant dans l'environnement"
@@ -67,6 +65,26 @@ def _start_task_ecs(account_id: str):
         f"[SCHEDULER][ECS] run_task cluster={ECS_CLUSTER} "
         f"taskDef={ECS_TASK_DEFINITION} account_id={account_id}"
     )
+
+    account = load_account(account_id)
+
+    container_overrides = {
+        "name": ECS_CONTAINER_NAME,
+        "environment": [
+            {"name": "ACCOUNT_ID", "value": account_id},
+            {"name": "RUN_ENV", "value": "aws"},
+
+            # 🔑 Proxy EXACTEMENT comme dans Secrets
+            {"name": "PROXY_URL", "value": account["PROXY_URL"]},
+            {"name": "PROXY_USER", "value": account["PROXY_USER"]},
+            {"name": "PROXY_PASS", "value": account["PROXY_PASS"]},
+
+            {"name": "GEO_LAT", "value": str(account.get("GEO_LAT", ""))},
+            {"name": "GEO_LON", "value": str(account.get("GEO_LON", ""))},
+            {"name": "SURVEY_LANG", "value": account.get("SURVEY_LANG", "fr-FR")},
+            {"name": "SURVEY_TZ", "value": account.get("SURVEY_TZ", "Europe/Paris")},
+        ]
+    }
 
     response = ecs.run_task(
         cluster=ECS_CLUSTER,
@@ -81,16 +99,8 @@ def _start_task_ecs(account_id: str):
             }
         },
         overrides={
-            "containerOverrides": [
-                {
-                    "name": ECS_CONTAINER_NAME,
-                    "environment": [
-                        {"name": "ACCOUNT_ID", "value": account_id},
-                        {"name": "RUN_ENV", "value": "aws"},
-                    ],
-                }
-            ]
-        },
+        "containerOverrides": [container_overrides]
+    },
     )
 
     failures = response.get("failures")
