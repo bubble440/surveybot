@@ -54,9 +54,9 @@ class RuntimeGuard:
         *,
         account_id: str,
         idle_timeout_sec: int = 120,          # 2 minutes
-        restart_cooldown_sec: int = 900,      # 15 minutes
+        restart_cooldown_sec: int = 60,      # 1 minute
         max_errors_in_row: int = 5,
-        max_runtime_sec: int = 6 * 3600,      # 6h
+        max_runtime_sec: int = 2 * 3600,      # 2h
         daily_target_eur: float = 5.0,
         notify_fn: Optional[Callable[[str], None]] = None,
         on_soft_restart: Optional[Callable[[str], None]] = None,
@@ -314,7 +314,7 @@ class RuntimeGuard:
                 # 6h atteintes mais objectif NON atteint → pause 30 min
                 self._soft_restart(
                     StopReason.RUNTIME_LIMIT,
-                    pause_sec=1800  # 30 min
+                    pause_sec=900  # 30 min
                 )
             else:
                 # objectif atteint → arrêt complet

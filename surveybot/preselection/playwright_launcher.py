@@ -2,8 +2,7 @@ from __future__ import annotations
 import os
 
 # IS_LOCAL = os.getenv("RUN_ENV", "local") == "local"
-RUN_ENV = os.getenv("RUN_ENV", "docker").lower()
-IS_LOCAL = RUN_ENV == "local"
+IS_LOCAL = os.getenv("RUN_ENV", "local") == "local"
 
 # preselection/playwright_launcher.py
 """
@@ -66,9 +65,9 @@ def _detect_chrome_binary() -> str:
     )
 
 def _parse_proxy_env():
-    proxy_url = os.getenv("PROXY_URL", "").strip()
-    proxy_user = os.getenv("PROXY_USER", "").strip()
-    proxy_pass = os.getenv("PROXY_PASS", "").strip()
+    proxy_user = os.getenv("PROXY_USER")
+    proxy_pass = os.getenv("PROXY_PASS")
+    proxy_url  = os.getenv("PROXY_URL")
 
     if not proxy_url:
         return None, None, None
@@ -180,7 +179,7 @@ def launch_browser():
     f"[PW][PROXY] server={proxy_server} "
     f"user={'yes' if proxy_user else 'no'} "
     f"pass={'yes' if proxy_pass else 'no'}"
-)
+    )
     headless = _want_headless()
 
     # Port remote debugging (Selenium va s'attacher dessus)
@@ -262,6 +261,10 @@ def launch_browser():
         print("[PW][OVERRIDE] DevTools overrides appliqués (FR / Paris).")
 
         page = context.new_page()
+        # print("[PW][WARMUP] Navigation initiale via Playwright (proxy auth-safe)")
+        # page.goto("https://www.topsurveys.app", wait_until="domcontentloaded", timeout=60000)
+        # time.sleep(2)
+
         # ✅ Permission geolocation : sans ça, beaucoup de sites voient "denied"
         try:
             context.grant_permissions(["geolocation"], origin="https://app.topsurveys.app")
@@ -276,6 +279,19 @@ def launch_browser():
         opts.add_experimental_option("debuggerAddress", f"127.0.0.1:{debug_port}")
 
         driver = webdriver.Chrome(options=opts)
+
+        # 🔐 VALIDATION CRITIQUE
+        try:
+            _ = driver.current_url
+            _ = driver.window_handles
+        except Exception as e:
+            print("[PW][FATAL] Selenium attach failed:", e)
+            driver.quit()
+            raise RuntimeError("Selenium failed to attach to Playwright Chrome")
+        
+        if "topsurveys" not in driver.current_url:
+            print("[WARN] Selenium attaché mais URL inattendue:", driver.current_url)
+
         try:
             fingerprint = driver.execute_script("""
                 return {
@@ -299,16 +315,16 @@ def launch_browser():
         driver._pw_page = page
         driver._pw_user_data_dir = user_data_dir
 
-        # Petit check côté Selenium
-        try:
-            driver.get("https://api.ipify.org/")
-            time.sleep(0.8)
-            html = driver.page_source or ""
-            m = re.search(r"\b\d{1,3}(?:\.\d{1,3}){3}\b", html)
-            ip_sel = m.group(0) if m else None
-            print(f"[SEL][CHECK] ipify via Selenium => {ip_sel}")
-        except Exception as e:
-            print(f"[SEL][WARN] check ipify Selenium a échoué: {e}")
+        # # Petit check côté Selenium
+        # try:
+        #     driver.get("https://api.ipify.org/")
+        #     time.sleep(0.8)
+        #     html = driver.page_source or ""
+        #     m = re.search(r"\b\d{1,3}(?:\.\d{1,3}){3}\b", html)
+        #     ip_sel = m.group(0) if m else None
+        #     print(f"[SEL][CHECK] ipify via Selenium => {ip_sel}")
+        # except Exception as e:
+        #     print(f"[SEL][WARN] check ipify Selenium a échoué: {e}")
 
         return driver
 
