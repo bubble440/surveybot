@@ -5,9 +5,11 @@ from ecs_bot_scheduler import scheduler_tick
 # 🔐 Liste des comptes gérés par ce scheduler
 # (plus tard : chargement dynamique depuis S3 / Dynamo / Secrets)
 ACCOUNTS = [
-    "topsurveys_wilfried_01",
-    # "topsurveys_wilfried_02",
-    # ...
+    "topsurveys_bot_001",
+    # "topsurveys_bot_002",
+    # "topsurveys_bot_003",
+    # "topsurveys_bot_004",
+    # "topsurveys_bot_005",
 ]
 
 # ⏱️ Intervalle entre deux ticks (secondes)
