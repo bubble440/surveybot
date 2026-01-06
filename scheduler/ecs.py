@@ -20,10 +20,59 @@ ECS_CONTAINER_NAME = os.getenv("ECS_SURVEYBOT_CONTAINER", "surveybot")
 
 def is_task_running(account_id: str) -> bool:
     """
-    En local : toujours False (dry-run)
-    En prod : sera implémenté via ECS list_tasks / describe_tasks
+    Retourne True si une task ECS (PENDING ou RUNNING)
+    existe déjà pour cet account_id.
     """
-    return False
+
+    # 🧪 En local : jamais de task ECS
+    if not IS_PROD:
+        return False
+
+    if not ECS_CLUSTER:
+        raise RuntimeError("ECS_CLUSTER manquant")
+
+    ecs = boto3.client("ecs")
+
+    try:
+        # 1️⃣ Récupérer les tasks actives
+        task_arns = []
+        for status in ("RUNNING", "PENDING"):
+            resp = ecs.list_tasks(
+                cluster=ECS_CLUSTER,
+                desiredStatus=status,
+            )
+            task_arns.extend(resp.get("taskArns", []))
+
+        if not task_arns:
+            return False
+
+        # 2️⃣ Décrire les tasks
+        desc = ecs.describe_tasks(
+            cluster=ECS_CLUSTER,
+            tasks=task_arns,
+        )
+
+        for task in desc.get("tasks", []):
+            for container in task.get("containers", []):
+                envs = container.get("environment", [])
+                for env in envs:
+                    if (
+                        env.get("name") == "ACCOUNT_ID"
+                        and env.get("value") == account_id
+                    ):
+                        print(
+                            f"[SCHEDULER] Task déjà active pour {account_id} "
+                            f"(status={task.get('lastStatus')})"
+                        )
+                        return True
+
+        return False
+
+    except Exception as e:
+        # ⚠️ En cas d’erreur AWS, on joue safe :
+        # on considère la task comme active pour éviter les doublons
+        print(f"[SCHEDULER][WARN] is_task_running failed: {e}")
+        return True
 
 def _start_task_local_dry_run(account_id: str):
     print(
@@ -73,6 +122,9 @@ def _start_task_ecs(account_id: str):
         "environment": [
             {"name": "ACCOUNT_ID", "value": account_id},
             {"name": "RUN_ENV", "value": "aws"},
+
+            {"name": "EMAIL", "value": account["EMAIL"]},
+            {"name": "PASSWORD", "value": account["PASSWORD"]},
 
             # 🔑 Proxy EXACTEMENT comme dans Secrets
             {"name": "PROXY_URL", "value": account["PROXY_URL"]},

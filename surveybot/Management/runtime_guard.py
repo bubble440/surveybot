@@ -5,15 +5,11 @@ Objectif : protéger OpenAI, AWS et Proxy (pay-as-you-use)
 """
 
 from __future__ import annotations
-import time
-import os
-import threading
-import traceback
+import time, socket, os, threading, traceback
 from dataclasses import dataclass, field
 from typing import Optional, Callable
 from enum import Enum
 from State.account_state import load_state, update_state
-import time
 
 def _is_prod_env() -> bool:
     return bool(
@@ -54,7 +50,7 @@ class RuntimeGuard:
         *,
         account_id: str,
         idle_timeout_sec: int = 120,          # 2 minutes
-        restart_cooldown_sec: int = 60,      # 1 minute
+        restart_cooldown_sec: int = 900,      # 15 minutes
         max_errors_in_row: int = 5,
         max_runtime_sec: int = 2 * 3600,      # 2h
         daily_target_eur: float = 5.0,
@@ -64,6 +60,7 @@ class RuntimeGuard:
         self.account_id = account_id
         self.driver = None  # sera injecté après le lancement du navigateur
         self.state = RuntimeState()
+        self.task_id = os.getenv("ECS_TASK_ID") or socket.gethostname()
         self.idle_timeout_sec = idle_timeout_sec
         self.restart_cooldown_sec = restart_cooldown_sec
         self.max_errors_in_row = max_errors_in_row
@@ -211,6 +208,14 @@ class RuntimeGuard:
     def heartbeat(self):
         with self._lock:
             self.state.last_activity_ts = time.time()
+            from State.account_state import update_state
+
+            def _refresh_lock(st):
+                if st.get("lock_owner") == self.task_id:
+                    st["lock_until_ts"] = int(time.time()) + 900
+
+            update_state(self.account_id, _refresh_lock)
+
 
     def record_success(self):
         with self._lock:
@@ -314,7 +319,7 @@ class RuntimeGuard:
                 # 6h atteintes mais objectif NON atteint → pause 30 min
                 self._soft_restart(
                     StopReason.RUNTIME_LIMIT,
-                    pause_sec=900  # 30 min
+                    pause_sec=900  # 15 min
                 )
             else:
                 # objectif atteint → arrêt complet

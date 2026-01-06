@@ -59,6 +59,7 @@ def run_survey(driver, api_key, *, account_id: str):
 
             # Cas : on est disqualifié → cliquer sur OK puis relancer
             if question and "Tu n'as pas été qualifié cette fois" in question:
+                print("⚠️ Disqualification détectée, raison: tu n'as pas été qualifié cette fois.")
                 preselection.question_analyzer.handle_disqualification_and_retry(driver)
                 time.sleep(2)
                 try:
@@ -144,6 +145,7 @@ def run_survey(driver, api_key, *, account_id: str):
 
                     # Cas : on est disqualifié → cliquer sur OK puis relancer
                     if preselection.question_analyzer.handle_disqualification_and_retry(driver):
+                        print("⚠️ Disqualification détectée après question finale.")
                         time.sleep(2)
                         get_guard().record_success()
                         get_guard().request_survey_restart("disqualification_or_retry")

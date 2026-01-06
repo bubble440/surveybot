@@ -1,6 +1,8 @@
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+import time
+from preselection.auth_handler import snap
 
 def go_to_best_paid_survey(driver):
     wait_short = WebDriverWait(driver, 8)
@@ -36,6 +38,7 @@ def go_to_best_paid_survey(driver):
             print("🛑 Exception navigation :", type(e).__name__, "-", e)
             return
 
+    time.sleep(15)  # laisser le temps au contenu de charger
     # Appliquer le filtre « Paiement le plus élevé »
     try:
         flt = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, "div[data-test-id='ps-filter-item-by_survey_reward']")))
@@ -44,6 +47,8 @@ def go_to_best_paid_survey(driver):
     except Exception:
         print("⚠️ Impossible d'appliquer le filtre du paiement — on continue.")
 
+    time.sleep(10)  # laisser le temps au filtre de s'appliquer
+    snap(driver, "after_filter_best_paid")
     # Cliquer le premier tile
     try:
         first = wait.until(EC.element_to_be_clickable((By.XPATH, "(//div[contains(@class, 'survey-tile')])[1]")))

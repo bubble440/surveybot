@@ -63,6 +63,23 @@ def _from_env_overrides() -> dict:
             out[key] = v
     return out
 
+def _from_direct_env_keys() -> dict:
+    keys = [
+        "EMAIL", "PASSWORD",
+        "PROXY_URL", "PROXY_USER", "PROXY_PASS",
+        "GEO_LAT", "GEO_LON",
+        "SURVEY_LANG", "SURVEY_TZ",
+        "ACCOUNT_ID",
+        "OPENAI_API_KEY", "PAYOUT_NAME", "PAYOUT_REVOLUT_TAG",
+        "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID",
+    ]
+    out = {}
+    for k in keys:
+        v = os.getenv(k)
+        if v is not None and v != "":
+            out[k] = v
+    return out
+
 def load_remote_secrets() -> dict:
     """
     Stratégie d’empilement :
@@ -77,5 +94,6 @@ def load_remote_secrets() -> dict:
     for k, v in sm.items():
         data.setdefault(k, v)
     # puis override par variables unitaires
+    data.update(_from_direct_env_keys())
     data.update(_from_env_overrides())
     return data
