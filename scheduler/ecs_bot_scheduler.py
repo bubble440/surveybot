@@ -1,6 +1,7 @@
 import time, os, socket
 from State.account_state import load_state, update_state
 from ecs import is_task_running, start_task
+from State.account_state import try_acquire_account_lock
 
 def scheduler_tick(account_id):
     state = load_state(account_id)
@@ -49,17 +50,18 @@ def scheduler_tick(account_id):
     
     SCHEDULER_ID = os.getenv("SCHEDULER_ID", socket.gethostname())
 
-    def _lock(st):
-        st["status"] = "starting"
-        st["lock_owner"] = SCHEDULER_ID
-        st["lock_until_ts"] = time.time() + 120  # 2 min de sécurité
-
-    update_state(account_id, _lock)
-
-    print(
-        f"[SCHEDULER] lock pris | account_id={account_id} "
-        f"owner={SCHEDULER_ID}"
+    LOCK_OK = try_acquire_account_lock(
+        account_id=account_id,
+        owner=SCHEDULER_ID,
+        ttl_sec=120,  # juste pour le démarrage
     )
+
+    if not LOCK_OK:
+        print(
+            f"[SCHEDULER] Lock refusé pour {account_id} "
+            f"(déjà pris par une autre task)"
+        )
+        return
 
     # 4) Sinon → on relance la task
     try:

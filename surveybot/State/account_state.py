@@ -161,7 +161,7 @@ def load_state(account_id: str) -> Dict[str, Any]:
     Charge l'état depuis DynamoDB (prod) ou fallback fichier.
     """
     if IS_LOCAL:
-        return {}
+        return _default_state(account_id)
     
     account_id = (account_id or "").strip()
     if not account_id:
@@ -303,3 +303,66 @@ def try_acquire_proxy_lock(proxy_id: str, account_id: str, ttl_sec: int) -> bool
 
     update_state(account_id, _apply)
     return success
+
+# -----------------------------
+# 🔐 ACCOUNT LOCK (CRITIQUE)
+# -----------------------------
+
+def try_acquire_account_lock(
+    account_id: str,
+    owner: str,
+    ttl_sec: int = 900,
+) -> bool:
+    """
+    Lock atomique du compte.
+    Une seule task (bot ou scheduler) peut réussir.
+
+    Retourne True si le lock est acquis, False sinon.
+    """
+
+    if IS_LOCAL:
+        # 🧪 En local : on autorise toujours
+        return True
+
+    now = int(time.time())
+    expires = now + ttl_sec
+
+    if not _ddb_enabled():
+        # fallback fichier : lock naïf (acceptable en local/debug)
+        st = load_state(account_id)
+        if st.get("lock_until_ts", 0) > now:
+            return False
+        update_state(account_id, lambda s: s.update({
+            "lock_owner": owner,
+            "lock_until_ts": expires,
+        }))
+        return True
+
+    table = _get_ddb_table()
+    if table is None:
+        return False
+
+    try:
+        table.update_item(
+            Key={"account_id": account_id},
+            UpdateExpression="""
+                SET lock_owner = :o,
+                    lock_until_ts = :u,
+                    updated_ts = :now
+            """,
+            ConditionExpression="""
+                attribute_not_exists(lock_owner)
+                OR lock_owner = :o
+                OR lock_until_ts < :now
+            """,
+            ExpressionAttributeValues=_to_dynamodb_compatible({
+                ":o": owner,
+                ":u": expires,
+                ":now": now,
+            }),
+        )
+        return True
+
+    except Exception as e:
+        # ConditionalCheckFailedException = lock déjà pris
+        return False

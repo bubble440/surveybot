@@ -10,7 +10,7 @@ docker version
 $env:AWS_REGION   = "eu-west-3"
 $env:ACCOUNT_ID   = "865626945801"
 $env:REPO         = "surveybot"
-$env:TAG          = "95"
+$env:TAG          = "114"
 # 2) Vérifier qu'AWS CLI est bien connecté (devrait renvoyer ton compte)
 aws sts get-caller-identity
 # 3) Créer le repo s’il n’existe pas (sinon, ignore l’erreur)
@@ -30,7 +30,7 @@ docker push "$($env:ACCOUNT_ID).dkr.ecr.$($env:AWS_REGION).amazonaws.com/$($env:
 $env:AWS_REGION="eu-west-3"
 $env:ACCOUNT_ID="865626945801"
 $env:SCHEDULER_REPO="surveybot-scheduler"
-$env:SCHEDULER_TAG="14"
+$env:SCHEDULER_TAG="18"
 # Build
 docker build -t "$($env:SCHEDULER_REPO):$($env:SCHEDULER_TAG)" ./scheduler
 # Tag
