@@ -3,7 +3,7 @@ import os
 IS_LOCAL = os.getenv("RUN_ENV", "local") == "local"
 
 from Management.runtime_guard import RuntimeGuard, set_guard, get_guard
-import base64, time, Cash.payout as payout, sys, logging, threading, signal, json
+import base64, time, Cash.payout as payout, sys, logging, threading, signal, json, socket
 from cProfile import label
 from preselection.config_loader import load_config
 from preselection.playwright_launcher import launch_browser
@@ -15,8 +15,9 @@ if not IS_LOCAL:
     from selenium.webdriver.chrome.options import Options
 from Management.idle_monitor import start_idle_gain_watch
 from Management.notifier import send_telegram
-from State.account_state import update_state, try_acquire_proxy_lock, load_state, save_state
+from State.account_state import update_state, try_acquire_proxy_lock, load_state, save_state, try_acquire_account_lock
 from pathlib import Path
+from selenium.common.exceptions import TimeoutException
 
 if IS_LOCAL:
     ACCOUNT_ID = "local_debug"
@@ -60,6 +61,14 @@ log.info("BOOT: surveybot starting")  # ✅ maintenant log est défini
 def main():
     config = load_config()
 
+    print(config.get("PROXY_URL"))
+    print(config.get("PROXY_USER"))
+    print(config.get("PROXY_PASS"))
+    
+    print(config.get("Email"))
+    print(config.get("Password"))
+    print(config.get("ACCOUNT_ID"))
+
     def _read_account_id_from_state_file() -> str | None:
         """
         Fallback local: lit account_id depuis State/account_state.json.
@@ -90,14 +99,27 @@ def main():
         or _read_account_id_from_state_file()
     )
 
+    TASK_ID = os.getenv("ECS_TASK_ID") or socket.gethostname()
+
+    LOCK_OK = try_acquire_account_lock(
+        account_id=account_id,
+        owner=TASK_ID,
+        ttl_sec=900,  # 15 minutes (renouvelé par heartbeat plus tard)
+    )
+
+    if not LOCK_OK:
+        print(
+            f"[LOCK] task obsolète détectée "
+            f"(account_id={account_id}, owner={TASK_ID}) → EXIT"
+        )
+        sys.exit(0)
+
     if not account_id:
         raise RuntimeError("ACCOUNT_ID introuvable (ENV / config / State/account_state.json)")
 
     print(f"🚀 Démarrage surveybot pour account_id={account_id}")
     update_state(account_id, lambda st: (
         st.__setitem__("status", "running"),
-        st.__setitem__("lock_owner", ""),
-        st.__setitem__("lock_until_ts", 0),
         st.__setitem__("last_boot_ts", int(time.time()))
     ))
 
@@ -207,7 +229,7 @@ def main():
         guard = RuntimeGuard(
             account_id=account_id,
             idle_timeout_sec=120,
-            restart_cooldown_sec=60,
+            restart_cooldown_sec=900,
             max_errors_in_row=5,
             max_runtime_sec=2 * 3600,
             daily_target_eur=5.0,
@@ -233,7 +255,7 @@ def main():
     threading.Thread(target=_heartbeat, name="heartbeat", daemon=True).start()
 
     try:
-        driver = launch_browser()
+        driver = launch_browser(config)
         if driver is None:
             raise RuntimeError("launch_browser() a retourné None")
         if IS_LOCAL:
@@ -259,6 +281,8 @@ def main():
     def safe_get(driver, url):
         """
         Navigation sécurisée : s'assure qu'un driver valide existe.
+        - Ajoute un timeout pour éviter les hangs infinis en ECS.
+        - Fallback: stoppe le chargement et continue.
         """
         if driver is None:
             raise RuntimeError("SAFE_GET appelé avec driver=None")
@@ -266,8 +290,23 @@ def main():
         try:
             if not hasattr(driver, "window_handles") or not driver.window_handles:
                 raise RuntimeError("Aucune fenêtre active")
+
             driver.switch_to.window(driver.window_handles[-1])
-            driver.get(url)
+
+            # 🔒 évite blocage infini
+            driver.set_page_load_timeout(45)
+
+            try:
+                print(f"[SAFE_GET] start get: {url}")
+                driver.get(url)
+                print(f"[SAFE_GET] done get: {url}")
+            except TimeoutException:
+                print(f"[SAFE_GET][WARN] Timeout page load vers {url} -> window.stop()")
+                try:
+                    driver.execute_script("window.stop();")
+                except Exception:
+                    pass
+
         except Exception as e:
             print(f"[SAFE_GET] Navigation impossible vers {url}: {e}")
             raise
@@ -302,9 +341,10 @@ def main():
     except Exception as e:
         print(f"[WATCHDOG][WARN] Impossible de démarrer le watchdog: {e}")
     # ===========================================================
+    time.sleep(30)
     snap(driver, "after_login")
     go_to_best_paid_survey(driver)
-
+    snap(driver, "after_navigate_best_paid")
 
     # --- HOT RELOAD EN MODE LIVE (toujours actif) ---
     print("♻️ Hot-reload actif en mode LIVE (forcé).")

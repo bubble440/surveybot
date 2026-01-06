@@ -179,6 +179,8 @@ def login(driver, email, password):
         email_input.send_keys(email)
         print(f"✅ Email saisi : {email}")
 
+        time.sleep(2)  # petit délai pour stabilité
+
         # Cliquer sur le bouton "Continue"
         continue_btn = wait.until(
             EC.element_to_be_clickable((By.XPATH, "//button[contains(., 'Continue')]"))
@@ -191,8 +193,9 @@ def login(driver, email, password):
         with open("debug_email_page.html", "w", encoding="utf-8") as f:
             f.write(driver.page_source)
 
+    time.sleep(2)
     dom_probe(driver)
-
+    snap(driver, "after_email")
     # Étape 3 : Remplir le mot de passe et valider
     try:
         pwd_input = wait.until(EC.element_to_be_clickable(
@@ -210,10 +213,13 @@ def login(driver, email, password):
         if pwd_input.get_attribute("value").strip() == "":
             pwd_input.clear()
             pwd_input.send_keys(password)
+            snap(driver, "after_pwd_fallback")
             print("🔁 Fallback : mot de passe injecté via send_keys()")
         else:
             print("🔑 Mot de passe injecté via JS.")
-
+            snap(driver, "after_pwd_js")
+            
+        time.sleep(2)  # petit délai pour stabilité
         # ✅ Corrigé ici : bouton Se connecter avec data-test-id
         login_btn = wait.until(EC.element_to_be_clickable(
             (By.CSS_SELECTOR, 'button[data-test-id="sign-in-submit-button"]')

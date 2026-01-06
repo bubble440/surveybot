@@ -39,4 +39,19 @@ def load_config() -> dict:
     # Normalisation légère des clés attendues ailleurs dans le code
     # (main.py lit: Email, Password, openai_api_key, payout_name, payout_revolut_tag,
     #  telegram_bot_token, telegram_chat_id)
+
+    # 🔁 Normalisation des clés (Secrets Manager → code)
+    key_aliases = {
+        "EMAIL": "Email",
+        "PASSWORD": "Password",
+        "OPENAI_API_KEY": "openai_api_key",
+        "PAYOUT_NAME": "payout_name",
+        "PAYOUT_REVOLUT_TAG": "payout_revolut_tag",
+        "ACCOUNT_ID":"account_id",
+    }
+
+    for src, dst in key_aliases.items():
+        if src in merged:
+            merged[dst] = merged[src]
+
     return merged

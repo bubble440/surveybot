@@ -64,10 +64,21 @@ def _detect_chrome_binary() -> str:
         "Installe Chromium (Linux/Docker) ou Chrome (Windows)."
     )
 
-def _parse_proxy_env():
-    proxy_user = os.getenv("PROXY_USER")
-    proxy_pass = os.getenv("PROXY_PASS")
-    proxy_url  = os.getenv("PROXY_URL")
+def _parse_proxy_env(config: dict | None = None):
+    """
+    Récupère le proxy depuis :
+    1) config (source principale)
+    2) os.environ (fallback CI / debug)
+    """
+
+    def _get(key):
+        if config and key in config and config[key]:
+            return str(config[key]).strip()
+        return os.getenv(key)
+
+    proxy_url  = _get("PROXY_URL")
+    proxy_user = _get("PROXY_USER")
+    proxy_pass = _get("PROXY_PASS")
 
     if not proxy_url:
         return None, None, None
@@ -78,7 +89,6 @@ def _parse_proxy_env():
     parsed = urlparse(proxy_url)
     server = f"{parsed.scheme}://{parsed.hostname}:{parsed.port}"
 
-    # 🔒 Si user ou pass manquant → on désactive l’auth
     if not proxy_user or not proxy_pass:
         return server, None, None
 
@@ -150,7 +160,7 @@ def _apply_devtools_overrides(context):
         });
     """)
 
-def launch_browser():
+def launch_browser(config: dict | None = None):
     """
     1) Playwright lance Chrome avec proxy authentifié.
     2) Selenium s'attache au Chrome via debuggerAddress.
@@ -174,7 +184,7 @@ def launch_browser():
         # driver.get("https://www.topsurveys.app/")
         return driver
 
-    proxy_server, proxy_user, proxy_pass = _parse_proxy_env()
+    proxy_server, proxy_user, proxy_pass = _parse_proxy_env(config)
     print(
     f"[PW][PROXY] server={proxy_server} "
     f"user={'yes' if proxy_user else 'no'} "
@@ -261,10 +271,6 @@ def launch_browser():
         print("[PW][OVERRIDE] DevTools overrides appliqués (FR / Paris).")
 
         page = context.new_page()
-        # print("[PW][WARMUP] Navigation initiale via Playwright (proxy auth-safe)")
-        # page.goto("https://www.topsurveys.app", wait_until="domcontentloaded", timeout=60000)
-        # time.sleep(2)
-
         # ✅ Permission geolocation : sans ça, beaucoup de sites voient "denied"
         try:
             context.grant_permissions(["geolocation"], origin="https://app.topsurveys.app")
@@ -277,20 +283,9 @@ def launch_browser():
         opts = webdriver.ChromeOptions()
         # ⚠️ Selenium ne doit PAS relancer chrome : on s'attache au debug port
         opts.add_experimental_option("debuggerAddress", f"127.0.0.1:{debug_port}")
+        opts.page_load_strategy = "eager"  # ne pas attendre toutes les ressources
 
-        driver = webdriver.Chrome(options=opts)
-
-        # 🔐 VALIDATION CRITIQUE
-        try:
-            _ = driver.current_url
-            _ = driver.window_handles
-        except Exception as e:
-            print("[PW][FATAL] Selenium attach failed:", e)
-            driver.quit()
-            raise RuntimeError("Selenium failed to attach to Playwright Chrome")
-        
-        if "topsurveys" not in driver.current_url:
-            print("[WARN] Selenium attaché mais URL inattendue:", driver.current_url)
+        driver = webdriver.Chrome(options=opts)        
 
         try:
             fingerprint = driver.execute_script("""
@@ -314,18 +309,7 @@ def launch_browser():
         driver._pw_context = context
         driver._pw_page = page
         driver._pw_user_data_dir = user_data_dir
-
-        # # Petit check côté Selenium
-        # try:
-        #     driver.get("https://api.ipify.org/")
-        #     time.sleep(0.8)
-        #     html = driver.page_source or ""
-        #     m = re.search(r"\b\d{1,3}(?:\.\d{1,3}){3}\b", html)
-        #     ip_sel = m.group(0) if m else None
-        #     print(f"[SEL][CHECK] ipify via Selenium => {ip_sel}")
-        # except Exception as e:
-        #     print(f"[SEL][WARN] check ipify Selenium a échoué: {e}")
-
+        
         return driver
 
     except Exception:
