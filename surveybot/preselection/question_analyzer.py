@@ -7,6 +7,8 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.action_chains import ActionChains
 from Management.url_guard import is_allowed
+from Management.runtime_guard import get_guard
+from Management.sensitive_question_guard import is_sensitive_question
 
 ASSISTANT_ID = "asst_dzB8sAFrNdPPD17auG4WI0EK"
 
@@ -202,31 +204,6 @@ def reformulate_prompt_for_gpt(question_text, options):
     )
 
 
-# def ask_assistant(prompt_text, api_key):
-#     client = OpenAI(api_key=api_key)
-#     from Management.runtime_guard import get_guard
-#     get_guard().record_openai_call()
-#     thread = client.beta.threads.create()
-
-#     client.beta.threads.messages.create(
-#         thread_id=thread.id, role="user", content=prompt_text
-#     )
-
-#     run = client.beta.threads.runs.create(
-#         thread_id=thread.id, assistant_id=ASSISTANT_ID
-#     )
-
-#     while run.status not in ["completed", "failed"]:
-#         time.sleep(1)
-#         run = client.beta.threads.runs.retrieve(thread_id=thread.id, run_id=run.id)
-
-#     if run.status == "completed":
-#         messages = client.beta.threads.messages.list(thread_id=thread.id)
-#         raw = messages.data[0].content[0].text.value.strip()
-#         cleaned = raw.split("\n")[0].strip(" .,-–—•*➡️✅🤖⭐")
-#         return cleaned
-#     return None
-
 def ask_assistant(prompt_text, api_key, *, question=None, options=None):
     from Utils.openai_cache import (
         make_cache_key,
@@ -245,7 +222,6 @@ def ask_assistant(prompt_text, api_key, *, question=None, options=None):
 
     # 2️⃣ Appel OpenAI normal
     client = OpenAI(api_key=api_key)
-    from Management.runtime_guard import get_guard
     get_guard().record_openai_call()
 
     thread = client.beta.threads.create()
@@ -303,7 +279,6 @@ def get_response_for_question(driver, api_key):
                 return "NOT_RETURNED", None
 
         question = extract_question_text(html)
-        from Management.sensitive_question_guard import is_sensitive_question
 
         if is_sensitive_question(question):
             print("⏭️ Question sensible détectée (hardware / permission) → SKIP")
