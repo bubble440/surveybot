@@ -10,6 +10,10 @@ from dataclasses import dataclass, field
 from typing import Optional, Callable
 from enum import Enum
 from State.account_state import load_state, update_state
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+
 
 def _is_prod_env() -> bool:
     return bool(
@@ -146,10 +150,6 @@ class RuntimeGuard:
         """
 
         try:
-            from selenium.webdriver.common.by import By
-            from selenium.webdriver.support.ui import WebDriverWait
-            from selenium.webdriver.support import expected_conditions as EC
-
             wait = WebDriverWait(driver, 6)
 
             # Sélecteurs volontairement larges pour anticiper les variations UI
@@ -173,7 +173,24 @@ class RuntimeGuard:
         except Exception as e:
             print(f"ℹ️ CTA 'Ouvrir l'application' non cliquable : {e}")
             return False
+        
+    def signal_no_gain(self):
+        """Appelé par le watchdog si aucun gain prolongé."""
+        self._soft_restart(
+            StopReason.NO_GAIN,
+            pause_sec=self.restart_cooldown_sec
+        )
 
+    def signal_strict_survey(self, reason: str):
+        """Survey trop strict (captcha, drag&drop, etc.)."""
+        self.request_survey_restart(reason)
+
+    def signal_fatal_error(self, reason: str):
+        """Erreur non récupérable."""
+        self._soft_restart(
+            StopReason.TOO_MANY_ERRORS,
+            pause_sec=self.restart_cooldown_sec
+        )
     def request_survey_restart(self, reason):
         """
         Redémarrage intelligent :

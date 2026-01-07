@@ -10,7 +10,7 @@ docker version
 $env:AWS_REGION   = "eu-west-3"
 $env:ACCOUNT_ID   = "865626945801"
 $env:REPO         = "surveybot"
-$env:TAG          = "116"
+$env:TAG          = "119"
 # 2) Vérifier qu'AWS CLI est bien connecté (devrait renvoyer ton compte)
 aws sts get-caller-identity
 # 3) Créer le repo s’il n’existe pas (sinon, ignore l’erreur)

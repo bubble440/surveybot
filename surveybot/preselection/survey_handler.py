@@ -13,6 +13,9 @@ from preselection.auth_handler import snap
 import Survey.survey_solver 
 import Cash.payout as payout
 from Management.runtime_guard import get_guard
+from Management.survey_difficulty_guard import detect_strict_survey
+from Management.redirect_watcher import wait_for_final_redirection, switch_to_latest_window_and_close_others
+from Management.url_guard import is_allowed, normalize_host
 
 def run_survey(driver, api_key, *, account_id: str):
     snap(driver, "before_survey_loop")
@@ -107,7 +110,6 @@ def run_survey(driver, api_key, *, account_id: str):
                     # Cas : on est qualifié → lancer solve_full_survey()
                     base_handles = set(driver.window_handles)
                     if preselection.question_analyzer.click_participer_if_qualified(driver):
-                        from Management.redirect_watcher import switch_to_latest_window_and_close_others
                         # 🔑 CRUCIAL : bascule vers le nouvel onglet du survey
                         switch_to_latest_window_and_close_others(
                             driver,
@@ -115,14 +117,9 @@ def run_survey(driver, api_key, *, account_id: str):
                             timeout=10,
                             prefer_external=True
                         )
-
-                        from Management.redirect_watcher import wait_for_final_redirection
-                        from Management.url_guard import is_allowed, normalize_host
                     
                         final_url = wait_for_final_redirection(driver, max_wait=60)  # déjà présent dans ton repo
                         host = normalize_host(final_url)
-
-                        from Management.survey_difficulty_guard import detect_strict_survey
 
                         is_strict, reason = detect_strict_survey(driver)
                         if is_strict:

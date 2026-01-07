@@ -67,10 +67,7 @@ class GainWatchdog:
                 # ⛔ Aucun gain depuis threshold_sec
                 print(f"[IDLE_GAIN] Aucun gain depuis {self.threshold_sec}s → pause 15 min")
 
-                get_guard()._soft_restart(
-                    StopReason.NO_GAIN,
-                    pause_sec=900  # 15 minutes
-                )
+                get_guard().signal_no_gain()
                 self.stop()
                 self._armed = False  # éviter le spam jusqu'à prochaine hausse
 

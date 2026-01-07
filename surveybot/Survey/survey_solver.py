@@ -342,7 +342,7 @@ def solve_full_survey(driver, api_key, *, account_id: str):
             print(f"[STRICT_SURVEY][MID] Détecté en cours de survey ({reason}) -> restart propre")
             from Management.runtime_guard import get_guard
             get_guard().record_success()
-            get_guard().request_survey_restart(f"strict_mid_{reason}")
+            get_guard().signal_strict_survey(f"strict_mid_{reason}")
             return
         # -------------------------------------------------------------------
 
