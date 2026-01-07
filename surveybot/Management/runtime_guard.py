@@ -281,8 +281,11 @@ class RuntimeGuard:
             except Exception:
                 traceback.print_exc()
 
-    def _check_conditions(self):
+    def _check_conditions(self):        
         now = time.time()
+        
+        if _is_prod_env():
+            return  # conditions gérées par ECS en prod
 
         with self._lock:
             idle_time = now - self.state.last_activity_ts
