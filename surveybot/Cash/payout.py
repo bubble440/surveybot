@@ -4,7 +4,7 @@ import re
 import time
 from typing import Tuple
 from State.account_state import update_state
-from Management.runtime_guard import get_guard
+from Management.guards.runtime_guard import get_guard
 
 IS_LOCAL = os.getenv("RUN_ENV", "local") == "local"
 
@@ -320,14 +320,12 @@ def check_and_cashout_if_needed(
             if _select_paypal_5_eur(driver):
                 success_select = True
                 print("[PAYOUT] Option PayPal 5 € sélectionnée.")
-                from Management.runtime_guard import get_guard
                 get_guard().record_earning(5.0)
                 break
         elif method == "revolut":
             if _select_revolut_5_eur(driver):
                 success_select = True
                 print("[PAYOUT] Option Revolut 5 € sélectionnée (fallback).")
-                from Management.runtime_guard import get_guard
                 get_guard().record_earning(5.0)
                 break
 

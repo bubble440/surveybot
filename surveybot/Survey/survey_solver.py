@@ -9,7 +9,7 @@ import Management.redirect_watcher as redirect_watcher
 import Survey.survey_executor  
 from selenium.webdriver.common.by import By
 import time
-from Management.survey_difficulty_guard import detect_strict_survey
+from Management.guards.survey_difficulty_guard import detect_strict_survey
 
 # ⚙️ Paramètres de boucle pour éviter les boucles infinies
 MAX_STEPS = 200  # sécurité dure : max de pages/questions à traiter
@@ -340,7 +340,7 @@ def solve_full_survey(driver, api_key, *, account_id: str):
         is_strict, reason = detect_strict_survey(driver)
         if is_strict:
             print(f"[STRICT_SURVEY][MID] Détecté en cours de survey ({reason}) -> restart propre")
-            from Management.runtime_guard import get_guard
+            from Management.guards.runtime_guard import get_guard
             get_guard().record_success()
             get_guard().signal_strict_survey(f"strict_mid_{reason}")
             return

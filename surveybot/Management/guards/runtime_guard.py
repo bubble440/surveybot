@@ -13,7 +13,7 @@ from State.account_state import load_state, update_state
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-
+from Management.pause_policy import PausePolicy, resolve_pause_seconds
 
 def _is_prod_env() -> bool:
     return bool(
@@ -29,6 +29,7 @@ class StopReason(Enum):
     NO_GAIN = "no_gain"
     RUNTIME_LIMIT = "runtime_limit"
     DAILY_TARGET_REACHED = "daily_target_reached"
+    SESSION_EXPIRED = "session_expired"
 
 
 @dataclass
@@ -54,7 +55,7 @@ class RuntimeGuard:
         *,
         account_id: str,
         idle_timeout_sec: int = 120,          # 2 minutes
-        restart_cooldown_sec: int = 900,      # 15 minutes
+        restart_cooldown_sec: int = 60,      # 1 minute
         max_errors_in_row: int = 5,
         max_runtime_sec: int = 2 * 3600,      # 2h
         daily_target_eur: float = 5.0,
@@ -108,41 +109,6 @@ class RuntimeGuard:
         """
         self.driver = driver
 
-    def sleep_and_exit(self, reason: str, notify: bool = True):
-        if notify:
-            self._notify(f"😴 Cooldown ({self.restart_cooldown_sec}s) : {reason}")
-        time.sleep(self.restart_cooldown_sec)
-        self.state.stopped = False
-        self.on_soft_restart(reason)
-
-    def _soft_restart(self, reason: StopReason, pause_sec: int):
-        print(
-            f"[RUNTIME_GUARD] arrêt dur demandé ({reason.value}) "
-            f"| pause souhaitée = {pause_sec}s"
-        )
-
-        def _apply_stop(st):
-            st["last_stop_reason"] = reason.value
-            st["cooldown_until_ts"] = time.time() + pause_sec
-
-        update_state(self.account_id, _apply_stop)
-
-        if _is_prod_env():
-            # ✅ en ECS : on laisse le scheduler gérer
-            raise SystemExit(reason.value)
-        else:
-            # 🧪 en local : on ne tue pas brutalement le process
-            print(
-                "[RUNTIME_GUARD][LOCAL] SystemExit ignoré "
-                f"(raison={reason.value}, pause={pause_sec}s)"
-            )
-            self.state.stopped = True
-
-    def _stop_until_tomorrow(self, reason: StopReason):
-        self._notify(f"🛑 Bot stoppé ({reason.value}) — reprise demain à 00h")
-
-        raise SystemExit(reason.value)
-
     def try_open_application_cta(self, driver) -> bool:
         """
         Tente de cliquer sur le CTA 'Ouvrir l'application' si présent.
@@ -171,14 +137,14 @@ class RuntimeGuard:
             return True
 
         except Exception as e:
-            print(f"ℹ️ CTA 'Ouvrir l'application' non cliquable : {e}")
+            print(f"ℹ️ CTA 'Ouvrir l'application' non cliquable.")
             return False
         
     def signal_no_gain(self):
         """Appelé par le watchdog si aucun gain prolongé."""
-        self._soft_restart(
+        self.pause(
+            PausePolicy.MEDIUM_COOLDOWN,
             StopReason.NO_GAIN,
-            pause_sec=self.restart_cooldown_sec
         )
 
     def signal_strict_survey(self, reason: str):
@@ -187,37 +153,53 @@ class RuntimeGuard:
 
     def signal_fatal_error(self, reason: str):
         """Erreur non récupérable."""
-        self._soft_restart(
+        self.pause(
+            PausePolicy.MEDIUM_COOLDOWN,
             StopReason.TOO_MANY_ERRORS,
-            pause_sec=self.restart_cooldown_sec
         )
+
     def request_survey_restart(self, reason):
         """
         Redémarrage intelligent :
-        1) tente un clic léger sur 'Ouvrir l'application'
-        2) sinon, arrêt dur + cooldown (scheduler prendra le relais)
+        1) tentative CTA (best effort)
+        2) sinon reprise normale du flow
+        3) si init échoue → pause courte
         """
         print(f"🔁 Restart survey demandé | raison = {reason}")
 
         if not _is_prod_env():
             print("[RUNTIME_GUARD][LOCAL] restart survey simulé")
             return
-        else:
-            # tentative soft via CTA
-            try:
-                if self.driver and self.try_open_application_cta(self.driver):
-                    print("🟢 Redémarrage léger réussi via CTA")
-                    return
-            except Exception as e:
-                print(f"⚠️ Erreur tentative CTA : {e}")
 
-        # fallback robuste et assumé
-        print("🔴 Fallback : arrêt dur via RuntimeGuard")
-        self._soft_restart(
-            StopReason.IDLE,
-            pause_sec=self.restart_cooldown_sec
+        # 1️⃣ Tentative CTA (best effort)
+        try:
+            if self.driver and self.try_open_application_cta(self.driver):
+                print("🟢 CTA cliqué → reprise via UI")
+                return
+        except Exception:
+            # ⚠️ CTA qui échoue n'est PAS une erreur
+            pass
+
+        # 2️⃣ CTA absent ou inutile → reprise normale
+        try:
+            print("🔄 CTA indisponible → reprise session normale")
+
+            # ⚠️ RuntimeGuard ne connaît PAS les détails
+            # on délègue au flow principal via on_soft_restart
+            if self.on_soft_restart:
+                self.on_soft_restart("resume_after_cta_fail")
+                return
+
+        except Exception as e:
+            print(f"❌ Échec init_session_and_enter_surveys : {e}")
+
+        # 3️⃣ Une seule erreur → pause courte
+        print("⛔ Init session échouée → pause courte")
+        self.pause(
+            PausePolicy.SHORT_COOLDOWN,
+            StopReason.DAILY_TARGET_REACHED,
         )
-
+        
     # ----------------------------
     # EVENTS (appelés par le bot)
     # ----------------------------
@@ -225,11 +207,10 @@ class RuntimeGuard:
     def heartbeat(self):
         with self._lock:
             self.state.last_activity_ts = time.time()
-            from State.account_state import update_state
 
             def _refresh_lock(st):
                 if st.get("lock_owner") == self.task_id:
-                    st["lock_until_ts"] = int(time.time()) + 900
+                    st["lock_until_ts"] = int(time.time()) + 15 
 
             update_state(self.account_id, _refresh_lock)
 
@@ -312,39 +293,41 @@ class RuntimeGuard:
 
         # 1️⃣ Inactivité prolongée → restart silencieux
         if idle_time > self.idle_timeout_sec:
-            self._soft_restart(
+            self.pause(
+                PausePolicy.SHORT_COOLDOWN,
                 StopReason.IDLE,
-                pause_sec=self.restart_cooldown_sec
             )
             return
 
         # 2️⃣ Trop d’erreurs consécutives → restart silencieux
         if errors >= self.max_errors_in_row:
-            self._soft_restart(
+            self.pause(
+                PausePolicy.SHORT_COOLDOWN,
                 StopReason.TOO_MANY_ERRORS,
-                pause_sec=self.restart_cooldown_sec
             )
             return
 
         # 3️⃣ Objectif journalier atteint → arrêt jusqu’à demain
         if earnings >= self.daily_target_eur:
-            self._stop_until_tomorrow(
-                StopReason.DAILY_TARGET_REACHED
+            self.pause(
+                PausePolicy.DAILY_RESET,
+                StopReason.DAILY_TARGET_REACHED,
             )
             return
 
         # 4️⃣ Runtime max atteint
         if runtime >= self.max_runtime_sec:
             if earnings < self.daily_target_eur:
-                # 6h atteintes mais objectif NON atteint → pause 30 min
-                self._soft_restart(
-                    StopReason.RUNTIME_LIMIT,
-                    pause_sec=900  # 15 min
+                # 2h atteintes mais objectif NON atteint → pause 15 min
+                self.pause(
+                    PausePolicy.MEDIUM_COOLDOWN,
+                    StopReason.RUNTIME_LIMIT
                 )
             else:
                 # objectif atteint → arrêt complet
-                self._stop_until_tomorrow(
-                    StopReason.DAILY_TARGET_REACHED
+                self.pause(
+                    PausePolicy.DAILY_RESET,
+                    StopReason.DAILY_TARGET_REACHED,
                 )
             return
 
@@ -353,6 +336,26 @@ class RuntimeGuard:
             self.notify_fn(msg)
         except Exception:
             pass
+
+    def pause(self, policy: PausePolicy, reason: StopReason):
+        """
+        Applique une PausePolicy au bot et stoppe l'exécution.
+        """
+        pause_sec = resolve_pause_seconds(policy)
+
+        self._notify(
+            f"⏸️ Pause bot ({policy.name}) | raison={reason.value} | pause={pause_sec}s"
+        )
+
+        def _apply_pause(st):
+            st["last_stop_reason"] = reason.value
+            st["pause_policy"] = policy.name
+            st["cooldown_until_ts"] = int(time.time()) + pause_sec
+
+        update_state(self.account_id, _apply_pause)
+
+        # En prod on laisse ECS / scheduler gérer
+        raise SystemExit(reason.value)
 
 # ----------------------------
 # Singleton global (robuste)
@@ -368,6 +371,7 @@ class _NullGuard:
     def record_error(self, err=None): pass
     def record_openai_call(self): pass
     def record_earning(self, amount_eur: float): pass
+    def attach_driver(self, driver): pass
 
 _guard_instance = None
 

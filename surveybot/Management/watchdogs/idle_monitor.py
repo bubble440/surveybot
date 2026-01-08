@@ -7,8 +7,8 @@ from __future__ import annotations
 import threading, time, traceback
 from typing import Callable, Optional
 import Cash.payout as payout  # on réutilise _read_balance(driver) et son parsing robuste
-from Management.runtime_guard import get_guard
-from Management.runtime_guard import StopReason
+from ..guards.runtime_guard import get_guard
+from ..guards.runtime_guard import StopReason
 
 class GainWatchdog:
     """
@@ -18,8 +18,8 @@ class GainWatchdog:
     def __init__(
         self,
         driver,
-        threshold_sec: int = 1800,     # 30 min
-        poll_seconds: int = 45,        # intervalle de sondage
+        threshold_sec: int = 900,     # 15 min
+        poll_seconds: int = 900,        # intervalle de sondage
         notify_fn: Optional[Callable[[str], None]] = None,
     ) -> None:
         self.driver = driver

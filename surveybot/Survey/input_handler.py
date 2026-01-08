@@ -264,7 +264,6 @@ def _normt_txt(s: str) -> str:
 
 def _find_questions_container(driver, context_hint: str):
     """Essaie de limiter la recherche au bloc <div class='question'> qui porte le H1 du contexte."""
-    from selenium.webdriver.common.by import By
     ctx = (context_hint or "").strip()
     if not ctx:
         return None
@@ -423,7 +422,6 @@ DATE_HINTS = {
 
 def _find_inputs_by_hint(driver, kind: str):
     """Retourne une liste d'<input> candidates pour month/day/year."""
-    from selenium.webdriver.common.by import By
     if kind not in DATE_HINTS: 
         return []
     H = DATE_HINTS[kind]
@@ -1267,7 +1265,6 @@ def _dropdown_visible_value(driver, ctrl) -> str:
     try:
         if ctrl.tag_name.lower() == "select":
             try:
-                from selenium.webdriver.support.ui import Select
                 sel = Select(ctrl)
                 if sel.first_selected_option:
                     return sel.first_selected_option.text or ""
@@ -1353,7 +1350,6 @@ def is_dropdown_filled(driver, ctrl) -> bool:
                 return True
             # teste l'option sélectionnée
             try:
-                from selenium.webdriver.support.ui import Select
                 sel = Select(ctrl)
                 txt = _norm_txt(sel.first_selected_option.text or "")
                 return bool(txt and txt not in _DROPDOWN_PLACEHOLDERS)
@@ -2467,8 +2463,6 @@ def _xpath_literal(s: str) -> str:
 
 def _click_radio_label_in_scope(driver, scope, label_text: str) -> bool:
     """Decipher/Confirmit : coche une radio via <label for=...> **dans le scope**."""
-    from selenium.webdriver.common.by import By
-    import time, unicodedata, re
 
     def _n(s):
         if not s: return ""
@@ -2516,7 +2510,6 @@ def _click_radio_label_in_scope(driver, scope, label_text: str) -> bool:
         driver.execute_script("arguments[0].scrollIntoView({block:'center'});", best)
         try: best.click()
         except Exception:
-            from selenium.webdriver.common.action_chains import ActionChains
             ActionChains(driver).move_to_element(best).click().perform()
         time.sleep(0.05)
         if not getattr(inp, "is_selected", lambda: False)():
@@ -2825,8 +2818,6 @@ def click_confirmit_image_selector(driver, label: str, context_hint: str | None 
     - libellé lu dans .itemtitle span OU dans img[alt] (après un `$`)
     - clic sur .clickarea (fallback: image), avec post-vérif .ticker visible ou classe 'selected/active'
     """
-    from selenium.webdriver.common.by import By
-    import time, re, unicodedata
 
     def _n(s: str) -> str:
         if not s:
@@ -2939,10 +2930,6 @@ def click_confirmit_image_selector(driver, label: str, context_hint: str | None 
 def click_confirmit_gridclick(driver, label: str, context_hint: str | None = None, max_retries: int = 2) -> bool:
     """Clique un bouton .scale-button (Pas du tout d’accord, etc.) dans une question GridClick.
        Post-vérifie par changement de l’item courant / compteur d’items 'answered'."""
-    from selenium.webdriver.common.by import By
-    from selenium.webdriver.common.action_chains import ActionChains
-    import time, re, unicodedata
-
     def _n(s):
         if not s: return ""
         s = s.replace("\u00A0"," ").replace("’","'").replace("´","'").replace("`","'")
@@ -3819,9 +3806,6 @@ def click_confirmit_checktable(driver, label: str, context_hint: str | None = No
       <td><label for="..."><div><p>Texte ...</p></div></label></td>
     Post-vérifie via is_selected()/@checked.
     """
-    from selenium.webdriver.common.by import By
-    import unicodedata, re, time
-
     def _n(s: str) -> str:
         if not s: return ""
         s = s.replace("\u00A0", " ").replace("’", "'").replace("´", "'").replace("`", "'")
@@ -3956,9 +3940,6 @@ def click_decipher_fir_checkbox(driver, label: str, context_hint: str | None = N
       - cliquer label -> .fir-icon -> .cell-input -> JS click(input),
       - post-check: is_selected()/@checked ; sinon forcer checked + events (1 seule fois).
     """
-    from selenium.webdriver.common.by import By
-    import time, unicodedata, re
-
     def _norm(s: str) -> str:
         if not s: return ""
         s = s.replace("\u00A0"," ").replace("’","'").replace("´","'").replace("`","'")

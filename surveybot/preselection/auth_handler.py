@@ -3,6 +3,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
+from selenium.webdriver.common.action_chains import ActionChains
 
 def _is_aws_env() -> bool:
     """
@@ -43,6 +44,28 @@ def dom_probe(driver):
     )
     print("[DOM] cookies=", len(cookies))
 
+def is_session_expired(driver) -> bool:
+    """
+    Détecte une expiration de session / mot de passe.
+    Doit être appelée AVANT toute logique survey.
+    """
+    try:
+        txt = (driver.page_source or "").lower()
+
+        signals = [
+            "session expired",
+            "your session has expired",
+            "please log in again",
+            "mot de passe expiré",
+            "reconnectez-vous",
+            "password expired",
+            "log in again",
+        ]
+
+        return any(s in txt for s in signals)
+    except Exception:
+        return False
+
 def net_probe():
     try:
         ip_nat = requests.get("https://api.ipify.org", timeout=8).text
@@ -81,10 +104,23 @@ def snap(driver, label: str = "state"):
         print("[SNAP][ERROR]", e)
 
 
-import re  # en haut du fichier si ce n'est pas déjà fait
 
 def login(driver, email, password):
     wait = WebDriverWait(driver, 20)
+
+    print("[DEBUG][DRIVER] type=", type(driver))
+    print("[DEBUG][DRIVER] has execute_script=", hasattr(driver, "execute_script"))
+    print("[DEBUG][DRIVER] url=", getattr(driver, "current_url", None))
+
+    def js_click(driver, el):
+        try:
+            driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
+            time.sleep(0.2)
+            driver.execute_script("arguments[0].click();", el)
+            return True
+        except :
+            print("[JS_CLICK][ERR]")
+            return False
 
     # --- DEBUG: snapshot HTML complet + extraction éventuelle du code d'erreur ---
     try:
@@ -147,9 +183,14 @@ def login(driver, email, password):
             dom_probe(driver)
             return
 
-        driver.execute_script("arguments[0].click();", login_btn)
-        print("✅ Bouton de connexion cliqué.")
-
+        if not js_click(driver, login_btn):
+            # fallback "humain"
+            try:
+                ActionChains(driver).move_to_element(login_btn).click().perform()
+            except Exception as e:
+                print("[CLICK][FATAL]", e)
+                raise
+            
         # 🔄 Attente que la modale soit bien visible
         wait.until(
             EC.presence_of_element_located(
@@ -196,6 +237,7 @@ def login(driver, email, password):
     time.sleep(15)  # attendre le chargement de la page suivante
     dom_probe(driver)
     snap(driver, "after_email")
+
     # Étape 3 : Remplir le mot de passe et valider
     try:
         pwd_input = wait.until(EC.element_to_be_clickable(
@@ -228,7 +270,6 @@ def login(driver, email, password):
         print("✅ Bouton « Se connecter » cliqué.")
 
     except Exception as e:
+        snap(driver, "error_pwd_step")
         print("🛑 Exception mot de passe :", type(e).__name__, "-", e)
-        #with open("debug_pwd_page.html", "w", encoding="utf-8") as f:
-        #    f.write(driver.page_source)
 
