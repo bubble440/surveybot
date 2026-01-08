@@ -1,20 +1,17 @@
 import os
 IS_LOCAL = os.getenv("RUN_ENV", "local") == "local"
 
-from Management.runtime_guard import RuntimeGuard, set_guard, get_guard
-import base64, time, sys, logging, threading, traceback, signal, json, socket, Cash.payout as payout
-from cProfile import label
-from preselection.config_loader import load_config
+from Management.guards.runtime_guard import RuntimeGuard, StopReason, set_guard, get_guard
+import time, sys, logging, threading, traceback, signal, socket, Cash.payout as payout
 from preselection.playwright_launcher import launch_browser
 from preselection.auth_handler import login, snap
 from preselection.survey_navigator import go_to_best_paid_survey
 from preselection.survey_handler import run_survey
-from hot_reload.hot_reload import ModuleReloader
-from Management.idle_monitor import start_idle_gain_watch
+from Management.watchdogs.idle_monitor import start_idle_gain_watch
 from Management.notifier import send_telegram
 from State.account_state import update_state, try_acquire_proxy_lock, load_state, save_state, try_acquire_account_lock
-from pathlib import Path
 from selenium.common.exceptions import TimeoutException
+from preselection.auth_handler import is_session_expired
 
 def acquire_account_lock_or_exit(account_id: str, ttl_sec: int = 180):
     task_id = os.getenv("ECS_TASK_ID") or socket.gethostname()
@@ -39,11 +36,22 @@ def safe_get(driver, url):
         driver.switch_to.window(driver.window_handles[-1])
 
         # 🔒 évite blocage infini
-        driver.set_page_load_timeout(45)
+        driver.set_page_load_timeout(70)
 
         try:
             print(f"[SAFE_GET] start get: {url}")
             driver.get(url)
+            if is_session_expired(driver):
+                print("🛑 Session expirée détectée (24h). Pause longue.")
+                get_guard().pause(
+                    reason=StopReason.SESSION_EXPIRED,
+                    duration_sec=6 * 3600,   # 6h
+                    notify=True
+                )
+
+
+                raise SystemExit("session_expired")
+
             print(f"[SAFE_GET] done get: {url}")
         except TimeoutException:
             print(f"[SAFE_GET][WARN] Timeout page load vers {url} -> window.stop()")
@@ -161,7 +169,7 @@ def start_runtime_guard(account_id: str, notify_fn, on_soft_restart):
     guard = RuntimeGuard(
         account_id=account_id,
         idle_timeout_sec=120,
-        restart_cooldown_sec=900,
+        restart_cooldown_sec=60,
         max_errors_in_row=5,
         max_runtime_sec=2 * 3600,
         daily_target_eur=5.0,
@@ -249,7 +257,6 @@ def init_session_and_enter_surveys(driver, config, account_id: str, notify_fn):
     payout_revolut_tag = config.get("payout_revolut_tag")
 
     safe_get(driver, "https://www.topsurveys.app")
-    print(f"[DEBUG] DISPLAY={os.environ.get('DISPLAY')}")
     print("🚀 Brave lancé.")
     login(driver, email, password)
 
@@ -269,11 +276,11 @@ def init_session_and_enter_surveys(driver, config, account_id: str, notify_fn):
     try:
         start_idle_gain_watch(
             driver,
-            threshold_sec=1800,   # 30 minutes
-            check_every=60,       # lecture toutes les 60 s
+            threshold_sec=900,   # 15 minutes
+            check_every=900,       # lecture toutes les 900 s
             notify_fn= notify_fn,
         )
-        print("👀 Watchdog gains: actif (30 min sans hausse → alerte).")
+        print("👀 Watchdog gains: actif (15 min sans hausse → alerte).")
     except Exception as e:
         print(f"[WATCHDOG][WARN] Impossible de démarrer le watchdog: {e}")
 
@@ -285,34 +292,39 @@ def init_session_and_enter_surveys(driver, config, account_id: str, notify_fn):
     return api_key, payout_name, payout_revolut_tag
 
 def start_hot_reload_thread():
-    import Survey.survey_executor as _se
+    if IS_LOCAL:
+        import Survey.survey_executor as _se
+        from hot_reload.hot_reload import ModuleReloader
 
-    reloader = ModuleReloader(
-        [
-            "Survey.action_dispatcher",
-            "Survey.input_handler",
-            "Survey.survey_executor",
-            "Survey.screenshot_analyzer",
-            "preselection.survey_handler",
-            "preselection.question_analyzer",
-            "Survey.survey_solver",
-            "Management.url_guard",
-            "Management.survey_difficulty_guard",
-        ],
-        poll_interval=0.5,
-    )
+        reloader = ModuleReloader(
+            [
+                "Survey.action_dispatcher",
+                "Survey.input_handler",
+                "Survey.survey_executor",
+                "Survey.screenshot_analyzer",
+                "preselection.survey_handler",
+                "preselection.question_analyzer",
+                "Survey.survey_solver",
+                "Management.guards.url_guard",
+                "Management.guards.survey_difficulty_guard",
+            ],
+            poll_interval=0.5,
+        )
 
-    def _on_change(reloaded):
-        nonlocal _se
-        if "Survey.survey_executor" in reloaded:
-            _se = reloaded["Survey.survey_executor"]
-        print("🔁 Modules rechargés:", ", ".join(reloaded.keys()))
+        def _on_change(reloaded):
+            nonlocal _se
+            if "Survey.survey_executor" in reloaded:
+                _se = reloaded["Survey.survey_executor"]
+            print("🔁 Modules rechargés:", ", ".join(reloaded.keys()))
 
-    threading.Thread(
-        target=reloader.watch_loop,
-        args=(_on_change,),
-        daemon=True,
-    ).start()
+        threading.Thread(
+            target=reloader.watch_loop,
+            args=(_on_change,),
+            daemon=True,
+        ).start()
+    else:
+        print("[HOT_RELOAD] Ignoré en environnement non-local.")
+        
 
 def run_main_loop(driver, api_key: str, account_id: str):
     run_survey(driver, api_key, account_id=account_id)

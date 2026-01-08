@@ -10,7 +10,7 @@ docker version
 $env:AWS_REGION   = "eu-west-3"
 $env:ACCOUNT_ID   = "865626945801"
 $env:REPO         = "surveybot"
-$env:TAG          = "119"
+$env:TAG          = "133"
 # 2) Vérifier qu'AWS CLI est bien connecté (devrait renvoyer ton compte)
 aws sts get-caller-identity
 # 3) Créer le repo s’il n’existe pas (sinon, ignore l’erreur)
@@ -56,12 +56,13 @@ docker run --rm -it ^
 
 # 9) Test avec proxy (optionnel)
 docker run --rm -it `
--v "$PWD/test:/app/test" `
+-e RUN_ENV=docker `
+-e ACCOUNT_ID=topsurveys_bot_006 `
+-e EMAIL="wil2.pretender848@silomails.com" `
+-e PASSWORD="P@ssw0rD!123" `
 -e PROXY_URL="geo.iproyal.com:12321" `
 -e PROXY_USER="AFe0mvVocKuoFWzq" `
--e PROXY_PASS="ajKCpYNJXZz4DTI4_session-hVEjiTWc_lifetime-168h" `
--e SURVEY_LANG="fr-FR" `
-surveybot:v59
+-e PROXY_PASS="ajKCpYNJXZz4DTI4_country-fr_city-paris_session-myo6lDFM_lifetime-24h" `
 
 # wil1.freezable830@simplelogin.fr
 # birthdate:12/12/2000

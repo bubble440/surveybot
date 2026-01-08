@@ -12,10 +12,7 @@ Objectif : contourner les erreurs proxy auth de Chrome/UC (ERR_INVALID_ARGUMENT,
 sans réécrire tout le bot qui dépend de Selenium.
 """
 
-import re
-import time
 import json
-import shutil
 import random
 import logging
 import tempfile
@@ -24,8 +21,6 @@ import undetected_chromedriver as uc
 
 if not IS_LOCAL:
     from selenium import webdriver
-    from selenium.webdriver.chrome.service import Service
-
 from playwright.sync_api import sync_playwright
 
 log = logging.getLogger(__name__)

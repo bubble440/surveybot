@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 from threading import Lock
-from typing import Callable, Dict, Optional, Any
+from typing import Callable, Dict, Any
 
 log = logging.getLogger("account_state")
 
@@ -311,7 +311,7 @@ def try_acquire_proxy_lock(proxy_id: str, account_id: str, ttl_sec: int) -> bool
 def try_acquire_account_lock(
     account_id: str,
     owner: str,
-    ttl_sec: int = 900,
+    ttl_sec: int = 180,
 ) -> bool:
     """
     Lock atomique du compte.
