@@ -1,126 +1,17 @@
 from __future__ import annotations
-import re, unicodedata, time
+import re, unicodedata
 from selenium.webdriver.common.by import By
-from selenium.webdriver.common.keys import Keys
-import Survey.input_handler 
-from selenium.webdriver.common.action_chains import ActionChains
 import captcha.captcha_solver as captcha_solver
 import captcha.recaptcha_utils as recaptcha_utils
-import Survey.video_utils  # nouveau module
 
-def _norm_txt_soft(s: str) -> str:
-    if not s:
-        return ""
-    s = unicodedata.normalize("NFKD", s).replace("\u00a0", " ")
-    s = re.sub(r"\s+", " ", s, flags=re.S).strip().lower()
-    # allège un peu pour les "contains"
-    return re.sub(r"[\"'’“”«»:·•→,.;!?()\[\]]+", "", s)
-
-def _similarity(a: str, b: str) -> float:
-    if not a or not b:
-        return 0.0
-    if a in b or b in a:
-        return 1.0
-    aw, bw = set(a.split()), set(b.split())
-    if not aw or not bw:
-        return 0.0
-    return len(aw & bw) / len(aw | bw)
-
-def _find_question_container(driver, qctx: str):
-    """Retourne le conteneur le plus proche du contexte (fieldset/div question...)."""
-    if not qctx:
-        return None
-    ctx = _norm_txt_soft(qctx)
-    # candidats fréquents de conteneurs "question"
-    candidates = []
-    try:
-        candidates += driver.find_elements(By.XPATH,
-            "//*[self::fieldset or @role='group' or contains(@class,'question') or contains(@class,'Question') or contains(@data-test-id,'question')]")
-    except Exception:
-        pass
-    best, best_score = None, -1e9
-    for c in candidates:
-        try:
-            t = _norm_txt_soft(c.text or c.get_attribute("innerText") or "")
-            score = _similarity(ctx, t)
-            # petit bonus si le contexte est entièrement inclus
-            if ctx and ctx in t:
-                score += 0.25
-            if score > best_score:
-                best, best_score = c, score
-        except Exception:
-            continue
-    return best if best_score > 0.10 else None  # seuil doux
-
-def _click_choice_in_container(driver, container, label: str, kind: str) -> bool:
-    """Clique une option 'radio' ou 'checkbox' portant 'label' à l'intérieur d'un conteneur."""
-    if container is None:
-        return False
-    target = _norm_txt_soft(label)
-
-    # Textes visibles courants pour radios/checkbox (libellés)
-    paths = [
-        ".//label",  # cas le plus standard
-        ".//*[contains(@class,'radio') or contains(@class,'check') or contains(@data-test-id,'multiple_choice')]",
-        ".//span",   # certains libellés sont dans span
-    ]
-    seen = set()
-    for p in paths:
-        try:
-            for el in container.find_elements(By.XPATH, p):
-                try:
-                    tid = getattr(el, "_id", id(el))
-                    if tid in seen:
-                        continue
-                    seen.add(tid)
-
-                    txt = _norm_txt_soft(el.text or el.get_attribute("innerText") or "")
-                    if not txt or not (target == txt or target in txt or txt in target):
-                        continue
-
-                    # Vérifie le type recherché dans la proximité (input type=…)
-                    ok_type = False
-                    try:
-                        if el.tag_name.lower() == "label":
-                            inp = el.find_element(By.XPATH, ".//input")
-                            t = (inp.get_attribute("type") or "").lower()
-                            ok_type = (kind == "radio" and t == "radio") or (kind == "checkbox" and t == "checkbox")
-                        else:
-                            inp = el.find_element(By.XPATH, ".//input[@type='radio' or @type='checkbox']")
-                            t = (inp.get_attribute("type") or "").lower()
-                            ok_type = (kind == "radio" and t == "radio") or (kind == "checkbox" and t == "checkbox")
-                    except Exception:
-                        # pas d'input direct dans le libellé → on tolère, on cliquera le label parent
-                        ok_type = True
-
-                    if not ok_type:
-                        continue
-
-                    driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
-                    time.sleep(0.15)
-                    try:
-                        el.click()
-                    except Exception:
-                        ActionChains(driver).move_to_element(el).click().perform()
-                    print(f"✅ {kind.title()} « {label} » cliquée (scopé par contexte). source: action_dispatcher.py")
-                    return True
-                except Exception:
-                    continue
-        except Exception:
-            continue
-    return False
-
-# ------------------------- Normalisation -------------------------
 def _norm(s: str) -> str:
     if not s:
         return ""
     s = unicodedata.normalize("NFKC", s).replace("\xa0", " ").strip()
     return re.sub(r"\s+", " ", s)
 
-
 def _norm_lc(s: str) -> str:
     return _norm(s).lower()
-
 
 # ------------------- Parsing "libellé //// type" -------------------
 # Types acceptés (synonymes FR/EN)
@@ -135,40 +26,6 @@ _TYPE_ALIASES = {
     "matrix-col": {"matrix-col", "matrix column", "colonne", "col"},
     "open":     {"open", "ouvrir"},
 }
-
-def _parse_typed_instruction(instr: str) -> tuple[str, str | None, str]:
-    """
-    Parse "libellé //// type //// contexte-question".
-    - Le 'contexte' est optionnel ("" si absent).
-    - Retourne (label, type_normalisé_ou_None, contexte).
-    """
-    if not instr:
-        return "", None, ""
-    parts = re.split(r"/{4,}", instr)
-    label = _norm(parts[0])
-
-    # type (2e partie)
-    itype = None
-    if len(parts) >= 2:
-        raw_type = _norm_lc(parts[1])
-        for t, aliases in _TYPE_ALIASES.items():
-            if raw_type in aliases:
-                itype = t
-                break
-        if itype is None:
-            if re.search(r"drop|select|menu|combo", raw_type): itype = "dropdown"
-            elif re.search(r"button|bouton|cta", raw_type):    itype = "button"
-            elif re.search(r"check|coch", raw_type):           itype = "checkbox"
-            elif re.search(r"radio|option", raw_type):         itype = "radio"
-            elif re.search(r"textarea|long|open", raw_type):   itype = "textarea"
-            elif re.search(r"text|champ|input", raw_type):     itype = "text"
-            elif re.search(r"number|numér|numer", raw_type):   itype = "number"
-            elif re.search(r"matrix|col", raw_type):           itype = "matrix-col"
-            elif re.search(r"open|ouvrir", raw_type):          itype = "open"
-
-    # contexte (3e partie)
-    qctx = _norm(parts[2]) if len(parts) >= 3 else ""
-    return label, itype, qctx
 
 def _parse_typed_instruction3(instr: str) -> tuple[str, str | None, str]:
     """
@@ -305,34 +162,6 @@ def _sanitize_instruction_with_page_context(driver, label, itype):
     return label
 
 
-# ------------------- Détection du type d'intention -------------------
-_CTA_WORDS = {
-    "suivant",
-    "continuer",
-    "next",
-    "continue",
-    "start",
-    "commencer",
-    "valider",
-    "envoyer",
-    "submit",
-    "terminer",
-    "finish",
-}
-_OPEN_TOKENS = {
-    "an",
-    "annee",
-    "année",
-    "mois",
-    "month",
-    "year",
-    "pays",
-    "ville",
-    "state",
-    "province",
-    "département",
-    "department",
-}
 _OPEN_FIELD_TOKENS = {
     "jour",
     "mois",
@@ -366,6 +195,8 @@ def execute_action(driver, instruction: str) -> bool:
     """
     Applique l'instruction. Supporte 'libellé //// type //// contexte-question'.
     """
+    import Survey.input_handler 
+
     if not instruction or not instruction.strip():
         return False
 
@@ -580,7 +411,35 @@ def execute_action(driver, instruction: str) -> bool:
             if Survey.input_handler.click_cta_strong_any_context(driver, label_hint=label, allow_generic=False):
                 print(f"✅ Fallback-bouton (strict via label_hint) « {label} ». source: action_dispatcher.py")
                 return True
-                
+
+            # ============================================================
+            # Question Block Resolver (PRIORITAIRE pour champs numériques)
+            # ============================================================
+
+            if itype == "text":
+                # Fallback intelligent : résolution par blocs de questions
+                # Objectif : éviter le mauvais mapping label → input
+                try:
+                    resolved = Survey.question_block_resolver.try_resolve_number_block(
+                        driver,
+                        context_question=ctx,   # TEXTE de la question OpenAI / DOM
+                        value=label,                     # valeur à injecter (ex: "28")
+                        min_score=0.75,                   # seuil robuste (pas agressif)
+                        allow_overwrite=False,            # JAMAIS écraser un champ déjà rempli
+                        debug=True,                       # logs utiles en prod
+                    )
+
+                    if resolved:
+                        print("[ACTION][QBR] Champ numérique résolu via QuestionBlockResolver")
+                        return True   # ⚠️ STOP ici : on ne continue PAS la logique générique
+
+                except Exception as e:
+                    print(f"[ACTION][QBR] Exception ignorée (fallback): {e}")
+
+            # ⚠️ IMPORTANT :
+            # - Si QBR échoue → on CONTINUE normalement
+            # - Aucun comportement existant n’est cassé
+
         if itype == "text":
             print("trying text input")
             if Survey.input_handler.fill_text_input(driver, label, context_hint=ctx):

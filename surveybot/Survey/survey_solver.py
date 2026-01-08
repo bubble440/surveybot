@@ -5,11 +5,8 @@
 from selenium.webdriver.support.ui import WebDriverWait  # [AJOUT]
 from selenium.webdriver.support import expected_conditions as EC  # [AJOUT]
 from selenium.webdriver.common.action_chains import ActionChains  # [AJOUT]
-import Management.redirect_watcher as redirect_watcher
-import Survey.survey_executor  
 from selenium.webdriver.common.by import By
 import time
-from Management.guards.survey_difficulty_guard import detect_strict_survey
 
 # ⚙️ Paramètres de boucle pour éviter les boucles infinies
 MAX_STEPS = 200  # sécurité dure : max de pages/questions à traiter
@@ -271,8 +268,8 @@ def _if_on_topsurveys_handle(driver, api_key, account_id) -> bool:
 
     # Cas B : check disqualification puis relance si besoin
     try:
-        from preselection.question_analyzer import handle_disqualification_and_retry
-        if handle_disqualification_and_retry(driver):
+        import preselection.question_analyzer
+        if preselection.question_analyzer.handle_disqualification_and_retry(driver):
             _close_other_tabs_in_current_session(driver)
             import preselection.survey_navigator
             import preselection.survey_handler
@@ -286,6 +283,11 @@ def _if_on_topsurveys_handle(driver, api_key, account_id) -> bool:
     return False
 
 def solve_full_survey(driver, api_key, *, account_id: str):
+    import Management.redirect_watcher as redirect_watcher
+    import Survey.survey_executor  
+    import Management.guards.survey_difficulty_guard
+    import Management.guards.runtime_guard
+
     """
     Boucle principale de résolution du survey.
     1) Bascule vers l’onglet externe + stabilisation d’URL
@@ -337,12 +339,11 @@ def solve_full_survey(driver, api_key, *, account_id: str):
 
         # on ne fait pas le check à chaque micro-iteration si overlay dropdown etc.
         # mais par défaut: 1 check par étape suffit
-        is_strict, reason = detect_strict_survey(driver)
+        is_strict, reason = Management.guards.survey_difficulty_guard.detect_strict_survey(driver)
         if is_strict:
             print(f"[STRICT_SURVEY][MID] Détecté en cours de survey ({reason}) -> restart propre")
-            from Management.guards.runtime_guard import get_guard
-            get_guard().record_success()
-            get_guard().signal_strict_survey(f"strict_mid_{reason}")
+            Management.guards.runtime_guard.get_guard().record_success()
+            Management.guards.runtime_guard.get_guard().signal_strict_survey(f"strict_mid_{reason}")
             return
         # -------------------------------------------------------------------
 

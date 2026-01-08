@@ -10,7 +10,6 @@ from selenium.common.exceptions import (
     StaleElementReferenceException,
     ElementClickInterceptedException,
 )
-import os, sys
 
 # --- Placeholders usuels (à compléter si besoin)
 _DROPDOWN_PLACEHOLDERS = {
@@ -255,7 +254,6 @@ def _normt_txt(s: str) -> str:
     if s is None:
         return ""
     # normalisation robuste (espaces, accents, apostrophes typographiques)
-    import unicodedata, re
     s = s.replace("’", "'").replace("´", "'").replace("`", "'").replace("‘", "'")
     s = unicodedata.normalize("NFKD", s)
     s = "".join(c for c in s if not unicodedata.combining(c))
@@ -448,7 +446,6 @@ def _set_input_value_with_events(driver, el, value: str):
         pass
     try:
         # Ctrl+A puis Backspace : efface dans 99% des UIs
-        from selenium.webdriver.common.keys import Keys
         el.send_keys(Keys.CONTROL, "a")
         el.send_keys(Keys.BACKSPACE)
         el.send_keys(value)
@@ -2532,8 +2529,6 @@ def _click_decipher_grid_radio_strict(driver, label: str, context_hint: str = ""
     - clique le <label>, force checked + events sur l'<input>,
     - clique la cellule .clickableCell en secours.
     """
-    from selenium.webdriver.common.by import By
-    import time, re, unicodedata
 
     def _n(s):
         if not s: return ""
@@ -4366,10 +4361,6 @@ def _swagbucks_zip_patch(driver, value: str) -> bool:
     - clear + saisie "humaine" (CDP) + events JS
     - lève le 'disabled' sur le bouton Continue et clique
     """
-    try:
-        from selenium.webdriver.common.keys import Keys
-    except Exception:
-        pass
 
     try:
         el = driver.find_element(By.ID, "profilerNumericInput")

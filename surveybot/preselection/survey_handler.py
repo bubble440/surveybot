@@ -7,16 +7,18 @@ if not IS_LOCAL:
     from selenium.webdriver.support.ui import WebDriverWait
     from selenium.webdriver.support import expected_conditions as EC
     from selenium.webdriver.common.by import By
-import preselection.question_analyzer
 from preselection.auth_handler import snap
-import Survey.survey_solver 
-import Cash.payout as payout
-from Management.guards.runtime_guard import get_guard
-from Management.guards.survey_difficulty_guard import detect_strict_survey
-from Management.redirect_watcher import wait_for_final_redirection, switch_to_latest_window_and_close_others
-from Management.guards.url_guard import is_allowed, normalize_host
 
 def run_survey(driver, api_key, *, account_id: str):
+    import preselection.question_analyzer
+    import Survey.survey_solver 
+    import Cash.payout as payout
+    import Management.guards.runtime_guard
+    import Management.guards.survey_difficulty_guard
+    import Management.redirect_watcher
+    import Management.guards.url_guard
+    
+
     snap(driver, "before_survey_loop")
     try:
         while True:
@@ -37,14 +39,14 @@ def run_survey(driver, api_key, *, account_id: str):
                     time.sleep(0.3)
                     driver.execute_script("arguments[0].click();", skip_btn)
 
-                    get_guard().record_success()
+                    Management.guards.runtime_guard.get_guard().record_success()
                     time.sleep(1.5)
                     continue  # 🔁 revenir à la boucle des questions
 
                 except Exception as e:
-                    get_guard().record_error(e)
+                    Management.guards.runtime_guard.get_guard().record_error(e)
                     print("❌ Impossible de cliquer sur 'Je ne peux pas répondre' :", e)
-                    get_guard().request_survey_restart("sensitive_question_skip_failed")
+                    Management.guards.runtime_guard.get_guard().request_survey_restart("sensitive_question_skip_failed")
                     return
 
             # Cas : on est disqualifié → cliquer sur OK puis relancer
@@ -61,11 +63,11 @@ def run_survey(driver, api_key, *, account_id: str):
                         revolut_fullname="Wilfred Jamein Saah",
                         revolut_tag="@jameinsaah",
                     )
-                    get_guard().record_success()
+                    Management.guards.runtime_guard.get_guard().record_success()
                 except Exception as e:
-                    get_guard().record_error(e)
+                    Management.guards.runtime_guard.get_guard().record_error(e)
                     print(f"[PAYOUT][WARN] Encaissement automatique: {e}")
-                get_guard().request_survey_restart("disqualification_or_retry")
+                Management.guards.runtime_guard.get_guard().request_survey_restart("disqualification_or_retry")
                 return
             
             # Cas normal : une réponse est attendue
@@ -85,11 +87,11 @@ def run_survey(driver, api_key, *, account_id: str):
                             revolut_fullname="Wilfred Jamein Saah",
                             revolut_tag="@jameinsaah",
                         )
-                        get_guard().record_success()
+                        Management.guards.runtime_guard.get_guard().record_success()
                     except Exception as e:
-                        get_guard().record_error(e)
+                        Management.guards.runtime_guard.get_guard().record_error(e)
                         print(f"[PAYOUT][WARN] Encaissement automatique: {e}")
-                    get_guard().request_survey_restart("disqualification_or_retry")
+                    Management.guards.runtime_guard.get_guard().request_survey_restart("disqualification_or_retry")
                     return
 
             else:
@@ -98,28 +100,28 @@ def run_survey(driver, api_key, *, account_id: str):
                     base_handles = set(driver.window_handles)
                     if preselection.question_analyzer.click_participer_if_qualified(driver):
                         # 🔑 CRUCIAL : bascule vers le nouvel onglet du survey
-                        switch_to_latest_window_and_close_others(
+                        Management.redirect_watcher.switch_to_latest_window_and_close_others(
                             driver,
                             base_handles=base_handles,
                             timeout=10,
                             prefer_external=True
                         )
-                    
-                        final_url = wait_for_final_redirection(driver, max_wait=60)  # déjà présent dans ton repo
-                        host = normalize_host(final_url)
 
-                        is_strict, reason = detect_strict_survey(driver)
+                        final_url = Management.redirect_watcher.wait_for_final_redirection(driver, max_wait=60)  # déjà présent dans ton repo
+                        host = Management.redirect_watcher.normalize_host(final_url)
+
+                        is_strict, reason = Management.guards.survey_difficulty_guard.detect_strict_survey(driver)
                         if is_strict:
                             print(f"[STRICT_SURVEY] Ignoré ({reason}) → retour TopSurveys")
-                            get_guard().record_success()
-                            get_guard().request_survey_restart("disqualification_or_retry")
+                            Management.guards.runtime_guard.get_guard().record_success()
+                            Management.guards.runtime_guard.get_guard().request_survey_restart("disqualification_or_retry")
                             return
 
-                        if not is_allowed(final_url):
+                        if not Management.guards.url_guard.is_allowed(final_url):
                             print(f"[URL_GUARD] Bloqué : {final_url} — tentative de retour propre via l'app")
-                            get_guard().record_error(e)
+                            Management.guards.runtime_guard.get_guard().record_error(e)
                             # 🧠 Délégation complète au RuntimeGuard
-                            get_guard().request_survey_restart("url_guard_blocked")
+                            Management.guards.runtime_guard.get_guard().request_survey_restart("url_guard_blocked")
                             return
 
                         print(f"[URL_GUARD] Autorisé : {final_url} (host: {host})")
@@ -131,23 +133,23 @@ def run_survey(driver, api_key, *, account_id: str):
                     if preselection.question_analyzer.handle_disqualification_and_retry(driver):
                         print("⚠️ Disqualification détectée après question finale.")
                         time.sleep(2)
-                        get_guard().record_success()
-                        get_guard().request_survey_restart("disqualification_or_retry")
+                        Management.guards.runtime_guard.get_guard().record_success()
+                        Management.guards.runtime_guard.get_guard().request_survey_restart("disqualification_or_retry")
                         return
 
                     print("ℹ️ Aucun bouton Participer ou Ok détecté. Fin de boucle.")
                     break
 
                 except Exception as e:
-                    get_guard().record_error(e)
+                    Management.guards.runtime_guard.get_guard().record_error(e)
                     print(f"❌ Erreur lors du clic sur Participer ou redirection : {e}")
                     break
 
     except KeyboardInterrupt:
-        get_guard().record_error()
+        Management.guards.runtime_guard.get_guard().record_error()
         driver.quit ()
         print("⏹️  Fermeture manuelle détectée.")
     except Exception as e:
-        get_guard().record_error(e)
+        Management.guards.runtime_guard.get_guard().record_error(e)
         driver.quit ()
         print("💥 Erreur en boucle principale :", e)

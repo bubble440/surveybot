@@ -2,12 +2,8 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.support import expected_conditions as EC
 import time
-import Survey.screenshot_analyzer
-import Survey.action_dispatcher 
 import re
 import unicodedata
-from selenium.webdriver.support.ui import WebDriverWait
-from Management.guards.url_guard import is_allowed
 
 ASSISTANT_ID = "asst_dzB8sAFrNdPPD17auG4WI0EK"
 ICON_TOKEN = "[BOUTON_ICONE]"
@@ -79,13 +75,17 @@ def execute_survey_page(driver, api_key):
     previous_screenshot_path = (
         last_screenshot_path if "last_screenshot_path" in globals() else None
     )
+    import Management.guards.url_guard
+    import Survey.screenshot_analyzer
+    import Survey.action_dispatcher 
+    import selenium.webdriver.support.ui
 
     # ⏳ Attente que le DOM ait fini de charger avant capture
     try:
-        WebDriverWait(driver, 8).until(
+        selenium.webdriver.support.ui.WebDriverWait(driver, 8).until(
             lambda d: d.execute_script("return document.readyState") == "complete"
         )
-        WebDriverWait(driver, 8).until(
+        selenium.webdriver.support.ui.WebDriverWait(driver, 8).until(
             lambda d: len(d.find_elements(By.CSS_SELECTOR,
                 "input, select, textarea, button, [role='button'], [role='radio'], [role='checkbox']"
             )) > 0
@@ -101,7 +101,7 @@ def execute_survey_page(driver, api_key):
         cur = driver.current_url
     except Exception:
         cur = ""
-    if not is_allowed(cur):
+    if not Management.guards.url_guard.is_allowed(cur):
         print(f"[URL_GUARD] Page hors périmètre, aucune action: {cur}")
         return False
 

@@ -1,7 +1,8 @@
 import openai
 import os, base64, time
 from PIL import Image  # pip install pillow
-from datetime import datetime
+from pathlib import Path  # <-- si pas déjà importé en haut du fichier
+
 FINETUNED_MODEL = os.getenv(
     "SURVEY_VISION_MODEL",
     "ft:gpt-4o-2024-08-06:survey-bot:version-2:CLEp48bw"
@@ -41,7 +42,6 @@ def take_screenshot(
     """
 
     # 📂 1) Dossier screenshots (chemin absolu, ancré au projet)
-    from pathlib import Path  # <-- si pas déjà importé en haut du fichier
     try:
         base_dir = Path(__file__).resolve().parent   # dossier du module
         folder = str(base_dir / "screenshots")
