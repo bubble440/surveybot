@@ -108,7 +108,7 @@ def run_survey(driver, api_key, *, account_id: str):
                         )
 
                         final_url = Management.redirect_watcher.wait_for_final_redirection(driver, max_wait=60)  # déjà présent dans ton repo
-                        host = Management.redirect_watcher.normalize_host(final_url)
+                        host = Management.guards.url_guard.normalize_host(final_url)
 
                         is_strict, reason = Management.guards.survey_difficulty_guard.detect_strict_survey(driver)
                         if is_strict:
