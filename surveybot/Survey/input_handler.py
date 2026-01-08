@@ -4063,214 +4063,351 @@ def click_decipher_fir_checkbox(driver, label: str, context_hint: str | None = N
     return False
 # === FIN Decipher/FIR ========================================================
 
-def click_checkbox_by_label(driver, target_text: str, context_hint: str | None = None) -> bool:
-    """
-    Coche une checkbox d’après son libellé, même si :
-    - pas de <label for="...">
-    - libellé éclaté sur plusieurs spans/ancêtres
-    - checkbox custom: <div role="checkbox"> …, aria-checked, etc.
-    - guillemets typographiques ou espaces irréguliers
-    """
-    wait = WebDriverWait(driver, 6)
-    needle = _norm_text(target_text)
+def _force_checkbox_events(driver, checkbox_el):
+    driver.execute_script(
+        """
+        const cb = arguments[0];
+        cb.checked = true;
+        cb.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+        cb.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+        cb.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        cb.dispatchEvent(new Event('change', { bubbles: true }));
+        cb.dispatchEvent(new Event('input', { bubbles: true }));
+        """,
+        checkbox_el
+    )
 
-    scope = _find_context_container(driver, context_hint)
-    # NEW — Confirmit table (checkbox/radio en <tr>)
-    if click_confirmit_checktable(driver, label=target_text, context_hint=context_hint):
-        print(f"✅ Checkbox(Confirmit table) « {target_text} ». source: input_handler.py")
-        return True
-
-    # NEW — Decipher/FIR (input caché + icône SVG)
-    if click_decipher_fir_checkbox(driver, label=target_text, context_hint=context_hint):
-        print(f"✅ Checkbox(Decipher/FIR) « {target_text} ». source: input_handler.py")
-        return True
-
-    if scope is not None:
-        # 1) label[for] dans le scope
-        try:
-            label = scope.find_element(
-                By.XPATH,
-                f".//label[normalize-space()!='' and contains(translate(normalize-space(.),"
-                "'ABCDEFGHIJKLMNOPQRSTUVWXYZÀÂÄÇÉÈÊËÎÏÔÖÙÛÜŸ','abcdefghijklmnopqrstuvwxyzàâäçéèêëîïôöùûüÿ'),"
-                f" {_xpath_literal(needle)})]"
-            )
-            _scroll_into_view(driver, label)
-            fid = label.get_attribute("for")
-            cb = driver.find_element(By.ID, fid) if fid else None
-            if cb is not None:
-                _scroll_into_view(driver, cb)
-                if not _is_checked(cb):
-                    try: cb.click()
-                    except: _js_click(driver, cb)
-                if _is_checked(cb):
-                    return True
-            try: label.click()
-            except: _js_click(driver, label)
-            try:
-                cb = label.find_element(By.XPATH, ".//input[@type='checkbox']")
-                if _is_checked(cb): return True
-            except: pass
-        except Exception:
-            pass
-        # 2) voisins dans le scope (fallback)
-        try:
-            host = scope.find_element(
-                By.XPATH,
-                ".//*[contains(translate(normalize-space(string(.)),'ABCDEFGHIJKLMNOPQRSTUVWXYZÀÂÄÇÉÈÊËÎÏÔÖÙÛÜŸ','abcdefghijklmnopqrstuvwxyzàâäçéèêëîïôöùûüÿ'),"
-                f" {_xpath_literal(needle)})]"
-            )
-            for xp in [".//input[@type='checkbox']", ".//*[@role='checkbox']"]:
-                try:
-                    cb = host.find_element(By.XPATH, xp)
-                    _scroll_into_view(driver, cb)
-                    try: cb.click()
-                    except: _js_click(driver, cb)
-                    if _is_checked(cb): return True
-                except: continue
-        except Exception:
-            pass
-    # → si pas trouvé, on retombe sur la logique globale déjà présente
-
-    # 1) Si un label explicite existe : utiliser @for
+def _privacy_checkbox_is_accepted(driver) -> bool:
     try:
-        label = driver.find_element(
+        warn = driver.find_element(By.ID, "privacyPolicyFeedback7")
+        return not warn.is_displayed()
+    except Exception:
+        return True  # plus de warning → OK
+
+# def click_checkbox_by_label(driver, target_text: str, context_hint: str | None = None) -> bool:
+#     """
+#     Coche une checkbox d’après son libellé, même si :
+#     - pas de <label for="...">
+#     - libellé éclaté sur plusieurs spans/ancêtres
+#     - checkbox custom: <div role="checkbox"> …, aria-checked, etc.
+#     - guillemets typographiques ou espaces irréguliers
+#     """
+#     wait = WebDriverWait(driver, 6)
+#     needle = _norm_text(target_text)
+
+#     scope = _find_context_container(driver, context_hint)
+#     # NEW — Confirmit table (checkbox/radio en <tr>)
+#     if click_confirmit_checktable(driver, label=target_text, context_hint=context_hint):
+#         _force_checkbox_events(driver, checkbox)
+#         print(f"✅ Checkbox(Confirmit table) « {target_text} ». source: input_handler.py")
+#         return True
+
+#     # NEW — Decipher/FIR (input caché + icône SVG)
+#     if click_decipher_fir_checkbox(driver, label=target_text, context_hint=context_hint):
+#         _force_checkbox_events(driver, checkbox)
+#         print(f"✅ Checkbox(Decipher/FIR) « {target_text} ». source: input_handler.py")
+#         return True
+
+#     if scope is not None:
+#         # 1) label[for] dans le scope
+#         try:
+#             label = scope.find_element(
+#                 By.XPATH,
+#                 f".//label[normalize-space()!='' and contains(translate(normalize-space(.),"
+#                 "'ABCDEFGHIJKLMNOPQRSTUVWXYZÀÂÄÇÉÈÊËÎÏÔÖÙÛÜŸ','abcdefghijklmnopqrstuvwxyzàâäçéèêëîïôöùûüÿ'),"
+#                 f" {_xpath_literal(needle)})]"
+#             )
+#             _scroll_into_view(driver, label)
+#             fid = label.get_attribute("for")
+#             cb = driver.find_element(By.ID, fid) if fid else None
+#             if cb is not None:
+#                 _scroll_into_view(driver, cb)
+#                 if not _is_checked(cb):
+#                     try: cb.click()
+#                     except: _js_click(driver, cb)
+#                 if _is_checked(cb):
+#                     return True
+#             try: label.click()
+#             except: _js_click(driver, label)
+#             try:
+#                 cb = label.find_element(By.XPATH, ".//input[@type='checkbox']")
+#                 if _is_checked(cb): return True
+#             except: pass
+#         except Exception:
+#             pass
+#         # 2) voisins dans le scope (fallback)
+#         try:
+#             host = scope.find_element(
+#                 By.XPATH,
+#                 ".//*[contains(translate(normalize-space(string(.)),'ABCDEFGHIJKLMNOPQRSTUVWXYZÀÂÄÇÉÈÊËÎÏÔÖÙÛÜŸ','abcdefghijklmnopqrstuvwxyzàâäçéèêëîïôöùûüÿ'),"
+#                 f" {_xpath_literal(needle)})]"
+#             )
+#             for xp in [".//input[@type='checkbox']", ".//*[@role='checkbox']"]:
+#                 try:
+#                     cb = host.find_element(By.XPATH, xp)
+#                     _scroll_into_view(driver, cb)
+#                     try: cb.click()
+#                     except: _js_click(driver, cb)
+#                     if _is_checked(cb): return True
+#                 except: continue
+#         except Exception:
+#             pass
+#     # → si pas trouvé, on retombe sur la logique globale déjà présente
+
+#     # 1) Si un label explicite existe : utiliser @for
+#     try:
+#         label = driver.find_element(
+#             By.XPATH,
+#             f"//label[normalize-space()!='' and contains(translate(normalize-space(.),"
+#             "'ABCDEFGHIJKLMNOPQRSTUVWXYZÀÂÄÇÉÈÊËÎÏÔÖÙÛÜŸ',"
+#             "'abcdefghijklmnopqrstuvwxyzàâäçéèêëîïôöùûüÿ'),"
+#             f" {_xpath_literal(needle)})]",
+#         )
+#         _scroll_into_view(driver, label)
+#         for_attr = label.get_attribute("for")
+#         if for_attr:
+#             try:
+#                 cb = driver.find_element(By.ID, for_attr)
+#             except Exception:
+#                 cb = None
+#             if cb is not None:
+#                 _scroll_into_view(driver, cb)
+#                 if not _is_checked(cb):
+#                     try:
+#                         cb.click()
+#                     except Exception:
+#                         _js_click(driver, cb)
+#                 return _is_checked(cb)
+#         # pas de @for : cliquer le label lui‑même peut suffire
+#         try:
+#             label.click()
+#         except Exception:
+#             _js_click(driver, label)
+#         # on reteste en cherchant un input voisin
+#         try:
+#             cb = label.find_element(By.XPATH, ".//input[@type='checkbox']")
+#             return _is_checked(cb)
+#         except Exception:
+#             pass
+#     except Exception:
+#         pass
+
+#     # 2) Chercher un conteneur contenant le texte puis remonter
+#     #    pour trouver un input checkbox OU role=checkbox
+#     candidates = driver.find_elements(
+#         By.XPATH,
+#         # un élément qui contient le texte (même éclaté) puis
+#         # un input/role=checkbox dans les ancêtres/proches
+#         (
+#             "//*[contains(translate(normalize-space(string(.)),"
+#             "'ABCDEFGHIJKLMNOPQRSTUVWXYZÀÂÄÇÉÈÊËÎÏÔÖÙÛÜŸ',"
+#             "'abcdefghijklmnopqrstuvwxyzàâäçéèêëîïôöùûüÿ'),"
+#             f" {_xpath_literal(needle)})]"
+#         ),
+#     )
+
+#     for el in candidates:
+#         # tente diverses stratégies autour du conteneur texte
+#         paths = [
+#             ".//input[@type='checkbox']",
+#             ".//preceding::input[@type='checkbox'][1]",
+#             ".//following::input[@type='checkbox'][1]",
+#             ".//ancestor::*//input[@type='checkbox']",
+#             ".//*[@role='checkbox']",
+#             ".//ancestor::*//*[@role='checkbox']",
+#         ]
+#         cb = None
+#         for p in paths:
+#             try:
+#                 cb = el.find_element(By.XPATH, p)
+#                 break
+#             except Exception:
+#                 continue
+#         if cb is None:
+#             continue
+
+#         try:
+#             _scroll_into_view(driver, cb)
+#         except Exception:
+#             pass
+
+#         # parfois le clic doit se faire sur un wrapper cliquable
+#         clickable = cb
+#         if cb.get_attribute("role") == "checkbox":
+#             clickable = cb
+#         else:
+#             # bibliothèques type "prettycheckbox", "mdc-checkbox", etc.
+#             try:
+#                 clickable = cb.find_element(
+#                     By.XPATH,
+#                     "./ancestor::*[self::label or contains(@class,'checkbox') or contains(@class,'pretty')][1]",
+#                 )
+#             except Exception:
+#                 clickable = cb
+
+#         # set checked=true
+#         try:
+#             if not _is_checked(cb):
+#                 try:
+#                     clickable.click()
+#                 except Exception:
+#                     _js_click(driver, clickable)
+#             # validation
+#             if _is_checked(cb):
+#                 _force_checkbox_events(driver, checkbox)
+#                 return True
+#         except Exception:
+#             continue
+
+#     # 3) Dernier recours : cliquer l’élément texte (certains wrappers togglent)
+#     for el in candidates:
+#         try:
+#             _scroll_into_view(driver, el)
+#             try:
+#                 el.click()
+#                 _force_checkbox_events(driver, checkbox)
+#             except Exception:
+#                 _js_click(driver, el)
+#                 _force_checkbox_events(driver, checkbox)
+#             # re-chercher un voisin checkbox pour valider l’état
+#             try:
+#                 ncb = el.find_element(
+#                     By.XPATH, ".//input[@type='checkbox'] | .//*[@role='checkbox']"
+#                 )
+#                 if _is_checked(ncb):
+#                     _force_checkbox_events(driver, checkbox)
+#                     return True
+#             except Exception:
+#                 pass
+#         except Exception:
+#             continue
+
+#         # 4) Fallback spécifique Alchemer (SG)
+#     if _fallback_click_checkbox_js_alchemer(driver, target_text):
+#         _force_checkbox_events(driver, checkbox)
+#         print(f"✅ Checkbox cochée (fallback Alchemer) : {target_text}")
+#         return True
+
+#     # 5) Fallback générique JS multi-sites
+#     if _fallback_click_checkbox_js_generic(driver, target_text):
+#         _force_checkbox_events(driver, checkbox)
+#         print(f"✅ Checkbox cochée (fallback JS générique) : {target_text}")
+#         return True
+    
+#     if _force_label_for_checkbox_js(driver, target_text):
+#         _force_checkbox_events(driver, checkbox)
+#         print(f"✅ Checkbox cochée (force JS via label[for]) : {target_text}")
+#         return True
+
+#     return False
+
+def click_checkbox_by_label(
+    driver,
+    target_text: str,
+    context_hint: str | None = None,
+):
+    """
+    Clique un checkbox identifié par son label visible.
+    Retourne le WebElement <input type="checkbox"> si succès, sinon None.
+    """
+
+    needle = _norm_lc_soft(target_text)
+    if not needle:
+        return None
+    
+    scope = _find_context_container(driver, context_hint)
+
+    # ------------------------------------------------------------------
+    # 1) Cas standard : <label for="id"> → <input id="id" type="checkbox">
+    # ------------------------------------------------------------------
+    try:
+        labels = (scope or driver).find_elements(
             By.XPATH,
-            f"//label[normalize-space()!='' and contains(translate(normalize-space(.),"
-            "'ABCDEFGHIJKLMNOPQRSTUVWXYZÀÂÄÇÉÈÊËÎÏÔÖÙÛÜŸ',"
-            "'abcdefghijklmnopqrstuvwxyzàâäçéèêëîïôöùûüÿ'),"
-            f" {_xpath_literal(needle)})]",
+            ".//label[normalize-space()!='' and contains("
+            "translate(normalize-space(.),"
+            "'ABCDEFGHIJKLMNOPQRSTUVWXYZÀÂÄÉÈÊËÎÏÔÖÙÛÜÇ',"
+            "'abcdefghijklmnopqrstuvwxyzàâäéèêëîïôöùûüç'),"
+            f"{_xpath_literal(needle)}"
+            ")]"
         )
-        _scroll_into_view(driver, label)
-        for_attr = label.get_attribute("for")
-        if for_attr:
+
+        for label in labels:
+            fid = label.get_attribute("for")
+            if not fid:
+                continue
+
             try:
-                cb = driver.find_element(By.ID, for_attr)
+                cb = driver.find_element(By.ID, fid)
             except Exception:
-                cb = None
-            if cb is not None:
-                _scroll_into_view(driver, cb)
-                if not _is_checked(cb):
-                    try:
-                        cb.click()
-                    except Exception:
-                        _js_click(driver, cb)
-                return _is_checked(cb)
-        # pas de @for : cliquer le label lui‑même peut suffire
-        try:
-            label.click()
-        except Exception:
-            _js_click(driver, label)
-        # on reteste en cherchant un input voisin
-        try:
-            cb = label.find_element(By.XPATH, ".//input[@type='checkbox']")
-            return _is_checked(cb)
-        except Exception:
-            pass
+                continue
+
+            if cb.get_attribute("type") != "checkbox":
+                continue
+
+            _scroll_into_view(driver, cb)
+
+            if not _is_checked(cb):
+                try:
+                    cb.click()
+                except Exception:
+                    _js_click(driver, cb)
+
+            # 🔥 FORCER LES EVENTS JS (clé Ipsos)
+            _force_checkbox_events(driver, cb)
+
+            if _is_checked(cb):
+                return cb
+
     except Exception:
         pass
 
-    # 2) Chercher un conteneur contenant le texte puis remonter
-    #    pour trouver un input checkbox OU role=checkbox
-    candidates = driver.find_elements(
-        By.XPATH,
-        # un élément qui contient le texte (même éclaté) puis
-        # un input/role=checkbox dans les ancêtres/proches
-        (
-            "//*[contains(translate(normalize-space(string(.)),"
-            "'ABCDEFGHIJKLMNOPQRSTUVWXYZÀÂÄÇÉÈÊËÎÏÔÖÙÛÜŸ',"
-            "'abcdefghijklmnopqrstuvwxyzàâäçéèêëîïôöùûüÿ'),"
-            f" {_xpath_literal(needle)})]"
-        ),
-    )
+    # ------------------------------------------------------------------
+    # 2) Cas checkbox ARIA / custom (role="checkbox")
+    # ------------------------------------------------------------------
+    try:
+        boxes = (scope or driver).find_elements(
+            By.XPATH,
+            ".//*[@role='checkbox' or @aria-checked]"
+        )
 
-    for el in candidates:
-        # tente diverses stratégies autour du conteneur texte
-        paths = [
-            ".//input[@type='checkbox']",
-            ".//preceding::input[@type='checkbox'][1]",
-            ".//following::input[@type='checkbox'][1]",
-            ".//ancestor::*//input[@type='checkbox']",
-            ".//*[@role='checkbox']",
-            ".//ancestor::*//*[@role='checkbox']",
-        ]
-        cb = None
-        for p in paths:
-            try:
-                cb = el.find_element(By.XPATH, p)
-                break
-            except Exception:
+        for box in boxes:
+            txt = _norm(
+                box.text or box.get_attribute("aria-label") or ""
+            )
+            if needle not in txt:
                 continue
-        if cb is None:
-            continue
 
-        try:
-            _scroll_into_view(driver, cb)
-        except Exception:
-            pass
+            _scroll_into_view(driver, box)
 
-        # parfois le clic doit se faire sur un wrapper cliquable
-        clickable = cb
-        if cb.get_attribute("role") == "checkbox":
-            clickable = cb
-        else:
-            # bibliothèques type "prettycheckbox", "mdc-checkbox", etc.
             try:
-                clickable = cb.find_element(
-                    By.XPATH,
-                    "./ancestor::*[self::label or contains(@class,'checkbox') or contains(@class,'pretty')][1]",
-                )
+                box.click()
             except Exception:
-                clickable = cb
+                _js_click(driver, box)
 
-        # set checked=true
-        try:
-            if not _is_checked(cb):
-                try:
-                    clickable.click()
-                except Exception:
-                    _js_click(driver, clickable)
-            # validation
-            if _is_checked(cb):
-                return True
-        except Exception:
-            continue
+            # aria-checked doit passer à true
+            if box.get_attribute("aria-checked") == "true":
+                return box
 
-    # 3) Dernier recours : cliquer l’élément texte (certains wrappers togglent)
-    for el in candidates:
-        try:
-            _scroll_into_view(driver, el)
-            try:
-                el.click()
-            except Exception:
-                _js_click(driver, el)
-            # re-chercher un voisin checkbox pour valider l’état
-            try:
-                ncb = el.find_element(
-                    By.XPATH, ".//input[@type='checkbox'] | .//*[@role='checkbox']"
-                )
-                if _is_checked(ncb):
-                    return True
-            except Exception:
-                pass
-        except Exception:
-            continue
+    except Exception:
+        pass
 
-        # 4) Fallback spécifique Alchemer (SG)
-    if _fallback_click_checkbox_js_alchemer(driver, target_text):
-        print(f"✅ Checkbox cochée (fallback Alchemer) : {target_text}")
-        return True
+    # ------------------------------------------------------------------
+    # 3) Cas fallback Confirmit / tables (si déjà existant chez toi)
+    # ------------------------------------------------------------------
+    try:
+        cb = click_confirmit_checktable(
+            driver,
+            label=target_text,
+            context_hint=context_hint,
+            return_element=True,   # ⚠️ si possible, sinon enlève
+        )
+        if cb:
+            _force_checkbox_events(driver, cb)
+            return cb
+    except Exception:
+        pass
 
-    # 5) Fallback générique JS multi-sites
-    if _fallback_click_checkbox_js_generic(driver, target_text):
-        print(f"✅ Checkbox cochée (fallback JS générique) : {target_text}")
-        return True
-    
-    # ... tout en bas de click_checkbox_by_label, juste avant "return False"
-    if _force_label_for_checkbox_js(driver, target_text):
-        print(f"✅ Checkbox cochée (force JS via label[for]) : {target_text}")
-        return True
-
-    return False
+    return None
 
 def _xpath_literal(s: str) -> str:
     """Construit un littéral XPath sûr (gère les quotes)."""
