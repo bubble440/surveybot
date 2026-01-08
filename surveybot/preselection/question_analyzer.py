@@ -8,28 +8,10 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.action_chains import ActionChains
 from Management.guards.runtime_guard import get_guard
 from Management.guards.sensitive_question_guard import is_sensitive_question
-import preselection.question_analyzer
-import Cash.payout as payout
+from preselection.question_validation import validate_question
 
 ASSISTANT_ID = "asst_dzB8sAFrNdPPD17auG4WI0EK"
 
-def _is_block_page(text: str) -> bool:
-    """Détecte une page de blocage (VPN/Proxy/Access denied/unusual traffic)."""
-    if not text:
-        return False
-    t = text.lower()
-    patterns = [
-        "proxy ou vpn détecté",
-        "vpn détecté",
-        "proxy détecté",
-        "proxy or vpn detected",
-        "disable your vpn",
-        "access denied",
-        "we have detected unusual traffic",
-        "security policy violation",
-        "désactive ton proxy",
-    ]
-    return any(p in t for p in patterns)
 
 def extract_popup_html(driver):
     try:
@@ -246,7 +228,7 @@ def ask_assistant(prompt_text, api_key, *, question=None, options=None):
 
     return cleaned
 
-def get_response_for_question(driver, account_id, api_key):
+def get_response_for_question(driver, api_key):
     try:
         WebDriverWait(driver, 10).until(
             EC.presence_of_element_located((By.TAG_NAME, "body"))
@@ -266,13 +248,10 @@ def get_response_for_question(driver, account_id, api_key):
 
         question = extract_question_text(html)
 
-        if is_sensitive_question(question):
-            print("⏭️ Question sensible détectée (hardware / permission) → SKIP")
+        decision = validate_question(question, " ".join(js_texts))
 
-            return {
-                "action": "SKIP",
-                "reason": "SENSITIVE_QUESTION",
-            }
+        if decision.action != "CONTINUE":
+            return question, {"action": decision.action, "reason": decision.reason}
 
         # options des radios/checkbox + options des <select>
         options = (extract_options_js(driver) or []) + (
@@ -280,50 +259,12 @@ def get_response_for_question(driver, account_id, api_key):
         )
 
         prompt = reformulate_prompt_for_gpt(question, options)
-        # 🛡️ Détection page de blocage (vpn/proxy/denied) → pas de GPT, pas d'action
-        page_debug = (question or "") + " " + (driver.page_source or "")
-        if _is_block_page(page_debug):
-            print("[BLOCK] Page de blocage détectée (vpn/proxy).")
-            # 1) tenter un clic 'Recharger/Reload' si présent
-            try:
-                btn = WebDriverWait(driver, 2).until(
-                    EC.element_to_be_clickable((By.XPATH, "//button[contains(., 'Recharger') or contains(., 'Reload')]"))
-                )
-                driver.execute_script("arguments[0].scrollIntoView({block:'center'});", btn)
-                time.sleep(0.2)
-                driver.execute_script("arguments[0].click();", btn)
-                time.sleep(2)
-            except Exception:
-                # 2) sinon refresh
-                try:
-                    driver.refresh()
-                    time.sleep(2)
-                except Exception:
-                    pass
-
         print(
             f"🧠 Reformulation pour GPT :\n Question : {question}\n\nChoix : {options}"
         )
 
         response = ask_assistant(prompt, api_key, question=question, options=options)
         print(f"🤖 Réponse proposée : {response}")
-
-        def _norm(s):
-            return (s or "").strip().lower().replace("’", "'")
-
-        qn = _norm(question)
-        rp = _norm(response)
-
-        # si l'IA renvoie la question, un texte avec "?" ou une chaîne vide → on fabrique une valeur sûre
-        if not rp or "?" in rp or rp == qn:
-            ql = qn
-            if any(k in ql for k in ["code postal", "postal", "zip"]):
-                response = "95000"  # FR sûr (5 chiffres)
-            elif any(k in ql for k in ["âge", "age"]):
-                response = "28"
-            elif any(k in ql for k in ["année", "naissance"]):
-                response = "1996"
-            print(f"🛡️ Fallback valeur sûre appliqué : {response}")
 
         return question, response
 

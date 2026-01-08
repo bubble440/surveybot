@@ -234,7 +234,7 @@ def login(driver, email, password):
         with open("debug_email_page.html", "w", encoding="utf-8") as f:
             f.write(driver.page_source)
 
-    time.sleep(15)  # attendre le chargement de la page suivante
+    time.sleep(7)  # attendre le chargement de la page suivante
     dom_probe(driver)
     snap(driver, "after_email")
 

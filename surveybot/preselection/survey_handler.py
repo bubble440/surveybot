@@ -47,18 +47,6 @@ def run_survey(driver, api_key, *, account_id: str):
                     get_guard().request_survey_restart("sensitive_question_skip_failed")
                     return
 
-            # Cas : on a quitté le survey sans revenir
-            if question == "NOT_RETURNED":
-                try:
-                    close_btn = driver.find_element(By.CSS_SELECTOR, "button[data-test-id='ps-popup-close-btn']")
-                    driver.execute_script("arguments[0].click();", close_btn)
-                    print("❌ L'utilisateur n'est pas revenu de l'enquête. Fermeture du popup et fin de boucle.")
-                    get_guard().record_success()
-                except Exception as e:
-                    get_guard().record_error(e)
-                    print(f"❌ Erreur lors de la fermeture du popup : {e}")
-                break
-
             # Cas : on est disqualifié → cliquer sur OK puis relancer
             if question and "Tu n'as pas été qualifié cette fois" in question:
                 print("⚠️ Disqualification détectée, raison: tu n'as pas été qualifié cette fois.")
