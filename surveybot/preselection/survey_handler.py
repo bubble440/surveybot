@@ -12,8 +12,8 @@ import preselection.survey_navigator
 from preselection.auth_handler import snap
 import Survey.survey_solver 
 import Cash.payout as payout
-from Management.runtime_guard import get_guard
-from Management.survey_difficulty_guard import detect_strict_survey
+from Management.guards.runtime_guard import get_guard
+from Management.guards.survey_difficulty_guard import detect_strict_survey
 from Management.redirect_watcher import wait_for_final_redirection, switch_to_latest_window_and_close_others
 from Management.url_guard import is_allowed, normalize_host
 

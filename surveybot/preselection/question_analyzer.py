@@ -7,8 +7,8 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.action_chains import ActionChains
 from Management.url_guard import is_allowed
-from Management.runtime_guard import get_guard
-from Management.sensitive_question_guard import is_sensitive_question
+from Management.guards.runtime_guard import get_guard
+from Management.guards.sensitive_question_guard import is_sensitive_question
 
 ASSISTANT_ID = "asst_dzB8sAFrNdPPD17auG4WI0EK"
 
@@ -71,27 +71,12 @@ def extract_question_text(html):
 
 def detect_input_type(html):
     soup = BeautifulSoup(html, "html.parser")
-
-    ## dropdown natif
-    #if soup.find("select"):
-    #    return "dropdown"
-
     # radios/checkbox (y compris rôle ARIA)
     if soup.find("input", {"type": "checkbox"}) or soup.select("[role='checkbox']"):
         return "checkbox"
     if soup.find("input", {"type": "radio"}) or soup.select("[role='radio']"):
         return "radio"
 
-    ## champs texte / textarea / number / contenteditable
-    #if (
-    #    soup.find("input", {"type": "text"})
-    #    or soup.find("input", {"type": "number"})
-    #    or soup.find("textarea")
-    #    or soup.select("[contenteditable='true']")
-    #):
-    #    return "text"
-
-    # défaut conservateur
     return "radio"
 
 
