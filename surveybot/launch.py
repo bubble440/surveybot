@@ -302,6 +302,7 @@ def start_hot_reload_thread():
                 "Survey.input_handler",
                 "Survey.survey_executor",
                 "Survey.screenshot_analyzer",
+                "Survey.question_block_resolver",
                 "preselection.survey_handler",
                 "preselection.question_analyzer",
                 "Survey.survey_solver",
