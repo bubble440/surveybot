@@ -6,9 +6,6 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.action_chains import ActionChains
-from Management.guards.runtime_guard import get_guard
-from Management.guards.sensitive_question_guard import is_sensitive_question
-from preselection.question_validation import validate_question
 
 ASSISTANT_ID = "asst_dzB8sAFrNdPPD17auG4WI0EK"
 
@@ -173,6 +170,8 @@ def reformulate_prompt_for_gpt(question_text, options):
 
 
 def ask_assistant(prompt_text, api_key, *, question=None, options=None):
+    import Management.guards.runtime_guard
+
     from Utils.openai_cache import (
         make_cache_key,
         get_cached_answer,
@@ -190,7 +189,7 @@ def ask_assistant(prompt_text, api_key, *, question=None, options=None):
 
     # 2️⃣ Appel OpenAI normal
     client = OpenAI(api_key=api_key)
-    get_guard().record_openai_call()
+    Management.guards.runtime_guard.get_guard().record_openai_call()
 
     thread = client.beta.threads.create()
     client.beta.threads.messages.create(
@@ -229,6 +228,8 @@ def ask_assistant(prompt_text, api_key, *, question=None, options=None):
     return cleaned
 
 def get_response_for_question(driver, api_key):
+    import preselection.question_validation
+
     try:
         WebDriverWait(driver, 10).until(
             EC.presence_of_element_located((By.TAG_NAME, "body"))
@@ -248,7 +249,7 @@ def get_response_for_question(driver, api_key):
 
         question = extract_question_text(html)
 
-        decision = validate_question(question, " ".join(js_texts))
+        decision = preselection.question_validation.validate_question(question, " ".join(js_texts))
 
         if decision.action != "CONTINUE":
             return question, {"action": decision.action, "reason": decision.reason}
@@ -298,6 +299,8 @@ def click_participer_if_present(driver):
 
 
 def click_participer_if_qualified(driver):
+    import Management.redirect_watcher
+
     try:
         # 1. Vérifie le message de qualification
         page_text = driver.execute_script(
@@ -329,9 +332,7 @@ def click_participer_if_qualified(driver):
             ActionChains(driver).move_to_element(btn).click().perform()
             print("🖱️ Clic ActionChains simulé sur 'Participer'.")
 
-            from Management.redirect_watcher import switch_to_latest_window_and_close_others
-
-            switched = switch_to_latest_window_and_close_others(
+            switched = Management.redirect_watcher.switch_to_latest_window_and_close_others(
                 driver,
                 base_handles=base_handles,
                 timeout=12,
