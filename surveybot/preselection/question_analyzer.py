@@ -6,9 +6,10 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.action_chains import ActionChains
-from Management.url_guard import is_allowed
 from Management.guards.runtime_guard import get_guard
 from Management.guards.sensitive_question_guard import is_sensitive_question
+import preselection.question_analyzer
+import Cash.payout as payout
 
 ASSISTANT_ID = "asst_dzB8sAFrNdPPD17auG4WI0EK"
 
@@ -245,7 +246,7 @@ def ask_assistant(prompt_text, api_key, *, question=None, options=None):
 
     return cleaned
 
-def get_response_for_question(driver, api_key):
+def get_response_for_question(driver, account_id, api_key):
     try:
         WebDriverWait(driver, 10).until(
             EC.presence_of_element_located((By.TAG_NAME, "body"))

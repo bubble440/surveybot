@@ -7,7 +7,7 @@ import Survey.action_dispatcher
 import re
 import unicodedata
 from selenium.webdriver.support.ui import WebDriverWait
-from Management.url_guard import is_allowed
+from Management.guards.url_guard import is_allowed
 
 ASSISTANT_ID = "asst_dzB8sAFrNdPPD17auG4WI0EK"
 ICON_TOKEN = "[BOUTON_ICONE]"
