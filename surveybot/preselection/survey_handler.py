@@ -8,14 +8,13 @@ if not IS_LOCAL:
     from selenium.webdriver.support import expected_conditions as EC
     from selenium.webdriver.common.by import By
 import preselection.question_analyzer
-import preselection.survey_navigator
 from preselection.auth_handler import snap
 import Survey.survey_solver 
 import Cash.payout as payout
 from Management.guards.runtime_guard import get_guard
 from Management.guards.survey_difficulty_guard import detect_strict_survey
 from Management.redirect_watcher import wait_for_final_redirection, switch_to_latest_window_and_close_others
-from Management.url_guard import is_allowed, normalize_host
+from Management.guards.url_guard import is_allowed, normalize_host
 
 def run_survey(driver, api_key, *, account_id: str):
     snap(driver, "before_survey_loop")
