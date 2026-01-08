@@ -239,6 +239,35 @@ def _wait_for_button_effect(driver, *, timeout=6):
 
     return False
 
+# ================================
+# Anti double-fallback guard
+# ================================
+
+def _new_attempt_context(driver):
+    """
+    Initialise un contexte de tentative pour UNE instruction.
+    Empêche toute stratégie d'être exécutée 2 fois.
+    """
+    ctx = {
+        "attempted": set(),
+    }
+    driver._action_attempt_ctx = ctx
+    return ctx
+
+
+def _try(driver, name: str, fn):
+    """
+    Exécute fn() UNE SEULE FOIS par nom de stratégie.
+    """
+    ctx = getattr(driver, "_action_attempt_ctx", None)
+    if ctx is None:
+        ctx = _new_attempt_context(driver)
+
+    if name in ctx["attempted"]:
+        return False
+
+    ctx["attempted"].add(name)
+    return fn()
 
 # --------------------------- Dispatcher principal ---------------------------
 
@@ -293,306 +322,169 @@ def execute_action(driver, instruction: str) -> bool:
             print(f"[DBG] matrix_try_exception: {e}")
             pass
 
+        # ================================
+        # Dispatcher principal sécurisé
+        # ================================
 
-        # 🛡️ garde-fou anti-disqualification
+        _new_attempt_context(driver)
+
+        # 1️⃣ MATRICES (PRIORITÉ ABSOLUE)
+        try:
+            if (ctx or "").strip() and itype in ("checkbox", "radio"):
+                if dom_context_mapper.try_click_matrix_by_visual_mapping(
+                    driver,
+                    row_label=ctx,
+                    col_label=label,
+                    debug=True,
+                ):
+                    return True
+        except Exception:
+            pass
+
+        # 2️⃣ SANITIZER ANTI-DISQUALIFICATION
         safe_label = _sanitize_instruction_with_page_context(driver, label, itype or "")
         if safe_label != label:
-            print(f"🛡️ Instruction ajustée : « {label} » → « {safe_label} » (sanitizer)")
             label = safe_label
-            low = _norm_lc(label)
 
-        # 0) Types forcés
-        if itype == "open":
-            print("trying open")
-            if Survey.input_handler.open_dropdown_generic(driver, hint=ctx or label):
-                print(
-                    f"🔽 Dropdown ouvert (hint « {ctx or label} »). source: action_dispatcher.py"
-                )
-                return True
-
-        if itype == "dropdown":
-            print("trying dropdown")
-            # ============================================================
-            # PRIORITÉ — Dropdown Block Resolver (contexte → champ → valeur)
-            # ============================================================
-            try:
-                if ctx:
-                    if dropdown_block_resolver.try_resolve_dropdown_block(
-                        driver,
-                        context_question=ctx,
-                        value=label,
-                        debug=True,
-                    ):
-                        print(
-                            f"✅ DROPDOWN-BLOCK résolu: ctx='{ctx}' value='{label}'. source: action_dispatcher.py"
-                        )
-                        return True
-            except Exception as e:
-                print(f"[DROPDOWN-BLOCK] exception ignorée (fallback): {e}")
-
-            lowlbl = _norm_lc(label)
-
-            # sliderpoints avant la logique générique
-            try:
-                if Survey.input_handler.set_sliderpoints(driver, label, context_hint=ctx):
-                    print(f"✅ Dropdown/sliderpoints « {label} ». source: action_dispatcher.py")
-                    return True
-            except Exception:
-                pass
-
-            # 1) Si ça ressemble à un NOM DE CHAMP → on ouvre
-            if any(tok in lowlbl for tok in _OPEN_FIELD_TOKENS):
-                if Survey.input_handler.open_dropdown_generic(driver, hint=label, context_hint=ctx):
-                    # mémoriser le dernier champ ouvert pour la prochaine valeur
-                    try:
-                        driver._last_dropdown_hint = label
-                    except Exception:
-                        pass
-                    print(
-                        f"🔽 Dropdown ouvert (champ « {label} », ctx='{ctx}'). source: action_dispatcher.py"
-                    )
-                    return True
-
-            # 2) Sinon, on considère que c’est une VALEUR → on sélectionne
-            field_hint = ctx or getattr(driver, "_last_dropdown_hint", None)  
-            if Survey.input_handler.try_select_option_any(driver, label, field_hint=field_hint, context_hint=ctx):
-                try: driver._last_dropdown_hint = None
-                except: pass
-                print(f"✅ Dropdown: valeur « {label} » (ctx). source: action_dispatcher.py")
-                return True
-
-            if Survey.input_handler.open_dropdown_generic(driver, hint=label, context_hint=ctx):
-                try: driver._last_dropdown_hint = label
-                except: pass
-                print(f"🔽 Dropdown ouvert (fallback, ctx) « {label} ». source: action_dispatcher.py")
-                return True
-
+        # ==========================================================
+        # 🟦 BUTTON
+        # ==========================================================
         if itype == "button":
-            print("trying button")
-            # libellé CTA ?
-            try:
-                is_nav = Survey.input_handler._looks_like_nav_label(label or "") or Survey.input_handler._looks_like_nav_label(ctx or "")
-            except Exception:
-                is_nav = False
 
-            if not is_nav:    
-                if Survey.input_handler.click_button_by_text(driver, label):
-                    if _wait_for_button_effect(driver):
-                        print(f"✅ Bouton (texte) validé via click_button_by_text. label: « {label} »")
-                        return True
-                    else:
-                        print("⚠️ Bouton cliqué mais sans effet → fallback suivant1")
+            if _try(driver, "btn_text", lambda:
+                Survey.input_handler.click_button_by_text(driver, label)
+            ):
+                if _wait_for_button_effect(driver):
+                    return True
 
-                if Survey.input_handler.click_cta_strong_any_context(driver, label_hint=label, allow_generic=False):
-                    if _wait_for_button_effect(driver):
-                        print(f"✅ Bouton (texte) validé via click_cta_strong_any_context. label: « {label} »")
-                        return True
-                    else:
-                        print("⚠️ Bouton cliqué mais sans effet → fallback suivant2")
-            else:
-                # 2) Si le libellé ressemble à un CTA, on autorise les hints génériques
-                if Survey.input_handler.click_cta_strong_any_context(driver, label_hint=label or ctx, allow_generic=True):
-                    if _wait_for_button_effect(driver):
-                        print(f"✅ Bouton (texte) validé via click_cta_strong_any_context. label: « {label} »")
-                        return True
-                    else:
-                        print("⚠️ Bouton cliqué mais sans effet → fallback suivant3")
-                # puis texte en secours
-                if Survey.input_handler.click_button_by_text(driver, label):
-                    if _wait_for_button_effect(driver):
-                        print(f"✅ Bouton (texte) validé via click_button_by_text. label: « {label} »")
-                        return True
-                    else:
-                        print("⚠️ Bouton cliqué mais sans effet → fallback suivant4")
+            if _try(driver, "cta_strong", lambda:
+                Survey.input_handler.click_cta_strong_any_context(
+                    driver, label_hint=label, allow_generic=True
+                )
+            ):
+                if _wait_for_button_effect(driver):
+                    return True
 
-            # 1.5) NEW — petit chevron d’ouverture d’un champ 'open-ended'
-            if Survey.input_handler.ensure_open_ended_open(driver, context_hint=ctx, desired_state="open"):
-                print("✅ Chevron open-ended ouvert. source: action_dispatcher.py")
+            if _try(driver, "btn_fallback_radio", lambda:
+                Survey.input_handler.click_radio_by_label(driver, label, context_hint=ctx)
+            ):
                 return True
 
-            # 2) Fallbacks heuristiques : parfois un “bouton” est en fait une option
-            print("↪️ Échec bouton : fallback → radio puis checkbox (heuristique).")
-            if Survey.input_handler.click_radio_by_label(driver, label, context_hint=ctx):
-                if _wait_for_button_effect(driver):
-                    print(f"✅ Bouton (texte) validé via click_radio_by_label. label: « {label} »")
-                    return True
-                else:
-                    print("⚠️ Bouton cliqué mais sans effet → fallback suivant")
-            if Survey.input_handler.click_checkbox_by_label(driver, label, context_hint=ctx):
-                if _wait_for_button_effect(driver):
-                    print(f"✅ Bouton (texte) validé via click_checkbox_by_label. label: « {label} »")
-                    return True
-                else:
-                    print("⚠️ Bouton cliqué mais sans effet → fallback suivant")
+            if _try(driver, "btn_fallback_checkbox", lambda:
+                Survey.input_handler.click_checkbox_by_label(driver, label, context_hint=ctx)
+            ):
+                return True
 
+        # ==========================================================
+        # 🟦 DROPDOWN
+        # ==========================================================
+        if itype == "dropdown":
+
+            if ctx and _try(driver, "dropdown_block", lambda:
+                dropdown_block_resolver.try_resolve_dropdown_block(
+                    driver,
+                    context_question=ctx,
+                    value=label,
+                    debug=True,
+                )
+            ):
+                return True
+
+            if _try(driver, "dropdown_sliderpoints", lambda:
+                Survey.input_handler.set_sliderpoints(driver, label, context_hint=ctx)
+            ):
+                return True
+
+            if _try(driver, "dropdown_open", lambda:
+                Survey.input_handler.open_dropdown_generic(driver, hint=label, context_hint=ctx)
+            ):
+                driver._last_dropdown_hint = label
+                return True
+
+            field_hint = ctx or getattr(driver, "_last_dropdown_hint", None)
+            if _try(driver, "dropdown_select", lambda:
+                Survey.input_handler.try_select_option_any(
+                    driver, label, field_hint=field_hint, context_hint=ctx
+                )
+            ):
+                driver._last_dropdown_hint = None
+                return True
+
+        # ==========================================================
+        # 🟦 CHECKBOX
+        # ==========================================================
         if itype == "checkbox":
-            print("trying checkbox")
-            # 1) tentative principale
-            checkbox = Survey.input_handler.click_checkbox_by_label(driver, label, context_hint=ctx)
-            if checkbox:
-                if Survey.input_handler._privacy_checkbox_is_accepted(driver):
-                    print("✅ Checkbox privacy validée côté JS")
-                    return True
-                else:
-                    print("⚠️ Checkbox cochée mais non validée JS")
 
-            # 2) NEW: checkbox 'button-like' (label role=button / ui-btn …)
-            if Survey.input_handler.click_checkbox_buttonish_by_label(driver, label, context_hint=ctx):
-                print(f"✅ Checkbox (button-like) « {label} ». source: action_dispatcher.py")
+            if _try(driver, "checkbox_main", lambda:
+                Survey.input_handler.click_checkbox_by_label(driver, label, context_hint=ctx)
+            ):
                 return True
 
-            # 3) fallbacks : certains “checkbox” sont rendus comme radios ou CTA
-            print("↪️ Échec checkbox : fallback → radio puis bouton (CTA).")
-            if Survey.input_handler.click_radio_by_label(driver, label, context_hint=ctx):
-                print(f"✅ Fallback-radio sur « {label} ». source: action_dispatcher.py")
-                return True
-            if Survey.input_handler.click_button_by_text(driver, label):
-                print(f"✅ Fallback-bouton (texte) « {label} ». source: action_dispatcher.py")
-                return True
-            # 2) bouton 'fort' mais SANS hints génériques (ne cherchera QUE label_hint)
-            if Survey.input_handler.click_cta_strong_any_context(driver, label_hint=label, allow_generic=False):
-                print(f"✅ Fallback-bouton (strict via label_hint) « {label} ». source: action_dispatcher.py")
+            if _try(driver, "checkbox_buttonish", lambda:
+                Survey.input_handler.click_checkbox_buttonish_by_label(driver, label, context_hint=ctx)
+            ):
                 return True
 
-        if itype == "captcha":
-            print("trying captcha")
-            subtype = ctx.get("captcha") or "recaptcha_v2"
+            if _try(driver, "checkbox_fallback_radio", lambda:
+                Survey.input_handler.click_radio_by_label(driver, label, context_hint=ctx)
+            ):
+                return True
 
-            if subtype == "recaptcha_v2":
-                try:
-                    # 1) on récupère sitekey (depuis ctx OU auto-détection DOM)
-                    sitekey = ctx.get("sitekey")
-                    invisible = bool(ctx.get("invisible", False))
-                    if not sitekey:
-                        sitekey, auto_inv = recaptcha_utils.extract_recaptcha_v2_sitekey(driver)
-                        if not sitekey:
-                            print("[captcha] sitekey introuvable")
-                            return False
-                        # si 'invisible' pas précisé dans ctx, on prend l’auto
-                        if "invisible" not in ctx:
-                            invisible = bool(auto_inv)
-
-                    # 2) URL courante (ou ctx["page_url"] si fourni)
-                    page_url = ctx.get("page_url") or driver.current_url
-
-                    # 3) Résolution 2Captcha
-                    solver = captcha_solver.TwoCaptchaClient()
-                    token = solver.solve_recaptcha_v2(
-                        sitekey=sitekey,
-                        url=page_url,
-                        invisible=invisible
-                    )
-
-                    # 4) Injection du token et events
-                    recaptcha_utils.inject_recaptcha_token(driver, token)
-
-                    print("[captcha] reCAPTCHA v2 résolu et injecté")
-                    return True
-
-                except Exception as e:
-                    print(f"[captcha] erreur: {e}")
-                    return False
-
+        # ==========================================================
+        # 🟦 RADIO
+        # ==========================================================
         if itype == "radio":
-            print("trying radio")
-            # certains sliders sont rédigés comme des "réponses uniques"
-            try:
-                if Survey.input_handler.set_sliderpoints(driver, label, context_hint=ctx):
-                    print(f"✅ Radio/sliderpoints « {label} ». source: action_dispatcher.py")
-                    return True
-            except Exception:
-                pass
 
-            # 1) tentative principale
-            if Survey.input_handler.click_radio_by_label(driver, label, context_hint=ctx):
-                print(f"✅ Radio « {label} » ctx: {ctx}. source: action_dispatcher.py")
+            if _try(driver, "radio_slider", lambda:
+                Survey.input_handler.set_sliderpoints(driver, label, context_hint=ctx)
+            ):
                 return True
 
-            # 2) NEW: checkbox 'button-like' (label role=button / ui-btn …)
-            if Survey.input_handler.click_checkbox_buttonish_by_label(driver, label, context_hint=ctx):
-                print(f"✅ Checkbox (button-like) « {label} ». source: action_dispatcher.py")
-                return True
-            
-            # 3) fallbacks : des radios stylisées se comportent comme checkbox / CTA
-            print("↪️ Échec radio : fallback → checkbox puis bouton (CTA).")
-            if Survey.input_handler.click_checkbox_by_label(driver, label, context_hint=ctx):
-                print(f"✅ Fallback-checkbox sur « {label} ». source: action_dispatcher.py")
-                return True
-            if Survey.input_handler.click_button_by_text(driver, label):
-                print(f"✅ Fallback-bouton (texte) « {label} ». source: action_dispatcher.py")
-                return True
-            # 4) bouton 'fort' mais SANS hints génériques (ne cherchera QUE label_hint)
-            if Survey.input_handler.click_cta_strong_any_context(driver, label_hint=label, allow_generic=False):
-                print(f"✅ Fallback-bouton (strict via label_hint) « {label} ». source: action_dispatcher.py")
+            if _try(driver, "radio_main", lambda:
+                Survey.input_handler.click_radio_by_label(driver, label, context_hint=ctx)
+            ):
                 return True
 
-            # ============================================================
-            # Question Block Resolver (PRIORITAIRE pour champs numériques)
-            # ============================================================
+            if _try(driver, "radio_buttonish", lambda:
+                Survey.input_handler.click_checkbox_buttonish_by_label(driver, label, context_hint=ctx)
+            ):
+                return True
 
-            if itype == "text":
-                # Fallback intelligent : résolution par blocs de questions
-                # Objectif : éviter le mauvais mapping label → input
-                try:
-                    resolved = Survey.question_block_resolver.try_resolve_number_block(
-                        driver,
-                        context_question=ctx,   # TEXTE de la question OpenAI / DOM
-                        value=label,                     # valeur à injecter (ex: "28")
-                        min_score=0.75,                   # seuil robuste (pas agressif)
-                        allow_overwrite=False,            # JAMAIS écraser un champ déjà rempli
-                        debug=True,                       # logs utiles en prod
-                    )
-
-                    if resolved:
-                        print("[ACTION][QBR] Champ numérique résolu via QuestionBlockResolver")
-                        return True   # ⚠️ STOP ici : on ne continue PAS la logique générique
-
-                except Exception as e:
-                    print(f"[ACTION][QBR] Exception ignorée (fallback): {e}")
-
-            # ⚠️ IMPORTANT :
-            # - Si QBR échoue → on CONTINUE normalement
-            # - Aucun comportement existant n’est cassé
-
-        if itype == "text":
+        # ==========================================================
+        # 🟦 TEXT / NUMBER
+        # ==========================================================
+        if itype in ("text", "number"):
             print("trying text input")
-            if Survey.input_handler.fill_text_input(driver, label, context_hint=ctx):
-                print(f"✅ Texte saisi « {label} » ctx: {ctx}. source: action_dispatcher.py")
+            try:
+                resolved = Survey.question_block_resolver.try_resolve_number_block(
+                    driver,
+                    context_question=ctx,   # TEXTE de la question OpenAI / DOM
+                    value=label,                     # valeur à injecter (ex: "28")
+                    min_score=0.75,                   # seuil robuste (pas agressif)
+                    allow_overwrite=False,            # JAMAIS écraser un champ déjà rempli
+                    debug=True,                       # logs utiles en prod
+                )
+
+                if resolved:
+                    print("[ACTION][QBR] Champ numérique résolu via QuestionBlockResolver")
+                    return True   # ⚠️ STOP ici : on ne continue PAS la logique générique
+
+            except :
+                pass
+            if _try(driver, "text_input", lambda:
+                Survey.input_handler.fill_text_input(driver, label, context_hint=ctx)
+            ):
                 return True
 
-        CTA_WORDS = {
-            "suivant",
-            "continuer",
-            "next",
-            "continue",
-            "start",
-            "commencer",
-            "valider",
-            "envoyer",
-            "submit",
-            "terminer",
-            "finish",
-        }
-        if low not in CTA_WORDS:
-            print(f"ℹ️ Instruction non-CTA, on continue. source: action_dispatcher.py")
-            if Survey.input_handler.fill_text_input(driver, label):
-                return True
-
-        if Survey.input_handler._has_native_selects(driver):
-            if Survey.input_handler.try_select_option_any(driver, label, field_hint=ctx, context_hint=ctx):
-                print(f"✅ Radio→Dropdown fallback: « {label} ».")
-                return True
-            
-        if Survey.input_handler.click_cta_strong_any_context(driver,text=label if 'text' in Survey.input_handler.click_cta_strong_any_context.__code__.co_varnames else label):
-            return True
-
-        print(f"ℹ️ Sous-instruction ignorée « {raw} », on continue.")
-
-    print(
-        "❌ Aucune stratégie n’a abouti pour :",
-        instruction,
-        " source: action_dispatcher.py",
-    )
+        # ==========================================================
+        # ❌ AUCUNE STRATÉGIE N’A ABOUTI
+        # ==========================================================
+        print(
+            "❌ Aucune stratégie n’a abouti pour :",
+            instruction,
+            " source: action_dispatcher.py",
+        )
+        return False
     
     # --- Fallback vidéo (Video.js / Brightcove) ----------------------
     try:
