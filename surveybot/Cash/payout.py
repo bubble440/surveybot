@@ -19,21 +19,6 @@ if not IS_LOCAL:
     from selenium.webdriver.common.action_chains import ActionChains
 # ---------- Helpers ----------
 
-def _norm(txt: str) -> str:
-    return re.sub(r"\s+", " ", txt or "").strip()
-
-def _text_to_amount_eur(txt: str) -> float:
-    """
-    Convertit '5,57 €' -> 5.57
-    Gère espaces insécables & variantes.
-    """
-    if not txt:
-        return 0.0
-    t = txt.replace("\xa0", " ").replace("€", "").strip()
-    t = t.replace(",", ".")
-    m = re.search(r"([0-9]+(?:\.[0-9]+)?)", t)
-    return float(m.group(1)) if m else 0.0
-
 def _wait(driver, timeout=10):
     return WebDriverWait(driver, timeout)
 
@@ -49,16 +34,6 @@ def _find_all(driver, by, sel, timeout=10):
     return driver.find_elements(by, sel)
 
 # ---------- Lecture du solde & ouverture du modal ----------
-
-def _read_balance(driver) -> float:
-    """
-    DOM fourni:
-    <div class="balance-card-value">
-      <span data-test-id="balance-card-amount">5,08 €</span>
-    </div>
-    """
-    el = _find(driver, By.CSS_SELECTOR, "[data-test-id='balance-card-amount']")
-    return _text_to_amount_eur(el.text)
 
 def _open_cashout_modal(driver) -> bool:
     """
@@ -279,6 +254,52 @@ def _confirm_claim(driver, maybe_revolut_fullname: str = "", maybe_revolut_tag: 
     except Exception:
         return False
 
+def _parse_amount(text: str) -> float:
+    """
+    Parse un montant € de façon robuste.
+    Exemples acceptés :
+      - "2,19 €"
+      - "2.19€"
+      - "2,19 €"
+      - "€2,19"
+    """
+    if not text:
+        raise ValueError("balance text vide")
+
+    # normalisation unicode + espaces
+    t = (
+        text.replace("\u00a0", " ")  # nbsp
+            .replace("€", "")
+            .strip()
+    )
+
+    # extraction nombre (virgule ou point)
+    m = re.search(r"(\d+[.,]\d+|\d+)", t)
+    if not m:
+        raise ValueError(f"montant non détecté dans '{text}'")
+
+    num = m.group(1).replace(",", ".")
+    return float(num)
+
+def _read_balance(driver) -> float:
+    """
+    DOM fourni:
+    <div class="balance-card-value">
+      <span data-test-id="balance-card-amount">5,08 €</span>
+    </div>
+    """
+    el = driver.find_element(
+        By.CSS_SELECTOR,
+        "[data-test-id='balance-card-amount']"
+    )
+
+    raw = el.text
+    amount = _parse_amount(raw)
+
+    print(f"[PAYOUT][DEBUG] balance raw='{raw}' parsed={amount}")
+    return amount
+
+
 # ---------- API principale ----------
 
 def check_and_cashout_if_needed(
@@ -300,9 +321,9 @@ def check_and_cashout_if_needed(
 
     try:
         amount = _read_balance(driver)
-    except Exception:
-        # si pas de widget (autre page), on essaye quand même d'ouvrir le modal si le bouton est présent
-        amount = 0.0
+    except Exception as e:
+        print("[PAYOUT][ERROR] Lecture solde échouée:", e)
+        return False
 
     if amount < min_amount_eur:
         print(f"[PAYOUT] Solde insuffisant ({amount:.2f} €). Rien à faire.")
