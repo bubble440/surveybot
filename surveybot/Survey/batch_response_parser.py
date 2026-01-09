@@ -22,6 +22,8 @@ def parse_batch_response(raw: str) -> list[dict]:
 
     for line in lines:
         parts = re.split(r"/{4,}", line)
+        if len(parts) > 3:
+            parts = parts[:3]
         if len(parts) < 3:
             continue
 
