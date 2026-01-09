@@ -126,11 +126,8 @@ def execute_survey_page(driver, api_key):
         prompt = Survey.prompt_builder.build_batch_prompt(question_blocks)
 
         instruction_raw = client.responses.create(
-            messages=[
-                {"role": "user", "content": prompt}
-                ],
-            model="gpt-4o-mini",
-            cache_key_hint="dom_batch"
+            input=prompt,
+            model="gpt-5-nano",
         )
 
         raw_text = instruction_raw.output_text
