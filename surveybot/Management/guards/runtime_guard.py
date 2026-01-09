@@ -162,8 +162,8 @@ class RuntimeGuard:
         """
         Redémarrage intelligent :
         1) tentative CTA (best effort)
-        2) sinon reprise normale du flow
-        3) si init échoue → pause courte
+        2) sinon délégation au flow principal (soft restart)
+        3) si ça échoue → pause courte
         """
         print(f"🔁 Restart survey demandé | raison = {reason}")
 
@@ -171,33 +171,39 @@ class RuntimeGuard:
             print("[RUNTIME_GUARD][LOCAL] restart survey simulé")
             return
 
-        # 1️⃣ Tentative CTA (best effort)
+        # 1) CTA best-effort
+        cta_clicked = False
         try:
-            if self.driver and self.try_open_application_cta(self.driver):
-                print("🟢 CTA cliqué → reprise via UI")
-                return
-        except Exception:
-            # ⚠️ CTA qui échoue n'est PAS une erreur
-            pass
+            if self.driver:
+                cta_clicked = self.try_open_application_cta(self.driver)
+        except Exception as e:
+            # CTA qui explose = non bloquant
+            print(f"[RUNTIME_GUARD][WARN] try_open_application_cta a levé: {e}")
+            cta_clicked = False
 
-        # 2️⃣ CTA absent ou inutile → reprise normale
+        if cta_clicked:
+            print("🟢 CTA cliqué → reprise via UI")
+            return
+
+        # 2) CTA absent / inutile → délégation soft restart
         try:
-            print("🔄 CTA indisponible → reprise session normale")
-
-            # ⚠️ RuntimeGuard ne connaît PAS les détails
-            # on délègue au flow principal via on_soft_restart
+            print("🔄 CTA indisponible → délégation soft restart")
             if self.on_soft_restart:
-                self.on_soft_restart("resume_after_cta_fail")
+                # IMPORTANT: on passe la vraie raison, pas un alias
+                self.on_soft_restart(reason)
                 return
+
+            # Si on_soft_restart n'est pas défini, c'est une config invalide en prod
+            raise RuntimeError("on_soft_restart non défini en prod")
 
         except Exception as e:
-            print(f"❌ Échec init_session_and_enter_surveys : {e}")
+            print(f"❌ Échec soft restart (on_soft_restart) : {e}")
 
-        # 3️⃣ Une seule erreur → pause courte
-        print("⛔ Init session échouée → pause courte")
+        # 3) Échec → pause courte
+        print("⛔ Soft restart échoué → pause courte")
         self.pause(
             PausePolicy.SHORT_COOLDOWN,
-            StopReason.DAILY_TARGET_REACHED,
+            StopReason.TOO_MANY_ERRORS,  # plus cohérent que DAILY_TARGET_REACHED
         )
         
     # ----------------------------

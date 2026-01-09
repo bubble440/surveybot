@@ -17,7 +17,7 @@ def run_survey(driver, api_key, *, account_id: str):
     import Management.guards.survey_difficulty_guard
     import Management.redirect_watcher
     import Management.guards.url_guard
-    
+    import launch
 
     snap(driver, "before_survey_loop")
     try:
@@ -67,13 +67,13 @@ def run_survey(driver, api_key, *, account_id: str):
                 except Exception as e:
                     Management.guards.runtime_guard.get_guard().record_error(e)
                     print(f"[PAYOUT][WARN] Encaissement automatique: {e}")
-                if IS_LOCAL:
-                    print("⏹️ Environnement local, relance d'un nouveau survey après disqualification.")
-                    return
-                else:
-                    Management.guards.runtime_guard.get_guard().request_survey_restart("disqualification_or_retry")
-                return
-            
+                try:
+                    launch.soft_restart(driver, "disqualification_or_retry")
+                except Exception:
+                    Management.guards.runtime_guard.get_guard().request_survey_restart(
+                        "disqualification_or_retry"
+                    )
+                
             # Cas normal : une réponse est attendue
             if question and answer:
                 success = preselection.response_executor.execute_response(driver, answer)

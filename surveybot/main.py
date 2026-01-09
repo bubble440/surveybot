@@ -7,6 +7,8 @@ from preselection.config_loader import load_config
 from launch import start_heartbeat_thread, acquire_account_lock_or_exit, mark_bot_running
 from launch import install_sigterm_handler, start_runtime_guard, acquire_proxy_lock_or_exit, launch_driver_or_fail, init_session_and_enter_surveys
 from launch import start_hot_reload_thread, run_main_loop, build_notifier, soft_restart
+from Management.guards.runtime_guard import get_guard
+
 if IS_LOCAL:
     ACCOUNT_ID = "local_debug"
 else:
@@ -41,42 +43,53 @@ def main():
 
     if not IS_LOCAL:
         acquire_proxy_lock_or_exit(account_id)
-
-    ctx = {
-        "account_id": account_id,
+    runtime_ctx = {
+        "driver": None,
+        "session": {},
     }
 
-    driver= None  # pour scope
+    guard = None
 
-    def _soft_restart(reason):
-        soft_restart(ctx, driver, reason)
+    while True:
+        try:
+            driver = launch_driver_or_fail(config, account_id)
+            api_key, payout_name, payout_revolut_tag = init_session_and_enter_surveys(driver, config, account_id, notify_fn)
 
-    if not IS_LOCAL:
-        start_runtime_guard(
-            account_id=account_id,
-            notify_fn=notify_fn,
-            on_soft_restart=_soft_restart,
-        )
+            runtime_ctx["driver"] = driver
+            runtime_ctx["session"] = {
+                "account_id": account_id,
+                "api_key": api_key,
+                "payout_name": payout_name,
+                "payout_revolut_tag": payout_revolut_tag,
+            }
 
-    driver = launch_driver_or_fail(config, account_id)
+            def _soft_restart(reason):
+                    soft_restart(
+                    runtime_ctx["session"],
+                    runtime_ctx["driver"],
+                    reason,
+                )
 
-    api_key, payout_name, payout_revolut_tag = init_session_and_enter_surveys(
-        driver,
-        config,
-        account_id,
-        notify_fn,
-    )
+            if not IS_LOCAL:
+                if guard is None:
+                    guard = start_runtime_guard(
+                        account_id=account_id,
+                        notify_fn=notify_fn,
+                        on_soft_restart=_soft_restart,
+                    )
+                get_guard().attach_driver(driver)
+            elif guard:
+                guard.attach_driver(driver)
 
-    ctx.update({
-        "api_key": api_key,
-        "payout_name": payout_name,
-        "payout_revolut_tag": payout_revolut_tag,
-    })
+            run_main_loop(driver, api_key, account_id)
 
-    start_heartbeat_thread()
-    start_hot_reload_thread()
-
-    run_main_loop(driver, api_key, account_id)
+        except Exception as e:
+            print(f"[MAIN][ERROR] {type(e).__name__}: {e}")
+            continue
+        
+        if not IS_LOCAL:
+            start_heartbeat_thread()
+        start_hot_reload_thread()
 
 if __name__ == "__main__":
     main()

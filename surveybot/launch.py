@@ -126,42 +126,37 @@ def build_notifier(config):
         
     return _notify
 
-def soft_restart(ctx, driver, reason: str):
-    account_id = ctx["account_id"]
-    api_key = ctx["api_key"]
-    payout_name = ctx["payout_name"]
-    payout_revolut_tag = ctx["payout_revolut_tag"]
+def soft_restart_cleanup(driver):
+    from Survey.survey_solver import _close_other_tabs_in_current_session
+    _close_other_tabs_in_current_session(driver)
+    driver.get("https://www.topsurveys.app")
 
+def soft_restart_payout(ctx, driver):
+    payout.check_and_cashout_if_needed(
+        driver,
+        account_id=ctx["account_id"],
+        min_amount_eur=5.0,
+        cashout_order=("paypal", "revolut"),
+        revolut_fullname=ctx["payout_name"],
+        revolut_tag=ctx["payout_revolut_tag"],
+    )
+
+def soft_restart_resume(ctx, driver):
+    go_to_best_paid_survey(driver)
+    run_survey(driver, ctx["api_key"], account_id=ctx["account_id"])
+
+def soft_restart(ctx, driver, reason):
     print(f"[SOFT_RESTART] {reason}")
+
+    soft_restart_cleanup(driver)
+    time.sleep(3)
+
     try:
-        # 🔒 Nettoyage onglets
-        try:
-            from Survey.survey_solver import _close_other_tabs_in_current_session
-            _close_other_tabs_in_current_session(driver)
-        except Exception:
-            pass
-
-        # 🌐 Retour TopSurveys
-        driver.get("https://www.topsurveys.app")
-        time.sleep(3)
-
-        # 💰 Vérif encaissement
-        payout.check_and_cashout_if_needed(
-            driver,
-            account_id=account_id,
-            min_amount_eur=5.0,
-            cashout_order=("paypal", "revolut"),
-            revolut_fullname=payout_name,
-            revolut_tag=payout_revolut_tag,
-        )
-
-        # 🎯 Reprise normale
-        go_to_best_paid_survey(driver)
-        run_survey(driver, api_key)
-
+        soft_restart_payout(ctx, driver)
     except Exception as e:
-        print("[SOFT_RESTART][FATAL]", e)
-        raise SystemExit(e)
+        print("[SOFT_RESTART][PAYOUT][WARN]", e)
+
+    soft_restart_resume(ctx, driver)
 
 def start_runtime_guard(account_id: str, notify_fn, on_soft_restart):
     state = load_state(account_id)
