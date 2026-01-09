@@ -11,6 +11,8 @@ def parse_batch_response(raw: str) -> list[dict]:
     """
     Transforme la réponse OpenAI en liste d'instructions exécutables.
     """
+    print("[batch_response_parser] raw response", raw)
+    
     actions = []
 
     if not raw:

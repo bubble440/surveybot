@@ -282,21 +282,56 @@ def _parse_amount(text: str) -> float:
 
 def _read_balance(driver) -> float:
     """
-    DOM fourni:
-    <div class="balance-card-value">
-      <span data-test-id="balance-card-amount">5,08 €</span>
-    </div>
+    Lecture robuste du solde TopSurveys.
+    Fallbacks successifs basés sur le DOM réel.
     """
-    el = driver.find_element(
-        By.CSS_SELECTOR,
-        "[data-test-id='balance-card-amount']"
-    )
+    import re
 
-    raw = el.text
-    amount = _parse_amount(raw)
+    candidates = []
 
-    print(f"[PAYOUT][DEBUG] balance raw='{raw}' parsed={amount}")
-    return amount
+    # 1️⃣ Méthode historique (si jamais ils réintroduisent le test-id)
+    try:
+        el = driver.find_element(By.CSS_SELECTOR, "[data-test-id='balance-card-amount']")
+        candidates.append(el.text)
+    except Exception:
+        pass
+
+    # 2️⃣ DOM actuel : span contenant "€" dans balance-card-progress
+    try:
+        spans = driver.find_elements(
+            By.CSS_SELECTOR,
+            ".balance-card-progress span"
+        )
+        for s in spans:
+            txt = (s.text or "").strip()
+            if "€" in txt and "/" not in txt:
+                candidates.append(txt)
+    except Exception:
+        pass
+
+    # 3️⃣ Fallback ultime : scan global (safe mais coûteux)
+    if not candidates:
+        try:
+            spans = driver.find_elements(By.XPATH, "//span[contains(text(),'€')]")
+            for s in spans:
+                txt = (s.text or "").strip()
+                if "€" in txt and "/" not in txt:
+                    candidates.append(txt)
+        except Exception:
+            pass
+
+    if not candidates:
+        raise RuntimeError("Impossible de lire le solde (aucun montant détecté)")
+
+    # Nettoyage & parsing
+    raw = candidates[0]
+    raw = raw.replace("\xa0", " ").replace("€", "").strip()
+    raw = raw.replace(",", ".")
+
+    try:
+        return float(re.findall(r"\d+(?:\.\d+)?", raw)[0])
+    except Exception:
+        raise RuntimeError(f"Parsing solde échoué: '{raw}'")
 
 
 # ---------- API principale ----------
