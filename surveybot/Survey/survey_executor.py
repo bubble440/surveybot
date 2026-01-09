@@ -129,16 +129,17 @@ def execute_survey_page(driver, api_key):
             messages=[
                 {"role": "user", "content": prompt}
                 ],
-            model="gpt-4o-2024-08-06",
+            model="gpt-4o-mini",
             cache_key_hint="dom_batch"
         )
 
-        actions = Survey.batch_response_parser.parse_batch_response(instruction_raw)
+        raw_text = instruction_raw.output_text
+        actions = Survey.batch_response_parser.parse_batch_response(raw_text)
 
         success_any = False
 
         for act in actions:
-            instruction = f"{act['value']} //// {act['itype']} //// {act['context']}"
+            instruction = f"{act['value']} //// {act['itype']} //// {act['contexte']}"
             ok = Survey.action_dispatcher.execute_action(driver, instruction)
             if ok:
                 success_any = True
