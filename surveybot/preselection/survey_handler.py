@@ -67,7 +67,11 @@ def run_survey(driver, api_key, *, account_id: str):
                 except Exception as e:
                     Management.guards.runtime_guard.get_guard().record_error(e)
                     print(f"[PAYOUT][WARN] Encaissement automatique: {e}")
-                Management.guards.runtime_guard.get_guard().request_survey_restart("disqualification_or_retry")
+                if IS_LOCAL:
+                    print("⏹️ Environnement local, relance d'un nouveau survey après disqualification.")
+                    return
+                else:
+                    Management.guards.runtime_guard.get_guard().request_survey_restart("disqualification_or_retry")
                 return
             
             # Cas normal : une réponse est attendue
