@@ -137,7 +137,7 @@ def build_batch_prompt(question_blocks: list[dict]) -> str:
 
     lines.append(
         "FORMAT STRICT (une ligne par question) :\n"
-        "valeur //// itype //// contexte_question"
+        "valeur //// itype //// contexte"
     )
 
     lines.append(
@@ -145,7 +145,7 @@ def build_batch_prompt(question_blocks: list[dict]) -> str:
         "- itype ∈ {radio, checkbox, dropdown, text, textarea, button}\n"
         "- valeur DOIT être une option existante ou une valeur logique non disqualifiante\n"
         "- Évite : non, jamais, aucun, je préfère ne pas répondre\n"
-        "- Respecte exactement le texte du contexte_question"
+        "- Respecte exactement le texte du contexte"
     )
 
     lines.append("\n--- QUESTIONS ---")
