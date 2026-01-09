@@ -1,13 +1,8 @@
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.action_chains import ActionChains
-from selenium.webdriver.support import expected_conditions as EC
-import time
-import re
-import unicodedata
+import re, openai, time, unicodedata
 
 ASSISTANT_ID = "asst_dzB8sAFrNdPPD17auG4WI0EK"
-ICON_TOKEN = "[BOUTON_ICONE]"
-
 
 def _norm_lc(s: str) -> str:
     s = unicodedata.normalize("NFKC", (s or "")).lower().strip()
@@ -79,6 +74,12 @@ def execute_survey_page(driver, api_key):
     import Survey.screenshot_analyzer
     import Survey.action_dispatcher 
     import selenium.webdriver.support.ui
+    import Survey.dom_analyzer
+    import Survey.prompt_builder
+    import Survey.batch_response_parser
+    import Survey.dom_classifier as dom_classifier
+    import Survey.action_dispatcher as action_dispatcher
+    import Survey.dom_metrics as dom_metrics
 
     # ⏳ Attente que le DOM ait fini de charger avant capture
     try:
@@ -105,13 +106,58 @@ def execute_survey_page(driver, api_key):
         print(f"[URL_GUARD] Page hors périmètre, aucune action: {cur}")
         return False
 
+    classification = dom_classifier.classify_dom(driver)
+
+    if classification:
+        itype = classification["itype"]
+        handler_name = classification["handler"]
+        allow_openai = classification["openai"]
+
+        print(f"[DOM_CLASSIFIER] itype={itype} handler={handler_name} openai={allow_openai}")
+
+        if not allow_openai:
+            # handler local direct
+            return getattr(action_dispatcher, handler_name)(driver)
+        
+    dom_metrics.log_snapshot()
+
     print(
         "🤖 Envoi à GPT pour interprétation visuelle... source: survey_executor.py line 59"
     )
-    instruction = Survey.screenshot_analyzer.send_image_to_gpt(
-        screenshot_path, api_key, previous_image_path=previous_screenshot_path,
-        side_context=getattr(driver, "_last_video_transcript", None)
-    )
+
+    question_blocks = Survey.dom_analyzer.analyze_dom(driver)
+    client = openai.OpenAI(api_key=api_key)
+
+    if question_blocks:
+        prompt = Survey.prompt_builder.build_batch_prompt(question_blocks)
+
+        instruction_raw = client.chat.completions.create(
+            messages=[{"role": "system", "content": prompt}],
+            model="gpt-4o-2024-08-06",
+            assistant_id=ASSISTANT_ID,
+            cache_key_hint="dom_batch"
+        )
+
+        actions = Survey.batch_response_parser.parse_batch_response(instruction_raw)
+
+        success_any = False
+
+        for act in actions:
+            instruction = f"{act['value']} //// {act['itype']} //// {act['context']}"
+            ok = Survey.action_dispatcher.execute_action(driver, instruction)
+            if ok:
+                success_any = True
+
+        return success_any
+    else:
+        # fallback vision (existant)
+        instruction = Survey.screenshot_analyzer.send_image_to_gpt(
+            screenshot_path, api_key, previous_image_path=previous_screenshot_path,
+            side_context=getattr(driver, "_last_video_transcript", None)
+            )   
+        pass
+
+
     #print("📥 Instruction reçue (non-nettoyée) :",instruction,)
     # 🔁 MàJ: mémoriser cette capture comme "précédente" pour le prochain tour
     last_screenshot_path = screenshot_path

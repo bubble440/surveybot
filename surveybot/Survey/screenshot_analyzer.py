@@ -301,3 +301,7 @@ def send_image_to_gpt(image_path, api_key, previous_image_path=None, side_contex
     except Exception as e:
         print(f"💥 Erreur GPT vision : {e}")
         return None
+
+
+# == IGNORE pour entrainement ==
+# s'il est possible de choisir plusieurs options, en selectionner 2.
