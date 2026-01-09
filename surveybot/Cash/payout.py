@@ -359,6 +359,23 @@ def check_and_cashout_if_needed(
         print("[PAYOUT][ERROR] Lecture solde échouée:", e)
         return False
 
+    # Retry: l'UI peut ne pas être prête juste après le login/redirection
+    amount = None
+    last_err = None
+    deadline = time.time() + 12.0
+    while time.time() < deadline:
+        try:
+            amount = _read_balance(driver)
+            last_err = None
+            break
+        except Exception as e:
+            last_err = e
+            time.sleep(0.6)
+
+    if amount is None:
+        print("[PAYOUT][ERROR] Lecture solde échouée:", last_err)
+        return False
+
     if amount < min_amount_eur:
         print(f"[PAYOUT] Solde insuffisant ({amount:.2f} €). Rien à faire.")
         return False
