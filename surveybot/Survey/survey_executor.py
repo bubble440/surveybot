@@ -2,8 +2,6 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.action_chains import ActionChains
 import re, openai, time, unicodedata
 
-ASSISTANT_ID = "asst_dzB8sAFrNdPPD17auG4WI0EK"
-
 def _norm_lc(s: str) -> str:
     s = unicodedata.normalize("NFKC", (s or "")).lower().strip()
     return re.sub(r"\s+", " ", s)
@@ -121,20 +119,17 @@ def execute_survey_page(driver, api_key):
         
     dom_metrics.log_snapshot()
 
-    print(
-        "🤖 Envoi à GPT pour interprétation visuelle... source: survey_executor.py line 59"
-    )
-
     question_blocks = Survey.dom_analyzer.analyze_dom(driver)
     client = openai.OpenAI(api_key=api_key)
 
     if question_blocks:
         prompt = Survey.prompt_builder.build_batch_prompt(question_blocks)
 
-        instruction_raw = client.chat.completions.create(
-            messages=[{"role": "system", "content": prompt}],
+        instruction_raw = client.responses.create(
+            messages=[
+                {"role": "user", "content": prompt}
+                ],
             model="gpt-4o-2024-08-06",
-            assistant_id=ASSISTANT_ID,
             cache_key_hint="dom_batch"
         )
 
@@ -151,6 +146,7 @@ def execute_survey_page(driver, api_key):
         return success_any
     else:
         # fallback vision (existant)
+        print("🤖 Envoi à GPT pour interprétation visuelle... source: survey_executor.py line 59")
         instruction = Survey.screenshot_analyzer.send_image_to_gpt(
             screenshot_path, api_key, previous_image_path=previous_screenshot_path,
             side_context=getattr(driver, "_last_video_transcript", None)

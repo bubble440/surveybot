@@ -120,6 +120,7 @@ def build_batch_prompt(question_blocks: list[dict]) -> str:
     """
     Construit un prompt OpenAI pour répondre à TOUTES les questions en une fois.
     """
+    print("🛠️ Construction du prompt batch pour.")
 
     lines = []
 
