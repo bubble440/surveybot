@@ -310,7 +310,7 @@ def start_hot_reload_thread():
                 "preselection.survey_handler",
                 "preselection.question_analyzer",
                 "preselection.question_validation",
-                "preselection.reponse_executor",
+                "preselection.response_executor",
                 "Management.guards.runtime_guard",
                 "Management.guards.sensitive_question_guard",
                 "Management.guards.survey_difficulty_guard",

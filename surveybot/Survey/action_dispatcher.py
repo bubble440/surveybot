@@ -3,6 +3,7 @@ import re, unicodedata
 from selenium.webdriver.common.by import By
 import captcha.captcha_solver as captcha_solver
 import captcha.recaptcha_utils as recaptcha_utils
+import Survey.input_handler
 
 def _norm(s: str) -> str:
     if not s:
@@ -237,6 +238,28 @@ def _wait_for_button_effect(driver, *, timeout=6):
         except Exception:
             pass
 
+    return False
+
+def handle_consent_screen(driver):
+    return (
+        Survey.input_handler.click_button_by_text(driver, "accepter")
+        or Survey.input_handler.click_button_by_text(driver, "accept")
+        or Survey.input_handler.click_button_by_text(driver, "continue")
+    )
+
+
+def handle_start_screen(driver):
+    return (
+        Survey.input_handler.click_button_by_text(driver, "commencer")
+        or Survey.input_handler.click_button_by_text(driver, "start")
+        or Survey.input_handler.click_button_by_text(driver, "begin")
+    )
+
+def handle_end_screen(driver):
+    return True  # on laisse la redirection se faire
+
+def handle_captcha_guard(driver):
+    print("[GUARD] CAPTCHA détecté → arrêt survey")
     return False
 
 # ================================
