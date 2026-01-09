@@ -5,11 +5,10 @@ import time
 from typing import Tuple
 from State.account_state import update_state
 from Management.guards.runtime_guard import get_guard
-
+from selenium.webdriver.common.by import By
 IS_LOCAL = os.getenv("RUN_ENV", "local") == "local"
 
 if not IS_LOCAL:
-    from selenium.webdriver.common.by import By
     from selenium.webdriver.support.ui import WebDriverWait
     from selenium.webdriver.support import expected_conditions as EC
     from selenium.common.exceptions import (
