@@ -723,11 +723,17 @@ def reset_attempt_context(driver):
             pass
 
 
-def execute_actions_plan(driver, actions: list[dict], *, stop_on_navigation: bool = True) -> bool:
+def execute_actions_plan(
+    driver,
+    actions: list[dict],
+    *,
+    stop_on_navigation: bool = True,
+    rescan_between_actions: bool = True,
+) -> bool:
     """
     Applique une série d'actions (issues du batch OpenAI).
     - reset attempt context avant chaque action
-    - stop optionnel si navigation détectée (URL change)
+    - (NEW) rescan DOM entre actions si risque de re-render (évite xpaths obsolètes)
     """
     success_any = False
 
@@ -739,7 +745,7 @@ def execute_actions_plan(driver, actions: list[dict], *, stop_on_navigation: boo
     # cap sécurité (évite un flood si OpenAI hallucine)
     actions = (actions or [])[:25]
 
-    for act in actions:
+    for idx, act in enumerate(actions):
         try:
             value = (act.get("value") or "").strip()
             itype = (act.get("itype") or "").strip()
@@ -767,6 +773,24 @@ def execute_actions_plan(driver, actions: list[dict], *, stop_on_navigation: boo
                 try:
                     if driver.current_url != url_before:
                         break
+                except Exception:
+                    pass
+
+            # (NEW) Entre deux actions, le DOM peut re-render (React/Qualtrics/etc.).
+            #       On rebuild le registry pour que les target_id restent applicables.
+            if ok and rescan_between_actions and idx < (len(actions) - 1):
+                try:
+                    if (itype or "").lower() in ("radio", "checkbox", "dropdown", "text", "number"):
+                        import time
+                        import Survey.dom_analyzer as dom_analyzer
+                        time.sleep(0.2)  # laisse le framework appliquer l'état
+                        dom_analyzer.analyze_dom(driver)  # clear+rebuild registry (target_id stable-ish)
+                        # 📈 micro-métrique: nombre de rescans DOM déclenchés sur la page courante
+                        try:
+                            driver._dom_rescans_this_page = int(getattr(driver, "_dom_rescans_this_page", 0)) + 1
+                        except Exception:
+                            pass
+
                 except Exception:
                     pass
 

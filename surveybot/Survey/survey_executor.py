@@ -97,6 +97,13 @@ def execute_survey_page(driver, api_key):
         print(f"[URL_GUARD] Page hors périmètre, aucune action: {cur}")
         return False
 
+    # 📈 micro-métrique: compteur rescans DOM sur CETTE page (reset à chaque page)
+    try:
+        driver._dom_rescans_this_page = 0
+    except Exception:
+        pass
+
+
     classification = dom_classifier.classify_dom(driver)
 
     if classification:
@@ -130,7 +137,27 @@ def execute_survey_page(driver, api_key):
         actions = Survey.batch_response_parser.parse_batch_response(raw_text, constraints=qid_constraints)
 
         # exécution "plan" (multi actions) + anti-double-fallback par action
-        return Survey.action_dispatcher.execute_actions_plan(driver, actions, stop_on_navigation=True)
+        result = Survey.action_dispatcher.execute_actions_plan(driver, actions, stop_on_navigation=True)
+
+        # 📈 Export DynamoDB : compteur unique des rescans DOM (si > 0)
+        try:
+            rescans = int(getattr(driver, "_dom_rescans_this_page", 0))
+            if rescans:
+                # (optionnel) log local 1 ligne (utile pour debug)
+                print(f"[DOM_RESCAN] rescans_this_page={rescans} url={driver.current_url}")
+                dom_metrics.export_dom_rescans(rescans)
+        except Exception:
+            pass
+
+        return result
+        # log 1 ligne / page (évite le spam)
+        try:
+            rescans = int(getattr(driver, "_dom_rescans_this_page", 0))
+            if rescans:
+                print(f"[DOM_RESCAN] rescans_this_page={rescans} url={driver.current_url}")
+        except Exception:
+            pass
+        return result
     
     else:
         # fallback vision (existant)

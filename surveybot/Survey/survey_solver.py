@@ -10,7 +10,10 @@ import time
 from preselection.question_validation import detect_disqualification_reason
 
 # ⚙️ Paramètres de boucle pour éviter les boucles infinies
-MAX_STEPS = 200  # sécurité dure : max de pages/questions à traiter
+# NOTE: à l'échelle 100+ bots, il faut des caps qui ne se reset jamais.
+MAX_TOTAL_STEPS = 200  # sécurité dure : itérations TOTALES (ne se reset jamais)
+MAX_STEPS_PER_URL = 80  # sécurité : évite de tourner en rond sur la même URL
+MAX_URL_CHANGES = 60  # sécurité : évite les ping-pongs de redirection
 STABILIZE_SLEEP = 2.0  # délai court entre deux actions pour laisser le DOM respirer
 
 
@@ -71,15 +74,29 @@ def _has_actionable_elements(driver):
     """
 
     def _here(drv):
+        def _is_actionable(el) -> bool:
+            """Évite les faux positifs : caché / disabled / taille nulle."""
+            try:
+                if not el.is_displayed():
+                    return False
+                if not el.is_enabled():
+                    return False
+                r = getattr(el, "rect", None) or {}
+                return (r.get("width", 0) or 0) > 2 and (r.get("height", 0) or 0) > 2
+            except Exception:
+                return False
+
         try:
-            # Inputs classiques
+            # Inputs classiques (uniquement visibles)
             inputs = drv.find_elements(
                 By.CSS_SELECTOR,
                 "input[type='radio'], input[type='checkbox'], input[type='text'], textarea, select",
             )
-            if inputs:
+            if any(_is_actionable(el) for el in inputs):
                 return True
             # Boutons navigation (FR/EN), inclut Start! et Start
+
+            # Boutons navigation (FR/EN), inclut Start! et Start (cas insensitive)
             btn_xpath = (
                 "//button[normalize-space()='Start!' or "
                 "contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'start') or "
@@ -88,13 +105,18 @@ def _has_actionable_elements(driver):
                 "contains(., 'Commencer') or contains(., 'Soumettre') or contains(., 'Submit')]"
                 " | //a[(contains(@class,'btn') or contains(@class,'button') or contains(@class,'cta')) and "
                 "(contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'start') or "
-                " contains(., 'Continuer') or contains(., 'Suivant') or contains(., 'Next') or contains(., 'Continue') or contains(., 'Commencer'))]"
+                "contains(., 'Continuer') or contains(., 'Suivant') or contains(., 'Next') or "
+                "contains(., 'Continue') or contains(., 'Commencer'))]"
             )
 
-            if drv.find_elements(By.XPATH, btn_xpath):
+            if any(_is_actionable(el) for el in drv.find_elements(By.XPATH, btn_xpath)):
                 return True
-            # Inputs submit
-            if drv.find_elements(By.CSS_SELECTOR, "input[type='submit']"):
+
+            # Inputs submit / boutons (uniquement visibles)
+            submit_buttons = drv.find_elements(
+                By.CSS_SELECTOR, "input[type='submit'], input[type='button'], button"
+            )
+            if any(_is_actionable(el) for el in submit_buttons):
                 return True
         except Exception:
             pass
@@ -307,7 +329,7 @@ def solve_full_survey(driver, api_key, *, account_id: str):
     On sort si :
       - plus rien d’actionnable détecté
       - écran de fin détecté
-      - seuil MAX_STEPS atteint (sécurité)
+      - seuil MAX_TOTAL_STEPS atteint (sécurité)
     """
     print("🧪 [solve_full_survey] Début de traitement du survey...")
     # 🔁 Sécurité : si plusieurs onglets existent, on prend le dernier
@@ -326,12 +348,26 @@ def solve_full_survey(driver, api_key, *, account_id: str):
     print(f"🌐 URL finale stabilisée : {final_url}")
 
     # 2) Boucle d’exécution des actions
-    steps = 0
+    steps_total = 0
+    steps_on_url = 0
+    url_changes = 0
     last_url = driver.current_url
 
-    while steps < MAX_STEPS:
-        steps += 1
-        print(f"🔁 Étape {steps}/{MAX_STEPS} — exécution de la page courante")
+    while steps_total < MAX_TOTAL_STEPS:
+        steps_total += 1
+        steps_on_url += 1
+        print(
+            f"🔁 Étape {steps_total}/{MAX_TOTAL_STEPS} "
+            f"(page {steps_on_url}/{MAX_STEPS_PER_URL}) — exécution de la page courante"
+        )
+
+        # sécurité : si on stagne sur la même URL, on sort plutôt que de brûler du budget
+        if steps_on_url > MAX_STEPS_PER_URL:
+            print(
+                f"🛑 Trop d'itérations sur la même URL ({MAX_STEPS_PER_URL}). "
+                f"Stop pour éviter une boucle infinie. URL={last_url}"
+            )
+            break
 
         # Réinitialise le drapeau de succès côté handlers
         try:
@@ -406,8 +442,20 @@ def solve_full_survey(driver, api_key, *, account_id: str):
 
         # Si l’URL a changé → on inspecte le nouvel emplacement
         if current_url != last_url:
-            print(f"🔀 Changement d’URL détecté → reset steps\n   {last_url} → {current_url}")
-            steps = 0                      # ✅ RESET ICI
+            url_changes += 1
+            steps_on_url = 0  # ✅ reset PER-URL seulement (le cap total ne se reset jamais)
+            print(
+                f"🔀 Changement d’URL détecté ({url_changes}/{MAX_URL_CHANGES})\n"
+                f"   {last_url} → {current_url}"
+            )
+
+            if url_changes > MAX_URL_CHANGES:
+                print(
+                    f"🛑 Trop de changements d'URL ({MAX_URL_CHANGES}). "
+                    f"Stop pour éviter un ping-pong de redirection."
+                )
+                break
+
             last_url = current_url
 
             # [NEW] Retour TopSurveys ? Traite popup 'Complète' ou disqualification, puis relance.
