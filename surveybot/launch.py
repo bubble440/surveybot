@@ -1,4 +1,4 @@
-import os
+import os, random
 IS_LOCAL = os.getenv("RUN_ENV", "local") == "local"
 
 from Management.guards.runtime_guard import RuntimeGuard, StopReason, set_guard, get_guard
@@ -189,12 +189,22 @@ def start_runtime_guard(account_id: str, notify_fn, on_soft_restart):
 _HEARTBEAT_STARTED = False
 
 def _heartbeat():
-    while True:
-        try:
-            get_guard().heartbeat()
-        except Exception:
-            pass
-        time.sleep(15)
+        # Fréquence heartbeat (coût) vs TTL (robustesse)
+        # - interval: toutes les 30s par défaut (divise les writes par 2 vs 15s)
+        # - jitter: évite que 100 bots heartbeat exactement en même temps (pics WCU)
+        interval = int(os.getenv("HEARTBEAT_INTERVAL_SEC", "30") or "30")
+        jitter = float(os.getenv("HEARTBEAT_JITTER_SEC", "3") or "3")
+
+        while True:
+            try:
+                get_guard().heartbeat()
+            except Exception:
+                # Heartbeat best-effort : ne doit jamais tuer le bot
+                pass
+
+            # Jitter aléatoire [0..jitter] pour lisser la charge en prod
+            sleep_s = interval + (random.random() * jitter if jitter > 0 else 0.0)
+            time.sleep(sleep_s)
 
 def start_heartbeat_thread():
     threading.Thread(target=_heartbeat, name="heartbeat", daemon=True).start()

@@ -312,7 +312,7 @@ def update_state(account_id: str, fn: Callable[[Dict[str, Any]], None], max_retr
     """
     return True
 
-def touch_heartbeat(account_id: str, owner: str, ttl_sec: int = 180) -> bool:
+def touch_heartbeat(account_id: str, owner: str, ttl_sec: int = 240) -> bool:
     """
     Heartbeat DynamoDB (cheap & safe):
     - UpdateExpression (pas de load_state + put_item)
