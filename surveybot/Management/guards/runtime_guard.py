@@ -213,7 +213,8 @@ class RuntimeGuard:
     def heartbeat(self):
         with self._lock:
             self.state.last_activity_ts = time.time()
-            ttl = int(os.getenv("ACCOUNT_LOCK_TTL_SEC", "180") or "180")
+            # Avec heartbeat ~30s, un TTL plus large évite les expirations en cas de freeze CPU/selenium
+            ttl = int(os.getenv("ACCOUNT_LOCK_TTL_SEC", "240") or "240")
             # Best-effort: ne doit jamais casser le bot
             try:
                 touch_heartbeat(self.account_id, owner=self.task_id, ttl_sec=ttl)
