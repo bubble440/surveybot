@@ -208,7 +208,7 @@ def _stitch_fullpage(driver, out_path: str) -> str:
     return out_path
 
 
-def send_image_to_gpt(image_path, api_key, previous_image_path=None, side_context: str | None = None):
+def send_image_to_gpt(image_path, api_key):
     """
     Build the message payload *here* (no global state), optionally include
     previous vs current images, and call GPT-4o cleanly.
@@ -216,35 +216,23 @@ def send_image_to_gpt(image_path, api_key, previous_image_path=None, side_contex
     client = openai.OpenAI(api_key=api_key)
 
     user_content = []
-    if side_context:
-        side_trim = side_context.strip()
-        if len(side_trim) > 600:
-            side_trim = side_trim[:600] + " …"
-        user_content.append({
-            "type": "text",
-            "text": "Mémo utile pour répondre aux questions: " + side_trim
-        })
+    # if side_context:
+    #     side_trim = side_context.strip()
+    #     if len(side_trim) > 600:
+    #         side_trim = side_trim[:600] + " …"
+    #     user_content.append({
+    #         "type": "text",
+    #         "text": "Mémo utile pour répondre aux questions: " + side_trim
+    #     })
 
     user_content.append({
         "type": "text",
         "text": "Quelle instruction appliquer?"
     })
 
-    # Optional "previous" image
-    if previous_image_path:
-        prev_small = _compress_image(previous_image_path, max_w=768, quality=70)
-        with open(prev_small, "rb") as f:
-            prev_b64 = base64.b64encode(f.read()).decode("utf-8")
-        user_content.append(
-            {
-                "type": "image_url",
-                "image_url": {"url": f"data:image/jpeg;base64,{prev_b64}"},
-            }
-        )
-
     # Current image (always)
     curr_small = _compress_image(
-        image_path, max_w=1024 if previous_image_path else 1280, quality=75
+        image_path, max_w=1280, quality=75
     )
     with open(curr_small, "rb") as f:
         curr_b64 = base64.b64encode(f.read()).decode("utf-8")
