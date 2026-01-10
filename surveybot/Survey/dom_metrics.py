@@ -112,3 +112,47 @@ def _export_to_dynamodb(itype: str, openai: bool):
     except Exception as e:
         # ⚠️ jamais bloquant
         print(f"[DOM_METRICS][WARN] export DynamoDB échoué: {e}")
+
+def export_dom_rescans(rescans: int):
+    """
+    Export incrémental d'un seul compteur :
+      - dom_rescans_total (ADD)
+    Best-effort, jamais bloquant.
+    """
+    try:
+        rescans = int(rescans or 0)
+    except Exception:
+        return
+
+    # Pas d'écriture si 0 (économie de coût)
+    if rescans <= 0:
+        return
+
+    if IS_LOCAL:
+        return
+
+    account_id = os.getenv("ACCOUNT_ID")
+    if not account_id:
+        return
+
+    try:
+        import boto3
+
+        resource = (
+            boto3.resource("dynamodb", region_name=AWS_REGION)
+            if AWS_REGION else boto3.resource("dynamodb")
+        )
+        table = resource.Table(DOM_METRICS_TABLE)
+
+        day = date.today().isoformat()
+        now = int(time.time())
+
+        table.update_item(
+            Key={"account_id": account_id, "day": day},
+            UpdateExpression="SET updated_ts = :now ADD dom_rescans_total :n",
+            ExpressionAttributeValues={":now": now, ":n": rescans},
+        )
+
+    except Exception as e:
+        # ⚠️ jamais bloquant
+        print(f"[DOM_METRICS][WARN] export rescans DynamoDB échoué: {e}")
