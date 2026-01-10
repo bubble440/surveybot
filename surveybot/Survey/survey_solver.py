@@ -411,9 +411,9 @@ def solve_full_survey(driver, api_key, *, account_id: str):
 
 
         # d) Conditions d’arrêt
-        if _looks_like_end_screen(driver):
-            print("🏁 Écran de fin détecté. Fin du survey.")
-            break
+        # if _looks_like_end_screen(driver):
+            # print("🏁 Écran de fin détecté. Fin du survey.")
+            # break
 
         # Heuristique : si aucune actionnable visible MAIS on vient de réussir une action,
         # on laisse 1 tour de plus au DOM pour apparaître (évite l’arrêt prématuré).
