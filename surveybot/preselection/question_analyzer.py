@@ -6,6 +6,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.action_chains import ActionChains
+from preselection.question_validation import detect_disqualification_reason
 
 ASSISTANT_ID = "asst_dzB8sAFrNdPPD17auG4WI0EK"
 
@@ -244,8 +245,9 @@ def get_response_for_question(driver, api_key):
                     "🎯 Message de qualification détecté : sortie de boucle autorisée."
                 )
                 return None, None
-            if "Soumettre" in line.lower():
-                return "NOT_RETURNED", None
+            if "soumettre" in line.lower():
+                # Pas une vraie question (souvent un écran de soumission/consentement)
+                return None, {"action": "NOT_RETURNED", "reason": "submit_seen"}
 
         question = extract_question_text(html)
 
@@ -355,33 +357,38 @@ def click_participer_if_qualified(driver):
 # Détecter disqualification et cliquer sur "Ok"
 # ─────────────────────────────────────────────
 def handle_disqualification_and_retry(driver):
+    """
+    Détection robuste de disqualification (centralisée dans question_validation).
+    Retourne True si disqualification détectée (même si le clic 'Ok' échoue),
+    pour forcer un restart cohérent.
+    """
+    page_text = ""
     try:
-        print("🔍 Vérification disqualification...")
-        # Vérifie si le texte du popup contient un message de disqualification
-        full_text = driver.execute_script(
-            """
-            return Array.from(document.querySelectorAll(".p-modal-inner *"))
-                        .map(el => el.innerText).join("\\n");
-        """
-        ).lower()
+        page_text = driver.find_element(By.TAG_NAME, "body").text or ""
+    except Exception:
+        # fallback ultime (moins propre mais évite un faux négatif)
+        try:
+            page_text = driver.page_source or ""
+        except Exception:
+            page_text = ""
 
-        if (
-            "tu ne t'es pas qualifié cette", "Tu n'as pas été qualifié cette fois" in full_text
-            or "malheureusement" in full_text
-        ):
-            print("❌ Disqualification détectée. Tentative de fermeture du popup.")
-            ok_btn = WebDriverWait(driver, 5).until(
-                EC.element_to_be_clickable(
-                    (By.XPATH, "//button[span[contains(text(),'Ok')]]")
-                )
-            )
-            driver.execute_script(
-                "arguments[0].scrollIntoView({block: 'center'});", ok_btn
-            )
-            time.sleep(0.3)
-            ok_btn.click()
-            return True
+    dq_reason = detect_disqualification_reason("", page_text)
+    if not dq_reason:
         return False
+
+    print(f"❌ Disqualification détectée (reason={dq_reason}). Tentative de fermeture du popup.")
+    try:
+        ok_btn = WebDriverWait(driver, 5).until(
+            EC.element_to_be_clickable((By.XPATH, "//button[span[contains(.,'Ok')]]"))
+        )
+        try:
+            driver.execute_script("arguments[0].scrollIntoView({block:'center'});", ok_btn)
+        except Exception:
+            pass
+        driver.execute_script("arguments[0].click();", ok_btn)
+        return True
     except Exception as e:
-        print("💥 Erreur gestion disqualification :", e)
-        return False
+        # Important : on renvoie True quand même (signal détecté),
+        # sinon tu auras des états “popup fermé mais pas restart / pas relance”.
+        print(f"⚠️ Disqualification détectée mais clic 'Ok' impossible: {e}")
+        return True

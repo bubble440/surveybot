@@ -8,6 +8,8 @@ from launch import start_heartbeat_thread, acquire_account_lock_or_exit, mark_bo
 from launch import install_sigterm_handler, start_runtime_guard, acquire_proxy_lock_or_exit, launch_driver_or_fail, init_session_and_enter_surveys
 from launch import start_hot_reload_thread, run_main_loop, build_notifier, soft_restart
 from Management.guards.runtime_guard import get_guard
+import time
+import traceback
 
 if IS_LOCAL:
     ACCOUNT_ID = "local_debug"
@@ -49,8 +51,11 @@ def main():
     }
 
     guard = None
+    heartbeat_started = False
+    hot_reload_started = False
 
     while True:
+        driver = None
         try:
             driver = launch_driver_or_fail(config, account_id)
             api_key, payout_name, payout_revolut_tag = init_session_and_enter_surveys(driver, config, account_id, notify_fn)
@@ -64,11 +69,10 @@ def main():
             }
 
             def _soft_restart(reason):
-                    soft_restart(
-                    runtime_ctx["session"],
-                    runtime_ctx["driver"],
-                    reason,
-                )
+                return soft_restart(
+                runtime_ctx["session"],
+                runtime_ctx["driver"],
+                reason,)
 
             if not IS_LOCAL:
                 if guard is None:
@@ -78,18 +82,31 @@ def main():
                         on_soft_restart=_soft_restart,
                     )
                 get_guard().attach_driver(driver)
-            elif guard:
-                guard.attach_driver(driver)
+
+            # ✅ IMPORTANT : démarrer les threads AVANT d'entrer dans une boucle bloquante
+            if IS_LOCAL and not hot_reload_started:
+                start_hot_reload_thread()
+                hot_reload_started = True
+
+            if (not IS_LOCAL) and (not heartbeat_started):
+                start_heartbeat_thread()
+                heartbeat_started = True
 
             run_main_loop(driver, api_key, account_id)
 
+        except SystemExit:
+            raise
+
         except Exception as e:
             print(f"[MAIN][ERROR] {type(e).__name__}: {e}")
+            traceback.print_exc()
+            try:
+                if driver:
+                    driver.quit()
+            except Exception:
+                pass
+            time.sleep(2)
             continue
         
-        if not IS_LOCAL:
-            start_heartbeat_thread()
-        start_hot_reload_thread()
-
 if __name__ == "__main__":
     main()
