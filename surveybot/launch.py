@@ -9,7 +9,7 @@ from preselection.survey_navigator import go_to_best_paid_survey
 from preselection.survey_handler import run_survey
 from Management.watchdogs.idle_monitor import start_idle_gain_watch
 from Management.notifier import send_telegram
-from State.account_state import update_state, try_acquire_proxy_lock, load_state, save_state, try_acquire_account_lock
+from State.account_state import update_state, load_state, save_state, try_acquire_account_lock
 from selenium.common.exceptions import TimeoutException
 from preselection.auth_handler import is_session_expired
 from Management.pause_policy import PausePolicy
@@ -185,13 +185,6 @@ def start_runtime_guard(account_id: str, notify_fn, on_soft_restart):
     save_state(state)
 
     return guard
-
-def acquire_proxy_lock_or_exit(account_id: str, lock_ttl_sec: int = 2 * 3600):
-    proxy_id = os.getenv("PROXY_ID")
-    if not try_acquire_proxy_lock(proxy_id, account_id, lock_ttl_sec):
-        print(f"[LOCK] Proxy {proxy_id} déjà utilisé → exit")
-        time.sleep(60)
-        raise SystemExit("proxy_locked")
 
 _HEARTBEAT_STARTED = False
 

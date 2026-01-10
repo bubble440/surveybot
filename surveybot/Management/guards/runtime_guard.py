@@ -9,7 +9,7 @@ import time, socket, os, threading, traceback
 from dataclasses import dataclass, field
 from typing import Optional, Callable
 from enum import Enum
-from State.account_state import load_state, update_state
+from State.account_state import load_state, update_state, touch_heartbeat
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
@@ -213,13 +213,12 @@ class RuntimeGuard:
     def heartbeat(self):
         with self._lock:
             self.state.last_activity_ts = time.time()
-
-            def _refresh_lock(st):
-                if st.get("lock_owner") == self.task_id:
-                    st["lock_until_ts"] = int(time.time()) + 15 
-
-            update_state(self.account_id, _refresh_lock)
-
+            ttl = int(os.getenv("ACCOUNT_LOCK_TTL_SEC", "180") or "180")
+            # Best-effort: ne doit jamais casser le bot
+            try:
+                touch_heartbeat(self.account_id, owner=self.task_id, ttl_sec=ttl)
+            except Exception:
+                pass
 
     def record_success(self):
         with self._lock:
