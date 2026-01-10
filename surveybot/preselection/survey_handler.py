@@ -8,9 +8,21 @@ if not IS_LOCAL:
     from selenium.webdriver.support import expected_conditions as EC
     from selenium.webdriver.common.by import By
 from preselection.auth_handler import snap
+from preselection.question_validation import detect_disqualification_reason
+
+def _safe_page_text(driver) -> str:
+    """Récupère un texte exploitable pour les détecteurs (robuste)."""
+    try:
+        return driver.find_element(By.TAG_NAME, "body").text or ""
+    except Exception:
+        try:
+            return driver.page_source or ""
+        except Exception:
+            return ""
 
 def run_survey(driver, api_key, *, account_id: str):
     import preselection.question_analyzer
+    import preselection.response_executor
     import Survey.survey_solver 
     import Cash.payout as payout
     import Management.guards.runtime_guard
@@ -19,61 +31,104 @@ def run_survey(driver, api_key, *, account_id: str):
     import Management.guards.url_guard
     import launch
 
+    def _restart(reason: str) -> None:
+        """
+        Redémarrage robuste, compatible local/prod.
+        - Si un vrai RuntimeGuard est initialisé avec on_soft_restart -> on délègue.
+        - Sinon (local typiquement) -> soft_restart direct avec un ctx minimal.
+        """
+        g = Management.guards.runtime_guard.get_guard()
+
+        # ✅ 1) Délégation au RuntimeGuard si réellement armé
+        try:
+            if getattr(g, "on_soft_restart", None):
+                g.request_survey_restart(reason)
+                return
+        except Exception as e:
+            print(f"[RESTART][WARN] Délégation RuntimeGuard échouée: {e}")
+
+        # ✅ 2) Fallback local/dev : soft_restart direct
+        try:
+            ctx = {
+                "account_id": account_id,
+                "api_key": api_key,
+                # payout_* optionnels (soft_restart_payout doit être tolérant)
+                "payout_name": "",
+                "payout_revolut_tag": "",
+            }
+            launch.soft_restart(ctx, driver, reason)
+        except Exception as e:
+            print(f"[RESTART][FATAL] soft_restart fallback échoué: {e}")
+
     snap(driver, "before_survey_loop")
     try:
         while True:
-            question, answer= preselection.question_analyzer.get_response_for_question(driver, api_key)
+            question, answer = preselection.question_analyzer.get_response_for_question(driver, api_key)
 
-            # 🎛️ Cas : question sensible → cliquer sur "Je ne peux pas répondre"
-            if isinstance(answer, dict) and answer.get("action") == "SKIP":
-                print("🚫 Question sensible → clic sur 'Je ne peux pas répondre'")
+            # ✅ 1) Actions de contrôle renvoyées par l'analyzer.
+            # Important: ces actions ne doivent JAMAIS arriver dans execute_response().
+            if isinstance(answer, dict) and answer.get("action"):
+                action = (answer.get("action") or "").upper()
 
-                try:
-                    skip_btn = driver.find_element(
-                        By.CSS_SELECTOR,
-                        "button[data-test-id='ps-skip-question-button']"
-                    )
-                    driver.execute_script(
-                        "arguments[0].scrollIntoView({block:'center'});", skip_btn
-                    )
-                    time.sleep(0.3)
-                    driver.execute_script("arguments[0].click();", skip_btn)
+                # 🎛️ Cas : question sensible → cliquer sur "Je ne peux pas répondre"
+                if action == "SKIP":
+                    print("🚫 Question sensible → clic sur 'Je ne peux pas répondre'")
 
-                    Management.guards.runtime_guard.get_guard().record_success()
+                    try:
+                        skip_btn = driver.find_element(
+                            By.CSS_SELECTOR,
+                            "button[data-test-id='ps-skip-question-button']"
+                        )
+                        driver.execute_script(
+                            "arguments[0].scrollIntoView({block:'center'});", skip_btn
+                        )
+                        time.sleep(0.3)
+                        driver.execute_script("arguments[0].click();", skip_btn)
+
+                        Management.guards.runtime_guard.get_guard().record_success()
+                        time.sleep(1.5)
+                        continue  # 🔁 revenir à la boucle des questions
+
+                    except Exception as e:
+                        Management.guards.runtime_guard.get_guard().record_error(e)
+                        print("❌ Impossible de cliquer sur 'Je ne peux pas répondre' :", e)
+                        _restart("sensitive_question_skip_failed")
+                        return
+
+                # ❌ Cas : disqualification détectée par la validation
+                if action == "DISQUALIFIED":
+                    print(f"⚠️ Disqualification détectée (validator) | reason={answer.get('reason')}")
+                    preselection.question_analyzer.handle_disqualification_and_retry(driver)
                     time.sleep(1.5)
-                    continue  # 🔁 revenir à la boucle des questions
-
-                except Exception as e:
-                    Management.guards.runtime_guard.get_guard().record_error(e)
-                    print("❌ Impossible de cliquer sur 'Je ne peux pas répondre' :", e)
-                    Management.guards.runtime_guard.get_guard().request_survey_restart("sensitive_question_skip_failed")
+                    _restart("preselection_disqualified")
                     return
 
-            # Cas : on est disqualifié → cliquer sur OK puis relancer
-            if question and "Tu n'as pas été qualifié cette fois" in question:
-                print("⚠️ Disqualification détectée, raison: tu n'as pas été qualifié cette fois.")
-                preselection.question_analyzer.handle_disqualification_and_retry(driver)
-                time.sleep(2)
-                try:
-                    payout.check_and_cashout_if_needed(
-                        driver,
-                        account_id=account_id,
-                        min_amount_eur=5.0,
-                        cashout_order=("paypal", "revolut"),
-                        revolut_fullname="Wilfred Jamein Saah",
-                        revolut_tag="@jameinsaah",
-                    )
-                    Management.guards.runtime_guard.get_guard().record_success()
-                except Exception as e:
-                    Management.guards.runtime_guard.get_guard().record_error(e)
-                    print(f"[PAYOUT][WARN] Encaissement automatique: {e}")
-                try:
-                    launch.soft_restart(driver, "disqualification_or_retry")
-                except Exception:
-                    Management.guards.runtime_guard.get_guard().request_survey_restart(
-                        "disqualification_or_retry"
-                    )
+                # ℹ️ Cas : pas une vraie question (ex: écran 'Soumettre')
+                if action == "NOT_RETURNED":
+                    print("ℹ️ Écran non-question détecté (ex: 'Soumettre') → tentative de passer à l'étape suivante.")
+                    # On force la logique 'Participer / Ok' plus bas
+                    question, answer = None, None
+
+                else:
+                    # Toute autre action inconnue → restart (fallback généraliste)
+                    print(f"⚠️ Action préselection inconnue: {action} → restart")
+                    _restart(f"preselection_action_{action.lower()}")
+                    return
                 
+            # ✅ Disqualification : détection centralisée (robuste)
+            dq_reason = detect_disqualification_reason(question, _safe_page_text(driver))
+            if dq_reason:
+                print(f"⚠️ Disqualification détectée (reason={dq_reason}).")
+                # best-effort: fermer popup si présent
+                try:
+                    preselection.question_analyzer.handle_disqualification_and_retry(driver)
+                except Exception:
+                    pass
+                time.sleep(1.2)
+                _restart("preselection_disqualified")
+                return
+
+
             # Cas normal : une réponse est attendue
             if question and answer:
                 success = preselection.response_executor.execute_response(driver, answer)
@@ -95,7 +150,7 @@ def run_survey(driver, api_key, *, account_id: str):
                     except Exception as e:
                         Management.guards.runtime_guard.get_guard().record_error(e)
                         print(f"[PAYOUT][WARN] Encaissement automatique: {e}")
-                    Management.guards.runtime_guard.get_guard().request_survey_restart("disqualification_or_retry")
+                    _restart("disqualification_or_retry")
                     return
 
             else:
@@ -118,14 +173,14 @@ def run_survey(driver, api_key, *, account_id: str):
                         if is_strict:
                             print(f"[STRICT_SURVEY] Ignoré ({reason}) → retour TopSurveys")
                             Management.guards.runtime_guard.get_guard().record_success()
-                            Management.guards.runtime_guard.get_guard().request_survey_restart("disqualification_or_retry")
+                            _restart("disqualification_or_retry")
                             return
 
                         if not Management.guards.url_guard.is_allowed(final_url):
                             print(f"[URL_GUARD] Bloqué : {final_url} — tentative de retour propre via l'app")
-                            Management.guards.runtime_guard.get_guard().record_error(e)
+                            Management.guards.runtime_guard.get_guard().record_error(RuntimeError(f"url_guard_blocked: {final_url}"))
                             # 🧠 Délégation complète au RuntimeGuard
-                            Management.guards.runtime_guard.get_guard().request_survey_restart("url_guard_blocked")
+                            _restart("url_guard_blocked")
                             return
 
                         print(f"[URL_GUARD] Autorisé : {final_url} (host: {host})")
@@ -138,7 +193,7 @@ def run_survey(driver, api_key, *, account_id: str):
                         print("⚠️ Disqualification détectée après question finale.")
                         time.sleep(2)
                         Management.guards.runtime_guard.get_guard().record_success()
-                        Management.guards.runtime_guard.get_guard().request_survey_restart("disqualification_or_retry")
+                        _restart("disqualification_or_retry")
                         return
 
                     print("ℹ️ Aucun bouton Participer ou Ok détecté. Fin de boucle.")

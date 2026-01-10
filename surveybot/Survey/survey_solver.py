@@ -7,6 +7,7 @@ from selenium.webdriver.support import expected_conditions as EC  # [AJOUT]
 from selenium.webdriver.common.action_chains import ActionChains  # [AJOUT]
 from selenium.webdriver.common.by import By
 import time
+from preselection.question_validation import detect_disqualification_reason
 
 # ⚙️ Paramètres de boucle pour éviter les boucles infinies
 MAX_STEPS = 200  # sécurité dure : max de pages/questions à traiter
@@ -268,14 +269,25 @@ def _if_on_topsurveys_handle(driver, api_key, account_id) -> bool:
 
     # Cas B : check disqualification puis relance si besoin
     try:
-        import preselection.question_analyzer
-        if preselection.question_analyzer.handle_disqualification_and_retry(driver):
+        # ✅ Détection disqualification centralisée (robuste)
+        page_txt = _page_text_lc(driver)
+        dq_reason = detect_disqualification_reason("", page_txt)
+        if dq_reason:
+            print(f"⚠️ Disqualification TopSurveys détectée (reason={dq_reason}).")
+
+            # best-effort : ferme le popup si présent (mais la détection ne dépend plus de ça)
+            try:
+                import preselection.question_analyzer
+                preselection.question_analyzer.handle_disqualification_and_retry(driver)
+            except Exception as e:
+                print("⚠️ Popup disqualification détecté mais fermeture 'Ok' a échoué:", e)
+
             _close_other_tabs_in_current_session(driver)
             import preselection.survey_navigator
             import preselection.survey_handler
             time.sleep(0.7)
             preselection.survey_navigator.go_to_best_paid_survey(driver)
-            preselection.survey_handler.run_survey(driver, api_key)
+            preselection.survey_handler.run_survey(driver, api_key, account_id=account_id)
             return True
     except Exception as e:
         print("💥 Erreur check disqualification TopSurveys :", e)

@@ -378,6 +378,18 @@ class _NullGuard:
     def record_openai_call(self): pass
     def record_earning(self, amount_eur: float): pass
     def attach_driver(self, driver): pass
+    def request_survey_restart(self, reason):
+        # 🔁 En local : on log seulement, sans casser l'exécution
+        print(f"[NULL_GUARD][LOCAL] request_survey_restart ignoré | reason={reason}")
+        return
+
+    def pause(self, policy=None, reason=None):
+        """Compat local: évite AttributeError quand du code appelle get_guard().pause(...)."""
+        pol = getattr(policy, "name", policy)
+        rea = getattr(reason, "value", reason)
+        print(f"[NULL_GUARD][LOCAL] pause appelée | policy={pol} reason={rea}")
+        # En local, on stoppe le process pour reproduire le comportement prod.
+        raise SystemExit(str(rea) if rea else "paused")
 
 _guard_instance = None
 
