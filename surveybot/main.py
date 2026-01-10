@@ -5,7 +5,7 @@ IS_LOCAL = os.getenv("RUN_ENV", "local") == "local"
 import sys
 from preselection.config_loader import load_config
 from launch import start_heartbeat_thread, acquire_account_lock_or_exit, mark_bot_running
-from launch import install_sigterm_handler, start_runtime_guard, acquire_proxy_lock_or_exit, launch_driver_or_fail, init_session_and_enter_surveys
+from launch import install_sigterm_handler, start_runtime_guard, launch_driver_or_fail, init_session_and_enter_surveys
 from launch import start_hot_reload_thread, run_main_loop, build_notifier, soft_restart
 from Management.guards.runtime_guard import get_guard
 import time
@@ -43,8 +43,7 @@ def main():
 
     notify_fn = build_notifier(config)
 
-    if not IS_LOCAL:
-        acquire_proxy_lock_or_exit(account_id)
+    # Proxy-lock retiré : en prod on a 1 bot par proxy, donc lock proxy redondant
     runtime_ctx = {
         "driver": None,
         "session": {},

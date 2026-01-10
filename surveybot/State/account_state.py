@@ -17,6 +17,10 @@ Objectif:
 RUN_ENV = os.getenv("RUN_ENV", "local").lower()
 IS_LOCAL = RUN_ENV == "local"
 
+# En environnement non-local (docker / aws), le filesystem n'est PAS une source de vérité partagée.
+# Donc: pas de fallback fichier → DynamoDB doit être correctement configuré.
+STRICT_NO_FILE_FALLBACK = not IS_LOCAL
+
 from decimal import Decimal
 import json
 import time
@@ -94,6 +98,8 @@ def _get_ddb_table():
             resource = boto3.resource("dynamodb")
         return resource.Table(STATE_TABLE)
     except Exception as e:
+        if STRICT_NO_FILE_FALLBACK:
+            raise RuntimeError(f"[STATE] DynamoDB indisponible en environnement non-local. err={e}")
         log.warning(f"[STATE] DynamoDB indisponible -> fallback fichier. err={e}")
         return None
 
@@ -167,6 +173,9 @@ def load_state(account_id: str) -> Dict[str, Any]:
     if not account_id:
         raise ValueError("account_id vide")
 
+    if STRICT_NO_FILE_FALLBACK and not _ddb_enabled():
+        raise RuntimeError("[STATE] STATE_BACKEND=dynamodb et STATE_TABLE requis en environnement non-local")
+
     if _ddb_enabled():
         table = _get_ddb_table()
         if table is not None:
@@ -182,9 +191,11 @@ def load_state(account_id: str) -> Dict[str, Any]:
                 normalized = {k: _json_safe(v) for k, v in item.items()}
                 return _normalize_state(normalized, account_id)
             except Exception as e:
+                if STRICT_NO_FILE_FALLBACK:
+                    raise
                 log.warning(f"[STATE] get_item failed -> fallback fichier. err={e}")
 
-    # fallback fichier
+    # fallback fichier (local/debug seulement)
     with _FILE_LOCK:
         return _normalize_state(_file_load(account_id), account_id)
 
@@ -215,6 +226,9 @@ def save_state(state: Dict[str, Any]) -> None:
 
     st = _normalize_state(state, account_id)
 
+    if STRICT_NO_FILE_FALLBACK and not _ddb_enabled():
+        raise RuntimeError("[STATE] STATE_BACKEND=dynamodb et STATE_TABLE requis en environnement non-local")
+
     if _ddb_enabled():
         table = _get_ddb_table()
         if table is not None:
@@ -222,8 +236,11 @@ def save_state(state: Dict[str, Any]) -> None:
                 table.put_item(Item=_to_dynamodb_compatible(st))
                 return
             except Exception as e:
+                if STRICT_NO_FILE_FALLBACK:
+                    raise
                 log.warning(f"[STATE] put_item failed -> fallback fichier. err={e}")
 
+    # fallback fichier (local/debug seulement)
     with _FILE_LOCK:
         _file_save(st)
 
@@ -243,6 +260,9 @@ def update_state(account_id: str, fn: Callable[[Dict[str, Any]], None], max_retr
     account_id = (account_id or "").strip()
     if not account_id:
         raise ValueError("account_id vide")
+
+    if STRICT_NO_FILE_FALLBACK and not _ddb_enabled():
+        raise RuntimeError("[STATE] STATE_BACKEND=dynamodb et STATE_TABLE requis en environnement non-local")
 
     # PROD: DynamoDB atomic update via version
     if _ddb_enabled():
@@ -274,7 +294,10 @@ def update_state(account_id: str, fn: Callable[[Dict[str, Any]], None], max_retr
                     log.error(f"[STATE] update_state failed after retries. err={e}")
                     raise
 
-    # FALLBACK FILE: lock process-local
+    # FALLBACK FILE (local/debug seulement)
+    if STRICT_NO_FILE_FALLBACK:
+        raise RuntimeError("[STATE] update_state: DynamoDB requis en environnement non-local (pas de fallback fichier).")
+
     with _FILE_LOCK:
         st = _normalize_state(_file_load(account_id), account_id)
         fn(st)
@@ -283,26 +306,57 @@ def update_state(account_id: str, fn: Callable[[Dict[str, Any]], None], max_retr
         _file_save(st)
         return st
 
-def try_acquire_proxy_lock(proxy_id: str, account_id: str, ttl_sec: int) -> bool:
-    now = int(time.time())
+    """
+    DEPRECATED: on est en "1 bot par proxy", donc ce lock n'est plus nécessaire.
+    On le garde pour compat, mais c'est un no-op.
+    """
+    return True
 
-    def _lock(st):
-        # si verrou libre ou expiré
-        if not st.get("proxy_lock_owner") or st.get("proxy_lock_until_ts", 0) < now:
-            st["proxy_lock_owner"] = account_id
-            st["proxy_lock_until_ts"] = now + ttl_sec
-            return True
+def touch_heartbeat(account_id: str, owner: str, ttl_sec: int = 180) -> bool:
+    """
+    Heartbeat DynamoDB (cheap & safe):
+    - UpdateExpression (pas de load_state + put_item)
+    - Condition: lock_owner == owner (la task ne prolonge QUE son propre lock)
+    - Prolonge lock_until_ts à now + ttl_sec (pas un +15 fragile)
+    - ADD version +1 pour éviter qu'un update_state() écrase un heartbeat récent.
+    """
+    if IS_LOCAL:
+        return True
+
+    if STRICT_NO_FILE_FALLBACK and not _ddb_enabled():
+        raise RuntimeError("[STATE] touch_heartbeat: DynamoDB requis en environnement non-local")
+
+    if not _ddb_enabled():
         return False
 
-    success = False
+    now = _now()
+    expires = now + int(ttl_sec)
 
-    def _apply(st):
-        nonlocal success
-        if _lock(st):
-            success = True
+    table = _get_ddb_table()
+    if table is None:
+        return False
 
-    update_state(account_id, _apply)
-    return success
+    try:
+        table.update_item(
+            Key={"account_id": account_id},
+            UpdateExpression="""
+                SET lock_until_ts = :u,
+                    last_heartbeat_ts = :now,
+                    updated_ts = :now
+                ADD version :one
+            """,
+            ConditionExpression="lock_owner = :o",
+            ExpressionAttributeValues=_to_dynamodb_compatible({
+                ":u": expires,
+                ":now": now,
+                ":o": owner,
+                ":one": 1,
+            }),
+        )
+        return True
+    except Exception:
+        # Condition failed (lock plus détenu) ou autre erreur → heartbeat best-effort
+        return False
 
 # -----------------------------
 # 🔐 ACCOUNT LOCK (CRITIQUE)
@@ -328,15 +382,9 @@ def try_acquire_account_lock(
     expires = now + ttl_sec
 
     if not _ddb_enabled():
-        # fallback fichier : lock naïf (acceptable en local/debug)
-        st = load_state(account_id)
-        if st.get("lock_until_ts", 0) > now:
-            return False
-        update_state(account_id, lambda s: s.update({
-            "lock_owner": owner,
-            "lock_until_ts": expires,
-        }))
-        return True
+        if STRICT_NO_FILE_FALLBACK:
+            raise RuntimeError("[STATE] try_acquire_account_lock: DynamoDB requis en environnement non-local")
+        return False
 
     table = _get_ddb_table()
     if table is None:
