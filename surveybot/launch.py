@@ -12,12 +12,13 @@ from Management.notifier import send_telegram
 from State.account_state import update_state, try_acquire_proxy_lock, load_state, save_state, try_acquire_account_lock
 from selenium.common.exceptions import TimeoutException
 from preselection.auth_handler import is_session_expired
+from Management.pause_policy import PausePolicy
 
 def acquire_account_lock_or_exit(account_id: str, ttl_sec: int = 180):
     task_id = os.getenv("ECS_TASK_ID") or socket.gethostname()
     ok = try_acquire_account_lock(account_id=account_id, owner=task_id, ttl_sec=ttl_sec)
     if not ok:
-        print(...)
+        print("[LOCK] Account {account_id} déja utilisé → exit")
         sys.exit(0)
 
 def safe_get(driver, url):
@@ -44,11 +45,9 @@ def safe_get(driver, url):
             if is_session_expired(driver):
                 print("🛑 Session expirée détectée (24h). Pause longue.")
                 get_guard().pause(
-                    reason=StopReason.SESSION_EXPIRED,
-                    duration_sec=6 * 3600,   # 6h
-                    notify=True
+                    PausePolicy.LONG_COOLDOWN,
+                    StopReason.SESSION_EXPIRED,
                 )
-
 
                 raise SystemExit("session_expired")
 
@@ -132,13 +131,20 @@ def soft_restart_cleanup(driver):
     driver.get("https://www.topsurveys.app")
 
 def soft_restart_payout(ctx, driver):
+    """
+    Encaissement best-effort.
+    En local / ctx minimal, on peut ne pas avoir payout_name/tag → on skip proprement.
+    """
+    payout_name = (ctx.get("payout_name") or "").strip()
+    payout_tag  = (ctx.get("payout_revolut_tag") or "").strip()
+
     payout.check_and_cashout_if_needed(
         driver,
         account_id=ctx["account_id"],
         min_amount_eur=5.0,
         cashout_order=("paypal", "revolut"),
-        revolut_fullname=ctx["payout_name"],
-        revolut_tag=ctx["payout_revolut_tag"],
+        revolut_fullname=payout_name,
+        revolut_tag=payout_tag,
     )
 
 def soft_restart_resume(ctx, driver):
@@ -186,6 +192,8 @@ def acquire_proxy_lock_or_exit(account_id: str, lock_ttl_sec: int = 2 * 3600):
         print(f"[LOCK] Proxy {proxy_id} déjà utilisé → exit")
         time.sleep(60)
         raise SystemExit("proxy_locked")
+
+_HEARTBEAT_STARTED = False
 
 def _heartbeat():
     while True:
@@ -287,7 +295,15 @@ def init_session_and_enter_surveys(driver, config, account_id: str, notify_fn):
     return api_key, payout_name, payout_revolut_tag
 
 def start_hot_reload_thread():
-    if IS_LOCAL:
+    global _HOT_RELOAD_STARTED
+    if not IS_LOCAL:
+        print("[HOT_RELOAD] Ignoré en environnement non-local.")
+        return
+    if _HOT_RELOAD_STARTED:
+        return
+    _HOT_RELOAD_STARTED = True
+
+    if IS_LOCAL:        
         import Survey.survey_executor as _se
         from hot_reload.hot_reload import ModuleReloader
 
@@ -328,6 +344,7 @@ def start_hot_reload_thread():
     else:
         print("[HOT_RELOAD] Ignoré en environnement non-local.")
         
+_HOT_RELOAD_STARTED = False
 
 def run_main_loop(driver, api_key: str, account_id: str):
     run_survey(driver, api_key, account_id=account_id)
