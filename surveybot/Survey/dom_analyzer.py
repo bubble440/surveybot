@@ -4,10 +4,10 @@ DOM Analyzer — extraction TEXT-ONLY des questions de survey.
 
 Objectif:
 - Scanner le DOM
-- Identifier chaque question
+- Identifier chaque question (1 bloc par question, PAS 1 bloc par option radio)
 - Déterminer le type d'input attendu
 - Extraire les options associées
-- Fournir un contexte DOM stable pour l'exécution
+- Ajouter une contrainte de cardinalité (max_select)
 
 Aucune dépendance image.
 Compatible local / prod.
@@ -15,9 +15,10 @@ Pensé pour 100+ bots.
 """
 
 from __future__ import annotations
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Tuple
 import re
 import unicodedata
+from Survey.dom_registry import clear_registry, register_target, make_target_id
 
 from selenium.webdriver.common.by import By
 
@@ -31,10 +32,60 @@ def _norm(text: str) -> str:
     if not text:
         return ""
     text = unicodedata.normalize("NFKC", text)
+    text = text.replace("\u00a0", " ")
     text = text.strip()
     text = re.sub(r"\s+", " ", text)
     return text
 
+
+def _norm_lc(text: str) -> str:
+    return _norm(text).lower()
+
+def _best_xpath_for_element(driver, el) -> str:
+    """
+    XPath robuste:
+    - si id => //*[@id='...']
+    - sinon XPath absolu généré via JS (stable sur la page courante)
+    """
+    try:
+        el_id = (el.get_attribute("id") or "").strip()
+        if el_id:
+            return f"//*[@id='{el_id}']"
+    except Exception:
+        pass
+
+    # XPath absolu JS
+    js = r"""
+    function absoluteXPath(element) {
+      if (element.tagName.toLowerCase() === 'html') return '/html[1]';
+      if (element === document.body) return '/html[1]/body[1]';
+      var ix = 0;
+      var siblings = element.parentNode.childNodes;
+      for (var i = 0; i < siblings.length; i++) {
+        var sibling = siblings[i];
+        if (sibling === element) {
+          var tag = element.tagName.toLowerCase();
+          return absoluteXPath(element.parentNode) + '/' + tag + '[' + (ix + 1) + ']';
+        }
+        if (sibling.nodeType === 1 && sibling.tagName === element.tagName) {
+          ix++;
+        }
+      }
+    }
+    return absoluteXPath(arguments[0]);
+    """
+    try:
+        xp = driver.execute_script(js, el)
+        if xp:
+            return xp
+    except Exception:
+        pass
+
+    return ""
+
+
+def _norm_key(text: str) -> str:
+    return _norm_lc(text)
 
 def _is_question_text(text: str) -> bool:
     """Heuristique simple pour identifier une question."""
@@ -44,8 +95,10 @@ def _is_question_text(text: str) -> bool:
     if "?" in text:
         return True
     keywords = [
-        "what is", "which", "how", "quel", "quelle", "combien",
-        "âge", "age", "gender", "education", "niveau"
+        "what", "which", "how", "why",
+        "quel", "quelle", "quels", "quelles", "combien",
+        "où", "ou", "comment", "pourquoi",
+        "âge", "age", "gender", "education", "niveau",
     ]
     return any(k in low for k in keywords)
 
@@ -59,14 +112,16 @@ def _detect_itype(el) -> str:
 
     if tag == "input":
         t = (el.get_attribute("type") or "").lower()
-        if t in ("radio", "checkbox", "text", "number"):
-            return "radio" if t == "radio" else \
-                   "checkbox" if t == "checkbox" else \
-                   "text"
+        if t == "radio":
+            return "radio"
+        if t == "checkbox":
+            return "checkbox"
+        if t in ("text", "number", "tel", "email", "password", "search", "url"):
+            return "text"
         return "text"
 
     if tag == "select":
-        return "select"
+        return "dropdown"
 
     if tag == "textarea":
         return "textarea"
@@ -82,80 +137,176 @@ def _detect_itype(el) -> str:
 
 
 # =========================
-# Extraction du label / question
+# Extraction labels/options
 # =========================
 
 def _find_associated_label(driver, el) -> str:
     """
-    Cherche le texte de question associé à un input :
-    - <label for=>
-    - parent label
-    - texte visible juste au-dessus
+    Récupère le libellé associé à un input (souvent l'OPTION pour radio/checkbox).
     """
     try:
         el_id = el.get_attribute("id")
         if el_id:
             labels = driver.find_elements(By.XPATH, f"//label[@for='{el_id}']")
             if labels:
-                return _norm(labels[0].text)
+                return _norm(labels[0].text or labels[0].get_attribute("innerText") or "")
     except Exception:
         pass
 
     try:
         parent_label = el.find_element(By.XPATH, "ancestor::label")
         if parent_label:
-            return _norm(parent_label.text)
+            return _norm(parent_label.text or parent_label.get_attribute("innerText") or "")
     except Exception:
         pass
 
-    try:
-        container = el.find_element(
-            By.XPATH,
-            "ancestor::*[self::div or self::fieldset][1]"
-        )
-        texts = container.text.splitlines()
-        for line in texts:
-            line = _norm(line)
-            if _is_question_text(line):
-                return line
-    except Exception:
-        pass
+    # fallback léger: aria-label / name
+    for attr in ("aria-label", "name", "placeholder"):
+        try:
+            v = el.get_attribute(attr)
+            if v and len(v.strip()) >= 2:
+                return _norm(v)
+        except Exception:
+            pass
 
     return ""
 
 
-# =========================
-# Extraction des options
-# =========================
+def _nearest_question_container(el):
+    """
+    Cherche un conteneur 'question-like' (fieldset / role group / class question...).
+    """
+    xps = [
+        "ancestor::*[self::fieldset or @role='radiogroup' or @role='group' "
+        "or contains(@class,'question') or contains(@class,'Question') "
+        "or contains(@class,'form-group') or contains(@class,'field')][1]",
+        "ancestor::*[self::div or self::section or self::form][1]",
+    ]
+    for xp in xps:
+        try:
+            c = el.find_element(By.XPATH, xp)
+            if c:
+                return c
+        except Exception:
+            continue
+    return None
 
-def _extract_options(driver, el, itype: str) -> List[str]:
-    options = []
 
+def _extract_question_from_container(container, options: List[str]) -> str:
+    """
+    Extrait le texte de QUESTION (pas les options) depuis un conteneur.
+    Stratégie:
+    - prioriser legend/h1/h2/h3/h4/label "question-like"
+    - fallback: lignes de texte du conteneur
+    - exclure toute ligne qui est une option connue
+    """
+    opt_lc = {_norm_lc(o) for o in (options or []) if o}
+
+    candidates: List[str] = []
+
+    # 1) titres/entêtes
+    head_xp = (
+        ".//*[self::legend or self::h1 or self::h2 or self::h3 or self::h4 or self::h5 "
+        "or contains(@class,'question-text') or contains(@class,'QuestionText') "
+        "or contains(@class,'question__title') or contains(@data-test-id,'question')]"
+    )
     try:
-        if itype == "select":
-            opts = el.find_elements(By.TAG_NAME, "option")
-            for o in opts:
-                txt = _norm(o.text)
-                if txt:
-                    options.append(txt)
+        heads = container.find_elements(By.XPATH, head_xp)
+    except Exception:
+        heads = []
 
-        elif itype in ("radio", "checkbox"):
-            name = el.get_attribute("name")
-            if name:
-                group = driver.find_elements(By.XPATH, f"//input[@name='{name}']")
-            else:
-                group = [el]
+    for h in heads[:15]:
+        try:
+            t = _norm(h.text or h.get_attribute("innerText") or "")
+            if not t:
+                continue
+            tlc = _norm_lc(t)
+            if tlc in opt_lc:
+                continue
+            candidates.append(t)
+        except Exception:
+            continue
 
-            for g in group:
-                label = _find_associated_label(driver, g)
-                if label:
-                    options.append(label)
-
+    # 2) fallback: texte brut du conteneur
+    try:
+        raw = (container.text or container.get_attribute("innerText") or "")
+        for line in (raw.splitlines() if raw else []):
+            t = _norm(line)
+            if not t:
+                continue
+            tlc = _norm_lc(t)
+            if tlc in opt_lc:
+                continue
+            candidates.append(t)
     except Exception:
         pass
 
-    # dédoublonnage conservant l'ordre
-    return list(dict.fromkeys(options))
+    # scoring simple
+    best = ""
+    best_sc = -1
+    for t in candidates:
+        tl = _norm(t)
+        if len(tl) < 5:
+            continue
+        sc = 0
+        if _is_question_text(tl):
+            sc += 3
+        # bonus si ça ressemble à une vraie question et pas à un label court
+        sc += min(len(tl), 120) // 20
+        if "?" in tl:
+            sc += 2
+        if sc > best_sc:
+            best_sc = sc
+            best = tl
+
+    return best
+
+
+def _group_key_for_choice(el, itype: str) -> str:
+    """
+    Crée une clé de groupe stable-ish pour radio/checkbox:
+    - name si présent (meilleur)
+    - aria-labelledby sinon
+    - sinon conteneur question
+    """
+    try:
+        name = (el.get_attribute("name") or "").strip()
+        if name:
+            return f"{itype}:name:{name}"
+    except Exception:
+        pass
+
+    try:
+        labby = (el.get_attribute("aria-labelledby") or "").strip()
+        if labby:
+            return f"{itype}:labby:{labby}"
+    except Exception:
+        pass
+
+    c = _nearest_question_container(el)
+    try:
+        cid = (c.get_attribute("id") or "").strip() if c is not None else ""
+        if cid:
+            return f"{itype}:container_id:{cid}"
+    except Exception:
+        pass
+
+    # fallback ultime: id(obj) (pas stable cross-run mais ok pour une page)
+    return f"{itype}:container_obj:{id(c) if c is not None else id(el)}"
+
+
+def _compute_max_select(itype: str, options: List[str]) -> int:
+    """
+    Règle métier simple:
+    - radio / dropdown / text / textarea / button => 1
+    - checkbox => multi (cap à 3 par défaut)
+    """
+    if itype == "checkbox":
+        n = len(options or [])
+        if n <= 1:
+            return 1
+        return min(3, n)
+    return 1
 
 
 # =========================
@@ -165,45 +316,182 @@ def _extract_options(driver, el, itype: str) -> List[str]:
 def analyze_dom(driver) -> List[Dict[str, Any]]:
     """
     Analyse le DOM courant et retourne une liste de QuestionBlock.
+    IMPORTANT: 1 bloc par question (group radio/checkbox).
     """
     question_blocks: List[Dict[str, Any]] = []
+    clear_registry()
 
-    inputs = driver.find_elements(
-        By.CSS_SELECTOR,
-        "input, select, textarea, button, [role='radio'], [role='checkbox']"
-    )
+    # --- 1) Radios / checkboxes groupés ---
+    try:
+        choice_els = driver.find_elements(
+            By.CSS_SELECTOR,
+            "input[type='radio'], input[type='checkbox'], [role='radio'], [role='checkbox']"
+        )
+    except Exception:
+        choice_els = []
 
-    seen = set()
-
-    for el in inputs:
+    groups: Dict[str, List[Any]] = {}
+    for el in choice_els:
         try:
             itype = _detect_itype(el)
-            if itype == "unknown":
+            if itype not in ("radio", "checkbox"):
                 continue
+            k = _group_key_for_choice(el, itype)
+            groups.setdefault(k, []).append(el)
+        except Exception:
+            continue
 
-            question = _find_associated_label(driver, el)
+    seen_signatures = set()
+
+    for k, els in groups.items():
+        try:
+            # type homogène dans une clé donnée
+            itype = "radio" if k.startswith("radio:") else "checkbox"
+
+            # options = labels des inputs
+            options: List[str] = []
+            for e in els:
+                lbl = _find_associated_label(driver, e)
+                if lbl:
+                    options.append(lbl)
+            # dédoublonnage conservant l'ordre
+            options = list(dict.fromkeys([o for o in options if o]))
+
+            # question = depuis conteneur (et on exclut options)
+            container = _nearest_question_container(els[0])
+            question = _extract_question_from_container(container, options) if container is not None else ""
+
+            # fallback si on n'a pas trouvé: on évite de créer un "bloc option"
             if not question:
+                # si la question est introuvable, on préfère ne pas envoyer ce groupe à OpenAI
+                # (sinon on recrée le problème initial: 1 bloc par option).
                 continue
 
-            signature = (question, itype)
-            if signature in seen:
+            sig = (question, itype)
+            if sig in seen_signatures:
                 continue
-            seen.add(signature)
+            seen_signatures.add(sig)
 
-            options = _extract_options(driver, el, itype)
+            # --- target_id + registry pour group (radio/checkbox)
+            target_id = make_target_id("group", k, question)
+
+            # map option -> xpath de l'input correspondant
+            option_xpath_map = {}
+            for e in els:
+                try:
+                    lbl = _find_associated_label(driver, e)
+                    if not lbl:
+                        continue
+                    xp = _best_xpath_for_element(driver, e)
+                    if not xp:
+                        continue
+                    option_xpath_map[_norm_key(lbl)] = xp
+                except Exception:
+                    continue
+
+            register_target(
+                target_id,
+                {
+                    "kind": "group",
+                    "itype": itype,
+                    "group_key": k,
+                    "question": question,
+                    "option_xpath_map": option_xpath_map,  # {norm(label)->xpath}
+                },
+            )
 
             block = {
                 "question": question,
                 "itype": itype,
                 "options": options,
+                "max_select": _compute_max_select(itype, options),
+                "target_id": target_id,
                 "context": {
+                    "kind": "group",
+                    "group_key": k,
+                },
+            }
+
+            question_blocks.append(block)
+        except Exception:
+            continue
+
+    # --- 2) Autres inputs (dropdown / text / textarea / button) ---
+    try:
+        other_inputs = driver.find_elements(
+            By.CSS_SELECTOR,
+            "select, textarea, input:not([type='radio']):not([type='checkbox']), button, a[role='button']"
+        )
+    except Exception:
+        other_inputs = []
+
+    for el in other_inputs:
+        try:
+            itype = _detect_itype(el)
+            if itype in ("radio", "checkbox", "unknown"):
+                continue
+
+            # on ne veut pas transformer un "bouton next" en question
+            if itype == "button":
+                txt = _norm(el.text or el.get_attribute("innerText") or "")
+                if _norm_lc(txt) in {"next", "suivant", "continue", "continuer"}:
+                    continue
+
+            container = _nearest_question_container(el) or el
+            question = _extract_question_from_container(container, options=[]) or _find_associated_label(driver, el)
+            question = _norm(question)
+
+            if not question:
+                continue
+
+            sig = (question, itype)
+            if sig in seen_signatures:
+                continue
+            seen_signatures.add(sig)
+
+            options: List[str] = []
+            if itype == "dropdown":
+                try:
+                    for o in el.find_elements(By.TAG_NAME, "option"):
+                        if o.get_attribute("disabled"):
+                            continue
+                        t = _norm(o.text or o.get_attribute("innerText") or "")
+                        if t:
+                            options.append(t)
+                    options = list(dict.fromkeys(options))
+                except Exception:
+                    pass
+
+            # --- target_id + registry pour single input
+            single_key = f"{itype}:{(el.get_attribute('id') or '').strip()}:{(el.get_attribute('name') or '').strip()}"
+            target_id = make_target_id("single", single_key, question)
+
+            xpath = _best_xpath_for_element(driver, el)
+            register_target(
+                target_id,
+                {
+                    "kind": "single",
+                    "itype": itype,
+                    "question": question,
+                    "xpath": xpath,
+                },
+            )
+
+            block = {
+                "question": question,
+                "itype": itype,
+                "options": options,
+                "max_select": _compute_max_select(itype, options),
+                "target_id": target_id,
+                "context": {
+                    "kind": "single",
                     "tag": el.tag_name,
                     "name": el.get_attribute("name"),
                     "id": el.get_attribute("id"),
                     "role": el.get_attribute("role"),
                 },
             }
-
+            
             question_blocks.append(block)
 
         except Exception:

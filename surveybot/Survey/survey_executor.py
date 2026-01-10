@@ -64,10 +64,6 @@ def execute_survey_page(driver, api_key):
     """
     Nouvelle version : capture l’image, demande à GPT-4o quoi faire, puis applique l'action.
     """
-    global last_screenshot_path
-    previous_screenshot_path = (
-        last_screenshot_path if "last_screenshot_path" in globals() else None
-    )
     import Management.guards.url_guard
     import Survey.screenshot_analyzer
     import Survey.action_dispatcher 
@@ -91,9 +87,6 @@ def execute_survey_page(driver, api_key):
         )
     except Exception:
         print("⚠️ Page encore vide, tentative de capture malgré tout.")
-
-    print("📸 Capture de la page pour vision IA... source: survey_executor.py line 56")
-    screenshot_path = Survey.screenshot_analyzer.take_screenshot(driver, full_page=True)  # ⬅️ plein‑page
 
     # 🛡️ Garde-fou URL: si on est hors périmètre, on n'agit pas
     try:
@@ -131,30 +124,23 @@ def execute_survey_page(driver, api_key):
         )
 
         raw_text = instruction_raw.output_text
-        actions = Survey.batch_response_parser.parse_batch_response(raw_text)
+        # contraintes max_select par QID (doit matcher le build_batch_prompt)
+        qid_constraints = {f"Q{i}": int((b.get("max_select", 1) or 1)) for i, b in enumerate(question_blocks, start=1)}
 
-        success_any = False
+        actions = Survey.batch_response_parser.parse_batch_response(raw_text, constraints=qid_constraints)
 
-        for act in actions:
-            instruction = f"{act['value']} //// {act['itype']} //// {act['contexte']}"
-            ok = Survey.action_dispatcher.execute_action(driver, instruction)
-            if ok:
-                success_any = True
-
-        return success_any
+        # exécution "plan" (multi actions) + anti-double-fallback par action
+        return Survey.action_dispatcher.execute_actions_plan(driver, actions, stop_on_navigation=True)
+    
     else:
         # fallback vision (existant)
+        print("📸 Capture de la page pour vision IA... source: survey_executor.py line 56")
+        screenshot_path = Survey.screenshot_analyzer.take_screenshot(driver, full_page=True)  # ⬅️ plein‑page
+
         print("🤖 Envoi à GPT pour interprétation visuelle... source: survey_executor.py line 59")
-        instruction = Survey.screenshot_analyzer.send_image_to_gpt(
-            screenshot_path, api_key, previous_image_path=previous_screenshot_path,
-            side_context=getattr(driver, "_last_video_transcript", None)
-            )   
+        instruction = Survey.screenshot_analyzer.send_image_to_gpt(screenshot_path, api_key)   
         pass
 
-
-    #print("📥 Instruction reçue (non-nettoyée) :",instruction,)
-    # 🔁 MàJ: mémoriser cette capture comme "précédente" pour le prochain tour
-    last_screenshot_path = screenshot_path
 
     # ➜ UTILISATION, juste après avoir reçu la réponse du modèle (variable `instruction`)
     #    et avant de la renvoyer à l’exécuteur :

@@ -110,7 +110,7 @@ def build_prompt(question_blocks: List[Dict[str, Any]]) -> str:
     lines.append(
         "\nChoisis LA MEILLEURE action possible MAINTENANT.\n"
         "Rappelle-toi : UNE SEULE ligne en sortie.\n"
-        "Format : valeur //// itype //// contexte"
+        "Format : target_id //// valeur //// itype //// contexte"
     )
 
     return "\n".join(lines)
@@ -119,10 +119,9 @@ def build_prompt(question_blocks: List[Dict[str, Any]]) -> str:
 def build_batch_prompt(question_blocks: list[dict]) -> str:
     """
     Construit un prompt OpenAI pour répondre à TOUTES les questions en une fois.
+    Format de sortie robuste avec QID + max_select + target_id.
     """
-    print("🛠️ Construction du prompt batch pour.")
-
-    lines = []
+    lines: list[str] = []
 
     lines.append(
         "Tu es un répondant ADULTE (18–64). "
@@ -131,42 +130,52 @@ def build_batch_prompt(question_blocks: list[dict]) -> str:
 
     lines.append(
         "Tu dois répondre à CHAQUE question.\n"
-        "Pour CHAQUE question, renvoie EXACTEMENT UNE ligne.\n"
-        "AUCUNE explication."
+        "Tu ne dois JAMAIS lister toutes les options.\n"
+        "Tu dois proposer uniquement la/les réponse(s) nécessaires selon max_select."
     )
 
     lines.append(
-        "FORMAT STRICT (une ligne par question) :\n"
-        "valeur //// itype //// contexte"
+        "FORMAT STRICT (une ligne par sélection) :\n"
+        "QID //// target_id //// valeur //// itype //// contexte\n"
+        "Règles:\n"
+        "- Si max_select=1 => EXACTEMENT 1 ligne pour ce QID.\n"
+        "- Si max_select>1 => 1 à max_select lignes (même QID répété), une option par ligne.\n"
+        "- AUCUNE explication. Aucun texte hors format."
     )
 
     lines.append(
         "Contraintes :\n"
         "- itype ∈ {radio, checkbox, dropdown, text, textarea, button}\n"
-        "- valeur DOIT être une option existante ou une valeur logique non disqualifiante\n"
+        "- valeur DOIT être une option existante (si options listées)\n"
         "- Évite : non, jamais, aucun, je préfère ne pas répondre\n"
-        "- Respecte exactement le texte du contexte"
+        "- contexte doit correspondre exactement à la question affichée"
     )
 
     lines.append("\n--- QUESTIONS ---")
 
-    for i, block in enumerate(question_blocks, start=1):
-        q = block["question"]
-        itype = block["itype"]
-        opts = block.get("options") or []
+    for i, block in enumerate(question_blocks or [], start=1):
+        qid = f"Q{i}"
+        q = _escape(block.get("question", ""))
+        itype = _escape(block.get("itype", ""))
+        opts = [_escape(o) for o in (block.get("options") or []) if o]
+        max_sel = int(block.get("max_select", 1) or 1)
+        target_id = _escape(block.get("target_id", ""))
 
-        lines.append(f"\n{i}) {q}")
-        lines.append(f"Type : {itype}")
+        lines.append(f"\n{qid}")
+        lines.append(f"target_id: {target_id}")
+        lines.append(f"contexte: {q}")
+        lines.append(f"itype: {itype}")
+        lines.append(f"max_select: {max_sel}")
 
         if opts:
-            lines.append("Options : " + ", ".join(opts))
+            lines.append("options: " + " | ".join(opts))
         else:
-            lines.append("Champ ouvert (valeur libre)")
+            lines.append("options: (champ ouvert)")
 
     lines.append(
         "\nRéponds maintenant.\n"
-        "UNE ligne par question.\n"
-        "AUCUN texte en dehors des lignes de réponse."
+        "Respecte STRICTEMENT le format. "
+        "Ne renvoie rien d'autre."
     )
 
     return "\n".join(lines)

@@ -4,6 +4,7 @@ from selenium.webdriver.common.by import By
 import captcha.captcha_solver as captcha_solver
 import captcha.recaptcha_utils as recaptcha_utils
 import Survey.input_handler
+from Survey.dom_registry import get_target
 
 def _norm(s: str) -> str:
     if not s:
@@ -13,6 +14,157 @@ def _norm(s: str) -> str:
 
 def _norm_lc(s: str) -> str:
     return _norm(s).lower()
+
+def _click_xpath(driver, xpath: str) -> bool:
+    if not xpath:
+        return False
+    try:
+        el = driver.find_element(By.XPATH, xpath)
+        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
+        el.click()
+        return True
+    except Exception:
+        return False
+
+
+def _set_text_xpath(driver, xpath: str, text: str) -> bool:
+    if not xpath:
+        return False
+    try:
+        el = driver.find_element(By.XPATH, xpath)
+        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
+        el.click()
+        try:
+            el.clear()
+        except Exception:
+            pass
+        el.send_keys(text)
+        return True
+    except Exception:
+        return False
+
+
+def _xpath_literal(s: str) -> str:
+    """
+    Construit un literal XPath safe, même si la chaîne contient des quotes.
+    """
+    s = s or ""
+    if "'" not in s:
+        return f"'{s}'"
+    if '"' not in s:
+        return f'"{s}"'
+    parts = s.split("'")
+    out = []
+    for i, p in enumerate(parts):
+        if p:
+            out.append(f"'{p}'")
+        if i != len(parts) - 1:
+            out.append("\"'\"")
+    return "concat(" + ", ".join(out) + ")"
+
+
+def _apply_by_target_id(driver, target_id: str, itype: str, value: str) -> bool:
+    """
+    Applique l'action directement via DOM_REGISTRY (target_id -> xpath).
+    Returns True si une action est exécutée.
+    """
+    try:
+        payload = get_target(target_id)
+        if not payload:
+            return False
+
+        kind = payload.get("kind")
+        reg_itype = (payload.get("itype") or "").lower()
+        itype = (itype or reg_itype).lower().strip()
+
+        v_norm = _norm_lc(value)
+
+        # --- cas group (radio/checkbox)
+        if kind == "group" and itype in ("radio", "checkbox"):
+            opt_map = payload.get("option_xpath_map") or {}
+            xp = opt_map.get(v_norm)
+
+            if not xp and v_norm:
+                for k, x in opt_map.items():
+                    if not k:
+                        continue
+                    if v_norm == k or v_norm in k or k in v_norm:
+                        xp = x
+                        break
+
+            if not xp:
+                return False
+
+            try:
+                el = driver.find_element(By.XPATH, xp)
+                driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
+                el.click()
+                return True
+            except Exception:
+                try:
+                    el = driver.find_element(By.XPATH, xp)
+                    driver.execute_script("arguments[0].click();", el)
+                    return True
+                except Exception:
+                    return False
+
+        # --- cas single (text/textarea/dropdown/button)
+        if kind == "single":
+            xp = payload.get("xpath")
+            if not xp:
+                return False
+
+            if itype in ("text", "textarea", "number"):
+                try:
+                    el = driver.find_element(By.XPATH, xp)
+                    driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
+                    try:
+                        el.clear()
+                    except Exception:
+                        pass
+                    el.send_keys(value or "")
+                    return True
+                except Exception:
+                    return False
+
+            if itype == "dropdown":
+                try:
+                    sel = driver.find_element(By.XPATH, xp)
+                    driver.execute_script("arguments[0].scrollIntoView({block:'center'});", sel)
+                    sel.click()
+                except Exception:
+                    return False
+
+                v = (value or "").strip()
+                if not v:
+                    return False
+
+                lit = _xpath_literal(v)
+                xps = [
+                    f"{xp}//option[normalize-space(.)={lit}]",
+                    f"{xp}//option[contains(normalize-space(.), {lit})]",
+                ]
+                for oxp in xps:
+                    try:
+                        opt = driver.find_element(By.XPATH, oxp)
+                        opt.click()
+                        return True
+                    except Exception:
+                        continue
+                return False
+
+            if itype == "button":
+                try:
+                    el = driver.find_element(By.XPATH, xp)
+                    driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
+                    el.click()
+                    return True
+                except Exception:
+                    return False
+
+        return False
+    except Exception:
+        return False
 
 # ------------------- Parsing "libellé //// type" -------------------
 # Types acceptés (synonymes FR/EN)
@@ -189,6 +341,50 @@ def _split_multiline_instruction(instr: str) -> list[str]:
             items.append(line)
     return items
 
+_QID_RE = re.compile(r"^Q\d+$", re.IGNORECASE)
+
+def _parse_action_line(raw: str) -> dict:
+    """
+    Parse une ligne d'instruction (batch + legacy).
+    Formats supportés :
+    - QID //// target_id //// valeur //// itype //// contexte
+    - QID //// valeur //// itype //// contexte
+    - target_id //// valeur //// itype //// contexte
+    - valeur //// itype //// contexte
+    """
+    parts = [p.strip() for p in re.split(r"/{4,}", (raw or "")) if p.strip()]
+
+    out = {"qid": None, "target_id": None, "value": "", "itype": "", "context": ""}
+
+    if len(parts) >= 5:
+        out["qid"] = parts[0]
+        out["target_id"] = parts[1]
+        out["value"] = parts[2]
+        out["itype"] = parts[3]
+        out["context"] = parts[4]
+        return out
+
+    if len(parts) == 4:
+        if _QID_RE.match(parts[0] or ""):
+            out["qid"] = parts[0]
+            out["value"] = parts[1]
+            out["itype"] = parts[2]
+            out["context"] = parts[3]
+        else:
+            out["target_id"] = parts[0]
+            out["value"] = parts[1]
+            out["itype"] = parts[2]
+            out["context"] = parts[3]
+        return out
+
+    if len(parts) == 3:
+        out["value"] = parts[0]
+        out["itype"] = parts[1]
+        out["context"] = parts[2]
+        return out
+
+    return out
+
 # action_dispatcher.py
 # À placer AVANT la logique générique itype == "button"
 
@@ -296,9 +492,15 @@ def _try(driver, name: str, fn):
 
 def execute_action(driver, instruction: str) -> bool:
     """
-    Applique l'instruction. Supporte 'libellé //// type //// contexte-question'.
+    Applique une instruction OpenAI (batch + legacy).
+
+    Formats supportés :
+    - QID //// target_id //// valeur //// itype //// contexte
+    - QID //// valeur //// itype //// contexte
+    - target_id //// valeur //// itype //// contexte
+    - valeur //// itype //// contexte
     """
-    import Survey.input_handler 
+    import Survey.input_handler
     import Survey.dom_context_mapper as dom_context_mapper
     import Survey.dropdown_block_resolver as dropdown_block_resolver
 
@@ -306,52 +508,33 @@ def execute_action(driver, instruction: str) -> bool:
         return False
 
     for raw in _split_multiline_instruction(instruction):
-        label, itype, ctx = _parse_typed_instruction3(raw)
-        low = _norm_lc(label)
-        #print(f"🎯 Instruction parsée → label='{label}' | type='{itype}' | ctx='{ctx}', source: execute_action")
+        parsed = _parse_action_line(raw)
 
-        # ============================================================
-        # NEW — DOM Context Mapper (tableau visuel, DOM éclaté)
-        #   - traite les “fausses matrices” où le DOM sépare contextes et inputs
-        #   - doit passer AVANT _looks_like_matrix() (sinon on rate ces cas)
-        # ============================================================
-        try:
-            if (ctx or "").strip() and itype in ("checkbox", "radio"):
-                if dom_context_mapper.try_click_matrix_by_visual_mapping(
-                    driver,
-                    row_label=ctx,
-                    col_label=label,
-                    debug=True,
-                ):
-                    print(
-                        f"✅ DOMMAP (visuel): cellule validée row='{ctx}' col='{label}'. source: action_dispatcher.py"
-                    )
+        target_id = (parsed.get("target_id") or "").strip() or None
+        value = (parsed.get("value") or "").strip()
+        ctx = (parsed.get("context") or "").strip()
+
+        raw_itype = (parsed.get("itype") or "").strip()
+        _, itype, _ = _parse_typed_instruction3(f"x //// {raw_itype} //// y")
+        itype = (itype or "").strip()
+
+        if not value and not target_id:
+            continue
+
+        # 1) target_id => application directe via DOM_REGISTRY
+        if target_id:
+            try:
+                if _apply_by_target_id(driver, target_id, itype, value):
                     return True
-        except Exception as e:
-            print(f"[DOMMAP] exception ignorée (fallback): {e}")
+            except Exception:
+                pass
 
-
-        # 🎯 Cas matrice: si on a un contexte (ligne) + une intention checkbox/radio,
-        # essaie la cellule (row × column) AVANT les handlers génériques.
-        try:
-            cond_matrix = bool((ctx or "").strip()) and (itype in ("checkbox", "radio") and Survey.input_handler._looks_like_matrix(driver))
-            print(f"[DBG] matrix_cond itype={itype!r} ctx_empty={not bool((ctx or '').strip())} -> {cond_matrix}")
-            if cond_matrix:
-                print("condition matrice")
-                if Survey.input_handler.click_matrix_cell_by_row_and_col(driver, row_label=ctx, col_label=label):
-                    print(f"✅ Matrice (cellule) validée: row='{ctx}' col='{label}'. source: action_dispatcher.py")
-                    return True
-        except Exception as e:
-            print(f"[DBG] matrix_try_exception: {e}")
-            pass
-
-        # ================================
-        # Dispatcher principal sécurisé
-        # ================================
+        # 2) fallback legacy: label == valeur (IMPORTANT: pas QID)
+        label = value
 
         _new_attempt_context(driver)
 
-        # 1️⃣ MATRICES (PRIORITÉ ABSOLUE)
+        # 1️⃣ MATRICES
         try:
             if (ctx or "").strip() and itype in ("checkbox", "radio"):
                 if dom_context_mapper.try_click_matrix_by_visual_mapping(
@@ -364,10 +547,20 @@ def execute_action(driver, instruction: str) -> bool:
         except Exception:
             pass
 
-        # 2️⃣ SANITIZER ANTI-DISQUALIFICATION
-        safe_label = _sanitize_instruction_with_page_context(driver, label, itype or "")
-        if safe_label != label:
-            label = safe_label
+        try:
+            if (ctx or "").strip() and itype in ("checkbox", "radio") and Survey.input_handler._looks_like_matrix(driver):
+                if Survey.input_handler.click_matrix_cell_by_row_and_col(driver, row_label=ctx, col_label=label):
+                    return True
+        except Exception:
+            pass
+
+        # 2️⃣ SANITIZER
+        try:
+            safe_label = _sanitize_instruction_with_page_context(driver, label, itype or "")
+            if safe_label != label:
+                label = safe_label
+        except Exception:
+            pass
 
         # ==========================================================
         # 🟦 BUTTON
@@ -477,50 +670,107 @@ def execute_action(driver, instruction: str) -> bool:
         # 🟦 TEXT / NUMBER
         # ==========================================================
         if itype in ("text", "number"):
-            print("trying text input")
             try:
                 resolved = Survey.question_block_resolver.try_resolve_number_block(
                     driver,
-                    context_question=ctx,   # TEXTE de la question OpenAI / DOM
-                    value=label,                     # valeur à injecter (ex: "28")
-                    min_score=0.75,                   # seuil robuste (pas agressif)
-                    allow_overwrite=False,            # JAMAIS écraser un champ déjà rempli
-                    debug=True,                       # logs utiles en prod
+                    context_question=ctx,
+                    value=label,
+                    min_score=0.75,
+                    allow_overwrite=False,
+                    debug=True,
                 )
-
                 if resolved:
-                    print("[ACTION][QBR] Champ numérique résolu via QuestionBlockResolver")
-                    return True   # ⚠️ STOP ici : on ne continue PAS la logique générique
-
-            except :
+                    return True
+            except Exception:
                 pass
+
             if _try(driver, "text_input", lambda:
                 Survey.input_handler.fill_text_input(driver, label, context_hint=ctx)
             ):
                 return True
 
-        # ==========================================================
-        # ❌ AUCUNE STRATÉGIE N’A ABOUTI
-        # ==========================================================
-        print(
-            "❌ Aucune stratégie n’a abouti pour :",
-            instruction,
-            " source: action_dispatcher.py",
-        )
-        return False
-    
+        # si cette ligne échoue, on tente la suivante (au lieu de return False)
+        print("❌ Aucune stratégie n’a abouti pour :", raw, " source: action_dispatcher.py")
+        continue
+
     # --- Fallback vidéo (Video.js / Brightcove) ----------------------
     try:
-        # Si une vidéo est présente, lire et capturer l'audio.
         if Survey.video_utils.try_watch_and_capture(driver, api_key=None, max_seconds=35):
-            # Après lecture, certains surveys activent le bouton Suivant :
             try:
                 if Survey.input_handler.click_cta_strong_any_context(driver, text="Suivant"):
                     return True
             except Exception:
                 pass
-            return True  # action faite (lecture + capture)
+            return True
     except Exception as _e:
         print(f"[video] fallback error: {_e}")
 
     return False
+
+def reset_attempt_context(driver):
+    """
+    Reset du garde-fou anti double-fallback.
+    À appeler avant CHAQUE instruction, sinon une stratégie peut être bloquée par un essai précédent.
+    """
+    try:
+        _new_attempt_context(driver)
+    except Exception:
+        # fallback: on efface juste l'attribut
+        try:
+            if hasattr(driver, "_action_attempt_ctx"):
+                delattr(driver, "_action_attempt_ctx")
+        except Exception:
+            pass
+
+
+def execute_actions_plan(driver, actions: list[dict], *, stop_on_navigation: bool = True) -> bool:
+    """
+    Applique une série d'actions (issues du batch OpenAI).
+    - reset attempt context avant chaque action
+    - stop optionnel si navigation détectée (URL change)
+    """
+    success_any = False
+
+    try:
+        url_before = driver.current_url
+    except Exception:
+        url_before = ""
+
+    # cap sécurité (évite un flood si OpenAI hallucine)
+    actions = (actions or [])[:25]
+
+    for act in actions:
+        try:
+            value = (act.get("value") or "").strip()
+            itype = (act.get("itype") or "").strip()
+            context = (act.get("context") or "").strip()
+
+            if not value or not itype:
+                continue
+
+            reset_attempt_context(driver)
+
+            tid = (act.get("target_id") or "").strip()
+            qid = (act.get("qid") or "").strip()
+
+            if tid and qid:
+                instruction = f"{qid} //// {tid} //// {value} //// {itype} //// {context}"
+            elif qid:
+                instruction = f"{qid} //// {value} //// {itype} //// {context}"
+            else:
+                instruction = f"{value} //// {itype} //// {context}"
+            ok = execute_action(driver, instruction)
+            if ok:
+                success_any = True
+
+            if stop_on_navigation:
+                try:
+                    if driver.current_url != url_before:
+                        break
+                except Exception:
+                    pass
+
+        except Exception:
+            continue
+
+    return success_any
