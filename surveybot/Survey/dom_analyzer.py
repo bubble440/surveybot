@@ -22,7 +22,6 @@ from Survey.dom_registry import clear_registry, register_target, make_target_id
 
 from selenium.webdriver.common.by import By
 
-
 # =========================
 # Helpers texte
 # =========================
@@ -37,9 +36,48 @@ def _norm(text: str) -> str:
     text = re.sub(r"\s+", " ", text)
     return text
 
-
 def _norm_lc(text: str) -> str:
     return _norm(text).lower()
+
+# --- Champs techniques/ASP.NET à ignorer (anti-pollution prompt) ---
+_SYS_FIELD_TOKENS = (
+    "__viewstate", "viewstate",
+    "__eventvalidation", "eventvalidation",
+    "__viewstategenerator", "viewstategenerator",
+    "screen", "screener",
+    "responsestatus", "clientrs_status",
+    "ctl00$content$hf", "hf",  # hidden fields typiques
+)
+
+def _looks_like_system_field(el) -> bool:
+    """
+    Détecte les inputs techniques (ASP.NET / hidden / tracking) pour ne pas les traiter comme questions.
+    IMPORTANT: ça évite d'envoyer du bruit à OpenAI -> moins cher + plus fiable.
+    """
+    try:
+        t = (el.get_attribute("type") or "").strip().lower()
+        if t == "hidden":
+            return True
+
+        id_ = (el.get_attribute("id") or "").strip().lower()
+        name = (el.get_attribute("name") or "").strip().lower()
+        if any(tok in id_ or tok in name for tok in _SYS_FIELD_TOKENS):
+            return True
+    except Exception:
+        pass
+    return False
+
+def _is_actionable_visible(el) -> bool:
+    """
+    Filtre 'cheap' anti-faux-positifs: affiché + dimensions non nulles.
+    """
+    try:
+        if not el.is_displayed():
+            return False
+        r = getattr(el, "rect", None) or {}
+        return (r.get("width", 0) or 0) > 2 and (r.get("height", 0) or 0) > 2
+    except Exception:
+        return False
 
 def _best_xpath_for_element(driver, el) -> str:
     """
@@ -83,7 +121,6 @@ def _best_xpath_for_element(driver, el) -> str:
 
     return ""
 
-
 def _norm_key(text: str) -> str:
     return _norm_lc(text)
 
@@ -102,7 +139,6 @@ def _is_question_text(text: str) -> bool:
     ]
     return any(k in low for k in keywords)
 
-
 # =========================
 # Détection du type d'input
 # =========================
@@ -111,13 +147,26 @@ def _detect_itype(el) -> str:
     tag = (el.tag_name or "").lower()
 
     if tag == "input":
-        t = (el.get_attribute("type") or "").lower()
-        if t == "radio":
-            return "radio"
-        if t == "checkbox":
-            return "checkbox"
-        if t in ("text", "number", "tel", "email", "password", "search", "url"):
+        t = (el.get_attribute("type") or "").strip().lower()
+
+        # ⚠️ Hidden = jamais une question
+        if t == "hidden":
+            return "hidden"
+
+        # Boutons/submit = CTA (pas du texte)
+        if t in ("submit", "button", "image", "reset"):
+            return "button"
+
+        if t in ("radio", "checkbox"):
+            return t
+
+        # Inputs texte usuels
+        if t in ("text", "number", "email", "tel", "search", "password", ""):
             return "text"
+        if t in ("date", "datetime-local"):
+            return "text"
+
+        # Défaut: texte (mais on filtrera via visibilité + system fields)
         return "text"
 
     if tag == "select":
@@ -134,7 +183,6 @@ def _detect_itype(el) -> str:
         return role
 
     return "unknown"
-
 
 # =========================
 # Extraction labels/options
@@ -171,7 +219,6 @@ def _find_associated_label(driver, el) -> str:
 
     return ""
 
-
 def _nearest_question_container(el):
     """
     Cherche un conteneur 'question-like' (fieldset / role group / class question...).
@@ -190,7 +237,6 @@ def _nearest_question_container(el):
         except Exception:
             continue
     return None
-
 
 def _extract_question_from_container(container, options: List[str]) -> str:
     """
@@ -261,7 +307,6 @@ def _extract_question_from_container(container, options: List[str]) -> str:
 
     return best
 
-
 def _group_key_for_choice(el, itype: str) -> str:
     """
     Crée une clé de groupe stable-ish pour radio/checkbox:
@@ -294,7 +339,6 @@ def _group_key_for_choice(el, itype: str) -> str:
     # fallback ultime: id(obj) (pas stable cross-run mais ok pour une page)
     return f"{itype}:container_obj:{id(c) if c is not None else id(el)}"
 
-
 def _compute_max_select(itype: str, options: List[str]) -> int:
     """
     Règle métier simple:
@@ -307,7 +351,6 @@ def _compute_max_select(itype: str, options: List[str]) -> int:
             return 1
         return min(3, n)
     return 1
-
 
 # =========================
 # API principale
@@ -420,7 +463,7 @@ def analyze_dom(driver) -> List[Dict[str, Any]]:
     try:
         other_inputs = driver.find_elements(
             By.CSS_SELECTOR,
-            "select, textarea, input:not([type='radio']):not([type='checkbox']), button, a[role='button']"
+            "input:not([type='radio']):not([type='checkbox']):not([type='hidden']), textarea, select, button, a[role='button']",
         )
     except Exception:
         other_inputs = []
@@ -428,6 +471,15 @@ def analyze_dom(driver) -> List[Dict[str, Any]]:
     for el in other_inputs:
         try:
             itype = _detect_itype(el)
+
+            # 1) On ignore les champs techniques/hidden
+            if itype == "hidden" or _looks_like_system_field(el):
+                continue
+
+            # 2) On ignore les éléments non actionnables/visibles
+            if not _is_actionable_visible(el):
+                continue
+
             if itype in ("radio", "checkbox", "unknown"):
                 continue
 
