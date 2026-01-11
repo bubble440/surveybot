@@ -17,7 +17,6 @@ from typing import Callable, Optional, Dict, Any
 import Survey.dom_metrics as dom_metrics
 from selenium.webdriver.common.by import By
 
-
 # ============================================================
 # Utils
 # ============================================================
@@ -43,7 +42,6 @@ def _page_text_lc(driver) -> str:
     except Exception:
         return ""
 
-
 # ============================================================
 # Signatures DOM (détecteurs)
 # ============================================================
@@ -59,29 +57,75 @@ def is_consent_screen(driver) -> bool:
         if any(w in (b.text or "").lower() for w in ["accepter", "agree", "continuer", "continue"])
     )
 
-
 def is_start_screen(driver) -> bool:
     txt = _page_text_lc(driver)
     return any(k in txt for k in ["bienvenue", "welcome", "commencer", "start"]) and \
            len(driver.find_elements(By.CSS_SELECTOR, "input, select, textarea")) == 0
 
+def _has_visible_answerables(driver) -> bool:
+    """
+    True si la page contient des éléments de réponse visibles (radio/checkbox/select/input/textarea).
+    Objectif: empêcher une classification end-screen quand la page est une vraie question.
+    """
+    try:
+        return bool(driver.execute_script("""
+            const sels = [
+              "input:not([type='hidden']):not([type='submit']):not([type='button'])",
+              "textarea",
+              "select",
+              "[role='radio']",
+              "[role='checkbox']",
+              "[contenteditable='true']"
+            ];
+            const els = Array.from(document.querySelectorAll(sels.join(",")));
+            for (const e of els) {
+              const cs = getComputedStyle(e);
+              if (cs.display === "none" || cs.visibility === "hidden") continue;
 
-def is_end_screen(driver) -> bool:
+              // offsetParent null => généralement invisible (sauf position fixed), on garde le check rect
+              const r = e.getBoundingClientRect();
+              if (!r || r.width < 4 || r.height < 4) continue;
+
+              return true;
+            }
+            return false;
+        """))
+    except Exception:
+        return False
+
+def is_end_screen(driver):
+    # 1) Un end-screen doit contenir un signal explicite de fin
     txt = _page_text_lc(driver)
-    return any(k in txt for k in ["merci", "thank you", "fin du sondage", "completed"])
+    has_end_keyword = any(k in txt for k in [
+        "thank you",
+        "merci",
+        "fin du sondage",
+        "sondage terminé",
+        "enquête terminée",
+        "completed",
+        "survey complete",
+        "vous avez terminé",
+    ])
 
+    if not has_end_keyword:
+        return False
+
+    # 2) ET ne doit pas contenir d’inputs de réponse visibles
+    # (Sinon on est sur une vraie question, comme ton écran “secteur d’activité”.)
+    if _has_visible_answerables(driver):
+        return False
+
+    return True
 
 def is_captcha_screen(driver) -> bool:
     return bool(
         driver.find_elements(By.CSS_SELECTOR, "iframe[src*='captcha'], iframe[src*='recaptcha']")
     )
 
-
 def is_drag_drop(driver) -> bool:
     return bool(
         driver.find_elements(By.CSS_SELECTOR, "[draggable='true'], .cdk-drag")
     )
-
 
 def is_matrix(driver) -> bool:
     radios = driver.find_elements(By.CSS_SELECTOR, "input[type='radio'], [role='radio']")
@@ -90,7 +134,6 @@ def is_matrix(driver) -> bool:
     ys = [r.rect.get("y", 0) for r in radios]
     return len(set(round(y / 30) for y in ys)) >= 2
 
-
 def is_date_multi_dropdown(driver) -> bool:
     selects = driver.find_elements(By.TAG_NAME, "select")
     if len(selects) < 2:
@@ -98,10 +141,8 @@ def is_date_multi_dropdown(driver) -> bool:
     txt = _page_text_lc(driver)
     return any(k in txt for k in ["année", "annee", "year", "mois", "month"])
 
-
 def is_open_textarea(driver) -> bool:
     return bool(driver.find_elements(By.TAG_NAME, "textarea"))
-
 
 # ============================================================
 # DOM REGISTRY (ORDRE CRITIQUE)
@@ -163,7 +204,6 @@ DOM_REGISTRY: list[dict[str, Any]] = [
         "openai": True,
     },
 ]
-
 
 # ============================================================
 # API publique

@@ -26,7 +26,6 @@ def _click_xpath(driver, xpath: str) -> bool:
     except Exception:
         return False
 
-
 def _set_text_xpath(driver, xpath: str, text: str) -> bool:
     if not xpath:
         return False
@@ -42,7 +41,6 @@ def _set_text_xpath(driver, xpath: str, text: str) -> bool:
         return True
     except Exception:
         return False
-
 
 def _xpath_literal(s: str) -> str:
     """
@@ -61,7 +59,6 @@ def _xpath_literal(s: str) -> str:
         if i != len(parts) - 1:
             out.append("\"'\"")
     return "concat(" + ", ".join(out) + ")"
-
 
 def _apply_by_target_id(driver, target_id: str, itype: str, value: str) -> bool:
     """
@@ -232,7 +229,6 @@ def _get_visible_options(driver):
             continue
     return opts
 
-
 def _get_page_text_lc(driver):
     try:
         return " ".join(
@@ -244,7 +240,6 @@ def _get_page_text_lc(driver):
         ).lower()
     except Exception:
         return ""
-
 
 def _sanitize_instruction_with_page_context(driver, label, itype):
     """
@@ -314,7 +309,6 @@ def _sanitize_instruction_with_page_context(driver, label, itype):
     # rien à corriger
     return label
 
-
 _OPEN_FIELD_TOKENS = {
     "jour",
     "mois",
@@ -329,7 +323,6 @@ _OPEN_FIELD_TOKENS = {
     "state",
     "province",
 }
-
 
 def _split_multiline_instruction(instr: str) -> list[str]:
     items = []
@@ -443,7 +436,6 @@ def handle_consent_screen(driver):
         or Survey.input_handler.click_button_by_text(driver, "continue")
     )
 
-
 def handle_start_screen(driver):
     return (
         Survey.input_handler.click_button_by_text(driver, "commencer")
@@ -472,7 +464,6 @@ def _new_attempt_context(driver):
     }
     driver._action_attempt_ctx = ctx
     return ctx
-
 
 def _try(driver, name: str, fn):
     """
@@ -503,6 +494,10 @@ def execute_action(driver, instruction: str) -> bool:
     import Survey.input_handler
     import Survey.dom_context_mapper as dom_context_mapper
     import Survey.dropdown_block_resolver as dropdown_block_resolver
+    import Survey.action_types as Action
+
+    if isinstance(instruction, Action):
+        instruction = instruction.to_dispatcher_line()
 
     if not instruction or not instruction.strip():
         return False
@@ -721,7 +716,6 @@ def reset_attempt_context(driver):
                 delattr(driver, "_action_attempt_ctx")
         except Exception:
             pass
-
 
 def execute_actions_plan(
     driver,

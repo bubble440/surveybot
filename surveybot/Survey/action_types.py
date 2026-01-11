@@ -19,29 +19,44 @@ class Action:
     """
     Action canonique.
 
-    - value   : la valeur à appliquer (ex: "Souvent", "1999", "Paris")
-    - itype   : type logique (ex: "radio", "checkbox", "dropdown", "text", "textarea", etc.)
-    - context : contexte optionnel (ex: libellé de ligne pour matrice, question)
-    - meta    : infos additionnelles non critiques (debug, source, qid...)
+    - value     : valeur à appliquer (ex: "Île-de-France")
+    - itype     : type logique ("radio", "checkbox", "dropdown", "text", ...)
+    - context   : contexte (question / row label matrice, etc.)
+    - qid       : identifiant logique "Q1", "Q2"... (optionnel)
+    - target_id : identifiant DOM_REGISTRY (optionnel mais recommandé)
+    - meta      : infos additionnelles (debug/source/etc.)
     """
     value: str
     itype: Optional[str] = None
     context: str = ""
+    qid: str = ""
+    target_id: str = ""
     meta: Dict[str, Any] = field(default_factory=dict)
 
-    def to_legacy_instruction(self) -> str:
+    def to_dispatcher_line(self) -> str:
         """
-        Convertit en format legacy pour compatibilité avec execute_action(instruction: str).
-        On garde toujours 3 segments pour stabiliser le parsing.
+        Format le plus riche pour action_dispatcher.execute_action():
+        - QID //// target_id //// value //// itype //// context
+        - target_id //// value //// itype //// context
+        - value //// itype //// context
         """
+        v = self.value or ""
         t = self.itype or ""
         c = self.context or ""
-        v = self.value or ""
+
+        q = (self.qid or "").strip()
+        tid = (self.target_id or "").strip()
+
+        if q and tid:
+            return f"{q} //// {tid} //// {v} //// {t} //// {c}"
+        if tid:
+            return f"{tid} //// {v} //// {t} //// {c}"
         return f"{v} //// {t} //// {c}"
 
     def as_dict(self) -> Dict[str, Any]:
-        """Sérialisation simple (logs / export)."""
         return {
+            "qid": self.qid,
+            "target_id": self.target_id,
             "value": self.value,
             "itype": self.itype,
             "context": self.context,

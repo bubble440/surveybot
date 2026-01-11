@@ -1,7 +1,0 @@
-{
-  "version": "1.0",
-  "manifest_version": 2,
-  "name": "Proxy Auto Auth",
-  "permissions": ["webRequest", "webRequestBlocking", "extraHeaders", "<all_urls>"],
-  "background": {"scripts": ["background.js"], "persistent": true}
-}
