@@ -288,7 +288,7 @@ def _read_balance(driver) -> float:
     import re
 
     candidates = []
-
+    time.sleep(5)
     # 1️⃣ Méthode historique (si jamais ils réintroduisent le test-id)
     try:
         el = driver.find_element(By.CSS_SELECTOR, "[data-test-id='balance-card-amount']")
@@ -332,7 +332,6 @@ def _read_balance(driver) -> float:
         return float(re.findall(r"\d+(?:\.\d+)?", raw)[0])
     except Exception:
         raise RuntimeError(f"Parsing solde échoué: '{raw}'")
-
 
 # ---------- API principale ----------
 
