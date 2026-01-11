@@ -177,7 +177,9 @@ def build_batch_prompt(question_blocks: list[dict]) -> str:
         "Respecte STRICTEMENT le format. "
         "Ne renvoie rien d'autre."
     )
-
+    
+    print("Le prompt est: \n" + "\n".join(lines))
+    
     return "\n".join(lines)
 
 def _norm_lc(s: str | None) -> str:

@@ -6,8 +6,8 @@ import preselection.response_executor
 if not IS_LOCAL:
     from selenium.webdriver.support.ui import WebDriverWait
     from selenium.webdriver.support import expected_conditions as EC
-    from selenium.webdriver.common.by import By
 from preselection.auth_handler import snap
+from selenium.webdriver.common.by import By
 from preselection.question_validation import detect_disqualification_reason
 
 def _safe_page_text(driver) -> str:
@@ -30,7 +30,7 @@ def run_survey(driver, api_key, *, account_id: str):
     import Management.redirect_watcher
     import Management.guards.url_guard
     import launch
-
+    
     def _restart(reason: str) -> None:
         """
         Redémarrage robuste, compatible local/prod.
@@ -70,9 +70,53 @@ def run_survey(driver, api_key, *, account_id: str):
             if isinstance(answer, dict) and answer.get("action"):
                 action = (answer.get("action") or "").upper()
 
-                # 🎛️ Cas : question sensible → cliquer sur "Je ne peux pas répondre"
+                # 🎛️ Cas : question sensible → décliner (option radio) ou bouton skip
                 if action == "SKIP":
-                    print("🚫 Question sensible → clic sur 'Je ne peux pas répondre'")
+                    print("🚫 Question sensible → tentative 'Je ne peux pas répondre' (option) puis bouton skip")
+
+                    try:
+                        # 1) Beaucoup d'écrans TopSurveys mettent "Je ne peux pas répondre" comme OPTION (radio),
+                        # pas comme bouton dédié. On essaye donc via le response_executor d'abord.
+                        decline_labels = [
+                            "Je ne peux pas répondre à cette question",
+                            "Je ne peux pas répondre",
+                            "Je préfère ne pas répondre",
+                            "Prefer not to answer",
+                            "I prefer not to answer",
+                        ]
+
+                        for lab in decline_labels:
+                            try:
+                                if preselection.response_executor.execute_response(driver, lab):
+                                    Management.guards.runtime_guard.get_guard().record_success()
+                                    time.sleep(1.2)
+                                    # ✅ on revient à la boucle des questions
+                                    break
+                            except Exception:
+                                pass
+                        else:
+                            # 2) Sinon, fallback bouton skip TopSurveys (quand il existe)
+                            skip_btn = driver.find_element(
+                                By.CSS_SELECTOR,
+                                "button[data-test-id='ps-skip-question-button']"
+                            )
+                            driver.execute_script("arguments[0].scrollIntoView({block:'center'});", skip_btn)
+                            time.sleep(0.2)
+                            try:
+                                skip_btn.click()
+                            except Exception:
+                                driver.execute_script("arguments[0].click();", skip_btn)
+
+                            Management.guards.runtime_guard.get_guard().record_success()
+                            time.sleep(1.2)
+
+                        continue  # 🔁 revenir à la boucle des questions
+
+                    except Exception as e:
+                        Management.guards.runtime_guard.get_guard().record_error(e)
+                        print("❌ Impossible de décliner/skip la question :", e)
+                        _restart("sensitive_question_skip_failed")
+                        return
 
                     try:
                         skip_btn = driver.find_element(

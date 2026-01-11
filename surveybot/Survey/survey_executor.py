@@ -184,40 +184,38 @@ def execute_survey_page(driver, api_key):
 
         print("🤖 Envoi à GPT pour interprétation visuelle... source: survey_executor.py line 59")
         instruction = screenshot_analyzer.send_image_to_gpt(screenshot_path, api_key)   
-        pass
 
+        # ➜ UTILISATION, juste après avoir reçu la réponse du modèle (variable `instruction`)
+        #    et avant de la renvoyer à l’exécuteur :
+        lines = [ln for ln in (instruction or "").splitlines() if ln.strip()]
+        fixed_lines = [_coerce_safe_value_if_questionish(ln) for ln in lines]
+        instruction = "\n".join(fixed_lines)
+        #print("📥 Instruction reçue (nettoyée dans le fixed_lines) :", instruction, " source: survey_executor.py")
 
-    # ➜ UTILISATION, juste après avoir reçu la réponse du modèle (variable `instruction`)
-    #    et avant de la renvoyer à l’exécuteur :
-    lines = [ln for ln in (instruction or "").splitlines() if ln.strip()]
-    fixed_lines = [_coerce_safe_value_if_questionish(ln) for ln in lines]
-    instruction = "\n".join(fixed_lines)
-    #print("📥 Instruction reçue (nettoyée dans le fixed_lines) :", instruction, " source: survey_executor.py")
-
-    # --- Ne conserver que la 1ère ligne non vide ---
-    if instruction:
-        instruction = next(
-            (ln.strip() for ln in instruction.splitlines() if ln.strip()), ""
-        )
-
-    print(
-        "📥 Instruction reçue (nettoyée) :",
-        instruction,
-        " source: survey_executor.py line 67",
-    )
-
-    try:
-        success = action_dispatcher.execute_action(driver, instruction)
-        if not success:
-            print(
-                "ℹ️ Aucune action appliquée par le dispatcher. source: survey_executor.py"
+        # --- Ne conserver que la 1ère ligne non vide ---
+        if instruction:
+            instruction = next(
+                (ln.strip() for ln in instruction.splitlines() if ln.strip()), ""
             )
-        return success
-    except Exception as e:
+
         print(
-            "❌ Erreur dans l’exécution de l’action basée sur GPT; source: survey_executor.py",
+            "📥 Instruction reçue (nettoyée) :",
+            instruction,
+            " source: survey_executor.py line 67",
         )
-        return False
+
+        try:
+            success = action_dispatcher.execute_action(driver, instruction)
+            if not success:
+                print(
+                    "ℹ️ Aucune action appliquée par le dispatcher. source: survey_executor.py"
+                )
+            return success
+        except Exception as e:
+            print(
+                "❌ Erreur dans l’exécution de l’action basée sur GPT; source: survey_executor.py",
+            )
+            return False
 
 
 def extract_full_visible_text(driver):
