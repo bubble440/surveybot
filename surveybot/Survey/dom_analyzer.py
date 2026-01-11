@@ -188,6 +188,63 @@ def _detect_itype(el) -> str:
 # Extraction labels/options
 # =========================
 
+def _find_question_text_near_element(driver, el) -> str:
+    """
+    Cherche un texte "question" visuellement proche (au-dessus) de l'élément input/textarea.
+    Objectif: éviter les fallbacks vision quand la question est bien dans le DOM
+    mais pas dans le même conteneur HTML (Angular/React très fréquent).
+    """
+    try:
+        txt = driver.execute_script(
+            """
+            const el = arguments[0];
+            if (!el) return "";
+            const r = el.getBoundingClientRect();
+
+            const badTags = new Set(["SCRIPT","STYLE","NOSCRIPT","TEXTAREA","INPUT","BUTTON","SELECT","OPTION"]);
+            const isVisible = (e) => {
+              const s = window.getComputedStyle(e);
+              if (!s) return false;
+              if (s.display === "none" || s.visibility === "hidden") return false;
+              const rr = e.getBoundingClientRect();
+              return rr.width > 0 && rr.height > 0;
+            };
+
+            const candidates = [];
+            const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT);
+            while (walker.nextNode()) {
+              const e = walker.currentNode;
+              if (!e || badTags.has(e.tagName)) continue;
+              if (!isVisible(e)) continue;
+
+              const t = (e.innerText || "").trim();
+              if (!t || t.length < 8) continue;
+
+              const rr = e.getBoundingClientRect();
+
+              // On veut un bloc au-dessus (ou très légèrement overlap) et proche verticalement
+              const gap = r.top - rr.bottom;
+              if (gap < -10 || gap > 320) continue;
+
+              // Overlap horizontal minimum (évite de prendre le header de la page)
+              const overlap = Math.min(r.right, rr.right) - Math.max(r.left, rr.left);
+              const minOverlap = Math.min(r.width, rr.width) * 0.25;
+              if (overlap < minOverlap) continue;
+
+              // Score: plus proche verticalement + bloc plus "important" (surface)
+              const area = rr.width * rr.height;
+              candidates.push({ t, gap, area });
+            }
+
+            candidates.sort((a,b) => (a.gap - b.gap) || (b.area - a.area));
+            return candidates.length ? candidates[0].t : "";
+            """,
+            el,
+        )
+        return (txt or "").strip()
+    except Exception:
+        return ""
+
 def _find_associated_label(driver, el) -> str:
     """
     Récupère le libellé associé à un input (souvent l'OPTION pour radio/checkbox).
@@ -402,12 +459,15 @@ def analyze_dom(driver) -> List[Dict[str, Any]]:
 
             # question = depuis conteneur (et on exclut options)
             container = _nearest_question_container(els[0])
-            question = _extract_question_from_container(container, options) if container is not None else ""
-
-            # fallback si on n'a pas trouvé: on évite de créer un "bloc option"
+            question = _extract_question_from_container(container) or ""
             if not question:
-                # si la question est introuvable, on préfère ne pas envoyer ce groupe à OpenAI
-                # (sinon on recrée le problème initial: 1 bloc par option).
+                question = _find_associated_label(driver, ta) or ""
+            if not question:
+                question = _find_question_text_near_element(driver, ta) or ""
+
+            question = (question or "").strip()
+            if not question:
+                # si aucune question trouvée: on laisse survey_executor décider d’un fallback (vision)
                 continue
 
             sig = (question, itype)
