@@ -128,20 +128,36 @@ def click_next_button(driver):
 
     except:
         try:
-            next_btn = wait.until(
-                EC.element_to_be_clickable(
-                    (
-                        By.XPATH,
-                        "//button[contains(., 'Suivant') or contains(., 'Continuer') or contains(., 'Next') or contains(., 'Continue')]",
-                    )
-                )
+            xpath = (
+                "//button["
+                "contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'suivant') or "
+                "contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'continuer') or "
+                "contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'next') or "
+                "contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'continue')"
+                "]"
             )
-            driver.execute_script(
-                "arguments[0].scrollIntoView({block: 'center'});", next_btn
-            )
+
+            next_btn = wait.until(EC.presence_of_element_located((By.XPATH, xpath)))
+            driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", next_btn)
             time.sleep(0.2)
+
+            # attendre que le bouton devienne réellement cliquable (disabled retiré)
+            try:
+                WebDriverWait(driver, 6).until(
+                    lambda d: next_btn.is_enabled() and (next_btn.get_attribute("disabled") is None)
+                )
+            except Exception:
+                # dernier recours: si l’UI ne réagit pas malgré input/change, on force le enable
+                try:
+                    driver.execute_script(
+                        "arguments[0].removeAttribute('disabled'); arguments[0].classList.remove('disabled');",
+                        next_btn,
+                    )
+                except Exception:
+                    pass
+
             driver.execute_script("arguments[0].click();", next_btn)
-            print("➡️ Bouton cliqué via fallback textuel. source: reponse_executor.py")
+            print("➡️ Bouton cliqué via fallback textuel (case-insensitive + enabled). source: reponse_executor.py")
             return True
 
         except Exception as e:

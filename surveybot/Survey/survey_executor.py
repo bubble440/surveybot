@@ -178,12 +178,35 @@ def execute_survey_page(driver, api_key):
 
         return result    
     else:
-        # fallback vision (existant)
-        print("📸 Capture de la page pour vision IA... source: survey_executor.py line 56")
-        screenshot_path = screenshot_analyzer.take_screenshot(driver, full_page=True)  # ⬅️ plein‑page
+        # fallback vision (existant) — mais on évite le plein-page si possible (moins cher + moins de bruit)
+        print("📸 Fallback vision (DOM insuffisant). source: survey_executor.py")
 
-        print("🤖 Envoi à GPT pour interprétation visuelle... source: survey_executor.py line 59")
-        instruction = screenshot_analyzer.send_image_to_gpt(screenshot_path, api_key)   
+        screenshot_path = None
+
+        # 1) Tentative screenshot ciblé (EdgeSurvey/InnovateMR : question souvent dans img.taImage)
+        try:
+            from selenium.webdriver.common.by import By
+            import os, time, tempfile
+
+            img = driver.find_element(By.CSS_SELECTOR, "img.taImage")
+            tmp_dir = os.path.join(tempfile.gettempdir(), "surveybot_screens")
+            os.makedirs(tmp_dir, exist_ok=True)
+            screenshot_path = os.path.join(tmp_dir, f"taImage_{int(time.time()*1000)}.png")
+            img.screenshot(screenshot_path)
+            print(f"📸 Screenshot ciblé (img.taImage) -> {screenshot_path}")
+        except Exception:
+            screenshot_path = None
+
+        # 2) Fallback viewport (moins lourd que full_page) puis full_page en dernier recours
+        if not screenshot_path:
+            print("📸 Screenshot viewport (pas full-page). source: survey_executor.py")
+            try:
+                screenshot_path = screenshot_analyzer.take_screenshot(driver, full_page=False)
+            except Exception:
+                screenshot_path = screenshot_analyzer.take_screenshot(driver, full_page=True)
+
+        print("🤖 Envoi à GPT pour interprétation visuelle. source: survey_executor.py line 59")
+        instruction = screenshot_analyzer.send_image_to_gpt(screenshot_path, api_key)
 
         # ➜ UTILISATION, juste après avoir reçu la réponse du modèle (variable `instruction`)
         #    et avant de la renvoyer à l’exécuteur :
