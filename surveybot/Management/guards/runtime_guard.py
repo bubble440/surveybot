@@ -183,7 +183,7 @@ class RuntimeGuard:
 
         if cta_clicked:
             print("🟢 CTA cliqué → reprise via UI")
-            return
+            # pas de return : on laisse le flow soft_restart (on_soft_restart) remettre /surveys + sélection mieux payé
 
         # 2) CTA absent / inutile → délégation soft restart
         try:

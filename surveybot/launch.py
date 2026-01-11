@@ -126,9 +126,21 @@ def build_notifier(config):
     return _notify
 
 def soft_restart_cleanup(driver):
+    """
+    Prépare un soft restart.
+    IMPORTANT : se replacer sur la page APP (app.topsurveys.app) avant la logique payout,
+    sinon la lecture du solde échoue sur la landing marketing.
+    """
     from Survey.survey_solver import _close_other_tabs_in_current_session
     _close_other_tabs_in_current_session(driver)
-    driver.get("https://www.topsurveys.app")
+
+    # Plus fiable que la landing + clic CTA
+    try:
+        safe_get(driver, "https://app.topsurveys.app/surveys")
+    except Exception as e:
+        print(f"[SOFT_RESTART][WARN] échec accès app /surveys: {e}")
+        # Fallback best-effort : on retente la landing (au pire, le flow suivant récupère)
+        safe_get(driver, "https://www.topsurveys.app")
 
 def soft_restart_payout(ctx, driver):
     """
