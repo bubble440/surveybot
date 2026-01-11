@@ -66,18 +66,17 @@ def execute_survey_page(driver, api_key):
     Nouvelle version : capture l’image, demande à GPT-4o quoi faire, puis applique l'action.
     """
     import Management.guards.url_guard
-    import screenshot_analyzer
-    import action_dispatcher 
+    import Survey.screenshot_analyzer as screenshot_analyzer
+    import Survey.action_dispatcher as action_dispatcher
     import selenium.webdriver.support.ui
-    import dom_analyzer
-    import prompt_builder
-    import batch_response_parser
-    import dom_classifier
-    import action_dispatcher
-    import dom_metrics
-    import prompt_builder
-    import batch_response_parser
-    import input_handler
+    import Survey.dom_analyzer as dom_analyzer
+    import Survey.prompt_builder as prompt_builder
+    import Survey.batch_response_parser as batch_response_parser
+    import Survey.dom_classifier as dom_classifier
+    import Survey.action_dispatcher as action_dispatcher
+    import Survey.dom_metrics as dom_metrics
+    import Survey.batch_response_parser as batch_response_parser
+    import Survey.input_handler as input_handler
     import Management.redirect_watcher as redirect_watcher
 
     # ⏳ Attente que le DOM ait fini de charger avant capture
