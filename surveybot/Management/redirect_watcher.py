@@ -88,3 +88,53 @@ def switch_to_latest_window_and_close_others(driver, base_handles, timeout=10, p
         raise RuntimeError("Aucun onglet restant après nettoyage")
 
     return False
+
+def _dom_signature(driver) -> int:
+    """
+    Signature DOM cheap: basée sur innerText (moins lourd que page_source).
+    """
+    try:
+        txt = driver.execute_script("return document.body ? (document.body.innerText || '') : ''") or ""
+        txt = txt.strip()
+        # signature stable & cheap
+        head = txt[:800]
+        tail = txt[-800:] if len(txt) > 800 else ""
+        return hash((len(txt), head, tail))
+    except Exception:
+        try:
+            src = driver.page_source or ""
+            return hash((len(src), src[:800], src[-800:]))
+        except Exception:
+            return 0
+
+def wait_for_navigation_or_dom_change(driver, before_url: str = "", before_sig: int = 0, timeout: float = 10.0, poll: float = 0.25) -> bool:
+    """
+    Attend soit:
+    - un changement d'URL
+    - OU un changement significatif du DOM (signature)
+    Retourne True si changement détecté, sinon False.
+    """
+    try:
+        start = time.time()
+        if not before_url:
+            before_url = driver.current_url
+        if not before_sig:
+            before_sig = _dom_signature(driver)
+
+        while time.time() - start < timeout:
+            time.sleep(poll)
+            try:
+                if driver.current_url != before_url:
+                    return True
+            except Exception:
+                pass
+
+            try:
+                if _dom_signature(driver) != before_sig:
+                    return True
+            except Exception:
+                pass
+
+        return False
+    except Exception:
+        return False

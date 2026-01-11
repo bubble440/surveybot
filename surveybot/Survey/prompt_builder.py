@@ -179,3 +179,48 @@ def build_batch_prompt(question_blocks: list[dict]) -> str:
     )
 
     return "\n".join(lines)
+
+def _norm_lc(s: str | None) -> str:
+    return re.sub(r"\s+", " ", (s or "")).strip().lower()
+
+def _is_navigation_label(label: str | None) -> bool:
+    v = _norm_lc(label)
+    if not v:
+        return False
+    # CTA typiques (FR/EN) + variations flèches
+    nav_tokens = [
+        "continue", "continuer", "next", "suivant", "valider", "submit", "terminer",
+        "envoyer", "send", "ok", "start", "commencer"
+    ]
+    return any(tok in v for tok in nav_tokens)
+
+def filter_blocks_for_openai(question_blocks: list) -> list:
+    """
+    Garder uniquement ce qui est 'answerable' : radio/checkbox/dropdown/text.
+    Exclure les champs système & CTA.
+    """
+    kept = []
+    for qb in question_blocks:
+        it = getattr(qb, "itype", None) or qb.get("itype")
+        label = getattr(qb, "label", None) or qb.get("label") or getattr(qb, "question", None) or qb.get("question")
+
+        it_lc = _norm_lc(it)
+
+        # On n'envoie jamais les buttons à OpenAI (on les clique nous-mêmes)
+        if it_lc == "button":
+            continue
+
+        # Si jamais un champ système a quand même traversé (défense en profondeur)
+        scope = getattr(qb, "scope_hint", None) or qb.get("scope_hint") or getattr(qb, "dom_scope_hint", None) or qb.get("dom_scope_hint")
+        if scope and any(x in _norm_lc(scope) for x in ["__viewstate", "__eventvalidation", "__viewstategenerator", "__eventtarget", "__eventargument"]):
+            continue
+
+        # Si label ressemble à une navigation, on skip
+        if _is_navigation_label(label):
+            continue
+
+        # types acceptés
+        if it_lc in {"radio", "checkbox", "dropdown", "text", "matrix_rows_single_choice", "matrix"}:
+            kept.append(qb)
+
+    return kept

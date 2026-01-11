@@ -129,7 +129,6 @@ def _has_visible_open_ended_field(container):
         pass
     return False
 
-
 def ensure_open_ended_open(
     driver,
     context_hint: str = "",
@@ -720,15 +719,6 @@ def click_cta_strong_any_context(driver, label_hint: str = "", allow_generic: bo
             continue
     return False
 
-
-#def _norm_txt(s: str) -> str:
-#    if not s:
-#        return ""
-#    s = unicodedata.normalize("NFKC", s).replace("\u00a0", " ").lower().strip()
-#    s = re.sub(r"[»«“”\"'›→·•:…]+", "", s)
-#    s = re.sub(r"\s+", " ", s)
-#    return s
-
 def _find_context_container(driver, context_hint: str | None):
     if not context_hint:
         print("❌ Contexte None")
@@ -813,7 +803,6 @@ def _find_context_container(driver, context_hint: str | None):
     except Exception:
         return None
 
-
 def _type_via_cdp(driver, text: str):
     """
     Frappe clavier via Chrome DevTools Protocol (Input.dispatchKeyEvent).
@@ -841,7 +830,6 @@ def _type_via_cdp(driver, text: str):
 
 def _has_native_selects(driver) -> bool:
     return bool(driver.find_elements(By.TAG_NAME, "select"))
-
 
 def _open_first_dropdown(driver) -> bool:
     """
@@ -894,7 +882,6 @@ def _open_first_dropdown(driver) -> bool:
 
     print("❌ Aucun dropdown à ouvrir. source: input_handler.py")
     return False
-
 
 def _try_select_option_any(driver, option_text: str) -> bool:
     """
@@ -1001,10 +988,8 @@ def _try_select_option_any(driver, option_text: str) -> bool:
     )
     return False
 
-
 def _norm_hint(s: str) -> str:
     return _norm_txt(s)
-
 
 def _select_like_elements(driver):
     els = []
@@ -1027,7 +1012,6 @@ def _select_like_elements(driver):
         except Exception:
             continue
     return uniq
-
 
 def _element_signature_text(driver, el) -> str:
     # concatène tout ce qui décrit ce champ (labels/aria/placeholder/contenu question)
@@ -1077,7 +1061,6 @@ def _element_signature_text(driver, el) -> str:
     # nettoyage léger
     return _norm_txt(sig)
 
-
 def _viewport_penalty(driver, el) -> float:
     try:
         r = el.rect
@@ -1097,7 +1080,6 @@ def _viewport_penalty(driver, el) -> float:
         pass
     return 0.0
 
-
 def _similarity(a: str, b: str) -> float:
     # simple: sous-chaîne / chevauchement de mots
     if not a or not b:
@@ -1109,7 +1091,6 @@ def _similarity(a: str, b: str) -> float:
     if not aw or not bw:
         return 0.0
     return len(aw & bw) / len(aw | bw)
-
 
 def _best_dropdown_for_hint(driver, hint: str | None, context_hint: str | None = None):
     cands = _select_like_elements(driver)
@@ -1166,7 +1147,6 @@ def _best_dropdown_for_hint(driver, hint: str | None, context_hint: str | None =
         except Exception:
             continue
     return best
-
 
 def open_dropdown_generic(driver, hint: str | None = None, context_hint: str | None = None) -> bool:
     el = _best_dropdown_for_hint(driver, hint, context_hint=context_hint)
@@ -1476,7 +1456,6 @@ def try_select_option_any(driver, option_text: str, field_hint: str | None = Non
     )
     return False
 
-
 def _norm_text(s: str) -> str:
     if not s:
         return ""
@@ -1485,19 +1464,16 @@ def _norm_text(s: str) -> str:
     s = re.sub(r"\s+", " ", s, flags=re.S).strip().lower()
     return s
 
-
 def _scroll_into_view(driver, el):
     driver.execute_script(
         "arguments[0].scrollIntoView({block:'center', inline:'center'})", el
     )
-
 
 def _js_click(driver, el):
     driver.execute_script(
         "arguments[0].scrollIntoView({block:'center',inline:'center'});", el
     )
     driver.execute_script("arguments[0].click();", el)
-
 
 def _safe_click(driver, el, *, trace: str = "") -> bool:
     """
@@ -1568,7 +1544,6 @@ def _is_checked(el):
     cls = (el.get_attribute("class") or "").lower()
     return "checked" in cls or "is-checked" in cls
 
-
 def _looks_like_nav_label(s: str) -> bool:
     if not s:
         return False
@@ -1588,7 +1563,6 @@ def _looks_like_nav_label(s: str) -> bool:
         "valider",
     }
     return any(k in s for k in nav_kw)
-
 
 # ─────────────────────────────────────────────────────────────
 # MATRICES (tableaux Qualtrics/Dynata/SSI…) : détection + actions
@@ -1638,13 +1612,11 @@ MATRIX_COL_SYNONYMS = {
     "very unsatisfied": "very unsatisfied",
 }
 
-
 def _norm(s: str) -> str:
     if not s:
         return ""
     s = unicodedata.normalize("NFKC", s).replace("\xa0", " ").strip()
     return re.sub(r"\s+", " ", s)
-
 
 def split_typed_instruction(s: str):
     """
@@ -1659,7 +1631,6 @@ def split_typed_instruction(s: str):
         return lbl, None
     itype = _norm(parts[1]).lower()
     return lbl, itype
-
 
 def _looks_like_matrix(driver):
     """
@@ -1686,7 +1657,6 @@ def _looks_like_matrix(driver):
         except:
             continue
     return False
-
 
 def _iter_matrix_rows(driver):
     """
@@ -1741,7 +1711,6 @@ def _iter_matrix_rows(driver):
         except:
             continue
     return rows
-
 
 def _get_matrix_columns(driver):
     """
@@ -2077,7 +2046,6 @@ def _select_cell_action(cell, preferred_col_norm):
 
     return False
 
-
 def apply_matrix_column_to_all_rows(driver, column_label: str) -> bool:
     """
     Si l'IA renvoie uniquement un EN‑TÊTE DE COLONNE (ex: 'Oui', 'Agree', '5'),
@@ -2158,7 +2126,6 @@ def apply_matrix_column_to_all_rows(driver, column_label: str) -> bool:
             continue
 
     return success_any
-
 
 def handle_generic_input(driver, gpt_answer: str):
     """
@@ -2356,7 +2323,6 @@ def _force_label_for_checkbox_js(driver, label_text: str) -> bool:
         return bool(driver.execute_script(js, label_text))
     except Exception:
         return False
-
 
 def click_checkbox_buttonish_by_label(driver, label: str, context_hint: str | None = None) -> bool:
     """
@@ -3598,7 +3564,6 @@ def click_radio_by_label(driver, label: str, context_hint: str | None = None) ->
         pass
         return False
 
-
 def _fallback_click_checkbox_js_alchemer(driver, target_text: str) -> bool:
     """
     Fallback ciblé Alchemer (classes 'sg-*'):
@@ -3666,7 +3631,6 @@ def _fallback_click_checkbox_js_alchemer(driver, target_text: str) -> bool:
     except Exception:
         return False
 
-
 def _fallback_click_checkbox_js_generic(driver, target_text: str) -> bool:
     """
     Fallback générique multi-sites :
@@ -3727,7 +3691,6 @@ def _fallback_click_checkbox_js_generic(driver, target_text: str) -> bool:
         return bool(driver.execute_script(js, target_text))
     except Exception:
         return False
-
 
 def _fallback_click_radio_js_generic(driver, target_text: str) -> bool:
     """
@@ -4215,7 +4178,6 @@ def _xpath_literal(s: str) -> str:
         return f'"{s}"'
     parts = s.split("'")
     return "concat(" + ',"\'",'.join([f"'{p}'" for p in parts]) + ")"
-
 
 def _click_next_any(driver):
     """
@@ -4714,7 +4676,6 @@ def fill_text_input(driver, text: str, context_hint: str | None = None) -> bool:
 
     return current.strip() == value
 
-
 def _normalize_lbl(s: str) -> str:
     if not s:
         return ""
@@ -4724,7 +4685,6 @@ def _normalize_lbl(s: str) -> str:
     s = re.sub(r"[»«“”\"'›→·•:]+", "", s)
     s = re.sub(r"\s+", " ", s)
     return s
-
 
 def click_button_by_text(driver, text):
     target = _normalize_lbl(text)
@@ -4919,8 +4879,6 @@ def click_button_by_text(driver, text):
     print(f"❌ Aucun élément cliquable trouvé (après normalisation) pour : {text} source: input_handler.py")
     return False
 
-
-
 def apply_ai_response(driver, response):
     print("run: apply_ai_response")
     """
@@ -5001,7 +4959,6 @@ def apply_ai_response(driver, response):
     )
     return False
 
-
 def _is_visible(driver, el):
     try:
         if not el.is_displayed():
@@ -5010,7 +4967,6 @@ def _is_visible(driver, el):
         return box and box.get("width", 0) > 5 and box.get("height", 0) > 5
     except Exception:
         return False
-
 
 def click_icon_like_button(driver, hints=None):
     """
@@ -5100,7 +5056,6 @@ def click_icon_like_button(driver, hints=None):
     print("❌ Aucun bouton-icône pertinent trouvé. source: input_handler.py")
     return False
 
-
 def click_primary_cta(driver):
     """
     Clique le CTA principal lorsque le bouton n'a pas de texte.
@@ -5172,7 +5127,6 @@ def click_primary_cta(driver):
     print("❌ Impossible de cliquer le CTA principal. source: input_handler.py")
     return False
 
-
 def _iter_iframes_safe(driver):
     """Retourne la liste des iframes visibles et probablement interactives."""
     frames = []
@@ -5184,7 +5138,6 @@ def _iter_iframes_safe(driver):
         except Exception:
             continue
     return frames
-
 
 def _in_each_frame_recursive(driver, fn_try, depth=2):
     """
@@ -5222,7 +5175,6 @@ def _in_each_frame_recursive(driver, fn_try, depth=2):
 
     return False
 
-
 def click_button_by_text_any_context(driver, text, depth=2):
     """
     Tente de cliquer un bouton par texte dans le DOM courant et,
@@ -5235,7 +5187,6 @@ def click_button_by_text_any_context(driver, text, depth=2):
 
     return _in_each_frame_recursive(driver, _try_here, depth=depth)
 
-
 def click_icon_like_button_any_context(driver, hints=None, depth=2):
     """
     Même logique mais pour les boutons sans texte (icône/flèche).
@@ -5246,7 +5197,6 @@ def click_icon_like_button_any_context(driver, hints=None, depth=2):
 
     return _in_each_frame_recursive(driver, _try_here, depth=depth)
 
-
 def click_primary_cta_any_context(driver, depth=2):
     """
     Clique le CTA principal, en testant aussi à travers les iframes.
@@ -5255,4 +5205,76 @@ def click_primary_cta_any_context(driver, depth=2):
     def _try_here(drv):
         return click_primary_cta(drv)
 
+    return _in_each_frame_recursive(driver, _try_here, depth=depth)
+
+def _norm_btn_text(s: str) -> str:
+    s = re.sub(r"\s+", " ", (s or "")).strip().lower()
+    # enlève flèches / décorations fréquentes
+    s = s.replace("→", " ").replace("»", " ").replace(">", " ")
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
+
+def try_click_navigation_cta(driver) -> bool:
+    """
+    Cherche un CTA de navigation (Continue/Suivant/Next/Valider…)
+    et clique le meilleur candidat visible.
+    """
+    candidates = []
+
+    # buttons
+    for el in driver.find_elements(By.XPATH, "//button|//a[@role='button']|//input[@type='submit' or @type='button']"):
+        try:
+            if not el.is_displayed() or not el.is_enabled():
+                continue
+            txt = el.text or el.get_attribute("value") or el.get_attribute("aria-label") or ""
+            t = _norm_btn_text(txt)
+            if not t:
+                continue
+
+            # exclure liens “learn more” / privacy etc
+            if any(x in t for x in ["learn more", "privacy", "terms", "cookies"]):
+                continue
+
+            score = 0
+            if any(x in t for x in ["continue", "continuer", "next", "suivant"]):
+                score += 50
+            if any(x in t for x in ["valider", "submit", "envoyer", "terminer", "send", "start", "commencer"]):
+                score += 30
+
+            cls = (el.get_attribute("class") or "").lower()
+            if "primary" in cls:
+                score += 10
+            if "btn" in cls:
+                score += 5
+
+            candidates.append((score, el))
+        except Exception:
+            continue
+
+    if not candidates:
+        return False
+
+    candidates.sort(key=lambda x: x[0], reverse=True)
+
+    # ✅ Essayer plusieurs candidats (pas seulement le "best")
+    for score, el in candidates[:6]:
+        try:
+            driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
+            try:
+                el.click()
+            except Exception:
+                driver.execute_script("arguments[0].click();", el)
+            return True
+        except Exception:
+            continue
+
+    return False
+
+def try_click_navigation_cta_any_context(driver, depth=2) -> bool:
+    """
+    Même CTA nav, mais tente aussi à travers les iframes.
+    Indispensable à l’échelle (100 bots) car les providers varient beaucoup.
+    """
+    def _try_here(drv):
+        return try_click_navigation_cta(drv)
     return _in_each_frame_recursive(driver, _try_here, depth=depth)
