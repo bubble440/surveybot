@@ -140,3 +140,28 @@ def parse_batch_response(raw: str, constraints: Optional[Dict[str, int]] = None)
             )
 
     return actions
+
+def _norm_lc(s: str | None) -> str:
+    return re.sub(r"\s+", " ", (s or "")).strip().lower()
+
+def _is_system_scope(scope: str | None) -> bool:
+    v = _norm_lc(scope)
+    return any(x in v for x in ["__viewstate", "__eventvalidation", "__viewstategenerator", "__eventtarget", "__eventargument"])
+
+def sanitize_actions(actions: list) -> list:
+    cleaned = []
+    for a in actions:
+        it = _norm_lc(getattr(a, "itype", None) or a.get("itype"))
+        scope = getattr(a, "scope_hint", None) or a.get("scope_hint") or getattr(a, "dom_scope_hint", None) or a.get("dom_scope_hint")
+
+        if scope and _is_system_scope(scope):
+            continue
+
+        # si jamais CTA passé en text/whatever
+        answer = _norm_lc(getattr(a, "answer", None) or a.get("answer"))
+        if it == "text" and any(tok in answer for tok in ["continue", "continuer", "next", "suivant"]):
+            continue
+
+        cleaned.append(a)
+
+    return cleaned

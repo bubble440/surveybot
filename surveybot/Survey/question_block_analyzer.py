@@ -33,6 +33,86 @@ from selenium.webdriver.remote.webelement import WebElement
 # Utils texte
 # ------------------------------------------------------------
 
+_ASPNET_SYSTEM_FIELDS = {
+    "__viewstate",
+    "__viewstategenerator",
+    "__eventvalidation",
+    "__eventtarget",
+    "__eventargument",
+    "__lastfocus",
+    "__scrollpositionx",
+    "__scrollpositiony",
+}
+
+def _norm_lc(s: str | None) -> str:
+    return re.sub(r"\s+", " ", (s or "")).strip().lower()
+
+def _looks_like_system_field(name_or_id: str | None) -> bool:
+    v = _norm_lc(name_or_id)
+    if not v:
+        return False
+    if v in _ASPNET_SYSTEM_FIELDS:
+        return True
+    # Certains sites encapsulent avec prefixes/suffixes
+    if any(tok in v for tok in ["__viewstate", "__eventvalidation", "__viewstategenerator", "__eventtarget", "__eventargument"]):
+        return True
+    return False
+
+def _is_hidden_like(attrs: dict) -> bool:
+    """
+    Heuristique cheap & robuste (pas besoin de Selenium ici).
+    attrs: dict d'attributs HTML (type/name/id/style/class/hidden/aria-hidden...)
+    """
+    t = _norm_lc(attrs.get("type"))
+    if t == "hidden":
+        return True
+
+    # attribut HTML hidden / aria-hidden
+    if "hidden" in attrs and attrs.get("hidden") is not None:
+        return True
+    if _norm_lc(attrs.get("aria-hidden")) in {"true", "1"}:
+        return True
+
+    style = _norm_lc(attrs.get("style"))
+    if "display:none" in style or "visibility:hidden" in style:
+        return True
+
+    # champs système ASP.NET
+    if _looks_like_system_field(attrs.get("id")) or _looks_like_system_field(attrs.get("name")):
+        return True
+
+    return False
+
+def _infer_itype(tag_name: str, attrs: dict) -> str:
+    """
+    Corrige notamment le cas <input type="submit" ...> (CTA Continue)
+    """
+    tag = _norm_lc(tag_name)
+    t = _norm_lc(attrs.get("type"))
+
+    if tag == "button":
+        return "button"
+
+    if tag == "input":
+        if t in {"submit", "button", "reset", "image"}:
+            return "button"
+        if t == "radio":
+            return "radio"
+        if t == "checkbox":
+            return "checkbox"
+        # text-like
+        if t in {"", "text", "email", "tel", "number", "search", "password", "url"}:
+            return "text"
+        # default safe
+        return "text"
+
+    if tag == "select":
+        return "dropdown"
+    if tag == "textarea":
+        return "text"
+
+    return "unknown"
+
 def _norm(s: str) -> str:
     if not s:
         return ""
