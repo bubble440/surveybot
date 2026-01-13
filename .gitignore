@@ -22,3 +22,5 @@ surveybot/Survey/screenshots/
 
 # Docker leftovers
 *.pid
+
+./snapshots/

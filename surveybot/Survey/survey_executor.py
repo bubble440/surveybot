@@ -78,6 +78,7 @@ def execute_survey_page(driver, api_key):
     import Survey.batch_response_parser as batch_response_parser
     import Survey.input_handler as input_handler
     import Management.redirect_watcher as redirect_watcher
+    import Survey.page_snapshot as page_snapshot
 
     # ⏳ Attente que le DOM ait fini de charger avant capture
     try:
@@ -125,6 +126,12 @@ def execute_survey_page(driver, api_key):
 
     question_blocks = dom_analyzer.analyze_dom(driver)
     question_blocks = prompt_builder.filter_blocks_for_openai(question_blocks)
+
+    # ✅ SNAPSHOT DEBUG (opt-in)
+    try:
+        page_snapshot.snapshot_if_enabled(driver, reason="after_dom_analyze", question_blocks=question_blocks)
+    except Exception:
+        pass
 
     client = openai.OpenAI(api_key=api_key)
 

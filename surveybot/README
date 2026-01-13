@@ -72,3 +72,11 @@ docker run --rm -it `
 # Adresse mail de test jetable :
 # wil2.pretender848@silomails.com
 # qatar.chimp729@8shield.net
+
+
+# Pour activer les snapshots (debug) :
+New-Item -ItemType Directory -Force snapshots | Out-Null
+Set-Content -Path snapshots\.snapshot_flag -Value "on"
+
+# Pour désactiver les snapshots (debug) :
+Remove-Item -Force snapshots\.snapshot_flag -ErrorAction SilentlyContinue
