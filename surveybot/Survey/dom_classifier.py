@@ -118,9 +118,79 @@ def is_end_screen(driver):
     return True
 
 def is_captcha_screen(driver) -> bool:
-    return bool(
-        driver.find_elements(By.CSS_SELECTOR, "iframe[src*='captcha'], iframe[src*='recaptcha']")
-    )
+    """
+    Détecte un CAPTCHA *réellement bloquant*.
+    Évite les faux positifs quand reCAPTCHA est chargé en background (invisible/1x1).
+    """
+
+    # 1) Signal texte fort (visible seulement, via _page_text_lc)
+    txt = _page_text_lc(driver)
+    strong_kw = [
+        "je ne suis pas un robot",
+        "i'm not a robot",
+        "im not a robot",
+        "verify you are human",
+        "human verification",
+        "vérifiez que vous êtes",
+        "verification humaine",
+        "captcha",
+        "hcaptcha",
+    ]
+    if any(k in txt for k in strong_kw):
+        return True
+
+    # 2) Widget visible (taille minimale) : iframe/containers captcha visibles
+    # (reCAPTCHA invisible / tracking iframes sont souvent 0x0 ou 1x1)
+    try:
+        return bool(driver.execute_script("""
+            const sels = [
+              "iframe[src*='recaptcha']",
+              "iframe[src*='captcha']",
+              "iframe[src*='hcaptcha']",
+              ".g-recaptcha",
+              ".h-captcha",
+              "#recaptcha",
+              "[data-sitekey]"
+            ];
+            const els = Array.from(document.querySelectorAll(sels.join(",")));
+
+            for (const e of els) {
+              const cs = getComputedStyle(e);
+              if (cs.display === "none" || cs.visibility === "hidden") continue;
+
+              const r = e.getBoundingClientRect();
+              if (!r) continue;
+
+              // seuils anti-faux-positifs (1x1, 0x0, etc.)
+              if (r.width < 60 || r.height < 40) continue;
+
+              // ignore si complètement hors écran
+              if (r.bottom < 0 || r.right < 0) continue;
+
+              return true;
+            }
+            return false;
+        """))
+    except Exception:
+        # Fallback Selenium (moins précis, mais garde les seuils taille/visibilité)
+        try:
+            frames = driver.find_elements(
+                By.CSS_SELECTOR,
+                "iframe[src*='captcha'], iframe[src*='recaptcha'], iframe[src*='hcaptcha']"
+            )
+            for fr in frames:
+                try:
+                    if not fr.is_displayed():
+                        continue
+                    r = fr.rect or {}
+                    if (r.get("width", 0) or 0) >= 60 and (r.get("height", 0) or 0) >= 40:
+                        return True
+                except Exception:
+                    continue
+        except Exception:
+            pass
+
+    return False
 
 def is_drag_drop(driver) -> bool:
     return bool(

@@ -459,15 +459,12 @@ def analyze_dom(driver) -> List[Dict[str, Any]]:
 
             # question = depuis conteneur (et on exclut options)
             container = _nearest_question_container(els[0])
-            question = _extract_question_from_container(container) or ""
-            if not question:
-                question = _find_associated_label(driver, ta) or ""
-            if not question:
-                question = _find_question_text_near_element(driver, ta) or ""
+            question = _extract_question_from_container(container, options) if container is not None else ""
 
-            question = (question or "").strip()
+            # fallback si on n'a pas trouvé: on évite de créer un "bloc option"
             if not question:
-                # si aucune question trouvée: on laisse survey_executor décider d’un fallback (vision)
+                # si la question est introuvable, on préfère ne pas envoyer ce groupe à OpenAI
+                # (sinon on recrée le problème initial: 1 bloc par option).
                 continue
 
             sig = (question, itype)
