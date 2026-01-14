@@ -80,3 +80,7 @@ Set-Content -Path snapshots\.snapshot_flag -Value "on"
 
 # Pour désactiver les snapshots (debug) :
 Remove-Item -Force snapshots\.snapshot_flag -ErrorAction SilentlyContinue
+
+# Pour rejouer un snapshot et enregistrer une nouvelle baseline (debug) :
+cd C:\projects\Surveys\surveybot
+python tools\replay_snapshot.py ..\snapshots\20260113_214405_after_dom_analyze --save-baseline
