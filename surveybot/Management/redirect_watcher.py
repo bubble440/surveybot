@@ -138,3 +138,39 @@ def wait_for_navigation_or_dom_change(driver, before_url: str = "", before_sig: 
         return False
     except Exception:
         return False
+
+def wait_for_navigation_or_dom_change(driver, *, before_url: str, before_sig: str | None = None, timeout: int = 10) -> bool:
+    """
+    Attend un changement notable après un clic CTA:
+    - URL change
+    - OU signature DOM change
+
+    Best-effort, jamais bloquant.
+    """
+    import time
+
+    end = time.time() + max(1, int(timeout or 10))
+
+    try:
+        if before_sig is None:
+            before_sig = _dom_signature(driver)
+    except Exception:
+        before_sig = before_sig or ""
+
+    while time.time() < end:
+        try:
+            if driver.current_url != (before_url or ""):
+                return True
+        except Exception:
+            pass
+
+        try:
+            sig = _dom_signature(driver)
+            if sig and before_sig and sig != before_sig:
+                return True
+        except Exception:
+            pass
+
+        time.sleep(0.2)
+
+    return False

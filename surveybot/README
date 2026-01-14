@@ -83,4 +83,8 @@ Remove-Item -Force snapshots\.snapshot_flag -ErrorAction SilentlyContinue
 
 # Pour rejouer un snapshot et enregistrer une nouvelle baseline (debug) :
 cd C:\projects\Surveys\surveybot
-python tools\replay_snapshot.py ..\snapshots\20260113_214405_after_dom_analyze --save-baseline
+python tools\replay_snapshot.py ..\snapshots\20260114_211834_after_dom_analyze --use-dom-outer --save-baseline
+python tools\replay_snapshot.py ..\snapshots\20260114_211834_after_dom_analyze --use-dom-outer --headful --pause
+
+# Pour rejouer un snapshot en mode headful avec pause (debug) :
+python tools\replay_snapshot.py ..\snapshots\20260114_211834_after_dom_analyze --use-dom-outer --headful --pause
