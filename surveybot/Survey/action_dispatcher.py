@@ -437,188 +437,65 @@ def _wait_for_button_effect(driver, *, timeout=6):
 
 def handle_consent_screen(driver):
     """
-    Consent/RGPD screen:
-    1) coche toutes les checkboxes visibles non cochées
-    2) clique le CTA (accept/continue/proceed/next/start)
-    IMPORTANT: ne JAMAIS cliquer "Click here" (exit survey).
+    Consent/RGPD: on clique localement sur un CTA positif (Accepter/Continuer),
+    sans passer par OpenAI/vision.
+
+    Important: éviter explicitement "Refuser / Quitter / Disagree".
     """
-    import time
-    from selenium.webdriver.common.by import By
     import Survey.input_handler
-    from Survey.frame_utils import iter_frame_chains, switch_to_frame_chain
 
-    # 1) Consent peut être checkbox OU radio, souvent dans un iframe (Decipher)
-    js_click_checkboxes = """
-        const cbs = Array.from(document.querySelectorAll("input[type='checkbox'], [role='checkbox']"))
-          .filter(cb => {
-            try{
-              if (cb.disabled) return false;
-              const cs = getComputedStyle(cb);
-              if (cs.display === "none" || cs.visibility === "hidden") return false;
-              const r = cb.getBoundingClientRect();
-              if (!r || r.width < 3 || r.height < 3) return false;
-              return true;
-            }catch(e){ return false; }
-          });
+    # 1) Tentatives robustes (iframe-safe via Any-Context)
+    #    On préfère des mots FR/EN très "positifs".
+    for word in ("accepter", "continuer", "accept", "agree", "continue", "proceed", "suivant", "next", "ok"):
+        try:
+            if Survey.input_handler.click_cta_strong_any_context(driver, text=word):
+                return True
+        except Exception:
+            pass
 
-        let n = 0;
-        for (const cb of cbs) {
-          try{
-            const checked = (cb.checked === true) || ((cb.getAttribute("aria-checked")||"").toLowerCase()==="true");
-            if (!checked) { cb.click(); n++; }
-          }catch(e){}
-        }
-        return n;
-    """
-
-    js_click_accept_radio = r"""
-        const norm = s => (s||"").toLowerCase()
-          .normalize("NFKC").replace(/\u00A0/g," ")
-          .replace(/[»«“”"'›→·•:]/g,"").replace(/\s+/g," ").trim();
-
-        const accept = ["j'accepte","j accepte","accepte","accept","agree","i agree","i accept","oui","yes"];
-        const reject = ["je ne suis pas d'accord","pas d'accord","disagree","refuse","no"];
-
-        const isReject = t => reject.some(w => t.includes(w));
-        const isAccept = t => accept.some(w => t.includes(w));
-
-        // 1) labels
-        const labels = Array.from(document.querySelectorAll("label"));
-        for (const lab of labels){
-          const t = norm(lab.innerText || lab.textContent || "");
-          if (!t) continue;
-          if (isReject(t)) continue;
-          if (!isAccept(t)) continue;
-
-          try{ lab.scrollIntoView({block:"center"}); }catch(e){}
-          try{ lab.click(); }catch(e){}
-
-          const fid = lab.getAttribute("for");
-          if (fid){
-            const inp = document.getElementById(fid);
-            if (inp){
-              try{ inp.click(); }catch(e){}
-              try{
-                if (inp.type === "radio") inp.checked = true;
-                inp.dispatchEvent(new Event("input",{bubbles:true}));
-                inp.dispatchEvent(new Event("change",{bubbles:true}));
-              }catch(e){}
-            }
-          }
-          return true;
-        }
-
-        // 2) role=radio
-        const rs = Array.from(document.querySelectorAll("[role='radio']"));
-        for (const r of rs){
-          const t = norm(r.innerText || r.textContent || r.getAttribute("aria-label") || "");
-          if (!t) continue;
-          if (isReject(t)) continue;
-          if (!isAccept(t)) continue;
-          try{ r.scrollIntoView({block:"center"}); }catch(e){}
-          try{ r.click(); }catch(e){}
-          return true;
-        }
-
-        // 3) input radio + label[for]
-        const inps = Array.from(document.querySelectorAll("input[type='radio']"));
-        for (const inp of inps){
-          if (inp.disabled) continue;
-          const id = inp.id || "";
-          if (!id) continue;
-          const lab = document.querySelector("label[for='"+CSS.escape(id)+"']");
-          const t = norm(lab ? (lab.innerText||lab.textContent||"") : "");
-          if (!t) continue;
-          if (isReject(t)) continue;
-          if (!isAccept(t)) continue;
-
-          try{ inp.scrollIntoView({block:"center"}); }catch(e){}
-          try{ inp.click(); }catch(e){}
-          return true;
-        }
-
-        return false;
-    """
-
-    clicked = 0
-    accepted_radio = False
-
-    for chain in iter_frame_chains(driver, max_depth=2):
-        with switch_to_frame_chain(driver, chain) as ok:
-            if not ok:
-                continue
-            try:
-                clicked += int(driver.execute_script(js_click_checkboxes) or 0)
-            except Exception:
-                pass
-            try:
-                if driver.execute_script(js_click_accept_radio):
-                    accepted_radio = True
-            except Exception:
-                pass
-
-    if clicked or accepted_radio:
-        time.sleep(0.4)  # laisse le framework activer le bouton
-
-    # 2) CTA: “Suivant” est souvent dans le même iframe => on clique en mode iframe-safe
-    try:
-        if Survey.input_handler.click_cta_strong_any_context(driver, text="suivant", depth=2):
-            return True
-    except Exception:
-        pass
-
-    # 3) Cliquer le CTA (en évitant tout "exit")
-    # D'abord une recherche JS stricte sur boutons
+    # 2) JS best-effort (au cas où) en filtrant les "Refuser/Quitter"
     try:
         hit = (driver.execute_script("""
-            const words = arguments[0];
-            const els = Array.from(document.querySelectorAll(
-              "button, input[type='submit'], input[type='button'], a[role='button'], [role='button']"
-            ));
+            const good = arguments[0];
+            const bad = arguments[1];
 
-            const norm = s => (s || "").toLowerCase().replace(/\\s+/g, " ").trim();
+            function norm(s){ return (s||"").toLowerCase().replace(/\\s+/g," ").trim(); }
 
-            for (const el of els) {
-              let t = norm(el.innerText || el.value || "");
-              if (!t) continue;
+            const els = Array.from(document.querySelectorAll('button, a, input[type="button"], input[type="submit"], [role="button"]'));
+            for (const el of els){
+              const t = norm(el.innerText || el.value || el.getAttribute("aria-label") || "");
+              const id = norm(el.id || "");
+              if (!t && !id) continue;
 
-              // sécurité anti "exit"
-              if (t.includes("exit") || t.includes("quit") || t.includes("refuse") || t.includes("do not agree")) continue;
+              if (bad.some(b => t.includes(b) || id.includes(b))) continue;
 
-              if (!words.some(w => t.includes(w))) continue;
-
-              // visible ?
-              const cs = getComputedStyle(el);
-              if (cs.display === "none" || cs.visibility === "hidden") continue;
-              const r = el.getBoundingClientRect();
-              if (!r || r.width < 10 || r.height < 10) continue;
-
-              // enabled ?
-              if (el.disabled) continue;
-              if ((el.getAttribute("aria-disabled") || "") === "true") continue;
-
-              el.scrollIntoView({block: "center"});
-              el.click();
-              return t;
+              if (id.includes("gtm-agree-button") || id.includes("agree") || id.includes("accept") || id.includes("consent")){
+                el.scrollIntoView({block:"center"});
+                el.click();
+                return true;
+              }
+              if (good.some(g => t.includes(g))){
+                el.scrollIntoView({block:"center"});
+                el.click();
+                return true;
+              }
             }
-            return "";
-        """, ["proceed", "continue", "next", "accept", "agree", "start", "begin"]) or "").strip()
+            return false;
+        """, ["accepter","continuer","accept","agree","continue","proceed","suivant","next","ok","d'accord"],
+             ["refuser","disagree","quitter","quit","exit","annuler","cancel","fermer","close"])) or False
         if hit:
             return True
     except Exception:
         pass
 
-    # Fallback: click_button_by_text (best-effort)
+    # 3) dernier recours: anciens helpers
     return (
-        Survey.input_handler.click_button_by_text(driver, "proceed")
-        or Survey.input_handler.click_button_by_text(driver, "continue")
-        or Survey.input_handler.click_button_by_text(driver, "next")
+        Survey.input_handler.click_button_by_text(driver, "accepter")
+        or Survey.input_handler.click_button_by_text(driver, "continuer")
         or Survey.input_handler.click_button_by_text(driver, "accept")
         or Survey.input_handler.click_button_by_text(driver, "agree")
-        or Survey.input_handler.click_button_by_text(driver, "accepter")
-        or Survey.input_handler.click_button_by_text(driver, "commencer")
-        or Survey.input_handler.click_button_by_text(driver, "start")
-        or Survey.input_handler.click_button_by_text(driver, "begin")
+        or Survey.input_handler.click_button_by_text(driver, "continue")
+        or Survey.input_handler.click_button_by_text(driver, "next")
     )
 
 def handle_start_screen(driver):

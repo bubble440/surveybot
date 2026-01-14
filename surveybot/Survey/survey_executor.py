@@ -190,6 +190,44 @@ def execute_survey_page(driver, api_key):
 
         screenshot_path = None
 
+        # ------------------------------------------------------------
+        # ✅ FALLBACK LOCAL "CTA-only" (zéro question mais un bouton existe)
+        # Objectif: éviter un appel vision coûteux sur des pages comme "Consent"
+        # ------------------------------------------------------------
+        try:
+            before_url = driver.current_url
+        except Exception:
+            before_url = ""
+
+        try:
+            before_sig = redirect_watcher._dom_signature(driver)
+        except Exception:
+            before_sig = ""
+
+        try:
+            clicked = (
+                input_handler.click_cta_strong_any_context(driver, text="accepter")
+                or input_handler.click_cta_strong_any_context(driver, text="continuer")
+                or input_handler.click_cta_strong_any_context(driver, text="accept")
+                or input_handler.click_cta_strong_any_context(driver, text="agree")
+                or input_handler.click_cta_strong_any_context(driver, text="next")
+                or input_handler.click_cta_strong_any_context(driver, text="suivant")
+            )
+            if clicked:
+                try:
+                    redirect_watcher.wait_for_navigation_or_dom_change(
+                        driver,
+                        before_url=before_url,
+                        before_sig=before_sig,
+                        timeout=10,
+                    )
+                except Exception:
+                    # best-effort: si ça n'existe pas / échoue, on continue quand même
+                    pass
+                return True
+        except Exception:
+            pass
+        # ------------------------------------------------------------
         # 1) Tentative screenshot ciblé (EdgeSurvey/InnovateMR : question souvent dans img.taImage)
         try:
             from selenium.webdriver.common.by import By

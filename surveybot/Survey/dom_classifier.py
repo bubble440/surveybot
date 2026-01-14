@@ -63,22 +63,72 @@ def _page_text_lc(driver) -> str:
 
 def is_consent_screen(driver) -> bool:
     """
-    Détecte un écran de consentement / RGPD / privacy :
-    - présence de mots-clés (privacy/consent/gdpr/rgpd/terms…)
-    - présence de checkboxes visibles
-    - présence d'un CTA type accept/continue/proceed/next/start (même si disabled)
+    Détecte un écran de consentement / RGPD / privacy (y compris CTA-only comme rx.samplicio).
+    Objectif: bypass OpenAI/vision et cliquer localement sur "Accepter/Continuer".
+
+    Heuristique:
+    - mots-clés consent/privacy/cookies/rgpd…
+    - ET (checkbox/radio visibles OU présence d’un CTA "accept/agree/accepter/continuer" ou id "*agree*")
+    - en scannant default_content + iframes (profondeur 2)
     """
     txt = _page_text_lc(driver)
 
     has_kw = any(k in txt for k in [
-        "consent", "gdpr", "rgpd", "privacy", "privacy rights",
-        "politique de confidentialité", "confidentialité", "terms", "cookie",
-        "proceed into the survey", "consent form",
+        "consent", "gdpr", "rgpd", "privacy",
+        "politique de confidentialité", "confidentialité",
+        "terms", "cookie", "cookies",
+        "consent form",
     ])
     if not has_kw:
         return False
 
-    # Doit contenir un choix de consentement (checkbox OU radio), souvent dans un iframe
+    bad_words = ("refuser", "disagree", "quitter", "quit", "exit", "annuler", "cancel", "fermer", "close")
+    good_words = (
+        "accepter", "j'accepte", "agree", "accept",
+        "continuer", "continue", "proceed",
+        "suivant", "next",
+        "commencer", "start", "begin",
+        "ok", "d'accord"
+    )
+
+    def _has_agree_cta_here() -> bool:
+        # ids typiques: gtm-agree-button / agree / accept / consent…
+        try:
+            if driver.find_elements(By.CSS_SELECTOR, "#gtm-agree-button"):
+                return True
+        except Exception:
+            pass
+
+        sel = "button, [role='button'], input[type='button'], input[type='submit'], a"
+        try:
+            els = driver.find_elements(By.CSS_SELECTOR, sel) or []
+        except Exception:
+            els = []
+
+        for el in els[:120]:  # cap perf
+            try:
+                t = _norm_lc(el.text or el.get_attribute("value") or el.get_attribute("aria-label") or "")
+                _id = _norm_lc(el.get_attribute("id") or "")
+                if not t and not _id:
+                    continue
+
+                # ne jamais considérer un CTA "refuser/quitter" comme positif
+                if any(b in t for b in bad_words) or ("disagree" in _id) or ("quit" in _id):
+                    continue
+
+                # id "agree/accept/consent" -> très fort signal
+                if any(k in _id for k in ("agree", "accept", "consent")):
+                    return True
+
+                # texte positif
+                if any(g in t for g in good_words):
+                    return True
+            except Exception:
+                continue
+
+        return False
+
+    # a) choix explicites (checkbox/radio)
     has_choice = False
     for chain in iter_frame_chains(driver, max_depth=2):
         with switch_to_frame_chain(driver, chain) as ok:
@@ -90,26 +140,21 @@ def is_consent_screen(driver) -> bool:
                     break
             except Exception:
                 continue
-    if not has_choice:
-        return False
-    
-    # CTA possible (même si disabled, car sur ces pages il s'active après check)
-    cta_words = ["accepter", "accept", "agree", "continuer", "continue", "proceed", "next", "start", "begin"]
-    try:
-        for b in driver.find_elements(By.CSS_SELECTOR, "button, input[type='submit'], input[type='button'], a, [role='button']"):
+
+    # b) CTA accept/continue (même sans checkbox)
+    has_agree_cta = False
+    for chain in iter_frame_chains(driver, max_depth=2):
+        with switch_to_frame_chain(driver, chain) as ok:
+            if not ok:
+                continue
             try:
-                t = _norm_lc((b.text or "") or (b.get_attribute("value") or ""))
-                if not t:
-                    continue
-                if any(w in t for w in cta_words) and b.is_displayed():
-                    return True
+                if _has_agree_cta_here():
+                    has_agree_cta = True
+                    break
             except Exception:
                 continue
-    except Exception:
-        pass
 
-    # Fallback ultra permissif (safe) : mots clés + checkboxes suffit
-    return True
+    return bool(has_choice or has_agree_cta)
 
 def is_start_screen(driver) -> bool:
     txt = _page_text_lc(driver)
