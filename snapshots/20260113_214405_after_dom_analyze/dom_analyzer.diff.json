@@ -1,0 +1,19 @@
+{
+  "summary_before": {
+    "total": 5,
+    "by_type": {
+      "checkbox": 4,
+      "button": 1
+    }
+  },
+  "summary_after": {
+    "total": 5,
+    "by_type": {
+      "checkbox": 4,
+      "button": 1
+    }
+  },
+  "added": [],
+  "removed": [],
+  "changed": []
+}
