@@ -5235,6 +5235,10 @@ def try_click_navigation_cta(driver) -> bool:
             if any(x in t for x in ["learn more", "privacy", "terms", "cookies"]):
                 continue
 
+            bad = ("refuser", "disagree", "quitter", "quit", "exit", "annuler", "cancel", "fermer", "close")
+            if any(b in t for b in bad):
+                continue
+
             score = 0
             if any(x in t for x in ["continue", "continuer", "next", "suivant", "proceed"]):
                 score += 50
