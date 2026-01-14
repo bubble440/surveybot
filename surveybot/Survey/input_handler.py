@@ -5236,7 +5236,7 @@ def try_click_navigation_cta(driver) -> bool:
                 continue
 
             score = 0
-            if any(x in t for x in ["continue", "continuer", "next", "suivant"]):
+            if any(x in t for x in ["continue", "continuer", "next", "suivant", "proceed"]):
                 score += 50
             if any(x in t for x in ["valider", "submit", "envoyer", "terminer", "send", "start", "commencer"]):
                 score += 30

@@ -1,289 +1,261 @@
 #!/usr/bin/env python3
 # tools/replay_snapshot.py
 """
-Replay offline d'un snapshot DOM pour valider dom_analyzer.
+Rejoue un snapshot DOM dans un vrai navigateur, puis exécute Survey.dom_analyzer.analyze_dom()
+et compare automatiquement avant/après via un fichier baseline.
 
-Usage (depuis la racine du projet) :
-  python tools/replay_snapshot.py ./snapshots/20260111_180000_after_dom_analyze
-  python tools/replay_snapshot.py ./snapshots/.../dom_outer.html
+Usage:
+  python tools/replay_snapshot.py <snapshot_dir_or_dom_html> --save-baseline
+  python tools/replay_snapshot.py <snapshot_dir_or_dom_html>
+  python tools/replay_snapshot.py <snapshot_dir_or_dom_html> --use-page-source
 
-Le script :
-- charge dom_outer.html
-- appelle Survey.dom_analyzer.analyze_dom() (via un driver offline minimal)
-  ou Survey.dom_analyzer.analyze_html() si cette fonction existe
-- compare au baseline question_blocks.json (si présent)
-- écrit question_blocks.new.json dans le dossier snapshot
+Fichiers écrits dans le dossier snapshot:
+  - dom_analyzer.out.json
+  - dom_analyzer.baseline.json (si --save-baseline)
+  - dom_analyzer.diff.json (si baseline existe)
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
-from collections import Counter
+import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 
 
-# ---------------------------
-# Driver offline minimal
-# ---------------------------
-class OfflineDriver:
-    """
-    Simule le strict minimum d'un Selenium driver pour les analyseurs
-    qui ne font que driver.execute_script(...) / driver.page_source.
-    """
+# -----------------------------
+# Helpers diff
+# -----------------------------
 
-    def __init__(self, html: str, url: str = "", title: str = "") -> None:
-        self._html = html
-        self._url = url
-        self._title = title
-        self.page_source = html  # fallback si le code utilise driver.page_source
+def _sig(block: Dict[str, Any]) -> str:
+    q = (block.get("question") or "").strip().lower()
+    it = (block.get("itype") or "").strip().lower()
+    return f"{it}|{q}"
 
-    @property
-    def current_url(self) -> str:
-        return self._url
+def _index_blocks(blocks: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+    out = {}
+    for b in blocks or []:
+        out[_sig(b)] = b
+    return out
 
-    def execute_script(self, script: str, *args, **kwargs):
-        s = script or ""
-        if "document.documentElement.outerHTML" in s:
-            return self._html
-        if "return document.title" in s or "document.title" in s:
-            return self._title
-        return None
+def _summarize(blocks: List[Dict[str, Any]]) -> Dict[str, Any]:
+    by_type: Dict[str, int] = {}
+    for b in blocks or []:
+        t = (b.get("itype") or "unknown").lower()
+        by_type[t] = by_type.get(t, 0) + 1
+    return {
+        "total": len(blocks or []),
+        "by_type": dict(sorted(by_type.items(), key=lambda x: (-x[1], x[0]))),
+    }
 
+def _diff_blocks(before: List[Dict[str, Any]], after: List[Dict[str, Any]]) -> Dict[str, Any]:
+    b = _index_blocks(before)
+    a = _index_blocks(after)
 
-# ---------------------------
-# Normalisation / comparaison
-# ---------------------------
-def _as_dict(obj: Any) -> Dict[str, Any]:
-    """Convertit dict/dataclass/objet en dict JSON-friendly."""
-    if obj is None:
-        return {}
-    if isinstance(obj, dict):
-        return obj
-    # dataclass / objet standard
-    if hasattr(obj, "__dict__"):
-        return dict(obj.__dict__)
-    return {"value": obj}
+    added = sorted([k for k in a.keys() if k not in b])
+    removed = sorted([k for k in b.keys() if k not in a])
 
-
-def _pick(d: Dict[str, Any], *keys: str) -> Any:
-    for k in keys:
-        if k in d and d[k] not in (None, ""):
-            return d[k]
-    return None
-
-
-def _block_key(b: Dict[str, Any]) -> str:
-    # On essaie d'abord les IDs stables
-    qid = _pick(b, "qid", "q_id", "question_id")
-    tid = _pick(b, "target_id", "targetId", "dom_target_id")
-    it = _pick(b, "itype", "input_type", "type")
-    label = _pick(b, "label", "question", "text")
-    if qid:
-        return f"qid:{qid}"
-    if tid:
-        return f"target:{tid}"
-    # fallback : moins stable mais utile si pas d'IDs
-    return f"sig:{(it or 'na')}:{(str(label)[:80] if label else 'no_label')}"
-
-
-def _canonical(b: Dict[str, Any]) -> Dict[str, Any]:
-    """Réduit un block à un sous-ensemble stable pour comparer facilement."""
-    c: Dict[str, Any] = {}
-
-    c["key"] = _block_key(b)
-    c["qid"] = _pick(b, "qid", "q_id", "question_id")
-    c["target_id"] = _pick(b, "target_id", "targetId", "dom_target_id")
-    c["itype"] = _pick(b, "itype", "input_type", "type")
-    c["label"] = _pick(b, "label", "question", "text")
-
-    # options peuvent être volumineuses — on compare surtout le COUNT + un aperçu
-    opts = _pick(b, "options", "choices", "items") or []
-    if isinstance(opts, (list, tuple)):
-        c["options_count"] = len(opts)
-        c["options_preview"] = [str(x) for x in list(opts)[:5]]
-    else:
-        c["options_count"] = None
-        c["options_preview"] = None
-
-    c["max_select"] = _pick(b, "max_select", "maxSelect", "max_choices")
-    c["scope_hint"] = _pick(b, "scope_hint", "dom_scope_hint", "context_scope")
-    return c
-
-
-def _diff_blocks(base: List[Dict[str, Any]], new: List[Dict[str, Any]]) -> Dict[str, Any]:
-    base_map = {_block_key(b): _canonical(b) for b in base}
-    new_map = {_block_key(b): _canonical(b) for b in new}
-
-    base_keys = set(base_map.keys())
-    new_keys = set(new_map.keys())
-
-    added = sorted(new_keys - base_keys)
-    removed = sorted(base_keys - new_keys)
-
-    changed: List[Tuple[str, Dict[str, Any]]] = []
-    for k in sorted(base_keys & new_keys):
-        if base_map[k] != new_map[k]:
-            # Diff champ par champ (simple)
-            diffs = {}
-            for field in sorted(set(base_map[k].keys()) | set(new_map[k].keys())):
-                if base_map[k].get(field) != new_map[k].get(field):
-                    diffs[field] = {"base": base_map[k].get(field), "new": new_map[k].get(field)}
-            changed.append((k, diffs))
+    changed: List[Dict[str, Any]] = []
+    for k in sorted(set(a.keys()) & set(b.keys())):
+        bb = b[k]
+        aa = a[k]
+        # compare options + max_select (les plus importants pour toi)
+        b_opts = bb.get("options") or []
+        a_opts = aa.get("options") or []
+        if (b_opts != a_opts) or (bb.get("max_select") != aa.get("max_select")):
+            changed.append({
+                "sig": k,
+                "before": {"options": b_opts, "max_select": bb.get("max_select")},
+                "after": {"options": a_opts, "max_select": aa.get("max_select")},
+            })
 
     return {
-        "counts": {"base": len(base), "new": len(new)},
+        "summary_before": _summarize(before),
+        "summary_after": _summarize(after),
         "added": added,
         "removed": removed,
-        "changed": [{"key": k, "diff": d} for k, d in changed],
+        "changed": changed,
     }
 
 
-def _itype_stats(blocks: List[Dict[str, Any]]) -> Dict[str, int]:
-    c = Counter()
-    for b in blocks:
-        it = _pick(b, "itype", "input_type", "type") or "unknown"
-        c[str(it)] += 1
-    return dict(c)
+# -----------------------------
+# Driver launch (projet -> fallback selenium)
+# -----------------------------
 
-
-# ---------------------------
-# Main
-# ---------------------------
-def _resolve_paths(p: Path) -> Tuple[Path, Path]:
+def _launch_driver(headful: bool = False):
     """
-    Accepte :
-      - un dossier snapshot (contient dom_outer.html)
-      - un fichier dom_outer.html
-    Retourne (snapshot_dir, dom_outer_path)
+    1) Essaie le launcher du projet (preselection.playwright_launcher.launch_browser)
+    2) Sinon fallback Selenium Chrome
     """
-    if p.is_dir():
-        dom = p / "dom_outer.html"
-        if not dom.exists():
-            raise FileNotFoundError(f"dom_outer.html introuvable dans: {p}")
-        return p, dom
+    # 1) launcher projet
+    try:
+        from preselection.config_loader import load_config
+        from preselection.playwright_launcher import launch_browser  # type: ignore
 
-    if p.is_file():
-        if p.name != "dom_outer.html":
-            # on tolère mais on avertit
-            pass
-        return p.parent, p
-
-    raise FileNotFoundError(f"Chemin introuvable: {p}")
-
-
-def main() -> int:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("path", help="Dossier snapshot ou chemin vers dom_outer.html")
-    parser.add_argument(
-        "--baseline",
-        default=None,
-        help="Chemin vers question_blocks.json (par défaut: <snapshot_dir>/question_blocks.json)",
-    )
-    args = parser.parse_args()
-
-    # Ajoute la racine du projet au PYTHONPATH
-    # (tools/replay_snapshot.py => racine = parent de tools/)
-    project_root = Path(__file__).resolve().parent.parent
-    sys.path.insert(0, str(project_root))
-
-    snap_dir, dom_path = _resolve_paths(Path(args.path).resolve())
-
-    html = dom_path.read_text(encoding="utf-8", errors="ignore")
-
-    meta_path = snap_dir / "meta.json"
-    url = ""
-    title = ""
-    if meta_path.exists():
+        cfg = {}
         try:
-            meta = json.loads(meta_path.read_text(encoding="utf-8"))
-            url = meta.get("url") or ""
-            title = meta.get("title") or ""
+            cfg = load_config() or {}
+        except Exception:
+            cfg = {}
+
+        # Si ton launcher supporte un flag headless via config/env, tu peux l’adapter ici.
+        if headful:
+            os.environ["HEADLESS"] = "0"
+
+        drv = launch_browser(cfg)
+        return drv
+    except Exception as e:
+        print(f"[replay_snapshot] launcher projet indisponible -> fallback selenium. reason={type(e).__name__}: {e}")
+
+    # 2) fallback selenium chrome
+    try:
+        from selenium import webdriver
+        from selenium.webdriver.chrome.options import Options
+
+        opt = Options()
+        if not headful:
+            # Chrome récent
+            opt.add_argument("--headless=new")
+        opt.add_argument("--disable-gpu")
+        opt.add_argument("--no-sandbox")
+        opt.add_argument("--disable-dev-shm-usage")
+
+        drv = webdriver.Chrome(options=opt)
+        return drv
+    except Exception as e:
+        raise RuntimeError(
+            "Impossible de lancer un navigateur (ni launcher projet, ni Selenium Chrome). "
+            "Vérifie que ton environnement local lance bien le bot normalement."
+        ) from e
+
+
+# -----------------------------
+# Main
+# -----------------------------
+
+def _resolve_snapshot_paths(arg_path: str, use_page_source: bool) -> Tuple[Path, Path]:
+    p = Path(arg_path).expanduser()
+
+    # Si on pointe directement un fichier HTML
+    if p.is_file():
+        snap_dir = p.parent
+        html_path = p
+        return snap_dir, html_path
+
+    # Sinon, on suppose un dossier snapshot
+    snap_dir = p
+    if not snap_dir.exists():
+        raise FileNotFoundError(f"Snapshot introuvable: {snap_dir}")
+
+    html_name = "page_source.html" if use_page_source else "dom_outer.html"
+    html_path = snap_dir / html_name
+    if not html_path.exists():
+        raise FileNotFoundError(f"Fichier HTML manquant: {html_path}")
+
+    return snap_dir, html_path
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("path", help="Dossier snapshot (ex: ./snapshots/20260113_214405_after_dom_analyze) ou fichier dom_outer.html")
+    ap.add_argument("--use-page-source", action="store_true", help="Utiliser page_source.html au lieu de dom_outer.html")
+    ap.add_argument("--save-baseline", action="store_true", help="Écrit dom_analyzer.baseline.json (pour faire le avant/après)")
+    ap.add_argument("--headful", action="store_true", help="Lance le navigateur en mode visible (debug)")
+    ap.add_argument("--no-classify", action="store_true", help="Ne pas exécuter dom_classifier.classify_dom()")
+    args = ap.parse_args()
+
+    snap_dir, html_path = _resolve_snapshot_paths(args.path, args.use_page_source)
+
+    # imports Survey (assure l'import même si tu lances depuis ailleurs)
+    repo_root = Path(__file__).resolve().parents[1]
+    if str(repo_root) not in sys.path:
+        sys.path.insert(0, str(repo_root))
+
+    from Survey import dom_analyzer  # type: ignore
+
+    classify_info = None
+    if not args.no_classify:
+        try:
+            from Survey import dom_classifier  # type: ignore
+        except Exception:
+            dom_classifier = None  # type: ignore
+
+    out_file = snap_dir / "dom_analyzer.out.json"
+    base_file = snap_dir / "dom_analyzer.baseline.json"
+    diff_file = snap_dir / "dom_analyzer.diff.json"
+
+    print(f"[replay_snapshot] snapshot_dir = {snap_dir}")
+    print(f"[replay_snapshot] html         = {html_path.name}")
+
+    driver = _launch_driver(headful=args.headful)
+    try:
+        # Ouvre le fichier local
+        file_url = html_path.resolve().as_uri()
+        try:
+            driver.set_page_load_timeout(20)
         except Exception:
             pass
 
-    # Import dom_analyzer
-    try:
-        from Survey import dom_analyzer  # type: ignore
-    except Exception as e:
-        print("❌ Impossible d'importer Survey.dom_analyzer")
-        print(f"   Racine projet détectée: {project_root}")
-        print(f"   Erreur: {e}")
-        return 2
+        driver.get(file_url)
+        time.sleep(0.5)  # laisse le DOM se stabiliser
 
-    # Analyse
-    try:
-        if hasattr(dom_analyzer, "analyze_html"):
-            new_blocks = dom_analyzer.analyze_html(html)  # type: ignore
-        elif hasattr(dom_analyzer, "analyze_dom_from_html"):
-            new_blocks = dom_analyzer.analyze_dom_from_html(html)  # type: ignore
+        # Optionnel: classification de page (super utile quand le type détecté est mauvais)
+        if not args.no_classify:
+            try:
+                from Survey import dom_classifier  # type: ignore
+                rule = dom_classifier.classify_dom(driver)
+                classify_info = rule
+                print(f"[replay_snapshot] classify_dom = {rule.get('itype') if rule else 'unclassified'}")
+            except Exception as e:
+                print(f"[replay_snapshot] classify_dom failed: {type(e).__name__}: {e}")
+
+        # Analyse DOM
+        blocks = dom_analyzer.analyze_dom(driver) or []
+        summary = _summarize(blocks)
+
+        payload = {
+            "meta": {
+                "source_html": html_path.name,
+                "file_url": file_url,
+                "ts": int(time.time()),
+            },
+            "classify_dom": classify_info,
+            "summary": summary,
+            "question_blocks": blocks,
+        }
+
+        out_file.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        print(f"[replay_snapshot] wrote {out_file.name}")
+        print(f"[replay_snapshot] blocks: total={summary['total']} by_type={summary['by_type']}")
+
+        # Baseline
+        if args.save_baseline:
+            base_file.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+            print(f"[replay_snapshot] wrote baseline {base_file.name}")
+
+        # Diff si baseline existe
+        if base_file.exists():
+            try:
+                before = json.loads(base_file.read_text(encoding="utf-8")).get("question_blocks") or []
+                after = blocks
+                d = _diff_blocks(before, after)
+                diff_file.write_text(json.dumps(d, ensure_ascii=False, indent=2), encoding="utf-8")
+                print(f"[replay_snapshot] wrote diff {diff_file.name}")
+                print(f"[replay_snapshot] diff: +{len(d['added'])} -{len(d['removed'])} ~{len(d['changed'])}")
+            except Exception as e:
+                print(f"[replay_snapshot] diff failed: {type(e).__name__}: {e}")
         else:
-            drv = OfflineDriver(html=html, url=url, title=title)
-            new_blocks = dom_analyzer.analyze_dom(drv)  # type: ignore
-    except Exception as e:
-        print("❌ Échec de l'analyse offline.")
-        print("   Cause probable: analyze_dom() dépend de Selenium WebElement/find_elements().")
-        print(f"   Exception: {repr(e)}")
-        return 3
+            print("[replay_snapshot] pas de baseline -> lance avec --save-baseline pour créer le 'avant'.")
 
-    # Normalise en list[dict]
-    new_list = [_as_dict(x) for x in (new_blocks or [])]
-
-    # Écrit résultat
-    out_path = snap_dir / "question_blocks.new.json"
-    out_path.write_text(json.dumps(new_list, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"✅ Nouveau résultat écrit: {out_path}")
-
-    # Baseline
-    baseline_path = Path(args.baseline).resolve() if args.baseline else (snap_dir / "question_blocks.json")
-    if not baseline_path.exists():
-        print(f"⚠️ Baseline introuvable: {baseline_path}")
-        print("   (Tu peux comparer manuellement question_blocks.json vs question_blocks.new.json)")
-        print("   Stats itype (new):", _itype_stats(new_list))
-        return 0
-
-    base = json.loads(baseline_path.read_text(encoding="utf-8"))
-    base_list = [_as_dict(x) for x in (base or [])]
-
-    diff = _diff_blocks(base_list, new_list)
-
-    print("\n--- Résumé comparaison ---")
-    print("Counts:", diff["counts"])
-    print("iType base:", _itype_stats(base_list))
-    print("iType new :", _itype_stats(new_list))
-    print("Added  :", len(diff["added"]))
-    print("Removed:", len(diff["removed"]))
-    print("Changed:", len(diff["changed"]))
-
-    # Détails succincts (pour ne pas spam)
-    if diff["added"]:
-        print("\n+ Added keys (max 10):")
-        for k in diff["added"][:10]:
-            print("  ", k)
-
-    if diff["removed"]:
-        print("\n- Removed keys (max 10):")
-        for k in diff["removed"][:10]:
-            print("  ", k)
-
-    if diff["changed"]:
-        print("\n* Changed (max 5):")
-        for item in diff["changed"][:5]:
-            print("  ", item["key"])
-            # affiche 3 champs qui bougent max
-            fields = list(item["diff"].keys())[:3]
-            for f in fields:
-                print("     ", f, "=>", item["diff"][f])
-
-    # Écrit diff machine-readable
-    diff_path = snap_dir / "question_blocks.diff.json"
-    diff_path.write_text(json.dumps(diff, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"\n✅ Diff écrit: {diff_path}")
-
-    return 0
+    finally:
+        try:
+            driver.quit()
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()

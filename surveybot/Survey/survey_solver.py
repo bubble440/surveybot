@@ -96,6 +96,16 @@ def _has_actionable_elements(driver):
                 return True
             # Boutons navigation (FR/EN), inclut Start! et Start
 
+            # ✅ NEW: beaucoup de surveys cachent l'input (0x0) et rendent le label cliquable
+            labels = drv.find_elements(By.CSS_SELECTOR, "label[for]")
+            if any(_is_actionable(el) for el in labels):
+                return True
+
+            # ✅ NEW: widgets custom (role=checkbox/radio)
+            custom = drv.find_elements(By.CSS_SELECTOR, "[role='checkbox'], [role='radio']")
+            if any(_is_actionable(el) for el in custom):
+                return True
+
             # Boutons navigation (FR/EN), inclut Start! et Start (cas insensitive)
             btn_xpath = (
                 "//button[normalize-space()='Start!' or "
