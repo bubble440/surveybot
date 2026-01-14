@@ -5278,3 +5278,102 @@ def try_click_navigation_cta_any_context(driver, depth=2) -> bool:
     def _try_here(drv):
         return try_click_navigation_cta(drv)
     return _in_each_frame_recursive(driver, _try_here, depth=depth)
+
+def click_cta_strong_any_context(driver, text=None, label_hint=None, depth: int = 2, **_kwargs) -> bool:
+    """
+    Clique un CTA (Suivant / Continuer / Next / Continue / Start...) en scannant
+    default_content + iframes (Decipher/Confirmit).
+    Cette définition est volontairement à la FIN du fichier pour écraser toute version dupliquée.
+    """
+    import re
+    import unicodedata
+    from selenium.webdriver.common.by import By
+    from Survey.frame_utils import iter_frame_chains, switch_to_frame_chain
+
+    raw = text if text is not None else (label_hint or "")
+    raw = (raw or "").strip()
+    if not raw:
+        return False
+
+    def norm(s: str) -> str:
+        s = unicodedata.normalize("NFKC", s or "").replace("\u00A0", " ").lower()
+        s = re.sub(r"[»«“”'\"›→·•:]+", "", s)
+        s = re.sub(r"\s+", " ", s).strip()
+        return s
+
+    needle = norm(raw)
+    if not needle:
+        return False
+
+    bad = ["exit", "quit", "refuse", "do not agree", "disagree", "je ne suis pas d'accord", "pas d'accord"]
+    good_fallback = ["suivant", "continuer", "next", "continue", "proceed", "start", "begin", "accept", "agree"]
+
+    def is_bad(t: str) -> bool:
+        return any(b in t for b in bad)
+
+    def is_match(t: str) -> bool:
+        if not t:
+            return False
+        if is_bad(t):
+            return False
+        # match direct ou fallback si on nous donne "suivant" mais le bouton est "suivant »"
+        if needle in t or t in needle:
+            return True
+        # si raw est très court, autoriser un match via listes standards
+        if len(needle) <= 5:
+            return any(w in t for w in good_fallback)
+        return False
+
+    css = "button, input[type='submit'], input[type='button'], a, [role='button']"
+
+    for chain in iter_frame_chains(driver, max_depth=depth):
+        with switch_to_frame_chain(driver, chain) as ok:
+            if not ok:
+                continue
+
+            try:
+                els = driver.find_elements(By.CSS_SELECTOR, css)
+            except Exception:
+                els = []
+
+            for el in els:
+                try:
+                    if not el.is_displayed():
+                        continue
+                    t = norm((el.text or "") or (el.get_attribute("value") or "") or (el.get_attribute("aria-label") or ""))
+                    if not is_match(t):
+                        continue
+
+                    # enabled ?
+                    try:
+                        if el.get_attribute("aria-disabled") == "true":
+                            continue
+                        if el.get_attribute("disabled") is not None:
+                            continue
+                    except Exception:
+                        pass
+
+                    try:
+                        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
+                    except Exception:
+                        pass
+
+                    # click robuste (JS)
+                    try:
+                        driver.execute_script("arguments[0].click();", el)
+                    except Exception:
+                        try:
+                            el.click()
+                        except Exception:
+                            continue
+
+                    try:
+                        setattr(driver, "last_action_success", True)
+                    except Exception:
+                        pass
+                    return True
+
+                except Exception:
+                    continue
+
+    return False
