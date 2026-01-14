@@ -90,6 +90,12 @@ def _apply_by_target_id(driver, target_id: str, itype: str, value: str) -> bool:
                         break
 
             if not xp:
+                # ✅ NEW: si une seule checkbox dans le groupe et valeur "oui/true", on clique la seule option
+                if itype == "checkbox" and len(opt_map) == 1:
+                    if v_norm in {"oui", "yes", "true", "1", "checked", "on", "x"} or not v_norm:
+                        xp = next(iter(opt_map.values()))
+
+            if not xp:
                 return False
 
             try:
@@ -625,6 +631,10 @@ def execute_action(driver, instruction: str) -> bool:
         # 🟦 CHECKBOX
         # ==========================================================
         if itype == "checkbox":
+
+            # ✅ NEW: si OpenAI renvoie "Oui" pour une checkbox "statement", on clique le statement (ctx)
+            if _norm_lc(label) in {"oui", "yes", "true", "1", "checked", "on", "x"} and ctx and len(ctx) >= 6:
+                label = ctx
 
             if _try(driver, "checkbox_main", lambda:
                 Survey.input_handler.click_checkbox_by_label(driver, label, context_hint=ctx)

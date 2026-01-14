@@ -265,6 +265,20 @@ def _find_associated_label(driver, el) -> str:
     except Exception:
         pass
 
+    # ✅ NEW: pattern très fréquent (Angular/React) : input + label(vide) + span/div texte
+    # Exemple: <input ...><label for="..."></label><span class="_checkboxText">Agree to all</span>
+    try:
+        for i in range(1, 5):
+            sibs = el.find_elements(By.XPATH, f"following-sibling::*[{i}]")
+            if not sibs:
+                continue
+            s = sibs[0]
+            t = _norm(s.text or s.get_attribute("innerText") or "")
+            if t and len(t) >= 2:
+                return t
+    except Exception:
+        pass
+
     # fallback léger: aria-label / name
     for attr in ("aria-label", "name", "placeholder"):
         try:
@@ -461,11 +475,16 @@ def analyze_dom(driver) -> List[Dict[str, Any]]:
             container = _nearest_question_container(els[0])
             question = _extract_question_from_container(container, options) if container is not None else ""
 
-            # fallback si on n'a pas trouvé: on évite de créer un "bloc option"
+            # ✅ NEW: cas "consent" / "terms" : pas de question séparée, l'unique option EST le libellé
             if not question:
-                # si la question est introuvable, on préfère ne pas envoyer ce groupe à OpenAI
-                # (sinon on recrée le problème initial: 1 bloc par option).
-                continue
+                if len(options) == 1 and len(els) == 1:
+                    question = options[0]
+                else:
+                    continue
+
+            # ✅ NEW: si on a une seule checkbox et aucune option détectée, on force option=question
+            if not options and len(els) == 1 and question:
+                options = [question]
 
             sig = (question, itype)
             if sig in seen_signatures:
@@ -480,8 +499,14 @@ def analyze_dom(driver) -> List[Dict[str, Any]]:
             for e in els:
                 try:
                     lbl = _find_associated_label(driver, e)
+
+                    # ✅ NEW: single checkbox => si label vide, on mappe sur la question
+                    if not lbl and len(els) == 1 and question:
+                        lbl = question
+
                     if not lbl:
                         continue
+
                     xp = _best_xpath_for_element(driver, e)
                     if not xp:
                         continue
