@@ -445,34 +445,129 @@ def handle_consent_screen(driver):
     import time
     from selenium.webdriver.common.by import By
     import Survey.input_handler
+    from Survey.frame_utils import iter_frame_chains, switch_to_frame_chain
 
-    # 1) Cocher les checkboxes visibles via JS (le plus robuste sur DOMs Angular/React)
-    clicked = 0
-    try:
-        clicked = int(driver.execute_script("""
-            const cbs = Array.from(document.querySelectorAll("input[type='checkbox']"))
-              .filter(cb => {
-                if (cb.disabled) return false;
-                const cs = getComputedStyle(cb);
-                if (cs.display === "none" || cs.visibility === "hidden") return false;
-                const r = cb.getBoundingClientRect();
-                if (!r || r.width < 3 || r.height < 3) return false;
-                return true;
-              });
+    # 1) Consent peut être checkbox OU radio, souvent dans un iframe (Decipher)
+    js_click_checkboxes = """
+        const cbs = Array.from(document.querySelectorAll("input[type='checkbox'], [role='checkbox']"))
+          .filter(cb => {
+            try{
+              if (cb.disabled) return false;
+              const cs = getComputedStyle(cb);
+              if (cs.display === "none" || cs.visibility === "hidden") return false;
+              const r = cb.getBoundingClientRect();
+              if (!r || r.width < 3 || r.height < 3) return false;
+              return true;
+            }catch(e){ return false; }
+          });
 
-            let n = 0;
-            for (const cb of cbs) {
-              if (!cb.checked) { cb.click(); n++; }
+        let n = 0;
+        for (const cb of cbs) {
+          try{
+            const checked = (cb.checked === true) || ((cb.getAttribute("aria-checked")||"").toLowerCase()==="true");
+            if (!checked) { cb.click(); n++; }
+          }catch(e){}
+        }
+        return n;
+    """
+
+    js_click_accept_radio = r"""
+        const norm = s => (s||"").toLowerCase()
+          .normalize("NFKC").replace(/\u00A0/g," ")
+          .replace(/[»«“”"'›→·•:]/g,"").replace(/\s+/g," ").trim();
+
+        const accept = ["j'accepte","j accepte","accepte","accept","agree","i agree","i accept","oui","yes"];
+        const reject = ["je ne suis pas d'accord","pas d'accord","disagree","refuse","no"];
+
+        const isReject = t => reject.some(w => t.includes(w));
+        const isAccept = t => accept.some(w => t.includes(w));
+
+        // 1) labels
+        const labels = Array.from(document.querySelectorAll("label"));
+        for (const lab of labels){
+          const t = norm(lab.innerText || lab.textContent || "");
+          if (!t) continue;
+          if (isReject(t)) continue;
+          if (!isAccept(t)) continue;
+
+          try{ lab.scrollIntoView({block:"center"}); }catch(e){}
+          try{ lab.click(); }catch(e){}
+
+          const fid = lab.getAttribute("for");
+          if (fid){
+            const inp = document.getElementById(fid);
+            if (inp){
+              try{ inp.click(); }catch(e){}
+              try{
+                if (inp.type === "radio") inp.checked = true;
+                inp.dispatchEvent(new Event("input",{bubbles:true}));
+                inp.dispatchEvent(new Event("change",{bubbles:true}));
+              }catch(e){}
             }
-            return n;
-        """) or 0)
-    except Exception:
-        clicked = 0
+          }
+          return true;
+        }
 
-    if clicked:
+        // 2) role=radio
+        const rs = Array.from(document.querySelectorAll("[role='radio']"));
+        for (const r of rs){
+          const t = norm(r.innerText || r.textContent || r.getAttribute("aria-label") || "");
+          if (!t) continue;
+          if (isReject(t)) continue;
+          if (!isAccept(t)) continue;
+          try{ r.scrollIntoView({block:"center"}); }catch(e){}
+          try{ r.click(); }catch(e){}
+          return true;
+        }
+
+        // 3) input radio + label[for]
+        const inps = Array.from(document.querySelectorAll("input[type='radio']"));
+        for (const inp of inps){
+          if (inp.disabled) continue;
+          const id = inp.id || "";
+          if (!id) continue;
+          const lab = document.querySelector("label[for='"+CSS.escape(id)+"']");
+          const t = norm(lab ? (lab.innerText||lab.textContent||"") : "");
+          if (!t) continue;
+          if (isReject(t)) continue;
+          if (!isAccept(t)) continue;
+
+          try{ inp.scrollIntoView({block:"center"}); }catch(e){}
+          try{ inp.click(); }catch(e){}
+          return true;
+        }
+
+        return false;
+    """
+
+    clicked = 0
+    accepted_radio = False
+
+    for chain in iter_frame_chains(driver, max_depth=2):
+        with switch_to_frame_chain(driver, chain) as ok:
+            if not ok:
+                continue
+            try:
+                clicked += int(driver.execute_script(js_click_checkboxes) or 0)
+            except Exception:
+                pass
+            try:
+                if driver.execute_script(js_click_accept_radio):
+                    accepted_radio = True
+            except Exception:
+                pass
+
+    if clicked or accepted_radio:
         time.sleep(0.4)  # laisse le framework activer le bouton
 
-    # 2) Cliquer le CTA (en évitant tout "exit")
+    # 2) CTA: “Suivant” est souvent dans le même iframe => on clique en mode iframe-safe
+    try:
+        if Survey.input_handler.click_cta_strong_any_context(driver, text="suivant", depth=2):
+            return True
+    except Exception:
+        pass
+
+    # 3) Cliquer le CTA (en évitant tout "exit")
     # D'abord une recherche JS stricte sur boutons
     try:
         hit = (driver.execute_script("""

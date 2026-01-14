@@ -16,7 +16,7 @@ import re
 from typing import Callable, Optional, Dict, Any
 import Survey.dom_metrics as dom_metrics
 from selenium.webdriver.common.by import By
-
+from Survey.frame_utils import iter_frame_chains, switch_to_frame_chain
 # ============================================================
 # Utils
 # ============================================================
@@ -24,23 +24,38 @@ from selenium.webdriver.common.by import By
 def _norm_lc(s: str) -> str:
     return re.sub(r"\s+", " ", (s or "").lower()).strip()
 
-
 def _page_text_lc(driver) -> str:
-    try:
-        return " ".join(
-            driver.execute_script(
-                """
-                return Array.from(document.querySelectorAll('body *'))
-                  .filter(e => {
-                    const s = getComputedStyle(e);
-                    return s.display !== 'none' && s.visibility !== 'hidden' && e.offsetParent !== null;
-                  })
-                  .map(e => e.innerText || '')
-                """
-            )
-        ).lower()
-    except Exception:
-        return ""
+    """
+    IMPORTANT: Decipher/Confirmit mettent souvent tout le contenu dans un iframe.
+    Donc on collecte le texte visible sur default_content + iframes (profondeur 2).
+    """
+    js = """
+        const els = Array.from(document.querySelectorAll('body *'));
+        const out = [];
+        for (const e of els){
+          try{
+            const s = getComputedStyle(e);
+            if (s.display === 'none' || s.visibility === 'hidden') continue;
+            const r = e.getBoundingClientRect();
+            if (!r || r.width < 2 || r.height < 2) continue;
+            const t = (e.innerText || '').trim();
+            if (t) out.push(t);
+          }catch(_){}
+        }
+        return out;
+    """
+    chunks = []
+    for chain in iter_frame_chains(driver, max_depth=2):
+        with switch_to_frame_chain(driver, chain) as ok:
+            if not ok:
+                continue
+            try:
+                arr = driver.execute_script(js) or []
+                if arr:
+                    chunks.append(" ".join(arr))
+            except Exception:
+                continue
+    return " ".join(chunks).lower()
 
 # ============================================================
 # Signatures DOM (détecteurs)
@@ -63,14 +78,21 @@ def is_consent_screen(driver) -> bool:
     if not has_kw:
         return False
 
-    # Doit contenir des checkboxes (souvent le coeur de ces pages)
-    try:
-        has_cb = bool(driver.find_elements(By.CSS_SELECTOR, "input[type='checkbox'], [role='checkbox']"))
-    except Exception:
-        has_cb = False
-    if not has_cb:
+    # Doit contenir un choix de consentement (checkbox OU radio), souvent dans un iframe
+    has_choice = False
+    for chain in iter_frame_chains(driver, max_depth=2):
+        with switch_to_frame_chain(driver, chain) as ok:
+            if not ok:
+                continue
+            try:
+                if driver.find_elements(By.CSS_SELECTOR, "input[type='checkbox'], [role='checkbox'], input[type='radio'], [role='radio']"):
+                    has_choice = True
+                    break
+            except Exception:
+                continue
+    if not has_choice:
         return False
-
+    
     # CTA possible (même si disabled, car sur ces pages il s'active après check)
     cta_words = ["accepter", "accept", "agree", "continuer", "continue", "proceed", "next", "start", "begin"]
     try:
