@@ -165,6 +165,7 @@ def main():
     ap.add_argument("--save-baseline", action="store_true", help="Écrit dom_analyzer.baseline.json (pour faire le avant/après)")
     ap.add_argument("--headful", action="store_true", help="Lance le navigateur en mode visible (debug)")
     ap.add_argument("--no-classify", action="store_true", help="Ne pas exécuter dom_classifier.classify_dom()")
+    ap.add_argument("--pause", action="store_true", help="Garde le navigateur ouvert jusqu'à ENTER (debug)")
     args = ap.parse_args()
 
     snap_dir, html_path = _resolve_snapshot_paths(args.path, args.use_page_source)
@@ -249,6 +250,12 @@ def main():
                 print(f"[replay_snapshot] diff failed: {type(e).__name__}: {e}")
         else:
             print("[replay_snapshot] pas de baseline -> lance avec --save-baseline pour créer le 'avant'.")
+
+        if args.pause:
+            try:
+                input("[replay_snapshot] pause actif -> appuie sur ENTER pour fermer le navigateur...")
+            except Exception:
+                pass
 
     finally:
         try:

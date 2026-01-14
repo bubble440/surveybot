@@ -436,10 +436,94 @@ def _wait_for_button_effect(driver, *, timeout=6):
     return False
 
 def handle_consent_screen(driver):
+    """
+    Consent/RGPD screen:
+    1) coche toutes les checkboxes visibles non cochées
+    2) clique le CTA (accept/continue/proceed/next/start)
+    IMPORTANT: ne JAMAIS cliquer "Click here" (exit survey).
+    """
+    import time
+    from selenium.webdriver.common.by import By
+    import Survey.input_handler
+
+    # 1) Cocher les checkboxes visibles via JS (le plus robuste sur DOMs Angular/React)
+    clicked = 0
+    try:
+        clicked = int(driver.execute_script("""
+            const cbs = Array.from(document.querySelectorAll("input[type='checkbox']"))
+              .filter(cb => {
+                if (cb.disabled) return false;
+                const cs = getComputedStyle(cb);
+                if (cs.display === "none" || cs.visibility === "hidden") return false;
+                const r = cb.getBoundingClientRect();
+                if (!r || r.width < 3 || r.height < 3) return false;
+                return true;
+              });
+
+            let n = 0;
+            for (const cb of cbs) {
+              if (!cb.checked) { cb.click(); n++; }
+            }
+            return n;
+        """) or 0)
+    except Exception:
+        clicked = 0
+
+    if clicked:
+        time.sleep(0.4)  # laisse le framework activer le bouton
+
+    # 2) Cliquer le CTA (en évitant tout "exit")
+    # D'abord une recherche JS stricte sur boutons
+    try:
+        hit = (driver.execute_script("""
+            const words = arguments[0];
+            const els = Array.from(document.querySelectorAll(
+              "button, input[type='submit'], input[type='button'], a[role='button'], [role='button']"
+            ));
+
+            const norm = s => (s || "").toLowerCase().replace(/\\s+/g, " ").trim();
+
+            for (const el of els) {
+              let t = norm(el.innerText || el.value || "");
+              if (!t) continue;
+
+              // sécurité anti "exit"
+              if (t.includes("exit") || t.includes("quit") || t.includes("refuse") || t.includes("do not agree")) continue;
+
+              if (!words.some(w => t.includes(w))) continue;
+
+              // visible ?
+              const cs = getComputedStyle(el);
+              if (cs.display === "none" || cs.visibility === "hidden") continue;
+              const r = el.getBoundingClientRect();
+              if (!r || r.width < 10 || r.height < 10) continue;
+
+              // enabled ?
+              if (el.disabled) continue;
+              if ((el.getAttribute("aria-disabled") || "") === "true") continue;
+
+              el.scrollIntoView({block: "center"});
+              el.click();
+              return t;
+            }
+            return "";
+        """, ["proceed", "continue", "next", "accept", "agree", "start", "begin"]) or "").strip()
+        if hit:
+            return True
+    except Exception:
+        pass
+
+    # Fallback: click_button_by_text (best-effort)
     return (
-        Survey.input_handler.click_button_by_text(driver, "accepter")
-        or Survey.input_handler.click_button_by_text(driver, "accept")
+        Survey.input_handler.click_button_by_text(driver, "proceed")
         or Survey.input_handler.click_button_by_text(driver, "continue")
+        or Survey.input_handler.click_button_by_text(driver, "next")
+        or Survey.input_handler.click_button_by_text(driver, "accept")
+        or Survey.input_handler.click_button_by_text(driver, "agree")
+        or Survey.input_handler.click_button_by_text(driver, "accepter")
+        or Survey.input_handler.click_button_by_text(driver, "commencer")
+        or Survey.input_handler.click_button_by_text(driver, "start")
+        or Survey.input_handler.click_button_by_text(driver, "begin")
     )
 
 def handle_start_screen(driver):
