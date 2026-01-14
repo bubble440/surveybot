@@ -47,15 +47,47 @@ def _page_text_lc(driver) -> str:
 # ============================================================
 
 def is_consent_screen(driver) -> bool:
+    """
+    Détecte un écran de consentement / RGPD / privacy :
+    - présence de mots-clés (privacy/consent/gdpr/rgpd/terms…)
+    - présence de checkboxes visibles
+    - présence d'un CTA type accept/continue/proceed/next/start (même si disabled)
+    """
     txt = _page_text_lc(driver)
-    return any(k in txt for k in [
-        "consent", "cookie", "rgpd", "privacy",
-        "politique de confidentialité", "terms"
-    ]) and any(
-        b.is_displayed()
-        for b in driver.find_elements(By.CSS_SELECTOR, "button, a")
-        if any(w in (b.text or "").lower() for w in ["accepter", "agree", "continuer", "continue"])
-    )
+
+    has_kw = any(k in txt for k in [
+        "consent", "gdpr", "rgpd", "privacy", "privacy rights",
+        "politique de confidentialité", "confidentialité", "terms", "cookie",
+        "proceed into the survey", "consent form",
+    ])
+    if not has_kw:
+        return False
+
+    # Doit contenir des checkboxes (souvent le coeur de ces pages)
+    try:
+        has_cb = bool(driver.find_elements(By.CSS_SELECTOR, "input[type='checkbox'], [role='checkbox']"))
+    except Exception:
+        has_cb = False
+    if not has_cb:
+        return False
+
+    # CTA possible (même si disabled, car sur ces pages il s'active après check)
+    cta_words = ["accepter", "accept", "agree", "continuer", "continue", "proceed", "next", "start", "begin"]
+    try:
+        for b in driver.find_elements(By.CSS_SELECTOR, "button, input[type='submit'], input[type='button'], a, [role='button']"):
+            try:
+                t = _norm_lc((b.text or "") or (b.get_attribute("value") or ""))
+                if not t:
+                    continue
+                if any(w in t for w in cta_words) and b.is_displayed():
+                    return True
+            except Exception:
+                continue
+    except Exception:
+        pass
+
+    # Fallback ultra permissif (safe) : mots clés + checkboxes suffit
+    return True
 
 def is_start_screen(driver) -> bool:
     txt = _page_text_lc(driver)
