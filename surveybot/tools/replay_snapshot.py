@@ -23,8 +23,7 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
-
+from typing import Any, Dict, List, Optional, Tuple
 
 # -----------------------------
 # Helpers diff
@@ -131,45 +130,117 @@ def _launch_driver(headful: bool = False):
             "Vérifie que ton environnement local lance bien le bot normalement."
         ) from e
 
-
 # -----------------------------
 # Main
 # -----------------------------
 
-def _resolve_snapshot_paths(arg_path: str, use_page_source: bool) -> Tuple[Path, Path]:
+def _pick_best_frame_html(snap_dir: Path) -> Optional[Path]:
+    """Choisit le meilleur frame dump si meta.json le permet."""
+    meta_path = snap_dir / "meta.json"
+    if not meta_path.exists():
+        return None
+
+    try:
+        meta = json.loads(meta_path.read_text(encoding="utf-8", errors="ignore") or "{}")
+    except Exception:
+        return None
+
+    # 1) best_frame déjà calculé
+    best = meta.get("best_frame")
+    if isinstance(best, dict):
+        try:
+            dom_outer_rel = (best.get("files") or {}).get("dom_outer")
+            if dom_outer_rel:
+                p = (snap_dir / dom_outer_rel).resolve()
+                if p.exists():
+                    return p
+        except Exception:
+            pass
+
+    # 2) sinon, recalcul rapide sur meta[frames]
+    frames = meta.get("frames")
+    if not isinstance(frames, list) or not frames:
+        return None
+
+    def _score(f: dict) -> tuple:
+        try:
+            return (int(f.get("inputs_count", 0)), int(f.get("text_len", 0)))
+        except Exception:
+            return (0, 0)
+
+    try:
+        best_f = sorted([f for f in frames if isinstance(f, dict)], key=_score, reverse=True)[0]
+        dom_outer_rel = (best_f.get("files") or {}).get("dom_outer")
+        if dom_outer_rel:
+            p = (snap_dir / dom_outer_rel).resolve()
+            if p.exists():
+                return p
+    except Exception:
+        return None
+
+    return None
+
+def _resolve_snapshot_paths(
+    arg_path: str,
+    *,
+    use_page_source: bool,
+    use_mhtml: bool,
+    use_dom_outer: bool,
+    use_best_frame: bool,
+) -> Tuple[Path, Path]:
     p = Path(arg_path).expanduser()
 
-    # Si on pointe directement un fichier HTML
+    # Si on pointe directement un fichier
     if p.is_file():
-        snap_dir = p.parent
-        html_path = p
-        return snap_dir, html_path
+        return p.parent, p
 
     # Sinon, on suppose un dossier snapshot
     snap_dir = p
     if not snap_dir.exists():
         raise FileNotFoundError(f"Snapshot introuvable: {snap_dir}")
 
-    html_name = "page_source.html" if use_page_source else "dom_outer.html"
-    html_path = snap_dir / html_name
+    # --- Choix du fichier à ouvrir (priorités) ---
+    if use_mhtml:
+        html_path = snap_dir / "page.mhtml"
+    elif use_best_frame:
+        html_path = _pick_best_frame_html(snap_dir) or (snap_dir / "dom_outer.html")
+    elif use_page_source:
+        html_path = snap_dir / "page_source.html"
+    elif use_dom_outer:
+        html_path = snap_dir / "dom_outer.html"
+    else:
+        # AUTO: mhtml si dispo (meilleur rendu), sinon meilleur frame, sinon dom_outer
+        if (snap_dir / "page.mhtml").exists():
+            html_path = snap_dir / "page.mhtml"
+        else:
+            html_path = _pick_best_frame_html(snap_dir) or (snap_dir / "dom_outer.html")
+
     if not html_path.exists():
-        raise FileNotFoundError(f"Fichier HTML manquant: {html_path}")
+        raise FileNotFoundError(f"Fichier snapshot manquant: {html_path}")
 
     return snap_dir, html_path
-
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("path", help="Dossier snapshot (ex: ./snapshots/20260113_214405_after_dom_analyze) ou fichier dom_outer.html")
-    ap.add_argument("--use-page-source", action="store_true", help="Utiliser page_source.html au lieu de dom_outer.html")
     ap.add_argument("--save-baseline", action="store_true", help="Écrit dom_analyzer.baseline.json (pour faire le avant/après)")
     ap.add_argument("--headful", action="store_true", help="Lance le navigateur en mode visible (debug)")
     ap.add_argument("--no-classify", action="store_true", help="Ne pas exécuter dom_classifier.classify_dom()")
     ap.add_argument("--pause", action="store_true", help="Garde le navigateur ouvert jusqu'à ENTER (debug)")
+    ap.add_argument("--use-mhtml", action="store_true", help="Utiliser page.mhtml (si présent) pour un rendu offline plus fidèle")
+    ap.add_argument("--use-best-frame", action="store_true", help="Utiliser le meilleur frame dump (si meta.json contient frames)")
+    ap.add_argument("--use-page-source", action="store_true", help="Utiliser page_source.html au lieu de dom_outer.html")
+    ap.add_argument("--use-dom-outer", action="store_true", help="Forcer dom_outer.html (ignore mhtml/frames)")
+  
     args = ap.parse_args()
 
-    snap_dir, html_path = _resolve_snapshot_paths(args.path, args.use_page_source)
-
+    snap_dir, html_path = _resolve_snapshot_paths(
+        args.path,
+        use_page_source=args.use_page_source,
+        use_mhtml=args.use_mhtml,
+        use_dom_outer=args.use_dom_outer,
+        use_best_frame=args.use_best_frame,
+    )
     # imports Survey (assure l'import même si tu lances depuis ailleurs)
     repo_root = Path(__file__).resolve().parents[1]
     if str(repo_root) not in sys.path:

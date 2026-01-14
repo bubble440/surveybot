@@ -6,7 +6,149 @@ import os
 import re
 import time
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Dict, List, Optional
+
+def _wait_dom_settle(
+    driver,
+    *,
+    max_wait_s: float = 6.0,
+    stable_rounds: int = 3,
+    poll_s: float = 0.25,
+) -> None:
+    """Attends un DOM "stable" avant de capturer (best-effort).
+
+    Heuristique:
+      - attend document.readyState == 'complete'
+      - puis attends que (len(outerHTML), len(innerText), count(inputs)) soit stable N fois
+    """
+    js_sig = """
+      try {
+        const html = document.documentElement ? document.documentElement.outerHTML : '';
+        const txt = document.body ? (document.body.innerText || '') : '';
+        const inputs = document.querySelectorAll(
+          "input:not([type='hidden']), select, textarea, [role='radio'], [role='checkbox'], [contenteditable='true']"
+        ).length;
+        const rs = document.readyState || '';
+        return [rs, html.length, txt.length, inputs].join('|');
+      } catch(e) {
+        return 'err';
+      }
+    """
+
+    deadline = time.time() + max_wait_s
+    stable = 0
+    last = None
+
+    while time.time() < deadline:
+        try:
+            rs = driver.execute_script("return document.readyState")
+        except Exception:
+            rs = ""
+
+        if rs != "complete":
+            time.sleep(poll_s)
+            continue
+
+        try:
+            cur = driver.execute_script(js_sig)
+        except Exception:
+            cur = None
+
+        if cur and cur == last:
+            stable += 1
+            if stable >= stable_rounds:
+                return
+        else:
+            stable = 0
+            last = cur
+
+        time.sleep(poll_s)
+
+def _dump_frames_best_effort(driver, folder: Path) -> List[Dict[str, Any]]:
+    """Dump les DOM des iframes dans ./frames (best-effort)."""
+    try:
+        from Survey.frame_utils import iter_frame_chains, switch_to_frame_chain  # type: ignore
+    except Exception:
+        return []
+
+    frames_dir = folder / "frames"
+    frames_dir.mkdir(parents=True, exist_ok=True)
+
+    out: List[Dict[str, Any]] = []
+
+    for chain in iter_frame_chains(driver, max_depth=2):
+        if not chain:
+            continue
+
+        with switch_to_frame_chain(driver, chain) as ok:
+            if not ok:
+                continue
+
+            try:
+                url = driver.execute_script("return location.href") or ""
+            except Exception:
+                url = ""
+
+            try:
+                title = driver.execute_script("return document.title") or ""
+            except Exception:
+                title = ""
+
+            try:
+                text_len = int(
+                    driver.execute_script(
+                        "return (document.body && (document.body.innerText||'').length) || 0"
+                    )
+                )
+            except Exception:
+                text_len = 0
+
+            try:
+                inputs_count = int(
+                    driver.execute_script(
+                        "return document.querySelectorAll(\"input:not([type='hidden']),select,textarea,[role='radio'],[role='checkbox'],[contenteditable='true']\").length"
+                    )
+                )
+            except Exception:
+                inputs_count = 0
+
+            # évite d'exploser la taille des snapshots
+            if inputs_count <= 0 and text_len < 200:
+                continue
+
+            try:
+                outer = driver.execute_script("return document.documentElement.outerHTML") or ""
+            except Exception:
+                outer = ""
+
+            try:
+                src = driver.page_source or ""
+            except Exception:
+                src = ""
+
+            chain_str = "_".join(str(x) for x in chain)
+            outer_name = f"frame_{chain_str}.dom_outer.html"
+            src_name = f"frame_{chain_str}.page_source.html"
+
+            (frames_dir / outer_name).write_text(outer, encoding="utf-8", errors="ignore")
+            (frames_dir / src_name).write_text(src, encoding="utf-8", errors="ignore")
+
+            out.append(
+                {
+                    "chain": chain,
+                    "chain_str": chain_str,
+                    "url": url,
+                    "title": title,
+                    "text_len": text_len,
+                    "inputs_count": inputs_count,
+                    "files": {
+                        "dom_outer": f"frames/{outer_name}",
+                        "page_source": f"frames/{src_name}",
+                    },
+                }
+            )
+
+    return out
 
 def _slug(s: str) -> str:
     s = (s or "").strip().lower()
@@ -48,6 +190,11 @@ def dump_page_snapshot(
     root = Path(out_root or os.getenv("SURVEY_SNAPSHOT_DIR", default_root))
     folder = root / folder_name
     folder.mkdir(parents=True, exist_ok=True)
+    # IMPORTANT: stabilise le DOM avant de capturer (évite de figer un loader/état transitoire)
+    try:
+        _wait_dom_settle(driver)
+    except Exception:
+        pass
 
     # Meta
     try:
@@ -57,11 +204,25 @@ def dump_page_snapshot(
 
     try:
         title = driver.execute_script("return document.title") or ""
+        try:
+            ready_state = driver.execute_script("return document.readyState") or ""
+        except Exception:
+            ready_state = ""
+
+        try:
+            dom_sig = driver.execute_script(
+                "return [document.readyState,(document.documentElement&&document.documentElement.outerHTML||'').length,(document.body&&(document.body.innerText||'').length)||0,document.querySelectorAll(\"input:not([type='hidden']),select,textarea,[role='radio'],[role='checkbox'],[contenteditable='true']\").length].join('|')"
+            ) or ""
+        except Exception:
+            dom_sig = ""
+
     except Exception:
         title = ""
 
     meta = {
         "ts": ts,
+        "ready_state": ready_state,
+        "dom_sig": dom_sig,
         "reason": reason,
         "url": url,
         "title": title,
@@ -83,6 +244,15 @@ def dump_page_snapshot(
     except Exception:
         src = ""
     (folder / "page_source.html").write_text(src, encoding="utf-8", errors="ignore")
+    # Texte visible (audit rapide sans navigateur)
+    try:
+        body_text = driver.execute_script("return (document.body && (document.body.innerText || '')) || ''") or ""
+    except Exception:
+        body_text = ""
+    try:
+        (folder / "body_text.txt").write_text(body_text, encoding="utf-8", errors="ignore")
+    except Exception:
+        pass
 
     # Screenshot viewport
     try:
@@ -101,6 +271,31 @@ def dump_page_snapshot(
                 )
     except Exception as e:
         (folder / "mhtml_error.txt").write_text(repr(e), encoding="utf-8")
+
+    # Dump frames (utile quand le contenu est dans un iframe)
+    try:
+        frames = _dump_frames_best_effort(driver, folder)
+    except Exception:
+        frames = []
+
+    if frames:
+        # meilleur frame = plus d'inputs, puis plus de texte
+        try:
+            best = sorted(
+                frames,
+                key=lambda f: (int(f.get("inputs_count", 0)), int(f.get("text_len", 0))),
+                reverse=True,
+            )[0]
+        except Exception:
+            best = None
+
+        try:
+            meta.update({"frames_count": len(frames), "frames": frames, "best_frame": best})
+            (folder / "meta.json").write_text(
+                json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+        except Exception:
+            pass
 
     # Question blocks (super important pour valider dom_analyzer/prompt_builder)
     if question_blocks is not None:
