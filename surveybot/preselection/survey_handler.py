@@ -118,27 +118,6 @@ def run_survey(driver, api_key, *, account_id: str):
                         _restart("sensitive_question_skip_failed")
                         return
 
-                    try:
-                        skip_btn = driver.find_element(
-                            By.CSS_SELECTOR,
-                            "button[data-test-id='ps-skip-question-button']"
-                        )
-                        driver.execute_script(
-                            "arguments[0].scrollIntoView({block:'center'});", skip_btn
-                        )
-                        time.sleep(0.3)
-                        driver.execute_script("arguments[0].click();", skip_btn)
-
-                        Management.guards.runtime_guard.get_guard().record_success()
-                        time.sleep(1.5)
-                        continue  # 🔁 revenir à la boucle des questions
-
-                    except Exception as e:
-                        Management.guards.runtime_guard.get_guard().record_error(e)
-                        print("❌ Impossible de cliquer sur 'Je ne peux pas répondre' :", e)
-                        _restart("sensitive_question_skip_failed")
-                        return
-
                 # ❌ Cas : disqualification détectée par la validation
                 if action == "DISQUALIFIED":
                     print(f"⚠️ Disqualification détectée (validator) | reason={answer.get('reason')}")
