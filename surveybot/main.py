@@ -10,6 +10,7 @@ from launch import start_hot_reload_thread, run_main_loop, build_notifier, soft_
 from Management.guards.runtime_guard import get_guard
 import time
 import traceback
+from config import is_attach_mode
 
 if IS_LOCAL:
     ACCOUNT_ID = "local_debug"
@@ -25,6 +26,77 @@ if hasattr(sys.stdout, "reconfigure"):
     except Exception:
         pass
 
+def _attach_tab_score(driver) -> tuple[int, int]:
+    """Score simple: nb d'éléments actionnables + taille texte."""
+    try:
+        actionable = driver.execute_script("""
+            try {
+              const sel = "input,select,textarea,button,[role='button'],[role='radio'],[role='checkbox'],label[for]";
+              return document.querySelectorAll(sel).length || 0;
+            } catch(e) { return 0; }
+        """)
+    except Exception:
+        actionable = 0
+
+    try:
+        text_len = driver.execute_script("""
+            try { return (document.body && (document.body.innerText||'').length) || 0; }
+            catch(e) { return 0; }
+        """)
+    except Exception:
+        text_len = 0
+
+    return int(actionable), int(text_len)
+
+def _attach_select_best_tab(driver) -> None:
+    """
+    Selenium ne sait pas 'prendre l'onglet actif' de Chrome de façon fiable.
+    Donc: on parcourt tous les onglets et on choisit celui qui ressemble le plus
+    à une page testable (beaucoup d'inputs/texte).
+    """
+    best = None  # (score_tuple, handle, url)
+    for h in list(getattr(driver, "window_handles", []) or []):
+        try:
+            driver.switch_to.window(h)
+            url = driver.current_url or ""
+            score = _attach_tab_score(driver)
+            if (best is None) or (score > best[0]):
+                best = (score, h, url)
+        except Exception:
+            continue
+
+    if best:
+        score, h, url = best
+        try:
+            driver.switch_to.window(h)
+        except Exception:
+            pass
+        print(f"[ATTACH] Tab sélectionné score={score} url={url}")
+
+def run_attach_takeover(driver, *, api_key: str, account_id: str) -> None:
+    """
+    Mode takeover: on n'ouvre AUCUNE URL, on n'exécute PAS la préselection TopSurveys.
+    On agit uniquement sur la page courante (celle que tu as ouverte à la main).
+    """
+    import time
+    import Survey.survey_executor as survey_executor
+
+    _attach_select_best_tab(driver)
+
+    max_steps = int(os.getenv("ATTACH_MAX_STEPS", "25"))
+    print(f"[ATTACH] takeover loop start (max_steps={max_steps}) url={getattr(driver,'current_url','')}")
+    for i in range(1, max_steps + 1):
+        try:
+            ok = survey_executor.execute_survey_page(driver, api_key)
+            print(f"[ATTACH] step={i}/{max_steps} ok={ok} url={driver.current_url}")
+        except Exception as e:
+            print(f"[ATTACH][ERROR] step={i} {type(e).__name__}: {e}")
+            break
+
+        time.sleep(0.6)  # mini respiration DOM
+
+    print("[ATTACH] takeover loop end (process exit, sans fermer Chrome).")
+
 def main():
     config = load_config()
 
@@ -36,6 +108,26 @@ def main():
 
     if not account_id:
         raise RuntimeError("ACCOUNT_ID introuvable")
+
+    if is_attach_mode():
+        # ⚠️ ATTACH = LOCAL DEBUG TAKEOVER
+        # - pas de lock DynamoDB
+        # - pas de navigation TopSurveys
+        # - pas de quit() (sinon tu fermes ton Chrome)
+        driver = launch_driver_or_fail(config, account_id)
+
+        api_key = (
+            os.getenv("OPENAI_API_KEY")
+            or os.getenv("OPENAI_API_KEY_LOCAL")
+            or config.get("openai_api_key")
+            or config.get("api_key")
+            or config.get("OPENAI_API_KEY")
+        )
+        if not api_key:
+            raise RuntimeError("OPENAI_API_KEY introuvable (nécessaire en attach)")
+
+        run_attach_takeover(driver, api_key=api_key, account_id=account_id)
+        return
 
     acquire_account_lock_or_exit(account_id)
     mark_bot_running(account_id)
@@ -100,7 +192,7 @@ def main():
             print(f"[MAIN][ERROR] {type(e).__name__}: {e}")
             traceback.print_exc()
             try:
-                if driver:
+                if driver and (not is_attach_mode()):
                     driver.quit()
             except Exception:
                 pass
