@@ -10,7 +10,7 @@ from launch import start_hot_reload_thread, run_main_loop, build_notifier, soft_
 from Management.guards.runtime_guard import get_guard
 import time
 import traceback
-from config import is_attach_mode
+from config import is_attach_mode, RUN_ENV, RUN_MODE, BROWSER_MODE
 
 if IS_LOCAL:
     ACCOUNT_ID = "local_debug"
@@ -100,6 +100,15 @@ def run_attach_takeover(driver, *, api_key: str, account_id: str) -> None:
 def main():
     config = load_config()
 
+    print(
+        f"[BOOT] RUN_ENV={RUN_ENV} RUN_MODE={RUN_MODE} BROWSER_MODE={BROWSER_MODE} attach={is_attach_mode()}",
+        flush=True,
+    )
+
+    # 🔒 Fail-fast : même si quelqu'un force des env vars en prod, attach ne doit jamais tourner
+    if is_attach_mode() and (not IS_LOCAL):
+        raise SystemExit("attach_forbidden_in_prod")
+
     account_id = (
         os.getenv("ACCOUNT_ID")
         or config.get("account_id")
@@ -145,8 +154,13 @@ def main():
     heartbeat_started = False
     hot_reload_started = False
 
-    while True:
+    max_cycles = int(os.getenv("MAX_MAIN_CYCLES", "3") or "3")
+    cycle = 0
+
+    while cycle < max_cycles:
+        cycle += 1
         driver = None
+
         try:
             driver = launch_driver_or_fail(config, account_id)
             api_key, payout_name, payout_revolut_tag = init_session_and_enter_surveys(driver, config, account_id, notify_fn)
@@ -161,9 +175,10 @@ def main():
 
             def _soft_restart(reason):
                 return soft_restart(
-                runtime_ctx["session"],
-                runtime_ctx["driver"],
-                reason,)
+                    runtime_ctx["session"],
+                    runtime_ctx["driver"],
+                    reason,
+                )
 
             if not IS_LOCAL:
                 if guard is None:
@@ -174,7 +189,6 @@ def main():
                     )
                 get_guard().attach_driver(driver)
 
-            # ✅ IMPORTANT : démarrer les threads AVANT d'entrer dans une boucle bloquante
             if IS_LOCAL and not hot_reload_started:
                 start_hot_reload_thread()
                 hot_reload_started = True
@@ -189,7 +203,7 @@ def main():
             raise
 
         except Exception as e:
-            print(f"[MAIN][ERROR] {type(e).__name__}: {e}")
+            print(f"[MAIN][ERROR] cycle={cycle}/{max_cycles} {type(e).__name__}: {e}")
             traceback.print_exc()
             try:
                 if driver and (not is_attach_mode()):
@@ -198,6 +212,9 @@ def main():
                 pass
             time.sleep(2)
             continue
+
+    # Si on sort de la boucle, on stoppe proprement (ECS relancera via scheduler)
+    raise SystemExit("max_main_cycles_reached")
         
 if __name__ == "__main__":
     main()
