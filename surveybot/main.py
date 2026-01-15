@@ -83,7 +83,7 @@ def run_attach_takeover(driver, *, api_key: str, account_id: str) -> None:
 
     _attach_select_best_tab(driver)
 
-    max_steps = int(os.getenv("ATTACH_MAX_STEPS", "25"))
+    max_steps = int(os.getenv("ATTACH_MAX_STEPS", "10"))
     print(f"[ATTACH] takeover loop start (max_steps={max_steps}) url={getattr(driver,'current_url','')}")
     for i in range(1, max_steps + 1):
         try:
