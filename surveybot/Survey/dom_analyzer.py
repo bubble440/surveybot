@@ -18,8 +18,9 @@ from __future__ import annotations
 from typing import List, Dict, Any, Tuple
 import re
 import unicodedata
+import os
 from Survey.dom_registry import clear_registry, register_target, make_target_id
-
+from Survey.frame_utils import iter_frame_chains, switch_to_frame_chain
 from selenium.webdriver.common.by import By
 
 # =========================
@@ -424,14 +425,103 @@ def _compute_max_select(itype: str, options: List[str]) -> int:
     return 1
 
 # =========================
+# Sélection de contexte (iframe-aware)
+# =========================
+
+def _env_truthy(name: str, default: str = "0") -> bool:
+    v = (os.getenv(name, default) or "").strip().lower()
+    return v in ("1", "true", "yes", "on")
+
+def _score_dom_context(driver) -> Dict[str, Any]:
+    """Score cheap d'un contexte DOM (default ou iframe)."""
+    try:
+        res = driver.execute_script(
+            """
+            const body = document.body;
+            const text = (body && body.innerText) ? body.innerText : "";
+            const t = (text || "").trim();
+            const textLen = t.length;
+
+            const nodes = document.querySelectorAll(
+              "input, textarea, select, button, a[role='button'], [role='button']"
+            );
+            const inputsCount = nodes ? nodes.length : 0;
+
+            let visibleCount = 0;
+            for (const el of nodes) {
+              try {
+                const r = el.getBoundingClientRect();
+                const st = window.getComputedStyle(el);
+                const visible = r.width > 2 && r.height > 2 && st.display !== 'none' && st.visibility !== 'hidden';
+                if (visible) visibleCount++;
+              } catch (e) {}
+            }
+
+            const low = t.toLowerCase();
+            const hasSurveyWords = /question|suivant|next|continue|prochaine|étape|sondage|enquête|profil/i.test(low);
+
+            return {textLen, inputsCount, visibleCount, hasSurveyWords};
+            """
+        ) or {}
+    except Exception:
+        res = {}
+
+    text_len = int(res.get("textLen") or 0)
+    inputs_count = int(res.get("inputsCount") or 0)
+    visible_count = int(res.get("visibleCount") or 0)
+    has_words = bool(res.get("hasSurveyWords") or False)
+
+    # score = visible inputs >> text length. Bonus si vocabulaire survey.
+    score = visible_count * 1000 + min(text_len, 2000) + (2000 if has_words else 0)
+
+    return {
+        "score": score,
+        "visible_count": visible_count,
+        "inputs_count": inputs_count,
+        "text_len": text_len,
+        "has_survey_words": has_words,
+    }
+
+def _select_best_frame_chain(driver, max_depth: int = 2) -> Tuple[List[int], Dict[str, Any]]:
+    """
+    Parcourt [] + iframes (profondeur <= max_depth) et choisit le meilleur contexte.
+    Comportement déterministe, sans retries infinis.
+    """
+    best_chain: List[int] = []
+    best_meta: Dict[str, Any] = {"score": -1}
+
+    for chain in iter_frame_chains(driver, max_depth=max_depth):
+        try:
+            with switch_to_frame_chain(driver, chain) as ok:
+                if not ok:
+                    continue
+                meta = _score_dom_context(driver)
+        except Exception:
+            continue
+
+        if int(meta.get("score") or 0) > int(best_meta.get("score") or 0):
+            best_chain = list(chain)
+            best_meta = meta
+
+    if _env_truthy("DOM_DEBUG_FRAMES", "0"):
+        try:
+            print(f"[DOM] best_frame_chain={best_chain} meta={best_meta}")
+        except Exception:
+            pass
+
+    return best_chain, best_meta
+
+# =========================
 # API principale
 # =========================
 
-def analyze_dom(driver) -> List[Dict[str, Any]]:
+def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any]]:
     """
     Analyse le DOM courant et retourne une liste de QuestionBlock.
     IMPORTANT: 1 bloc par question (group radio/checkbox).
     """
+    
+    frame_chain = frame_chain or []
     question_blocks: List[Dict[str, Any]] = []
     clear_registry()
 
@@ -473,10 +563,32 @@ def analyze_dom(driver) -> List[Dict[str, Any]]:
 
             # question = depuis conteneur (et on exclut options)
             container = _nearest_question_container(els[0])
-            question = _extract_question_from_container(container, options) if container is not None else ""
+            question = _extract_question_from_container(container, options) if container else ""
 
-            # ✅ NEW: cas "consent" / "terms" : pas de question séparée, l'unique option EST le libellé
+            # ✅ Fallback DOM: question parfois hors container (ex: <h2 id="label"> au-dessus du <form>)
             if not question:
+                # ✅ Fallback direct: cas très fréquent (Cint/QPS) -> <h2 id="label"> contient la question
+                try:
+                    if not question:
+                        el_label = driver.find_elements(By.CSS_SELECTOR, "#label")
+                        if el_label:
+                            t = _norm(el_label[0].text)
+                            if t:
+                                question = t
+                except Exception:
+                    pass
+
+                near = _norm(_find_question_text_near_element(driver, els[0]))
+                if near:
+                    near_lc = _norm_lc(near)
+                    opt_lc = {_norm_lc(o) for o in (options or []) if o}
+                    # filtre anti "Question 1 de 3" / textes d’aide génériques
+                    is_meta = bool(re.match(r"^question\s*\d+", near_lc)) or ("veuillez" in near_lc and "sélection" in near_lc)
+                    if (near_lc not in opt_lc) and (not is_meta):
+                        question = near
+
+            if not question:
+                # dernier recours: bloc "1 option" (rare, mais utile)
                 if len(options) == 1 and len(els) == 1:
                     question = options[0]
                 else:
@@ -522,6 +634,7 @@ def analyze_dom(driver) -> List[Dict[str, Any]]:
                     "group_key": k,
                     "question": question,
                     "option_xpath_map": option_xpath_map,  # {norm(label)->xpath}
+                    "frame_chain": frame_chain,
                 },
             )
 
@@ -608,6 +721,7 @@ def analyze_dom(driver) -> List[Dict[str, Any]]:
                     "itype": itype,
                     "question": question,
                     "xpath": xpath,
+                    "frame_chain": frame_chain,
                 },
             )
 
@@ -632,3 +746,22 @@ def analyze_dom(driver) -> List[Dict[str, Any]]:
             continue
 
     return question_blocks
+
+def analyze_dom(driver) -> List[Dict[str, Any]]:
+    """
+    Analyse le DOM et retourne une liste de QuestionBlock.
+    Frame-aware: choisit automatiquement le meilleur contexte (default ou iframe) jusqu'à depth=DOM_FRAME_MAX_DEPTH (défaut=2).
+    """
+    max_depth = int(os.getenv("DOM_FRAME_MAX_DEPTH", "2") or "2")
+    best_chain, _meta = _select_best_frame_chain(driver, max_depth=max_depth)
+
+    # Scan dans le contexte choisi; retour à default_content garanti.
+    with switch_to_frame_chain(driver, best_chain) as ok:
+        chain = best_chain if ok else []
+        blocks = _analyze_dom_current_context(driver, frame_chain=chain)
+
+    # Fallback strict: si on a scanné un iframe et qu'on n'a rien, tente default_content une seule fois.
+    if not blocks and chain:
+        blocks = _analyze_dom_current_context(driver, frame_chain=[])
+
+    return blocks

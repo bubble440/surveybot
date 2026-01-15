@@ -64,108 +64,129 @@ def _apply_by_target_id(driver, target_id: str, itype: str, value: str) -> bool:
     """
     Applique l'action directement via DOM_REGISTRY (target_id -> xpath).
     Returns True si une action est exécutée.
+
+    Support iframe: si le payload du registry contient frame_chain, on se positionne
+    dans ce contexte le temps d'appliquer l'action.
     """
     try:
         payload = get_target(target_id)
         if not payload:
             return False
 
-        kind = payload.get("kind")
-        reg_itype = (payload.get("itype") or "").lower()
-        itype = (itype or reg_itype).lower().strip()
+        # (Optionnel) exécution dans un iframe spécifique
+        frame_chain = payload.get("frame_chain") or []
+        try:
+            from Survey.frame_utils import switch_to_frame_chain  # type: ignore
+        except Exception:
+            switch_to_frame_chain = None  # type: ignore
 
-        v_norm = _norm_lc(value)
+        def _apply_in_current_context() -> bool:
+            kind = payload.get("kind")
+            reg_itype = (payload.get("itype") or "").lower()
+            resolved_itype = (itype or reg_itype).lower().strip()
 
-        # --- cas group (radio/checkbox)
-        if kind == "group" and itype in ("radio", "checkbox"):
-            opt_map = payload.get("option_xpath_map") or {}
-            xp = opt_map.get(v_norm)
+            v_norm = _norm_lc(value)
 
-            if not xp and v_norm:
-                for k, x in opt_map.items():
-                    if not k:
-                        continue
-                    if v_norm == k or v_norm in k or k in v_norm:
-                        xp = x
-                        break
+            # --- cas group (radio/checkbox)
+            if kind == "group" and resolved_itype in ("radio", "checkbox"):
+                opt_map = payload.get("option_xpath_map") or {}
+                xp = opt_map.get(v_norm)
 
-            if not xp:
-                # ✅ NEW: si une seule checkbox dans le groupe et valeur "oui/true", on clique la seule option
-                if itype == "checkbox" and len(opt_map) == 1:
-                    if v_norm in {"oui", "yes", "true", "1", "checked", "on", "x"} or not v_norm:
-                        xp = next(iter(opt_map.values()))
+                if not xp and v_norm:
+                    for k, x in opt_map.items():
+                        if not k:
+                            continue
+                        if v_norm == k or v_norm in k or k in v_norm:
+                            xp = x
+                            break
 
-            if not xp:
-                return False
+                if not xp:
+                    # si une seule checkbox et valeur "oui/true", clique la seule option
+                    if resolved_itype == "checkbox" and len(opt_map) == 1:
+                        if v_norm in {"oui", "yes", "true", "1", "checked", "on", "x"} or not v_norm:
+                            xp = next(iter(opt_map.values()))
 
-            try:
-                el = driver.find_element(By.XPATH, xp)
-                driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
-                el.click()
-                return True
-            except Exception:
-                try:
-                    el = driver.find_element(By.XPATH, xp)
-                    driver.execute_script("arguments[0].click();", el)
-                    return True
-                except Exception:
+                if not xp:
                     return False
 
-        # --- cas single (text/textarea/dropdown/button)
-        if kind == "single":
-            xp = payload.get("xpath")
-            if not xp:
-                return False
-
-            if itype in ("text", "textarea", "number"):
-                try:
-                    el = driver.find_element(By.XPATH, xp)
-                    driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
-                    try:
-                        el.clear()
-                    except Exception:
-                        pass
-                    el.send_keys(value or "")
-                    return True
-                except Exception:
-                    return False
-
-            if itype == "dropdown":
-                try:
-                    sel = driver.find_element(By.XPATH, xp)
-                    driver.execute_script("arguments[0].scrollIntoView({block:'center'});", sel)
-                    sel.click()
-                except Exception:
-                    return False
-
-                v = (value or "").strip()
-                if not v:
-                    return False
-
-                lit = _xpath_literal(v)
-                xps = [
-                    f"{xp}//option[normalize-space(.)={lit}]",
-                    f"{xp}//option[contains(normalize-space(.), {lit})]",
-                ]
-                for oxp in xps:
-                    try:
-                        opt = driver.find_element(By.XPATH, oxp)
-                        opt.click()
-                        return True
-                    except Exception:
-                        continue
-                return False
-
-            if itype == "button":
                 try:
                     el = driver.find_element(By.XPATH, xp)
                     driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
                     el.click()
                     return True
                 except Exception:
+                    try:
+                        el = driver.find_element(By.XPATH, xp)
+                        driver.execute_script("arguments[0].click();", el)
+                        return True
+                    except Exception:
+                        return False
+
+            # --- cas single (text/textarea/dropdown/button)
+            if kind == "single":
+                xp = payload.get("xpath")
+                if not xp:
                     return False
 
-        return False
+                if resolved_itype in ("text", "textarea", "number"):
+                    try:
+                        el = driver.find_element(By.XPATH, xp)
+                        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
+                        try:
+                            el.clear()
+                        except Exception:
+                            pass
+                        el.send_keys(value or "")
+                        return True
+                    except Exception:
+                        return False
+
+                if resolved_itype == "dropdown":
+                    try:
+                        sel = driver.find_element(By.XPATH, xp)
+                        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", sel)
+                        sel.click()
+                    except Exception:
+                        return False
+
+                    v = (value or "").strip()
+                    if not v:
+                        return False
+
+                    lit = _xpath_literal(v)
+                    xps = [
+                        f"{xp}//option[normalize-space(.)={lit}]",
+                        f"{xp}//option[contains(normalize-space(.), {lit})]",
+                    ]
+                    for oxp in xps:
+                        try:
+                            opt = driver.find_element(By.XPATH, oxp)
+                            opt.click()
+                            return True
+                        except Exception:
+                            continue
+                    return False
+
+                if resolved_itype == "button":
+                    try:
+                        el = driver.find_element(By.XPATH, xp)
+                        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
+                        el.click()
+                        return True
+                    except Exception:
+                        return False
+
+            return False
+
+        # Exécuter dans le bon frame si possible
+        if switch_to_frame_chain is not None and frame_chain:
+            with switch_to_frame_chain(driver, frame_chain) as ok:
+                if not ok:
+                    return False
+                return _apply_in_current_context()
+
+        return _apply_in_current_context()
+
     except Exception:
         return False
 

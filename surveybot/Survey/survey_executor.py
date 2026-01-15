@@ -1,12 +1,15 @@
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.action_chains import ActionChains
-import re, openai, time, unicodedata
+import re, openai, time, unicodedata, os
 import hashlib
 
 def _norm_lc(s: str) -> str:
     s = unicodedata.normalize("NFKC", (s or "")).lower().strip()
     return re.sub(r"\s+", " ", s)
 
+def _env_truthy(name: str, default: str = "0") -> bool:
+    v = (os.getenv(name, default) or "").strip().lower()
+    return v in ("1", "true", "yes", "on")
 
 def _coerce_safe_value_if_questionish(raw_line: str) -> str:
     """
@@ -66,7 +69,7 @@ def execute_survey_page(driver, api_key):
     Nouvelle version : capture l’image, demande à GPT-4o quoi faire, puis applique l'action.
     """
     import Management.guards.url_guard
-    import Survey.screenshot_analyzer as screenshot_analyzer
+    # import Survey.screenshot_analyzer as screenshot_analyzer
     import Survey.action_dispatcher as action_dispatcher
     import selenium.webdriver.support.ui
     import Survey.dom_analyzer as dom_analyzer
@@ -80,18 +83,18 @@ def execute_survey_page(driver, api_key):
     import Management.redirect_watcher as redirect_watcher
     import Survey.page_snapshot as page_snapshot
 
-    # ⏳ Attente que le DOM ait fini de charger avant capture
-    try:
-        selenium.webdriver.support.ui.WebDriverWait(driver, 8).until(
-            lambda d: d.execute_script("return document.readyState") == "complete"
-        )
-        selenium.webdriver.support.ui.WebDriverWait(driver, 8).until(
-            lambda d: len(d.find_elements(By.CSS_SELECTOR,
-                "input, select, textarea, button, [role='button'], [role='radio'], [role='checkbox']"
-            )) > 0
-        )
-    except Exception:
-        print("⚠️ Page encore vide, tentative de capture malgré tout.")
+    # # ⏳ Attente que le DOM ait fini de charger avant capture
+    # try:
+    #     selenium.webdriver.support.ui.WebDriverWait(driver, 8).until(
+    #         lambda d: d.execute_script("return document.readyState") == "complete"
+    #     )
+    #     selenium.webdriver.support.ui.WebDriverWait(driver, 8).until(
+    #         lambda d: len(d.find_elements(By.CSS_SELECTOR,
+    #             "input, select, textarea, button, [role='button'], [role='radio'], [role='checkbox']"
+    #         )) > 0
+    #     )
+    # except Exception:
+    #     print("⚠️ Page encore vide, tentative de capture malgré tout.")
 
     # 🛡️ Garde-fou URL: si on est hors périmètre, on n'agit pas
     try:
@@ -227,7 +230,14 @@ def execute_survey_page(driver, api_key):
                 return True
         except Exception:
             pass
-        # ------------------------------------------------------------
+
+        # 🔒 Vision fallback = OFF par défaut (V1 stable)
+        if not _env_truthy("SURVEY_VISION_FALLBACK", "0"):
+            print("🟣 Vision fallback désactivé (SURVEY_VISION_FALLBACK=0) -> abandon contrôlé.")
+            return False
+
+        # Import lazy: évite d'embarquer screenshot_analyzer / PIL si on n'a pas explicitement activé la vision
+        import Survey.screenshot_analyzer as screenshot_analyzer
         # 1) Tentative screenshot ciblé (EdgeSurvey/InnovateMR : question souvent dans img.taImage)
         try:
             from selenium.webdriver.common.by import By
