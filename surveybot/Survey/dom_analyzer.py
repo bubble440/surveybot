@@ -457,10 +457,30 @@ def _score_dom_context(driver) -> Dict[str, Any]:
               } catch (e) {}
             }
 
-            const low = t.toLowerCase();
-            const hasSurveyWords = /question|suivant|next|continue|prochaine|étape|sondage|enquête|profil/i.test(low);
+            // Signaux "survey question" (plus discriminants que juste inputsCount)
+            const qNodes = document.querySelectorAll(
+              "input[name^='question_'], textarea[name^='question_'], select[name^='question_'], " +
+              ".js-question-options input, .js-question-options select, .js-question-options textarea"
+            );
+            const qCount = qNodes ? qNodes.length : 0;
 
-            return {textLen, inputsCount, visibleCount, hasSurveyWords};
+            const labelNodes = document.querySelectorAll(".js-question-options label, label.radio, label.checkbox");
+            let visibleLabelCount = 0;
+            for (const el of (labelNodes || [])) {
+              try {
+                const r = el.getBoundingClientRect();
+                const st = window.getComputedStyle(el);
+                const visible = r.width > 2 && r.height > 2 && st.display !== 'none' && st.visibility !== 'hidden';
+                if (visible) visibleLabelCount++;
+              } catch (e) {}
+            }
+
+            const hasSurveyRoot = !!document.querySelector(".js-question-options, #templates .question, .survey-content #templates");
+
+            const low = t.toLowerCase();
+            const hasSurveyWords = /question|suivant|next|continue|prochaine|étape|sondage|enquête|profil|survey/i.test(low);
+
+            return {textLen, inputsCount, visibleCount, qCount, visibleLabelCount, hasSurveyRoot, hasSurveyWords};
             """
         ) or {}
     except Exception:
@@ -469,16 +489,29 @@ def _score_dom_context(driver) -> Dict[str, Any]:
     text_len = int(res.get("textLen") or 0)
     inputs_count = int(res.get("inputsCount") or 0)
     visible_count = int(res.get("visibleCount") or 0)
+    q_count = int(res.get("qCount") or 0)
+    visible_label_count = int(res.get("visibleLabelCount") or 0)
+    has_root = bool(res.get("hasSurveyRoot") or False)
     has_words = bool(res.get("hasSurveyWords") or False)
 
-    # score = visible inputs >> text length. Bonus si vocabulaire survey.
-    score = visible_count * 1000 + min(text_len, 2000) + (2000 if has_words else 0)
+    # Score: signaux question >> visible inputs >> texte. Bonus vocabulaire + root.
+    score = (
+        q_count * 5000
+        + visible_label_count * 2000
+        + visible_count * 1000
+        + min(text_len, 2000)
+        + (3000 if has_root else 0)
+        + (2000 if has_words else 0)
+    )
 
     return {
         "score": score,
+        "q_count": q_count,
+        "visible_label_count": visible_label_count,
         "visible_count": visible_count,
         "inputs_count": inputs_count,
         "text_len": text_len,
+        "has_survey_root": has_root,
         "has_survey_words": has_words,
     }
 
