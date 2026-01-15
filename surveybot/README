@@ -1,3 +1,18 @@
+# -----------------------------------------------------------------------------------------------------------------------------------------------------------------------
+# Pour lancer Chrome avec le debug remote activé (debug)
+chrome.exe `
+  --remote-debugging-port=9222 `
+  --user-data-dir="C:\tmp\surveybot-attach"
+
+# Pour lancer surveybot en mode local avec attachement au Chrome debug
+$env:RUN_ENV="local"
+$env:RUN_MODE="local"
+$env:BROWSER_MODE="attach"
+$env:DOM_DEBUG_FRAMES="1"
+# Pour lancer surveybot en mode "attach" (debug)
+python surveybot/main.py
+
+# -----------------------------------------------------------------------------------------------------------------------------------------------------------------------
 Etapes pour dockeriser et deployer une version du programme.
 
 #TOUT CECI EST A EXECUTER DANS POWERSHELL
@@ -68,12 +83,11 @@ docker run --rm -it `
 # birthdate:12/12/2000
 # postal:95800
 
-
 # Adresse mail de test jetable :
 # wil2.pretender848@silomails.com
 # qatar.chimp729@8shield.net
 
-
+# ------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 # Pour activer les snapshots (debug) :
 New-Item -ItemType Directory -Force snapshots | Out-Null
 Set-Content -Path snapshots\.snapshot_flag -Value "on"
@@ -83,13 +97,8 @@ Remove-Item -Force snapshots\.snapshot_flag -ErrorAction SilentlyContinue
 
 # Pour rejouer un snapshot et enregistrer une nouvelle baseline (debug) :
 Set-Location C:\projects\Surveys\surveybot
-python tools\replay_snapshot.py ..\snapshots\20260114_211834_after_dom_analyze --use-dom-outer --save-baseline
-python tools\replay_snapshot.py ..\snapshots\20260114_211834_after_dom_analyze --use-dom-outer --headful --pause
+python tools\replay_snapshot.py ..\snapshots\20260115_165644_after_dom_analyze --use-dom-outer --save-baseline
+python tools\replay_snapshot.py ..\snapshots\20260115_165644_after_dom_analyze --use-dom-outer --headful --pause
 
 # Pour rejouer un snapshot en mode headful avec pause (debug) :
 python tools\replay_snapshot.py ..\snapshots\20260114_211834_after_dom_analyze --use-dom-outer --headful --pause
-
-# Pour lancer Chrome avec le debug remote activé (debug)
-chrome.exe `
-  --remote-debugging-port=9222 `
-  --user-data-dir="C:\tmp\surveybot-attach"
