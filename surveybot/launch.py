@@ -13,6 +13,7 @@ from State.account_state import update_state, load_state, save_state, try_acquir
 from selenium.common.exceptions import TimeoutException
 from preselection.auth_handler import is_session_expired
 from Management.pause_policy import PausePolicy
+from browser.browser_factory import get_driver
 
 def acquire_account_lock_or_exit(account_id: str, ttl_sec: int = 180):
     task_id = os.getenv("ECS_TASK_ID") or socket.gethostname()
@@ -247,7 +248,8 @@ def mark_bot_running(account_id: str):
 
 def launch_driver_or_fail(config, account_id: str):
     try:
-        driver = launch_browser(config)
+        # driver = launch_browser(config) Ancien launcher Playwright
+        driver = get_driver()  # Nouveau launcher Selenium
         if driver is None:
             raise RuntimeError("launch_browser() a retourné None")
         if not IS_LOCAL:
