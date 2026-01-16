@@ -1,8 +1,6 @@
 from __future__ import annotations
-import re, unicodedata
+import re, unicodedata, os
 from selenium.webdriver.common.by import By
-import captcha.captcha_solver as captcha_solver
-import captcha.recaptcha_utils as recaptcha_utils
 import Survey.input_handler
 from Survey.dom_registry import get_target
 
@@ -14,6 +12,20 @@ def _norm(s: str) -> str:
 
 def _norm_lc(s: str) -> str:
     return _norm(s).lower()
+
+def _fold_norm_lc(s: str) -> str:
+    """
+    Normalisation robuste pour comparer des libellés (options):
+    - NFKD + suppression des diacritiques (Île -> Ile)
+    - lower + collapse spaces
+    """
+    if not s:
+        return ""
+    s = unicodedata.normalize("NFKD", s)
+    s = "".join(c for c in s if not unicodedata.combining(c))
+    s = s.replace("\xa0", " ").strip()
+    s = re.sub(r"\s+", " ", s)
+    return s.lower()
 
 def _click_xpath(driver, xpath: str) -> bool:
     if not xpath:
@@ -75,6 +87,14 @@ def _apply_by_target_id(driver, target_id: str, itype: str, value: str) -> bool:
 
         # (Optionnel) exécution dans un iframe spécifique
         frame_chain = payload.get("frame_chain") or []
+        
+        # NEW: si le registry dit "pas d'iframe", on s'assure de revenir au default_content
+        if not frame_chain:
+            try:
+                driver.switch_to.default_content()
+            except Exception:
+                pass
+
         try:
             from Survey.frame_utils import switch_to_frame_chain  # type: ignore
         except Exception:
@@ -85,42 +105,274 @@ def _apply_by_target_id(driver, target_id: str, itype: str, value: str) -> bool:
             reg_itype = (payload.get("itype") or "").lower()
             resolved_itype = (itype or reg_itype).lower().strip()
 
+            debug_target = (os.getenv("ACTION_DEBUG_TARGET", "0") or "").strip().lower() in ("1", "true", "yes", "on")
+
+            def _find_best_visible(xpath: str):
+                # évite de cliquer un élément caché si le DOM contient une ancienne étape/template
+                try:
+                    cands = driver.find_elements(By.XPATH, xpath)
+                except Exception:
+                    cands = []
+
+                if not cands:
+                    return None
+
+                for c in cands:
+                    try:
+                        if c.is_displayed():
+                            return c
+                    except Exception:
+                        continue
+                return cands[0]
+
+            def _wait_checked(input_id: str | None, input_name: str | None, timeout_s: float = 1.2) -> bool:
+                import time
+                end = time.time() + timeout_s
+
+                while time.time() < end:
+                    try:
+                        if input_id:
+                            ok = driver.execute_script(
+                                "var e=document.getElementById(arguments[0]); return !!(e && e.checked);",
+                                input_id,
+                            )
+                            if ok:
+                                return True
+
+                        if input_name:
+                            ok = driver.execute_script(
+                                "return !!document.querySelector("
+                                "  \"input[type='radio'][name=\\\"\"+arguments[0]+\"\\\"]:checked, \" +"
+                                "  \"input[type='checkbox'][name=\\\"\"+arguments[0]+\"\\\"]:checked\""
+                                ");",
+                                input_name,
+                            )
+                            if ok:
+                                return True
+                    except Exception:
+                        pass
+
+                    time.sleep(0.05)
+
+                return False
+
             v_norm = _norm_lc(value)
+            v_fold = _fold_norm_lc(value)
 
-            # --- cas group (radio/checkbox)
-            if kind == "group" and resolved_itype in ("radio", "checkbox"):
-                opt_map = payload.get("option_xpath_map") or {}
-                xp = opt_map.get(v_norm)
+            # --- cas "options map" (radio/checkbox)
+            # IMPORTANT: on n'exige pas kind=="group" pour éviter le couplage à la classification (ex: matrix_rows_single_choice)
+            opt_map = payload.get("option_xpath_map") or {}
+            if opt_map and resolved_itype in ("radio", "checkbox"):
 
-                if not xp and v_norm:
+                # 1) lookup direct
+                xp = opt_map.get(v_norm) or (opt_map.get(v_fold) if v_fold else None)
+
+                # 2) lookup fuzzy (avec et sans accents)
+                if not xp:
                     for k, x in opt_map.items():
                         if not k:
                             continue
-                        if v_norm == k or v_norm in k or k in v_norm:
+                        k_norm = _norm_lc(k)
+                        k_fold = _fold_norm_lc(k)
+
+                        # match sur versions normalisées
+                        if v_norm and (v_norm == k_norm or v_norm in k_norm or k_norm in v_norm):
+                            xp = x
+                            break
+                        if v_fold and (
+                            v_fold == k_norm or v_fold in k_norm or k_norm in v_fold
+                            or v_fold == k_fold or v_fold in k_fold or k_fold in v_fold
+                        ):
                             xp = x
                             break
 
-                if not xp:
-                    # si une seule checkbox et valeur "oui/true", clique la seule option
-                    if resolved_itype == "checkbox" and len(opt_map) == 1:
-                        if v_norm in {"oui", "yes", "true", "1", "checked", "on", "x"} or not v_norm:
-                            xp = next(iter(opt_map.values()))
+                # 3) checkbox unique : "oui/true" => clique la seule option
+                if not xp and resolved_itype == "checkbox" and len(opt_map) == 1:
+                    if (v_norm in {"oui", "yes", "true", "1", "checked", "on", "x"} or not v_norm):
+                        xp = next(iter(opt_map.values()))
 
                 if not xp:
+                    if debug_target:
+                        print(f"[TARGET_DEBUG] target_id='{target_id}' kind='{kind}' itype='{resolved_itype}' value='{value}' -> option introuvable (opt_map={len(opt_map)})")
                     return False
 
-                try:
-                    el = driver.find_element(By.XPATH, xp)
-                    driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
-                    el.click()
-                    return True
-                except Exception:
+                def _first_input_under(node):
                     try:
-                        el = driver.find_element(By.XPATH, xp)
-                        driver.execute_script("arguments[0].click();", el)
-                        return True
+                        if (node.tag_name or "").lower() == "input":
+                            return node
+                    except Exception:
+                        pass
+                    try:
+                        return node.find_element(By.XPATH, ".//input[@type='radio' or @type='checkbox']")
+                    except Exception:
+                        return None
+
+                def _is_selected(inp):
+                    try:
+                        return bool(inp and inp.is_selected())
                     except Exception:
                         return False
+
+                def _dispatch_check_events(inp):
+                    try:
+                        driver.execute_script(
+                            """
+                            const inp = arguments[0];
+                            if (!inp) return;
+                            inp.checked = true;
+                            inp.dispatchEvent(new Event('input',  {bubbles:true}));
+                            inp.dispatchEvent(new Event('change', {bubbles:true}));
+                            inp.dispatchEvent(new MouseEvent('click', {bubbles:true}));
+                            """,
+                            inp,
+                        )
+                    except Exception:
+                        pass
+
+                def _cdp_click(el) -> bool:
+                    # Click "réel" via CDP (plus proche d'un user click)
+                    try:
+                        if not hasattr(driver, "execute_cdp_cmd"):
+                            if debug_target:
+                                print("[TARGET_DEBUG] CDP click unavailable: driver has no execute_cdp_cmd()")
+                            return False
+
+                        rect = driver.execute_script(
+                            "const r = arguments[0].getBoundingClientRect();"
+                            "return {x:r.left + r.width/2, y:r.top + r.height/2, w:r.width, h:r.height};",
+                            el,
+                        )
+                        x = int(rect.get("x", 0))
+                        y = int(rect.get("y", 0))
+
+                        driver.execute_cdp_cmd("Input.dispatchMouseEvent", {"type": "mouseMoved", "x": x, "y": y, "button": "none"})
+                        driver.execute_cdp_cmd("Input.dispatchMouseEvent", {"type": "mousePressed", "x": x, "y": y, "button": "left", "clickCount": 1})
+                        driver.execute_cdp_cmd("Input.dispatchMouseEvent", {"type": "mouseReleased", "x": x, "y": y, "button": "left", "clickCount": 1})
+                        return True
+                    except Exception as e:
+                        if debug_target:
+                            print(f"[TARGET_DEBUG] CDP click failed: {e}")
+                        return False
+
+
+                def _click_candidate(node, label: str) -> bool:
+                    # 1) click webdriver standard
+                    try:
+                        node.click()
+                        return True
+                    except Exception as e:
+                        if debug_target:
+                            print(f"[TARGET_DEBUG] native click failed on {label}: {e}")
+
+                    # 2) ActionChains (souvent plus robuste quand le DOM est “capricieux”)
+                    try:
+                        from selenium.webdriver.common.action_chains import ActionChains
+                        ActionChains(driver).move_to_element(node).pause(0.05).click().perform()
+                        return True
+                    except Exception as e:
+                        if debug_target:
+                            print(f"[TARGET_DEBUG] actionchains click failed on {label}: {e}")
+
+                    # 3) CDP click (trusted-ish)
+                    if _cdp_click(node):
+                        return True
+
+                    # 4) JS click (dernier recours, parfois ignoré si anti-bot)
+                    try:
+                        driver.execute_script("arguments[0].click();", node)
+                        return True
+                    except Exception as e:
+                        if debug_target:
+                            print(f"[TARGET_DEBUG] js click failed on {label}: {e}")
+                        return False
+
+                # 1) trouver l'élément cible (label/span/input)
+                try:
+                    el = _find_best_visible(xp)
+                    if not el:
+                        if debug_target:
+                            print(f"[TARGET_DEBUG] element not found for xpath: {xp}")
+                        return False
+                except Exception as ex:
+                    if debug_target:
+                        print(f"[TARGET_DEBUG] element not found for xpath={xp} ({type(ex).__name__}: {ex})")
+                    return False
+
+                # 2) clic “normal” sur la cible
+                _click_candidate(el, "target")
+
+                # NEW: si la cible est un <label for="...">, forcer l'input associé
+                try:
+                    if (el.tag_name or "").lower() == "label":
+                        fid = (el.get_attribute("for") or "").strip()
+                        if fid:
+                            inp_for = driver.find_element(By.ID, fid)
+                            _dispatch_check_events(inp_for)
+                except Exception:
+                    pass
+
+                inp = _first_input_under(el)
+                if _is_selected(inp):
+                    return True
+
+                # 3) si on a cliqué un label non interactif (pointer-events, overlay), tenter le span
+                try:
+                    sp = el.find_element(By.XPATH, ".//span[1]")
+                    _click_candidate(sp, "span")
+                except Exception:
+                    pass
+
+                inp = inp or _first_input_under(el)
+                if _is_selected(inp):
+                    return True
+
+                # 4) tenter un clic direct sur l'input (même si masqué) via JS
+                if inp:
+                    _click_candidate(inp, "input")
+                    if _is_selected(inp):
+                        return True
+
+                    # 5) dernier recours DOM-only: forcer checked + events (ce qui active souvent le bouton Continue)
+                    _dispatch_check_events(inp)
+                    if _is_selected(inp):
+                        return True
+
+                # --- vérification robuste (évite stale / re-render) ---
+                inp_id = None
+                inp_name = None
+
+                try:
+                    # si label[for] => input id
+                    if (el.tag_name or "").lower() == "label":
+                        _for = (el.get_attribute("for") or "").strip()
+                        if _for:
+                            inp_id = _for
+                except Exception:
+                    pass
+
+                try:
+                    if not inp_id:
+                        if (el.tag_name or "").lower() == "input":
+                            inp_id = (el.get_attribute("id") or "").strip() or None
+                            inp_name = (el.get_attribute("name") or "").strip() or None
+                except Exception:
+                    pass
+
+                try:
+                    if not inp_id or not inp_name:
+                        inp = _first_input_under(el)
+                        if inp:
+                            inp_id = inp_id or ((inp.get_attribute("id") or "").strip() or None)
+                            inp_name = inp_name or ((inp.get_attribute("name") or "").strip() or None)
+                except Exception:
+                    pass
+
+                if _wait_checked(inp_id, inp_name, timeout_s=1.2):
+                    return True
+
+                if debug_target:
+                    print(f"[TARGET_DEBUG] selection failed after waits: value='{value}' xpath='{xp}' inp_id='{inp_id}' inp_name='{inp_name}'")
+                return False
 
             # --- cas single (text/textarea/dropdown/button)
             if kind == "single":
@@ -577,10 +829,21 @@ def execute_action(driver, instruction: str) -> bool:
     import Survey.input_handler
     import Survey.dom_context_mapper as dom_context_mapper
     import Survey.dropdown_block_resolver as dropdown_block_resolver
-    import Survey.action_types as Action
+    from Survey.action_types import Action as ActionModel
 
-    if isinstance(instruction, Action):
+    import os
+    debug_target = (os.getenv("ACTION_DEBUG_TARGET", "0") or "").strip().lower() in ("1", "true", "yes", "on")
+
+    # Print 1 seule fois pour prouver que CE fichier est chargé
+    if debug_target and not getattr(driver, "_target_debug_header_printed", False):
+        print(f"[TARGET_DEBUG] action_dispatcher file={__file__}")
+        driver._target_debug_header_printed = True
+
+    if isinstance(instruction, ActionModel):
         instruction = instruction.to_dispatcher_line()
+
+    if debug_target:
+        print(f"[TARGET_DEBUG] execute_action raw={instruction!r}")
 
     if not instruction or not instruction.strip():
         return False
@@ -604,8 +867,9 @@ def execute_action(driver, instruction: str) -> bool:
             try:
                 if _apply_by_target_id(driver, target_id, itype, value):
                     return True
-            except Exception:
-                pass
+            except Exception as e:
+                if debug_target:
+                    print(f"[TARGET_DEBUG] _apply_by_target_id exception: {type(e).__name__}: {e}")
 
         # 2) fallback legacy: label == valeur (IMPORTANT: pas QID)
         label = value
@@ -771,6 +1035,9 @@ def execute_action(driver, instruction: str) -> bool:
             ):
                 return True
 
+        if debug_target:
+            print(f"[TARGET_DEBUG] parsed target_id={target_id!r} itype={itype!r} value={value!r} context={ctx!r}")
+
         # si cette ligne échoue, on tente la suivante (au lieu de return False)
         print("❌ Aucune stratégie n’a abouti pour :", raw, " source: action_dispatcher.py")
         continue
@@ -875,7 +1142,14 @@ def execute_actions_plan(
                 except Exception:
                     pass
 
-        except Exception:
+        except Exception as e:
+            try:
+                import os
+                debug_target = (os.getenv("ACTION_DEBUG_TARGET", "0") or "").strip().lower() in ("1", "true", "yes", "on")
+                if debug_target:
+                    print(f"[TARGET_DEBUG] execute_actions_plan idx={idx} crashed: {type(e).__name__}: {e}")
+            except Exception:
+                pass
             continue
 
     return success_any
