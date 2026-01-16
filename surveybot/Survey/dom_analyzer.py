@@ -122,6 +122,24 @@ def _best_xpath_for_element(driver, el) -> str:
 
     return ""
 
+def _xpath_literal(s: str) -> str:
+    """
+    Literal XPath safe, même si la chaîne contient des quotes.
+    """
+    s = s or ""
+    if "'" not in s:
+        return f"'{s}'"
+    if '"' not in s:
+        return f'"{s}"'
+    parts = s.split("'")
+    out = []
+    for i, p in enumerate(parts):
+        if p:
+            out.append(f"'{p}'")
+        if i != len(parts) - 1:
+            out.append("\"'\"")
+    return "concat(" + ", ".join(out) + ")"
+
 def _norm_key(text: str) -> str:
     return _norm_lc(text)
 
@@ -652,9 +670,47 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                     if not lbl:
                         continue
 
-                    xp = _best_xpath_for_element(driver, e)
+                    # ✅ Locator STABLE pour le choix (évite XPath absolu fragile)
+                    inp_id = ""
+                    inp_type = ""
+                    inp_name = ""
+                    inp_value = ""
+                    try:
+                        inp_id = (e.get_attribute("id") or "").strip()
+                        inp_type = (e.get_attribute("type") or "").strip().lower()
+                        inp_name = (e.get_attribute("name") or "").strip()
+                        inp_value = (e.get_attribute("value") or "").strip()
+                    except Exception:
+                        pass
+
+                    xp = ""
+
+                    # 1) Le plus stable : label[for="<id>"] (ou fallback input#id)
+                    if inp_id:
+                        id_lit = _xpath_literal(inp_id)
+                        xp = f"(//label[@for={id_lit}] | //*[@id={id_lit}])[1]"
+
+                    # 2) Fallback stable : input par (type,name,value) si pas d'id
+                    elif inp_type in ("radio", "checkbox") and inp_name and inp_value:
+                        t_lit = _xpath_literal(inp_type)
+                        n_lit = _xpath_literal(inp_name)
+                        v_lit = _xpath_literal(inp_value)
+                        xp = f"(//input[@type={t_lit} and @name={n_lit} and @value={v_lit}]/ancestor::label[1] | //input[@type={t_lit} and @name={n_lit} and @value={v_lit}])[1]"
+
+                    # 3) Dernier recours : XPath absolu
+                    else:
+                        click_el = e
+                        try:
+                            lab = e.find_element(By.XPATH, "ancestor::label[1]")
+                            if lab:
+                                click_el = lab
+                        except Exception:
+                            pass
+                        xp = _best_xpath_for_element(driver, click_el)
+
                     if not xp:
                         continue
+
                     option_xpath_map[_norm_key(lbl)] = xp
                 except Exception:
                     continue

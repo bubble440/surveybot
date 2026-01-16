@@ -177,9 +177,7 @@ def build_batch_prompt(question_blocks: list[dict]) -> str:
         "Respecte STRICTEMENT le format. "
         "Ne renvoie rien d'autre."
     )
-    
-    print("Le prompt est: \n" + "\n".join(lines))
-    
+        
     return "\n".join(lines)
 
 def _norm_lc(s: str | None) -> str:
@@ -225,4 +223,5 @@ def filter_blocks_for_openai(question_blocks: list) -> list:
         if it_lc in {"radio", "checkbox", "dropdown", "text", "matrix_rows_single_choice", "matrix"}:
             kept.append(qb)
 
+        print(kept)
     return kept

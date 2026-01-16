@@ -24,38 +24,64 @@ from Survey.frame_utils import iter_frame_chains, switch_to_frame_chain
 def _norm_lc(s: str) -> str:
     return re.sub(r"\s+", " ", (s or "").lower()).strip()
 
+# def _page_text_lc(driver) -> str:
+#     """
+#     IMPORTANT: Decipher/Confirmit mettent souvent tout le contenu dans un iframe.
+#     Donc on collecte le texte visible sur default_content + iframes (profondeur 2).
+#     """
+#     js = """
+#         const els = Array.from(document.querySelectorAll('body *'));
+#         const out = [];
+#         for (const e of els){
+#           try{
+#             const s = getComputedStyle(e);
+#             if (s.display === 'none' || s.visibility === 'hidden') continue;
+#             const r = e.getBoundingClientRect();
+#             if (!r || r.width < 2 || r.height < 2) continue;
+#             const t = (e.innerText || '').trim();
+#             if (t) out.push(t);
+#           }catch(_){}
+#         }
+#         return out;
+#     """
+#     chunks = []
+#     for chain in iter_frame_chains(driver, max_depth=2):
+#         with switch_to_frame_chain(driver, chain) as ok:
+#             if not ok:
+#                 continue
+#             try:
+#                 arr = driver.execute_script(js) or []
+#                 if arr:
+#                     chunks.append(" ".join(arr))
+#             except Exception:
+#                 continue
+#     return " ".join(chunks).lower()
+
 def _page_text_lc(driver) -> str:
     """
-    IMPORTANT: Decipher/Confirmit mettent souvent tout le contenu dans un iframe.
-    Donc on collecte le texte visible sur default_content + iframes (profondeur 2).
+    Texte visible "utile" pour les heuristiques.
+    IMPORTANT: on ignore le footer (Privacy Policy / General Terms) car ça crée des faux positifs (consent_screen).
     """
-    js = """
-        const els = Array.from(document.querySelectorAll('body *'));
-        const out = [];
-        for (const e of els){
-          try{
-            const s = getComputedStyle(e);
-            if (s.display === 'none' || s.visibility === 'hidden') continue;
-            const r = e.getBoundingClientRect();
-            if (!r || r.width < 2 || r.height < 2) continue;
-            const t = (e.innerText || '').trim();
-            if (t) out.push(t);
-          }catch(_){}
-        }
-        return out;
-    """
-    chunks = []
-    for chain in iter_frame_chains(driver, max_depth=2):
-        with switch_to_frame_chain(driver, chain) as ok:
-            if not ok:
-                continue
-            try:
-                arr = driver.execute_script(js) or []
-                if arr:
-                    chunks.append(" ".join(arr))
-            except Exception:
-                continue
-    return " ".join(chunks).lower()
+    try:
+        txt = driver.execute_script(
+            """
+            const root = document.querySelector('#survey') || document.querySelector('main') || document.body;
+            if (!root) return '';
+            const clone = root.cloneNode(true);
+
+            // supprimer les zones footer-like (sinon faux positifs 'privacy policy' etc.)
+            clone.querySelectorAll('footer, [id*="footer"], [class*="footer"], [id*="Footer"], [class*="Footer"]').forEach(n => n.remove());
+
+            return (clone.innerText || '').trim();
+            """
+        )
+        txt = _norm_lc(txt or "")
+        return txt[:5000] if len(txt) > 5000 else txt
+    except Exception:
+        try:
+            return _norm_lc(driver.page_source or "")
+        except Exception:
+            return ""
 
 # ============================================================
 # Signatures DOM (détecteurs)
@@ -63,98 +89,105 @@ def _page_text_lc(driver) -> str:
 
 def is_consent_screen(driver) -> bool:
     """
-    Détecte un écran de consentement / RGPD / privacy (y compris CTA-only comme rx.samplicio).
-    Objectif: bypass OpenAI/vision et cliquer localement sur "Accepter/Continuer".
-
-    Heuristique:
-    - mots-clés consent/privacy/cookies/rgpd…
-    - ET (checkbox/radio visibles OU présence d’un CTA "accept/agree/accepter/continuer" ou id "*agree*")
-    - en scannant default_content + iframes (profondeur 2)
+    Détecte un écran de consentement (cookies / privacy / terms) sans confondre une vraie question survey.
+    Règle clé: "Continue/Next/Suivant" seul ne suffit PAS (trop de faux positifs).
     """
     txt = _page_text_lc(driver)
 
-    has_kw = any(k in txt for k in [
-        "consent", "gdpr", "rgpd", "privacy",
-        "politique de confidentialité", "confidentialité",
-        "terms", "cookie", "cookies",
-        "consent form",
-    ])
-    if not has_kw:
-        return False
+    # --- hard negative: page "question" classique (beaucoup de radios + un '?' visible) ---
+    try:
+        radios = driver.find_elements(By.CSS_SELECTOR, "input[type='radio'], [role='radio']")
+        if len(radios) >= 4 and "?" in (txt or ""):
+            # on ne retourne PAS tout de suite False si on trouve des marqueurs explicites de consentement
+            pass
+    except Exception:
+        radios = []
 
-    bad_words = ("refuser", "disagree", "quitter", "quit", "exit", "annuler", "cancel", "fermer", "close")
-    good_words = (
-        "accepter", "j'accepte", "agree", "accept",
-        "continuer", "continue", "proceed",
-        "suivant", "next",
-        "commencer", "start", "begin",
-        "ok", "d'accord"
-    )
-
-    def _has_agree_cta_here() -> bool:
-        # ids typiques: gtm-agree-button / agree / accept / consent…
-        try:
-            if driver.find_elements(By.CSS_SELECTOR, "#gtm-agree-button"):
+    # marqueurs explicites (id/class)
+    try:
+        for el in driver.find_elements(By.CSS_SELECTOR, "*[id], *[class]"):
+            s = f"{(el.get_attribute('id') or '')} {(el.get_attribute('class') or '')}".lower()
+            if any(k in s for k in ["onetrust", "cookie", "consent", "gdpr", "rgpd", "accept", "agree"]):
                 return True
+    except Exception:
+        pass
+
+    # --- CTA explicite "Accepter / Agree / OK" (PAS "Continue") ---
+    def _has_explicit_agree_cta() -> bool:
+        good = {
+            "i agree", "agree", "accept", "i accept",
+            "j'accepte", "j accepte", "accepter", "accepte",
+            "autoriser", "allow", "ok"
+        }
+        try:
+            cands = driver.find_elements(
+                By.CSS_SELECTOR,
+                "button, a[role='button'], input[type='button'], input[type='submit']"
+            )
+            for el in cands:
+                try:
+                    t = _norm_lc(el.text or el.get_attribute("value") or el.get_attribute("innerText") or "")
+                    if not t:
+                        continue
+                    if t in good:
+                        return True
+                except Exception:
+                    continue
         except Exception:
             pass
-
-        sel = "button, [role='button'], input[type='button'], input[type='submit'], a"
-        try:
-            els = driver.find_elements(By.CSS_SELECTOR, sel) or []
-        except Exception:
-            els = []
-
-        for el in els[:120]:  # cap perf
-            try:
-                t = _norm_lc(el.text or el.get_attribute("value") or el.get_attribute("aria-label") or "")
-                _id = _norm_lc(el.get_attribute("id") or "")
-                if not t and not _id:
-                    continue
-
-                # ne jamais considérer un CTA "refuser/quitter" comme positif
-                if any(b in t for b in bad_words) or ("disagree" in _id) or ("quit" in _id):
-                    continue
-
-                # id "agree/accept/consent" -> très fort signal
-                if any(k in _id for k in ("agree", "accept", "consent")):
-                    return True
-
-                # texte positif
-                if any(g in t for g in good_words):
-                    return True
-            except Exception:
-                continue
-
         return False
 
-    # a) choix explicites (checkbox/radio)
-    has_choice = False
-    for chain in iter_frame_chains(driver, max_depth=2):
-        with switch_to_frame_chain(driver, chain) as ok:
-            if not ok:
-                continue
-            try:
-                if driver.find_elements(By.CSS_SELECTOR, "input[type='checkbox'], [role='checkbox'], input[type='radio'], [role='radio']"):
-                    has_choice = True
-                    break
-            except Exception:
-                continue
+    # --- contrôle explicite type consent (checkbox/radio avec libellé agree/accept/consent) ---
+    def _has_explicit_consent_control() -> bool:
+        markers = {"agree", "accept", "consent", "gdpr", "rgpd", "cookie", "j'accepte", "i agree", "i accept"}
+        try:
+            inputs = driver.find_elements(By.CSS_SELECTOR, "input[type='checkbox'], input[type='radio']")
+            for inp in inputs:
+                try:
+                    id_ = (inp.get_attribute("id") or "").strip()
+                    name = (inp.get_attribute("name") or "").strip()
+                    blob = f"{id_} {name}".lower()
+                    if any(m in blob for m in markers):
+                        return True
 
-    # b) CTA accept/continue (même sans checkbox)
-    has_agree_cta = False
-    for chain in iter_frame_chains(driver, max_depth=2):
-        with switch_to_frame_chain(driver, chain) as ok:
-            if not ok:
-                continue
-            try:
-                if _has_agree_cta_here():
-                    has_agree_cta = True
-                    break
-            except Exception:
-                continue
+                    label_txt = ""
+                    if id_:
+                        labs = driver.find_elements(By.CSS_SELECTOR, f"label[for='{id_}']")
+                        if labs:
+                            label_txt = labs[0].text or labs[0].get_attribute("innerText") or ""
+                    if not label_txt:
+                        # label ancêtre
+                        try:
+                            lab = inp.find_element(By.XPATH, "ancestor::label[1]")
+                            label_txt = lab.text or lab.get_attribute("innerText") or ""
+                        except Exception:
+                            pass
 
-    return bool(has_choice or has_agree_cta)
+                    label_txt = _norm_lc(label_txt)
+                    if label_txt and any(m in label_txt for m in markers):
+                        return True
+                except Exception:
+                    continue
+        except Exception:
+            pass
+        return False
+
+    has_agree = _has_explicit_agree_cta()
+    has_ctrl = _has_explicit_consent_control()
+
+    if has_agree or has_ctrl:
+        return True
+
+    # keywords (hors footer, grâce à _page_text_lc)
+    strong_kw = [
+        "cookie", "cookies", "consent", "gdpr", "rgpd",
+        "privacy", "confidential", "confidentialité",
+        "politique de confidentialité", "terms of use", "conditions d'utilisation",
+    ]
+    has_kw = any(k in (txt or "") for k in strong_kw)
+
+    # règle stricte: keywords seuls ne suffisent pas
+    return bool(has_kw and (has_agree or has_ctrl))
 
 def is_start_screen(driver) -> bool:
     txt = _page_text_lc(driver)
