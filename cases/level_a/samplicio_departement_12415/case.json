@@ -1,0 +1,19 @@
+{
+  "name": "samplicio_departement_12415",
+  "snapshot_dir": "20260116_213628_after_dom_analyze",
+  "assert": {
+    "summary": {
+      "total": 2,
+      "by_type": { "radio": 1, "button": 1 }
+    },
+    "must_have_radio_group": {
+      "group_key": "radio:name:question_646",
+      "max_select": 1,
+      "min_options": 20
+    },
+    "must_have_continue_button": {
+      "id": "ctl00_Content_btnContinue",
+      "name": "ctl00$Content$btnContinue"
+    }
+  }
+}

@@ -1,8 +1,9 @@
 # -----------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
 # Pour lancer Chrome avec le debug remote activé (debug)
 chrome.exe `
-  --remote-debugging-port=9222 `
-  --user-data-dir="C:\tmp\surveybot-attach"
+--remote-debugging-port=9222 `
+--user-data-dir="C:\tmp\surveybot-attach"
 
 # Pour lancer surveybot en mode local avec attachement au Chrome debug
 $env:RUN_ENV="local"
@@ -14,6 +15,29 @@ $env:ACTION_DEBUG_TARGET="1"
 python surveybot/main.py
 
 # -----------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+# Pour lancer le niveau A uniquement (debug)
+python surveybot\tools\run_level_a.py
+
+# ------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+# Pour activer les snapshots (debug) :
+New-Item -ItemType Directory -Force snapshots | Out-Null
+Set-Content -Path snapshots\.snapshot_flag -Value "on"
+
+# Pour désactiver les snapshots (debug) :
+Remove-Item -Force snapshots\.snapshot_flag -ErrorAction SilentlyContinue
+
+# Pour rejouer un snapshot et enregistrer une nouvelle baseline (debug) :
+Set-Location C:\projects\Surveys\surveybot
+python tools\replay_snapshot.py ..\snapshots\20260116_151932_after_dom_analyze --use-dom-outer --save-baseline
+python tools\replay_snapshot.py ..\snapshots\20260116_151932_after_dom_analyze --use-dom-outer --headful --pause
+
+# Pour rejouer un snapshot en mode headful avec pause (debug) :
+python tools\replay_snapshot.py ..\snapshots\20260114_211834_after_dom_analyze --use-dom-outer --headful --pause
+
+# ------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
 Etapes pour dockeriser et deployer une version du programme.
 
 #TOUT CECI EST A EXECUTER DANS POWERSHELL
@@ -88,18 +112,10 @@ docker run --rm -it `
 # wil2.pretender848@silomails.com
 # qatar.chimp729@8shield.net
 
-# ------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-# Pour activer les snapshots (debug) :
-New-Item -ItemType Directory -Force snapshots | Out-Null
-Set-Content -Path snapshots\.snapshot_flag -Value "on"
-
-# Pour désactiver les snapshots (debug) :
-Remove-Item -Force snapshots\.snapshot_flag -ErrorAction SilentlyContinue
-
-# Pour rejouer un snapshot et enregistrer une nouvelle baseline (debug) :
 Set-Location C:\projects\Surveys\surveybot
-python tools\replay_snapshot.py ..\snapshots\20260115_165644_after_dom_analyze --use-dom-outer --save-baseline
-python tools\replay_snapshot.py ..\snapshots\20260115_165644_after_dom_analyze --use-dom-outer --headful --pause
+python tools\replay_snapshot.py ..\cases\level_a\samplicio_departement_12415\20260116_213628_after_dom_analyze --use-dom-outer --save-baseline
+python tools\replay_snapshot.py ..\cases\level_a\samplicio_departement_12415\20260116_213628_after_dom_analyze --use-dom-outer --headful --pause
 
-# Pour rejouer un snapshot en mode headful avec pause (debug) :
-python tools\replay_snapshot.py ..\snapshots\20260114_211834_after_dom_analyze --use-dom-outer --headful --pause
+# ------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+# Pour activer l'environnement virtuel
+& C:/projects/Surveys/.venv/Scripts/Activate.ps1

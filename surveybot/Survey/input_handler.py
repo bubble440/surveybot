@@ -4688,7 +4688,7 @@ def _normalize_lbl(s: str) -> str:
 
 def click_button_by_text(driver, text):
     target = _normalize_lbl(text)
-    print("Label normalisé: '{target}'; source: input_handler.py")
+    print(f"Label normalisé: '{target}'; source: input_handler.py")
 
     # 1) Candidats “boutons” sûrs (jamais des <a>)
     candidates = []
@@ -4861,12 +4861,6 @@ def click_button_by_text(driver, text):
             return True
     except Exception:
         pass
-
-    # --- Fallback CTA (UNIQUEMENT si le libellé ressemble à un bouton de nav) ---
-    try:
-        import input_handler  # si la fonction est dans ce fichier, l'import n'est pas nécessaire
-    except Exception:
-        input_handler._looks_like_nav_label = lambda s: False
 
     if _looks_like_nav_label(text):
         try:
