@@ -24,39 +24,6 @@ from Survey.frame_utils import iter_frame_chains, switch_to_frame_chain
 def _norm_lc(s: str) -> str:
     return re.sub(r"\s+", " ", (s or "").lower()).strip()
 
-# def _page_text_lc(driver) -> str:
-#     """
-#     IMPORTANT: Decipher/Confirmit mettent souvent tout le contenu dans un iframe.
-#     Donc on collecte le texte visible sur default_content + iframes (profondeur 2).
-#     """
-#     js = """
-#         const els = Array.from(document.querySelectorAll('body *'));
-#         const out = [];
-#         for (const e of els){
-#           try{
-#             const s = getComputedStyle(e);
-#             if (s.display === 'none' || s.visibility === 'hidden') continue;
-#             const r = e.getBoundingClientRect();
-#             if (!r || r.width < 2 || r.height < 2) continue;
-#             const t = (e.innerText || '').trim();
-#             if (t) out.push(t);
-#           }catch(_){}
-#         }
-#         return out;
-#     """
-#     chunks = []
-#     for chain in iter_frame_chains(driver, max_depth=2):
-#         with switch_to_frame_chain(driver, chain) as ok:
-#             if not ok:
-#                 continue
-#             try:
-#                 arr = driver.execute_script(js) or []
-#                 if arr:
-#                     chunks.append(" ".join(arr))
-#             except Exception:
-#                 continue
-#     return " ".join(chunks).lower()
-
 def _page_text_lc(driver) -> str:
     """
     Texte visible "utile" pour les heuristiques.
@@ -89,57 +56,29 @@ def _page_text_lc(driver) -> str:
 
 def is_consent_screen(driver) -> bool:
     """
-    Détecte un écran de consentement (cookies / privacy / terms) sans confondre une vraie question survey.
-    Règle clé: "Continue/Next/Suivant" seul ne suffit PAS (trop de faux positifs).
+    Détecte un écran de consentement (cookies / RGPD) *bloquant*.
+
+    But: éviter les faux positifs causés par des widgets non bloquants
+    (ex: petit bouton flottant "Accepter les cookies" type Evidon).
+
+    Critère central: on ne renvoie True que si on observe un *overlay/dialog*
+    visible et suffisamment grand, ou un contrôle explicite de consentement.
     """
-    txt = _page_text_lc(driver)
 
-    # --- hard negative: page "question" classique (beaucoup de radios + un '?' visible) ---
+    # Hard negative: un écran "Start/Commencer" n'est pas un consent_screen.
+    # (ex: page Dynata avec bouton Start + widget cookies)
     try:
-        radios = driver.find_elements(By.CSS_SELECTOR, "input[type='radio'], [role='radio']")
-        if len(radios) >= 4 and "?" in (txt or ""):
-            # on ne retourne PAS tout de suite False si on trouve des marqueurs explicites de consentement
-            pass
-    except Exception:
-        radios = []
-
-    # marqueurs explicites (id/class)
-    try:
-        for el in driver.find_elements(By.CSS_SELECTOR, "*[id], *[class]"):
-            s = f"{(el.get_attribute('id') or '')} {(el.get_attribute('class') or '')}".lower()
-            if any(k in s for k in ["onetrust", "cookie", "consent", "gdpr", "rgpd", "accept", "agree"]):
-                return True
+        if is_start_screen(driver):
+            return False
     except Exception:
         pass
 
-    # --- CTA explicite "Accepter / Agree / OK" (PAS "Continue") ---
-    def _has_explicit_agree_cta() -> bool:
-        good = {
-            "i agree", "agree", "accept", "i accept",
-            "j'accepte", "j accepte", "accepter", "accepte",
-            "autoriser", "allow", "ok"
-        }
-        try:
-            cands = driver.find_elements(
-                By.CSS_SELECTOR,
-                "button, a[role='button'], input[type='button'], input[type='submit']"
-            )
-            for el in cands:
-                try:
-                    t = _norm_lc(el.text or el.get_attribute("value") or el.get_attribute("innerText") or "")
-                    if not t:
-                        continue
-                    if t in good:
-                        return True
-                except Exception:
-                    continue
-        except Exception:
-            pass
-        return False
-
     # --- contrôle explicite type consent (checkbox/radio avec libellé agree/accept/consent) ---
     def _has_explicit_consent_control() -> bool:
-        markers = {"agree", "accept", "consent", "gdpr", "rgpd", "cookie", "j'accepte", "i agree", "i accept"}
+        markers = {
+            "agree", "accept", "consent", "gdpr", "rgpd", "cookie", "cookies",
+            "j'accepte", "j accepte", "i agree", "i accept"
+        }
         try:
             inputs = driver.find_elements(By.CSS_SELECTOR, "input[type='checkbox'], input[type='radio']")
             for inp in inputs:
@@ -156,7 +95,6 @@ def is_consent_screen(driver) -> bool:
                         if labs:
                             label_txt = labs[0].text or labs[0].get_attribute("innerText") or ""
                     if not label_txt:
-                        # label ancêtre
                         try:
                             lab = inp.find_element(By.XPATH, "ancestor::label[1]")
                             label_txt = lab.text or lab.get_attribute("innerText") or ""
@@ -172,22 +110,71 @@ def is_consent_screen(driver) -> bool:
             pass
         return False
 
-    has_agree = _has_explicit_agree_cta()
-    has_ctrl = _has_explicit_consent_control()
+    # --- overlay CMP (OneTrust / Didomi / Quantcast / TrustArc / Cookiebot, etc.) ---
+    def _has_blocking_cmp_overlay() -> bool:
+        # On s'appuie sur la taille à l'écran pour distinguer un bandeau/dialog bloquant
+        # d'un simple bouton "cookies" discret.
+        js = r"""
+        const vw = Math.max(320, window.innerWidth || 0);
+        const vh = Math.max(240, window.innerHeight || 0);
+        const minArea = vw * vh * 0.12; // >= 12% de l'écran => probablement bloquant
 
-    if has_agree or has_ctrl:
+        const selectors = [
+          '#onetrust-banner-sdk', '#onetrust-consent-sdk',
+          '.qc-cmp2-container', '.qc-cmp2-ui', '.qc-cmp-cleanslate',
+          '.didomi-popup-container', '#didomi-popup',
+          '.truste_overlay', '.truste_box_overlay',
+          '#CybotCookiebotDialog', '#CookiebotWidget',
+          '.cc-window', '.cookie-banner', '.cookie-consent', '.cookie-notice',
+          '[role="alertdialog"]', '[role="dialog"][aria-modal="true"]', '[aria-modal="true"]'
+        ];
+
+        const kw = ['cookie','cookies','consent','gdpr','rgpd','privacy','confidential'];
+
+        function isVisible(e){
+          try{
+            const s = window.getComputedStyle(e);
+            if (!s) return false;
+            if (s.display === 'none' || s.visibility === 'hidden') return false;
+            const r = e.getBoundingClientRect();
+            if (!r) return false;
+            if (r.width < 60 || r.height < 40) return false;
+            // hors écran
+            if (r.bottom < 0 || r.right < 0 || r.top > vh || r.left > vw) return false;
+            return true;
+          }catch(_){ return false; }
+        }
+
+        const candidates = Array.from(document.querySelectorAll(selectors.join(',')));
+        for (const el of candidates){
+          if (!isVisible(el)) continue;
+          const r = el.getBoundingClientRect();
+          if ((r.width * r.height) < minArea) continue;
+          const t = (el.innerText || '').toLowerCase();
+          if (!kw.some(k => t.includes(k))) {
+            // si pas de texte, on accepte quand même certains CMP connus
+            const blob = ((el.id||'') + ' ' + (el.className||'')).toLowerCase();
+            if (!(blob.includes('onetrust') || blob.includes('qc-cmp') || blob.includes('didomi') || blob.includes('truste') || blob.includes('cookiebot')))
+              continue;
+          }
+          return true;
+        }
+
+        // Evidon spécifique: le "button" flottant n'est PAS bloquant
+        return false;
+        """
+        try:
+            return bool(driver.execute_script(js))
+        except Exception:
+            return False
+
+    if _has_explicit_consent_control():
         return True
 
-    # keywords (hors footer, grâce à _page_text_lc)
-    strong_kw = [
-        "cookie", "cookies", "consent", "gdpr", "rgpd",
-        "privacy", "confidential", "confidentialité",
-        "politique de confidentialité", "terms of use", "conditions d'utilisation",
-    ]
-    has_kw = any(k in (txt or "") for k in strong_kw)
+    if _has_blocking_cmp_overlay():
+        return True
 
-    # règle stricte: keywords seuls ne suffisent pas
-    return bool(has_kw and (has_agree or has_ctrl))
+    return False
 
 def is_start_screen(driver) -> bool:
     txt = _page_text_lc(driver)
@@ -196,54 +183,89 @@ def is_start_screen(driver) -> bool:
 
 def _has_visible_answerables(driver) -> bool:
     """
-    True si la page contient des éléments de réponse visibles (radio/checkbox/select/input/textarea).
-    Objectif: empêcher une classification end-screen quand la page est une vraie question.
+    True si la page contient des éléments de réponse visibles.
+    Important: Decipher/Confirmit peuvent rendre les options cliquables via:
+    - <td class="clickableCell"> ... (input radio parfois masqué)
+    - <li class="sq-cardrating-button" data-clickable="true"> ... (cartes)
     """
-    try:
-        return bool(driver.execute_script("""
-            const sels = [
-              "input:not([type='hidden']):not([type='submit']):not([type='button'])",
-              "textarea",
-              "select",
-              "[role='radio']",
-              "[role='checkbox']",
-              "[contenteditable='true']"
-            ];
-            const els = Array.from(document.querySelectorAll(sels.join(",")));
-            for (const e of els) {
-              const cs = getComputedStyle(e);
-              if (cs.display === "none" || cs.visibility === "hidden") continue;
+    js = """
+      const isVisible = (e) => {
+        if (!e) return false;
+        const s = window.getComputedStyle(e);
+        if (!s) return false;
+        if (s.display === 'none' || s.visibility === 'hidden') return false;
+        const r = e.getBoundingClientRect();
+        return r && r.width > 2 && r.height > 2;
+      };
 
-              // offsetParent null => généralement invisible (sauf position fixed), on garde le check rect
-              const r = e.getBoundingClientRect();
-              if (!r || r.width < 4 || r.height < 4) continue;
+      // 1) inputs classiques
+      const inputs = Array.from(document.querySelectorAll(
+        "input[type='radio'], input[type='checkbox'], select, textarea, " +
+        "input[type='text'], input[type='number'], input[type='email'], input[type='tel'], input[type='search']"
+      ));
+      for (const el of inputs){
+        try { if (isVisible(el)) return true; } catch(_){}
+      }
 
-              return true;
-            }
-            return false;
-        """))
-    except Exception:
-        return False
+      // 2) boutons/CTA
+      const btns = Array.from(document.querySelectorAll(
+        "button, a[role='button'], [role='button'], input[type='button'], input[type='submit']"
+      ));
+      for (const b of btns){
+        try { if (isVisible(b)) return true; } catch(_){}
+      }
+
+      // 3) Decipher/Confirmit: cellules/cartes cliquables (inputs souvent masqués)
+      const special = Array.from(document.querySelectorAll(
+        "td.clickableCell, li.sq-cardrating-button[data-clickable='true'], li.sq-cardrating-button"
+      ));
+      let count = 0;
+      for (const e of special){
+        try{
+          if (!isVisible(e)) continue;
+          const t = (e.innerText || "").trim();
+          if (!t) continue;
+          count++;
+          if (count >= 3) return true; // seuil anti-faux positifs
+        }catch(_){}
+      }
+
+      return false;
+    """
+
+    for chain in iter_frame_chains(driver, max_depth=2):
+        with switch_to_frame_chain(driver, chain) as ok:
+            if not ok:
+                continue
+            try:
+                if driver.execute_script(js):
+                    return True
+            except Exception:
+                continue
+
+    return False
 
 def is_end_screen(driver):
-    # 1) Un end-screen doit contenir un signal explicite de fin
+    # 1) Un end-screen doit contenir un signal explicite de fin (pas juste "merci")
     txt = _page_text_lc(driver)
-    has_end_keyword = any(k in txt for k in [
-        "thank you",
-        "merci",
+
+    strong_end = any(k in txt for k in [
+        "thank you for",
+        "survey complete",
+        "completed",
         "fin du sondage",
         "sondage terminé",
         "enquête terminée",
-        "completed",
-        "survey complete",
         "vous avez terminé",
+        "merci de votre participation",
+        "merci pour votre participation",
+        "merci d'avoir participé",
     ])
 
-    if not has_end_keyword:
+    if not strong_end:
         return False
 
     # 2) ET ne doit pas contenir d’inputs de réponse visibles
-    # (Sinon on est sur une vraie question, comme ton écran “secteur d’activité”.)
     if _has_visible_answerables(driver):
         return False
 
@@ -360,15 +382,15 @@ DOM_REGISTRY: list[dict[str, Any]] = [
         "openai": False,
     },
     {
-        "itype": "consent_screen",
-        "signature": is_consent_screen,
-        "handler": "handle_consent_screen",
-        "openai": False,
-    },
-    {
         "itype": "start_screen",
         "signature": is_start_screen,
         "handler": "handle_start_screen",
+        "openai": False,
+    },
+    {
+        "itype": "consent_screen",
+        "signature": is_consent_screen,
+        "handler": "handle_consent_screen",
         "openai": False,
     },
     {
@@ -423,11 +445,16 @@ def classify_dom(driver) -> Optional[dict]:
                     itype=rule["itype"],
                     openai=rule["openai"],
                 )
-                return rule
+
+                # ✅ IMPORTANT: on ne renvoie PAS la fonction signature (non sérialisable)
+                public = dict(rule)
+                sig = public.pop("signature", None)
+                if callable(sig):
+                    public["signature_name"] = getattr(sig, "__name__", "signature")
+                return public
         except Exception:
             continue
 
-    # Aucun match → par défaut OpenAI (questions standards)
     dom_metrics.record_dom_classification(
         itype="unclassified",
         openai=True,

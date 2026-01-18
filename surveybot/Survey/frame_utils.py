@@ -23,13 +23,24 @@ def switch_to_frame_chain(driver, chain: FrameChain):
     Toujours retour à default_content en sortie.
     """
     try:
-        driver.switch_to.default_content()
+        # IMPORTANT: ne jamais crasher si la fenêtre/onglet a été fermé
+        try:
+            driver.switch_to.default_content()
+        except Exception:
+            yield False
+            return
+
         for idx in chain:
             frames = _frame_elements(driver)
             if idx < 0 or idx >= len(frames):
                 yield False
                 return
-            driver.switch_to.frame(frames[idx])
+            try:
+                driver.switch_to.frame(frames[idx])
+            except Exception:
+                yield False
+                return
+
         yield True
     finally:
         try:

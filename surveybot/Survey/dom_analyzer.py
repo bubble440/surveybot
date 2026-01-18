@@ -71,12 +71,33 @@ def _looks_like_system_field(el) -> bool:
 def _is_actionable_visible(el) -> bool:
     """
     Filtre 'cheap' anti-faux-positifs: affiché + dimensions non nulles.
+
+    NEW: certains moteurs (Decipher/Confirmit) masquent l'input (radio/checkbox)
+    mais rendent cliquable un ancêtre visible (td.clickableCell / li.sq-cardrating-button).
+    Dans ce cas, on considère l'input comme actionable pour permettre l'extraction DOM.
     """
     try:
-        if not el.is_displayed():
-            return False
-        r = getattr(el, "rect", None) or {}
-        return (r.get("width", 0) or 0) > 2 and (r.get("height", 0) or 0) > 2
+        if el.is_displayed():
+            r = getattr(el, "rect", None) or {}
+            return (r.get("width", 0) or 0) > 2 and (r.get("height", 0) or 0) > 2
+
+        # --- NEW: input masqué mais conteneur cliquable visible ---
+        tag = (el.tag_name or "").lower()
+        if tag == "input":
+            t = (el.get_attribute("type") or "").strip().lower()
+            if t in ("radio", "checkbox"):
+                try:
+                    anc = el.find_element(
+                        By.XPATH,
+                        "ancestor::*[contains(@class,'clickableCell') or contains(@class,'sq-cardrating-button')][1]"
+                    )
+                    if anc and anc.is_displayed():
+                        r = getattr(anc, "rect", None) or {}
+                        return (r.get("width", 0) or 0) > 2 and (r.get("height", 0) or 0) > 2
+                except Exception:
+                    pass
+
+        return False
     except Exception:
         return False
 
@@ -740,6 +761,190 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             }
 
             question_blocks.append(block)
+        except Exception:
+            continue
+
+    # --- 1b) Groupes de choix "stylés en boutons" (Decipher/Confirmit, etc.) ---
+    # Objectif: quand les options ne sont PAS des <input type=radio> visibles,
+    # mais une liste de <li>/<button> cliquables (ex: Decipher cardrating)
+
+    def _is_nav_like_choice(text: str) -> bool:
+        v = _norm_lc(text)
+        if not v:
+            return False
+        nav_tokens = [
+            "continue", "continuer", "next", "suivant",
+            "back", "retour", "previous", "précédent", "precedent",
+            "ok", "submit", "valider", "envoyer", "send",
+            "start", "commencer", "finish", "terminer",
+            "close", "fermer", "cancel", "annuler",
+            "refuser", "decline",
+        ]
+        return any(tok in v for tok in nav_tokens)
+
+    def _stable_xpath_for_buttonish(el) -> str:
+        """
+        Locator stable prioritaire pour Decipher:
+        - data-uid est très souvent unique et stable sur la page.
+        - sinon data-label + data-index
+        - sinon id
+        - sinon XPath absolu.
+        """
+        try:
+            uid = (el.get_attribute("data-uid") or "").strip()
+            if uid:
+                return f"//*[@data-uid={_xpath_literal(uid)}]"
+
+            dlabel = (el.get_attribute("data-label") or "").strip()
+            dindex = (el.get_attribute("data-index") or "").strip()
+            if dlabel and dindex:
+                return f"(//*[@data-label={_xpath_literal(dlabel)} and @data-index={_xpath_literal(dindex)}])[1]"
+        except Exception:
+            pass
+
+        return _best_xpath_for_element(driver, el)
+
+    try:
+        btn_like = driver.find_elements(
+            By.CSS_SELECTOR,
+            "button, a[role='button'], [role='button'], .sq-cardrating-button"
+        )
+    except Exception:
+        btn_like = []
+
+    btn_groups: Dict[str, Dict[str, Any]] = {}
+    for b in btn_like:
+        try:
+            if not _is_actionable_visible(b):
+                continue
+
+            # Filtre Decipher cardrating : ignore disabled / non-clickable
+            cls = _norm_lc(b.get_attribute("class") or "")
+            if "sq-cardrating-button" in cls:
+                if _norm_lc(b.get_attribute("data-clickable") or "") in ("false", "0"):
+                    continue
+                if _norm_lc(b.get_attribute("data-disabled") or "") in ("true", "1"):
+                    continue
+
+            # Texte (pour cardrating, le texte est dans le <li>)
+            t = _norm(b.text or b.get_attribute("innerText") or b.get_attribute("value") or "")
+            if (not t or len(t) < 2) and "sq-cardrating-button" in cls:
+                # backup: certains thèmes remplissent le texte dans .sq-cardrating-content
+                try:
+                    t = _norm(b.find_element(By.CSS_SELECTOR, ".sq-cardrating-content").text)
+                except Exception:
+                    pass
+
+            if not t or len(t) < 2:
+                continue
+            if _is_nav_like_choice(t):
+                continue
+
+            cont = _nearest_question_container(b)
+            if not cont:
+                try:
+                    cont = b.find_element(By.XPATH, "ancestor::*[self::div or self::section or self::form][1]")
+                except Exception:
+                    cont = None
+            if not cont:
+                continue
+
+            cid = (cont.get_attribute("id") or "").strip()
+            ccl = _norm_lc(cont.get_attribute("class") or "")
+            gk = f"btn_group:{cid}:{ccl}:{id(cont)}"
+            g = btn_groups.setdefault(gk, {"container": cont, "buttons": []})
+            g["buttons"].append(b)
+        except Exception:
+            continue
+
+    for _gk, g in (btn_groups or {}).items():
+        try:
+            cont = g.get("container")
+            btns = g.get("buttons") or []
+            if len(btns) < 3:
+                continue
+
+            # options = textes des boutons (dédoublonnés)
+            options: List[str] = []
+            for b in btns:
+                tt = _norm(b.text or b.get_attribute("innerText") or b.get_attribute("value") or "")
+                if not tt or _is_nav_like_choice(tt):
+                    continue
+                if tt not in options:
+                    options.append(tt)
+
+            if len(options) < 3:
+                continue
+
+            question = ""
+            if cont:
+                question = _extract_question_from_container(cont, options=options) or ""
+
+            if not question:
+                question = _norm(_find_question_text_near_element(driver, btns[0]))
+
+            # évite de prendre les bannières d’erreur comme "question"
+            qlc = _norm_lc(question)
+            if qlc and ("un problème est survenu" in qlc or ("veuillez" in qlc and "sélection" in qlc)):
+                # on tente un near-text sur un autre bouton (souvent plus bas = plus proche du vrai libellé)
+                for cand in btns[1:3]:
+                    near2 = _norm(_find_question_text_near_element(driver, cand))
+                    near2_lc = _norm_lc(near2)
+                    if near2 and ("un problème est survenu" not in near2_lc) and not ("veuillez" in near2_lc and "sélection" in near2_lc):
+                        question = near2
+                        break
+
+            question = _norm(question)
+            if not question:
+                continue
+
+            sig = (question, "radio")
+            if sig in seen_signatures:
+                continue
+            seen_signatures.add(sig)
+
+            # group_key stable-ish: id/class du conteneur + quelques options
+            cid = (cont.get_attribute("id") or "").strip() if cont else ""
+            ccl = _norm_lc(cont.get_attribute("class") or "") if cont else ""
+            opt_sig = "|".join(_norm_key(o) for o in (options[:5] or []))
+            group_key = f"radio:button_group:{cid}:{ccl}:{opt_sig}"
+
+            target_id = make_target_id("group", group_key, question)
+
+            option_xpath_map = {}
+            for b in btns:
+                lbl = _norm(b.text or b.get_attribute("innerText") or b.get_attribute("value") or "")
+                if not lbl or _is_nav_like_choice(lbl):
+                    continue
+                xp = _best_xpath_for_element(driver, b)
+                if xp:
+                    option_xpath_map[_norm_key(lbl)] = xp
+
+            if not option_xpath_map:
+                continue
+
+            register_target(
+                target_id,
+                {
+                    "kind": "group",
+                    "itype": "radio",
+                    "group_key": group_key,
+                    "question": question,
+                    "option_xpath_map": option_xpath_map,
+                    "frame_chain": frame_chain,
+                },
+            )
+
+            question_blocks.append(
+                {
+                    "question": question,
+                    "itype": "radio",
+                    "options": options,
+                    "max_select": 1,
+                    "target_id": target_id,
+                    "context": {"kind": "group", "group_key": group_key},
+                }
+            )
         except Exception:
             continue
 

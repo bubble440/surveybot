@@ -84,11 +84,20 @@ def _diff_blocks(before: List[Dict[str, Any]], after: List[Dict[str, Any]]) -> D
 # Driver launch (projet -> fallback selenium)
 # -----------------------------
 
-def _launch_driver(headful: bool = False):
+def _launch_driver(headful: bool = False, use_project_launcher: bool = False):
     """
-    1) Essaie le launcher du projet (preselection.playwright_launcher.launch_browser)
-    2) Sinon fallback Selenium Chrome
+    - Par défaut: Selenium Chrome minimal (stable pour snapshots offline).
+    - Option: --use-project-launcher pour reproduire exactement l'environnement bot.
     """
+    if use_project_launcher:
+        try:
+            from preselection.playwright_launcher import launch_browser  # type: ignore
+            driver = launch_browser(headful=headful)
+            return driver
+        except Exception as e:
+            print(f"[replay_snapshot] project launcher failed -> fallback selenium: {type(e).__name__}: {e}")
+
+    # fallback selenium (à laisser tel quel dans ton fichier)
     # 1) launcher projet
     try:
         from preselection.config_loader import load_config
@@ -225,6 +234,7 @@ def main():
     ap.add_argument("path", help="Dossier snapshot (ex: ./snapshots/20260113_214405_after_dom_analyze) ou fichier dom_outer.html")
     ap.add_argument("--save-baseline", action="store_true", help="Écrit dom_analyzer.baseline.json (pour faire le avant/après)")
     ap.add_argument("--headful", action="store_true", help="Lance le navigateur en mode visible (debug)")
+    ap.add_argument("--use-project-launcher", action="store_true", help="Utiliser le launcher du projet au lieu du Chrome Selenium minimal")
     ap.add_argument("--no-classify", action="store_true", help="Ne pas exécuter dom_classifier.classify_dom()")
     ap.add_argument("--pause", action="store_true", help="Garde le navigateur ouvert jusqu'à ENTER (debug)")
     ap.add_argument("--use-mhtml", action="store_true", help="Utiliser page.mhtml (si présent) pour un rendu offline plus fidèle")
@@ -262,7 +272,7 @@ def main():
     print(f"[replay_snapshot] snapshot_dir = {snap_dir}")
     print(f"[replay_snapshot] html         = {html_path.name}")
 
-    driver = _launch_driver(headful=args.headful)
+    driver = _launch_driver(headful=args.headful, use_project_launcher=args.use_project_launcher)
     try:
         # Ouvre le fichier local
         file_url = html_path.resolve().as_uri()
@@ -299,13 +309,13 @@ def main():
             "question_blocks": blocks,
         }
 
-        out_file.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        out_file.write_text(json.dumps(payload, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
         print(f"[replay_snapshot] wrote {out_file.name}")
         print(f"[replay_snapshot] blocks: total={summary['total']} by_type={summary['by_type']}")
 
         # Baseline
         if args.save_baseline:
-            base_file.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+            base_file.write_text(json.dumps(payload, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
             print(f"[replay_snapshot] wrote baseline {base_file.name}")
 
         # Diff si baseline existe
@@ -331,8 +341,8 @@ def main():
     finally:
         try:
             driver.quit()
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[replay_snapshot] driver.quit ignored: {type(e).__name__}: {e}")
 
 
 if __name__ == "__main__":
