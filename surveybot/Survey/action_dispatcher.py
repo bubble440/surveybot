@@ -1,8 +1,164 @@
 from __future__ import annotations
-import re, unicodedata, os
+import re, unicodedata, os, time
 from selenium.webdriver.common.by import By
 import Survey.input_handler
 from Survey.dom_registry import get_target
+from typing import Optional
+
+
+def solve_decipher_cardrating_rows(driver, preferred_label: Optional[str] = None, max_widgets: int = 3) -> bool:
+    """
+    Résout les questions Decipher 'sq-cardrating' groupées par rows.
+    Stratégie (DOM-only, prédictible):
+    - détecter les widgets .sq-cardrating-widget[data-uid]
+    - choisir une colonne (option) (préférée si fournie, sinon un choix "safe")
+    - cocher (via JS events) tous les radios cachés ans<uid>.<col>.<row>
+    - vérifier que chaque groupe de name (ans<uid>.*) a un checked
+    Retourne True si au moins un widget multi-row a été complété.
+    """
+    def _norm(s: str) -> str:
+        return " ".join((s or "").split()).strip().lower()
+
+    def _dispatch_check(el) -> None:
+        # radios souvent non-interactables (hidden) → JS events
+        driver.execute_script(
+            """
+            const el = arguments[0];
+            if (!el) return;
+            try { el.checked = true; } catch(e) {}
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+            el.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+            """,
+            el,
+        )
+
+    def _all_rows_answered(widget_el) -> bool:
+        return bool(driver.execute_script(
+            """
+            const widget = arguments[0];
+            if (!widget) return false;
+            const uid = widget.getAttribute('data-uid');
+            if (!uid) return false;
+            const root = widget.closest('.question') || document;
+            const inputs = Array.from(root.querySelectorAll("input[type='radio'][name^='ans" + uid + ".']"));
+            const names = [...new Set(inputs.map(i => i.name))];
+            if (!names.length) return false;
+            return names.every(n => !!root.querySelector("input[type='radio'][name='" + n + "']:checked"));
+            """,
+            widget_el
+        ))
+
+    def _row_group_count(widget_el) -> int:
+        return int(driver.execute_script(
+            """
+            const widget = arguments[0];
+            if (!widget) return 0;
+            const uid = widget.getAttribute('data-uid');
+            if (!uid) return 0;
+            const root = widget.closest('.question') || document;
+            const inputs = Array.from(root.querySelectorAll("input[type='radio'][name^='ans" + uid + ".']"));
+            const names = [...new Set(inputs.map(i => i.name))];
+            return names.length;
+            """,
+            widget_el
+        ) or 0)
+
+    def _pick_option_button(widget_el):
+        btns = widget_el.find_elements(By.CSS_SELECTOR, ".sq-cardrating-buttons .sq-cardrating-button[data-clickable='true']")
+        if not btns:
+            return None
+
+        # map text -> button
+        wanted = _norm(preferred_label or "")
+        if wanted:
+            for b in btns:
+                try:
+                    t = b.text or ""
+                    if not t:
+                        t = b.find_element(By.CSS_SELECTOR, ".sq-cardrating-content").text
+                    if _norm(t) == wanted:
+                        return b
+                except Exception:
+                    continue
+
+        # fallback "safe" (évite 'Jamais')
+        safe_order = ["il y a quelques jours", "il y a 1-3 mois", "il y a 2-4 semaines", "il y a 1 semaine", "hier", "aujourd'hui"]
+        # index par texte
+        norm_to_btn = {}
+        for b in btns:
+            try:
+                t = b.text or ""
+                if not t:
+                    t = b.find_element(By.CSS_SELECTOR, ".sq-cardrating-content").text
+                nt = _norm(t)
+                if nt and "jamais" not in nt:
+                    norm_to_btn[nt] = b
+            except Exception:
+                continue
+
+        for key in safe_order:
+            if key in norm_to_btn:
+                return norm_to_btn[key]
+
+        # dernier recours: premier bouton non-'Jamais'
+        for b in btns:
+            try:
+                t = b.text or ""
+                if not t:
+                    t = b.find_element(By.CSS_SELECTOR, ".sq-cardrating-content").text
+                if "jamais" not in _norm(t):
+                    return b
+            except Exception:
+                continue
+        return None
+
+    widgets = driver.find_elements(By.CSS_SELECTOR, ".sq-cardrating-widget[data-uid]")
+    if not widgets:
+        return False
+
+    completed_any = False
+    for widget in widgets[:max_widgets]:
+        try:
+            # on ne s'occupe que des multi-rows
+            if _row_group_count(widget) <= 1:
+                continue
+
+            if _all_rows_answered(widget):
+                completed_any = True
+                continue
+
+            btn = _pick_option_button(widget)
+            if not btn:
+                continue
+
+            uid = (widget.get_attribute("data-uid") or "").strip()
+            col = (btn.get_attribute("data-index") or "").strip()
+            if not uid or not col.isdigit():
+                continue
+
+            # cocher toutes les rows pour cette colonne (ans<uid>.<col>.<row>)
+            # Les inputs sont dans le même bloc question (souvent dans une QA-view cachée)
+            qroot = widget.find_element(By.XPATH, "ancestor::*[contains(@class,'question')][1]")
+            inputs = qroot.find_elements(By.CSS_SELECTOR, f"input[type='radio'][id^='ans{uid}.{col}.']")
+            if not inputs:
+                # fallback global (au cas où la structure varie)
+                inputs = driver.find_elements(By.CSS_SELECTOR, f"input[type='radio'][id^='ans{uid}.{col}.']")
+
+            if not inputs:
+                continue
+
+            for inp in inputs:
+                _dispatch_check(inp)
+                time.sleep(0.03)
+
+            # check final
+            if _all_rows_answered(widget):
+                completed_any = True
+        except Exception:
+            continue
+
+    return completed_any
 
 def _norm(s: str) -> str:
     if not s:
@@ -300,6 +456,47 @@ def _apply_by_target_id(driver, target_id: str, itype: str, value: str) -> bool:
 
                 # 2) clic “normal” sur la cible
                 _click_candidate(el, "target")
+
+                # Cas widgets sans <input> sous l'option (ex: Decipher cardrating):
+                # la sélection est reflétée par data-selected / aria-selected / aria-checked.
+                def _selected_like(node) -> bool:
+                    try:
+                        ds = (node.get_attribute("data-selected") or "").strip().lower()
+                        if ds in ("true", "1", "yes", "on"):
+                            return True
+                        if (node.get_attribute("aria-selected") or "").strip().lower() == "true":
+                            return True
+                        if (node.get_attribute("aria-checked") or "").strip().lower() == "true":
+                            return True
+                        cls = (node.get_attribute("class") or "").lower()
+                        if any(tok in cls for tok in (" selected", "selected ", " active", "active ", "checked", "is-selected", "is-checked")):
+                            return True
+                    except Exception:
+                        pass
+                    return False
+
+                def _wait_selected_like(node, timeout_s: float = 1.0) -> bool:
+                    import time
+                    end = time.time() + timeout_s
+                    while time.time() < end:
+                        if _selected_like(node):
+                            return True
+                        # parfois l'état est porté par un parent (li -> span, etc.)
+                        try:
+                            node.find_element(
+                                By.XPATH,
+                                "ancestor-or-self::*[@data-selected='true' or @aria-selected='true' or @aria-checked='true'][1]"
+                            )
+                            return True
+                        except Exception:
+                            pass
+                        time.sleep(0.05)
+                    return False
+
+                inp = _first_input_under(el)
+                if not inp:
+                    if _wait_selected_like(el, timeout_s=1.0):
+                        return True
 
                 # NEW: si la cible est un <label for="...">, forcer l'input associé
                 try:
@@ -710,70 +907,237 @@ def _wait_for_button_effect(driver, *, timeout=6):
 
 def handle_consent_screen(driver):
     """
-    Consent/RGPD: on clique localement sur un CTA positif (Accepter/Continuer),
-    sans passer par OpenAI/vision.
+    Résout un écran/bandeau de consentement (cookies/RGPD) quand il est réellement bloquant.
 
-    Important: éviter explicitement "Refuser / Quitter / Disagree".
+    IMPORTANT:
+    - Ne jamais retourner True si aucun effet DOM/URL n'est observé.
+    - Ne pas confondre un simple widget cookies non bloquant (ex: Evidon) avec un overlay.
     """
-    import Survey.input_handler
+    import time
+    from selenium.webdriver.common.by import By
 
-    # 1) Tentatives robustes (iframe-safe via Any-Context)
-    #    On préfère des mots FR/EN très "positifs".
-    for word in ("accepter", "continuer", "accept", "agree", "continue", "proceed", "suivant", "next", "ok"):
+    def _norm_lc(s: str) -> str:
+        return " ".join((s or "").lower().split()).strip()
+
+    CMP_CONTAINER_SELECTORS = [
+        "#onetrust-banner-sdk",
+        "#onetrust-consent-sdk",
+        ".qc-cmp2-container",
+        ".qc-cmp2-ui",
+        ".qc-cmp-cleanslate",
+        ".didomi-popup-container",
+        "#didomi-popup",
+        ".truste_overlay",
+        ".truste_box_overlay",
+        "#CybotCookiebotDialog",
+        ".cc-window",
+        ".cookie-banner",
+        "[role='alertdialog']",
+        "[role='dialog'][aria-modal='true']",
+        "[aria-modal='true']",
+    ]
+
+    ACCEPT_WORDS = [
+        "tout accepter",
+        "accepter",
+        "j'accepte",
+        "j accepte",
+        "accept all",
+        "accept",
+        "i accept",
+        "agree",
+        "i agree",
+        "ok",
+        "d'accord",
+    ]
+
+    REJECT_WORDS = [
+        "refuser",
+        "reject",
+        "decline",
+        "disagree",
+        "necessary",
+        "nécessaire",
+        "paramétrer",
+        "settings",
+        "préférences",
+        "preferences",
+    ]
+
+    def _cmp_overlay_present() -> bool:
+        """True si un container CMP *bloquant* (grand et visible) est présent."""
         try:
-            if Survey.input_handler.click_cta_strong_any_context(driver, text=word):
-                return True
+            return bool(driver.execute_script(
+                r"""
+                const vw = Math.max(320, window.innerWidth || 0);
+                const vh = Math.max(240, window.innerHeight || 0);
+                const minArea = vw * vh * 0.12;
+
+                const selectors = arguments[0] || [];
+                const kw = ['cookie','cookies','consent','gdpr','rgpd','privacy','confidential'];
+
+                function isVisible(e){
+                  try{
+                    const s = window.getComputedStyle(e);
+                    if (!s) return false;
+                    if (s.display === 'none' || s.visibility === 'hidden') return false;
+                    const r = e.getBoundingClientRect();
+                    if (!r) return false;
+                    if (r.width < 60 || r.height < 40) return false;
+                    if (r.bottom < 0 || r.right < 0 || r.top > vh || r.left > vw) return false;
+                    return true;
+                  }catch(_){ return false; }
+                }
+
+                const cand = [];
+                for (const sel of selectors){
+                  try{ cand.push(...Array.from(document.querySelectorAll(sel))); }catch(_){ }
+                }
+
+                for (const el of cand){
+                  if (!isVisible(el)) continue;
+                  const r = el.getBoundingClientRect();
+                  if ((r.width * r.height) < minArea) continue;
+                  const t = (el.innerText || '').toLowerCase();
+                  if (kw.some(k => t.includes(k))) return true;
+
+                  const blob = ((el.id||'') + ' ' + (el.className||'')).toLowerCase();
+                  if (blob.includes('onetrust') || blob.includes('qc-cmp') || blob.includes('didomi') || blob.includes('truste') || blob.includes('cookiebot'))
+                    return true;
+                }
+                return false;
+                """,
+                CMP_CONTAINER_SELECTORS,
+            ))
         except Exception:
-            pass
+            return False
 
-    # 2) JS best-effort (au cas où) en filtrant les "Refuser/Quitter"
+    def _sig() -> str:
+        try:
+            url = driver.current_url or ""
+        except Exception:
+            url = ""
+        try:
+            txt_len = int(driver.execute_script("return (document.body && (document.body.innerText||'').length) || 0;") or 0)
+        except Exception:
+            txt_len = 0
+        try:
+            n_btn = len(driver.find_elements(By.CSS_SELECTOR, "button, a, [role='button'], input[type='submit'], input[type='button']"))
+        except Exception:
+            n_btn = 0
+        return f"{url}||{txt_len}||{n_btn}||{int(_cmp_overlay_present())}"
+
     try:
-        hit = (driver.execute_script("""
-            const good = arguments[0];
-            const bad = arguments[1];
+        before_url = driver.current_url or ""
+    except Exception:
+        before_url = ""
+    before_sig = _sig()
 
-            function norm(s){ return (s||"").toLowerCase().replace(/\\s+/g," ").trim(); }
+    def _wait_change(before_sig: str, before_url: str, timeout_s: float = 6.0) -> bool:
+        end = time.time() + timeout_s
+        while time.time() < end:
+            time.sleep(0.25)
 
-            const els = Array.from(document.querySelectorAll('button, a, input[type="button"], input[type="submit"], [role="button"]'));
-            for (const el of els){
-              const t = norm(el.innerText || el.value || el.getAttribute("aria-label") || "");
-              const id = norm(el.id || "");
-              if (!t && !id) continue;
+            # 1) URL changée
+            try:
+                if driver.current_url != before_url:
+                    return True
+            except Exception:
+                pass
 
-              if (bad.some(b => t.includes(b) || id.includes(b))) continue;
+            # 2) Signature DOM/overlay changée
+            if _sig() != before_sig:
+                return True
 
-              if (id.includes("gtm-agree-button") || id.includes("agree") || id.includes("accept") || id.includes("consent")){
-                el.scrollIntoView({block:"center"});
-                el.click();
-                return true;
-              }
-              if (good.some(g => t.includes(g))){
-                el.scrollIntoView({block:"center"});
-                el.click();
-                return true;
-              }
-            }
-            return false;
-        """, ["accepter","continuer","accept","agree","continue","proceed","suivant","next","ok","d'accord"],
-             ["refuser","disagree","quitter","quit","exit","annuler","cancel","fermer","close"])) or False
-        if hit:
-            return True
+        return False
+
+    # 1) Chercher le plus grand overlay CMP visible
+    best = None
+    for sel in CMP_CONTAINER_SELECTORS:
+        try:
+            for el in driver.find_elements(By.CSS_SELECTOR, sel):
+                try:
+                    if not el.is_displayed():
+                        continue
+                    r = el.rect or {}
+                    area = float(r.get('width', 0) or 0) * float(r.get('height', 0) or 0)
+                    if area <= 0:
+                        continue
+                    if (best is None) or (area > best[0]):
+                        best = (area, el)
+                except Exception:
+                    continue
+        except Exception:
+            continue
+
+    # 2) Si overlay trouvé, cliquer un bouton Accept/Agree à l'intérieur
+    if best is not None:
+        _, container = best
+        try:
+            cands = container.find_elements(By.CSS_SELECTOR, "button, a, [role='button'], input[type='submit'], input[type='button']")
+        except Exception:
+            cands = []
+
+        def _score(el) -> int:
+            try:
+                t = _norm_lc(el.text or el.get_attribute('value') or el.get_attribute('innerText') or "")
+            except Exception:
+                t = ""
+            if not t:
+                return -1
+            if any(w in t for w in REJECT_WORDS):
+                return -1
+            for i, w in enumerate(ACCEPT_WORDS):
+                if w in t:
+                    return 100 - i
+            return -1
+
+        cands = sorted(cands, key=_score, reverse=True)
+        if cands and _score(cands[0]) >= 0:
+            btn = cands[0]
+            try:
+                btn.click()
+            except Exception:
+                try:
+                    driver.execute_script("arguments[0].click();", btn)
+                except Exception:
+                    pass
+
+            if _wait_change(before_sig, before_url):
+                return True
+
+    # 3) Fallback: tenter un clic accept/agree global (iframe-safe), mais toujours avec validation
+    try:
+        import Survey.input_handler as input_handler
+        for needle in ("tout accepter", "accepter", "j'accepte", "accept all", "accept", "agree", "ok"):
+            try:
+                if input_handler.click_cta_strong_any_context(driver, needle):
+                    if _wait_change(before_sig, before_url):
+                        return True
+            except Exception:
+                continue
     except Exception:
         pass
 
-    # 3) dernier recours: anciens helpers
-    return (
-        Survey.input_handler.click_button_by_text(driver, "accepter")
-        or Survey.input_handler.click_button_by_text(driver, "continuer")
-        or Survey.input_handler.click_button_by_text(driver, "accept")
-        or Survey.input_handler.click_button_by_text(driver, "agree")
-        or Survey.input_handler.click_button_by_text(driver, "continue")
-        or Survey.input_handler.click_button_by_text(driver, "next")
-    )
+    return False
 
 def handle_start_screen(driver):
+    """
+    Start screen: accepter cookies si besoin, puis cliquer Start/Commencer.
+    """
+    import Survey.input_handler
+
+    # 1) si un bandeau cookies bloque, on tente de le fermer (non bloquant)
+    try:
+        Survey.input_handler.click_cta_strong_any_context(driver, "accepter")
+        Survey.input_handler.click_cta_strong_any_context(driver, "accept")
+    except Exception:
+        pass
+
+    # 2) cliquer Start/Commencer (CTA nav le plus robuste)
     return (
-        Survey.input_handler.click_button_by_text(driver, "commencer")
+        Survey.input_handler.try_click_navigation_cta_any_context(driver)
+        or Survey.input_handler.click_button_by_text(driver, "commencer")
         or Survey.input_handler.click_button_by_text(driver, "start")
         or Survey.input_handler.click_button_by_text(driver, "begin")
     )

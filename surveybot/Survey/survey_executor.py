@@ -130,6 +130,15 @@ def execute_survey_page(driver, api_key):
     question_blocks = dom_analyzer.analyze_dom(driver)
     question_blocks = prompt_builder.filter_blocks_for_openai(question_blocks)
 
+    if not question_blocks:
+        # ✅ NEW: Decipher cardrating multi-rows (DOM-only) avant vision
+        try:
+            from Survey.action_dispatcher import solve_decipher_cardrating_rows
+            if solve_decipher_cardrating_rows(driver):
+                return True
+        except Exception as e:
+            print(f"[CARD RATING] solver failed before vision: {e}")
+
     # ✅ SNAPSHOT DEBUG (opt-in)
     try:
         page_snapshot.snapshot_if_enabled(driver, reason="after_dom_analyze", question_blocks=question_blocks)
