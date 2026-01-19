@@ -97,8 +97,30 @@ def _launch_driver(headful: bool = False, use_project_launcher: bool = False):
         except Exception as e:
             print(f"[replay_snapshot] project launcher failed -> fallback selenium: {type(e).__name__}: {e}")
 
-    # fallback selenium (à laisser tel quel dans ton fichier)
-    # 1) launcher projet
+    # 1) Selenium minimal (préféré pour snapshots offline, plus stable/prédictible)
+    try:
+        from selenium import webdriver
+        from selenium.webdriver.chrome.options import Options
+
+        opt = Options()
+        # Ne pas attendre le chargement complet (ressources externes peuvent bloquer)
+        try:
+            opt.set_capability("pageLoadStrategy", "none")
+        except Exception:
+            pass
+
+        if not headful:
+            opt.add_argument("--headless=new")
+        opt.add_argument("--disable-gpu")
+        opt.add_argument("--no-sandbox")
+        opt.add_argument("--disable-dev-shm-usage")
+
+        drv = webdriver.Chrome(options=opt)
+        return drv
+    except Exception as e:
+        selenium_err = e
+
+    # 2) Launcher projet uniquement si demandé (ou si Selenium indisponible)
     try:
         from preselection.config_loader import load_config
         from preselection.playwright_launcher import launch_browser  # type: ignore
@@ -109,35 +131,15 @@ def _launch_driver(headful: bool = False, use_project_launcher: bool = False):
         except Exception:
             cfg = {}
 
-        # Si ton launcher supporte un flag headless via config/env, tu peux l’adapter ici.
         if headful:
             os.environ["HEADLESS"] = "0"
 
         drv = launch_browser(cfg)
         return drv
     except Exception as e:
-        print(f"[replay_snapshot] launcher projet indisponible -> fallback selenium. reason={type(e).__name__}: {e}")
-
-    # 2) fallback selenium chrome
-    try:
-        from selenium import webdriver
-        from selenium.webdriver.chrome.options import Options
-
-        opt = Options()
-        if not headful:
-            # Chrome récent
-            opt.add_argument("--headless=new")
-        opt.add_argument("--disable-gpu")
-        opt.add_argument("--no-sandbox")
-        opt.add_argument("--disable-dev-shm-usage")
-
-        drv = webdriver.Chrome(options=opt)
-        return drv
-    except Exception as e:
         raise RuntimeError(
-            "Impossible de lancer un navigateur (ni launcher projet, ni Selenium Chrome). "
-            "Vérifie que ton environnement local lance bien le bot normalement."
-        ) from e
+            "Impossible de lancer un navigateur (Selenium minimal a échoué, launcher projet aussi)."
+        ) from (selenium_err if "selenium_err" in locals() else e)
 
 # -----------------------------
 # Main
@@ -276,12 +278,26 @@ def main():
     try:
         # Ouvre le fichier local
         file_url = html_path.resolve().as_uri()
+        # Les snapshots peuvent charger lentement (ressources externes, renderer bloqué, etc.)
+        # On veut un comportement prédictible: si timeout, on stoppe le chargement et on analyse quand même.
         try:
-            driver.set_page_load_timeout(20)
+            driver.set_page_load_timeout(60)
         except Exception:
             pass
 
-        driver.get(file_url)
+        try:
+            driver.get(file_url)
+        except Exception as e:
+            msg = (str(e) or "").lower()
+            if ("timeout" in msg) and ("receiving message from renderer" in msg or "timed out" in msg):
+                print(f"[replay_snapshot] driver.get timeout (renderer) -> window.stop() puis continue")
+                try:
+                    driver.execute_script("window.stop();")
+                except Exception:
+                    pass
+            else:
+                raise
+
         time.sleep(0.5)  # laisse le DOM se stabiliser
 
         # Optionnel: classification de page (super utile quand le type détecté est mauvais)

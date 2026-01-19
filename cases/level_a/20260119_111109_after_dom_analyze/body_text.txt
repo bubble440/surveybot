@@ -1,0 +1,9 @@
+Un problème est survenu avec certaines données saisies dans le cadre de l'enquête. Les questions contenant des erreurs sont indiquées ci-dessous ; veuillez suivre les instructions associées à chacune d'elles.
+Pour valider vos réponses, merci de confirmer lequel des produits suivants vous avez bien acheté la dernière fois chez Coccimarket?
+Veuillez sélectionner une réponse.
+Veuillez sélectionner une réponse.
+	Yaourts, fromages frais, spécialités laitières nature ou aux fruits
+	Aliments pour chats
+	Crèmes fraiche ou UHT
+	Pâtisseries emballées traditionnelles
+	Salades et légumes prêts à l'emploi

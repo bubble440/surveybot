@@ -13,7 +13,11 @@
       "checkbox": 1
     }
   },
-  "added": [],
-  "removed": [],
+  "added": [
+    "button|merci d'indiquer l'âge et le sexe de votre/vos enfant(s) garçon de moins d’un an fille de moins d’un an garçon d’un an fille d’un an garçon de 2 ans fille de 2 ans garçon de 3 ans fille de 3 ans garçon de 4 ans fille de 4 ans garçon de 5 ans fille de 5 ans garçon de 6 ans fille de 6 ans garçon de 7 ans fille de 7 ans garçon de 8 ans fille de 8 ans garçon de 9 ans fille de 9 ans garçon de 10 ans fille de 10 ans garçon de 11 ans fille de 11 ans garçon de 12 ans fille de 12 ans adolescent de 13 ans adolescente de 13 ans adolescent de 14 ans adolescente de 14 ans adolescent de 15 ans adolescente de 15 ans adolescent de 16 ans adolescente de 16 ans adolescent de 17 ans adolescente de 17 ans aucune de ces réponses"
+  ],
+  "removed": [
+    "button|ctl00$content$btncontinue"
+  ],
   "changed": []
 }
