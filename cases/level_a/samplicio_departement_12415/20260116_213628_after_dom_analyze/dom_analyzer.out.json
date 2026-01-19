@@ -2,7 +2,7 @@
   "meta": {
     "source_html": "dom_outer.html",
     "file_url": "file:///C:/projects/Surveys/cases/level_a/samplicio_departement_12415/20260116_213628_after_dom_analyze/dom_outer.html",
-    "ts": 1768695571
+    "ts": 1768855161
   },
   "classify_dom": {
     "itype": "matrix_rows_single_choice",
@@ -54,11 +54,11 @@
       }
     },
     {
-      "question": "ctl00$Content$btnContinue",
+      "question": "Dans quelle département travaillez-vous ? Administration / Etat-Major Service client Equipe de direction Finance / Comptabilité Ressources Humaines Juridique / Droit Marketing Gestion / Exploitation Approvisionnement Ventes / Développement commercial Matériels de développement technologique (pas seulement Technologies de l'Information) Logiciels de développement technologique (pas seulement Technologies de l'Information) Mise en œuvre de la technologie Autre Je ne travaille pas Recherche et développement Production Médical Artistique Divertissement Gestion des produits / développement de produits Études de marché Logistique/expéditions",
       "itype": "button",
       "options": [],
       "max_select": 1,
-      "target_id": "single_495acaaaf42d",
+      "target_id": "single_0aaca9660a17",
       "context": {
         "kind": "single",
         "tag": "input",

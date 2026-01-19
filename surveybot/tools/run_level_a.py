@@ -66,7 +66,7 @@ def assert_case(case_dir: Path) -> None:
         if by_type.get(k) != v:
             die(f"[LEVEL_A] {spec['name']} summary.by_type[{k}] mismatch: {by_type.get(k)} != {v}")
 
-    # 2) Group (radio OR checkbox) — comportement explicite et prédictible
+    # 2) Un seul "must_have_*" requis : radio OU checkbox OU text (prédictible)
     if "must_have_radio_group" in exp:
         gk = exp["must_have_radio_group"]["group_key"]
         min_opts = exp["must_have_radio_group"]["min_options"]
@@ -105,18 +105,39 @@ def assert_case(case_dir: Path) -> None:
         if len(opts) < min_opts:
             die(f"[LEVEL_A] {spec['name']} checkbox.options too small: {len(opts)} < {min_opts}")
 
-    else:
-        die(f"[LEVEL_A] {spec['name']} missing must_have_radio_group or must_have_checkbox_group in case.json")
+    elif "must_have_text_input" in exp:
+        exp_txt = exp["must_have_text_input"]
+        exp_itype = exp_txt.get("itype", "text")
+        exp_id = exp_txt.get("id")
+        exp_name = exp_txt.get("name")
+        q_contains = (exp_txt.get("question_contains") or "").strip().lower()
 
-    # 3) Continue button
-    exp_btn = exp["must_have_continue_button"]
-    btn = find_block(
-        blocks, "button",
-        lambda b: ((b.get("context") or {}).get("id") == exp_btn["id"])
-                  and ((b.get("context") or {}).get("name") == exp_btn["name"])
-    )
-    if not btn:
-        die(f"[LEVEL_A] {spec['name']} missing Continue button id={exp_btn['id']} name={exp_btn['name']}")
+        txt = find_block(
+            blocks, exp_itype,
+            lambda b: ((b.get("context") or {}).get("id") == exp_id)
+                   and ((b.get("context") or {}).get("name") == exp_name)
+        )
+        if not txt:
+            die(f"[LEVEL_A] {spec['name']} missing text input id={exp_id} name={exp_name}")
+
+        if q_contains:
+            q = (txt.get("question") or "").strip().lower()
+            if q_contains not in q:
+                die(f"[LEVEL_A] {spec['name']} text.question mismatch: expected contains '{q_contains}' got '{q}'")
+
+    else:
+        die(f"[LEVEL_A] {spec['name']} missing must_have_radio_group or must_have_checkbox_group or must_have_text_input in case.json")
+
+    # 3) Continue button (OPTIONNEL)
+    if "must_have_continue_button" in exp:
+        exp_btn = exp["must_have_continue_button"]
+        btn = find_block(
+            blocks, "button",
+            lambda b: ((b.get("context") or {}).get("id") == exp_btn["id"])
+                      and ((b.get("context") or {}).get("name") == exp_btn["name"])
+        )
+        if not btn:
+            die(f"[LEVEL_A] {spec['name']} missing Continue button id={exp_btn['id']} name={exp_btn['name']}")
 
     print(f"[LEVEL_A] PASS: {spec['name']}")
 
@@ -124,12 +145,29 @@ def main():
     if not CASES_DIR.exists():
         die(f"Missing cases dir: {CASES_DIR}")
 
-    case_jsons = list(CASES_DIR.glob("*/case.json"))
+    case_jsons = sorted(CASES_DIR.glob("*/case.json"))
     if not case_jsons:
         die(f"No cases found in: {CASES_DIR}")
 
+    print(f"[LEVEL_A] Running {len(case_jsons)} case(s)...")
+
+    failures = 0
     for cj in case_jsons:
-        assert_case(cj.parent)
+        try:
+            assert_case(cj.parent)
+        except SystemExit:
+            # die() -> sys.exit(1) : on capture pour continuer sur les autres cas
+            failures += 1
+            continue
+        except Exception as e:
+            failures += 1
+            print(f"[LEVEL_A][ERROR] {cj.parent.name}: {type(e).__name__}: {e}")
+
+    if failures:
+        print(f"[LEVEL_A] FAILURES: {failures}/{len(case_jsons)}")
+        sys.exit(1)
+
+    print(f"[LEVEL_A] ALL PASS ({len(case_jsons)}/{len(case_jsons)})")
 
 if __name__ == "__main__":
     main()

@@ -16,12 +16,13 @@ Pensé pour 100+ bots.
 
 from __future__ import annotations
 from typing import List, Dict, Any, Tuple
-import re
+import re, time
 import unicodedata
 import os
 from Survey.dom_registry import clear_registry, register_target, make_target_id
 from Survey.frame_utils import iter_frame_chains, switch_to_frame_chain
 from selenium.webdriver.common.by import By
+import Survey.dom_registry as dom_registry
 
 # =========================
 # Helpers texte
@@ -471,6 +472,28 @@ def _env_truthy(name: str, default: str = "0") -> bool:
     v = (os.getenv(name, default) or "").strip().lower()
     return v in ("1", "true", "yes", "on")
 
+def _wait_for_survey_dom(driver, timeout_s: float = 1.2, step_s: float = 0.2) -> bool:
+    """
+    Attente courte et bornée: évite le scan DOM trop tôt (page pas encore prête).
+    Pas de retry infini: max ~1.2s.
+    """
+    t0 = time.time()
+    while (time.time() - t0) < timeout_s:
+        try:
+            ok = driver.execute_script("""
+                return !!(
+                    document.querySelector('#survey')
+                    || document.querySelector('div.question')
+                    || document.querySelector('.answers.answers-list')
+                );
+            """)
+            if ok:
+                return True
+        except Exception:
+            pass
+        time.sleep(step_s)
+    return False
+
 def _score_dom_context(driver) -> Dict[str, Any]:
     """Score cheap d'un contexte DOM (default ou iframe)."""
     try:
@@ -498,23 +521,33 @@ def _score_dom_context(driver) -> Dict[str, Any]:
 
             // Signaux "survey question" (plus discriminants que juste inputsCount)
             const qNodes = document.querySelectorAll(
-              "input[name^='question_'], textarea[name^='question_'], select[name^='question_'], " +
-              ".js-question-options input, .js-question-options select, .js-question-options textarea"
+            "input[name^='question_'], textarea[name^='question_'], select[name^='question_'], " +
+            ".js-question-options input, .js-question-options select, .js-question-options textarea"
             );
-            const qCount = qNodes ? qNodes.length : 0;
+            let qCount = qNodes ? qNodes.length : 0;
+
+            // FocusVision/Decipher-like: cardsort UI peut ne pas exposer de qNodes visibles.
+            // On force qCount=1 si un composant cardsort est présent, pour mieux scorer le bon frame.
+            if (!qCount) {
+            const hasCardsort = !!document.querySelector(".sq-cardsort, [class*='sq-cardsort-']");
+            if (hasCardsort) qCount = 1;
+            }
 
             const labelNodes = document.querySelectorAll(".js-question-options label, label.radio, label.checkbox");
             let visibleLabelCount = 0;
             for (const el of (labelNodes || [])) {
-              try {
+            try {
                 const r = el.getBoundingClientRect();
                 const st = window.getComputedStyle(el);
                 const visible = r.width > 2 && r.height > 2 && st.display !== 'none' && st.visibility !== 'hidden';
                 if (visible) visibleLabelCount++;
-              } catch (e) {}
+            } catch (e) {}
             }
 
-            const hasSurveyRoot = !!document.querySelector(".js-question-options, #templates .question, .survey-content #templates");
+            const hasSurveyRoot = !!document.querySelector(
+            ".js-question-options, #templates .question, .survey-content #templates, " +
+            "#survey.survey-container, div[id^=\"question_\"], .sq-cardsort"
+            );
 
             const low = t.toLowerCase();
             const hasSurveyWords = /question|suivant|next|continue|prochaine|étape|sondage|enquête|profil|survey/i.test(low);
@@ -587,6 +620,337 @@ def _select_best_frame_chain(driver, max_depth: int = 2) -> Tuple[List[int], Dic
 # API principale
 # =========================
 
+# --- FocusVision: answers-list (inputs radio/checkbox masqués + wrapper clickableCell) ---
+
+def _xpath_literal(s: str) -> str:
+    if "'" not in s:
+        return f"'{s}'"
+    if '"' not in s:
+        return f'"{s}"'
+    parts = s.split("'")
+    return "concat(" + ", \"'\", ".join(f"'{p}'" for p in parts) + ")"
+
+def _extract_focusvision_answers_list_groups(driver) -> list[dict]:
+    blocks: list[dict] = []
+
+    # question container FocusVision
+    q_containers = driver.find_elements(By.CSS_SELECTOR, "div.question[role='radiogroup'], div.question.radio, div.question.checkbox")
+    for q in q_containers:
+        try:
+            answers = q.find_element(By.CSS_SELECTOR, ".answers.answers-list")
+        except Exception:
+            continue
+
+        # inputs sont souvent masqués (fir-hidden) => on passe via wrapper clickableCell
+        inputs = answers.find_elements(
+            By.CSS_SELECTOR,
+            "div.element.clickableCell input[type='radio'], div.element.clickableCell input[type='checkbox']"
+        )
+        if len(inputs) < 2:
+            continue
+
+        # question texte
+        question = ""
+        try:
+            question = (q.find_element(By.CSS_SELECTOR, ".question-text").text or "").strip()
+        except Exception:
+            question = (q.text or "").strip().split("\n")[0].strip()
+
+        # regrouper par name
+        by_name: dict[str, list] = {}
+        for inp in inputs:
+            name = (inp.get_attribute("name") or "").strip()
+            if not name:
+                continue
+            by_name.setdefault(name, []).append(inp)
+
+        for name, inps in by_name.items():
+            # itype
+            itype = "radio"
+            try:
+                if (inps[0].get_attribute("type") or "").strip().lower() == "checkbox":
+                    itype = "checkbox"
+            except Exception as e:
+                if os.getenv("RUN_ENV", "local") == "local":
+                    print(f"[DOM_ANALYZER][WARN] focusvision extract: {type(e).__name__}: {e}")
+                continue
+
+            options: list[str] = []
+            option_xpath_map: dict[str, str] = {}
+
+            for inp in inps:
+                inp_id = (inp.get_attribute("id") or "").strip()
+                if not inp_id:
+                    continue
+
+                # label visible
+                label_txt = ""
+                try:
+                    lab = answers.find_element(By.CSS_SELECTOR, f"label[for='{inp_id}']")
+                    label_txt = (lab.text or "").strip()
+                except Exception:
+                    try:
+                        lab = inp.find_element(By.XPATH, "ancestor::*[contains(@class,'clickableCell')][1]//label")
+                        label_txt = (lab.text or "").strip()
+                    except Exception as e:
+                        if os.getenv("RUN_ENV", "local") == "local":
+                            print(f"[DOM_ANALYZER][WARN] focusvision extract: {type(e).__name__}: {e}")
+                        continue
+
+                if not label_txt:
+                    continue
+
+                options.append(label_txt)
+
+                # IMPORTANT: on clique le wrapper clickableCell (pas l'input masqué)
+                xp = (
+                    f"//input[@id={_xpath_literal(inp_id)}]"
+                    f"/ancestor::*[contains(concat(' ',normalize-space(@class),' '),' clickableCell ')][1]"
+                )
+                option_xpath_map[label_txt] = xp
+
+            if len(options) < 2:
+                continue
+
+            group_key = f"{itype}:name:{name}"
+            target_id = dom_registry.make_target_id("group", group_key, question or name)
+
+            dom_registry.register_target(target_id, {
+                "kind": "group",
+                "itype": itype,
+                "group_key": group_key,
+                "question": question,
+                "input_name": name,
+                "max_select": 1,
+                "options": options,
+                "option_xpath_map": option_xpath_map,
+            })
+
+            blocks.append({
+                "question": question,
+                "itype": itype,
+                "options": options,
+                "max_select": 1,
+                "target_id": target_id,
+                "context": {"kind": "group", "group_key": group_key},
+            })
+
+    return blocks
+
+def _extract_focusvision_cardsort_block(driver, frame_chain: list[int] | None) -> dict | None:
+    """
+    FocusVision/Decipher cardsort: UI visible = 1 carte active + des buckets.
+
+    Objectif:
+    - Construire 1 bloc radio pour la carte visible (row) avec options = buckets
+    - Enregistrer un target_id qui clique le bucket VISIBLE (pas un label/input caché)
+    """
+    try:
+        cardsorts = driver.find_elements(By.CSS_SELECTOR, ".sq-cardsort")
+    except Exception:
+        cardsorts = []
+
+    def _vis(el) -> bool:
+        # Plus robuste que is_displayed() sur les UIs cardsort (overflow/scroll).
+        try:
+            return bool(driver.execute_script(
+                """
+                const el = arguments[0];
+                if (!el) return false;
+                const s = window.getComputedStyle(el);
+                if (!s) return false;
+                if (s.display === "none" || s.visibility === "hidden" || s.opacity === "0") return false;
+                const r = el.getBoundingClientRect();
+                return (r.width > 8 && r.height > 8);
+                """,
+                el
+            ))
+        except Exception:
+            try:
+                return bool(el.is_displayed())
+            except Exception:
+                return False
+
+    cs = None
+    for el in cardsorts:
+        if _vis(el):
+            cs = el
+            break
+
+    if not cs:
+        return None
+
+    # Carte active (visible) : li dans .sq-cardsort-cards
+    active = None
+    try:
+        cards = cs.find_elements(By.CSS_SELECTOR, ".sq-cardsort-cards li")
+    except Exception:
+        cards = []
+
+    for c in cards:
+        try:
+            cl = (c.get_attribute("class") or "").lower()
+            if "sq-cardsort-completion" in cl:
+                continue
+            if _vis(c):
+                active = c
+                break
+        except Exception:
+            continue
+
+    if not active:
+        return None
+
+    # Texte de la carte (row label)
+    card_text = ""
+    try:
+        legend = active.find_elements(By.CSS_SELECTOR, ".sq-cardsort-card-legend")
+        if legend:
+            card_text = _norm(legend[0].text or legend[0].get_attribute("innerText") or "")
+    except Exception as e:
+        if os.getenv("RUN_ENV", "local") == "local":
+            print(f"[DOM_ANALYZER][WARN] focusvision extract: {type(e).__name__}: {e}")
+
+    if not card_text:
+        try:
+            card_text = _norm(active.text or active.get_attribute("innerText") or "")
+        except Exception:
+            card_text = ""
+
+    if not card_text or len(card_text) < 3:
+        return None
+
+    # Conteneur question (ex: <div id="question_Q1" class="question ...">)
+    container = None
+    try:
+        container = cs.find_element(
+            By.XPATH,
+            "ancestor::*[starts-with(@id,'question_') or contains(@class,'question')][1]",
+        )
+    except Exception:
+        container = None
+
+    # Question globale (ex: "Quand avez-vous acheté ... ?")
+    global_q = ""
+    if container is not None:
+        global_q = _extract_question_from_container(container, options=[]) or ""
+    global_q = _norm(global_q)
+
+    # Options = buckets (éviter le compteur)
+    options: list[str] = []
+    option_xpath_map: dict[str, str] = {}
+
+    try:
+        buckets = cs.find_elements(By.CSS_SELECTOR, "li.sq-cardsort-bucket")
+    except Exception:
+        buckets = []
+
+    # Scope XPath: limiter au container si id dispo
+    scope_prefix = ""
+    try:
+        cid = (container.get_attribute("id") or "").strip() if container is not None else ""
+        if cid:
+            scope_prefix = f"//*[@id={_xpath_literal(cid)}]"
+    except Exception:
+        scope_prefix = ""
+
+    for b in buckets:
+        if not _vis(b):
+            continue
+
+        lbl = ""
+        try:
+            ps = b.find_elements(By.CSS_SELECTOR, ".sq-cardsort-bucket-legend")
+            if ps:
+                lbl = _norm(ps[0].text or ps[0].get_attribute("innerText") or "")
+        except Exception as e:
+            if os.getenv("RUN_ENV", "local") == "local":
+                print(f"[DOM_ANALYZER][WARN] focusvision extract: {type(e).__name__}: {e}")
+            continue
+
+        if not lbl:
+            try:
+                raw = _norm(b.text or b.get_attribute("innerText") or "")
+                # ex: "Aujourd'hui\n1" => garder 1ère ligne
+                lbl = _norm((raw.splitlines()[0] if raw else ""))
+            except Exception:
+                lbl = ""
+
+        if not lbl or lbl in {"<<", ">>", "<", ">"}:
+            continue
+
+        options.append(lbl)
+
+        # XPath du bucket (clickable)
+        try:
+            b_index = (b.get_attribute("index") or "").strip()
+        except Exception:
+            b_index = ""
+
+        if b_index:
+            xp = f"{scope_prefix}//*[contains(@class,'sq-cardsort-bucket') and @index={_xpath_literal(b_index)}]"
+        else:
+            xp = (
+                f"{scope_prefix}//*[contains(@class,'sq-cardsort-bucket')]"
+                f"[.//p[contains(@class,'sq-cardsort-bucket-legend') and normalize-space(.)={_xpath_literal(lbl)}]]"
+            )
+
+        option_xpath_map[_norm_key(lbl)] = xp
+
+    options = list(dict.fromkeys([o for o in options if o]))
+    if not options or not option_xpath_map:
+        return None
+
+    # Question envoyée à OpenAI (question globale + carte)
+    question = global_q
+    if question:
+        question = f"{question} — {card_text}"
+    else:
+        question = card_text
+
+    # group_key stable-ish
+    qid = ""
+    try:
+        if container is not None:
+            cid = (container.get_attribute("id") or "").strip()
+            if cid.startswith("question_"):
+                qid = cid.replace("question_", "", 1)
+    except Exception:
+        qid = ""
+
+    card_idx = ""
+    try:
+        card_idx = (active.get_attribute("index") or "").strip()
+    except Exception:
+        card_idx = ""
+
+    group_key = f"cardsort:{qid}:{card_idx}" if qid or card_idx else f"cardsort:{id(cs)}:{id(active)}"
+    target_id = make_target_id("group", group_key, question)
+
+    register_target(
+        target_id,
+        {
+            "kind": "group",
+            "itype": "radio",
+            "group_key": group_key,
+            "question": question,
+            "option_xpath_map": option_xpath_map,
+            "frame_chain": frame_chain or [],
+            "cardsort": True,
+            "cardsort_qid": qid,
+            "cardsort_card_index": card_idx,
+        },
+    )
+
+    return {
+        "question": question,
+        "itype": "radio",
+        "options": options,
+        "max_select": 1,
+        "target_id": target_id,
+        "context": {"kind": "group", "group_key": group_key, "cardsort": True},
+    }
+
 def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any]]:
     """
     Analyse le DOM courant et retourne une liste de QuestionBlock.
@@ -596,6 +960,15 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
     frame_chain = frame_chain or []
     question_blocks: List[Dict[str, Any]] = []
     clear_registry()
+
+    # --- 0) FocusVision cardsort (UI visible) ---
+    # Si présent, on préfère cette stratégie (1 seule carte active) à l'extraction radio/checkbox cachée.
+    try:
+        cs_block = _extract_focusvision_cardsort_block(driver, frame_chain)
+        if cs_block:
+            return [cs_block]
+    except Exception:
+        pass
 
     # --- 1) Radios / checkboxes groupés ---
     try:
@@ -670,7 +1043,9 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             if not options and len(els) == 1 and question:
                 options = [question]
 
-            sig = (question, itype)
+            # IMPORTANT: pour les matrices, plusieurs groupes (1 par colonne) partagent la même question.
+            # Si le group_key est basé sur name=..., on dédoublonne par group_key (k), pas par (question, itype).
+            sig = k if k.startswith(f"{itype}:name:") else (question, itype)
             if sig in seen_signatures:
                 continue
             seen_signatures.add(sig)
@@ -707,9 +1082,36 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                     xp = ""
 
                     # 1) Le plus stable : label[for="<id>"] (ou fallback input#id)
+                    # IMPORTANT: sur FocusVision/Decipher-like, l'input radio peut être masqué (fir-hidden)
+                    # et le click doit viser le <label for="...">.
                     if inp_id:
                         id_lit = _xpath_literal(inp_id)
-                        xp = f"(//label[@for={id_lit}] | //*[@id={id_lit}])[1]"
+
+                        # FocusVision/Decipher grid: le <label for=...> peut être 0x0 (template caché).
+                        # On préfère cliquer la cellule <td> qui contient l'input.
+                        in_grid = False
+                        try:
+                            in_grid = bool(e.find_elements(By.XPATH, "ancestor::table[contains(@class,'grid')][1]"))
+                        except Exception:
+                            in_grid = False
+
+                        if in_grid:
+                            xp = (
+                                f"(//*[@id={id_lit}]/ancestor::td[contains(@class,'clickableCell')][1] | "
+                                f"//*[@id={id_lit}]/ancestor::td[1] | "
+                                f"//label[@for={id_lit}] | "
+                                f"//*[@id={id_lit}])[1]"
+                            )
+                        else:
+                            try:
+                                has_label = bool(driver.find_elements(By.XPATH, f"//label[@for={id_lit}]"))
+                            except Exception:
+                                has_label = False
+
+                            if has_label:
+                                xp = f"(//label[@for={id_lit}])[1]"
+                            else:
+                                xp = f"(//*[@id={id_lit}])[1]"
 
                     # 2) Fallback stable : input par (type,name,value) si pas d'id
                     elif inp_type in ("radio", "checkbox") and inp_name and inp_value:
@@ -974,12 +1376,48 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
 
             # on ne veut pas transformer un "bouton next" en question
             if itype == "button":
+                # 1) filtres structurels (navigation)
+                bid = (el.get_attribute("id") or "").strip().lower()
+                bname = (el.get_attribute("name") or "").strip().lower()
+
+                if bid in {"next_button", "back_button", "skip_button"}:
+                    continue
+                if bname in {"next", "back"}:
+                    continue
+
+                try:
+                    # conteneurs nav typiques (YouGov & autres)
+                    if el.find_elements(
+                        By.XPATH,
+                        "ancestor::*[@role='navigation' or @id='mainNav' or contains(@class,'nav-buttons')][1]"
+                    ):
+                        continue
+                except Exception:
+                    pass
+
+                # 2) filtre textuel (plus large)
                 txt = _norm(el.text or el.get_attribute("innerText") or "")
-                if _norm_lc(txt) in {"next", "suivant", "continue", "continuer"}:
+                tlc = _norm_lc(txt)
+                if tlc in {
+                    "next", "suivant", "continue", "continuer",
+                    "next page", "previous page",
+                    "page suivante", "page précédente",
+                }:
                     continue
 
             container = _nearest_question_container(el) or el
             question = _extract_question_from_container(container, options=[]) or _find_associated_label(driver, el)
+            # question = _norm(question)
+            question = ""
+            if container:
+                question = _extract_question_from_container(container, options=[]) or ""
+
+            if not question:
+                # important pour YouGov-like: question visible au-dessus mais pas bien "liée" au input
+                question = _find_question_text_near_element(driver, el) or ""
+
+            if not question:
+                question = _find_associated_label(driver, el) or ""
             question = _norm(question)
 
             if not question:
@@ -1046,6 +1484,8 @@ def analyze_dom(driver) -> List[Dict[str, Any]]:
     Analyse le DOM et retourne une liste de QuestionBlock.
     Frame-aware: choisit automatiquement le meilleur contexte (default ou iframe) jusqu'à depth=DOM_FRAME_MAX_DEPTH (défaut=2).
     """
+    dom_registry.clear_registry()
+    _wait_for_survey_dom(driver)
     max_depth = int(os.getenv("DOM_FRAME_MAX_DEPTH", "2") or "2")
     best_chain, _meta = _select_best_frame_chain(driver, max_depth=max_depth)
 
@@ -1053,9 +1493,13 @@ def analyze_dom(driver) -> List[Dict[str, Any]]:
     with switch_to_frame_chain(driver, best_chain) as ok:
         chain = best_chain if ok else []
         blocks = _analyze_dom_current_context(driver, frame_chain=chain)
+        blocks.extend(_extract_focusvision_answers_list_groups(driver))
 
     # Fallback strict: si on a scanné un iframe et qu'on n'a rien, tente default_content une seule fois.
     if not blocks and chain:
-        blocks = _analyze_dom_current_context(driver, frame_chain=[])
+        with switch_to_frame_chain(driver, []) as ok:
+            if ok:
+                blocks = _analyze_dom_current_context(driver)
+                blocks.extend(_extract_focusvision_answers_list_groups(driver))
 
     return blocks

@@ -217,7 +217,7 @@ def _has_visible_answerables(driver) -> bool:
 
       // 3) Decipher/Confirmit: cellules/cartes cliquables (inputs souvent masqués)
       const special = Array.from(document.querySelectorAll(
-        "td.clickableCell, li.sq-cardrating-button[data-clickable='true'], li.sq-cardrating-button"
+        "td.clickableCell, div.clickableCell, li.sq-cardrating-button[data-clickable='true'], li.sq-cardrating-button"
       ));
       let count = 0;
       for (const e of special){

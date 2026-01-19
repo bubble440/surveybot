@@ -33,9 +33,6 @@ Set-Location C:\projects\Surveys\surveybot
 python tools\replay_snapshot.py ..\snapshots\20260116_151932_after_dom_analyze --use-dom-outer --save-baseline
 python tools\replay_snapshot.py ..\snapshots\20260116_151932_after_dom_analyze --use-dom-outer --headful --pause
 
-# Pour rejouer un snapshot en mode headful avec pause (debug) :
-python tools\replay_snapshot.py ..\snapshots\20260114_211834_after_dom_analyze --use-dom-outer --headful --pause
-
 # ------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 Etapes pour dockeriser et deployer une version du programme.
@@ -119,3 +116,5 @@ python tools\replay_snapshot.py ..\cases\level_a\samplicio_departement_12415\202
 # ------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 # Pour activer l'environnement virtuel
 & C:/projects/Surveys/.venv/Scripts/Activate.ps1
+
+python surveybot\tools\replay_snapshot.py cases\level_a\focusvision_matrix_recent_courses\20260118_232903_after_dom_analyze --use-dom-outer --save-baseline
