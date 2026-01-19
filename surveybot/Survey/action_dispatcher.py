@@ -1,10 +1,10 @@
 from __future__ import annotations
-import re, unicodedata, os, time
+import re, unicodedata, os, time, zlib
 from selenium.webdriver.common.by import By
 import Survey.input_handler
 from Survey.dom_registry import get_target
 from typing import Optional
-
+from selenium.webdriver.common.action_chains import ActionChains
 
 def solve_decipher_cardrating_rows(driver, preferred_label: Optional[str] = None, max_widgets: int = 3) -> bool:
     """
@@ -160,6 +160,232 @@ def solve_decipher_cardrating_rows(driver, preferred_label: Optional[str] = None
 
     return completed_any
 
+def solve_focusvision_cardsort(driver, preferred_label: Optional[str] = None, max_cards: int = 20) -> bool:
+    """
+    FocusVision/Decipher cardsort (DOM-only, prédictible, budget borné):
+    - détecte .sq-cardsort
+    - clique une bucket "safe" pour chaque carte visible, jusqu'à completion ou max_cards
+    - clique "Continuer" si visible
+    Retourne True si au moins 1 clic a été effectué.
+    """
+    def _norm(s: str) -> str:
+        if not s:
+            return ""
+        s = unicodedata.normalize("NFKC", s).replace("\xa0", " ").strip()
+        s = re.sub(r"\s+", " ", s)
+        return s
+
+    def _norm_lc(s: str) -> str:
+        return _norm(s).lower()
+
+    def _pick_cardsort_root():
+        try:
+            css = driver.find_elements(By.CSS_SELECTOR, ".sq-cardsort")
+            return css[0] if css else None
+        except Exception:
+            return None
+
+    def _active_card(cs):
+        try:
+            cards = cs.find_elements(By.CSS_SELECTOR, ".sq-cardsort-cards li")
+        except Exception:
+            cards = []
+        for c in cards:
+            try:
+                cl = (c.get_attribute("class") or "").lower()
+                if "sq-cardsort-completion" in cl:
+                    continue
+                style = (c.get_attribute("style") or "").lower()
+                if "display: none" in style:
+                    continue
+                # fallback selenium visibility
+                try:
+                    if c.is_displayed():
+                        return c
+                except Exception:
+                    return c
+            except Exception:
+                continue
+        return None
+
+    def _completion_visible(cs) -> bool:
+        try:
+            el = cs.find_elements(By.CSS_SELECTOR, ".sq-cardsort-completion")
+            if not el:
+                return False
+            try:
+                return bool(el[0].is_displayed())
+            except Exception:
+                return True
+        except Exception:
+            return False
+
+    def _read_bucket_label(b) -> str:
+        try:
+            ps = b.find_elements(By.CSS_SELECTOR, ".sq-cardsort-bucket-legend")
+            if ps:
+                return _norm(ps[0].text or ps[0].get_attribute("innerText") or "")
+        except Exception:
+            pass
+        try:
+            raw = _norm(b.text or b.get_attribute("innerText") or "")
+            return _norm((raw.splitlines()[0] if raw else ""))
+        except Exception:
+            return ""
+
+    def _get_question_text(cs, card) -> str:
+        parts = []
+        # Question globale
+        try:
+            qels = driver.find_elements(By.CSS_SELECTOR, ".question-text")
+            if qels:
+                parts.append(_norm(qels[0].text or qels[0].get_attribute("innerText") or ""))
+        except Exception:
+            pass
+
+        # Texte carte active
+        try:
+            parts.append(_norm(card.text or card.get_attribute("innerText") or ""))
+        except Exception:
+            pass
+
+        return " — ".join([p for p in parts if p])
+
+    def _pick_bucket(cs, question_text: str):
+        try:
+            buckets = cs.find_elements(By.CSS_SELECTOR, "li.sq-cardsort-bucket")
+        except Exception:
+            buckets = []
+
+        label_to_el = {}
+        for b in buckets:
+            try:
+                lbl = _read_bucket_label(b)
+                if not lbl:
+                    continue
+                label_to_el[_norm_lc(lbl)] = b
+            except Exception:
+                continue
+
+        if not label_to_el:
+            return None
+
+        qt = _norm_lc(question_text)
+
+        # 1) Attention check explicite : si la consigne contient une option textuelle
+        triggers = ["veuillez", "selectionnez", "sélectionnez", "choisissez", "pour vérifier", "attention"]
+        if any(t in qt for t in triggers):
+            for opt_lc, el in label_to_el.items():
+                if opt_lc and opt_lc in qt:
+                    return el
+
+        # 2) Choix safe mais variable (déterministe)
+        safe_order = [
+            "il y a 2 ou 3 jours",
+            "il y a 4 à 7 jours",
+            "il y a 1 à 2 semaines",
+            "il y a 2 à 3 semaines",
+            "il y a 3 à 4 semaines",
+            "il y a plus de 4 semaines",
+            "hier",
+            "aujourd'hui",
+        ]
+        available = [k for k in safe_order if k in label_to_el]
+
+        # fallback : tout sauf "jamais"
+        if not available:
+            available = [k for k in label_to_el.keys() if "jamais" not in k and "ne se souvient" not in k]
+        if not available:
+            available = list(label_to_el.keys())
+
+        # Seed stable par bot (optionnel) + question_text
+        seed = (_norm_lc(os.getenv("BOT_ID", "")) or _norm_lc(os.getenv("ACCOUNT_ID", "")) or "")
+        h = zlib.crc32(f"{seed}|{qt}".encode("utf-8")) & 0xffffffff
+        chosen = available[h % len(available)]
+        return label_to_el[chosen]
+
+    def _click(el) -> bool:
+        try:
+            driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
+            time.sleep(0.05)
+        except Exception:
+            pass
+        try:
+            el.click()
+            return True
+        except Exception:
+            try:
+                ActionChains(driver).move_to_element(el).click().perform()
+                return True
+            except Exception:
+                try:
+                    driver.execute_script("arguments[0].click();", el)
+                    return True
+                except Exception:
+                    return False
+
+    cs = _pick_cardsort_root()
+    if not cs:
+        return False
+
+    did = False
+
+    for _ in range(max_cards):
+        if _completion_visible(cs):
+            break
+
+        card = _active_card(cs)
+        if not card:
+            break
+
+        before_idx = ""
+        try:
+            before_idx = (card.get_attribute("index") or "").strip()
+        except Exception:
+            before_idx = ""
+
+        qtxt = _get_question_text(cs, card)
+        bucket = _pick_bucket(cs, qtxt)
+        if not bucket:
+            break
+
+        if not _click(bucket):
+            break
+        did = True
+
+        # petit wait pour l'auto-advance (page JS)
+        time.sleep(0.12)
+
+        # si la carte n'a pas changé, on retente 1 fois en cliquant l'item interne
+        card2 = _active_card(cs)
+        after_idx = ""
+        try:
+            after_idx = (card2.get_attribute("index") or "").strip() if card2 else ""
+        except Exception:
+            after_idx = ""
+
+        if before_idx and after_idx and before_idx == after_idx:
+            try:
+                inner = bucket.find_element(By.CSS_SELECTOR, ".sq-cardsort-bucket-item")
+                _click(inner)
+                time.sleep(0.12)
+            except Exception:
+                pass
+
+    # CTA Continue (si visible)
+    try:
+        btn = driver.find_elements(By.CSS_SELECTOR, "#btn_continue, input#btn_continue, input.button.continue")
+        if btn:
+            try:
+                if btn[0].is_displayed():
+                    _click(btn[0])
+            except Exception:
+                _click(btn[0])
+    except Exception:
+        pass
+
+    return did
+
 def _norm(s: str) -> str:
     if not s:
         return ""
@@ -264,7 +490,6 @@ def _apply_by_target_id(driver, target_id: str, itype: str, value: str) -> bool:
             debug_target = (os.getenv("ACTION_DEBUG_TARGET", "0") or "").strip().lower() in ("1", "true", "yes", "on")
 
             def _find_best_visible(xpath: str):
-                # évite de cliquer un élément caché si le DOM contient une ancienne étape/template
                 try:
                     cands = driver.find_elements(By.XPATH, xpath)
                 except Exception:
@@ -273,12 +498,30 @@ def _apply_by_target_id(driver, target_id: str, itype: str, value: str) -> bool:
                 if not cands:
                     return None
 
+                def _rect_ok(el) -> bool:
+                    try:
+                        r = el.rect or {}
+                        return (r.get("width", 0) or 0) > 2 and (r.get("height", 0) or 0) > 2
+                    except Exception:
+                        return False
+
+                # 1) affiché + taille > 2px (évite label 0x0)
+                for c in cands:
+                    try:
+                        if c.is_displayed() and _rect_ok(c):
+                            return c
+                    except Exception:
+                        continue
+
+                # 2) affiché
                 for c in cands:
                     try:
                         if c.is_displayed():
                             return c
                     except Exception:
                         continue
+
+                # 3) fallback
                 return cands[0]
 
             def _wait_checked(input_id: str | None, input_name: str | None, timeout_s: float = 1.2) -> bool:
