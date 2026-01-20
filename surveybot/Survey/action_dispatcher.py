@@ -833,11 +833,12 @@ def _apply_by_target_id(driver, target_id: str, itype: str, value: str) -> bool:
                     except Exception:
                         return False
 
+                # --- Dropdown: set value via JS + dispatch events (works even if <select> is hidden) ---
+                # + cas spécial "sq-sliderpoints" : cliquer / dragger la piste pour que l'UI se mette à jour
                 if resolved_itype == "dropdown":
                     try:
                         sel = driver.find_element(By.XPATH, xp)
                         driver.execute_script("arguments[0].scrollIntoView({block:'center'});", sel)
-                        sel.click()
                     except Exception:
                         return False
 
@@ -845,20 +846,156 @@ def _apply_by_target_id(driver, target_id: str, itype: str, value: str) -> bool:
                     if not v:
                         return False
 
-                    lit = _xpath_literal(v)
-                    xps = [
-                        f"{xp}//option[normalize-space(.)={lit}]",
-                        f"{xp}//option[contains(normalize-space(.), {lit})]",
-                    ]
-                    for oxp in xps:
+                    def _key(s: str) -> str:
+                        # Robust label normalization for dropdown/sliderpoints matching:
+                        # - fold accents
+                        # - normalize quotes/apostrophes
+                        # - drop stray punctuation
+                        s = (s or "").replace("\xa0", " ")
+                        s = unicodedata.normalize("NFKD", s)
+                        s = "".join(c for c in s if not unicodedata.combining(c))
+
+                        # normalize common unicode quotes -> ascii
+                        s = s.replace("\u2019", "'").replace("\u2018", "'")
+                        s = s.replace("\u00b4", "'").replace("`", "'")
+                        s = s.replace("\u201c", '"').replace("\u201d", '"')
+
+                        # remove quotes/apostrophes and light punctuation
+                        s = re.sub(r"[\"'\u2019\u2018\u00b4`]+", " ", s)
+                        s = re.sub(r"[.,;:!?()\[\]{}<>]+", " ", s)
+                        s = re.sub(r"\s+", " ", s).strip().lower()
+                        return s
+
+                    v_lc = _key(v)
+
+                    # options exploitables (hors placeholder)
+                    try:
+                        raw_opts = sel.find_elements(By.TAG_NAME, "option")
+                    except Exception:
+                        raw_opts = []
+
+                    real_opts = []  # [(idx, text_lc, value)]
+                    for o in raw_opts:
                         try:
-                            opt = driver.find_element(By.XPATH, oxp)
-                            opt.click()
-                            return True
+                            if (o.get_attribute("disabled") or "").strip():
+                                continue
+                            t = _key(o.text or "")
+                            if not t:
+                                continue
+                            ov = (o.get_attribute("value") or "").strip()
+                            if ov in ("", "-1"):
+                                continue
+                            if any(tok in t for tok in ("veuillez", "sélection", "selection", "select", "choose")):
+                                continue
+                            real_opts.append((len(real_opts), t, ov))
                         except Exception:
                             continue
-                    return False
 
+                    if not real_opts:
+                        return False
+
+                    best_val = None
+                    best_idx = None
+                    for i, t, ov in real_opts:
+                        if (t == v_lc) or (v_lc in t) or (t in v_lc):
+                            best_val = ov
+                            best_idx = i
+                            break
+
+                    if best_val is None:
+                        for i, t, ov in real_opts:
+                            if v_lc and (v_lc in t):
+                                best_val = ov
+                                best_idx = i
+                                break
+
+                    if best_val is None or best_idx is None:
+                        return False
+
+                    # 1) source de vérité: <select>
+                    try:
+                        driver.execute_script(
+                            """
+                            const sel = arguments[0];
+                            const val = arguments[1];
+                            sel.value = val;
+                            try { sel.dispatchEvent(new Event('input',  {bubbles:true})); } catch(e) {}
+                            try { sel.dispatchEvent(new Event('change', {bubbles:true})); } catch(e) {}
+                            """,
+                            sel,
+                            best_val,
+                        )
+                    except Exception:
+                        return False
+
+                    # 2) sliderpoints: clic/drag sur la piste pour déplacer le handle (sinon off-scale)
+                    try:
+                        meta = payload.get("meta") or {}
+                        src = (meta.get("source") or "").strip().lower()
+                        sel_id = (sel.get_attribute("id") or "").strip()
+                        is_sliderpoints = (src == "sq-sliderpoints") or ("sliderpoints" in sel_id.lower())
+
+                        if is_sliderpoints:
+                            track = None
+                            if sel_id:
+                                try:
+                                    track = driver.find_element(By.ID, f"sliderpoints_{sel_id}")
+                                except Exception:
+                                    track = None
+
+                            if track is None:
+                                try:
+                                    container = sel.find_element(
+                                        By.XPATH,
+                                        "ancestor::*[contains(@class,'sq-sliderpoints-container') or contains(@class,'sq-sliderpoints-element')][1]",
+                                    )
+                                    track = container.find_element(By.CSS_SELECTOR, ".ui-slider-horizontal")
+                                except Exception:
+                                    track = None
+
+                            if track is not None:
+                                driver.execute_script("arguments[0].scrollIntoView({block:'center'});", track)
+                                r = track.rect or {}
+                                w = int(r.get("width", 0) or 0)
+                                h = int(r.get("height", 0) or 0)
+
+                                steps = max(1, len(real_opts) - 1)
+                                x = int((best_idx / steps) * max(1, w - 4)) + 2
+                                y = max(1, h // 2)
+
+                                try:
+                                    ActionChains(driver).move_to_element_with_offset(track, x, y).click().perform()
+                                except Exception:
+                                    pass
+
+                                def _handle_offscale() -> bool:
+                                    try:
+                                        hnd = track.find_element(By.CSS_SELECTOR, ".ui-slider-handle")
+                                        st = (hnd.get_attribute("style") or "")
+                                        return ("-40" in st) or ("offscale" in st.lower())
+                                    except Exception:
+                                        return False
+
+                                if _handle_offscale():
+                                    try:
+                                        hnd = track.find_element(By.CSS_SELECTOR, ".ui-slider-handle")
+                                        ActionChains(driver).click_and_hold(hnd).move_to_element_with_offset(track, x, y).release().perform()
+                                    except Exception:
+                                        pass
+
+                                try:
+                                    cur_val = (sel.get_attribute("value") or "").strip()
+                                    if cur_val != best_val:
+                                        return False
+                                except Exception:
+                                    pass
+
+                                return True
+                    except Exception:
+                        # si le forcing UI échoue, on considère quand même le select comme set
+                        pass
+
+                    return True
                 if resolved_itype == "button":
                     try:
                         el = driver.find_element(By.XPATH, xp)
@@ -1470,7 +1607,43 @@ def execute_action(driver, instruction: str) -> bool:
             continue
 
         # 1) target_id => application directe via DOM_REGISTRY
+        # IMPORTANT: sliderpoints (FocusVision/Decipher) ne doivent PAS passer par le chemin dropdown générique,
+        # sinon on peut obtenir des faux positifs (dropdown ouvert) ou une valeur décalée (mapping 0/1-based).
+        # On route donc explicitement vers set_sliderpoints.
+        skip_apply_by_target_id = False
         if target_id:
+            try:
+                _p = get_target(target_id) or {}
+                _m = _p.get("meta") or {}
+                if (_m.get("source") or "").strip().lower() == "sq-sliderpoints":
+                    skip_apply_by_target_id = True
+
+                    # Support iframe: on se place dans frame_chain si présent (même logique que _apply_by_target_id)
+                    frame_chain = _p.get("frame_chain") or []
+                    if not frame_chain:
+                        try:
+                            driver.switch_to.default_content()
+                        except Exception:
+                            pass
+                    else:
+                        try:
+                            from Survey.frame_utils import switch_to_frame_chain  # type: ignore
+                            switch_to_frame_chain(driver, frame_chain)
+                        except Exception:
+                            pass
+
+                    # sliderpoints: une seule stratégie (DOM). Pas de fallback générique,
+                    # sinon on peut écraser une sélection correcte (ex: valeur contenant une virgule).
+                    ok_sp = Survey.input_handler.set_sliderpoints(driver, value, context_hint=ctx)
+                    if ok_sp:
+                        return True
+                    continue
+
+            except Exception as e:
+                # même en exception: pas de fallback générique pour sliderpoints
+                continue
+
+        if target_id and not skip_apply_by_target_id:
             try:
                 if _apply_by_target_id(driver, target_id, itype, value):
                     return True
@@ -1544,6 +1717,26 @@ def execute_action(driver, instruction: str) -> bool:
         # 🟦 DROPDOWN
         # ==========================================================
         if itype == "dropdown":
+
+            # Guard: sliderpoints are rendered as <select> but behave like Likert sliders.
+            # We forbid generic dropdown fallbacks here because they can return True without selecting a value.
+            is_sliderpoints_target = False
+            if target_id:
+                try:
+                    _p = get_target(target_id) or {}
+                    _m = _p.get("meta") or {}
+                    if (_m.get("source") or "").strip().lower() == "sq-sliderpoints":
+                        is_sliderpoints_target = True
+                except Exception:
+                    pass
+
+            if is_sliderpoints_target:
+                if _try(driver, "dropdown_sliderpoints", lambda:
+                    Survey.input_handler.set_sliderpoints(driver, label, context_hint=ctx)
+                ):
+                    return True
+                # No other fallback for sliderpoints (avoid false positives).
+                continue
 
             if ctx and _try(driver, "dropdown_block", lambda:
                 dropdown_block_resolver.try_resolve_dropdown_block(

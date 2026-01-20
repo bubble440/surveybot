@@ -456,16 +456,59 @@ def _set_input_value_with_events(driver, el, value: str):
     """, el)
 
 def set_sliderpoints(driver, choice_text: str, context_hint: str | None = None) -> bool:
-    """Behaviorally/Decipher 'sq-sliderpoints' :
-       mappe le libellé visible vers l'index, sélectionne le <select> frère
-       (dispatch input/change/blur), sinon clique la piste jQuery-UI.
+    """Behaviorally/Decipher 'sq-sliderpoints'.
+
+    Problème observé:
+    - le code peut retourner True alors que le curseur reste "Off Scale" (tout à droite)
+      => la page considère la réponse non saisie.
+
+    Stratégie (prédictible, 2 tentatives max):
+    1) Scoper strictement la bonne ligne via le row-legend (si context_hint fourni)
+    2) Mapper choice_text -> index sur la légende visible
+    3) Appliquer via click sur legend + set du <select> + (si présent) jQuery-UI slider('value', ...)
+    4) Vérifier que le slider n'est plus off-scale (handle != ~100%) et que le select a la bonne value.
     """
-    def _n(s):  # normaliseur doux
-        s = (s or "").lower().replace("\u00a0", " ")
-        s = re.sub(r"[»«“”\"'›→·•:]+", " ", s)
-        return re.sub(r"\s+", " ", s).strip()
+    import unicodedata
+
+    def _strip_accents(s: str) -> str:
+        s = unicodedata.normalize("NFKD", s or "")
+        return "".join(ch for ch in s if not unicodedata.combining(ch))
+
+    def _n(s: str) -> str:
+        s = _strip_accents((s or "").replace("\u00a0", " "))
+        s = s.lower()
+        s = re.sub(r"[»«“”\"'’›→·•:…]", " ", s)
+        s = re.sub(r"[^a-z0-9 ]+", " ", s)
+        s = re.sub(r"\s+", " ", s).strip()
+        return s
+
+    def _handle_left_pct(track) -> float | None:
+        try:
+            h = track.find_element(By.CSS_SELECTOR, "a.ui-slider-handle")
+            style = (h.get_attribute("style") or "").lower()
+            m = re.search(r"left\s*:\s*([0-9.]+)%", style)
+            if m:
+                return float(m.group(1))
+        except Exception:
+            return None
+        return None
+
+    def _is_off_scale(track) -> bool:
+        try:
+            cls = (track.get_attribute("class") or "").lower()
+            if "off scale" in cls or "offscale" in cls:
+                return True
+        except Exception:
+            pass
+        pct = _handle_left_pct(track)
+        if pct is not None and pct >= 99.0:
+            return True
+        return False
 
     needle = _n(choice_text)
+    if not needle:
+        return False
+
     # scope optionnel (question courante), sinon page entière
     try:
         scope = _find_context_container(driver, context_hint) if context_hint else None
@@ -473,112 +516,249 @@ def set_sliderpoints(driver, choice_text: str, context_hint: str | None = None) 
         scope = None
     root = scope if scope is not None else driver
 
-    # blocs sliderpoints
-    blocks = []
+    # IMPORTANT: utiliser les *containers* (1 ligne = 1 container).
     try:
-        blocks += root.find_elements(By.CSS_SELECTOR, ".sq-sliderpoints-element, .sq-sliderpoints-container")
+        blocks_all = root.find_elements(By.CSS_SELECTOR, ".sq-sliderpoints-container")
     except Exception:
-        pass
-    if not blocks:
+        blocks_all = []
+
+    if not blocks_all:
         return False
+
+    # Scoping strict par row label si fourni (évite de répondre la mauvaise ligne)
+    blocks = blocks_all
+    row_ctx = _n(context_hint or "")
+    if row_ctx:
+        matched = None
+        saw_any_label = False
+        for c in blocks_all:
+            try:
+                lbl = _n(c.find_element(By.CSS_SELECTOR, ".sq-sliderpoints-row-legend").text)
+            except Exception:
+                lbl = ""
+            if lbl:
+                saw_any_label = True
+            if lbl and (lbl == row_ctx or row_ctx in lbl or lbl in row_ctx):
+                matched = c
+                break
+
+        # Si on a des row labels mais aucun match, on ne "devine" pas.
+        if saw_any_label and matched is None:
+            return False
+        if matched is not None:
+            blocks = [matched]
 
     for b in blocks:
         try:
-            # 1) lire la légende visible
             legends = b.find_elements(By.CSS_SELECTOR, ".sliderpoints_legend .sliderpoints-legenditem")
-            items = [_n(x.text) for x in legends if (x.text or "").strip()]
-            idx = next((i for i, t in enumerate(items) if t and (needle == t or needle in t or t in needle)), -1)
+            legend_txts = [_n(x.text) for x in legends if (x.text or "").strip()]
+            if not legend_txts:
+                continue
 
-            # 2) sélectionner via le <select> frère si possible
+            idx = next(
+                (i for i, t in enumerate(legend_txts) if t and (needle == t or needle in t or t in needle)),
+                -1,
+            )
+            if idx < 0:
+                continue
+
+            try:
+                track = b.find_element(By.CSS_SELECTOR, ".ui-slider-horizontal")
+            except Exception:
+                track = None
+            if not track:
+                continue
+
+            driver.execute_script("arguments[0].scrollIntoView({block:'center'});", track)
+
+            # calcule position (fallback seulement)
+            r = track.rect or {}
+            w = int(r.get("width", 0) or 0)
+            h = int(r.get("height", 0) or 0)
+            steps = max(1, len(legend_txts) - 1)
+            x = int((idx / steps) * max(1, w - 4)) + 2
+            y = max(1, h // 2)
+
+            # Prépare select + value cible (si présent)
             sel = None
-            S = _Sel(sel)
-            # calcule un offset si placeholder en tête
-            def _is_placeholder_opt(opt):
-                t = _n(opt.text)
-                v = (opt.get_attribute("value") or "").strip()
-                return (v in ("", "-1")) or any(k in t for k in ("sélection", "selection", "select", "choose"))
-
-            offset = 1 if S.options and _is_placeholder_opt(S.options[0]) else 0
-            real_idx = min(len(S.options) - 1, idx + offset)
-
-            # si les values sont numériques, mappe directement l’index
-            vals = [ (o.get_attribute("value") or "").strip() for o in S.options ]
-            try:
-                if offset == 1 and all(v.isdigit() for v in vals[1:]):   # pattern Decipher/Behaviorally
-                    S.select_by_value(str(idx))  
-                else:
-                    S.select_by_index(real_idx)
-            except Exception:
-                # dernier recours: clic direct sur l’option cible
-                try: 
-                    S.options[real_idx].click()
-                except Exception: pass
-
-            # événements attendus par la page
-            driver.execute_script("""
-              const s = arguments[0];
-              try{s.dispatchEvent(new Event('input',{bubbles:true}));}catch(e){}
-              try{s.dispatchEvent(new Event('change',{bubbles:true}));}catch(e){}
-              try{s.dispatchEvent(new Event('blur',  {bubbles:true}));}catch(e){}
-            """, sel)
-
-            # vérification rapide ; sinon fallback sur la piste jQuery-UI
-            try:
-                cur = _n(_Sel(sel).first_selected_option.text or "")
-                if not cur or cur in ("sélectionnez", "selectionnez", "select", "choose"):
-                    raise Exception("still placeholder")
-            except Exception:
-                # fallback piste (déjà présent dans ton code)
-                # -> on clique .ui-slider-horizontal au pourcentage correspondant
-                pass
-
+            desired_val: str | None = None
+            real_idx = idx
             try:
                 sel = b.find_element(By.TAG_NAME, "select")
+                S = Select(sel)
+
+                def _is_placeholder(opt) -> bool:
+                    v = (opt.get_attribute("value") or "").strip()
+                    t = _n(opt.text)
+                    return (v in ("", "-1")) or any(k in t for k in ("selection", "select", "choose", "sélection"))
+
+                offset = 1 if S.options and _is_placeholder(S.options[0]) else 0
+                real_idx = idx + offset
+                real_idx = min(len(S.options) - 1, max(0, real_idx))
+                opt = S.options[real_idx]
+                desired_val = (opt.get_attribute("value") or "").strip() or None
             except Exception:
                 sel = None
+                desired_val = None
 
-            if sel is not None and idx >= 0:
-                S = _Sel(sel)
+            def _dispatch_select_events(el) -> None:
                 try:
-                    # valeur par index (ou value si présente)
-                    val = None
-                    try: 
-                        val = S.options[idx].get_attribute("value")
-                    except Exception: pass
-                    if val is not None:
-                        S.select_by_value(val)
-                    else:
-                        S.select_by_index(idx)
-                except Exception:
-                    # dernier recours : clic direct option
-                    try: 
-                        S.options[idx].click()
-                    except Exception: pass
-
-                # events attendus par la page
-                driver.execute_script("""
-                    const s = arguments[0];
-                    try{s.dispatchEvent(new Event('input',{bubbles:true}));}catch(e){}
-                    try{s.dispatchEvent(new Event('change',{bubbles:true}));}catch(e){}
-                    try{s.dispatchEvent(new Event('blur',  {bubbles:true}));}catch(e){}
-                """, sel)
-                print(f"✅ Sliderpoints sélectionné via <select> : {choice_text}. source: input_handler.py")
-                return True
-
-            # 3) fallback : cliquer la piste jQuery-UI au bon pourcentage
-            if idx >= 0 and legends:
-                try:
-                    track = b.find_element(By.CSS_SELECTOR, ".ui-slider-horizontal")
-                    driver.execute_script("arguments[0].scrollIntoView({block:'center'});", track)
-                    r = track.rect
-                    steps = max(1, len(legends) - 1)   # 0..steps
-                    x = int((idx / steps) * max(1, r["width"] - 4)) + 2
-                    pause_here("Sliderpoints: clic sur la piste")
-                    ActionChains(driver).move_to_element_with_offset(track, x, max(1, r["height"]//2)).click().perform()
-                    print(f"✅ Sliderpoints cliqué sur la piste : {choice_text}. source: input_handler.py")
-                    return True
+                    driver.execute_script(
+                        """
+                        const s = arguments[0];
+                        for (const t of ['input','change','blur']) {
+                          try { s.dispatchEvent(new Event(t, {bubbles:true})); } catch(e) {}
+                        }
+                        """,
+                        el,
+                    )
                 except Exception:
                     pass
+
+            def _apply_via_widget() -> None:
+                # 1) Click sur le "point" (circle) : c'est l'élément réellement interactif du sliderpoints
+                clicked = False
+                circles = []
+                try:
+                    circles = b.find_elements(
+                        By.CSS_SELECTOR,
+                        ".sliderpoints_circleLegend span.fa-icon-circle, .sliderpoints_circleLegend span"
+                    )
+                except Exception:
+                    circles = []
+
+                try:
+                    if 0 <= idx < len(circles):
+                        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", circles[idx])
+                        driver.execute_script("arguments[0].click();", circles[idx])
+                        clicked = True
+                except Exception:
+                    clicked = False
+
+                # Fallback: click sur le texte de légende (moins fiable)
+                if not clicked:
+                    try:
+                        if 0 <= idx < len(legends):
+                            driver.execute_script("arguments[0].scrollIntoView({block:'center'});", legends[idx])
+                            driver.execute_script("arguments[0].click();", legends[idx])
+                    except Exception:
+                        pass
+
+                # 2) Set <select> (value backend)
+                if sel is not None:
+                    try:
+                        # On ne force le <select> que si nécessaire (évite désync UI <-> select)
+                        cur = (sel.get_attribute("value") or "").strip()
+                        if desired_val is not None and cur != desired_val:
+                            driver.execute_script("arguments[0].value = arguments[1];", sel, desired_val)
+                        elif desired_val is None:
+                            driver.execute_script("arguments[0].selectedIndex = arguments[1];", sel, int(real_idx))
+                        _dispatch_select_events(sel)
+                    except Exception:
+                        pass
+
+                # 3) jQuery-UI slider('value', ...) si dispo (état interne widget)
+                try:
+                    v = int(desired_val) if desired_val is not None and str(desired_val).lstrip("-").isdigit() else int(idx)
+                    driver.execute_script(
+                        """
+                        const root = arguments[0];
+                        const v = arguments[1];
+                        const slider = root.querySelector('.ui-slider-horizontal, .ui-slider');
+                        if (slider && window.jQuery && window.jQuery(slider).slider) {
+                          try { window.jQuery(slider).slider('value', v); } catch(e) {}
+                          try { window.jQuery(slider).trigger('change'); } catch(e) {}
+                          try { window.jQuery(slider).trigger('slidechange'); } catch(e) {}
+                        }
+                        """,
+                        b,
+                        v,
+                    )
+                except Exception:
+                    pass
+
+            def _verify() -> bool:
+                ok_val = False
+                if sel is not None and desired_val is not None:
+                    try:
+                        ok_val = ((sel.get_attribute("value") or "").strip() == desired_val)
+                    except Exception:
+                        ok_val = False
+                elif sel is None:
+                    # pas de <select> => on ne peut pas valider la value, on se base sur l'état du slider
+                    ok_val = True
+
+                # on veut sortir du mode Off Scale (handle tout à droite)
+                try:
+                    # IMPORTANT: re-trouve le track pour éviter stale element => vérif conservatrice
+                    t2 = b.find_element(By.CSS_SELECTOR, ".ui-slider-horizontal")
+                    ok_scale = not _is_off_scale(t2)
+                except Exception:
+                    ok_scale = False
+
+                return bool(ok_val and ok_scale)
+
+            # Debug uniquement (ne doit jamais bloquer en prod)
+            try:
+                import os
+                if os.getenv("DEBUG_PAUSE_SLIDERPOINTS", "0") == "1":
+                    pause_here("Sliderpoints: avant application")
+            except Exception:
+                pass
+
+            # Tentative 1: widget/JS (le plus fiable)
+            _apply_via_widget()
+
+            # L'UI met parfois un court délai à sortir de "Off Scale" après sync (<select> + events).
+            # Sans ce délai, on déclenche inutilement le fallback "clic piste", qui peut déplacer le curseur.
+            try:
+                time.sleep(0.15)
+            except Exception:
+                pass
+
+            if _verify():
+                print(f"✅ Sliderpoints rempli: '{choice_text}'. source: input_handler.py")
+                return True
+
+            # Tentative 2: clic piste (fallback)
+            try:
+                if w > 4:
+                    # Click robuste (coordonnées absolues) pour éviter l'ambiguïté des offsets ActionChains.
+                    driver.execute_script(
+                        """
+                        const track = arguments[0];
+                        const x = arguments[1];
+                        const y = arguments[2];
+                        const r = track.getBoundingClientRect();
+
+                        const cx = Math.min(r.right - 2, Math.max(r.left + 2, r.left + x));
+                        const cy = Math.min(r.bottom - 2, Math.max(r.top + 2, r.top + y));
+
+                        const ev = (type) => new MouseEvent(type, {
+                        bubbles: true,
+                        cancelable: true,
+                        clientX: cx,
+                        clientY: cy
+                        });
+
+                        track.dispatchEvent(ev('mousemove'));
+                        track.dispatchEvent(ev('mousedown'));
+                        track.dispatchEvent(ev('mouseup'));
+                        track.dispatchEvent(ev('click'));
+                        """,
+                        track, int(x), int(y)
+                    )
+                    time.sleep(0.10)
+            except Exception:
+                pass
+
+            if sel is not None:
+                _dispatch_select_events(sel)
+
+            if _verify():
+                print(f"✅ Sliderpoints rempli: '{choice_text}'. source: input_handler.py")
+                return True
+
         except Exception:
             continue
 

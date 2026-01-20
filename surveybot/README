@@ -11,6 +11,8 @@ $env:RUN_MODE="local"
 $env:BROWSER_MODE="attach"
 $env:DOM_DEBUG_FRAMES="1"
 $env:ACTION_DEBUG_TARGET="1"
+$env:ATTACH_TAB_SELECTOR="current"
+
 # Pour lancer surveybot en mode "attach" (debug)
 python surveybot/main.py
 
@@ -110,11 +112,12 @@ docker run --rm -it `
 # qatar.chimp729@8shield.net
 
 Set-Location C:\projects\Surveys\surveybot
-python tools\replay_snapshot.py ..\cases\level_a\samplicio_departement_12415\20260116_213628_after_dom_analyze --use-dom-outer --save-baseline
-python tools\replay_snapshot.py ..\cases\level_a\samplicio_departement_12415\20260116_213628_after_dom_analyze --use-dom-outer --headful --pause
+python surveybot\tools\replay_snapshot.py ..\cases\level_a\samplicio_departement_12415\20260116_213628_after_dom_analyze --use-dom-outer --save-baseline
+python surveybot\tools\replay_snapshot.py ..\cases\level_a\samplicio_departement_12415\20260116_213628_after_dom_analyze --use-dom-outer --headful --pause
 
 # ------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 # Pour activer l'environnement virtuel
 & C:/projects/Surveys/.venv/Scripts/Activate.ps1
 
-python surveybot\tools\replay_snapshot.py cases\level_a\focusvision_matrix_recent_courses\20260118_232903_after_dom_analyze --use-dom-outer --save-baseline
+python surveybot\tools\replay_snapshot.py snapshots\focusvision_sliderpoints_362624\snapshot --use-dom-outer --save-baseline
+python surveybot\tools\replay_snapshot.py snapshots\20260120_112345_after_dom_analyze --use-dom-outer --save-baseline

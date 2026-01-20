@@ -7,14 +7,28 @@ from selenium.webdriver.common.by import By
 
 FrameChain = List[int]
 
-
 def _frame_elements(driver):
     """Retourne la liste des <iframe>/<frame> du contexte courant."""
     try:
-        return driver.find_elements(By.CSS_SELECTOR, "iframe, frame")
+        frames = driver.find_elements(By.CSS_SELECTOR, "iframe, frame")
+
+        # Fallback: certaines pages rendent le CSS selector instable.
+        # On tente TAG_NAME (sans exception si l'un des tags n'existe pas).
+        if not frames:
+            out = []
+            try:
+                out.extend(driver.find_elements(By.TAG_NAME, "iframe"))
+            except Exception:
+                pass
+            try:
+                out.extend(driver.find_elements(By.TAG_NAME, "frame"))
+            except Exception:
+                pass
+            frames = out
+
+        return frames
     except Exception:
         return []
-
 
 @contextmanager
 def switch_to_frame_chain(driver, chain: FrameChain):

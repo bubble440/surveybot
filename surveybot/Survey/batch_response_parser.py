@@ -16,28 +16,32 @@ _ALLOWED_ITYPES = {"radio", "checkbox", "dropdown", "text", "textarea", "button"
 _QID_RE = re.compile(r"\bQ\d+\b", re.IGNORECASE)
 
 
-def _split_values(value: str) -> List[str]:
+def _split_values(value: str, itype: str = "", max_select: int = 1) -> List[str]:
     """
-    Supporte les réponses multi:
-    - "A | B | C"
-    - "A, B, C"
+    Supporte les réponses multi *uniquement quand ça a du sens*.
+
+    Règles (prédictibles):
+    - split prioritaire sur "|" (format recommandé)
+    - split sur "," UNIQUEMENT pour checkbox quand max_select > 1
+      (évite de casser des libellés qui contiennent des virgules, ex: "NI D'ACCORD, NI PAS D'ACCORD")
     """
     if not value:
         return []
+
     v = value.strip()
+    it = (itype or "").strip().lower()
 
     # split prioritaire sur |
     if "|" in v:
-        parts = [p.strip() for p in v.split("|") if p.strip()]
-        return parts
+        return [p.strip() for p in v.split("|") if p.strip()]
 
-    # split léger sur virgule si ça ressemble à une liste courte
-    if "," in v and len(v) < 120:
-        parts = [p.strip() for p in v.split(",") if p.strip()]
-        return parts
+    # split sur virgule UNIQUEMENT pour checkbox multi
+    # (évite de casser des libellés single-select contenant des virgules,
+    # ex: "NI D'ACCORD, NI PAS D'ACCORD")
+    if it == "checkbox" and (max_select or 1) > 1 and "," in v and len(v) < 120:
+        return [p.strip() for p in v.split(",") if p.strip()]
 
     return [v]
-
 
 def parse_batch_response(raw: str, constraints: Optional[Dict[str, int]] = None) -> list[dict]:
     """
@@ -107,7 +111,11 @@ def parse_batch_response(raw: str, constraints: Optional[Dict[str, int]] = None)
         if itype and itype not in _ALLOWED_ITYPES:
             continue
 
-        values = _split_values(value)
+        mx = 1
+        if qid and constraints:
+            mx = int(constraints.get(qid, 1) or 1)
+
+        values = _split_values(value, itype=itype, max_select=mx)
 
         for v in values:
             v = (v or "").strip()
@@ -115,7 +123,7 @@ def parse_batch_response(raw: str, constraints: Optional[Dict[str, int]] = None)
                 continue
 
             if qid and constraints:
-                mx = int(constraints.get(qid, 1) or 1)
+                # mx déjà calculé au-dessus
                 kept_count.setdefault(qid, 0)
                 kept_values.setdefault(qid, set())
 
