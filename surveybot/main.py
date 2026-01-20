@@ -73,6 +73,73 @@ def _attach_select_best_tab(driver) -> None:
             pass
         print(f"[ATTACH] Tab sélectionné score={score} url={url}")
 
+def _attach_select_tab(driver) -> None:
+    """
+    Sélection d'onglet en mode attach.
+
+    Priorité 1: ATTACH_TAB_URL_CONTAINS (si défini) => on prend le 1er onglet dont l'URL contient ce substring.
+    Sinon: ATTACH_TAB_SELECTOR:
+      - "current" (défaut): ne change pas d'onglet
+      - "last": dernier window_handle
+      - "best": ancien comportement (inputs+texte)
+      - "<index>": index numérique dans window_handles (ex: "2")
+    """
+    url_contains = (os.getenv("ATTACH_TAB_URL_CONTAINS") or "").strip()
+    mode = (os.getenv("ATTACH_TAB_SELECTOR", "current") or "current").strip().lower()
+
+    handles = list(getattr(driver, "window_handles", []) or [])
+    if not handles:
+        return
+
+    # URL contains (prioritaire)
+    if url_contains:
+        for i, h in enumerate(handles):
+            try:
+                driver.switch_to.window(h)
+                url = driver.current_url or ""
+                if url_contains in url:
+                    print(f"[ATTACH] Tab=url_contains idx={i} url={url}")
+                    return
+            except Exception:
+                continue
+        # si pas trouvé => ne pas faire n'importe quoi
+        print(f"[ATTACH] Tab=url_contains NOT FOUND ({url_contains}) => current")
+        return
+
+    if mode in ("current", "active", "focused"):
+        try:
+            print(f"[ATTACH] Tab=current url={driver.current_url}")
+        except Exception:
+            pass
+        return
+
+    if mode in ("last", "newest"):
+        h = handles[-1]
+        try:
+            driver.switch_to.window(h)
+            print(f"[ATTACH] Tab=last idx={len(handles)-1} url={driver.current_url}")
+        except Exception:
+            pass
+        return
+
+    if mode == "best":
+        _attach_select_best_tab(driver)
+        return
+
+    if mode.isdigit():
+        idx = int(mode)
+        idx = max(0, min(idx, len(handles) - 1))
+        h = handles[idx]
+        try:
+            driver.switch_to.window(h)
+            print(f"[ATTACH] Tab=index idx={idx} url={driver.current_url}")
+        except Exception:
+            pass
+        return
+
+    # fallback: rien
+    return
+
 def run_attach_takeover(driver, *, api_key: str, account_id: str) -> None:
     """
     Mode takeover: on n'ouvre AUCUNE URL, on n'exécute PAS la préselection TopSurveys.
@@ -81,7 +148,7 @@ def run_attach_takeover(driver, *, api_key: str, account_id: str) -> None:
     import time
     import Survey.survey_executor as survey_executor
 
-    _attach_select_best_tab(driver)
+    _attach_select_tab(driver)
 
     max_steps = int(os.getenv("ATTACH_MAX_STEPS", "10"))
     print(f"[ATTACH] takeover loop start (max_steps={max_steps}) url={getattr(driver,'current_url','')}")

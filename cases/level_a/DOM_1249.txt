@@ -1,0 +1,379 @@
+<body id="ctl00_supplierBranding" ondragstart="return false" oncontextmenu="return false" class=" supplier-1771">
+
+<div class="container">
+    <form method="post" action="./Profiler.aspx?SSID=696a0d08-c820-af74-75f9-6a37fa2bd948&amp;SuID=5fa2472944471&amp;zToken=d30d0f82-75e3-43b5-90d8-21634984dcaf" id="aspnetForm" onselectstart="return false">
+<div class="aspNetHidden">
+<input type="hidden" name="__VIEWSTATE" id="__VIEWSTATE" value="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">
+</div>
+
+<div class="aspNetHidden">
+
+	<input type="hidden" name="__VIEWSTATEGENERATOR" id="__VIEWSTATEGENERATOR" value="1716A1E3">
+	<input type="hidden" name="__VIEWSTATEENCRYPTED" id="__VIEWSTATEENCRYPTED" value="">
+	<input type="hidden" name="__EVENTVALIDATION" id="__EVENTVALIDATION" value="qQF62oktO4JaGtgSmaVuabuAnXEJ1ef9w/mRsN24QrGAYmj05PQeKtiJiyeNifXtHvJzf2PX+ousfyjAZThm1mUSMX6fQODMF+FK9D314uTsQ+gMpknmrgkdVpDgOQoLbmMaqJOPgtZawtre75tU37Vr51iJekIAjRzUwms+SlWPaaXqiCuQFa8CMr5V7w2ZKNXUZ1e1JY3KLCjH5SVrZjkkz18QjAxvQDeRy4Cw6xLVg4rm">
+</div>
+        
+
+        <div class="header">
+            <div class="header-content">
+                <img src="includes/images/brandings/headerlogo/supplier-default.png" id="ctl00_supplierImage" class="header-logo">
+            </div>
+        </div>
+
+        
+    <script type="text/javascript">
+        BOOMR.addVar('p', 'profiler');
+        var question = {"QuestionId":1249,"QuestionText":"Merci d\u0027indiquer l\u0027âge et le sexe de votre/vos enfant(s)","SubText":"","TemplateName":"MULTI","QuestionOptions":[{"Display":"Garçon de moins d’un  an","Precode":"1","IsMutuallyExclusive":false,"ParentItem":null},{"Display":"Fille de moins d’un an","Precode":"2","IsMutuallyExclusive":false,"ParentItem":null},{"Display":"Garçon d’un an","Precode":"3","IsMutuallyExclusive":false,"ParentItem":null},{"Display":"Fille d’un an","Precode":"4","IsMutuallyExclusive":false,"ParentItem":null},{"Display":"Garçon de 2 ans","Precode":"5","IsMutuallyExclusive":false,"ParentItem":null},{"Display":"Fille de 2 ans","Precode":"6","IsMutuallyExclusive":false,"ParentItem":null},{"Display":"Garçon de 3 ans","Precode":"7","IsMutuallyExclusive":false,"ParentItem":null},{"Display":"Fille de 3 ans","Precode":"8","IsMutuallyExclusive":false,"ParentItem":null},{"Display":"Garçon de 4 ans","Precode":"9","IsMutuallyExclusive":false,"ParentItem":null},{"Display":"Fille de 4 ans","Precode":"10","IsMutuallyExclusive":false,"ParentItem":null},{"Display":"Garçon de 5 ans","Precode":"11","IsMutuallyExclusive":false,"ParentItem":null},{"Display":"Fille de 5 ans","Precode":"12","IsMutuallyExclusive":false,"ParentItem":null},{"Display":"Garçon de 6 ans","Precode":"13","IsMutuallyExclusive":false,"ParentItem":null},{"Display":"Fille de 6 ans","Precode":"14","IsMutuallyExclusive":false,"ParentItem":null},{"Display":"Garçon de 7 ans","Precode":"15","IsMutuallyExclusive":false,"ParentItem":null},{"Display":"Fille de 7 ans","Precode":"16","IsMutuallyExclusive":false,"ParentItem":null},{"Display":"Garçon de 8 ans","Precode":"17","IsMutuallyExclusive":false,"ParentItem":null},{"Display":"Fille de 8 ans","Precode":"18","IsMutuallyExclusive":false,"ParentItem":null},{"Display":"Garçon de 9 ans","Precode":"19","IsMutuallyExclusive":false,"ParentItem":null},{"Display":"Fille de 9 ans","Precode":"20","IsMutuallyExclusive":false,"ParentItem":null},{"Display":"Garçon de 10 ans","Precode":"21","IsMutuallyExclusive":false,"ParentItem":null},{"Display":"Fille de 10 ans","Precode":"22","IsMutuallyExclusive":false,"ParentItem":null},{"Display":"Garçon de 11 ans","Precode":"23","IsMutuallyExclusive":false,"ParentItem":null},{"Display":"Fille de 11 ans","Precode":"24","IsMutuallyExclusive":false,"ParentItem":null},{"Display":"Garçon de 12 ans","Precode":"25","IsMutuallyExclusive":false,"ParentItem":null},{"Display":"Fille de 12 ans","Precode":"26","IsMutuallyExclusive":false,"ParentItem":null},{"Display":"Adolescent de 13 ans","Precode":"27","IsMutuallyExclusive":false,"ParentItem":null},{"Display":"Adolescente de 13 ans","Precode":"28","IsMutuallyExclusive":false,"ParentItem":null},{"Display":"Adolescent de 14 ans","Precode":"29","IsMutuallyExclusive":false,"ParentItem":null},{"Display":"Adolescente de 14 ans","Precode":"30","IsMutuallyExclusive":false,"ParentItem":null},{"Display":"Adolescent de 15 ans","Precode":"31","IsMutuallyExclusive":false,"ParentItem":null},{"Display":"Adolescente de 15 ans","Precode":"32","IsMutuallyExclusive":false,"ParentItem":null},{"Display":"Adolescent de 16 ans","Precode":"33","IsMutuallyExclusive":false,"ParentItem":null},{"Display":"Adolescente de 16 ans","Precode":"34","IsMutuallyExclusive":false,"ParentItem":null},{"Display":"Adolescent de 17 ans","Precode":"35","IsMutuallyExclusive":false,"ParentItem":null},{"Display":"Adolescente de 17 ans","Precode":"36","IsMutuallyExclusive":false,"ParentItem":null},{"Display":"Aucune de ces réponses","Precode":"-3105","IsMutuallyExclusive":true,"ParentItem":null}],"SubQuestions":null};
+
+        $(function () {
+            Template.init();
+            Bind.init();
+        });
+    </script>
+    
+    <div id="survey">
+        <div class="survey-content">
+
+            
+    <div id="templates">
+        <div class="question">
+            Merci d'indiquer l'âge et le sexe de votre/vos enfant(s)
+            <div class="subtext"></div>
+        </div>
+        <div class="answer">
+            
+    <div class="options js-resize-choices js-question-options">
+        
+            <label for="option-0" class="checkbox" style="width: 208.133px;">
+                <input type="checkbox" id="option-0" name="question_1249" value="1">
+                <span>Garçon de moins d’un  an</span>
+            </label>
+        
+            <label for="option-1" class="checkbox" style="width: 208.133px;">
+                <input type="checkbox" id="option-1" name="question_1249" value="2">
+                <span>Fille de moins d’un an</span>
+            </label>
+        
+            <label for="option-2" class="checkbox" style="width: 208.133px;">
+                <input type="checkbox" id="option-2" name="question_1249" value="3">
+                <span>Garçon d’un an</span>
+            </label>
+        
+            <label for="option-3" class="checkbox" style="width: 208.133px;">
+                <input type="checkbox" id="option-3" name="question_1249" value="4">
+                <span>Fille d’un an</span>
+            </label>
+        
+            <label for="option-4" class="checkbox" style="width: 208.133px;">
+                <input type="checkbox" id="option-4" name="question_1249" value="5">
+                <span>Garçon de 2 ans</span>
+            </label>
+        
+            <label for="option-5" class="checkbox" style="width: 208.133px;">
+                <input type="checkbox" id="option-5" name="question_1249" value="6">
+                <span>Fille de 2 ans</span>
+            </label>
+        
+            <label for="option-6" class="checkbox" style="width: 208.133px;">
+                <input type="checkbox" id="option-6" name="question_1249" value="7">
+                <span>Garçon de 3 ans</span>
+            </label>
+        
+            <label for="option-7" class="checkbox" style="width: 208.133px;">
+                <input type="checkbox" id="option-7" name="question_1249" value="8">
+                <span>Fille de 3 ans</span>
+            </label>
+        
+            <label for="option-8" class="checkbox" style="width: 208.133px;">
+                <input type="checkbox" id="option-8" name="question_1249" value="9">
+                <span>Garçon de 4 ans</span>
+            </label>
+        
+            <label for="option-9" class="checkbox" style="width: 208.133px;">
+                <input type="checkbox" id="option-9" name="question_1249" value="10">
+                <span>Fille de 4 ans</span>
+            </label>
+        
+            <label for="option-10" class="checkbox" style="width: 208.133px;">
+                <input type="checkbox" id="option-10" name="question_1249" value="11">
+                <span>Garçon de 5 ans</span>
+            </label>
+        
+            <label for="option-11" class="checkbox" style="width: 208.133px;">
+                <input type="checkbox" id="option-11" name="question_1249" value="12">
+                <span>Fille de 5 ans</span>
+            </label>
+        
+            <label for="option-12" class="checkbox" style="width: 208.133px;">
+                <input type="checkbox" id="option-12" name="question_1249" value="13">
+                <span>Garçon de 6 ans</span>
+            </label>
+        
+            <label for="option-13" class="checkbox" style="width: 208.133px;">
+                <input type="checkbox" id="option-13" name="question_1249" value="14">
+                <span>Fille de 6 ans</span>
+            </label>
+        
+            <label for="option-14" class="checkbox" style="width: 208.133px;">
+                <input type="checkbox" id="option-14" name="question_1249" value="15">
+                <span>Garçon de 7 ans</span>
+            </label>
+        
+            <label for="option-15" class="checkbox" style="width: 208.133px;">
+                <input type="checkbox" id="option-15" name="question_1249" value="16">
+                <span>Fille de 7 ans</span>
+            </label>
+        
+            <label for="option-16" class="checkbox" style="width: 208.133px;">
+                <input type="checkbox" id="option-16" name="question_1249" value="17">
+                <span>Garçon de 8 ans</span>
+            </label>
+        
+            <label for="option-17" class="checkbox" style="width: 208.133px;">
+                <input type="checkbox" id="option-17" name="question_1249" value="18">
+                <span>Fille de 8 ans</span>
+            </label>
+        
+            <label for="option-18" class="checkbox" style="width: 208.133px;">
+                <input type="checkbox" id="option-18" name="question_1249" value="19">
+                <span>Garçon de 9 ans</span>
+            </label>
+        
+            <label for="option-19" class="checkbox" style="width: 208.133px;">
+                <input type="checkbox" id="option-19" name="question_1249" value="20">
+                <span>Fille de 9 ans</span>
+            </label>
+        
+            <label for="option-20" class="checkbox" style="width: 208.133px;">
+                <input type="checkbox" id="option-20" name="question_1249" value="21">
+                <span>Garçon de 10 ans</span>
+            </label>
+        
+            <label for="option-21" class="checkbox" style="width: 208.133px;">
+                <input type="checkbox" id="option-21" name="question_1249" value="22">
+                <span>Fille de 10 ans</span>
+            </label>
+        
+            <label for="option-22" class="checkbox" style="width: 208.133px;">
+                <input type="checkbox" id="option-22" name="question_1249" value="23">
+                <span>Garçon de 11 ans</span>
+            </label>
+        
+            <label for="option-23" class="checkbox" style="width: 208.133px;">
+                <input type="checkbox" id="option-23" name="question_1249" value="24">
+                <span>Fille de 11 ans</span>
+            </label>
+        
+            <label for="option-24" class="checkbox" style="width: 208.133px;">
+                <input type="checkbox" id="option-24" name="question_1249" value="25">
+                <span>Garçon de 12 ans</span>
+            </label>
+        
+            <label for="option-25" class="checkbox" style="width: 208.133px;">
+                <input type="checkbox" id="option-25" name="question_1249" value="26">
+                <span>Fille de 12 ans</span>
+            </label>
+        
+            <label for="option-26" class="checkbox" style="width: 208.133px;">
+                <input type="checkbox" id="option-26" name="question_1249" value="27">
+                <span>Adolescent de 13 ans</span>
+            </label>
+        
+            <label for="option-27" class="checkbox" style="width: 208.133px;">
+                <input type="checkbox" id="option-27" name="question_1249" value="28">
+                <span>Adolescente de 13 ans</span>
+            </label>
+        
+            <label for="option-28" class="checkbox" style="width: 208.133px;">
+                <input type="checkbox" id="option-28" name="question_1249" value="29">
+                <span>Adolescent de 14 ans</span>
+            </label>
+        
+            <label for="option-29" class="checkbox" style="width: 208.133px;">
+                <input type="checkbox" id="option-29" name="question_1249" value="30">
+                <span>Adolescente de 14 ans</span>
+            </label>
+        
+            <label for="option-30" class="checkbox" style="width: 208.133px;">
+                <input type="checkbox" id="option-30" name="question_1249" value="31">
+                <span>Adolescent de 15 ans</span>
+            </label>
+        
+            <label for="option-31" class="checkbox" style="width: 208.133px;">
+                <input type="checkbox" id="option-31" name="question_1249" value="32">
+                <span>Adolescente de 15 ans</span>
+            </label>
+        
+            <label for="option-32" class="checkbox" style="width: 208.133px;">
+                <input type="checkbox" id="option-32" name="question_1249" value="33">
+                <span>Adolescent de 16 ans</span>
+            </label>
+        
+            <label for="option-33" class="checkbox" style="width: 208.133px;">
+                <input type="checkbox" id="option-33" name="question_1249" value="34">
+                <span>Adolescente de 16 ans</span>
+            </label>
+        
+            <label for="option-34" class="checkbox" style="width: 208.133px;">
+                <input type="checkbox" id="option-34" name="question_1249" value="35">
+                <span>Adolescent de 17 ans</span>
+            </label>
+        
+            <label for="option-35" class="checkbox" style="width: 208.133px;">
+                <input type="checkbox" id="option-35" name="question_1249" value="36">
+                <span>Adolescente de 17 ans</span>
+            </label>
+        
+            <label for="option-36" class="checkbox" style="width: 208.133px;">
+                <input type="checkbox" id="option-36" name="question_1249" value="-3105" class="exclusive">
+                <span>Aucune de ces réponses</span>
+            </label>
+         
+    </div>
+
+        </div>
+    </div>
+
+            <div class="button-container" style="margin-bottom: 3rem;">
+                <span class="keypress-for-enter"><!-- Press Enter --></span>
+                <input type="submit" name="ctl00$Content$btnContinue" value="Continue →" id="ctl00_Content_btnContinue" class="submit-btn disabled" disabled="" style="color: rgb(255, 255, 255);">
+
+                
+                <input type="hidden" name="ctl00$Content$hfInScreenerUpdate" id="ctl00_Content_hfInScreenerUpdate">
+                <input type="hidden" name="ctl00$Content$hfRS_LK_ResponseStatusID" id="ctl00_Content_hfRS_LK_ResponseStatusID">
+                <input type="hidden" name="ctl00$Content$hfRS_ClientLK_ResponseStatusID" id="ctl00_Content_hfRS_ClientLK_ResponseStatusID">
+            </div>
+        </div>
+    </div>
+
+    <!-- Do not remove this: it includes underscore templates to render the questions -->
+    <script type="text/template" class="template" id="screener-template">
+    <div id="templates">
+        <div class="question">
+            ## item.QuestionText ##
+            <div class="subtext">## item.SubText ##</div>
+        </div>
+        <div class="answer">
+            ## _.template( $("#" + item.TemplateName.toLowerCase() + "-template").html(), {'model': item}) ##
+        </div>
+    </div>
+</script>
+
+<script type="text/template" class="template" id="single-template">
+    <div class="options js-resize-choices js-question-options">
+        {% _.each(model.QuestionOptions, function(child, i) { %}
+                <label for="option-##i##" class="radio{% if (child.ParentItem != null) { %} collection" data-parent="## child.ParentItem ##{% } %}">
+                    <input type="radio" id="option-##i##" name="question_##model.QuestionId##" value="##child.Precode##"/>
+                    <span>##child.Display##</span>
+                </label>
+        {% }); %} 
+    </div>    
+</script>
+
+<script type="text/template" class="template" id="multi-template">
+    <div class="options js-resize-choices js-question-options">
+        {% _.each(model.QuestionOptions, function(child, i) { %}
+            <label for="option-##i##" class="checkbox">
+                <input type="checkbox" id="option-##i##" name="question_##model.QuestionId##" value="##child.Precode##" {% if (child.IsMutuallyExclusive) { %} class="exclusive" {% } %}/>
+                <span>##child.Display##</span>
+            </label>
+        {% }); %} 
+    </div>
+</script>
+
+<script type="text/template" class="template" id="text-template">
+    <div class="options js-question-options">
+        <input type="text" name="question_##model.QuestionId##" />
+    </div>
+</script>
+
+<script type="text/template" class="template" id="numeric-template">
+    <div class="options js-question-options">
+        <input type="number" name="question_##model.QuestionId##" />
+    </div>
+</script>
+
+<script type="text/template" class="template" id="date-template">
+    <div class="options js-question-options">
+        <input type="date" name="question_##model.QuestionId##" class="datepicker"/>
+    </div>
+</script>
+
+<script type="text/template" class="template" id="grid-template">
+    {% var templateName = ($('body').width() <= 768) ? 'mobile' : 'desktop'; %}
+        
+    ## _.template($("#grid-" + templateName + "-template").html(), {'model': model}) ##
+</script>
+
+<script type="text/template" class="template" id="grid-mobile-template">
+    
+    {% if (model.SubQuestions) { %}
+        <input type="hidden" name="This needs to change" value="-1"/>
+        <ul class="grid-answers">
+        {% _.each(model.SubQuestions, function(subquestion, sId) { %}
+            <li class="subquestion">
+                <div class="label">##subquestion.Display##</div>
+                <div class="options js-resize-choices js-question-options">
+                    {% _.each(model.QuestionOptions, function(child, oId) { %}
+                            <label for="option-##sId##-##oId##" class="radio">
+                                <input type="radio" id="option-##sId##-##oId##" name="##subquestion.Code##" value="##child.Precode##"/>
+                                <span>##child.Display##</span>
+                            </label>
+                    {% }); %} 
+                </div>  
+            </li>
+        {% }); %}  
+        </ul>
+    {% } %}        
+</script>
+
+<script type="text/template" class="template" id="grid-desktop-template">
+    {% $('body').addClass('grid'); %}
+    {% var columnWidth = 75 / model.QuestionOptions.length; %}
+
+    {% if (model.SubQuestions) { %}
+        <input type="hidden" name="This needs to change" value="-1"/>
+        <table class="grid-question">
+            <thead>
+                <tr>
+                    <th></th>
+                    {% _.each(model.QuestionOptions, function(child, oId) { %}
+                        <th>
+                            <span>##child.Display##</span>
+                        </th>
+                    {% }); %}
+                </tr>
+            </thead>
+            <tbody>
+                {% _.each(model.SubQuestions, function(subquestion, sId) { %}
+                    <tr class="js-question-options">
+                        <td class="row-label"><span class="label">##subquestion.Display##</span></td>
+                        {% _.each(model.QuestionOptions, function(child, oId) { %}
+                            <td width="##columnWidth##%">
+                                <label for="option-##sId##-##oId##"><input type="radio" id="option-##sId##-##oId##" name="##subquestion.Code##" value="##child.Precode##"/></label>
+                            </td>
+                        {% }); %}
+                    </tr>
+                {% }); %}
+            </tbody>
+        </table>
+    {% } %}  
+</script>
+
+        <div class="footer">
+            <div class="footer-content">
+                <img id="ctl00_footerImage">
+                <span id="ctl00_footerText" class="footer-text">Copyright © 2026. All rights reserved. <a href="https://samplicio.us/s/privacy-policy" target="_blank">Privacy Policy</a> <a href="https://samplicio.us/s/general-terms" target="_blank">General Terms</a> </span>
+                <br>
+                
+            </div>
+        </div>
+
+    </form>
+</div>
+
+<script type="text/javascript" src="includes/js/vendor.min.js?v=2017-09-08"></script>
+<script type="text/javascript" src="includes/js/screener.min.js?v=2023-04-26"></script>
+
+
+</body>
