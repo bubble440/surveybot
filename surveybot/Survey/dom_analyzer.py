@@ -23,6 +23,7 @@ from Survey.dom_registry import clear_registry, register_target, make_target_id
 from Survey.frame_utils import iter_frame_chains, switch_to_frame_chain
 from selenium.webdriver.common.by import By
 import Survey.dom_registry as dom_registry
+from Survey.sliderpoints_extractor import extract_sliderpoints_question_blocks
 
 # =========================
 # Helpers texte
@@ -479,23 +480,149 @@ def _wait_for_survey_dom(driver, timeout_s: float = 1.2, step_s: float = 0.2) ->
     """
     t0 = time.time()
     while (time.time() - t0) < timeout_s:
+        ok = False
+
+        # 1) Chemin rapide JS (souvent le plus fiable)
         try:
-            ok = driver.execute_script("""
-                return !!(
-                    document.querySelector('#survey')
-                    || document.querySelector('div.question')
-                    || document.querySelector('.answers.answers-list')
-                );
-            """)
-            if ok:
+            ok = bool(
+                driver.execute_script(
+                    """
+                    const root =
+                      document.querySelector('#survey')
+                      || document.querySelector('div.question')
+                      || document.querySelector('.answers.answers-list')
+                      || document.body;
+                    if (!root) return false;
+
+                    // On attend un "signal answerable" (inputs OU sliderpoints),
+                    // pas juste un conteneur vide rendu trop tôt.
+                    const answerable = root.querySelector(
+                      "input[type='radio'], input[type='checkbox'], select, textarea, " +
+                      "input[type='text'], input[type='number'], input[type='email'], input[type='tel'], input[type='search'], " +
+                      ".sq-sliderpoints, .sq-sliderpoints-container, .sliderpoints_legend, " +
+                      ".answers.answers-list input, .answers.answers-list select, .answers.answers-list textarea"
+                    );
+                    return !!answerable;
+                    """
+                )
+            )
+        except Exception:
+            ok = False
+
+        if ok:
+            return True
+
+        # 2) Fallback Selenium (utile si execute_script est instable dans un contexte)
+        try:
+            if driver.find_elements(
+                By.CSS_SELECTOR,
+                "#survey input, #survey select, #survey textarea, "
+                "div.question input, div.question select, div.question textarea, "
+                ".sq-sliderpoints, .sq-sliderpoints-container, .sliderpoints_legend, "
+                ".answers.answers-list input, .answers.answers-list select, .answers.answers-list textarea"
+            ):
                 return True
         except Exception:
             pass
+
         time.sleep(step_s)
+
     return False
 
 def _score_dom_context(driver) -> Dict[str, Any]:
     """Score cheap d'un contexte DOM (default ou iframe)."""
+
+    def _safe_is_displayed(el) -> bool:
+        try:
+            return bool(el.is_displayed())
+        except Exception:
+            return False
+
+    def _fallback_score() -> Dict[str, Any]:
+        # Texte
+        try:
+            body_text = (driver.find_element(By.TAG_NAME, "body").text or "")
+        except Exception:
+            body_text = ""
+        t = (body_text or "").strip()
+
+        # Inputs/actionnables
+        try:
+            nodes = driver.find_elements(
+                By.CSS_SELECTOR,
+                "input, textarea, select, button, a[role='button'], [role='button']",
+            )
+        except Exception:
+            nodes = []
+
+        inputs_count = len(nodes)
+        visible_count = sum(1 for el in nodes if _safe_is_displayed(el))
+
+        # Signaux question (inclut FocusVision: inputs ans* souvent masqués)
+        try:
+            q_nodes = driver.find_elements(
+                By.CSS_SELECTOR,
+                "input[name^='question_'], textarea[name^='question_'], select[name^='question_'], "
+                ".js-question-options input, .js-question-options select, .js-question-options textarea, "
+                "div.question input[type='radio'], div.question input[type='checkbox'], "
+                ".answers.answers-list input[type='radio'], .answers.answers-list input[type='checkbox']",
+            )
+        except Exception:
+            q_nodes = []
+        q_count = len(q_nodes)
+
+        # Labels
+        try:
+            label_nodes = driver.find_elements(
+                By.CSS_SELECTOR,
+                ".js-question-options label, label.radio, label.checkbox, .answers.answers-list label[for]",
+            )
+        except Exception:
+            label_nodes = []
+        visible_label_count = sum(1 for el in label_nodes if _safe_is_displayed(el))
+
+        # Racines survey
+        try:
+            has_root = bool(
+                driver.find_elements(
+                    By.CSS_SELECTOR,
+                    ".js-question-options, #templates .question, .survey-content #templates, "
+                    "#survey, #survey.survey-container, div[id^='question_'], .sq-cardsort, "
+                    ".answers.answers-list, div.question",
+                )
+            )
+        except Exception:
+            has_root = False
+
+        has_words = bool(
+            re.search(
+                r"question|suivant|next|continue|prochaine|étape|sondage|enquête|profil|survey",
+                t.lower(),
+                re.I,
+            )
+        )
+
+        score = (
+            q_count * 5000
+            + visible_label_count * 2000
+            + visible_count * 1000
+            + min(len(t), 2000)
+            + (3000 if has_root else 0)
+            + (2000 if has_words else 0)
+        )
+
+        return {
+            "score": score,
+            "q_count": q_count,
+            "visible_label_count": visible_label_count,
+            "visible_count": visible_count,
+            "inputs_count": inputs_count,
+            "text_len": len(t),
+            "has_survey_root": has_root,
+            "has_survey_words": has_words,
+        }
+
+    # --- chemin principal JS ---
     try:
         res = driver.execute_script(
             """
@@ -519,34 +646,31 @@ def _score_dom_context(driver) -> Dict[str, Any]:
               } catch (e) {}
             }
 
-            // Signaux "survey question" (plus discriminants que juste inputsCount)
             const qNodes = document.querySelectorAll(
-            "input[name^='question_'], textarea[name^='question_'], select[name^='question_'], " +
-            ".js-question-options input, .js-question-options select, .js-question-options textarea"
+              "input[name^='question_'], textarea[name^='question_'], select[name^='question_'], " +
+              ".js-question-options input, .js-question-options select, .js-question-options textarea"
             );
             let qCount = qNodes ? qNodes.length : 0;
 
-            // FocusVision/Decipher-like: cardsort UI peut ne pas exposer de qNodes visibles.
-            // On force qCount=1 si un composant cardsort est présent, pour mieux scorer le bon frame.
             if (!qCount) {
-            const hasCardsort = !!document.querySelector(".sq-cardsort, [class*='sq-cardsort-']");
-            if (hasCardsort) qCount = 1;
+              const hasCardsort = !!document.querySelector(".sq-cardsort, [class*='sq-cardsort-']");
+              if (hasCardsort) qCount = 1;
             }
 
             const labelNodes = document.querySelectorAll(".js-question-options label, label.radio, label.checkbox");
             let visibleLabelCount = 0;
             for (const el of (labelNodes || [])) {
-            try {
+              try {
                 const r = el.getBoundingClientRect();
                 const st = window.getComputedStyle(el);
                 const visible = r.width > 2 && r.height > 2 && st.display !== 'none' && st.visibility !== 'hidden';
                 if (visible) visibleLabelCount++;
-            } catch (e) {}
+              } catch (e) {}
             }
 
             const hasSurveyRoot = !!document.querySelector(
-            ".js-question-options, #templates .question, .survey-content #templates, " +
-            "#survey.survey-container, div[id^=\"question_\"], .sq-cardsort"
+              ".js-question-options, #templates .question, .survey-content #templates, " +
+              "#survey.survey-container, div[id^=\"question_\"], .sq-cardsort"
             );
 
             const low = t.toLowerCase();
@@ -566,7 +690,22 @@ def _score_dom_context(driver) -> Dict[str, Any]:
     has_root = bool(res.get("hasSurveyRoot") or False)
     has_words = bool(res.get("hasSurveyWords") or False)
 
-    # Score: signaux question >> visible inputs >> texte. Bonus vocabulaire + root.
+    # Si le chemin JS ne remonte rien d'utile (ou a silencieusement échoué),
+    # on bascule sur un score Selenium.
+    if (
+        (not res)
+        or (
+            text_len == 0
+            and inputs_count == 0
+            and visible_count == 0
+            and q_count == 0
+            and visible_label_count == 0
+            and (not has_root)
+            and (not has_words)
+        )
+    ):
+        return _fallback_score()
+
     score = (
         q_count * 5000
         + visible_label_count * 2000
@@ -630,7 +769,7 @@ def _xpath_literal(s: str) -> str:
     parts = s.split("'")
     return "concat(" + ", \"'\", ".join(f"'{p}'" for p in parts) + ")"
 
-def _extract_focusvision_answers_list_groups(driver) -> list[dict]:
+def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | None) -> list[dict]:
     blocks: list[dict] = []
 
     # question container FocusVision
@@ -641,10 +780,12 @@ def _extract_focusvision_answers_list_groups(driver) -> list[dict]:
         except Exception:
             continue
 
-        # inputs sont souvent masqués (fir-hidden) => on passe via wrapper clickableCell
+        # inputs souvent masqués (fir-hidden). Variante FocusVision:
+        # - clickableCell peut être sur .element OU sur un ancêtre/descendant.
+        # => on élargit un peu, mais toujours sous .answers.answers-list (scope strict).
         inputs = answers.find_elements(
             By.CSS_SELECTOR,
-            "div.element.clickableCell input[type='radio'], div.element.clickableCell input[type='checkbox']"
+            "input[type='radio'], input[type='checkbox']"
         )
         if len(inputs) < 2:
             continue
@@ -702,12 +843,16 @@ def _extract_focusvision_answers_list_groups(driver) -> list[dict]:
 
                 options.append(label_txt)
 
-                # IMPORTANT: on clique le wrapper clickableCell (pas l'input masqué)
+                # IMPORTANT: on clique un wrapper cliquable (pas l'input masqué).
+                # Fallback: si clickableCell absent, on remonte sur .element.
                 xp = (
                     f"//input[@id={_xpath_literal(inp_id)}]"
-                    f"/ancestor::*[contains(concat(' ',normalize-space(@class),' '),' clickableCell ')][1]"
+                    f"/ancestor::*["
+                    f"contains(concat(' ',normalize-space(@class),' '),' clickableCell ')"
+                    f" or contains(concat(' ',normalize-space(@class),' '),' element ')"
+                    f"][1]"
                 )
-                option_xpath_map[label_txt] = xp
+                option_xpath_map[_norm_lc(label_txt)] = xp
 
             if len(options) < 2:
                 continue
@@ -717,6 +862,7 @@ def _extract_focusvision_answers_list_groups(driver) -> list[dict]:
 
             dom_registry.register_target(target_id, {
                 "kind": "group",
+                "frame_chain": list(frame_chain or []),
                 "itype": itype,
                 "group_key": group_key,
                 "question": question,
@@ -1028,7 +1174,13 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                     near_lc = _norm_lc(near)
                     opt_lc = {_norm_lc(o) for o in (options or []) if o}
                     # filtre anti "Question 1 de 3" / textes d’aide génériques
-                    is_meta = bool(re.match(r"^question\s*\d+", near_lc)) or ("veuillez" in near_lc and "sélection" in near_lc)
+                    # IMPORTANT: ne pas rejeter une vraie question longue qui contient juste
+                    # "Veuillez sélectionner une réponse." (cas Walr, etc.)
+                    is_meta = bool(re.match(r"^question\s*\d+", near_lc))
+                    if not is_meta:
+                        # Ne considérer "veuillez sélectionner..." comme meta QUE si c'est court (= bannière/erreur)
+                        if (len(near_lc) < 140) and ("veuillez" in near_lc) and (("sélection" in near_lc) or ("selection" in near_lc)):
+                            is_meta = True
                     if (near_lc not in opt_lc) and (not is_meta):
                         question = near
 
@@ -1287,7 +1439,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
 
             # évite de prendre les bannières d’erreur comme "question"
             qlc = _norm_lc(question)
-            if qlc and ("un problème est survenu" in qlc or ("veuillez" in qlc and "sélection" in qlc)):
+            if qlc and ("un problème est survenu" in qlc or ((len(qlc) < 140) and ("veuillez" in qlc) and (("sélection" in qlc) or ("selection" in qlc)))):
                 # on tente un near-text sur un autre bouton (souvent plus bas = plus proche du vrai libellé)
                 for cand in btns[1:3]:
                     near2 = _norm(_find_question_text_near_element(driver, cand))
@@ -1485,20 +1637,32 @@ def analyze_dom(driver) -> List[Dict[str, Any]]:
     Frame-aware: choisit automatiquement le meilleur contexte (default ou iframe) jusqu'à depth=DOM_FRAME_MAX_DEPTH (défaut=2).
     """
     dom_registry.clear_registry()
+
     _wait_for_survey_dom(driver)
     max_depth = int(os.getenv("DOM_FRAME_MAX_DEPTH", "2") or "2")
     best_chain, _meta = _select_best_frame_chain(driver, max_depth=max_depth)
 
     # Scan dans le contexte choisi; retour à default_content garanti.
+    blocks: List[Dict[str, Any]] = []
+    chain: List[Any] = []
     with switch_to_frame_chain(driver, best_chain) as ok:
         chain = best_chain if ok else []
+
+        # --- FocusVision/Decipher sliderpoints (matrix dropdowns) ---
+        sp_blocks = extract_sliderpoints_question_blocks(driver)
+        if sp_blocks:
+            return sp_blocks
+
         blocks = _analyze_dom_current_context(driver, frame_chain=chain)
-        blocks.extend(_extract_focusvision_answers_list_groups(driver))
+        blocks.extend(_extract_focusvision_answers_list_groups(driver, frame_chain=chain))
 
     # Fallback strict: si on a scanné un iframe et qu'on n'a rien, tente default_content une seule fois.
     if not blocks and chain:
         with switch_to_frame_chain(driver, []) as ok:
             if ok:
+                sp_blocks = extract_sliderpoints_question_blocks(driver)
+                if sp_blocks:
+                    return sp_blocks
                 blocks = _analyze_dom_current_context(driver)
                 blocks.extend(_extract_focusvision_answers_list_groups(driver))
 

@@ -1,0 +1,314 @@
+<body class="survey-page non-touch" data-device="">
+
+
+<div id="survey" class="survey-container">
+<div class="survey-section"><div class="page-header"></div>
+<!-- /.page-header --></div>
+<div class="survey-section">
+<div class="survey-body">
+<div class="survey-header">
+
+
+</div>
+<!-- /.survey-header -->
+
+<form id="primary" name="primary" method="post" action="/survey/selfserve/3507/251209" enctype="application/x-www-form-urlencoded">
+<input type="hidden" name="_v2_counter" value="44">
+<!-- @@XYZZY@@ -->
+<div class="survey-error">
+<h1 class="survey-error-text">Un problème est survenu avec certaines données saisies dans le cadre de l'enquête. Les questions contenant des erreurs sont indiquées ci-dessous&nbsp;; veuillez suivre les instructions associées à chacune d'elles.</h1>
+</div>
+<!-- /.survey-error --><div id="question_Q23_r1" class="question select label_Q23_r1 sq-sliderpoints hasError sq-sliderpoints-desktop hasRows">
+<h1 title="question" class="question-text" id="question_text_Q23_r1">Pensez aux <b>Aliments pour chats</b> chez <b>Coccimarket</b>. Dans quelle mesure êtes-vous d'accord ou pas avec chacune des affirmations suivantes ?</h1>
+<!-- /.question-text -->
+<div class="question-error">
+<h2 class="question-error-text">Veuillez faire glisser le curseur pour indiquer votre réponse.</h2>
+</div>
+<!-- /.question-error -->
+<h2 title="instructions" class="instruction-text">Veuillez sélectionner une réponse sur chaque curseur</h2>
+<!-- /.instruction-text -->
+<div class="answers survey-q-answers"><div class="sq-sliderpoints-container">
+      <div class="sq-sliderpoints-row-legend">
+         Je serais prêt à acheter des <b>Aliments pour chats</b> de la marque de distributeur de <b>Coccimarket</b>
+    </div>
+      <div class="sq-sliderpoints-element groupingCols OneColumnEl hasError">
+          
+    <div id="sliderpoints_ans362624.0.8" class="Off Scale ui-slider ui-slider-horizontal ui-widget ui-widget-content ui-corner-all"><div class="ui-slider-range ui-widget-header ui-slider-range-min" style="width: 0%;"></div><a class="ui-slider-handle ui-state-default ui-corner-all" href="#" style="left: -40px;"><i class="fa-icon-arrow-right"></i></a></div>
+    <div class="sliderpoints_circleLegend Off Scale"><span class="fa-icon-circle" style="left: -15.0376%;"></span><span class="fa-icon-circle" style="left: 9.96241%;"></span><span class="fa-icon-circle" style="left: 34.9624%;"></span><span class="fa-icon-circle" style="left: 59.9624%;"></span><span class="fa-icon-circle" style="left: 84.9624%;"></span></div>
+    <div class="sliderpoints_legend Off Scale" style="height: 70px;"><span class="sliderpoints-legenditem" style="left: -15.0376%;">PAS DU TOUT D'ACCORD</span><span class="sliderpoints-legenditem" style="left: 9.96241%;">PLUTÔT PAS D'ACCORD</span><span class="sliderpoints-legenditem" style="left: 34.9624%;">NI D'ACCORD, NI PAS D'ACCORD</span><span class="sliderpoints-legenditem" style="left: 59.9624%;">PLUTÔT D'ACCORD</span><span class="sliderpoints-legenditem" style="left: 84.9624%;">TOUT A FAIT D'ACCORD</span></div>
+
+    <div class="sliderpoints_ooLegend Off Scale">
+      <label for="sliderpointsOO_ans362624.0.8">
+        <input type="checkbox" id="sliderpointsOO_ans362624.0.8" class="sliderpoints_OO">
+      </label>
+    </div>
+<select name="ans362624.0.8" id="ans362624.0.8" class="input dropdown" aria-invalid="true">
+<option value="-1" selected="">Sélectionnez une seule proposition...</option>
+<option value="0" class="None">PAS DU TOUT D'ACCORD</option>
+<option value="1" class="None">PLUTÔT PAS D'ACCORD</option>
+<option value="2" class="None">NI D'ACCORD, NI PAS D'ACCORD</option>
+<option value="3" class="None">PLUTÔT D'ACCORD</option>
+<option value="4" class="None">TOUT A FAIT D'ACCORD</option>
+</select>
+    </div>
+    </div><div class="sq-sliderpoints-container">
+      <div class="sq-sliderpoints-row-legend">
+        Il m'arrive souvent d'acheter de plus grandes quantités de <b>Aliments pour chats</b> chez <b>Coccimarket</b> que prévu, par exemple en raison des offres promotionnelles
+    </div>
+      <div class="sq-sliderpoints-element groupingCols OneColumnEl hasError">
+          
+    <div id="sliderpoints_ans362624.0.4" class="Off Scale ui-slider ui-slider-horizontal ui-widget ui-widget-content ui-corner-all"><div class="ui-slider-range ui-widget-header ui-slider-range-min" style="width: 0%;"></div><a class="ui-slider-handle ui-state-default ui-corner-all" href="#" style="left: -40px;"><i class="fa-icon-arrow-right"></i></a></div>
+    <div class="sliderpoints_circleLegend Off Scale"><span class="fa-icon-circle" style="left: -15.0376%;"></span><span class="fa-icon-circle" style="left: 9.96241%;"></span><span class="fa-icon-circle" style="left: 34.9624%;"></span><span class="fa-icon-circle" style="left: 59.9624%;"></span><span class="fa-icon-circle" style="left: 84.9624%;"></span></div>
+    <div class="sliderpoints_legend Off Scale" style="height: 70px;"><span class="sliderpoints-legenditem" style="left: -15.0376%;">PAS DU TOUT D'ACCORD</span><span class="sliderpoints-legenditem" style="left: 9.96241%;">PLUTÔT PAS D'ACCORD</span><span class="sliderpoints-legenditem" style="left: 34.9624%;">NI D'ACCORD, NI PAS D'ACCORD</span><span class="sliderpoints-legenditem" style="left: 59.9624%;">PLUTÔT D'ACCORD</span><span class="sliderpoints-legenditem" style="left: 84.9624%;">TOUT A FAIT D'ACCORD</span></div>
+
+    <div class="sliderpoints_ooLegend Off Scale">
+      <label for="sliderpointsOO_ans362624.0.4">
+        <input type="checkbox" id="sliderpointsOO_ans362624.0.4" class="sliderpoints_OO">
+      </label>
+    </div>
+<select name="ans362624.0.4" id="ans362624.0.4" class="input dropdown" aria-invalid="true">
+<option value="-1" selected="">Sélectionnez une seule proposition...</option>
+<option value="0" class="None">PAS DU TOUT D'ACCORD</option>
+<option value="1" class="None">PLUTÔT PAS D'ACCORD</option>
+<option value="2" class="None">NI D'ACCORD, NI PAS D'ACCORD</option>
+<option value="3" class="None">PLUTÔT D'ACCORD</option>
+<option value="4" class="None">TOUT A FAIT D'ACCORD</option>
+</select>
+    </div>
+    </div><div class="sq-sliderpoints-container">
+      <div class="sq-sliderpoints-row-legend">
+        Acheter des <b>Aliments pour chats</b> est l'une des principales raisons pour lesquelles je vais faire les courses
+    </div>
+      <div class="sq-sliderpoints-element groupingCols OneColumnEl hasError">
+          
+    <div id="sliderpoints_ans362624.0.0" class="Off Scale ui-slider ui-slider-horizontal ui-widget ui-widget-content ui-corner-all"><div class="ui-slider-range ui-widget-header ui-slider-range-min" style="width: 0%;"></div><a class="ui-slider-handle ui-state-default ui-corner-all" href="#" style="left: -40px;"><i class="fa-icon-arrow-right"></i></a></div>
+    <div class="sliderpoints_circleLegend Off Scale"><span class="fa-icon-circle" style="left: -15.0376%;"></span><span class="fa-icon-circle" style="left: 9.96241%;"></span><span class="fa-icon-circle" style="left: 34.9624%;"></span><span class="fa-icon-circle" style="left: 59.9624%;"></span><span class="fa-icon-circle" style="left: 84.9624%;"></span></div>
+    <div class="sliderpoints_legend Off Scale" style="height: 70px;"><span class="sliderpoints-legenditem" style="left: -15.0376%;">PAS DU TOUT D'ACCORD</span><span class="sliderpoints-legenditem" style="left: 9.96241%;">PLUTÔT PAS D'ACCORD</span><span class="sliderpoints-legenditem" style="left: 34.9624%;">NI D'ACCORD, NI PAS D'ACCORD</span><span class="sliderpoints-legenditem" style="left: 59.9624%;">PLUTÔT D'ACCORD</span><span class="sliderpoints-legenditem" style="left: 84.9624%;">TOUT A FAIT D'ACCORD</span></div>
+
+    <div class="sliderpoints_ooLegend Off Scale">
+      <label for="sliderpointsOO_ans362624.0.0">
+        <input type="checkbox" id="sliderpointsOO_ans362624.0.0" class="sliderpoints_OO">
+      </label>
+    </div>
+<select name="ans362624.0.0" id="ans362624.0.0" class="input dropdown" aria-invalid="true">
+<option value="-1" selected="">Sélectionnez une seule proposition...</option>
+<option value="0" class="None">PAS DU TOUT D'ACCORD</option>
+<option value="1" class="None">PLUTÔT PAS D'ACCORD</option>
+<option value="2" class="None">NI D'ACCORD, NI PAS D'ACCORD</option>
+<option value="3" class="None">PLUTÔT D'ACCORD</option>
+<option value="4" class="None">TOUT A FAIT D'ACCORD</option>
+</select>
+    </div>
+    </div><div class="sq-sliderpoints-container">
+      <div class="sq-sliderpoints-row-legend">
+        Les promotions sur les <b>Aliments pour chats</b> m'incitent à faire mes courses chez <b>Coccimarket</b>
+    </div>
+      <div class="sq-sliderpoints-element groupingCols OneColumnEl hasError">
+          
+    <div id="sliderpoints_ans362624.0.2" class="Off Scale ui-slider ui-slider-horizontal ui-widget ui-widget-content ui-corner-all"><div class="ui-slider-range ui-widget-header ui-slider-range-min" style="width: 0%;"></div><a class="ui-slider-handle ui-state-default ui-corner-all" href="#" style="left: -40px;"><i class="fa-icon-arrow-right"></i></a></div>
+    <div class="sliderpoints_circleLegend Off Scale"><span class="fa-icon-circle" style="left: -15.0376%;"></span><span class="fa-icon-circle" style="left: 9.96241%;"></span><span class="fa-icon-circle" style="left: 34.9624%;"></span><span class="fa-icon-circle" style="left: 59.9624%;"></span><span class="fa-icon-circle" style="left: 84.9624%;"></span></div>
+    <div class="sliderpoints_legend Off Scale" style="height: 70px;"><span class="sliderpoints-legenditem" style="left: -15.0376%;">PAS DU TOUT D'ACCORD</span><span class="sliderpoints-legenditem" style="left: 9.96241%;">PLUTÔT PAS D'ACCORD</span><span class="sliderpoints-legenditem" style="left: 34.9624%;">NI D'ACCORD, NI PAS D'ACCORD</span><span class="sliderpoints-legenditem" style="left: 59.9624%;">PLUTÔT D'ACCORD</span><span class="sliderpoints-legenditem" style="left: 84.9624%;">TOUT A FAIT D'ACCORD</span></div>
+
+    <div class="sliderpoints_ooLegend Off Scale">
+      <label for="sliderpointsOO_ans362624.0.2">
+        <input type="checkbox" id="sliderpointsOO_ans362624.0.2" class="sliderpoints_OO">
+      </label>
+    </div>
+<select name="ans362624.0.2" id="ans362624.0.2" class="input dropdown" aria-invalid="true">
+<option value="-1" selected="">Sélectionnez une seule proposition...</option>
+<option value="0" class="None">PAS DU TOUT D'ACCORD</option>
+<option value="1" class="None">PLUTÔT PAS D'ACCORD</option>
+<option value="2" class="None">NI D'ACCORD, NI PAS D'ACCORD</option>
+<option value="3" class="None">PLUTÔT D'ACCORD</option>
+<option value="4" class="None">TOUT A FAIT D'ACCORD</option>
+</select>
+    </div>
+    </div><div class="sq-sliderpoints-container">
+      <div class="sq-sliderpoints-row-legend">
+        Je fais très attention à ne pas me retrouver à court de <b>Aliments pour chats</b> à la maison
+    </div>
+      <div class="sq-sliderpoints-element groupingCols OneColumnEl hasError">
+          
+    <div id="sliderpoints_ans362624.0.1" class="Off Scale ui-slider ui-slider-horizontal ui-widget ui-widget-content ui-corner-all"><div class="ui-slider-range ui-widget-header ui-slider-range-min" style="width: 0%;"></div><a class="ui-slider-handle ui-state-default ui-corner-all" href="#" style="left: -40px;"><i class="fa-icon-arrow-right"></i></a></div>
+    <div class="sliderpoints_circleLegend Off Scale"><span class="fa-icon-circle" style="left: -15.0376%;"></span><span class="fa-icon-circle" style="left: 9.96241%;"></span><span class="fa-icon-circle" style="left: 34.9624%;"></span><span class="fa-icon-circle" style="left: 59.9624%;"></span><span class="fa-icon-circle" style="left: 84.9624%;"></span></div>
+    <div class="sliderpoints_legend Off Scale" style="height: 70px;"><span class="sliderpoints-legenditem" style="left: -15.0376%;">PAS DU TOUT D'ACCORD</span><span class="sliderpoints-legenditem" style="left: 9.96241%;">PLUTÔT PAS D'ACCORD</span><span class="sliderpoints-legenditem" style="left: 34.9624%;">NI D'ACCORD, NI PAS D'ACCORD</span><span class="sliderpoints-legenditem" style="left: 59.9624%;">PLUTÔT D'ACCORD</span><span class="sliderpoints-legenditem" style="left: 84.9624%;">TOUT A FAIT D'ACCORD</span></div>
+
+    <div class="sliderpoints_ooLegend Off Scale">
+      <label for="sliderpointsOO_ans362624.0.1">
+        <input type="checkbox" id="sliderpointsOO_ans362624.0.1" class="sliderpoints_OO">
+      </label>
+    </div>
+<select name="ans362624.0.1" id="ans362624.0.1" class="input dropdown" aria-invalid="true">
+<option value="-1" selected="">Sélectionnez une seule proposition...</option>
+<option value="0" class="None">PAS DU TOUT D'ACCORD</option>
+<option value="1" class="None">PLUTÔT PAS D'ACCORD</option>
+<option value="2" class="None">NI D'ACCORD, NI PAS D'ACCORD</option>
+<option value="3" class="None">PLUTÔT D'ACCORD</option>
+<option value="4" class="None">TOUT A FAIT D'ACCORD</option>
+</select>
+    </div>
+    </div><div class="sq-sliderpoints-container">
+      <div class="sq-sliderpoints-row-legend">
+        Les <b>Aliments pour chats</b> font partie des produits dont je vérifie les prix pour savoir si <b>Coccimarket</b> est le moins cher
+    </div>
+      <div class="sq-sliderpoints-element groupingCols OneColumnEl hasError">
+          
+    <div id="sliderpoints_ans362624.0.9" class="Off Scale ui-slider ui-slider-horizontal ui-widget ui-widget-content ui-corner-all"><div class="ui-slider-range ui-widget-header ui-slider-range-min" style="width: 0%;"></div><a class="ui-slider-handle ui-state-default ui-corner-all" href="#" style="left: -40px;"><i class="fa-icon-arrow-right"></i></a></div>
+    <div class="sliderpoints_circleLegend Off Scale"><span class="fa-icon-circle" style="left: -15.0376%;"></span><span class="fa-icon-circle" style="left: 9.96241%;"></span><span class="fa-icon-circle" style="left: 34.9624%;"></span><span class="fa-icon-circle" style="left: 59.9624%;"></span><span class="fa-icon-circle" style="left: 84.9624%;"></span></div>
+    <div class="sliderpoints_legend Off Scale" style="height: 70px;"><span class="sliderpoints-legenditem" style="left: -15.0376%;">PAS DU TOUT D'ACCORD</span><span class="sliderpoints-legenditem" style="left: 9.96241%;">PLUTÔT PAS D'ACCORD</span><span class="sliderpoints-legenditem" style="left: 34.9624%;">NI D'ACCORD, NI PAS D'ACCORD</span><span class="sliderpoints-legenditem" style="left: 59.9624%;">PLUTÔT D'ACCORD</span><span class="sliderpoints-legenditem" style="left: 84.9624%;">TOUT A FAIT D'ACCORD</span></div>
+
+    <div class="sliderpoints_ooLegend Off Scale">
+      <label for="sliderpointsOO_ans362624.0.9">
+        <input type="checkbox" id="sliderpointsOO_ans362624.0.9" class="sliderpoints_OO">
+      </label>
+    </div>
+<select name="ans362624.0.9" id="ans362624.0.9" class="input dropdown" aria-invalid="true">
+<option value="-1" selected="">Sélectionnez une seule proposition...</option>
+<option value="0" class="None">PAS DU TOUT D'ACCORD</option>
+<option value="1" class="None">PLUTÔT PAS D'ACCORD</option>
+<option value="2" class="None">NI D'ACCORD, NI PAS D'ACCORD</option>
+<option value="3" class="None">PLUTÔT D'ACCORD</option>
+<option value="4" class="None">TOUT A FAIT D'ACCORD</option>
+</select>
+    </div>
+    </div><div class="sq-sliderpoints-container">
+      <div class="sq-sliderpoints-row-legend">
+        Je suis prêt à payer un peu plus cher certains types de <b>Aliments pour chats</b> chez <b>Coccimarket</b> pour avoir une meilleure qualité ou quelque chose de différent
+    </div>
+      <div class="sq-sliderpoints-element groupingCols OneColumnEl hasError">
+          
+    <div id="sliderpoints_ans362624.0.5" class="Off Scale ui-slider ui-slider-horizontal ui-widget ui-widget-content ui-corner-all"><div class="ui-slider-range ui-widget-header ui-slider-range-min" style="width: 0%;"></div><a class="ui-slider-handle ui-state-default ui-corner-all" href="#" style="left: -40px;"><i class="fa-icon-arrow-right"></i></a></div>
+    <div class="sliderpoints_circleLegend Off Scale"><span class="fa-icon-circle" style="left: -15.0376%;"></span><span class="fa-icon-circle" style="left: 9.96241%;"></span><span class="fa-icon-circle" style="left: 34.9624%;"></span><span class="fa-icon-circle" style="left: 59.9624%;"></span><span class="fa-icon-circle" style="left: 84.9624%;"></span></div>
+    <div class="sliderpoints_legend Off Scale" style="height: 70px;"><span class="sliderpoints-legenditem" style="left: -15.0376%;">PAS DU TOUT D'ACCORD</span><span class="sliderpoints-legenditem" style="left: 9.96241%;">PLUTÔT PAS D'ACCORD</span><span class="sliderpoints-legenditem" style="left: 34.9624%;">NI D'ACCORD, NI PAS D'ACCORD</span><span class="sliderpoints-legenditem" style="left: 59.9624%;">PLUTÔT D'ACCORD</span><span class="sliderpoints-legenditem" style="left: 84.9624%;">TOUT A FAIT D'ACCORD</span></div>
+
+    <div class="sliderpoints_ooLegend Off Scale">
+      <label for="sliderpointsOO_ans362624.0.5">
+        <input type="checkbox" id="sliderpointsOO_ans362624.0.5" class="sliderpoints_OO">
+      </label>
+    </div>
+<select name="ans362624.0.5" id="ans362624.0.5" class="input dropdown" aria-invalid="true">
+<option value="-1" selected="">Sélectionnez une seule proposition...</option>
+<option value="0" class="None">PAS DU TOUT D'ACCORD</option>
+<option value="1" class="None">PLUTÔT PAS D'ACCORD</option>
+<option value="2" class="None">NI D'ACCORD, NI PAS D'ACCORD</option>
+<option value="3" class="None">PLUTÔT D'ACCORD</option>
+<option value="4" class="None">TOUT A FAIT D'ACCORD</option>
+</select>
+    </div>
+    </div><div class="sq-sliderpoints-container">
+      <div class="sq-sliderpoints-row-legend">
+        Il m'arrive d'acheter des <b>Aliments pour chats</b> juste parce que j'en ai envie sur le moment
+    </div>
+      <div class="sq-sliderpoints-element groupingCols OneColumnEl hasError">
+          
+    <div id="sliderpoints_ans362624.0.7" class="Off Scale ui-slider ui-slider-horizontal ui-widget ui-widget-content ui-corner-all"><div class="ui-slider-range ui-widget-header ui-slider-range-min" style="width: 0%;"></div><a class="ui-slider-handle ui-state-default ui-corner-all" href="#" style="left: -40px;"><i class="fa-icon-arrow-right"></i></a></div>
+    <div class="sliderpoints_circleLegend Off Scale"><span class="fa-icon-circle" style="left: -15.0376%;"></span><span class="fa-icon-circle" style="left: 9.96241%;"></span><span class="fa-icon-circle" style="left: 34.9624%;"></span><span class="fa-icon-circle" style="left: 59.9624%;"></span><span class="fa-icon-circle" style="left: 84.9624%;"></span></div>
+    <div class="sliderpoints_legend Off Scale" style="height: 70px;"><span class="sliderpoints-legenditem" style="left: -15.0376%;">PAS DU TOUT D'ACCORD</span><span class="sliderpoints-legenditem" style="left: 9.96241%;">PLUTÔT PAS D'ACCORD</span><span class="sliderpoints-legenditem" style="left: 34.9624%;">NI D'ACCORD, NI PAS D'ACCORD</span><span class="sliderpoints-legenditem" style="left: 59.9624%;">PLUTÔT D'ACCORD</span><span class="sliderpoints-legenditem" style="left: 84.9624%;">TOUT A FAIT D'ACCORD</span></div>
+
+    <div class="sliderpoints_ooLegend Off Scale">
+      <label for="sliderpointsOO_ans362624.0.7">
+        <input type="checkbox" id="sliderpointsOO_ans362624.0.7" class="sliderpoints_OO">
+      </label>
+    </div>
+<select name="ans362624.0.7" id="ans362624.0.7" class="input dropdown" aria-invalid="true">
+<option value="-1" selected="">Sélectionnez une seule proposition...</option>
+<option value="0" class="None">PAS DU TOUT D'ACCORD</option>
+<option value="1" class="None">PLUTÔT PAS D'ACCORD</option>
+<option value="2" class="None">NI D'ACCORD, NI PAS D'ACCORD</option>
+<option value="3" class="None">PLUTÔT D'ACCORD</option>
+<option value="4" class="None">TOUT A FAIT D'ACCORD</option>
+</select>
+    </div>
+    </div><div class="sq-sliderpoints-container">
+      <div class="sq-sliderpoints-row-legend">
+        L’une des raisons pour lesquelles je choisis d’aller chez <b>Coccimarket</b>, c’est parce qu’ils sont très bien pour les <b>Aliments pour chats</b>
+    </div>
+      <div class="sq-sliderpoints-element groupingCols OneColumnEl hasError">
+          
+    <div id="sliderpoints_ans362624.0.3" class="Off Scale ui-slider ui-slider-horizontal ui-widget ui-widget-content ui-corner-all"><div class="ui-slider-range ui-widget-header ui-slider-range-min" style="width: 0%;"></div><a class="ui-slider-handle ui-state-default ui-corner-all" href="#" style="left: -40px;"><i class="fa-icon-arrow-right"></i></a></div>
+    <div class="sliderpoints_circleLegend Off Scale"><span class="fa-icon-circle" style="left: -15.0376%;"></span><span class="fa-icon-circle" style="left: 9.96241%;"></span><span class="fa-icon-circle" style="left: 34.9624%;"></span><span class="fa-icon-circle" style="left: 59.9624%;"></span><span class="fa-icon-circle" style="left: 84.9624%;"></span></div>
+    <div class="sliderpoints_legend Off Scale" style="height: 70px;"><span class="sliderpoints-legenditem" style="left: -15.0376%;">PAS DU TOUT D'ACCORD</span><span class="sliderpoints-legenditem" style="left: 9.96241%;">PLUTÔT PAS D'ACCORD</span><span class="sliderpoints-legenditem" style="left: 34.9624%;">NI D'ACCORD, NI PAS D'ACCORD</span><span class="sliderpoints-legenditem" style="left: 59.9624%;">PLUTÔT D'ACCORD</span><span class="sliderpoints-legenditem" style="left: 84.9624%;">TOUT A FAIT D'ACCORD</span></div>
+
+    <div class="sliderpoints_ooLegend Off Scale">
+      <label for="sliderpointsOO_ans362624.0.3">
+        <input type="checkbox" id="sliderpointsOO_ans362624.0.3" class="sliderpoints_OO">
+      </label>
+    </div>
+<select name="ans362624.0.3" id="ans362624.0.3" class="input dropdown" aria-invalid="true">
+<option value="-1" selected="">Sélectionnez une seule proposition...</option>
+<option value="0" class="None">PAS DU TOUT D'ACCORD</option>
+<option value="1" class="None">PLUTÔT PAS D'ACCORD</option>
+<option value="2" class="None">NI D'ACCORD, NI PAS D'ACCORD</option>
+<option value="3" class="None">PLUTÔT D'ACCORD</option>
+<option value="4" class="None">TOUT A FAIT D'ACCORD</option>
+</select>
+    </div>
+    </div><div class="sq-sliderpoints-container">
+      <div class="sq-sliderpoints-row-legend">
+        Il m'arrive parfois d'acheter un article en plus dans le rayon <b>Aliments pour chats</b> pour essayer quelque chose de nouveau ou de différent
+    </div>
+      <div class="sq-sliderpoints-element groupingCols OneColumnEl hasError">
+          
+    <div id="sliderpoints_ans362624.0.6" class="Off Scale ui-slider ui-slider-horizontal ui-widget ui-widget-content ui-corner-all"><div class="ui-slider-range ui-widget-header ui-slider-range-min" style="width: 0%;"></div><a class="ui-slider-handle ui-state-default ui-corner-all" href="#" style="left: -40px;"><i class="fa-icon-arrow-right"></i></a></div>
+    <div class="sliderpoints_circleLegend Off Scale"><span class="fa-icon-circle" style="left: -15.0376%;"></span><span class="fa-icon-circle" style="left: 9.96241%;"></span><span class="fa-icon-circle" style="left: 34.9624%;"></span><span class="fa-icon-circle" style="left: 59.9624%;"></span><span class="fa-icon-circle" style="left: 84.9624%;"></span></div>
+    <div class="sliderpoints_legend Off Scale" style="height: 70px;"><span class="sliderpoints-legenditem" style="left: -15.0376%;">PAS DU TOUT D'ACCORD</span><span class="sliderpoints-legenditem" style="left: 9.96241%;">PLUTÔT PAS D'ACCORD</span><span class="sliderpoints-legenditem" style="left: 34.9624%;">NI D'ACCORD, NI PAS D'ACCORD</span><span class="sliderpoints-legenditem" style="left: 59.9624%;">PLUTÔT D'ACCORD</span><span class="sliderpoints-legenditem" style="left: 84.9624%;">TOUT A FAIT D'ACCORD</span></div>
+
+    <div class="sliderpoints_ooLegend Off Scale">
+      <label for="sliderpointsOO_ans362624.0.6">
+        <input type="checkbox" id="sliderpointsOO_ans362624.0.6" class="sliderpoints_OO">
+      </label>
+    </div>
+<select name="ans362624.0.6" id="ans362624.0.6" class="input dropdown" aria-invalid="true">
+<option value="-1" selected="">Sélectionnez une seule proposition...</option>
+<option value="0" class="None">PAS DU TOUT D'ACCORD</option>
+<option value="1" class="None">PLUTÔT PAS D'ACCORD</option>
+<option value="2" class="None">NI D'ACCORD, NI PAS D'ACCORD</option>
+<option value="3" class="None">PLUTÔT D'ACCORD</option>
+<option value="4" class="None">TOUT A FAIT D'ACCORD</option>
+</select>
+    </div>
+    </div></div>
+</div>
+<!-- /.question --><style type="text/css">
+.sq-sliderpoints.hasRows .sq-sliderpoints-container {
+    border-bottom: 1px solid lightblue;
+    margin-bottom: 25px;
+    padding-bottom: 5px;
+    padding-top: 5px;
+}
+.sq-sliderpoints .sq-sliderpoints-container {margin-top: 10px;}
+   </style>
+<script>
+jQuery(document).ready(
+  function() {
+    /* survey.xml line 13490 */
+    var jsexport = {"comment": "Veuillez s\u00e9lectionner une r\u00e9ponse sur chaque curseur", "uid": 362624, "totalColCount": 2, "sliderpoints:offScaleText": "\u003ci class=\"fa-icon-arrow-right\"\u003e\u003c/i\u003e", "cols": [{"index": 0, "uid": 362641, "open": 0, "exclusive": 0, "text": "", "label": "", "openOptional": 0, "amount": 0, "optional": 0}], "sliderpoints:offScaleAdjustment_smartphone": "-36px", "rows": [{"index": 8, "rightLegend": "", "uid": 362639, "open": 0, "exclusive": 0, "text": " Je serais pr\u00eat \u00e0 acheter des \u003cb\u003eAliments pour chats\u003c/b\u003e de la marque de distributeur de \u003cb\u003eCoccimarket\u003c/b\u003e", "label": "r27", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 4, "rightLegend": "", "uid": 362635, "open": 0, "exclusive": 0, "text": "Il m'arrive souvent d'acheter de plus grandes quantit\u00e9s de \u003cb\u003eAliments pour chats\u003c/b\u003e chez \u003cb\u003eCoccimarket\u003c/b\u003e que pr\u00e9vu, par exemple en raison des offres promotionnelles", "label": "r4", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 0, "rightLegend": "", "uid": 362631, "open": 0, "exclusive": 0, "text": "Acheter des \u003cb\u003eAliments pour chats\u003c/b\u003e est l'une des principales raisons pour lesquelles je vais faire les courses", "label": "r1", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 2, "rightLegend": "", "uid": 362633, "open": 0, "exclusive": 0, "text": "Les promotions sur les \u003cb\u003eAliments pour chats\u003c/b\u003e m'incitent \u00e0 faire mes courses chez \u003cb\u003eCoccimarket\u003c/b\u003e", "label": "r3", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 1, "rightLegend": "", "uid": 362632, "open": 0, "exclusive": 0, "text": "Je fais tr\u00e8s attention \u00e0 ne pas me retrouver \u00e0 court de \u003cb\u003eAliments pour chats\u003c/b\u003e \u00e0 la maison", "label": "r2", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 9, "rightLegend": "", "uid": 362640, "open": 0, "exclusive": 0, "text": "Les \u003cb\u003eAliments pour chats\u003c/b\u003e font partie des produits dont je v\u00e9rifie les prix pour savoir si \u003cb\u003eCoccimarket\u003c/b\u003e est le moins cher", "label": "r15", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 5, "rightLegend": "", "uid": 362636, "open": 0, "exclusive": 0, "text": "Je suis pr\u00eat \u00e0 payer un peu plus cher certains types de \u003cb\u003eAliments pour chats\u003c/b\u003e chez \u003cb\u003eCoccimarket\u003c/b\u003e pour avoir une meilleure qualit\u00e9 ou quelque chose de diff\u00e9rent", "label": "r6", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 7, "rightLegend": "", "uid": 362638, "open": 0, "exclusive": 0, "text": "Il m'arrive d'acheter des \u003cb\u003eAliments pour chats\u003c/b\u003e juste parce que j'en ai envie sur le moment", "label": "r14", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 3, "rightLegend": "", "uid": 362634, "open": 0, "exclusive": 0, "text": "L\u2019une des raisons pour lesquelles je choisis d\u2019aller chez \u003cb\u003eCoccimarket\u003c/b\u003e, c\u2019est parce qu\u2019ils sont tr\u00e8s bien pour les \u003cb\u003eAliments pour chats\u003c/b\u003e", "label": "r12", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 6, "rightLegend": "", "uid": 362637, "open": 0, "exclusive": 0, "text": "Il m'arrive parfois d'acheter un article en plus dans le rayon \u003cb\u003eAliments pour chats\u003c/b\u003e pour essayer quelque chose de nouveau ou de diff\u00e9rent", "label": "r13", "openOptional": 0, "amount": 0, "optional": 0}], "sliderpoints:offScaleText_smartphone": "\u003ci class=\"fa-icon-arrow-up\"\u003e\u003c/i\u003e", "title": "Pensez aux \u003cb\u003eAliments pour chats\u003c/b\u003e chez \u003cb\u003eCoccimarket\u003c/b\u003e. Dans quelle mesure \u00eates-vous d'accord ou pas avec chacune des affirmations suivantes ?", "ss:questionClassNames": "sq-sliderpoints", "label": "Q23_r1", "sliderpoints:OO": false, "noanswers": [], "haveLeftLegend": true, "minRanks": -1, "type": "select", "sliderpoints:showRange": true, "errors": [["Veuillez faire glisser le curseur pour indiquer votre r\u00e9ponse.", "cell", 0, 2], ["Veuillez faire glisser le curseur pour indiquer votre r\u00e9ponse.", "cell", 0, 4], ["Veuillez faire glisser le curseur pour indiquer votre r\u00e9ponse.", "cell", 0, 3], ["Veuillez faire glisser le curseur pour indiquer votre r\u00e9ponse.", "cell", 0, 8], ["Veuillez faire glisser le curseur pour indiquer votre r\u00e9ponse.", "cell", 0, 1], ["Veuillez faire glisser le curseur pour indiquer votre r\u00e9ponse.", "cell", 0, 6], ["Veuillez faire glisser le curseur pour indiquer votre r\u00e9ponse.", "cell", 0, 9], ["Veuillez faire glisser le curseur pour indiquer votre r\u00e9ponse.", "cell", 0, 7], ["Veuillez faire glisser le curseur pour indiquer votre r\u00e9ponse.", "cell", 0, 0], ["Veuillez faire glisser le curseur pour indiquer votre r\u00e9ponse.", "cell", 0, 5]], "verifiers": {}, "device": {"category": "", "smartphone": false, "tablet": false, "otherMobile": false, "mobileDevice": false, "desktop": true, "width": "0", "iphone": false, "featurephone": false, "android": false, "height": "0", "blackberry": false}, "sliderpoints:offScaleAdjustment": "-40px", "haveRightLegend": false, "choices": [{"index": 0, "uid": 362626, "open": 0, "exclusive": 0, "text": "PAS DU TOUT D'ACCORD", "label": "c1", "openOptional": 0, "sliderpoints:OO": false, "amount": 0, "optional": 0}, {"index": 1, "uid": 362627, "open": 0, "exclusive": 0, "text": "PLUT\u00d4T PAS D'ACCORD", "label": "c2", "openOptional": 0, "sliderpoints:OO": false, "amount": 0, "optional": 0}, {"index": 2, "uid": 362628, "open": 0, "exclusive": 0, "text": "NI D'ACCORD, NI PAS D'ACCORD", "label": "c3", "openOptional": 0, "sliderpoints:OO": false, "amount": 0, "optional": 0}, {"index": 3, "uid": 362629, "open": 0, "exclusive": 0, "text": "PLUT\u00d4T D'ACCORD", "label": "c4", "openOptional": 0, "sliderpoints:OO": false, "amount": 0, "optional": 0}, {"index": 4, "uid": 362630, "open": 0, "exclusive": 0, "text": "TOUT A FAIT D'ACCORD", "label": "c5", "openOptional": 0, "sliderpoints:OO": false, "amount": 0, "optional": 0}], "sliderpoints:legendPosition": "Below Slider", "sliderpoints:sliderPosition": "Off Scale", "sliderpoints:sliderWidth": "75%", "grouping": "cols"};
+
+        Survey.question.sliderpoints.setup(jsexport);
+  }
+);
+</script>
+<div class="survey-buttons">
+<input type="submit" name="continue" id="btn_continue" class="button continue" value="Continuer »" onclick="var i = document.createElement('input'); i.setAttribute('type', 'hidden');i.setAttribute('value', '1');i.setAttribute('name', '__has_javascript');document.forms.primary.appendChild(i);">
+
+</div>
+<!-- #surveyButtons --><input type="hidden" name="state" value="9b88f6a0-2f30-4c04-9494-61567bffe9ff">
+<input type="hidden" name="start_time" value="1768859582">
+<input type="hidden" name="_ptime" value="0">
+<script>addHandler(Survey.capturePreciseTime)</script><script>
+$ (window).on("load", function() { setTimeout(function() { Survey.recordPageTiming("selfserve/3507/251209", "dubfagy2bu7rrybd", "7d1hphfmy48c0n7t");}, 100); });
+</script>
+</form>
+
+
+</div>
+<!-- /.survey-body -->
+</div>
+<div class="survey-section"><div class="footer"><a href="/s/accessibility.html" target="_blank">Déclaration d'accessibilité</a> - <a href="https://emea.focusvision.com/support?decLang=french&amp;state=9b88f6a0-2f30-4c04-9494-61567bffe9ff" target="_blank">Aide</a></div>
+<!-- /.footer --></div>
+</div>
+<div id="detectBreakpoint"></div>
+<!-- /.survey-container -->
+
+
+</body>

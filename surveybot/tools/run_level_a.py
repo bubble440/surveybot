@@ -66,7 +66,7 @@ def assert_case(case_dir: Path) -> None:
         if by_type.get(k) != v:
             die(f"[LEVEL_A] {spec['name']} summary.by_type[{k}] mismatch: {by_type.get(k)} != {v}")
 
-    # 2) Un seul "must_have_*" requis : radio OU checkbox OU text (prédictible)
+    # 2) Un seul "must_have_*" requis : radio OU checkbox OU text OU dropdown (prédictible)
     if "must_have_radio_group" in exp:
         gk = exp["must_have_radio_group"]["group_key"]
         min_opts = exp["must_have_radio_group"]["min_options"]
@@ -125,8 +125,35 @@ def assert_case(case_dir: Path) -> None:
             if q_contains not in q:
                 die(f"[LEVEL_A] {spec['name']} text.question mismatch: expected contains '{q_contains}' got '{q}'")
 
+    elif "must_have_dropdown_input" in exp:
+        exp_dd = exp["must_have_dropdown_input"]
+        min_opts = int(exp_dd.get("min_options", 1) or 1)
+        max_select = int(exp_dd.get("max_select", 1) or 1)
+        q_contains = (exp_dd.get("question_contains") or "").strip().lower()
+
+        dd = find_block(
+            blocks, "dropdown",
+            lambda b: True
+        )
+        # raffine : on cherche un dropdown dont la question contient q_contains
+        if q_contains:
+            dd = find_block(
+                blocks, "dropdown",
+                lambda b: q_contains in ((b.get("question") or "").strip().lower())
+            )
+
+        if not dd:
+            die(f"[LEVEL_A] {spec['name']} missing dropdown (question_contains='{q_contains}')")
+
+        if int(dd.get("max_select", 1) or 1) != max_select:
+            die(f"[LEVEL_A] {spec['name']} dropdown.max_select mismatch: {dd.get('max_select')} != {max_select}")
+
+        opts = dd.get("options") or []
+        if len(opts) < min_opts:
+            die(f"[LEVEL_A] {spec['name']} dropdown.options too small: {len(opts)} < {min_opts}")
+
     else:
-        die(f"[LEVEL_A] {spec['name']} missing must_have_radio_group or must_have_checkbox_group or must_have_text_input in case.json")
+        die(f"[LEVEL_A] {spec['name']} missing must_have_radio_group or must_have_checkbox_group or must_have_text_input or must_have_dropdown_input in case.json")
 
     # 3) Continue button (OPTIONNEL)
     if "must_have_continue_button" in exp:

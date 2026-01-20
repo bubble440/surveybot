@@ -187,12 +187,31 @@ def _is_navigation_label(label: str | None) -> bool:
     v = _norm_lc(label)
     if not v:
         return False
-    # CTA typiques (FR/EN) + variations flèches
+
+    # IMPORTANT:
+    # On ne doit PAS rejeter une vraie question juste parce qu'elle contient
+    # un mot comme "commencer"/"continuer" dans un texte long
+    # (ex: "Avant de commencer, ..." sur les pages de consentement Walr).
+    # On considère "navigation" uniquement si le texte ressemble à un CTA court.
+    if len(v) > 40:
+        return False
+
     nav_tokens = [
         "continue", "continuer", "next", "suivant", "valider", "submit", "terminer",
         "envoyer", "send", "ok", "start", "commencer"
     ]
-    return any(tok in v for tok in nav_tokens)
+
+    # Match strict (ou quasi-strict avec un petit suffixe de flèche/punct.)
+    for tok in nav_tokens:
+        if v == tok:
+            return True
+
+        if v.startswith(tok) and len(v) <= (len(tok) + 5):
+            tail = v[len(tok):].strip()
+            if tail in ("", ">", ">>", "»", "»>", ":", "-", "—", "→", "➡"):
+                return True
+
+    return False
 
 def filter_blocks_for_openai(question_blocks: list) -> list:
     """
@@ -205,6 +224,13 @@ def filter_blocks_for_openai(question_blocks: list) -> list:
         label = getattr(qb, "label", None) or qb.get("label") or getattr(qb, "question", None) or qb.get("question")
 
         it_lc = _norm_lc(it)
+
+        # Normalisation: certains extracteurs renvoient "select"
+        # On le traite comme "dropdown" (sinon DOM1 -> vidé -> fallback vision)
+        if it_lc == "select":
+            it_lc = "dropdown"
+            if isinstance(qb, dict):
+                qb["itype"] = "dropdown"
 
         # On n'envoie jamais les buttons à OpenAI (on les clique nous-mêmes)
         if it_lc == "button":
@@ -220,8 +246,7 @@ def filter_blocks_for_openai(question_blocks: list) -> list:
             continue
 
         # types acceptés
-        if it_lc in {"radio", "checkbox", "dropdown", "text", "matrix_rows_single_choice", "matrix"}:
+        if it_lc in {"radio", "checkbox", "dropdown", "text", "textarea", "matrix_rows_single_choice", "matrix"}:
             kept.append(qb)
 
-        print(kept)
     return kept
