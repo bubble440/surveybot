@@ -625,15 +625,37 @@ def _apply_by_target_id(driver, target_id: str, itype: str, value: str) -> bool:
                         return False
 
                 def _dispatch_check_events(inp):
+                    """Set checkbox/radio de façon idempotente.
+
+                    But: éviter le “coché puis décoché” quand plusieurs stratégies s'enchaînent
+                    (click label + events) et que la page a des handlers custom.
+
+                    - checkbox: checked=true + input/change (PAS de click synthétique)
+                    - radio: checked=true + input/change + click synthétique (souvent nécessaire)
+                    """
                     try:
+                        if not inp:
+                            return
+
+                        # Idempotence: si déjà sélectionné, ne rien faire
+                        try:
+                            if inp.is_selected():
+                                return
+                        except Exception:
+                            pass
+
                         driver.execute_script(
                             """
                             const inp = arguments[0];
                             if (!inp) return;
-                            inp.checked = true;
+                            const type = (inp.type || '').toLowerCase();
+                            try { inp.checked = true; } catch(e) {}
                             inp.dispatchEvent(new Event('input',  {bubbles:true}));
                             inp.dispatchEvent(new Event('change', {bubbles:true}));
-                            inp.dispatchEvent(new MouseEvent('click', {bubbles:true}));
+                            // Pour checkbox, click peut retoggler via handlers. Pour radio, click aide souvent.
+                            if (type === 'radio') {
+                              inp.dispatchEvent(new MouseEvent('click', {bubbles:true}));
+                            }
                             """,
                             inp,
                         )
@@ -759,7 +781,8 @@ def _apply_by_target_id(driver, target_id: str, itype: str, value: str) -> bool:
                         fid = (el.get_attribute("for") or "").strip()
                         if fid:
                             inp_for = driver.find_element(By.ID, fid)
-                            _dispatch_check_events(inp_for)
+                            if not _is_selected(inp_for):
+                                _dispatch_check_events(inp_for)
                 except Exception:
                     pass
 
@@ -785,7 +808,8 @@ def _apply_by_target_id(driver, target_id: str, itype: str, value: str) -> bool:
                         return True
 
                     # 5) dernier recours DOM-only: forcer checked + events (ce qui active souvent le bouton Continue)
-                    _dispatch_check_events(inp)
+                    if not _is_selected(inp):
+                        _dispatch_check_events(inp)
                     if _is_selected(inp):
                         return True
 
@@ -1987,6 +2011,27 @@ def execute_actions_plan(
     # cap sécurité (évite un flood si OpenAI hallucine)
     actions = (actions or [])[:25]
 
+    # Heuristique simple & prédictible:
+    # - Un dropdown de langue peut reloader la page et annuler les réponses précédentes (ex: checkbox consent).
+    # => si on détecte un "language selector", on l'applique AVANT le reste.
+    def _is_language_dropdown(act: dict) -> bool:
+        try:
+            it = (act.get("itype") or "").strip().lower()
+            if it != "dropdown":
+                return False
+            blob = " ".join([(act.get("context") or ""), (act.get("value") or "")]).lower()
+            if any(k in blob for k in ("langue", "language", "idioma", "sprache", "lingua")):
+                return True
+            # valeurs fréquentes (au cas où le contexte est vide)
+            if any(k in blob for k in ("français", "anglais", "english", "español", "spanish", "deutsch", "german", "italiano", "portugu", "nederlands", "dutch")):
+                return True
+            return False
+        except Exception:
+            return False
+
+    if any(_is_language_dropdown(a) for a in actions):
+        actions = [a for _, a in sorted(list(enumerate(actions)), key=lambda t: (0 if _is_language_dropdown(t[1]) else 1, t[0]))]
+
     for idx, act in enumerate(actions):
         try:
             value = (act.get("value") or "").strip()
@@ -2007,9 +2052,57 @@ def execute_actions_plan(
                 instruction = f"{qid} //// {value} //// {itype} //// {context}"
             else:
                 instruction = f"{value} //// {itype} //// {context}"
+            # Si dropdown: peut déclencher un refresh/reload sans changer d'URL.
+            # On attend la stabilisation avant de continuer, sinon on perd l'état (ex: checkbox décochée).
+            before_sig = None
+            try:
+                if (itype or "").strip().lower() == "dropdown":
+                    rs = ""
+                    try:
+                        rs = driver.execute_script("return document.readyState") or ""
+                    except Exception:
+                        rs = ""
+                    try:
+                        html_len = int(driver.execute_script("return document.documentElement.outerHTML.length") or 0)
+                    except Exception:
+                        html_len = 0
+                    before_sig = f"{driver.current_url}|{rs}|{html_len}"
+            except Exception:
+                before_sig = None
+
             ok = execute_action(driver, instruction)
             if ok:
                 success_any = True
+            # Wait DOM stable after dropdown (budget borné)
+            if ok and before_sig and (itype or "").strip().lower() == "dropdown":
+                try:
+                    import time
+                    t0 = time.time()
+                    last = None
+                    stable_hits = 0
+                    while time.time() - t0 < 10.0:
+                        try:
+                            rs = driver.execute_script("return document.readyState") or ""
+                        except Exception:
+                            rs = ""
+                        try:
+                            html_len = int(driver.execute_script("return document.documentElement.outerHTML.length") or 0)
+                        except Exception:
+                            html_len = 0
+                        sig = f"{driver.current_url}|{rs}|{html_len}"
+
+                        # on veut au minimum: readyState complete ET un DOM non trivial
+                        if rs == "complete" and html_len > 500:
+                            if sig == last:
+                                stable_hits += 1
+                            else:
+                                stable_hits = 0
+                                last = sig
+                            if stable_hits >= 1:
+                                break
+                        time.sleep(0.2)
+                except Exception:
+                    pass
 
             if stop_on_navigation:
                 try:

@@ -71,31 +71,103 @@ def _looks_like_system_field(el) -> bool:
     return False
 
 def _is_actionable_visible(el) -> bool:
-    """
-    Filtre 'cheap' anti-faux-positifs: affiché + dimensions non nulles.
+    """Retourne True si l'élément est réellement actionnable côté UI.
 
-    NEW: certains moteurs (Decipher/Confirmit) masquent l'input (radio/checkbox)
-    mais rendent cliquable un ancêtre visible (td.clickableCell / li.sq-cardrating-button).
-    Dans ce cas, on considère l'input comme actionable pour permettre l'extraction DOM.
+    Fix principal:
+    - Exclure les inputs utilitaires/masqués LimeSurvey (ls-js-hidden) qui polluent l'extraction
+      (ex: confirm-clearall), sinon OpenAI renvoie des actions impossibles à appliquer.
+
+    Compat:
+    - Inputs masqués mais cliquables via wrapper visible (Decipher/FocusVision: clickableCell / sq-cardrating-button).
+    - Inputs masqués mais label visible (custom UI).
     """
     try:
-        if el.is_displayed():
-            r = getattr(el, "rect", None) or {}
-            return (r.get("width", 0) or 0) > 2 and (r.get("height", 0) or 0) > 2
+        # 0) LimeSurvey: ignorer tout ce qui est dans un bloc masqué "ls-js-hidden"
+        try:
+            if el.find_elements(
+                By.XPATH,
+                "ancestor-or-self::*[contains(concat(' ',normalize-space(@class),' '),' ls-js-hidden ')][1]",
+            ):
+                return False
+        except Exception:
+            pass
 
-        # --- NEW: input masqué mais conteneur cliquable visible ---
-        tag = (el.tag_name or "").lower()
+        def _rect_ok(node) -> bool:
+            try:
+                r = getattr(node, "rect", None) or {}
+                return (r.get("width", 0) or 0) > 2 and (r.get("height", 0) or 0) > 2
+            except Exception:
+                return False
+
+        # 1) Visible + taille non nulle
+        try:
+            if el.is_displayed() and _rect_ok(el):
+                return True
+        except Exception:
+            pass
+
+        tag = ((getattr(el, "tag_name", "") or "").lower() or "")
         if tag == "input":
             t = (el.get_attribute("type") or "").strip().lower()
             if t in ("radio", "checkbox"):
+                # 2) Wrapper visible (Decipher/FocusVision)
                 try:
                     anc = el.find_element(
                         By.XPATH,
-                        "ancestor::*[contains(@class,'clickableCell') or contains(@class,'sq-cardrating-button')][1]"
+                        "ancestor::*[contains(@class,'clickableCell') or contains(@class,'sq-cardrating-button')][1]",
                     )
-                    if anc and anc.is_displayed():
-                        r = getattr(anc, "rect", None) or {}
-                        return (r.get("width", 0) or 0) > 2 and (r.get("height", 0) or 0) > 2
+                    if anc and anc.is_displayed() and _rect_ok(anc):
+                        return True
+                except Exception:
+                    pass
+
+                # 3) Wrapper visible (Cint/QPS): <div class="answer ..."> contient input masqué + label/span visible
+                try:
+                    anc = el.find_element(
+                        By.XPATH,
+                        "ancestor::*[contains(concat(' ',normalize-space(@class),' '),' answer ')][1]"
+                    )
+                    if anc and anc.is_displayed() and _rect_ok(anc):
+                        return True
+                except Exception:
+                    pass
+
+                # 4) Label visible (custom UI) — version robuste sans dépendre de el._parent
+                try:
+                    el_id = (el.get_attribute("id") or "").strip()
+                    if el_id:
+                        # a) label adjacent
+                        labs = el.find_elements(
+                            By.XPATH,
+                            f"following-sibling::label[@for='{el_id}'][1] | preceding-sibling::label[@for='{el_id}'][1]"
+                        )
+
+                        # b) label sous le parent immédiat
+                        if not labs:
+                            labs = el.find_elements(By.XPATH, f"ancestor::*[1]//label[@for='{el_id}'][1]")
+
+                        # c) fallback “document” via racine <html> (iframe-safe)
+                        if not labs:
+                            try:
+                                root = el.find_element(By.XPATH, "ancestor-or-self::html[1]")
+                                labs = root.find_elements(By.XPATH, f".//label[@for='{el_id}']")
+                            except Exception:
+                                labs = []
+
+                        for lab in (labs or [])[:5]:
+                            try:
+                                if lab.is_displayed() and _rect_ok(lab):
+                                    return True
+                            except Exception:
+                                continue
+                except Exception:
+                    pass
+
+                # 4) Label ancêtre visible (input inside <label> ...)
+                try:
+                    lab = el.find_element(By.XPATH, "ancestor::label[1]")
+                    if lab and lab.is_displayed() and _rect_ok(lab):
+                        return True
                 except Exception:
                     pass
 
@@ -407,13 +479,41 @@ def _extract_question_from_container(container, options: List[str]) -> str:
         tl = _norm(t)
         if len(tl) < 5:
             continue
+
         sc = 0
+        tlc = tl.lower()
+
         if _is_question_text(tl):
             sc += 3
+
+        # ✅ Bonus "consigne explicite" (souvent le vrai libellé dans les control questions)
+        directive_tokens = (
+            "veuillez", "merci de", "please",
+            "select", "choose",
+            "choisir", "choisissez",
+            "sélectionnez", "selectionnez",
+            "cochez", "cliquez",
+            "indiquez", "entrez", "saisissez",
+        )
+        if any(tok in tlc for tok in directive_tokens):
+            sc += 4
+
+        # léger malus pour les phrases d'intro (souvent au-dessus de la vraie consigne)
+        boilerplate_tokens = (
+            "la qualité de vos réponses",
+            "standards de qualité",
+            "votre avis est important",
+            "merci pour votre participation",
+            "nous vous remercions",
+        )
+        if any(tok in tlc for tok in boilerplate_tokens):
+            sc -= 2
+
         # bonus si ça ressemble à une vraie question et pas à un label court
         sc += min(len(tl), 120) // 20
         if "?" in tl:
             sc += 2
+
         if sc > best_sc:
             best_sc = sc
             best = tl
@@ -1149,6 +1249,14 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         try:
             itype = _detect_itype(el)
             if itype not in ("radio", "checkbox"):
+                continue
+            # Anti-bruit: ignorer inputs utilitaires/masqués et non actionnables
+            try:
+                if _looks_like_system_field(el):
+                    continue
+            except Exception:
+                pass
+            if not _is_actionable_visible(el):
                 continue
             k = _group_key_for_choice(el, itype)
             groups.setdefault(k, []).append(el)
