@@ -1,0 +1,21 @@
+Êtes-vous... ?
+
+Veuillez sélectionner une réponse.
+
+	
+
+Une femme
+
+	
+
+Un homme
+
+	
+
+Autre
+
+	
+
+Je ne souhaite pas répondre
+
+	

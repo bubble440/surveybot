@@ -4534,7 +4534,7 @@ def fill_text_input(driver, text: str, context_hint: str | None = None) -> bool:
     try:
         ctx_lc = (context_hint or "").lower()
         has_pscaptcha = bool(driver.find_elements(By.ID, "pscaptcha"))
-        if has_pscaptcha or ("captcha" in ctx_lc or "code" in ctx_lc):
+        if has_pscaptcha or ("captcha" in ctx_lc or "taper le code" in ctx_lc or "code ci-dessus" in ctx_lc or "recop" in ctx_lc):
             # 1) scope = ancêtre du bloc captcha ou de l'entête covered-if
             try:
                 scope = driver.find_element(By.XPATH, "//*[@id='pscaptcha']/ancestor::*[self::h5 or self::div or self::section][1]")
@@ -4660,27 +4660,66 @@ def fill_text_input(driver, text: str, context_hint: str | None = None) -> bool:
     if field is None:
         field = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, selector)))
 
-    # 🧩 Cas particulier "code postal" / ZIP → activer patch ciblé si possible
+    # 🧩 Cas particulier "code postal" / ZIP → valeur stable + patch Swagbucks si présent
     try:
         ctx_lc = (context_hint or "").lower()
-        is_zip_ctx = any(k in ctx_lc for k in ("postal", "zip", "code postal"))
+
+        # Indices aussi sur le champ lui-même (placeholder / id / name / aria)
+        ph_lc = " ".join([
+            (field.get_attribute("placeholder") or ""),
+            (field.get_attribute("aria-label") or ""),
+            (field.get_attribute("name") or ""),
+            (field.get_attribute("id") or ""),
+        ]).lower()
+
+        is_zip_ctx = (
+            any(k in ctx_lc for k in ("postal", "zip", "code postal"))
+            or any(k in ph_lc for k in ("postal", "zip", "zipcode", "codepostal"))
+        )
+
         is_swagbucks = False
         try:
             is_swagbucks = bool(driver.find_elements(By.ID, "profilerNumericInput"))
         except Exception:
             pass
 
-        # On normalise la valeur ici (digits-only si le champ est numérique)
-        raw_value = re.sub(r"\s+", " ", text).strip()
+        raw_value = re.sub(r"\s+", " ", (text or "")).strip()
         digits_only = re.sub(r"\D", "", raw_value)
 
-        if is_zip_ctx or is_swagbucks:
-            print(f"[ZIP] ctx='{context_hint}' swag={is_swagbucks} -> trying swagbucks patch" if (is_zip_ctx or is_swagbucks) else "[ZIP] no-zip-context")
+        # 1) Si c'est un champ CP/ZIP : éviter de saisir l'exemple (souvent "12345")
+        if is_zip_ctx:
+            placeholder_digits = re.sub(r"\D", "", field.get_attribute("placeholder") or "")
+
+            # Heuristique locale simple (FR vs non-FR)
+            fr_hint = ("code postal" in ctx_lc) or ("for fr" in ctx_lc) or ("france" in ctx_lc)
+            safe_zip = "75001" if fr_hint else "10001"
+
+            suspicious = (
+                digits_only in ("12345", "00000", "99999")
+                or (placeholder_digits and digits_only == placeholder_digits)
+            )
+            if suspicious:
+                digits_only = safe_zip
+
+            # Respecte maxlength si présent (PureSpectrum met maxlength="5")
+            try:
+                mx = int((field.get_attribute("maxlength") or "").strip() or 0)
+            except Exception:
+                mx = 0
+            if mx and len(digits_only) > mx:
+                digits_only = digits_only[:mx]
+
+            # Appliquer la valeur corrigée au flux standard (send_keys + fallbacks)
+            text = digits_only or raw_value
+
+        # 2) Patch Swagbucks UNIQUEMENT si on détecte Swagbucks
+        if is_swagbucks:
+            print(f"[ZIP] ctx='{context_hint}' swag=True -> trying swagbucks patch")
             if _swagbucks_zip_patch(driver, digits_only or raw_value):
                 return True
+
     except Exception:
         pass
-
 
     # Mise au centre + clic fiable
     try:

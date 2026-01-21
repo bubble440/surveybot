@@ -36,7 +36,13 @@ def _page_text_lc(driver) -> str:
             if (!root) return '';
             const clone = root.cloneNode(true);
 
-            // supprimer les zones footer-like (sinon faux positifs 'privacy policy' etc.)
+            // 0) IMPORTANT: virer les scripts/templates qui contiennent souvent des messages d’erreur (dont "captcha")
+            // Ex: <script type="text/ng-template" id="v-error-messages"> ... Captcha incorrect ...
+            clone.querySelectorAll('script, style, noscript, template').forEach(n => n.remove());
+            // Angular cache souvent via ng-hide / aria-hidden (texte non visible -> bruit)
+            clone.querySelectorAll('.ng-hide, [aria-hidden="true"]').forEach(n => n.remove());
+
+            // 1) supprimer les zones footer-like (sinon faux positifs 'privacy policy' etc.)
             clone.querySelectorAll('footer, [id*="footer"], [class*="footer"], [id*="Footer"], [class*="Footer"]').forEach(n => n.remove());
 
             return (clone.innerText || '').trim();
@@ -168,10 +174,37 @@ def is_consent_screen(driver) -> bool:
         except Exception:
             return False
 
-    if _has_explicit_consent_control():
+    # 1) Priorité: CMP overlay réellement bloquant
+    if _has_blocking_cmp_overlay():
         return True
 
-    if _has_blocking_cmp_overlay():
+    # 2) Détection "contrôle explicite" UNIQUEMENT si le contexte ressemble à du cookies/RGPD/CMP.
+    #    Sinon on évite les faux positifs sur des questions de survey du type "J'accepte la politique de confidentialité".
+    def _cmp_container_exists_anywhere() -> bool:
+        try:
+            return bool(driver.execute_script(
+                """
+                const sels = [
+                  '#onetrust-banner-sdk', '#onetrust-consent-sdk',
+                  '.qc-cmp2-container', '.qc-cmp2-ui', '.qc-cmp-cleanslate',
+                  '.didomi-popup-container', '#didomi-popup',
+                  '.truste_overlay', '.truste_box_overlay',
+                  '#CybotCookiebotDialog', '#CookiebotWidget',
+                  '.cc-window', '.cookie-banner', '.cookie-consent', '.cookie-notice'
+                ];
+                return !!document.querySelector(sels.join(','));
+                """
+            ))
+        except Exception:
+            return False
+
+    txt = _page_text_lc(driver)
+    looks_like_cookie_context = (
+        any(k in txt for k in ["cookie", "cookies", "gdpr", "rgpd", "consentement", "consent"])
+        or _cmp_container_exists_anywhere()
+    )
+
+    if looks_like_cookie_context and _has_explicit_consent_control():
         return True
 
     return False
@@ -279,7 +312,7 @@ def is_captcha_screen(driver) -> bool:
 
     # 1) Signal texte fort (visible seulement, via _page_text_lc)
     txt = _page_text_lc(driver)
-    strong_kw = [
+    robot_kw = [
         "je ne suis pas un robot",
         "i'm not a robot",
         "im not a robot",
@@ -287,11 +320,159 @@ def is_captcha_screen(driver) -> bool:
         "human verification",
         "vérifiez que vous êtes",
         "verification humaine",
-        "captcha",
-        "hcaptcha",
     ]
-    if any(k in txt for k in strong_kw):
+    if any(k in txt for k in robot_kw):
         return True
+
+    # "captcha" seul est trop bruité (templates / erreurs non visibles).
+    # On n’accepte "captcha/hcaptcha" que si un widget/contrôle captcha *visible* est présent,
+    # ou si la page n’a aucune réponse exploitable (rare mais possible sur des interstitiels).
+    if ("captcha" in txt) or ("hcaptcha" in txt):
+        try:
+            has_visible_captcha = bool(driver.execute_script("""
+                const isVisible = (e) => {
+                try{
+                    const cs = getComputedStyle(e);
+                    if (!cs) return false;
+                    if (cs.display === "none" || cs.visibility === "hidden" || cs.opacity === "0") return false;
+                    const r = e.getBoundingClientRect();
+                    if (!r) return false;
+                    if (r.bottom < 0 || r.right < 0) return false;
+                    return (r.width > 2 && r.height > 2);
+                }catch(_){ return false; }
+                };
+
+                // Widgets classiques + quelques cas text-only (input id/name contenant captcha)
+                const sels = [
+                "iframe[src*='recaptcha']",
+                "iframe[src*='captcha']",
+                "iframe[src*='hcaptcha']",
+                ".g-recaptcha",
+                ".h-captcha",
+                "#recaptcha",
+                "[data-sitekey]",
+                "#pscaptcha",
+                "input[id*='captcha' i]",
+                "input[name*='captcha' i]"
+                ];
+
+                const els = Array.from(document.querySelectorAll(sels.join(","))).filter(isVisible);
+                for (const e of els){
+                const r = e.getBoundingClientRect();
+                const tn = (e.tagName||"").toLowerCase();
+                // Seuils : iframe/widget doit être “grand”, input captcha peut être petit
+                if (tn === "iframe" || e.classList.contains("g-recaptcha") || e.classList.contains("h-captcha")) {
+                    if (r.width >= 60 && r.height >= 40) return true;
+                } else {
+                    if (r.width >= 10 && r.height >= 10) return true;
+                }
+                }
+                return false;
+            """))
+        except Exception:
+            has_visible_captcha = False
+
+        if has_visible_captcha:
+            return True
+
+        # Pas de widget visible => on ne classe pas captcha si on peut répondre à la page
+        if _has_visible_answerables(driver):
+            return False
+
+        # Sinon (page stérile + mot captcha) => on garde captcha
+        return True
+
+    # 1bis) CAPTCHA arithmétique via image (ex: "Veuillez saisir le résultat" + image)
+    # On le traite comme CAPTCHA car la donnée à saisir n'est pas dans le DOM texte.
+    # Critères explicites (anti faux-positifs) :
+    # - texte "saisir le résultat" (FR/EN)
+    # - image visible dans le bloc question
+    # - input numérique/texte visible dans le même bloc question
+    try:
+        if any(k in txt for k in [
+            "veuillez saisir le résultat",
+            "veuillez saisir le resultat",
+            "saisir le résultat",
+            "saisir le resultat",
+            "enter the result",
+            "type the result",
+            "please enter the result",
+        ]):
+            has_img_math = bool(driver.execute_script(r"""
+                const needles = ['saisir le résultat','saisir le resultat','enter the result','type the result','please enter the result'];
+                const root = document.querySelector('#survey') || document.body;
+                const t = (root && root.innerText ? root.innerText : '').toLowerCase();
+                if (!needles.some(n => t.includes(n))) return false;
+
+                const isVisible = (e) => {
+                  try {
+                    const cs = getComputedStyle(e);
+                    if (!cs) return false;
+                    if (cs.display === 'none' || cs.visibility === 'hidden' || cs.opacity === '0') return false;
+                    const r = e.getBoundingClientRect();
+                    if (!r) return false;
+                    if (r.width < 40 || r.height < 30) return false;
+                    if (r.bottom < 0 || r.right < 0) return false;
+                    return true;
+                  } catch (_) { return false; }
+                };
+
+                const imgSel = "h1.question-text img, .question-text img, img.survey_image, img.survey-image-original";
+                const imgs = Array.from(document.querySelectorAll(imgSel)).filter(isVisible);
+                if (!imgs.length) return false;
+
+                for (const img of imgs) {
+                  const q = img.closest('.question') || img.closest('[id^="question_"]') || img.closest('.survey-body') || img.parentElement;
+                  if (!q) continue;
+                  const inp = q.querySelector("input[type='number'], input[inputmode='numeric'], input[type='text'], input[type='tel']");
+                  if (!inp) continue;
+                  const r = inp.getBoundingClientRect();
+                  if (r && r.width > 10 && r.height > 10) return true;
+                }
+                return false;
+            """))
+            if has_img_math:
+                return True
+    except Exception:
+        pass
+
+    # 1ter) Slider puzzle (NIQ / GfK mrIWeb) : "faites glisser le curseur..."
+    # On le traite comme CAPTCHA car c'est une vérification humaine bloquante (pas une question).
+    try:
+        if any(k in txt for k in [
+            "faites glisser le curseur",
+            "veuillez faire glisser le curseur",
+            "glisser le curseur vers la droite",
+            "pour compléter la partie manquante de l’image",
+            "pour completer la partie manquante de l'image",
+        ]):
+            has_slider_puzzle = bool(driver.execute_script(r"""
+                const root = document.querySelector('#sliderpanel') || document.body;
+                if (!root) return false;
+
+                // Signaux DOM forts (anti faux-positifs)
+                const hasVerify = !!root.querySelector(
+                  "#sliderpanel, .verify-img-panel, .verify-gap, .verify-bar-area, .verify-move-block, .verify-sub-block"
+                );
+                if (!hasVerify) return false;
+
+                // Image de fond visible (le puzzle)
+                const sub = root.querySelector(".verify-sub-block");
+                if (sub){
+                  try{
+                    const cs = getComputedStyle(sub);
+                    const bg = (cs && cs.backgroundImage) ? cs.backgroundImage : "";
+                    if (bg && bg !== "none") return true;
+                  }catch(e){}
+                }
+
+                // Sinon, fallback: présence du panel + gap + barre
+                return !!root.querySelector(".verify-img-panel") && !!root.querySelector(".verify-gap") && !!root.querySelector(".verify-bar-area");
+            """))
+            if has_slider_puzzle:
+                return True
+    except Exception:
+        pass
 
     # 2) Widget visible (taille minimale) : iframe/containers captcha visibles
     # (reCAPTCHA invisible / tracking iframes sont souvent 0x0 ou 1x1)

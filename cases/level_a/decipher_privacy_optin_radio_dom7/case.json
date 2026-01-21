@@ -1,0 +1,22 @@
+{
+  "name": "decipher_privacy_optin_radio_dom7",
+  "snapshot_dir": "snapshot",
+  "assert": {
+    "summary": {
+      "total": 2,
+      "by_type": {
+        "radio": 1,
+        "button": 1
+      }
+    },
+    "must_have_radio_group": {
+      "group_key": "radio:name:ans18923.0.0",
+      "min_options": 2,
+      "max_select": 1
+    },
+    "must_have_continue_button": {
+      "id": "btn_continue",
+      "name": "continue"
+    }
+  }
+}

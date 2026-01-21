@@ -1,0 +1,22 @@
+[
+  {
+    "question": "Vous y compris, combien de personnes vivent dans votre foyer ?",
+    "itype": "dropdown",
+    "options": [
+      "1",
+      "2",
+      "3",
+      "4",
+      "5 ou plus"
+    ],
+    "max_select": 1,
+    "target_id": "single_f2c3eb126966",
+    "context": {
+      "kind": "single",
+      "tag": "select",
+      "name": "",
+      "id": "ss_113_",
+      "role": null
+    }
+  }
+]

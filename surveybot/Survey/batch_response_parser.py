@@ -62,6 +62,9 @@ def parse_batch_response(raw: str, constraints: Optional[Dict[str, int]] = None)
 
     kept_count: Dict[str, int] = {}
     kept_values: Dict[str, set] = {}
+    # ✅ Anti-doublons : OpenAI peut répéter la même action sur plusieurs QIDs.
+    # Pour les itypes "single-select", on n'exécute qu'une fois par target_id.
+    seen_single_targets: set[str] = set()
 
     for line in lines:
         parts = [p.strip() for p in re.split(r"/{4,}", line) if p.strip()]
@@ -121,6 +124,21 @@ def parse_batch_response(raw: str, constraints: Optional[Dict[str, int]] = None)
             v = (v or "").strip()
             if not v and not target_id:
                 continue
+            
+            # ✅ Dédup par target_id pour les single-select
+            if target_id:
+                if constraints is not None:
+                    # en batch strict, mx est fiable (max_select par QID)
+                    if mx <= 1 and itype in {"radio", "dropdown", "text", "textarea", "number", "button", "checkbox"}:
+                        if target_id in seen_single_targets:
+                            continue
+                        seen_single_targets.add(target_id)
+                else:
+                    # hors batch: on évite de casser les multi-checkbox (mx inconnu ici)
+                    if itype in {"radio", "dropdown", "text", "textarea", "number", "button"}:
+                        if target_id in seen_single_targets:
+                            continue
+                        seen_single_targets.add(target_id)
 
             if qid and constraints:
                 # mx déjà calculé au-dessus
