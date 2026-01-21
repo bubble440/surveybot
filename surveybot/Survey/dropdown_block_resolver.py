@@ -201,6 +201,27 @@ def try_resolve_dropdown_block(
             print("[DROPDOWN] Aucun dropdown pertinent pour ctx:", context_question)
         return False
 
+    # ---- 1️⃣5️⃣ Idempotence: si la valeur est déjà sélectionnée, NE RIEN FAIRE (évite reload)
+    try:
+        cur_txt = ""
+        tag = (best.trigger.tag_name or "").strip().lower()
+        if tag == "select":
+            try:
+                from selenium.webdriver.support.ui import Select
+                cur_txt = (Select(best.trigger).first_selected_option.text or "").strip()
+            except Exception:
+                cur_txt = (best.trigger.get_attribute("value") or "").strip()
+        else:
+            # dropdown custom: texte affiché dans le trigger
+            cur_txt = (best.trigger.text or "").strip()
+
+        if cur_txt and _jaccard(_norm(value), cur_txt) >= 0.9:
+            if debug:
+                print(f"[DROPDOWN] (skip) valeur déjà sélectionnée: '{cur_txt}'")
+            return True
+    except Exception:
+        pass
+
     # ---- 2️⃣ Ouvrir dropdown
     try:
         driver.execute_script("arguments[0].scrollIntoView({block:'center'});", best.trigger)

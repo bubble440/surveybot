@@ -1,0 +1,25 @@
+[
+  {
+    "question": "Passez directement à l'enquête Mise à jour rapide du profil Avant de commencer le sondage, veuillez s'il vous plaît répondre à quelques questions d'identification. Vous aurez terminé et commencerez l'enquête dans moins d'une minute.",
+    "itype": "checkbox",
+    "options": [
+      "Appareils / équipements électroniques",
+      "Divertissement (jeux, jouets, films, musique, livres, etc.)",
+      "Médicaments / produits santé et bien-être",
+      "Produits alimentaires",
+      "Produits de beauté",
+      "Produits ménagers / d’entretien",
+      "Vêtements et accessoires / chaussures",
+      "Voyages / séjours ou hébergement (billets d’avion ou de train, hôtels, etc.)",
+      "Autre",
+      "Je n’achète jamais rien en ligne",
+      "Je préfère ne pas répondre"
+    ],
+    "max_select": 3,
+    "target_id": "group_4a93ff7acd1f",
+    "context": {
+      "kind": "group",
+      "group_key": "checkbox:name:answer[]"
+    }
+  }
+]
