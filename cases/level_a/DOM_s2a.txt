@@ -1,0 +1,250 @@
+<body onload="return rsLoad();" style="cursor: auto;">
+    
+    <form method="post" action="./c?rs=_cBOihjydM1xMTqwtS7CVmYnCvea9TVzSkyvza7xnbc5jLUrC7d5Dj3Wcms7pNFaptFtTn4Pkuhy_rzeAkRU2u4d8mvOpRie-HtgG54HlgArMwuTHMvxYYHMog1jvs4NwF4ocFlaAJmoI39EdsStFquCLdtmpLISzbdIZMqNQU0dqHum5lHLM88xshiZ25kFgcx1ObTc_ptb0h0FQm_-7dZJQZD45_EOSFVnDKIK4Qs&amp;lang=fr" onsubmit="javascript:return WebForm_OnSubmit();" id="rsForm" style="">
+<div class="aspNetHidden">
+
+
+
+</div>
+
+<script type="text/javascript">
+//<![CDATA[
+var theForm = document.forms['rsForm'];
+if (!theForm) {
+    theForm = document.rsForm;
+}
+function __doPostBack(eventTarget, eventArgument) {
+    if (!theForm.onsubmit || (theForm.onsubmit() != false)) {
+        theForm.__EVENTTARGET.value = eventTarget;
+        theForm.__EVENTARGUMENT.value = eventArgument;
+        theForm.submit();
+    }
+}
+//]]>
+</script>
+
+
+<script src="https://ajax.aspnetcdn.com/ajax/4.6/1/WebForms.js" type="text/javascript"></script>
+<script type="text/javascript">
+//<![CDATA[
+window.WebForm_PostBackOptions||document.write('<script type="text/javascript" src="/WebResource.axd?d=pynGkmcFUV13He1Qd6_TZP8-N8NSGDh5ESLx52sCvORw6RV6oCFpD_ItAgThmY9VIBNUSg2&amp;t=638901526312636832"><\/script>');//]]>
+</script>
+
+
+<script>function pageReady(){}function validate(){return true;}</script>
+<script>
+function pageReady(){
+
+$('#Age_Check1').css("height","1px");
+ $('#Age_Check1').css("width","1px");
+ $('#Age_Check1').css("overflow","hidden");
+ $('#Age_Check1').css("display","flex");  
+}
+</script>
+
+<script>
+function initRankFunctionality(){}
+function clearRankFunctionality(){}
+</script>
+<script>function rsLoad(){pageDuration();}</script><script>
+function setFormStyle(){}
+</script>
+<script>
+function pageDuration() {
+  if(typeof objTimeMin !== "undefined"){clearTimeout(objTimeMin);}
+  if(typeof objTimeMax !== "undefined"){clearTimeout(objTimeMax);}
+}
+</script>
+
+<script src="https://ajax.aspnetcdn.com/ajax/4.6/1/WebUIValidation.js" type="text/javascript"></script>
+<script src="https://ajax.aspnetcdn.com/ajax/4.6/1/MicrosoftAjax.js" type="text/javascript"></script>
+<script type="text/javascript">
+//<![CDATA[
+(window.Sys && Sys._Application && Sys.Observer)||document.write('<script type="text/javascript" src="/ScriptResource.axd?d=uHIkleVeDJf4xS50Krz-yGoJmOW4o6BOcIgMjrU-x7k4TuuU82qsvxreluBIABnokkwanDXzYvgk8vzABKzjHUqP43SppakROh00j4GHbpcWQECEA5nUkRgOOhEmV-9I0NY4vL_tZJgTXGNLpti7jywOHMc1&t=345ad968"><\/script>');//]]>
+</script>
+
+<script src="https://ajax.aspnetcdn.com/ajax/4.6/1/MicrosoftAjaxWebForms.js" type="text/javascript"></script>
+<script type="text/javascript">
+//<![CDATA[
+(window.Sys && Sys.WebForms)||document.write('<script type="text/javascript" src="/ScriptResource.axd?d=Jw6tUGWnA15YEa3ai3FadEtHojACZX9yG9hOyqfbRqWGlNvyiVU1c7RVnkT2sar-GIWCYbrgfl84caB0VYJrjYIAoyWrdsw8Cz3RDFDTHr6-eR5RSnynYHzha3R8ajEz-gmDnmyEF0BFKzDpapSOZaMwz241&t=345ad968"><\/script>');function WebForm_OnSubmit() {
+if (typeof(ValidatorOnSubmit) == "function" && ValidatorOnSubmit() == false) return false;
+return true;
+}
+//]]>
+</script>
+
+<div class="aspNetHidden">
+
+	
+</div>
+        <script type="text/javascript">
+//<![CDATA[
+Sys.WebForms.PageRequestManager._initialize('ScMan', 'rsForm', ['trsPanelComments','rsPanelComments','trsPanelProgress','rsPanelProgress','trsPanelMain','rsPanelMain','trsPanelLang','rsPanelLang','trsPanelButtons','rsPanelButtons','tctl15','ctl15'], [], [], 90, '');
+//]]>
+</script>
+
+        <script src="js/dc.rank.min.js?v=5.1.9476.23711"></script>
+        <div id="rsPanelComments">
+                <div id="msgBar" class="msgBar" style="display:none;">
+                    <div id="msgContainer" style="display:none">
+                        <span id="msgText"></span>
+                    </div>
+                </div>
+                
+            </div>
+        <div class="mainContainer" role="main">
+            <div class="bannerContainer">
+                
+            </div>
+            <div class="contentContainer">
+                <div class="logo1Container">
+                    <img class="logo1" src="img/walr.png?v=5.1.9476.23711" alt="Walr Data Collection">
+                </div>
+                <div class="progressContainer">
+                    <div id="rsPanelProgress">
+                            <span id="progressBarControl1"><div class="progressBarContainer"><div class="progressBar" aria-label="progress" role="progressbar" aria-valuenow="10" aria-valuemin="0" aria-valuemax="100" style="width:10%;"></div><div class="progressBarText" aria-hidden="true">10%</div></div></span>
+                        </div>
+                </div>
+                <div class="panelMainContainer">
+                    <div id="rsPanelMain" style="visibility: visible;">
+                            <table id="S2" cellpadding="0" width="100%" class="cTABLEContainQues" role="presentation">
+	<tbody><tr>
+		<td valign="top" class="cTDContainQues" style="display: table-cell;"><table id="q_13" class="cTable rsSingle" role="presentation" cellpadding="0" cellspacing="0" border="0">
+			<tbody><tr class="cRowSubQuestion">
+				<td class="cCellSubQuestion" colspan="2"><div class="cQuestionNumber">S2.A)</div><div class="cQuestionText" role="heading" aria-level="1"><div class="rs-ht cReg reg"><p>Êtes-vous...&nbsp;?</p></div><div class="rs-ht do cDo" id="instr1"><p>Veuillez sélectionner une réponse.</p></div></div></td>
+			</tr>
+			<tr class="rsRow cRow cRowNotSelected">
+				<td class="cCell" valign="top"><input value="1" name="n13A" type="radio" id="n13A0" class="cRadio" onclick="clearAll(&quot;n13A0&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"><div class="cValue">1</div></td>
+				<td id="r_13_1" class="cCellRowText textleft cellw100"><label for="n13A0" class="textleft"><div class="cRowText textleft"><div class="rs-ht cReg reg"><p>Une femme</p></div></div></label></td>
+			</tr>
+			<tr class="rsRow cRowAlt cRowAltNotSelected">
+				<td class="cCell" valign="top"><input value="2" name="n13A" type="radio" id="n13A1" class="cRadio" onclick="clearAll(&quot;n13A1&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"><div class="cValue">2</div></td>
+				<td id="r_13_2" class="cCellRowText textleft cellw100"><label for="n13A1" class="textleft"><div class="cRowText textleft"><div class="rs-ht cReg reg"><p>Un homme</p></div></div></label></td>
+			</tr>
+			<tr class="rsRow rsSelected cRow cRowSelected">
+				<td class="cCell" valign="top"><input value="3" name="n13A" type="radio" id="n13A2" class="cRadio" onclick="clearAll(&quot;n13A2&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"><div class="cValue">3</div></td>
+				<td id="r_13_3" class="cCellRowText textleft cellw100"><label for="n13A2" class="textleft"><div class="cRowText textleft"><div class="rs-ht cReg reg"><p>Autre</p></div></div></label></td>
+			</tr>
+			<tr class="rsRow cRowAlt cRowAltNotSelected">
+				<td class="cCell" valign="top"><input value="4" name="n13A" type="radio" id="n13A3" class="cRadio" onclick="clearAll(&quot;n13A3&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"><div class="cValue">4</div></td>
+				<td id="r_13_4" class="cCellRowText textleft cellw100"><label for="n13A3" class="textleft"><div class="cRowText textleft"><div class="rs-ht cReg reg"><p>Je ne souhaite pas répondre</p></div></div></label></td>
+			</tr>
+			<tr class="rsEmptyFinalRow">
+				<td name="emptyCell" class="cFooter"></td>
+				<td name="emptyCell" class="cFooter"></td>
+			</tr>
+		</tbody></table>
+		</td>
+	</tr>
+</tbody></table>
+<input name="Q" type="hidden" id="Q" value="13"><input name="S" type="hidden" id="S" value="0">
+                            <span id="PageDurationScriptControl1"></span>
+                        </div>
+                </div>
+            </div>
+            <div class="langContainer">
+                <div id="rsPanelLang">
+                        <div id="LangSelector_PanelLayout" class="languagePanel" style="background-color:Transparent;border-color:Transparent;border-style:None;">
+	<a id="LangSelector_lb_en" class="languageLink" href="javascript:WebForm_DoPostBackWithOptions(new WebForm_PostBackOptions(&quot;LangSelector$lb_en&quot;, &quot;&quot;, true, &quot;&quot;, &quot;&quot;, false, true))">en</a><a id="LangSelector_lb_de" class="languageLink" href="javascript:WebForm_DoPostBackWithOptions(new WebForm_PostBackOptions(&quot;LangSelector$lb_de&quot;, &quot;&quot;, true, &quot;&quot;, &quot;&quot;, false, true))">de</a><a id="LangSelector_lb_fr" class="aspNetDisabled languageLink">fr</a>
+</div>
+
+
+                    </div>
+            </div>
+            <div class="buttonContainer">
+                <div id="rsPanelButtons">
+                        <span id="_customValidator" style="visibility:hidden;"></span>
+                        
+                        <input type="button" name="btnNext" value="Suivant" onclick="rsSethf('rs_dir','1');WebForm_DoPostBackWithOptions(new WebForm_PostBackOptions(&quot;btnNext&quot;, &quot;&quot;, true, &quot;&quot;, &quot;&quot;, false, true))" id="btnNext" class="buttonPage buttonNext">
+                        <input type="button" name="btnToggleWcag" value="0" onclick="javascript:WebForm_DoPostBackWithOptions(new WebForm_PostBackOptions(&quot;btnToggleWcag&quot;, &quot;&quot;, true, &quot;&quot;, &quot;&quot;, false, true))" id="btnToggleWcag" style="display:none;">
+                        <div id="UpdateProgress2" style="display:none;" role="status" aria-hidden="true">
+	
+                                <div class="loadingAnimation"></div>
+                            
+</div>
+                    </div>
+            </div>
+             <div class="logo2Container">
+                <a title="Walr Data Collection v. 5.1.9476.23711
+www.walr.com" class="logo2link" rel="noopener" href="https://www.walr.com" target="_blank">Created in Walr Survey Builder</a><br>
+            </div>
+        </div>
+        <div id="ctl15">
+                
+                
+                <input name="rs_lto" type="hidden" id="rs_lto" value="-60">
+                <input name="rs_lang" type="hidden" id="rs_lang" value="fr">
+                <input name="rs_rnd" type="hidden" id="rs_rnd" value="281">
+                <input name="rs_dir" type="hidden" id="rs_dir" value="1">
+                <input name="rs_dcv" type="hidden" id="rs_dcv" value="5.1.9476.23711">
+                <input name="rs_r" type="hidden" id="rs_r" value="aaf63099-67f7-42fc-85da-24a82cf457ed">
+                <input name="rs_tr" type="hidden" id="rs_tr">
+                <input name="rs_s" type="hidden" id="rs_s" value="05412940-126f-4db6-82b2-8b7c71491dcb">
+                <input name="rs_q" type="hidden" id="rs_q" value="a95f5b15-46e5-426d-87b0-5e42eb12182f">
+                <input name="rs_c" type="hidden" id="rs_c" value="3ef11f3f-290d-4a64-925c-34ae02f863ce">
+                <input name="rs_cid" type="hidden" id="rs_cid">
+            </div>
+        <script>
+            Sys.WebForms.PageRequestManager.getInstance().add_initializeRequest(initRequestHandler);
+            Sys.WebForms.PageRequestManager.getInstance().add_beginRequest(beginRequestHandler);
+            Sys.WebForms.PageRequestManager.getInstance().add_endRequest(endRequestHandler);
+            Sys.WebForms.PageRequestManager.getInstance().add_pageLoaded(pageLoadedHandler);
+        </script>
+    
+<script type="text/javascript">
+//<![CDATA[
+var Page_Validators =  new Array(document.getElementById("_customValidator"));
+//]]>
+</script>
+
+<script type="text/javascript">
+//<![CDATA[
+var _customValidator = document.all ? document.all["_customValidator"] : document.getElementById("_customValidator");
+_customValidator.evaluationfunction = "CustomValidatorEvaluateIsValid";
+_customValidator.clientvalidationfunction = "clientValidation";
+//]]>
+</script>
+
+
+<script type="text/javascript">
+//<![CDATA[
+rsSethf('rs_lang','fr');//]]>
+</script>
+<script>settimeoffset();</script>
+<script type="text/javascript">
+//<![CDATA[
+
+var Page_ValidationActive = false;
+if (typeof(ValidatorOnLoad) == "function") {
+    ValidatorOnLoad();
+}
+
+function ValidatorOnSubmit() {
+    if (Page_ValidationActive) {
+        return ValidatorCommonOnSubmit();
+    }
+    else {
+        return true;
+    }
+}
+        
+document.getElementById('_customValidator').dispose = function() {
+    Array.remove(Page_Validators, document.getElementById('_customValidator'));
+}
+Sys.Application.add_init(function() {
+    $create(Sys.UI._UpdateProgress, {"associatedUpdatePanelId":"rsPanelButtons","displayAfter":1000,"dynamicLayout":true}, null, null, $get("UpdateProgress2"));
+});
+//]]>
+</script>
+<span style="display: none !important;"><input type="hidden" name="__EVENTTARGET" id="__EVENTTARGET" value=""></span><span style="display: none !important;"><input type="hidden" name="__EVENTARGUMENT" id="__EVENTARGUMENT" value=""></span><span style="display: none !important;"><input type="hidden" name="__VIEWSTATE" id="__VIEWSTATE" value="W5Hrx6XuBMOkcp6J+NBPm4AqV1oagyvg8fptCzZEjW152iYzeF0nKPT7kmMogzB0VBBm8JUJ7h0x9AKljnQov6qULLw="></span><span style="display: none !important;"><input type="hidden" name="__VIEWSTATEGENERATOR" id="__VIEWSTATEGENERATOR" value="4116D544"></span></form>
+    
+    <noscript>
+        <div>This survey requires that javascript is enabled in your browser. Please enable javascript and re-enter the survey.</div>
+        <div><br/>Survey link: <a href="https://as-weu-prod-survey-datacollectionv1.azurewebsites.net/collect.aspx?rs=_cBOihjydM1xMTqwtS7CVmYnCvea9TVzSkyvza7xnbc5jLUrC7d5Dj3Wcms7pNFaptFtTn4Pkuhy_rzeAkRU2u4d8mvOpRie-HtgG54HlgArMwuTHMvxYYHMog1jvs4NwF4ocFlaAJmoI39EdsStFquCLdtmpLISzbdIZMqNQU0dqHum5lHLM88xshiZ25kFgcx1ObTc_ptb0h0FQm_-7dZJQZD45_EOSFVnDKIK4Qs&lang=fr" id="surveyLink">Re-enter survey</a></div>
+    </noscript>
+    <script type="text/javascript" src="https://quenchtec.github.io/visualisations/walrthemes/v1.0.0-2colour/main_theme.js"></script>
+<link rel="stylesheet" type="text/css" href="https://quenchtec.github.io/visualisations/walrthemes/v1.0.0-2colour/main_theme.css">
+<link rel="stylesheet" type="text/css" href="https://fonts.googleapis.com/css2?family=Lato&amp;display=swap">
+
+
+<div id="cboxOverlay" style="display: none;"></div><div id="colorbox" class="" role="dialog" tabindex="-1" style="display: none;"><div id="cboxWrapper"><div><div id="cboxTopLeft" style="float: left;"></div><div id="cboxTopCenter" style="float: left;"></div><div id="cboxTopRight" style="float: left;"></div></div><div style="clear: left;"><div id="cboxMiddleLeft" style="float: left;"></div><div id="cboxContent" style="float: left;"><div id="cboxTitle" style="float: left;"></div><div id="cboxCurrent" style="float: left;"></div><button type="button" id="cboxPrevious"></button><button type="button" id="cboxNext"></button><button id="cboxSlideshow"></button><div id="cboxLoadingOverlay" style="float: left;"></div><div id="cboxLoadingGraphic" style="float: left;"></div></div><div id="cboxMiddleRight" style="float: left;"></div></div><div style="clear: left;"><div id="cboxBottomLeft" style="float: left;"></div><div id="cboxBottomCenter" style="float: left;"></div><div id="cboxBottomRight" style="float: left;"></div></div></div><div style="position: absolute; width: 9999px; visibility: hidden; display: none; max-width: none;"></div></div></body>

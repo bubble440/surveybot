@@ -144,6 +144,11 @@ def build_batch_prompt(question_blocks: list[dict]) -> str:
     )
 
     lines.append(
+        "Champs ouverts (text/textarea) : si la question contient un exemple (ex: 'E.g.' / 'Ex:'), "
+        "N'UTILISE PAS l'exemple comme valeur. Donne une valeur réaliste (ex: code postal FR -> 75001)."
+    )
+
+    lines.append(
         "Contraintes :\n"
         "- itype ∈ {radio, checkbox, dropdown, text, textarea, button}\n"
         "- valeur DOIT être une option existante (si options listées)\n"

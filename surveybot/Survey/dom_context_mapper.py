@@ -101,8 +101,8 @@ _JS_COLLECT = r"""
   const q = [
     "input[type='radio']",
     "input[type='checkbox']",
-    "[role='radio']",
-    "[role='checkbox']"
+    "[role='radio']:not(svg)",
+    "[role='checkbox']:not(svg)"
   ].join(",");
 
   const els = Array.from(document.querySelectorAll(q));

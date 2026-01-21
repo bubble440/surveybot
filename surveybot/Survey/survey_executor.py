@@ -1,7 +1,6 @@
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.action_chains import ActionChains
-import re, openai, time, unicodedata, os
-import hashlib
+import re, openai, time, unicodedata, os, sys, hashlib
 
 def _norm_lc(s: str) -> str:
     s = unicodedata.normalize("NFKC", (s or "")).lower().strip()
@@ -10,6 +9,34 @@ def _norm_lc(s: str) -> str:
 def _env_truthy(name: str, default: str = "0") -> bool:
     v = (os.getenv(name, default) or "").strip().lower()
     return v in ("1", "true", "yes", "on")
+
+def _local_pause_before_cta(reason: str = "") -> None:
+    """
+    LOCAL ONLY: attend que l'utilisateur appuie sur Entrée avant de cliquer un CTA.
+    Protège prod/docker: ne bloque jamais si stdin non-interactif.
+    Active uniquement si LOCAL_CTA_REQUIRE_ENTER=1.
+    """
+    try:
+        if (os.getenv("RUN_ENV", "local") or "").strip().lower() != "local":
+            return
+        if not _env_truthy("LOCAL_CTA_REQUIRE_ENTER", "0"):
+            return
+        if not getattr(sys.stdin, "isatty", lambda: False)():
+            # évite de bloquer CI / docker / logs non interactifs
+            return
+
+        msg = "[LOCAL][PAUSE] Appuie sur Entrée pour autoriser le clic CTA"
+        if reason:
+            msg += f" ({reason})"
+        print(msg, flush=True)
+        try:
+            input()
+        except KeyboardInterrupt:
+            # abandon contrôlé : on ne clique pas
+            raise
+    except Exception:
+        # best-effort : ne jamais casser un run parce que le pause-mode bug
+        return
 
 def _coerce_safe_value_if_questionish(raw_line: str) -> str:
     """
@@ -61,7 +88,6 @@ def _coerce_safe_value_if_questionish(raw_line: str) -> str:
             label = "28"
 
     return f"{label} //// {itype} //// {context}"
-
 
 # ✍️ Fonction principale
 def execute_survey_page(driver, api_key):
@@ -179,6 +205,7 @@ def execute_survey_page(driver, api_key):
             before_sig = redirect_watcher._dom_signature(driver)  # ou recalc local si tu préfères
 
             # iframe-safe recommandé
+            _local_pause_before_cta("navigation_cta")
             clicked = input_handler.try_click_navigation_cta_any_context(driver)
 
             if clicked:
@@ -225,6 +252,7 @@ def execute_survey_page(driver, api_key):
             before_sig = ""
 
         try:
+            _local_pause_before_cta("cta_only_fallback")
             clicked = (
                 input_handler.click_cta_strong_any_context(driver, text="accepter")
                 or input_handler.click_cta_strong_any_context(driver, text="continuer")
@@ -312,7 +340,6 @@ def execute_survey_page(driver, api_key):
             )
             return False
 
-
 def extract_full_visible_text(driver):
     """
     Extrait tout le texte visible de la page, en ignorant les balises de type lien, script, style, header, etc.
@@ -339,7 +366,6 @@ def extract_full_visible_text(driver):
     except Exception as e:
         print("❌ JS extraction erreur:", e, "survey_executor.py line 251")
         return []
-
 
 # ⚖️ Sous-fonction : appliquer une action recommandée par l'IA
 

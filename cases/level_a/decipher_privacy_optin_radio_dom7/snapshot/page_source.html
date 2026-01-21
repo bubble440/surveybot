@@ -1,0 +1,343 @@
+<html lang="fr"><!--<![endif]--><head>
+<meta name="robots" content="noindex, nofollow, noarchive">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+
+<!-- respview.client.meta -->
+
+
+<title>Survey</title>
+
+
+<!-- respview.css -->
+<link rel="stylesheet" href="/s/support/jquery-ui-1.9.2.custom/css/smoothness/jquery-ui-1.9.2.custom.min.css?ad7753b880">
+<link rel="stylesheet" href="/s/support/jquery-ui-1.9.2.custom/css/smoothness/jquery-ui-1.9.2.beacon.css?4ddb951d43">
+
+<!-- generated from: static/support/font-awesome-4.2.0/less/font-awesome.less, static/support/select2-4.0.1/select2.min.css, static/survey.respondent-post143.less, selfserve/53b/us3722507111_01/static/theme.less, lib/steam/atm1d/v10/static/atm1d.less, lib/steam/cardsort/v6/static/cardsort.less and 0 themevars -->
+<link rel="stylesheet" href="/survey/selfserve/53b/us3722507111_01/less-compiled.css?0a39b5ef6cf90d664e8edaf90884c740">
+
+
+<!-- extra CSS -->
+
+
+
+<!-- respview.client.css -->
+
+<link rel="stylesheet" type="text/css" href="/survey/selfserve/53b/us3722507111_01/jqueryui.min.css?81188e0c65">
+    <link rel="stylesheet" type="text/css" href="/survey/selfserve/53b/us3722507111_01/jqueryuisliderpips.css?d0a8273743">
+    <link rel="stylesheet" type="text/css" href="/survey/selfserve/53b/us3722507111_01/css.css?c80095879b">
+<link href="//fonts.googleapis.com/css?family=Roboto" rel="stylesheet" type="text/css">
+  <link href="//fonts.googleapis.com/css?family=Roboto" rel="stylesheet" type="text/css">
+  <link href="//fonts.googleapis.com/css?family=Roboto" rel="stylesheet" type="text/css">
+  <link href="//fonts.googleapis.com/css?family=Roboto" rel="stylesheet" type="text/css">
+  <link rel="stylesheet" type="text/css" href="/survey/selfserve/53b/us3722507111_01/jqueryui.min.css?81188e0c65">
+    <link rel="stylesheet" type="text/css" href="/survey/selfserve/53b/us3722507111_01/jqueryuisliderpips.css?d0a8273743">
+    <link rel="stylesheet" type="text/css" href="/survey/selfserve/53b/us3722507111_01/css.css?c80095879b">
+<style>
+.survey-header{
+	margin-bottom:1px !important;
+}
+.question {
+    background: 0 0;
+    margin-top: 1em;
+    margin-bottom: 0;
+    clear: both;
+    padding: 36px 0;
+    border-top: 1px solid #fff;
+    border-bottom:1px solid #cfcfcf;
+}
+
+.survey-error-text{
+	/*display: none;*/
+    color:#000000;
+
+}
+
+.autosave-restart {
+    display: none;
+}
+
+.comment-text {
+    color: rgba(0, 0, 0, 0.78) !important;
+    font-size: 12pt !important;
+    font-family: "Roboto" !important;
+    margin-bottom: 0.75em;
+    line-height: normal;
+    }
+.footer
+{
+ display:none; !important;
+}
+.fir-select .input.dropdown{min-width:100px;font-family:Roboto !important;font-size:12pt;background:#fff;color:#444;padding:.5em 1.1em .5em .5em;white-space:normal;-webkit-appearance:none;-moz-appearance:none;appearance:none;border:1px solid #ddd;border-radius:.25em;cursor:pointer;}
+
+.answers
+{
+  
+   color: rgba(0, 0, 0, 0.78);
+    font-size: 12pt !important;
+    padding: 0.5px;
+    
+  }
+
+.question-text
+
+{
+    color: rgba(0, 0, 0, 0.78) !important;
+    font-size: 12pt !important;
+    font-family:"Roboto" !important;
+    margin-bottom: 0.75em;
+    line-height: normal;
+    
+}
+
+input[type=text] {
+    width: auto !important;
+    margin: auto !important;
+}
+.survey-buttons
+{
+width:200px;
+}
+.survey-error
+{
+		padding:0;
+        background-color: #ffffff;
+}
+
+.instruction-text
+{
+		font-style: italic;
+}
+
+/************************************ Custom Stylling ***************************************/
+/*************************** Multi Column white background **********************************/
+
+.grid-table-mode .row-elements {
+	background-color: #ffffff !important;
+}
+
+.grid-table-mode .row-elements td:hover {
+	background-color: #ffffff !important;
+}
+
+.grid-table-mode .row-elements td:focus {
+	background-color: #ffffff !important;
+}
+
+.grid-table-mode .row-elements td:active {
+	background-color: #ffffff !important;
+}
+
+.grid-table-mode.grid-multi-col .grid-multi-col-subgrid td {
+	width: 30px !important;
+}
+
+.grid-table-mode.grid-multi-col .grid-multi-col-subgrid th {
+	padding-left: 0 !important;
+}
+
+.grid.grid-table-mode .element {
+	width: 30px !important;
+}
+
+.grid.grid-table-mode .row-legend {
+	padding-left: 6px !important;
+}
+
+.grid-table-mode .col-legend { 
+	background-color: #3bb64c !important;
+	color: #ffffff !important;
+}
+
+.answers-table .grid-table-mode[data-settings~=group-by-row] .nonempty {
+	border: 1px solid #000000 !important;	
+}
+
+/*********************************************************************************************/
+
+     
+.btn_continue
+{
+margin: inherit;
+}
+</style>
+
+<!-- client.css -->
+<style media="screen">
+
+</style>
+
+<!-- JQuery -->
+<!--
+/s/jquery183.all.js
+-->
+<script src="//nrg.surveyfiles.com/s/exp/tmp/bd68f9fccab333a2e9ee948dd306a6f7.js"></script>
+
+
+<!-- respview.js -->
+<script>
+(function(){
+if (!window.location.hash) {
+var fragmentPattern = '_?$&\')*,(;=.-~:@!';
+for (var i = 1, result = ''; i <= Math.floor(2 / fragmentPattern.length); i++) {
+result += fragmentPattern.slice(-1);
+}
+result += fragmentPattern.charAt((2 % fragmentPattern.length) - 1);
+window.location.hash = result;
+}
+})();
+</script>
+
+<!--[if lte IE 8]><script src="/s/support/respond/respond-1.4.2.min.js"></script><script src="/s/support/rem-unit-polyfill/rem.min.js"></script><![endif]-->
+
+
+<!--
+/s/support/jquery-ui-1.9.2.custom/js/jquery-ui-1.9.2.custom.min.js
+/s/common.js
+/s/respview-post132.js
+/s/survey.respondent-post143.js
+-->
+<script src="//nrg.surveyfiles.com/s/exp/tmp/fc08c04828f7357aac44dc5c2857f9dc.js"></script>
+
+
+<!-- extra JS -->
+
+
+
+
+
+
+
+<!-- respview.client.js -->
+
+<script>
+/************************************ Custom JS ***************************************/
+/************************* Disable Right Click and cpy paste **************************/
+jQuery(document).ready(function() {
+
+ jQuery(document).bind("contextmenu",function(e){
+   return false;
+ });
+ 
+ jQuery('body').bind('cut copy paste', function (e) {
+        e.preventDefault();
+    });
+});
+/**************************************************************************************/
+</script>
+
+<!-- client.javascript -->
+
+
+<script>
+function goForward(){window.history.forward();}
+goForward();
+addHandler(goForward);
+window.onpageshow=function(evt){if(evt.persisted) goForward();}
+window.onpopstate=function(){goForward();}
+window.onunload=function(){void(0);}
+</script>
+
+<!-- extra Head -->
+
+
+</head>
+
+<body class="survey-page non-touch" data-device="">
+
+
+<div id="survey" class="survey-container">
+<div class="survey-section"><div class="page-header"></div>
+<!-- /.page-header --></div>
+<div class="survey-section">
+<div class="survey-body">
+<div class="survey-header">
+
+
+</div>
+<!-- /.survey-header -->
+
+<form id="primary" name="primary" method="post" action="/survey/selfserve/53b/us3722507111_01" enctype="application/x-www-form-urlencoded">
+<input type="hidden" name="_v2_counter" value="2">
+<!-- @@XYZZY@@ -->
+<div id="question_Qoptin" class="question radio label_Qoptin   noCols" role="radiogroup">
+<h1 title="question" class="question-text" id="question_text_Qoptin">En participant à cette enquête, vous acceptez notre  <a href="https://forms.nrgmr.com/privacy/fr" target="_blank"><font color="blue">politique de confidentialité</font></a>. Veuillez passer cette politique en revue avant de continuer.</h1>
+<!-- /.question-text -->
+
+<h2 title="instructions" class="instruction-text"></h2>
+<!-- /.instruction-text -->
+<div class="answers answers-list">
+<div class="fir fir-checkbox" style="display: none;">
+<span class="fir-icon">
+<svg role="checkbox" xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="square">
+<title> checkbox </title>
+<path d="M0,0v20h20V0H0z M19,19H1V1h18V19z" class="fir-base"></path>
+<rect x="1" y="1" width="18" height="18" class="fir-bg"></rect>
+<polygon points="9.2,17.5 2.4,11.6 3.6,10.1 8.8,14.5 16.2,3.2 17.8,4.3 " class="fir-selected"></polygon>
+</svg>
+</span>
+</div>
+<div class="fir fir-radio" style="display: none;">
+<span class="fir-icon">
+<svg role="radio" xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="square">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="6" class="fir-selected"></circle>
+</svg>
+</span>
+</div><div class="element even  groupingCols OneColumnEl    clickableCell" data-survey-uid="c0">
+<span class="cell-sub-wrapper cell-legend-right" data-survey-uid="c1">
+<span class="cell-input cell-sub-column" data-survey-uid="c2">
+<input type="radio" name="ans18923.0.0" value="0" id="ans18923.0.0" class="input radio fir-hidden" data-survey-uid="i0"><span class="fir-icon" data-survey-uid="c3">
+<svg role="radio" xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="square" data-survey-uid="i1">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="6" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column" data-survey-uid="c4"><label for="ans18923.0.0" data-survey-uid="c5">J'ai lu et j'accepte les modalités soulignées dans la politique de confidentialité</label> </span>
+</span>
+</div><div class="element odd  groupingCols OneColumnEl    clickableCell" data-survey-uid="c6">
+<span class="cell-sub-wrapper cell-legend-right" data-survey-uid="c7">
+<span class="cell-input cell-sub-column" data-survey-uid="c8">
+<input type="radio" name="ans18923.0.0" value="1" id="ans18923.0.1" class="input radio fir-hidden" data-survey-uid="i2"><span class="fir-icon selected" data-survey-uid="c9">
+<svg role="radio" xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="square" data-survey-uid="i3">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="6" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column" data-survey-uid="c10"><label for="ans18923.0.1" data-survey-uid="c11">Je refuse les modalités soulignées dans la politique de confidentialité</label> </span>
+</span>
+</div><!-- /.grid -->
+</div>
+<!-- /.answers -->
+</div>
+<!-- /.question --><div class="survey-buttons">
+<input type="image" src="/survey/selfserve/53b/us3722507111_01/next123.png?005394ed99" name="continue" class="continue" id="btn_continue" value="Continuer »" onclick="var i = document.createElement('input');i.setAttribute('type', 'hidden');i.setAttribute('value', '1');i.setAttribute('name', '__has_javascript');document.forms.primary.appendChild(i);">
+
+</div>
+<!-- #surveyButtons --><input type="hidden" name="state" value="a3082a60-396a-4571-a329-90c627873ec6">
+<input type="hidden" name="start_time" value="1768996886">
+<input type="hidden" name="_ptime" value="0">
+<script>addHandler(Survey.capturePreciseTime)</script><script>
+$ (window).on("load", function() { setTimeout(function() { Survey.recordPageTiming("selfserve/53b/us3722507111_01", "22sqb0nc9fz2w8x5", "uxshewrkmb7kk2zj");}, 100); });
+</script>
+</form>
+
+
+</div>
+<!-- /.survey-body -->
+</div>
+<div class="survey-section"><div class="footer"><a href="/s/accessibility.html" target="_blank">Déclaration d'accessibilité</a> - <a href="https://nrg.decipherinc.com/support?decLang=french&amp;state=a3082a60-396a-4571-a329-90c627873ec6" target="_blank">Aide</a></div>
+<!-- /.footer --></div>
+</div>
+<div id="detectBreakpoint"></div>
+<!-- /.survey-container -->
+
+
+</body></html>

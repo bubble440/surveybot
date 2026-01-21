@@ -11,7 +11,9 @@ $env:RUN_MODE="local"
 $env:BROWSER_MODE="attach"
 $env:DOM_DEBUG_FRAMES="1"
 $env:ACTION_DEBUG_TARGET="1"
+$env:LOCAL_CTA_REQUIRE_ENTER="1"
 $env:ATTACH_TAB_SELECTOR="current"
+$env:ATTACH_TAB_URL_CONTAINS="survey.walr.com"
 
 # Pour lancer surveybot en mode "attach" (debug)
 python surveybot/main.py
@@ -119,5 +121,8 @@ python surveybot\tools\replay_snapshot.py ..\cases\level_a\samplicio_departement
 # Pour activer l'environnement virtuel
 & C:/projects/Surveys/.venv/Scripts/Activate.ps1
 
-python surveybot\tools\replay_snapshot.py snapshots\focusvision_sliderpoints_362624\snapshot --use-dom-outer --save-baseline
+# Pour rejouer un snapshot et enregistrer une nouvelle baseline (debug) :
+python surveybot\tools\replay_snapshot.py snapshots\walr_single_radio_question_645_revenue\snapshot --use-dom-outer --save-baseline
+
+# 
 python surveybot\tools\replay_snapshot.py snapshots\20260120_112345_after_dom_analyze --use-dom-outer --save-baseline
