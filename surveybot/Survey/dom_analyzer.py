@@ -1120,10 +1120,29 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
     try:
         choice_els = driver.find_elements(
             By.CSS_SELECTOR,
-            "input[type='radio'], input[type='checkbox'], [role='radio'], [role='checkbox']"
+            "input[type='radio'], input[type='checkbox'], [role='radio']:not(svg), [role='checkbox']:not(svg)"
         )
     except Exception:
         choice_els = []
+
+    # ✅ Anti-bruit (Decipher/FIR, etc.) :
+    # Des icônes SVG portent role="radio"/"checkbox" mais ne sont pas des inputs actionnables.
+    # Si on les garde, on duplique les groupes => OpenAI renvoie Q1/Q2 pour la même question.
+    try:
+        has_real_inputs = any((e.tag_name or "").lower() == "input" for e in choice_els)
+        if has_real_inputs:
+            filtered = []
+            for e in choice_els:
+                try:
+                    tag = (e.tag_name or "").lower()
+                    if tag in {"svg", "path", "polygon", "rect", "circle", "g", "title"}:
+                        continue
+                    filtered.append(e)
+                except Exception:
+                    continue
+            choice_els = filtered
+    except Exception:
+        pass
 
     groups: Dict[str, List[Any]] = {}
     for el in choice_els:

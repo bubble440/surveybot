@@ -1,0 +1,30 @@
+[
+  {
+    "question": "En participant à cette enquête, vous acceptez notre politique de confidentialité. Veuillez passer cette politique en revue avant de continuer.",
+    "itype": "radio",
+    "options": [
+      "J'ai lu et j'accepte les modalités soulignées dans la politique de confidentialité",
+      "Je refuse les modalités soulignées dans la politique de confidentialité"
+    ],
+    "max_select": 1,
+    "target_id": "group_afade84a6ae4",
+    "context": {
+      "kind": "group",
+      "group_key": "radio:name:ans18923.0.0"
+    }
+  },
+  {
+    "question": "En participant à cette enquête, vous acceptez notre politique de confidentialité. Veuillez passer cette politique en revue avant de continuer.",
+    "itype": "radio",
+    "options": [
+      "J'ai lu et j'accepte les modalités soulignées dans la politique de confidentialité",
+      "Je refuse les modalités soulignées dans la politique de confidentialité"
+    ],
+    "max_select": 1,
+    "target_id": "group_afade84a6ae4",
+    "context": {
+      "kind": "group",
+      "group_key": "radio:name:ans18923.0.0"
+    }
+  }
+]

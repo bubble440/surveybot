@@ -6,6 +6,18 @@ from Survey.dom_registry import get_target
 from typing import Optional
 from selenium.webdriver.common.action_chains import ActionChains
 
+def _short_exc(e: Exception) -> str:
+    """Rend les exceptions Selenium lisibles (sans Stacktrace bruyant)."""
+    try:
+        msg = getattr(e, "msg", None) or str(e) or ""
+    except Exception:
+        msg = ""
+    # Selenium ajoute souvent un bloc 'Stacktrace:' énorme dans le message
+    if "Stacktrace:" in msg:
+        msg = msg.split("Stacktrace:")[0]
+    msg = re.sub(r"\s+", " ", msg).strip()
+    return f"{type(e).__name__}: {msg}" if msg else type(e).__name__
+
 def solve_decipher_cardrating_rows(driver, preferred_label: Optional[str] = None, max_widgets: int = 3) -> bool:
     """
     Résout les questions Decipher 'sq-cardrating' groupées par rows.
@@ -650,7 +662,7 @@ def _apply_by_target_id(driver, target_id: str, itype: str, value: str) -> bool:
                         return True
                     except Exception as e:
                         if debug_target:
-                            print(f"[TARGET_DEBUG] CDP click failed: {e}")
+                            print(f"[TARGET_DEBUG] CDP click failed: {_short_exc(e)}")
                         return False
 
 
@@ -661,7 +673,7 @@ def _apply_by_target_id(driver, target_id: str, itype: str, value: str) -> bool:
                         return True
                     except Exception as e:
                         if debug_target:
-                            print(f"[TARGET_DEBUG] native click failed on {label}: {e}")
+                            print(f"[TARGET_DEBUG] native click failed on {label}: {_short_exc(e)}")
 
                     # 2) ActionChains (souvent plus robuste quand le DOM est “capricieux”)
                     try:
@@ -670,7 +682,7 @@ def _apply_by_target_id(driver, target_id: str, itype: str, value: str) -> bool:
                         return True
                     except Exception as e:
                         if debug_target:
-                            print(f"[TARGET_DEBUG] actionchains click failed on {label}: {e}")
+                            print(f"[TARGET_DEBUG] actionchains click failed on {label}: {_short_exc(e)}")
 
                     # 3) CDP click (trusted-ish)
                     if _cdp_click(node):
@@ -682,7 +694,7 @@ def _apply_by_target_id(driver, target_id: str, itype: str, value: str) -> bool:
                         return True
                     except Exception as e:
                         if debug_target:
-                            print(f"[TARGET_DEBUG] js click failed on {label}: {e}")
+                            print(f"[TARGET_DEBUG] js click failed on {label}: {_short_exc(e)}")
                         return False
 
                 # 1) trouver l'élément cible (label/span/input)
@@ -694,7 +706,7 @@ def _apply_by_target_id(driver, target_id: str, itype: str, value: str) -> bool:
                         return False
                 except Exception as ex:
                     if debug_target:
-                        print(f"[TARGET_DEBUG] element not found for xpath={xp} ({type(ex).__name__}: {ex})")
+                        print(f"[TARGET_DEBUG] element not found for xpath={xp} ({type(ex).__name__}: {_short_exc(ex)})")
                     return False
 
                 # 2) clic “normal” sur la cible
@@ -1526,7 +1538,79 @@ def handle_end_screen(driver):
     return True  # on laisse la redirection se faire
 
 def handle_captcha_guard(driver):
-    print("[GUARD] CAPTCHA détecté → arrêt survey")
+    """
+    CAPTCHA / vérification humaine.
+
+    Sécurité & prédictibilité:
+    - Prod/Docker: on n'essaie pas de "résoudre" un CAPTCHA (arrêt contrôlé + snapshot si activé).
+    - Local: on permet une résolution MANUELLE, puis on ATTEND la redirection / disparition du widget.
+    """
+    import os, sys, time
+
+    def _env_truthy(name: str, default: str = "0") -> bool:
+        v = (os.getenv(name, default) or "").strip().lower()
+        return v in ("1", "true", "yes", "on")
+
+    run_env = (os.getenv("RUN_ENV", "local") or "").strip().lower()
+
+    # Snapshot best-effort (utile pour debug / nouveaux cas)
+    try:
+        if _env_truthy("SNAPSHOT_ON_GUARD", "0"):
+            from Survey.page_snapshot import save_snapshot
+            save_snapshot(driver, reason="captcha_guard", out_root=os.getenv("SURVEY_SNAPSHOT_DIR"))
+    except Exception:
+        pass
+
+    # PROD/DOCKER: arrêt contrôlé (pas de bypass)
+    if run_env != "local":
+        print("[GUARD] CAPTCHA détecté → arrêt contrôlé (prod/docker)")
+        return False
+
+    # LOCAL: pause manuelle si terminal interactif
+    print("[GUARD] CAPTCHA détecté → résolution MANUELLE requise (local)")
+    try:
+        if getattr(sys.stdin, "isatty", lambda: False)():
+            input("[LOCAL][PAUSE] Résous le CAPTCHA dans le navigateur, puis appuie Entrée…\n")
+    except KeyboardInterrupt:
+        print("[LOCAL] Abandon demandé.")
+        return False
+    except Exception:
+        pass
+
+    # Après résolution: attendre que (1) l'URL change OU (2) le widget disparaisse
+    try:
+        before_url = driver.current_url
+    except Exception:
+        before_url = ""
+
+    deadline = time.time() + float(os.getenv("CAPTCHA_WAIT_SEC", "25") or 25)
+
+    while time.time() < deadline:
+        try:
+            cur_url = driver.current_url
+        except Exception:
+            cur_url = ""
+
+        if cur_url and before_url and cur_url != before_url:
+            print("[GUARD] CAPTCHA résolu → URL changée")
+            return True
+
+        try:
+            still_there = bool(driver.execute_script("""
+                const root = document.querySelector('#sliderpanel') || document.body;
+                if (!root) return false;
+                return !!root.querySelector('#sliderpanel, .verify-img-panel, .verify-gap, .verify-bar-area, .verify-move-block, .verify-sub-block');
+            """))
+        except Exception:
+            still_there = False
+
+        if not still_there:
+            print("[GUARD] CAPTCHA résolu → widget disparu")
+            return True
+
+        time.sleep(0.5)
+
+    print("[GUARD] CAPTCHA: timeout d'attente après résolution manuelle (local)")
     return False
 
 # ================================
@@ -1843,16 +1927,26 @@ def execute_action(driver, instruction: str) -> bool:
         continue
 
     # --- Fallback vidéo (Video.js / Brightcove) ----------------------
+    # V1: optionnel / best-effort. Si le module n'existe pas, on skip sans bruit.
+    debug_video = (os.getenv("ACTION_DEBUG_VIDEO", "0") or "").strip().lower() in ("1", "true", "yes", "on")
+    _video_utils = None
     try:
-        if Survey.video_utils.try_watch_and_capture(driver, api_key=None, max_seconds=35):
-            try:
-                if Survey.input_handler.click_cta_strong_any_context(driver, text="Suivant"):
-                    return True
-            except Exception:
-                pass
-            return True
-    except Exception as _e:
-        print(f"[video] fallback error: {_e}")
+        from Survey import video_utils as _video_utils  # type: ignore
+    except Exception:
+        _video_utils = None
+
+    if _video_utils and getattr(_video_utils, "try_watch_and_capture", None):
+        try:
+            if _video_utils.try_watch_and_capture(driver, api_key=None, max_seconds=35):
+                try:
+                    if Survey.input_handler.click_cta_strong_any_context(driver, text="Suivant"):
+                        return True
+                except Exception:
+                    pass
+                return True
+        except Exception as _e:
+            if debug_video:
+                print(f"[VIDEO_DEBUG] video fallback error: {_short_exc(_e)}")
 
     return False
 

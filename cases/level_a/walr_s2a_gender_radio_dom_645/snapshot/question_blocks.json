@@ -1,0 +1,18 @@
+[
+  {
+    "question": "Êtes-vous... ? Veuillez sélectionner une réponse.",
+    "itype": "radio",
+    "options": [
+      "Une femme",
+      "Un homme",
+      "Autre",
+      "Je ne souhaite pas répondre"
+    ],
+    "max_select": 1,
+    "target_id": "group_7285cbf44e57",
+    "context": {
+      "kind": "group",
+      "group_key": "radio:name:n13A"
+    }
+  }
+]
