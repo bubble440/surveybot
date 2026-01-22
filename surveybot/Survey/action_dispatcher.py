@@ -665,6 +665,16 @@ def _apply_by_target_id(driver, target_id: str, itype: str, value: str) -> bool:
                 def _cdp_click(el) -> bool:
                     # Click "réel" via CDP (plus proche d'un user click)
                     try:
+                        # IMPORTANT: certaines grilles (mat-table) scrollent horizontalement.
+                        # On force le scroll dans les 2 axes pour éviter les éléments 0x0 / hors viewport.
+                        try:
+                            driver.execute_script(
+                                "arguments[0].scrollIntoView({block:'center', inline:'center'});",
+                                el,
+                            )
+                        except Exception:
+                            pass
+
                         if not hasattr(driver, "execute_cdp_cmd"):
                             if debug_target:
                                 print("[TARGET_DEBUG] CDP click unavailable: driver has no execute_cdp_cmd()")
@@ -853,6 +863,19 @@ def _apply_by_target_id(driver, target_id: str, itype: str, value: str) -> bool:
                     while time.time() < end:
                         if _selected_like(node):
                             return True
+                        # Angular Material: l'état est souvent porté par la classe sur mat-radio-button
+                        try:
+                            cls = (node.get_attribute("class") or "")
+                            if "mat-radio-checked" in cls:
+                                return True
+                        except Exception:
+                            pass
+                        try:
+                            node.find_element(By.XPATH, "ancestor-or-self::*[contains(@class,'mat-radio-checked')][1]")
+                            return True
+                        except Exception:
+                            pass
+
                         # parfois l'état est porté par un parent (li -> span, etc.)
                         try:
                             node.find_element(
@@ -884,6 +907,27 @@ def _apply_by_target_id(driver, target_id: str, itype: str, value: str) -> bool:
                 inp = _first_input_under(el)
                 if _is_selected(inp):
                     return True
+
+                # NEW: Angular Material (Ask&Answer desktop matrix)
+                # Le <label> peut être 0x0 / non-interactif. On clique le conteneur mat-radio-button,
+                # puis on valide via mat-radio-checked (plus fiable que input.checked après re-render).
+                try:
+                    mr = el.find_element(
+                        By.XPATH,
+                        "ancestor-or-self::*[self::mat-radio-button or contains(@class,'mat-radio-button')][1]",
+                    )
+                    _click_candidate(mr, "mat-radio-button")
+                    if _wait_selected_like(mr, timeout_s=0.8):
+                        return True
+                    try:
+                        mc = mr.find_element(By.XPATH, ".//span[contains(@class,'mat-radio-container')][1]")
+                        _click_candidate(mc, "mat-radio-container")
+                        if _wait_selected_like(mr, timeout_s=0.8):
+                            return True
+                    except Exception:
+                        pass
+                except Exception:
+                    pass
 
                 # 3) si on a cliqué un label non interactif (pointer-events, overlay), tenter le span
                 try:
@@ -1762,6 +1806,232 @@ def _try(driver, name: str, fn):
     return fn()
 
 # --------------------------- Dispatcher principal ---------------------------
+def _aa__norm_ws(s: str) -> str:
+    return re.sub(r"\s+", " ", (s or "").strip())
+
+def _aa__contains(hay: str, needle: str) -> bool:
+    h = _aa__norm_ws(hay).lower()
+    n = _aa__norm_ws(needle).lower()
+    return bool(n) and (n in h)
+
+def _aa__safe_scroll_center(driver, el) -> None:
+    try:
+        driver.execute_script(
+            "arguments[0].scrollIntoView({block:'center', inline:'center'});",
+            el
+        )
+    except Exception:
+        pass
+
+def _aa__safe_click(driver, el) -> bool:
+    """
+    Click robuste, sans retry infini.
+    On scroll puis:
+      1) click natif
+      2) click ActionChains
+      3) click JS
+    """
+    try:
+        _aa__safe_scroll_center(driver, el)
+    except Exception:
+        pass
+
+    try:
+        el.click()
+        return True
+    except Exception:
+        pass
+
+    try:
+        from selenium.webdriver.common.action_chains import ActionChains
+        ActionChains(driver).move_to_element(el).click().perform()
+        return True
+    except Exception:
+        pass
+
+    try:
+        driver.execute_script("arguments[0].click();", el)
+        return True
+    except Exception:
+        return False
+
+def _aa__is_mat_checked(node) -> bool:
+    try:
+        cls = (node.get_attribute("class") or "")
+        return "mat-radio-checked" in cls
+    except Exception:
+        return False
+
+def _aa__try_answer_matrix(driver, full_question: str, choice_text: str) -> bool:
+    """
+    Résout le cas Ask&Answer MATRIX Angular Material, en évitant les éléments cachés.
+    Retourne True si l'action a bien été appliquée.
+    """
+    try:
+        from selenium.webdriver.common.by import By
+    except Exception:
+        return False
+
+    q = full_question or ""
+    choice = _aa__norm_ws(choice_text)
+    if not choice:
+        return False
+
+    # Garde-fou : on n'active ce helper que si on détecte app-matrix-question (Ask&Answer)
+    try:
+        if not driver.find_elements(By.XPATH, "//app-matrix-question"):
+            return False
+    except Exception:
+        return False
+
+    # Extraire le libellé de ligne (celebrity) depuis " ... — <statement>"
+    statement = ""
+    for sep in ("—", " - ", " – "):
+        if sep in q:
+            statement = q.split(sep, 1)[1]
+            break
+    statement = _aa__norm_ws(statement)
+    statement_key = _aa__norm_ws(statement.split("(", 1)[0]) if statement else ""
+
+    # ========== 1) Desktop table visible ==========
+    try:
+        tables = driver.find_elements(By.XPATH, "//app-matrix-question//table[contains(@class,'mat-table')]")
+    except Exception:
+        tables = []
+
+    table = None
+    for t in tables:
+        try:
+            if t.is_displayed():
+                table = t
+                break
+        except Exception:
+            continue
+
+    if table is not None and statement_key:
+        # Trouver la matrixId via le header (texte == choix)
+        mid = None
+        try:
+            headers = table.find_elements(By.XPATH, ".//thead//th[contains(@class,'matrixId-')]")
+        except Exception:
+            headers = []
+
+        for th in headers:
+            try:
+                if not th.is_displayed():
+                    continue
+                txt = _aa__norm_ws(th.text)
+                if txt and _aa__contains(txt, choice):
+                    cls = th.get_attribute("class") or ""
+                    m = re.search(r"matrixId-(\d+)", cls)
+                    if m:
+                        mid = m.group(1)
+                        break
+            except Exception:
+                continue
+
+        if mid:
+            # Trouver la ligne correspondant au statement (colonne "statement")
+            try:
+                rows = table.find_elements(By.XPATH, ".//tbody//tr")
+            except Exception:
+                rows = []
+
+            for row in rows:
+                try:
+                    if not row.is_displayed():
+                        continue
+                    st_cell = row.find_element(By.XPATH, ".//td[contains(@class,'mat-column-statement')]")
+                    st_txt = _aa__norm_ws(st_cell.text)
+                    if not _aa__contains(st_txt, statement_key):
+                        continue
+
+                    # Cellule de la colonne mid
+                    cell = row.find_element(By.XPATH, f".//td[contains(@class,'matrixId-{mid}')]")
+                    # Cliquer la radio dans cette cellule (uniquement éléments visibles)
+                    candidates = []
+                    try:
+                        candidates = cell.find_elements(
+                            By.XPATH,
+                            ".//mat-radio-button | .//label[contains(@class,'mat-radio-label')] | .//span[contains(@class,'mat-radio-container')] | .//input[@type='radio']"
+                        )
+                    except Exception:
+                        candidates = []
+
+                    for cand in candidates:
+                        try:
+                            if not cand.is_displayed():
+                                continue
+                        except Exception:
+                            continue
+
+                        _aa__safe_click(driver, cand)
+
+                        # Vérif: mat-radio-button checked dans la cellule
+                        try:
+                            mr = cell.find_element(By.XPATH, ".//mat-radio-button[1]")
+                            if _aa__is_mat_checked(mr):
+                                return True
+                        except Exception:
+                            pass
+
+                    return False
+                except Exception:
+                    continue
+
+    # ========== 2) Mobile expansion visible ==========
+    # (utile si la table est cachée par responsive)
+    if statement_key:
+        try:
+            panels = driver.find_elements(By.XPATH, "//app-matrix-question//mat-expansion-panel")
+        except Exception:
+            panels = []
+
+        for p in panels:
+            try:
+                if not p.is_displayed():
+                    continue
+
+                # header contient le statement
+                hdr = p.find_element(By.XPATH, ".//mat-expansion-panel-header")
+                hdr_txt = _aa__norm_ws(hdr.text)
+                if not _aa__contains(hdr_txt, statement_key):
+                    continue
+
+                # ouvrir si nécessaire
+                try:
+                    expanded = (hdr.get_attribute("aria-expanded") or "").strip().lower() == "true"
+                except Exception:
+                    expanded = False
+                if not expanded:
+                    _aa__safe_click(driver, hdr)
+
+                # choisir l'option par texte (labels visibles)
+                opts = p.find_elements(
+                    By.XPATH,
+                    ".//mat-radio-button//label[contains(@class,'mat-radio-label')][.//span[contains(@class,'mat-radio-label-content')]]"
+                )
+                for lab in opts:
+                    try:
+                        if not lab.is_displayed():
+                            continue
+                        txt = _aa__norm_ws(lab.text)
+                        if txt and _aa__contains(txt, choice):
+                            _aa__safe_click(driver, lab)
+                            # vérifier checked sur mat-radio-button parent
+                            try:
+                                mr = lab.find_element(By.XPATH, "ancestor::mat-radio-button[1]")
+                                if _aa__is_mat_checked(mr):
+                                    return True
+                            except Exception:
+                                pass
+                            return False
+                    except Exception:
+                        continue
+            except Exception:
+                continue
+
+    return False
 
 def execute_action(driver, instruction: str) -> bool:
     """
@@ -2000,6 +2270,14 @@ def execute_action(driver, instruction: str) -> bool:
         # ==========================================================
         if itype == "radio":
 
+            # Ask&Answer (Angular Material MATRIX): éviter les éléments cachés (desktop/mobile) et cliquer la bonne cellule.
+            # Ici, "ctx" contient le texte complet de la question (souvent avec "— <statement>"),
+            # et "label" contient le choix (colonne) à sélectionner.
+            question_text = ctx or ""
+            answer_text = label or ""
+            if question_text and answer_text and _aa__try_answer_matrix(driver, question_text, answer_text):
+                return True
+
             if _try(driver, "radio_slider", lambda:
                 Survey.input_handler.set_sliderpoints(driver, label, context_hint=ctx)
             ):
@@ -2104,7 +2382,23 @@ def execute_actions_plan(
         url_before = ""
 
     # cap sécurité (évite un flood si OpenAI hallucine)
-    actions = (actions or [])[:25]
+    # Par défaut on accepte plus que 25 pour couvrir les matrices longues (ex: 28 items).
+    try:
+        max_actions = int(os.getenv("MAX_ACTIONS_PER_PLAN", "60") or 60)
+    except Exception:
+        max_actions = 60
+    if max_actions < 1:
+        max_actions = 1
+
+    actions = (actions or [])
+    # IMPORTANT: si OpenAI a renvoyé un plan plus long que MAX_ACTIONS_PER_PLAN,
+    # on ne tronque pas ici : le parser batch borne déjà (max_select / qid_constraints),
+    # donc la taille reste contrôlée. Tronquer = “dernières questions jamais appliquées”.
+    if actions and len(actions) > max_actions:
+        print(f"[PLAN] MAX_ACTIONS_PER_PLAN={max_actions} < actions={len(actions)} -> pas de cap (plan déjà borné)")
+        max_actions = len(actions)
+
+    actions = actions[:max_actions]
 
     # Heuristique simple & prédictible:
     # - Un dropdown de langue peut reloader la page et annuler les réponses précédentes (ex: checkbox consent).
@@ -2226,7 +2520,6 @@ def execute_actions_plan(
 
         except Exception as e:
             try:
-                import os
                 debug_target = (os.getenv("ACTION_DEBUG_TARGET", "0") or "").strip().lower() in ("1", "true", "yes", "on")
                 if debug_target:
                     print(f"[TARGET_DEBUG] execute_actions_plan idx={idx} crashed: {type(e).__name__}: {e}")

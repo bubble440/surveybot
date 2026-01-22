@@ -1,0 +1,17 @@
+{
+  "name": "aa_selection_list_sports_fr",
+  "snapshot_dir": "snapshot",
+  "assert": {
+    "summary": {
+      "total": 2,
+      "by_type": {
+        "checkbox": 2
+      }
+    },
+    "must_have_checkbox_group": {
+      "group_key": "aa_selection_list:appQuestionContainer-801157:multi-question-0",
+      "min_options": 10,
+      "max_select": 3
+    }
+  }
+}
