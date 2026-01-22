@@ -1,3 +1,12 @@
+$env:RUN_ENV="local"
+$env:RUN_MODE="local"
+$env:DOM_DEBUG_FRAMES="1"
+$env:BROWSER_MODE="attach"
+$env:ACTION_DEBUG_TARGET="1"
+$env:ATTACH_TAB_SELECTOR="pick"
+$env:LOCAL_CTA_REQUIRE_ENTER="1"
+$env:ATTACH_TAB_URL_CONTAINS="none"
+
 # -----------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 # Pour lancer Chrome avec le debug remote activé (debug)
@@ -12,7 +21,6 @@ $env:BROWSER_MODE="attach"
 $env:DOM_DEBUG_FRAMES="1"
 $env:ACTION_DEBUG_TARGET="1"
 $env:LOCAL_CTA_REQUIRE_ENTER="1"
-$env:ATTACH_TAB_SELECTOR="current"
 $env:ATTACH_TAB_URL_CONTAINS="survey.walr.com"
 
 # Pour lancer surveybot en mode "attach" (debug)
