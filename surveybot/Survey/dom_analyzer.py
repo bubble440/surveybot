@@ -1480,6 +1480,190 @@ def _extract_askandanswer_mobile_matrix_rows(driver, frame_chain: list[int] | No
 
     return blocks
 
+def _extract_askandanswer_selection_list_questions(driver, frame_chain: list[int] | None) -> list[dict]:
+    """
+    Ask&Answer / FirstInsight (Angular Material) : questions rendues via <mat-selection-list>.
+
+    Problème:
+    - les options ne sont pas des <input type=checkbox>, donc l'extraction générique (radios/checkbox) ne voit rien.
+    - le seul <input> présent est souvent l'option "Autre (veuillez préciser)" => on extrait une fausse question.
+
+    Stratégie DOM-only, stricte et non-invasive:
+    - ne s'active que si on détecte un <app-survey-page> ET des <mat-selection-list> sous appQuestionContainer
+    - retourne 1 bloc par selection-list:
+        - question = mat-card-title
+        - options = texte des mat-list-option (fallback mat-label pour l'option Autre)
+        - option_xpath_map = XPath stable sur l'id de chaque mat-list-option (answer-*-*)
+
+    Objectif:
+    - corriger ce provider sans impacter les cas canoniques non-Angular.
+    """
+    frame_chain = list(frame_chain or [])
+
+    # Gate strict : pages Ask&Answer (Angular) uniquement
+    try:
+        if not driver.find_elements(By.CSS_SELECTOR, "app-survey-page"):
+            return []
+    except Exception:
+        return []
+
+    try:
+        lists = driver.find_elements(
+            By.CSS_SELECTOR,
+            "div[id^='appQuestionContainer-'] mat-selection-list[role='listbox']",
+        )
+    except Exception:
+        lists = []
+
+    if not lists:
+        return []
+
+    blocks: list[dict] = []
+
+    # Budget (évite prompts énormes si provider change et renvoie une liste très longue)
+    try:
+        max_lists = int(os.getenv("AA_SELECTION_LIST_MAX", "10") or "10")
+        if max_lists <= 0:
+            max_lists = 10
+    except Exception:
+        max_lists = 10
+
+    for sl in lists[:max_lists]:
+        try:
+            # options candidates
+            try:
+                opt_els = sl.find_elements(By.CSS_SELECTOR, "mat-list-option[role='option']")
+            except Exception:
+                opt_els = []
+
+            # ignore templates/vides
+            if len(opt_els) < 2:
+                continue
+
+            # remonter au conteneur de question
+            q_container = None
+            try:
+                q_container = sl.find_element(
+                    By.XPATH,
+                    "ancestor::div[starts-with(@id,'appQuestionContainer-')][1]",
+                )
+            except Exception:
+                q_container = None
+
+            # texte de question
+            question = ""
+            try:
+                scope = q_container or sl
+                titles = scope.find_elements(By.CSS_SELECTOR, "mat-card-title div")
+                if titles:
+                    question = _norm(titles[0].text or titles[0].get_attribute("innerText") or "")
+            except Exception:
+                question = ""
+
+            if not question:
+                continue
+
+            # itype : checkbox (multi) par défaut; si aria-multiselectable=false => radio
+            itype = "checkbox"
+            try:
+                am = (sl.get_attribute("aria-multiselectable") or "").strip().lower()
+                if am in {"false", "0", "no"}:
+                    itype = "radio"
+            except Exception:
+                pass
+
+            # options + mapping option->xpath
+            options: list[str] = []
+            option_xpath_map: dict[str, str] = {}
+
+            for opt in opt_els:
+                try:
+                    label = _norm(opt.text or opt.get_attribute("innerText") or "")
+                    # nettoie les multi-lignes (l'option "Autre" peut inclure du bruit)
+                    if label:
+                        label = _norm(label.splitlines()[0])
+
+                    # fallback robuste pour l'option "Autre (veuillez préciser)"
+                    if not label:
+                        try:
+                            labs = opt.find_elements(By.CSS_SELECTOR, "mat-label")
+                            if labs:
+                                label = _norm(labs[0].text or labs[0].get_attribute("innerText") or "")
+                        except Exception:
+                            label = ""
+
+                    if not label:
+                        continue
+
+                    # xpath stable : l'id answer-*-* est unique et cliquable
+                    xp = ""
+                    try:
+                        oid = (opt.get_attribute("id") or "").strip()
+                        if oid:
+                            xp = f"(//*[@id={_xpath_literal(oid)}])[1]"
+                        else:
+                            xp = _best_xpath_for_element(driver, opt)
+                    except Exception:
+                        xp = ""
+
+                    if not xp:
+                        continue
+
+                    nk = _norm_key(label)
+                    if nk in option_xpath_map:
+                        continue
+
+                    option_xpath_map[nk] = xp
+                    options.append(label)
+                except Exception:
+                    continue
+
+            if len(options) < 2 or not option_xpath_map:
+                continue
+
+            sl_id = ""
+            cont_id = ""
+            try:
+                sl_id = (sl.get_attribute("id") or "").strip()
+            except Exception:
+                sl_id = ""
+            try:
+                cont_id = (q_container.get_attribute("id") or "").strip() if q_container else ""
+            except Exception:
+                cont_id = ""
+
+            group_key = f"aa_selection_list:{cont_id}:{sl_id}".strip(":")
+            target_id = make_target_id("group", group_key, question)
+
+            register_target(
+                target_id,
+                {
+                    "kind": "group",
+                    "itype": itype,
+                    "group_key": group_key,
+                    "question": question,
+                    "option_xpath_map": option_xpath_map,
+                    "frame_chain": frame_chain,
+                    "aa_selection_list": True,
+                },
+            )
+
+            blocks.append(
+                {
+                    "question": question,
+                    "itype": itype,
+                    "options": options,
+                    "max_select": _compute_max_select(itype, options),
+                    "target_id": target_id,
+                    "context": {"kind": "group", "group_key": group_key, "aa_selection_list": True},
+                }
+            )
+
+        except Exception:
+            continue
+
+    return blocks
+
 def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any]]:
     """
     Analyse le DOM courant et retourne une liste de QuestionBlock.
@@ -1505,6 +1689,15 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         aa_blocks = _extract_askandanswer_mobile_matrix_rows(driver, frame_chain)
         if aa_blocks:
             return aa_blocks
+    except Exception:
+        pass
+
+    # --- 0c) Ask&Answer / FirstInsight : listes multi (mat-selection-list) ---
+    # Objectif: éviter de prendre l'input 'Autre (veuillez préciser)' comme une question.
+    try:
+        aa_sl_blocks = _extract_askandanswer_selection_list_questions(driver, frame_chain)
+        if aa_sl_blocks:
+            return aa_sl_blocks
     except Exception:
         pass
 
