@@ -2,14 +2,12 @@ print("BOOT: container démarré.", flush=True)
 import os
 IS_LOCAL = os.getenv("RUN_ENV", "local") == "local"
 
-import sys
+import sys, json, time, traceback
 from preselection.config_loader import load_config
 from launch import start_heartbeat_thread, acquire_account_lock_or_exit, mark_bot_running
 from launch import install_sigterm_handler, start_runtime_guard, launch_driver_or_fail, init_session_and_enter_surveys
 from launch import start_hot_reload_thread, run_main_loop, build_notifier, soft_restart
 from Management.guards.runtime_guard import get_guard
-import time
-import traceback
 from config import is_attach_mode, RUN_ENV, RUN_MODE, BROWSER_MODE
 
 if IS_LOCAL:
@@ -73,53 +71,262 @@ def _attach_select_best_tab(driver) -> None:
             pass
         print(f"[ATTACH] Tab sélectionné score={score} url={url}")
 
+def _attach_is_user_web_url(url: str) -> bool:
+    u = (url or "").strip().lower()
+    if not u:
+        return False
+    # On exclut volontairement les onglets internes Chrome (chrome://, devtools://, etc.)
+    return u.startswith("http://") or u.startswith("https://")
+
+def _attach__is_disabled_token(s: str) -> bool:
+    return (s or "").strip().lower() in ("none", "null", "false", "0", "off")
+
+def _attach__strip_url(u: str) -> str:
+    u = (u or "").strip()
+    if not u:
+        return ""
+    # ignore fragment
+    u = u.split("#", 1)[0].strip()
+    # normalize trailing slash (soft)
+    if u.endswith("/") and len(u) > 8:
+        u = u[:-1]
+    return u
+
+def _attach_urls_equiv(a: str, b: str) -> bool:
+    aa = _attach__strip_url(a)
+    bb = _attach__strip_url(b)
+    return bool(aa and bb and aa == bb)
+
+def _attach_pick_ui_active_tab(driver, handles):
+    """
+    Tente de retrouver l'onglet UI réellement actif (celui que tu vois).
+    Heuristique stable:
+      - on ne considère que les URLs http(s)
+      - on préfère visibilityState='visible' et document.hasFocus()==True
+      - si focus indisponible, on prend au moins visibilityState='visible'
+    Retour: tuple (idx, handle, url, vis, has_focus) ou None
+    """
+    best_visible = None  # (has_focus, idx, handle, url, vis)
+
+    for idx, h in enumerate(list(handles) or []):
+        try:
+            driver.switch_to.window(h)
+        except Exception:
+            continue
+
+        try:
+            url = driver.current_url or ""
+        except Exception:
+            url = ""
+
+        if not _attach_is_user_web_url(url):
+            continue
+
+        vis = ""
+        has_focus = False
+
+        try:
+            vis = (driver.execute_script("return (document.visibilityState || '') + ''") or "").strip().lower()
+        except Exception:
+            vis = ""
+
+        try:
+            has_focus = bool(driver.execute_script("return !!(document.hasFocus && document.hasFocus());"))
+        except Exception:
+            has_focus = False
+
+        # Meilleur cas: visible + focus => c'est l'onglet actif UI
+        if vis == "visible" and has_focus:
+            return (idx, h, url, vis, has_focus)
+
+        # Sinon on garde le meilleur "visible"
+        if vis == "visible":
+            cand = (has_focus, idx, h, url, vis)
+            if (best_visible is None) or (cand[0] > best_visible[0]):
+                best_visible = cand
+
+    if best_visible is not None:
+        has_focus, idx, h, url, vis = best_visible
+        return (idx, h, url, vis, has_focus)
+
+    return None
+
 def _attach_select_tab(driver) -> None:
     """
-    Sélection d'onglet en mode attach.
+    Sélection d'onglet en mode attach (LOCAL).
 
-    Priorité 1: ATTACH_TAB_URL_CONTAINS (si défini) => on prend le 1er onglet dont l'URL contient ce substring.
-    Sinon: ATTACH_TAB_SELECTOR:
-      - "current" (défaut): ne change pas d'onglet
-      - "last": dernier window_handle
-      - "best": ancien comportement (inputs+texte)
-      - "<index>": index numérique dans window_handles (ex: "2")
+    Objectif: comportement prédictible (pas de pseudo "focus" Selenium).
+
+    Priorités (dans l'ordre):
+    1) ATTACH_TAB_URL_CONTAINS           => 1er onglet dont l'URL contient le substring
+    2) ATTACH_TAB_TITLE_CONTAINS         => 1er onglet dont document.title contient le substring (case-insensitive)
+    3) ATTACH_TAB_DOM_CONTAINS           => 1er onglet dont body.innerText contient le substring (case-insensitive, tronqué)
+    4) ATTACH_TAB_SELECTOR:
+        - "pick" / "prompt": affiche la liste + demande un index (LOCAL only)
+        - "current": no-op (on garde l'onglet courant du driver, si http(s))
+        - "last"/"newest": dernier onglet http(s)
+        - "best": ancien scoring (inputs + texte)
+        - "<index>": index numérique dans window_handles
+    Fallback final: last_web (dernier http(s)).
     """
     url_contains = (os.getenv("ATTACH_TAB_URL_CONTAINS") or "").strip()
+    if _attach__is_disabled_token(url_contains):
+        url_contains = ""
+
+    title_contains = (os.getenv("ATTACH_TAB_TITLE_CONTAINS") or "").strip()
+    if _attach__is_disabled_token(title_contains):
+        title_contains = ""
+
+    dom_contains = (os.getenv("ATTACH_TAB_DOM_CONTAINS") or "").strip()
+    if _attach__is_disabled_token(dom_contains):
+        dom_contains = ""
+
     mode = (os.getenv("ATTACH_TAB_SELECTOR", "current") or "current").strip().lower()
 
     handles = list(getattr(driver, "window_handles", []) or [])
     if not handles:
         return
 
-    # URL contains (prioritaire)
-    if url_contains:
-        for i, h in enumerate(handles):
-            try:
-                driver.switch_to.window(h)
-                url = driver.current_url or ""
-                if url_contains in url:
-                    print(f"[ATTACH] Tab=url_contains idx={i} url={url}")
-                    return
-            except Exception:
+    def _switch(i: int) -> bool:
+        try:
+            h = handles[i]
+            driver.switch_to.window(h)
+            return True
+        except Exception:
+            return False
+
+    def _safe_url() -> str:
+        try:
+            return driver.current_url or ""
+        except Exception:
+            return ""
+
+    def _safe_title() -> str:
+        try:
+            return driver.title or ""
+        except Exception:
+            return ""
+
+    def _safe_body_text_prefix(max_chars: int = 8000) -> str:
+        try:
+            return (
+                driver.execute_script(
+                    "return (document.body && (document.body.innerText||'')) ? "
+                    "(document.body.innerText||'').slice(0, arguments[0]) : '';",
+                    int(max_chars),
+                )
+                or ""
+            )
+        except Exception:
+            return ""
+
+    def _pick_last_web() -> bool:
+        last_web = None  # (idx, url)
+        for i in range(len(handles)):
+            if not _switch(i):
                 continue
-        # si pas trouvé => ne pas faire n'importe quoi
-        print(f"[ATTACH] Tab=url_contains NOT FOUND ({url_contains}) => current")
-        return
+            u = _safe_url()
+            if _attach_is_user_web_url(u):
+                last_web = (i, u)
+        if last_web is not None:
+            i, _ = last_web
+            _switch(i)
+            print(f"[ATTACH] Tab=last_web idx={i} url={_safe_url()}")
+            return True
+        return False
+
+    # 1) URL contains (prioritaire)
+    if url_contains:
+        for i in range(len(handles)):
+            if not _switch(i):
+                continue
+            u = _safe_url()
+            if _attach_is_user_web_url(u) and (url_contains in u):
+                print(f"[ATTACH] Tab=url_contains idx={i} url={u}")
+                return
+        print(f"[ATTACH] Tab=url_contains NOT FOUND ({url_contains})")
+
+    # 2) Title contains (utile quand plusieurs onglets ont la même URL mais titres différents)
+    if title_contains:
+        needle = title_contains.lower()
+        for i in range(len(handles)):
+            if not _switch(i):
+                continue
+            u = _safe_url()
+            if not _attach_is_user_web_url(u):
+                continue
+            t = _safe_title().strip().lower()
+            if needle and (needle in t):
+                print(f"[ATTACH] Tab=title_contains idx={i} title={_safe_title()!r} url={u}")
+                return
+        print(f"[ATTACH] Tab=title_contains NOT FOUND ({title_contains})")
+
+    # 3) DOM contains (solution robuste pour 3 onglets avec EXACTEMENT la même URL)
+    if dom_contains:
+        needle = dom_contains.lower()
+        for i in range(len(handles)):
+            if not _switch(i):
+                continue
+            u = _safe_url()
+            if not _attach_is_user_web_url(u):
+                continue
+            txt = _safe_body_text_prefix(8000).lower()
+            if needle and (needle in txt):
+                print(f"[ATTACH] Tab=dom_contains idx={i} url={u}")
+                return
+        print(f"[ATTACH] Tab=dom_contains NOT FOUND ({dom_contains})")
+
+    # 4) Mode selector
+    if mode in ("pick", "prompt", "menu"):
+        if not IS_LOCAL:
+            # attach est déjà interdit en prod, mais on garde une safety net
+            print("[ATTACH] Tab=pick ignored (non-local)")
+        else:
+            print("[ATTACH] Tabs disponibles (idx | score=(actionables,text) | title | url):")
+            for i in range(len(handles)):
+                if not _switch(i):
+                    continue
+                u = _safe_url()
+                t = _safe_title().strip().replace("\n", " ")
+                if _attach_is_user_web_url(u):
+                    sc = _attach_tab_score(driver)
+                    print(f"[ATTACH]  {i:02d} | score={sc} | title={t[:80]!r} | url={u}")
+                else:
+                    print(f"[ATTACH]  {i:02d} | (non-web) | title={t[:80]!r} | url={u}")
+
+            choice = (input("[ATTACH] Choisis l'index d'onglet à utiliser: ") or "").strip()
+            if choice.isdigit():
+                idx = int(choice)
+                idx = max(0, min(idx, len(handles) - 1))
+                _switch(idx)
+                u = _safe_url()
+                if _attach_is_user_web_url(u):
+                    print(f"[ATTACH] Tab=pick idx={idx} url={u}")
+                    return
+                print(f"[ATTACH] Tab=pick idx={idx} non-web url={u} -> fallback last_web")
+            else:
+                print(f"[ATTACH] Tab=pick invalid={choice!r} -> fallback last_web")
+
+            if _pick_last_web():
+                return
 
     if mode in ("current", "active", "focused"):
-        try:
-            print(f"[ATTACH] Tab=current url={driver.current_url}")
-        except Exception:
-            pass
+        # No-op prédictible: on ne tente PAS de deviner le focus UI.
+        u = _safe_url()
+        if _attach_is_user_web_url(u):
+            print(f"[ATTACH] Tab=current(no-op) url={u}")
+            return
+        # si on est tombé sur chrome://tab-search etc., on fallback
+        if _pick_last_web():
+            return
         return
 
     if mode in ("last", "newest"):
-        h = handles[-1]
-        try:
-            driver.switch_to.window(h)
-            print(f"[ATTACH] Tab=last idx={len(handles)-1} url={driver.current_url}")
-        except Exception:
-            pass
+        if _pick_last_web():
+            return
+        # fallback brut
+        _switch(len(handles) - 1)
+        print(f"[ATTACH] Tab=last idx={len(handles)-1} url={_safe_url()}")
         return
 
     if mode == "best":
@@ -129,16 +336,19 @@ def _attach_select_tab(driver) -> None:
     if mode.isdigit():
         idx = int(mode)
         idx = max(0, min(idx, len(handles) - 1))
-        h = handles[idx]
-        try:
-            driver.switch_to.window(h)
-            print(f"[ATTACH] Tab=index idx={idx} url={driver.current_url}")
-        except Exception:
-            pass
+        _switch(idx)
+        u = _safe_url()
+        if _attach_is_user_web_url(u):
+            print(f"[ATTACH] Tab=index idx={idx} url={u}")
+            return
+        print(f"[ATTACH] Tab=index idx={idx} non-web url={u} -> fallback last_web")
+        if _pick_last_web():
+            return
         return
 
-    # fallback: rien
-    return
+    # Fallback final
+    if _pick_last_web():
+        return
 
 def run_attach_takeover(driver, *, api_key: str, account_id: str) -> None:
     """

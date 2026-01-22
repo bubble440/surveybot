@@ -687,6 +687,72 @@ def _apply_by_target_id(driver, target_id: str, itype: str, value: str) -> bool:
                             print(f"[TARGET_DEBUG] CDP click failed: {_short_exc(e)}")
                         return False
 
+                def _ensure_pre_clicks_ready(target_xpath: str) -> None:
+                    """
+                    Rend le target visible AVANT de le chercher/click.
+                    Cas typique: Ask&Answer mobile matrix (mat-expansion-panel replié).
+                    Budget borné, pas de retry infini.
+                    """
+                    pre_click_xps = payload.get("pre_click_xpaths") or []
+                    if not pre_click_xps:
+                        return
+
+                    # Déjà visible -> no-op
+                    try:
+                        cur = _find_best_visible(target_xpath)
+                        if cur:
+                            try:
+                                if cur.is_displayed():
+                                    return
+                            except Exception:
+                                return
+                    except Exception:
+                        pass
+
+                    # Ouvrir le panneau/accordéon (au plus 3 xpaths)
+                    for pre_xp in pre_click_xps[:3]:
+                        try:
+                            pre_el = _find_best_visible(pre_xp)
+                            if not pre_el:
+                                continue
+
+                            # éviter de retoggler un panneau déjà ouvert
+                            try:
+                                if (pre_el.get_attribute("aria-expanded") or "").strip().lower() == "true":
+                                    break
+                            except Exception:
+                                pass
+
+                            try:
+                                driver.execute_script("arguments[0].scrollIntoView({block:'center'});", pre_el)
+                            except Exception:
+                                pass
+
+                            try:
+                                pre_el.click()
+                            except Exception:
+                                try:
+                                    driver.execute_script("arguments[0].click();", pre_el)
+                                except Exception:
+                                    continue
+                            break
+                        except Exception:
+                            continue
+
+                    # Attendre que l'option devienne visible (animation/lazy render Angular)
+                    t0 = time.time()
+                    while time.time() - t0 < 1.3:
+                        try:
+                            cur = _find_best_visible(target_xpath)
+                            if cur:
+                                try:
+                                    if cur.is_displayed():
+                                        return
+                                except Exception:
+                                    return
+                        except Exception:
+                            pass
+                        time.sleep(0.05)
 
                 def _click_candidate(node, label: str) -> bool:
                     # 1) click webdriver standard
@@ -719,7 +785,36 @@ def _apply_by_target_id(driver, target_id: str, itype: str, value: str) -> bool:
                             print(f"[TARGET_DEBUG] js click failed on {label}: {_short_exc(e)}")
                         return False
 
+                # 0) pre-clicks (ex: ouvrir un panneau accordéon AVANT de chercher l'option)
+                # IMPORTANT: certains panels sont lazy-rendered: tant que le panel est fermé,
+                # les mat-radio-button n'existent pas / ne sont pas visibles -> xpath introuvable.
+                if (payload.get("pre_click_xpaths") or []) and not payload.get("_preclick_done"):
+                    payload["_preclick_done"] = True
+                    for pre_xp in (payload.get("pre_click_xpaths") or [])[:3]:
+                        try:
+                            pre_el = _find_best_visible(pre_xp)
+                            if not pre_el:
+                                continue
+                            # éviter de retoggler un panneau déjà ouvert
+                            try:
+                                if (pre_el.get_attribute("aria-expanded") or "").strip().lower() == "true":
+                                    continue
+                            except Exception:
+                                pass
+
+                            try:
+                                pre_el.click()
+                            except Exception:
+                                try:
+                                    driver.execute_script("arguments[0].click();", pre_el)
+                                except Exception:
+                                    pass
+                            time.sleep(0.12)
+                        except Exception:
+                            continue
+
                 # 1) trouver l'élément cible (label/span/input)
+                _ensure_pre_clicks_ready(xp)
                 try:
                     el = _find_best_visible(xp)
                     if not el:

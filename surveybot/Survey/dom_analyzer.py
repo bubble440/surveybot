@@ -16,9 +16,8 @@ Pensé pour 100+ bots.
 
 from __future__ import annotations
 from typing import List, Dict, Any, Tuple
-import re, time
+import re, time, zlib, os
 import unicodedata
-import os
 from Survey.dom_registry import clear_registry, register_target, make_target_id
 from Survey.frame_utils import iter_frame_chains, switch_to_frame_chain
 from selenium.webdriver.common.by import By
@@ -1197,6 +1196,290 @@ def _extract_focusvision_cardsort_block(driver, frame_chain: list[int] | None) -
         "context": {"kind": "group", "group_key": group_key, "cardsort": True},
     }
 
+def _extract_askandanswer_mobile_matrix_rows(driver, frame_chain: list[int] | None) -> list[dict]:
+    """
+    Ask&Answer / FirstInsight (Angular Material) : matrices en mode *mobile*
+    rendues comme une liste de <mat-expansion-panel class="mobile-matrix-question">.
+
+    Problème : les <input type=radio> des panels repliés ne sont pas "visibles" (height=0, visibility:hidden)
+    => notre extraction générique (qui filtre sur visibilité) ne sort que la/les lignes déjà ouvertes.
+
+    Stratégie DOM-only, prédictible:
+    - détecter les panels mobile-matrix-question
+    - créer 1 bloc radio par ligne (header = libellé de la ligne)
+    - options = textes des labels dans le panel
+    - registry: option_xpath_map pointe sur label[for=inputId] DANS le panel
+      + pre_click_xpaths pour ouvrir le panel avant de cliquer l'option
+    """
+    frame_chain = list(frame_chain or [])
+
+    try:
+        panels = driver.find_elements(By.CSS_SELECTOR, "mat-expansion-panel.mobile-matrix-question")
+    except Exception:
+        panels = []
+
+    if not panels:
+        return []
+
+    # Question globale (titre de la carte)
+    global_q = ""
+    try:
+        titles = driver.find_elements(By.CSS_SELECTOR, "mat-card-title div")
+        if titles:
+            global_q = _norm(titles[0].text or titles[0].get_attribute("innerText") or "")
+    except Exception:
+        global_q = ""
+
+    blocks: list[dict] = []
+
+    # Budget (évite prompts énormes sur des listes très longues)
+    try:
+        max_rows = int(os.getenv("AA_MATRIX_MAX_ROWS", "40") or "40")
+        if max_rows <= 0:
+            max_rows = 40
+    except Exception:
+        max_rows = 40
+
+    def _open_panel_if_needed(panel) -> None:
+        """
+        Angular Material: le contenu (radios) peut être rendu via *ngIf uniquement quand le panel est ouvert.
+        On ouvre le panel (1 fois) puis on attend brièvement que les radios apparaissent.
+        """
+        try:
+            hdr = panel.find_element(By.CSS_SELECTOR, "mat-expansion-panel-header")
+        except Exception:
+            return
+
+        try:
+            if (hdr.get_attribute("aria-expanded") or "").strip().lower() == "true":
+                return
+        except Exception:
+            pass
+
+        try:
+            driver.execute_script("arguments[0].scrollIntoView({block:'center'});", hdr)
+        except Exception:
+            pass
+        time.sleep(0.05)
+
+        pre_count = 0
+        try:
+            pre_count = len(panel.find_elements(By.CSS_SELECTOR, "mat-radio-button"))
+        except Exception:
+            pre_count = 0
+
+        try:
+            hdr.click()
+        except Exception:
+            try:
+                driver.execute_script("arguments[0].click();", hdr)
+            except Exception:
+                return
+
+        t0 = time.time()
+        while time.time() - t0 < 1.2:
+            # 1) Angular Material met à jour aria-expanded sur le header (signal fiable).
+            try:
+                if (hdr.get_attribute("aria-expanded") or "").strip().lower() == "true":
+                    break
+            except Exception:
+                pass
+
+            # 2) fallback: si le contenu est lazy-rendered, attendre l'apparition des radios.
+            if pre_count == 0:
+                try:
+                    if panel.find_elements(By.CSS_SELECTOR, "mat-radio-button"):
+                        break
+                except Exception:
+                    pass
+
+            time.sleep(0.05)
+
+    for panel in panels[:max_rows]:
+        try:
+            panel_id = (panel.get_attribute("id") or "").strip()
+            if not panel_id:
+                panel_id = f"panel_{zlib.adler32((panel.get_attribute('outerHTML') or '').encode('utf-8'))}"
+
+            # libellé de ligne = header
+            row_label = ""
+            try:
+                htxt = panel.find_elements(By.CSS_SELECTOR, "mat-expansion-panel-header .matrix-text-color")
+                if htxt:
+                    row_label = _norm(htxt[0].text or htxt[0].get_attribute("innerText") or "")
+            except Exception:
+                row_label = ""
+
+            if not row_label:
+                # fallback: 1ère ligne du header (souvent "Nom (détails)" puis la sélection en dessous)
+                try:
+                    hdrs = panel.find_elements(By.CSS_SELECTOR, "mat-expansion-panel-header")
+                    if hdrs:
+                        raw = hdrs[0].text or hdrs[0].get_attribute("innerText") or ""
+                        raw = (raw.splitlines()[0] if raw else "")
+                        row_label = _norm(raw)
+                except Exception:
+                    row_label = ""
+
+            if not row_label:
+                continue
+
+            # options (dans le panel body)
+            options: list[str] = []
+
+            def _collect_opt_nodes():
+                try:
+                    return panel.find_elements(By.CSS_SELECTOR, "mat-radio-button .mat-radio-label-content")
+                except Exception:
+                    return []
+
+            def _read_options(nodes) -> list[str]:
+                opts: list[str] = []
+                for n in nodes:
+                    try:
+                        t = _norm(n.text or n.get_attribute("innerText") or "")
+                        if t and t not in opts:
+                            opts.append(t)
+                    except Exception:
+                        continue
+                return opts
+
+            opt_nodes = _collect_opt_nodes()
+            options = _read_options(opt_nodes)
+
+            # Si le panel est replié, Selenium peut retourner "" pour du texte non visible.
+            # On force une ouverture (1 fois) puis on relit.
+            if not options:
+                _open_panel_if_needed(panel)
+                opt_nodes = _collect_opt_nodes()
+                options = _read_options(opt_nodes)
+
+            if not options:
+                continue
+
+            # registry: map option -> xpath (label[for=inputId]) scoped au panel
+            def _build_option_xpath_map() -> dict[str, str]:
+                m: dict[str, str] = {}
+                try:
+                    rbs = panel.find_elements(By.CSS_SELECTOR, "mat-radio-button")
+                except Exception:
+                    rbs = []
+
+                # 1) mapping stable : on préfère l'attribut @value de l'input (beaucoup plus robuste que le texte)
+                for rb in rbs:
+                    try:
+                        lab_txt = ""
+                        try:
+                            lc = rb.find_elements(By.CSS_SELECTOR, ".mat-radio-label-content")
+                            if lc:
+                                lab_txt = _norm(lc[0].text or lc[0].get_attribute("innerText") or "")
+                        except Exception:
+                            lab_txt = ""
+
+                        if not lab_txt:
+                            try:
+                                lab_txt = _norm(rb.text or rb.get_attribute("innerText") or "")
+                            except Exception:
+                                lab_txt = ""
+
+                        if not lab_txt:
+                            continue
+
+                        pid = _xpath_literal(panel_id)
+                        # Si on peut, on construit un XPath sur @value (stable)
+                        val = ""
+                        try:
+                            inp = rb.find_element(By.CSS_SELECTOR, "input.mat-radio-input")
+                            val = (inp.get_attribute("value") or "").strip()
+                        except Exception:
+                            val = ""
+
+                        if val:
+                            vlit = _xpath_literal(val)
+                            xp = (
+                                f"(//mat-expansion-panel[@id={pid}]"
+                                f"//mat-radio-button[.//input[@type='radio' and @value={vlit}]]"
+                                f"//label[contains(@class,'mat-radio-label')])[1]"
+                            )
+                        else:
+                            # Fallback texte (si @value indisponible)
+                            lit = _xpath_literal(lab_txt)
+                            xp = (
+                                f"(//mat-expansion-panel[@id={pid}]"
+                                f"//mat-radio-button[.//*[contains(@class,'mat-radio-label-content') and normalize-space(.)={lit}]]"
+                                f"//label[contains(@class,'mat-radio-label')])[1]"
+                            )
+                        m[_norm_key(lab_txt)] = xp
+                    except Exception:
+                        continue
+
+                # 2) fallback: certains DOM (ex: mat-table) n'ont pas le texte dans chaque radio.
+                #    Dans ce cas, on mappe par position (ordre des options) -> n-ième mat-radio-button du panel.
+                if not m and options:
+                    try:
+                        pid = _xpath_literal(panel_id)
+                        for i, opt in enumerate(options):
+                            if not opt:
+                                continue
+                            xp = (
+                                f"(//mat-expansion-panel[@id={pid}]//*[contains(@class,'mat-expansion-panel-body')]//mat-radio-button)[{i+1}]"
+                                f"//label[contains(@class,'mat-radio-label')][1]"
+                            )
+                            m[_norm_key(opt)] = xp
+                    except Exception:
+                        pass
+
+                return m
+
+            option_xpath_map = _build_option_xpath_map()
+            if not option_xpath_map:
+                _open_panel_if_needed(panel)
+                option_xpath_map = _build_option_xpath_map()
+
+            if not option_xpath_map:
+                continue
+
+            group_key = f"aa_mobile_matrix_row:{panel_id}"
+            question = f"{global_q} — {row_label}" if global_q else row_label
+            target_id = make_target_id("group", group_key, question)
+
+            # pré-clic : ouvrir le panel avant clic option
+            pre_click_xpaths = []
+            try:
+                pid = _xpath_literal(panel_id)
+                pre_click_xpaths = [f"(//mat-expansion-panel[@id={pid}]//mat-expansion-panel-header)[1]"]
+            except Exception:
+                pre_click_xpaths = []
+
+            register_target(
+                target_id,
+                {
+                    "kind": "group",
+                    "itype": "radio",
+                    "group_key": group_key,
+                    "question": question,
+                    "option_xpath_map": option_xpath_map,
+                    "pre_click_xpaths": pre_click_xpaths,
+                    "frame_chain": frame_chain,
+                    "aa_mobile_matrix": True,
+                },
+            )
+
+            blocks.append(
+                {
+                    "question": question,
+                    "itype": "radio",
+                    "options": options,
+                    "max_select": 1,
+                    "target_id": target_id,
+                    "context": {"kind": "group", "group_key": group_key, "aa_mobile_matrix": True},
+                }
+            )
+        except Exception:
+            continue
+
+    return blocks
+
 def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any]]:
     """
     Analyse le DOM courant et retourne une liste de QuestionBlock.
@@ -1213,6 +1496,15 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         cs_block = _extract_focusvision_cardsort_block(driver, frame_chain)
         if cs_block:
             return [cs_block]
+    except Exception:
+        pass
+
+    # --- 0b) Ask&Answer / FirstInsight : matrice mobile (expansion panels) ---
+    # Objectif: extraire TOUTES les lignes même si les panels sont repliés (inputs non visibles).
+    try:
+        aa_blocks = _extract_askandanswer_mobile_matrix_rows(driver, frame_chain)
+        if aa_blocks:
+            return aa_blocks
     except Exception:
         pass
 
