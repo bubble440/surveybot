@@ -106,6 +106,53 @@ def _is_actionable_visible(el) -> bool:
             pass
 
         tag = ((getattr(el, "tag_name", "") or "").lower() or "")
+        # 1bis) <select> masqué mais contrôlé par un proxy visible (ex: bootstrap-select / selectpicker)
+        # Exemple: <select class="selectpicker bs-select-hidden"> + bouton .dropdown-toggle visible.
+        if tag == "select":
+            try:
+                cls = (el.get_attribute("class") or "").lower()
+                if ("bs-select-hidden" in cls) or ("selectpicker" in cls):
+                    proxy = None
+
+                    # ✅ Ipsos: le proxy bootstrap-select est souvent un SIBLING (pas un ancêtre)
+                    for xp in (
+                        "ancestor::*[contains(concat(' ',normalize-space(@class),' '),' bootstrap-select ')][1]",
+                        "following-sibling::*[contains(concat(' ',normalize-space(@class),' '),' bootstrap-select ')][1]",
+                        "preceding-sibling::*[contains(concat(' ',normalize-space(@class),' '),' bootstrap-select ')][1]",
+                    ):
+                        try:
+                            proxy = el.find_element(By.XPATH, xp)
+                            if proxy:
+                                break
+                        except Exception:
+                            proxy = None
+
+                    if proxy:
+                        # si le bouton proxy est visible, on considère le select comme actionnable
+                        btn = None
+                        try:
+                            btn = proxy.find_element(
+                                By.CSS_SELECTOR,
+                                "button.dropdown-toggle, button[data-toggle='dropdown']",
+                            )
+                        except Exception:
+                            btn = None
+
+                        if btn:
+                            try:
+                                if btn.is_displayed() and _rect_ok(btn):
+                                    return True
+                            except Exception:
+                                pass
+
+                        try:
+                            if proxy.is_displayed() and _rect_ok(proxy):
+                                return True
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+
         if tag == "input":
             t = (el.get_attribute("type") or "").strip().lower()
             if t in ("radio", "checkbox"):
@@ -296,6 +343,70 @@ def _detect_itype(el) -> str:
         return role
 
     return "unknown"
+
+def _dropdown_field_hint(driver, el) -> str:
+    """Sous-label pour distinguer plusieurs dropdowns dans la même question.
+
+    Cas typique: "Quelle est votre date de naissance ?" avec 2 selects (Mois / Année),
+    souvent rendus via bootstrap-select (select masqué + bouton visible).
+    """
+    try:
+        # 1) name/id
+        nid = f"{(el.get_attribute('name') or '')} {(el.get_attribute('id') or '')}".lower()
+        if any(k in nid for k in ("month", "mois")):
+            return "Mois"
+        if any(k in nid for k in ("year", "annee", "année")):
+            return "Année"
+
+        # 2) classes ancêtres (monthPicker/yearPicker, etc.)
+        try:
+            anc = el.find_element(
+                By.XPATH,
+                "ancestor-or-self::*[contains(@class,'month') or contains(@class,'mois') or contains(@class,'year') or contains(@class,'annee')][1]"
+            )
+            cls = (anc.get_attribute("class") or "").lower()
+            if ("month" in cls) or ("mois" in cls):
+                return "Mois"
+            if ("year" in cls) or ("annee" in cls) or ("année" in cls):
+                return "Année"
+        except Exception:
+            pass
+
+        # 3) bootstrap-select proxy button text
+        try:
+            anc = el.find_element(
+                By.XPATH,
+                "ancestor::*[contains(concat(' ',normalize-space(@class),' '),' bootstrap-select ')][1]"
+            )
+            btns = anc.find_elements(By.CSS_SELECTOR, "button.dropdown-toggle, button[data-toggle='dropdown']")
+            for b in (btns or [])[:2]:
+                t = _norm(b.text or b.get_attribute("innerText") or "")
+                tl = (t or "").lower()
+                if tl in ("mois", "month"):
+                    return "Mois"
+                if tl in ("année", "annee", "year"):
+                    return "Année"
+        except Exception:
+            pass
+
+        # 4) first option (placeholder)
+        try:
+            opts = el.find_elements(By.TAG_NAME, "option")
+            for o in (opts or [])[:3]:
+                if o.get_attribute("disabled"):
+                    continue
+                t = _norm(o.text or o.get_attribute("innerText") or "")
+                tl = (t or "").lower()
+                if tl in ("mois", "month"):
+                    return "Mois"
+                if tl in ("année", "annee", "year"):
+                    return "Année"
+        except Exception:
+            pass
+
+        return ""
+    except Exception:
+        return ""
 
 # =========================
 # Extraction labels/options
@@ -2187,7 +2298,35 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             if not question:
                 continue
 
+            # Spécial: plusieurs dropdowns dans le même conteneur (ex: DOB Mois/Année).
+            # - Enrichit la question avec un sous-label (Mois/Année) si possible
+            # - Évite de dédupliquer à tort deux <select> distincts
+            if itype == "dropdown":
+                try:
+                    multi = False
+                    if container:
+                        sels = container.find_elements(By.TAG_NAME, "select")
+                        if len(sels) >= 2:
+                            multi = True
+                    if multi:
+                        hint = _dropdown_field_hint(driver, el)
+                        if hint and hint.lower() not in (question or "").lower():
+                            question = _norm(f"{question} — {hint}")
+                except Exception:
+                    pass
+
             sig = (question, itype)
+            if itype == "dropdown":
+                try:
+                    sig = (
+                        question,
+                        itype,
+                        (el.get_attribute("name") or "").strip(),
+                        (el.get_attribute("id") or "").strip(),
+                    )
+                except Exception:
+                    sig = (question, itype)
+
             if sig in seen_signatures:
                 continue
             seen_signatures.add(sig)
@@ -2206,10 +2345,34 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                     pass
 
             # --- target_id + registry pour single input
-            single_key = f"{itype}:{(el.get_attribute('id') or '').strip()}:{(el.get_attribute('name') or '').strip()}"
+            el_id = (el.get_attribute("id") or "").strip()
+            el_name = (el.get_attribute("name") or "").strip()
+            el_tag = (el.tag_name or "").strip().lower()
+
+            single_key = f"{itype}:{el_id}:{el_name}"
             target_id = make_target_id("single", single_key, question)
 
             xpath = _best_xpath_for_element(driver, el)
+
+            # Locators alternatifs (stables) : en pratique, @name survit aux re-render Wicket/Bootstrap-select
+            alt_xpaths = []
+            try:
+                if el_tag and el_name:
+                    alt_xpaths.append(f"//{el_tag}[@name={_xpath_literal(el_name)}]")
+                elif el_name:
+                    alt_xpaths.append(f"//*[@name={_xpath_literal(el_name)}]")
+            except Exception:
+                pass
+
+            try:
+                if el_id:
+                    alt_xpaths.append(f"//*[@id='{el_id}']")
+            except Exception:
+                pass
+
+            # dédup + retirer le primary xpath
+            alt_xpaths = [x for x in dict.fromkeys(alt_xpaths) if x and x != xpath][:4]
+
             register_target(
                 target_id,
                 {
@@ -2217,6 +2380,10 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                     "itype": itype,
                     "question": question,
                     "xpath": xpath,
+                    "alt_xpaths": alt_xpaths,
+                    "tag": el_tag,
+                    "name": el_name,
+                    "id": el_id,
                     "frame_chain": frame_chain,
                 },
             )

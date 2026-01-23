@@ -1071,10 +1071,66 @@ def _try_select_option_any(driver, option_text: str) -> bool:
 
     target = _norm_txt(option_text)
 
+    # [PATCH] Ne pas "sélectionner" un placeholder (inutile et souvent disqualifiant)
+    if target in {"mois", "année", "annee", "month", "year"}:
+        print(f"ℹ️ Valeur placeholder ignorée: '{option_text}'. source: input_handler.py")
+        return False
+
     # A) <select> natif
     selects = driver.find_elements(By.TAG_NAME, "select")
     for s in selects:
         try:
+            # [PATCH] Sélection via JS (robuste même si <select> hidden / bootstrap-select)
+            ok_js = False
+            if target:
+                try:
+                    ok_js = bool(driver.execute_script(
+                        """
+                        const sel = arguments[0];
+                        const target = arguments[1];
+                        if (!sel || !sel.options) return false;
+
+                        const norm = (x) => (x || "").toString().trim().toLowerCase();
+                        const tgt = norm(target);
+
+                        let found = null;
+                        for (const opt of sel.options) {
+                            const t = norm(opt.textContent);
+                            if (!t) continue;
+                            if (t === tgt || t.includes(tgt)) { found = opt; break; }
+                        }
+                        if (!found) return false;
+
+                        sel.value = found.value;
+                        found.selected = true;
+
+                        try { sel.dispatchEvent(new Event('input', {bubbles:true})); } catch(e){}
+                        try { sel.dispatchEvent(new Event('change',{bubbles:true})); } catch(e){}
+                        try { sel.dispatchEvent(new Event('blur',  {bubbles:true})); } catch(e){}
+
+                        // bootstrap-select refresh si dispo
+                        try {
+                          if (window.jQuery && window.jQuery(sel).selectpicker) {
+                            window.jQuery(sel).selectpicker('refresh');
+                          }
+                        } catch(e){}
+
+                        return true;
+                        """,
+                        s, target
+                    ))
+                except Exception:
+                    ok_js = False
+
+            if ok_js:
+                print(f"✅ Option sélectionnée (JS/select) : {option_text}. source: input_handler.py")
+                try:
+                    driver._ui_overlay_opened = None
+                except Exception:
+                    pass
+                return True
+
+            # fallback existant
             sel = Select(s)
             # match texte visible
             for opt in sel.options:
@@ -1281,11 +1337,40 @@ def _best_dropdown_for_hint(driver, hint: str | None, context_hint: str | None =
         return cands[0]
     h = _norm_hint(hint)
     c = _norm_hint(context_hint) if context_hint else ""
+    # Disambiguation spécifique: quand le hint mentionne explicitement 'année/mois',
+    # on privilégie le dropdown dont le libellé/texte propre correspond (évite d'ouvrir 'Mois' à la place de 'Année').
+    want = None
+    if any(k in h for k in ("année", "annee", "year", "years")):
+        want = "year"
+    elif any(k in h for k in ("mois", "month", "months")):
+        want = "month"
+
     best, best_score = None, -1e9
     for el in cands:
         try:
             sig = _element_signature_text(driver, el)
             sim = _similarity(h, sig)
+            if want:
+                try:
+                    nid = _norm_txt(((el.get_attribute("name") or "") + " " + (el.get_attribute("id") or "") + " " + (el.get_attribute("aria-label") or "")).strip())
+                except Exception:
+                    nid = ""
+                try:
+                    self_txt = _norm_txt((el.text or el.get_attribute("innerText") or "").strip())
+                except Exception:
+                    self_txt = ""
+                pool = f"{nid} {self_txt}"
+                if want == "year":
+                    if any(t in pool for t in ("année", "annee", "year", "years")):
+                        sim += 0.55
+                    else:
+                        sim -= 0.25
+                else:
+                    if any(t in pool for t in ("mois", "month", "months")):
+                        sim += 0.55
+                    else:
+                        sim -= 0.25
+
             # petit boost si le hint ressemble à des champs typiques (année/mois/pays…)
             if any(
                 k in h

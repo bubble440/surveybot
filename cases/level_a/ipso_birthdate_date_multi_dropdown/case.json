@@ -1,0 +1,17 @@
+{
+  "name": "ipso_birthdate_date_multi_dropdown",
+  "snapshot_dir": "snapshot",
+  "assert": {
+    "summary": {
+      "total": 2,
+      "by_type": {
+        "dropdown": 2
+      }
+    },
+    "must_have_dropdown_input": {
+      "question_contains": "année — mois",
+      "min_options": 12,
+      "max_select": 1
+    }
+  }
+}
