@@ -1943,10 +1943,63 @@ def handle_captcha_guard(driver):
             return True
 
         try:
-            still_there = bool(driver.execute_script("""
-                const root = document.querySelector('#sliderpanel') || document.body;
-                if (!root) return false;
-                return !!root.querySelector('#sliderpanel, .verify-img-panel, .verify-gap, .verify-bar-area, .verify-move-block, .verify-sub-block');
+            still_there = bool(driver.execute_script(r"""
+                const isVisible = (e) => {
+                  try{
+                    const cs = getComputedStyle(e);
+                    if (!cs) return false;
+                    if (cs.display === 'none' || cs.visibility === 'hidden' || cs.opacity === '0') return false;
+                    const r = e.getBoundingClientRect();
+                    if (!r) return false;
+                    if (r.bottom < 0 || r.right < 0) return false;
+                    return (r.width > 2 && r.height > 2);
+                  }catch(_){ return false; }
+                };
+
+                // 1) Slider puzzle (NIQ/GfK)
+                const slider = document.querySelector('#sliderpanel');
+                if (
+                  slider && isVisible(slider) &&
+                  slider.querySelector('.verify-img-panel, .verify-gap, .verify-bar-area, .verify-move-block, .verify-sub-block')
+                ) return true;
+
+                // 2) reCAPTCHA / hCaptcha visibles (ignorer 0x0 / 1x1)
+                const widgetSels = [
+                  "iframe[src*='recaptcha']",
+                  "iframe[src*='captcha']",
+                  "iframe[src*='hcaptcha']",
+                  ".g-recaptcha",
+                  ".h-captcha",
+                  "#recaptcha",
+                  "[data-sitekey]"
+                ];
+                for (const e of Array.from(document.querySelectorAll(widgetSels.join(",")))) {
+                  if (!isVisible(e)) continue;
+                  const r = e.getBoundingClientRect();
+                  const tn = (e.tagName||"").toLowerCase();
+                  if (tn === "iframe" || e.classList.contains("g-recaptcha") || e.classList.contains("h-captcha")) {
+                    if (r.width >= 60 && r.height >= 40) return true;
+                  } else {
+                    if (r.width >= 60 && r.height >= 40) return true;
+                  }
+                }
+
+                // 3) PureSpectrum CAPTCHA (ps-captcha-question)
+                const psRoot = document.querySelector('ps-captcha-question') || document.querySelector('ps-captcha');
+                if (psRoot && isVisible(psRoot)) {
+                  const img = psRoot.querySelector("img[alt*='captcha' i], img[alt*='ps captcha' i]");
+                  const inp = psRoot.querySelector("input[data-e2e='alpha-numeric-input'], ps-alpha-numeric-input input");
+                  if (img && inp && isVisible(img) && isVisible(inp)) return true;
+                }
+
+                // 4) fallback: input id/name contient captcha (visible)
+                for (const i of Array.from(document.querySelectorAll("input[id*='captcha' i], input[name*='captcha' i]"))) {
+                  if (!isVisible(i)) continue;
+                  const r = i.getBoundingClientRect();
+                  if (r.width >= 10 && r.height >= 10) return true;
+                }
+
+                return false;
             """))
         except Exception:
             still_there = False
