@@ -324,6 +324,48 @@ def is_captcha_screen(driver) -> bool:
     if any(k in txt for k in robot_kw):
         return True
 
+    # 1a) PureSpectrum CAPTCHA (ps-captcha-question)
+    # Important: le mot "captcha" n'est pas forcément présent dans le texte visible,
+    # donc on détecte via signaux DOM forts (image + input dédié).
+    try:
+        js_ps = r"""
+        const isVisible = (e) => {
+          try{
+            const cs = getComputedStyle(e);
+            if (!cs) return false;
+            if (cs.display === 'none' || cs.visibility === 'hidden' || cs.opacity === '0') return false;
+            const r = e.getBoundingClientRect();
+            if (!r) return false;
+            if (r.bottom < 0 || r.right < 0) return false;
+            return (r.width > 10 && r.height > 10);
+          }catch(_){ return false; }
+        };
+
+        const root = document.querySelector('ps-captcha-question') || document.querySelector('ps-captcha');
+        if (!root || !isVisible(root)) return false;
+
+        const img = root.querySelector("img[alt*='captcha' i], img[alt*='ps captcha' i]");
+        const inp = root.querySelector(
+          "input[data-e2e='alpha-numeric-input'], ps-alpha-numeric-input input, " +
+          "input[aria-label*='characters you see' i], input[aria-label*='caract' i]"
+        );
+
+        if (!img || !inp) return false;
+        return isVisible(img) && isVisible(inp);
+        """
+
+        for chain in iter_frame_chains(driver, max_depth=2):
+            with switch_to_frame_chain(driver, chain) as ok:
+                if not ok:
+                    continue
+                try:
+                    if driver.execute_script(js_ps):
+                        return True
+                except Exception:
+                    continue
+    except Exception:
+        pass
+
     # "captcha" seul est trop bruité (templates / erreurs non visibles).
     # On n’accepte "captcha/hcaptcha" que si un widget/contrôle captcha *visible* est présent,
     # ou si la page n’a aucune réponse exploitable (rare mais possible sur des interstitiels).
