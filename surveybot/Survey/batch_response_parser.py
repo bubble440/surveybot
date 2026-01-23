@@ -10,7 +10,7 @@ valeur //// itype //// contexte
 """
 
 from __future__ import annotations
-import re
+import re, datetime
 from typing import Dict, Optional, List
 _ALLOWED_ITYPES = {"radio", "checkbox", "dropdown", "text", "textarea", "button", "number"}
 _QID_RE = re.compile(r"\bQ\d+\b", re.IGNORECASE)
@@ -175,18 +175,69 @@ def _is_system_scope(scope: str | None) -> bool:
     return any(x in v for x in ["__viewstate", "__eventvalidation", "__viewstategenerator", "__eventtarget", "__eventargument"])
 
 def sanitize_actions(actions: list) -> list:
+    """Nettoie/valide les actions OpenAI avant exécution."""
     cleaned = []
-    for a in actions:
-        it = _norm_lc(getattr(a, "itype", None) or a.get("itype"))
-        scope = getattr(a, "scope_hint", None) or a.get("scope_hint") or getattr(a, "dom_scope_hint", None) or a.get("dom_scope_hint")
+    now_year = datetime.datetime.utcnow().year
 
-        if scope and _is_system_scope(scope):
+    months_fr = {
+        "1": "Janvier", "01": "Janvier",
+        "2": "Février", "02": "Février",
+        "3": "Mars", "03": "Mars",
+        "4": "Avril", "04": "Avril",
+        "5": "Mai", "05": "Mai",
+        "6": "Juin", "06": "Juin",
+        "7": "Juillet", "07": "Juillet",
+        "8": "Août", "08": "Août",
+        "9": "Septembre", "09": "Septembre",
+        "10": "Octobre",
+        "11": "Novembre",
+        "12": "Décembre",
+    }
+    months_en_to_fr = {
+        "january": "Janvier", "february": "Février", "march": "Mars", "april": "Avril",
+        "may": "Mai", "june": "Juin", "july": "Juillet", "august": "Août",
+        "september": "Septembre", "october": "Octobre", "november": "Novembre", "december": "Décembre",
+    }
+
+    for a in actions or []:
+        if not isinstance(a, dict):
+            cleaned.append(a)
             continue
 
-        # si jamais CTA passé en text/whatever
-        answer = _norm_lc(getattr(a, "answer", None) or a.get("answer"))
-        if it == "text" and any(tok in answer for tok in ["continue", "continuer", "next", "suivant"]):
+        it = _norm_lc(a.get("itype") or "")
+        ctx_lc = _norm_lc(str(a.get("context") or ""))
+        raw_lc = _norm_lc(str(a.get("raw") or ""))
+
+        # valeur (clé correcte)
+        v = a.get("value")
+        v_lc = _norm_lc(str(v or ""))
+
+        # virer les “CTA” parasites très courts
+        if it in ("text", "dropdown", "radio", "checkbox", "") and any(tok in v_lc for tok in ["continue", "continuer", "next", "suivant"]) and len(v_lc) <= 16:
             continue
+
+        is_dob = any(k in ctx_lc or k in raw_lc for k in ["date de naissance", "naissance", "dob", "birth"])
+        if is_dob and it == "dropdown":
+            # Année : force 18–64
+            if any(k in ctx_lc or k in raw_lc for k in ["année", "annee", "year"]):
+                m = re.search(r"\b(19\d{2}|20\d{2})\b", str(v or ""))
+                if m:
+                    y = int(m.group(1))
+                    min_y = now_year - 64
+                    max_y = now_year - 18
+                    if y < min_y or y > max_y:
+                        y2 = now_year - 25
+                        y2 = max(min_y, min(max_y, y2))
+                        a = dict(a)
+                        a["value"] = str(y2)
+                        a["raw"] = (a.get("raw") or "") + f" [sanitized_year:{y}->{y2}]"
+
+            # Mois : map num/anglais -> FR
+            if any(k in ctx_lc or k in raw_lc for k in ["mois", "month"]):
+                if v_lc in months_fr:
+                    a = dict(a); a["value"] = months_fr[v_lc]
+                elif v_lc in months_en_to_fr:
+                    a = dict(a); a["value"] = months_en_to_fr[v_lc]
 
         cleaned.append(a)
 

@@ -1011,10 +1011,73 @@ def _apply_by_target_id(driver, target_id: str, itype: str, value: str) -> bool:
                 # --- Dropdown: set value via JS + dispatch events (works even if <select> is hidden) ---
                 # + cas spécial "sq-sliderpoints" : cliquer / dragger la piste pour que l'UI se mette à jour
                 if resolved_itype == "dropdown":
-                    try:
-                        sel = driver.find_element(By.XPATH, xp)
-                        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", sel)
-                    except Exception:
+
+                    # Trouver le <select> même si l'id a changé (re-render).
+                    def _iter_dropdown_candidates():
+                        cands = []
+
+                        def _add(elems):
+                            for e in elems or []:
+                                try:
+                                    if (e.tag_name or "").lower() == "select":
+                                        cands.append(e)
+                                except Exception:
+                                    continue
+
+                        # 1) xpath principal
+                        if xp:
+                            try:
+                                _add(driver.find_elements(By.XPATH, xp))
+                            except Exception:
+                                pass
+
+                        # 2) alt_xpaths (ex: //select[@name='...'])
+                        for ax in (payload.get("alt_xpaths") or []):
+                            try:
+                                _add(driver.find_elements(By.XPATH, ax))
+                            except Exception:
+                                pass
+
+                        # 3) By.NAME / By.ID (au cas où)
+                        nm = (payload.get("name") or "").strip()
+                        if nm:
+                            try:
+                                _add(driver.find_elements(By.NAME, nm))
+                            except Exception:
+                                pass
+
+                        eid = (payload.get("id") or "").strip()
+                        if eid:
+                            try:
+                                _add(driver.find_elements(By.ID, eid))
+                            except Exception:
+                                pass
+
+                        # 4) fallback: si aucun locator n'a matché (re-render), tenter tous les <select>.
+                        #    Le filtrage se fera plus bas via la présence de l'option demandée.
+                        if not cands:
+                            try:
+                                _add(driver.find_elements(By.CSS_SELECTOR, "select"))
+                            except Exception:
+                                pass
+
+                        # dédup
+                        uniq = []
+                        seen = set()
+                        for e in cands:
+                            try:
+                                k = getattr(e, "_id", None) or getattr(e, "id", None)
+                            except Exception:
+                                k = None
+                            if k and k in seen:
+                                continue
+                            if k:
+                                seen.add(k)
+                            uniq.append(e)
+                        return uniq
+
+                    v = (value or "").strip()
+                    if not v:
                         return False
 
                     v = (value or "").strip()
@@ -1043,134 +1106,151 @@ def _apply_by_target_id(driver, target_id: str, itype: str, value: str) -> bool:
 
                     v_lc = _key(v)
 
-                    # options exploitables (hors placeholder)
-                    try:
-                        raw_opts = sel.find_elements(By.TAG_NAME, "option")
-                    except Exception:
-                        raw_opts = []
-
-                    real_opts = []  # [(idx, text_lc, value)]
-                    for o in raw_opts:
+                    for sel in _iter_dropdown_candidates():
+                        # Best-effort: amener le select dans le viewport (même s'il est masqué)
                         try:
-                            if (o.get_attribute("disabled") or "").strip():
-                                continue
-                            t = _key(o.text or "")
-                            if not t:
-                                continue
-                            ov = (o.get_attribute("value") or "").strip()
-                            if ov in ("", "-1"):
-                                continue
-                            if any(tok in t for tok in ("veuillez", "sélection", "selection", "select", "choose")):
-                                continue
-                            real_opts.append((len(real_opts), t, ov))
+                            driver.execute_script("arguments[0].scrollIntoView({block:'center'});", sel)
                         except Exception:
+                            pass
+
+                        # options exploitables (hors placeholder)
+                        try:
+                            raw_opts = sel.find_elements(By.TAG_NAME, "option")
+                        except Exception:
+                            raw_opts = []
+
+                        real_opts = []  # [(idx, text_lc, value)]
+                        for o in raw_opts:
+                            try:
+                                if (o.get_attribute("disabled") or "").strip():
+                                    continue
+                                t = _key(o.text or "")
+                                if not t:
+                                    continue
+                                ov = (o.get_attribute("value") or "").strip()
+                                if ov in ("", "-1"):
+                                    continue
+                                if any(tok in t for tok in ("veuillez", "sélection", "selection", "select", "choose")):
+                                    continue
+                                real_opts.append((len(real_opts), t, ov))
+                            except Exception:
+                                continue
+
+                        if not real_opts:
                             continue
 
-                    if not real_opts:
-                        return False
+                        best_val = None
+                        best_idx = None
 
-                    best_val = None
-                    best_idx = None
-                    for i, t, ov in real_opts:
-                        if (t == v_lc) or (v_lc in t) or (t in v_lc):
-                            best_val = ov
-                            best_idx = i
-                            break
-
-                    if best_val is None:
+                        # matching strict puis partiel
                         for i, t, ov in real_opts:
-                            if v_lc and (v_lc in t):
+                            if (t == v_lc) or (v_lc in t) or (t in v_lc):
                                 best_val = ov
                                 best_idx = i
                                 break
 
-                    if best_val is None or best_idx is None:
-                        return False
+                        if best_val is None:
+                            for i, t, ov in real_opts:
+                                if v_lc and (v_lc in t):
+                                    best_val = ov
+                                    best_idx = i
+                                    break
 
-                    # 1) source de vérité: <select>
-                    try:
-                        driver.execute_script(
-                            """
-                            const sel = arguments[0];
-                            const val = arguments[1];
-                            sel.value = val;
-                            try { sel.dispatchEvent(new Event('input',  {bubbles:true})); } catch(e) {}
-                            try { sel.dispatchEvent(new Event('change', {bubbles:true})); } catch(e) {}
-                            """,
-                            sel,
-                            best_val,
-                        )
-                    except Exception:
-                        return False
+                        if best_val is None or best_idx is None:
+                            continue
 
-                    # 2) sliderpoints: clic/drag sur la piste pour déplacer le handle (sinon off-scale)
-                    try:
-                        meta = payload.get("meta") or {}
-                        src = (meta.get("source") or "").strip().lower()
-                        sel_id = (sel.get_attribute("id") or "").strip()
-                        is_sliderpoints = (src == "sq-sliderpoints") or ("sliderpoints" in sel_id.lower())
+                        # 1) source de vérité: <select>
+                        try:
+                            driver.execute_script(
+                                """
+                                const sel = arguments[0];
+                                const val = arguments[1];
+                                sel.value = val;
+                                try { sel.dispatchEvent(new Event('input',  {bubbles:true})); } catch(e) {}
+                                try { sel.dispatchEvent(new Event('change', {bubbles:true})); } catch(e) {}
+                                try {
+                                  if (window.jQuery && window.jQuery(sel).selectpicker) {
+                                    window.jQuery(sel).selectpicker('refresh');
+                                  }
+                                } catch(e) {}
+                                """,
+                                sel,
+                                best_val,
+                            )
+                        except Exception:
+                            continue
 
-                        if is_sliderpoints:
-                            track = None
-                            if sel_id:
-                                try:
-                                    track = driver.find_element(By.ID, f"sliderpoints_{sel_id}")
-                                except Exception:
-                                    track = None
+                        # 2) sliderpoints: clic/drag sur la piste pour déplacer le handle (sinon off-scale)
+                        try:
+                            meta = payload.get("meta") or {}
+                            src = (meta.get("source") or "").strip().lower()
+                            sel_id = (sel.get_attribute("id") or "").strip()
+                            is_sliderpoints = (src == "sq-sliderpoints") or ("sliderpoints" in sel_id.lower())
 
-                            if track is None:
-                                try:
-                                    container = sel.find_element(
-                                        By.XPATH,
-                                        "ancestor::*[contains(@class,'sq-sliderpoints-container') or contains(@class,'sq-sliderpoints-element')][1]",
-                                    )
-                                    track = container.find_element(By.CSS_SELECTOR, ".ui-slider-horizontal")
-                                except Exception:
-                                    track = None
-
-                            if track is not None:
-                                driver.execute_script("arguments[0].scrollIntoView({block:'center'});", track)
-                                r = track.rect or {}
-                                w = int(r.get("width", 0) or 0)
-                                h = int(r.get("height", 0) or 0)
-
-                                steps = max(1, len(real_opts) - 1)
-                                x = int((best_idx / steps) * max(1, w - 4)) + 2
-                                y = max(1, h // 2)
-
-                                try:
-                                    ActionChains(driver).move_to_element_with_offset(track, x, y).click().perform()
-                                except Exception:
-                                    pass
-
-                                def _handle_offscale() -> bool:
+                            if is_sliderpoints:
+                                track = None
+                                if sel_id:
                                     try:
-                                        hnd = track.find_element(By.CSS_SELECTOR, ".ui-slider-handle")
-                                        st = (hnd.get_attribute("style") or "")
-                                        return ("-40" in st) or ("offscale" in st.lower())
+                                        track = driver.find_element(By.ID, f"sliderpoints_{sel_id}")
                                     except Exception:
-                                        return False
+                                        track = None
 
-                                if _handle_offscale():
+                                if track is None:
                                     try:
-                                        hnd = track.find_element(By.CSS_SELECTOR, ".ui-slider-handle")
-                                        ActionChains(driver).click_and_hold(hnd).move_to_element_with_offset(track, x, y).release().perform()
+                                        container = sel.find_element(
+                                            By.XPATH,
+                                            "ancestor::*[contains(@class,'sq-sliderpoints-container') or contains(@class,'sq-sliderpoints-element')][1]",
+                                        )
+                                        track = container.find_element(By.CSS_SELECTOR, ".ui-slider-horizontal")
+                                    except Exception:
+                                        track = None
+
+                                if track is not None:
+                                    driver.execute_script("arguments[0].scrollIntoView({block:'center'});", track)
+                                    r = track.rect or {}
+                                    w = int(r.get("width", 0) or 0)
+                                    h = int(r.get("height", 0) or 0)
+
+                                    steps = max(1, len(real_opts) - 1)
+                                    x = int((best_idx / steps) * max(1, w - 4)) + 2
+                                    y = max(1, h // 2)
+
+                                    try:
+                                        ActionChains(driver).move_to_element_with_offset(track, x, y).click().perform()
                                     except Exception:
                                         pass
 
-                                try:
-                                    cur_val = (sel.get_attribute("value") or "").strip()
-                                    if cur_val != best_val:
-                                        return False
-                                except Exception:
-                                    pass
+                                    def _handle_offscale() -> bool:
+                                        try:
+                                            hnd = track.find_element(By.CSS_SELECTOR, ".ui-slider-handle")
+                                            st = (hnd.get_attribute("style") or "")
+                                            return ("-40" in st) or ("offscale" in st.lower())
+                                        except Exception:
+                                            return False
 
-                                return True
-                    except Exception:
-                        # si le forcing UI échoue, on considère quand même le select comme set
-                        pass
+                                    if _handle_offscale():
+                                        try:
+                                            hnd = track.find_element(By.CSS_SELECTOR, ".ui-slider-handle")
+                                            ActionChains(driver).click_and_hold(hnd).move_to_element_with_offset(track, x, y).release().perform()
+                                        except Exception:
+                                            pass
 
-                    return True
+                                    try:
+                                        cur_val = (sel.get_attribute("value") or "").strip()
+                                        if cur_val != best_val:
+                                            # si on rate l'UI, on laisse quand même le <select> en source de vérité
+                                            pass
+                                    except Exception:
+                                        pass
+
+                        except Exception:
+                            # si le forcing UI échoue, on considère quand même le select comme set
+                            pass
+
+                        return True
+
+                    return False
+
                 if resolved_itype == "button":
                     try:
                         el = driver.find_element(By.XPATH, xp)
@@ -1605,6 +1685,110 @@ def handle_consent_screen(driver):
                 return True
 
         return False
+
+    # 0) Ipsos / entercdn : écran "Politique de confidentialité" (checkbox + CTA "Accepter et commencer")
+    #    Ex: input#privacyPolicyCheckbox1 + a#acceptAndTakeSurveyLink2
+    def _scroll_center(el) -> None:
+        try:
+            driver.execute_script("arguments[0].scrollIntoView({block:'center', inline:'center'});", el)
+        except Exception:
+            pass
+
+    def _click_best_effort(el) -> bool:
+        if el is None:
+            return False
+        _scroll_center(el)
+        time.sleep(0.12)
+        try:
+            el.click()
+            return True
+        except Exception:
+            try:
+                ActionChains(driver).move_to_element(el).click().perform()
+                return True
+            except Exception:
+                try:
+                    driver.execute_script("arguments[0].click();", el)
+                    return True
+                except Exception:
+                    return False
+
+    def _handle_ipsos_privacy_policy_page() -> bool:
+        # Détection volontairement stricte (évite les faux positifs sur d'autres consent screens)
+        try:
+            cta = driver.find_element(By.CSS_SELECTOR, "#acceptAndTakeSurveyLink2")
+        except Exception:
+            return False
+
+        try:
+            cbs = driver.find_elements(
+                By.CSS_SELECTOR,
+                "input[type='checkbox']#privacyPolicyCheckbox1, "
+                "input[type='checkbox'][name*='privacyPolicyCheckbox'], "
+                "input[type='checkbox'][id*='privacyPolicyCheckbox']"
+            )
+        except Exception:
+            cbs = []
+
+        if not cbs:
+            return False
+
+        cb = cbs[0]
+
+        # 1) Cocher la policy checkbox (préférer le <label for=...>)
+        try:
+            already = bool(cb.is_selected())
+        except Exception:
+            already = False
+
+        if not already:
+            try:
+                cb_id = (cb.get_attribute("id") or "").strip()
+            except Exception:
+                cb_id = ""
+
+            clicked = False
+            if cb_id:
+                try:
+                    lab = driver.find_element(By.CSS_SELECTOR, f"label[for='{cb_id}']")
+                    clicked = _click_best_effort(lab)
+                except Exception:
+                    clicked = False
+
+            if not clicked:
+                clicked = _click_best_effort(cb)
+
+            # Validation : on attend que is_selected() passe à True
+            deadline = time.time() + 2.5
+            while time.time() < deadline:
+                try:
+                    if cb.is_selected():
+                        break
+                except Exception:
+                    break
+                time.sleep(0.1)
+
+        try:
+            if not cb.is_selected():
+                return False  # pas d'effet observable -> on n'annonce pas le succès
+        except Exception:
+            return False
+
+        # 2) Cliquer "Accepter et commencer" + valider un effet (URL/spinner/disparition)
+        if not _click_best_effort(cta):
+            return False
+
+        try:
+            if _wait_for_button_effect(driver, timeout=10):
+                return True
+        except Exception:
+            pass
+
+        # fallback : signature/URL
+        return _wait_change(before_sig, before_url, timeout_s=8.0)
+
+    if _handle_ipsos_privacy_policy_page():
+        return True
 
     # 1) Chercher le plus grand overlay CMP visible
     best = None
@@ -2226,11 +2410,24 @@ def execute_action(driver, instruction: str) -> bool:
             ):
                 return True
 
-            if _try(driver, "dropdown_open", lambda:
-                Survey.input_handler.open_dropdown_generic(driver, hint=label, context_hint=ctx)
+            open_hint = (ctx or "").strip() or label
+            _opened = _try(driver, "dropdown_open", lambda:
+                Survey.input_handler.open_dropdown_generic(driver, hint=open_hint, context_hint=ctx)
+            )
+            if _opened:
+                driver._last_dropdown_hint = open_hint
+
+            field_hint = ctx or getattr(driver, "_last_dropdown_hint", None) or label
+            if _try(driver, "dropdown_select", lambda:
+                Survey.input_handler.try_select_option_any(
+                    driver, label, field_hint=field_hint, context_hint=ctx
+                )
             ):
-                driver._last_dropdown_hint = label
+                driver._last_dropdown_hint = None
                 return True
+
+            # nettoyage: ne pas polluer l'action suivante
+            driver._last_dropdown_hint = None
 
             field_hint = ctx or getattr(driver, "_last_dropdown_hint", None)
             if _try(driver, "dropdown_select", lambda:
