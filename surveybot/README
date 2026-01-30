@@ -121,16 +121,14 @@ docker run --rm -it `
 # wil2.pretender848@silomails.com
 # qatar.chimp729@8shield.net
 
-Set-Location C:\projects\Surveys\surveybot
 python surveybot\tools\replay_snapshot.py ..\cases\level_a\samplicio_departement_12415\20260116_213628_after_dom_analyze --use-dom-outer --save-baseline
-python surveybot\tools\replay_snapshot.py ..\cases\level_a\samplicio_departement_12415\20260116_213628_after_dom_analyze --use-dom-outer --headful --pause
 
 # ------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 # Pour activer l'environnement virtuel
 & C:/projects/Surveys/.venv/Scripts/Activate.ps1
 
 # Pour rejouer un snapshot et enregistrer une nouvelle baseline (debug) :
-python surveybot\tools\replay_snapshot.py snapshots\walr_single_radio_question_645_revenue\snapshot --use-dom-outer --save-baseline
+python surveybot\tools\replay_snapshot.py cases\level_a\aa_mobile_matrix_celebs_28\snapshot --use-dom-outer --save-baseline
 
 # 
 python surveybot\tools\replay_snapshot.py snapshots\20260120_112345_after_dom_analyze --use-dom-outer --save-baseline

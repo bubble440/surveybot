@@ -1,0 +1,64 @@
+{
+  "meta": {
+    "source_html": "dom_outer.html",
+    "file_url": "file:///C:/projects/Surveys/cases/level_a/ipso_birthdate_date_multi_dropdown_fr/snapshot/dom_outer.html",
+    "ts": 1769726618
+  },
+  "classify_dom": null,
+  "summary": {
+    "total": 2,
+    "by_type": {
+      "checkbox": 2
+    }
+  },
+  "question_blocks": [
+    {
+      "question": "Pratiquez-vous les sports suivants (à titre récréatif ou professionnel) ? Sélectionnez toutes les réponses qui s’appliquent. *",
+      "itype": "checkbox",
+      "options": [
+        "Football américain",
+        "Basket-ball",
+        "Hockey",
+        "Volley-ball",
+        "Tennis",
+        "Rugby",
+        "Football",
+        "Golf",
+        "Base-ball",
+        "Autre (veuillez préciser)",
+        "Je ne pratique aucun sport."
+      ],
+      "max_select": 3,
+      "target_id": "group_f237e306fa21",
+      "context": {
+        "kind": "group",
+        "group_key": "aa_selection_list:appQuestionContainer-801157:multi-question-0",
+        "aa_selection_list": true
+      }
+    },
+    {
+      "question": "Parmi les sports suivants, lesquels vous intéressent ? Sélectionnez toutes les réponses qui s’appliquent. *",
+      "itype": "checkbox",
+      "options": [
+        "Basket-ball",
+        "Golf",
+        "Rugby",
+        "Hockey",
+        "Football américain",
+        "Base-ball",
+        "Volley-ball",
+        "Tennis",
+        "Football",
+        "Autre (veuillez préciser)",
+        "Je ne m'intéresse à aucun sport."
+      ],
+      "max_select": 3,
+      "target_id": "group_daa01acaf44e",
+      "context": {
+        "kind": "group",
+        "group_key": "aa_selection_list:appQuestionContainer-801158:multi-question-1",
+        "aa_selection_list": true
+      }
+    }
+  ]
+}

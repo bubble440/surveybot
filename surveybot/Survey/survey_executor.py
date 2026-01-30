@@ -193,8 +193,19 @@ def execute_survey_page(driver, api_key):
         # contraintes max_select par QID (doit matcher le build_batch_prompt)
         qid_constraints = {f"Q{i}": int((b.get("max_select", 1) or 1)) for i, b in enumerate(question_blocks, start=1)}
 
+        # ✅ Meta par QID (pour sanitizer avec les options du DOM)
+        qid_meta = {
+            f"Q{i}": {
+                "question": (b.get("question") or ""),
+                "itype": (b.get("itype") or ""),
+                "options": (b.get("options") or []),
+                "max_select": int(b.get("max_select", 1) or 1),
+            }
+            for i, b in enumerate(question_blocks, start=1)
+        }
+
         actions = batch_response_parser.parse_batch_response(raw_text, constraints=qid_constraints)
-        actions = batch_response_parser.sanitize_actions(actions)
+        actions = batch_response_parser.sanitize_actions(actions, qid_meta=qid_meta)
 
         # exécution "plan" (multi actions) + anti-double-fallback par action
         result = action_dispatcher.execute_actions_plan(driver, actions, stop_on_navigation=True)

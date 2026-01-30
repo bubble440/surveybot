@@ -1,6 +1,6 @@
 {
   "name": "samplicio_departement_12415",
-  "snapshot_dir": "20260116_213628_after_dom_analyze",
+  "snapshot_dir": "snapshot",
   "assert": {
     "summary": {
       "total": 2,

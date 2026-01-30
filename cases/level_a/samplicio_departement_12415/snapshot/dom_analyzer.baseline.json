@@ -1,8 +1,8 @@
 {
   "meta": {
     "source_html": "dom_outer.html",
-    "file_url": "file:///C:/projects/Surveys/cases/level_a/samplicio_departement_12415/20260116_213628_after_dom_analyze/dom_outer.html",
-    "ts": 1769045430
+    "file_url": "file:///C:/projects/Surveys/cases/level_a/samplicio_departement_12415/snapshot/dom_outer.html",
+    "ts": 1769178561
   },
   "classify_dom": {
     "itype": "matrix_rows_single_choice",
