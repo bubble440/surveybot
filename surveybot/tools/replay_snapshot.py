@@ -91,8 +91,19 @@ def _launch_driver(headful: bool = False, use_project_launcher: bool = False):
     """
     if use_project_launcher:
         try:
+            from preselection.config_loader import load_config
             from preselection.playwright_launcher import launch_browser  # type: ignore
-            driver = launch_browser(headful=headful)
+
+            cfg = {}
+            try:
+                cfg = load_config() or {}
+            except Exception:
+                cfg = {}
+
+            # Déterministe: replay_snapshot impose headless/headful (évite dépendance à l'env existant)
+            os.environ["HEADLESS"] = "0" if headful else "1"
+
+            driver = launch_browser(cfg)
             return driver
         except Exception as e:
             print(f"[replay_snapshot] project launcher failed -> fallback selenium: {type(e).__name__}: {e}")
@@ -109,6 +120,9 @@ def _launch_driver(headful: bool = False, use_project_launcher: bool = False):
         except Exception:
             pass
 
+        # Viewport fixe => rect/is_displayed stables en headless (sinon 0x0 sur certains snapshots)
+        opt.add_argument("--window-size=1280,900")
+
         if not headful:
             opt.add_argument("--headless=new")
         opt.add_argument("--disable-gpu")
@@ -116,6 +130,12 @@ def _launch_driver(headful: bool = False, use_project_launcher: bool = False):
         opt.add_argument("--disable-dev-shm-usage")
 
         drv = webdriver.Chrome(options=opt)
+
+        try:
+            drv.set_window_size(1280, 900)
+        except Exception:
+            pass
+
         return drv
     except Exception as e:
         selenium_err = e
@@ -131,8 +151,7 @@ def _launch_driver(headful: bool = False, use_project_launcher: bool = False):
         except Exception:
             cfg = {}
 
-        if headful:
-            os.environ["HEADLESS"] = "0"
+        os.environ["HEADLESS"] = "0" if headful else "1"
 
         drv = launch_browser(cfg)
         return drv
@@ -298,7 +317,17 @@ def main():
             else:
                 raise
 
-        time.sleep(0.5)  # laisse le DOM se stabiliser
+        # Attente courte et bornée: on évite d’analyser “trop tôt” (0 blocks) avec pageLoadStrategy=none
+        try:
+            from selenium.webdriver.support.ui import WebDriverWait
+            WebDriverWait(driver, 3).until(lambda d: d.execute_script("return !!document.body"))
+            WebDriverWait(driver, 3).until(
+                lambda d: d.execute_script(
+                    "return document.querySelectorAll('input,select,textarea,button,a[role=\"button\"]').length"
+                ) > 0
+            )
+        except Exception:
+            pass
 
         # Optionnel: classification de page (super utile quand le type détecté est mauvais)
         if not args.no_classify:

@@ -174,10 +174,68 @@ def _is_system_scope(scope: str | None) -> bool:
     v = _norm_lc(scope)
     return any(x in v for x in ["__viewstate", "__eventvalidation", "__viewstategenerator", "__eventtarget", "__eventargument"])
 
-def sanitize_actions(actions: list) -> list:
+def _year_span_from_options(opts: list) -> tuple[int, int, int] | None:
+    """
+    Déduit une plage d'années depuis les options (ex: 1926..2026).
+    Retourne (min_year, max_year, span) si suffisamment robuste, sinon None.
+    """
+    if not opts:
+        return None
+
+    years: set[int] = set()
+    for o in opts:
+        s = str(o or "")
+        m = re.search(r"\b(19\d{2}|20\d{2})\b", s)
+        if m:
+            try:
+                years.add(int(m.group(1)))
+            except Exception:
+                pass
+
+    if len(years) < 10:
+        return None
+
+    mn, mx = min(years), max(years)
+    span = mx - mn
+    if span < 40:
+        return None
+
+    return mn, mx, span
+
+def _looks_like_month_options(opts: list) -> bool:
+    """
+    Heuristique simple : options contenant beaucoup de mois (FR/EN).
+    """
+    if not opts:
+        return False
+    blob = " ".join(str(o or "").strip().lower() for o in opts)
+    month_tokens = [
+        "janvier","février","fevrier","mars","avril","mai","juin","juillet","août","aout","septembre","octobre","novembre","décembre","decembre",
+        "january","february","march","april","may","june","july","august","september","october","november","december",
+    ]
+    hits = sum(1 for t in month_tokens if t in blob)
+    return hits >= 6
+
+def sanitize_actions(actions: list, qid_meta: dict | None = None) -> list:
     """Nettoie/valide les actions OpenAI avant exécution."""
     cleaned = []
     now_year = datetime.datetime.utcnow().year
+    qid_meta = qid_meta or {}
+
+    # Heuristique "page" : présence d'un dropdown de mois + un dropdown d'années sur grande plage
+    page_has_month_dropdown = False
+    page_year_span: tuple[int, int, int] | None = None
+
+    for _, meta in (qid_meta or {}).items():
+        if not isinstance(meta, dict):
+            continue
+        opts = meta.get("options") or []
+        if _looks_like_month_options(opts):
+            page_has_month_dropdown = True
+        ys = _year_span_from_options(opts)
+        if ys:
+            if (page_year_span is None) or (ys[2] > page_year_span[2]):
+                page_year_span = ys
 
     months_fr = {
         "1": "Janvier", "01": "Janvier",
@@ -216,23 +274,93 @@ def sanitize_actions(actions: list) -> list:
         if it in ("text", "dropdown", "radio", "checkbox", "") and any(tok in v_lc for tok in ["continue", "continuer", "next", "suivant"]) and len(v_lc) <= 16:
             continue
 
-        is_dob = any(k in ctx_lc or k in raw_lc for k in ["date de naissance", "naissance", "dob", "birth"])
-        if is_dob and it == "dropdown":
-            # Année : force 18–64
+        # Détection "date range" (ex: IPSOS DOB: "entre 23/02/1926 et 29/01/2026")
+        range_m = (
+            re.search(r"entre\s+(\d{1,2}/\d{1,2}/\d{4})\s+et\s+(\d{1,2}/\d{1,2}/\d{4})", raw_lc)
+            or re.search(r"entre\s+(\d{1,2}/\d{1,2}/\d{4})\s+et\s+(\d{1,2}/\d{1,2}/\d{4})", ctx_lc)
+        )
+        range_min_y = range_max_y = None
+        range_span = None
+        if range_m:
+            try:
+                y1 = int(range_m.group(1).split("/")[-1])
+                y2 = int(range_m.group(2).split("/")[-1])
+                range_min_y, range_max_y = (y1, y2) if y1 <= y2 else (y2, y1)
+                range_span = range_max_y - range_min_y
+            except Exception:
+                range_m = None
+
+        is_dob_keywords = any(k in ctx_lc or k in raw_lc for k in ["date de naissance", "naissance", "dob", "birth"])
+        has_month_or_year_marker = any(k in ctx_lc or k in raw_lc for k in ["mois", "month", "année", "annee", "year"])
+        # Règle simple : si gros range (>=40 ans) + champ mois/année => DOB
+        is_dob = bool(is_dob_keywords or (range_m and has_month_or_year_marker and (range_span is not None and range_span >= 40)))
+
+        act_qid = (a.get("qid") or "").strip().upper()
+        meta = qid_meta.get(act_qid) if act_qid else None
+        meta_opts = (meta.get("options") or []) if isinstance(meta, dict) else []
+        meta_year_span = _year_span_from_options(meta_opts)
+
+        # DOB "explicite" (keywords/range) OU DOB "implicite" (options années sur grande plage + mois sur la page)
+        is_dob_like_by_options = bool(
+            it == "dropdown"
+            and page_has_month_dropdown
+            and (meta_year_span is not None or page_year_span is not None)
+            and any(k in ctx_lc or k in raw_lc for k in ["année", "annee", "year"])
+        )
+
+        # ✅ IMPORTANT: traiter les DOB implicites comme des DOB pour la sanitation de l'année
+        is_dob_effective = bool(is_dob or is_dob_like_by_options)
+
+        if it == "dropdown" and (is_dob or range_m or is_dob_like_by_options):
+            # Année : évite les valeurs disqualifiantes (trop jeune) + respecte un éventuel range
             if any(k in ctx_lc or k in raw_lc for k in ["année", "annee", "year"]):
                 m = re.search(r"\b(19\d{2}|20\d{2})\b", str(v or ""))
                 if m:
                     y = int(m.group(1))
-                    min_y = now_year - 64
-                    max_y = now_year - 18
-                    if y < min_y or y > max_y:
-                        y2 = now_year - 25
-                        y2 = max(min_y, min(max_y, y2))
-                        a = dict(a)
-                        a["value"] = str(y2)
-                        a["raw"] = (a.get("raw") or "") + f" [sanitized_year:{y}->{y2}]"
+                    if range_m and range_max_y:
+                        ref_year = int(range_max_y)
+                    elif meta_year_span:
+                        ref_year = int(meta_year_span[1])
+                    elif page_year_span:
+                        ref_year = int(page_year_span[1])
+                    else:
+                        ref_year = now_year
 
-            # Mois : map num/anglais -> FR
+                    # ⬇️ AVANT: if is_dob:
+                    if is_dob_effective:
+                        min_y = ref_year - 64
+                        max_y = ref_year - 18
+                        if range_m and range_min_y is not None and range_max_y is not None:
+                            min_y = max(min_y, int(range_min_y))
+                            max_y = min(max_y, int(range_max_y))
+                            if min_y > max_y:  # garde-fou
+                                min_y, max_y = int(range_min_y), int(range_max_y)
+
+                    if is_dob:
+                        min_y = ref_year - 64
+                        max_y = ref_year - 18
+                        if range_m and range_min_y is not None and range_max_y is not None:
+                            min_y = max(min_y, int(range_min_y))
+                            max_y = min(max_y, int(range_max_y))
+                            if min_y > max_y:  # garde-fou
+                                min_y, max_y = int(range_min_y), int(range_max_y)
+
+                        if y < min_y or y > max_y:
+                            y2 = ref_year - 25
+                            y2 = max(min_y, min(max_y, y2))
+                            a = dict(a)
+                            a["value"] = str(y2)
+                            a["raw"] = (a.get("raw") or "") + f" [sanitized_year:{y}->{y2}]"
+
+                    elif range_m and range_min_y is not None and range_max_y is not None:
+                        # pas DOB : on se contente d'être dans le range
+                        if y < int(range_min_y) or y > int(range_max_y):
+                            y2 = int(range_max_y)
+                            a = dict(a)
+                            a["value"] = str(y2)
+                            a["raw"] = (a.get("raw") or "") + f" [clamped_year:{y}->{y2}]"
+
+            # Mois : map num/anglais -> FR (utile DOB et dates "range")
             if any(k in ctx_lc or k in raw_lc for k in ["mois", "month"]):
                 if v_lc in months_fr:
                     a = dict(a); a["value"] = months_fr[v_lc]

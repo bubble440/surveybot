@@ -1622,10 +1622,42 @@ def try_select_option_any(driver, option_text: str, field_hint: str | None = Non
     """
     target = _norm_txt(option_text)
 
+    # --- [PATCH] Disambiguation robuste mois/année -------------------------
+    # Sur certains écrans "date_multi_dropdown" (IPSOS / bootstrap-select),
+    # le libellé généré peut contenir "Année — Mois" pour le dropdown des mois.
+    # Si on se base sur le hint, _best_dropdown_for_hint() ouvre alors le champ
+    # "Année" et la sélection de "Janvier" échoue.
+    # Règle simple et prédictible :
+    #   - si la valeur à appliquer ressemble à un mois -> forcer hint="mois"
+    #   - si la valeur à appliquer ressemble à une année (4 chiffres) -> forcer hint="année"
+    _MONTHS_FR = {
+        "janvier", "février", "fevrier", "mars", "avril", "mai", "juin",
+        "juillet", "août", "aout", "septembre", "octobre", "novembre", "décembre", "decembre",
+    }
+
+    def _forced_hint_from_value(val_norm: str) -> str | None:
+        if not val_norm:
+            return None
+        if val_norm in _MONTHS_FR:
+            return "mois"
+        # année (simple): 4 chiffres entre 1900 et 2100
+        if re.fullmatch(r"\d{4}", val_norm):
+            try:
+                y = int(val_norm)
+                if 1900 <= y <= 2100:
+                    return "année"
+            except Exception:
+                pass
+        return None
+
+    forced_hint = _forced_hint_from_value(target)
+    # hint effectivement utilisé pour choisir/ouvrir le bon contrôle
+    effective_hint = forced_hint or field_hint or option_text
+
     # --- NATIF <select>: sélection directe (sans ouvrir)
     selects = driver.find_elements(By.TAG_NAME, "select")
     if selects:
-        s = _best_dropdown_for_hint(driver, field_hint or option_text, context_hint=context_hint)
+        s = _best_dropdown_for_hint(driver, effective_hint, context_hint=context_hint)
         try_selects = []
         if s is not None:
             try_selects.append(s)
@@ -1661,7 +1693,7 @@ def try_select_option_any(driver, option_text: str, field_hint: str | None = Non
 
     # --- CUSTOM: ouvrir puis sélectionner rapidement (avec retries)
     for attempt in range(2):
-        opened = open_dropdown_generic(driver, hint=field_hint or option_text, context_hint=context_hint)
+        opened = open_dropdown_generic(driver, hint=effective_hint, context_hint=context_hint)
         # Si aucune option à appliquer (option_text vide) et que le champ semblait déjà rempli, on skip
         if not option_text:
             try:
@@ -5519,21 +5551,32 @@ def try_click_navigation_cta(driver) -> bool:
     """
     candidates = []
 
-    # buttons
-    for el in driver.find_elements(By.XPATH, "//button|//a[@role='button']|//input[@type='submit' or @type='button']"):
+    # buttons + anchors "btn" (ex: Ipsos/Wicket utilise <a class="btn ..."> pour soumettre)
+    nav_xpath = (
+        "//button"
+        "|//input[@type='submit' or @type='button']"
+        "|//a[@role='button']"
+        "|//a[contains(concat(' ', normalize-space(@class), ' '), ' btn ')]"
+    )
+
+    for el in driver.find_elements(By.XPATH, nav_xpath):
         try:
             if not el.is_displayed() or not el.is_enabled():
                 continue
+
+            # certains <a> sont "désactivés" via class/aria (is_enabled() peut rester True)
+            cls = (el.get_attribute("class") or "").lower()
+            if "disabled" in cls:
+                continue
+            if (el.get_attribute("aria-disabled") or "").lower() == "true":
+                continue
+
             txt = el.text or el.get_attribute("value") or el.get_attribute("aria-label") or ""
             t = _norm_btn_text(txt)
             if not t:
                 continue
 
-            # exclure liens “learn more” / privacy etc
-            if any(x in t for x in ["learn more", "privacy", "terms", "cookies"]):
-                continue
-
-            bad = ("refuser", "disagree", "quitter", "quit", "exit", "annuler", "cancel", "fermer", "close")
+            bad = ("refuser", "disagree", "quitter", "quit", "exit", "annuler", "cancel", "fermer", "close", "retour", "précédent", "precedent", "previous", "back")
             if any(b in t for b in bad):
                 continue
 
@@ -5543,7 +5586,20 @@ def try_click_navigation_cta(driver) -> bool:
             if any(x in t for x in ["valider", "submit", "envoyer", "terminer", "send", "start", "commencer"]):
                 score += 30
 
-            cls = (el.get_attribute("class") or "").lower()
+            # bonus id (ex: id="submitQuestion")
+            el_id = (el.get_attribute("id") or "").lower()
+            if el_id == "submitquestion":
+                score += 120
+            elif any(k in el_id for k in ["submit", "next", "continue"]):
+                score += 60
+
+            # bonus si dans un <form> (évite liens header/footer)
+            try:
+                if el.find_elements(By.XPATH, "ancestor::form[1]"):
+                    score += 10
+            except Exception:
+                pass
+
             if "primary" in cls:
                 score += 10
             if "btn" in cls:
