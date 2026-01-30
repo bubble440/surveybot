@@ -7,13 +7,13 @@
 # (dropdown, radio, checkbox, text, button)
 #
 # - AUCUN mapping global
-# - AUCUNE hypothèse d'ordre DOM
+# - AUCUNE hypothÃ¨se d'ordre DOM
 # - Analyse purement DOM + texte
 #
 # Compatible avec OpenAI :
-#   réponse //// itype //// contexte
+#   rÃ©ponse //// itype //// contexte
 #
-# Conçu pour :
+# ConÃ§u pour :
 # - 100+ bots
 # - DOM dynamiques (React, Bootstrap, Decipher, etc.)
 # ------------------------------------------------------------
@@ -77,7 +77,7 @@ def _is_hidden_like(attrs: dict) -> bool:
     if "display:none" in style or "visibility:hidden" in style:
         return True
 
-    # champs système ASP.NET
+    # champs systÃ¨me ASP.NET
     if _looks_like_system_field(attrs.get("id")) or _looks_like_system_field(attrs.get("name")):
         return True
 
@@ -140,8 +140,8 @@ def _visible(el: WebElement) -> bool:
 @dataclass
 class QuestionBlock:
     itype: str                  # dropdown, radio, checkbox, text, button
-    label: str                  # texte humain ("Année", "Oui", etc.)
-    dom_el: WebElement          # élément principal
+    label: str                  # texte humain ("AnnÃ©e", "Oui", etc.)
+    dom_el: WebElement          # Ã©lÃ©ment principal
     container: Optional[WebElement]
     options: Optional[List[str]] = None
 
@@ -153,7 +153,7 @@ class QuestionBlock:
 def _find_question_container(driver) -> WebElement:
     """
     Trouve le conteneur DOM principal de la question courante.
-    Heuristiques empilées, robustes.
+    Heuristiques empilÃ©es, robustes.
     """
     selectors = [
         "div[id*='question']",
@@ -176,12 +176,12 @@ def _find_question_container(driver) -> WebElement:
 
 
 # ------------------------------------------------------------
-# Label detection (clé du mapping)
+# Label detection (clÃ© du mapping)
 # ------------------------------------------------------------
 
 def _extract_label(el: WebElement) -> str:
     """
-    Essaie d'associer un texte humain à un input.
+    Essaie d'associer un texte humain Ã  un input.
     """
     try:
         # 1) label[for=id]
@@ -218,7 +218,7 @@ def _extract_label(el: WebElement) -> str:
 
 
 # ------------------------------------------------------------
-# Détecteurs par type
+# DÃ©tecteurs par type
 # ------------------------------------------------------------
 
 def _detect_dropdowns(scope: WebElement) -> List[QuestionBlock]:
@@ -286,19 +286,27 @@ def _detect_radios(scope: WebElement) -> List[QuestionBlock]:
 
 def _detect_aria_radios(scope: WebElement) -> List[QuestionBlock]:
     """
-    Détecte les boutons radio implémentés via role="button" 
-    (CloudResearch, Vue.js, React, etc.).
+    Détecte les boutons radio implémentés via role="button" (CloudResearch, Vue.js, React, etc.).
+    
+    Ces frameworks modernes n'utilisent pas <input type="radio"> mais des divs avec:
+    - role="button" (ARIA)
+    - Classes spécifiques: .choice-option, .random-choice, etc.
+    - Tabindex pour la navigation clavier
+    
+    Exemples:
+    - CloudResearch/Sentry: div[role="button"].choice-option.random-choice
+    - Autres Vue.js/React: div[role="button"][tabindex]
     """
     blocks = []
     
-    # Sélecteurs pour différents patterns
+    # Sélecteurs pour différents patterns de boutons radio ARIA
     selectors = [
         '[role="button"].choice-option',
         '[role="button"].random-choice',
-        'div[tabindex][role="button"]',  # Fallback générique
+        # Fallback: div avec role="button" et tabindex dans un contexte de choix multiples
+        'div[tabindex][role="button"]',
     ]
     
-    # Collecter tous les boutons
     all_buttons = []
     for selector in selectors:
         try:
@@ -311,30 +319,70 @@ def _detect_aria_radios(scope: WebElement) -> List[QuestionBlock]:
     seen = set()
     unique_buttons = []
     for btn in all_buttons:
-        btn_id = id(btn)
-        if btn_id not in seen:
-            seen.add(btn_id)
-            unique_buttons.append(btn)
+        try:
+            btn_id = id(btn)
+            if btn_id not in seen:
+                seen.add(btn_id)
+                unique_buttons.append(btn)
+        except Exception:
+            continue
     
     # Filtrer les boutons visibles avec texte
     visible_buttons = []
     for btn in unique_buttons:
-        if not _visible(btn):
+        try:
+            if not _visible(btn):
+                continue
+            
+            # CORRECTION: Extraction robuste du texte
+            # Les frameworks modernes ont souvent le texte dans des divs imbriqués,
+            # et btn.text peut retourner une chaîne vide. On essaie plusieurs méthodes:
+            text = None
+            
+            # Méthode 1: .text (propriété Selenium standard)
+            try:
+                text = btn.text
+                if text:
+                    text = text.strip()
+            except Exception:
+                pass
+            
+            # Méthode 2: innerText (recommandé pour les éléments avec du texte visible)
+            if not text or len(text) < 1:
+                try:
+                    text = btn.get_attribute('innerText')
+                    if text:
+                        text = text.strip()
+                except Exception:
+                    pass
+            
+            # Méthode 3: textContent (fallback, inclut aussi le texte masqué)
+            if not text or len(text) < 1:
+                try:
+                    text = btn.get_attribute('textContent')
+                    if text:
+                        text = text.strip()
+                except Exception:
+                    pass
+            
+            # Si toujours pas de texte, ignorer ce bouton
+            if not text or len(text) < 1:
+                continue
+            
+            visible_buttons.append((btn, text))
+            
+        except Exception:
             continue
-        text = btn.text.strip()
-        if not text or len(text) < 1:
-            continue
-        visible_buttons.append(btn)
     
-    # Si au moins 2 boutons → groupe de radios
+    # Si on trouve au moins 2 boutons visibles, c'est probablement un groupe de radios
     if len(visible_buttons) >= 2:
-        options = [btn.text.strip() for btn in visible_buttons]
+        options = [text for btn, text in visible_buttons]
         
         blocks.append(
             QuestionBlock(
                 itype="radio",
                 label=" / ".join(options),
-                dom_el=visible_buttons[0],
+                dom_el=visible_buttons[0][0],  # Premier élément du tuple (btn, text)
                 container=None,
                 options=options,
             )
@@ -403,7 +451,7 @@ def _detect_buttons(scope: WebElement) -> List[QuestionBlock]:
         if not txt:
             continue
 
-        # on ignore les boutons globaux évidents
+        # on ignore les boutons globaux Ã©vidents
         if _norm(txt) in {"suivant", "next", "continue", "continuer"}:
             continue
 
@@ -425,7 +473,7 @@ def _detect_buttons(scope: WebElement) -> List[QuestionBlock]:
 
 def analyze_question_blocks(driver) -> List[QuestionBlock]:
     """
-    Point d'entrée UNIQUE.
+    Point d'entrÃ©e UNIQUE.
     Retourne la carte logique des inputs de la question courante.
     """
     scope = _find_question_container(driver)
