@@ -284,6 +284,64 @@ def _detect_radios(scope: WebElement) -> List[QuestionBlock]:
             )
     return blocks
 
+def _detect_aria_radios(scope: WebElement) -> List[QuestionBlock]:
+    """
+    Détecte les boutons radio implémentés via role="button" 
+    (CloudResearch, Vue.js, React, etc.).
+    """
+    blocks = []
+    
+    # Sélecteurs pour différents patterns
+    selectors = [
+        '[role="button"].choice-option',
+        '[role="button"].random-choice',
+        'div[tabindex][role="button"]',  # Fallback générique
+    ]
+    
+    # Collecter tous les boutons
+    all_buttons = []
+    for selector in selectors:
+        try:
+            buttons = scope.find_elements(By.CSS_SELECTOR, selector)
+            all_buttons.extend(buttons)
+        except Exception:
+            continue
+    
+    # Dédupliquer (un bouton peut matcher plusieurs sélecteurs)
+    seen = set()
+    unique_buttons = []
+    for btn in all_buttons:
+        btn_id = id(btn)
+        if btn_id not in seen:
+            seen.add(btn_id)
+            unique_buttons.append(btn)
+    
+    # Filtrer les boutons visibles avec texte
+    visible_buttons = []
+    for btn in unique_buttons:
+        if not _visible(btn):
+            continue
+        text = btn.text.strip()
+        if not text or len(text) < 1:
+            continue
+        visible_buttons.append(btn)
+    
+    # Si au moins 2 boutons → groupe de radios
+    if len(visible_buttons) >= 2:
+        options = [btn.text.strip() for btn in visible_buttons]
+        
+        blocks.append(
+            QuestionBlock(
+                itype="radio",
+                label=" / ".join(options),
+                dom_el=visible_buttons[0],
+                container=None,
+                options=options,
+            )
+        )
+    
+    return blocks
+
 
 def _detect_checkboxes(scope: WebElement) -> List[QuestionBlock]:
     blocks = []
@@ -375,6 +433,7 @@ def analyze_question_blocks(driver) -> List[QuestionBlock]:
     blocks: List[QuestionBlock] = []
     blocks.extend(_detect_dropdowns(scope))
     blocks.extend(_detect_radios(scope))
+    blocks.extend(_detect_aria_radios(scope))
     blocks.extend(_detect_checkboxes(scope))
     blocks.extend(_detect_text_inputs(scope))
     blocks.extend(_detect_buttons(scope))

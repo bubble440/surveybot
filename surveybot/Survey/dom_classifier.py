@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 import re
+from urllib.parse import urlparse, parse_qs
 from typing import Callable, Optional, Dict, Any
 import Survey.dom_metrics as dom_metrics
 from selenium.webdriver.common.by import By
@@ -20,6 +21,78 @@ from Survey.frame_utils import iter_frame_chains, switch_to_frame_chain
 # ============================================================
 # Utils
 # ============================================================
+_IFRAME_SRC_RE = re.compile(r'<iframe[^>]+src="([^"]+)"', re.IGNORECASE)
+
+def _has_visible_recaptcha_challenge(dom_html: str) -> bool:
+    h = dom_html.lower()
+
+    # 1) bframe => challenge visible (quasi certain)
+    if "recaptcha/api2/bframe" in h:
+        return True
+
+    # 2) anchor iframe: visible si size != invisible
+    #    (Le badge reCAPTCHA invisible/v3 injecte souvent un anchor avec size=invisible)
+    for src in _IFRAME_SRC_RE.findall(dom_html):
+        s = src.lower()
+        if "recaptcha" in s and "api2/anchor" in s:
+            try:
+                q = parse_qs(urlparse(src).query)
+                size = (q.get("size", [""])[0] or "").lower()
+            except Exception:
+                size = ""
+            if size and size != "invisible":
+                return True
+            # si pas de size explicite, on reste conservateur:
+            # on ne déclenche PAS captcha juste sur anchor seul (trop de faux positifs)
+    # 3) widget visible classique
+    if 'class="g-recaptcha"' in h or "g-recaptcha" in h and "data-sitekey" in h:
+        return True
+    if "recaptcha-checkbox" in h:
+        return True
+
+    return False
+
+
+def _has_visible_hcaptcha_challenge(dom_html: str) -> bool:
+    h = dom_html.lower()
+    if "hcaptcha.com" not in h and "h-captcha" not in h and "data-hcaptcha" not in h:
+        return False
+
+    # widget visible
+    if 'class="h-captcha"' in h or ("data-sitekey" in h and "hcaptcha" in h):
+        return True
+
+    # iframe de challenge (fréquent)
+    for src in _IFRAME_SRC_RE.findall(dom_html):
+        s = src.lower()
+        if "hcaptcha.com" in s:
+            return True
+
+    return False
+
+
+def _has_visible_turnstile_challenge(dom_html: str) -> bool:
+    h = dom_html.lower()
+    if "challenges.cloudflare.com" not in h and "cf-turnstile" not in h:
+        return False
+    if "cf-turnstile" in h and "data-sitekey" in h:
+        return True
+    for src in _IFRAME_SRC_RE.findall(dom_html):
+        if "challenges.cloudflare.com" in src.lower():
+            return True
+    return False
+
+
+def is_captcha_page_strict(dom_html: str) -> bool:
+    """
+    Politique stricte: on ne classe captcha QUE si on observe un challenge visible.
+    Le simple badge reCAPTCHA / script render= / anchor size=invisible ne suffit pas.
+    """
+    return (
+        _has_visible_recaptcha_challenge(dom_html)
+        or _has_visible_hcaptcha_challenge(dom_html)
+        or _has_visible_turnstile_challenge(dom_html)
+    )
 
 def _norm_lc(s: str) -> str:
     return re.sub(r"\s+", " ", (s or "").lower()).strip()
@@ -263,6 +336,22 @@ def _has_visible_answerables(driver) -> bool:
         }catch(_){}
       }
 
+        // ✅ 4) NOUVEAU : CloudResearch/Vue/React role="button" choice-option
+      const roleButtons = Array.from(document.querySelectorAll(
+        '[role="button"].choice-option, [role="button"].random-choice, ' +
+        'div[tabindex][role="button"]'
+      ));
+      let roleCount = 0;
+      for (const rb of roleButtons){
+        try{
+          if (!isVisible(rb)) continue;
+          const txt = (rb.innerText || "").trim();
+          if (!txt) continue;
+          roleCount++;
+          if (roleCount >= 2) return true; // 2+ options visibles => page answerable
+        }catch(_){}
+      }
+
       return false;
     """
 
@@ -282,19 +371,23 @@ def is_end_screen(driver):
     # 1) Un end-screen doit contenir un signal explicite de fin (pas juste "merci")
     txt = _page_text_lc(driver)
 
-    strong_end = any(k in txt for k in [
-        "thank you for",
-        "survey complete",
-        "completed",
-        "fin du sondage",
-        "sondage terminé",
-        "enquête terminée",
-        "vous avez terminé",
-        "merci de votre participation",
-        "merci pour votre participation",
-        "merci d'avoir participé",
-    ])
+    # IMPORTANT: éviter les faux positifs sur des labels techniques type "CompleteDate"
+    # (normalisé en "completedate") qui matchaient l'ancien "completed" en sous-chaîne.
+    end_patterns = [
+        r"\bthank you for\b",
+        r"\bsurvey complete\b",
+        r"\bsurvey completed\b",
+        r"\bfin du sondage\b",
+        r"\bsondage termin[eé]\b",
+        r"\benqu[eê]te termin[eé]e\b",
+        r"\bvous avez termin[eé]\b",
+        r"\bmerci de votre participation\b",
+        r"\bmerci pour votre participation\b",
+        r"\bmerci d'avoir particip[eé]\b",
+        r"\bcompleted\b",  # standalone uniquement (ne match pas "completedate")
+    ]
 
+    strong_end = any(re.search(p, txt) for p in end_patterns)
     if not strong_end:
         return False
 
@@ -541,9 +634,17 @@ def is_captcha_screen(driver) -> bool:
               // seuils anti-faux-positifs (1x1, 0x0, etc.)
               if (r.width < 60 || r.height < 40) continue;
 
-              // ignore si complètement hors écran
-              if (r.bottom < 0 || r.right < 0) continue;
+                // Vérifier si l'élément est vraiment visible dans le viewport
+                const vw = window.innerWidth || document.documentElement.clientWidth;
+                const vh = window.innerHeight || document.documentElement.clientHeight;
 
+                // Ignore si complètement hors écran (gauche, droite, haut, bas)
+                if (r.right < 0 || r.left > vw || r.bottom < 0 || r.top > vh) continue;
+
+                // Ignore si moins de 30% de l'élément est visible (badge reCAPTCHA invisible partiel)
+                const visibleWidth = Math.min(r.right, vw) - Math.max(r.left, 0);
+                const visibleHeight = Math.min(r.bottom, vh) - Math.max(r.top, 0);
+                if (visibleWidth < r.width * 0.3 || visibleHeight < r.height * 0.3) continue;
               return true;
             }
             return false;
@@ -589,7 +690,28 @@ def is_date_multi_dropdown(driver) -> bool:
     return any(k in txt for k in ["année", "annee", "year", "mois", "month"])
 
 def is_open_textarea(driver) -> bool:
-    return bool(driver.find_elements(By.TAG_NAME, "textarea"))
+    """Vrai uniquement si un textarea est réellement exploitable (visible).
+
+    Raison: certains providers injectent des <textarea> cachés (tracking/params).
+    Si on les considère, la page est classée "textarea" à tort (comme le screen CMIX),
+    ce qui pollue les logs/metrics et peut déclencher des handlers inadaptés.
+    """
+    try:
+        tas = driver.find_elements(By.TAG_NAME, "textarea")
+    except Exception:
+        return False
+
+    for ta in tas:
+        try:
+            if not ta.is_displayed():
+                continue
+            r = ta.rect or {}
+            if float(r.get("width") or 0) < 20 or float(r.get("height") or 0) < 20:
+                continue
+            return True
+        except Exception:
+            continue
+    return False
 
 # ============================================================
 # DOM REGISTRY (ORDRE CRITIQUE)

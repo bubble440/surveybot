@@ -182,28 +182,56 @@ def _is_actionable_visible(el) -> bool:
                 try:
                     el_id = (el.get_attribute("id") or "").strip()
                     if el_id:
-                        # a) label adjacent
-                        labs = el.find_elements(
-                            By.XPATH,
-                            f"following-sibling::label[@for='{el_id}'][1] | preceding-sibling::label[@for='{el_id}'][1]"
-                        )
+                        # a) labels proches (souvent un label "proxy" vide est sibling du input)
+                        labs = []
+                        try:
+                            labs.extend(el.find_elements(
+                                By.XPATH,
+                                f"following-sibling::label[@for='{el_id}'] | preceding-sibling::label[@for='{el_id}']"
+                            ))
+                        except Exception:
+                            labs = labs or []
 
-                        # b) label sous le parent immédiat
-                        if not labs:
-                            labs = el.find_elements(By.XPATH, f"ancestor::*[1]//label[@for='{el_id}'][1]")
+                        # b) labels dans le conteneur immédiat (ex: label texte dans une colonne voisine)
+                        try:
+                            labs.extend(el.find_elements(By.XPATH, f"ancestor::*[1]//label[@for='{el_id}']"))
+                        except Exception:
+                            pass
 
-                        # c) fallback “document” via racine <html> (iframe-safe)
-                        if not labs:
+                        # c) fallback “document” via racine <html> (iframe-safe) — toujours en plus,
+                        # car certaines UIs (ex: CMIX/Materialize) mettent un label sibling vide (pictogramme)
+                        # et le vrai label (texte) ailleurs dans la ligne.
+                        try:
+                            root = el.find_element(By.XPATH, "ancestor-or-self::html[1]")
+                            labs.extend(root.find_elements(By.XPATH, f".//label[@for='{el_id}']"))
+                        except Exception:
+                            pass
+
+                        for lab in (labs or [])[:20]:
                             try:
-                                root = el.find_element(By.XPATH, "ancestor-or-self::html[1]")
-                                labs = root.find_elements(By.XPATH, f".//label[@for='{el_id}']")
-                            except Exception:
-                                labs = []
+                                if not lab.is_displayed():
+                                    continue
 
-                        for lab in (labs or [])[:5]:
-                            try:
-                                if lab.is_displayed() and _rect_ok(lab):
+                                # ✅ CMIX/Materialize: le label peut avoir une bbox 0x0 (display:contents/pseudo-element),
+                                # mais contenir du texte/descendants visibles.
+                                if _rect_ok(lab):
                                     return True
+
+                                t = _norm(lab.text or lab.get_attribute("innerText") or "")
+                                if t:
+                                    return True
+
+                                # Dernier recours: un enfant visible avec bbox non nulle
+                                try:
+                                    kids = lab.find_elements(By.XPATH, ".//*")
+                                except Exception:
+                                    kids = []
+                                for kid in (kids or [])[:8]:
+                                    try:
+                                        if kid.is_displayed() and _rect_ok(kid):
+                                            return True
+                                    except Exception:
+                                        continue
                             except Exception:
                                 continue
                 except Exception:
@@ -212,8 +240,22 @@ def _is_actionable_visible(el) -> bool:
                 # 4) Label ancêtre visible (input inside <label> ...)
                 try:
                     lab = el.find_element(By.XPATH, "ancestor::label[1]")
-                    if lab and lab.is_displayed() and _rect_ok(lab):
-                        return True
+                    if lab and lab.is_displayed():
+                        if _rect_ok(lab):
+                            return True
+                        t = _norm(lab.text or lab.get_attribute("innerText") or "")
+                        if t:
+                            return True
+                        try:
+                            kids = lab.find_elements(By.XPATH, ".//*")
+                        except Exception:
+                            kids = []
+                        for kid in (kids or [])[:8]:
+                            try:
+                                if kid.is_displayed() and _rect_ok(kid):
+                                    return True
+                            except Exception:
+                                continue
                 except Exception:
                     pass
 
@@ -775,6 +817,8 @@ def _score_dom_context(driver) -> Dict[str, Any]:
                 "input[name^='question_'], textarea[name^='question_'], select[name^='question_'], "
                 ".js-question-options input, .js-question-options select, .js-question-options textarea, "
                 "div.question input[type='radio'], div.question input[type='checkbox'], "
+                ".cm-question-wrapper input[type='radio'], .cm-question-wrapper input[type='checkbox'], "
+                ".cm-question-wrapper select, .cm-question-wrapper textarea,"
                 ".answers.answers-list input[type='radio'], .answers.answers-list input[type='checkbox']",
             )
         except Exception:
@@ -785,7 +829,8 @@ def _score_dom_context(driver) -> Dict[str, Any]:
         try:
             label_nodes = driver.find_elements(
                 By.CSS_SELECTOR,
-                ".js-question-options label, label.radio, label.checkbox, .answers.answers-list label[for]",
+                ".js-question-options label, label.radio, label.checkbox, .answers.answers-list label[for],"
+                ".cm-question-wrapper label.cm-radio-label[for], .cm-question-wrapper label.cm-checkbox-label[for]",
             )
         except Exception:
             label_nodes = []
@@ -798,6 +843,7 @@ def _score_dom_context(driver) -> Dict[str, Any]:
                     By.CSS_SELECTOR,
                     ".js-question-options, #templates .question, .survey-content #templates, "
                     "#survey, #survey.survey-container, div[id^='question_'], .sq-cardsort, "
+                    ".cm-question-wrapper, .cm-response-group, .cm-survey-layout,"
                     ".answers.answers-list, div.question",
                 )
             )
@@ -857,30 +903,21 @@ def _score_dom_context(driver) -> Dict[str, Any]:
             }
 
             const qNodes = document.querySelectorAll(
-              "input[name^='question_'], textarea[name^='question_'], select[name^='question_'], " +
-              ".js-question-options input, .js-question-options select, .js-question-options textarea"
+            "input[name^='question_'], textarea[name^='question_'], select[name^='question_'], " +
+            ".js-question-options input, .js-question-options select, .js-question-options textarea, " +
+            ".cm-question-wrapper input[type='radio'], .cm-question-wrapper input[type='checkbox'], " +
+            ".cm-question-wrapper select, .cm-question-wrapper textarea"
             );
-            let qCount = qNodes ? qNodes.length : 0;
 
-            if (!qCount) {
-              const hasCardsort = !!document.querySelector(".sq-cardsort, [class*='sq-cardsort-']");
-              if (hasCardsort) qCount = 1;
-            }
-
-            const labelNodes = document.querySelectorAll(".js-question-options label, label.radio, label.checkbox");
-            let visibleLabelCount = 0;
-            for (const el of (labelNodes || [])) {
-              try {
-                const r = el.getBoundingClientRect();
-                const st = window.getComputedStyle(el);
-                const visible = r.width > 2 && r.height > 2 && st.display !== 'none' && st.visibility !== 'hidden';
-                if (visible) visibleLabelCount++;
-              } catch (e) {}
-            }
+            const labelNodes = document.querySelectorAll(
+            ".js-question-options label, label.radio, label.checkbox, " +
+            ".cm-question-wrapper label.cm-radio-label[for], .cm-question-wrapper label.cm-checkbox-label[for]"
+            );
 
             const hasSurveyRoot = !!document.querySelector(
-              ".js-question-options, #templates .question, .survey-content #templates, " +
-              "#survey.survey-container, div[id^=\"question_\"], .sq-cardsort"
+            ".js-question-options, #templates .question, .survey-content #templates, " +
+            "#survey.survey-container, div[id^=\"question_\"], .sq-cardsort, " +
+            ".cm-question-wrapper, .cm-response-group, .cm-survey-layout"
             );
 
             const low = t.toLowerCase();
@@ -1775,6 +1812,169 @@ def _extract_askandanswer_selection_list_questions(driver, frame_chain: list[int
 
     return blocks
 
+def _extract_cmix_radio_question_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
+    """CMIX (survey.cmix.com) : extraction DOM-only des questions radio.
+
+    Bug visé (capture CMIX): la page affiche des radios (ex: politique de confidentialité)
+    mais l'extraction générique peut retourner 0 question_blocks, déclenchant le fallback
+    CTA-only et sautant la question.
+
+    Stratégie:
+    - activation stricte uniquement si le markup CMIX est détecté (.cm-question-wrapper + .cm-radio-label)
+    - 1 bloc par groupe radio (name) dans un wrapper
+    - mapping option->xpath en privilégiant le label texte (.cm-radio-label) plutôt que le label "bouton" (.cm-radio-input)
+    """
+
+    frame_chain = list(frame_chain or [])
+
+    # Gate strict: CMIX radio wrappers
+    try:
+        if not driver.find_elements(By.CSS_SELECTOR, ".cm-question-wrapper .cm-radio-label"):
+            return []
+    except Exception:
+        return []
+
+    try:
+        wrappers = driver.find_elements(By.CSS_SELECTOR, ".cm-question-wrapper")
+    except Exception:
+        wrappers = []
+
+    if not wrappers:
+        return []
+
+    blocks: list[dict] = []
+
+    for w in wrappers[:25]:
+        try:
+            # wrapper visible (évite templates hors écran)
+            try:
+                if not w.is_displayed():
+                    continue
+            except Exception:
+                pass
+
+            # question text (CMIX)
+            question = ""
+            try:
+                qels = w.find_elements(By.CSS_SELECTOR, ".cm-question-text")
+                if qels:
+                    question = _norm(qels[0].text or qels[0].get_attribute("innerText") or "")
+            except Exception:
+                question = ""
+
+            if not question:
+                # fallback (rare): première ligne non vide du wrapper
+                raw = _norm(w.text or w.get_attribute("innerText") or "")
+                if raw:
+                    question = _norm(raw.splitlines()[0])
+
+            if not question:
+                continue
+
+            # radios dans le wrapper
+            try:
+                radios = w.find_elements(By.CSS_SELECTOR, "input[type='radio'][id][name]")
+            except Exception:
+                radios = []
+
+            if len(radios) < 2:
+                continue
+
+            # group par name (CMIX utilise name numeric pour le groupe)
+            by_name: dict[str, list[Any]] = {}
+            for r in radios:
+                try:
+                    if _looks_like_system_field(r):
+                        continue
+                except Exception:
+                    pass
+
+                # On accepte les inputs masqués si le label texte existe
+                try:
+                    rid = (r.get_attribute("id") or "").strip()
+                    rname = (r.get_attribute("name") or "").strip()
+                    if not rid or not rname:
+                        continue
+                    # label texte (pas le label "cercle")
+                    lbls = w.find_elements(By.CSS_SELECTOR, f"label.cm-radio-label[for='{rid}']")
+                    if not lbls:
+                        continue
+                    t = _norm(lbls[0].text or lbls[0].get_attribute("innerText") or "")
+                    if not t or len(t) < 2:
+                        continue
+                    by_name.setdefault(rname, []).append(r)
+                except Exception:
+                    continue
+
+            for rname, els in by_name.items():
+                if len(els) < 2:
+                    continue
+
+                options: list[str] = []
+                option_xpath_map: dict[str, str] = {}
+
+                for r in els:
+                    try:
+                        rid = (r.get_attribute("id") or "").strip()
+                        if not rid:
+                            continue
+                        lbls = w.find_elements(By.CSS_SELECTOR, f"label.cm-radio-label[for='{rid}']")
+                        if not lbls:
+                            continue
+                        label = _norm(lbls[0].text or lbls[0].get_attribute("innerText") or "")
+                        if not label:
+                            continue
+
+                        # XPath stable: label texte CMIX (évite le label .cm-radio-input sans texte)
+                        rid_lit = _xpath_literal(rid)
+                        xp = (
+                            f"(//label[contains(concat(' ',normalize-space(@class),' '),' cm-radio-label ') and @for={rid_lit}])[1]"
+                        )
+
+                        nk = _norm_key(label)
+                        if nk in option_xpath_map:
+                            continue
+
+                        option_xpath_map[nk] = xp
+                        options.append(label)
+                    except Exception:
+                        continue
+
+                if len(options) < 2 or not option_xpath_map:
+                    continue
+
+                group_key = f"cmix_radio:name:{rname}"
+                target_id = make_target_id("group", group_key, question)
+
+                register_target(
+                    target_id,
+                    {
+                        "kind": "group",
+                        "itype": "radio",
+                        "group_key": group_key,
+                        "question": question,
+                        "option_xpath_map": option_xpath_map,
+                        "frame_chain": frame_chain,
+                        "cmix": True,
+                    },
+                )
+
+                blocks.append(
+                    {
+                        "question": question,
+                        "itype": "radio",
+                        "options": options,
+                        "max_select": 1,
+                        "target_id": target_id,
+                        "context": {"kind": "group", "group_key": group_key, "cmix": True},
+                    }
+                )
+
+        except Exception:
+            continue
+
+    return blocks
+
 def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any]]:
     """
     Analyse le DOM courant et retourne une liste de QuestionBlock.
@@ -1809,6 +2009,15 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         aa_sl_blocks = _extract_askandanswer_selection_list_questions(driver, frame_chain)
         if aa_sl_blocks:
             return aa_sl_blocks
+    except Exception:
+        pass
+
+    # --- 0d) CMIX (survey.cmix.com) : radios rendus via .cm-question-wrapper ---
+    # Objectif: éviter le fallback CTA-only quand les radios sont visibles mais non extraites.
+    try:
+        cmix_blocks = _extract_cmix_radio_question_blocks(driver, frame_chain)
+        if cmix_blocks:
+            return cmix_blocks
     except Exception:
         pass
 
@@ -1974,8 +2183,9 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                             xp = (
                                 f"(//*[@id={id_lit}]/ancestor::td[contains(@class,'clickableCell')][1] | "
                                 f"//*[@id={id_lit}]/ancestor::td[1] | "
+                                f"//label[@for={id_lit}]//*[normalize-space(.)!=''] | "
                                 f"//label[@for={id_lit}] | "
-                                f"//*[@id={id_lit}])[1]"
+                                f"//*[@id={id_lit}])"
                             )
                         else:
                             try:
@@ -1984,9 +2194,9 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                                 has_label = False
 
                             if has_label:
-                                xp = f"(//label[@for={id_lit}])[1]"
+                                xp = f"(//label[@for={id_lit}]//*[normalize-space(.)!=''] | //label[@for={id_lit}] | //*[@id={id_lit}])"
                             else:
-                                xp = f"(//*[@id={id_lit}])[1]"
+                                xp = f"//*[@id={id_lit}]"
 
                     # 2) Fallback stable : input par (type,name,value) si pas d'id
                     elif inp_type in ("radio", "checkbox") and inp_name and inp_value:
@@ -2281,11 +2491,32 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                     continue
 
             container = _nearest_question_container(el) or el
-            question = _extract_question_from_container(container, options=[]) or _find_associated_label(driver, el)
-            # question = _norm(question)
+
             question = ""
             if container:
                 question = _extract_question_from_container(container, options=[]) or ""
+
+            # --- [PATCH] Multi-dropdown (DOB/date) : éviter de prendre "Mois"/"Année" comme question ---
+            # Sur IPSOS (bootstrap-select), le conteneur des <select> peut exposer seulement les libellés de champs
+            # ("Mois", "Année") et masquer le vrai libellé question ("Quelle est votre date de naissance ?").
+            # Si on envoie "Année — Mois" à OpenAI, il peut répondre une année absurde (ex: 2026).
+            multi = False
+            hint = None
+            try:
+                if itype == "dropdown" and container:
+                    sels = container.find_elements(By.TAG_NAME, "select")
+                    multi = bool(sels and len(sels) >= 2)
+                    if multi:
+                        hint = _dropdown_field_hint(driver, el)
+                        field_labels = {"mois", "month", "année", "annee", "year", "jour", "day"}
+                        qlc = _norm_lc(question)
+                        if (qlc in field_labels) or (hint and qlc == _norm_lc(hint)):
+                            alt = _find_question_text_near_element(driver, el) or ""
+                            alt_lc = _norm_lc(alt)
+                            if alt and alt_lc not in field_labels:
+                                question = alt
+            except Exception:
+                pass
 
             if not question:
                 # important pour YouGov-like: question visible au-dessus mais pas bien "liée" au input
@@ -2303,18 +2534,17 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             # - Évite de dédupliquer à tort deux <select> distincts
             if itype == "dropdown":
                 try:
-                    multi = False
-                    if container:
+                    if not multi and container:
                         sels = container.find_elements(By.TAG_NAME, "select")
                         if len(sels) >= 2:
                             multi = True
                     if multi:
-                        hint = _dropdown_field_hint(driver, el)
+                        if not hint:
+                            hint = _dropdown_field_hint(driver, el)
                         if hint and hint.lower() not in (question or "").lower():
                             question = _norm(f"{question} — {hint}")
                 except Exception:
                     pass
-
             sig = (question, itype)
             if itype == "dropdown":
                 try:
@@ -2410,6 +2640,244 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
 
     return question_blocks
 
+def _extract_decipher_answers_list_fallback(driver, frame_chain: List[Any]) -> List[Dict[str, Any]]:
+    """
+    Fallback DOM strict (Decipher/FocusVision).
+    Déclenché uniquement quand l'analyse standard retourne 0 block.
+    Objectif: extraire (1) radio/checkbox groups dans .answers.answers-list/.clickableCell
+              (2) bouton #btn_continue (input type=image)
+    """
+    try:
+        data = driver.execute_script(
+            r"""
+            function norm(s){
+              return (s || "").replace(/\s+/g, " ").trim();
+            }
+
+            const out = [];
+
+            // --- 1) Groups radio/checkbox FocusVision/Decipher ---
+            const qNodes = Array.from(document.querySelectorAll(
+              "div.question[role='radiogroup'], div.question.radio, div.question.checkbox"
+            ));
+
+            for (const q of qNodes) {
+              const answers = q.querySelector(".answers.answers-list");
+              if (!answers) continue;
+
+              const inputs = Array.from(answers.querySelectorAll("input[type='radio'], input[type='checkbox']"));
+              if (inputs.length < 2) continue;
+
+              const qtext = norm((q.querySelector(".question-text") || q).innerText);
+              if (!qtext) continue;
+
+              // group by (itype,name)
+              const groups = new Map();
+
+              for (const inp of inputs) {
+                const itype = (inp.type || "").toLowerCase();
+                const name = norm(inp.getAttribute("name"));
+                const id = norm(inp.getAttribute("id"));
+                if (!name || !id) continue;
+                if (itype !== "radio" && itype !== "checkbox") continue;
+
+                // label: priorité label[for=id]
+                let label = "";
+                try {
+                  // id contient des '.' => OK dans un attribut [for="..."]
+                  const safe = id.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+                  const labEl = answers.querySelector('label[for="' + safe + '"]');
+                  label = norm(labEl ? labEl.innerText : "");
+                } catch(e) {}
+
+                // fallback: texte du wrapper cliquable
+                if (!label) {
+                  const cell = inp.closest(".clickableCell") || inp.closest(".sq-cardrating-button") || inp.closest(".element");
+                  label = norm(cell ? cell.innerText : "");
+                }
+                if (!label) continue;
+
+                const key = itype + "|" + name;
+                if (!groups.has(key)) groups.set(key, { itype, name, question: qtext, options: [] });
+
+                groups.get(key).options.push({ label, id });
+              }
+
+              // flush groups
+              for (const g of groups.values()) {
+                // dedupe
+                const seen = new Set();
+                const opts = [];
+                const ids = [];
+                for (const o of g.options) {
+                  const k = (o.label || "").toLowerCase();
+                  if (!k || seen.has(k)) continue;
+                  seen.add(k);
+                  opts.push(o.label);
+                  ids.push(o.id);
+                }
+                if (opts.length >= 2) {
+                  out.push({
+                    kind: "group",
+                    itype: g.itype,
+                    name: g.name,
+                    question: g.question,
+                    options: opts,
+                    input_ids: ids
+                  });
+                }
+              }
+            }
+
+            // --- 2) Bouton continue Decipher ---
+            const btn = document.querySelector("#btn_continue");
+            if (btn && btn.id && btn.name) {
+              const label = norm(
+                btn.getAttribute("value")
+                || btn.getAttribute("aria-label")
+                || btn.getAttribute("title")
+                || btn.getAttribute("alt")
+                || btn.name
+                || btn.id
+              );
+              out.push({ kind: "btn_continue", id: btn.id, name: btn.name, label });
+            }
+
+            return out;
+            """
+        )
+    except Exception:
+        return []
+
+    if not isinstance(data, list) or not data:
+        return []
+
+    blocks: List[Dict[str, Any]] = []
+
+    # --- Groups ---
+    for g in data:
+        try:
+            if (g or {}).get("kind") != "group":
+                continue
+
+            itype = (g.get("itype") or "").strip().lower()
+            name = (g.get("name") or "").strip()
+            question = _norm(g.get("question") or "")
+            options = [(_norm(x) or "") for x in (g.get("options") or [])]
+            input_ids = [((x or "").strip()) for x in (g.get("input_ids") or [])]
+
+            if itype not in ("radio", "checkbox") or not name or not question:
+                continue
+            if len(options) < 2 or len(input_ids) < 2:
+                continue
+
+            option_xpath_map: Dict[str, str] = {}
+            clean_options: List[str] = []
+            for opt_txt, inp_id in zip(options, input_ids):
+                if not opt_txt or not inp_id:
+                    continue
+                k = _norm_lc(opt_txt)
+                if not k or k in option_xpath_map:
+                    continue
+
+                # Clique le wrapper visible (Decipher/FocusVision)
+                xpath_click = (
+                    f"//input[@id={_xpath_literal(inp_id)}]/ancestor::*["
+                    f"contains(concat(' ',normalize-space(@class),' '),' clickableCell ') "
+                    f"or contains(concat(' ',normalize-space(@class),' '),' sq-cardrating-button ') "
+                    f"or contains(concat(' ',normalize-space(@class),' '),' element ')"
+                    f"][1]"
+                )
+                option_xpath_map[k] = xpath_click
+                clean_options.append(opt_txt)
+
+            if len(clean_options) < 2:
+                continue
+
+            group_key = f"{itype}:name:{name}"
+            target_id = make_target_id("group", group_key, question)
+
+            register_target(
+                target_id,
+                {
+                    "kind": "group",
+                    "itype": itype,
+                    "group_key": group_key,
+                    "question": question,
+                    "option_xpath_map": option_xpath_map,
+                    "frame_chain": frame_chain,
+                },
+            )
+
+            blocks.append(
+                {
+                    "question": question,
+                    "itype": itype,
+                    "options": clean_options,
+                    "max_select": _compute_max_select(itype, clean_options),
+                    "target_id": target_id,
+                    "context": {"kind": "group", "group_key": group_key},
+                }
+            )
+        except Exception:
+            continue
+
+    # --- Continue button ---
+    for b in data:
+        try:
+            if (b or {}).get("kind") != "btn_continue":
+                continue
+
+            btn_id = (b.get("id") or "").strip()
+            btn_name = (b.get("name") or "").strip()
+            label = _norm(b.get("label") or "")
+
+            if not btn_id or not btn_name:
+                continue
+
+            question = label or "Continue"
+            single_key = f"button:{btn_id}:{btn_name}"
+            target_id = make_target_id("single", single_key, question)
+
+            xpath = f"//*[@id={_xpath_literal(btn_id)}]"
+            alt_xpaths = [f"//input[@name={_xpath_literal(btn_name)}]"]
+
+            register_target(
+                target_id,
+                {
+                    "kind": "single",
+                    "itype": "button",
+                    "question": question,
+                    "xpath": xpath,
+                    "alt_xpaths": alt_xpaths,
+                    "tag": "input",
+                    "name": btn_name,
+                    "id": btn_id,
+                    "frame_chain": frame_chain,
+                },
+            )
+
+            blocks.append(
+                {
+                    "question": question,
+                    "itype": "button",
+                    "options": [],
+                    "max_select": 1,
+                    "target_id": target_id,
+                    "context": {
+                        "kind": "single",
+                        "tag": "input",
+                        "name": btn_name,
+                        "id": btn_id,
+                        "role": None,
+                    },
+                }
+            )
+        except Exception:
+            continue
+
+    return blocks
+
 def analyze_dom(driver) -> List[Dict[str, Any]]:
     """
     Analyse le DOM et retourne une liste de QuestionBlock.
@@ -2435,6 +2903,9 @@ def analyze_dom(driver) -> List[Dict[str, Any]]:
         blocks = _analyze_dom_current_context(driver, frame_chain=chain)
         blocks.extend(_extract_focusvision_answers_list_groups(driver, frame_chain=chain))
 
+        if not blocks:
+            blocks = _extract_decipher_answers_list_fallback(driver, frame_chain=chain)
+
     # Fallback strict: si on a scanné un iframe et qu'on n'a rien, tente default_content une seule fois.
     if not blocks and chain:
         with switch_to_frame_chain(driver, []) as ok:
@@ -2444,5 +2915,8 @@ def analyze_dom(driver) -> List[Dict[str, Any]]:
                     return sp_blocks
                 blocks = _analyze_dom_current_context(driver)
                 blocks.extend(_extract_focusvision_answers_list_groups(driver))
+
+                if not blocks:
+                    blocks = _extract_decipher_answers_list_fallback(driver, frame_chain=chain)
 
     return blocks
