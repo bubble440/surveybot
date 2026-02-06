@@ -35,9 +35,15 @@ def _split_values(value: str, itype: str = "", max_select: int = 1) -> List[str]
     if "|" in v:
         return [p.strip() for p in v.split("|") if p.strip()]
 
+    # ✅ NEW: multi champs ouverts (text/textarea) quand max_select>1
+    # Cas fréquent: le modèle renvoie "A, B, C" sur une seule ligne.
+    # On découpe de manière prédictible (virgule/point-virgule) et constraints coupera à max_select.
+    if it in {"text", "textarea", "number"} and (max_select or 1) > 1 and ("," in v or ";" in v):
+        parts = [p.strip(" \t-•") for p in re.split(r"\s*[,;]\s*", v) if p.strip()]
+        if len(parts) >= 2:
+            return parts
+
     # split sur virgule UNIQUEMENT pour checkbox multi
-    # (évite de casser des libellés single-select contenant des virgules,
-    # ex: "NI D'ACCORD, NI PAS D'ACCORD")
     if it == "checkbox" and (max_select or 1) > 1 and "," in v and len(v) < 120:
         return [p.strip() for p in v.split(",") if p.strip()]
 

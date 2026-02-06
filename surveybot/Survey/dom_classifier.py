@@ -154,14 +154,43 @@ def is_consent_screen(driver) -> bool:
 
     # --- contrôle explicite type consent (checkbox/radio avec libellé agree/accept/consent) ---
     def _has_explicit_consent_control() -> bool:
+        """
+        Détecte un contrôle de consentement explicite (checkbox/radio).
+        IMPORTANT: on vérifie que l'input est VISIBLE (évite faux positifs CookieYes caché).
+        """
+
         markers = {
             "agree", "accept", "consent", "gdpr", "rgpd", "cookie", "cookies",
             "j'accepte", "j accepte", "i agree", "i accept"
         }
+
+        def _is_input_visible(inp) -> bool:
+            """Vérifie qu'un input est visible (pas dans un widget caché)."""
+            try:
+                if not inp.is_displayed():
+                    return False
+                # Vérifier si un ancêtre a une classe 'hide' (CookieYes: .cky-hide)
+                has_hidden = driver.execute_script(
+                    "return !!arguments[0].closest('.cky-hide, .ng-hide, [hidden], .hidden, [aria-hidden=\"true\"]')",
+                    inp
+                )
+                if has_hidden:
+                    return False
+                # Vérifier taille minimale
+                r = inp.rect or {}
+                if float(r.get('width', 0) or 0) < 5 or float(r.get('height', 0) or 0) < 5:
+                    return False
+                return True
+            except Exception:
+                return False
+
         try:
             inputs = driver.find_elements(By.CSS_SELECTOR, "input[type='checkbox'], input[type='radio']")
             for inp in inputs:
                 try:
+                    # NOUVEAU: vérifier la visibilité AVANT de traiter
+                    if not _is_input_visible(inp):
+                        continue
                     id_ = (inp.get_attribute("id") or "").strip()
                     name = (inp.get_attribute("name") or "").strip()
                     blob = f"{id_} {name}".lower()
@@ -254,6 +283,10 @@ def is_consent_screen(driver) -> bool:
     # 2) Détection "contrôle explicite" UNIQUEMENT si le contexte ressemble à du cookies/RGPD/CMP.
     #    Sinon on évite les faux positifs sur des questions de survey du type "J'accepte la politique de confidentialité".
     def _cmp_container_exists_anywhere() -> bool:
+        """
+        Vérifie qu'un container CMP VISIBLE existe.
+        IMPORTANT: on ignore les containers cachés (ex: CookieYes avec .cky-hide).
+        """
         try:
             return bool(driver.execute_script(
                 """
@@ -265,7 +298,31 @@ def is_consent_screen(driver) -> bool:
                   '#CybotCookiebotDialog', '#CookiebotWidget',
                   '.cc-window', '.cookie-banner', '.cookie-consent', '.cookie-notice'
                 ];
-                return !!document.querySelector(sels.join(','));
+                const vw = Math.max(320, window.innerWidth || 0);
+                const vh = Math.max(240, window.innerHeight || 0);
+                
+                function isVisible(el) {
+                    if (!el) return false;
+                    try {
+                        const s = window.getComputedStyle(el);
+                        if (!s) return false;
+                        if (s.display === 'none' || s.visibility === 'hidden') return false;
+                        if (parseFloat(s.opacity || '1') < 0.1) return false;
+                        const r = el.getBoundingClientRect();
+                        if (!r) return false;
+                        if (r.width < 50 || r.height < 30) return false;
+                        if (r.bottom < 0 || r.right < 0 || r.top > vh || r.left > vw) return false;
+                        return true;
+                    } catch(_) { return false; }
+                }
+                
+                const candidates = document.querySelectorAll(sels.join(','));
+                for (const el of candidates) {
+                    const hasHiddenAncestor = el.closest('.cky-hide, .ng-hide, [hidden], .hidden');
+                    if (hasHiddenAncestor) continue;
+                    if (isVisible(el)) return true;
+                }
+                return false;
                 """
             ))
         except Exception:

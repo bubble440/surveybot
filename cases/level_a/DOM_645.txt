@@ -1,264 +1,250 @@
-<body id="ctl00_supplierBranding" ondragstart="return false" oncontextmenu="return false" class=" supplier-1771">
-
-<div class="container">
-    <form method="post" action="./Profiler.aspx?SSID=697014a8-cb0e-a269-7d02-490f94abf7d6&amp;SuID=d5ef373117678&amp;zToken=7517c556-df04-469b-b4ee-76ab697b388d" id="aspnetForm" onselectstart="return false">
-<div class="aspNetHidden">
-<input type="hidden" name="__VIEWSTATE" id="__VIEWSTATE" value="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">
-</div>
-
+<body onload="return rsLoad();" style="cursor: auto;">
+    
+    <form method="post" action="./c?rs=_cBOihjydM1xMTqwtS7CVmYnCvea9TVzSkyvza7xnbc5jLUrC7d5Dj3Wcms7pNFaptFtTn4Pkuhy_rzeAkRU2u4d8mvOpRie-HtgG54HlgArMwuTHMvxYYHMog1jvs4NwF4ocFlaAJmoI39EdsStFquCLdtmpLISzbdIZMqNQU0dqHum5lHLM88xshiZ25kFgcx1ObTc_ptb0h0FQm_-7dZJQZD45_EOSFVnDKIK4Qs&amp;lang=fr" onsubmit="javascript:return WebForm_OnSubmit();" id="rsForm" style="">
 <div class="aspNetHidden">
 
-	<input type="hidden" name="__VIEWSTATEGENERATOR" id="__VIEWSTATEGENERATOR" value="1716A1E3">
-	<input type="hidden" name="__VIEWSTATEENCRYPTED" id="__VIEWSTATEENCRYPTED" value="">
-	<input type="hidden" name="__EVENTVALIDATION" id="__EVENTVALIDATION" value="bRHGrH22iDWsoJU1US3axBEf2QpbMPnXyMETbwBKd14rvmBKMewvTjEdbZfJds4CmOwhEq0Teurofgxa3ylqxq+4hAdM+U6173Qz7AOJjl0EYTs0G4wuK+IQq9wdyPa6dJvwy6UfyugYaoMRx2TLMnzmEGFA/PTI/a3aPIsRb3hlCwQAGjCsaOqOK7YJz3vmE+QqzPMQ7jLr8wd0dlBeVFOoPC36Iws/givI5oGiL4XVoFio">
-</div>
-        
 
-        <div class="header">
-            <div class="header-content">
-                <img src="includes/images/brandings/headerlogo/supplier-default.png" id="ctl00_supplierImage" class="header-logo">
-            </div>
-        </div>
 
-        
-    <script type="text/javascript">
-        BOOMR.addVar('p', 'profiler');
-        var question = {"QuestionId":645,"QuestionText":"Approximativement, quel-est le chiffre d\u0027affaires de votre entreprise ?","SubText":"","TemplateName":"SINGLE","QuestionOptions":[{"Display":"Moins de 100,000 EUR","Precode":"1","IsMutuallyExclusive":false,"ParentItem":null},{"Display":"100,000 EUR - 249,999 EUR","Precode":"2","IsMutuallyExclusive":false,"ParentItem":null},{"Display":"250,000 EUR - 499,999 EUR","Precode":"3","IsMutuallyExclusive":false,"ParentItem":null},{"Display":"500,000 EUR - 999,999 EUR","Precode":"4","IsMutuallyExclusive":false,"ParentItem":null},{"Display":"1 Million EUR - 4.99 Millions EUR","Precode":"5","IsMutuallyExclusive":false,"ParentItem":null},{"Display":"5 Millions EUR - 9.99 Millions EUR","Precode":"6","IsMutuallyExclusive":false,"ParentItem":null},{"Display":"10 Millions EUR -  24.99 Millions EUR","Precode":"7","IsMutuallyExclusive":false,"ParentItem":null},{"Display":"25 Millions EUR - 49.99 Millions EUR","Precode":"8","IsMutuallyExclusive":false,"ParentItem":null},{"Display":"50 Millions EUR - 99.99 Millions EUR","Precode":"9","IsMutuallyExclusive":false,"ParentItem":null},{"Display":"100 Millions EUR - 249.99 Millions EUR","Precode":"10","IsMutuallyExclusive":false,"ParentItem":null},{"Display":"250 Millions EUR - 499.99 Millions EUR","Precode":"11","IsMutuallyExclusive":false,"ParentItem":null},{"Display":"500 Millions EUR - 999.99 Millions EUR","Precode":"12","IsMutuallyExclusive":false,"ParentItem":null},{"Display":"1 Milliard EUR ou plus","Precode":"13","IsMutuallyExclusive":false,"ParentItem":null},{"Display":"Je ne travaille pas / Je ne sais pas","Precode":"14","IsMutuallyExclusive":false,"ParentItem":null}],"SubQuestions":null};
-
-        $(function () {
-            Template.init();
-            Bind.init();
-        });
-    </script>
-    
-    <div id="survey">
-        <div class="survey-content">
-
-            
-    <div id="templates">
-        <div class="question">
-            Approximativement, quel-est le chiffre d'affaires de votre entreprise ?
-            <div class="subtext"></div>
-        </div>
-        <div class="answer">
-            
-    <div class="options js-resize-choices js-question-options">
-        
-                <label for="option-0" class="radio" style="width: 410.4px;">
-                    <input type="radio" id="option-0" name="question_645" value="1">
-                    <span>Moins de 100,000 EUR</span>
-                </label>
-        
-                <label for="option-1" class="radio" style="width: 410.4px;">
-                    <input type="radio" id="option-1" name="question_645" value="2">
-                    <span>100,000 EUR - 249,999 EUR</span>
-                </label>
-        
-                <label for="option-2" class="radio" style="width: 410.4px;">
-                    <input type="radio" id="option-2" name="question_645" value="3">
-                    <span>250,000 EUR - 499,999 EUR</span>
-                </label>
-        
-                <label for="option-3" class="radio" style="width: 410.4px;">
-                    <input type="radio" id="option-3" name="question_645" value="4">
-                    <span>500,000 EUR - 999,999 EUR</span>
-                </label>
-        
-                <label for="option-4" class="radio" style="width: 410.4px;">
-                    <input type="radio" id="option-4" name="question_645" value="5">
-                    <span>1 Million EUR - 4.99 Millions EUR</span>
-                </label>
-        
-                <label for="option-5" class="radio" style="width: 410.4px;">
-                    <input type="radio" id="option-5" name="question_645" value="6">
-                    <span>5 Millions EUR - 9.99 Millions EUR</span>
-                </label>
-        
-                <label for="option-6" class="radio" style="width: 410.4px;">
-                    <input type="radio" id="option-6" name="question_645" value="7">
-                    <span>10 Millions EUR -  24.99 Millions EUR</span>
-                </label>
-        
-                <label for="option-7" class="radio" style="width: 410.4px;">
-                    <input type="radio" id="option-7" name="question_645" value="8">
-                    <span>25 Millions EUR - 49.99 Millions EUR</span>
-                </label>
-        
-                <label for="option-8" class="radio" style="width: 410.4px;">
-                    <input type="radio" id="option-8" name="question_645" value="9">
-                    <span>50 Millions EUR - 99.99 Millions EUR</span>
-                </label>
-        
-                <label for="option-9" class="radio" style="width: 410.4px;">
-                    <input type="radio" id="option-9" name="question_645" value="10">
-                    <span>100 Millions EUR - 249.99 Millions EUR</span>
-                </label>
-        
-                <label for="option-10" class="radio" style="width: 410.4px;">
-                    <input type="radio" id="option-10" name="question_645" value="11">
-                    <span>250 Millions EUR - 499.99 Millions EUR</span>
-                </label>
-        
-                <label for="option-11" class="radio" style="width: 410.4px;">
-                    <input type="radio" id="option-11" name="question_645" value="12">
-                    <span>500 Millions EUR - 999.99 Millions EUR</span>
-                </label>
-        
-                <label for="option-12" class="radio" style="width: 410.4px;">
-                    <input type="radio" id="option-12" name="question_645" value="13">
-                    <span>1 Milliard EUR ou plus</span>
-                </label>
-        
-                <label for="option-13" class="radio" style="width: 410.4px;">
-                    <input type="radio" id="option-13" name="question_645" value="14">
-                    <span>Je ne travaille pas / Je ne sais pas</span>
-                </label>
-         
-    </div>    
-
-        </div>
-    </div>
-
-            <div class="button-container" style="margin-bottom: 3rem;">
-                <span class="keypress-for-enter show"><!-- Press Enter --></span>
-                <input type="submit" name="ctl00$Content$btnContinue" value="Continue →" id="ctl00_Content_btnContinue" class="submit-btn" style="color: rgb(255, 255, 255);">
-
-                
-                <input type="hidden" name="ctl00$Content$hfInScreenerUpdate" id="ctl00_Content_hfInScreenerUpdate">
-                <input type="hidden" name="ctl00$Content$hfRS_LK_ResponseStatusID" id="ctl00_Content_hfRS_LK_ResponseStatusID">
-                <input type="hidden" name="ctl00$Content$hfRS_ClientLK_ResponseStatusID" id="ctl00_Content_hfRS_ClientLK_ResponseStatusID">
-            </div>
-        </div>
-    </div>
-
-    <!-- Do not remove this: it includes underscore templates to render the questions -->
-    <script type="text/template" class="template" id="screener-template">
-    <div id="templates">
-        <div class="question">
-            ## item.QuestionText ##
-            <div class="subtext">## item.SubText ##</div>
-        </div>
-        <div class="answer">
-            ## _.template( $("#" + item.TemplateName.toLowerCase() + "-template").html(), {'model': item}) ##
-        </div>
-    </div>
-</script>
-
-<script type="text/template" class="template" id="single-template">
-    <div class="options js-resize-choices js-question-options">
-        {% _.each(model.QuestionOptions, function(child, i) { %}
-                <label for="option-##i##" class="radio{% if (child.ParentItem != null) { %} collection" data-parent="## child.ParentItem ##{% } %}">
-                    <input type="radio" id="option-##i##" name="question_##model.QuestionId##" value="##child.Precode##"/>
-                    <span>##child.Display##</span>
-                </label>
-        {% }); %} 
-    </div>    
-</script>
-
-<script type="text/template" class="template" id="multi-template">
-    <div class="options js-resize-choices js-question-options">
-        {% _.each(model.QuestionOptions, function(child, i) { %}
-            <label for="option-##i##" class="checkbox">
-                <input type="checkbox" id="option-##i##" name="question_##model.QuestionId##" value="##child.Precode##" {% if (child.IsMutuallyExclusive) { %} class="exclusive" {% } %}/>
-                <span>##child.Display##</span>
-            </label>
-        {% }); %} 
-    </div>
-</script>
-
-<script type="text/template" class="template" id="text-template">
-    <div class="options js-question-options">
-        <input type="text" name="question_##model.QuestionId##" />
-    </div>
-</script>
-
-<script type="text/template" class="template" id="numeric-template">
-    <div class="options js-question-options">
-        <input type="number" name="question_##model.QuestionId##" />
-    </div>
-</script>
-
-<script type="text/template" class="template" id="date-template">
-    <div class="options js-question-options">
-        <input type="date" name="question_##model.QuestionId##" class="datepicker"/>
-    </div>
-</script>
-
-<script type="text/template" class="template" id="grid-template">
-    {% var templateName = ($('body').width() <= 768) ? 'mobile' : 'desktop'; %}
-        
-    ## _.template($("#grid-" + templateName + "-template").html(), {'model': model}) ##
-</script>
-
-<script type="text/template" class="template" id="grid-mobile-template">
-    
-    {% if (model.SubQuestions) { %}
-        <input type="hidden" name="This needs to change" value="-1"/>
-        <ul class="grid-answers">
-        {% _.each(model.SubQuestions, function(subquestion, sId) { %}
-            <li class="subquestion">
-                <div class="label">##subquestion.Display##</div>
-                <div class="options js-resize-choices js-question-options">
-                    {% _.each(model.QuestionOptions, function(child, oId) { %}
-                            <label for="option-##sId##-##oId##" class="radio">
-                                <input type="radio" id="option-##sId##-##oId##" name="##subquestion.Code##" value="##child.Precode##"/>
-                                <span>##child.Display##</span>
-                            </label>
-                    {% }); %} 
-                </div>  
-            </li>
-        {% }); %}  
-        </ul>
-    {% } %}        
-</script>
-
-<script type="text/template" class="template" id="grid-desktop-template">
-    {% $('body').addClass('grid'); %}
-    {% var columnWidth = 75 / model.QuestionOptions.length; %}
-
-    {% if (model.SubQuestions) { %}
-        <input type="hidden" name="This needs to change" value="-1"/>
-        <table class="grid-question">
-            <thead>
-                <tr>
-                    <th></th>
-                    {% _.each(model.QuestionOptions, function(child, oId) { %}
-                        <th>
-                            <span>##child.Display##</span>
-                        </th>
-                    {% }); %}
-                </tr>
-            </thead>
-            <tbody>
-                {% _.each(model.SubQuestions, function(subquestion, sId) { %}
-                    <tr class="js-question-options">
-                        <td class="row-label"><span class="label">##subquestion.Display##</span></td>
-                        {% _.each(model.QuestionOptions, function(child, oId) { %}
-                            <td width="##columnWidth##%">
-                                <label for="option-##sId##-##oId##"><input type="radio" id="option-##sId##-##oId##" name="##subquestion.Code##" value="##child.Precode##"/></label>
-                            </td>
-                        {% }); %}
-                    </tr>
-                {% }); %}
-            </tbody>
-        </table>
-    {% } %}  
-</script>
-
-        <div class="footer">
-            <div class="footer-content">
-                <img id="ctl00_footerImage">
-                <span id="ctl00_footerText" class="footer-text">Copyright © 2026. All rights reserved. <a href="https://samplicio.us/s/privacy-policy" target="_blank">Privacy Policy</a> <a href="https://samplicio.us/s/general-terms" target="_blank">General Terms</a> </span>
-                <br>
-                
-            </div>
-        </div>
-
-    </form>
 </div>
 
-<script type="text/javascript" src="includes/js/vendor.min.js?v=2017-09-08"></script>
-<script type="text/javascript" src="includes/js/screener.min.js?v=2023-04-26"></script>
+<script type="text/javascript">
+//<![CDATA[
+var theForm = document.forms['rsForm'];
+if (!theForm) {
+    theForm = document.rsForm;
+}
+function __doPostBack(eventTarget, eventArgument) {
+    if (!theForm.onsubmit || (theForm.onsubmit() != false)) {
+        theForm.__EVENTTARGET.value = eventTarget;
+        theForm.__EVENTARGUMENT.value = eventArgument;
+        theForm.submit();
+    }
+}
+//]]>
+</script>
 
 
-</body>
+<script src="https://ajax.aspnetcdn.com/ajax/4.6/1/WebForms.js" type="text/javascript"></script>
+<script type="text/javascript">
+//<![CDATA[
+window.WebForm_PostBackOptions||document.write('<script type="text/javascript" src="/WebResource.axd?d=pynGkmcFUV13He1Qd6_TZP8-N8NSGDh5ESLx52sCvORw6RV6oCFpD_ItAgThmY9VIBNUSg2&amp;t=638901526312636832"><\/script>');//]]>
+</script>
+
+
+<script>function pageReady(){}function validate(){return true;}</script>
+<script>
+function pageReady(){
+
+$('#Age_Check1').css("height","1px");
+ $('#Age_Check1').css("width","1px");
+ $('#Age_Check1').css("overflow","hidden");
+ $('#Age_Check1').css("display","flex");  
+}
+</script>
+
+<script>
+function initRankFunctionality(){}
+function clearRankFunctionality(){}
+</script>
+<script>function rsLoad(){pageDuration();}</script><script>
+function setFormStyle(){}
+</script>
+<script>
+function pageDuration() {
+  if(typeof objTimeMin !== "undefined"){clearTimeout(objTimeMin);}
+  if(typeof objTimeMax !== "undefined"){clearTimeout(objTimeMax);}
+}
+</script>
+
+<script src="https://ajax.aspnetcdn.com/ajax/4.6/1/WebUIValidation.js" type="text/javascript"></script>
+<script src="https://ajax.aspnetcdn.com/ajax/4.6/1/MicrosoftAjax.js" type="text/javascript"></script>
+<script type="text/javascript">
+//<![CDATA[
+(window.Sys && Sys._Application && Sys.Observer)||document.write('<script type="text/javascript" src="/ScriptResource.axd?d=uHIkleVeDJf4xS50Krz-yGoJmOW4o6BOcIgMjrU-x7k4TuuU82qsvxreluBIABnokkwanDXzYvgk8vzABKzjHUqP43SppakROh00j4GHbpcWQECEA5nUkRgOOhEmV-9I0NY4vL_tZJgTXGNLpti7jywOHMc1&t=345ad968"><\/script>');//]]>
+</script>
+
+<script src="https://ajax.aspnetcdn.com/ajax/4.6/1/MicrosoftAjaxWebForms.js" type="text/javascript"></script>
+<script type="text/javascript">
+//<![CDATA[
+(window.Sys && Sys.WebForms)||document.write('<script type="text/javascript" src="/ScriptResource.axd?d=Jw6tUGWnA15YEa3ai3FadEtHojACZX9yG9hOyqfbRqWGlNvyiVU1c7RVnkT2sar-GIWCYbrgfl84caB0VYJrjYIAoyWrdsw8Cz3RDFDTHr6-eR5RSnynYHzha3R8ajEz-gmDnmyEF0BFKzDpapSOZaMwz241&t=345ad968"><\/script>');function WebForm_OnSubmit() {
+if (typeof(ValidatorOnSubmit) == "function" && ValidatorOnSubmit() == false) return false;
+return true;
+}
+//]]>
+</script>
+
+<div class="aspNetHidden">
+
+	
+</div>
+        <script type="text/javascript">
+//<![CDATA[
+Sys.WebForms.PageRequestManager._initialize('ScMan', 'rsForm', ['trsPanelComments','rsPanelComments','trsPanelProgress','rsPanelProgress','trsPanelMain','rsPanelMain','trsPanelLang','rsPanelLang','trsPanelButtons','rsPanelButtons','tctl15','ctl15'], [], [], 90, '');
+//]]>
+</script>
+
+        <script src="js/dc.rank.min.js?v=5.1.9476.23711"></script>
+        <div id="rsPanelComments">
+                <div id="msgBar" class="msgBar" style="display:none;">
+                    <div id="msgContainer" style="display:none">
+                        <span id="msgText"></span>
+                    </div>
+                </div>
+                
+            </div>
+        <div class="mainContainer" role="main">
+            <div class="bannerContainer">
+                
+            </div>
+            <div class="contentContainer">
+                <div class="logo1Container">
+                    <img class="logo1" src="img/walr.png?v=5.1.9476.23711" alt="Walr Data Collection">
+                </div>
+                <div class="progressContainer">
+                    <div id="rsPanelProgress">
+                            <span id="progressBarControl1"><div class="progressBarContainer"><div class="progressBar" aria-label="progress" role="progressbar" aria-valuenow="10" aria-valuemin="0" aria-valuemax="100" style="width:10%;"></div><div class="progressBarText" aria-hidden="true">10%</div></div></span>
+                        </div>
+                </div>
+                <div class="panelMainContainer">
+                    <div id="rsPanelMain" style="visibility: visible;">
+                            <table id="S2" cellpadding="0" width="100%" class="cTABLEContainQues" role="presentation">
+	<tbody><tr>
+		<td valign="top" class="cTDContainQues" style="display: table-cell;"><table id="q_13" class="cTable rsSingle" role="presentation" cellpadding="0" cellspacing="0" border="0">
+			<tbody><tr class="cRowSubQuestion">
+				<td class="cCellSubQuestion" colspan="2"><div class="cQuestionNumber">S2.A)</div><div class="cQuestionText" role="heading" aria-level="1"><div class="rs-ht cReg reg"><p>Êtes-vous...&nbsp;?</p></div><div class="rs-ht do cDo" id="instr1"><p>Veuillez sélectionner une réponse.</p></div></div></td>
+			</tr>
+			<tr class="rsRow cRow cRowNotSelected">
+				<td class="cCell" valign="top"><input value="1" name="n13A" type="radio" id="n13A0" class="cRadio" onclick="clearAll(&quot;n13A0&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"><div class="cValue">1</div></td>
+				<td id="r_13_1" class="cCellRowText textleft cellw100"><label for="n13A0" class="textleft"><div class="cRowText textleft"><div class="rs-ht cReg reg"><p>Une femme</p></div></div></label></td>
+			</tr>
+			<tr class="rsRow cRowAlt cRowAltNotSelected">
+				<td class="cCell" valign="top"><input value="2" name="n13A" type="radio" id="n13A1" class="cRadio" onclick="clearAll(&quot;n13A1&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"><div class="cValue">2</div></td>
+				<td id="r_13_2" class="cCellRowText textleft cellw100"><label for="n13A1" class="textleft"><div class="cRowText textleft"><div class="rs-ht cReg reg"><p>Un homme</p></div></div></label></td>
+			</tr>
+			<tr class="rsRow rsSelected cRow cRowSelected">
+				<td class="cCell" valign="top"><input value="3" name="n13A" type="radio" id="n13A2" class="cRadio" onclick="clearAll(&quot;n13A2&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"><div class="cValue">3</div></td>
+				<td id="r_13_3" class="cCellRowText textleft cellw100"><label for="n13A2" class="textleft"><div class="cRowText textleft"><div class="rs-ht cReg reg"><p>Autre</p></div></div></label></td>
+			</tr>
+			<tr class="rsRow cRowAlt cRowAltNotSelected">
+				<td class="cCell" valign="top"><input value="4" name="n13A" type="radio" id="n13A3" class="cRadio" onclick="clearAll(&quot;n13A3&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"><div class="cValue">4</div></td>
+				<td id="r_13_4" class="cCellRowText textleft cellw100"><label for="n13A3" class="textleft"><div class="cRowText textleft"><div class="rs-ht cReg reg"><p>Je ne souhaite pas répondre</p></div></div></label></td>
+			</tr>
+			<tr class="rsEmptyFinalRow">
+				<td name="emptyCell" class="cFooter"></td>
+				<td name="emptyCell" class="cFooter"></td>
+			</tr>
+		</tbody></table>
+		</td>
+	</tr>
+</tbody></table>
+<input name="Q" type="hidden" id="Q" value="13"><input name="S" type="hidden" id="S" value="0">
+                            <span id="PageDurationScriptControl1"></span>
+                        </div>
+                </div>
+            </div>
+            <div class="langContainer">
+                <div id="rsPanelLang">
+                        <div id="LangSelector_PanelLayout" class="languagePanel" style="background-color:Transparent;border-color:Transparent;border-style:None;">
+	<a id="LangSelector_lb_en" class="languageLink" href="javascript:WebForm_DoPostBackWithOptions(new WebForm_PostBackOptions(&quot;LangSelector$lb_en&quot;, &quot;&quot;, true, &quot;&quot;, &quot;&quot;, false, true))">en</a><a id="LangSelector_lb_de" class="languageLink" href="javascript:WebForm_DoPostBackWithOptions(new WebForm_PostBackOptions(&quot;LangSelector$lb_de&quot;, &quot;&quot;, true, &quot;&quot;, &quot;&quot;, false, true))">de</a><a id="LangSelector_lb_fr" class="aspNetDisabled languageLink">fr</a>
+</div>
+
+
+                    </div>
+            </div>
+            <div class="buttonContainer">
+                <div id="rsPanelButtons">
+                        <span id="_customValidator" style="visibility:hidden;"></span>
+                        
+                        <input type="button" name="btnNext" value="Suivant" onclick="rsSethf('rs_dir','1');WebForm_DoPostBackWithOptions(new WebForm_PostBackOptions(&quot;btnNext&quot;, &quot;&quot;, true, &quot;&quot;, &quot;&quot;, false, true))" id="btnNext" class="buttonPage buttonNext">
+                        <input type="button" name="btnToggleWcag" value="0" onclick="javascript:WebForm_DoPostBackWithOptions(new WebForm_PostBackOptions(&quot;btnToggleWcag&quot;, &quot;&quot;, true, &quot;&quot;, &quot;&quot;, false, true))" id="btnToggleWcag" style="display:none;">
+                        <div id="UpdateProgress2" style="display:none;" role="status" aria-hidden="true">
+	
+                                <div class="loadingAnimation"></div>
+                            
+</div>
+                    </div>
+            </div>
+             <div class="logo2Container">
+                <a title="Walr Data Collection v. 5.1.9476.23711
+www.walr.com" class="logo2link" rel="noopener" href="https://www.walr.com" target="_blank">Created in Walr Survey Builder</a><br>
+            </div>
+        </div>
+        <div id="ctl15">
+                
+                
+                <input name="rs_lto" type="hidden" id="rs_lto" value="-60">
+                <input name="rs_lang" type="hidden" id="rs_lang" value="fr">
+                <input name="rs_rnd" type="hidden" id="rs_rnd" value="281">
+                <input name="rs_dir" type="hidden" id="rs_dir" value="1">
+                <input name="rs_dcv" type="hidden" id="rs_dcv" value="5.1.9476.23711">
+                <input name="rs_r" type="hidden" id="rs_r" value="aaf63099-67f7-42fc-85da-24a82cf457ed">
+                <input name="rs_tr" type="hidden" id="rs_tr">
+                <input name="rs_s" type="hidden" id="rs_s" value="05412940-126f-4db6-82b2-8b7c71491dcb">
+                <input name="rs_q" type="hidden" id="rs_q" value="a95f5b15-46e5-426d-87b0-5e42eb12182f">
+                <input name="rs_c" type="hidden" id="rs_c" value="3ef11f3f-290d-4a64-925c-34ae02f863ce">
+                <input name="rs_cid" type="hidden" id="rs_cid">
+            </div>
+        <script>
+            Sys.WebForms.PageRequestManager.getInstance().add_initializeRequest(initRequestHandler);
+            Sys.WebForms.PageRequestManager.getInstance().add_beginRequest(beginRequestHandler);
+            Sys.WebForms.PageRequestManager.getInstance().add_endRequest(endRequestHandler);
+            Sys.WebForms.PageRequestManager.getInstance().add_pageLoaded(pageLoadedHandler);
+        </script>
+    
+<script type="text/javascript">
+//<![CDATA[
+var Page_Validators =  new Array(document.getElementById("_customValidator"));
+//]]>
+</script>
+
+<script type="text/javascript">
+//<![CDATA[
+var _customValidator = document.all ? document.all["_customValidator"] : document.getElementById("_customValidator");
+_customValidator.evaluationfunction = "CustomValidatorEvaluateIsValid";
+_customValidator.clientvalidationfunction = "clientValidation";
+//]]>
+</script>
+
+
+<script type="text/javascript">
+//<![CDATA[
+rsSethf('rs_lang','fr');//]]>
+</script>
+<script>settimeoffset();</script>
+<script type="text/javascript">
+//<![CDATA[
+
+var Page_ValidationActive = false;
+if (typeof(ValidatorOnLoad) == "function") {
+    ValidatorOnLoad();
+}
+
+function ValidatorOnSubmit() {
+    if (Page_ValidationActive) {
+        return ValidatorCommonOnSubmit();
+    }
+    else {
+        return true;
+    }
+}
+        
+document.getElementById('_customValidator').dispose = function() {
+    Array.remove(Page_Validators, document.getElementById('_customValidator'));
+}
+Sys.Application.add_init(function() {
+    $create(Sys.UI._UpdateProgress, {"associatedUpdatePanelId":"rsPanelButtons","displayAfter":1000,"dynamicLayout":true}, null, null, $get("UpdateProgress2"));
+});
+//]]>
+</script>
+<span style="display: none !important;"><input type="hidden" name="__EVENTTARGET" id="__EVENTTARGET" value=""></span><span style="display: none !important;"><input type="hidden" name="__EVENTARGUMENT" id="__EVENTARGUMENT" value=""></span><span style="display: none !important;"><input type="hidden" name="__VIEWSTATE" id="__VIEWSTATE" value="W5Hrx6XuBMOkcp6J+NBPm4AqV1oagyvg8fptCzZEjW152iYzeF0nKPT7kmMogzB0VBBm8JUJ7h0x9AKljnQov6qULLw="></span><span style="display: none !important;"><input type="hidden" name="__VIEWSTATEGENERATOR" id="__VIEWSTATEGENERATOR" value="4116D544"></span></form>
+    
+    <noscript>
+        <div>This survey requires that javascript is enabled in your browser. Please enable javascript and re-enter the survey.</div>
+        <div><br/>Survey link: <a href="https://as-weu-prod-survey-datacollectionv1.azurewebsites.net/collect.aspx?rs=_cBOihjydM1xMTqwtS7CVmYnCvea9TVzSkyvza7xnbc5jLUrC7d5Dj3Wcms7pNFaptFtTn4Pkuhy_rzeAkRU2u4d8mvOpRie-HtgG54HlgArMwuTHMvxYYHMog1jvs4NwF4ocFlaAJmoI39EdsStFquCLdtmpLISzbdIZMqNQU0dqHum5lHLM88xshiZ25kFgcx1ObTc_ptb0h0FQm_-7dZJQZD45_EOSFVnDKIK4Qs&lang=fr" id="surveyLink">Re-enter survey</a></div>
+    </noscript>
+    <script type="text/javascript" src="https://quenchtec.github.io/visualisations/walrthemes/v1.0.0-2colour/main_theme.js"></script>
+<link rel="stylesheet" type="text/css" href="https://quenchtec.github.io/visualisations/walrthemes/v1.0.0-2colour/main_theme.css">
+<link rel="stylesheet" type="text/css" href="https://fonts.googleapis.com/css2?family=Lato&amp;display=swap">
+
+
+<div id="cboxOverlay" style="display: none;"></div><div id="colorbox" class="" role="dialog" tabindex="-1" style="display: none;"><div id="cboxWrapper"><div><div id="cboxTopLeft" style="float: left;"></div><div id="cboxTopCenter" style="float: left;"></div><div id="cboxTopRight" style="float: left;"></div></div><div style="clear: left;"><div id="cboxMiddleLeft" style="float: left;"></div><div id="cboxContent" style="float: left;"><div id="cboxTitle" style="float: left;"></div><div id="cboxCurrent" style="float: left;"></div><button type="button" id="cboxPrevious"></button><button type="button" id="cboxNext"></button><button id="cboxSlideshow"></button><div id="cboxLoadingOverlay" style="float: left;"></div><div id="cboxLoadingGraphic" style="float: left;"></div></div><div id="cboxMiddleRight" style="float: left;"></div></div><div style="clear: left;"><div id="cboxBottomLeft" style="float: left;"></div><div id="cboxBottomCenter" style="float: left;"></div><div id="cboxBottomRight" style="float: left;"></div></div></div><div style="position: absolute; width: 9999px; visibility: hidden; display: none; max-width: none;"></div></div></body>
