@@ -893,6 +893,33 @@ def _apply_by_target_id(driver, target_id: str, itype: str, value: str) -> bool:
                     if _wait_selected_like(el, timeout_s=1.0):
                         return True
 
+                # AreYouNet: la sélection est stockée dans un <input type=hidden name=...>
+                # (pas de radio/checkbox natif). On valide en lisant la valeur après clic.
+                try:
+                    ayn_name = (payload.get('ayn_field_name') or '').strip()
+                    ayn_map = payload.get('ayn_value_map') or {}
+                    if ayn_name and ayn_map:
+                        exp = ayn_map.get(v_norm) or (ayn_map.get(v_fold) if v_fold else None)
+                        if exp is not None and exp != '':
+                            ok = driver.execute_script(
+                                """
+                                const name = arguments[0];
+                                const exp  = arguments[1];
+                                const els = document.getElementsByName(name);
+                                for (const e of els) {
+                                  if (!e) continue;
+                                  if ((e.value || '') === exp) return true;
+                                }
+                                return false;
+                                """,
+                                ayn_name,
+                                str(exp),
+                            )
+                            if ok:
+                                return True
+                except Exception:
+                    pass
+
                 # NEW: si la cible est un <label for="...">, forcer l'input associé
                 try:
                     if (el.tag_name or "").lower() == "label":
@@ -988,6 +1015,77 @@ def _apply_by_target_id(driver, target_id: str, itype: str, value: str) -> bool:
                 if debug_target:
                     print(f"[TARGET_DEBUG] selection failed after waits: value='{value}' xpath='{xp}' inp_id='{inp_id}' inp_name='{inp_name}'")
                 return False
+
+            # --- cas multi_text : plusieurs cases texte pour UNE même question (OpenTextMultiLines)
+            if kind == "multi_text" and resolved_itype in ("text", "textarea", "number"):
+                fields = payload.get("fields") or []
+                if not fields:
+                    return False
+
+                def _locate_field(fld: dict):
+                    # 1) xpath + alt_xpaths
+                    for cand_xp in [fld.get("xpath")] + list(fld.get("alt_xpaths") or []):
+                        if not cand_xp:
+                            continue
+                        elc = _find_best_visible(cand_xp)
+                        if elc:
+                            return elc
+
+                    # 2) By.NAME / By.ID (dernier recours)
+                    nm = (fld.get("name") or "").strip()
+                    if nm:
+                        try:
+                            for c in driver.find_elements(By.NAME, nm):
+                                try:
+                                    if c.is_displayed():
+                                        return c
+                                except Exception:
+                                    continue
+                        except Exception:
+                            pass
+
+                    fid = (fld.get("id") or "").strip()
+                    if fid:
+                        try:
+                            for c in driver.find_elements(By.ID, fid):
+                                try:
+                                    if c.is_displayed():
+                                        return c
+                                except Exception:
+                                    continue
+                        except Exception:
+                            pass
+
+                    return None
+
+                # Remplit la 1ère case vide (déterministe, pas de boucle/retry infini)
+                for fld in fields:
+                    try:
+                        elx = _locate_field(fld)
+                        if not elx:
+                            continue
+                        try:
+                            if not elx.is_enabled():
+                                continue
+                        except Exception:
+                            pass
+
+                        cur = (elx.get_attribute("value") or "").strip()
+                        if cur:
+                            continue
+
+                        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", elx)
+                        try:
+                            elx.clear()
+                        except Exception:
+                            pass
+                        elx.send_keys(value or "")
+                        return True
+                    except Exception:
+                        continue
+
+                # Si tout est déjà rempli, on ignore l'excès de valeurs (évite fallback)
+                return True
 
             # --- cas single (text/textarea/dropdown/button)
             if kind == "single":
@@ -1791,12 +1889,25 @@ def handle_consent_screen(driver):
         return True
 
     # 1) Chercher le plus grand overlay CMP visible
+    #    IMPORTANT: on ignore les containers cachés (ex: CookieYes avec .cky-hide)
+    def _has_hidden_ancestor(el) -> bool:
+        """Vérifie si un élément est dans un container caché (CookieYes, etc.)."""
+        try:
+            return bool(driver.execute_script(
+                "return !!arguments[0].closest('.cky-hide, .ng-hide, [hidden], .hidden')",
+                el
+            ))
+        except Exception:
+            return False
     best = None
     for sel in CMP_CONTAINER_SELECTORS:
         try:
             for el in driver.find_elements(By.CSS_SELECTOR, sel):
                 try:
                     if not el.is_displayed():
+                        continue
+                    # NOUVEAU: vérifier si l'élément est dans un container caché
+                    if _has_hidden_ancestor(el):
                         continue
                     r = el.rect or {}
                     area = float(r.get('width', 0) or 0) * float(r.get('height', 0) or 0)

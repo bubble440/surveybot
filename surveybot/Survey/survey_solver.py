@@ -6,7 +6,7 @@ from selenium.webdriver.support.ui import WebDriverWait  # [AJOUT]
 from selenium.webdriver.support import expected_conditions as EC  # [AJOUT]
 from selenium.webdriver.common.action_chains import ActionChains  # [AJOUT]
 from selenium.webdriver.common.by import By
-import time
+import time, os, sys
 from preselection.question_validation import detect_disqualification_reason
 
 # ⚙️ Paramètres de boucle pour éviter les boucles infinies
@@ -399,12 +399,82 @@ def solve_full_survey(driver, api_key, *, account_id: str):
         # mais par défaut: 1 check par étape suffit
         is_strict, reason = Management.guards.survey_difficulty_guard.detect_strict_survey(driver)
         if is_strict:
-            print(f"[STRICT_SURVEY][MID] Détecté en cours de survey ({reason}) -> restart propre")
-            Management.guards.runtime_guard.get_guard().record_success()
-            Management.guards.runtime_guard.get_guard().signal_strict_survey(f"strict_mid_{reason}")
-            return
+            # ✅ CAPTCHA : comportement différent selon environnement
+            if reason == "captcha":
+                run_env = (os.getenv("RUN_ENV", "local") or "").strip().lower()
+                
+                # PROD/DOCKER : arrêt contrôlé immédiat (inchangé)
+                if run_env != "local":
+                    print(f"[STRICT_SURVEY][MID] Détecté en cours de survey (captcha) -> restart propre")
+                    Management.guards.runtime_guard.get_guard().record_success()
+                    Management.guards.runtime_guard.get_guard().signal_strict_survey(f"strict_mid_captcha")
+                    return
+                
+                # LOCAL : pause manuelle pour résolution utilisateur
+                print("[LOCAL][CAPTCHA] ⚠️  CAPTCHA détecté → résolution MANUELLE requise")
+                
+                # Anti-boucle : ne pas mettre en pause plusieurs fois sur la même URL
+                try:
+                    captcha_url = driver.current_url or ""
+                    last_captcha_url = getattr(driver, "_last_captcha_pause_url", None)
+                    if last_captcha_url == captcha_url:
+                        print("[LOCAL][CAPTCHA] ⏭️  Captcha déjà traité sur cette URL, on continue")
+                        # On continue l'exécution normale sans repause
+                    else:
+                        # Marquer cette URL comme traitée
+                        setattr(driver, "_last_captcha_pause_url", captcha_url)
+                        
+                        # Pause interactive si terminal disponible
+                        if getattr(sys.stdin, "isatty", lambda: False)():
+                            try:
+                                input("[LOCAL][PAUSE] 🧩 Résous le CAPTCHA dans le navigateur, puis appuie sur Entrée...\n")
+                            except KeyboardInterrupt:
+                                print("[LOCAL] ⏹️  Abandon demandé par l'utilisateur")
+                                Management.guards.runtime_guard.get_guard().record_success()
+                                Management.guards.runtime_guard.get_guard().signal_strict_survey("captcha_user_abort")
+                                return
+                        else:
+                            print("[LOCAL][CAPTCHA] ⚠️  Terminal non-interactif, pas de pause possible")
+                            Management.guards.runtime_guard.get_guard().record_success()
+                            Management.guards.runtime_guard.get_guard().signal_strict_survey("captcha_no_tty")
+                            return
+                        
+                        # Vérification : attendre que le captcha disparaisse (max 30s)
+                        print("[LOCAL][CAPTCHA] 🔍 Vérification de la disparition du captcha...")
+                        deadline = time.time() + 30.0
+                        captcha_resolved = False
+                        
+                        while time.time() < deadline:
+                            # Re-check si le captcha est toujours là
+                            still_strict, still_reason = Management.guards.survey_difficulty_guard.detect_strict_survey(driver)
+                            if not still_strict or still_reason != "captcha":
+                                print("[LOCAL][CAPTCHA] ✅ Captcha résolu → continuation de l'exécution")
+                                captcha_resolved = True
+                                break
+                            time.sleep(1.0)
+                        
+                        if not captcha_resolved:
+                            print("[LOCAL][CAPTCHA] ⏱️  Timeout : captcha toujours présent après 30s")
+                            Management.guards.runtime_guard.get_guard().record_success()
+                            Management.guards.runtime_guard.get_guard().signal_strict_survey("captcha_timeout")
+                            return
+                        
+                        # Captcha résolu avec succès : on continue la boucle normale
+                        print("[LOCAL][CAPTCHA] 🚀 Reprise de l'exécution du survey")
+                except Exception as e:
+                    print(f"[LOCAL][CAPTCHA] ❌ Erreur lors de la gestion du captcha : {e}")
+                    Management.guards.runtime_guard.get_guard().record_success()
+                    Management.guards.runtime_guard.get_guard().signal_strict_survey("captcha_error")
+                    return
+            
+            # ⚠️ AUTRES RAISONS (drag_drop, hold_button, etc.) : arrêt immédiat (inchangé)
+            else:
+                print(f"[STRICT_SURVEY][MID] Détecté en cours de survey ({reason}) -> restart propre")
+                Management.guards.runtime_guard.get_guard().record_success()
+                Management.guards.runtime_guard.get_guard().signal_strict_survey(f"strict_mid_{reason}")
+                return        
+        
         # -------------------------------------------------------------------
-
         # a) Laisser GPT décider de l’action à partir de la capture d’écran
         success = Survey.survey_executor.execute_survey_page(driver, api_key)
 

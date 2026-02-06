@@ -773,7 +773,7 @@ def norm(s: str) -> str:
     s = re.sub(r"\s+", " ", s)
     return s
 
-def click_cta_strong_any_context(driver, label_hint: str = "", allow_generic: bool = True) -> bool:
+def _click_cta_strong_hintscan(driver, label_hint: str = "", allow_generic: bool = True) -> bool:
     """
     Clique un CTA 'Next/Suivant/Continuer/Start/Valider' même si c'est une image,
     un <a> JavaScript sans texte, ou un div role=button.
@@ -5549,6 +5549,65 @@ def try_click_navigation_cta(driver) -> bool:
     Cherche un CTA de navigation (Continue/Suivant/Next/Valider…)
     et clique le meilleur candidat visible.
     """
+
+    # --- AreYouNet / runet : CTA image sans texte ---
+    # Exemple : <a href="javascript:EnqueteDef_submit();"><img id="btn_next" ...></a>
+    # Notre logique "candidates" se base sur le texte du bouton, donc on traite ce cas AVANT.
+    try:
+        btns = driver.find_elements(By.CSS_SELECTOR, "#btn_next")
+        if btns:
+            el = btns[0]
+            # Si c'est un <img>, on clique le <a> parent (plus fiable que img.click())
+            try:
+                a = el.find_element(By.XPATH, "ancestor::a[1]")
+                if a:
+                    el = a
+            except Exception:
+                pass
+
+            driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
+            try:
+                el.click()
+            except Exception:
+                driver.execute_script("arguments[0].click();", el)
+            print("[CTA_NAV] AreYouNet: clicked #btn_next")
+            return True
+    except Exception:
+        pass
+
+    # Autre variante AreYouNet : lien direct vers EnqueteDef_submit()
+    try:
+        links = driver.find_elements(By.CSS_SELECTOR, "a[href*='EnqueteDef_submit']")
+        if links:
+            el = links[0]
+            driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
+            try:
+                el.click()
+            except Exception:
+                driver.execute_script("arguments[0].click();", el)
+            print("[CTA_NAV] AreYouNet: clicked EnqueteDef_submit link")
+            return True
+    except Exception:
+        pass
+
+    # --- Decipher : CTA avec value symbolique (">>" etc.) ---
+    # Le bouton #btn_continue a souvent value=">>" qui est vidé par _norm_btn_text,
+    # donc on le traite explicitement par ID avant la boucle candidates.
+    try:
+        btns = driver.find_elements(By.CSS_SELECTOR, "#btn_continue")
+        if btns:
+            el = btns[0]
+            if el.is_displayed():
+                driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
+                try:
+                    el.click()
+                except Exception:
+                    driver.execute_script("arguments[0].click();", el)
+                print("[CTA_NAV] Decipher: clicked #btn_continue")
+                return True
+    except Exception:
+        pass
+
     candidates = []
 
     # buttons + anchors "btn" (ex: Ipsos/Wicket utilise <a class="btn ..."> pour soumettre)
@@ -5643,9 +5702,6 @@ def click_cta_strong_any_context(driver, text=None, label_hint=None, depth: int 
     default_content + iframes (Decipher/Confirmit).
     Cette définition est volontairement à la FIN du fichier pour écraser toute version dupliquée.
     """
-    import re
-    import unicodedata
-    from selenium.webdriver.common.by import By
     from Survey.frame_utils import iter_frame_chains, switch_to_frame_chain
 
     raw = text if text is not None else (label_hint or "")
@@ -5698,7 +5754,11 @@ def click_cta_strong_any_context(driver, text=None, label_hint=None, depth: int 
                 try:
                     if not el.is_displayed():
                         continue
-                    t = norm((el.text or "") or (el.get_attribute("value") or "") or (el.get_attribute("aria-label") or ""))
+                    # Extraction texte : value peut être symbolique (">>" etc.), fallback sur aria-label
+                    raw_val = (el.text or "") or (el.get_attribute("value") or "")
+                    t = norm(raw_val)
+                    if not t or not any(c.isalpha() for c in t):
+                        t = norm(el.get_attribute("aria-label") or "")
                     if not is_match(t):
                         continue
 
