@@ -149,6 +149,11 @@ def build_batch_prompt(question_blocks: list[dict]) -> str:
     )
 
     lines.append(
+        "IMPORTANT: si itype ∈ {text, textarea} ET max_select>1, "
+        "renvoie UNE SEULE entrée courte par ligne (pas une liste sur une seule ligne)."
+    )
+
+    lines.append(
         "Contraintes :\n"
         "- itype ∈ {radio, checkbox, dropdown, text, textarea, button}\n"
         "- valeur DOIT être une option existante (si options listées)\n"
