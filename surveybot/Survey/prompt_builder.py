@@ -11,6 +11,10 @@ Sortie :
 
 Aucune image.
 Pensé pour cache, robustesse, 100+ bots.
+
+IMPORTANT - MULTI-SELECT:
+Pour les checkbox avec max_select > 1, le séparateur OBLIGATOIRE est "|".
+NE JAMAIS utiliser "," car les options peuvent contenir des virgules internes.
 """
 
 from __future__ import annotations
@@ -85,7 +89,7 @@ def build_prompt(question_blocks: List[Dict[str, Any]]) -> str:
     lines.append(
         "Évite toute réponse disqualifiante "
         "(ex: non, jamais, aucun, je préfère ne pas répondre), "
-        "SAUF si la question porte explicitement sur les secteurs d’emploi "
+        "SAUF si la question porte explicitement sur les secteurs d'emploi "
         "et que cette option est présente."
     )
 
@@ -120,6 +124,8 @@ def build_batch_prompt(question_blocks: list[dict]) -> str:
     """
     Construit un prompt OpenAI pour répondre à TOUTES les questions en une fois.
     Format de sortie robuste avec QID + max_select + target_id.
+    
+    IMPORTANT: Pour les multi-select, le séparateur OBLIGATOIRE est "|".
     """
     lines: list[str] = []
 
@@ -134,23 +140,21 @@ def build_batch_prompt(question_blocks: list[dict]) -> str:
         "Tu dois proposer uniquement la/les réponse(s) nécessaires selon max_select."
     )
 
+    # ✅ FORMAT RENFORCÉ: exigence explicite de "|" comme séparateur
     lines.append(
-        "FORMAT STRICT (une ligne par sélection) :\n"
-        "QID //// target_id //// valeur //// itype //// contexte\n"
-        "Règles:\n"
+        "FORMAT STRICT (une ligne par question) :\n"
+        "QID //// target_id //// valeur //// itype //// contexte\n\n"
+        "RÈGLES CRITIQUES:\n"
         "- Si max_select=1 => EXACTEMENT 1 ligne pour ce QID.\n"
-        "- Si max_select>1 => 1 à max_select lignes (même QID répété), une option par ligne.\n"
+        "- Si max_select>1 => UNE SEULE LIGNE avec les valeurs séparées par \"|\".\n"
+        "  Exemple: Q1 //// group_abc //// Option A | Option B | Option C //// checkbox //// ...\n"
+        "- ⚠️ NE JAMAIS utiliser la virgule \",\" comme séparateur (les options peuvent en contenir).\n"
         "- AUCUNE explication. Aucun texte hors format."
     )
 
     lines.append(
         "Champs ouverts (text/textarea) : si la question contient un exemple (ex: 'E.g.' / 'Ex:'), "
         "N'UTILISE PAS l'exemple comme valeur. Donne une valeur réaliste (ex: code postal FR -> 75001)."
-    )
-
-    lines.append(
-        "IMPORTANT: si itype ∈ {text, textarea} ET max_select>1, "
-        "renvoie UNE SEULE entrée courte par ligne (pas une liste sur une seule ligne)."
     )
 
     lines.append(
@@ -182,9 +186,11 @@ def build_batch_prompt(question_blocks: list[dict]) -> str:
         else:
             lines.append("options: (champ ouvert)")
 
+    # ✅ RAPPEL FINAL: séparateur "|" obligatoire
     lines.append(
         "\nRéponds maintenant.\n"
-        "Respecte STRICTEMENT le format. "
+        "Respecte STRICTEMENT le format.\n"
+        "RAPPEL: Pour max_select>1, sépare les valeurs par \"|\" (jamais par virgule).\n"
         "Ne renvoie rien d'autre."
     )
         
@@ -218,7 +224,7 @@ def _is_navigation_label(label: str | None) -> bool:
 
         if v.startswith(tok) and len(v) <= (len(tok) + 5):
             tail = v[len(tok):].strip()
-            if tail in ("", ">", ">>", "»", "»>", ":", "-", "—", "→", "➡"):
+            if tail in ("", ">", ">>", "»", "»>", ":", "-", "–", "→", "➡"):
                 return True
 
     return False

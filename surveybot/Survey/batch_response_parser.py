@@ -3,10 +3,20 @@
 Parse les réponses OpenAI batch.
 
 Format attendu (préféré):
-QID //// valeur //// itype //// contexte
+QID //// target_id //// valeur //// itype //// contexte
 
 Fallback accepté:
 valeur //// itype //// contexte
+
+IMPORTANT - SÉPARATEUR MULTI-SELECT:
+Pour les réponses multi (checkbox max_select > 1), le SEUL séparateur accepté est "|".
+Le split sur "," a été supprimé car il cassait les options contenant des virgules internes
+(ex: "Les médias, comme la télévision, la radio, la presse...").
+
+FILTRAGE OPTIONS EXCLUSIVES:
+Quand OpenAI retourne plusieurs valeurs pour une checkbox, certaines combinaisons
+sont logiquement impossibles (ex: "Aucune de ces réponses" + autres options).
+La fonction filter_exclusive_conflicts() élimine ces conflits AVANT exécution.
 """
 
 from __future__ import annotations
@@ -16,36 +26,295 @@ _ALLOWED_ITYPES = {"radio", "checkbox", "dropdown", "text", "textarea", "button"
 _QID_RE = re.compile(r"\bQ\d+\b", re.IGNORECASE)
 
 
+# =============================================================================
+# DÉTECTION OPTIONS EXCLUSIVES
+# =============================================================================
+
+# Patterns d'options qui sont mutuellement exclusives avec les autres
+# Ces options désactivent normalement toutes les autres sélections
+_EXCLUSIVE_PATTERNS_FR = (
+    r"^aucun(e)?(\s|$)",                    # "Aucun", "Aucune", "Aucune de ces..."
+    r"aucun(e)?\s+(de\s+)?(ces|ceux|celles)",  # "Aucune de ces activités"
+    r"^autre(\s|$|[^s])",                   # "Autre" mais pas "Autres"
+    r"^pas\s+(de|d')",                      # "Pas de...", "Pas d'..."
+    r"^je\s+ne\s+sais\s+pas",               # "Je ne sais pas"
+    r"^ne\s+sais\s+pas",                    # "Ne sais pas"
+    r"^nsp$",                               # NSP (Ne Sais Pas)
+    r"^n/?a$",                              # N/A
+    r"^sans\s+(avis|opinion|réponse)",      # "Sans avis", "Sans opinion"
+    r"^refus",                              # "Refus", "Refuse"
+    r"^préfère\s+ne\s+pas",                 # "Préfère ne pas répondre"
+    r"^je\s+préfère\s+ne\s+pas",            # "Je préfère ne pas répondre"
+    r"^pas\s+applicable",                   # "Pas applicable"
+    r"^non\s+applicable",                   # "Non applicable"
+    r"^non\s+concern[ée]",                  # "Non concerné(e)"
+)
+
+_EXCLUSIVE_PATTERNS_EN = (
+    r"^none(\s|$)",                         # "None", "None of the above"
+    r"^none\s+of\s+(the|these|those)",      # "None of the above", "None of these"
+    r"^other(\s|$)",                        # "Other" seul
+    r"^i\s+don'?t\s+know",                  # "I don't know"
+    r"^don'?t\s+know",                      # "Don't know"
+    r"^not\s+applicable",                   # "Not applicable"
+    r"^n/?a$",                              # N/A
+    r"^prefer\s+not\s+to",                  # "Prefer not to say"
+    r"^i\s+prefer\s+not",                   # "I prefer not to..."
+    r"^refuse",                             # "Refuse"
+    r"^not\s+sure",                         # "Not sure"
+    r"^no\s+opinion",                       # "No opinion"
+)
+
+# Compilation des patterns pour performance
+_EXCLUSIVE_REGEX_FR = [re.compile(p, re.IGNORECASE) for p in _EXCLUSIVE_PATTERNS_FR]
+_EXCLUSIVE_REGEX_EN = [re.compile(p, re.IGNORECASE) for p in _EXCLUSIVE_PATTERNS_EN]
+
+
+def _is_exclusive_value(value: str) -> bool:
+    """
+    Détecte si une valeur est une option "exclusive" (mutuellement exclusive avec les autres).
+    
+    Ces options, quand sélectionnées, devraient normalement désélectionner toutes les autres.
+    Exemples: "Aucune de ces réponses", "None of the above", "Autre", "Je ne sais pas"
+    
+    Returns:
+        True si l'option est de type exclusive
+    """
+    if not value:
+        return False
+    
+    v = value.strip()
+    if not v:
+        return False
+    
+    # Normalisation pour matching
+    v_norm = re.sub(r"\s+", " ", v).strip()
+    
+    # Test patterns français
+    for regex in _EXCLUSIVE_REGEX_FR:
+        if regex.search(v_norm):
+            return True
+    
+    # Test patterns anglais
+    for regex in _EXCLUSIVE_REGEX_EN:
+        if regex.search(v_norm):
+            return True
+    
+    return False
+
+
+def filter_exclusive_conflicts(actions: list, qid_meta: dict | None = None) -> list:
+    """
+    Filtre les combinaisons incompatibles d'options exclusives.
+    
+    LOGIQUE EN 3 PHASES:
+    
+    Phase 1 - Détection des hallucinations OpenAI:
+        Si le "contexte" d'une action exclusive correspond à une VALEUR d'une autre action,
+        c'est une hallucination (OpenAI a inventé une fausse question).
+        → Supprimer l'action hallucination
+    
+    Phase 2 - Filtrage par QID:
+        Pour un même QID checkbox, si exclusives + régulières coexistent:
+        → Garder seulement les régulières
+    
+    Phase 3 - Filtrage global checkbox:
+        Si des exclusives (radio/checkbox) coexistent avec des régulières checkbox
+        sur la page entière (QIDs différents), c'est souvent un conflit
+        (ex: DOM extrait 2 groupes pour 1 question visuelle)
+        → Supprimer les exclusives si elles sont minoritaires
+    
+    Returns:
+        Liste d'actions filtrées sans conflits d'exclusivité
+    """
+    if not actions:
+        return actions
+    
+    qid_meta = qid_meta or {}
+    
+    # ==========================================================================
+    # PHASE 1: Détecter et supprimer les hallucinations OpenAI
+    # ==========================================================================
+    # Une hallucination = action exclusive dont le "contexte" est en fait
+    # une VALEUR d'une autre action (OpenAI confond question et option)
+    
+    # Collecter toutes les valeurs non-exclusives (normalisées)
+    all_regular_values: set = set()
+    for a in actions:
+        if not isinstance(a, dict):
+            continue
+        val = (a.get("value") or "").strip()
+        if val and not _is_exclusive_value(val):
+            all_regular_values.add(val.lower())
+    
+    # Filtrer les hallucinations
+    phase1_filtered: list = []
+    for a in actions:
+        if not isinstance(a, dict):
+            phase1_filtered.append(a)
+            continue
+        
+        val = a.get("value") or ""
+        ctx = (a.get("context") or "").strip()
+        qid = a.get("qid") or ""
+        
+        # Si c'est une exclusive ET son contexte = une valeur d'autre action
+        if _is_exclusive_value(val) and ctx:
+            ctx_lower = ctx.lower()
+            if ctx_lower in all_regular_values:
+                print(f"[batch_response_parser] HALLUCINATION DETECTED {qid}: "
+                      f"exclusive '{val}' has context '{ctx}' which is a VALUE of another action -> REMOVED")
+                continue
+        
+        phase1_filtered.append(a)
+    
+    # ==========================================================================
+    # PHASE 2: Filtrage par QID (même question)
+    # ==========================================================================
+    by_qid: Dict[str, list] = {}
+    no_qid: list = []
+    
+    for a in phase1_filtered:
+        qid = (a.get("qid") or "").strip().upper() if isinstance(a, dict) else ""
+        if qid:
+            by_qid.setdefault(qid, []).append(a)
+        else:
+            no_qid.append(a)
+    
+    phase2_filtered: list = []
+    
+    for qid, group in by_qid.items():
+        if len(group) <= 1:
+            phase2_filtered.extend(group)
+            continue
+        
+        # Vérifier si checkbox présent
+        itypes = {(a.get("itype") or "").lower() for a in group if isinstance(a, dict)}
+        if "checkbox" not in itypes:
+            phase2_filtered.extend(group)
+            continue
+        
+        exclusives = [a for a in group if isinstance(a, dict) and _is_exclusive_value(a.get("value") or "")]
+        regulars = [a for a in group if a not in exclusives]
+        
+        if exclusives and regulars:
+            print(f"[batch_response_parser] QID CONFLICT {qid}: "
+                  f"exclusive={[e.get('value') for e in exclusives]} vs "
+                  f"regular={[r.get('value') for r in regulars]} -> keeping regular only")
+            phase2_filtered.extend(regulars)
+        else:
+            phase2_filtered.extend(group)
+    
+    phase2_filtered.extend(no_qid)
+    
+    # ==========================================================================
+    # PHASE 3: Filtrage global (conflits cross-QID pour même question visuelle)
+    # ==========================================================================
+    # Cas: le DOM extrait 2 groupes (2 QIDs) pour 1 seule question visuelle
+    # Ex: checkboxes normales = Q1, radio "Aucune" = Q2
+    # 
+    # On ne filtre QUE si les contextes sont similaires (même question)
+    # Pour éviter de supprimer des exclusives légitimes sur des questions distinctes
+    
+    # Identifier les exclusives et régulières de type radio/checkbox
+    global_exclusives: list = []
+    global_checkbox_regulars: list = []
+    others: list = []
+    
+    for a in phase2_filtered:
+        if not isinstance(a, dict):
+            others.append(a)
+            continue
+        
+        itype = (a.get("itype") or "").lower()
+        val = a.get("value") or ""
+        
+        if itype in ("radio", "checkbox"):
+            if _is_exclusive_value(val):
+                global_exclusives.append(a)
+            else:
+                global_checkbox_regulars.append(a)
+        else:
+            others.append(a)
+    
+    # S'il y a des exclusives ET des régulières, vérifier si mêmes questions
+    if global_exclusives and global_checkbox_regulars:
+        # Collecter les contextes normalisés des régulières
+        regular_contexts = set()
+        for a in global_checkbox_regulars:
+            ctx = (a.get("context") or "").strip().lower()
+            if ctx:
+                # Normaliser: premiers 50 caractères pour tolérer variations mineures
+                regular_contexts.add(ctx[:50])
+        
+        # Identifier les exclusives qui partagent un contexte similaire
+        exclusives_to_remove = []
+        for e in global_exclusives:
+            e_ctx = (e.get("context") or "").strip().lower()
+            e_ctx_prefix = e_ctx[:50] if e_ctx else ""
+            
+            # Vérifier si le contexte de l'exclusive est similaire à celui d'une régulière
+            ctx_match = False
+            if e_ctx_prefix and e_ctx_prefix in regular_contexts:
+                ctx_match = True
+            else:
+                # Fallback: vérifier si le contexte contient des mots-clés communs
+                for rc in regular_contexts:
+                    # Si >60% des mots sont communs, considérer comme même question
+                    e_words = set(e_ctx.split())
+                    r_words = set(rc.split())
+                    if e_words and r_words:
+                        common = len(e_words & r_words)
+                        total = min(len(e_words), len(r_words))
+                        if total > 0 and (common / total) > 0.6:
+                            ctx_match = True
+                            break
+            
+            if ctx_match:
+                exclusives_to_remove.append(e)
+        
+        if exclusives_to_remove:
+            print(f"[batch_response_parser] GLOBAL CONFLICT (same question): "
+                  f"{len(exclusives_to_remove)} exclusive(s) vs "
+                  f"{len(global_checkbox_regulars)} regular(s) -> removing exclusives")
+            for e in exclusives_to_remove:
+                print(f"  [REMOVED] {e.get('qid')}: '{e.get('value')}'")
+            
+            # Retourner tout sauf les exclusives à supprimer
+            return [a for a in phase2_filtered if a not in exclusives_to_remove]
+    
+    # Pas de conflit global
+    return phase2_filtered
+
+
 def _split_values(value: str, itype: str = "", max_select: int = 1) -> List[str]:
     """
-    Supporte les réponses multi *uniquement quand ça a du sens*.
+    Supporte les réponses multi *uniquement via le séparateur "|"*.
 
-    Règles (prédictibles):
-    - split prioritaire sur "|" (format recommandé)
-    - split sur "," UNIQUEMENT pour checkbox quand max_select > 1
-      (évite de casser des libellés qui contiennent des virgules, ex: "NI D'ACCORD, NI PAS D'ACCORD")
+    Règles (prévisibles et sûres):
+    - Split UNIQUEMENT sur "|" (format recommandé et obligatoire)
+    - PAS de split sur "," car les options contiennent souvent des virgules internes
+      (ex: "Les médias, comme la télévision, la radio, la presse, les journaux...")
+    
+    Historique du bug corrigé:
+    - Avant: split sur "," si checkbox + max_select > 1 + len < 120
+    - Problème: options avec virgules internes étaient fragmentées
+    - Solution: supprimer le split sur virgule, exiger "|" dans le prompt
     """
     if not value:
         return []
 
     v = value.strip()
-    it = (itype or "").strip().lower()
 
-    # split prioritaire sur |
+    # Split UNIQUEMENT sur | (séparateur explicite et non-ambigu)
     if "|" in v:
         return [p.strip() for p in v.split("|") if p.strip()]
 
-    # ✅ NEW: multi champs ouverts (text/textarea) quand max_select>1
-    # Cas fréquent: le modèle renvoie "A, B, C" sur une seule ligne.
-    # On découpe de manière prédictible (virgule/point-virgule) et constraints coupera à max_select.
-    if it in {"text", "textarea", "number"} and (max_select or 1) > 1 and ("," in v or ";" in v):
-        parts = [p.strip(" \t-•") for p in re.split(r"\s*[,;]\s*", v) if p.strip()]
-        if len(parts) >= 2:
-            return parts
-
-    # split sur virgule UNIQUEMENT pour checkbox multi
-    if it == "checkbox" and (max_select or 1) > 1 and "," in v and len(v) < 120:
-        return [p.strip() for p in v.split(",") if p.strip()]
+    # ⚠️ SUPPRIMÉ: split sur virgule (causait le bug des options fragmentées)
+    # L'ancien code faisait:
+    # if it == "checkbox" and (max_select or 1) > 1 and "," in v and len(v) < 120:
+    #     return [p.strip() for p in v.split(",") if p.strip()]
+    # Ceci cassait les options comme "Les médias, comme la télévision..."
 
     return [v]
 
@@ -223,7 +492,14 @@ def _looks_like_month_options(opts: list) -> bool:
     return hits >= 6
 
 def sanitize_actions(actions: list, qid_meta: dict | None = None) -> list:
-    """Nettoie/valide les actions OpenAI avant exécution."""
+    """
+    Nettoie/valide les actions OpenAI avant exécution.
+    
+    Étapes:
+    1. Filtrage des CTA parasites
+    2. Sanitization des dates (DOB, ranges)
+    3. Filtrage des conflits d'options exclusives
+    """
     cleaned = []
     now_year = datetime.datetime.utcnow().year
     qid_meta = qid_meta or {}
@@ -276,7 +552,7 @@ def sanitize_actions(actions: list, qid_meta: dict | None = None) -> list:
         v = a.get("value")
         v_lc = _norm_lc(str(v or ""))
 
-        # virer les “CTA” parasites très courts
+        # virer les "CTA" parasites très courts
         if it in ("text", "dropdown", "radio", "checkbox", "") and any(tok in v_lc for tok in ["continue", "continuer", "next", "suivant"]) and len(v_lc) <= 16:
             continue
 
@@ -374,5 +650,12 @@ def sanitize_actions(actions: list, qid_meta: dict | None = None) -> list:
                     a = dict(a); a["value"] = months_en_to_fr[v_lc]
 
         cleaned.append(a)
+
+    # =========================================================================
+    # ÉTAPE FINALE: Filtrage des conflits d'options exclusives
+    # =========================================================================
+    # Après nettoyage individuel, on filtre les combinaisons impossibles
+    # (ex: "Aucune de ces réponses" + autres options pour le même QID)
+    cleaned = filter_exclusive_conflicts(cleaned, qid_meta)
 
     return cleaned

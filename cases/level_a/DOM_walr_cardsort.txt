@@ -1,0 +1,608 @@
+<body onload="return rsLoad();" style="cursor: auto;">
+    
+    <form method="post" action="./c?rs=n5R45khALCfIjIcIRFJ8xSixGv-PZstMTablm-ISQfLixlfC9YUoU3eUM6El-gnNvddc4Ais7W-HRm2u_7HFqHtuUpvJo-7N8YBQKsD7rMCUlAXLi206jZckK50uToWEIbeljReAC5PXIrfGVrgtnoTBoz2fjhQxVkHNSes4ap0er8cWLNmiVYpwdbDnV3C_M5FMI-r1C4UTyzFfU8pi3PKPJKC45VPfvm69y9iyrEI" onsubmit="javascript:return WebForm_OnSubmit();" id="rsForm" style="">
+<div class="aspNetHidden">
+
+
+
+</div>
+
+<script type="text/javascript">
+//<![CDATA[
+var theForm = document.forms['rsForm'];
+if (!theForm) {
+    theForm = document.rsForm;
+}
+function __doPostBack(eventTarget, eventArgument) {
+    if (!theForm.onsubmit || (theForm.onsubmit() != false)) {
+        theForm.__EVENTTARGET.value = eventTarget;
+        theForm.__EVENTARGUMENT.value = eventArgument;
+        theForm.submit();
+    }
+}
+//]]>
+</script>
+
+
+<script src="https://ajax.aspnetcdn.com/ajax/4.6/1/WebForms.js" type="text/javascript"></script>
+<script type="text/javascript">
+//<![CDATA[
+window.WebForm_PostBackOptions||document.write('<script type="text/javascript" src="/WebResource.axd?d=pynGkmcFUV13He1Qd6_TZP8-N8NSGDh5ESLx52sCvORw6RV6oCFpD_ItAgThmY9VIBNUSg2&amp;t=638901526312636832"><\/script>');//]]>
+</script>
+
+
+<script>function pageReady(){}function validate(){return true;}</script>
+<script>
+setInterval(function(){$('#msgText').html( $('#rsPanelMain').find("table").eq(0).attr('id'));},300);
+</script>
+
+<script>
+$(window).on("rsEventPageLoaded", function(e) {
+  let rsQno = "reCaptchaV3";
+  let rsSubqIndex = 0;
+  let rsParams = {};
+  rsDetectEnterprise();
+
+function rsDetectEnterprise() {
+    let runCaptcha = true;
+    let intClick = 0;
+
+    // Disable for certain environments
+    const hostPrefix = window.location.hostname.split('.')[0].toString();
+    if (hostPrefix === 'testlink' || hostPrefix === 'review' || hostPrefix === 'preview') {
+        runCaptcha = true;
+    }
+
+    if (runCaptcha) {
+        grecaptcha.enterprise.ready(function() {
+            grecaptcha.enterprise.execute('6LeKPKIrAAAAAK9MGjEL5RBCH5yWYSkVN_6DAn-P', {
+                    action: 'homepage'
+                })
+                .then(function(token) {
+                    const data = {
+                        token
+                    };
+
+                    fetch('https://api.walr.com/su/verify', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify(data)
+                        })
+                        .then(response => {
+                            if (!response.ok) {
+                                $(".cTextInput").val("Bot returned");
+                                throw new Error(`Network response was not ok, status ${response.status}`);
+                            }
+                            return response.json();
+                        })
+                        .then(function(responseData) {
+                            //console.log(responseData);
+                            $(".cTextInput").val(responseData.reStatus || "fail");
+                            intClick++;
+                            clickOnce(intClick);
+                        })
+                        .catch(function(error) {
+                            console.error("Error: ", error.message);
+                            $(".cTextInput").val("Bot returned");
+                            intClick++;
+                            clickOnce(intClick);
+                        });
+                })
+                .catch(function(err) {
+                    console.error("Enterprise reCAPTCHA execute error: ", err);
+                    $(".cTextInput").val("Bot returned");
+                    intClick++;
+                    clickOnce(intClick);
+                });
+        });
+    } else {
+        $(".cTextInput").val("Bot returned");
+        intClick++;
+        clickOnce(intClick);
+    }
+
+    function clickOnce(myClick) {
+        if (myClick === 1) {
+            $("#btnNext").click();
+        }
+    }
+}
+});
+</script>
+
+<script>
+function initRankFunctionality(){}
+function clearRankFunctionality(){}
+</script>
+<script>function rsLoad(){pageDuration();}</script><script>
+function setFormStyle(){}
+</script>
+<script>
+function pageDuration() {
+  if(typeof objTimeMin !== "undefined"){clearTimeout(objTimeMin);}
+  if(typeof objTimeMax !== "undefined"){clearTimeout(objTimeMax);}
+}
+</script>
+
+<script src="https://ajax.aspnetcdn.com/ajax/4.6/1/WebUIValidation.js" type="text/javascript"></script>
+<script src="https://ajax.aspnetcdn.com/ajax/4.6/1/MicrosoftAjax.js" type="text/javascript"></script>
+<script type="text/javascript">
+//<![CDATA[
+(window.Sys && Sys._Application && Sys.Observer)||document.write('<script type="text/javascript" src="/ScriptResource.axd?d=uHIkleVeDJf4xS50Krz-yGoJmOW4o6BOcIgMjrU-x7k4TuuU82qsvxreluBIABnokkwanDXzYvgk8vzABKzjHUqP43SppakROh00j4GHbpcWQECEA5nUkRgOOhEmV-9I0NY4vL_tZJgTXGNLpti7jywOHMc1&t=345ad968"><\/script>');//]]>
+</script>
+
+<script src="https://ajax.aspnetcdn.com/ajax/4.6/1/MicrosoftAjaxWebForms.js" type="text/javascript"></script>
+<script type="text/javascript">
+//<![CDATA[
+(window.Sys && Sys.WebForms)||document.write('<script type="text/javascript" src="/ScriptResource.axd?d=Jw6tUGWnA15YEa3ai3FadEtHojACZX9yG9hOyqfbRqWGlNvyiVU1c7RVnkT2sar-GIWCYbrgfl84caB0VYJrjYIAoyWrdsw8Cz3RDFDTHr6-eR5RSnynYHzha3R8ajEz-gmDnmyEF0BFKzDpapSOZaMwz241&t=345ad968"><\/script>');function WebForm_OnSubmit() {
+if (typeof(ValidatorOnSubmit) == "function" && ValidatorOnSubmit() == false) return false;
+return true;
+}
+//]]>
+</script>
+
+<div class="aspNetHidden">
+
+	
+</div>
+        <script type="text/javascript">
+//<![CDATA[
+Sys.WebForms.PageRequestManager._initialize('ScMan', 'rsForm', ['trsPanelComments','rsPanelComments','trsPanelProgress','rsPanelProgress','trsPanelMain','rsPanelMain','trsPanelLang','rsPanelLang','trsPanelButtons','rsPanelButtons','tctl15','ctl15'], [], [], 90, '');
+//]]>
+</script>
+
+        <script src="js/dc.rank.min.js?v=5.1.9536.21569"></script>
+        <div id="rsPanelComments">
+                <div id="msgBar" class="msgBar" style="display:none;">
+                    <div id="msgContainer" style="display:none">
+                        <span id="msgText">QCGridCheck</span>
+                    </div>
+                </div>
+                
+            </div>
+        <div class="mainContainer" role="main">
+            <div class="bannerContainer">
+                
+            </div>
+            <div class="contentContainer">
+                <div class="logo1Container">
+                    <img class="logo1" src="img/walr.png?v=5.1.9536.21569" alt="Walr Data Collection">
+                </div>
+                <div class="progressContainer">
+                    <div id="rsPanelProgress">
+                            <span id="progressBarControl1"><div class="progressBarContainer"><div class="progressBar" aria-label="progress" role="progressbar" aria-valuenow="17" aria-valuemin="0" aria-valuemax="100" style="width:17%;"></div><div class="progressBarText" aria-hidden="true">17%</div></div></span>
+                        </div>
+                </div>
+                <div class="panelMainContainer">
+                    <div id="rsPanelMain" style="visibility: visible;">
+                            <table id="QCGridCheck" cellpadding="0" width="100%" class="cTABLEContainQues" role="presentation">
+	<tbody><tr>
+		<td valign="top" class="cTDContainQues" style="display: table-cell;"><table id="q_2" class="cTable rsSingleGrid rsProcessedGrid desktopGrid" cellpadding="0" cellspacing="0" border="0">
+			<tbody><tr class="cRowSubQuestion">
+				<td class="cCellSubQuestion" colspan="9"><div class="cQuestionNumber">QCGridCheck.A)</div><div class="cQuestionText" role="heading" aria-level="1">
+<style>
+@keyframes slideInRight {
+    from {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+@keyframes slideOutLeft {
+    from {
+        transform: translateX(0);
+        opacity: 1;
+    }
+    to {
+        transform: translateX(-100%);
+        opacity: 0;
+    }
+}
+
+
+
+#cardSortContainer {
+    max-width: 600px;
+    margin: 0 auto;
+    position: relative;
+    overflow: hidden;
+}
+
+.statement-box {
+    min-height: 100px;
+    background: white;
+    padding: 20px;
+    font-size: 20px;
+    font-weight: bold;
+    border: 2px solid black;
+    border-radius: 10px;
+    margin-bottom: 20px;
+    text-align: center;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    animation: slideInRight 0.5s ease-in-out;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.button-container {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.answer-button {
+    width: 100%;
+    padding: 15px;
+    border: 1px solid #ccc;
+    background: white;
+    cursor: pointer;
+    font-size: 18px;
+    border-radius: 5px;
+    /* transition: background 0.3s; */
+    text-align: center;
+    color:#093a4e;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.3s ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+    .answer-button:hover {
+        background: #d3d3d3;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        transform: translate3d(0, -2px, 0);
+    }
+}
+
+
+.answer-button:active {
+    background: #b3b3b3;
+}
+#btnNext {
+    display: none;
+}
+
+
+/* Hide everything inside .cTable.rsSingleGrid except the cRowSubQuestion */
+.cTable.rsSingleGrid > tbody > tr:not(.cRowSubQuestion) {
+    display: none;
+}
+
+/* Then, ensure only .cQuestionText inside .cRowSubQuestion is visible */
+.cTable.rsSingleGrid .cRowSubQuestion > td > *:not(.cQuestionText) {
+    display: none;
+}
+</style>
+<div class="rs-ht cReg reg"><p><strong>Typically, how often do you….?</strong></p></div><div class="rs-ht do cDo" id="instr1"><p>Please select one answer for each statement</p></div></div></td>
+			</tr>
+			<tr class="rsHeaderRow" style="width: 0px;">
+				<td name="emptyCell" class="cCellHeader cCellFirstHeader revisedCellFirstHeader" style="min-width: 30%; width: auto; max-width: 10%;"></td>
+				<th id="h_2_0" nowrap="nowrap" class="cCellHeader textcenter cCellFirstValue" scope="col" style="min-width: 4.55556%; width: 0px;"><div class="rs-ht cReg reg"><p>Everyday</p></div></th>
+				<th id="h_2_1" nowrap="nowrap" class="cCellHeader textcenter" scope="col" style="min-width: 4.55556%; width: 0px;"><div class="rs-ht cReg reg"><p>At least once a week</p></div></th>
+				<th id="h_2_2" nowrap="nowrap" class="cCellHeader textcenter" scope="col" style="min-width: 4.55556%; width: 0px;"><div class="rs-ht cReg reg"><p>At least once a month</p></div></th>
+				<th id="h_2_3" nowrap="nowrap" class="cCellHeader textcenter" scope="col" style="min-width: 4.55556%; width: 0px;"><div class="rs-ht cReg reg"><p>At least once every 3 months</p></div></th>
+				<th id="h_2_4" nowrap="nowrap" class="cCellHeader textcenter" scope="col" style="min-width: 4.55556%; width: 0px;"><div class="rs-ht cReg reg"><p>At least once every 6 months</p></div></th>
+				<th id="h_2_5" nowrap="nowrap" class="cCellHeader textcenter" scope="col" style="min-width: 4.55556%; width: 0px;"><div class="rs-ht cReg reg"><p>At least once a year</p></div></th>
+				<th id="h_2_6" nowrap="nowrap" class="cCellHeader textcenter" scope="col" style="min-width: 4.55556%; width: 0px;"><div class="rs-ht cReg reg"><p>Less often than once a year</p></div></th>
+				<th id="h_2_7" nowrap="nowrap" class="cCellHeader textcenter cCellLastValue" scope="col" style="min-width: 4.55556%; width: 0px;"><div class="rs-ht cReg reg"><p>Never</p></div></th>
+			</tr>
+			<tr>
+				<td name="emptyCell" class="cCellHeaderCode cCellFirstValue"></td>
+				<td class="cCellHeaderCode" align="center"><div class="cValue">[1]</div></td>
+				<td class="cCellHeaderCode" align="center"><div class="cValue">[2]</div></td>
+				<td class="cCellHeaderCode" align="center"><div class="cValue">[3]</div></td>
+				<td class="cCellHeaderCode" align="center"><div class="cValue">[4]</div></td>
+				<td class="cCellHeaderCode" align="center"><div class="cValue">[5]</div></td>
+				<td class="cCellHeaderCode" align="center"><div class="cValue">[6]</div></td>
+				<td class="cCellHeaderCode" align="center"><div class="cValue">[7]</div></td>
+				<td class="cCellHeaderCode cCellLastValue" align="center"><div class="cValue">[8]</div></td>
+			</tr>
+			<tr class="rsRow cRow" style="height: 40px;">
+				<th id="r_2_1" class="cCellRowText" scope="row" align="left"><div class="cRowText"><div class="rs-ht cReg reg"><p>Take an international flight</p></div></div></th>
+				<td class="cCell textcenter"><input value="1" name="rn2A0" type="radio" id="rn2A0" class="cRadio" onclick="clearAll(&quot;rn2A0&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="2" name="rn2A0" type="radio" id="rn2A0" class="cRadio" onclick="clearAll(&quot;rn2A0&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="3" name="rn2A0" type="radio" id="rn2A0" class="cRadio" onclick="clearAll(&quot;rn2A0&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="4" name="rn2A0" type="radio" id="rn2A0" class="cRadio" onclick="clearAll(&quot;rn2A0&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="5" name="rn2A0" type="radio" id="rn2A0" class="cRadio" onclick="clearAll(&quot;rn2A0&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="6" name="rn2A0" type="radio" id="rn2A0" class="cRadio" onclick="clearAll(&quot;rn2A0&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="7" name="rn2A0" type="radio" id="rn2A0" class="cRadio" onclick="clearAll(&quot;rn2A0&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="8" name="rn2A0" type="radio" id="rn2A0" class="cRadio" onclick="clearAll(&quot;rn2A0&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+			</tr>
+			<tr class="rsRow cRowAlt" style="height: 40px;">
+				<th id="r_2_2" class="cCellRowText" scope="row" align="left"><div class="cRowText"><div class="rs-ht cReg reg"><p>Attend the wedding of a family member/friend/colleague as a guest</p></div></div></th>
+				<td class="cCell textcenter"><input value="1" name="rn2A1" type="radio" id="rn2A1" class="cRadio" onclick="clearAll(&quot;rn2A1&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="2" name="rn2A1" type="radio" id="rn2A1" class="cRadio" onclick="clearAll(&quot;rn2A1&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="3" name="rn2A1" type="radio" id="rn2A1" class="cRadio" onclick="clearAll(&quot;rn2A1&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="4" name="rn2A1" type="radio" id="rn2A1" class="cRadio" onclick="clearAll(&quot;rn2A1&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="5" name="rn2A1" type="radio" id="rn2A1" class="cRadio" onclick="clearAll(&quot;rn2A1&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="6" name="rn2A1" type="radio" id="rn2A1" class="cRadio" onclick="clearAll(&quot;rn2A1&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="7" name="rn2A1" type="radio" id="rn2A1" class="cRadio" onclick="clearAll(&quot;rn2A1&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="8" name="rn2A1" type="radio" id="rn2A1" class="cRadio" onclick="clearAll(&quot;rn2A1&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+			</tr>
+			<tr class="rsRow cRow" style="height: 40px;">
+				<th id="r_2_3" class="cCellRowText" scope="row" align="left"><div class="cRowText"><div class="rs-ht cReg reg"><p>Go on holiday/vacation for at least one night</p></div></div></th>
+				<td class="cCell textcenter"><input value="1" name="rn2A2" type="radio" id="rn2A2" class="cRadio" onclick="clearAll(&quot;rn2A2&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="2" name="rn2A2" type="radio" id="rn2A2" class="cRadio" onclick="clearAll(&quot;rn2A2&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="3" name="rn2A2" type="radio" id="rn2A2" class="cRadio" onclick="clearAll(&quot;rn2A2&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="4" name="rn2A2" type="radio" id="rn2A2" class="cRadio" onclick="clearAll(&quot;rn2A2&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="5" name="rn2A2" type="radio" id="rn2A2" class="cRadio" onclick="clearAll(&quot;rn2A2&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="6" name="rn2A2" type="radio" id="rn2A2" class="cRadio" onclick="clearAll(&quot;rn2A2&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="7" name="rn2A2" type="radio" id="rn2A2" class="cRadio" onclick="clearAll(&quot;rn2A2&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="8" name="rn2A2" type="radio" id="rn2A2" class="cRadio" onclick="clearAll(&quot;rn2A2&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+			</tr>
+			<tr class="rsRow cRowAlt" style="height: 40px;">
+				<th id="r_2_4" class="cCellRowText" scope="row" align="left"><div class="cRowText"><div class="rs-ht cReg reg"><p>Make a luxury purchase, e.g. watch, jewellery, designer clothes</p></div></div></th>
+				<td class="cCell textcenter"><input value="1" name="rn2A3" type="radio" id="rn2A3" class="cRadio" onclick="clearAll(&quot;rn2A3&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="2" name="rn2A3" type="radio" id="rn2A3" class="cRadio" onclick="clearAll(&quot;rn2A3&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="3" name="rn2A3" type="radio" id="rn2A3" class="cRadio" onclick="clearAll(&quot;rn2A3&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="4" name="rn2A3" type="radio" id="rn2A3" class="cRadio" onclick="clearAll(&quot;rn2A3&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="5" name="rn2A3" type="radio" id="rn2A3" class="cRadio" onclick="clearAll(&quot;rn2A3&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="6" name="rn2A3" type="radio" id="rn2A3" class="cRadio" onclick="clearAll(&quot;rn2A3&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="7" name="rn2A3" type="radio" id="rn2A3" class="cRadio" onclick="clearAll(&quot;rn2A3&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="8" name="rn2A3" type="radio" id="rn2A3" class="cRadio" onclick="clearAll(&quot;rn2A3&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+			</tr>
+			<tr class="rsRow cRow" style="height: 40px;">
+				<th id="r_2_5" class="cCellRowText" scope="row" align="left"><div class="cRowText"><div class="rs-ht cReg reg"><p>Make a large furniture purchase (e.g. bed, wardrobe, drawers)</p></div></div></th>
+				<td class="cCell textcenter"><input value="1" name="rn2A4" type="radio" id="rn2A4" class="cRadio" onclick="clearAll(&quot;rn2A4&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="2" name="rn2A4" type="radio" id="rn2A4" class="cRadio" onclick="clearAll(&quot;rn2A4&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="3" name="rn2A4" type="radio" id="rn2A4" class="cRadio" onclick="clearAll(&quot;rn2A4&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="4" name="rn2A4" type="radio" id="rn2A4" class="cRadio" onclick="clearAll(&quot;rn2A4&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="5" name="rn2A4" type="radio" id="rn2A4" class="cRadio" onclick="clearAll(&quot;rn2A4&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="6" name="rn2A4" type="radio" id="rn2A4" class="cRadio" onclick="clearAll(&quot;rn2A4&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="7" name="rn2A4" type="radio" id="rn2A4" class="cRadio" onclick="clearAll(&quot;rn2A4&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="8" name="rn2A4" type="radio" id="rn2A4" class="cRadio" onclick="clearAll(&quot;rn2A4&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+			</tr>
+			<tr class="rsRow cRowAlt" style="height: 40px;">
+				<th id="r_2_6" class="cCellRowText" scope="row" align="left"><div class="cRowText"><div class="rs-ht cReg reg"><p>Make a large electrical purchase (e.g. television, phone, laptop)</p></div></div></th>
+				<td class="cCell textcenter"><input value="1" name="rn2A5" type="radio" id="rn2A5" class="cRadio" onclick="clearAll(&quot;rn2A5&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="2" name="rn2A5" type="radio" id="rn2A5" class="cRadio" onclick="clearAll(&quot;rn2A5&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="3" name="rn2A5" type="radio" id="rn2A5" class="cRadio" onclick="clearAll(&quot;rn2A5&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="4" name="rn2A5" type="radio" id="rn2A5" class="cRadio" onclick="clearAll(&quot;rn2A5&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="5" name="rn2A5" type="radio" id="rn2A5" class="cRadio" onclick="clearAll(&quot;rn2A5&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="6" name="rn2A5" type="radio" id="rn2A5" class="cRadio" onclick="clearAll(&quot;rn2A5&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="7" name="rn2A5" type="radio" id="rn2A5" class="cRadio" onclick="clearAll(&quot;rn2A5&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="8" name="rn2A5" type="radio" id="rn2A5" class="cRadio" onclick="clearAll(&quot;rn2A5&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+			</tr>
+			<tr class="rsRow cRow" style="height: 40px;">
+				<th id="r_2_7" class="cCellRowText" scope="row" align="left"><div class="cRowText"><div class="rs-ht cReg reg"><p>Travel abroad for business purposes</p></div></div></th>
+				<td class="cCell textcenter"><input value="1" name="rn2A6" type="radio" id="rn2A6" class="cRadio" onclick="clearAll(&quot;rn2A6&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="2" name="rn2A6" type="radio" id="rn2A6" class="cRadio" onclick="clearAll(&quot;rn2A6&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="3" name="rn2A6" type="radio" id="rn2A6" class="cRadio" onclick="clearAll(&quot;rn2A6&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="4" name="rn2A6" type="radio" id="rn2A6" class="cRadio" onclick="clearAll(&quot;rn2A6&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="5" name="rn2A6" type="radio" id="rn2A6" class="cRadio" onclick="clearAll(&quot;rn2A6&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="6" name="rn2A6" type="radio" id="rn2A6" class="cRadio" onclick="clearAll(&quot;rn2A6&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="7" name="rn2A6" type="radio" id="rn2A6" class="cRadio" onclick="clearAll(&quot;rn2A6&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="8" name="rn2A6" type="radio" id="rn2A6" class="cRadio" onclick="clearAll(&quot;rn2A6&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+			</tr>
+			<tr class="rsRow cRowAlt" style="height: 40px;">
+				<th id="r_2_8" class="cCellRowText" scope="row" align="left"><div class="cRowText"><div class="rs-ht cReg reg"><p>Perform DIY home improvements (e.g. painting a room)</p></div></div></th>
+				<td class="cCell textcenter"><input value="1" name="rn2A7" type="radio" id="rn2A7" class="cRadio" onclick="clearAll(&quot;rn2A7&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="2" name="rn2A7" type="radio" id="rn2A7" class="cRadio" onclick="clearAll(&quot;rn2A7&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="3" name="rn2A7" type="radio" id="rn2A7" class="cRadio" onclick="clearAll(&quot;rn2A7&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="4" name="rn2A7" type="radio" id="rn2A7" class="cRadio" onclick="clearAll(&quot;rn2A7&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="5" name="rn2A7" type="radio" id="rn2A7" class="cRadio" onclick="clearAll(&quot;rn2A7&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="6" name="rn2A7" type="radio" id="rn2A7" class="cRadio" onclick="clearAll(&quot;rn2A7&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="7" name="rn2A7" type="radio" id="rn2A7" class="cRadio" onclick="clearAll(&quot;rn2A7&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="8" name="rn2A7" type="radio" id="rn2A7" class="cRadio" onclick="clearAll(&quot;rn2A7&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+			</tr>
+			<tr class="rsRow cRow" style="height: 40px;">
+				<th id="r_2_9" class="cCellRowText" scope="row" align="left"><div class="cRowText"><div class="rs-ht cReg reg"><p>Get your hair cut / dyed</p></div></div></th>
+				<td class="cCell textcenter"><input value="1" name="rn2A8" type="radio" id="rn2A8" class="cRadio" onclick="clearAll(&quot;rn2A8&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="2" name="rn2A8" type="radio" id="rn2A8" class="cRadio" onclick="clearAll(&quot;rn2A8&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="3" name="rn2A8" type="radio" id="rn2A8" class="cRadio" onclick="clearAll(&quot;rn2A8&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="4" name="rn2A8" type="radio" id="rn2A8" class="cRadio" onclick="clearAll(&quot;rn2A8&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="5" name="rn2A8" type="radio" id="rn2A8" class="cRadio" onclick="clearAll(&quot;rn2A8&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="6" name="rn2A8" type="radio" id="rn2A8" class="cRadio" onclick="clearAll(&quot;rn2A8&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="7" name="rn2A8" type="radio" id="rn2A8" class="cRadio" onclick="clearAll(&quot;rn2A8&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="8" name="rn2A8" type="radio" id="rn2A8" class="cRadio" onclick="clearAll(&quot;rn2A8&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+			</tr>
+			<tr class="rsRow cRowAlt" style="height: 40px;">
+				<th id="r_2_10" class="cCellRowText" scope="row" align="left"><div class="cRowText"><div class="rs-ht cReg reg"><p>Attend a music event / festival </p></div></div></th>
+				<td class="cCell textcenter"><input value="1" name="rn2A9" type="radio" id="rn2A9" class="cRadio" onclick="clearAll(&quot;rn2A9&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="2" name="rn2A9" type="radio" id="rn2A9" class="cRadio" onclick="clearAll(&quot;rn2A9&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="3" name="rn2A9" type="radio" id="rn2A9" class="cRadio" onclick="clearAll(&quot;rn2A9&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="4" name="rn2A9" type="radio" id="rn2A9" class="cRadio" onclick="clearAll(&quot;rn2A9&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="5" name="rn2A9" type="radio" id="rn2A9" class="cRadio" onclick="clearAll(&quot;rn2A9&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="6" name="rn2A9" type="radio" id="rn2A9" class="cRadio" onclick="clearAll(&quot;rn2A9&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="7" name="rn2A9" type="radio" id="rn2A9" class="cRadio" onclick="clearAll(&quot;rn2A9&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="8" name="rn2A9" type="radio" id="rn2A9" class="cRadio" onclick="clearAll(&quot;rn2A9&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+			</tr>
+			<tr class="rsRow cRow" style="height: 40px;">
+				<th id="r_2_11" class="cCellRowText" scope="row" align="left"><div class="cRowText"><div class="rs-ht cReg reg"><p>Go to the cinema</p></div></div></th>
+				<td class="cCell textcenter"><input value="1" name="rn2A10" type="radio" id="rn2A10" class="cRadio" onclick="clearAll(&quot;rn2A10&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="2" name="rn2A10" type="radio" id="rn2A10" class="cRadio" onclick="clearAll(&quot;rn2A10&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="3" name="rn2A10" type="radio" id="rn2A10" class="cRadio" onclick="clearAll(&quot;rn2A10&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="4" name="rn2A10" type="radio" id="rn2A10" class="cRadio" onclick="clearAll(&quot;rn2A10&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="5" name="rn2A10" type="radio" id="rn2A10" class="cRadio" onclick="clearAll(&quot;rn2A10&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="6" name="rn2A10" type="radio" id="rn2A10" class="cRadio" onclick="clearAll(&quot;rn2A10&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="7" name="rn2A10" type="radio" id="rn2A10" class="cRadio" onclick="clearAll(&quot;rn2A10&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="8" name="rn2A10" type="radio" id="rn2A10" class="cRadio" onclick="clearAll(&quot;rn2A10&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+			</tr>
+			<tr class="rsRow cRowAlt" style="height: 40px;">
+				<th id="r_2_12" class="cCellRowText" scope="row" align="left"><div class="cRowText"><div class="rs-ht cReg reg"><p>Eat out at a restaurant</p></div></div></th>
+				<td class="cCell textcenter"><input value="1" name="rn2A11" type="radio" id="rn2A11" class="cRadio" onclick="clearAll(&quot;rn2A11&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="2" name="rn2A11" type="radio" id="rn2A11" class="cRadio" onclick="clearAll(&quot;rn2A11&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="3" name="rn2A11" type="radio" id="rn2A11" class="cRadio" onclick="clearAll(&quot;rn2A11&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="4" name="rn2A11" type="radio" id="rn2A11" class="cRadio" onclick="clearAll(&quot;rn2A11&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="5" name="rn2A11" type="radio" id="rn2A11" class="cRadio" onclick="clearAll(&quot;rn2A11&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="6" name="rn2A11" type="radio" id="rn2A11" class="cRadio" onclick="clearAll(&quot;rn2A11&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="7" name="rn2A11" type="radio" id="rn2A11" class="cRadio" onclick="clearAll(&quot;rn2A11&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="8" name="rn2A11" type="radio" id="rn2A11" class="cRadio" onclick="clearAll(&quot;rn2A11&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+			</tr>
+			<tr class="rsRow cRow" style="height: 40px;">
+				<th id="r_2_13" class="cCellRowText" scope="row" align="left"><div class="cRowText"><div class="rs-ht cReg reg"><p>Order food to be delivered</p></div></div></th>
+				<td class="cCell textcenter"><input value="1" name="rn2A12" type="radio" id="rn2A12" class="cRadio" onclick="clearAll(&quot;rn2A12&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="2" name="rn2A12" type="radio" id="rn2A12" class="cRadio" onclick="clearAll(&quot;rn2A12&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="3" name="rn2A12" type="radio" id="rn2A12" class="cRadio" onclick="clearAll(&quot;rn2A12&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="4" name="rn2A12" type="radio" id="rn2A12" class="cRadio" onclick="clearAll(&quot;rn2A12&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="5" name="rn2A12" type="radio" id="rn2A12" class="cRadio" onclick="clearAll(&quot;rn2A12&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="6" name="rn2A12" type="radio" id="rn2A12" class="cRadio" onclick="clearAll(&quot;rn2A12&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="7" name="rn2A12" type="radio" id="rn2A12" class="cRadio" onclick="clearAll(&quot;rn2A12&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="8" name="rn2A12" type="radio" id="rn2A12" class="cRadio" onclick="clearAll(&quot;rn2A12&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+			</tr>
+			<tr class="rsRow cRowAlt" style="height: 40px;">
+				<th id="r_2_14" class="cCellRowText" scope="row" align="left"><div class="cRowText"><div class="rs-ht cReg reg"><p>Shop for groceries</p></div></div></th>
+				<td class="cCell textcenter"><input value="1" name="rn2A13" type="radio" id="rn2A13" class="cRadio" onclick="clearAll(&quot;rn2A13&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="2" name="rn2A13" type="radio" id="rn2A13" class="cRadio" onclick="clearAll(&quot;rn2A13&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="3" name="rn2A13" type="radio" id="rn2A13" class="cRadio" onclick="clearAll(&quot;rn2A13&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="4" name="rn2A13" type="radio" id="rn2A13" class="cRadio" onclick="clearAll(&quot;rn2A13&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="5" name="rn2A13" type="radio" id="rn2A13" class="cRadio" onclick="clearAll(&quot;rn2A13&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="6" name="rn2A13" type="radio" id="rn2A13" class="cRadio" onclick="clearAll(&quot;rn2A13&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="7" name="rn2A13" type="radio" id="rn2A13" class="cRadio" onclick="clearAll(&quot;rn2A13&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="8" name="rn2A13" type="radio" id="rn2A13" class="cRadio" onclick="clearAll(&quot;rn2A13&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+			</tr>
+			<tr class="rsRow cRow" style="height: 40px;">
+				<th id="r_2_15" class="cCellRowText" scope="row" align="left"><div class="cRowText"><div class="rs-ht cReg reg"><p>Visit extended family or friends</p></div></div></th>
+				<td class="cCell textcenter"><input value="1" name="rn2A14" type="radio" id="rn2A14" class="cRadio" onclick="clearAll(&quot;rn2A14&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="2" name="rn2A14" type="radio" id="rn2A14" class="cRadio" onclick="clearAll(&quot;rn2A14&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="3" name="rn2A14" type="radio" id="rn2A14" class="cRadio" onclick="clearAll(&quot;rn2A14&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="4" name="rn2A14" type="radio" id="rn2A14" class="cRadio" onclick="clearAll(&quot;rn2A14&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="5" name="rn2A14" type="radio" id="rn2A14" class="cRadio" onclick="clearAll(&quot;rn2A14&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="6" name="rn2A14" type="radio" id="rn2A14" class="cRadio" onclick="clearAll(&quot;rn2A14&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="7" name="rn2A14" type="radio" id="rn2A14" class="cRadio" onclick="clearAll(&quot;rn2A14&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="8" name="rn2A14" type="radio" id="rn2A14" class="cRadio" onclick="clearAll(&quot;rn2A14&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+			</tr>
+			<tr class="rsRow cRowAlt" style="height: 40px;">
+				<th id="r_2_16" class="cCellRowText" scope="row" align="left"><div class="cRowText"><div class="rs-ht cReg reg"><p>Access the internet</p></div></div></th>
+				<td class="cCell textcenter"><input value="1" name="rn2A15" type="radio" id="rn2A15" class="cRadio" onclick="clearAll(&quot;rn2A15&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="2" name="rn2A15" type="radio" id="rn2A15" class="cRadio" onclick="clearAll(&quot;rn2A15&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="3" name="rn2A15" type="radio" id="rn2A15" class="cRadio" onclick="clearAll(&quot;rn2A15&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="4" name="rn2A15" type="radio" id="rn2A15" class="cRadio" onclick="clearAll(&quot;rn2A15&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="5" name="rn2A15" type="radio" id="rn2A15" class="cRadio" onclick="clearAll(&quot;rn2A15&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="6" name="rn2A15" type="radio" id="rn2A15" class="cRadio" onclick="clearAll(&quot;rn2A15&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="7" name="rn2A15" type="radio" id="rn2A15" class="cRadio" onclick="clearAll(&quot;rn2A15&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="8" name="rn2A15" type="radio" id="rn2A15" class="cRadio" onclick="clearAll(&quot;rn2A15&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+			</tr>
+			<tr class="rsRow cRow" style="height: 40px;">
+				<th id="r_2_17" class="cCellRowText" scope="row" align="left"><div class="cRowText"><div class="rs-ht cReg reg"><p>Use a smartphone/ tablet/ laptop</p></div></div></th>
+				<td class="cCell textcenter"><input value="1" name="rn2A16" type="radio" id="rn2A16" class="cRadio" onclick="clearAll(&quot;rn2A16&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="2" name="rn2A16" type="radio" id="rn2A16" class="cRadio" onclick="clearAll(&quot;rn2A16&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="3" name="rn2A16" type="radio" id="rn2A16" class="cRadio" onclick="clearAll(&quot;rn2A16&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="4" name="rn2A16" type="radio" id="rn2A16" class="cRadio" onclick="clearAll(&quot;rn2A16&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="5" name="rn2A16" type="radio" id="rn2A16" class="cRadio" onclick="clearAll(&quot;rn2A16&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="6" name="rn2A16" type="radio" id="rn2A16" class="cRadio" onclick="clearAll(&quot;rn2A16&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="7" name="rn2A16" type="radio" id="rn2A16" class="cRadio" onclick="clearAll(&quot;rn2A16&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+				<td class="cCell textcenter"><input value="8" name="rn2A16" type="radio" id="rn2A16" class="cRadio" onclick="clearAll(&quot;rn2A16&quot;);this.focus();this.checked=true;return true;" onfocus="return true;"></td>
+			</tr>
+			<tr class="rsEmptyFinalRow">
+				<td name="emptyCell" class="cFooter"></td>
+				<td name="emptyCell" class="cFooter"></td>
+				<td name="emptyCell" class="cFooter"></td>
+				<td name="emptyCell" class="cFooter"></td>
+				<td name="emptyCell" class="cFooter"></td>
+				<td name="emptyCell" class="cFooter"></td>
+				<td name="emptyCell" class="cFooter"></td>
+				<td name="emptyCell" class="cFooter"></td>
+				<td name="emptyCell" class="cFooter"></td>
+			</tr>
+		</tbody></table>
+		</td>
+	</tr>
+</tbody></table>
+<input name="Q" type="hidden" id="Q" value="2"><input name="S" type="hidden" id="S" value="0">
+                            <span id="PageDurationScriptControl1"></span>
+                        <div id="cardSortContainer" style="text-align: center; padding: 20px;"><div class="statement-box">Get your hair cut / dyed</div><div class="button-container"><button class="answer-button">Everyday</button><button class="answer-button">At least once a week</button><button class="answer-button">At least once a month</button><button class="answer-button">At least once every 3 months</button><button class="answer-button">At least once every 6 months</button><button class="answer-button">At least once a year</button><button class="answer-button">Less often than once a year</button><button class="answer-button">Never</button></div></div></div>
+                </div>
+            </div>
+            <div class="langContainer">
+                <div id="rsPanelLang">
+                        
+                    </div>
+            </div>
+            <div class="buttonContainer">
+                <div id="rsPanelButtons">
+                        <span id="_customValidator" style="visibility:hidden;"></span>
+                        
+                        <input type="button" name="btnNext" value="Next" onclick="rsSethf('rs_dir','1');WebForm_DoPostBackWithOptions(new WebForm_PostBackOptions(&quot;btnNext&quot;, &quot;&quot;, true, &quot;&quot;, &quot;&quot;, false, true))" id="btnNext" class="buttonPage buttonNext">
+                        <input type="button" name="btnToggleWcag" value="0" onclick="javascript:WebForm_DoPostBackWithOptions(new WebForm_PostBackOptions(&quot;btnToggleWcag&quot;, &quot;&quot;, true, &quot;&quot;, &quot;&quot;, false, true))" id="btnToggleWcag" style="display:none;">
+                        <div id="UpdateProgress2" style="display:none;" role="status" aria-hidden="true">
+	
+                                <div class="loadingAnimation"></div>
+                            
+</div>
+                    </div>
+            </div>
+             <div class="logo2Container">
+                <a title="Walr Data Collection v. 5.1.9536.21569
+www.walr.com" class="logo2link" rel="noopener" href="https://www.walr.com" target="_blank">Created in Walr Survey Builder</a><br>
+            </div>
+        </div>
+        <div id="ctl15">
+                
+                
+                <input name="rs_lto" type="hidden" id="rs_lto" value="-60">
+                <input name="rs_lang" type="hidden" id="rs_lang" value="en">
+                <input name="rs_rnd" type="hidden" id="rs_rnd" value="566">
+                <input name="rs_dir" type="hidden" id="rs_dir" value="1">
+                <input name="rs_dcv" type="hidden" id="rs_dcv" value="5.1.9536.21569">
+                <input name="rs_r" type="hidden" id="rs_r" value="976d27a2-436a-4c76-82e1-c62c07d7c0dd">
+                <input name="rs_tr" type="hidden" id="rs_tr">
+                <input name="rs_s" type="hidden" id="rs_s" value="bb84d89e-adc3-4ebc-b124-d8af8a15818b">
+                <input name="rs_q" type="hidden" id="rs_q" value="97c56d11-c43b-48ae-a29a-3205afe5d38d">
+                <input name="rs_c" type="hidden" id="rs_c" value="3ef11f3f-290d-4a64-925c-34ae02f863ce">
+                <input name="rs_cid" type="hidden" id="rs_cid">
+            </div>
+        <script>
+            Sys.WebForms.PageRequestManager.getInstance().add_initializeRequest(initRequestHandler);
+            Sys.WebForms.PageRequestManager.getInstance().add_beginRequest(beginRequestHandler);
+            Sys.WebForms.PageRequestManager.getInstance().add_endRequest(endRequestHandler);
+            Sys.WebForms.PageRequestManager.getInstance().add_pageLoaded(pageLoadedHandler);
+        </script>
+    
+<script type="text/javascript">
+//<![CDATA[
+var Page_Validators =  new Array(document.getElementById("_customValidator"));
+//]]>
+</script>
+
+<script type="text/javascript">
+//<![CDATA[
+var _customValidator = document.all ? document.all["_customValidator"] : document.getElementById("_customValidator");
+_customValidator.evaluationfunction = "CustomValidatorEvaluateIsValid";
+_customValidator.clientvalidationfunction = "clientValidation";
+//]]>
+</script>
+
+<script>settimeoffset();</script>
+<script type="text/javascript">
+//<![CDATA[
+
+var Page_ValidationActive = false;
+if (typeof(ValidatorOnLoad) == "function") {
+    ValidatorOnLoad();
+}
+
+function ValidatorOnSubmit() {
+    if (Page_ValidationActive) {
+        return ValidatorCommonOnSubmit();
+    }
+    else {
+        return true;
+    }
+}
+        
+document.getElementById('_customValidator').dispose = function() {
+    Array.remove(Page_Validators, document.getElementById('_customValidator'));
+}
+Sys.Application.add_init(function() {
+    $create(Sys.UI._UpdateProgress, {"associatedUpdatePanelId":"rsPanelButtons","displayAfter":1000,"dynamicLayout":true}, null, null, $get("UpdateProgress2"));
+});
+//]]>
+</script>
+<span style="display: none !important;"><input type="hidden" name="__EVENTTARGET" id="__EVENTTARGET" value=""></span><span style="display: none !important;"><input type="hidden" name="__EVENTARGUMENT" id="__EVENTARGUMENT" value=""></span><span style="display: none !important;"><input type="hidden" name="__VIEWSTATE" id="__VIEWSTATE" value="o13J8jfnPO+je8Gm8eZXcC+x0i4unvcXdZ5NpfCEtuDqkv4fb3JiVzq4fTwYRWidF9rUrOw01wqNX0AJsTphgxl4GS8="></span><span style="display: none !important;"><input type="hidden" name="__VIEWSTATEGENERATOR" id="__VIEWSTATEGENERATOR" value="4116D544"></span></form>
+    
+    <noscript>
+        <div>This survey requires that javascript is enabled in your browser. Please enable javascript and re-enter the survey.</div>
+        <div><br/>Survey link: <a href="https://as-weu-prod-survey-datacollectionv1.azurewebsites.net/collect.aspx?rs=n5R45khALCfIjIcIRFJ8xSixGv-PZstMTablm-ISQfLixlfC9YUoU3eUM6El-gnNvddc4Ais7W-HRm2u_7HFqHtuUpvJo-7N8YBQKsD7rMCUlAXLi206jZckK50uToWEIbeljReAC5PXIrfGVrgtnoTBoz2fjhQxVkHNSes4ap0er8cWLNmiVYpwdbDnV3C_M5FMI-r1C4UTyzFfU8pi3PKPJKC45VPfvm69y9iyrEI" id="surveyLink">Re-enter survey</a></div>
+    </noscript>
+    <script type="text/javascript" src="https://quenchtec.github.io/visualisations/walrthemes/v1.0.0-2colour/main_theme.js"></script>
+<link rel="stylesheet" type="text/css" href="https://quenchtec.github.io/visualisations/walrthemes/v1.0.0-2colour/main_theme.css">
+<link rel="stylesheet" type="text/css" href="https://fonts.googleapis.com/css2?family=Lato&amp;display=swap">
+
+
+<div id="cboxOverlay" style="display: none;"></div><div id="colorbox" class="" role="dialog" tabindex="-1" style="display: none;"><div id="cboxWrapper"><div><div id="cboxTopLeft" style="float: left;"></div><div id="cboxTopCenter" style="float: left;"></div><div id="cboxTopRight" style="float: left;"></div></div><div style="clear: left;"><div id="cboxMiddleLeft" style="float: left;"></div><div id="cboxContent" style="float: left;"><div id="cboxTitle" style="float: left;"></div><div id="cboxCurrent" style="float: left;"></div><button type="button" id="cboxPrevious"></button><button type="button" id="cboxNext"></button><button id="cboxSlideshow"></button><div id="cboxLoadingOverlay" style="float: left;"></div><div id="cboxLoadingGraphic" style="float: left;"></div></div><div id="cboxMiddleRight" style="float: left;"></div></div><div style="clear: left;"><div id="cboxBottomLeft" style="float: left;"></div><div id="cboxBottomCenter" style="float: left;"></div><div id="cboxBottomRight" style="float: left;"></div></div></div><div style="position: absolute; width: 9999px; visibility: hidden; display: none; max-width: none;"></div></div><div><div class="grecaptcha-badge" data-style="bottomright" style="width: 256px; height: 60px; display: block; transition: right 0.3s; position: fixed; bottom: 14px; right: -186px; box-shadow: gray 0px 0px 5px; border-radius: 2px; overflow: hidden;"><div class="grecaptcha-logo"><iframe title="reCAPTCHA" width="256" height="60" role="presentation" name="a-gn1ek3rfc8fq" frameborder="0" scrolling="no" sandbox="allow-forms allow-popups allow-same-origin allow-scripts allow-top-navigation allow-modals allow-popups-to-escape-sandbox allow-storage-access-by-user-activation" src="https://www.google.com/recaptcha/enterprise/anchor?ar=1&amp;k=6LeKPKIrAAAAAK9MGjEL5RBCH5yWYSkVN_6DAn-P&amp;co=aHR0cHM6Ly9zdXJ2ZXkud2Fsci5jb206NDQz&amp;hl=fr&amp;v=gYdqkxiddE5aXrugNbBbKgtN&amp;size=invisible&amp;anchor-ms=20000&amp;execute-ms=30000&amp;cb=rq9e5xcilz04"></iframe></div><div class="grecaptcha-error"></div><textarea id="g-recaptcha-response-100000" name="g-recaptcha-response" class="g-recaptcha-response" style="width: 250px; height: 40px; border: 1px solid rgb(193, 193, 193); margin: 10px 25px; padding: 0px; resize: none; display: none;"></textarea></div><iframe style="display: none;"></iframe></div></body>
