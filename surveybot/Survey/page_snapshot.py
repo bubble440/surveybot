@@ -162,6 +162,7 @@ def dump_page_snapshot(
     reason: str,
     out_root: Optional[str] = None,
     question_blocks: Any = None,
+    snapshot_name: Optional[str] = None,
 ) -> str:
     """
     Sauvegarde un snapshot de page "debug" :
@@ -179,7 +180,14 @@ def dump_page_snapshot(
     """
 
     ts = time.strftime("%Y%m%d_%H%M%S")
-    folder_name = f"{ts}_{_slug(reason)}"
+
+    # Nom forcé (ex: case.json["name"]) :
+    # priorité: param snapshot_name -> ENV SURVEY_SNAPSHOT_NAME -> fallback ts+reason
+    forced = (snapshot_name or os.getenv("SURVEY_SNAPSHOT_NAME", "") or "").strip()
+    if forced:
+        folder_name = _slug(forced)
+    else:
+        folder_name = f"{ts}_{_slug(reason)}"
 
     # Dossier par défaut:
     # - local: ./snapshots
@@ -237,6 +245,20 @@ def dump_page_snapshot(
     except Exception:
         outer = ""
     (folder / "dom_outer.html").write_text(outer, encoding="utf-8", errors="ignore")
+
+    # DOM body uniquement (demandé pour tes snapshots/cases)
+    try:
+        body_outer = driver.execute_script("return document.body ? document.body.outerHTML : ''") or ""
+    except Exception:
+        body_outer = ""
+    (folder / "dom_body.html").write_text(body_outer, encoding="utf-8", errors="ignore")
+
+    # Si on a un nom de case, on écrit aussi un fichier nommé comme le case.json["name"]
+    if forced:
+        try:
+            (folder / f"{_slug(forced)}.dom_body.html").write_text(body_outer, encoding="utf-8", errors="ignore")
+        except Exception:
+            pass
 
     # page_source (parfois différent du DOM live, mais utile)
     try:

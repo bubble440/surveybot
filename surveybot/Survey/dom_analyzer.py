@@ -1,23 +1,31 @@
 # Survey/dom_analyzer.py
 """
-DOM Analyzer Ã¢â‚¬â€ extraction TEXT-ONLY des questions de survey.
+DOM Analyzer ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â extraction TEXT-ONLY des questions de survey.
 
 Objectif:
 - Scanner le DOM
 - Identifier chaque question (1 bloc par question, PAS 1 bloc par option radio)
-- DÃƒÂ©terminer le type d'input attendu
-- Extraire les options associÃƒÂ©es
-- Ajouter une contrainte de cardinalitÃƒÂ© (max_select)
+- DÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©terminer le type d'input attendu
+- Extraire les options associÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©es
+- Ajouter une contrainte de cardinalitÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â© (max_select)
 
-Aucune dÃƒÂ©pendance image.
+Aucune dÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©pendance image.
 Compatible local / prod.
-PensÃƒÂ© pour 100+ bots.
+PensÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â© pour 100+ bots.
 """
 
 from __future__ import annotations
 from typing import List, Dict, Any, Tuple
-import re, time, zlib, os
+import re, time, zlib, os, sys
 import unicodedata
+
+# =========================
+# Configuration encodage UTF-8 (Ã©vite les caractÃ¨res corrompus dans les logs)
+# =========================
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+if hasattr(sys.stderr, 'reconfigure'):
+    sys.stderr.reconfigure(encoding='utf-8', errors='replace')
 from Survey.dom_registry import clear_registry, register_target, make_target_id
 from Survey.frame_utils import iter_frame_chains, switch_to_frame_chain
 from selenium.webdriver.common.by import By
@@ -41,7 +49,7 @@ def _norm(text: str) -> str:
 def _norm_lc(text: str) -> str:
     return _norm(text).lower()
 
-# --- Champs techniques/ASP.NET ÃƒÂ  ignorer (anti-pollution prompt) ---
+# --- Champs techniques/ASP.NET ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â  ignorer (anti-pollution prompt) ---
 _SYS_FIELD_TOKENS = (
     "__viewstate", "viewstate",
     "__eventvalidation", "eventvalidation",
@@ -53,8 +61,8 @@ _SYS_FIELD_TOKENS = (
 
 def _looks_like_system_field(el) -> bool:
     """
-    DÃƒÂ©tecte les inputs techniques (ASP.NET / hidden / tracking) pour ne pas les traiter comme questions.
-    IMPORTANT: ÃƒÂ§a ÃƒÂ©vite d'envoyer du bruit ÃƒÂ  OpenAI -> moins cher + plus fiable.
+    DÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©tecte les inputs techniques (ASP.NET / hidden / tracking) pour ne pas les traiter comme questions.
+    IMPORTANT: ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§a ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©vite d'envoyer du bruit ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â  OpenAI -> moins cher + plus fiable.
     """
     try:
         t = (el.get_attribute("type") or "").strip().lower()
@@ -70,18 +78,18 @@ def _looks_like_system_field(el) -> bool:
     return False
 
 def _is_actionable_visible(el) -> bool:
-    """Retourne True si l'ÃƒÂ©lÃƒÂ©ment est rÃƒÂ©ellement actionnable cÃƒÂ´tÃƒÂ© UI.
+    """Retourne True si l'ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©lÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©ment est rÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©ellement actionnable cÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â´tÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â© UI.
 
     Fix principal:
-    - Exclure les inputs utilitaires/masquÃƒÂ©s LimeSurvey (ls-js-hidden) qui polluent l'extraction
-      (ex: confirm-clearall), sinon OpenAI renvoie des actions impossibles ÃƒÂ  appliquer.
+    - Exclure les inputs utilitaires/masquÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©s LimeSurvey (ls-js-hidden) qui polluent l'extraction
+      (ex: confirm-clearall), sinon OpenAI renvoie des actions impossibles ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â  appliquer.
 
     Compat:
-    - Inputs masquÃƒÂ©s mais cliquables via wrapper visible (Decipher/FocusVision: clickableCell / sq-cardrating-button).
-    - Inputs masquÃƒÂ©s mais label visible (custom UI).
+    - Inputs masquÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©s mais cliquables via wrapper visible (Decipher/FocusVision: clickableCell / sq-cardrating-button).
+    - Inputs masquÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©s mais label visible (custom UI).
     """
     try:
-        # 0) LimeSurvey: ignorer tout ce qui est dans un bloc masquÃƒÂ© "ls-js-hidden"
+        # 0) LimeSurvey: ignorer tout ce qui est dans un bloc masquÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â© "ls-js-hidden"
         try:
             if el.find_elements(
                 By.XPATH,
@@ -106,7 +114,7 @@ def _is_actionable_visible(el) -> bool:
             pass
 
         tag = ((getattr(el, "tag_name", "") or "").lower() or "")
-        # 1bis) <select> masquÃƒÂ© mais contrÃƒÂ´lÃƒÂ© par un proxy visible (ex: bootstrap-select / selectpicker)
+        # 1bis) <select> masquÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â© mais contrÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â´lÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â© par un proxy visible (ex: bootstrap-select / selectpicker)
         # Exemple: <select class="selectpicker bs-select-hidden"> + bouton .dropdown-toggle visible.
         if tag == "select":
             try:
@@ -114,7 +122,7 @@ def _is_actionable_visible(el) -> bool:
                 if ("bs-select-hidden" in cls) or ("selectpicker" in cls):
                     proxy = None
 
-                    # Ã¢Å“â€¦ Ipsos: le proxy bootstrap-select est souvent un SIBLING (pas un ancÃƒÂªtre)
+                    # ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ Ipsos: le proxy bootstrap-select est souvent un SIBLING (pas un ancÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âªtre)
                     for xp in (
                         "ancestor::*[contains(concat(' ',normalize-space(@class),' '),' bootstrap-select ')][1]",
                         "following-sibling::*[contains(concat(' ',normalize-space(@class),' '),' bootstrap-select ')][1]",
@@ -128,7 +136,7 @@ def _is_actionable_visible(el) -> bool:
                             proxy = None
 
                     if proxy:
-                        # si le bouton proxy est visible, on considÃƒÂ¨re le select comme actionnable
+                        # si le bouton proxy est visible, on considÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¨re le select comme actionnable
                         btn = None
                         try:
                             btn = proxy.find_element(
@@ -167,7 +175,7 @@ def _is_actionable_visible(el) -> bool:
                 except Exception:
                     pass
 
-                # 3) Wrapper visible (Cint/QPS): <div class="answer ..."> contient input masquÃƒÂ© + label/span visible
+                # 3) Wrapper visible (Cint/QPS): <div class="answer ..."> contient input masquÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â© + label/span visible
                 try:
                     anc = el.find_element(
                         By.XPATH,
@@ -178,7 +186,24 @@ def _is_actionable_visible(el) -> bool:
                 except Exception:
                     pass
 
-                # 4) Label visible (custom UI) Ã¢â‚¬â€ version robuste sans dÃƒÂ©pendre de el._parent
+                # 3b) Wrapper visible (ovey.kr): input masque + div.radio-wrapper ou .checkbox-wrapper
+                # Structure ovey.kr: <div.answer-choice-wrapper> <input hidden/> <div.radio-wrapper> <label>
+                # Le input est display:none mais le wrapper parent est visible et cliquable via label[for=id]
+                try:
+                    anc = el.find_element(
+                        By.XPATH,
+                        "ancestor::*["
+                        "contains(@class,'answer-choice-wrapper') or "
+                        "contains(@class,'radio-wrapper') or "
+                        "contains(@class,'checkbox-wrapper')"
+                        "][1]"
+                    )
+                    if anc and anc.is_displayed() and _rect_ok(anc):
+                        return True
+                except Exception:
+                    pass
+
+                # 4) Label visible (custom UI) ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â version robuste sans dÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©pendre de el._parent
                 try:
                     el_id = (el.get_attribute("id") or "").strip()
                     if el_id:
@@ -192,13 +217,13 @@ def _is_actionable_visible(el) -> bool:
                         except Exception:
                             labs = labs or []
 
-                        # b) labels dans le conteneur immÃƒÂ©diat (ex: label texte dans une colonne voisine)
+                        # b) labels dans le conteneur immÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©diat (ex: label texte dans une colonne voisine)
                         try:
                             labs.extend(el.find_elements(By.XPATH, f"ancestor::*[1]//label[@for='{el_id}']"))
                         except Exception:
                             pass
 
-                        # c) fallback Ã¢â‚¬Å“documentÃ¢â‚¬Â via racine <html> (iframe-safe) Ã¢â‚¬â€ toujours en plus,
+                        # c) fallback ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“documentÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â via racine <html> (iframe-safe) ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â toujours en plus,
                         # car certaines UIs (ex: CMIX/Materialize) mettent un label sibling vide (pictogramme)
                         # et le vrai label (texte) ailleurs dans la ligne.
                         try:
@@ -212,7 +237,7 @@ def _is_actionable_visible(el) -> bool:
                                 if not lab.is_displayed():
                                     continue
 
-                                # Ã¢Å“â€¦ CMIX/Materialize: le label peut avoir une bbox 0x0 (display:contents/pseudo-element),
+                                # ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ CMIX/Materialize: le label peut avoir une bbox 0x0 (display:contents/pseudo-element),
                                 # mais contenir du texte/descendants visibles.
                                 if _rect_ok(lab):
                                     return True
@@ -237,7 +262,7 @@ def _is_actionable_visible(el) -> bool:
                 except Exception:
                     pass
 
-                # 4) Label ancÃƒÂªtre visible (input inside <label> ...)
+                # 4) Label ancÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âªtre visible (input inside <label> ...)
                 try:
                     lab = el.find_element(By.XPATH, "ancestor::label[1]")
                     if lab and lab.is_displayed():
@@ -267,7 +292,7 @@ def _best_xpath_for_element(driver, el) -> str:
     """
     XPath robuste:
     - si id => //*[@id='...']
-    - sinon XPath absolu gÃƒÂ©nÃƒÂ©rÃƒÂ© via JS (stable sur la page courante)
+    - sinon XPath absolu gÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©nÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©rÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â© via JS (stable sur la page courante)
     """
     try:
         el_id = (el.get_attribute("id") or "").strip()
@@ -307,7 +332,7 @@ def _best_xpath_for_element(driver, el) -> str:
 
 def _xpath_literal(s: str) -> str:
     """
-    Literal XPath safe, mÃƒÂªme si la chaÃƒÂ®ne contient des quotes.
+    Literal XPath safe, mÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âªme si la chaÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â®ne contient des quotes.
     """
     s = s or ""
     if "'" not in s:
@@ -336,13 +361,49 @@ def _is_question_text(text: str) -> bool:
     keywords = [
         "what", "which", "how", "why",
         "quel", "quelle", "quels", "quelles", "combien",
-        "oÃƒÂ¹", "ou", "comment", "pourquoi",
-        "ÃƒÂ¢ge", "age", "gender", "education", "niveau",
+        "oÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¹", "ou", "comment", "pourquoi",
+        "ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ge", "age", "gender", "education", "niveau",
     ]
     return any(k in low for k in keywords)
 
 # =========================
-# DÃƒÂ©tection du type d'input
+# Filtrage instructions de validation (pas des questions)
+# =========================
+
+_VALIDATION_INSTRUCTION_PATTERNS = (
+    # Anglais
+    r"please enter at least \d+ characters",
+    r"remaining characters[:\s]*\d+",
+    r"minimum \d+ characters",
+    r"maximum \d+ characters",
+    r"characters? (left|remaining)",
+    r"^\d+\s*/\s*\d+\s*(characters?)?$",  # "40/500 characters"
+    r"^(at least|minimum|maximum) \d+",
+    # FranÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â§ais
+    r"veuillez (saisir|entrer) au moins \d+",
+    r"caractÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¨res? restants?[:\s]*\d+",
+    r"minimum \d+ caractÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¨res?",
+    r"maximum \d+ caractÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¨res?",
+)
+
+def _is_validation_instruction(text: str) -> bool:
+    """
+    DÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©tecte si un texte est une instruction de validation (compteur de caractÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¨res, etc.)
+    et NON une vraie question.
+    
+    UtilisÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â© pour filtrer les textes parasites adjacents aux textareas.
+    Ex: "Please enter at least 40 characters. Remaining characters: 40"
+    """
+    if not text:
+        return False
+    low = _norm_lc(text)
+    for pattern in _VALIDATION_INSTRUCTION_PATTERNS:
+        if re.search(pattern, low):
+            return True
+    return False
+
+# =========================
+# DÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©tection du type d'input
 # =========================
 
 def _detect_itype(el) -> str:
@@ -351,7 +412,7 @@ def _detect_itype(el) -> str:
     if tag == "input":
         t = (el.get_attribute("type") or "").strip().lower()
 
-        # Ã¢Å¡Â Ã¯Â¸Â Hidden = jamais une question
+        # ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¯ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â Hidden = jamais une question
         if t == "hidden":
             return "hidden"
 
@@ -368,7 +429,7 @@ def _detect_itype(el) -> str:
         if t in ("date", "datetime-local"):
             return "text"
 
-        # DÃƒÂ©faut: texte (mais on filtrera via visibilitÃƒÂ© + system fields)
+        # DÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©faut: texte (mais on filtrera via visibilitÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â© + system fields)
         return "text"
 
     if tag == "select":
@@ -387,20 +448,20 @@ def _detect_itype(el) -> str:
     return "unknown"
 
 def _dropdown_field_hint(driver, el) -> str:
-    """Sous-label pour distinguer plusieurs dropdowns dans la mÃƒÂªme question.
+    """Sous-label pour distinguer plusieurs dropdowns dans la mÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âªme question.
 
-    Cas typique: "Quelle est votre date de naissance ?" avec 2 selects (Mois / AnnÃƒÂ©e),
-    souvent rendus via bootstrap-select (select masquÃƒÂ© + bouton visible).
+    Cas typique: "Quelle est votre date de naissance ?" avec 2 selects (Mois / AnnÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©e),
+    souvent rendus via bootstrap-select (select masquÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â© + bouton visible).
     """
     try:
         # 1) name/id
         nid = f"{(el.get_attribute('name') or '')} {(el.get_attribute('id') or '')}".lower()
         if any(k in nid for k in ("month", "mois")):
             return "Mois"
-        if any(k in nid for k in ("year", "annee", "annÃƒÂ©e")):
-            return "AnnÃƒÂ©e"
+        if any(k in nid for k in ("year", "annee", "annÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©e")):
+            return "AnnÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©e"
 
-        # 2) classes ancÃƒÂªtres (monthPicker/yearPicker, etc.)
+        # 2) classes ancÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âªtres (monthPicker/yearPicker, etc.)
         try:
             anc = el.find_element(
                 By.XPATH,
@@ -409,8 +470,8 @@ def _dropdown_field_hint(driver, el) -> str:
             cls = (anc.get_attribute("class") or "").lower()
             if ("month" in cls) or ("mois" in cls):
                 return "Mois"
-            if ("year" in cls) or ("annee" in cls) or ("annÃƒÂ©e" in cls):
-                return "AnnÃƒÂ©e"
+            if ("year" in cls) or ("annee" in cls) or ("annÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©e" in cls):
+                return "AnnÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©e"
         except Exception:
             pass
 
@@ -426,8 +487,8 @@ def _dropdown_field_hint(driver, el) -> str:
                 tl = (t or "").lower()
                 if tl in ("mois", "month"):
                     return "Mois"
-                if tl in ("annÃƒÂ©e", "annee", "year"):
-                    return "AnnÃƒÂ©e"
+                if tl in ("annÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©e", "annee", "year"):
+                    return "AnnÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©e"
         except Exception:
             pass
 
@@ -441,8 +502,8 @@ def _dropdown_field_hint(driver, el) -> str:
                 tl = (t or "").lower()
                 if tl in ("mois", "month"):
                     return "Mois"
-                if tl in ("annÃƒÂ©e", "annee", "year"):
-                    return "AnnÃƒÂ©e"
+                if tl in ("annÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©e", "annee", "year"):
+                    return "AnnÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©e"
         except Exception:
             pass
 
@@ -456,9 +517,9 @@ def _dropdown_field_hint(driver, el) -> str:
 
 def _find_question_text_near_element(driver, el) -> str:
     """
-    Cherche un texte "question" visuellement proche (au-dessus) de l'ÃƒÂ©lÃƒÂ©ment input/textarea.
-    Objectif: ÃƒÂ©viter les fallbacks vision quand la question est bien dans le DOM
-    mais pas dans le mÃƒÂªme conteneur HTML (Angular/React trÃƒÂ¨s frÃƒÂ©quent).
+    Cherche un texte "question" visuellement proche (au-dessus) de l'ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©lÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©ment input/textarea.
+    Objectif: ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©viter les fallbacks vision quand la question est bien dans le DOM
+    mais pas dans le mÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âªme conteneur HTML (Angular/React trÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¨s frÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©quent).
     """
     try:
         txt = driver.execute_script(
@@ -488,11 +549,11 @@ def _find_question_text_near_element(driver, el) -> str:
 
               const rr = e.getBoundingClientRect();
 
-              // On veut un bloc au-dessus (ou trÃƒÂ¨s lÃƒÂ©gÃƒÂ¨rement overlap) et proche verticalement
+              // On veut un bloc au-dessus (ou trÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¨s lÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©gÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¨rement overlap) et proche verticalement
               const gap = r.top - rr.bottom;
               if (gap < -10 || gap > 320) continue;
 
-              // Overlap horizontal minimum (ÃƒÂ©vite de prendre le header de la page)
+              // Overlap horizontal minimum (ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©vite de prendre le header de la page)
               const overlap = Math.min(r.right, rr.right) - Math.max(r.left, rr.left);
               const minOverlap = Math.min(r.width, rr.width) * 0.25;
               if (overlap < minOverlap) continue;
@@ -513,19 +574,19 @@ def _find_question_text_near_element(driver, el) -> str:
 
 def _find_associated_label(driver, el) -> str:
     """
-    RÃ©cupÃ¨re le libellÃ© associÃ© Ã  un input (souvent l'OPTION pour radio/checkbox).
+    RÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©cupÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¨re le libellÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â© associÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â© ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â  un input (souvent l'OPTION pour radio/checkbox).
 
     Note Qualtrics: Il peut y avoir plusieurs <label for="id">:
-    - Un label vide (aria-hidden) pour l'icÃ´ne visuelle
+    - Un label vide (aria-hidden) pour l'icÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â´ne visuelle
     - Un label avec le vrai texte dans span.LabelWrapper
-    On itÃ¨re donc sur tous les labels et on prend le premier avec du texte.
+    On itÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¨re donc sur tous les labels et on prend le premier avec du texte.
 
     """
     try:
         el_id = el.get_attribute("id")
         if el_id:
             # Qualtrics/autres: plusieurs labels possibles, prendre celui avec du texte
-            # (le premier label peut Ãªtre vide/aria-hidden, juste pour l'icÃ´ne)
+            # (le premier label peut ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âªtre vide/aria-hidden, juste pour l'icÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â´ne)
             labels = driver.find_elements(By.XPATH, f"//label[@for='{el_id}']")
             for lbl in labels:
                 try:
@@ -547,7 +608,7 @@ def _find_associated_label(driver, el) -> str:
     except Exception:
         pass
 
-    # Ã¢Å“â€¦ NEW: pattern trÃƒÂ¨s frÃƒÂ©quent (Angular/React) : input + label(vide) + span/div texte
+    # ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ NEW: pattern trÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¨s frÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©quent (Angular/React) : input + label(vide) + span/div texte
     # Exemple: <input ...><label for="..."></label><span class="_checkboxText">Agree to all</span>
     try:
         for i in range(1, 5):
@@ -561,7 +622,7 @@ def _find_associated_label(driver, el) -> str:
     except Exception:
         pass
 
-    # fallback lÃƒÂ©ger: aria-label / name
+    # fallback lÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©ger: aria-label / name
     for attr in ("aria-label", "name", "placeholder"):
         try:
             v = el.get_attribute(attr)
@@ -570,6 +631,94 @@ def _find_associated_label(driver, el) -> str:
         except Exception:
             pass
 
+    return ""
+
+def _extract_ssi_confirmit_question(driver, el) -> str:
+    """
+    Extraction spÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©cifique pour les plateformes SSI/Confirmit (ResearchNow, Dynata surveys).
+    
+    Pattern DOM typique:
+    - Question dans <h1 id="{input_id}_text" class="qtext"> ou <div class="header-text-qs">
+    - Input dans <fieldset id="fieldset_{input_id}">
+    - La question est HORS du fieldset
+    
+    Cette fonction cherche la question via:
+    1. Element avec id="{input_id}_text"
+    2. Element avec classe "qtext" contenant label[for="{input_id}"]
+    3. Element avec classe "header-text-qs" proche du input
+    """
+    try:
+        el_id = (el.get_attribute("id") or "").strip()
+        el_name = (el.get_attribute("name") or "").strip()
+        
+        if not el_id and not el_name:
+            return ""
+        
+        key = el_id or el_name
+        
+        # 1) Chercher l'ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©lÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©ment <h1 id="{key}_text"> ou similaire
+        for tag in ("h1", "h2", "h3", "div", "span"):
+            try:
+                q_el = driver.find_element(By.CSS_SELECTOR, f"{tag}#{key}_text, {tag}[id='{key}_text']")
+                if q_el:
+                    # Chercher le texte dans .header-text-qs d'abord (plus prÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©cis)
+                    try:
+                        inner = q_el.find_element(By.CSS_SELECTOR, ".header-text-qs")
+                        txt = _norm(inner.text or inner.get_attribute("innerText") or "")
+                        if txt and not _is_validation_instruction(txt):
+                            return txt
+                    except Exception:
+                        pass
+                    
+                    # Sinon prendre le texte complet
+                    txt = _norm(q_el.text or q_el.get_attribute("innerText") or "")
+                    if txt and not _is_validation_instruction(txt):
+                        return txt
+            except Exception:
+                continue
+        
+        # 2) Chercher via label[for="{key}"] dans un conteneur .qtext
+        try:
+            label = driver.find_element(By.CSS_SELECTOR, f"label[for='{key}']")
+            if label:
+                # Remonter vers un parent .qtext ou h1/h2/h3
+                parent = label.find_element(By.XPATH, "ancestor::*[contains(@class,'qtext') or self::h1 or self::h2 or self::h3][1]")
+                if parent:
+                    # Chercher .header-text-qs dans ce parent
+                    try:
+                        inner = parent.find_element(By.CSS_SELECTOR, ".header-text-qs")
+                        txt = _norm(inner.text or inner.get_attribute("innerText") or "")
+                        if txt and not _is_validation_instruction(txt):
+                            return txt
+                    except Exception:
+                        pass
+                    
+                    # Sinon texte du parent filtrÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©
+                    txt = _norm(parent.text or parent.get_attribute("innerText") or "")
+                    if txt and not _is_validation_instruction(txt):
+                        # Nettoyer: enlever les titres secondaires si prÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©sents
+                        # Ex: "Just one more thing!\nWhat are three things..." -> garder la question
+                        lines = [l.strip() for l in txt.split("\n") if l.strip()]
+                        for line in lines:
+                            if _is_question_text(line) and not _is_validation_instruction(line):
+                                return line
+                        return txt
+        except Exception:
+            pass
+        
+        # 3) Chercher .header-text-qs proche (mÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Âªme page)
+        try:
+            headers = driver.find_elements(By.CSS_SELECTOR, ".header-text-qs, .questiontext, .question-text-qs")
+            for h in headers[:5]:  # Limiter la recherche
+                txt = _norm(h.text or h.get_attribute("innerText") or "")
+                if txt and _is_question_text(txt) and not _is_validation_instruction(txt):
+                    return txt
+        except Exception:
+            pass
+        
+    except Exception:
+        pass
+    
     return ""
 
 def _nearest_question_container(el):
@@ -594,7 +743,7 @@ def _nearest_question_container(el):
 def _extract_question_from_container(container, options: List[str]) -> str:
     """
     Extrait le texte de QUESTION (pas les options) depuis un conteneur.
-    StratÃƒÂ©gie:
+    StratÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©gie:
     - prioriser legend/h1/h2/h3/h4/label "question-like"
     - fallback: lignes de texte du conteneur
     - exclure toute ligne qui est une option connue
@@ -603,7 +752,7 @@ def _extract_question_from_container(container, options: List[str]) -> str:
 
     candidates: List[str] = []
 
-    # 1) titres/entÃƒÂªtes
+    # 1) titres/entÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âªtes
     head_xp = (
         ".//*[self::legend or self::h1 or self::h2 or self::h3 or self::h4 or self::h5 "
         "or contains(@class,'question-text') or contains(@class,'QuestionText') "
@@ -654,22 +803,22 @@ def _extract_question_from_container(container, options: List[str]) -> str:
         if _is_question_text(tl):
             sc += 3
 
-        # Ã¢Å“â€¦ Bonus "consigne explicite" (souvent le vrai libellÃƒÂ© dans les control questions)
+        # ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ Bonus "consigne explicite" (souvent le vrai libellÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â© dans les control questions)
         directive_tokens = (
             "veuillez", "merci de", "please",
             "select", "choose",
             "choisir", "choisissez",
-            "sÃƒÂ©lectionnez", "selectionnez",
+            "sÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©lectionnez", "selectionnez",
             "cochez", "cliquez",
             "indiquez", "entrez", "saisissez",
         )
         if any(tok in tlc for tok in directive_tokens):
             sc += 4
 
-        # lÃƒÂ©ger malus pour les phrases d'intro (souvent au-dessus de la vraie consigne)
+        # lÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©ger malus pour les phrases d'intro (souvent au-dessus de la vraie consigne)
         boilerplate_tokens = (
-            "la qualitÃƒÂ© de vos rÃƒÂ©ponses",
-            "standards de qualitÃƒÂ©",
+            "la qualitÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â© de vos rÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©ponses",
+            "standards de qualitÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©",
             "votre avis est important",
             "merci pour votre participation",
             "nous vous remercions",
@@ -677,7 +826,7 @@ def _extract_question_from_container(container, options: List[str]) -> str:
         if any(tok in tlc for tok in boilerplate_tokens):
             sc -= 2
 
-        # bonus si ÃƒÂ§a ressemble ÃƒÂ  une vraie question et pas ÃƒÂ  un label court
+        # bonus si ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§a ressemble ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â  une vraie question et pas ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â  un label court
         sc += min(len(tl), 120) // 20
         if "?" in tl:
             sc += 2
@@ -688,30 +837,30 @@ def _extract_question_from_container(container, options: List[str]) -> str:
 
     return best
 
-# Regex pour dÃ©tecter les noms indexÃ©s:
-# - Decipher: ans9501.0.16 â†’ prÃ©fixe ans9501.0 (sÃ©parateur .)
-# - Qualtrics: QR~QID29~6 â†’ prÃ©fixe QR~QID29 (sÃ©parateur ~)
-# Permet de regrouper checkboxes avec noms uniques mais prÃ©fixe commun.
+# Regex pour dÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©tecter les noms indexÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©s:
+# - Decipher: ans9501.0.16 ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ prÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©fixe ans9501.0 (sÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©parateur .)
+# - Qualtrics: QR~QID29~6 ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ prÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©fixe QR~QID29 (sÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©parateur ~)
+# Permet de regrouper checkboxes avec noms uniques mais prÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©fixe commun.
 _INDEXED_NAME_PATTERN = re.compile(r'^(.+)[.~]\d+$')
 
 def _group_key_for_choice(el, itype: str) -> str:
     """
-    CrÃƒÂ©e une clÃƒÂ© de groupe stable-ish pour radio/checkbox:
-    - name si prÃƒÂ©sent (meilleur)
-    - Pour checkboxes avec noms indexÃƒÂ©s (pattern prefix.N), regroupe par prÃƒÂ©fixe + conteneur
+    CrÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©e une clÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â© de groupe stable-ish pour radio/checkbox:
+    - name si prÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©sent (meilleur)
+    - Pour checkboxes avec noms indexÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©s (pattern prefix.N), regroupe par prÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©fixe + conteneur
     - aria-labelledby sinon
     - sinon conteneur question
     """
     try:
         name = (el.get_attribute("name") or "").strip()
         if name:
-            # DÃƒÂ©tecter le pattern indexÃƒÂ© pour les checkboxes (Decipher/FocusVision)
-            # Ex: "ans9501.0.16" Ã¢â€ â€™ prÃƒÂ©fixe "ans9501.0" Ã¢â€ â€™ regrouper avec "ans9501.0.17", etc.
+            # DÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©tecter le pattern indexÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â© pour les checkboxes (Decipher/FocusVision)
+            # Ex: "ans9501.0.16" ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ prÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©fixe "ans9501.0" ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ regrouper avec "ans9501.0.17", etc.
             if itype == "checkbox":
                 m = _INDEXED_NAME_PATTERN.match(name)
                 if m:
                     prefix = m.group(1)
-                    # Combine avec container_id pour ÃƒÂ©viter de fusionner des questions diffÃƒÂ©rentes
+                    # Combine avec container_id pour ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©viter de fusionner des questions diffÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©rentes
                     c = _nearest_question_container(el)
                     cid = ""
                     try:
@@ -734,6 +883,21 @@ def _group_key_for_choice(el, itype: str) -> str:
     except Exception:
         pass
 
+    # --- FIX Quantilope/React: aria-labelledby peut ÃƒÆ’Ã‚Âªtre sur un ancÃƒÆ’Ã‚Âªtre (conteneur de groupe) ---
+    # Pattern standard ARIA: le conteneur des options porte aria-labelledby vers le label de question.
+    # Ex: <div class="_question-items_..." aria-labelledby=":r0:"> contient N radios sans name.
+    try:
+        anc = el.find_element(
+            By.XPATH,
+            "ancestor::*[@aria-labelledby][1]"
+        )
+        if anc:
+            labby = (anc.get_attribute("aria-labelledby") or "").strip()
+            if labby:
+                return f"{itype}:labby:{labby}"
+    except Exception:
+        pass
+
     c = _nearest_question_container(el)
     try:
         cid = (c.get_attribute("id") or "").strip() if c is not None else ""
@@ -746,9 +910,9 @@ def _group_key_for_choice(el, itype: str) -> str:
 
 def _compute_max_select(itype: str, options: List[str]) -> int:
     """
-    RÃƒÂ¨gle mÃƒÂ©tier simple:
+    RÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¨gle mÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©tier simple:
     - radio / dropdown / text / textarea / button => 1
-    - checkbox => multi (cap ÃƒÂ  3 par dÃƒÂ©faut)
+    - checkbox => multi (cap ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â  3 par dÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©faut)
     """
     if itype == "checkbox":
         n = len(options or [])
@@ -758,7 +922,7 @@ def _compute_max_select(itype: str, options: List[str]) -> int:
     return 1
 
 # =========================
-# SÃƒÂ©lection de contexte (iframe-aware)
+# SÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©lection de contexte (iframe-aware)
 # =========================
 
 def _env_truthy(name: str, default: str = "0") -> bool:
@@ -767,7 +931,7 @@ def _env_truthy(name: str, default: str = "0") -> bool:
 
 def _wait_for_survey_dom(driver, timeout_s: float = 1.2, step_s: float = 0.2) -> bool:
     """
-    Attente courte et bornÃƒÂ©e: ÃƒÂ©vite le scan DOM trop tÃƒÂ´t (page pas encore prÃƒÂªte).
+    Attente courte et bornÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©e: ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©vite le scan DOM trop tÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â´t (page pas encore prÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âªte).
     Pas de retry infini: max ~1.2s.
     """
     t0 = time.time()
@@ -787,7 +951,7 @@ def _wait_for_survey_dom(driver, timeout_s: float = 1.2, step_s: float = 0.2) ->
                     if (!root) return false;
 
                     // On attend un "signal answerable" (inputs OU sliderpoints),
-                    // pas juste un conteneur vide rendu trop tÃƒÂ´t.
+                    // pas juste un conteneur vide rendu trop tÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â´t.
                     const answerable = root.querySelector(
                       "input[type='radio'], input[type='checkbox'], select, textarea, " +
                       "input[type='text'], input[type='number'], input[type='email'], input[type='tel'], input[type='search'], " +
@@ -850,7 +1014,7 @@ def _score_dom_context(driver) -> Dict[str, Any]:
         inputs_count = len(nodes)
         visible_count = sum(1 for el in nodes if _safe_is_displayed(el))
 
-        # Signaux question (inclut FocusVision: inputs ans* souvent masquÃƒÂ©s)
+        # Signaux question (inclut FocusVision: inputs ans* souvent masquÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©s)
         try:
             q_nodes = driver.find_elements(
                 By.CSS_SELECTOR,
@@ -892,7 +1056,7 @@ def _score_dom_context(driver) -> Dict[str, Any]:
 
         has_words = bool(
             re.search(
-                r"question|suivant|next|continue|prochaine|ÃƒÂ©tape|sondage|enquÃƒÂªte|profil|survey",
+                r"question|suivant|next|continue|prochaine|ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©tape|sondage|enquÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âªte|profil|survey",
                 t.lower(),
                 re.I,
             )
@@ -961,7 +1125,7 @@ def _score_dom_context(driver) -> Dict[str, Any]:
             );
 
             const low = t.toLowerCase();
-            const hasSurveyWords = /question|suivant|next|continue|prochaine|ÃƒÂ©tape|sondage|enquÃƒÂªte|profil|survey/i.test(low);
+            const hasSurveyWords = /question|suivant|next|continue|prochaine|ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©tape|sondage|enquÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âªte|profil|survey/i.test(low);
 
             return {textLen, inputsCount, visibleCount, qCount, visibleLabelCount, hasSurveyRoot, hasSurveyWords};
             """
@@ -977,7 +1141,7 @@ def _score_dom_context(driver) -> Dict[str, Any]:
     has_root = bool(res.get("hasSurveyRoot") or False)
     has_words = bool(res.get("hasSurveyWords") or False)
 
-    # Si le chemin JS ne remonte rien d'utile (ou a silencieusement ÃƒÂ©chouÃƒÂ©),
+    # Si le chemin JS ne remonte rien d'utile (ou a silencieusement ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©chouÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©),
     # on bascule sur un score Selenium.
     if (
         (not res)
@@ -1016,7 +1180,7 @@ def _score_dom_context(driver) -> Dict[str, Any]:
 def _select_best_frame_chain(driver, max_depth: int = 2) -> Tuple[List[int], Dict[str, Any]]:
     """
     Parcourt [] + iframes (profondeur <= max_depth) et choisit le meilleur contexte.
-    Comportement dÃƒÂ©terministe, sans retries infinis.
+    Comportement dÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©terministe, sans retries infinis.
     """
     best_chain: List[int] = []
     best_meta: Dict[str, Any] = {"score": -1}
@@ -1046,7 +1210,7 @@ def _select_best_frame_chain(driver, max_depth: int = 2) -> Tuple[List[int], Dic
 # API principale
 # =========================
 
-# --- FocusVision: answers-list (inputs radio/checkbox masquÃƒÂ©s + wrapper clickableCell) ---
+# --- FocusVision: answers-list (inputs radio/checkbox masquÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©s + wrapper clickableCell) ---
 
 def _xpath_literal(s: str) -> str:
     if "'" not in s:
@@ -1079,7 +1243,7 @@ def _extract_angular_material_radio_groups(driver, frame_chain: list[int] | None
     
     for group in radio_groups:
         try:
-            # Nom du groupe (clé de regroupement)
+            # Nom du groupe (clÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â© de regroupement)
             name = (group.get_attribute("name") or "").strip()
             if not name:
                 continue
@@ -1095,7 +1259,7 @@ def _extract_angular_material_radio_groups(driver, frame_chain: list[int] | None
             
             for btn in buttons:
                 try:
-                    # Vérifier visibilité du bouton
+                    # VÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©rifier visibilitÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â© du bouton
                     try:
                         if not btn.is_displayed():
                             continue
@@ -1105,7 +1269,7 @@ def _extract_angular_material_radio_groups(driver, frame_chain: list[int] | None
                     except Exception:
                         continue
                     
-                    # Extraire le label (plusieurs méthodes)
+                    # Extraire le label (plusieurs mÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©thodes)
                     label_txt = ""
                     
                     # 1) label.mdc-label (Angular Material standard)
@@ -1137,7 +1301,7 @@ def _extract_angular_material_radio_groups(driver, frame_chain: list[int] | None
                 except Exception:
                     continue
             
-            # Au moins 2 options pour créer un block
+            # Au moins 2 options pour crÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©er un block
             if len(options) < 2 or len(input_ids) < 2:
                 continue
             
@@ -1183,8 +1347,8 @@ def _extract_angular_material_radio_groups(driver, frame_chain: list[int] | None
                 if not k or k in option_xpath_map:
                     continue
                 
-                # XPath: cliquer sur le label visible (pas l'input masqué)
-                # Stratégie: mat-radio-button contenant cet input
+                # XPath: cliquer sur le label visible (pas l'input masquÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©)
+                # StratÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©gie: mat-radio-button contenant cet input
                 xpath_click = (
                     f"//input[@id={_xpath_literal(inp_id)}]"
                     f"/ancestor::mat-radio-button[1]"
@@ -1195,10 +1359,10 @@ def _extract_angular_material_radio_groups(driver, frame_chain: list[int] | None
             if len(clean_options) < 2:
                 continue
             
-            # Déterminer itype (toujours radio pour mat-radio-group)
+            # DÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©terminer itype (toujours radio pour mat-radio-group)
             itype = "radio"
             
-            # Créer target_id et enregistrer
+            # CrÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©er target_id et enregistrer
             group_key = f"{itype}:name:{name}"
             target_id = make_target_id("group", group_key, question)
             
@@ -1243,9 +1407,9 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
         except Exception:
             continue
 
-        # inputs souvent masquÃƒÂ©s (fir-hidden). Variante FocusVision:
-        # - clickableCell peut ÃƒÂªtre sur .element OU sur un ancÃƒÂªtre/descendant.
-        # => on ÃƒÂ©largit un peu, mais toujours sous .answers.answers-list (scope strict).
+        # inputs souvent masquÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©s (fir-hidden). Variante FocusVision:
+        # - clickableCell peut ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âªtre sur .element OU sur un ancÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âªtre/descendant.
+        # => on ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©largit un peu, mais toujours sous .answers.answers-list (scope strict).
         inputs = answers.find_elements(
             By.CSS_SELECTOR,
             "input[type='radio'], input[type='checkbox']"
@@ -1306,7 +1470,7 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
 
                 options.append(label_txt)
 
-                # IMPORTANT: on clique un wrapper cliquable (pas l'input masquÃƒÂ©).
+                # IMPORTANT: on clique un wrapper cliquable (pas l'input masquÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©).
                 # Fallback: si clickableCell absent, on remonte sur .element.
                 xp = (
                     f"//input[@id={_xpath_literal(inp_id)}]"
@@ -1352,7 +1516,7 @@ def _extract_focusvision_cardsort_block(driver, frame_chain: list[int] | None) -
 
     Objectif:
     - Construire 1 bloc radio pour la carte visible (row) avec options = buckets
-    - Enregistrer un target_id qui clique le bucket VISIBLE (pas un label/input cachÃƒÂ©)
+    - Enregistrer un target_id qui clique le bucket VISIBLE (pas un label/input cachÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©)
     """
     try:
         cardsorts = driver.find_elements(By.CSS_SELECTOR, ".sq-cardsort")
@@ -1439,13 +1603,13 @@ def _extract_focusvision_cardsort_block(driver, frame_chain: list[int] | None) -
     except Exception:
         container = None
 
-    # Question globale (ex: "Quand avez-vous achetÃƒÂ© ... ?")
+    # Question globale (ex: "Quand avez-vous achetÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â© ... ?")
     global_q = ""
     if container is not None:
         global_q = _extract_question_from_container(container, options=[]) or ""
     global_q = _norm(global_q)
 
-    # Options = buckets (ÃƒÂ©viter le compteur)
+    # Options = buckets (ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©viter le compteur)
     options: list[str] = []
     option_xpath_map: dict[str, str] = {}
 
@@ -1480,7 +1644,7 @@ def _extract_focusvision_cardsort_block(driver, frame_chain: list[int] | None) -
         if not lbl:
             try:
                 raw = _norm(b.text or b.get_attribute("innerText") or "")
-                # ex: "Aujourd'hui\n1" => garder 1ÃƒÂ¨re ligne
+                # ex: "Aujourd'hui\n1" => garder 1ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¨re ligne
                 lbl = _norm((raw.splitlines()[0] if raw else ""))
             except Exception:
                 lbl = ""
@@ -1510,10 +1674,10 @@ def _extract_focusvision_cardsort_block(driver, frame_chain: list[int] | None) -
     if not options or not option_xpath_map:
         return None
 
-    # Question envoyÃƒÂ©e ÃƒÂ  OpenAI (question globale + carte)
+    # Question envoyÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©e ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â  OpenAI (question globale + carte)
     question = global_q
     if question:
-        question = f"{question} Ã¢â‚¬â€ {card_text}"
+        question = f"{question} ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â {card_text}"
     else:
         question = card_text
 
@@ -1560,17 +1724,375 @@ def _extract_focusvision_cardsort_block(driver, frame_chain: list[int] | None) -
         "context": {"kind": "group", "group_key": group_key, "cardsort": True},
     }
 
+
+def _extract_walr_cardsort_block(driver, frame_chain: list[int] | None) -> dict | None:
+    """
+    Walr CardSort: UI avec boutons simples (pas de radios natifs).
+    
+    Pattern DOM:
+        <div id="cardSortContainer">
+            <div class="statement-box">Question text</div>
+            <div class="button-container">
+                <button class="answer-button">Option 1</button>
+                <button class="answer-button">Option 2</button>
+                ...
+            </div>
+        </div>
+    
+    Retourne un bloc radio avec XPath vers les boutons pour clic direct.
+    """
+    frame_chain = list(frame_chain or [])
+    
+    try:
+        container = driver.find_elements(By.CSS_SELECTOR, "#cardSortContainer")
+    except Exception:
+        container = []
+    
+    if not container:
+        print("[WALR_CS] Pas de #cardSortContainer")
+        return None
+    
+    container = container[0]
+    
+    # VÃ©rifier visibilitÃ© - SKIP si exception (ne pas bloquer)
+    try:
+        displayed = container.is_displayed()
+        print(f"[WALR_CS] is_displayed={displayed}")
+        if not displayed:
+            # Tenter quand mÃªme - parfois is_displayed() ment
+            pass
+    except Exception as e:
+        print(f"[WALR_CS] is_displayed exception: {e}")
+    
+    # Extraire la question depuis .statement-box
+    question = ""
+    try:
+        stmt = container.find_elements(By.CSS_SELECTOR, ".statement-box")
+        print(f"[WALR_CS] .statement-box count={len(stmt)}")
+        if stmt:
+            raw_text = stmt[0].text
+            inner_text = stmt[0].get_attribute("innerText")
+            text_content = stmt[0].get_attribute("textContent")
+            print(f"[WALR_CS] .text='{raw_text}' innerText='{inner_text}' textContent='{text_content}'")
+            question = _norm(raw_text or inner_text or text_content or "")
+    except Exception as e:
+        print(f"[WALR_CS] statement-box exception: {e}")
+    
+    # Tenter d'extraire le titre principal (optionnel, amÃ©liore la comprÃ©hension)
+    main_title = ""
+    try:
+        # Chercher le titre dans div.cQuestionText ou div.rs-ht strong
+        title_selectors = [
+            "div.cQuestionText p strong",
+            "div.rs-ht.cReg p strong", 
+            "div.rs-ht p strong",
+            "div.cQuestionText",
+        ]
+        for sel in title_selectors:
+            titles = driver.find_elements(By.CSS_SELECTOR, sel)
+            for t in titles:
+                txt = _norm(t.text or t.get_attribute("innerText") or "")
+                if txt and len(txt) > 5 and txt != question:
+                    main_title = txt
+                    print(f"[WALR_CS] main_title trouvÃ© via '{sel}': '{main_title}'")
+                    break
+            if main_title:
+                break
+    except Exception as e:
+        print(f"[WALR_CS] main_title exception (non bloquant): {e}")
+    
+    # Combiner titre + statement si disponible
+    if main_title and question:
+        question = f"{main_title} {question}"
+        print(f"[WALR_CS] question combinÃ©e: '{question}'")
+    
+    print(f"[WALR_CS] question finale='{question}'")
+    
+    if not question:
+        print("[WALR_CS] ABANDON - question vide")
+        return None
+    
+    # Extraire les options depuis button.answer-button
+    try:
+        buttons = container.find_elements(By.CSS_SELECTOR, "button.answer-button")
+    except Exception:
+        buttons = []
+    
+    print(f"[WALR_CS] buttons count={len(buttons)}")
+    
+    if len(buttons) < 2:
+        print("[WALR_CS] ABANDON - moins de 2 boutons")
+        return None
+    
+    options = []
+    option_xpath_map = {}
+    
+    for idx, btn in enumerate(buttons):
+        try:
+            raw = btn.text
+            inner = btn.get_attribute("innerText")
+            txt = _norm(raw or inner or "")
+            print(f"[WALR_CS] btn[{idx}] raw='{raw}' inner='{inner}' norm='{txt}'")
+            if not txt:
+                continue
+            
+            # XPath pour clic direct sur le bouton
+            # On utilise l'index 1-based pour XPath
+            xpath = f"//*[@id='cardSortContainer']//button[contains(@class,'answer-button')][{idx + 1}]"
+            
+            options.append(txt)
+            option_xpath_map[txt] = xpath
+        except Exception as e:
+            print(f"[WALR_CS] btn[{idx}] exception: {e}")
+            continue
+    
+    print(f"[WALR_CS] options finales={len(options)}")
+    
+    if len(options) < 2:
+        print("[WALR_CS] ABANDON - moins de 2 options extraites")
+        return None
+    
+    # Construire la clÃ© de groupe
+    group_key = f"walr_cardsort:{question[:30]}"
+    print(f"[WALR_CS] group_key='{group_key}'")
+    
+    # GÃ©nÃ©rer le target_id
+    target_id = make_target_id("walr_cardsort", group_key, question)
+    print(f"[WALR_CS] target_id={target_id}")
+    
+    # Enregistrer dans le registry
+    print(f"[WALR_CS] Appel register_target...")
+    try:
+        register_target(target_id, {
+            "kind": "walr_cardsort",
+            "group_key": group_key,
+            "question": question,
+            "option_xpath_map": option_xpath_map,
+            "frame_chain": frame_chain,
+            "walr_cardsort": True,
+        })
+        print(f"[WALR_CS] register_target OK")
+    except Exception as e:
+        print(f"[WALR_CS] register_target EXCEPTION: {type(e).__name__}: {e}")
+        import traceback
+        traceback.print_exc()
+        raise
+    
+    result = {
+        "question": question,
+        "itype": "radio",
+        "options": options,
+        "max_select": 1,
+        "target_id": target_id,
+        "context": {"kind": "group", "group_key": group_key, "walr_cardsort": True},
+    }
+    print(f"[WALR_CS] Returning result: itype={result['itype']}, options={len(result['options'])}")
+    return result
+
+
+def _extract_walr_image_eval_block(driver, frame_chain: list[int] | None) -> dict | None:
+    """
+    Walr Image Evaluation: question avec image à évaluer + boutons rsBtn.
+    
+    Pattern DOM (différent du CardSort classique):
+        <div id="*_scroll" class="rsScrollGridWrappper">
+            <div class="rsScrollGridContent">
+                <img src="https://resources.walr.com/..." />
+            </div>
+        </div>
+        <div id="*_btn" class="rsFlexBtnContainer">
+            <div class="rsBtn exclusive" alt="0"><p>Negative</p></div>
+            <div class="rsBtn exclusive" alt="1"><p>Positive</p></div>
+        </div>
+    
+    Ce type de question nécessite l'envoi de l'image à OpenAI Vision pour analyse.
+    Retourne un bloc avec requires_vision=True et image_url pour traitement spécial.
+    """
+    import hashlib
+    frame_chain = list(frame_chain or [])
+    
+    print("[WALR_IMG] Recherche pattern rsScrollGridWrappper + rsFlexBtnContainer...")
+    
+    # Chercher le conteneur de scroll avec image
+    try:
+        scroll_containers = driver.find_elements(By.CSS_SELECTOR, "div.rsScrollGridWrappper, div[class*='rsScrollGrid']")
+    except Exception:
+        scroll_containers = []
+    
+    if not scroll_containers:
+        print("[WALR_IMG] Pas de rsScrollGridWrappper trouvé")
+        return None
+    
+    # Chercher une image dans le conteneur
+    image_url = None
+    for sc in scroll_containers:
+        try:
+            # Vérifier que le conteneur est visible
+            style = sc.get_attribute("style") or ""
+            if "display: none" in style.lower() or "display:none" in style.lower():
+                continue
+            
+            # Chercher l'image
+            imgs = sc.find_elements(By.CSS_SELECTOR, "img")
+            for img in imgs:
+                src = img.get_attribute("src") or ""
+                if src and ("walr.com" in src or "resources.walr" in src or src.startswith("http")):
+                    image_url = src
+                    print(f"[WALR_IMG] Image trouvée: {image_url[:80]}...")
+                    break
+            if image_url:
+                break
+        except Exception as e:
+            print(f"[WALR_IMG] Exception scroll container: {e}")
+            continue
+    
+    if not image_url:
+        print("[WALR_IMG] Pas d'image trouvée dans rsScrollGridWrappper")
+        return None
+    
+    # Chercher les boutons rsBtn
+    try:
+        btn_containers = driver.find_elements(By.CSS_SELECTOR, "div.rsFlexBtnContainer, div[class*='rsFlexBtn']")
+    except Exception:
+        btn_containers = []
+    
+    if not btn_containers:
+        print("[WALR_IMG] Pas de rsFlexBtnContainer trouvé")
+        return None
+    
+    options = []
+    option_xpath_map = {}
+    
+    for bc in btn_containers:
+        try:
+            # Vérifier visibilité
+            style = bc.get_attribute("style") or ""
+            if "display: none" in style.lower() or "display:none" in style.lower():
+                continue
+            
+            # Chercher les boutons
+            btns = bc.find_elements(By.CSS_SELECTOR, "div.rsBtn")
+            print(f"[WALR_IMG] Trouvé {len(btns)} boutons rsBtn")
+            
+            for idx, btn in enumerate(btns):
+                try:
+                    # Extraire le texte
+                    text = _norm(btn.text or btn.get_attribute("innerText") or "")
+                    if not text:
+                        # Chercher dans les sous-éléments
+                        p_els = btn.find_elements(By.CSS_SELECTOR, "p")
+                        for p in p_els:
+                            text = _norm(p.text or p.get_attribute("innerText") or "")
+                            if text:
+                                break
+                    
+                    if not text:
+                        continue
+                    
+                    # Récupérer l'attribut alt pour identification
+                    alt = btn.get_attribute("alt") or str(idx)
+                    
+                    print(f"[WALR_IMG] btn[{idx}] alt='{alt}' text='{text}'")
+                    
+                    # Construire XPath pour le clic
+                    # On utilise la classe et l'index
+                    xpath = f"//div[contains(@class,'rsFlexBtnContainer')]//div[contains(@class,'rsBtn')][{idx + 1}]"
+                    
+                    options.append(text)
+                    option_xpath_map[text] = xpath
+                except Exception as e:
+                    print(f"[WALR_IMG] btn[{idx}] exception: {e}")
+                    continue
+            
+            if options:
+                break  # On a trouvé des options, pas besoin de continuer
+        except Exception as e:
+            print(f"[WALR_IMG] Exception btn container: {e}")
+            continue
+    
+    if len(options) < 2:
+        print(f"[WALR_IMG] ABANDON - moins de 2 options ({len(options)})")
+        return None
+    
+    print(f"[WALR_IMG] Options trouvées: {options}")
+    
+    # Construire la question implicite basée sur les options
+    # La vraie question sera déterminée par l'analyse de l'image
+    question = "Do you think the above image is positive or negative?"
+    
+    # Chercher une question explicite dans le DOM
+    try:
+        q_selectors = [
+            "h1", "h2", "h3", 
+            "div.cQuestionText", 
+            "div.rs-ht.cReg p",
+            ".question-text",
+        ]
+        for sel in q_selectors:
+            q_els = driver.find_elements(By.CSS_SELECTOR, sel)
+            for q_el in q_els:
+                txt = _norm(q_el.text or q_el.get_attribute("innerText") or "")
+                if txt and len(txt) > 10 and "?" in txt:
+                    question = txt
+                    print(f"[WALR_IMG] Question trouvée: '{question}'")
+                    break
+            if "?" in question and len(question) > 30:
+                break
+    except Exception:
+        pass
+    
+    # Construire la clé de groupe
+    group_key = f"walr_image_eval:{hashlib.md5(image_url.encode()).hexdigest()[:10]}"
+    print(f"[WALR_IMG] group_key='{group_key}'")
+    
+    # Générer le target_id
+    target_id = make_target_id("walr_image_eval", group_key, question)
+    print(f"[WALR_IMG] target_id={target_id}")
+    
+    # Enregistrer dans le registry avec les infos spéciales pour Vision
+    try:
+        register_target(target_id, {
+            "kind": "walr_image_eval",
+            "group_key": group_key,
+            "question": question,
+            "option_xpath_map": option_xpath_map,
+            "frame_chain": frame_chain,
+            "image_url": image_url,
+            "requires_vision": True,
+            "walr_image_eval": True,
+        })
+        print(f"[WALR_IMG] register_target OK")
+    except Exception as e:
+        print(f"[WALR_IMG] register_target EXCEPTION: {type(e).__name__}: {e}")
+        import traceback
+        traceback.print_exc()
+        raise
+    
+    result = {
+        "question": question,
+        "itype": "radio",
+        "options": options,
+        "max_select": 1,
+        "target_id": target_id,
+        "image_url": image_url,
+        "requires_vision": True,
+        "context": {"kind": "group", "group_key": group_key, "walr_image_eval": True},
+    }
+    print(f"[WALR_IMG] SUCCESS - returning block with {len(result['options'])} options, image_url present")
+    return result
+
+
 def _extract_askandanswer_mobile_matrix_rows(driver, frame_chain: list[int] | None) -> list[dict]:
     """
     Ask&Answer / FirstInsight (Angular Material) : matrices en mode *mobile*
     rendues comme une liste de <mat-expansion-panel class="mobile-matrix-question">.
 
-    ProblÃƒÂ¨me : les <input type=radio> des panels repliÃƒÂ©s ne sont pas "visibles" (height=0, visibility:hidden)
-    => notre extraction gÃƒÂ©nÃƒÂ©rique (qui filtre sur visibilitÃƒÂ©) ne sort que la/les lignes dÃƒÂ©jÃƒÂ  ouvertes.
+    ProblÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¨me : les <input type=radio> des panels repliÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©s ne sont pas "visibles" (height=0, visibility:hidden)
+    => notre extraction gÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©nÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©rique (qui filtre sur visibilitÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©) ne sort que la/les lignes dÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©jÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â  ouvertes.
 
-    StratÃƒÂ©gie DOM-only, prÃƒÂ©dictible:
-    - dÃƒÂ©tecter les panels mobile-matrix-question
-    - crÃƒÂ©er 1 bloc radio par ligne (header = libellÃƒÂ© de la ligne)
+    StratÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©gie DOM-only, prÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©dictible:
+    - dÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©tecter les panels mobile-matrix-question
+    - crÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©er 1 bloc radio par ligne (header = libellÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â© de la ligne)
     - options = textes des labels dans le panel
     - registry: option_xpath_map pointe sur label[for=inputId] DANS le panel
       + pre_click_xpaths pour ouvrir le panel avant de cliquer l'option
@@ -1596,7 +2118,7 @@ def _extract_askandanswer_mobile_matrix_rows(driver, frame_chain: list[int] | No
 
     blocks: list[dict] = []
 
-    # Budget (ÃƒÂ©vite prompts ÃƒÂ©normes sur des listes trÃƒÂ¨s longues)
+    # Budget (ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©vite prompts ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©normes sur des listes trÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¨s longues)
     try:
         max_rows = int(os.getenv("AA_MATRIX_MAX_ROWS", "40") or "40")
         if max_rows <= 0:
@@ -1606,8 +2128,8 @@ def _extract_askandanswer_mobile_matrix_rows(driver, frame_chain: list[int] | No
 
     def _open_panel_if_needed(panel) -> None:
         """
-        Angular Material: le contenu (radios) peut ÃƒÂªtre rendu via *ngIf uniquement quand le panel est ouvert.
-        On ouvre le panel (1 fois) puis on attend briÃƒÂ¨vement que les radios apparaissent.
+        Angular Material: le contenu (radios) peut ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âªtre rendu via *ngIf uniquement quand le panel est ouvert.
+        On ouvre le panel (1 fois) puis on attend briÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¨vement que les radios apparaissent.
         """
         try:
             hdr = panel.find_element(By.CSS_SELECTOR, "mat-expansion-panel-header")
@@ -1642,7 +2164,7 @@ def _extract_askandanswer_mobile_matrix_rows(driver, frame_chain: list[int] | No
 
         t0 = time.time()
         while time.time() - t0 < 1.2:
-            # 1) Angular Material met ÃƒÂ  jour aria-expanded sur le header (signal fiable).
+            # 1) Angular Material met ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â  jour aria-expanded sur le header (signal fiable).
             try:
                 if (hdr.get_attribute("aria-expanded") or "").strip().lower() == "true":
                     break
@@ -1665,7 +2187,7 @@ def _extract_askandanswer_mobile_matrix_rows(driver, frame_chain: list[int] | No
             if not panel_id:
                 panel_id = f"panel_{zlib.adler32((panel.get_attribute('outerHTML') or '').encode('utf-8'))}"
 
-            # libellÃƒÂ© de ligne = header
+            # libellÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â© de ligne = header
             row_label = ""
             try:
                 htxt = panel.find_elements(By.CSS_SELECTOR, "mat-expansion-panel-header .matrix-text-color")
@@ -1675,7 +2197,7 @@ def _extract_askandanswer_mobile_matrix_rows(driver, frame_chain: list[int] | No
                 row_label = ""
 
             if not row_label:
-                # fallback: 1ÃƒÂ¨re ligne du header (souvent "Nom (dÃƒÂ©tails)" puis la sÃƒÂ©lection en dessous)
+                # fallback: 1ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¨re ligne du header (souvent "Nom (dÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©tails)" puis la sÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©lection en dessous)
                 try:
                     hdrs = panel.find_elements(By.CSS_SELECTOR, "mat-expansion-panel-header")
                     if hdrs:
@@ -1711,7 +2233,7 @@ def _extract_askandanswer_mobile_matrix_rows(driver, frame_chain: list[int] | No
             opt_nodes = _collect_opt_nodes()
             options = _read_options(opt_nodes)
 
-            # Si le panel est repliÃƒÂ©, Selenium peut retourner "" pour du texte non visible.
+            # Si le panel est repliÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©, Selenium peut retourner "" pour du texte non visible.
             # On force une ouverture (1 fois) puis on relit.
             if not options:
                 _open_panel_if_needed(panel)
@@ -1729,7 +2251,7 @@ def _extract_askandanswer_mobile_matrix_rows(driver, frame_chain: list[int] | No
                 except Exception:
                     rbs = []
 
-                # 1) mapping stable : on prÃƒÂ©fÃƒÂ¨re l'attribut @value de l'input (beaucoup plus robuste que le texte)
+                # 1) mapping stable : on prÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©fÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¨re l'attribut @value de l'input (beaucoup plus robuste que le texte)
                 for rb in rbs:
                     try:
                         lab_txt = ""
@@ -1778,7 +2300,7 @@ def _extract_askandanswer_mobile_matrix_rows(driver, frame_chain: list[int] | No
                         continue
 
                 # 2) fallback: certains DOM (ex: mat-table) n'ont pas le texte dans chaque radio.
-                #    Dans ce cas, on mappe par position (ordre des options) -> n-iÃƒÂ¨me mat-radio-button du panel.
+                #    Dans ce cas, on mappe par position (ordre des options) -> n-iÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¨me mat-radio-button du panel.
                 if not m and options:
                     try:
                         pid = _xpath_literal(panel_id)
@@ -1804,10 +2326,10 @@ def _extract_askandanswer_mobile_matrix_rows(driver, frame_chain: list[int] | No
                 continue
 
             group_key = f"aa_mobile_matrix_row:{panel_id}"
-            question = f"{global_q} Ã¢â‚¬â€ {row_label}" if global_q else row_label
+            question = f"{global_q} ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â {row_label}" if global_q else row_label
             target_id = make_target_id("group", group_key, question)
 
-            # prÃƒÂ©-clic : ouvrir le panel avant clic option
+            # prÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©-clic : ouvrir le panel avant clic option
             pre_click_xpaths = []
             try:
                 pid = _xpath_literal(panel_id)
@@ -1848,12 +2370,12 @@ def _extract_askandanswer_selection_list_questions(driver, frame_chain: list[int
     """
     Ask&Answer / FirstInsight (Angular Material) : questions rendues via <mat-selection-list>.
 
-    ProblÃƒÂ¨me:
-    - les options ne sont pas des <input type=checkbox>, donc l'extraction gÃƒÂ©nÃƒÂ©rique (radios/checkbox) ne voit rien.
-    - le seul <input> prÃƒÂ©sent est souvent l'option "Autre (veuillez prÃƒÂ©ciser)" => on extrait une fausse question.
+    ProblÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¨me:
+    - les options ne sont pas des <input type=checkbox>, donc l'extraction gÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©nÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©rique (radios/checkbox) ne voit rien.
+    - le seul <input> prÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©sent est souvent l'option "Autre (veuillez prÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©ciser)" => on extrait une fausse question.
 
-    StratÃƒÂ©gie DOM-only, stricte et non-invasive:
-    - ne s'active que si on dÃƒÂ©tecte un <app-survey-page> ET des <mat-selection-list> sous appQuestionContainer
+    StratÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©gie DOM-only, stricte et non-invasive:
+    - ne s'active que si on dÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©tecte un <app-survey-page> ET des <mat-selection-list> sous appQuestionContainer
     - retourne 1 bloc par selection-list:
         - question = mat-card-title
         - options = texte des mat-list-option (fallback mat-label pour l'option Autre)
@@ -1884,7 +2406,7 @@ def _extract_askandanswer_selection_list_questions(driver, frame_chain: list[int
 
     blocks: list[dict] = []
 
-    # Budget (ÃƒÂ©vite prompts ÃƒÂ©normes si provider change et renvoie une liste trÃƒÂ¨s longue)
+    # Budget (ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©vite prompts ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©normes si provider change et renvoie une liste trÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¨s longue)
     try:
         max_lists = int(os.getenv("AA_SELECTION_LIST_MAX", "10") or "10")
         if max_lists <= 0:
@@ -1927,7 +2449,7 @@ def _extract_askandanswer_selection_list_questions(driver, frame_chain: list[int
             if not question:
                 continue
 
-            # itype : checkbox (multi) par dÃƒÂ©faut; si aria-multiselectable=false => radio
+            # itype : checkbox (multi) par dÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©faut; si aria-multiselectable=false => radio
             itype = "checkbox"
             try:
                 am = (sl.get_attribute("aria-multiselectable") or "").strip().lower()
@@ -1947,7 +2469,7 @@ def _extract_askandanswer_selection_list_questions(driver, frame_chain: list[int
                     if label:
                         label = _norm(label.splitlines()[0])
 
-                    # fallback robuste pour l'option "Autre (veuillez prÃƒÂ©ciser)"
+                    # fallback robuste pour l'option "Autre (veuillez prÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©ciser)"
                     if not label:
                         try:
                             labs = opt.find_elements(By.CSS_SELECTOR, "mat-label")
@@ -2031,14 +2553,14 @@ def _extract_askandanswer_selection_list_questions(driver, frame_chain: list[int
 def _extract_cmix_radio_question_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
     """CMIX (survey.cmix.com) : extraction DOM-only des questions radio.
 
-    Bug visÃƒÂ© (capture CMIX): la page affiche des radios (ex: politique de confidentialitÃƒÂ©)
-    mais l'extraction gÃƒÂ©nÃƒÂ©rique peut retourner 0 question_blocks, dÃƒÂ©clenchant le fallback
+    Bug visÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â© (capture CMIX): la page affiche des radios (ex: politique de confidentialitÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©)
+    mais l'extraction gÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©nÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©rique peut retourner 0 question_blocks, dÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©clenchant le fallback
     CTA-only et sautant la question.
 
-    StratÃƒÂ©gie:
-    - activation stricte uniquement si le markup CMIX est dÃƒÂ©tectÃƒÂ© (.cm-question-wrapper + .cm-radio-label)
+    StratÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©gie:
+    - activation stricte uniquement si le markup CMIX est dÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©tectÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â© (.cm-question-wrapper + .cm-radio-label)
     - 1 bloc par groupe radio (name) dans un wrapper
-    - mapping option->xpath en privilÃƒÂ©giant le label texte (.cm-radio-label) plutÃƒÂ´t que le label "bouton" (.cm-radio-input)
+    - mapping option->xpath en privilÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©giant le label texte (.cm-radio-label) plutÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â´t que le label "bouton" (.cm-radio-input)
     """
 
     frame_chain = list(frame_chain or [])
@@ -2062,7 +2584,7 @@ def _extract_cmix_radio_question_blocks(driver, frame_chain: list[int] | None) -
 
     for w in wrappers[:25]:
         try:
-            # wrapper visible (ÃƒÂ©vite templates hors ÃƒÂ©cran)
+            # wrapper visible (ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©vite templates hors ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©cran)
             try:
                 if not w.is_displayed():
                     continue
@@ -2079,7 +2601,7 @@ def _extract_cmix_radio_question_blocks(driver, frame_chain: list[int] | None) -
                 question = ""
 
             if not question:
-                # fallback (rare): premiÃƒÂ¨re ligne non vide du wrapper
+                # fallback (rare): premiÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¨re ligne non vide du wrapper
                 raw = _norm(w.text or w.get_attribute("innerText") or "")
                 if raw:
                     question = _norm(raw.splitlines()[0])
@@ -2105,7 +2627,7 @@ def _extract_cmix_radio_question_blocks(driver, frame_chain: list[int] | None) -
                 except Exception:
                     pass
 
-                # On accepte les inputs masquÃƒÂ©s si le label texte existe
+                # On accepte les inputs masquÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©s si le label texte existe
                 try:
                     rid = (r.get_attribute("id") or "").strip()
                     rname = (r.get_attribute("name") or "").strip()
@@ -2141,7 +2663,7 @@ def _extract_cmix_radio_question_blocks(driver, frame_chain: list[int] | None) -
                         if not label:
                             continue
 
-                        # XPath stable: label texte CMIX (ÃƒÂ©vite le label .cm-radio-input sans texte)
+                        # XPath stable: label texte CMIX (ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©vite le label .cm-radio-input sans texte)
                         rid_lit = _xpath_literal(rid)
                         xp = (
                             f"(//label[contains(concat(' ',normalize-space(@class),' '),' cm-radio-label ') and @for={rid_lit}])[1]"
@@ -2199,7 +2721,7 @@ def _extract_areyounet_matrix_blocks(driver, frame_chain: list[int] | None) -> l
     blocks: list[dict] = []
     frame_chain = frame_chain or []
 
-    # DÃƒÂ©tection stricte: prÃƒÂ©sence de MatriceViewElement
+    # DÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©tection stricte: prÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©sence de MatriceViewElement
     try:
         matrices = driver.find_elements(By.CSS_SELECTOR, "div.MatriceViewElement")
     except Exception:
@@ -2211,7 +2733,7 @@ def _extract_areyounet_matrix_blocks(driver, frame_chain: list[int] | None) -> l
     rx_radio = re.compile(r"switch_radio\((?:'|\")(?P<qname>[^'\"]+)(?:'|\")\s*,\s*(?P<idx>\d+)")
     rx_checkbox = re.compile(r"switch_checkbox\((?:'|\")(?P<qname>[^'\"]+)(?:'|\")\s*,\s*(?P<idx>\d+)")
     
-    # DÃ©duplication: Ã©viter de traiter le mÃªme qname deux fois (tables imbriquÃ©es, etc.)
+    # DÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©duplication: ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©viter de traiter le mÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âªme qname deux fois (tables imbriquÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©es, etc.)
     seen_qnames: set[str] = set()
 
     for matrix in matrices:
@@ -2235,7 +2757,7 @@ def _extract_areyounet_matrix_blocks(driver, frame_chain: list[int] | None) -> l
             if not title:
                 continue
 
-            # 2) Extraire les headers de colonnes (options communes ÃƒÂ  toutes les lignes)
+            # 2) Extraire les headers de colonnes (options communes ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â  toutes les lignes)
             col_headers: list[str] = []
             try:
                 header_cells = matrix.find_elements(By.CSS_SELECTOR, "td.tableHeader")
@@ -2294,12 +2816,12 @@ def _extract_areyounet_matrix_blocks(driver, frame_chain: list[int] | None) -> l
                     if not qname:
                         continue
 
-                    # DÃ©duplication: Ã©viter de traiter le mÃªme qname deux fois
+                    # DÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©duplication: ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©viter de traiter le mÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âªme qname deux fois
                     if qname in seen_qnames:
                         continue
                     seen_qnames.add(qname)
 
-                    # Construire la question complÃƒÂ¨te
+                    # Construire la question complÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¨te
                     question = f"{title} [{row_label}]"
 
                     # Construire option_xpath_map: option_label -> xpath du td cliquable
@@ -2312,13 +2834,13 @@ def _extract_areyounet_matrix_blocks(driver, frame_chain: list[int] | None) -> l
 
                         # XPath pour cibler le td avec onclick contenant qname et idx
                         func_name = "switch_radio" if cell_type == "radio" else "switch_checkbox"
-                        # XPath strict: matcher 'QNAME',IDX pour Ã©viter les matchs partiels (ex: QA03:221621_1 vs QA03:221621_11)
+                        # XPath strict: matcher 'QNAME',IDX pour ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©viter les matchs partiels (ex: QA03:221621_1 vs QA03:221621_11)
                         xp = (
                             f"//td[contains(@onclick,\"{func_name}('{qname}',{idx}\")]"
                         )
                         option_xpath_map[_norm_key(header)] = xp
 
-                        # Extraire la valeur associÃ©e (input hidden *_rad_{idx}_value ou *_chk_{idx}_value)
+                        # Extraire la valeur associÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©e (input hidden *_rad_{idx}_value ou *_chk_{idx}_value)
                         try:
                             suffix = "rad" if cell_type == "radio" else "chk"
                             v_name = f"{qname}_{suffix}_{idx}_value"
@@ -2376,7 +2898,7 @@ def _extract_areyounet_switch_radio_blocks(driver, frame_chain: list[int] | None
     blocks: list[dict] = []
     frame_chain = frame_chain or []
 
-    # DÃƒÂ©tection STRICTE pour ne pas impacter les cas canoniques.
+    # DÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©tection STRICTE pour ne pas impacter les cas canoniques.
     try:
         containers = driver.find_elements(By.CSS_SELECTOR, "td[id^='QCB_'], div[id^='QCB_']")
     except Exception:
@@ -2405,7 +2927,7 @@ def _extract_areyounet_switch_radio_blocks(driver, frame_chain: list[int] | None
             q_el = cont.find_element(By.CSS_SELECTOR, "p.titleQuestionElement .elementTitle")
             question = _norm(q_el.text or q_el.get_attribute("innerText") or "")
         except Exception:
-            # fallback cheap: premiÃƒÂ¨re ligne "question-like"
+            # fallback cheap: premiÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¨re ligne "question-like"
             try:
                 raw = cont.get_attribute("innerText") or cont.text or ""
                 for line in (raw.splitlines() if raw else []):
@@ -2443,14 +2965,14 @@ def _extract_areyounet_switch_radio_blocks(driver, frame_chain: list[int] | None
                 continue
 
             # ------------------------------------------------------------
-            # AreYouNet: toutes les options peuvent ÃƒÂªtre sur la MÃƒÅ ME row.
+            # AreYouNet: toutes les options peuvent ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âªtre sur la MÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ME row.
             # On cherche le label dans le TD courant ou le TD sibling suivant,
             # PAS dans toute la row (sinon on prend le mauvais label).
             # ------------------------------------------------------------
             label = ""
             value = ""
 
-            # 1) Chercher span.elementText dans le TD courant (cas oÃƒÂ¹ onclick est sur le TD label)
+            # 1) Chercher span.elementText dans le TD courant (cas oÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¹ onclick est sur le TD label)
             try:
                 sp = el.find_elements(By.CSS_SELECTOR, "span.elementText")
                 if sp:
@@ -2458,7 +2980,7 @@ def _extract_areyounet_switch_radio_blocks(driver, frame_chain: list[int] | None
             except Exception:
                 pass
 
-            # 2) Si pas trouvÃƒÂ©, chercher dans le TD sibling suivant immÃƒÂ©diat
+            # 2) Si pas trouvÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©, chercher dans le TD sibling suivant immÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©diat
             if not label:
                 try:
                     next_td = el.find_element(By.XPATH, "following-sibling::td[1]")
@@ -2476,14 +2998,14 @@ def _extract_areyounet_switch_radio_blocks(driver, frame_chain: list[int] | None
                 except Exception:
                     pass
 
-            # option value (utile pour valider la sÃƒÂ©lection cÃƒÂ´tÃƒÂ© dispatcher)
-            # Chercher dans le TD courant ou remonter ÃƒÂ  la row si nÃƒÂ©cessaire
+            # option value (utile pour valider la sÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©lection cÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â´tÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â© dispatcher)
+            # Chercher dans le TD courant ou remonter ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â  la row si nÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©cessaire
             try:
                 v_name = f"{qname}_rad_{idx}_value"
                 v_el = el.find_element(By.CSS_SELECTOR, f"input[name='{v_name}']")
                 value = (v_el.get_attribute("value") or "").strip()
             except Exception:
-                # Fallback: chercher dans la row entiÃƒÂ¨re pour le value hidden
+                # Fallback: chercher dans la row entiÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¨re pour le value hidden
                 try:
                     row = el.find_element(By.XPATH, "ancestor::tr[1]")
                     v_el = row.find_element(By.CSS_SELECTOR, f"input[name='{v_name}']")
@@ -2498,7 +3020,7 @@ def _extract_areyounet_switch_radio_blocks(driver, frame_chain: list[int] | None
 
         for qname, idx_map in by_qname.items():
             if len(idx_map) < 2:
-                continue  # ÃƒÂ©vite de prendre un bruit isolÃƒÂ©
+                continue  # ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©vite de prendre un bruit isolÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©
 
             options = [idx_map[i]["label"] for i in sorted(idx_map.keys()) if idx_map[i].get("label")]
             if len(options) < 2:
@@ -2543,7 +3065,7 @@ def _extract_areyounet_switch_radio_blocks(driver, frame_chain: list[int] | None
                     "question": question,
                     "option_xpath_map": option_xpath_map,
                     "frame_chain": frame_chain,
-                    # AreYouNet: sÃƒÂ©lection stockÃƒÂ©e dans un input hidden name=qname
+                    # AreYouNet: sÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©lection stockÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©e dans un input hidden name=qname
                     "ayn_field_name": qname,
                     "ayn_value_map": ayn_value_map,
                 },
@@ -2564,14 +3086,14 @@ def _extract_areyounet_switch_radio_blocks(driver, frame_chain: list[int] | None
 
 def _extract_areyounet_switch_checkbox_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
     """
-    AreYouNet CHECKBOX (areyounet.com / runet) : checkboxes simulÃ©es via onclick switch_checkbox().
+    AreYouNet CHECKBOX (areyounet.com / runet) : checkboxes simulÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©es via onclick switch_checkbox().
     Pattern: <td onclick="switch_checkbox('QA04:215604',0,...)"><img class="img_checkbox">
-    Les vrais inputs sont tous hidden ; la sÃ©lection se fait via JS sur les images.
+    Les vrais inputs sont tous hidden ; la sÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©lection se fait via JS sur les images.
     """
     blocks: list[dict] = []
     frame_chain = frame_chain or []
 
-    # DÃ©tection STRICTE : conteneurs AreYouNet uniquement
+    # DÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©tection STRICTE : conteneurs AreYouNet uniquement
     try:
         containers = driver.find_elements(By.CSS_SELECTOR, "td[id^='QCB_'], div[id^='QCB_']")
     except Exception:
@@ -2600,7 +3122,7 @@ def _extract_areyounet_switch_checkbox_blocks(driver, frame_chain: list[int] | N
             q_el = cont.find_element(By.CSS_SELECTOR, "p.titleQuestionElement .elementTitle")
             question = _norm(q_el.text or q_el.get_attribute("innerText") or "")
         except Exception:
-            # fallback: premiÃ¨re ligne "question-like"
+            # fallback: premiÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¨re ligne "question-like"
             try:
                 raw = cont.get_attribute("innerText") or cont.text or ""
                 for line in (raw.splitlines() if raw else []):
@@ -2637,7 +3159,7 @@ def _extract_areyounet_switch_checkbox_blocks(driver, frame_chain: list[int] | N
             if not qname:
                 continue
 
-            # AreYouNet: options sur la MÃŠME row.
+            # AreYouNet: options sur la MÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â ME row.
             # Chercher le label dans le TD courant ou le TD sibling suivant.
             label = ""
             value = ""
@@ -2650,7 +3172,7 @@ def _extract_areyounet_switch_checkbox_blocks(driver, frame_chain: list[int] | N
             except Exception:
                 pass
 
-            # 2) TD sibling suivant immÃ©diat
+            # 2) TD sibling suivant immÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©diat
             if not label:
                 try:
                     next_td = el.find_element(By.XPATH, "following-sibling::td[1]")
@@ -2674,7 +3196,7 @@ def _extract_areyounet_switch_checkbox_blocks(driver, frame_chain: list[int] | N
                 v_el = el.find_element(By.CSS_SELECTOR, f"input[name='{v_name}']")
                 value = (v_el.get_attribute("value") or "").strip()
             except Exception:
-                # Fallback: chercher dans la row entiÃ¨re
+                # Fallback: chercher dans la row entiÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¨re
                 try:
                     row = el.find_element(By.XPATH, "ancestor::tr[1]")
                     v_el = row.find_element(By.CSS_SELECTOR, f"input[name='{v_name}']")
@@ -2733,7 +3255,7 @@ def _extract_areyounet_switch_checkbox_blocks(driver, frame_chain: list[int] | N
                     "question": question,
                     "option_xpath_map": option_xpath_map,
                     "frame_chain": frame_chain,
-                    # AreYouNet: sÃ©lection stockÃ©e dans input hidden name=qname
+                    # AreYouNet: sÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©lection stockÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©e dans input hidden name=qname
                     "ayn_field_name": qname,
                     "ayn_value_map": ayn_value_map,
                 },
@@ -2752,6 +3274,184 @@ def _extract_areyounet_switch_checkbox_blocks(driver, frame_chain: list[int] | N
 
     return blocks
 
+
+def _extract_cloudresearch_sentry_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
+    """CloudResearch/Sentry : extraction DOM-only des questions ÃƒÂ  choix unique.
+
+    Plateforme CloudResearch utilise Vue.js avec des divs role="button" comme boutons radio.
+    Structure DOM typique:
+    - Conteneur: #sentry ou .cr-question-card
+    - Question: h1[id*="QuestionLabel"] ou h1.question-prompt
+    - Options: .choice-option[role="button"] avec texte dans .cr-ct ou div[class*="answer-choice"]
+
+    Gate strict: n'active l'extracteur que si le pattern CloudResearch est dÃƒÂ©tectÃƒÂ©
+    (.choice-option[role="button"] + #sentry ou .cr-question-card).
+    """
+
+    frame_chain = list(frame_chain or [])
+
+    # Gate strict: CloudResearch/Sentry pattern
+    try:
+        # VÃƒÂ©rifier la prÃƒÂ©sence du pattern CloudResearch
+        sentry_marker = driver.find_elements(By.CSS_SELECTOR, "#sentry, .cr-question-card")
+        choice_btns = driver.find_elements(By.CSS_SELECTOR, ".choice-option[role='button']")
+        if not sentry_marker or not choice_btns:
+            return []
+    except Exception:
+        return []
+
+    blocks: list[dict] = []
+
+    try:
+        # Extraction de la question
+        question = ""
+
+        # 1) PrioritÃƒÂ©: h1 avec classe question-prompt ou ID contenant "Question"
+        question_selectors = [
+            "h1[class*='question-prompt']",
+            "h1[id*='QuestionLabel']",
+            "h1[id*='questionLabel']",
+            "h1.cr-custom-qt",
+            ".cr-question-card h1",
+            "#mainContent h1",
+        ]
+        for sel in question_selectors:
+            try:
+                q_els = driver.find_elements(By.CSS_SELECTOR, sel)
+                for q_el in q_els:
+                    try:
+                        if not q_el.is_displayed():
+                            continue
+                        t = _norm(q_el.text or q_el.get_attribute("innerText") or "")
+                        if t and len(t) >= 5:
+                            question = t
+                            break
+                    except Exception:
+                        continue
+                if question:
+                    break
+            except Exception:
+                continue
+
+        if not question:
+            return []
+
+        # Extraction des options (boutons radio simulÃƒÂ©s)
+        options: list[str] = []
+        option_xpath_map: dict[str, str] = {}
+
+        for btn in choice_btns:
+            try:
+                # VÃƒÂ©rifier que le bouton est visible
+                try:
+                    if not btn.is_displayed():
+                        continue
+                except Exception:
+                    pass
+
+                # Extraire le texte de l'option
+                # PrioritÃƒÂ©: .cr-ct ou div[class*="answer-choice"]
+                opt_text = ""
+
+                # 1) Chercher dans .cr-ct (CloudResearch content)
+                try:
+                    cr_ct = btn.find_elements(By.CSS_SELECTOR, ".cr-ct, [class*='answer-choice']")
+                    if cr_ct:
+                        opt_text = _norm(cr_ct[0].text or cr_ct[0].get_attribute("innerText") or "")
+                except Exception:
+                    pass
+
+                # 2) Fallback: texte du bouton sans les SVG
+                if not opt_text:
+                    try:
+                        # RÃƒÂ©cupÃƒÂ©rer le texte de tous les divs enfants sauf ceux contenant SVG
+                        text_divs = btn.find_elements(By.CSS_SELECTOR, "div:not(:has(svg))")
+                        for td in text_divs:
+                            t = _norm(td.text or "")
+                            if t and len(t) >= 1:
+                                opt_text = t
+                                break
+                    except Exception:
+                        pass
+
+                # 3) Dernier recours: texte direct du bouton
+                if not opt_text:
+                    raw = _norm(btn.text or btn.get_attribute("innerText") or "")
+                    if raw:
+                        opt_text = raw
+
+                if not opt_text or len(opt_text) < 1:
+                    continue
+
+                # Ãƒâ€°viter les doublons et textes meta
+                opt_lc = _norm_lc(opt_text)
+                if opt_lc in {"next", "suivant", "continue", "continuer", "please select"}:
+                    continue
+
+                # XPath stable pour ce bouton
+                # PrioritÃƒÂ©: tabindex (unique par bouton dans CloudResearch)
+                xp = ""
+                try:
+                    tabidx = (btn.get_attribute("tabindex") or "").strip()
+                    if tabidx:
+                        xp = f"(//*[contains(@class,'choice-option') and @role='button' and @tabindex='{tabidx}'])[1]"
+                except Exception:
+                    pass
+
+                # Fallback: XPath absolu
+                if not xp:
+                    xp = _best_xpath_for_element(driver, btn)
+
+                if not xp:
+                    continue
+
+                nk = _norm_key(opt_text)
+                if nk in option_xpath_map:
+                    continue
+
+                option_xpath_map[nk] = xp
+                options.append(opt_text)
+
+            except Exception:
+                continue
+
+        if len(options) < 2 or not option_xpath_map:
+            return []
+
+        # CrÃƒÂ©er le bloc
+        group_key = f"cloudresearch_sentry:radio:q:{_norm_key(question[:50])}"
+        target_id = make_target_id("group", group_key, question)
+
+        register_target(
+            target_id,
+            {
+                "kind": "group",
+                "itype": "radio",
+                "group_key": group_key,
+                "question": question,
+                "option_xpath_map": option_xpath_map,
+                "frame_chain": frame_chain,
+                "cloudresearch_sentry": True,
+            },
+        )
+
+        blocks.append(
+            {
+                "question": question,
+                "itype": "radio",
+                "options": options,
+                "max_select": 1,
+                "target_id": target_id,
+                "context": {"kind": "group", "group_key": group_key, "cloudresearch_sentry": True},
+            }
+        )
+
+    except Exception:
+        pass
+
+    return blocks
+
+
 def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any]]:
     """
     Analyse le DOM courant et retourne une liste de QuestionBlock.
@@ -2763,7 +3463,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
     clear_registry()
 
     # --- 0) FocusVision cardsort (UI visible) ---
-    # Si prÃƒÂ©sent, on prÃƒÂ©fÃƒÂ¨re cette stratÃƒÂ©gie (1 seule carte active) ÃƒÂ  l'extraction radio/checkbox cachÃƒÂ©e.
+    # Si prÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©sent, on prÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©fÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¨re cette stratÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©gie (1 seule carte active) ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â  l'extraction radio/checkbox cachÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©e.
     try:
         cs_block = _extract_focusvision_cardsort_block(driver, frame_chain)
         if cs_block:
@@ -2771,8 +3471,38 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
     except Exception:
         pass
 
+
+    # --- 0a-bis) Walr Image Evaluation (rsScrollGridWrappper + rsBtn) ---
+    # Pattern: Image à évaluer + boutons Negative/Positive
+    # Nécessite envoi de l'image à OpenAI Vision pour analyse.
+    # DOIT être testé AVANT le CardSort car pas de #cardSortContainer
+    try:
+        walr_img_block = _extract_walr_image_eval_block(driver, frame_chain)
+        print(f"[WALR_IMG] bloc retourné: {walr_img_block is not None}")
+        if walr_img_block:
+            print(f"[WALR_IMG] SUCCESS - returning block with {len(walr_img_block.get('options', []))} options")
+            return [walr_img_block]
+    except Exception as e:
+        print(f"[WALR_IMG] EXCEPTION dans appel: {type(e).__name__}: {e}")
+        import traceback
+        traceback.print_exc()
+
+    # --- 0a) Walr CardSort (button.answer-button) ---
+    # Pattern: #cardSortContainer > .statement-box + button.answer-button
+    # Pas de radios natifs, on clique directement sur les boutons.
+    try:
+        walr_cs_block = _extract_walr_cardsort_block(driver, frame_chain)
+        print(f"[WALR_CS] bloc retournÃ©: {walr_cs_block is not None}")
+        if walr_cs_block:
+            print(f"[WALR_CS] SUCCESS - returning block with {len(walr_cs_block.get('options', []))} options")
+            return [walr_cs_block]
+    except Exception as e:
+        print(f"[WALR_CS] EXCEPTION dans appel: {type(e).__name__}: {e}")
+        import traceback
+        traceback.print_exc()
+
     # --- 0b) Ask&Answer / FirstInsight : matrice mobile (expansion panels) ---
-    # Objectif: extraire TOUTES les lignes mÃƒÂªme si les panels sont repliÃƒÂ©s (inputs non visibles).
+    # Objectif: extraire TOUTES les lignes mÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âªme si les panels sont repliÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©s (inputs non visibles).
     try:
         aa_blocks = _extract_askandanswer_mobile_matrix_rows(driver, frame_chain)
         if aa_blocks:
@@ -2781,7 +3511,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         pass
 
     # --- 0c) Ask&Answer / FirstInsight : listes multi (mat-selection-list) ---
-    # Objectif: ÃƒÂ©viter de prendre l'input 'Autre (veuillez prÃƒÂ©ciser)' comme une question.
+    # Objectif: ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©viter de prendre l'input 'Autre (veuillez prÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©ciser)' comme une question.
     try:
         aa_sl_blocks = _extract_askandanswer_selection_list_questions(driver, frame_chain)
         if aa_sl_blocks:
@@ -2790,7 +3520,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         pass
 
     # --- 0d) CMIX (survey.cmix.com) : radios rendus via .cm-question-wrapper ---
-    # Objectif: ÃƒÂ©viter le fallback CTA-only quand les radios sont visibles mais non extraites.
+    # Objectif: ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©viter le fallback CTA-only quand les radios sont visibles mais non extraites.
     try:
         cmix_blocks = _extract_cmix_radio_question_blocks(driver, frame_chain)
         if cmix_blocks:
@@ -2798,7 +3528,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
     except Exception:
         pass
 
-    # --- 0e) AreYouNet MATRICE (areyounet.com / runet) : grilles frÃƒÂ©quence/satisfaction ---
+    # --- 0e) AreYouNet MATRICE (areyounet.com / runet) : grilles frÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©quence/satisfaction ---
     # Objectif: extraire les matrices (1 ligne = 1 question radio).
     try:
         ayn_matrix_blocks = _extract_areyounet_matrix_blocks(driver, frame_chain)
@@ -2808,7 +3538,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         pass
 
     # --- 0f) AreYouNet SIMPLE (areyounet.com / runet) : radios via onclick switch_radio() ---
-    # Objectif: Ã©viter le fallback vision alors que le DOM est exploitable (options Oui/Non).
+    # Objectif: ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©viter le fallback vision alors que le DOM est exploitable (options Oui/Non).
     try:
         ayn_blocks = _extract_areyounet_switch_radio_blocks(driver, frame_chain)
         if ayn_blocks:
@@ -2817,7 +3547,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         pass
 
     # --- 0g) AreYouNet CHECKBOX (areyounet.com / runet) : checkboxes via onclick switch_checkbox() ---
-    # Objectif: extraire les checkboxes simulÃ©es (img + hidden inputs) sans fallback vision.
+    # Objectif: extraire les checkboxes simulÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©es (img + hidden inputs) sans fallback vision.
     try:
         ayn_chk_blocks = _extract_areyounet_switch_checkbox_blocks(driver, frame_chain)
         if ayn_chk_blocks:
@@ -2825,7 +3555,17 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
     except Exception:
         pass
 
-    # --- 1) Radios / checkboxes groupÃ©s ---
+    # --- 0h) CloudResearch/Sentry : divs role="button" comme boutons radio ---
+    # Objectif: extraire les questions CloudResearch/Sentry qui utilisent Vue.js
+    # avec des divs cliquables au lieu d'inputs radio traditionnels.
+    try:
+        cr_blocks = _extract_cloudresearch_sentry_blocks(driver, frame_chain)
+        if cr_blocks:
+            return cr_blocks
+    except Exception:
+        pass
+
+    # --- 1) Radios / checkboxes groupÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©s ---
     try:
         choice_els = driver.find_elements(
             By.CSS_SELECTOR,
@@ -2834,9 +3574,9 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
     except Exception:
         choice_els = []
 
-    # Ã¢Å“â€¦ Anti-bruit (Decipher/FIR, etc.) :
-    # Des icÃƒÂ´nes SVG portent role="radio"/"checkbox" mais ne sont pas des inputs actionnables.
-    # Si on les garde, on duplique les groupes => OpenAI renvoie Q1/Q2 pour la mÃƒÂªme question.
+    # ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ Anti-bruit (Decipher/FIR, etc.) :
+    # Des icÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â´nes SVG portent role="radio"/"checkbox" mais ne sont pas des inputs actionnables.
+    # Si on les garde, on duplique les groupes => OpenAI renvoie Q1/Q2 pour la mÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âªme question.
     try:
         has_real_inputs = any((e.tag_name or "").lower() == "input" for e in choice_els)
         if has_real_inputs:
@@ -2859,7 +3599,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             itype = _detect_itype(el)
             if itype not in ("radio", "checkbox"):
                 continue
-            # Anti-bruit: ignorer inputs utilitaires/masquÃƒÂ©s et non actionnables
+            # Anti-bruit: ignorer inputs utilitaires/masquÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©s et non actionnables
             try:
                 if _looks_like_system_field(el):
                     continue
@@ -2877,7 +3617,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
 
     for k, els in groups.items():
         try:
-            # type homogÃƒÂ¨ne dans une clÃƒÂ© donnÃƒÂ©e
+            # type homogÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¨ne dans une clÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â© donnÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©e
             itype = "radio" if k.startswith("radio:") else "checkbox"
 
             # options = labels des inputs
@@ -2886,16 +3626,16 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                 lbl = _find_associated_label(driver, e)
                 if lbl:
                     options.append(lbl)
-            # dÃƒÂ©doublonnage conservant l'ordre
+            # dÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©doublonnage conservant l'ordre
             options = list(dict.fromkeys([o for o in options if o]))
 
             # question = depuis conteneur (et on exclut options)
             container = _nearest_question_container(els[0])
             question = _extract_question_from_container(container, options) if container else ""
 
-            # Ã¢Å“â€¦ Fallback DOM: question parfois hors container (ex: <h2 id="label"> au-dessus du <form>)
+            # ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ Fallback DOM: question parfois hors container (ex: <h2 id="label"> au-dessus du <form>)
             if not question:
-                # Ã¢Å“â€¦ Fallback direct: cas trÃƒÂ¨s frÃƒÂ©quent (Cint/QPS) -> <h2 id="label"> contient la question
+                # ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ Fallback direct: cas trÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¨s frÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©quent (Cint/QPS) -> <h2 id="label"> contient la question
                 try:
                     if not question:
                         el_label = driver.find_elements(By.CSS_SELECTOR, "#label")
@@ -2910,13 +3650,13 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                 if near:
                     near_lc = _norm_lc(near)
                     opt_lc = {_norm_lc(o) for o in (options or []) if o}
-                    # filtre anti "Question 1 de 3" / textes dÃ¢â‚¬â„¢aide gÃƒÂ©nÃƒÂ©riques
+                    # filtre anti "Question 1 de 3" / textes dÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¾ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢aide gÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©nÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©riques
                     # IMPORTANT: ne pas rejeter une vraie question longue qui contient juste
-                    # "Veuillez sÃƒÂ©lectionner une rÃƒÂ©ponse." (cas Walr, etc.)
+                    # "Veuillez sÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©lectionner une rÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©ponse." (cas Walr, etc.)
                     is_meta = bool(re.match(r"^question\s*\d+", near_lc))
                     if not is_meta:
-                        # Ne considÃƒÂ©rer "veuillez sÃƒÂ©lectionner..." comme meta QUE si c'est court (= banniÃƒÂ¨re/erreur)
-                        if (len(near_lc) < 140) and ("veuillez" in near_lc) and (("sÃƒÂ©lection" in near_lc) or ("selection" in near_lc)):
+                        # Ne considÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©rer "veuillez sÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©lectionner..." comme meta QUE si c'est court (= banniÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¨re/erreur)
+                        if (len(near_lc) < 140) and ("veuillez" in near_lc) and (("sÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©lection" in near_lc) or ("selection" in near_lc)):
                             is_meta = True
                     if (near_lc not in opt_lc) and (not is_meta):
                         question = near
@@ -2928,12 +3668,12 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                 else:
                     continue
 
-            # Ã¢Å“â€¦ NEW: si on a une seule checkbox et aucune option dÃƒÂ©tectÃƒÂ©e, on force option=question
+            # ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ NEW: si on a une seule checkbox et aucune option dÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©tectÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©e, on force option=question
             if not options and len(els) == 1 and question:
                 options = [question]
 
-            # IMPORTANT: pour les matrices, plusieurs groupes (1 par colonne) partagent la mÃƒÂªme question.
-            # Si le group_key est basÃƒÂ© sur name=..., on dÃƒÂ©doublonne par group_key (k), pas par (question, itype).
+            # IMPORTANT: pour les matrices, plusieurs groupes (1 par colonne) partagent la mÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âªme question.
+            # Si le group_key est basÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â© sur name=..., on dÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©doublonne par group_key (k), pas par (question, itype).
             sig = k if k.startswith(f"{itype}:name:") else (question, itype)
             if sig in seen_signatures:
                 continue
@@ -2948,14 +3688,14 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                 try:
                     lbl = _find_associated_label(driver, e)
 
-                    # Ã¢Å“â€¦ NEW: single checkbox => si label vide, on mappe sur la question
+                    # ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ NEW: single checkbox => si label vide, on mappe sur la question
                     if not lbl and len(els) == 1 and question:
                         lbl = question
 
                     if not lbl:
                         continue
 
-                    # Ã¢Å“â€¦ Locator STABLE pour le choix (ÃƒÂ©vite XPath absolu fragile)
+                    # ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ Locator STABLE pour le choix (ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©vite XPath absolu fragile)
                     inp_id = ""
                     inp_type = ""
                     inp_name = ""
@@ -2971,13 +3711,13 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                     xp = ""
 
                     # 1) Le plus stable : label[for="<id>"] (ou fallback input#id)
-                    # IMPORTANT: sur FocusVision/Decipher-like, l'input radio peut ÃƒÂªtre masquÃƒÂ© (fir-hidden)
+                    # IMPORTANT: sur FocusVision/Decipher-like, l'input radio peut ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âªtre masquÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â© (fir-hidden)
                     # et le click doit viser le <label for="...">.
                     if inp_id:
                         id_lit = _xpath_literal(inp_id)
 
-                        # FocusVision/Decipher grid: le <label for=...> peut ÃƒÂªtre 0x0 (template cachÃƒÂ©).
-                        # On prÃƒÂ©fÃƒÂ¨re cliquer la cellule <td> qui contient l'input.
+                        # FocusVision/Decipher grid: le <label for=...> peut ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âªtre 0x0 (template cachÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©).
+                        # On prÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©fÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¨re cliquer la cellule <td> qui contient l'input.
                         in_grid = False
                         try:
                             in_grid = bool(e.find_elements(By.XPATH, "ancestor::table[contains(@class,'grid')][1]"))
@@ -3056,7 +3796,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         except Exception:
             continue
 
-    # --- 1b) Groupes de choix "stylÃƒÂ©s en boutons" (Decipher/Confirmit, etc.) ---
+    # --- 1b) Groupes de choix "stylÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©s en boutons" (Decipher/Confirmit, etc.) ---
     # Objectif: quand les options ne sont PAS des <input type=radio> visibles,
     # mais une liste de <li>/<button> cliquables (ex: Decipher cardrating)
 
@@ -3066,7 +3806,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             return False
         nav_tokens = [
             "continue", "continuer", "next", "suivant",
-            "back", "retour", "previous", "prÃƒÂ©cÃƒÂ©dent", "precedent",
+            "back", "retour", "previous", "prÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©cÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©dent", "precedent",
             "ok", "submit", "valider", "envoyer", "send",
             "start", "commencer", "finish", "terminer",
             "close", "fermer", "cancel", "annuler",
@@ -3077,7 +3817,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
     def _stable_xpath_for_buttonish(el) -> str:
         """
         Locator stable prioritaire pour Decipher:
-        - data-uid est trÃƒÂ¨s souvent unique et stable sur la page.
+        - data-uid est trÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¨s souvent unique et stable sur la page.
         - sinon data-label + data-index
         - sinon id
         - sinon XPath absolu.
@@ -3121,7 +3861,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             # Texte (pour cardrating, le texte est dans le <li>)
             t = _norm(b.text or b.get_attribute("innerText") or b.get_attribute("value") or "")
             if (not t or len(t) < 2) and "sq-cardrating-button" in cls:
-                # backup: certains thÃƒÂ¨mes remplissent le texte dans .sq-cardrating-content
+                # backup: certains thÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¨mes remplissent le texte dans .sq-cardrating-content
                 try:
                     t = _norm(b.find_element(By.CSS_SELECTOR, ".sq-cardrating-content").text)
                 except Exception:
@@ -3156,7 +3896,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             if len(btns) < 3:
                 continue
 
-            # options = textes des boutons (dÃƒÂ©doublonnÃƒÂ©s)
+            # options = textes des boutons (dÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©doublonnÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©s)
             options: List[str] = []
             for b in btns:
                 tt = _norm(b.text or b.get_attribute("innerText") or b.get_attribute("value") or "")
@@ -3175,14 +3915,14 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             if not question:
                 question = _norm(_find_question_text_near_element(driver, btns[0]))
 
-            # ÃƒÂ©vite de prendre les banniÃƒÂ¨res dÃ¢â‚¬â„¢erreur comme "question"
+            # ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©vite de prendre les banniÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¨res dÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¾ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢erreur comme "question"
             qlc = _norm_lc(question)
-            if qlc and ("un problÃƒÂ¨me est survenu" in qlc or ((len(qlc) < 140) and ("veuillez" in qlc) and (("sÃƒÂ©lection" in qlc) or ("selection" in qlc)))):
-                # on tente un near-text sur un autre bouton (souvent plus bas = plus proche du vrai libellÃƒÂ©)
+            if qlc and ("un problÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¨me est survenu" in qlc or ((len(qlc) < 140) and ("veuillez" in qlc) and (("sÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©lection" in qlc) or ("selection" in qlc)))):
+                # on tente un near-text sur un autre bouton (souvent plus bas = plus proche du vrai libellÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©)
                 for cand in btns[1:3]:
                     near2 = _norm(_find_question_text_near_element(driver, cand))
                     near2_lc = _norm_lc(near2)
-                    if near2 and ("un problÃƒÂ¨me est survenu" not in near2_lc) and not ("veuillez" in near2_lc and "sÃƒÂ©lection" in near2_lc):
+                    if near2 and ("un problÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¨me est survenu" not in near2_lc) and not ("veuillez" in near2_lc and "sÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©lection" in near2_lc):
                         question = near2
                         break
 
@@ -3257,7 +3997,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             if itype == "hidden" or _looks_like_system_field(el):
                 continue
 
-            # 2) On ignore les ÃƒÂ©lÃƒÂ©ments non actionnables/visibles
+            # 2) On ignore les ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©lÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©ments non actionnables/visibles
             if not _is_actionable_visible(el):
                 continue
 
@@ -3291,7 +4031,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                 if tlc in {
                     "next", "suivant", "continue", "continuer",
                     "next page", "previous page",
-                    "page suivante", "page prÃƒÂ©cÃƒÂ©dente",
+                    "page suivante", "page prÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©cÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©dente",
                 }:
                     continue
 
@@ -3301,10 +4041,10 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             if container:
                 question = _extract_question_from_container(container, options=[]) or ""
 
-            # --- [PATCH] Multi-dropdown (DOB/date) : ÃƒÂ©viter de prendre "Mois"/"AnnÃƒÂ©e" comme question ---
-            # Sur IPSOS (bootstrap-select), le conteneur des <select> peut exposer seulement les libellÃƒÂ©s de champs
-            # ("Mois", "AnnÃƒÂ©e") et masquer le vrai libellÃƒÂ© question ("Quelle est votre date de naissance ?").
-            # Si on envoie "AnnÃƒÂ©e Ã¢â‚¬â€ Mois" ÃƒÂ  OpenAI, il peut rÃƒÂ©pondre une annÃƒÂ©e absurde (ex: 2026).
+            # --- [PATCH] Multi-dropdown (DOB/date) : ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©viter de prendre "Mois"/"AnnÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©e" comme question ---
+            # Sur IPSOS (bootstrap-select), le conteneur des <select> peut exposer seulement les libellÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©s de champs
+            # ("Mois", "AnnÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©e") et masquer le vrai libellÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â© question ("Quelle est votre date de naissance ?").
+            # Si on envoie "AnnÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©e ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â Mois" ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â  OpenAI, il peut rÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©pondre une annÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©e absurde (ex: 2026).
             multi = False
             hint = None
             try:
@@ -3313,7 +4053,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                     multi = bool(sels and len(sels) >= 2)
                     if multi:
                         hint = _dropdown_field_hint(driver, el)
-                        field_labels = {"mois", "month", "annÃƒÂ©e", "annee", "year", "jour", "day"}
+                        field_labels = {"mois", "month", "annÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©e", "annee", "year", "jour", "day"}
                         qlc = _norm_lc(question)
                         if (qlc in field_labels) or (hint and qlc == _norm_lc(hint)):
                             alt = _find_question_text_near_element(driver, el) or ""
@@ -3324,18 +4064,28 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                 pass
 
             if not question:
-                # important pour YouGov-like: question visible au-dessus mais pas bien "liÃƒÂ©e" au input
+                # important pour YouGov-like: question visible au-dessus mais pas bien "liÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©e" au input
                 question = _find_question_text_near_element(driver, el) or ""
 
             if not question:
                 question = _find_associated_label(driver, el) or ""
             question = _norm(question)
 
+            # --- [PATCH SSI/Confirmit] Filtrer les instructions de validation et chercher la vraie question ---
+            if _is_validation_instruction(question) or not question:
+                # Essayer l'extraction spÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©cifique SSI/Confirmit
+                ssi_q = _extract_ssi_confirmit_question(driver, el)
+                if ssi_q:
+                    question = ssi_q
+                elif _is_validation_instruction(question):
+                    # Si on n'a qu'une instruction de validation, continuer sans crÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©er de block
+                    continue
+
             if not question:
                 continue
 
-            # --- [NEW] Multi-text ("une rÃƒÂ©ponse par case") : regrouper plusieurs inputs texte sous une mÃƒÂªme question ---
-            if itype in ("text", "textarea"):
+            # --- [NEW] Multi-text ("une rÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©ponse par case") : regrouper plusieurs inputs texte sous une mÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Âªme question ---
+            if itype in ("text", "textarea"):                
                 try:
                     cont_id = (container.get_attribute("id") or "").strip()
                     nm = (el.get_attribute("name") or "").strip()
@@ -3357,7 +4107,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                     if group_key in seen_multi_text_groups:
                         continue
 
-                    # collect peers dans le mÃƒÂªme container
+                    # collect peers dans le mÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âªme container
                     try:
                         peers = container.find_elements(By.CSS_SELECTOR, "input[type='text'], textarea")
                     except Exception:
@@ -3382,7 +4132,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                             continue
 
                     if len(fields) >= 2:
-                        # signal fort: texte "par case" OU naming "_1/_2/_3..." avec mÃƒÂªme prefix
+                        # signal fort: texte "par case" OU naming "_1/_2/_3..." avec mÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âªme prefix
                         container_txt = _norm_lc(container.text or container.get_attribute("innerText") or "")
                         has_one_per_box = (
                             ("par case" in container_txt)
@@ -3449,7 +4199,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                                         "question": question,
                                         "itype": itype,
                                         "options": [],
-                                        "max_select": max_items,  # Ã¢Å“â€¦ 2Ã¢â‚¬â€œ3 rÃƒÂ©ponses max
+                                        "max_select": max_items,  # ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ 2ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ3 rÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©ponses max
                                         "target_id": multi_target_id,
                                         "context": {
                                             "kind": "multi_text",
@@ -3465,9 +4215,9 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                 except Exception:
                     pass
 
-            # SpÃƒÂ©cial: plusieurs dropdowns dans le mÃƒÂªme conteneur (ex: DOB Mois/AnnÃƒÂ©e).
-            # - Enrichit la question avec un sous-label (Mois/AnnÃƒÂ©e) si possible
-            # - Ãƒâ€°vite de dÃƒÂ©dupliquer ÃƒÂ  tort deux <select> distincts
+            # SpÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©cial: plusieurs dropdowns dans le mÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âªme conteneur (ex: DOB Mois/AnnÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©e).
+            # - Enrichit la question avec un sous-label (Mois/AnnÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©e) si possible
+            # - ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°vite de dÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©dupliquer ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â  tort deux <select> distincts
             if itype == "dropdown":
                 try:
                     if not multi and container:
@@ -3478,7 +4228,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                         if not hint:
                             hint = _dropdown_field_hint(driver, el)
                         if hint and hint.lower() not in (question or "").lower():
-                            question = _norm(f"{question} Ã¢â‚¬â€ {hint}")
+                            question = _norm(f"{question} ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â {hint}")
                 except Exception:
                     pass
             sig = (question, itype)
@@ -3536,7 +4286,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             except Exception:
                 pass
 
-            # dÃƒÂ©dup + retirer le primary xpath
+            # dÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©dup + retirer le primary xpath
             alt_xpaths = [x for x in dict.fromkeys(alt_xpaths) if x and x != xpath][:4]
 
             register_target(
@@ -3579,7 +4329,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
 def _extract_decipher_answers_list_fallback(driver, frame_chain: List[Any]) -> List[Dict[str, Any]]:
     """
     Fallback DOM strict (Decipher/FocusVision).
-    DÃƒÂ©clenchÃƒÂ© uniquement quand l'analyse standard retourne 0 block.
+    DÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©clenchÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â© uniquement quand l'analyse standard retourne 0 block.
     Objectif: extraire (1) radio/checkbox groups dans .answers.answers-list/.clickableCell
               (2) bouton #btn_continue (input type=image)
     """
@@ -3617,7 +4367,7 @@ def _extract_decipher_answers_list_fallback(driver, frame_chain: List[Any]) -> L
                 if (!name || !id) continue;
                 if (itype !== "radio" && itype !== "checkbox") continue;
 
-                // label: prioritÃƒÂ© label[for=id]
+                // label: prioritÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â© label[for=id]
                 let label = "";
                 try {
                   // id contient des '.' => OK dans un attribut [for="..."]
@@ -3817,7 +4567,7 @@ def _extract_decipher_answers_list_fallback(driver, frame_chain: List[Any]) -> L
 def analyze_dom(driver) -> List[Dict[str, Any]]:
     """
     Analyse le DOM et retourne une liste de QuestionBlock.
-    Frame-aware: choisit automatiquement le meilleur contexte (default ou iframe) jusqu'ÃƒÂ  depth=DOM_FRAME_MAX_DEPTH (dÃƒÂ©faut=2).
+    Frame-aware: choisit automatiquement le meilleur contexte (default ou iframe) jusqu'ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â  depth=DOM_FRAME_MAX_DEPTH (dÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©faut=2).
     """
     dom_registry.clear_registry()
 
@@ -3825,7 +4575,7 @@ def analyze_dom(driver) -> List[Dict[str, Any]]:
     max_depth = int(os.getenv("DOM_FRAME_MAX_DEPTH", "2") or "2")
     best_chain, _meta = _select_best_frame_chain(driver, max_depth=max_depth)
 
-    # Scan dans le contexte choisi; retour ÃƒÂ  default_content garanti.
+    # Scan dans le contexte choisi; retour ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â  default_content garanti.
     blocks: List[Dict[str, Any]] = []
     chain: List[Any] = []
     with switch_to_frame_chain(driver, best_chain) as ok:
@@ -3843,7 +4593,7 @@ def analyze_dom(driver) -> List[Dict[str, Any]]:
         if not blocks:
             blocks = _extract_decipher_answers_list_fallback(driver, frame_chain=chain)
 
-    # Fallback strict: si on a scannÃƒÂ© un iframe et qu'on n'a rien, tente default_content une seule fois.
+    # Fallback strict: si on a scannÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â© un iframe et qu'on n'a rien, tente default_content une seule fois.
     if not blocks and chain:
         with switch_to_frame_chain(driver, []) as ok:
             if ok:
