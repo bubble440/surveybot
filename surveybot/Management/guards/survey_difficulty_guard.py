@@ -78,12 +78,85 @@ def _page_text_lc(driver) -> str:
         return ""
 
 
+def _detect_image_evaluation(driver) -> bool:
+    """
+    Détecte les pages d'évaluation d'image (Walr) qui nécessitent Vision API.
+    
+    Pattern DOM:
+        <div class="rsScrollGridWrappper">  (contient une image)
+        <div class="rsFlexBtnContainer">    (boutons de réponse)
+    
+    Ces pages ne sont pas supportées en V1 prod → on les abandonne.
+    """
+    try:
+        # Chercher le conteneur de scroll avec image
+        scroll_containers = driver.find_elements(By.CSS_SELECTOR, 
+            "div.rsScrollGridWrappper, div[class*='rsScrollGrid']")
+        
+        if not scroll_containers:
+            return False
+        
+        # Vérifier qu'il y a une image dans le conteneur
+        has_image = False
+        for sc in scroll_containers:
+            try:
+                style = sc.get_attribute("style") or ""
+                if "display: none" in style.lower() or "display:none" in style.lower():
+                    continue
+                    
+                imgs = sc.find_elements(By.CSS_SELECTOR, "img")
+                for img in imgs:
+                    src = img.get_attribute("src") or ""
+                    if src and src.startswith("http"):
+                        has_image = True
+                        break
+                if has_image:
+                    break
+            except Exception:
+                continue
+        
+        if not has_image:
+            return False
+        
+        # Vérifier qu'il y a des boutons de réponse
+        btn_containers = driver.find_elements(By.CSS_SELECTOR, 
+            "div.rsFlexBtnContainer, div[class*='rsFlexBtn']")
+        
+        if not btn_containers:
+            return False
+        
+        # Vérifier qu'au moins un conteneur a des boutons rsBtn
+        for bc in btn_containers:
+            try:
+                style = bc.get_attribute("style") or ""
+                if "display: none" in style.lower() or "display:none" in style.lower():
+                    continue
+                    
+                btns = bc.find_elements(By.CSS_SELECTOR, "div.rsBtn")
+                if len(btns) >= 2:
+                    print(f"[DIFFICULTY_GUARD] Image evaluation détectée: {len(btns)} boutons rsBtn")
+                    return True
+            except Exception:
+                continue
+        
+        return False
+    except Exception as e:
+        print(f"[DIFFICULTY_GUARD] Exception _detect_image_evaluation: {e}")
+        return False
+
+
 def detect_strict_survey(driver) -> Tuple[bool, Optional[str]]:
     """
     Détecte si la page demande une interaction "stricte".
     - 1) Check selectors (rapide)
-    - 2) Fallback keywords (texte)
+    - 2) Check image evaluation (Walr) 
+    - 3) Fallback keywords (texte)
     """
+    # 0) IMAGE EVALUATION (Walr) - Non supporté en V1 prod
+    # Détection PRIORITAIRE car ces pages sont des slideshow images
+    if _detect_image_evaluation(driver):
+        return True, "image_evaluation"
+    
     # 1) DOM selectors
     for reason, selectors in STRICT_SELECTORS.items():
         matches = []
