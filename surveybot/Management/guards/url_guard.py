@@ -79,10 +79,6 @@ def is_allowed(url_or_host: str) -> bool:
     if not h:
         return False
 
-    # 2) Bloquer les retours TopSurveys / app (sinon on tourne en rond)
-    if h.endswith("topsurveys.app"):
-        return False
-
     # 3) (Optionnel) bloque-list minimale, à enrichir si besoin
     BLOCKLIST = {
         # exemples si tu en identifies (laisser vide au début si tu veux)

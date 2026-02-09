@@ -1,5 +1,6 @@
 import os, random
 IS_LOCAL = os.getenv("RUN_ENV", "local") == "local"
+from config import is_prod_like, should_run_guard_monitor, should_run_hot_reload
 
 from Management.guards.runtime_guard import RuntimeGuard, StopReason, set_guard, get_guard
 import time, sys, logging, threading, traceback, signal, socket, Cash.payout as payout
@@ -19,32 +20,32 @@ def acquire_account_lock_or_exit(account_id: str, ttl_sec: int = 180):
     task_id = os.getenv("ECS_TASK_ID") or socket.gethostname()
     ok = try_acquire_account_lock(account_id=account_id, owner=task_id, ttl_sec=ttl_sec)
     if not ok:
-        print("[LOCK] Account {account_id} déja utilisé → exit")
+        print("[LOCK] Account {account_id} dÃ©ja utilisÃ© â†’ exit")
         sys.exit(0)
 
 def safe_get(driver, url):
     """
-    Navigation sécurisée : s'assure qu'un driver valide existe.
-    - Ajoute un timeout pour éviter les hangs infinis en ECS.
+    Navigation sÃ©curisÃ©e : s'assure qu'un driver valide existe.
+    - Ajoute un timeout pour Ã©viter les hangs infinis en ECS.
     - Fallback: stoppe le chargement et continue.
     """
     if driver is None:
-        raise RuntimeError("SAFE_GET appelé avec driver=None")
+        raise RuntimeError("SAFE_GET appelÃ© avec driver=None")
 
     try:
         if not hasattr(driver, "window_handles") or not driver.window_handles:
-            raise RuntimeError("Aucune fenêtre active")
+            raise RuntimeError("Aucune fenÃªtre active")
 
         driver.switch_to.window(driver.window_handles[-1])
 
-        # 🔒 évite blocage infini
+        # ðŸ”’ Ã©vite blocage infini
         driver.set_page_load_timeout(70)
 
         try:
             print(f"[SAFE_GET] start get: {url}")
             driver.get(url)
             if is_session_expired(driver):
-                print("🛑 Session expirée détectée (24h). Pause longue.")
+                print("ðŸ›‘ Session expirÃ©e dÃ©tectÃ©e (24h). Pause longue.")
                 get_guard().pause(
                     PausePolicy.LONG_COOLDOWN,
                     StopReason.SESSION_EXPIRED,
@@ -69,27 +70,27 @@ def install_sigterm_handler(account_id: str):
 
 def _make_sigterm_handler(aid: str):
     """
-    Handler SIGTERM (ECS) : marque l'arrêt demandé dans l'état du compte.
-    - On capture 'aid' via closure pour éviter les variables globales non définies.
+    Handler SIGTERM (ECS) : marque l'arrÃªt demandÃ© dans l'Ã©tat du compte.
+    - On capture 'aid' via closure pour Ã©viter les variables globales non dÃ©finies.
     """
     def _handle_sigterm(signum, frame):
         ts = int(time.time())
-        print(f"🛑 SIGTERM reçu depuis ECS | account_id={aid}")
+        print(f"ðŸ›‘ SIGTERM reÃ§u depuis ECS | account_id={aid}")
 
         try:
             update_state(aid, lambda st: (
                 st.__setitem__("ecs_stop_requested", True),
                 st.__setitem__("ecs_stop_ts", ts),
-                st.__setitem__("ecs_stop_notified", False),  # reset anti-spam à chaque SIGTERM
+                st.__setitem__("ecs_stop_notified", False),  # reset anti-spam Ã  chaque SIGTERM
                 st.__setitem__("status", "idle"),
                 st.__setitem__("lock_owner", ""),
                 st.__setitem__("lock_until_ts", 0)
             ))
         except Exception as e:
-            print("[SIGTERM][WARN] update_state échoué:", e)
+            print("[SIGTERM][WARN] update_state Ã©chouÃ©:", e)
         
         finally:
-            print("🧨 SIGTERM traité → exit immédiat")
+            print("ðŸ§¨ SIGTERM traitÃ© â†’ exit immÃ©diat")
             raise SystemExit("ecs_sigterm")
 
     return _handle_sigterm
@@ -102,18 +103,18 @@ def build_notifier(config):
     def _notify(msg: str):
         # Console (toujours)
         print(f"[WATCHDOG] {msg}")
-        # Telegram si configuré
+        # Telegram si configurÃ©
         if tg_token and tg_chat:
             ok = False
             try:
                 ok = send_telegram(msg, tg_token, tg_chat)
             except Exception as e:
-                print(f"[WATCHDOG][WARN] Telegram a échoué: {e}")
+                print(f"[WATCHDOG][WARN] Telegram a Ã©chouÃ©: {e}")
         else:
             if ok:
-                print("[WATCHDOG] telegram non configuré.")
+                print("[WATCHDOG] telegram non configurÃ©.")
             else:
-                print("[WATCHDOG][WARN] Telegram a répondu 'not ok'.")
+                print("[WATCHDOG][WARN] Telegram a rÃ©pondu 'not ok'.")
 
         # Petit bip Windows si possible (facultatif)
         try:
@@ -128,9 +129,9 @@ def build_notifier(config):
 
 def soft_restart_cleanup(driver):
     """
-    Prépare un soft restart.
+    PrÃ©pare un soft restart.
     IMPORTANT : se replacer sur la page APP (app.topsurveys.app) avant la logique payout,
-    sinon la lecture du solde échoue sur la landing marketing.
+    sinon la lecture du solde Ã©choue sur la landing marketing.
     """
     from Survey.survey_solver import _close_other_tabs_in_current_session
     _close_other_tabs_in_current_session(driver)
@@ -139,14 +140,14 @@ def soft_restart_cleanup(driver):
     try:
         safe_get(driver, "https://app.topsurveys.app/surveys")
     except Exception as e:
-        print(f"[SOFT_RESTART][WARN] échec accès app /surveys: {e}")
-        # Fallback best-effort : on retente la landing (au pire, le flow suivant récupère)
+        print(f"[SOFT_RESTART][WARN] Ã©chec accÃ¨s app /surveys: {e}")
+        # Fallback best-effort : on retente la landing (au pire, le flow suivant rÃ©cupÃ¨re)
         safe_get(driver, "https://www.topsurveys.app")
 
 def soft_restart_payout(ctx, driver):
     """
     Encaissement best-effort.
-    En local / ctx minimal, on peut ne pas avoir payout_name/tag → on skip proprement.
+    En local / ctx minimal, on peut ne pas avoir payout_name/tag â†’ on skip proprement.
     """
     payout_name = (ctx.get("payout_name") or "").strip()
     payout_tag  = (ctx.get("payout_revolut_tag") or "").strip()
@@ -202,9 +203,9 @@ def start_runtime_guard(account_id: str, notify_fn, on_soft_restart):
 _HEARTBEAT_STARTED = False
 
 def _heartbeat():
-        # Fréquence heartbeat (coût) vs TTL (robustesse)
-        # - interval: toutes les 30s par défaut (divise les writes par 2 vs 15s)
-        # - jitter: évite que 100 bots heartbeat exactement en même temps (pics WCU)
+        # FrÃ©quence heartbeat (coÃ»t) vs TTL (robustesse)
+        # - interval: toutes les 30s par dÃ©faut (divise les writes par 2 vs 15s)
+        # - jitter: Ã©vite que 100 bots heartbeat exactement en mÃªme temps (pics WCU)
         interval = int(os.getenv("HEARTBEAT_INTERVAL_SEC", "30") or "30")
         jitter = float(os.getenv("HEARTBEAT_JITTER_SEC", "3") or "3")
 
@@ -215,7 +216,7 @@ def _heartbeat():
                 # Heartbeat best-effort : ne doit jamais tuer le bot
                 pass
 
-            # Jitter aléatoire [0..jitter] pour lisser la charge en prod
+            # Jitter alÃ©atoire [0..jitter] pour lisser la charge en prod
             sleep_s = interval + (random.random() * jitter if jitter > 0 else 0.0)
             time.sleep(sleep_s)
 
@@ -232,15 +233,15 @@ def setup_logging():
     )
     log = logging.getLogger("surveybot")
 
-    log.info("BOOT: surveybot starting")  # ✅ maintenant log est défini
+    log.info("BOOT: surveybot starting")  # âœ… maintenant log est dÃ©fini
 
-    # 3) loguer les exceptions non-captées (sinon elles tuent la task en silence)
+    # 3) loguer les exceptions non-captÃ©es (sinon elles tuent la task en silence)
     def _excepthook(exc_type, exc, tb):
         logging.getLogger("uncaught").exception("UNCAUGHT EXCEPTION", exc_info=(exc_type, exc, tb))
     sys.excepthook = _excepthook
 
 def mark_bot_running(account_id: str):
-    print(f"🚀 Démarrage surveybot pour account_id={account_id}")
+    print(f"ðŸš€ DÃ©marrage surveybot pour account_id={account_id}")
     update_state(account_id, lambda st: (
         st.__setitem__("status", "running"),
         st.__setitem__("last_boot_ts", int(time.time()))
@@ -251,16 +252,16 @@ def launch_driver_or_fail(config, account_id: str):
         # driver = launch_browser(config) Ancien launcher Playwright
         driver = get_driver()  # Nouveau launcher Selenium
         if driver is None:
-            raise RuntimeError("launch_browser() a retourné None")
-        if not IS_LOCAL:
+            raise RuntimeError("launch_browser() a retournÃ© None")
+        if should_run_guard_monitor():
             get_guard().attach_driver(driver)
         return driver
     except Exception as e:
         print("[LAUNCH][FATAL] Impossible de lancer le navigateur :", e)
         traceback.print_exc()
 
-        if not IS_LOCAL:
-        # 🔴 état propre pour le scheduler
+        if is_prod_like():
+        # ðŸ”´ Ã©tat propre pour le scheduler
             update_state(account_id, lambda st: (
                 st.__setitem__("status", "idle"),
                 st.__setitem__("lock_owner", ""),
@@ -277,7 +278,7 @@ def init_session_and_enter_surveys(driver, config, account_id: str, notify_fn):
     payout_revolut_tag = config.get("payout_revolut_tag")
 
     safe_get(driver, "https://www.topsurveys.app")
-    print("🚀 Brave lancé.")
+    print("ðŸš€ Brave lancÃ©.")
     login(driver, email, password)
 
     try:
@@ -300,9 +301,9 @@ def init_session_and_enter_surveys(driver, config, account_id: str, notify_fn):
             check_every=900,       # lecture toutes les 900 s
             notify_fn= notify_fn,
         )
-        print("👀 Watchdog gains: actif (15 min sans hausse → alerte).")
+        print("ðŸ‘€ Watchdog gains: actif (15 min sans hausse â†’ alerte).")
     except Exception as e:
-        print(f"[WATCHDOG][WARN] Impossible de démarrer le watchdog: {e}")
+        print(f"[WATCHDOG][WARN] Impossible de dÃ©marrer le watchdog: {e}")
 
     time.sleep(30)
     snap(driver, "after_login")
@@ -313,8 +314,8 @@ def init_session_and_enter_surveys(driver, config, account_id: str, notify_fn):
 
 def start_hot_reload_thread():
     global _HOT_RELOAD_STARTED
-    if not IS_LOCAL:
-        print("[HOT_RELOAD] Ignoré en environnement non-local.")
+    if not should_run_hot_reload():
+        print("[HOT_RELOAD] IgnorÃ© en environnement mode unattended ou non-local.")
         return
     if _HOT_RELOAD_STARTED:
         return
@@ -360,7 +361,7 @@ def start_hot_reload_thread():
             nonlocal _se
             if "Survey.survey_executor" in reloaded:
                 _se = reloaded["Survey.survey_executor"]
-            print("🔁 Modules rechargés:", ", ".join(reloaded.keys()))
+            print("ðŸ” Modules rechargÃ©s:", ", ".join(reloaded.keys()))
 
         threading.Thread(
             target=reloader.watch_loop,
@@ -368,12 +369,12 @@ def start_hot_reload_thread():
             daemon=True,
         ).start()
     else:
-        print("[HOT_RELOAD] Ignoré en environnement non-local.")
+        print("[HOT_RELOAD] IgnorÃ© en environnement non-local.")
         
 _HOT_RELOAD_STARTED = False
 
 def run_main_loop(driver, api_key: str, account_id: str):
     run_survey(driver, api_key, account_id=account_id)
-    print("🧩 Script terminé. Navigateur maintenu ouvert pour inspection.")
+    print("ðŸ§© Script terminÃ©. Navigateur maintenu ouvert pour inspection.")
     while True:
         time.sleep(999)

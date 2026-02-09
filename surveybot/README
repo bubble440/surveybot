@@ -14,15 +14,6 @@ chrome.exe `
 --remote-debugging-port=9222 `
 --user-data-dir="C:\tmp\surveybot-attach"
 
-# Pour lancer surveybot en mode local avec attachement au Chrome debug
-$env:RUN_ENV="local"
-$env:RUN_MODE="local"
-$env:BROWSER_MODE="attach"
-$env:DOM_DEBUG_FRAMES="1"
-$env:ACTION_DEBUG_TARGET="1"
-$env:LOCAL_CTA_REQUIRE_ENTER="1"
-$env:ATTACH_TAB_URL_CONTAINS="survey.walr.com"
-
 # Pour lancer surveybot en mode "attach" (debug)
 python surveybot/main.py
 
