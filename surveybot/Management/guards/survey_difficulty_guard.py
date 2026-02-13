@@ -27,16 +27,11 @@ STRICT_SELECTORS = {
     ],
 
     # Drag & drop (très fréquent dans les contrôles humains)
+    # NOTE: Ces selectors nécessitent une vérification de VISIBILITÉ
+    # car beaucoup de frameworks ont des éléments drag UI cachés (modales, etc.)
     "drag_drop": [
-        # élément explicitement draggable
         "[draggable='true']",
-
-        # bibliothèques de drag & drop connues
-        "[class*='drag-handle']",
-        "[class*='drag-item']",
         "[class*='draggable']",
-
-        # zones explicites de dépôt (dropzone, pas backdrop)
         "[class*='dropzone']",
         "[class*='drop-zone']",
         "[data-dropzone]",
@@ -46,9 +41,6 @@ STRICT_SELECTORS = {
         "[cdkdroplistgroup]",
         "[class*='cdk-drag']",
         "[class*='cdk-drop-list']",
-        "[class*='drop-zone']",
-        "[aria-label*='drag']",
-        "[aria-label*='drop']",
     ],
 
     # Maintenir un bouton / slider humain
@@ -84,80 +76,72 @@ def _detect_image_evaluation(driver) -> bool:
     
     Pattern DOM:
         <div class="rsScrollGridWrappper">  (contient une image)
-        <div class="rsFlexBtnContainer">    (boutons de réponse)
+        + div.rsBtn (boutons de réponse, ≥2)
     
     Ces pages ne sont pas supportées en V1 prod → on les abandonne.
     """
     try:
-        # Chercher le conteneur de scroll avec image
-        scroll_containers = driver.find_elements(By.CSS_SELECTOR, 
-            "div.rsScrollGridWrappper, div[class*='rsScrollGrid']")
+        # 1) Vérifier la présence de rsScrollGridWrappper ou similaire
+        scroll_els = driver.find_elements(By.CSS_SELECTOR, 
+            "div.rsScrollGridWrappper, div[class*='rsScrollGridW']")
         
-        if not scroll_containers:
+        if not scroll_els:
             return False
         
-        # Vérifier qu'il y a une image dans le conteneur
-        has_image = False
-        for sc in scroll_containers:
+        # 2) Vérifier la présence de boutons rsBtn (≥2)
+        rsBtn_els = driver.find_elements(By.CSS_SELECTOR, "div.rsBtn")
+        
+        if len(rsBtn_els) < 2:
+            return False
+        
+        # 3) Vérifier qu'il y a une image dans la page
+        imgs = driver.find_elements(By.TAG_NAME, "img")
+        has_walr_image = False
+        for img in imgs:
             try:
-                style = sc.get_attribute("style") or ""
-                if "display: none" in style.lower() or "display:none" in style.lower():
-                    continue
-                    
-                imgs = sc.find_elements(By.CSS_SELECTOR, "img")
-                for img in imgs:
-                    src = img.get_attribute("src") or ""
-                    if src and src.startswith("http"):
-                        has_image = True
-                        break
-                if has_image:
+                src = img.get_attribute("src") or ""
+                if "walr.com" in src or (src.startswith("http") and img.is_displayed()):
+                    has_walr_image = True
                     break
             except Exception:
                 continue
         
-        if not has_image:
-            return False
-        
-        # Vérifier qu'il y a des boutons de réponse
-        btn_containers = driver.find_elements(By.CSS_SELECTOR, 
-            "div.rsFlexBtnContainer, div[class*='rsFlexBtn']")
-        
-        if not btn_containers:
-            return False
-        
-        # Vérifier qu'au moins un conteneur a des boutons rsBtn
-        for bc in btn_containers:
-            try:
-                style = bc.get_attribute("style") or ""
-                if "display: none" in style.lower() or "display:none" in style.lower():
-                    continue
-                    
-                btns = bc.find_elements(By.CSS_SELECTOR, "div.rsBtn")
-                if len(btns) >= 2:
-                    print(f"[DIFFICULTY_GUARD] Image evaluation détectée: {len(btns)} boutons rsBtn")
-                    return True
-            except Exception:
-                continue
+        if has_walr_image:
+            print(f"[DIFFICULTY_GUARD] ✓ Image evaluation: rsScrollGrid + {len(rsBtn_els)} rsBtn + image")
+            return True
         
         return False
+        
     except Exception as e:
         print(f"[DIFFICULTY_GUARD] Exception _detect_image_evaluation: {e}")
+        return False
+
+
+def _is_element_visible(el) -> bool:
+    """Vérifie si un élément est réellement visible (pas caché dans une modale, etc.)"""
+    try:
+        if not el.is_displayed():
+            return False
+        rect = el.rect
+        if rect.get("width", 0) < 10 or rect.get("height", 0) < 10:
+            return False
+        return True
+    except Exception:
         return False
 
 
 def detect_strict_survey(driver) -> Tuple[bool, Optional[str]]:
     """
     Détecte si la page demande une interaction "stricte".
+    - 0) Check image evaluation (Walr) - PRIORITAIRE
     - 1) Check selectors (rapide)
-    - 2) Check image evaluation (Walr) 
-    - 3) Fallback keywords (texte)
+    - 2) Fallback keywords (texte)
     """
-    # 0) IMAGE EVALUATION (Walr) - Non supporté en V1 prod
-    # Détection PRIORITAIRE car ces pages sont des slideshow images
+    # === 0) IMAGE EVALUATION (Walr) - Non supporté en V1 prod ===
     if _detect_image_evaluation(driver):
         return True, "image_evaluation"
     
-    # 1) DOM selectors
+    # === 1) DOM selectors ===
     for reason, selectors in STRICT_SELECTORS.items():
         matches = []
         for sel in selectors:
@@ -168,29 +152,34 @@ def detect_strict_survey(driver) -> Tuple[bool, Optional[str]]:
             except Exception:
                 continue
 
-        # 🧠 Drag & drop : nécessite AU MOINS 2 signaux
+        # 🧠 Drag & drop : nécessite AU MOINS 2 signaux VISIBLES
+        # Beaucoup de frameworks ont des éléments drag cachés (modales, etc.)
         if reason == "drag_drop":
-            if len(matches) >= 2:
-                return True, "drag_drop"
+            visible_count = 0
+            for sel in matches:
+                try:
+                    for el in driver.find_elements(By.CSS_SELECTOR, sel):
+                        if _is_element_visible(el):
+                            visible_count += 1
+                            if visible_count >= 2:
+                                print(f"[DIFFICULTY_GUARD] drag_drop détecté: {visible_count} éléments visibles")
+                                return True, "drag_drop"
+                except Exception:
+                    continue
             continue
 
+        # Captcha : au moins un élément VISIBLE
         if reason == "captcha":
-            visible = False
             for sel in matches:
                 try:
                     for el in driver.find_elements(By.CSS_SELECTOR, sel):
                         if el.is_displayed():
-                            visible = True
-                            break
+                            return True, "captcha"
                 except Exception:
                     continue
-
-            if visible:
-                return True, "captcha"
-
             continue
 
-        # autres raisons : 1 signal suffit
+        # Hold button : 2 signaux + texte explicite
         if reason == "hold_button":
             if len(matches) >= 2:
                 txt = _page_text_lc(driver)
@@ -205,20 +194,14 @@ def detect_strict_survey(driver) -> Tuple[bool, Optional[str]]:
                     return True, "hold_button"
             continue
 
-    # --- AUDIO / VIDEO : strict UNIQUEMENT si obligation explicite ---
+    # --- AUDIO / VIDEO ---
     txt = _page_text_lc(driver)
 
     AUDIO_VIDEO_OBLIGATION_KEYWORDS = [
-        "écoutez",
-        "regardez",
-        "listen",
-        "watch",
-        "please listen",
-        "please watch",
-        "après avoir écouté",
-        "après avoir regardé",
-        "you must listen",
-        "you must watch",
+        "écoutez", "regardez", "listen", "watch",
+        "please listen", "please watch",
+        "après avoir écouté", "après avoir regardé",
+        "you must listen", "you must watch",
     ]
 
     has_media = False
@@ -232,11 +215,11 @@ def detect_strict_survey(driver) -> Tuple[bool, Optional[str]]:
         if any(k in txt for k in AUDIO_VIDEO_OBLIGATION_KEYWORDS):
             return True, "audio_video_required"
 
-    # 2) Keywords fallback (⚠️ captcha traité différemment)
+    # Keywords fallback
     if txt:
         for reason, toks in STRICT_KEYWORDS.items():
             if reason == "captcha":
-                continue  # captcha déjà géré par DOM + visibilité
+                continue
             if any(tok in txt for tok in toks):
                 return True, reason
 
