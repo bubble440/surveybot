@@ -1,13 +1,13 @@
 # ------------------------------------------------------------
 # DOM Classifier
 #
-# RÃƒÂ´le :
-# - DÃƒÂ©cider AVANT OpenAI ce que reprÃƒÂ©sente la page courante
-# - Mapper DOM Ã¢â€ â€™ itype logique Ã¢â€ â€™ handler cible
+# Rôle :
+# - Décider AVANT OpenAI ce que représente la page courante
+# - Mapper DOM → itype logique → handler cible
 #
 # Principe :
-# - DÃƒÂ©terministe
-# - ZÃƒÂ©ro IA
+# - Déterministe
+# - Zéro IA
 # - Extensible (100+ bots)
 # ------------------------------------------------------------
 
@@ -43,7 +43,7 @@ def _has_visible_recaptcha_challenge(dom_html: str) -> bool:
             if size and size != "invisible":
                 return True
             # si pas de size explicite, on reste conservateur:
-            # on ne dÃƒÂ©clenche PAS captcha juste sur anchor seul (trop de faux positifs)
+            # on ne déclenche PAS captcha juste sur anchor seul (trop de faux positifs)
     # 3) widget visible classique
     if 'class="g-recaptcha"' in h or "g-recaptcha" in h and "data-sitekey" in h:
         return True
@@ -62,7 +62,7 @@ def _has_visible_hcaptcha_challenge(dom_html: str) -> bool:
     if 'class="h-captcha"' in h or ("data-sitekey" in h and "hcaptcha" in h):
         return True
 
-    # iframe de challenge (frÃƒÂ©quent)
+    # iframe de challenge (fréquent)
     for src in _IFRAME_SRC_RE.findall(dom_html):
         s = src.lower()
         if "hcaptcha.com" in s:
@@ -100,7 +100,7 @@ def _norm_lc(s: str) -> str:
 def _page_text_lc(driver) -> str:
     """
     Texte visible "utile" pour les heuristiques.
-    IMPORTANT: on ignore le footer (Privacy Policy / General Terms) car ÃƒÂ§a crÃƒÂ©e des faux positifs (consent_screen).
+    IMPORTANT: on ignore le footer (Privacy Policy / General Terms) car ça crée des faux positifs (consent_screen).
     """
     try:
         txt = driver.execute_script(
@@ -109,7 +109,7 @@ def _page_text_lc(driver) -> str:
             if (!root) return '';
             const clone = root.cloneNode(true);
 
-            // 0) IMPORTANT: virer les scripts/templates qui contiennent souvent des messages dÃ¢â‚¬â„¢erreur (dont "captcha")
+            // 0) IMPORTANT: virer les scripts/templates qui contiennent souvent des messages d'erreur (dont "captcha")
             // Ex: <script type="text/ng-template" id="v-error-messages"> ... Captcha incorrect ...
             clone.querySelectorAll('script, style, noscript, template').forEach(n => n.remove());
             // Angular cache souvent via ng-hide / aria-hidden (texte non visible -> bruit)
@@ -130,21 +130,104 @@ def _page_text_lc(driver) -> str:
             return ""
 
 # ============================================================
-# Signatures DOM (dÃƒÂ©tecteurs)
+# Signatures DOM (détecteurs)
 # ============================================================
+
+def _is_formal_survey_question_page(driver) -> bool:
+    """
+    Détecte une page de question de sondage formelle.
+    
+    Utilisé pour EXCLURE les pages de sondage du consent_screen (évite faux positifs
+    sur des questions de consentement de participation qui contiennent "consent/agree").
+    
+    Patterns détectés:
+    - Decipher/FocusVision: .question[role="radiogroup"], name="ans*"
+    - Confirmit: .question, .sq-question
+    - Generic: structure de question avec options de réponse formelles
+    
+    IMPORTANT: retourne True SEULEMENT si on a une structure de sondage CLAIRE,
+    pas juste des radios/checkboxes (qui pourraient être dans un CMP).
+    """
+    try:
+        return bool(driver.execute_script(r"""
+            // --- Decipher/FocusVision ---
+            // Pattern: .question[role="radiogroup"] + inputs name="ans*"
+            const decipherQ = document.querySelector('.question[role="radiogroup"]');
+            if (decipherQ) {
+                const ansInputs = decipherQ.querySelectorAll('input[name^="ans"]');
+                if (ansInputs.length >= 2) return true;
+            }
+            
+            // Pattern: .survey-body + .question + inputs radio/checkbox avec name="ans*"
+            const surveyBody = document.querySelector('.survey-body');
+            if (surveyBody) {
+                const questions = surveyBody.querySelectorAll('.question');
+                for (const q of questions) {
+                    const ansInputs = q.querySelectorAll('input[name^="ans"]');
+                    if (ansInputs.length >= 2) return true;
+                }
+            }
+            
+            // --- Confirmit/Forsta ---
+            // Pattern: .sq-question avec options de réponse
+            const sqQuestions = document.querySelectorAll('.sq-question, [class*="sq-question"]');
+            for (const sq of sqQuestions) {
+                const radios = sq.querySelectorAll('input[type="radio"], input[type="checkbox"]');
+                if (radios.length >= 2) return true;
+            }
+            
+            // --- Generic survey question structure ---
+            // Pattern: élément .question-text + inputs radio/checkbox visibles dans un container survey
+            const surveyContainer = document.querySelector('#survey, .survey-container, [class*="survey"]');
+            if (surveyContainer) {
+                const qText = surveyContainer.querySelector('.question-text, h1.question-text, [class*="question-text"]');
+                if (qText) {
+                    // Chercher les inputs dans le même container question
+                    const qContainer = qText.closest('.question') || qText.closest('[id^="question_"]') || qText.parentElement;
+                    if (qContainer) {
+                        const inputs = qContainer.querySelectorAll('input[type="radio"], input[type="checkbox"]');
+                        if (inputs.length >= 2) {
+                            // Vérifier que les inputs ont des labels textuels (pas juste des icônes CMP)
+                            let hasTextLabels = 0;
+                            for (const inp of inputs) {
+                                const id = inp.id;
+                                if (id) {
+                                    const lab = document.querySelector(`label[for="${id}"]`);
+                                    if (lab && (lab.innerText || '').trim().length > 5) hasTextLabels++;
+                                }
+                            }
+                            if (hasTextLabels >= 2) return true;
+                        }
+                    }
+                }
+            }
+            
+            // --- Qualtrics ---
+            // Pattern: .QuestionBody avec options
+            const qBody = document.querySelector('.QuestionBody, [class*="QuestionBody"]');
+            if (qBody) {
+                const radios = qBody.querySelectorAll('input[type="radio"], input[type="checkbox"], [role="radio"], [role="checkbox"]');
+                if (radios.length >= 2) return true;
+            }
+            
+            return false;
+        """))
+    except Exception:
+        return False
+
 
 def is_consent_screen(driver) -> bool:
     """
-    DÃƒÂ©tecte un ÃƒÂ©cran de consentement (cookies / RGPD) *bloquant*.
+    Détecte un écran de consentement (cookies / RGPD) *bloquant*.
 
-    But: ÃƒÂ©viter les faux positifs causÃƒÂ©s par des widgets non bloquants
+    But: éviter les faux positifs causés par des widgets non bloquants
     (ex: petit bouton flottant "Accepter les cookies" type Evidon).
 
-    CritÃƒÂ¨re central: on ne renvoie True que si on observe un *overlay/dialog*
-    visible et suffisamment grand, ou un contrÃƒÂ´le explicite de consentement.
+    Critère central: on ne renvoie True que si on observe un *overlay/dialog*
+    visible et suffisamment grand, ou un contrôle explicite de consentement.
     """
 
-    # Hard negative: un ÃƒÂ©cran "Start/Commencer" n'est pas un consent_screen.
+    # Hard negative: un écran "Start/Commencer" n'est pas un consent_screen.
     # (ex: page Dynata avec bouton Start + widget cookies)
     try:
         if is_start_screen(driver):
@@ -152,11 +235,23 @@ def is_consent_screen(driver) -> bool:
     except Exception:
         pass
 
-    # --- contrÃƒÂ´le explicite type consent (checkbox/radio avec libellÃƒÂ© agree/accept/consent) ---
+    # -------------------------------------------------------------------------
+    # NOUVEAU: Hard negative pour les pages de question de sondage formelle.
+    # Évite les faux positifs sur les questions de consentement de participation
+    # (ex: Decipher "Do you agree to participate... I consent...")
+    # Ces pages ont "consent/agree" dans le texte mais ne sont PAS des CMP.
+    # -------------------------------------------------------------------------
+    try:
+        if _is_formal_survey_question_page(driver):
+            return False
+    except Exception:
+        pass
+
+    # --- contrôle explicite type consent (checkbox/radio avec libellé agree/accept/consent) ---
     def _has_explicit_consent_control() -> bool:
         """
-        DÃƒÂ©tecte un contrÃƒÂ´le de consentement explicite (checkbox/radio).
-        IMPORTANT: on vÃƒÂ©rifie que l'input est VISIBLE (ÃƒÂ©vite faux positifs CookieYes cachÃƒÂ©).
+        Détecte un contrôle de consentement explicite (checkbox/radio).
+        IMPORTANT: on vérifie que l'input est VISIBLE (évite faux positifs CookieYes caché).
         """
 
         markers = {
@@ -165,18 +260,18 @@ def is_consent_screen(driver) -> bool:
         }
 
         def _is_input_visible(inp) -> bool:
-            """VÃƒÂ©rifie qu'un input est visible (pas dans un widget cachÃƒÂ©)."""
+            """Vérifie qu'un input est visible (pas dans un widget caché)."""
             try:
                 if not inp.is_displayed():
                     return False
-                # VÃƒÂ©rifier si un ancÃƒÂªtre a une classe 'hide' (CookieYes: .cky-hide)
+                # Vérifier si un ancêtre a une classe 'hide' (CookieYes: .cky-hide)
                 has_hidden = driver.execute_script(
                     "return !!arguments[0].closest('.cky-hide, .ng-hide, [hidden], .hidden, [aria-hidden=\"true\"]')",
                     inp
                 )
                 if has_hidden:
                     return False
-                # VÃƒÂ©rifier taille minimale
+                # Vérifier taille minimale
                 r = inp.rect or {}
                 if float(r.get('width', 0) or 0) < 5 or float(r.get('height', 0) or 0) < 5:
                     return False
@@ -188,7 +283,7 @@ def is_consent_screen(driver) -> bool:
             inputs = driver.find_elements(By.CSS_SELECTOR, "input[type='checkbox'], input[type='radio']")
             for inp in inputs:
                 try:
-                    # NOUVEAU: vÃƒÂ©rifier la visibilitÃƒÂ© AVANT de traiter
+                    # NOUVEAU: vérifier la visibilité AVANT de traiter
                     if not _is_input_visible(inp):
                         continue
                     id_ = (inp.get_attribute("id") or "").strip()
@@ -220,12 +315,12 @@ def is_consent_screen(driver) -> bool:
 
     # --- overlay CMP (OneTrust / Didomi / Quantcast / TrustArc / Cookiebot, etc.) ---
     def _has_blocking_cmp_overlay() -> bool:
-        # On s'appuie sur la taille ÃƒÂ  l'ÃƒÂ©cran pour distinguer un bandeau/dialog bloquant
+        # On s'appuie sur la taille à l'écran pour distinguer un bandeau/dialog bloquant
         # d'un simple bouton "cookies" discret.
         js = r"""
         const vw = Math.max(320, window.innerWidth || 0);
         const vh = Math.max(240, window.innerHeight || 0);
-        const minArea = vw * vh * 0.12; // >= 12% de l'ÃƒÂ©cran => probablement bloquant
+        const minArea = vw * vh * 0.12; // >= 12% de l'écran => probablement bloquant
 
         const selectors = [
           '#onetrust-banner-sdk', '#onetrust-consent-sdk',
@@ -247,7 +342,7 @@ def is_consent_screen(driver) -> bool:
             const r = e.getBoundingClientRect();
             if (!r) return false;
             if (r.width < 60 || r.height < 40) return false;
-            // hors ÃƒÂ©cran
+            // hors écran
             if (r.bottom < 0 || r.right < 0 || r.top > vh || r.left > vw) return false;
             return true;
           }catch(_){ return false; }
@@ -260,7 +355,7 @@ def is_consent_screen(driver) -> bool:
           if ((r.width * r.height) < minArea) continue;
           const t = (el.innerText || '').toLowerCase();
           if (!kw.some(k => t.includes(k))) {
-            // si pas de texte, on accepte quand mÃƒÂªme certains CMP connus
+            // si pas de texte, on accepte quand même certains CMP connus
             const blob = ((el.id||'') + ' ' + (el.className||'')).toLowerCase();
             if (!(blob.includes('onetrust') || blob.includes('qc-cmp') || blob.includes('didomi') || blob.includes('truste') || blob.includes('cookiebot')))
               continue;
@@ -268,7 +363,7 @@ def is_consent_screen(driver) -> bool:
           return true;
         }
 
-        // Evidon spÃƒÂ©cifique: le "button" flottant n'est PAS bloquant
+        // Evidon spécifique: le "button" flottant n'est PAS bloquant
         return false;
         """
         try:
@@ -276,16 +371,16 @@ def is_consent_screen(driver) -> bool:
         except Exception:
             return False
 
-    # 1) PrioritÃƒÂ©: CMP overlay rÃƒÂ©ellement bloquant
+    # 1) Priorité: CMP overlay réellement bloquant
     if _has_blocking_cmp_overlay():
         return True
 
-    # 2) DÃƒÂ©tection "contrÃƒÂ´le explicite" UNIQUEMENT si le contexte ressemble ÃƒÂ  du cookies/RGPD/CMP.
-    #    Sinon on ÃƒÂ©vite les faux positifs sur des questions de survey du type "J'accepte la politique de confidentialitÃƒÂ©".
+    # 2) Détection "contrôle explicite" UNIQUEMENT si le contexte ressemble à du cookies/RGPD/CMP.
+    #    Sinon on évite les faux positifs sur des questions de survey du type "J'accepte la politique de confidentialité".
     def _cmp_container_exists_anywhere() -> bool:
         """
-        VÃƒÂ©rifie qu'un container CMP VISIBLE existe.
-        IMPORTANT: on ignore les containers cachÃƒÂ©s (ex: CookieYes avec .cky-hide).
+        Vérifie qu'un container CMP VISIBLE existe.
+        IMPORTANT: on ignore les containers cachés (ex: CookieYes avec .cky-hide).
         """
         try:
             return bool(driver.execute_script(
@@ -391,9 +486,9 @@ def is_start_screen(driver) -> bool:
 
 def _has_visible_answerables(driver) -> bool:
     """
-    True si la page contient des ÃƒÂ©lÃƒÂ©ments de rÃƒÂ©ponse visibles.
+    True si la page contient des éléments de réponse visibles.
     Important: Decipher/Confirmit peuvent rendre les options cliquables via:
-    - <td class="clickableCell"> ... (input radio parfois masquÃƒÂ©)
+    - <td class="clickableCell"> ... (input radio parfois masqué)
     - <li class="sq-cardrating-button" data-clickable="true"> ... (cartes)
     """
     js = """
@@ -423,7 +518,7 @@ def _has_visible_answerables(driver) -> bool:
         try { if (isVisible(b)) return true; } catch(_){}
       }
 
-      // 3) Decipher/Confirmit: cellules/cartes cliquables (inputs souvent masquÃƒÂ©s)
+      // 3) Decipher/Confirmit: cellules/cartes cliquables (inputs souvent masqués)
       const special = Array.from(document.querySelectorAll(
         "td.clickableCell, div.clickableCell, li.sq-cardrating-button[data-clickable='true'], li.sq-cardrating-button"
       ));
@@ -438,7 +533,7 @@ def _has_visible_answerables(driver) -> bool:
         }catch(_){}
       }
 
-        // Ã¢Å“â€¦ 4) NOUVEAU : CloudResearch/Vue/React role="button" choice-option
+        // ✅ 4) NOUVEAU : CloudResearch/Vue/React role="button" choice-option
       const roleButtons = Array.from(document.querySelectorAll(
         '[role="button"].choice-option, [role="button"].random-choice, ' +
         'div[tabindex][role="button"]'
@@ -473,19 +568,19 @@ def is_end_screen(driver):
     # 1) Un end-screen doit contenir un signal explicite de fin (pas juste "merci")
     txt = _page_text_lc(driver)
 
-    # IMPORTANT: ÃƒÂ©viter les faux positifs sur des labels techniques type "CompleteDate"
-    # (normalisÃƒÂ© en "completedate") qui matchaient l'ancien "completed" en sous-chaÃƒÂ®ne.
+    # IMPORTANT: éviter les faux positifs sur des labels techniques type "CompleteDate"
+    # (normalisé en "completedate") qui matchaient l'ancien "completed" en sous-chaîne.
     end_patterns = [
         r"\bthank you for\b",
         r"\bsurvey complete\b",
         r"\bsurvey completed\b",
         r"\bfin du sondage\b",
-        r"\bsondage termin[eÃƒÂ©]\b",
-        r"\benqu[eÃƒÂª]te termin[eÃƒÂ©]e\b",
-        r"\bvous avez termin[eÃƒÂ©]\b",
+        r"\bsondage termin[eé]\b",
+        r"\benqu[eê]te termin[eé]e\b",
+        r"\bvous avez termin[eé]\b",
         r"\bmerci de votre participation\b",
         r"\bmerci pour votre participation\b",
-        r"\bmerci d'avoir particip[eÃƒÂ©]\b",
+        r"\bmerci d'avoir particip[eé]\b",
         r"\bbon travail\b",                          # TopSurveys disqualification
         r"\bpartiellement r[ée]pondu\b",            # TopSurveys disqualification
         r"\bl'annonceur cherchait\b",               # TopSurveys disqualification
@@ -496,7 +591,7 @@ def is_end_screen(driver):
     if not strong_end:
         return False
 
-    # 2) ET ne doit pas contenir dÃ¢â‚¬â„¢inputs de rÃƒÂ©ponse visibles
+    # 2) ET ne doit pas contenir d'inputs de réponse visibles
     if _has_visible_answerables(driver):
         return False
 
@@ -504,8 +599,8 @@ def is_end_screen(driver):
 
 def is_captcha_screen(driver) -> bool:
     """
-    DÃƒÂ©tecte un CAPTCHA *rÃƒÂ©ellement bloquant*.
-    Ãƒâ€°vite les faux positifs quand reCAPTCHA est chargÃƒÂ© en background (invisible/1x1).
+    Détecte un CAPTCHA *réellement bloquant*.
+    Évite les faux positifs quand reCAPTCHA est chargé en background (invisible/1x1).
     """
 
     # 1) Signal texte fort (visible seulement, via _page_text_lc)
@@ -516,15 +611,15 @@ def is_captcha_screen(driver) -> bool:
         "im not a robot",
         "verify you are human",
         "human verification",
-        "vÃƒÂ©rifiez que vous ÃƒÂªtes",
+        "vérifiez que vous êtes",
         "verification humaine",
     ]
     if any(k in txt for k in robot_kw):
         return True
 
     # 1a) PureSpectrum CAPTCHA (ps-captcha-question)
-    # Important: le mot "captcha" n'est pas forcÃƒÂ©ment prÃƒÂ©sent dans le texte visible,
-    # donc on dÃƒÂ©tecte via signaux DOM forts (image + input dÃƒÂ©diÃƒÂ©).
+    # Important: le mot "captcha" n'est pas forcément présent dans le texte visible,
+    # donc on détecte via signaux DOM forts (image + input dédié).
     try:
         js_ps = r"""
         const isVisible = (e) => {
@@ -564,9 +659,9 @@ def is_captcha_screen(driver) -> bool:
     except Exception:
         pass
 
-    # "captcha" seul est trop bruitÃƒÂ© (templates / erreurs non visibles).
-    # On nÃ¢â‚¬â„¢accepte "captcha/hcaptcha" que si un widget/contrÃƒÂ´le captcha *visible* est prÃƒÂ©sent,
-    # ou si la page nÃ¢â‚¬â„¢a aucune rÃƒÂ©ponse exploitable (rare mais possible sur des interstitiels).
+    # "captcha" seul est trop bruité (templates / erreurs non visibles).
+    # On n'accepte "captcha/hcaptcha" que si un widget/contrôle captcha *visible* est présent,
+    # ou si la page n'a aucune réponse exploitable (rare mais possible sur des interstitiels).
     if ("captcha" in txt) or ("hcaptcha" in txt):
         try:
             has_visible_captcha = bool(driver.execute_script("""
@@ -600,7 +695,7 @@ def is_captcha_screen(driver) -> bool:
                 for (const e of els){
                 const r = e.getBoundingClientRect();
                 const tn = (e.tagName||"").toLowerCase();
-                // Seuils : iframe/widget doit ÃƒÂªtre Ã¢â‚¬Å“grandÃ¢â‚¬Â, input captcha peut ÃƒÂªtre petit
+                // Seuils : iframe/widget doit être "grand", input captcha peut être petit
                 if (tn === "iframe" || e.classList.contains("g-recaptcha") || e.classList.contains("h-captcha")) {
                     if (r.width >= 60 && r.height >= 40) return true;
                 } else {
@@ -615,31 +710,31 @@ def is_captcha_screen(driver) -> bool:
         if has_visible_captcha:
             return True
 
-        # Pas de widget visible => on ne classe pas captcha si on peut rÃƒÂ©pondre ÃƒÂ  la page
+        # Pas de widget visible => on ne classe pas captcha si on peut répondre à la page
         if _has_visible_answerables(driver):
             return False
 
-        # Sinon (page stÃƒÂ©rile + mot captcha) => on garde captcha
+        # Sinon (page stérile + mot captcha) => on garde captcha
         return True
 
-    # 1bis) CAPTCHA arithmÃƒÂ©tique via image (ex: "Veuillez saisir le rÃƒÂ©sultat" + image)
-    # On le traite comme CAPTCHA car la donnÃƒÂ©e ÃƒÂ  saisir n'est pas dans le DOM texte.
-    # CritÃƒÂ¨res explicites (anti faux-positifs) :
-    # - texte "saisir le rÃƒÂ©sultat" (FR/EN)
+    # 1bis) CAPTCHA arithmétique via image (ex: "Veuillez saisir le résultat" + image)
+    # On le traite comme CAPTCHA car la donnée à saisir n'est pas dans le DOM texte.
+    # Critères explicites (anti faux-positifs) :
+    # - texte "saisir le résultat" (FR/EN)
     # - image visible dans le bloc question
-    # - input numÃƒÂ©rique/texte visible dans le mÃƒÂªme bloc question
+    # - input numérique/texte visible dans le même bloc question
     try:
         if any(k in txt for k in [
-            "veuillez saisir le rÃƒÂ©sultat",
+            "veuillez saisir le résultat",
             "veuillez saisir le resultat",
-            "saisir le rÃƒÂ©sultat",
+            "saisir le résultat",
             "saisir le resultat",
             "enter the result",
             "type the result",
             "please enter the result",
         ]):
             has_img_math = bool(driver.execute_script(r"""
-                const needles = ['saisir le rÃƒÂ©sultat','saisir le resultat','enter the result','type the result','please enter the result'];
+                const needles = ['saisir le résultat','saisir le resultat','enter the result','type the result','please enter the result'];
                 const root = document.querySelector('#survey') || document.body;
                 const t = (root && root.innerText ? root.innerText : '').toLowerCase();
                 if (!needles.some(n => t.includes(n))) return false;
@@ -677,13 +772,13 @@ def is_captcha_screen(driver) -> bool:
         pass
 
     # 1ter) Slider puzzle (NIQ / GfK mrIWeb) : "faites glisser le curseur..."
-    # On le traite comme CAPTCHA car c'est une vÃƒÂ©rification humaine bloquante (pas une question).
+    # On le traite comme CAPTCHA car c'est une vérification humaine bloquante (pas une question).
     try:
         if any(k in txt for k in [
             "faites glisser le curseur",
             "veuillez faire glisser le curseur",
             "glisser le curseur vers la droite",
-            "pour complÃƒÂ©ter la partie manquante de lÃ¢â‚¬â„¢image",
+            "pour compléter la partie manquante de l'image",
             "pour completer la partie manquante de l'image",
         ]):
             has_slider_puzzle = bool(driver.execute_script(r"""
@@ -706,7 +801,7 @@ def is_captcha_screen(driver) -> bool:
                   }catch(e){}
                 }
 
-                // Sinon, fallback: prÃƒÂ©sence du panel + gap + barre
+                // Sinon, fallback: présence du panel + gap + barre
                 return !!root.querySelector(".verify-img-panel") && !!root.querySelector(".verify-gap") && !!root.querySelector(".verify-bar-area");
             """))
             if has_slider_puzzle:
@@ -718,7 +813,7 @@ def is_captcha_screen(driver) -> bool:
     # (reCAPTCHA invisible / tracking iframes sont souvent 0x0 ou 1x1)
     # IMPORTANT: on ignore les reCAPTCHA v3/invisible (size=invisible dans l'URL)
     try:
-        return bool(driver.execute_script("""
+        if bool(driver.execute_script("""
             const sels = [
               "iframe[src*='recaptcha']",
               "iframe[src*='captcha']",
@@ -769,9 +864,10 @@ def is_captcha_screen(driver) -> bool:
               return true;
             }
             return false;
-        """))
+        """)):
+            return True
     except Exception:
-        # Fallback Selenium (moins prÃƒÂ©cis, mais garde les seuils taille/visibilitÃƒÂ©)
+        # Fallback Selenium (moins précis, mais garde les seuils taille/visibilité)
         try:
             frames = driver.find_elements(
                 By.CSS_SELECTOR,
@@ -808,14 +904,14 @@ def is_date_multi_dropdown(driver) -> bool:
     if len(selects) < 2:
         return False
     txt = _page_text_lc(driver)
-    return any(k in txt for k in ["annÃƒÂ©e", "annee", "year", "mois", "month"])
+    return any(k in txt for k in ["année", "annee", "year", "mois", "month"])
 
 def is_open_textarea(driver) -> bool:
-    """Vrai uniquement si un textarea est rÃƒÂ©ellement exploitable (visible).
+    """Vrai uniquement si un textarea est réellement exploitable (visible).
 
-    Raison: certains providers injectent des <textarea> cachÃƒÂ©s (tracking/params).
-    Si on les considÃƒÂ¨re, la page est classÃƒÂ©e "textarea" ÃƒÂ  tort (comme le screen CMIX),
-    ce qui pollue les logs/metrics et peut dÃƒÂ©clencher des handlers inadaptÃƒÂ©s.
+    Raison: certains providers injectent des <textarea> cachés (tracking/params).
+    Si on les considère, la page est classée "textarea" à tort (comme le screen CMIX),
+    ce qui pollue les logs/metrics et peut déclencher des handlers inadaptés.
     """
     try:
         tas = driver.find_elements(By.TAG_NAME, "textarea")
@@ -840,7 +936,7 @@ def is_open_textarea(driver) -> bool:
 
 DOM_REGISTRY: list[dict[str, Any]] = [
 
-    # Ã¢â€ºâ€ SÃƒÂ©curitÃƒÂ© / hors OpenAI
+    # ⚠️ Sécurité / hors OpenAI
     {
         "itype": "captcha",
         "signature": is_captcha_screen,
@@ -866,7 +962,7 @@ DOM_REGISTRY: list[dict[str, Any]] = [
         "openai": False,
     },
 
-    # Ã°Å¸Â§Â© Composites
+    # 🧩 Composites
     {
         "itype": "matrix_rows_single_choice",
         "signature": is_matrix,
@@ -886,7 +982,7 @@ DOM_REGISTRY: list[dict[str, Any]] = [
         "openai": False,
     },
 
-    # Ã°Å¸â€œÂ Texte
+    # 📝 Texte
     {
         "itype": "textarea",
         "signature": is_open_textarea,
@@ -902,7 +998,7 @@ DOM_REGISTRY: list[dict[str, Any]] = [
 def classify_dom(driver) -> Optional[dict]:
     """
     Retourne le premier mapping DOM_REGISTRY qui match
-    et enregistre les mÃƒÂ©triques dÃ¢â‚¬â„¢usage OpenAI.
+    et enregistre les métriques d'usage OpenAI.
     """
     for rule in DOM_REGISTRY:
         try:
@@ -912,7 +1008,7 @@ def classify_dom(driver) -> Optional[dict]:
                     openai=rule["openai"],
                 )
 
-                # Ã¢Å“â€¦ IMPORTANT: on ne renvoie PAS la fonction signature (non sÃƒÂ©rialisable)
+                # ✅ IMPORTANT: on ne renvoie PAS la fonction signature (non sérialisable)
                 public = dict(rule)
                 sig = public.pop("signature", None)
                 if callable(sig):

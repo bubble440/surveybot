@@ -11,33 +11,33 @@ from selenium.common.exceptions import (
     ElementClickInterceptedException,
 )
 
-# --- Placeholders usuels (ÃƒÂ  complÃƒÂ©ter si besoin)
+# --- Placeholders usuels (ÃƒÆ’Ã‚Â  complÃƒÆ’Ã‚Â©ter si besoin)
 _DROPDOWN_PLACEHOLDERS = {
-    "veuillez sÃƒÂ©lectionner", "veuillez selectionner", "sÃƒÂ©lectionner", "selectionner",
+    "veuillez sÃƒÆ’Ã‚Â©lectionner", "veuillez selectionner", "sÃƒÆ’Ã‚Â©lectionner", "selectionner",
     "please select", "select", "choose", "choose an option", "choose option",
-    "select one", "selectÃ¢â‚¬Â¦", "select...", "seleccione", "seleziona", "wÃƒÂ¤hlen",
+    "select one", "selectÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦", "select...", "seleccione", "seleziona", "wÃƒÆ’Ã‚Â¤hlen",
 }
 
 def _norm_txt(s: str) -> str:
-    # trim + lowercase + remplace NBSP/ponctuation lÃƒÂ©gÃƒÂ¨re
+    # trim + lowercase + remplace NBSP/ponctuation lÃƒÆ’Ã‚Â©gÃƒÆ’Ã‚Â¨re
     if not s:
         return ""
     t = s.strip().lower().replace("\u00a0", " ")
-    for ch in ("Ã‚Â«", "Ã‚Â»", "Ã¢â‚¬Å“", "Ã¢â‚¬Â", '"', "Ã¢â‚¬â„¢", "'", "Ã¢â‚¬Âº", "Ã¢â‚¬Â¢", "Ã‚Â·", "Ã¢â‚¬Â¦", ":"):
+    for ch in ("Ãƒâ€šÃ‚Â«", "Ãƒâ€šÃ‚Â»", "ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ", "ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â", '"', "ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢", "'", "ÃƒÂ¢Ã¢â€šÂ¬Ã‚Âº", "ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢", "Ãƒâ€šÃ‚Â·", "ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦", ":"):
         t = t.replace(ch, " ")
     while "  " in t:
         t = t.replace("  ", " ")
     return t
 
 PLACEHOLDER_TOKENS = {
-    "sÃƒÂ©lectionnez",
+    "sÃƒÆ’Ã‚Â©lectionnez",
     "selectionnez",
-    "sÃƒÂ©lectionner",
+    "sÃƒÆ’Ã‚Â©lectionner",
     "selectionner",
     "choisir",
     "choisissez",
     "select",
-    "selectÃ¢â‚¬Â¦",
+    "selectÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦",
     "select ...",
     "select one",
     "choose",
@@ -66,7 +66,7 @@ def _norms_txt(s: str) -> str:
 def _find_question_container_by_ctx(driver, context_hint: str):
     """
     Retourne le <div class="question ..."> le plus pertinent pour le ctx.
-    On score les containers par nombre de tokens du ctx prÃƒÂ©sents dans le h1.question-text.
+    On score les containers par nombre de tokens du ctx prÃƒÆ’Ã‚Â©sents dans le h1.question-text.
     """
     if not context_hint:
         return None
@@ -91,7 +91,7 @@ def _find_question_container_by_ctx(driver, context_hint: str):
 
 DEBUG_PAUSE = True
 
-def pause_here(msg="Appuie sur EntrÃƒÂ©e pour continuerÃ¢â‚¬Â¦"):
+def pause_here(msg="Appuie sur EntrÃƒÆ’Ã‚Â©e pour continuerÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦"):
     if not DEBUG_PAUSE:
         return
     try:
@@ -102,7 +102,7 @@ def pause_here(msg="Appuie sur EntrÃƒÂ©e pour continuerÃ¢â‚¬Â¦"):
 # === [NOUVEAU] Toggle open-ended (chevron) ================================
 
 def _has_visible_open_ended_field(container):
-    """VÃƒÂ©rifie s'il y a dÃƒÂ©jÃƒÂ  un champ 'rÃƒÂ©ponse libre' visible sous cette question."""
+    """VÃƒÆ’Ã‚Â©rifie s'il y a dÃƒÆ’Ã‚Â©jÃƒÆ’Ã‚Â  un champ 'rÃƒÆ’Ã‚Â©ponse libre' visible sous cette question."""
     try:
         # 1) textarea visible
         areas = container.find_elements(By.XPATH, ".//textarea[not(@disabled) and not(@readonly)]")
@@ -138,14 +138,14 @@ def ensure_open_ended_open(
     selectors_override: list[str] | None = None,
 ) -> bool:
     """
-    Ouvre (si besoin) le champ 'rÃƒÂ©ponse libre' dÃƒÂ©clenchÃƒÂ© par un petit chevron.
-    - ScopÃƒÂ© par le contexte de la question.
+    Ouvre (si besoin) le champ 'rÃƒÆ’Ã‚Â©ponse libre' dÃƒÆ’Ã‚Â©clenchÃƒÆ’Ã‚Â© par un petit chevron.
+    - ScopÃƒÆ’Ã‚Â© par le contexte de la question.
     - Multi-fallbacks de clic.
-    - Post-vÃƒÂ©rification : apparition d'un textarea OU flip de l'icÃƒÂ´ne.
+    - Post-vÃƒÆ’Ã‚Â©rification : apparition d'un textarea OU flip de l'icÃƒÆ’Ã‚Â´ne.
 
     Params:
       - context_hint: texte de la question pour borner la recherche.
-      - desired_state: pour lÃ¢â‚¬â„¢instant Ã‚Â« open Ã‚Â» (idempotent).
+      - desired_state: pour lÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢instant Ãƒâ€šÃ‚Â« open Ãƒâ€šÃ‚Â» (idempotent).
       - postcheck: 'field' (textarea) ou 'icon' (flip chevron).
     """
     try:
@@ -153,16 +153,16 @@ def ensure_open_ended_open(
     except Exception:
         container = driver
 
-    # Si dÃƒÂ©jÃƒÂ  ouvert et on veut "open" Ã¢â€ â€™ rien ÃƒÂ  faire
+    # Si dÃƒÆ’Ã‚Â©jÃƒÆ’Ã‚Â  ouvert et on veut "open" ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ rien ÃƒÆ’Ã‚Â  faire
     if desired_state == "open":
         try:
             if _has_visible_open_ended_field(container):
-                print("Open-ended: dÃƒÂ©jÃƒÂ  ouvert (prÃƒÂ©check). source: input_handler.py")
+                print("Open-ended: dÃƒÆ’Ã‚Â©jÃƒÆ’Ã‚Â  ouvert (prÃƒÆ’Ã‚Â©check). source: input_handler.py")
                 return True
         except Exception:
             pass
 
-    # SÃƒÂ©lecteurs ciblant le chevron/toggle open-ended
+    # SÃƒÆ’Ã‚Â©lecteurs ciblant le chevron/toggle open-ended
     default_selectors = [
         ".//span[contains(@ng-click,'handleOpenEnded')]",
         ".//span[contains(@ng-click,'openEnded') or contains(@ng-click,'openended')]",
@@ -180,19 +180,19 @@ def ensure_open_ended_open(
         except Exception:
             continue
 
-    # Filtre visibles et 'cliquables' (petits hitbox autorisÃƒÂ©s)
+    # Filtre visibles et 'cliquables' (petits hitbox autorisÃƒÆ’Ã‚Â©s)
     visible = []
     for el in candidates:
         try:
             if el.is_displayed():
                 box = el.rect or {}
-                # Ignore ÃƒÂ©lÃƒÂ©ments totalement microscopiques
+                # Ignore ÃƒÆ’Ã‚Â©lÃƒÆ’Ã‚Â©ments totalement microscopiques
                 if box.get("width", 0) >= 6 and box.get("height", 0) >= 6:
                     visible.append(el)
         except Exception:
             continue
 
-    # Tri lÃƒÂ©ger: les ÃƒÂ©lÃƒÂ©ments avec icÃƒÂ´ne <i>/<svg> dÃ¢â‚¬â„¢abord
+    # Tri lÃƒÆ’Ã‚Â©ger: les ÃƒÆ’Ã‚Â©lÃƒÆ’Ã‚Â©ments avec icÃƒÆ’Ã‚Â´ne <i>/<svg> dÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢abord
     def _score(el):
         sc = 0
         try:
@@ -202,7 +202,7 @@ def ensure_open_ended_open(
             pass
         try:
             r = el.rect
-            # Un tout petit peu de prioritÃƒÂ© ÃƒÂ  des hitbox pas trop minuscules
+            # Un tout petit peu de prioritÃƒÆ’Ã‚Â© ÃƒÆ’Ã‚Â  des hitbox pas trop minuscules
             sc += min(int((r.get("width", 0) * r.get("height", 0)) / 400), 3)
         except Exception:
             pass
@@ -214,7 +214,7 @@ def ensure_open_ended_open(
     for el in visible[:8]:
         for attempt in range(max_retries):
             try:
-                # 1) scroll & clic Ã‚Â« normal Ã‚Â»
+                # 1) scroll & clic Ãƒâ€šÃ‚Â« normal Ãƒâ€šÃ‚Â»
                 if _safe_click(driver, el, trace="open_ended_toggle"):
                     time.sleep(0.15)
                     return True
@@ -227,21 +227,21 @@ def ensure_open_ended_open(
                 except Exception:
                     pass
 
-            # Post-vÃƒÂ©rif : champ visible ?
+            # Post-vÃƒÆ’Ã‚Â©rif : champ visible ?
             try:
                 if postcheck == "field":
                     if _has_visible_open_ended_field(container):
-                        print("Ã¢Å“â€¦ Open-ended: champ affichÃƒÂ© (postcheck=field). source: input_handler.py")
+                        print("ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Open-ended: champ affichÃƒÆ’Ã‚Â© (postcheck=field). source: input_handler.py")
                         return True
                 else:
-                    # VÃƒÂ©rifie flip dÃ¢â‚¬â„¢icÃƒÂ´ne (down Ã¢â€ â€™ up)
+                    # VÃƒÆ’Ã‚Â©rifie flip dÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢icÃƒÆ’Ã‚Â´ne (down ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ up)
                     if container.find_elements(By.XPATH, ".//i[contains(@class,'fa-chevron-up')]"):
-                        print("Ã¢Å“â€¦ Open-ended: icÃƒÂ´ne passÃƒÂ©e en 'up' (postcheck=icon). source: input_handler.py")
+                        print("ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Open-ended: icÃƒÆ’Ã‚Â´ne passÃƒÆ’Ã‚Â©e en 'up' (postcheck=icon). source: input_handler.py")
                         return True
             except Exception:
                 pass
 
-    print("Ã¢â€ ÂªÃ¯Â¸Â Open-ended: impossible dÃ¢â‚¬â„¢ouvrir via chevron. source: input_handler.py")
+    print("ÃƒÂ¢Ã¢â‚¬Â Ã‚ÂªÃƒÂ¯Ã‚Â¸Ã‚Â Open-ended: impossible dÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ouvrir via chevron. source: input_handler.py")
     return False
 # === [FIN NOUVEAU] =========================================================
 
@@ -249,7 +249,7 @@ def _normt_txt(s: str) -> str:
     if s is None:
         return ""
     # normalisation robuste (espaces, accents, apostrophes typographiques)
-    s = s.replace("Ã¢â‚¬â„¢", "'").replace("Ã‚Â´", "'").replace("`", "'").replace("Ã¢â‚¬Ëœ", "'")
+    s = s.replace("ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢", "'").replace("Ãƒâ€šÃ‚Â´", "'").replace("`", "'").replace("ÃƒÂ¢Ã¢â€šÂ¬Ã‹Å“", "'")
     s = unicodedata.normalize("NFKD", s)
     s = "".join(c for c in s if not unicodedata.combining(c))
     s = re.sub(r"\s+", " ", s).strip().lower()
@@ -260,7 +260,7 @@ def _find_questions_container(driver, context_hint: str):
     ctx = (context_hint or "").strip()
     if not ctx:
         return None
-    # TolÃƒÂ©rer variations (Ã¢â‚¬Ëœ vs ') et espaces
+    # TolÃƒÆ’Ã‚Â©rer variations (ÃƒÂ¢Ã¢â€šÂ¬Ã‹Å“ vs ') et espaces
     candidates = driver.find_elements(
         By.XPATH,
         "//div[contains(@class,'question')][.//h1 or .//h2]"
@@ -285,13 +285,13 @@ def _find_questions_container(driver, context_hint: str):
 def _click_decipher_grid_radio(driver, label: str, context_hint: str = "") -> bool:
     """
     Decipher (table.grid) robuste :
-    - repÃƒÂ¨re la ligne par le 'context_hint' (texte de la ligne),
-    - repÃƒÂ¨re la colonne par 'label' (texte d'en-tÃƒÂªte ou libellÃƒÂ© dans la cellule),
-    - clique le <label>/<td> cible, puis vÃƒÂ©rifie l'<input> exact.
+    - repÃƒÆ’Ã‚Â¨re la ligne par le 'context_hint' (texte de la ligne),
+    - repÃƒÆ’Ã‚Â¨re la colonne par 'label' (texte d'en-tÃƒÆ’Ã‚Âªte ou libellÃƒÆ’Ã‚Â© dans la cellule),
+    - clique le <label>/<td> cible, puis vÃƒÆ’Ã‚Â©rifie l'<input> exact.
     """
     def _n(s):
         if not s: return ""
-        s = s.replace("\u00A0"," ").replace("Ã¢â‚¬â„¢","'").replace("`","'")
+        s = s.replace("\u00A0"," ").replace("ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢","'").replace("`","'")
         s = unicodedata.normalize("NFKD", s)
         s = "".join(c for c in s if not unicodedata.combining(c))
         return re.sub(r"\s+"," ", s, flags=re.S).strip().lower()
@@ -301,7 +301,7 @@ def _click_decipher_grid_radio(driver, label: str, context_hint: str = "") -> bo
 
     # scope = bloc question si dispo
     try:
-        scope = _find_questions_container(driver, context_hint)  # dÃƒÂ©jÃƒÂ  dans ce fichier
+        scope = _find_questions_container(driver, context_hint)  # dÃƒÆ’Ã‚Â©jÃƒÆ’Ã‚Â  dans ce fichier
     except Exception:
         scope = None
     scope = scope or driver
@@ -312,7 +312,7 @@ def _click_decipher_grid_radio(driver, label: str, context_hint: str = "") -> bo
     except Exception:
         return False
 
-    # 1) index de colonne ÃƒÂ  partir des <th>
+    # 1) index de colonne ÃƒÆ’Ã‚Â  partir des <th>
     col_idx = None
     heads = table.find_elements(By.XPATH, ".//tr[1]//th[normalize-space(.)!='']")
     for i, th in enumerate(heads):
@@ -321,10 +321,10 @@ def _click_decipher_grid_radio(driver, label: str, context_hint: str = "") -> bo
             col_idx = i
             break
 
-    # 2) toutes les lignes de rÃƒÂ©ponses
+    # 2) toutes les lignes de rÃƒÆ’Ã‚Â©ponses
     rows = table.find_elements(By.XPATH, ".//tr[contains(@class,'row-elements')]")
     for tr in rows:
-        # texte de ligne (th ou 1ÃŠÂ³Ã¡Âµâ€°/2Ã¡Âµâ€° cellule texte)
+        # texte de ligne (th ou 1ÃƒÅ Ã‚Â³ÃƒÂ¡Ã‚ÂµÃ¢â‚¬Â°/2ÃƒÂ¡Ã‚ÂµÃ¢â‚¬Â° cellule texte)
         row_txt = ""
         for xp in (".//th", "./td[1]", "./td[2]"):
             try:
@@ -355,14 +355,14 @@ def _click_decipher_grid_radio(driver, label: str, context_hint: str = "") -> bo
         if cell is None:
             continue
 
-        # 4) ÃƒÂ©lÃƒÂ©ments cliquables dans la cellule
+        # 4) ÃƒÆ’Ã‚Â©lÃƒÆ’Ã‚Â©ments cliquables dans la cellule
         inp, lab = None, None
         try: inp = cell.find_element(By.XPATH, ".//input[@type='radio']")
         except Exception: pass
         try: lab = cell.find_element(By.XPATH, ".//label")
         except Exception: pass
 
-        # 5) clic (label Ã¢â€ â€™ input Ã¢â€ â€™ td), sans double-clic ni re-toggle
+        # 5) clic (label ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ input ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ td), sans double-clic ni re-toggle
         try:
             target = lab or inp or cell
             driver.execute_script("arguments[0].scrollIntoView({block:'center'});", target)
@@ -378,7 +378,7 @@ def _click_decipher_grid_radio(driver, label: str, context_hint: str = "") -> bo
 
         time.sleep(0.12)
 
-        # 6) vÃƒÂ©rification stricte sur l'input de la cellule
+        # 6) vÃƒÆ’Ã‚Â©rification stricte sur l'input de la cellule
         if inp is None:
             try: inp = cell.find_element(By.XPATH, ".//input[@type='radio']")
             except Exception: inp = None
@@ -392,7 +392,7 @@ def _click_decipher_grid_radio(driver, label: str, context_hint: str = "") -> bo
                 return v in ("true","checked","1")
 
         if _is_checked(inp):
-            print(f"Ã¢Å“â€¦ Radio (Decipher) cochÃƒÂ©e: row='{context_hint}' Ãƒâ€” col='{label}' Ã¢â‚¬â€ source: input_handler.py")
+            print(f"ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Radio (Decipher) cochÃƒÆ’Ã‚Â©e: row='{context_hint}' ÃƒÆ’Ã¢â‚¬â€ col='{label}' ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â source: input_handler.py")
             return True
         # sinon on tente une fois un clic direct sur la cellule (skins 'clickableCell')
         try:
@@ -400,7 +400,7 @@ def _click_decipher_grid_radio(driver, label: str, context_hint: str = "") -> bo
             driver.execute_script("arguments[0].click();", td)
             time.sleep(0.12)
             if _is_checked(inp):
-                print(f"Ã¢Å“â€¦ Radio (Decipher) cochÃƒÂ©e via <td>: row='{context_hint}' Ãƒâ€” col='{label}'")
+                print(f"ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Radio (Decipher) cochÃƒÆ’Ã‚Â©e via <td>: row='{context_hint}' ÃƒÆ’Ã¢â‚¬â€ col='{label}'")
                 return True
         except Exception:
             pass
@@ -430,7 +430,7 @@ def _find_inputs_by_hint(driver, kind: str):
         return []
 
 def _set_input_value_with_events(driver, el, value: str):
-    """Set .value, send_keys, et dÃƒÂ©clenche input/change/blur pour satisfaire le JS."""
+    """Set .value, send_keys, et dÃƒÆ’Ã‚Â©clenche input/change/blur pour satisfaire le JS."""
     try:
         el.click()
     except Exception:
@@ -447,7 +447,7 @@ def _set_input_value_with_events(driver, el, value: str):
     except Exception:
         # dernier recours: js direct + events
         driver.execute_script("arguments[0].value = arguments[1];", el, value)
-    # ÃƒÂ©vÃƒÂ©nements attendus
+    # ÃƒÆ’Ã‚Â©vÃƒÆ’Ã‚Â©nements attendus
     driver.execute_script("""
         const e = arguments[0];
         for (const t of ["input","change","blur"]) {
@@ -458,15 +458,15 @@ def _set_input_value_with_events(driver, el, value: str):
 def set_sliderpoints(driver, choice_text: str, context_hint: str | None = None) -> bool:
     """Behaviorally/Decipher 'sq-sliderpoints'.
 
-    ProblÃƒÂ¨me observÃƒÂ©:
-    - le code peut retourner True alors que le curseur reste "Off Scale" (tout ÃƒÂ  droite)
-      => la page considÃƒÂ¨re la rÃƒÂ©ponse non saisie.
+    ProblÃƒÆ’Ã‚Â¨me observÃƒÆ’Ã‚Â©:
+    - le code peut retourner True alors que le curseur reste "Off Scale" (tout ÃƒÆ’Ã‚Â  droite)
+      => la page considÃƒÆ’Ã‚Â¨re la rÃƒÆ’Ã‚Â©ponse non saisie.
 
-    StratÃƒÂ©gie (prÃƒÂ©dictible, 2 tentatives max):
+    StratÃƒÆ’Ã‚Â©gie (prÃƒÆ’Ã‚Â©dictible, 2 tentatives max):
     1) Scoper strictement la bonne ligne via le row-legend (si context_hint fourni)
-    2) Mapper choice_text -> index sur la lÃƒÂ©gende visible
-    3) Appliquer via click sur legend + set du <select> + (si prÃƒÂ©sent) jQuery-UI slider('value', ...)
-    4) VÃƒÂ©rifier que le slider n'est plus off-scale (handle != ~100%) et que le select a la bonne value.
+    2) Mapper choice_text -> index sur la lÃƒÆ’Ã‚Â©gende visible
+    3) Appliquer via click sur legend + set du <select> + (si prÃƒÆ’Ã‚Â©sent) jQuery-UI slider('value', ...)
+    4) VÃƒÆ’Ã‚Â©rifier que le slider n'est plus off-scale (handle != ~100%) et que le select a la bonne value.
     """
     import unicodedata
 
@@ -477,7 +477,7 @@ def set_sliderpoints(driver, choice_text: str, context_hint: str | None = None) 
     def _n(s: str) -> str:
         s = _strip_accents((s or "").replace("\u00a0", " "))
         s = s.lower()
-        s = re.sub(r"[Ã‚Â»Ã‚Â«Ã¢â‚¬Å“Ã¢â‚¬Â\"'Ã¢â‚¬â„¢Ã¢â‚¬ÂºÃ¢â€ â€™Ã‚Â·Ã¢â‚¬Â¢:Ã¢â‚¬Â¦]", " ", s)
+        s = re.sub(r"[Ãƒâ€šÃ‚Â»Ãƒâ€šÃ‚Â«ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÂ¢Ã¢â€šÂ¬Ã‚Â\"'ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂºÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢Ãƒâ€šÃ‚Â·ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢:ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦]", " ", s)
         s = re.sub(r"[^a-z0-9 ]+", " ", s)
         s = re.sub(r"\s+", " ", s).strip()
         return s
@@ -509,7 +509,7 @@ def set_sliderpoints(driver, choice_text: str, context_hint: str | None = None) 
     if not needle:
         return False
 
-    # scope optionnel (question courante), sinon page entiÃƒÂ¨re
+    # scope optionnel (question courante), sinon page entiÃƒÆ’Ã‚Â¨re
     try:
         scope = _find_context_container(driver, context_hint) if context_hint else None
     except Exception:
@@ -525,7 +525,7 @@ def set_sliderpoints(driver, choice_text: str, context_hint: str | None = None) 
     if not blocks_all:
         return False
 
-    # Scoping strict par row label si fourni (ÃƒÂ©vite de rÃƒÂ©pondre la mauvaise ligne)
+    # Scoping strict par row label si fourni (ÃƒÆ’Ã‚Â©vite de rÃƒÆ’Ã‚Â©pondre la mauvaise ligne)
     blocks = blocks_all
     row_ctx = _n(context_hint or "")
     if row_ctx:
@@ -579,7 +579,7 @@ def set_sliderpoints(driver, choice_text: str, context_hint: str | None = None) 
             x = int((idx / steps) * max(1, w - 4)) + 2
             y = max(1, h // 2)
 
-            # PrÃƒÂ©pare select + value cible (si prÃƒÂ©sent)
+            # PrÃƒÆ’Ã‚Â©pare select + value cible (si prÃƒÆ’Ã‚Â©sent)
             sel = None
             desired_val: str | None = None
             real_idx = idx
@@ -590,7 +590,7 @@ def set_sliderpoints(driver, choice_text: str, context_hint: str | None = None) 
                 def _is_placeholder(opt) -> bool:
                     v = (opt.get_attribute("value") or "").strip()
                     t = _n(opt.text)
-                    return (v in ("", "-1")) or any(k in t for k in ("selection", "select", "choose", "sÃƒÂ©lection"))
+                    return (v in ("", "-1")) or any(k in t for k in ("selection", "select", "choose", "sÃƒÆ’Ã‚Â©lection"))
 
                 offset = 1 if S.options and _is_placeholder(S.options[0]) else 0
                 real_idx = idx + offset
@@ -616,7 +616,7 @@ def set_sliderpoints(driver, choice_text: str, context_hint: str | None = None) 
                     pass
 
             def _apply_via_widget() -> None:
-                # 1) Click sur le "point" (circle) : c'est l'ÃƒÂ©lÃƒÂ©ment rÃƒÂ©ellement interactif du sliderpoints
+                # 1) Click sur le "point" (circle) : c'est l'ÃƒÆ’Ã‚Â©lÃƒÆ’Ã‚Â©ment rÃƒÆ’Ã‚Â©ellement interactif du sliderpoints
                 clicked = False
                 circles = []
                 try:
@@ -635,7 +635,7 @@ def set_sliderpoints(driver, choice_text: str, context_hint: str | None = None) 
                 except Exception:
                     clicked = False
 
-                # Fallback: click sur le texte de lÃƒÂ©gende (moins fiable)
+                # Fallback: click sur le texte de lÃƒÆ’Ã‚Â©gende (moins fiable)
                 if not clicked:
                     try:
                         if 0 <= idx < len(legends):
@@ -647,7 +647,7 @@ def set_sliderpoints(driver, choice_text: str, context_hint: str | None = None) 
                 # 2) Set <select> (value backend)
                 if sel is not None:
                     try:
-                        # On ne force le <select> que si nÃƒÂ©cessaire (ÃƒÂ©vite dÃƒÂ©sync UI <-> select)
+                        # On ne force le <select> que si nÃƒÆ’Ã‚Â©cessaire (ÃƒÆ’Ã‚Â©vite dÃƒÆ’Ã‚Â©sync UI <-> select)
                         cur = (sel.get_attribute("value") or "").strip()
                         if desired_val is not None and cur != desired_val:
                             driver.execute_script("arguments[0].value = arguments[1];", sel, desired_val)
@@ -657,7 +657,7 @@ def set_sliderpoints(driver, choice_text: str, context_hint: str | None = None) 
                     except Exception:
                         pass
 
-                # 3) jQuery-UI slider('value', ...) si dispo (ÃƒÂ©tat interne widget)
+                # 3) jQuery-UI slider('value', ...) si dispo (ÃƒÆ’Ã‚Â©tat interne widget)
                 try:
                     v = int(desired_val) if desired_val is not None and str(desired_val).lstrip("-").isdigit() else int(idx)
                     driver.execute_script(
@@ -685,12 +685,12 @@ def set_sliderpoints(driver, choice_text: str, context_hint: str | None = None) 
                     except Exception:
                         ok_val = False
                 elif sel is None:
-                    # pas de <select> => on ne peut pas valider la value, on se base sur l'ÃƒÂ©tat du slider
+                    # pas de <select> => on ne peut pas valider la value, on se base sur l'ÃƒÆ’Ã‚Â©tat du slider
                     ok_val = True
 
-                # on veut sortir du mode Off Scale (handle tout ÃƒÂ  droite)
+                # on veut sortir du mode Off Scale (handle tout ÃƒÆ’Ã‚Â  droite)
                 try:
-                    # IMPORTANT: re-trouve le track pour ÃƒÂ©viter stale element => vÃƒÂ©rif conservatrice
+                    # IMPORTANT: re-trouve le track pour ÃƒÆ’Ã‚Â©viter stale element => vÃƒÆ’Ã‚Â©rif conservatrice
                     t2 = b.find_element(By.CSS_SELECTOR, ".ui-slider-horizontal")
                     ok_scale = not _is_off_scale(t2)
                 except Exception:
@@ -709,21 +709,21 @@ def set_sliderpoints(driver, choice_text: str, context_hint: str | None = None) 
             # Tentative 1: widget/JS (le plus fiable)
             _apply_via_widget()
 
-            # L'UI met parfois un court dÃƒÂ©lai ÃƒÂ  sortir de "Off Scale" aprÃƒÂ¨s sync (<select> + events).
-            # Sans ce dÃƒÂ©lai, on dÃƒÂ©clenche inutilement le fallback "clic piste", qui peut dÃƒÂ©placer le curseur.
+            # L'UI met parfois un court dÃƒÆ’Ã‚Â©lai ÃƒÆ’Ã‚Â  sortir de "Off Scale" aprÃƒÆ’Ã‚Â¨s sync (<select> + events).
+            # Sans ce dÃƒÆ’Ã‚Â©lai, on dÃƒÆ’Ã‚Â©clenche inutilement le fallback "clic piste", qui peut dÃƒÆ’Ã‚Â©placer le curseur.
             try:
                 time.sleep(0.15)
             except Exception:
                 pass
 
             if _verify():
-                print(f"Ã¢Å“â€¦ Sliderpoints rempli: '{choice_text}'. source: input_handler.py")
+                print(f"ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Sliderpoints rempli: '{choice_text}'. source: input_handler.py")
                 return True
 
             # Tentative 2: clic piste (fallback)
             try:
                 if w > 4:
-                    # Click robuste (coordonnÃƒÂ©es absolues) pour ÃƒÂ©viter l'ambiguÃƒÂ¯tÃƒÂ© des offsets ActionChains.
+                    # Click robuste (coordonnÃƒÆ’Ã‚Â©es absolues) pour ÃƒÆ’Ã‚Â©viter l'ambiguÃƒÆ’Ã‚Â¯tÃƒÆ’Ã‚Â© des offsets ActionChains.
                     driver.execute_script(
                         """
                         const track = arguments[0];
@@ -756,7 +756,7 @@ def set_sliderpoints(driver, choice_text: str, context_hint: str | None = None) 
                 _dispatch_select_events(sel)
 
             if _verify():
-                print(f"Ã¢Å“â€¦ Sliderpoints rempli: '{choice_text}'. source: input_handler.py")
+                print(f"ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Sliderpoints rempli: '{choice_text}'. source: input_handler.py")
                 return True
 
         except Exception:
@@ -769,15 +769,15 @@ def norm(s: str) -> str:
         return ""
     s = s.replace("\u00a0", " ")
     s = s.lower().strip()
-    s = re.sub(r"[Ã‚Â»Ã‚Â«Ã¢â‚¬Å“Ã¢â‚¬Â\"'Ã¢â‚¬ÂºÃ¢â€ â€™Ã‚Â·Ã¢â‚¬Â¢:]+", "", s)
+    s = re.sub(r"[Ãƒâ€šÃ‚Â»Ãƒâ€šÃ‚Â«ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÂ¢Ã¢â€šÂ¬Ã‚Â\"'ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂºÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢Ãƒâ€šÃ‚Â·ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢:]+", "", s)
     s = re.sub(r"\s+", " ", s)
     return s
 
 def _click_cta_strong_hintscan(driver, label_hint: str = "", allow_generic: bool = True) -> bool:
     """
-    Clique un CTA 'Next/Suivant/Continuer/Start/Valider' mÃƒÂªme si c'est une image,
+    Clique un CTA 'Next/Suivant/Continuer/Start/Valider' mÃƒÆ’Ã‚Âªme si c'est une image,
     un <a> JavaScript sans texte, ou un div role=button.
-    label_hint est optionnel et ne bloque pas la dÃƒÂ©tection gÃƒÂ©nÃƒÂ©rique.
+    label_hint est optionnel et ne bloque pas la dÃƒÆ’Ã‚Â©tection gÃƒÆ’Ã‚Â©nÃƒÆ’Ã‚Â©rique.
     """
     BASE_HINTS = {
     "suivant",
@@ -796,7 +796,7 @@ def _click_cta_strong_hintscan(driver, label_hint: str = "", allow_generic: bool
 
     lh = (label_hint or "").strip().lower()
 
-    # NEW: si allow_generic=False, on N'UTILISE PAS les hints gÃƒÂ©nÃƒÂ©riques.
+    # NEW: si allow_generic=False, on N'UTILISE PAS les hints gÃƒÆ’Ã‚Â©nÃƒÆ’Ã‚Â©riques.
     if allow_generic:
         HINTS = set(BASE_HINTS)
     else:
@@ -805,7 +805,7 @@ def _click_cta_strong_hintscan(driver, label_hint: str = "", allow_generic: bool
     if lh:
         HINTS.add(lh)
 
-    # Cas limite: si aucun hint ÃƒÂ  chercher (allow_generic=False et label_hint vide)
+    # Cas limite: si aucun hint ÃƒÆ’Ã‚Â  chercher (allow_generic=False et label_hint vide)
     if not HINTS:
         return False
 
@@ -813,11 +813,11 @@ def _click_cta_strong_hintscan(driver, label_hint: str = "", allow_generic: bool
     # 1) Boutons & liens avec texte
     text_xpath = " | ".join(
         [
-            f"//button[normalize-space(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZÃƒâ‚¬Ãƒâ€šÃƒâ€žÃƒâ€¡Ãƒâ€°ÃƒË†ÃƒÅ Ãƒâ€¹ÃƒÅ½ÃƒÂÃƒâ€Ãƒâ€“Ãƒâ„¢Ãƒâ€ºÃƒÅ“Ã…Â¸', 'abcdefghijklmnopqrstuvwxyzÃƒÂ ÃƒÂ¢ÃƒÂ¤ÃƒÂ§ÃƒÂ©ÃƒÂ¨ÃƒÂªÃƒÂ«ÃƒÂ®ÃƒÂ¯ÃƒÂ´ÃƒÂ¶ÃƒÂ¹ÃƒÂ»ÃƒÂ¼ÃƒÂ¿'))='{t}']"
+            f"//button[normalize-space(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZÃƒÆ’Ã¢â€šÂ¬ÃƒÆ’Ã¢â‚¬Å¡ÃƒÆ’Ã¢â‚¬Å¾ÃƒÆ’Ã¢â‚¬Â¡ÃƒÆ’Ã¢â‚¬Â°ÃƒÆ’Ã‹â€ ÃƒÆ’Ã…Â ÃƒÆ’Ã¢â‚¬Â¹ÃƒÆ’Ã…Â½ÃƒÆ’Ã‚ÂÃƒÆ’Ã¢â‚¬ÂÃƒÆ’Ã¢â‚¬â€œÃƒÆ’Ã¢â€žÂ¢ÃƒÆ’Ã¢â‚¬ÂºÃƒÆ’Ã…â€œÃƒâ€¦Ã‚Â¸', 'abcdefghijklmnopqrstuvwxyzÃƒÆ’Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÆ’Ã‚Â¤ÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â©ÃƒÆ’Ã‚Â¨ÃƒÆ’Ã‚ÂªÃƒÆ’Ã‚Â«ÃƒÆ’Ã‚Â®ÃƒÆ’Ã‚Â¯ÃƒÆ’Ã‚Â´ÃƒÆ’Ã‚Â¶ÃƒÆ’Ã‚Â¹ÃƒÆ’Ã‚Â»ÃƒÆ’Ã‚Â¼ÃƒÆ’Ã‚Â¿'))='{t}']"
             for t in HINTS
         ]
         + [
-            f"//a[normalize-space(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZÃƒâ‚¬Ãƒâ€šÃƒâ€žÃƒâ€¡Ãƒâ€°ÃƒË†ÃƒÅ Ãƒâ€¹ÃƒÅ½ÃƒÂÃƒâ€Ãƒâ€“Ãƒâ„¢Ãƒâ€ºÃƒÅ“Ã…Â¸', 'abcdefghijklmnopqrstuvwxyzÃƒÂ ÃƒÂ¢ÃƒÂ¤ÃƒÂ§ÃƒÂ©ÃƒÂ¨ÃƒÂªÃƒÂ«ÃƒÂ®ÃƒÂ¯ÃƒÂ´ÃƒÂ¶ÃƒÂ¹ÃƒÂ»ÃƒÂ¼ÃƒÂ¿'))='{t}']"
+            f"//a[normalize-space(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZÃƒÆ’Ã¢â€šÂ¬ÃƒÆ’Ã¢â‚¬Å¡ÃƒÆ’Ã¢â‚¬Å¾ÃƒÆ’Ã¢â‚¬Â¡ÃƒÆ’Ã¢â‚¬Â°ÃƒÆ’Ã‹â€ ÃƒÆ’Ã…Â ÃƒÆ’Ã¢â‚¬Â¹ÃƒÆ’Ã…Â½ÃƒÆ’Ã‚ÂÃƒÆ’Ã¢â‚¬ÂÃƒÆ’Ã¢â‚¬â€œÃƒÆ’Ã¢â€žÂ¢ÃƒÆ’Ã¢â‚¬ÂºÃƒÆ’Ã…â€œÃƒâ€¦Ã‚Â¸', 'abcdefghijklmnopqrstuvwxyzÃƒÆ’Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÆ’Ã‚Â¤ÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â©ÃƒÆ’Ã‚Â¨ÃƒÆ’Ã‚ÂªÃƒÆ’Ã‚Â«ÃƒÆ’Ã‚Â®ÃƒÆ’Ã‚Â¯ÃƒÆ’Ã‚Â´ÃƒÆ’Ã‚Â¶ÃƒÆ’Ã‚Â¹ÃƒÆ’Ã‚Â»ÃƒÆ’Ã‚Â¼ÃƒÆ’Ã‚Â¿'))='{t}']"
             for t in HINTS
         ]
     )
@@ -828,7 +828,7 @@ def _click_cta_strong_hintscan(driver, label_hint: str = "", allow_generic: bool
         except Exception:
             pass
 
-    # 2) Id / name / data-* / class Ã¢â‚¬Å“next/continue/suivant/btn_nextÃ¢â‚¬Â¦Ã¢â‚¬Â
+    # 2) Id / name / data-* / class ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œnext/continue/suivant/btn_nextÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â
     css_patterns = [
         "[id*='next' i]",
         "[name*='next' i]",
@@ -849,7 +849,7 @@ def _click_cta_strong_hintscan(driver, label_hint: str = "", allow_generic: bool
         except Exception:
             pass
 
-    # 3) Images de bouton Ã¢â‚¬Å“nextÃ¢â‚¬Â
+    # 3) Images de bouton ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œnextÃƒÂ¢Ã¢â€šÂ¬Ã‚Â
     img_sel = "img[src*='button_next' i], img[src*='btn_next' i], img[alt*='suivant' i], img[alt*='next' i]"
     try:
         candidates += driver.find_elements(By.CSS_SELECTOR, img_sel)
@@ -865,7 +865,7 @@ def _click_cta_strong_hintscan(driver, label_hint: str = "", allow_generic: bool
     except Exception:
         pass
 
-    # DÃƒÂ©dupliquer en conservant lÃ¢â‚¬â„¢ordre
+    # DÃƒÆ’Ã‚Â©dupliquer en conservant lÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ordre
     seen = set()
     uniq = []
     for el in candidates:
@@ -884,7 +884,7 @@ def _click_cta_strong_hintscan(driver, label_hint: str = "", allow_generic: bool
             if not el.is_displayed():
                 continue
             if _safe_click(driver, el):
-                # Attente courte dÃ¢â‚¬â„¢une navigation ou dÃ¢â‚¬â„¢un changement DOM
+                # Attente courte dÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢une navigation ou dÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢un changement DOM
                 try:
                     WebDriverWait(driver, 2).until(
                         lambda d: d.execute_script("return document.readyState")
@@ -901,14 +901,14 @@ def _click_cta_strong_hintscan(driver, label_hint: str = "", allow_generic: bool
 
 def _find_context_container(driver, context_hint: str | None):
     if not context_hint:
-        print("Ã¢ÂÅ’ Contexte None")
+        print("ÃƒÂ¢Ã‚ÂÃ…â€™ Contexte None")
         return None
     ctx = _norm_txt(context_hint)
     if not ctx:
-        print("Ã¢ÂÅ’ Contexte vide")
+        print("ÃƒÂ¢Ã‚ÂÃ…â€™ Contexte vide")
         return None
 
-    # 1) localiser un titre/entÃƒÂªte de la question correspondant
+    # 1) localiser un titre/entÃƒÆ’Ã‚Âªte de la question correspondant
     head_xp = (
         "//*[self::legend or self::h1 or self::h2 or self::h3 or self::h4 or self::h5 "
         "   or contains(@class,'question-text') or contains(@class,'QuestionText') "
@@ -925,7 +925,7 @@ def _find_context_container(driver, context_hint: str | None):
     for h in heads:
         try:
             t = _norm_txt(h.text or h.get_attribute("innerText") or "")
-            # similaritÃƒÂ© souple
+            # similaritÃƒÆ’Ã‚Â© souple
             sc = 1.0 if (ctx == t or ctx in t or t in ctx) else 0.0
             if sc == 0.0:
                 # petit score si chevauchement de mots
@@ -933,7 +933,7 @@ def _find_context_container(driver, context_hint: str | None):
                 if aw and bw:
                     sc = len(aw & bw) / len(aw | bw)
             if sc > best_sc:
-                # conteneur "question" le plus proche de l'entÃƒÂªte
+                # conteneur "question" le plus proche de l'entÃƒÆ’Ã‚Âªte
                 try:
                     q = h.find_element(
                         By.XPATH,
@@ -941,8 +941,8 @@ def _find_context_container(driver, context_hint: str | None):
                     )
                 except Exception:
                     q = h.find_element(By.XPATH, "ancestor::*[self::div or self::section][1]")
-                # ne garder que si le conteneur a des inputs de rÃƒÂ©ponse
-                # ne garder que si le conteneur a des inputs de rÃƒÂ©ponse (inclure texte/textarea)
+                # ne garder que si le conteneur a des inputs de rÃƒÆ’Ã‚Â©ponse
+                # ne garder que si le conteneur a des inputs de rÃƒÆ’Ã‚Â©ponse (inclure texte/textarea)
                 has_answers = q.find_elements(
                     By.XPATH,
                     ".//input[@type='radio' or @type='checkbox' or @type='text' or @type='search' or @type='number' or @type='textarea' or not(@type)]"
@@ -959,7 +959,7 @@ def _find_context_container(driver, context_hint: str | None):
     if best:
         return best
 
-    # 2) fallback: bloc plus gÃƒÂ©nÃƒÂ©rique MAIS qui contient des inputs
+    # 2) fallback: bloc plus gÃƒÆ’Ã‚Â©nÃƒÆ’Ã‚Â©rique MAIS qui contient des inputs
     try:
         return driver.find_element(
             By.XPATH,
@@ -970,7 +970,7 @@ def _find_context_container(driver, context_hint: str | None):
     except Exception:
         pass
     
-        # Ã°Å¸â€Å½ Bonus : conteneur Decipher <div id="question_*" class="question ...">
+        # ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ…Â½ Bonus : conteneur Decipher <div id="question_*" class="question ...">
     try:
         q = driver.find_element(
             By.XPATH,
@@ -986,7 +986,7 @@ def _find_context_container(driver, context_hint: str | None):
 def _type_via_cdp(driver, text: str):
     """
     Frappe clavier via Chrome DevTools Protocol (Input.dispatchKeyEvent).
-    NÃƒÂ©cessite Chrome/Chromium + Selenium 4+.
+    NÃƒÆ’Ã‚Â©cessite Chrome/Chromium + Selenium 4+.
     """
     if not hasattr(driver, "execute_cdp_cmd"):
         raise RuntimeError("CDP indisponible sur ce driver")
@@ -1005,7 +1005,7 @@ def _type_via_cdp(driver, text: str):
             })
             time.sleep(0.05)  # micro-pause humaine
         except Exception:
-            # On continue mÃƒÂªme si un caractÃƒÂ¨re ÃƒÂ©choue
+            # On continue mÃƒÆ’Ã‚Âªme si un caractÃƒÆ’Ã‚Â¨re ÃƒÆ’Ã‚Â©choue
             pass
 
 def _has_native_selects(driver) -> bool:
@@ -1013,10 +1013,10 @@ def _has_native_selects(driver) -> bool:
 
 def _open_first_dropdown(driver) -> bool:
     """
-    Ouvre un dropdown visible (natif <select> ou custom rÃƒÂ´le=combobox / bouton).
-    Ne sÃƒÂ©lectionne pas d'option ici ; juste Ã‚Â« abaisser Ã‚Â» le menu.
+    Ouvre un dropdown visible (natif <select> ou custom rÃƒÆ’Ã‚Â´le=combobox / bouton).
+    Ne sÃƒÆ’Ã‚Â©lectionne pas d'option ici ; juste Ãƒâ€šÃ‚Â« abaisser Ãƒâ€šÃ‚Â» le menu.
     """
-    # 1) <select> natif : on clique pour lÃ¢â‚¬â„¢ouvrir (souvent inutile mais safe)
+    # 1) <select> natif : on clique pour lÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ouvrir (souvent inutile mais safe)
     selects = driver.find_elements(By.TAG_NAME, "select")
     for s in selects:
         try:
@@ -1026,12 +1026,12 @@ def _open_first_dropdown(driver) -> bool:
                 )
                 time.sleep(0.1)
                 s.click()
-                print("Ã°Å¸â€œâ€š Dropdown (natif) ouvert... source: input_handler.py")
+                print("ÃƒÂ°Ã…Â¸Ã¢â‚¬Å“Ã¢â‚¬Å¡ Dropdown (natif) ouvert... source: input_handler.py")
                 return True
         except Exception:
             continue
 
-    # 2) Dropdowns customs : role=combobox ou ÃƒÂ©lÃƒÂ©ments avec Ã¢â‚¬Å“selectÃ¢â‚¬Â dans la classe
+    # 2) Dropdowns customs : role=combobox ou ÃƒÆ’Ã‚Â©lÃƒÆ’Ã‚Â©ments avec ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œselectÃƒÂ¢Ã¢â€šÂ¬Ã‚Â dans la classe
     togglers = []
     togglers += driver.find_elements(By.CSS_SELECTOR, "[role='combobox']")
     togglers += driver.find_elements(By.CSS_SELECTOR, "[aria-haspopup='listbox']")
@@ -1055,32 +1055,32 @@ def _open_first_dropdown(driver) -> bool:
                 except Exception:
                     ActionChains(driver).move_to_element(t).click().perform()
                 time.sleep(0.2)
-                print("Ã°Å¸â€œâ€š Dropdown (custom) ouvert. source: input_handler.py")
+                print("ÃƒÂ°Ã…Â¸Ã¢â‚¬Å“Ã¢â‚¬Å¡ Dropdown (custom) ouvert. source: input_handler.py")
                 return True
         except Exception:
             continue
 
-    print("Ã¢ÂÅ’ Aucun dropdown ÃƒÂ  ouvrir. source: input_handler.py")
+    print("ÃƒÂ¢Ã‚ÂÃ…â€™ Aucun dropdown ÃƒÆ’Ã‚Â  ouvrir. source: input_handler.py")
     return False
 
 def _try_select_option_any(driver, option_text: str) -> bool:
     """
-    Tente de sÃƒÂ©lectionner 'option_text' si un <select> est prÃƒÂ©sent
+    Tente de sÃƒÆ’Ã‚Â©lectionner 'option_text' si un <select> est prÃƒÆ’Ã‚Â©sent
     ou si un menu custom est ouvert (ul/li, role=option...).
     """
 
     target = _norm_txt(option_text)
 
-    # [PATCH] Ne pas "sÃƒÂ©lectionner" un placeholder (inutile et souvent disqualifiant)
-    if target in {"mois", "annÃƒÂ©e", "annee", "month", "year"}:
-        print(f"Ã¢â€žÂ¹Ã¯Â¸Â Valeur placeholder ignorÃƒÂ©e: '{option_text}'. source: input_handler.py")
+    # [PATCH] Ne pas "sÃƒÆ’Ã‚Â©lectionner" un placeholder (inutile et souvent disqualifiant)
+    if target in {"mois", "annÃƒÆ’Ã‚Â©e", "annee", "month", "year"}:
+        print(f"ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¹ÃƒÂ¯Ã‚Â¸Ã‚Â Valeur placeholder ignorÃƒÆ’Ã‚Â©e: '{option_text}'. source: input_handler.py")
         return False
 
     # A) <select> natif
     selects = driver.find_elements(By.TAG_NAME, "select")
     for s in selects:
         try:
-            # [PATCH] SÃƒÂ©lection via JS (robuste mÃƒÂªme si <select> hidden / bootstrap-select)
+            # [PATCH] SÃƒÆ’Ã‚Â©lection via JS (robuste mÃƒÆ’Ã‚Âªme si <select> hidden / bootstrap-select)
             ok_js = False
             if target:
                 try:
@@ -1123,7 +1123,7 @@ def _try_select_option_any(driver, option_text: str) -> bool:
                     ok_js = False
 
             if ok_js:
-                print(f"Ã¢Å“â€¦ Option sÃƒÂ©lectionnÃƒÂ©e (JS/select) : {option_text}. source: input_handler.py")
+                print(f"ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Option sÃƒÆ’Ã‚Â©lectionnÃƒÆ’Ã‚Â©e (JS/select) : {option_text}. source: input_handler.py")
                 try:
                     driver._ui_overlay_opened = None
                 except Exception:
@@ -1156,7 +1156,7 @@ def _try_select_option_any(driver, option_text: str) -> bool:
                       try { s.dispatchEvent(new Event('blur',  {bubbles:true})); } catch(e){}
                     """, s)
                     print(
-                        f"Ã¢Å“â€¦ Option sÃƒÂ©lectionnÃƒÂ©e (natif) : {opt.text}. source: input_handler.py"
+                        f"ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Option sÃƒÆ’Ã‚Â©lectionnÃƒÆ’Ã‚Â©e (natif) : {opt.text}. source: input_handler.py"
                     )
                     try:
                         driver._ui_overlay_opened = None
@@ -1173,10 +1173,10 @@ def _try_select_option_any(driver, option_text: str) -> bool:
                     time.sleep(0.1)
                     sel.select_by_value(opt.get_attribute("value"))
                     print(
-                        f"Ã¢Å“â€¦ Option sÃƒÂ©lectionnÃƒÂ©e (natif/value) : {opt.get_attribute('value')}. source: input_handler.py"
+                        f"ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Option sÃƒÆ’Ã‚Â©lectionnÃƒÆ’Ã‚Â©e (natif/value) : {opt.get_attribute('value')}. source: input_handler.py"
                     )
                     try:
-                        # On signale ÃƒÂ  l'orchestrateur que l'action a rÃƒÂ©ussi
+                        # On signale ÃƒÆ’Ã‚Â  l'orchestrateur que l'action a rÃƒÆ’Ã‚Â©ussi
                         setattr(
                             driver, "last_action_success", True
                         )  # si tu stockes sur driver
@@ -1186,7 +1186,7 @@ def _try_select_option_any(driver, option_text: str) -> bool:
         except Exception:
             continue
 
-    # B) Dropdown custom : suppose menu dÃƒÂ©jÃƒÂ  ouvert
+    # B) Dropdown custom : suppose menu dÃƒÆ’Ã‚Â©jÃƒÆ’Ã‚Â  ouvert
     candidates = []
     candidates += driver.find_elements(By.XPATH, "//li[normalize-space(.)!='']")
     candidates += driver.find_elements(By.CSS_SELECTOR, "[role='option']")
@@ -1206,10 +1206,10 @@ def _try_select_option_any(driver, option_text: str) -> bool:
                 c.click()
                 time.sleep(0.2)
                 print(
-                    f"Ã¢Å“â€¦ Option sÃƒÂ©lectionnÃƒÂ©e (custom) : {option_text}. source: input_handler.py"
+                    f"ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Option sÃƒÆ’Ã‚Â©lectionnÃƒÆ’Ã‚Â©e (custom) : {option_text}. source: input_handler.py"
                 )
                 try:
-                    # On signale ÃƒÂ  l'orchestrateur que l'action a rÃƒÂ©ussi
+                    # On signale ÃƒÆ’Ã‚Â  l'orchestrateur que l'action a rÃƒÆ’Ã‚Â©ussi
                     setattr(
                         driver, "last_action_success", True
                     )  # si tu stockes sur driver
@@ -1220,7 +1220,7 @@ def _try_select_option_any(driver, option_text: str) -> bool:
             continue
 
     print(
-        f"Ã¢ÂÅ’ Option '{option_text}' introuvable dans dropdown. source: input_handler.py"
+        f"ÃƒÂ¢Ã‚ÂÃ…â€™ Option '{option_text}' introuvable dans dropdown. source: input_handler.py"
     )
     return False
 
@@ -1233,12 +1233,12 @@ def _select_like_elements(driver):
     els += driver.find_elements(
         By.CSS_SELECTOR, "[role='combobox'], [aria-haspopup='listbox']"
     )
-    # togglers frÃƒÂ©quents (custom selects)
+    # togglers frÃƒÆ’Ã‚Â©quents (custom selects)
     els += driver.find_elements(
         By.XPATH,
         "//*[contains(@class,'select') and (self::div or self::button or self::span)]",
     )
-    # ÃƒÂ©viter les doublons
+    # ÃƒÆ’Ã‚Â©viter les doublons
     seen, uniq = set(), []
     for e in els:
         try:
@@ -1250,10 +1250,10 @@ def _select_like_elements(driver):
     return uniq
 
 def _element_signature_text(driver, el) -> str:
-    # concatÃƒÂ¨ne tout ce qui dÃƒÂ©crit ce champ (labels/aria/placeholder/contenu question)
+    # concatÃƒÆ’Ã‚Â¨ne tout ce qui dÃƒÆ’Ã‚Â©crit ce champ (labels/aria/placeholder/contenu question)
     bits = []
     try:
-        # label for=Ã¢â‚¬Â¦
+        # label for=ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦
         eid = el.get_attribute("id")
         if eid:
             try:
@@ -1294,7 +1294,7 @@ def _element_signature_text(driver, el) -> str:
     except Exception:
         pass
     sig = " ".join(bits)
-    # nettoyage lÃƒÂ©ger
+    # nettoyage lÃƒÆ’Ã‚Â©ger
     return _norm_txt(sig)
 
 def _viewport_penalty(driver, el) -> float:
@@ -1307,7 +1307,7 @@ def _viewport_penalty(driver, el) -> float:
             )
             or 2000
         )
-        # pÃƒÂ©nalise header/footer (sÃƒÂ©lecteur de langue, navbarÃ¢â‚¬Â¦)
+        # pÃƒÆ’Ã‚Â©nalise header/footer (sÃƒÆ’Ã‚Â©lecteur de langue, navbarÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦)
         if y < 120:
             return -0.75
         if y > htot - 220:
@@ -1317,7 +1317,7 @@ def _viewport_penalty(driver, el) -> float:
     return 0.0
 
 def _similarity(a: str, b: str) -> float:
-    # simple: sous-chaÃƒÂ®ne / chevauchement de mots
+    # simple: sous-chaÃƒÆ’Ã‚Â®ne / chevauchement de mots
     if not a or not b:
         return 0.0
     if a in b or b in a:
@@ -1333,14 +1333,14 @@ def _best_dropdown_for_hint(driver, hint: str | None, context_hint: str | None =
     if not cands:
         return None
     if not hint:
-        # garder comportement par dÃƒÂ©faut si pas de hint
+        # garder comportement par dÃƒÆ’Ã‚Â©faut si pas de hint
         return cands[0]
     h = _norm_hint(hint)
     c = _norm_hint(context_hint) if context_hint else ""
-    # Disambiguation spÃƒÂ©cifique: quand le hint mentionne explicitement 'annÃƒÂ©e/mois',
-    # on privilÃƒÂ©gie le dropdown dont le libellÃƒÂ©/texte propre correspond (ÃƒÂ©vite d'ouvrir 'Mois' ÃƒÂ  la place de 'AnnÃƒÂ©e').
+    # Disambiguation spÃƒÆ’Ã‚Â©cifique: quand le hint mentionne explicitement 'annÃƒÆ’Ã‚Â©e/mois',
+    # on privilÃƒÆ’Ã‚Â©gie le dropdown dont le libellÃƒÆ’Ã‚Â©/texte propre correspond (ÃƒÆ’Ã‚Â©vite d'ouvrir 'Mois' ÃƒÆ’Ã‚Â  la place de 'AnnÃƒÆ’Ã‚Â©e').
     want = None
-    if any(k in h for k in ("annÃƒÂ©e", "annee", "year", "years")):
+    if any(k in h for k in ("annÃƒÆ’Ã‚Â©e", "annee", "year", "years")):
         want = "year"
     elif any(k in h for k in ("mois", "month", "months")):
         want = "month"
@@ -1361,7 +1361,7 @@ def _best_dropdown_for_hint(driver, hint: str | None, context_hint: str | None =
                     self_txt = ""
                 pool = f"{nid} {self_txt}"
                 if want == "year":
-                    if any(t in pool for t in ("annÃƒÂ©e", "annee", "year", "years")):
+                    if any(t in pool for t in ("annÃƒÆ’Ã‚Â©e", "annee", "year", "years")):
                         sim += 0.55
                     else:
                         sim -= 0.25
@@ -1371,12 +1371,12 @@ def _best_dropdown_for_hint(driver, hint: str | None, context_hint: str | None =
                     else:
                         sim -= 0.25
 
-            # petit boost si le hint ressemble ÃƒÂ  des champs typiques (annÃƒÂ©e/mois/paysÃ¢â‚¬Â¦)
+            # petit boost si le hint ressemble ÃƒÆ’Ã‚Â  des champs typiques (annÃƒÆ’Ã‚Â©e/mois/paysÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦)
             if any(
                 k in h
                 for k in (
                     "an",
-                    "annÃƒÂ©e",
+                    "annÃƒÆ’Ã‚Â©e",
                     "year",
                     "mois",
                     "month",
@@ -1392,7 +1392,7 @@ def _best_dropdown_for_hint(driver, hint: str | None, context_hint: str | None =
                     k in sig
                     for k in (
                         "an",
-                        "annÃƒÂ©e",
+                        "annÃƒÆ’Ã‚Â©e",
                         "year",
                         "mois",
                         "month",
@@ -1416,10 +1416,10 @@ def _best_dropdown_for_hint(driver, hint: str | None, context_hint: str | None =
 def open_dropdown_generic(driver, hint: str | None = None, context_hint: str | None = None) -> bool:
     el = _best_dropdown_for_hint(driver, hint, context_hint=context_hint)
     if not el:
-        print("Ã¢ÂÅ’ Aucun dropdown ÃƒÂ  ouvrir. source: input_handler.py")
+        print("ÃƒÂ¢Ã‚ÂÃ…â€™ Aucun dropdown ÃƒÆ’Ã‚Â  ouvrir. source: input_handler.py")
         return False
     
-    # [PATCH] Ouvrir rÃƒÂ©ellement les <select> natifs pour rendre le menu visible
+    # [PATCH] Ouvrir rÃƒÆ’Ã‚Â©ellement les <select> natifs pour rendre le menu visible
     if el.tag_name.lower() == "select":
         try:
             try:
@@ -1432,12 +1432,12 @@ def open_dropdown_generic(driver, hint: str | None = None, context_hint: str | N
                 el.click()  # ouverture native
             except Exception:
                 ActionChains(driver).move_to_element(el).click().perform()
-            # petit nudge pour ÃƒÂ©viter un blur immÃƒÂ©diat selon les thÃƒÂ¨mes
+            # petit nudge pour ÃƒÆ’Ã‚Â©viter un blur immÃƒÆ’Ã‚Â©diat selon les thÃƒÆ’Ã‚Â¨mes
             try:
                 el.send_keys(Keys.ARROW_DOWN)
             except Exception:
                 pass
-            # marquer un overlay ouvert (utilisÃƒÂ© dans la boucle solve_full_survey)
+            # marquer un overlay ouvert (utilisÃƒÆ’Ã‚Â© dans la boucle solve_full_survey)
             try:
                 driver._ui_overlay_opened = {
                     "type": "dropdown",
@@ -1450,23 +1450,23 @@ def open_dropdown_generic(driver, hint: str | None = None, context_hint: str | N
                 driver._last_dropdown_hint = hint or ""
             except Exception:
                 pass
-            print("Ã°Å¸â€œâ€š Dropdown (natif) ouvert. source: input_handler.py")
+            print("ÃƒÂ°Ã…Â¸Ã¢â‚¬Å“Ã¢â‚¬Å¡ Dropdown (natif) ouvert. source: input_handler.py")
             return True
         except Exception:
             print(
-                "Ã¢â€žÂ¹Ã¯Â¸Â Select natif ciblÃƒÂ©: ouverture impossible Ã¢â€ â€™ on continuera par sÃƒÂ©lection directe. source: input_handler.py"
+                "ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¹ÃƒÂ¯Ã‚Â¸Ã‚Â Select natif ciblÃƒÆ’Ã‚Â©: ouverture impossible ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ on continuera par sÃƒÆ’Ã‚Â©lection directe. source: input_handler.py"
             )
             return True
 
     try:
-        # Ãƒâ€°valuer l'ÃƒÂ©tat AVANT ouverture
+        # ÃƒÆ’Ã¢â‚¬Â°valuer l'ÃƒÆ’Ã‚Â©tat AVANT ouverture
         try:
             already_filled = is_dropdown_filled(driver, el)
         except Exception:
             already_filled = False
 
         driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
-        # clic + petite Ã¢â‚¬Å“pressionÃ¢â‚¬Â clavier pour empÃƒÂªcher un blur immÃƒÂ©diat
+        # clic + petite ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œpressionÃƒÂ¢Ã¢â€šÂ¬Ã‚Â clavier pour empÃƒÆ’Ã‚Âªcher un blur immÃƒÆ’Ã‚Â©diat
         try:
             el.click()
         except Exception:
@@ -1488,16 +1488,16 @@ def open_dropdown_generic(driver, hint: str | None = None, context_hint: str | N
             driver._last_dropdown_hint = hint or ""
         except Exception:
             pass
-        print("Ã°Å¸â€œâ€š Dropdown (custom) ouvert. source: input_handler.py")
+        print("ÃƒÂ°Ã…Â¸Ã¢â‚¬Å“Ã¢â‚¬Å¡ Dropdown (custom) ouvert. source: input_handler.py")
         return True
     except Exception:
-        print("Ã¢ÂÅ’ Ãƒâ€°chec ÃƒÂ  lÃ¢â‚¬â„¢ouverture du dropdown ciblÃƒÂ©. source: input_handler.py")
+        print("ÃƒÂ¢Ã‚ÂÃ…â€™ ÃƒÆ’Ã¢â‚¬Â°chec ÃƒÆ’Ã‚Â  lÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ouverture du dropdown ciblÃƒÆ’Ã‚Â©. source: input_handler.py")
         return False
 
 def _dropdown_visible_value(driver, ctrl) -> str:
     """
-    Tente de lire le texte AFFICHÃƒâ€° par le composant du dropdown (pas l'input cachÃƒÂ©).
-    Retourne "" si rien de fiable trouvÃƒÂ©.
+    Tente de lire le texte AFFICHÃƒÆ’Ã¢â‚¬Â° par le composant du dropdown (pas l'input cachÃƒÆ’Ã‚Â©).
+    Retourne "" si rien de fiable trouvÃƒÆ’Ã‚Â©.
     """
     # 1) <select> natif
     try:
@@ -1568,7 +1568,7 @@ def _dropdown_visible_value(driver, ctrl) -> str:
     except Exception:
         pass
 
-    # 6) fallback: texte direct du contrÃƒÂ´le
+    # 6) fallback: texte direct du contrÃƒÆ’Ã‚Â´le
     try:
         txt = (ctrl.text or ctrl.get_attribute("innerText") or "").strip()
         return txt
@@ -1577,8 +1577,8 @@ def _dropdown_visible_value(driver, ctrl) -> str:
 
 def is_dropdown_filled(driver, ctrl) -> bool:
     """
-    True si la valeur affichÃƒÂ©e semble une vraie valeur (Ã¢â€°Â  placeholder/vide).
-    GÃƒÂ¨re <select> natif et la plupart des rendus UI (Material, MUI, Select2, jQuery UI...).
+    True si la valeur affichÃƒÆ’Ã‚Â©e semble une vraie valeur (ÃƒÂ¢Ã¢â‚¬Â°Ã‚Â  placeholder/vide).
+    GÃƒÆ’Ã‚Â¨re <select> natif et la plupart des rendus UI (Material, MUI, Select2, jQuery UI...).
     """
     # cas natif <select>
     try:
@@ -1586,7 +1586,7 @@ def is_dropdown_filled(driver, ctrl) -> bool:
             val = ctrl.get_attribute("value") or ""
             if val and _norm_txt(val) not in _DROPDOWN_PLACEHOLDERS:
                 return True
-            # teste l'option sÃƒÂ©lectionnÃƒÂ©e
+            # teste l'option sÃƒÆ’Ã‚Â©lectionnÃƒÆ’Ã‚Â©e
             try:
                 sel = Select(ctrl)
                 txt = _norm_txt(sel.first_selected_option.text or "")
@@ -1601,38 +1601,38 @@ def is_dropdown_filled(driver, ctrl) -> bool:
     if not txt:
         return False
 
-    # heuristique: placeholders les + frÃƒÂ©quents
+    # heuristique: placeholders les + frÃƒÆ’Ã‚Â©quents
     if txt in _DROPDOWN_PLACEHOLDERS:
         return False
 
     # phrases usuelles
-    for bad in ("veuillez", "please", "select", "sÃƒÂ©lectionner", "selectionner", "choose"):
+    for bad in ("veuillez", "please", "select", "sÃƒÆ’Ã‚Â©lectionner", "selectionner", "choose"):
         if txt.startswith(bad):
             return False
 
-    # sinon, on considÃƒÂ¨re que c'est renseignÃƒÂ©
+    # sinon, on considÃƒÆ’Ã‚Â¨re que c'est renseignÃƒÆ’Ã‚Â©
     return True
 
 def try_select_option_any(driver, option_text: str, field_hint: str | None = None, context_hint: str | None = None) -> bool:
     """
-    SÃƒÂ©lectionne option_text dans le dropdown le plus pertinent en un seul enchaÃƒÂ®nement.
-    - <select> natif: sÃƒÂ©lection directe (pas dÃ¢â‚¬â„¢ouverture).
-    - dropdown custom: ouvre puis sÃƒÂ©lectionne tout de suite.
+    SÃƒÆ’Ã‚Â©lectionne option_text dans le dropdown le plus pertinent en un seul enchaÃƒÆ’Ã‚Â®nement.
+    - <select> natif: sÃƒÆ’Ã‚Â©lection directe (pas dÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ouverture).
+    - dropdown custom: ouvre puis sÃƒÆ’Ã‚Â©lectionne tout de suite.
     - 2 tentatives max si le menu se referme.
     """
     target = _norm_txt(option_text)
 
-    # --- [PATCH] Disambiguation robuste mois/annÃƒÂ©e -------------------------
-    # Sur certains ÃƒÂ©crans "date_multi_dropdown" (IPSOS / bootstrap-select),
-    # le libellÃƒÂ© gÃƒÂ©nÃƒÂ©rÃƒÂ© peut contenir "AnnÃƒÂ©e Ã¢â‚¬â€ Mois" pour le dropdown des mois.
+    # --- [PATCH] Disambiguation robuste mois/annÃƒÆ’Ã‚Â©e -------------------------
+    # Sur certains ÃƒÆ’Ã‚Â©crans "date_multi_dropdown" (IPSOS / bootstrap-select),
+    # le libellÃƒÆ’Ã‚Â© gÃƒÆ’Ã‚Â©nÃƒÆ’Ã‚Â©rÃƒÆ’Ã‚Â© peut contenir "AnnÃƒÆ’Ã‚Â©e ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â Mois" pour le dropdown des mois.
     # Si on se base sur le hint, _best_dropdown_for_hint() ouvre alors le champ
-    # "AnnÃƒÂ©e" et la sÃƒÂ©lection de "Janvier" ÃƒÂ©choue.
-    # RÃƒÂ¨gle simple et prÃƒÂ©dictible :
-    #   - si la valeur ÃƒÂ  appliquer ressemble ÃƒÂ  un mois -> forcer hint="mois"
-    #   - si la valeur ÃƒÂ  appliquer ressemble ÃƒÂ  une annÃƒÂ©e (4 chiffres) -> forcer hint="annÃƒÂ©e"
+    # "AnnÃƒÆ’Ã‚Â©e" et la sÃƒÆ’Ã‚Â©lection de "Janvier" ÃƒÆ’Ã‚Â©choue.
+    # RÃƒÆ’Ã‚Â¨gle simple et prÃƒÆ’Ã‚Â©dictible :
+    #   - si la valeur ÃƒÆ’Ã‚Â  appliquer ressemble ÃƒÆ’Ã‚Â  un mois -> forcer hint="mois"
+    #   - si la valeur ÃƒÆ’Ã‚Â  appliquer ressemble ÃƒÆ’Ã‚Â  une annÃƒÆ’Ã‚Â©e (4 chiffres) -> forcer hint="annÃƒÆ’Ã‚Â©e"
     _MONTHS_FR = {
-        "janvier", "fÃƒÂ©vrier", "fevrier", "mars", "avril", "mai", "juin",
-        "juillet", "aoÃƒÂ»t", "aout", "septembre", "octobre", "novembre", "dÃƒÂ©cembre", "decembre",
+        "janvier", "fÃƒÆ’Ã‚Â©vrier", "fevrier", "mars", "avril", "mai", "juin",
+        "juillet", "aoÃƒÆ’Ã‚Â»t", "aout", "septembre", "octobre", "novembre", "dÃƒÆ’Ã‚Â©cembre", "decembre",
     }
 
     def _forced_hint_from_value(val_norm: str) -> str | None:
@@ -1640,21 +1640,21 @@ def try_select_option_any(driver, option_text: str, field_hint: str | None = Non
             return None
         if val_norm in _MONTHS_FR:
             return "mois"
-        # annÃƒÂ©e (simple): 4 chiffres entre 1900 et 2100
+        # annÃƒÆ’Ã‚Â©e (simple): 4 chiffres entre 1900 et 2100
         if re.fullmatch(r"\d{4}", val_norm):
             try:
                 y = int(val_norm)
                 if 1900 <= y <= 2100:
-                    return "annÃƒÂ©e"
+                    return "annÃƒÆ’Ã‚Â©e"
             except Exception:
                 pass
         return None
 
     forced_hint = _forced_hint_from_value(target)
-    # hint effectivement utilisÃƒÂ© pour choisir/ouvrir le bon contrÃƒÂ´le
+    # hint effectivement utilisÃƒÆ’Ã‚Â© pour choisir/ouvrir le bon contrÃƒÆ’Ã‚Â´le
     effective_hint = forced_hint or field_hint or option_text
 
-    # --- NATIF <select>: sÃƒÂ©lection directe (sans ouvrir)
+    # --- NATIF <select>: sÃƒÆ’Ã‚Â©lection directe (sans ouvrir)
     selects = driver.find_elements(By.TAG_NAME, "select")
     if selects:
         s = _best_dropdown_for_hint(driver, effective_hint, context_hint=context_hint)
@@ -1681,7 +1681,7 @@ def try_select_option_any(driver, option_text: str, field_hint: str | None = Non
                             else:
                                 opt.click()
                         print(
-                            f"Ã¢Å“â€¦ Option sÃƒÂ©lectionnÃƒÂ©e (natif) : {opt.text}. source: input_handler.py"
+                            f"ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Option sÃƒÆ’Ã‚Â©lectionnÃƒÆ’Ã‚Â©e (natif) : {opt.text}. source: input_handler.py"
                         )
                         try:
                             driver._ui_overlay_opened = None
@@ -1691,15 +1691,15 @@ def try_select_option_any(driver, option_text: str, field_hint: str | None = Non
             except Exception:
                 continue
 
-    # --- CUSTOM: ouvrir puis sÃƒÂ©lectionner rapidement (avec retries)
+    # --- CUSTOM: ouvrir puis sÃƒÆ’Ã‚Â©lectionner rapidement (avec retries)
     for attempt in range(2):
         opened = open_dropdown_generic(driver, hint=effective_hint, context_hint=context_hint)
-        # Si aucune option ÃƒÂ  appliquer (option_text vide) et que le champ semblait dÃƒÂ©jÃƒÂ  rempli, on skip
+        # Si aucune option ÃƒÆ’Ã‚Â  appliquer (option_text vide) et que le champ semblait dÃƒÆ’Ã‚Â©jÃƒÆ’Ã‚Â  rempli, on skip
         if not option_text:
             try:
                 ov = getattr(driver, "_ui_overlay_opened", None)
                 if ov and ov.get("type") == "dropdown" and ov.get("filled") is True:
-                    print("Ã¢Å“â€¦ Dropdown dÃƒÂ©jÃƒÂ  rempli, on ne modifie pas. source: input_handler.py")
+                    print("ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Dropdown dÃƒÆ’Ã‚Â©jÃƒÆ’Ã‚Â  rempli, on ne modifie pas. source: input_handler.py")
                     # on peut refermer proprement si besoin
                     try:
                         driver._ui_overlay_opened = None
@@ -1710,7 +1710,7 @@ def try_select_option_any(driver, option_text: str, field_hint: str | None = Non
                 pass
 
         # Rechercher des options visibles tout de suite, attente courte
-        deadline = time.time() + 1.0  # Ã¢â€°Â¤ 1s
+        deadline = time.time() + 1.0  # ÃƒÂ¢Ã¢â‚¬Â°Ã‚Â¤ 1s
         while time.time() < deadline:
             candidates = []
             candidates += driver.find_elements(By.CSS_SELECTOR, "[role='option']")
@@ -1732,7 +1732,7 @@ def try_select_option_any(driver, option_text: str, field_hint: str | None = Non
                         )
                         c.click()
                         print(
-                            f"Ã¢Å“â€¦ Option sÃƒÂ©lectionnÃƒÂ©e (custom) : {option_text}. source: input_handler.py"
+                            f"ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Option sÃƒÆ’Ã‚Â©lectionnÃƒÆ’Ã‚Â©e (custom) : {option_text}. source: input_handler.py"
                         )
                         try:
                             driver._ui_overlay_opened = None
@@ -1743,13 +1743,13 @@ def try_select_option_any(driver, option_text: str, field_hint: str | None = Non
                     continue
             time.sleep(0.05)
 
-        # Si on arrive ici, cÃ¢â‚¬â„¢est sans doute que le menu sÃ¢â‚¬â„¢est refermÃƒÂ© -> retry
+        # Si on arrive ici, cÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢est sans doute que le menu sÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢est refermÃƒÆ’Ã‚Â© -> retry
         print(
-            "Ã¢â€ Â» Menu refermÃƒÂ© / option non visible, nouvelle tentativeÃ¢â‚¬Â¦ source: input_handler.py"
+            "ÃƒÂ¢Ã¢â‚¬Â Ã‚Â» Menu refermÃƒÆ’Ã‚Â© / option non visible, nouvelle tentativeÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ source: input_handler.py"
         )
 
     print(
-        f"Ã¢ÂÅ’ Option '{option_text}' introuvable dans dropdown. source: input_handler.py"
+        f"ÃƒÂ¢Ã‚ÂÃ…â€™ Option '{option_text}' introuvable dans dropdown. source: input_handler.py"
     )
     return False
 
@@ -1757,7 +1757,7 @@ def _norm_text(s: str) -> str:
     if not s:
         return ""
     s = unicodedata.normalize("NFKD", s)
-    s = s.replace("Ã¢â‚¬â„¢", "'").replace("`", "'").replace("Ã¢â‚¬Å“", '"').replace("Ã¢â‚¬Â", '"')
+    s = s.replace("ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢", "'").replace("`", "'").replace("ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ", '"').replace("ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â", '"')
     s = re.sub(r"\s+", " ", s, flags=re.S).strip().lower()
     return s
 
@@ -1780,10 +1780,10 @@ def _safe_click(driver, el, *, trace: str = "") -> bool:
       3) el.click()
     IMPORTANT:
       - Les callers NE doivent PAS refaire _js_click() en fallback,
-        sinon on duplique inutilement la mÃƒÂªme stratÃƒÂ©gie.
-    ObservabilitÃƒÂ©:
-      - stocke la derniÃƒÂ¨re mÃƒÂ©thode gagnante sur driver._last_click_method
-      - incrÃƒÂ©mente des compteurs sur driver._click_stats (utile en prod 100 bots)
+        sinon on duplique inutilement la mÃƒÆ’Ã‚Âªme stratÃƒÆ’Ã‚Â©gie.
+    ObservabilitÃƒÆ’Ã‚Â©:
+      - stocke la derniÃƒÆ’Ã‚Â¨re mÃƒÆ’Ã‚Â©thode gagnante sur driver._last_click_method
+      - incrÃƒÆ’Ã‚Â©mente des compteurs sur driver._click_stats (utile en prod 100 bots)
     """
     def _bump(method: str):
         try:
@@ -1829,7 +1829,7 @@ def _safe_click(driver, el, *, trace: str = "") -> bool:
 def _is_checked(el):
     # works for both <input type=checkbox> and role=checkbox
     t = (el.get_attribute("type") or "").lower()
-    if t in ("checkbox", "radio"):  # Ã¢â€ Â ajoute radio (certains thÃƒÂ¨mes lÃ¢â‚¬â„¢utilisent)
+    if t in ("checkbox", "radio"):  # ÃƒÂ¢Ã¢â‚¬Â Ã‚Â ajoute radio (certains thÃƒÆ’Ã‚Â¨mes lÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢utilisent)
         try:
             return el.is_selected()
         except Exception:
@@ -1850,7 +1850,7 @@ def _looks_like_nav_label(s: str) -> bool:
         "suivant",
         "start",
         "commencer",
-        "dÃƒÂ©marrer",
+        "dÃƒÆ’Ã‚Â©marrer",
         "accepter",
         "accepter et commencer",
         "next",
@@ -1861,30 +1861,30 @@ def _looks_like_nav_label(s: str) -> bool:
     }
     return any(k in s for k in nav_kw)
 
-# Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
-# MATRICES (tableaux Qualtrics/Dynata/SSIÃ¢â‚¬Â¦) : dÃƒÂ©tection + actions
-# Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+# ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
+# MATRICES (tableaux Qualtrics/Dynata/SSIÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦) : dÃƒÆ’Ã‚Â©tection + actions
+# ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
 
 MATRIX_COL_SYNONYMS = {
     # FR
     "oui": "oui",
     "non": "non",
-    "dÃ¢â‚¬â„¢accord": "daccord",
-    "pas dÃ¢â‚¬â„¢accord": "pas daccord",
-    "plutÃƒÂ´t dÃ¢â‚¬â„¢accord": "plutot daccord",
-    "tout ÃƒÂ  fait dÃ¢â‚¬â„¢accord": "tout a fait daccord",
-    "tout a fait dÃ¢â‚¬â„¢accord": "tout a fait daccord",
-    "tout ÃƒÂ  fait daccord": "tout a fait daccord",
+    "dÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢accord": "daccord",
+    "pas dÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢accord": "pas daccord",
+    "plutÃƒÆ’Ã‚Â´t dÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢accord": "plutot daccord",
+    "tout ÃƒÆ’Ã‚Â  fait dÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢accord": "tout a fait daccord",
+    "tout a fait dÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢accord": "tout a fait daccord",
+    "tout ÃƒÆ’Ã‚Â  fait daccord": "tout a fait daccord",
     "jamais": "jamais",
     "rarement": "rarement",
     "parfois": "parfois",
     "souvent": "souvent",
     "toujours": "toujours",
-    "trÃƒÂ¨s satisfait": "tres satisfait",
+    "trÃƒÆ’Ã‚Â¨s satisfait": "tres satisfait",
     "satisfait": "satisfait",
     "neutre": "neutre",
     "insatisfait": "insatisfait",
-    "trÃƒÂ¨s insatisfait": "tres insatisfait",
+    "trÃƒÆ’Ã‚Â¨s insatisfait": "tres insatisfait",
     "1": "1",
     "2": "2",
     "3": "3",
@@ -1917,8 +1917,8 @@ def _norm(s: str) -> str:
 
 def split_typed_instruction(s: str):
     """
-    Retourne (label, type or None) depuis 'libellÃƒÂ© //// type'.
-    Le sÃƒÂ©parateur est 4+ slashes.
+    Retourne (label, type or None) depuis 'libellÃƒÆ’Ã‚Â© //// type'.
+    Le sÃƒÆ’Ã‚Â©parateur est 4+ slashes.
     """
     if not s:
         return "", None
@@ -1931,7 +1931,7 @@ def split_typed_instruction(s: str):
 
 def _looks_like_matrix(driver):
     """
-    Heuristique simple : prÃƒÂ©sence d'un tableau <table> avec input[radio|checkbox] par cellule
+    Heuristique simple : prÃƒÆ’Ã‚Â©sence d'un tableau <table> avec input[radio|checkbox] par cellule
     ou de lignes .q-matrix/.Matrix (Qualtrics).
     """
     # Tables HTML
@@ -1964,7 +1964,7 @@ def _iter_matrix_rows(driver):
     # try <tr>
     for tr in driver.find_elements(By.XPATH, "//table//tr"):
         try:
-            # label ÃƒÂ  gauche, souvent dans th/td[1]
+            # label ÃƒÆ’Ã‚Â  gauche, souvent dans th/td[1]
             lbl_el = None
             for css in ["th", "td[1]", "td[1]//label", "td[1]//div"]:
                 try:
@@ -1985,7 +1985,7 @@ def _iter_matrix_rows(driver):
     if rows:
         return rows
 
-    # fallback divÃ¢â‚¬â€˜based
+    # fallback divÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Ëœbased
     grids = driver.find_elements(
         By.CSS_SELECTOR, ".q-matrix, .Matrix, .grid, .question-matrix, .matrix"
     )
@@ -2011,7 +2011,7 @@ def _iter_matrix_rows(driver):
 
 def _get_matrix_columns(driver):
     """
-    Retourne la liste des libellÃƒÂ©s d'enÃ¢â‚¬â€˜tÃƒÂªte de colonnes (normalisÃƒÂ©s) pour matching.
+    Retourne la liste des libellÃƒÆ’Ã‚Â©s d'enÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬ËœtÃƒÆ’Ã‚Âªte de colonnes (normalisÃƒÆ’Ã‚Â©s) pour matching.
     """
     headers = []
     # head <th>
@@ -2022,14 +2022,14 @@ def _get_matrix_columns(driver):
             continue
     if headers:
         return headers
-    # fallback: premiÃƒÂ¨re ligne header simulÃƒÂ©e
+    # fallback: premiÃƒÆ’Ã‚Â¨re ligne header simulÃƒÆ’Ã‚Â©e
     try:
         first_row = driver.find_element(By.XPATH, "(//table//tr)[1]")
         for td in first_row.find_elements(By.XPATH, ".//td[normalize-space(.)!='']"):
             headers.append(_norm(td.text))
     except:
         pass
-    # divÃ¢â‚¬â€˜based header
+    # divÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Ëœbased header
     for h in driver.find_elements(
         By.CSS_SELECTOR, ".matrix thead, .q-matrix thead, .Matrix thead"
     ):
@@ -2051,8 +2051,8 @@ def click_matrix_cell_by_row_and_col(driver, row_label: str, col_label: str) -> 
 
     # 1) Tenter les <table> classiques
     try:
-        # a) rÃƒÂ©cupÃƒÂ©rer index de colonne
-        headers = _get_matrix_columns(driver)  # dÃƒÂ©jÃƒÂ  normalisÃƒÂ©s
+        # a) rÃƒÆ’Ã‚Â©cupÃƒÆ’Ã‚Â©rer index de colonne
+        headers = _get_matrix_columns(driver)  # dÃƒÆ’Ã‚Â©jÃƒÆ’Ã‚Â  normalisÃƒÆ’Ã‚Â©s
         col_idx = None
         for i, h in enumerate(headers):
             if cneedle == h or cneedle in h or h in cneedle:
@@ -2062,11 +2062,11 @@ def click_matrix_cell_by_row_and_col(driver, row_label: str, col_label: str) -> 
         for tr in driver.find_elements(By.XPATH, "//table//tr"):
             try:
                 lbl = ""
-                # --- NEW: dÃƒÂ©tecter une cellule texte SANS input dans les 2-3 premiÃƒÂ¨res colonnes
+                # --- NEW: dÃƒÆ’Ã‚Â©tecter une cellule texte SANS input dans les 2-3 premiÃƒÆ’Ã‚Â¨res colonnes
                 tds = tr.find_elements(By.XPATH, "./td")
                 if tds:
-                    # on parcourt les premiÃƒÂ¨res cellules pour trouver du texte sans input
-                    for td in tds[:3]:  # couvre la majoritÃƒÂ© des tableaux max-diff
+                    # on parcourt les premiÃƒÆ’Ã‚Â¨res cellules pour trouver du texte sans input
+                    for td in tds[:3]:  # couvre la majoritÃƒÆ’Ã‚Â© des tableaux max-diff
                         try:
                             has_input = bool(td.find_elements(
                                 By.XPATH,
@@ -2088,14 +2088,14 @@ def click_matrix_cell_by_row_and_col(driver, row_label: str, col_label: str) -> 
                                 break
                         except Exception:
                             continue
-                # si on nÃ¢â‚¬â„¢a toujours rien, passer ÃƒÂ  la ligne suivante
+                # si on nÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢a toujours rien, passer ÃƒÆ’Ã‚Â  la ligne suivante
                 if not lbl:
                     continue
-                # match avec lÃ¢â‚¬â„¢aiguille (row_label)
+                # match avec lÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢aiguille (row_label)
                 if not (rneedle == lbl or rneedle in lbl or lbl in rneedle):
                     continue
 
-                # pointer la cellule d'intersection (robuste mÃƒÂªme sans <th>)
+                # pointer la cellule d'intersection (robuste mÃƒÆ’Ã‚Âªme sans <th>)
                 tds = tr.find_elements(By.XPATH, "./td")
 
                 def _is_most(s: str) -> bool:
@@ -2111,12 +2111,12 @@ def click_matrix_cell_by_row_and_col(driver, row_label: str, col_label: str) -> 
 
                 cand_cells = []
                 if col_idx is not None and len(tds) > 0:
-                    # mapping souple : tente l'index calculÃƒÂ© + voisin droit
+                    # mapping souple : tente l'index calculÃƒÆ’Ã‚Â© + voisin droit
                     if len(tds) > col_idx:
                         cand_cells.append(tds[col_idx])
                     if len(tds) > col_idx + 1:
                         cand_cells.append(tds[col_idx + 1])
-                # Fallback : toutes les cellules si pas d'en-tÃƒÂªtes
+                # Fallback : toutes les cellules si pas d'en-tÃƒÆ’Ã‚Âªtes
                 if not cand_cells:
                     cand_cells = tds
 
@@ -2139,7 +2139,7 @@ def click_matrix_cell_by_row_and_col(driver, row_label: str, col_label: str) -> 
                         
                         # score par indice (gauche/droite)
                         sc = 0.0
-                        # bonus si la cellule ressemble ÃƒÂ  "most" / "least" via classes/attrs
+                        # bonus si la cellule ressemble ÃƒÆ’Ã‚Â  "most" / "least" via classes/attrs
                         sig = " ".join([
                             _norm(cell.get_attribute("class") or ""),
                             _norm(inp.get_attribute("class") or ""),
@@ -2148,14 +2148,14 @@ def click_matrix_cell_by_row_and_col(driver, row_label: str, col_label: str) -> 
                         ]).lower()
                         if want_most:
                             if any(k in sig for k in ["most","best","max"]): sc += 3.0
-                            sc += idx * 0.5  # plus la cellule est ÃƒÂ  droite, mieux cÃ¢â‚¬â„¢est
+                            sc += idx * 0.5  # plus la cellule est ÃƒÆ’Ã‚Â  droite, mieux cÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢est
                             print(f"score most {sc}")
                         if want_least:
                             if any(k in sig for k in ["least","worst","min"]): sc += 3.0
-                            sc += (len(cand_cells) - idx - 1) * 0.5  # plus ÃƒÂ  gauche, mieux cÃ¢â‚¬â„¢est
+                            sc += (len(cand_cells) - idx - 1) * 0.5  # plus ÃƒÆ’Ã‚Â  gauche, mieux cÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢est
                             print(f"score least {sc}")
 
-                        # si aucun des deux explicitement demandÃƒÂ©, favorise lÃ¢â‚¬â„¢input le plus ÃƒÂ  droite (souvent "most")
+                        # si aucun des deux explicitement demandÃƒÆ’Ã‚Â©, favorise lÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢input le plus ÃƒÆ’Ã‚Â  droite (souvent "most")
                         if not want_most and not want_least:
                             sc += idx * 0.25
 
@@ -2164,7 +2164,7 @@ def click_matrix_cell_by_row_and_col(driver, row_label: str, col_label: str) -> 
                     except Exception:
                         continue
                     
-                # Cliquer la meilleure cellule trouvÃƒÂ©e
+                # Cliquer la meilleure cellule trouvÃƒÆ’Ã‚Â©e
                 if best_cell is not None:
                     try:
                         tgt = None
@@ -2187,7 +2187,7 @@ def click_matrix_cell_by_row_and_col(driver, row_label: str, col_label: str) -> 
                             except Exception:
                                 pass
                             side = "most/plus" if want_most else ("least/moins" if want_least else "unknown")
-                            print(f"Ã¢Å“â€¦ Matrice: '{row_label}' Ãƒâ€” '{col_label}' (table, {side}). source: input_handler.py")
+                            print(f"ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Matrice: '{row_label}' ÃƒÆ’Ã¢â‚¬â€ '{col_label}' (table, {side}). source: input_handler.py")
                             #_click_next_any(driver)
                             return True
                     except Exception:
@@ -2197,9 +2197,9 @@ def click_matrix_cell_by_row_and_col(driver, row_label: str, col_label: str) -> 
                 continue
     except Exception:
         pass
-    # 2) Grilles "div-based" (Qualtrics/Dynata/SSIÃ¢â‚¬Â¦)
+    # 2) Grilles "div-based" (Qualtrics/Dynata/SSIÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦)
     try:
-        # repÃƒÂ©rer bloc de matrice
+        # repÃƒÆ’Ã‚Â©rer bloc de matrice
         grids = driver.find_elements(By.CSS_SELECTOR, ".q-matrix, .Matrix, .grid, .question-matrix, .matrix")
         for g in grids:
             try:
@@ -2214,8 +2214,8 @@ def click_matrix_cell_by_row_and_col(driver, row_label: str, col_label: str) -> 
                 if row is None:
                     continue
 
-                # ii) dans la ligne, trouver la Ã¢â‚¬Å“colonneÃ¢â‚¬Â correspondant au col_label
-                #     (souvent ce sont des items frÃƒÂ¨res contenant un input)
+                # ii) dans la ligne, trouver la ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œcolonneÃƒÂ¢Ã¢â€šÂ¬Ã‚Â correspondant au col_label
+                #     (souvent ce sont des items frÃƒÆ’Ã‚Â¨res contenant un input)
                 cells = row.find_elements(By.XPATH, ".//div|.//li|.//span|.//td")
                 best = None
                 best_score = -1
@@ -2253,7 +2253,7 @@ def click_matrix_cell_by_row_and_col(driver, row_label: str, col_label: str) -> 
                         setattr(driver, "_post_action_t0", time.time())
                     except Exception:
                         pass
-                    print(f"Ã¢Å“â€¦ Matrice: '{row_label}' Ãƒâ€” '{col_label}' (grid). source: input_handler.py")
+                    print(f"ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Matrice: '{row_label}' ÃƒÆ’Ã¢â‚¬â€ '{col_label}' (grid). source: input_handler.py")
                     #_click_next_any(driver)
                     return True
                 except Exception:
@@ -2262,15 +2262,15 @@ def click_matrix_cell_by_row_and_col(driver, row_label: str, col_label: str) -> 
                 continue
     except Exception:
         pass
-    print("rien n'a fonctionnÃƒÂ©")
+    print("rien n'a fonctionnÃƒÆ’Ã‚Â©")
     return False
 
 def _select_cell_action(cell, preferred_col_norm):
     """
-    Dans une cellule (row x col), dÃƒÂ©clenche l'action selon le type :
-    - radio : coche si pas dÃƒÂ©jÃƒÂ  sÃƒÂ©lectionnÃƒÂ©
-    - checkbox : coche si non cochÃƒÂ©e (idempotent)
-    - select : ouvre et choisit l'option correspondant ÃƒÂ  la colonne
+    Dans une cellule (row x col), dÃƒÆ’Ã‚Â©clenche l'action selon le type :
+    - radio : coche si pas dÃƒÆ’Ã‚Â©jÃƒÆ’Ã‚Â  sÃƒÆ’Ã‚Â©lectionnÃƒÆ’Ã‚Â©
+    - checkbox : coche si non cochÃƒÆ’Ã‚Â©e (idempotent)
+    - select : ouvre et choisit l'option correspondant ÃƒÆ’Ã‚Â  la colonne
     """
     # radio
     try:
@@ -2345,21 +2345,21 @@ def _select_cell_action(cell, preferred_col_norm):
 
 def apply_matrix_column_to_all_rows(driver, column_label: str) -> bool:
     """
-    Si l'IA renvoie uniquement un ENÃ¢â‚¬â€˜TÃƒÅ TE DE COLONNE (ex: 'Oui', 'Agree', '5'),
-    alors on coche/sÃƒÂ©lectionne cette colonne pour TOUTES LES LIGNES NON RÃƒâ€°PONDUES.
+    Si l'IA renvoie uniquement un ENÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬ËœTÃƒÆ’Ã…Â TE DE COLONNE (ex: 'Oui', 'Agree', '5'),
+    alors on coche/sÃƒÆ’Ã‚Â©lectionne cette colonne pour TOUTES LES LIGNES NON RÃƒÆ’Ã¢â‚¬Â°PONDUES.
     """
     if not _looks_like_matrix(driver):
         return False
 
     target = _norm(column_label)
-    # map synonymes (oui -> oui, dÃ¢â‚¬â„¢accord -> daccordÃ¢â‚¬Â¦)
+    # map synonymes (oui -> oui, dÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢accord -> daccordÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦)
     target = MATRIX_COL_SYNONYMS.get(target, target)
 
     rows = _iter_matrix_rows(driver)
     if not rows:
         return False
 
-    # dÃƒÂ©terminer index de colonne dÃƒÂ©sirÃƒÂ©e (si table)
+    # dÃƒÆ’Ã‚Â©terminer index de colonne dÃƒÆ’Ã‚Â©sirÃƒÆ’Ã‚Â©e (si table)
     headers = _get_matrix_columns(driver)
     col_idx = None
     if headers:
@@ -2372,11 +2372,11 @@ def apply_matrix_column_to_all_rows(driver, column_label: str) -> bool:
     success_any = False
     for row_el, _lbl in rows:
         try:
-            # si vraie table : cellules TD alignÃƒÂ©es sur enÃ¢â‚¬â€˜tÃƒÂªtes
+            # si vraie table : cellules TD alignÃƒÆ’Ã‚Â©es sur enÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬ËœtÃƒÆ’Ã‚Âªtes
             if col_idx is not None and row_el.tag_name.lower() == "tr":
                 tds = row_el.find_elements(By.XPATH, ".//td")
-                # heuristique: premiÃƒÂ¨re td est le label; les colonnes rÃƒÂ©ponses commencent ensuite
-                # on essaye dans td[col_idx] et td[col_idx+1] pour couvrir dÃƒÂ©calages
+                # heuristique: premiÃƒÆ’Ã‚Â¨re td est le label; les colonnes rÃƒÆ’Ã‚Â©ponses commencent ensuite
+                # on essaye dans td[col_idx] et td[col_idx+1] pour couvrir dÃƒÆ’Ã‚Â©calages
                 cell_candidates = []
                 if len(tds) > col_idx:
                     cell_candidates.append(tds[col_idx])
@@ -2390,8 +2390,8 @@ def apply_matrix_column_to_all_rows(driver, column_label: str) -> bool:
                 if success_any:
                     continue
 
-            # fallback divÃ¢â‚¬â€˜based : chercher dans la ligne un input/select "proche" de la colonne par texte
-            # 1) chercher un libellÃƒÂ© descendant qui match la colonne
+            # fallback divÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Ëœbased : chercher dans la ligne un input/select "proche" de la colonne par texte
+            # 1) chercher un libellÃƒÆ’Ã‚Â© descendant qui match la colonne
             try:
                 label_cell = row_el.find_element(
                     By.XPATH,
@@ -2408,7 +2408,7 @@ def apply_matrix_column_to_all_rows(driver, column_label: str) -> bool:
             except:
                 pass
 
-            # 2) sinon, cliquer le premier input/select de la ligne (par dÃƒÂ©faut sur 'Oui')
+            # 2) sinon, cliquer le premier input/select de la ligne (par dÃƒÆ’Ã‚Â©faut sur 'Oui')
             try:
                 first_cell = row_el.find_element(
                     By.XPATH,
@@ -2426,42 +2426,42 @@ def apply_matrix_column_to_all_rows(driver, column_label: str) -> bool:
 
 def handle_generic_input(driver, gpt_answer: str):
     """
-    DÃƒÂ©tecte dynamiquement le type d'input et applique l'action.
-    - Si 'gpt_answer' est un placeholder de dropdown Ã¢â€ â€™ on ouvre un dropdown au lieu dÃ¢â‚¬â„¢ÃƒÂ©crire.
-    - Si des <select> existent et que 'gpt_answer' ressemble ÃƒÂ  une option Ã¢â€ â€™ on tente de la sÃƒÂ©lectionner.
-    - Si 'gpt_answer' ressemble ÃƒÂ  un CTA Ã¢â€ â€™ on laisse la logique bouton.
+    DÃƒÆ’Ã‚Â©tecte dynamiquement le type d'input et applique l'action.
+    - Si 'gpt_answer' est un placeholder de dropdown ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ on ouvre un dropdown au lieu dÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã‚Â©crire.
+    - Si des <select> existent et que 'gpt_answer' ressemble ÃƒÆ’Ã‚Â  une option ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ on tente de la sÃƒÆ’Ã‚Â©lectionner.
+    - Si 'gpt_answer' ressemble ÃƒÆ’Ã‚Â  un CTA ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ on laisse la logique bouton.
     """
     try:
         if _looks_like_nav_label(gpt_answer):
-            return False  # gÃƒÂ©rÃƒÂ© cÃƒÂ´tÃƒÂ© CTA
+            return False  # gÃƒÆ’Ã‚Â©rÃƒÆ’Ã‚Â© cÃƒÆ’Ã‚Â´tÃƒÆ’Ã‚Â© CTA
 
         ans_norm = _norm_txt(gpt_answer)
 
-        # Ã°Å¸â€Å½ Cas MATRICE : si la rÃƒÂ©ponse ressemble ÃƒÂ  un ENÃ¢â‚¬â€˜TÃƒÅ TE DE COLONNE,
-        # on applique cette colonne ÃƒÂ  toutes les lignes non rÃƒÂ©pondues.
+        # ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ…Â½ Cas MATRICE : si la rÃƒÆ’Ã‚Â©ponse ressemble ÃƒÆ’Ã‚Â  un ENÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬ËœTÃƒÆ’Ã…Â TE DE COLONNE,
+        # on applique cette colonne ÃƒÆ’Ã‚Â  toutes les lignes non rÃƒÆ’Ã‚Â©pondues.
         try:
             if apply_matrix_column_to_all_rows(driver, gpt_answer):
                 print(
-                    f"Ã°Å¸Â§Â® Matrice dÃƒÂ©tectÃƒÂ©e : colonne Ã‚Â« {gpt_answer} Ã‚Â» appliquÃƒÂ©e ÃƒÂ  toutes les lignes. source: input_handler.py"
+                    f"ÃƒÂ°Ã…Â¸Ã‚Â§Ã‚Â® Matrice dÃƒÆ’Ã‚Â©tectÃƒÆ’Ã‚Â©e : colonne Ãƒâ€šÃ‚Â« {gpt_answer} Ãƒâ€šÃ‚Â» appliquÃƒÆ’Ã‚Â©e ÃƒÆ’Ã‚Â  toutes les lignes. source: input_handler.py"
                 )
                 return True
         except Exception as e:
-            print("Ã¢ÂÅ’ Erreur matrix handler : source: input_handler.py", e)
+            print("ÃƒÂ¢Ã‚ÂÃ…â€™ Erreur matrix handler : source: input_handler.py", e)
 
-        # 0) Gestion dropdowns en prioritÃƒÂ© quand placeholder
+        # 0) Gestion dropdowns en prioritÃƒÆ’Ã‚Â© quand placeholder
         if ans_norm in PLACEHOLDER_TOKENS:
-            # Si un select existe Ã¢â€ â€™ ouvrir le menu (au lieu d'ÃƒÂ©crire "SÃƒÂ©lectionnez" dans un input)
+            # Si un select existe ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ ouvrir le menu (au lieu d'ÃƒÆ’Ã‚Â©crire "SÃƒÆ’Ã‚Â©lectionnez" dans un input)
             if _has_native_selects(driver) or driver.find_elements(
                 By.CSS_SELECTOR, "[role='combobox'], [aria-haspopup='listbox']"
             ):
                 return _open_first_dropdown(driver)
-            # sinon, on ne fait rien (ÃƒÂ©vite d'ÃƒÂ©crire n'importe oÃƒÂ¹)
+            # sinon, on ne fait rien (ÃƒÆ’Ã‚Â©vite d'ÃƒÆ’Ã‚Â©crire n'importe oÃƒÆ’Ã‚Â¹)
             print(
-                "Ã¢â€žÂ¹Ã¯Â¸Â Placeholder reÃƒÂ§u mais aucun dropdown dÃƒÂ©tectÃƒÂ©. source: input_handler.py"
+                "ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¹ÃƒÂ¯Ã‚Â¸Ã‚Â Placeholder reÃƒÆ’Ã‚Â§u mais aucun dropdown dÃƒÆ’Ã‚Â©tectÃƒÆ’Ã‚Â©. source: input_handler.py"
             )
             return False
 
-        # 0-bis) Si on a un select visible et une rÃƒÂ©ponse non-CTA, tenter la sÃƒÂ©lection directe
+        # 0-bis) Si on a un select visible et une rÃƒÆ’Ã‚Â©ponse non-CTA, tenter la sÃƒÆ’Ã‚Â©lection directe
         if _has_native_selects(driver):
             if _try_select_option_any(driver, gpt_answer):
                 return True
@@ -2471,7 +2471,7 @@ def handle_generic_input(driver, gpt_answer: str):
             By.CSS_SELECTOR, "input[type='radio'], [role='radio']"
         )
         if radio_inputs:
-            print("Ã°Å¸â€Ëœ Options radio dÃƒÂ©tectÃƒÂ©es. source: input_handler.py")
+            print("ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ‹Å“ Options radio dÃƒÆ’Ã‚Â©tectÃƒÆ’Ã‚Â©es. source: input_handler.py")
             return click_radio_by_label(driver, gpt_answer)
 
         # 2. Checkboxes
@@ -2479,27 +2479,27 @@ def handle_generic_input(driver, gpt_answer: str):
             By.CSS_SELECTOR, "input[type='checkbox'], [role='checkbox']"
         )
         if checkboxes:
-            print("Ã¢Ëœâ€˜Ã¯Â¸Â Checkboxs dÃƒÂ©tectÃƒÂ©es. source: input_handler.py")
+            print("ÃƒÂ¢Ã‹Å“Ã¢â‚¬ËœÃƒÂ¯Ã‚Â¸Ã‚Â Checkboxs dÃƒÆ’Ã‚Â©tectÃƒÆ’Ã‚Â©es. source: input_handler.py")
             return click_checkbox_by_label(driver, gpt_answer)
 
-        # 3. Texte (Ã¢Å¡Â Ã¯Â¸Â ignorer les placeholders)
+        # 3. Texte (ÃƒÂ¢Ã…Â¡Ã‚Â ÃƒÂ¯Ã‚Â¸Ã‚Â ignorer les placeholders)
         text_inputs = driver.find_elements(
             By.CSS_SELECTOR, "input[type='text'], textarea"
         )
         if text_inputs:
             if ans_norm in PLACEHOLDER_TOKENS:
                 print(
-                    "Ã¢â€ºâ€ Placeholder ignorÃƒÂ© pour le champ texte. source: input_handler.py"
+                    "ÃƒÂ¢Ã¢â‚¬ÂºÃ¢â‚¬Â Placeholder ignorÃƒÆ’Ã‚Â© pour le champ texte. source: input_handler.py"
                 )
                 return False
-            print("Ã¢Å’Â¨Ã¯Â¸Â Champ texte dÃƒÂ©tectÃƒÂ©. source: input_handler.py")
+            print("ÃƒÂ¢Ã…â€™Ã‚Â¨ÃƒÂ¯Ã‚Â¸Ã‚Â Champ texte dÃƒÆ’Ã‚Â©tectÃƒÆ’Ã‚Â©. source: input_handler.py")
             return fill_text_input(driver, gpt_answer)
 
-        print("Ã¢Ââ€œ Aucun input connu gÃƒÂ©rÃƒÂ©. source: input_handler.py")
+        print("ÃƒÂ¢Ã‚ÂÃ¢â‚¬Å“ Aucun input connu gÃƒÆ’Ã‚Â©rÃƒÆ’Ã‚Â©. source: input_handler.py")
         return False
 
     except Exception as e:
-        print("Ã°Å¸â€™Â¥ Erreur dans handle_generic_input : source: input_handler.py", e)
+        print("ÃƒÂ°Ã…Â¸Ã¢â‚¬â„¢Ã‚Â¥ Erreur dans handle_generic_input : source: input_handler.py", e)
         return False
 
 def _norm_soft(s: str) -> str:
@@ -2512,12 +2512,12 @@ def _norm_lc_soft(s: str) -> str:
 
 def _find_best_label_text(el):
     """
-    RÃƒÂ©cupÃƒÂ¨re un texte pertinent pour le label (prend le .text, sinon plus long des spans descendants).
+    RÃƒÆ’Ã‚Â©cupÃƒÆ’Ã‚Â¨re un texte pertinent pour le label (prend le .text, sinon plus long des spans descendants).
     """
     txt = (el.text or el.get_attribute("innerText") or "").strip()
     if txt:
         return txt
-    # parfois le texte est au fond dÃ¢â‚¬â„¢un span
+    # parfois le texte est au fond dÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢un span
     try:
         spans = el.find_elements(By.XPATH, ".//span[normalize-space(string())!='']")
         if spans:
@@ -2529,7 +2529,7 @@ def _find_best_label_text(el):
 
 def _looks_checked(el, linked_input):
     """
-    Heuristique succÃƒÂ¨s : input sÃƒÂ©lectionnÃƒÂ© OU classe aria/ui passÃƒÂ©e ÃƒÂ  'on/checked'.
+    Heuristique succÃƒÆ’Ã‚Â¨s : input sÃƒÆ’Ã‚Â©lectionnÃƒÆ’Ã‚Â© OU classe aria/ui passÃƒÆ’Ã‚Â©e ÃƒÆ’Ã‚Â  'on/checked'.
     """
     try:
         if linked_input and linked_input.is_selected():
@@ -2574,15 +2574,15 @@ def _find_linked_input_for_label(driver, label_el):
                 linked = None
     return linked
 
-# --- helper JS : force l'ÃƒÂ©tat checked via label[for] ---
+# --- helper JS : force l'ÃƒÆ’Ã‚Â©tat checked via label[for] ---
 def _force_label_for_checkbox_js(driver, label_text: str) -> bool:
     js = r"""
     const norm = s => (s||'').toLowerCase()
         .normalize('NFKC').replace(/\u00A0/g,' ')
-        .replace(/[Ã‚Â»Ã‚Â«Ã¢â‚¬Å“Ã¢â‚¬Â"'Ã¢â‚¬ÂºÃ¢â€ â€™Ã‚Â·Ã¢â‚¬Â¢:]/g,'').replace(/\s+/g,' ').trim();
+        .replace(/[Ãƒâ€šÃ‚Â»Ãƒâ€šÃ‚Â«ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÂ¢Ã¢â€šÂ¬Ã‚Â"'ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂºÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢Ãƒâ€šÃ‚Â·ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢:]/g,'').replace(/\s+/g,' ').trim();
     const needle = norm(arguments[0]);
 
-    // trouver un <label> compatible (texte Ã¢â€°Ë†, role=button/ui-btn/checkboxÃ¢â‚¬Â¦)
+    // trouver un <label> compatible (texte ÃƒÂ¢Ã¢â‚¬Â°Ã‹â€ , role=button/ui-btn/checkboxÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦)
     const labs = Array.from(document.querySelectorAll('label'));
     for (const lab of labs) {
       const txt = norm(lab.innerText || lab.textContent || '');
@@ -2597,7 +2597,7 @@ def _force_label_for_checkbox_js(driver, label_text: str) -> bool:
       // clic "naturel" sur label
       try { lab.click(); } catch(e){}
 
-      // sÃƒÂ©curiser l'ÃƒÂ©tat + events
+      // sÃƒÆ’Ã‚Â©curiser l'ÃƒÆ’Ã‚Â©tat + events
       try { inp.checked = true; } catch(e){}
       try {
         inp.dispatchEvent(new Event('input',{bubbles:true}));
@@ -2623,17 +2623,17 @@ def _force_label_for_checkbox_js(driver, label_text: str) -> bool:
 
 def click_checkbox_buttonish_by_label(driver, label: str, context_hint: str | None = None) -> bool:
     """
-    Coche une 'checkbox' rendue comme un bouton (label role='button' / classes ui-btn, ui-checkbox-*Ã¢â‚¬Â¦).
+    Coche une 'checkbox' rendue comme un bouton (label role='button' / classes ui-btn, ui-checkbox-*ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦).
     1) on cible le meilleur <label> (scope par contexte si fourni),
     2) click label (+ variantes),
-    3) si pas d'effet, click JS sur l'input liÃƒÂ© (for=...),
+    3) si pas d'effet, click JS sur l'input liÃƒÆ’Ã‚Â© (for=...),
     4) si toujours rien : _force_label_for_checkbox_js().
     """
 
     def _norm(s: str) -> str:
         return " ".join((s or "").split()).strip().lower()
 
-    # scope optionnel (mÃƒÂªme logique que _find_context_container)
+    # scope optionnel (mÃƒÆ’Ã‚Âªme logique que _find_context_container)
     scope = None
     try:
         import input_handler
@@ -2674,7 +2674,7 @@ def click_checkbox_buttonish_by_label(driver, label: str, context_hint: str | No
     if not best:
         return False
 
-    # input associÃƒÂ© via for=...
+    # input associÃƒÆ’Ã‚Â© via for=...
     linked = None
     try:
         fid = best.get_attribute("for")
@@ -2698,7 +2698,7 @@ def click_checkbox_buttonish_by_label(driver, label: str, context_hint: str | No
             else:
                 driver.execute_script("arguments[0].click();", best)
             time.sleep(0.15)
-            # ÃƒÂ©tat ?
+            # ÃƒÆ’Ã‚Â©tat ?
             if linked is not None:
                 try:
                     if linked.is_selected():
@@ -2712,14 +2712,14 @@ def click_checkbox_buttonish_by_label(driver, label: str, context_hint: str | No
         except Exception:
             continue
 
-    # 2) clic JS direct sur l'input liÃƒÂ© + events
+    # 2) clic JS direct sur l'input liÃƒÆ’Ã‚Â© + events
     if linked is not None:
         try:
             driver.execute_script("arguments[0].click();", linked)
             time.sleep(0.1)
             if linked.is_selected():
                 return True
-            # set + events (sÃƒÂ©curisation)
+            # set + events (sÃƒÆ’Ã‚Â©curisation)
             driver.execute_script("""
                 const el = arguments[0];
                 if (!el.checked) el.checked = true;
@@ -2735,19 +2735,19 @@ def click_checkbox_buttonish_by_label(driver, label: str, context_hint: str | No
         except Exception:
             pass
 
-    # 3) Dernier recours : forcer via JS (labelÃ¢â€ â€™input + classes ui-checkbox-on)
+    # 3) Dernier recours : forcer via JS (labelÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢input + classes ui-checkbox-on)
     if _force_label_for_checkbox_js(driver, label):
         return True
 
     return False
 
 def _xpath_literal(s: str) -> str:
-    # util pour insÃƒÂ©rer du texte en XPath sans se casser avec les quotes
+    # util pour insÃƒÆ’Ã‚Â©rer du texte en XPath sans se casser avec les quotes
     if "'" not in s: 
         return f"'{s}'"
     if '"' not in s:
         return f'"{s}"'
-    # cas rare, on concatÃƒÂ¨ne
+    # cas rare, on concatÃƒÆ’Ã‚Â¨ne
     parts = s.split("'")
     return "concat(" + ", \"'\", ".join([f"'{p}'" for p in parts]) + ")"
 
@@ -2757,7 +2757,7 @@ def _click_radio_label_in_scope(driver, scope, label_text: str) -> bool:
     def _n(s):
         if not s: return ""
         s = unicodedata.normalize("NFKC", s).replace("\u00A0"," ").lower()
-        s = re.sub(r"[Ã‚Â»Ã‚Â«Ã¢â‚¬Å“Ã¢â‚¬Â\"'Ã¢â‚¬ÂºÃ¢â€ â€™Ã‚Â·Ã¢â‚¬Â¢:]+"," ", s)
+        s = re.sub(r"[Ãƒâ€šÃ‚Â»Ãƒâ€šÃ‚Â«ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÂ¢Ã¢â€šÂ¬Ã‚Â\"'ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂºÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢Ãƒâ€šÃ‚Â·ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢:]+"," ", s)
         return re.sub(r"\s+"," ", s).strip()
 
     needle = _n(label_text)
@@ -2786,7 +2786,7 @@ def _click_radio_label_in_scope(driver, scope, label_text: str) -> bool:
     if not best:
         return False
 
-    # 2) lÃ¢â‚¬â„¢input ciblÃƒÂ© DOIT ÃƒÂªtre **dans le scope**
+    # 2) lÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢input ciblÃƒÆ’Ã‚Â© DOIT ÃƒÆ’Ã‚Âªtre **dans le scope**
     fid = best.get_attribute("for")
     if not fid:
         return False
@@ -2795,7 +2795,7 @@ def _click_radio_label_in_scope(driver, scope, label_text: str) -> bool:
     except Exception:
         return False
 
-    # 3) click label + sÃƒÂ©curisation de lÃ¢â‚¬â„¢ÃƒÂ©tat (events)
+    # 3) click label + sÃƒÆ’Ã‚Â©curisation de lÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã‚Â©tat (events)
     try:
         driver.execute_script("arguments[0].scrollIntoView({block:'center'});", best)
         try: best.click()
@@ -2818,7 +2818,7 @@ def _click_decipher_grid_radio_strict(driver, label: str, context_hint: str = ""
     """
     Decipher (table.grid) strict :
     - scope par question (ctx),
-    - trouve la <tr> dont le <th> contient le libellÃƒÂ©,
+    - trouve la <tr> dont le <th> contient le libellÃƒÆ’Ã‚Â©,
     - clique le <label>, force checked + events sur l'<input>,
     - clique la cellule .clickableCell en secours.
     """
@@ -2826,7 +2826,7 @@ def _click_decipher_grid_radio_strict(driver, label: str, context_hint: str = ""
     def _n(s):
         if not s: return ""
         s = s.replace("\u00A0", " ")
-        s = s.replace("Ã¢â‚¬â„¢","'").replace("Ã¢â‚¬Ëœ","'").replace("Ã‚Â´","'").replace("`","'")
+        s = s.replace("ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢","'").replace("ÃƒÂ¢Ã¢â€šÂ¬Ã‹Å“","'").replace("Ãƒâ€šÃ‚Â´","'").replace("`","'")
         s = unicodedata.normalize("NFKD", s)
         s = "".join(c for c in s if not unicodedata.combining(c))
         return re.sub(r"\s+", " ", s).strip().lower()
@@ -2835,9 +2835,9 @@ def _click_decipher_grid_radio_strict(driver, label: str, context_hint: str = ""
     if not needle:
         return False
 
-    # scope = bloc de la question si trouvÃƒÂ©, sinon page entiÃƒÂ¨re
+    # scope = bloc de la question si trouvÃƒÆ’Ã‚Â©, sinon page entiÃƒÆ’Ã‚Â¨re
     try:
-        scope = _find_questions_container(driver, context_hint)  # dÃƒÂ©jÃƒÂ  dans ton fichier
+        scope = _find_questions_container(driver, context_hint)  # dÃƒÆ’Ã‚Â©jÃƒÆ’Ã‚Â  dans ton fichier
     except Exception:
         scope = None
     scope = scope or driver
@@ -2855,9 +2855,9 @@ def _click_decipher_grid_radio_strict(driver, label: str, context_hint: str = ""
             except Exception:
                 pass
             thn = _n(th_text)
-            # accepte ÃƒÂ©galitÃƒÂ©, inclusion, ou label dans un <label> de la cellule
+            # accepte ÃƒÆ’Ã‚Â©galitÃƒÆ’Ã‚Â©, inclusion, ou label dans un <label> de la cellule
             if not (needle == thn or needle in thn or thn in needle):
-                # certains thÃƒÂ¨mes nÃ¢â‚¬â„¢ont pas de <th> Ã¢â‚¬Å“propreÃ¢â‚¬Â; on regarde le texte du label visible
+                # certains thÃƒÆ’Ã‚Â¨mes nÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ont pas de <th> ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œpropreÃƒÂ¢Ã¢â€šÂ¬Ã‚Â; on regarde le texte du label visible
                 try:
                     ltxt = tr.find_element(By.XPATH, ".//td//label").text
                     if not (needle in _n(ltxt) or _n(ltxt) in needle):
@@ -2865,7 +2865,7 @@ def _click_decipher_grid_radio_strict(driver, label: str, context_hint: str = ""
                 except Exception:
                     continue
 
-            # 1) clique le <label> si prÃƒÂ©sent
+            # 1) clique le <label> si prÃƒÆ’Ã‚Â©sent
             lab = None
             try:
                 lab = tr.find_element(By.XPATH, ".//td[contains(@class,'clickableCell')]//label")
@@ -2881,7 +2881,7 @@ def _click_decipher_grid_radio_strict(driver, label: str, context_hint: str = ""
             except Exception:
                 pass
 
-            # 2) force lÃ¢â‚¬â„¢ÃƒÂ©tat sur lÃ¢â‚¬â„¢input + events
+            # 2) force lÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã‚Â©tat sur lÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢input + events
             try:
                 inp = tr.find_element(By.XPATH, ".//input[@type='radio']")
                 pause_here("force checked 2619")
@@ -2895,7 +2895,7 @@ def _click_decipher_grid_radio_strict(driver, label: str, context_hint: str = ""
             except Exception:
                 pass
 
-            # 3) secours : clique la cellule cliquable (thÃƒÂ¨me Decipher)
+            # 3) secours : clique la cellule cliquable (thÃƒÆ’Ã‚Â¨me Decipher)
             try:
                 td = tr.find_element(By.XPATH, ".//td[contains(@class,'clickableCell')]")
                 pause_here("click clickableCell 2633")
@@ -2905,11 +2905,11 @@ def _click_decipher_grid_radio_strict(driver, label: str, context_hint: str = ""
             except Exception:
                 pass
 
-            # 4) vÃƒÂ©rification
+            # 4) vÃƒÆ’Ã‚Â©rification
             try:
                 chk = tr.find_element(By.XPATH, ".//input[@type='radio']")
                 if chk.is_selected() or (chk.get_attribute("checked") or "").lower() in ("true", "checked"):
-                    print(f"Ã¢Å“â€¦ Radio (Decipher strict) cochÃƒÂ©e : {label}")
+                    print(f"ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Radio (Decipher strict) cochÃƒÆ’Ã‚Â©e : {label}")
                     return True
             except Exception:
                 pass
@@ -2920,9 +2920,9 @@ def _click_decipher_grid_radio_strict(driver, label: str, context_hint: str = ""
 
 # --- Ajout utilitaire (placer juste au-dessus de click_radio_cardlike_js) ---
 def _mat_card_selected(el) -> bool:
-    """VÃƒÂ©rifie l'ÃƒÂ©tat 'sÃƒÂ©lectionnÃƒÂ©' sur un card Angular (mat-card)."""
+    """VÃƒÆ’Ã‚Â©rifie l'ÃƒÆ’Ã‚Â©tat 'sÃƒÆ’Ã‚Â©lectionnÃƒÆ’Ã‚Â©' sur un card Angular (mat-card)."""
     try:
-        # 1) icÃƒÂ´ne de validation visible ?
+        # 1) icÃƒÆ’Ã‚Â´ne de validation visible ?
         tick = el.find_elements(By.CSS_SELECTOR, ".selected-icon, .uil-check-circle")
         for t in tick:
             try:
@@ -2938,7 +2938,7 @@ def _mat_card_selected(el) -> bool:
             return True
     except Exception:
         pass
-    # voisinage : input radio gÃƒÂ©nÃƒÂ©rÃƒÂ© dynamiquement ?
+    # voisinage : input radio gÃƒÆ’Ã‚Â©nÃƒÆ’Ã‚Â©rÃƒÆ’Ã‚Â© dynamiquement ?
     try:
         if el.find_elements(By.XPATH, ".//input[@type='radio' and @checked]"):
             return True
@@ -2948,10 +2948,10 @@ def _mat_card_selected(el) -> bool:
 
 def click_radio_cardlike_js(driver, label: str, context_hint: str | None = None, max_retries: int = 2) -> bool:
     """
-    Cible et clique une option "radio" rendue comme carte/bouton (JS) Ã¢â‚¬â€ Confirmit/Dynata/Decipher.
+    Cible et clique une option "radio" rendue comme carte/bouton (JS) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â Confirmit/Dynata/Decipher.
     - Scope par le contexte de question si disponible.
-    - Une seule mÃƒÂ©thode de clic par essai ; on retourne True dÃƒÂ¨s rÃƒÂ©ussite.
-    - Validation dÃ¢â‚¬â„¢ÃƒÂ©tat via aria-checked / input:checked / classes visuelles.
+    - Une seule mÃƒÆ’Ã‚Â©thode de clic par essai ; on retourne True dÃƒÆ’Ã‚Â¨s rÃƒÆ’Ã‚Â©ussite.
+    - Validation dÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã‚Â©tat via aria-checked / input:checked / classes visuelles.
     """
     def _lc(s):  # normalisation simple "lower & squeeze"
         return " ".join((s or "").lower().strip().split())
@@ -2960,19 +2960,19 @@ def click_radio_cardlike_js(driver, label: str, context_hint: str | None = None,
     if not want:
         return False
 
-    # 1) Scope = conteneur de la question (sÃƒÂ©curise la recherche)
+    # 1) Scope = conteneur de la question (sÃƒÆ’Ã‚Â©curise la recherche)
     try:
         container = _find_question_container_by_ctx(driver, context_hint)
     except Exception:
         container = None
     scope = container if container is not None else driver
 
-    # 2) Candidats : ÃƒÂ©lÃƒÂ©ments contenant le texte + proches wrappers cliquables
+    # 2) Candidats : ÃƒÆ’Ã‚Â©lÃƒÆ’Ã‚Â©ments contenant le texte + proches wrappers cliquables
     #    - ARIA role="radio" / "radiogroup"
-    #    - classes frÃƒÂ©quences "answer|option|choice|card|button|tile"
-    #    - onclick prÃƒÂ©sent
-    UP = "ABCDEFGHIJKLMNOPQRSTUVWXYZÃƒâ‚¬Ãƒâ€šÃƒâ€žÃƒâ€¡Ãƒâ€°ÃƒË†ÃƒÅ Ãƒâ€¹ÃƒÅ½ÃƒÂÃƒâ€Ãƒâ€“Ãƒâ„¢Ãƒâ€ºÃƒÅ“Ã…Â¸"
-    LO = "abcdefghijklmnopqrstuvwxyzÃƒÂ ÃƒÂ¢ÃƒÂ¤ÃƒÂ§ÃƒÂ©ÃƒÂ¨ÃƒÂªÃƒÂ«ÃƒÂ®ÃƒÂ¯ÃƒÂ´ÃƒÂ¶ÃƒÂ¹ÃƒÂ»ÃƒÂ¼ÃƒÂ¿"
+    #    - classes frÃƒÆ’Ã‚Â©quences "answer|option|choice|card|button|tile"
+    #    - onclick prÃƒÆ’Ã‚Â©sent
+    UP = "ABCDEFGHIJKLMNOPQRSTUVWXYZÃƒÆ’Ã¢â€šÂ¬ÃƒÆ’Ã¢â‚¬Å¡ÃƒÆ’Ã¢â‚¬Å¾ÃƒÆ’Ã¢â‚¬Â¡ÃƒÆ’Ã¢â‚¬Â°ÃƒÆ’Ã‹â€ ÃƒÆ’Ã…Â ÃƒÆ’Ã¢â‚¬Â¹ÃƒÆ’Ã…Â½ÃƒÆ’Ã‚ÂÃƒÆ’Ã¢â‚¬ÂÃƒÆ’Ã¢â‚¬â€œÃƒÆ’Ã¢â€žÂ¢ÃƒÆ’Ã¢â‚¬ÂºÃƒÆ’Ã…â€œÃƒâ€¦Ã‚Â¸"
+    LO = "abcdefghijklmnopqrstuvwxyzÃƒÆ’Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÆ’Ã‚Â¤ÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â©ÃƒÆ’Ã‚Â¨ÃƒÆ’Ã‚ÂªÃƒÆ’Ã‚Â«ÃƒÆ’Ã‚Â®ÃƒÆ’Ã‚Â¯ÃƒÆ’Ã‚Â´ÃƒÆ’Ã‚Â¶ÃƒÆ’Ã‚Â¹ÃƒÆ’Ã‚Â»ÃƒÆ’Ã‚Â¼ÃƒÆ’Ã‚Â¿"
     txt_match = f"contains(translate(normalize-space(.),'{UP}','{LO}'), '{want}')"
 
     X_CARDS = (
@@ -3015,7 +3015,7 @@ def click_radio_cardlike_js(driver, label: str, context_hint: str | None = None,
     if not visibles:
         return False
 
-    # 3) Fonctions dÃ¢â‚¬â„¢ÃƒÂ©tat Ã¢â‚¬â€ pour confirmer la sÃƒÂ©lection
+    # 3) Fonctions dÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã‚Â©tat ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â pour confirmer la sÃƒÆ’Ã‚Â©lection
     def _aria_checked_true(el):
         try:
             return (el.get_attribute("role") or "").lower() == "radio" and (el.get_attribute("aria-checked") or "").lower() == "true"
@@ -3023,7 +3023,7 @@ def click_radio_cardlike_js(driver, label: str, context_hint: str | None = None,
             return False
 
     def _has_checked_input(nei):
-        # cherche un input radio checked dans le voisinage du candidat (descendant/ancÃƒÂªtre immÃƒÂ©diat)
+        # cherche un input radio checked dans le voisinage du candidat (descendant/ancÃƒÆ’Ã‚Âªtre immÃƒÆ’Ã‚Â©diat)
         try:
             r = nei.find_elements(By.XPATH, ".//input[@type='radio' and @checked]")
             if r:
@@ -3045,17 +3045,17 @@ def click_radio_cardlike_js(driver, label: str, context_hint: str | None = None,
         except Exception:
             return False
 
-    # 4) Clics (une seule mÃƒÂ©thode par essai) + validation immÃƒÂ©diate
+    # 4) Clics (une seule mÃƒÆ’Ã‚Â©thode par essai) + validation immÃƒÆ’Ã‚Â©diate
     for el in visibles[:8]:
         for _ in range(max_retries):
             # a) clic "safe"
             if _safe_click(driver, el):
                 time.sleep(0.1)
                 if _aria_checked_true(el) or _has_checked_input(el) or _has_visual_selected(el) or _mat_card_selected(el):
-                    print("Ã¢Å“â€¦ Radio(card): sÃƒÂ©lection via safe click. source: input_handler.py")
+                    print("ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Radio(card): sÃƒÆ’Ã‚Â©lection via safe click. source: input_handler.py")
                     return True
 
-            # c) SÃƒÂ©quence dÃ¢â‚¬â„¢ÃƒÂ©vÃƒÂ©nements souris (certaines libs lÃ¢â‚¬â„¢exigent)
+            # c) SÃƒÆ’Ã‚Â©quence dÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã‚Â©vÃƒÆ’Ã‚Â©nements souris (certaines libs lÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢exigent)
             try:
                 driver.execute_script(
                     "var e1=new MouseEvent('pointerdown',{bubbles:true});"
@@ -3070,22 +3070,22 @@ def click_radio_cardlike_js(driver, label: str, context_hint: str | None = None,
                 )
                 time.sleep(0.1)
                 if _aria_checked_true(el) or _has_checked_input(el) or _has_visual_selected(el) or _mat_card_selected(el):
-                    print("Ã¢Å“â€¦ Radio(card): sÃƒÂ©lection via sÃƒÂ©quence events. source: input_handler.py")
+                    print("ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Radio(card): sÃƒÆ’Ã‚Â©lection via sÃƒÆ’Ã‚Â©quence events. source: input_handler.py")
                     return True
             except Exception:
                 pass
 
-            # d) Fallback accessibilitÃƒÂ© : focus + SPACE
+            # d) Fallback accessibilitÃƒÆ’Ã‚Â© : focus + SPACE
             try:
                 ActionChains(driver).move_to_element(el).pause(0.05).click().pause(0.05).send_keys(Keys.SPACE).perform()
                 time.sleep(0.1)
                 if _aria_checked_true(el) or _has_checked_input(el) or _has_visual_selected(el) or _mat_card_selected(el):
-                    print("Ã¢Å“â€¦ Radio(card): sÃƒÂ©lection via SPACE. source: input_handler.py")
+                    print("ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Radio(card): sÃƒÆ’Ã‚Â©lection via SPACE. source: input_handler.py")
                     return True
             except Exception:
                 pass
 
-    print("Ã¢â€ ÂªÃ¯Â¸Â Radio(card): aucun clic valide. source: input_handler.py")
+    print("ÃƒÂ¢Ã¢â‚¬Â Ã‚ÂªÃƒÂ¯Ã‚Â¸Ã‚Â Radio(card): aucun clic valide. source: input_handler.py")
     return False
 
 # === Confirmit/Dynata ImageSelector (cards avec image) =======================
@@ -3093,8 +3093,8 @@ def click_confirmit_image_selector(driver, label: str, context_hint: str | None 
     """
     Cible les cartes ImageSelector (Confirmit/Dynata) :
     - blocs .element_shadows sous #ToolContainer
-    - libellÃƒÂ© lu dans .itemtitle span OU dans img[alt] (aprÃƒÂ¨s un `$`)
-    - clic sur .clickarea (fallback: image), avec post-vÃƒÂ©rif .ticker visible ou classe 'selected/active'
+    - libellÃƒÆ’Ã‚Â© lu dans .itemtitle span OU dans img[alt] (aprÃƒÆ’Ã‚Â¨s un `$`)
+    - clic sur .clickarea (fallback: image), avec post-vÃƒÆ’Ã‚Â©rif .ticker visible ou classe 'selected/active'
     """
 
     def _n(s: str) -> str:
@@ -3102,7 +3102,7 @@ def click_confirmit_image_selector(driver, label: str, context_hint: str | None 
             return ""
         s = s.replace("\u00a0"," ")
         s = unicodedata.normalize("NFKC", s)
-        s = re.sub(r"[Ã‚Â»Ã‚Â«Ã¢â‚¬Å“Ã¢â‚¬Â\"'Ã¢â‚¬ÂºÃ¢â€ â€™Ã‚Â·Ã¢â‚¬Â¢:]+"," ", s)
+        s = re.sub(r"[Ãƒâ€šÃ‚Â»Ãƒâ€šÃ‚Â«ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÂ¢Ã¢â€šÂ¬Ã‚Â\"'ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂºÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢Ãƒâ€šÃ‚Â·ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢:]+"," ", s)
         return re.sub(r"\s+"," ", s, flags=re.S).strip().lower()
 
     want = _n(label)
@@ -3124,7 +3124,7 @@ def click_confirmit_image_selector(driver, label: str, context_hint: str | None 
     if not blocks:
         return False
 
-    # 3) LibellÃƒÂ© dÃ¢â‚¬â„¢un bloc : .itemtitle span ou img[alt] (aprÃƒÂ¨s $)
+    # 3) LibellÃƒÆ’Ã‚Â© dÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢un bloc : .itemtitle span ou img[alt] (aprÃƒÆ’Ã‚Â¨s $)
     def _block_text(b) -> str:
         txt = ""
         try:
@@ -3136,7 +3136,7 @@ def click_confirmit_image_selector(driver, label: str, context_hint: str | None 
             try:
                 img = b.find_element(By.CSS_SELECTOR, "img[alt]")
                 alt = img.get_attribute("alt") or ""
-                # ex: "Male$Un homme " -> prendre la partie FR aprÃƒÂ¨s le $
+                # ex: "Male$Un homme " -> prendre la partie FR aprÃƒÆ’Ã‚Â¨s le $
                 parts = [p.strip() for p in alt.split("$") if p.strip()]
                 txt = parts[-1] if parts else alt
             except Exception:
@@ -3152,7 +3152,7 @@ def click_confirmit_image_selector(driver, label: str, context_hint: str | None 
             t = _block_text(b)
             if not t:
                 continue
-            # ÃƒÂ©galitÃƒÂ© / inclusion bilatÃƒÂ©rale
+            # ÃƒÆ’Ã‚Â©galitÃƒÆ’Ã‚Â© / inclusion bilatÃƒÆ’Ã‚Â©rale
             match = (want == t) or (want in t) or (t in want)
             if match:
                 sc = len(t)
@@ -3175,7 +3175,7 @@ def click_confirmit_image_selector(driver, label: str, context_hint: str | None 
     if not click_targets:
         click_targets = [best]
 
-    # 6) Clics (multi-fallback) + post-vÃƒÂ©rification
+    # 6) Clics (multi-fallback) + post-vÃƒÆ’Ã‚Â©rification
     for tgt in click_targets[:3]:
         for _ in range(max_retries):
             # a) safe click
@@ -3188,27 +3188,27 @@ def click_confirmit_image_selector(driver, label: str, context_hint: str | None 
             try:
                 tick = best.find_element(By.CSS_SELECTOR, ".ticker")
                 if getattr(tick, "is_displayed", lambda: False)():
-                    print("Ã¢Å“â€¦ ImageSelector: ticker affichÃƒÂ©. source: input_handler.py")
+                    print("ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ ImageSelector: ticker affichÃƒÆ’Ã‚Â©. source: input_handler.py")
                     return True
             except Exception:
                 pass
             try:
                 cls = (best.get_attribute("class") or "").lower()
                 if any(k in cls for k in ("selected", "active", "checked")):
-                    print("Ã¢Å“â€¦ ImageSelector: ÃƒÂ©tat sÃƒÂ©lectionnÃƒÂ© (classe). source: input_handler.py")
+                    print("ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ ImageSelector: ÃƒÆ’Ã‚Â©tat sÃƒÆ’Ã‚Â©lectionnÃƒÆ’Ã‚Â© (classe). source: input_handler.py")
                     return True
             except Exception:
                 pass
-    print("Ã¢â€ ÂªÃ¯Â¸Â ImageSelector: aucun clic valide. source: input_handler.py")
+    print("ÃƒÂ¢Ã¢â‚¬Â Ã‚ÂªÃƒÂ¯Ã‚Â¸Ã‚Â ImageSelector: aucun clic valide. source: input_handler.py")
     return False
 # === FIN Confirmit/Dynata ====================================================
 # === Confirmit/Dynata GridClick (scale-button) ===============================
 def click_confirmit_gridclick(driver, label: str, context_hint: str | None = None, max_retries: int = 2) -> bool:
-    """Clique un bouton .scale-button (Pas du tout dÃ¢â‚¬â„¢accord, etc.) dans une question GridClick.
-       Post-vÃƒÂ©rifie par changement de lÃ¢â‚¬â„¢item courant / compteur dÃ¢â‚¬â„¢items 'answered'."""
+    """Clique un bouton .scale-button (Pas du tout dÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢accord, etc.) dans une question GridClick.
+       Post-vÃƒÆ’Ã‚Â©rifie par changement de lÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢item courant / compteur dÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢items 'answered'."""
     def _n(s):
         if not s: return ""
-        s = s.replace("\u00A0"," ").replace("Ã¢â‚¬â„¢","'").replace("Ã‚Â´","'").replace("`","'")
+        s = s.replace("\u00A0"," ").replace("ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢","'").replace("Ãƒâ€šÃ‚Â´","'").replace("`","'")
         s = unicodedata.normalize("NFKD", s)
         s = "".join(c for c in s if not unicodedata.combining(c))
         return re.sub(r"\s+"," ", s, flags=re.S).strip().lower()
@@ -3229,7 +3229,7 @@ def click_confirmit_gridclick(driver, label: str, context_hint: str | None = Non
     except Exception:
         return False
 
-    # Ãƒâ€°tat avant clic (pour post-vÃƒÂ©rif)
+    # ÃƒÆ’Ã¢â‚¬Â°tat avant clic (pour post-vÃƒÆ’Ã‚Â©rif)
     def _state():
         try:
             cur = cont.find_element(By.CSS_SELECTOR, ".progress-indicator .currentNode")
@@ -3261,54 +3261,54 @@ def click_confirmit_gridclick(driver, label: str, context_hint: str | None = Non
         return False
 
     for _ in range(max_retries):
-        # clic Ã‚Â« sÃƒÂ»r Ã‚Â» Ã¢â€ â€™ JS Ã¢â€ â€™ sÃƒÂ©quence dÃ¢â‚¬â„¢ÃƒÂ©vÃƒÂ©nements
+        # clic Ãƒâ€šÃ‚Â« sÃƒÆ’Ã‚Â»r Ãƒâ€šÃ‚Â» ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ JS ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ sÃƒÆ’Ã‚Â©quence dÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã‚Â©vÃƒÆ’Ã‚Â©nements
         if _safe_click(driver, btn, trace="gridclick_btn"):
             time.sleep(0.12)
         else:
             time.sleep(0.12)
 
-        # Post-check : item courant/compteur a-t-il changÃƒÂ© ?
+        # Post-check : item courant/compteur a-t-il changÃƒÆ’Ã‚Â© ?
         deadline = time.time() + 1.0
         while time.time() < deadline:
             kind1, val1 = _state()
             if kind1 == kind0 and val1 and val1 != val0:
-                print("Ã¢Å“â€¦ GridClick: progression avancÃƒÂ©e. source: input_handler.py")
+                print("ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ GridClick: progression avancÃƒÆ’Ã‚Â©e. source: input_handler.py")
                 return True
             try:
                 cls = (btn.get_attribute("class") or "").lower()
                 if any(k in cls for k in ("selected","active","is-selected")):
-                    print("Ã¢Å“â€¦ GridClick: bouton marquÃƒÂ© sÃƒÂ©lectionnÃƒÂ©. source: input_handler.py")
+                    print("ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ GridClick: bouton marquÃƒÆ’Ã‚Â© sÃƒÆ’Ã‚Â©lectionnÃƒÆ’Ã‚Â©. source: input_handler.py")
                     return True
             except Exception:
                 pass
             time.sleep(0.05)
 
-    print("Ã¢â€ ÂªÃ¯Â¸Â GridClick: aucun clic valide. source: input_handler.py")
+    print("ÃƒÂ¢Ã¢â‚¬Â Ã‚ÂªÃƒÂ¯Ã‚Â¸Ã‚Â GridClick: aucun clic valide. source: input_handler.py")
     return False
 # === FIN GridClick ===========================================================
 
 def click_radio_by_label(driver, label: str, context_hint: str | None = None) -> bool:
     """
-    Coche le bouton radio correspondant ÃƒÂ  `label`.
-    Accepte aussi 'LibellÃƒÂ© //// radio'. Couvre :
+    Coche le bouton radio correspondant ÃƒÆ’Ã‚Â  `label`.
+    Accepte aussi 'LibellÃƒÆ’Ã‚Â© //// radio'. Couvre :
     - <label for="..."> + <input type=radio id="...">
     - input radio voisin de <label>
     - conteneurs ARIA role="radio" qui contiennent le texte (YouGov, etc.)
-    - blocs stylÃƒÂ©s (answer/option/choice)
-    AprÃƒÂ¨s sÃƒÂ©lection, tente un bouton 'Suivant/Continuer'.
+    - blocs stylÃƒÆ’Ã‚Â©s (answer/option/choice)
+    AprÃƒÆ’Ã‚Â¨s sÃƒÆ’Ã‚Â©lection, tente un bouton 'Suivant/Continuer'.
     """
 
     def _norm_radio(s: str) -> str:
         if not s:
             return ""
         s = unicodedata.normalize("NFKC", s).replace("\u00a0", " ").lower().strip()
-        s = re.sub(r"[Ã‚Â»Ã‚Â«Ã¢â‚¬Å“Ã¢â‚¬Â\"'Ã¢â‚¬ÂºÃ¢â€ â€™Ã‚Â·Ã¢â‚¬Â¢:]+", "", s)
+        s = re.sub(r"[Ãƒâ€šÃ‚Â»Ãƒâ€šÃ‚Â«ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÂ¢Ã¢â€šÂ¬Ã‚Â\"'ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂºÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢Ãƒâ€šÃ‚Â·ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢:]+", "", s)
         s = re.sub(r"\s+", " ", s)
         return s
     
-    # Confirmit GridClick (ÃƒÂ©chelle ÃƒÂ  droite, pas de <input>)
+    # Confirmit GridClick (ÃƒÆ’Ã‚Â©chelle ÃƒÆ’Ã‚Â  droite, pas de <input>)
     if click_confirmit_gridclick(driver, label=label, context_hint=context_hint):
-        print(f"Ã¢Å“â€¦ Radio(GridClick) Ã‚Â« {label} Ã‚Â». source: input_handler.py")
+        print(f"ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Radio(GridClick) Ãƒâ€šÃ‚Â« {label} Ãƒâ€šÃ‚Â». source: input_handler.py")
         return True
 
 
@@ -3320,7 +3320,7 @@ def click_radio_by_label(driver, label: str, context_hint: str | None = None) ->
         pass
 
     try:
-        # prioritÃƒÂ© ÃƒÂ  la voie stricte Decipher pour les tables .grid
+        # prioritÃƒÆ’Ã‚Â© ÃƒÆ’Ã‚Â  la voie stricte Decipher pour les tables .grid
         if _click_decipher_grid_radio_strict(driver, label, context_hint or ""):
             return True
     except Exception:
@@ -3333,18 +3333,18 @@ def click_radio_by_label(driver, label: str, context_hint: str | None = None) ->
 
     wait = WebDriverWait(driver, 5)
 
-    # NEW Ã¢â‚¬â€ cartes Confirmit/Dynata rendues par JavaScript (pas d'<input> visible)
+    # NEW ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â cartes Confirmit/Dynata rendues par JavaScript (pas d'<input> visible)
     if click_radio_cardlike_js(driver, label=label, context_hint=context_hint):
-        print(f"Ã¢Å“â€¦ Radio(card) Ã‚Â« {label} Ã‚Â». source: input_handler.py")
+        print(f"ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Radio(card) Ãƒâ€šÃ‚Â« {label} Ãƒâ€šÃ‚Â». source: input_handler.py")
         return True
     
-    # NEW Ã¢â‚¬â€ Confirmit/Dynata ImageSelector (grid dÃ¢â‚¬â„¢images)
+    # NEW ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â Confirmit/Dynata ImageSelector (grid dÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢images)
     if click_confirmit_image_selector(driver, label=label, context_hint=context_hint):
-        print(f"Ã¢Å“â€¦ Radio(ImageSelector) Ã‚Â« {label} Ã‚Â». source: input_handler.py")
+        print(f"ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Radio(ImageSelector) Ãƒâ€šÃ‚Â« {label} Ãƒâ€šÃ‚Â». source: input_handler.py")
         return True
 
 
-    # 1) Cas table (decipherinc) : <tr><th>LibellÃƒÂ©</th><td ...><label for="id"></label></td></tr>
+    # 1) Cas table (decipherinc) : <tr><th>LibellÃƒÆ’Ã‚Â©</th><td ...><label for="id"></label></td></tr>
     try:
         tr = scope.find_element(
             By.XPATH,
@@ -3352,7 +3352,7 @@ def click_radio_by_label(driver, label: str, context_hint: str | None = None) ->
             f"\"{label.strip()}\""
             "]]"
         )
-        # privilÃƒÂ©gier le label cliquable dans la cellule
+        # privilÃƒÆ’Ã‚Â©gier le label cliquable dans la cellule
         lab = tr.find_element(By.XPATH, ".//td[contains(@class,'clickableCell')]//label")
         driver.execute_script("arguments[0].scrollIntoView({block:'center'});", lab)
         wait.until(EC.element_to_be_clickable(lab))
@@ -3361,7 +3361,7 @@ def click_radio_by_label(driver, label: str, context_hint: str | None = None) ->
     except Exception:
         pass
     
-    # 2) Cas label direct : <label>LibellÃƒÂ©</label> avec un input sibling
+    # 2) Cas label direct : <label>LibellÃƒÆ’Ã‚Â©</label> avec un input sibling
     try:
         lab = scope.find_element(
             By.XPATH,
@@ -3376,7 +3376,7 @@ def click_radio_by_label(driver, label: str, context_hint: str | None = None) ->
     except Exception:
         pass
     
-    # 3) Cas input radio voisin dÃ¢â‚¬â„¢un texte (moins propre mais utile en dernier recours)
+    # 3) Cas input radio voisin dÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢un texte (moins propre mais utile en dernier recours)
     try:
         inp = scope.find_element(
             By.XPATH,
@@ -3388,7 +3388,7 @@ def click_radio_by_label(driver, label: str, context_hint: str | None = None) ->
         )
         driver.execute_script("arguments[0].scrollIntoView({block:'center'});", inp)
         driver.execute_script("arguments[0].click();", inp)
-        # sÃƒÂ©curiser lÃ¢â‚¬â„¢ÃƒÂ©tat + events
+        # sÃƒÆ’Ã‚Â©curiser lÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã‚Â©tat + events
         return True
     except Exception:
         pass
@@ -3403,12 +3403,12 @@ def click_radio_by_label(driver, label: str, context_hint: str | None = None) ->
     if not needle:
         return False
 
-    # Ã°Å¸â€Å½ Essai prioritaire dans le conteneur de la question (si fourni)
+    # ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ…Â½ Essai prioritaire dans le conteneur de la question (si fourni)
     scope = _find_context_container(driver, context_hint)
-    # Ã°Å¸â€â€™ Decipher/Confirmit table : si on a un scope, essayer dÃ¢â‚¬â„¢abord un clic strict
+    # ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ¢â‚¬â„¢ Decipher/Confirmit table : si on a un scope, essayer dÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢abord un clic strict
     if scope is not None:
         if _click_radio_label_in_scope(driver, scope, label):
-            print(f"Ã¢Å“â€¦ Radio cochÃƒÂ©e (Decipher/table via scope) : {label}")
+            print(f"ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Radio cochÃƒÆ’Ã‚Â©e (Decipher/table via scope) : {label}")
             try:
                 setattr(driver, "last_action_success", True)
                 setattr(driver, "_post_action_t0", time.time())
@@ -3420,7 +3420,7 @@ def click_radio_by_label(driver, label: str, context_hint: str | None = None) ->
     anchor_y = None
     if scope is not None:
         try:
-            # l'entÃƒÂªte de question la plus proche sert d'ancre
+            # l'entÃƒÆ’Ã‚Âªte de question la plus proche sert d'ancre
             hdr = scope.find_element(By.XPATH, ".//legend|.//h1|.//h2|.//h3|.//*[contains(@class,'question-text')][1]")
             anchor_y = hdr.rect.get("y", None)
         except Exception:
@@ -3431,7 +3431,7 @@ def click_radio_by_label(driver, label: str, context_hint: str | None = None) ->
 
     root = scope if scope is not None else driver
 
-    # --- 1) Pattern Angular/cc-radio mais ANCRÃƒâ€° sous lÃ¢â‚¬â„¢entÃƒÂªte ---
+    # --- 1) Pattern Angular/cc-radio mais ANCRÃƒÆ’Ã¢â‚¬Â° sous lÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢entÃƒÆ’Ã‚Âªte ---
     try:
         xp = ("(.//div[contains(@class,'fr-option') or contains(@class,'cc-radio') or contains(@class,'radio')])"
               f"//label[.//span[contains(@class,'cc-radio__label')] and contains(translate(normalize-space(string(.)),"
@@ -3440,7 +3440,7 @@ def click_radio_by_label(driver, label: str, context_hint: str | None = None) ->
         best = None; best_dy = 1e9
         for lbl in cands:
             y = lbl.rect.get("y", 0)
-            if anchor_y is not None and y + 1 < anchor_y:  # ignorer ce qui est au-dessus de lÃ¢â‚¬â„¢en-tÃƒÂªte
+            if anchor_y is not None and y + 1 < anchor_y:  # ignorer ce qui est au-dessus de lÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢en-tÃƒÆ’Ã‚Âªte
                 continue
             dy = abs((anchor_y or y) - y)
             if dy < best_dy:
@@ -3466,7 +3466,7 @@ def click_radio_by_label(driver, label: str, context_hint: str | None = None) ->
     except Exception:
         pass
 
-    # --- 2) Recherche gÃƒÂ©nÃƒÂ©rale ANCRÃƒâ€°E dans le scope (labels/role=radio/options) ---
+    # --- 2) Recherche gÃƒÆ’Ã‚Â©nÃƒÆ’Ã‚Â©rale ANCRÃƒÆ’Ã¢â‚¬Â°E dans le scope (labels/role=radio/options) ---
     if scope is not None:
         cands = []
         cands += root.find_elements(By.XPATH, ".//label[normalize-space()!='']")
@@ -3513,7 +3513,7 @@ def click_radio_by_label(driver, label: str, context_hint: str | None = None) ->
             # secours JS
             driver.execute_script("arguments[0].click();", lbl)
 
-        # 2) VÃƒÂ©rification + forÃƒÂ§age si nÃƒÂ©cessaire
+        # 2) VÃƒÆ’Ã‚Â©rification + forÃƒÆ’Ã‚Â§age si nÃƒÆ’Ã‚Â©cessaire
         try:
             for_id = lbl.get_attribute("for")
             if for_id:
@@ -3554,7 +3554,7 @@ def click_radio_by_label(driver, label: str, context_hint: str | None = None) ->
                 except Exception:
                     pass
                 
-                # fallback : conteneur dÃ¢â‚¬â„¢option descendant dans scope
+                # fallback : conteneur dÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢option descendant dans scope
                 try:
                     opt = scope.find_element(
                         By.XPATH,
@@ -3577,7 +3577,7 @@ def click_radio_by_label(driver, label: str, context_hint: str | None = None) ->
             except Exception:
                 pass
         
-        # Dernier essai strictement scoppÃƒÂ© si un scope/ancre existe
+        # Dernier essai strictement scoppÃƒÆ’Ã‚Â© si un scope/ancre existe
         if scope is not None and anchor_y is not None:
             needle = _norm_radio(label)
             cands = scope.find_elements(By.XPATH,
@@ -3589,7 +3589,7 @@ def click_radio_by_label(driver, label: str, context_hint: str | None = None) ->
                     if not (needle == txt or needle in txt or txt in needle):
                         continue
                     y = el.rect.get("y", 0)
-                    if y + 1 >= anchor_y:  # uniquement sous l'entÃƒÂªte
+                    if y + 1 >= anchor_y:  # uniquement sous l'entÃƒÆ’Ã‚Âªte
                         dy = abs(y - anchor_y)
                         if dy < best_dy:
                             best, best_dy = el, dy
@@ -3604,11 +3604,11 @@ def click_radio_by_label(driver, label: str, context_hint: str | None = None) ->
                 return True
 
             # IMPORTANT : si on avait un scope mais rien de valide dedans, on STOP ici
-            # pour ÃƒÂ©viter d'aller cliquer un "Un homme" ailleurs dans la page.
+            # pour ÃƒÆ’Ã‚Â©viter d'aller cliquer un "Un homme" ailleurs dans la page.
             return False
 
 
-        # 1) label[for] Ã¢â€ â€™ input#id
+        # 1) label[for] ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ input#id
         try:
             lbl = driver.find_element(
                 By.XPATH,
@@ -3620,7 +3620,7 @@ def click_radio_by_label(driver, label: str, context_hint: str | None = None) ->
                 rb = driver.find_element(By.ID, for_id)
                 try:
                     if hasattr(rb, "is_selected") and rb.is_selected():
-                        print(f"Ã¢â€žÂ¹Ã¯Â¸Â Radio dÃƒÂ©jÃƒÂ  cochÃƒÂ©e : {label} Ã¢â€ â€™ on tente le Next.")
+                        print(f"ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¹ÃƒÂ¯Ã‚Â¸Ã‚Â Radio dÃƒÆ’Ã‚Â©jÃƒÆ’Ã‚Â  cochÃƒÆ’Ã‚Â©e : {label} ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ on tente le Next.")
                         try:
                             setattr(driver, "last_action_success", True)
                             setattr(driver, "_post_action_t0", time.time())
@@ -3635,7 +3635,7 @@ def click_radio_by_label(driver, label: str, context_hint: str | None = None) ->
                 )
                 time.sleep(0.1)
                 ActionChains(driver).move_to_element(rb).click().perform()
-                print(f"Ã¢Å“â€¦ Radio cochÃƒÂ© (via for/id) : {label}")
+                print(f"ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Radio cochÃƒÆ’Ã‚Â© (via for/id) : {label}")
                 try:
                     setattr(driver, "last_action_success", True)
                     setattr(driver, "_post_action_t0", time.time())
@@ -3647,7 +3647,7 @@ def click_radio_by_label(driver, label: str, context_hint: str | None = None) ->
         except Exception:
             pass
 
-        # 2) input + label frÃƒÂ¨re contenant le texte (Decipher trÃƒÂ¨s courant)
+        # 2) input + label frÃƒÆ’Ã‚Â¨re contenant le texte (Decipher trÃƒÆ’Ã‚Â¨s courant)
         try:
             el = driver.find_element(
                 By.XPATH,
@@ -3661,7 +3661,7 @@ def click_radio_by_label(driver, label: str, context_hint: str | None = None) ->
                 el.click()
             except:
                 ActionChains(driver).move_to_element(el).click().perform()
-            print(f"Ã¢Å“â€¦ Radio cochÃƒÂ©e (input + label frÃƒÂ¨re) : {label}")
+            print(f"ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Radio cochÃƒÆ’Ã‚Â©e (input + label frÃƒÆ’Ã‚Â¨re) : {label}")
             try:
                 setattr(driver, "last_action_success", True)
                 setattr(driver, "_post_action_t0", time.time())
@@ -3673,7 +3673,7 @@ def click_radio_by_label(driver, label: str, context_hint: str | None = None) ->
         except Exception:
             pass
 
-        # 3) conteneurs dÃ¢â‚¬â„¢option (div/li) avec le texte + input radio descendant
+        # 3) conteneurs dÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢option (div/li) avec le texte + input radio descendant
         try:
             opt = driver.find_element(
                 By.XPATH,
@@ -3714,7 +3714,7 @@ def click_radio_by_label(driver, label: str, context_hint: str | None = None) ->
                     except:
                         driver.execute_script("arguments[0].click();", rb)
 
-            print(f"Ã¢Å“â€¦ Radio cochÃƒÂ©e (conteneur dÃ¢â‚¬â„¢option) : {label}")
+            print(f"ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Radio cochÃƒÆ’Ã‚Â©e (conteneur dÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢option) : {label}")
             try:
                 setattr(driver, "last_action_success", True)
                 setattr(driver, "_post_action_t0", time.time())
@@ -3742,7 +3742,7 @@ def click_radio_by_label(driver, label: str, context_hint: str | None = None) ->
                 aria.click()
             except:
                 ActionChains(driver).move_to_element(aria).click().perform()
-            print(f"Ã¢Å“â€¦ Radio cochÃƒÂ©e (ARIA) : {label}")
+            print(f"ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Radio cochÃƒÆ’Ã‚Â©e (ARIA) : {label}")
             try:
                 setattr(driver, "last_action_success", True)
                 setattr(driver, "_post_action_t0", time.time())
@@ -3754,7 +3754,7 @@ def click_radio_by_label(driver, label: str, context_hint: str | None = None) ->
         except Exception:
             pass
 
-        # 5) filet de sÃƒÂ©curitÃƒÂ© : texte -> remonter au parent cliquable puis radio descendant
+        # 5) filet de sÃƒÆ’Ã‚Â©curitÃƒÆ’Ã‚Â© : texte -> remonter au parent cliquable puis radio descendant
         try:
             txt_host = driver.find_element(
                 By.XPATH,
@@ -3787,7 +3787,7 @@ def click_radio_by_label(driver, label: str, context_hint: str | None = None) ->
             except:
                 pass
 
-            print(f"Ã¢Å“â€¦ Radio cochÃƒÂ© (fallback proximitÃƒÂ©/contener radio) : {label}")
+            print(f"ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Radio cochÃƒÆ’Ã‚Â© (fallback proximitÃƒÆ’Ã‚Â©/contener radio) : {label}")
             try:
                 setattr(driver, "last_action_success", True)
                 setattr(driver, "_post_action_t0", time.time())
@@ -3799,7 +3799,7 @@ def click_radio_by_label(driver, label: str, context_hint: str | None = None) ->
         except Exception:
             pass
 
-        # 6) Fallback gÃƒÂ©nÃƒÂ©rique : proche du texte Ã¢â€ â€™ conteneur "radio" custom (ex. GfK: .prettyradio)
+        # 6) Fallback gÃƒÆ’Ã‚Â©nÃƒÆ’Ã‚Â©rique : proche du texte ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ conteneur "radio" custom (ex. GfK: .prettyradio)
         try:
             # on localise d'abord le texte cible quelque part dans la ligne
             txt_el = driver.find_element(
@@ -3807,7 +3807,7 @@ def click_radio_by_label(driver, label: str, context_hint: str | None = None) ->
                 f"//*[normalize-space()!='' and contains(translate(normalize-space(.),"
                 "'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'), '{needle}')]",
             )
-            # remonter au conteneur de "ligne" qui contient un ÃƒÂ©lÃƒÂ©ment radio custom
+            # remonter au conteneur de "ligne" qui contient un ÃƒÆ’Ã‚Â©lÃƒÆ’Ã‚Â©ment radio custom
             row = txt_el.find_element(
                 By.XPATH,
                 "ancestor::*[self::li or self::div or self::td][.//input[@type='radio'] "
@@ -3816,7 +3816,7 @@ def click_radio_by_label(driver, label: str, context_hint: str | None = None) ->
                 "][1]",
             )
 
-            # cible cliquable dans la ligne (ordre de prÃƒÂ©fÃƒÂ©rence)
+            # cible cliquable dans la ligne (ordre de prÃƒÆ’Ã‚Â©fÃƒÆ’Ã‚Â©rence)
             for xp in [
                 ".//input[@type='radio']",
                 ".//*[@role='radio']",
@@ -3833,7 +3833,7 @@ def click_radio_by_label(driver, label: str, context_hint: str | None = None) ->
                     except Exception:
                         ActionChains(driver).move_to_element(rb).click().perform()
                     print(
-                        f"Ã¢Å“â€¦ Radio cochÃƒÂ© (fallback proximitÃƒÂ©/contener radio) : {label}"
+                        f"ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Radio cochÃƒÆ’Ã‚Â© (fallback proximitÃƒÆ’Ã‚Â©/contener radio) : {label}"
                     )
                     _click_next_any(driver)
                     return True
@@ -3843,12 +3843,12 @@ def click_radio_by_label(driver, label: str, context_hint: str | None = None) ->
             pass
 
     except Exception as e:
-        print("Ã°Å¸â€™Â¥ Erreur dans click_radio_by_label :", e, "source: input_handler.py")
+        print("ÃƒÂ°Ã…Â¸Ã¢â‚¬â„¢Ã‚Â¥ Erreur dans click_radio_by_label :", e, "source: input_handler.py")
 
-    # 7) Fallback ultime : JS gÃƒÂ©nÃƒÂ©rique (Decipher/Confirmit & co)
+    # 7) Fallback ultime : JS gÃƒÆ’Ã‚Â©nÃƒÆ’Ã‚Â©rique (Decipher/Confirmit & co)
     try:
         if _fallback_click_radio_js_generic(driver, label):
-            print(f"Ã¢Å“â€¦ Radio cochÃƒÂ©e (fallback JS gÃƒÂ©nÃƒÂ©rique) : {label}")
+            print(f"ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Radio cochÃƒÆ’Ã‚Â©e (fallback JS gÃƒÆ’Ã‚Â©nÃƒÆ’Ã‚Â©rique) : {label}")
             try:
                 setattr(driver, "last_action_success", True)
                 setattr(driver, "_post_action_t0", time.time())
@@ -3863,15 +3863,15 @@ def click_radio_by_label(driver, label: str, context_hint: str | None = None) ->
 
 def _fallback_click_checkbox_js_alchemer(driver, target_text: str) -> bool:
     """
-    Fallback ciblÃƒÂ© Alchemer (classes 'sg-*'):
+    Fallback ciblÃƒÆ’Ã‚Â© Alchemer (classes 'sg-*'):
     - Matche le texte dans la liste .sg-type-checkbox
-    - PrÃƒÂ©fÃƒÂ¨re <label for="..."> puis coche l'<input id="..."> liÃƒÂ©
+    - PrÃƒÆ’Ã‚Â©fÃƒÆ’Ã‚Â¨re <label for="..."> puis coche l'<input id="..."> liÃƒÆ’Ã‚Â©
     - Dispatch 'input' + 'change' pour frameworks
     """
     js = r"""
     const norm = s => (s||'').toLowerCase()
       .normalize('NFKC').replace(/\u00A0/g,' ')
-      .replace(/[Ã‚Â»Ã‚Â«Ã¢â‚¬Å“Ã¢â‚¬Â"'Ã¢â‚¬ÂºÃ¢â€ â€™Ã‚Â·Ã¢â‚¬Â¢:]/g,'').replace(/\s+/g,' ').trim();
+      .replace(/[Ãƒâ€šÃ‚Â»Ãƒâ€šÃ‚Â«ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÂ¢Ã¢â€šÂ¬Ã‚Â"'ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂºÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢Ãƒâ€šÃ‚Â·ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢:]/g,'').replace(/\s+/g,' ').trim();
     const needle = norm(arguments[0]);
 
     // Limiter la recherche au bloc checkbox d'Alchemer
@@ -3899,28 +3899,28 @@ def _fallback_click_checkbox_js_alchemer(driver, target_text: str) -> bool:
     const lab = items[0];
     lab.scrollIntoView({block:'center'});
 
-    // RÃƒÂ©cupÃƒÂ©rer l'input par @for ou voisinage
+    // RÃƒÆ’Ã‚Â©cupÃƒÆ’Ã‚Â©rer l'input par @for ou voisinage
     let inp = null;
     const fid = lab.getAttribute('for');
     if (fid) inp = document.getElementById(fid);
     if (!inp){
-      // input frÃƒÂ¨re/voisin dans le mÃƒÂªme <li>
+      // input frÃƒÆ’Ã‚Â¨re/voisin dans le mÃƒÆ’Ã‚Âªme <li>
       const li = lab.closest('li') || lab.parentElement;
       if (li) inp = li.querySelector('input[type=checkbox], input[type=radio]');
     }
     if (!inp) return false;
 
-    // Clic sur label dÃ¢â‚¬â„¢abord (comportement naturel Alchemer)
+    // Clic sur label dÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢abord (comportement naturel Alchemer)
     try { lab.click(); } catch(e){}
 
-    // SÃƒÂ©curiser lÃ¢â‚¬â„¢ÃƒÂ©tat + events
+    // SÃƒÆ’Ã‚Â©curiser lÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã‚Â©tat + events
     try {
       if (!inp.checked) inp.checked = true;
       inp.dispatchEvent(new Event('input', {bubbles:true}));
       inp.dispatchEvent(new Event('change', {bubbles:true}));
     } catch(e){}
 
-    // Validation dÃ¢â‚¬â„¢ÃƒÂ©tat
+    // Validation dÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã‚Â©tat
     return !!(inp.checked || (inp.getAttribute('aria-checked')||'').toLowerCase()==='true');
     """
     try:
@@ -3930,21 +3930,21 @@ def _fallback_click_checkbox_js_alchemer(driver, target_text: str) -> bool:
 
 def _fallback_click_checkbox_js_generic(driver, target_text: str) -> bool:
     """
-    Fallback gÃƒÂ©nÃƒÂ©rique multi-sites :
+    Fallback gÃƒÆ’Ã‚Â©nÃƒÆ’Ã‚Â©rique multi-sites :
     - Matche par innerText sur <label>/<span> proches
     - Clique label/wrapper, ou force checked=true + events
     """
     js = r"""
     const norm = s => (s||'').toLowerCase()
       .normalize('NFKC').replace(/\u00A0/g,' ')
-      .replace(/[Ã‚Â»Ã‚Â«Ã¢â‚¬Å“Ã¢â‚¬Â"'Ã¢â‚¬ÂºÃ¢â€ â€™Ã‚Â·Ã¢â‚¬Â¢:]/g,'').replace(/\s+/g,' ').trim();
+      .replace(/[Ãƒâ€šÃ‚Â»Ãƒâ€šÃ‚Â«ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÂ¢Ã¢â€šÂ¬Ã‚Â"'ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂºÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢Ãƒâ€šÃ‚Â·ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢:]/g,'').replace(/\s+/g,' ').trim();
     const needle = norm(arguments[0]);
 
     const candidates = [];
     candidates.push(...document.querySelectorAll('label, .checkbox, [role=checkbox]'));
     candidates.push(...document.querySelectorAll('span, div, li'));
 
-    // score par proximitÃƒÂ© + surface
+    // score par proximitÃƒÆ’Ã‚Â© + surface
     const scored = [];
     for (const el of candidates){
       const txt = norm(el.innerText || el.textContent || '');
@@ -3965,7 +3965,7 @@ def _fallback_click_checkbox_js_generic(driver, target_text: str) -> bool:
     // Essayer clic naturel
     try { best.click(); } catch(e){}
 
-    // Synchroniser l'input liÃƒÂ© si prÃƒÂ©sent
+    // Synchroniser l'input liÃƒÆ’Ã‚Â© si prÃƒÆ’Ã‚Â©sent
     let inp = null;
     const lab = best.closest('label');
     if (lab && lab.htmlFor) inp = document.getElementById(lab.htmlFor);
@@ -3991,17 +3991,17 @@ def _fallback_click_checkbox_js_generic(driver, target_text: str) -> bool:
 
 def _fallback_click_radio_js_generic(driver, target_text: str) -> bool:
     """
-    Fallback JS gÃƒÂ©nÃƒÂ©rique (Decipher/Confirmit & co) pour cocher une radio quand
-    les clics classiques ÃƒÂ©chouent. StratÃƒÂ©gie :
+    Fallback JS gÃƒÆ’Ã‚Â©nÃƒÆ’Ã‚Â©rique (Decipher/Confirmit & co) pour cocher une radio quand
+    les clics classiques ÃƒÆ’Ã‚Â©chouent. StratÃƒÆ’Ã‚Â©gie :
       1) label[for] -> input#id
       2) match [role=radio]/input[type=radio] via aria/texte voisin
-      3) proximitÃƒÂ© spatiale entre le texte et la radio la plus proche
+      3) proximitÃƒÆ’Ã‚Â© spatiale entre le texte et la radio la plus proche
     Force checked=true + dispatch 'input' & 'change'.
     """
     js = r"""
     const norm = s => (s||'').toLowerCase()
       .normalize('NFKC').replace(/\u00A0/g,' ')
-      .replace(/[Ã‚Â»Ã‚Â«Ã¢â‚¬Å“Ã¢â‚¬Â"'Ã¢â‚¬ÂºÃ¢â€ â€™Ã‚Â·Ã¢â‚¬Â¢:]/g,'').replace(/\s+/g,' ').trim();
+      .replace(/[Ãƒâ€šÃ‚Â»Ãƒâ€šÃ‚Â«ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÂ¢Ã¢â€šÂ¬Ã‚Â"'ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂºÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢Ãƒâ€šÃ‚Â·ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢:]/g,'').replace(/\s+/g,' ').trim();
     const needle = norm(arguments[0]);
 
     // 1) label[for] -> input#id
@@ -4042,7 +4042,7 @@ def _fallback_click_radio_js_generic(driver, target_text: str) -> bool:
       }
     }
 
-    // 3) ProximitÃƒÂ© : texte -> radio la plus proche verticalement
+    // 3) ProximitÃƒÆ’Ã‚Â© : texte -> radio la plus proche verticalement
     function center(el){ const b=el.getBoundingClientRect(); return {x:b.left+b.width/2, y:b.top+b.height/2}; }
     const texts = Array.from(document.querySelectorAll('label, span, div, li'))
       .filter(e => norm(e.innerText||e.textContent||'').includes(needle));
@@ -4076,11 +4076,11 @@ def click_confirmit_checktable(driver, label: str, context_hint: str | None = No
     <tr class="cRow/rsRow...">
       <td><input type="checkbox|radio" id="..."></td>
       <td><label for="..."><div><p>Texte ...</p></div></label></td>
-    Post-vÃƒÂ©rifie via is_selected()/@checked.
+    Post-vÃƒÆ’Ã‚Â©rifie via is_selected()/@checked.
     """
     def _n(s: str) -> str:
         if not s: return ""
-        s = s.replace("\u00A0", " ").replace("Ã¢â‚¬â„¢", "'").replace("Ã‚Â´", "'").replace("`", "'")
+        s = s.replace("\u00A0", " ").replace("ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢", "'").replace("Ãƒâ€šÃ‚Â´", "'").replace("`", "'")
         s = unicodedata.normalize("NFKD", s)
         s = "".join(c for c in s if not unicodedata.combining(c))
         s = re.sub(r"\s+", " ", s, flags=re.S).strip()
@@ -4096,7 +4096,7 @@ def click_confirmit_checktable(driver, label: str, context_hint: str | None = No
     except Exception:
         scope = driver
 
-    # Candidats: lignes de rÃƒÂ©ponses
+    # Candidats: lignes de rÃƒÆ’Ã‚Â©ponses
     rows = []
     try:
         rows += scope.find_elements(By.XPATH, ".//tr[contains(@class,'cRow') or contains(@class,'rsRow')]")
@@ -4106,7 +4106,7 @@ def click_confirmit_checktable(driver, label: str, context_hint: str | None = No
         return False
 
     def _row_text(row) -> str:
-        # Texte de la cellule libellÃƒÂ©
+        # Texte de la cellule libellÃƒÆ’Ã‚Â©
         try:
             cell = row.find_element(By.XPATH, ".//td[contains(@class,'cCellRowText')]")
         except Exception:
@@ -4173,7 +4173,7 @@ def click_confirmit_checktable(driver, label: str, context_hint: str | None = No
             else:
                 time.sleep(0.1)
             if _is_checked(target_input):
-                print("Ã¢Å“â€¦ Confirmit table: input cochÃƒÂ©. source: input_handler.py")
+                print("ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Confirmit table: input cochÃƒÆ’Ã‚Â©. source: input_handler.py")
                 return True
 
         # 2) sinon: clic sur le label[for]
@@ -4182,7 +4182,7 @@ def click_confirmit_checktable(driver, label: str, context_hint: str | None = No
                 time.sleep(0.1)
             else:
                 time.sleep(0.1)
-            # re-rÃƒÂ©cup input via @for
+            # re-rÃƒÆ’Ã‚Â©cup input via @for
             try:
                 if not target_input:
                     for_id = target_label.get_attribute("for")
@@ -4191,28 +4191,28 @@ def click_confirmit_checktable(driver, label: str, context_hint: str | None = No
             except Exception:
                 pass
             if target_input and _is_checked(target_input):
-                print("Ã¢Å“â€¦ Confirmit table: label cliquÃƒÂ© Ã¢â€ â€™ cochÃƒÂ©. source: input_handler.py")
+                print("ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Confirmit table: label cliquÃƒÆ’Ã‚Â© ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ cochÃƒÆ’Ã‚Â©. source: input_handler.py")
                 return True
 
-    print("Ã¢â€ ÂªÃ¯Â¸Â Confirmit table: ÃƒÂ©chec de coche. source: input_handler.py")
+    print("ÃƒÂ¢Ã¢â‚¬Â Ã‚ÂªÃƒÂ¯Ã‚Â¸Ã‚Â Confirmit table: ÃƒÆ’Ã‚Â©chec de coche. source: input_handler.py")
     return False
 # === FIN Confirmit table =====================================================
 
-# === Decipher/FIR checkbox (input cachÃƒÂ© + icÃƒÂ´ne SVG) =========================
+# === Decipher/FIR checkbox (input cachÃƒÆ’Ã‚Â© + icÃƒÆ’Ã‚Â´ne SVG) =========================
 def click_decipher_fir_checkbox(driver, label: str, context_hint: str | None = None, max_retries: int = 2) -> bool:
     """
     Coche un checkbox Decipher/FIR :
       <input class="fir-hidden ...">, voisin <span class="fir-icon"><svg>...</svg></span>,
-      libellÃƒÂ© dans <label for="ID"> ... </label>.
-    StratÃƒÂ©gie :
-      - retrouver le label par texte normalisÃƒÂ© (apostrophes/NBSP/diacritiques),
-      - rÃƒÂ©soudre l'input via @for (attention: ID avec '.'),
+      libellÃƒÆ’Ã‚Â© dans <label for="ID"> ... </label>.
+    StratÃƒÆ’Ã‚Â©gie :
+      - retrouver le label par texte normalisÃƒÆ’Ã‚Â© (apostrophes/NBSP/diacritiques),
+      - rÃƒÆ’Ã‚Â©soudre l'input via @for (attention: ID avec '.'),
       - cliquer label -> .fir-icon -> .cell-input -> JS click(input),
       - post-check: is_selected()/@checked ; sinon forcer checked + events (1 seule fois).
     """
     def _norm(s: str) -> str:
         if not s: return ""
-        s = s.replace("\u00A0"," ").replace("Ã¢â‚¬â„¢","'").replace("Ã‚Â´","'").replace("`","'")
+        s = s.replace("\u00A0"," ").replace("ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢","'").replace("Ãƒâ€šÃ‚Â´","'").replace("`","'")
         s = unicodedata.normalize("NFKD", s)
         s = "".join(c for c in s if not unicodedata.combining(c))
         s = re.sub(r"\s+"," ", s, flags=re.S).strip()
@@ -4248,7 +4248,7 @@ def click_decipher_fir_checkbox(driver, label: str, context_hint: str | None = N
     if not target_label:
         return False
 
-    # 2) RÃƒÂ©soudre l'INPUT depuis @for (ÃƒÂ©viter CSS #id car id contient '.')
+    # 2) RÃƒÆ’Ã‚Â©soudre l'INPUT depuis @for (ÃƒÆ’Ã‚Â©viter CSS #id car id contient '.')
     try:
         for_id = target_label.get_attribute("for") or ""
         if for_id:
@@ -4256,12 +4256,12 @@ def click_decipher_fir_checkbox(driver, label: str, context_hint: str | None = N
     except Exception:
         target_input = None
 
-    # 3) PrÃƒÂ©parer les cibles cliquables
+    # 3) PrÃƒÆ’Ã‚Â©parer les cibles cliquables
     click_targets = []
     # a) label[for]
     if target_label:
         click_targets.append(target_label)
-    # b) l'icÃƒÂ´ne FIR voisine
+    # b) l'icÃƒÆ’Ã‚Â´ne FIR voisine
     try:
         icon = target_label.find_element(By.XPATH, "./ancestor::span[contains(@class,'cell-sub-wrapper')][1]//span[contains(@class,'fir-icon')]")
         click_targets.append(icon)
@@ -4302,7 +4302,7 @@ def click_decipher_fir_checkbox(driver, label: str, context_hint: str | None = N
         return False
 
     def _ensure_events(inp):
-        # Forcer l'ÃƒÂ©tat + events une seule fois si toujours pas cochÃƒÂ©
+        # Forcer l'ÃƒÆ’Ã‚Â©tat + events une seule fois si toujours pas cochÃƒÆ’Ã‚Â©
         try:
             driver.execute_script("""
                 var el = arguments[0];
@@ -4313,7 +4313,7 @@ def click_decipher_fir_checkbox(driver, label: str, context_hint: str | None = N
         except Exception:
             pass
 
-    # 5) Essais de clic (une mÃƒÂ©thode par essai, sortie immÃƒÂ©diate si succÃƒÂ¨s)
+    # 5) Essais de clic (une mÃƒÆ’Ã‚Â©thode par essai, sortie immÃƒÆ’Ã‚Â©diate si succÃƒÆ’Ã‚Â¨s)
     for tgt in click_targets:
         for _ in range(max_retries):
             if _safe_click(driver, tgt, trace="decipher_fir_cb"):
@@ -4322,18 +4322,18 @@ def click_decipher_fir_checkbox(driver, label: str, context_hint: str | None = N
                 time.sleep(0.12)
 
             if target_input and _checked(target_input):
-                print("Ã¢Å“â€¦ Decipher/FIR: cochÃƒÂ© via clic. source: input_handler.py")
+                print("ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Decipher/FIR: cochÃƒÆ’Ã‚Â© via clic. source: input_handler.py")
                 return True
 
-            # Si l'on connaÃƒÂ®t l'input, sÃƒÂ©curiser l'ÃƒÂ©tat une fois
+            # Si l'on connaÃƒÆ’Ã‚Â®t l'input, sÃƒÆ’Ã‚Â©curiser l'ÃƒÆ’Ã‚Â©tat une fois
             if target_input and not _checked(target_input):
                 _ensure_events(target_input)
                 time.sleep(0.08)
                 if _checked(target_input):
-                    print("Ã¢Å“â€¦ Decipher/FIR: cochÃƒÂ© via events. source: input_handler.py")
+                    print("ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Decipher/FIR: cochÃƒÆ’Ã‚Â© via events. source: input_handler.py")
                     return True
 
-    print("Ã¢â€ ÂªÃ¯Â¸Â Decipher/FIR: ÃƒÂ©chec de coche. source: input_handler.py")
+    print("ÃƒÂ¢Ã¢â‚¬Â Ã‚ÂªÃƒÂ¯Ã‚Â¸Ã‚Â Decipher/FIR: ÃƒÆ’Ã‚Â©chec de coche. source: input_handler.py")
     return False
 # === FIN Decipher/FIR ========================================================
 
@@ -4356,7 +4356,7 @@ def _privacy_checkbox_is_accepted(driver) -> bool:
         warn = driver.find_element(By.ID, "privacyPolicyFeedback7")
         return not warn.is_displayed()
     except Exception:
-        return True  # plus de warning Ã¢â€ â€™ OK
+        return True  # plus de warning ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ OK
 
 def click_checkbox_by_label(
     driver,
@@ -4364,8 +4364,8 @@ def click_checkbox_by_label(
     context_hint: str | None = None,
 ):
     """
-    Clique un checkbox identifiÃƒÂ© par son label visible.
-    Retourne le WebElement <input type="checkbox"> si succÃƒÂ¨s, sinon None.
+    Clique un checkbox identifiÃƒÆ’Ã‚Â© par son label visible.
+    Retourne le WebElement <input type="checkbox"> si succÃƒÆ’Ã‚Â¨s, sinon None.
     """
 
     needle = _norm_lc_soft(target_text)
@@ -4375,15 +4375,15 @@ def click_checkbox_by_label(
     scope = _find_context_container(driver, context_hint)
 
     # ------------------------------------------------------------------
-    # 1) Cas standard : <label for="id"> Ã¢â€ â€™ <input id="id" type="checkbox">
+    # 1) Cas standard : <label for="id"> ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ <input id="id" type="checkbox">
     # ------------------------------------------------------------------
     try:
         labels = (scope or driver).find_elements(
             By.XPATH,
             ".//label[normalize-space()!='' and contains("
             "translate(normalize-space(.),"
-            "'ABCDEFGHIJKLMNOPQRSTUVWXYZÃƒâ‚¬Ãƒâ€šÃƒâ€žÃƒâ€°ÃƒË†ÃƒÅ Ãƒâ€¹ÃƒÅ½ÃƒÂÃƒâ€Ãƒâ€“Ãƒâ„¢Ãƒâ€ºÃƒÅ“Ãƒâ€¡',"
-            "'abcdefghijklmnopqrstuvwxyzÃƒÂ ÃƒÂ¢ÃƒÂ¤ÃƒÂ©ÃƒÂ¨ÃƒÂªÃƒÂ«ÃƒÂ®ÃƒÂ¯ÃƒÂ´ÃƒÂ¶ÃƒÂ¹ÃƒÂ»ÃƒÂ¼ÃƒÂ§'),"
+            "'ABCDEFGHIJKLMNOPQRSTUVWXYZÃƒÆ’Ã¢â€šÂ¬ÃƒÆ’Ã¢â‚¬Å¡ÃƒÆ’Ã¢â‚¬Å¾ÃƒÆ’Ã¢â‚¬Â°ÃƒÆ’Ã‹â€ ÃƒÆ’Ã…Â ÃƒÆ’Ã¢â‚¬Â¹ÃƒÆ’Ã…Â½ÃƒÆ’Ã‚ÂÃƒÆ’Ã¢â‚¬ÂÃƒÆ’Ã¢â‚¬â€œÃƒÆ’Ã¢â€žÂ¢ÃƒÆ’Ã¢â‚¬ÂºÃƒÆ’Ã…â€œÃƒÆ’Ã¢â‚¬Â¡',"
+            "'abcdefghijklmnopqrstuvwxyzÃƒÆ’Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÆ’Ã‚Â¤ÃƒÆ’Ã‚Â©ÃƒÆ’Ã‚Â¨ÃƒÆ’Ã‚ÂªÃƒÆ’Ã‚Â«ÃƒÆ’Ã‚Â®ÃƒÆ’Ã‚Â¯ÃƒÆ’Ã‚Â´ÃƒÆ’Ã‚Â¶ÃƒÆ’Ã‚Â¹ÃƒÆ’Ã‚Â»ÃƒÆ’Ã‚Â¼ÃƒÆ’Ã‚Â§'),"
             f"{_xpath_literal(needle)}"
             ")]"
         )
@@ -4409,7 +4409,7 @@ def click_checkbox_by_label(
                 except Exception:
                     _js_click(driver, cb)
 
-            # Ã°Å¸â€Â¥ FORCER LES EVENTS JS (clÃƒÂ© Ipsos)
+            # ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ‚Â¥ FORCER LES EVENTS JS (clÃƒÆ’Ã‚Â© Ipsos)
             _force_checkbox_events(driver, cb)
 
             if _is_checked(cb):
@@ -4441,7 +4441,7 @@ def click_checkbox_by_label(
             except Exception:
                 _js_click(driver, box)
 
-            # aria-checked doit passer ÃƒÂ  true
+            # aria-checked doit passer ÃƒÆ’Ã‚Â  true
             if box.get_attribute("aria-checked") == "true":
                 return box
 
@@ -4449,14 +4449,14 @@ def click_checkbox_by_label(
         pass
 
     # ------------------------------------------------------------------
-    # 3) Cas fallback Confirmit / tables (si dÃƒÂ©jÃƒÂ  existant chez toi)
+    # 3) Cas fallback Confirmit / tables (si dÃƒÆ’Ã‚Â©jÃƒÆ’Ã‚Â  existant chez toi)
     # ------------------------------------------------------------------
     try:
         cb = click_confirmit_checktable(
             driver,
             label=target_text,
             context_hint=context_hint,
-            return_element=True,   # Ã¢Å¡Â Ã¯Â¸Â si possible, sinon enlÃƒÂ¨ve
+            return_element=True,   # ÃƒÂ¢Ã…Â¡Ã‚Â ÃƒÂ¯Ã‚Â¸Ã‚Â si possible, sinon enlÃƒÆ’Ã‚Â¨ve
         )
         if cb:
             _force_checkbox_events(driver, cb)
@@ -4467,8 +4467,8 @@ def click_checkbox_by_label(
     return None
 
 def _xpath_literal(s: str) -> str:
-    """Construit un littÃƒÂ©ral XPath sÃƒÂ»r (gÃƒÂ¨re les quotes)."""
-    # on travaille sur la version normalisÃƒÂ©e dÃƒÂ©jÃƒÂ  minuscule
+    """Construit un littÃƒÆ’Ã‚Â©ral XPath sÃƒÆ’Ã‚Â»r (gÃƒÆ’Ã‚Â¨re les quotes)."""
+    # on travaille sur la version normalisÃƒÆ’Ã‚Â©e dÃƒÆ’Ã‚Â©jÃƒÆ’Ã‚Â  minuscule
     if "'" not in s:
         return f"'{s}'"
     if '"' not in s:
@@ -4478,12 +4478,12 @@ def _xpath_literal(s: str) -> str:
 
 def _click_next_any(driver):
     """
-    Clique le bouton de navigation aprÃƒÂ¨s sÃƒÂ©lection.
+    Clique le bouton de navigation aprÃƒÆ’Ã‚Â¨s sÃƒÆ’Ã‚Â©lection.
     Supporte data-test-id, <button> textuels et <input type=submit>.
     """
     wait = WebDriverWait(driver, 5)
 
-    # a) selectors spÃƒÂ©cifiques (quand dispo)
+    # a) selectors spÃƒÆ’Ã‚Â©cifiques (quand dispo)
     try:
         btn = driver.find_element(
             By.CSS_SELECTOR, 'button[data-test-id="ps-common-actions-button"]'
@@ -4491,12 +4491,12 @@ def _click_next_any(driver):
         driver.execute_script("arguments[0].scrollIntoView({block:'center'});", btn)
         time.sleep(0.2)
         driver.execute_script("arguments[0].click();", btn)
-        print("Ã¢Å¾Â¡Ã¯Â¸Â Bouton (data-test-id) cliquÃƒÂ©.")
+        print("ÃƒÂ¢Ã…Â¾Ã‚Â¡ÃƒÂ¯Ã‚Â¸Ã‚Â Bouton (data-test-id) cliquÃƒÆ’Ã‚Â©.")
         return True
     except Exception:
         pass
 
-    # b) libellÃƒÂ©s communs
+    # b) libellÃƒÆ’Ã‚Â©s communs
     try:
         btn = wait.until(
             EC.element_to_be_clickable(
@@ -4509,7 +4509,7 @@ def _click_next_any(driver):
         driver.execute_script("arguments[0].scrollIntoView({block:'center'});", btn)
         time.sleep(0.2)
         driver.execute_script("arguments[0].click();", btn)
-        print("Ã¢Å¾Â¡Ã¯Â¸Â Bouton navigation cliquÃƒÂ© (texte).")
+        print("ÃƒÂ¢Ã…Â¾Ã‚Â¡ÃƒÂ¯Ã‚Â¸Ã‚Â Bouton navigation cliquÃƒÆ’Ã‚Â© (texte).")
         return True
     except Exception:
         pass
@@ -4518,18 +4518,18 @@ def _click_next_any(driver):
     try:
         sub = driver.find_element(By.CSS_SELECTOR, "input[type='submit']")
         driver.execute_script("arguments[0].click();", sub)
-        print("Ã¢Å¾Â¡Ã¯Â¸Â Submit cliquÃƒÂ©.")
+        print("ÃƒÂ¢Ã…Â¾Ã‚Â¡ÃƒÂ¯Ã‚Â¸Ã‚Â Submit cliquÃƒÆ’Ã‚Â©.")
         return True
     except Exception:
         pass
 
     return False
 
-# --- Helper gÃƒÂ©nÃƒÂ©rique : setter "rÃƒÂ©actif" + events ---
+# --- Helper gÃƒÆ’Ã‚Â©nÃƒÆ’Ã‚Â©rique : setter "rÃƒÆ’Ã‚Â©actif" + events ---
 def _react_set_value_and_fire(driver, el, value: str):
     """
-    Pose la valeur via le setter natif (React/PRDG friendly) puis dÃƒÂ©clenche les
-    ÃƒÂ©vÃƒÂ¨nements que ces frameworks attendent.
+    Pose la valeur via le setter natif (React/PRDG friendly) puis dÃƒÆ’Ã‚Â©clenche les
+    ÃƒÆ’Ã‚Â©vÃƒÆ’Ã‚Â¨nements que ces frameworks attendent.
     """
     try:
         driver.execute_script("""
@@ -4537,7 +4537,7 @@ def _react_set_value_and_fire(driver, el, value: str):
             const d = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')
                    || Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value');
             if (d && d.set) { d.set.call(el, v); } else { el.value = v; }
-            // SÃƒÂ©quence d'ÃƒÂ©vÃƒÂ¨nements "humaine"
+            // SÃƒÆ’Ã‚Â©quence d'ÃƒÆ’Ã‚Â©vÃƒÆ’Ã‚Â¨nements "humaine"
             try { el.dispatchEvent(new Event('input',  {bubbles:true})); } catch(e){}
             try { el.dispatchEvent(new KeyboardEvent('keyup', {bubbles:true, key:'0'})); } catch(e){}
             try { el.dispatchEvent(new Event('change', {bubbles:true})); } catch(e){}
@@ -4549,10 +4549,10 @@ def _react_set_value_and_fire(driver, el, value: str):
 
 def _swagbucks_zip_patch(driver, value: str) -> bool:
     """
-    Patch ciblÃƒÂ© Swagbucks (champ zip):
+    Patch ciblÃƒÆ’Ã‚Â© Swagbucks (champ zip):
     - cible #profilerNumericInput
     - clear + saisie "humaine" (CDP) + events JS
-    - lÃƒÂ¨ve le 'disabled' sur le bouton Continue et clique
+    - lÃƒÆ’Ã‚Â¨ve le 'disabled' sur le bouton Continue et clique
     """
 
     try:
@@ -4578,7 +4578,7 @@ def _swagbucks_zip_patch(driver, value: str) -> bool:
         except Exception:
             pass
 
-        # 1) Frappe simulÃƒÂ©e via CDP : un premier caractÃƒÂ¨re pour lever 'disabled'
+        # 1) Frappe simulÃƒÆ’Ã‚Â©e via CDP : un premier caractÃƒÆ’Ã‚Â¨re pour lever 'disabled'
         first = (digits or value or "9")[0]
         try:
             driver.execute_cdp_cmd("Input.dispatchKeyEvent", {"type":"keyDown","text": first, "unmodifiedText": first})
@@ -4590,10 +4590,10 @@ def _swagbucks_zip_patch(driver, value: str) -> bool:
             except Exception:
                 pass
 
-        # 2) Pose de la valeur complÃƒÂ¨te via setter natif + events
+        # 2) Pose de la valeur complÃƒÆ’Ã‚Â¨te via setter natif + events
         _react_set_value_and_fire(driver, el, digits or value or "95000")
 
-        # 3) Tentative de lever 'disabled' (filet de sÃƒÂ©curitÃƒÂ©)
+        # 3) Tentative de lever 'disabled' (filet de sÃƒÆ’Ã‚Â©curitÃƒÆ’Ã‚Â©)
         driver.execute_script("""
             const btn = document.querySelector('button#profilerSubmit, button.profilerSubmit, button[id*="profilerSubmit"]');
             if (btn) { try { btn.removeAttribute('disabled'); } catch(e){} }
@@ -4623,7 +4623,7 @@ def _swagbucks_zip_patch(driver, value: str) -> bool:
         except Exception:
             pass
 
-        # VÃƒÂ©rification finale de la valeur
+        # VÃƒÆ’Ã‚Â©rification finale de la valeur
         cur = el.get_attribute("value") or ""
         return cur.strip() == digits
     except Exception:
@@ -4634,14 +4634,14 @@ def fill_text_input(driver, text: str, context_hint: str | None = None) -> bool:
     Saisie fiable dans input/textarea/contenteditable :
     - scroll+focus
     - clear (CTRL+A, DELETE)
-    - filtrage chiffres si le champ est numÃƒÂ©rique
+    - filtrage chiffres si le champ est numÃƒÆ’Ã‚Â©rique
     - fallback JS (dispatch 'input' & 'change')
     - petit 'nudge' clavier pour React/Angular
     """
 
     wait = WebDriverWait(driver, 10)
 
-    # Champ texte gÃƒÂ©nÃƒÂ©rique
+    # Champ texte gÃƒÆ’Ã‚Â©nÃƒÆ’Ã‚Â©rique
     selector = "input[type='text'], input[type='search'], input[type='number'], textarea, [contenteditable='true'], input[type='textarea']"
     field = None
     scope = _find_context_container(driver, context_hint)
@@ -4652,7 +4652,7 @@ def fill_text_input(driver, text: str, context_hint: str | None = None) -> bool:
         ctx_lc = (context_hint or "").lower()
         has_pscaptcha = bool(driver.find_elements(By.ID, "pscaptcha"))
         if has_pscaptcha or ("captcha" in ctx_lc or "taper le code" in ctx_lc or "code ci-dessus" in ctx_lc or "recop" in ctx_lc):
-            # 1) scope = ancÃƒÂªtre du bloc captcha ou de l'entÃƒÂªte covered-if
+            # 1) scope = ancÃƒÆ’Ã‚Âªtre du bloc captcha ou de l'entÃƒÆ’Ã‚Âªte covered-if
             try:
                 scope = driver.find_element(By.XPATH, "//*[@id='pscaptcha']/ancestor::*[self::h5 or self::div or self::section][1]")
             except Exception:
@@ -4665,7 +4665,7 @@ def fill_text_input(driver, text: str, context_hint: str | None = None) -> bool:
                 except Exception:
                     pass
 
-            # 2) cibler l'input spÃƒÂ©cifique du captcha
+            # 2) cibler l'input spÃƒÆ’Ã‚Â©cifique du captcha
             if scope is not None:
                 try:
                     field = scope.find_element(By.XPATH,
@@ -4697,7 +4697,7 @@ def fill_text_input(driver, text: str, context_hint: str | None = None) -> bool:
                 aid = (el.get_attribute("id") or "").lower()
                 name = (el.get_attribute("name") or "").lower()
                 ph = ((el.get_attribute("placeholder") or "") + " " + (el.get_attribute("aria-label") or "")).lower()
-                # indices Ã¢â‚¬Å“code postalÃ¢â‚¬Â
+                # indices ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œcode postalÃƒÂ¢Ã¢â€šÂ¬Ã‚Â
                 if any(k in ph for k in ("postal", "zip")): s += 3
                 # Swagbucks
                 if "profilernumericinput" in aid: s += 10
@@ -4717,7 +4717,7 @@ def fill_text_input(driver, text: str, context_hint: str | None = None) -> bool:
             else:
                 field = None
 
-            print(f"fill_text_input: champ trouvÃƒÂ© dans le scope -> {('none' if field is None else field.tag_name)}")
+            print(f"fill_text_input: champ trouvÃƒÆ’Ã‚Â© dans le scope -> {('none' if field is None else field.tag_name)}")
         except Exception:
             field = None
 
@@ -4725,14 +4725,14 @@ def fill_text_input(driver, text: str, context_hint: str | None = None) -> bool:
         kind = (context_hint or "").strip().lower()
         lbl  = _norm_txt(text or "")
 
-        # Si le contexte indique clairement le champ, ou si le label ressemble ÃƒÂ  une valeur date.
+        # Si le contexte indique clairement le champ, ou si le label ressemble ÃƒÆ’Ã‚Â  une valeur date.
         if kind in ("month", "day", "year") or lbl.isdigit():
             # 1) Cible par hint direct (aria-label/placeholder/name/id)
             targets = []
             if kind in ("month","day","year"):
                 targets = _find_inputs_by_hint(driver, kind)
             else:
-                # si pas de kind explicite, essaie d'infÃƒÂ©rer selon la longueur
+                # si pas de kind explicite, essaie d'infÃƒÆ’Ã‚Â©rer selon la longueur
                 if len(lbl) == 4:
                     targets = _find_inputs_by_hint(driver, "year")
                     kind = "year"
@@ -4741,16 +4741,16 @@ def fill_text_input(driver, text: str, context_hint: str | None = None) -> bool:
                     m = _find_inputs_by_hint(driver, "month")
                     d = _find_inputs_by_hint(driver, "day")
                     y = _find_inputs_by_hint(driver, "year")
-                    # Heuristique : si 3 prÃƒÂ©sents, mappe par ordre MonthÃ¢â€ â€™DayÃ¢â€ â€™Year
+                    # Heuristique : si 3 prÃƒÆ’Ã‚Â©sents, mappe par ordre MonthÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢DayÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢Year
                     if m and d and y:
-                        # on dÃƒÂ©cidera avec le context_hint si prÃƒÂ©sent, sinon month par dÃƒÂ©faut pour 2 chiffres
+                        # on dÃƒÆ’Ã‚Â©cidera avec le context_hint si prÃƒÆ’Ã‚Â©sent, sinon month par dÃƒÆ’Ã‚Â©faut pour 2 chiffres
                         targets = _find_inputs_by_hint(driver, "month") if kind=="month" or not kind else _find_inputs_by_hint(driver, kind)
                     else:
                         # sinon, essaie month puis day
                         targets = m or d
                         kind = "month" if m else "day"
 
-            # 2) Si trouvÃƒÂ©, saisie sÃƒÂ©curisÃƒÂ©e (respect des longueurs)
+            # 2) Si trouvÃƒÆ’Ã‚Â©, saisie sÃƒÆ’Ã‚Â©curisÃƒÆ’Ã‚Â©e (respect des longueurs)
             if targets:
                 el = None
                 # prend le premier **visible & enabled**
@@ -4768,7 +4768,7 @@ def fill_text_input(driver, text: str, context_hint: str | None = None) -> bool:
                     limit = DATE_HINTS.get(kind, {}).get("maxlen", None)
                     if limit:
                         raw = raw[:limit]
-                        # pad ÃƒÂ  gauche pour month/day (ex.: "1" -> "01")
+                        # pad ÃƒÆ’Ã‚Â  gauche pour month/day (ex.: "1" -> "01")
                         if kind in ("month","day") and len(raw)==1:
                             raw = "0"+raw
                     _set_input_value_with_events(driver, el, raw if raw else lbl)
@@ -4777,11 +4777,11 @@ def fill_text_input(driver, text: str, context_hint: str | None = None) -> bool:
     if field is None:
         field = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, selector)))
 
-    # Ã°Å¸Â§Â© Cas particulier "code postal" / ZIP Ã¢â€ â€™ valeur stable + patch Swagbucks si prÃƒÂ©sent
+    # ÃƒÂ°Ã…Â¸Ã‚Â§Ã‚Â© Cas particulier "code postal" / ZIP ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ valeur stable + patch Swagbucks si prÃƒÆ’Ã‚Â©sent
     try:
         ctx_lc = (context_hint or "").lower()
 
-        # Indices aussi sur le champ lui-mÃƒÂªme (placeholder / id / name / aria)
+        # Indices aussi sur le champ lui-mÃƒÆ’Ã‚Âªme (placeholder / id / name / aria)
         ph_lc = " ".join([
             (field.get_attribute("placeholder") or ""),
             (field.get_attribute("aria-label") or ""),
@@ -4803,7 +4803,7 @@ def fill_text_input(driver, text: str, context_hint: str | None = None) -> bool:
         raw_value = re.sub(r"\s+", " ", (text or "")).strip()
         digits_only = re.sub(r"\D", "", raw_value)
 
-        # 1) Si c'est un champ CP/ZIP : ÃƒÂ©viter de saisir l'exemple (souvent "12345")
+        # 1) Si c'est un champ CP/ZIP : ÃƒÆ’Ã‚Â©viter de saisir l'exemple (souvent "12345")
         if is_zip_ctx:
             placeholder_digits = re.sub(r"\D", "", field.get_attribute("placeholder") or "")
 
@@ -4818,7 +4818,7 @@ def fill_text_input(driver, text: str, context_hint: str | None = None) -> bool:
             if suspicious:
                 digits_only = safe_zip
 
-            # Respecte maxlength si prÃƒÂ©sent (PureSpectrum met maxlength="5")
+            # Respecte maxlength si prÃƒÆ’Ã‚Â©sent (PureSpectrum met maxlength="5")
             try:
                 mx = int((field.get_attribute("maxlength") or "").strip() or 0)
             except Exception:
@@ -4826,10 +4826,10 @@ def fill_text_input(driver, text: str, context_hint: str | None = None) -> bool:
             if mx and len(digits_only) > mx:
                 digits_only = digits_only[:mx]
 
-            # Appliquer la valeur corrigÃƒÂ©e au flux standard (send_keys + fallbacks)
+            # Appliquer la valeur corrigÃƒÆ’Ã‚Â©e au flux standard (send_keys + fallbacks)
             text = digits_only or raw_value
 
-        # 2) Patch Swagbucks UNIQUEMENT si on dÃƒÂ©tecte Swagbucks
+        # 2) Patch Swagbucks UNIQUEMENT si on dÃƒÆ’Ã‚Â©tecte Swagbucks
         if is_swagbucks:
             print(f"[ZIP] ctx='{context_hint}' swag=True -> trying swagbucks patch")
             if _swagbucks_zip_patch(driver, digits_only or raw_value):
@@ -4858,7 +4858,7 @@ def fill_text_input(driver, text: str, context_hint: str | None = None) -> bool:
     except Exception:
         pass
 
-    # DÃƒÂ©tecter champ numÃƒÂ©rique et ne garder que les chiffres si besoin
+    # DÃƒÆ’Ã‚Â©tecter champ numÃƒÆ’Ã‚Â©rique et ne garder que les chiffres si besoin
     def is_numeric(el) -> bool:
         t = (el.get_attribute("type") or "").lower()
         im = (el.get_attribute("inputmode") or "").lower()
@@ -4871,10 +4871,10 @@ def fill_text_input(driver, text: str, context_hint: str | None = None) -> bool:
 
     value = re.sub(r"\s+", " ", text).strip()
     if is_numeric(field):
-        print("[NUM] champ numÃƒÂ©rique dÃƒÂ©tectÃƒÂ©")
+        print("[NUM] champ numÃƒÆ’Ã‚Â©rique dÃƒÆ’Ã‚Â©tectÃƒÆ’Ã‚Â©")
         digits = re.sub(r"\D", "", value)
         if digits:
-            print("[NUM] champ numÃƒÂ©rique dÃƒÂ©tectÃƒÂ©")
+            print("[NUM] champ numÃƒÆ’Ã‚Â©rique dÃƒÆ’Ã‚Â©tectÃƒÆ’Ã‚Â©")
             value = digits
 
     # Saisie clavier
@@ -4885,7 +4885,7 @@ def fill_text_input(driver, text: str, context_hint: str | None = None) -> bool:
     except Exception:
         pass
 
-    # VÃƒÂ©rifier
+    # VÃƒÆ’Ã‚Â©rifier
     current = field.get_attribute("value") or field.get_attribute("textContent") or ""
     if current.strip() != value:
         # Tentative B : frappe char-par-char avec ActionChains (plus "humaine")
@@ -4902,7 +4902,7 @@ def fill_text_input(driver, text: str, context_hint: str | None = None) -> bool:
 
         current = field.get_attribute("value") or field.get_attribute("textContent") or ""
 
-    # [NUM fallback 1] si champ numÃƒÂ©rique et la valeur "texte" n'a pas pris,
+    # [NUM fallback 1] si champ numÃƒÆ’Ã‚Â©rique et la valeur "texte" n'a pas pris,
     # on tente la version chiffres seulement (digits-only)
     if is_numeric(field):
         only_digits = re.sub(r"\D", "", value)
@@ -4919,7 +4919,7 @@ def fill_text_input(driver, text: str, context_hint: str | None = None) -> bool:
             current = field.get_attribute("value") or field.get_attribute("textContent") or ""
 
     if current.strip() != value:
-        # Tentative C : frappe via CDP (ÃƒÂ©vÃƒÂ©nements clavier natifs)
+        # Tentative C : frappe via CDP (ÃƒÆ’Ã‚Â©vÃƒÆ’Ã‚Â©nements clavier natifs)
         try:
             print("Saisie via CDP")
             ActionChains(driver).move_to_element(field).click().pause(0.05).perform()
@@ -4948,7 +4948,7 @@ def fill_text_input(driver, text: str, context_hint: str | None = None) -> bool:
             field,
             value,
         )
-        # Petit "nudge" pour forcer la MAJ contrÃƒÂ´lÃƒÂ©e
+        # Petit "nudge" pour forcer la MAJ contrÃƒÆ’Ã‚Â´lÃƒÆ’Ã‚Â©e
         try:
             print("Petit nudge clavier")
             field.send_keys(" ")
@@ -4957,10 +4957,10 @@ def fill_text_input(driver, text: str, context_hint: str | None = None) -> bool:
         except Exception:
             pass
 
-    # [NUM fallback 2] Champ numÃƒÂ©rique encore rÃƒÂ©calcitrant Ã¢â€ â€™ JS gÃƒÂ©nÃƒÂ©rique + blur
+    # [NUM fallback 2] Champ numÃƒÆ’Ã‚Â©rique encore rÃƒÆ’Ã‚Â©calcitrant ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ JS gÃƒÆ’Ã‚Â©nÃƒÆ’Ã‚Â©rique + blur
     current = field.get_attribute("value") or field.get_attribute("textContent") or ""
     if is_numeric(field) and current.strip() != re.sub(r"\D","", value):
-        print("[NUM] champ numÃƒÂ©rique dÃƒÂ©tectÃƒÂ©")
+        print("[NUM] champ numÃƒÆ’Ã‚Â©rique dÃƒÆ’Ã‚Â©tectÃƒÆ’Ã‚Â©")
         digits = re.sub(r"\D","", value)
         driver.execute_script("""
             const el = arguments[0], v = arguments[1];
@@ -4978,7 +4978,7 @@ def fill_text_input(driver, text: str, context_hint: str | None = None) -> bool:
     # Re-lecture finale
     current = field.get_attribute("value") or field.get_attribute("textContent") or ""
     
-    # Dernier filet (numÃƒÂ©rique) : setter natif + ÃƒÂ©vÃƒÂ¨nements
+    # Dernier filet (numÃƒÆ’Ã‚Â©rique) : setter natif + ÃƒÆ’Ã‚Â©vÃƒÆ’Ã‚Â¨nements
     if is_numeric(field) and (current.strip() != re.sub(r"\D","", value)):
         try:
             _react_set_value_and_fire(driver, field, re.sub(r"\D", "", value))
@@ -4987,10 +4987,10 @@ def fill_text_input(driver, text: str, context_hint: str | None = None) -> bool:
         except Exception:
             pass
 
-    # PATCH spÃƒÂ©cifique Swagbucks : champ postal profilerNumericInput
+    # PATCH spÃƒÆ’Ã‚Â©cifique Swagbucks : champ postal profilerNumericInput
     if current.strip() != value:
         try:
-            print("[SWAG] tentative patch JS spÃƒÂ©cifique Swagbucks")
+            print("[SWAG] tentative patch JS spÃƒÆ’Ã‚Â©cifique Swagbucks")
             special = driver.find_element(By.ID, "profilerNumericInput")
             driver.execute_script("""
                 const el = arguments[0], v = arguments[1];
@@ -5005,7 +5005,7 @@ def fill_text_input(driver, text: str, context_hint: str | None = None) -> bool:
             time.sleep(0.3)
             current = special.get_attribute("value") or ""
             if current.strip() == value:
-                print("Ã¢Å“â€¦ Champ postal Swagbucks rempli via patch JS direct.")
+                print("ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Champ postal Swagbucks rempli via patch JS direct.")
                 return True
         except Exception:
             pass
@@ -5015,18 +5015,18 @@ def fill_text_input(driver, text: str, context_hint: str | None = None) -> bool:
 def _normalize_lbl(s: str) -> str:
     if not s:
         return ""
-    s = s.replace("\u00a0", " ")  # espace insÃƒÂ©cable
+    s = s.replace("\u00a0", " ")  # espace insÃƒÆ’Ã‚Â©cable
     s = unicodedata.normalize("NFKC", s).strip().lower()
-    # enlever flÃƒÂ¨ches/guillemets/ponctuation dÃƒÂ©corative courante
-    s = re.sub(r"[Ã‚Â»Ã‚Â«Ã¢â‚¬Å“Ã¢â‚¬Â\"'Ã¢â‚¬ÂºÃ¢â€ â€™Ã‚Â·Ã¢â‚¬Â¢:]+", "", s)
+    # enlever flÃƒÆ’Ã‚Â¨ches/guillemets/ponctuation dÃƒÆ’Ã‚Â©corative courante
+    s = re.sub(r"[Ãƒâ€šÃ‚Â»Ãƒâ€šÃ‚Â«ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÂ¢Ã¢â€šÂ¬Ã‚Â\"'ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂºÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢Ãƒâ€šÃ‚Â·ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢:]+", "", s)
     s = re.sub(r"\s+", " ", s)
     return s
 
 def click_button_by_text(driver, text):
     target = _normalize_lbl(text)
-    print(f"Label normalisÃƒÂ©: '{target}'; source: input_handler.py")
+    print(f"Label normalisÃƒÆ’Ã‚Â©: '{target}'; source: input_handler.py")
 
-    # 1) Candidats Ã¢â‚¬Å“boutonsÃ¢â‚¬Â sÃƒÂ»rs (jamais des <a>)
+    # 1) Candidats ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œboutonsÃƒÂ¢Ã¢â€šÂ¬Ã‚Â sÃƒÆ’Ã‚Â»rs (jamais des <a>)
     candidates = []
     candidates += driver.find_elements(By.TAG_NAME, "button")
     candidates += driver.find_elements(
@@ -5036,7 +5036,7 @@ def click_button_by_text(driver, text):
         By.CSS_SELECTOR, "div[role='button'], span[role='button']"
     )
 
-    # Ã¢Å¾â€¢ [PATCH] Inclure les <a> qui ressemblent ÃƒÂ  des boutons/CTA
+    # ÃƒÂ¢Ã…Â¾Ã¢â‚¬Â¢ [PATCH] Inclure les <a> qui ressemblent ÃƒÆ’Ã‚Â  des boutons/CTA
     anchor_ctas = []
     # classes usuelles de boutons
     anchor_ctas += driver.find_elements(
@@ -5065,13 +5065,13 @@ def click_button_by_text(driver, text):
             "cookies",
             "terms",
             "conditions",
-            "vie privÃƒÂ©e",
+            "vie privÃƒÆ’Ã‚Â©e",
             "legal",
         )
-        # si libellÃƒÂ© contient ces mots, on ÃƒÂ©carte
+        # si libellÃƒÆ’Ã‚Â© contient ces mots, on ÃƒÆ’Ã‚Â©carte
         if any(b in lbl for b in bad):
             return True
-        # si href mÃƒÂ¨ne clairement vers CGU/Privacy, on ÃƒÂ©carte
+        # si href mÃƒÆ’Ã‚Â¨ne clairement vers CGU/Privacy, on ÃƒÆ’Ã‚Â©carte
         return any(b in href for b in bad)
 
     for a in anchor_ctas:
@@ -5081,24 +5081,24 @@ def click_button_by_text(driver, text):
         except Exception:
             continue
 
-    # 2) On nÃ¢â‚¬â„¢ajoute des <a> que sÃ¢â‚¬â„¢ils se comportent comme des boutons
-    #    (pas de navigation rÃƒÂ©elle)
+    # 2) On nÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ajoute des <a> que sÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ils se comportent comme des boutons
+    #    (pas de navigation rÃƒÆ’Ã‚Â©elle)
     for a in driver.find_elements(By.TAG_NAME, "a"):
         try:
             role = (a.get_attribute("role") or "").lower()
             href = (a.get_attribute("href") or "").strip().lower()
-            # critÃƒÂ¨res dÃ¢â‚¬â„¢acceptation
+            # critÃƒÆ’Ã‚Â¨res dÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢acceptation
             looks_like_button = (
                 role == "button" or href in ("", "#") or href.startswith("javascript:")
             )
-            # blacklist ÃƒÂ©vidente (on ÃƒÂ©vite toute confusion Ã¢â‚¬Å“politique de confidentialitÃƒÂ©Ã¢â‚¬Â, etc.)
+            # blacklist ÃƒÆ’Ã‚Â©vidente (on ÃƒÆ’Ã‚Â©vite toute confusion ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œpolitique de confidentialitÃƒÆ’Ã‚Â©ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â, etc.)
             blacklist = (
                 "privacy",
                 "policy",
                 "cookies",
                 "confidentialit",
                 "terms",
-                "polÃƒÂ­tica",
+                "polÃƒÆ’Ã‚Â­tica",
                 "bedingungen",
             )
             if looks_like_button and not any(bad in href for bad in blacklist):
@@ -5138,9 +5138,9 @@ def click_button_by_text(driver, text):
         except Exception:
             continue
 
-    # --- Fallback 1 : XPath large, insensible ÃƒÂ  la casse/ponctuation ---
+    # --- Fallback 1 : XPath large, insensible ÃƒÆ’Ã‚Â  la casse/ponctuation ---
     try:
-        # Cherche directement des ÃƒÂ©lÃƒÂ©ments dont le texte *contient* le target (aprÃƒÂ¨s nettoyage cÃƒÂ´tÃƒÂ© Python)
+        # Cherche directement des ÃƒÆ’Ã‚Â©lÃƒÆ’Ã‚Â©ments dont le texte *contient* le target (aprÃƒÆ’Ã‚Â¨s nettoyage cÃƒÆ’Ã‚Â´tÃƒÆ’Ã‚Â© Python)
         xpath = (
             "//button[contains(translate(normalize-space(.), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'), '{t}')] | "
             "//*[self::div or self::span][@role='button'][contains(translate(normalize-space(.), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'), '{t}')] | "
@@ -5174,7 +5174,7 @@ def click_button_by_text(driver, text):
         js = """
         const norm = s => (s||'').toLowerCase()
             .replaceAll('\\u00A0',' ')
-            .replace(/[Ã‚Â»Ã‚Â«Ã¢â‚¬Å“Ã¢â‚¬Â"'Ã¢â‚¬ÂºÃ¢â€ â€™!?.:]/g,'')
+            .replace(/[Ãƒâ€šÃ‚Â»Ãƒâ€šÃ‚Â«ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÂ¢Ã¢â€šÂ¬Ã‚Â"'ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂºÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢!?.:]/g,'')
             .replace(/\\s+/g,' ')
             .trim();
         const target = arguments[0];
@@ -5201,22 +5201,22 @@ def click_button_by_text(driver, text):
     if _looks_like_nav_label(text):
         try:
             if click_primary_cta(driver):
-                print("Ã¢Å“â€¦ CTA principal cliquÃƒÂ© (fallback nav). source: input_handler.py")
+                print("ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ CTA principal cliquÃƒÆ’Ã‚Â© (fallback nav). source: input_handler.py")
                 return True
         except Exception:
             pass
 
-    print(f"Ã¢ÂÅ’ Aucun ÃƒÂ©lÃƒÂ©ment cliquable trouvÃƒÂ© (aprÃƒÂ¨s normalisation) pour : {text} source: input_handler.py")
+    print(f"ÃƒÂ¢Ã‚ÂÃ…â€™ Aucun ÃƒÆ’Ã‚Â©lÃƒÆ’Ã‚Â©ment cliquable trouvÃƒÆ’Ã‚Â© (aprÃƒÆ’Ã‚Â¨s normalisation) pour : {text} source: input_handler.py")
     return False
 
 def apply_ai_response(driver, response):
     print("run: apply_ai_response")
     """
-    Essaye d'appliquer dynamiquement la rÃƒÂ©ponse de l'assistant IA
-    ÃƒÂ  tous les types d'inputs (texte, bouton, checkbox...).
-    Ã¢Å¡Â Ã¯Â¸Â NEW: si 'response' ressemble ÃƒÂ  un CTA, on NE TOUCHE PAS aux checkboxes.
+    Essaye d'appliquer dynamiquement la rÃƒÆ’Ã‚Â©ponse de l'assistant IA
+    ÃƒÆ’Ã‚Â  tous les types d'inputs (texte, bouton, checkbox...).
+    ÃƒÂ¢Ã…Â¡Ã‚Â ÃƒÂ¯Ã‚Â¸Ã‚Â NEW: si 'response' ressemble ÃƒÆ’Ã‚Â  un CTA, on NE TOUCHE PAS aux checkboxes.
     """
-    # 0) Si ÃƒÂ§a ressemble ÃƒÂ  un CTA, on laisse les stratÃƒÂ©gies bouton gÃƒÂ©rer.
+    # 0) Si ÃƒÆ’Ã‚Â§a ressemble ÃƒÆ’Ã‚Â  un CTA, on laisse les stratÃƒÆ’Ã‚Â©gies bouton gÃƒÆ’Ã‚Â©rer.
     if _looks_like_nav_label(response):  # NEW
         # On tente juste du texte (rare) puis bouton; jamais checkbox
         try:
@@ -5229,20 +5229,20 @@ def apply_ai_response(driver, response):
                     field.send_keys(response)
                     time.sleep(1)
                     print(
-                        f"Ã¢Å“ÂÃ¯Â¸Â RÃƒÂ©ponse texte insÃƒÂ©rÃƒÂ©e (CTA-like ignorÃƒÂ© cÃƒÂ´tÃƒÂ© checkbox) : {response}"
+                        f"ÃƒÂ¢Ã…â€œÃ‚ÂÃƒÂ¯Ã‚Â¸Ã‚Â RÃƒÆ’Ã‚Â©ponse texte insÃƒÆ’Ã‚Â©rÃƒÆ’Ã‚Â©e (CTA-like ignorÃƒÆ’Ã‚Â© cÃƒÆ’Ã‚Â´tÃƒÆ’Ã‚Â© checkbox) : {response}"
                     )
                     return True
                 except:
                     continue
         except Exception as e:
-            print(f"Ã¢ÂÅ’ Erreur saisie texte (CTA-like) : {e} source: input_handler.py")
+            print(f"ÃƒÂ¢Ã‚ÂÃ…â€™ Erreur saisie texte (CTA-like) : {e} source: input_handler.py")
 
-        # Bouton par texte (au cas oÃƒÂ¹)
+        # Bouton par texte (au cas oÃƒÆ’Ã‚Â¹)
         try:
             if click_button_by_text(driver, response):
                 return True
         except Exception as e:
-            print(f"Ã¢ÂÅ’ Erreur clic bouton (CTA-like) : {e} source: input_handler.py")
+            print(f"ÃƒÂ¢Ã‚ÂÃ…â€™ Erreur clic bouton (CTA-like) : {e} source: input_handler.py")
 
         # Ne pas toucher aux checkboxes ici
         return False  # NEW
@@ -5257,35 +5257,35 @@ def apply_ai_response(driver, response):
                 field.clear()
                 field.send_keys(response)
                 time.sleep(1)
-                print(f"Ã¢Å“ÂÃ¯Â¸Â RÃƒÂ©ponse texte insÃƒÂ©rÃƒÂ©e : {response}")
+                print(f"ÃƒÂ¢Ã…â€œÃ‚ÂÃƒÂ¯Ã‚Â¸Ã‚Â RÃƒÆ’Ã‚Â©ponse texte insÃƒÆ’Ã‚Â©rÃƒÆ’Ã‚Â©e : {response}")
                 return True
             except:
                 continue
     except Exception as e:
-        print(f"Ã¢ÂÅ’ Erreur saisie texte : {e} source: input_handler.py")
+        print(f"ÃƒÂ¢Ã‚ÂÃ…â€™ Erreur saisie texte : {e} source: input_handler.py")
 
-    # 2. Essayer comme bouton ou ÃƒÂ©lÃƒÂ©ment cliquable
+    # 2. Essayer comme bouton ou ÃƒÆ’Ã‚Â©lÃƒÆ’Ã‚Â©ment cliquable
     try:
         if handle_generic_input(driver, response):
             return True
     except Exception as e:
-        print(f"Ã¢ÂÅ’ Erreur generic_input : {e}: source: input_handler.py")
+        print(f"ÃƒÂ¢Ã‚ÂÃ…â€™ Erreur generic_input : {e}: source: input_handler.py")
 
     try:
         if click_button_by_text(driver, response):
             return True
     except Exception as e:
-        print(f"Ã¢ÂÅ’ Erreur clic bouton : {e} source: input_handler.py")
+        print(f"ÃƒÂ¢Ã‚ÂÃ…â€™ Erreur clic bouton : {e} source: input_handler.py")
 
-    # 3. Essayer comme checkbox (CTA dÃƒÂ©jÃƒÂ  filtrÃƒÂ© au dÃƒÂ©but)
+    # 3. Essayer comme checkbox (CTA dÃƒÆ’Ã‚Â©jÃƒÆ’Ã‚Â  filtrÃƒÆ’Ã‚Â© au dÃƒÆ’Ã‚Â©but)
     try:
         if click_checkbox_by_label(driver, response):
             return True
     except Exception as e:
-        print(f"Ã¢ÂÅ’ Erreur clic checkbox : {e} source: input_handler.py")
+        print(f"ÃƒÂ¢Ã‚ÂÃ…â€™ Erreur clic checkbox : {e} source: input_handler.py")
 
     print(
-        f"Ã¢ÂÅ’ Aucune mÃƒÂ©thode nÃ¢â‚¬â„¢a fonctionnÃƒÂ© pour : {response} source: input_handler.py"
+        f"ÃƒÂ¢Ã‚ÂÃ…â€™ Aucune mÃƒÆ’Ã‚Â©thode nÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢a fonctionnÃƒÆ’Ã‚Â© pour : {response} source: input_handler.py"
     )
     return False
 
@@ -5300,14 +5300,14 @@ def _is_visible(driver, el):
 
 def click_icon_like_button(driver, hints=None):
     """
-    Tente de cliquer un bouton sans texte (icÃƒÂ´ne flÃƒÂ¨che).
-    On matche aria-label/title/classes/sous-ÃƒÂ©lÃƒÂ©ments <svg>/<i>.
+    Tente de cliquer un bouton sans texte (icÃƒÆ’Ã‚Â´ne flÃƒÆ’Ã‚Â¨che).
+    On matche aria-label/title/classes/sous-ÃƒÆ’Ã‚Â©lÃƒÆ’Ã‚Â©ments <svg>/<i>.
     """
 
     hints = [
         h.lower()
         for h in (
-            hints or ["flÃƒÂ¨che", "suivant", "continuer", "next", "continue", "start"]
+            hints or ["flÃƒÆ’Ã‚Â¨che", "suivant", "continuer", "next", "continue", "start"]
         )
     ]
     candidates = []
@@ -5319,7 +5319,7 @@ def click_icon_like_button(driver, hints=None):
     )
     candidates += driver.find_elements(By.CSS_SELECTOR, "[role='button']")
 
-    # 2) <a> qui se comportent comme des boutons (pas de navigation rÃƒÂ©elle)
+    # 2) <a> qui se comportent comme des boutons (pas de navigation rÃƒÆ’Ã‚Â©elle)
     for a in driver.find_elements(By.TAG_NAME, "a"):
         try:
             role = (a.get_attribute("role") or "").lower()
@@ -5343,7 +5343,7 @@ def click_icon_like_button(driver, hints=None):
             if h in aria or h in title or h in cls:
                 sc += 3
 
-        # icÃƒÂ´nes internes
+        # icÃƒÆ’Ã‚Â´nes internes
         try:
             has_svg = bool(el.find_elements(By.TAG_NAME, "svg"))
             has_i = any(
@@ -5365,7 +5365,7 @@ def click_icon_like_button(driver, hints=None):
 
         return sc
 
-    # Filtre visible + tri par score dÃƒÂ©croissant
+    # Filtre visible + tri par score dÃƒÆ’Ã‚Â©croissant
     filtered = [el for el in candidates if _is_visible(driver, el)]
     filtered.sort(key=score, reverse=True)
 
@@ -5378,18 +5378,18 @@ def click_icon_like_button(driver, hints=None):
             except Exception:
                 ActionChains(driver).move_to_element(el).click().perform()
             time.sleep(0.6)
-            print("Ã¢Å“â€¦ Bouton icÃƒÂ´ne cliquÃƒÂ© (heuristique). source: input_handler.py")
+            print("ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Bouton icÃƒÆ’Ã‚Â´ne cliquÃƒÆ’Ã‚Â© (heuristique). source: input_handler.py")
             return True
         except Exception:
             continue
 
-    print("Ã¢ÂÅ’ Aucun bouton-icÃƒÂ´ne pertinent trouvÃƒÂ©. source: input_handler.py")
+    print("ÃƒÂ¢Ã‚ÂÃ…â€™ Aucun bouton-icÃƒÆ’Ã‚Â´ne pertinent trouvÃƒÆ’Ã‚Â©. source: input_handler.py")
     return False
 
 def click_primary_cta(driver):
     """
     Clique le CTA principal lorsque le bouton n'a pas de texte.
-    Heuristique: plus grand bouton visible et proche du centre de l'ÃƒÂ©cran.
+    Heuristique: plus grand bouton visible et proche du centre de l'ÃƒÆ’Ã‚Â©cran.
     """
     def center_score(el, vw, vh):
         try:
@@ -5398,7 +5398,7 @@ def click_primary_cta(driver):
             cy = r["y"] + r["height"] / 2
             dx = abs(cx - vw / 2)
             dy = abs(cy - vh / 2)
-            return -(dx + dy)  # plus proche du centre Ã¢Å¾Å“ score plus haut
+            return -(dx + dy)  # plus proche du centre ÃƒÂ¢Ã…Â¾Ã…â€œ score plus haut
         except Exception:
             return -1e9
 
@@ -5422,14 +5422,14 @@ def click_primary_cta(driver):
     visibles = [el for el in candidates if _is_visible(driver, el)]
 
     if not visibles:
-        print("Ã¢ÂÅ’ Aucun CTA visible. source: input_handler.py")
+        print("ÃƒÂ¢Ã‚ÂÃ…â€™ Aucun CTA visible. source: input_handler.py")
         return False
 
     # Viewport
     vw = driver.execute_script("return window.innerWidth") or 1200
     vh = driver.execute_script("return window.innerHeight") or 800
 
-    # Score compositÃƒÂ©: aire + proximitÃƒÂ© centre
+    # Score compositÃƒÆ’Ã‚Â©: aire + proximitÃƒÆ’Ã‚Â© centre
     def score(el):
         try:
             r = el.rect
@@ -5449,12 +5449,12 @@ def click_primary_cta(driver):
             except Exception:
                 ActionChains(driver).move_to_element(el).click().perform()
             time.sleep(0.6)
-            print("Ã¢Å“â€¦ CTA principal cliquÃƒÂ©. source: input_handler.py")
+            print("ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ CTA principal cliquÃƒÆ’Ã‚Â©. source: input_handler.py")
             return True
         except Exception:
             continue
 
-    print("Ã¢ÂÅ’ Impossible de cliquer le CTA principal. source: input_handler.py")
+    print("ÃƒÂ¢Ã‚ÂÃ…â€™ Impossible de cliquer le CTA principal. source: input_handler.py")
     return False
 
 def _iter_iframes_safe(driver):
@@ -5472,8 +5472,8 @@ def _iter_iframes_safe(driver):
 def _in_each_frame_recursive(driver, fn_try, depth=2):
     """
     Appelle fn_try(driver) dans le contexte courant.
-    Si ÃƒÂ©chec, essaye rÃƒÂ©cursivement dans chaque iframe (profondeur limitÃƒÂ©e).
-    Reviens toujours au default_content() aprÃƒÂ¨s chaque descente.
+    Si ÃƒÆ’Ã‚Â©chec, essaye rÃƒÆ’Ã‚Â©cursivement dans chaque iframe (profondeur limitÃƒÆ’Ã‚Â©e).
+    Reviens toujours au default_content() aprÃƒÆ’Ã‚Â¨s chaque descente.
     """
     if depth < 0:
         return False
@@ -5485,18 +5485,18 @@ def _in_each_frame_recursive(driver, fn_try, depth=2):
     except Exception:
         pass
 
-    # 2) Descente dans les iframes si non trouvÃƒÂ©
+    # 2) Descente dans les iframes si non trouvÃƒÆ’Ã‚Â©
     frames = _iter_iframes_safe(driver)
     for fr in frames:
         try:
             driver.switch_to.frame(fr)
             if _in_each_frame_recursive(driver, fn_try, depth - 1):
-                # on remonte puis on annonce succÃƒÂ¨s
+                # on remonte puis on annonce succÃƒÆ’Ã‚Â¨s
                 driver.switch_to.default_content()
                 return True
             driver.switch_to.default_content()
         except Exception:
-            # en cas dÃ¢â‚¬â„¢erreur, on remonte quoi quÃ¢â‚¬â„¢il arrive
+            # en cas dÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢erreur, on remonte quoi quÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢il arrive
             try:
                 driver.switch_to.default_content()
             except:
@@ -5508,8 +5508,8 @@ def _in_each_frame_recursive(driver, fn_try, depth=2):
 def click_button_by_text_any_context(driver, text, depth=2):
     """
     Tente de cliquer un bouton par texte dans le DOM courant et,
-    en cas dÃ¢â‚¬â„¢ÃƒÂ©chec, dans les iframes (jusquÃ¢â‚¬â„¢ÃƒÂ  'depth' niveaux).
-    MultiÃ¢â‚¬â€˜mÃƒÂ©thodes (utilise click_button_by_text ÃƒÂ  chaque niveau).
+    en cas dÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã‚Â©chec, dans les iframes (jusquÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã‚Â  'depth' niveaux).
+    MultiÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬ËœmÃƒÆ’Ã‚Â©thodes (utilise click_button_by_text ÃƒÆ’Ã‚Â  chaque niveau).
     """
 
     def _try_here(drv):
@@ -5519,7 +5519,7 @@ def click_button_by_text_any_context(driver, text, depth=2):
 
 def click_icon_like_button_any_context(driver, hints=None, depth=2):
     """
-    MÃƒÂªme logique mais pour les boutons sans texte (icÃƒÂ´ne/flÃƒÂ¨che).
+    MÃƒÆ’Ã‚Âªme logique mais pour les boutons sans texte (icÃƒÆ’Ã‚Â´ne/flÃƒÆ’Ã‚Â¨che).
     """
 
     def _try_here(drv):
@@ -5529,7 +5529,7 @@ def click_icon_like_button_any_context(driver, hints=None, depth=2):
 
 def click_primary_cta_any_context(driver, depth=2):
     """
-    Clique le CTA principal, en testant aussi ÃƒÂ  travers les iframes.
+    Clique le CTA principal, en testant aussi ÃƒÆ’Ã‚Â  travers les iframes.
     """
 
     def _try_here(drv):
@@ -5539,14 +5539,14 @@ def click_primary_cta_any_context(driver, depth=2):
 
 def _norm_btn_text(s: str) -> str:
     s = re.sub(r"\s+", " ", (s or "")).strip().lower()
-    # enlÃƒÂ¨ve flÃƒÂ¨ches / dÃƒÂ©corations frÃƒÂ©quentes
-    s = s.replace("Ã¢â€ â€™", " ").replace("Ã‚Â»", " ").replace(">", " ")
+    # enlÃƒÆ’Ã‚Â¨ve flÃƒÆ’Ã‚Â¨ches / dÃƒÆ’Ã‚Â©corations frÃƒÆ’Ã‚Â©quentes
+    s = s.replace("ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢", " ").replace("Ãƒâ€šÃ‚Â»", " ").replace(">", " ")
     s = re.sub(r"\s+", " ", s).strip()
     return s
 
 def try_click_navigation_cta(driver) -> bool:
     """
-    Cherche un CTA de navigation (Continue/Suivant/Next/ValiderÃ¢â‚¬Â¦)
+    Cherche un CTA de navigation (Continue/Suivant/Next/ValiderÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦)
     et clique le meilleur candidat visible.
     """
 
@@ -5591,7 +5591,7 @@ def try_click_navigation_cta(driver) -> bool:
         pass
 
     # --- Decipher : CTA avec value symbolique (">>" etc.) ---
-    # Le bouton #btn_continue a souvent value=">>" qui est vidÃƒÂ© par _norm_btn_text,
+    # Le bouton #btn_continue a souvent value=">>" qui est vidÃƒÆ’Ã‚Â© par _norm_btn_text,
     # donc on le traite explicitement par ID avant la boucle candidates.
     try:
         btns = driver.find_elements(By.CSS_SELECTOR, "#btn_continue")
@@ -5605,6 +5605,46 @@ def try_click_navigation_cta(driver) -> bool:
                     driver.execute_script("arguments[0].click();", el)
                 print("[CTA_NAV] Decipher: clicked #btn_continue")
                 return True
+    except Exception:
+        pass
+
+
+    # --- PATCH: Formulaire simple avec bouton submit symbolique (">>", "→", etc.) ---
+    # Cas: page bienvenue avec <form> contenant juste des hidden + un submit.
+    # Le texte du bouton peut être purement symbolique (pas de lettres), donc ignoré
+    # par _norm_btn_text. On clique directement si c'est le seul élément interactif.
+    # Généraliste: fonctionne pour tous les providers avec ce pattern.
+    try:
+        submits = driver.find_elements(By.CSS_SELECTOR, "input[type='submit']")
+        for el in submits:
+            try:
+                if not el.is_displayed():
+                    continue
+                # Vérifier si c'est le seul élément interactif visible dans son form
+                form = None
+                try:
+                    form = el.find_element(By.XPATH, "ancestor::form[1]")
+                except Exception:
+                    pass
+                
+                if form:
+                    # Compter les inputs utilisateur visibles (pas hidden, pas submit)
+                    visible_inputs = form.find_elements(By.CSS_SELECTOR, 
+                        "input:not([type='hidden']):not([type='submit']):not([type='button']), select, textarea")
+                    visible_inputs = [i for i in visible_inputs if i.is_displayed()]
+                    
+                    if len(visible_inputs) == 0:
+                        # C'est un formulaire "bienvenue" avec juste un submit
+                        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
+                        try:
+                            el.click()
+                        except Exception:
+                            driver.execute_script("arguments[0].click();", el)
+                        val = (el.get_attribute("value") or "").strip()
+                        print(f"[CTA_NAV] Simple form: clicked lone submit button (value='{val}')")
+                        return True
+            except Exception:
+                continue
     except Exception:
         pass
 
@@ -5623,16 +5663,16 @@ def try_click_navigation_cta(driver) -> bool:
             if not el.is_displayed() or not el.is_enabled():
                 continue
 
-            # certains <a> sont "désactivés" via class/aria (is_enabled() peut rester True)
-            # IMPORTANT: aria-disabled est la source de vérité
+            # certains <a> sont "dÃ©sactivÃ©s" via class/aria (is_enabled() peut rester True)
+            # IMPORTANT: aria-disabled est la source de vÃ©ritÃ©
             if (el.get_attribute("aria-disabled") or "").lower() == "true":
                 continue
             
-            # Vérification classes désactivées - MAIS on évite les faux positifs
-            # des noms de classes CSS hashés (ex: _next-button-multi-matrix-partial-disabled_ngr5f_151)
+            # VÃ©rification classes dÃ©sactivÃ©es - MAIS on Ã©vite les faux positifs
+            # des noms de classes CSS hashÃ©s (ex: _next-button-multi-matrix-partial-disabled_ngr5f_151)
             cls = (el.get_attribute("class") or "").lower()
             cls_tokens = cls.split()
-            # Liste des patterns de classes qui indiquent vraiment un état désactivé
+            # Liste des patterns de classes qui indiquent vraiment un Ã©tat dÃ©sactivÃ©
             disabled_patterns = ("disabled", "btn-disabled", "is-disabled", "button--disabled", "btn--disabled")
             if any(tok in disabled_patterns for tok in cls_tokens):
                 continue
@@ -5642,14 +5682,14 @@ def try_click_navigation_cta(driver) -> bool:
             if not t:
                 continue
 
-            bad = ("refuser", "disagree", "quitter", "quit", "exit", "annuler", "cancel", "fermer", "close", "retour", "prÃƒÂ©cÃƒÂ©dent", "precedent", "previous", "back")
+            bad = ("refuser", "disagree", "quitter", "quit", "exit", "annuler", "cancel", "fermer", "close", "retour", "prÃƒÆ’Ã‚Â©cÃƒÆ’Ã‚Â©dent", "precedent", "previous", "back")
             if any(b in t for b in bad):
                 continue
 
             score = 0
             if any(x in t for x in ["continue", "continuer", "next", "suivant", "proceed"]):
                 score += 50
-            if any(x in t for x in ["valider", "submit", "envoyer", "terminer", "send", "start", "commencer", "dÃ©marrer"]):
+            if any(x in t for x in ["valider", "submit", "envoyer", "terminer", "send", "start", "commencer", "dÃƒÂ©marrer"]):
                 score += 30
 
             # bonus id (ex: id="submitQuestion")
@@ -5659,7 +5699,7 @@ def try_click_navigation_cta(driver) -> bool:
             elif any(k in el_id for k in ["submit", "next", "continue"]):
                 score += 60
 
-            # bonus si dans un <form> (ÃƒÂ©vite liens header/footer)
+            # bonus si dans un <form> (ÃƒÆ’Ã‚Â©vite liens header/footer)
             try:
                 if el.find_elements(By.XPATH, "ancestor::form[1]"):
                     score += 10
@@ -5680,7 +5720,7 @@ def try_click_navigation_cta(driver) -> bool:
 
     candidates.sort(key=lambda x: x[0], reverse=True)
 
-    # Ã¢Å“â€¦ Essayer plusieurs candidats (pas seulement le "best")
+    # ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Essayer plusieurs candidats (pas seulement le "best")
     for score, el in candidates[:6]:
         try:
             driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
@@ -5696,8 +5736,8 @@ def try_click_navigation_cta(driver) -> bool:
 
 def try_click_navigation_cta_any_context(driver, depth=2) -> bool:
     """
-    MÃƒÂªme CTA nav, mais tente aussi ÃƒÂ  travers les iframes.
-    Indispensable ÃƒÂ  lÃ¢â‚¬â„¢ÃƒÂ©chelle (100 bots) car les providers varient beaucoup.
+    MÃƒÆ’Ã‚Âªme CTA nav, mais tente aussi ÃƒÆ’Ã‚Â  travers les iframes.
+    Indispensable ÃƒÆ’Ã‚Â  lÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã‚Â©chelle (100 bots) car les providers varient beaucoup.
     """
     def _try_here(drv):
         return try_click_navigation_cta(drv)
@@ -5707,7 +5747,7 @@ def click_cta_strong_any_context(driver, text=None, label_hint=None, depth: int 
     """
     Clique un CTA (Suivant / Continuer / Next / Continue / Start...) en scannant
     default_content + iframes (Decipher/Confirmit).
-    Cette dÃƒÂ©finition est volontairement ÃƒÂ  la FIN du fichier pour ÃƒÂ©craser toute version dupliquÃƒÂ©e.
+    Cette dÃƒÆ’Ã‚Â©finition est volontairement ÃƒÆ’Ã‚Â  la FIN du fichier pour ÃƒÆ’Ã‚Â©craser toute version dupliquÃƒÆ’Ã‚Â©e.
     """
     from Survey.frame_utils import iter_frame_chains, switch_to_frame_chain
 
@@ -5718,7 +5758,7 @@ def click_cta_strong_any_context(driver, text=None, label_hint=None, depth: int 
 
     def norm(s: str) -> str:
         s = unicodedata.normalize("NFKC", s or "").replace("\u00A0", " ").lower()
-        s = re.sub(r"[Ã‚Â»Ã‚Â«Ã¢â‚¬Å“Ã¢â‚¬Â'\"Ã¢â‚¬ÂºÃ¢â€ â€™Ã‚Â·Ã¢â‚¬Â¢:]+", "", s)
+        s = re.sub(r"[Ãƒâ€šÃ‚Â»Ãƒâ€šÃ‚Â«ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÂ¢Ã¢â€šÂ¬Ã‚Â'\"ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂºÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢Ãƒâ€šÃ‚Â·ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢:]+", "", s)
         s = re.sub(r"\s+", " ", s).strip()
         return s
 
@@ -5737,10 +5777,10 @@ def click_cta_strong_any_context(driver, text=None, label_hint=None, depth: int 
             return False
         if is_bad(t):
             return False
-        # match direct ou fallback si on nous donne "suivant" mais le bouton est "suivant Ã‚Â»"
+        # match direct ou fallback si on nous donne "suivant" mais le bouton est "suivant Ãƒâ€šÃ‚Â»"
         if needle in t or t in needle:
             return True
-        # si raw est trÃƒÂ¨s court, autoriser un match via listes standards
+        # si raw est trÃƒÆ’Ã‚Â¨s court, autoriser un match via listes standards
         if len(needle) <= 5:
             return any(w in t for w in good_fallback)
         return False
@@ -5761,7 +5801,7 @@ def click_cta_strong_any_context(driver, text=None, label_hint=None, depth: int 
                 try:
                     if not el.is_displayed():
                         continue
-                    # Extraction texte : value peut ÃƒÂªtre symbolique (">>" etc.), fallback sur aria-label
+                    # Extraction texte : value peut ÃƒÆ’Ã‚Âªtre symbolique (">>" etc.), fallback sur aria-label
                     raw_val = (el.text or "") or (el.get_attribute("value") or "")
                     t = norm(raw_val)
                     if not t or not any(c.isalpha() for c in t):
