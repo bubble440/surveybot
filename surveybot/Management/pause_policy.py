@@ -37,10 +37,10 @@ def resolve_pause_seconds(
         return 60 * 2            # 2 minutes
 
     if policy == PausePolicy.MEDIUM_COOLDOWN:
-        return 60 * 15           # 15 minutes
+        return 60 * 5           # 5 minutes
 
     if policy == PausePolicy.LONG_COOLDOWN:
-        return 60 * 60 * 2       # 2 heures
+        return 60 * 30       # ✅ 30 min max, le scheduler relance et ré-auth
 
     if policy == PausePolicy.DAILY_RESET:
         tz = ZoneInfo(tz_name)

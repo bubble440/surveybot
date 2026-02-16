@@ -92,8 +92,8 @@ class GainWatchdog:
 
 def start_idle_gain_watch(
     driver,
-    threshold_sec: int = 900,
-    check_every: int = 60,
+    threshold_sec: int = 1200,
+    check_every: int = 300,
     notify_fn: Optional[Callable[[str], None]] = None,
 ) -> GainWatchdog:
     """

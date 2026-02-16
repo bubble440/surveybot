@@ -197,6 +197,60 @@ def detect_strict_survey(driver) -> Tuple[bool, Optional[str]]:
     # --- AUDIO / VIDEO ---
     txt = _page_text_lc(driver)
 
+    MICRO_CAMERA_KEYWORDS = [
+        "microphone",
+        "mic",
+        "webcam",
+        "camera",
+        "caméra",
+        "open camera",
+        "open microphone",
+        "autoriser le micro",
+        "autoriser la camera",
+        "autoriser la caméra",
+        "permission",
+        "enregistrement",
+        "record",
+        "recording",
+        "audio player",
+        "change microphone",
+        "change camera",
+        "flip camera",
+    ]
+
+    # Signaux DOM typiques (ex: mediatestimonial / videojs-record)
+    MICRO_CAMERA_SELECTORS = [
+        ".mediatestimonial-dq",
+        "[class*='mediatestimonial']",
+        "[class*='vjs-record']",
+        ".vjs-record",
+        ".vjs-camera-button",
+        ".vjs-record-button",
+        "[title*='Microphone']",
+        "[title*='Camera']",
+        "[aria-label*='microphone']",
+        "[aria-label*='camera']",
+        "[aria-label*='webcam']",
+    ]
+
+    has_mic_cam = any(k in txt for k in MICRO_CAMERA_KEYWORDS)
+    if not has_mic_cam:
+        try:
+            for sel in MICRO_CAMERA_SELECTORS:
+                try:
+                    if driver.find_elements(By.CSS_SELECTOR, sel):
+                        has_mic_cam = True
+                        break
+                except Exception:
+                    continue
+        except Exception:
+            pass
+
+    if has_mic_cam:
+        return True, "audio_capture"
+
+# --- AUDIO / VIDEO : strict UNIQUEMENT si obligation explicite ---
+
     AUDIO_VIDEO_OBLIGATION_KEYWORDS = [
         "écoutez", "regardez", "listen", "watch",
         "please listen", "please watch",
