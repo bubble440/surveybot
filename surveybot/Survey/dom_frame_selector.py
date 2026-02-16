@@ -19,7 +19,7 @@ try:
     from Survey.frame_utils import iter_frame_chains, switch_to_frame_chain
 except ImportError:
     # Fallback pour tests locaux
-    from dom_utils import _env_truthy
+    from Survey.dom_utils import _env_truthy
     import sys
     # Pour iter_frame_chains et switch_to_frame_chain, on devra les avoir disponibles
 

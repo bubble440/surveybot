@@ -27,8 +27,8 @@ try:
 
 except ImportError:
     # Fallback pour tests locaux
-    from dom_utils import _norm_lc, _xpath_literal, _best_xpath_for_element
-    from dom_question_extractor import _find_question_text_near_element
+    from Survey.dom_utils import _norm_lc, _xpath_literal, _best_xpath_for_element
+    from Survey.dom_question_extractor import _find_question_text_near_element
     # dom_registry devra être disponible
 
 

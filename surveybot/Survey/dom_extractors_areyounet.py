@@ -24,7 +24,7 @@ try:
     from Survey.dom_utils import _norm, _norm_key, _is_question_text
 except ImportError:
     # Fallback pour tests locaux
-    from dom_utils import _norm_lc, _xpath_literal, _best_xpath_for_element
+    from Survey.dom_utils import _norm_lc, _xpath_literal, _best_xpath_for_element
     # dom_registry devra être disponible
 
 

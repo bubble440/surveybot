@@ -631,35 +631,200 @@ strong_phrases = (
 
 ---
 
-### 4.5 Core - Analyse DOM
+### 4.5 Core - Analyse DOM (Architecture modulaire)
+
+L'analyse DOM est organisee en **7 modules specialises** avec architecture en couches pour faciliter la maintenance et l'evolution.
+
+```
++------------------------------------------------------------------+
+|                   ARCHITECTURE DOM ANALYZER                       |
++------------------------------------------------------------------+
+|                                                                  |
+|   dom_analyzer.py (Orchestration principale)                     |
+|   └── Point d'entree: analyze_dom(driver)                        |
+|       └── Appelle _analyze_dom_current_context(driver, chain)    |
+|                                                                  |
+|   +----------------------------------------------------------+   |
+|   |  COUCHES FONCTIONNELLES                                   |   |
+|   +----------------------------------------------------------+   |
+|   |                                                          |   |
+|   |  COUCHE 1 - UTILITAIRES DE BASE                          |   |
+|   |    dom_utils.py           Normalisation, XPath, helpers  |   |
+|   |    dom_question_extractor.py  Extraction texte question  |   |
+|   |                                                          |   |
+|   |  COUCHE 2 - GESTION CONTEXTE                             |   |
+|   |    dom_frame_selector.py  Selection meilleure frame      |   |
+|   |                                                          |   |
+|   |  COUCHE 3 - EXTRACTEURS PLATFORM-SPECIFIQUES             |   |
+|   |    dom_extractors_decipher.py    FocusVision/Decipher    |   |
+|   |    dom_extractors_areyounet.py   AreYouNet               |   |
+|   |    dom_extractors_misc.py        7 plateformes diverses  |   |
+|   |                                                          |   |
+|   +----------------------------------------------------------+   |
++------------------------------------------------------------------+
+```
+
+---
+
+#### `dom_utils.py`
+**Chemin**: `Survey/dom_utils.py`
+**Taille**: ~351 lignes (12 KB)
+**Role**: Fonctions utilitaires generiques pour l'analyse DOM (module de base sans dependance interne).
+
+**Fonctions principales**:
+
+| Fonction | Description |
+|----------|-------------|
+| `_norm()`, `_norm_lc()`, `_norm_key()` | Normalisation de texte |
+| `_looks_like_system_field(el)` | Detecte champs systeme (email, postal, etc.) |
+| `_is_actionable_visible(el, driver)` | Gere inputs masques avec wrappers visibles |
+| `_best_xpath_for_element(driver, el)` | Construction XPath absolu via JavaScript |
+| `_xpath_literal(s)` | Echappement robuste pour XPath (gere quotes mixtes) |
+| `_is_question_text(txt)`, `_is_validation_instruction(txt)` | Classification texte |
+| `_detect_itype(el)` | Detection type d'input (radio/checkbox/text/etc.) |
+| `_dropdown_field_hint(el)` | Detecte hints de champs dropdown |
+| `_env_truthy(var_name)` | Helper pour variables d'environnement |
+
+**Constantes exportees**:
+- `_SYS_FIELD_TOKENS`: tokens champs systeme (email, postal, captcha, etc.)
+- `_VALIDATION_INSTRUCTION_PATTERNS`: patterns messages validation
+
+---
+
+#### `dom_question_extractor.py`
+**Chemin**: `Survey/dom_question_extractor.py`
+**Taille**: ~334 lignes (11 KB)
+**Role**: Extraction du texte de question et association label/input.
+
+**Fonctions principales**:
+
+| Fonction | Description |
+|----------|-------------|
+| `_find_question_text_near_element(driver, el)` | Recherche proximite geometrique via TreeWalker JS |
+| `_find_associated_label(driver, el)` | Recherche label[for=id], parent label, sibling |
+| `_extract_ssi_confirmit_question(driver, el)` | Extracteur SSI/Confirmit (.qtext, .questiontext) |
+| `_extract_surveywriter_ssi_question(driver, el)` | Extracteur SurveyWriter (.label-text) |
+| `_nearest_question_container(driver, el)` | Trouve conteneur question ancestor |
+| `_extract_question_from_container(container_el, driver)` | Nettoie texte question |
+| `_group_key_for_choice(el)` | Genere cle de groupe depuis name |
+| `_compute_max_select(itype, options)` | Calcule max selections (1 pour radio, N pour checkbox) |
+
+**Strategie de recherche proximite**:
+- Gap vertical < 320px au-dessus de l'input
+- Overlap horizontal > 25%
+- Texte minimum 8 caracteres
+- Gere DOM fragmentes (Angular/React)
+
+---
+
+#### `dom_frame_selector.py`
+**Chemin**: `Survey/dom_frame_selector.py`
+**Taille**: ~271 lignes (9.1 KB)
+**Role**: Gestion des frames et selection du meilleur contexte DOM.
+
+**Fonctions principales**:
+
+| Fonction | Description |
+|----------|-------------|
+| `_wait_for_survey_dom(driver, timeout_s, step_s)` | Attente stabilite via MutationObserver |
+| `_score_dom_context(driver)` | Score 0-100 du contexte (inputs, boutons, texte, ratio) |
+| `_select_best_frame_chain(driver, max_depth)` | Parcourt frames, retourne meilleure chaine |
+
+**Criteres de scoring** (total 100 points):
+- Inputs/selects/textareas: max 40 pts
+- Boutons submit/next: max 20 pts
+- Texte visible: max 20 pts
+- Ratio inputs/texte: max 20 pts
+
+---
+
+#### `dom_extractors_decipher.py`
+**Chemin**: `Survey/dom_extractors_decipher.py`
+**Taille**: ~402 lignes (15 KB)
+**Role**: Extracteurs FocusVision/Decipher (inputs masques avec wrappers cliquables).
+
+**Fonctions principales**:
+
+| Fonction | Description |
+|----------|-------------|
+| `_extract_focusvision_answers_list_groups(driver, chain)` | Radio/checkbox `.answers.answers-list` |
+| `_extract_focusvision_cardsort_block(driver, chain)` | Cardsort drag & drop |
+| `_extract_decipher_answers_list_fallback(driver, chain)` | Fallback pattern alternatif |
+
+**Patterns DOM specifiques**:
+- Conteneurs: `div.question[role='radiogroup']`, `.answers.answers-list`
+- Inputs masques (fir-hidden) + wrappers cliquables (`.clickableCell`, `.element`)
+- XPath construit vers wrapper, PAS vers input cache
+
+---
+
+#### `dom_extractors_areyounet.py`
+**Chemin**: `Survey/dom_extractors_areyounet.py`
+**Taille**: ~606 lignes (25 KB)
+**Role**: Extracteurs plateforme AreYouNet (structures complexes avec wrappers).
+
+**Fonctions principales**:
+
+| Fonction | Description |
+|----------|-------------|
+| `_extract_areyounet_matrix_blocks(driver, chain)` | Grilles lignes × colonnes |
+| `_extract_areyounet_switch_radio_blocks(driver, chain)` | Radio avec switch component |
+| `_extract_areyounet_switch_checkbox_blocks(driver, chain)` | Checkbox avec switch |
+
+**Caracteristiques AreYouNet**:
+- Structure `.answer-group` avec wrappers `.switch-item`
+- Inputs caches, clics sur wrappers visibles
+- Matrices avec extraction coordonnees (row, column)
+
+---
+
+#### `dom_extractors_misc.py`
+**Chemin**: `Survey/dom_extractors_misc.py`
+**Taille**: ~1388 lignes (125 KB)
+**Role**: Extracteurs pour 7 plateformes diverses.
+
+**Extracteurs inclus**:
+
+| Fonction | Plateforme | Pattern DOM |
+|----------|-----------|-------------|
+| `_extract_angular_material_radio_groups()` | Angular Material | `mat-radio-group` + `mat-radio-button` |
+| `_extract_walr_cardsort_block()` | WALR | Zones source/target cardsort |
+| `_extract_askandanswer_mobile_matrix_rows()` | AskAndAnswer | Matrices mobile repliables |
+| `_extract_askandanswer_selection_list_questions()` | AskAndAnswer | Listes selection multiples |
+| `_extract_cmix_simple_grid_question_blocks()` | CMIX | Grilles simples (tables HTML) |
+| `_extract_cmix_radio_question_blocks()` | CMIX | Questions radio standard |
+| `_extract_cloudresearch_sentry_blocks()` | CloudResearch/Sentry | Components Vue.js reactifs |
+
+---
 
 #### `dom_analyzer.py`
 **Chemin**: `Survey/dom_analyzer.py`
-**Taille**: ~4450 lignes (1.9M)
-**Role**: Extraction TEXT-ONLY des questions depuis le DOM des pages de survey.
+**Taille**: ~1075 lignes (76 KB)
+**Role**: Orchestration principale de l'analyse DOM - point d'entree du systeme.
 
 **Fonctions principales**:
 
 | Fonction | Signature | Description |
 |----------|-----------|-------------|
 | `analyze_dom` | `(driver) -> List[Dict]` | Point d'entree principal |
-| `_detect_itype` | `(el) -> str` | Detecte le type d'input |
-| `_get_option_text` | `(el, driver) -> str` | Extrait le texte d'une option |
-| `_looks_like_system_field` | `(el) -> bool` | Detecte champs ASP.NET |
-| `_extract_questionpro_dropdowns` | `(driver) -> List[Dict]` | Extraction QuestionPro |
-| `_extract_walr_card_sort_questions` | `(driver) -> List[Dict]` | Extraction Walr card-sort |
-| `_extract_cloudresearch_sentry_questions` | `(driver) -> List[Dict]` | Extraction CloudResearch |
+| `_analyze_dom_current_context` | `(driver, chain) -> List[Dict]` | Orchestration extracteurs (906 lignes) |
 
-**Structure question_block**:
+**Workflow `_analyze_dom_current_context`**:
+1. Appelle extracteurs platform-specifiques dans l'ordre
+2. Fallback sur extracteurs generiques
+3. Construction registre unifie via `dom_registry`
+4. Gestion matrices, radio groups, checkboxes, dropdowns, textareas, sliders
+
+**Structure question_block retournee**:
 ```python
 {
     "question": str,           # Texte de la question
-    "itype": str,              # radio|checkbox|text|textarea|select|button
+    "itype": str,              # radio|checkbox|text|textarea|select|button|matrix
     "options": List[str],      # Options disponibles
     "max_select": int,         # Nombre max de selections
     "target_id": str,          # ID unique DOM Registry
     "scope_hint": str,         # Contexte DOM
-    "frame_chain": List[int],  # Chemin iframes
+    "frame_chain": List[int],  # Chemin iframes [0, 1, ...]
 }
 ```
 
@@ -1291,4 +1456,4 @@ Q2 //// grp_interests_q2 //// Sport | Musique //// checkbox //// Interets ?
 ---
 
 > **Version**: 4.0
-> **Derniere mise a jour**: Fevrier 2025
+> **Derniere mise a jour**: 16 Fevrier 2025

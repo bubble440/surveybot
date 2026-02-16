@@ -21,7 +21,7 @@ try:
     from Survey.dom_registry import dom_registry
 except ImportError:
     # Fallback pour tests locaux
-    from dom_utils import _norm_lc, _xpath_literal
+    from Survey.dom_utils import _norm_lc, _xpath_literal
     # dom_registry devra être disponible
 
 

@@ -77,33 +77,33 @@ try:
     
 except ImportError:
     # Fallback pour tests locaux (ne devrait pas arriver en production)
-    from dom_utils import (
+    from Survey.dom_utils import (
         _norm, _norm_lc, _norm_key,
         _looks_like_system_field, _is_actionable_visible,
         _best_xpath_for_element, _xpath_literal,
         _is_question_text, _is_validation_instruction,
         _detect_itype, _dropdown_field_hint, _env_truthy
     )
-    from dom_question_extractor import (
+    from Survey.dom_question_extractor import (
         _find_question_text_near_element, _find_associated_label,
         _extract_ssi_confirmit_question, _extract_surveywriter_ssi_question,
         _nearest_question_container, _extract_question_from_container,
         _group_key_for_choice, _compute_max_select
     )
-    from dom_frame_selector import (
+    from Survey.dom_frame_selector import (
         _wait_for_survey_dom, _score_dom_context, _select_best_frame_chain
     )
-    from dom_extractors_decipher import (
+    from Survey.dom_extractors_decipher import (
         _extract_focusvision_answers_list_groups,
         _extract_focusvision_cardsort_block,
         _extract_decipher_answers_list_fallback
     )
-    from dom_extractors_areyounet import (
+    from Survey.dom_extractors_areyounet import (
         _extract_areyounet_matrix_blocks,
         _extract_areyounet_switch_radio_blocks,
         _extract_areyounet_switch_checkbox_blocks
     )
-    from dom_extractors_misc import (
+    from Survey.dom_extractors_misc import (
         _extract_angular_material_radio_groups,
         _extract_walr_cardsort_block,
         _extract_askandanswer_mobile_matrix_rows,
