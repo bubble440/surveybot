@@ -141,18 +141,18 @@ def _in_each_frame_recursive(driver, fn_try, depth=2):
 def click_button_by_text(driver, text) -> bool:
     """
     Clique un bouton par son texte visible.
-    
+
     Stratégie multi-niveaux:
     1) Collecte candidats (buttons, inputs, role=button, anchors CTA)
     2) Match par texte normalisé
     3) Fallback XPath large
     4) Fallback JS sur tous les boutons visibles
     5) Si texte ressemble à nav, fallback click_primary_cta
-    
+
     Args:
         driver: WebDriver
         text: texte du bouton à cliquer
-    
+
     Returns:
         True si bouton cliqué avec succès
     """
@@ -277,7 +277,7 @@ def click_button_by_text(driver, text) -> bool:
         js = """
         const norm = s => (s||'').toLowerCase()
             .replaceAll('\\u00A0',' ')
-            .replace(/[»«""\"'›→·•:]/g,'')
+            .replace(/[»«""\\"'›→·•:]/g,'')
             .replace(/\\s+/g,' ')
             .trim();
         const target = arguments[0];
@@ -285,9 +285,8 @@ def click_button_by_text(driver, text) -> bool:
           'button, input[type=submit], input[type=button], [role=button]'
         ));
         for (const el of candidates) {
-          const label = (el.value || el.innerText || '').trim();
-          if (!label) continue;
-          if (norm(label).includes(target)) {
+          const label = (el.value || el.innerText || el.textContent || '').trim();
+          if (norm(label).includes(target) || target.includes(norm(label))) {
             el.scrollIntoView({block:'center'});
             el.click();
             return true;
@@ -295,21 +294,17 @@ def click_button_by_text(driver, text) -> bool:
         }
         return false;
         """
-        if driver.execute_script(js, target):
-            time.sleep(0.6)
+        ok = driver.execute_script(js, target)
+        if ok:
+            time.sleep(0.5)
             return True
     except Exception:
         pass
 
+    # 5) Dernier fallback: si nav label, cliquer CTA principal
     if looks_like_nav_label(text):
-        try:
-            if click_primary_cta(driver):
-                print("✓ CTA principal cliqué (fallback nav). source: cta_handler.py")
-                return True
-        except Exception:
-            pass
+        return click_primary_cta(driver)
 
-    print(f"✗ Aucun élément cliquable trouvé (après normalisation) pour : {text} source: cta_handler.py")
     return False
 
 
@@ -319,76 +314,68 @@ def click_button_by_text(driver, text) -> bool:
 
 def click_icon_like_button(driver, hints=None) -> bool:
     """
-    Tente de cliquer un bouton sans texte (icône flèche).
-    On matche aria-label/title/classes/sous-éléments <svg>/<i>.
-    
-    Args:
-        driver: WebDriver
-        hints: liste de mots-clés à rechercher
-    
-    Returns:
-        True si bouton cliqué
+    Clique un bouton sans texte (icône, flèche, play).
+
+    Heuristique:
+    - candidats : button/a/[role=button] visibles
+    - score : taille, proximité du centre, présence d'icône/svg/img, hints dans class/aria
     """
-    hints = [
-        h.lower()
-        for h in (hints or ["flèche", "suivant", "continuer", "next", "continue", "start"])
-    ]
+    hints = hints or []
+    hints_norm = [_normalize_lbl(h) for h in hints if h]
+
     candidates = []
-
-    # 1) Boutons classiques
     candidates += driver.find_elements(By.TAG_NAME, "button")
-    candidates += driver.find_elements(
-        By.CSS_SELECTOR, "input[type='submit'], input[type='button']"
-    )
     candidates += driver.find_elements(By.CSS_SELECTOR, "[role='button']")
+    candidates += driver.find_elements(By.TAG_NAME, "a")
 
-    # 2) <a> qui se comportent comme des boutons
-    for a in driver.find_elements(By.TAG_NAME, "a"):
-        try:
-            role = (a.get_attribute("role") or "").lower()
-            href = (a.get_attribute("href") or "").strip().lower()
-            looks_like_button = (
-                role == "button" or href in ("", "#") or href.startswith("javascript:")
-            )
-            if looks_like_button:
-                candidates.append(a)
-        except Exception:
-            continue
+    visibles = [el for el in candidates if _is_visible(driver, el)]
+    if not visibles:
+        return False
+
+    vw = driver.execute_script("return window.innerWidth") or 1200
+    vh = driver.execute_script("return window.innerHeight") or 800
 
     def score(el):
-        sc = 0
-        aria = (el.get_attribute("aria-label") or "").lower()
-        title = (el.get_attribute("title") or "").lower()
-        cls = (el.get_attribute("class") or "").lower()
-
-        for h in hints:
-            if h in aria or h in title or h in cls:
-                sc += 3
-
-        try:
-            has_svg = bool(el.find_elements(By.TAG_NAME, "svg"))
-            has_i = any(
-                k in (i.get_attribute("class") or "").lower()
-                for i in el.find_elements(By.TAG_NAME, "i")
-                for k in ("arrow", "chevron", "next", "right")
-            )
-            if has_svg or has_i:
-                sc += 2
-        except Exception:
-            pass
-
         try:
             r = el.rect
-            sc += min(int((r.get("width", 0) * r.get("height", 0)) / 3000), 5)
+            area = r["width"] * r["height"]
+            cx = r["x"] + r["width"] / 2
+            cy = r["y"] + r["height"] / 2
+            dx = abs(cx - vw / 2)
+            dy = abs(cy - vh / 2)
+            center = -(dx + dy)
+
+            cls = (el.get_attribute("class") or "").lower()
+            aria = (el.get_attribute("aria-label") or "").lower()
+            title = (el.get_attribute("title") or "").lower()
+            href = (el.get_attribute("href") or "").lower()
+
+            has_icon = False
+            try:
+                if el.find_elements(By.TAG_NAME, "svg") or el.find_elements(By.TAG_NAME, "img") or el.find_elements(By.TAG_NAME, "i"):
+                    has_icon = True
+            except Exception:
+                pass
+
+            s = area + center
+            if has_icon:
+                s += 500
+
+            for h in hints_norm:
+                if h and (h in cls or h in aria or h in title or h in href):
+                    s += 600
+
+            # éviter les liens footer
+            if any(b in href for b in ["privacy", "terms", "cookie", "policy"]):
+                s -= 800
+
+            return s
         except Exception:
-            pass
+            return -1e9
 
-        return sc
+    visibles.sort(key=score, reverse=True)
 
-    filtered = [el for el in candidates if _is_visible(driver, el)]
-    filtered.sort(key=score, reverse=True)
-
-    for el in filtered:
+    for el in visibles[:6]:
         try:
             driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
             time.sleep(0.1)
@@ -396,13 +383,11 @@ def click_icon_like_button(driver, hints=None) -> bool:
                 el.click()
             except Exception:
                 ActionChains(driver).move_to_element(el).click().perform()
-            time.sleep(0.6)
-            print("✓ Bouton icône cliqué (heuristique). source: cta_handler.py")
+            time.sleep(0.5)
             return True
         except Exception:
             continue
 
-    print("✗ Aucun bouton-icône pertinent trouvé. source: cta_handler.py")
     return False
 
 
@@ -412,9 +397,10 @@ def click_icon_like_button(driver, hints=None) -> bool:
 
 def click_primary_cta(driver) -> bool:
     """
-    Clique le CTA principal lorsque le bouton n'a pas de texte.
+    Clique le CTA principal d'une page (le plus gros bouton visible).
+
     Heuristique: plus grand bouton visible et proche du centre de l'écran.
-    
+
     Returns:
         True si CTA cliqué
     """
@@ -488,16 +474,73 @@ def try_click_navigation_cta(driver) -> bool:
     """
     Cherche un CTA de navigation (Continue/Suivant/Next/Valider…)
     et clique le meilleur candidat visible.
-    
+
     Supporte:
     - AreYouNet (#btn_next, EnqueteDef_submit)
     - Decipher (#btn_continue)
     - RSCH (#btnsmall, .enterButton.submitButton)
     - Boutons génériques avec scoring
-    
+
     Returns:
         True si CTA navigation cliqué
     """
+    # --- B3netSurvey / ask.dll : CTA image (Play) dans #NAVBAR ---
+    # Exemple DOM:
+    #   <table id="NAVBAR"> ... <a href="javascript:Next();" title="Page suivante">
+    #       <img id="nextButton" class="BtnDuBas" ...>
+    #   </a>
+    # Ici, le CTA n'a souvent AUCUN texte; on doit utiliser href/title/img.
+    try:
+        # 1) Clic direct du <a> "Next" dans la navbar
+        nav_links = driver.find_elements(
+            By.CSS_SELECTOR,
+            "#NAVBAR a[href^='javascript:Next'], #NAVBAR a[title*='suivante'], a[href^='javascript:Next'][title], a[title*='Page suivante']",
+        )
+        for a in nav_links:
+            try:
+                if not a.is_displayed():
+                    continue
+                # éviter un éventuel Prev() si la page contient les 2
+                href = (a.get_attribute("href") or "").lower()
+                if "javascript:prev" in href:
+                    continue
+                title = (a.get_attribute("title") or "").lower()
+                if title and ("précéd" in title or "preced" in title or "previous" in title):
+                    continue
+
+                driver.execute_script("arguments[0].scrollIntoView({block:'center'});", a)
+                try:
+                    a.click()
+                except Exception:
+                    driver.execute_script("arguments[0].click();", a)
+                print("[CTA_NAV] B3netSurvey: clicked navbar Next link")
+                return True
+            except Exception:
+                continue
+
+        # 2) Fallback: cliquer l'image elle-même (moins fiable mais utile si le <a> est masqué)
+        imgs = driver.find_elements(By.CSS_SELECTOR, "#NAVBAR img#nextButton, img#nextButton, img.BtnDuBas")
+        for img in imgs:
+            try:
+                if not img.is_displayed():
+                    continue
+                try:
+                    a = img.find_element(By.XPATH, "ancestor::a[1]")
+                except Exception:
+                    a = None
+                el = a or img
+                driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
+                try:
+                    el.click()
+                except Exception:
+                    driver.execute_script("arguments[0].click();", el)
+                print("[CTA_NAV] B3netSurvey: clicked nextButton image")
+                return True
+            except Exception:
+                continue
+    except Exception:
+        pass
+
     # --- AreYouNet / runet : CTA image sans texte ---
     try:
         btns = driver.find_elements(By.CSS_SELECTOR, "#btn_next")
@@ -585,14 +628,28 @@ def try_click_navigation_cta(driver) -> bool:
 
             if (el.get_attribute("aria-disabled") or "").lower() == "true":
                 continue
-            
+
             cls = (el.get_attribute("class") or "").lower()
             cls_tokens = cls.split()
             disabled_patterns = ("disabled", "btn-disabled", "is-disabled", "button--disabled", "btn--disabled")
             if any(tok in disabled_patterns for tok in cls_tokens):
                 continue
 
-            txt = el.text or el.get_attribute("value") or el.get_attribute("aria-label") or ""
+            # Les CTA "image-only" (Play/Next) ont souvent txt vide.
+            # On élargit la lecture aux attributs title/alt et au premier <img> enfant.
+            txt = (
+                el.text
+                or el.get_attribute("value")
+                or el.get_attribute("aria-label")
+                or el.get_attribute("title")
+                or ""
+            )
+            if not txt:
+                try:
+                    img = el.find_element(By.CSS_SELECTOR, "img")
+                    txt = img.get_attribute("alt") or img.get_attribute("title") or ""
+                except Exception:
+                    txt = ""
             t = _norm_btn_text(txt)
             if not t:
                 continue
@@ -696,13 +753,13 @@ def click_cta_strong_any_context(driver, text=None, label_hint=None, depth: int 
     """
     Clique un CTA (Suivant / Continuer / Next / Continue / Start...) en scannant
     default_content + iframes (Decipher/Confirmit).
-    
+
     Args:
         driver: WebDriver
         text: texte explicite du CTA
         label_hint: alias pour text
         depth: profondeur maximale d'exploration des iframes
-    
+
     Returns:
         True si CTA cliqué
     """
@@ -764,7 +821,7 @@ def click_cta_strong_any_context(driver, text=None, label_hint=None, depth: int 
                 try:
                     if not el.is_displayed():
                         continue
-                    
+
                     raw_val = (el.text or "") or (el.get_attribute("value") or "")
                     t = norm(raw_val)
                     if not t or not any(c.isalpha() for c in t):

@@ -19,7 +19,7 @@ import time
 import re
 
 # Import depuis input_utils
-from input_utils import (
+from Survey.input_utils import (
     norm_txt,
     norm_text,
     DROPDOWN_PLACEHOLDERS,
@@ -470,7 +470,7 @@ def open_dropdown_generic(driver, hint: str | None = None, context_hint: str | N
 # SÉLECTION D'OPTIONS
 # =============================================================================
 
-def try_select_option_any(driver, option_text: str) -> bool:
+def select_option_with_hint(driver, option_text: str, field_hint: str | None = None, context_hint: str | None = None) -> bool:
     """
     Tente de sélectionner 'option_text' si un <select> est présent
     ou si un menu custom est ouvert (ul/li, role=option...).

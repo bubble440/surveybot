@@ -247,6 +247,53 @@ def is_consent_screen(driver) -> bool:
     except Exception:
         pass
 
+    # -------------------------------------------------------------------------
+    # NOUVEAU: Confirmit/Forsta "welcome / GDPR info" pages (sans inputs) avec CTA "Suivant".
+    # Cas réel: iWelcome / iWelcomeGDPR / qGDPRConsent (infos RGPD) + bouton navigation next.
+    # Objectif: ne pas laisser ces pages en "unclassified" => allow handle_consent_screen => clic CTA.
+    # -------------------------------------------------------------------------
+    def _is_confirmit_welcome_gdpr_with_next() -> bool:
+        try:
+            return bool(driver.execute_script(r"""
+            const hasConfirmit = !!document.querySelector('body.cf-page, form.cf-page__form, .cf-page__main, .cf-page__question-list');
+            if (!hasConfirmit) return false;
+                // blocs info typiques
+                const infoBlocks = document.querySelectorAll(
+                    '.cf-question--info#iWelcome, .cf-question--info#iWelcomeMRS, .cf-question--info#iWelcomeGDPR, .cf-question--info#qGDPRConsent, .cf-question--info[id^="iWelcome"]'
+                );
+                if (infoBlocks.length < 1) return false;
+
+                // bouton next visible
+                const nextBtn = document.querySelector('#navButtons .cf-navigation-next, button.cf-navigation-next, .cf-navigation__button.cf-navigation-next');
+                if (!nextBtn) return false;
+
+                // pas d'inputs de réponse visibles (sinon c'est une vraie question)
+                const isVisible = (el) => {
+                    try {
+                        const s = window.getComputedStyle(el);
+                        if (!s || s.display === 'none' || s.visibility === 'hidden') return false;
+                        const r = el.getBoundingClientRect();
+                        return r && r.width > 10 && r.height > 10;
+                    } catch(_) { return false; }
+                };
+                const answerables = Array.from(document.querySelectorAll(
+                    'input[type="radio"], input[type="checkbox"], select, textarea, input[type="text"], input[type="number"], input[type="email"], input[type="tel"], input[type="search"]'
+                )).filter(isVisible);
+                if (answerables.length > 0) return false;
+
+                // signal texte RGPD/bienvenue (réduit les faux positifs)
+                const t = (document.querySelector('.cf-page__question-list')?.innerText || document.body.innerText || '').toLowerCase();
+                const kw = ['rgpd','gdpr','données','adresse ip','protection des données','confidentielle','market research society','prêt','c\'est parti','c’est parti'];
+                if (!kw.some(k => t.includes(k))) return false;
+
+                return true;
+            """))
+        except Exception:
+            return False
+
+    if _is_confirmit_welcome_gdpr_with_next():
+        return True
+
     # --- contrôle explicite type consent (checkbox/radio avec libellé agree/accept/consent) ---
     def _has_explicit_consent_control() -> bool:
         """

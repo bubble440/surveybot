@@ -1975,6 +1975,24 @@ def handle_consent_screen(driver):
     except Exception:
         pass
 
+    # 4) Confirmit/Forsta : bouton "Suivant" souvent SANS texte (icône) -> .cf-navigation-next
+    # Exemple DOM: <button class="cf-navigation__button cf-navigation-next"><img title="Suivant"></button>
+    try:
+        next_buttons = driver.find_elements(
+        By.CSS_SELECTOR,
+        "#navButtons button.cf-navigation-next, button.cf-navigation-next, .cf-navigation__button.cf-navigation-next",
+        )
+        for nb in next_buttons:
+            try:
+                if not nb.is_displayed():
+                    continue
+                if _click_best_effort(nb):
+                    if _wait_change(before_sig, before_url, timeout_s=8.0):
+                        return True
+            except Exception:
+                continue
+    except Exception:
+        pass
     return False
 
 def handle_start_screen(driver):
@@ -2591,7 +2609,7 @@ def execute_action(driver, instruction: str) -> bool:
 
             field_hint = ctx or getattr(driver, "_last_dropdown_hint", None) or label
             if _try(driver, "dropdown_select", lambda:
-                Survey.input_handler.try_select_option_any(
+                Survey.input_handler.select_option_with_hint(
                     driver, label, field_hint=field_hint, context_hint=ctx
                 )
             ):
@@ -2603,7 +2621,7 @@ def execute_action(driver, instruction: str) -> bool:
 
             field_hint = ctx or getattr(driver, "_last_dropdown_hint", None)
             if _try(driver, "dropdown_select", lambda:
-                Survey.input_handler.try_select_option_any(
+                Survey.input_handler.select_option_with_hint(
                     driver, label, field_hint=field_hint, context_hint=ctx
                 )
             ):

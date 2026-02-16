@@ -206,7 +206,7 @@ def _heartbeat():
         # FrÃ©quence heartbeat (coÃ»t) vs TTL (robustesse)
         # - interval: toutes les 30s par dÃ©faut (divise les writes par 2 vs 15s)
         # - jitter: Ã©vite que 100 bots heartbeat exactement en mÃªme temps (pics WCU)
-        interval = int(os.getenv("HEARTBEAT_INTERVAL_SEC", "30") or "30")
+        interval = int(os.getenv("HEARTBEAT_INTERVAL_SEC", "60") or "60")
         jitter = float(os.getenv("HEARTBEAT_JITTER_SEC", "3") or "3")
 
         while True:
@@ -297,15 +297,15 @@ def init_session_and_enter_surveys(driver, config, account_id: str, notify_fn):
     try:
         start_idle_gain_watch(
             driver,
-            threshold_sec=900,   # 15 minutes
-            check_every=900,       # lecture toutes les 900 s
+            threshold_sec=1200,   # 15 minutes
+            check_every=300,       # lecture toutes les 900 s
             notify_fn= notify_fn,
         )
         print("ðŸ‘€ Watchdog gains: actif (15 min sans hausse â†’ alerte).")
     except Exception as e:
         print(f"[WATCHDOG][WARN] Impossible de dÃ©marrer le watchdog: {e}")
 
-    time.sleep(30)
+    time.sleep(15)
     snap(driver, "after_login")
     go_to_best_paid_survey(driver)
     snap(driver, "after_navigate_best_paid")

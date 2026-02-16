@@ -21,7 +21,7 @@ import re
 import time
 
 # Import depuis input_utils
-from input_utils import (
+from Survey.input_utils import (
     norms_txt,
     normt_txt,
     xpath_literal,

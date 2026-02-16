@@ -21,7 +21,7 @@ import re
 import time
 
 # Import depuis input_utils
-from input_utils import (
+from Survey.input_utils import (
     norm_txt,
     set_input_value_with_events,
     find_inputs_by_hint,
@@ -145,7 +145,7 @@ def swagbucks_zip_patch(driver, value: str) -> bool:
         # 4) Clique "Continue"
         try:
             # Import dynamique pour éviter circular import
-            from input_frame import click_cta_strong_any_context
+            from Survey.input_frame import click_cta_strong_any_context
             if click_cta_strong_any_context(driver, "continue"):
                 return True
         except Exception:

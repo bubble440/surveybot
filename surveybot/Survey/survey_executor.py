@@ -598,6 +598,7 @@ def execute_survey_page(driver, api_key):
             "[data-role='next']",                # Generic data-role
             "#btn_next",                         # AreYouNet (img inside <a>)
             '[data-testid="start-button"]',      # Quantilope coversheet
+            "#bnNext", # Primis/Primisoft (bouton "Suivant")
         ]
         
         try:
