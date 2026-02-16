@@ -14,7 +14,7 @@ Ces extracteurs utilisent des patterns DOM spécifiques à chaque plateforme.
 
 from __future__ import annotations
 from typing import List, Dict, Any
-import os
+import os, time, zlib
 from selenium.webdriver.common.by import By
 
 # Import des utilitaires
@@ -22,6 +22,9 @@ try:
     from Survey.dom_utils import _norm_lc, _xpath_literal, _best_xpath_for_element
     from Survey.dom_question_extractor import _find_question_text_near_element
     from Survey.dom_registry import dom_registry
+    from Survey.dom_registry import clear_registry, register_target, make_target_id
+    from Survey.dom_utils import _norm, _norm_key, _is_question_text, _compute_max_select, _looks_like_system_field
+
 except ImportError:
     # Fallback pour tests locaux
     from dom_utils import _norm_lc, _xpath_literal, _best_xpath_for_element
