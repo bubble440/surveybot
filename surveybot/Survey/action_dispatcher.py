@@ -2114,6 +2114,25 @@ def handle_captcha_guard(driver):
                   if (!isVisible(e)) continue;
                   const r = e.getBoundingClientRect();
                   const tn = (e.tagName||"").toLowerCase();
+                  // Ignorer reCAPTCHA "invisible" et badge v3 (sinon faux positifs Walr/CloudResearch)
+                  if (tn === "iframe") {
+                    const src = (e.src || e.getAttribute("src") || "").toLowerCase();
+                    if (src.includes("recaptcha") && src.includes("size=invisible")) {
+                      continue;
+                    }
+                  }
+                  if (e.closest && e.closest(".grecaptcha-badge")) {
+                    continue;
+                  }
+
+                  // Vérifier une visibilité réelle dans le viewport (anti badge partiellement offscreen)
+                  const vw = window.innerWidth || document.documentElement.clientWidth;
+                  const vh = window.innerHeight || document.documentElement.clientHeight;
+                  if (r.right < 0 || r.left > vw || r.bottom < 0 || r.top > vh) continue;
+                  const visibleWidth = Math.min(r.right, vw) - Math.max(r.left, 0);
+                  const visibleHeight = Math.min(r.bottom, vh) - Math.max(r.top, 0);
+                  if (visibleWidth < r.width * 0.3 || visibleHeight < r.height * 0.3) continue;
+
                   if (tn === "iframe" || e.classList.contains("g-recaptcha") || e.classList.contains("h-captcha")) {
                     if (r.width >= 60 && r.height >= 40) return true;
                   } else {

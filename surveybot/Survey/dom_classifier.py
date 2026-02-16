@@ -22,6 +22,7 @@ from Survey.frame_utils import iter_frame_chains, switch_to_frame_chain
 # Utils
 # ============================================================
 _IFRAME_SRC_RE = re.compile(r'<iframe[^>]+src="([^"]+)"', re.IGNORECASE)
+_G_RECAPTCHA_WIDGET_RE = re.compile(r'class=["\'][^"\']*\bg-recaptcha(?!-)\b', re.IGNORECASE)
 
 def _has_visible_recaptcha_challenge(dom_html: str) -> bool:
     h = dom_html.lower()
@@ -44,8 +45,11 @@ def _has_visible_recaptcha_challenge(dom_html: str) -> bool:
                 return True
             # si pas de size explicite, on reste conservateur:
             # on ne déclenche PAS captcha juste sur anchor seul (trop de faux positifs)
+    
     # 3) widget visible classique
-    if 'class="g-recaptcha"' in h or "g-recaptcha" in h and "data-sitekey" in h:
+    # IMPORTANT: éviter les faux positifs sur "g-recaptcha-response" (ex: badge v3 Walr/CloudResearch)
+    # => on n'accepte que la classe g-recaptcha "widget" (pas g-recaptcha-*) et on exige data-sitekey.
+    if ("data-sitekey" in h) and _G_RECAPTCHA_WIDGET_RE.search(dom_html):
         return True
     if "recaptcha-checkbox" in h:
         return True
@@ -664,6 +668,15 @@ def is_captcha_screen(driver) -> bool:
     if any(k in txt for k in robot_kw):
         return True
 
+    # Vérification stricte HTML : challenge VRAIMENT visible (bframe, anchor non-invisible, etc.)
+    # IMPORTANT: doit être fait AVANT les heuristiques de widgets pour éviter faux positifs
+    try:
+        dom_html = driver.page_source.lower()
+        if is_captcha_page_strict(dom_html):
+            return True
+    except Exception:
+        pass
+
     # 1a) PureSpectrum CAPTCHA (ps-captcha-question)
     # Important: le mot "captcha" n'est pas forcément présent dans le texte visible,
     # donc on détecte via signaux DOM forts (image + input dédié).
@@ -742,6 +755,25 @@ def is_captcha_screen(driver) -> bool:
                 for (const e of els){
                 const r = e.getBoundingClientRect();
                 const tn = (e.tagName||"").toLowerCase();
+                // Ignorer reCAPTCHA "invisible" et badges v3 (sinon faux positifs Walr/CloudResearch)
+                if (tn === "iframe") {
+                    const src = (e.src || e.getAttribute("src") || "").toLowerCase();
+                    if (src.includes("recaptcha") && src.includes("size=invisible")) {
+                        continue;
+                    }
+                }
+                if (e.closest && e.closest(".grecaptcha-badge")) {
+                    continue;
+                }
+
+                // Vérifier que l'élément est réellement visible dans le viewport (anti badge partiellement offscreen)
+                const vw = window.innerWidth || document.documentElement.clientWidth;
+                const vh = window.innerHeight || document.documentElement.clientHeight;
+                if (r.right < 0 || r.left > vw || r.bottom < 0 || r.top > vh) continue;
+                const visibleWidth = Math.min(r.right, vw) - Math.max(r.left, 0);
+                const visibleHeight = Math.min(r.bottom, vh) - Math.max(r.top, 0);
+                if (visibleWidth < r.width * 0.3 || visibleHeight < r.height * 0.3) continue;
+
                 // Seuils : iframe/widget doit être "grand", input captcha peut être petit
                 if (tn === "iframe" || e.classList.contains("g-recaptcha") || e.classList.contains("h-captcha")) {
                     if (r.width >= 60 && r.height >= 40) return true;
@@ -856,6 +888,19 @@ def is_captcha_screen(driver) -> bool:
     except Exception:
         pass
 
+    # ⚠️ GARDE ANTI-FAUX-POSITIFS : pages de sondage avec badge reCAPTCHA v3 invisible
+    # Si la page contient des inputs de sondage visibles ET pas de challenge strict,
+    # on ne classe PAS comme CAPTCHA (évite faux positifs Walr/CloudResearch/etc.)
+    if _has_visible_answerables(driver):
+        try:
+            dom_html = driver.page_source.lower()
+            # Page de sondage => on exige un challenge STRICT pour classer comme CAPTCHA
+            if not is_captcha_page_strict(dom_html):
+                return False
+        except Exception:
+            # Si erreur lors du check strict, on est conservateur : pas CAPTCHA
+            return False
+
     # 2) Widget visible (taille minimale) : iframe/containers captcha visibles
     # (reCAPTCHA invisible / tracking iframes sont souvent 0x0 ou 1x1)
     # IMPORTANT: on ignore les reCAPTCHA v3/invisible (size=invisible dans l'URL)
@@ -914,7 +959,7 @@ def is_captcha_screen(driver) -> bool:
         """)):
             return True
     except Exception:
-        # Fallback Selenium (moins précis, mais garde les seuils taille/visibilité)
+        # Fallback Selenium : DOIT avoir les mêmes filtres anti-faux-positifs que le JavaScript
         try:
             frames = driver.find_elements(
                 By.CSS_SELECTOR,
@@ -924,9 +969,36 @@ def is_captcha_screen(driver) -> bool:
                 try:
                     if not fr.is_displayed():
                         continue
+                    # Ignorer reCAPTCHA invisible (size=invisible dans l'URL)
+                    src = (fr.get_attribute("src") or "").lower()
+                    if "recaptcha" in src and "size=invisible" in src:
+                        continue
+                    # Ignorer si dans badge grecaptcha-badge
+                    try:
+                        if fr.find_element(By.XPATH, "./ancestor::*[@class='grecaptcha-badge']"):
+                            continue
+                    except Exception:
+                        pass
+
                     r = fr.rect or {}
-                    if (r.get("width", 0) or 0) >= 60 and (r.get("height", 0) or 0) >= 40:
-                        return True
+                    width = r.get("width", 0) or 0
+                    height = r.get("height", 0) or 0
+                    if width >= 60 and height >= 40:
+                        # Vérifier visibilité dans le viewport (comme le JavaScript)
+                        location = fr.location or {}
+                        x = location.get("x", 0) or 0
+                        y = location.get("y", 0) or 0
+                        try:
+                            vw = driver.execute_script("return window.innerWidth || document.documentElement.clientWidth;")
+                            vh = driver.execute_script("return window.innerHeight || document.documentElement.clientHeight;")
+                            # Ignore si moins de 30% visible
+                            visible_w = min(x + width, vw) - max(x, 0)
+                            visible_h = min(y + height, vh) - max(y, 0)
+                            if visible_w >= width * 0.3 and visible_h >= height * 0.3:
+                                return True
+                        except Exception:
+                            # Si erreur calcul viewport, on est conservateur : pas CAPTCHA
+                            pass
                 except Exception:
                     continue
         except Exception:

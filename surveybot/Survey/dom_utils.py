@@ -140,8 +140,88 @@ def _is_actionable_visible(el) -> bool:
                     pass
                 # Pas de wrapper cliquable visible → pas actionnable
                 return False
-        
-        # 2) Cas standard: vérifier is_displayed()
+
+            # Cas PureSpectrum/Angular : l'input radio/checkbox peut être masqué
+            # mais le <label> englobant reste visible et cliquable.
+            if input_type in ("radio", "checkbox"):
+                try:
+                    if not el.is_displayed():
+                        # 1) label englobant
+                        lab = el.find_elements(By.XPATH, "ancestor::label[1]")
+                        if lab and lab[0].is_displayed():
+                            return True
+
+                        # 2) label[for=id]
+                        el_id = (el.get_attribute("id") or "").strip()
+                        if el_id:
+                            id_lit = _xpath_literal(el_id)
+                            labs = el.find_elements(By.XPATH, f"ancestor-or-self::html[1]//label[@for={id_lit}]")
+                            for l in labs:
+                                try:
+                                    if l.is_displayed():
+                                        return True
+                                except Exception:
+                                    continue
+                        return False
+                except Exception:
+                    pass
+
+        # 1b) Inputs radio/checkbox masqués (CSS) mais label visible.
+        #     Cas fréquent: frameworks qui cachent l'input et rendent le <label> cliquable.
+        if tag == "input":
+            input_type = (el.get_attribute("type") or "").lower()
+            if input_type in ("radio", "checkbox"):
+                try:
+                    if not el.is_displayed():
+                        # 1) label englobant
+                        try:
+                            lab = el.find_elements(By.XPATH, "ancestor::label[1]")
+                            if lab and lab[0].is_displayed():
+                                return True
+                        except Exception:
+                            pass
+
+                        # 2) label[for=id] (dans le même document/frame)
+                        try:
+                            el_id = (el.get_attribute("id") or "").strip()
+                            if el_id:
+                                id_lit = _xpath_literal(el_id)
+                                labs = el.find_elements(By.XPATH, f"ancestor-or-self::html[1]//label[@for={id_lit}]")
+                                if labs:
+                                    for l in labs:
+                                        try:
+                                            if l.is_displayed():
+                                                return True
+                                        except Exception:
+                                            continue
+                        except Exception:
+                            pass
+                        return False
+                except Exception:
+                    pass
+
+        # 2) Cas radios/checkbox custom UI: input masqué mais <label> parent visible
+        # (ex: frameworks Angular/Bootstrap où le vrai input est caché et le clic se fait sur le label)
+        if tag == "input":
+            input_type = (el.get_attribute("type") or "").lower()
+            if input_type in {"radio", "checkbox"}:
+                try:
+                    if el.is_displayed():
+                        return True
+                except Exception:
+                    pass
+                try:
+                    for lbl in el.find_elements(By.XPATH, "ancestor::label"):
+                        try:
+                            if lbl.is_displayed():
+                                return True
+                        except Exception:
+                            continue
+                except Exception:
+                    pass
+                return False
+
+        # 3) Cas standard: vérifier is_displayed()
         return el.is_displayed()
     
     except Exception:
@@ -283,16 +363,29 @@ def _detect_itype(el) -> str:
     Détecte le type d'input basé sur le tag et les attributs de l'élément.
     Retourne: 'radio', 'checkbox', 'dropdown', 'text', 'textarea', 'unknown'
     """
+    # Priorité 1: Rôle ARIA (Confirmit, CloudResearch)
+    try:
+        role = el.get_attribute("role")
+        if role in ("checkbox", "radio", "textbox", "button"):
+            # Normaliser: "textbox" -> "text"
+            return "text" if role == "textbox" else role
+    except Exception:
+        pass
+    
+    # Priorité 2: Tag natif
     try:
         tag = el.tag_name.lower()
         
         if tag == "select":
             return "dropdown"
         
-        if tag == "textarea":
+        elif tag == "textarea":
             return "textarea"
         
-        if tag == "input":
+        elif tag == "button":
+           return "button"
+
+        elif tag == "input":
             input_type = (el.get_attribute("type") or "text").lower()
             if input_type in ("radio",):
                 return "radio"

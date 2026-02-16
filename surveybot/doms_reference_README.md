@@ -19,6 +19,7 @@ Tout patch proposé **DOIT** être validé contre ces DOMs pour garantir :
 | `DOM_radio_dom7.txt` | **Decipher** | Radio (consent) | Extraction `input[type=radio]`, labels via `<label for>` |
 | `DOM_multi_checkbox.txt` | **Decipher** | Checkbox multi-select | Options exclusives (`class="exclusive"`), champ "Autre" avec input text |
 | `DOM_362624.txt` | **Decipher** | Slider Points (échelle) | `<select>` caché sous slider UI, classes `sq-sliderpoints`, valeurs 0-4 |
+| `DOM_decipher_text_redherring.txt` | **Decipher/FocusVision** | Text input (validation) | Question `.question-text`, erreur `.question-error`, input text unique, Red Herring Math |
 | `DOM_cint_q1.txt` | **Cint** | Checkbox multi-select | Structure simple `div.answer`, extraction via `label > span` |
 | `DOM_dynata.txt` | **Dynata** | Dropdown (single select) | `<select>` Angular (`ng-model`), options via `<option value="string:...">` |
 | `DOM_ipso_birthdate.txt` | **IPSOS** | Multi-dropdown (date) | 2 `<select>` liés (mois + année), Bootstrap Select overlay |
@@ -44,6 +45,7 @@ Tout patch proposé **DOIT** être validé contre ces DOMs pour garantir :
 | **Dropdown** | `dynata` | `<select>` natif ou stylé |
 | **Multi-dropdown** | `ipso_birthdate` | Plusieurs `<select>` liés (ex: date) |
 | **Slider/Échelle** | `362624` | UI slider + `<select>` caché fallback |
+| **Text input (validation)** | `decipher_text_redherring` | Input text unique, question Red Herring, filtrage erreurs/instructions |
 | **Matrix/Grille** | `aa_28`, `cmix_simplegrid` | Sous-questions × options, radio par ligne |
 | **Textarea (open-ended)** | `ssi_confirmit_textarea` | Texte libre, compteur caractères, question hors fieldset |
 ---
@@ -56,7 +58,15 @@ Question:     h1.question-text
 Options:      div.element > span.cell-text > label
 Inputs:       input.radio | input.checkbox
 Exclusives:   input.exclusive
+Erreurs:      div.question-error (à filtrer)
+Instructions: h2.instruction-text (à filtrer)
 ```
+**⚠ Particularité Decipher Text Input :**
+- Pour les inputs text uniques (Red Herring Math, validations), la question est dans `h1.question-text`
+- Le container `.question` contient aussi `.question-error` (message d'erreur) et `.instruction-text` (instructions)
+- Ces éléments doivent être filtrés pour extraire uniquement la vraie question
+- Structure: `div.question[role="radiogroup"] > .answers.answers-list > input[type="text"]`
+- Un seul input text par question (contrairement aux multi-text qui ont plusieurs champs)
 
 ### Cint (`/survey/`)
 ```
@@ -239,7 +249,9 @@ blocks = extract_question_blocks(dom_content)
 
 6. **Instructions de validation** : Sur SSI/Confirmit, les `<p>` adjacents aux textareas contiennent souvent des compteurs de caractères ("Please enter at least 40 characters"). Ces textes doivent être filtrés via `_is_validation_instruction()` pour ne pas être confondus avec la vraie question.
 
-7. **Grilles cmix** : Structure table HTML classique avec `data-type="SIMPLE_GRID"`. Les radios sont groupés par `name` (un par ligne/sous-question). Utiliser `questionid` pour identifier la sous-question associée.
+7. **Decipher Text Input** : Sur Decipher/FocusVision, les questions Red Herring (validations anti-bot) utilisent des inputs text uniques dans `.answers.answers-list`. Le container `.question` contient la question (`.question-text`), mais aussi des erreurs (`.question-error`) et instructions (`.instruction-text`) qui doivent être filtrées. Utiliser `_extract_decipher_single_text_input()` pour extraction ciblée.
+
+8. **Grilles cmix** : Structure table HTML classique avec `data-type="SIMPLE_GRID"`. Les radios sont groupés par `name` (un par ligne/sous-question). Utiliser `questionid` pour identifier la sous-question associée.
 
 ---
 
@@ -265,3 +277,4 @@ Pour ajouter un nouveau DOM de référence :
 | 2025-02 | `DOM_cloudresearch_sentry_radio.txt` | Support CloudResearch/Sentry - radios Vue.js via div[role="button"].choice-option |
 | 2025-02 | `DOM_walr_cardsort.txt` | Support Walr CardSort - boutons answer-button sans inputs natifs |
 | 2025-02 | `DOM_cmix_simplegrid_QLEISUREACTIVITIES_60524984.txt` | Support cmix SIMPLE_GRID - matrix table HTML avec radios groupés par ligne |
+| 2025-02 | `DOM_decipher_text_redherring.txt` | Support Decipher input text unique - questions Red Herring Math avec filtrage erreurs/instructions |

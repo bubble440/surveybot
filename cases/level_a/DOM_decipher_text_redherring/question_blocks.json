@@ -1,0 +1,10 @@
+[
+  {
+    "target_id": "single_59e1b02478a2",
+    "kind": "single",
+    "itype": "text",
+    "question": "Veuillez fournir une réponse à cette équation mathématique :\n6 + 6 = ??",
+    "options": [],
+    "max_select": 1
+  }
+]

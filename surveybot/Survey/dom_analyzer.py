@@ -51,7 +51,8 @@ try:
     from Survey.dom_extractors_decipher import (
         _extract_focusvision_answers_list_groups,
         _extract_focusvision_cardsort_block,
-        _extract_decipher_answers_list_fallback
+        _extract_decipher_answers_list_fallback,
+        _extract_decipher_single_text_input
     )
     
     from Survey.dom_extractors_areyounet import (
@@ -71,7 +72,7 @@ try:
     )
     
     # Registre et utilitaires
-    from Survey.dom_registry import dom_registry
+    from Survey.dom_registry import clear_registry
     from Survey.frame_utils import switch_to_frame_chain
     from Survey.sliderpoints_extractor import extract_sliderpoints_question_blocks
     
@@ -96,7 +97,8 @@ except ImportError:
     from Survey.dom_extractors_decipher import (
         _extract_focusvision_answers_list_groups,
         _extract_focusvision_cardsort_block,
-        _extract_decipher_answers_list_fallback
+        _extract_decipher_answers_list_fallback,
+        _extract_decipher_single_text_input
     )
     from Survey.dom_extractors_areyounet import (
         _extract_areyounet_matrix_blocks,
@@ -152,7 +154,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
     # Pas de radios natifs, on clique directement sur les boutons.
     try:
         walr_cs_block = _extract_walr_cardsort_block(driver, frame_chain)
-        print(f"[WALR_CS] bloc retournÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©: {walr_cs_block is not None}")
+        print(f"[WALR_CS] bloc retourné: {walr_cs_block is not None}")
         if walr_cs_block:
             print(f"[WALR_CS] SUCCESS - returning block with {len(walr_cs_block.get('options', []))} options")
             return [walr_cs_block]
@@ -198,6 +200,17 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
     except Exception:
         pass
 
+    # --- 0d-3) Decipher/FocusVision TEXT INPUT unique (.answers.answers-list + input text) ---
+    # Objectif: extraire les inputs text/textarea Decipher avec .question-text
+    # Pattern: div.question > .answers.answers-list > input[type=text]
+    try:
+        decipher_text_blocks = _extract_decipher_single_text_input(driver, frame_chain)
+        if decipher_text_blocks:
+            return decipher_text_blocks
+    except Exception:
+        pass
+
+     # Pattern spécifique
     # Pattern spécifique
     # Objectif: extraire les matrices (1 ligne = 1 question radio).
     try:
@@ -294,6 +307,30 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             options: List[str] = []
             for e in els:
                 lbl = _find_associated_label(driver, e)
+                # PureSpectrum/Angular: l'input radio peut être masqué et le texte
+                # est porté par le <label> englobant / label[for=id].
+                if not lbl:
+                    try:
+                        parent_lbl = e.find_elements(By.XPATH, "ancestor::label[1]")
+                        if parent_lbl:
+                            t = _norm(parent_lbl[0].text)
+                            if t:
+                                lbl = t.split("\n")[-1].strip()
+                    except Exception:
+                        pass
+                if not lbl:
+                    try:
+                        el_id = (e.get_attribute("id") or "").strip()
+                        if el_id:
+                            id_lit = _xpath_literal(el_id)
+                            labs = driver.find_elements(By.XPATH, f"//label[@for={id_lit}]")
+                            if labs:
+                                t = _norm(labs[0].text)
+                                if t:
+                                    lbl = t.split("\n")[-1].strip()
+                    except Exception:
+                        pass
+
                 if lbl:
                     options.append(lbl)
             # Pattern spécifique
@@ -654,16 +691,37 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         except Exception:
             continue
 
+    # --- 1) Radio/Checkbox (vrais inputs + ARIA) ---
+    try:
+        radio_checkbox = driver.find_elements(
+            By.CSS_SELECTOR,
+            "input[type='radio'], input[type='checkbox'], [role='radio'], [role='checkbox']"
+        )
+    except Exception:
+        radio_checkbox = []
+
     # --- 2) Autres inputs (dropdown / text / textarea / button) ---
     try:
         other_inputs = driver.find_elements(
             By.CSS_SELECTOR,
-            "input:not([type='radio']):not([type='checkbox']):not([type='hidden']), textarea, select, button, a[role='button']",
+            "input:not([type='radio']):not([type='checkbox']):not([type='hidden']), "
+            "select, textarea, button[type='submit'], "
+            "[role='checkbox'], [role='radio'], [role='textbox'], [role='button']"
         )
+        # Ajouter les éléments ARIA textbox
+        try:
+            aria_text = driver.find_elements(By.CSS_SELECTOR, "[role='textbox']")
+            other_inputs.extend(aria_text)
+        except Exception:
+            pass
+
     except Exception:
         other_inputs = []
 
-    for el in other_inputs:
+    # Fusionner pour traiter ensemble
+    all_inputs = radio_checkbox + other_inputs
+
+    for el in all_inputs:
         try:
             itype = _detect_itype(el)
 
@@ -712,9 +770,18 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             container = _nearest_question_container(el) or el
 
             question = ""
+            # PRIORITÉ : chercher .question-text pour Decipher/FocusVision
+            # Évite de mélanger question + erreur + instructions dans container.text
             if container:
-                question = _extract_question_from_container(container, options=[]) or ""
-
+                try:
+                    qtext_elem = container.find_element(By.CSS_SELECTOR, ".question-text, .qtext, .questiontext")
+                    question = _norm(qtext_elem.text)
+                except Exception:
+                    pass
+                
+                # Fallback générique si .question-text absent
+                if not question:
+                    question = _extract_question_from_container(container, options=[]) or ""
             # Pattern spécifique
             # Pattern spécifique
             # Masqué
@@ -1035,7 +1102,7 @@ def analyze_dom(driver) -> List[Dict[str, Any]]:
     Analyse le DOM et retourne une liste de QuestionBlock.
     Frame-aware: choisit automatiquement le meilleur contexte (default ou iframe) jusqu'ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¾ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â  depth=DOM_FRAME_MAX_DEPTH (dÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¾ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©faut=2).
     """
-    dom_registry.clear_registry()
+    clear_registry()
 
     _wait_for_survey_dom(driver)
     max_depth = int(os.getenv("DOM_FRAME_MAX_DEPTH", "2") or "2")

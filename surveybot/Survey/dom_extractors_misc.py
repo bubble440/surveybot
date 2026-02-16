@@ -21,7 +21,6 @@ from selenium.webdriver.common.by import By
 try:
     from Survey.dom_utils import _norm_lc, _xpath_literal, _best_xpath_for_element
     from Survey.dom_question_extractor import _find_question_text_near_element
-    from Survey.dom_registry import dom_registry
     from Survey.dom_registry import clear_registry, register_target, make_target_id
     from Survey.dom_utils import _norm, _norm_key, _is_question_text, _compute_max_select, _looks_like_system_field
 
@@ -29,6 +28,8 @@ except ImportError:
     # Fallback pour tests locaux
     from Survey.dom_utils import _norm_lc, _xpath_literal, _best_xpath_for_element
     from Survey.dom_question_extractor import _find_question_text_near_element
+    from Survey.dom_utils import _norm, _norm_key, _compute_max_select, _looks_like_system_field, _is_question_text
+    from Survey.dom_registry import clear_registry, register_target, make_target_id
     # dom_registry devra être disponible
 
 
@@ -329,9 +330,10 @@ def _extract_walr_cardsort_block(driver, frame_chain: list[int] | None) -> dict 
             if not txt:
                 continue
             
-            # XPath pour clic direct sur le bouton
-            # On utilise l'index 1-based pour XPath
-            xpath = f"//*[@id='cardSortContainer']//button[contains(@class,'answer-button')][{idx + 1}]"
+            # XPath robuste : cible le bouton par son texte exact dans .button-container
+            # Pattern: //div[@id='cardSortContainer']//div[@class='button-container']/button[text()='...']
+            txt_lit = _xpath_literal(txt)
+            xpath = f"//div[@id='cardSortContainer']//div[contains(@class,'button-container')]/button[contains(@class,'answer-button') and normalize-space(text())={txt_lit}]"
             
             options.append(txt)
             option_xpath_map[txt] = xpath

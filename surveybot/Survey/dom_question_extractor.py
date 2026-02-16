@@ -104,11 +104,12 @@ def _find_question_text_near_element(driver, el) -> str:
 def _find_associated_label(driver, el) -> str:
     """
     Cherche un <label> associé à cet input/select/textarea.
-    
+
     Stratégies:
     1. Label avec attribut for=id
     2. Label parent contenant l'input
     3. Label sibling proche
+    4. ARIA labelledby (Angular/accessible frameworks)
     """
     try:
         # 1) Label avec for=id
@@ -121,7 +122,7 @@ def _find_associated_label(driver, el) -> str:
                     return txt
             except Exception:
                 pass
-        
+
         # 2) Label parent
         try:
             labels = el.find_elements(By.XPATH, "ancestor::label")
@@ -131,7 +132,7 @@ def _find_associated_label(driver, el) -> str:
                     return txt
         except Exception:
             pass
-        
+
         # 3) Label sibling
         try:
             labels = el.find_elements(
@@ -144,9 +145,29 @@ def _find_associated_label(driver, el) -> str:
                     return txt
         except Exception:
             pass
-        
+
+        # 4) ARIA labelledby (Angular Material, PureSpectrum, etc.)
+        try:
+            # Chercher conteneur parent avec aria-labelledby
+            containers = el.find_elements(
+                By.XPATH,
+                "ancestor::*[@aria-labelledby]"
+            )
+            for container in containers:
+                labelledby_id = container.get_attribute("aria-labelledby")
+                if labelledby_id:
+                    try:
+                        label_el = driver.find_element(By.ID, labelledby_id)
+                        txt = _norm(label_el.text)
+                        if txt and _is_question_text(txt):
+                            return txt
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
         return ""
-    
+
     except Exception:
         return ""
 
@@ -174,7 +195,7 @@ def _extract_ssi_confirmit_question(driver, el) -> str:
         try:
             qtext_div = container.find_element(
                 By.CSS_SELECTOR,
-                ".qtext, .questiontext, .question-text"
+                ".qtext, .questiontext, .question-text, .cf-question__text, .cf-question__instruction"
             )
             txt = _norm(qtext_div.text)
             if txt and _is_question_text(txt):

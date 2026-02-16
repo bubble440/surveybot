@@ -20,6 +20,7 @@ try:
 except ImportError:
     # Fallback pour tests locaux
     from Survey.dom_utils import _env_truthy
+    from Survey.frame_utils import iter_frame_chains, switch_to_frame_chain
     import sys
     # Pour iter_frame_chains et switch_to_frame_chain, on devra les avoir disponibles
 

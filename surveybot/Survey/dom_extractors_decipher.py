@@ -18,10 +18,11 @@ from selenium.webdriver.common.by import By
 # Import des utilitaires
 try:
     from Survey.dom_utils import _norm_lc, _xpath_literal
-    from Survey.dom_registry import dom_registry
+    from Survey.dom_registry import make_target_id, register_target
 except ImportError:
     # Fallback pour tests locaux
     from Survey.dom_utils import _norm_lc, _xpath_literal
+    from Survey.dom_registry import make_target_id, register_target
     # dom_registry devra être disponible
 
 
@@ -140,9 +141,9 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
                 continue
 
             group_key = f"{itype}:name:{name}"
-            target_id = dom_registry.make_target_id("group", group_key, question or name)
+            target_id = make_target_id("group", group_key, question or name)
 
-            dom_registry.register_target(target_id, {
+            register_target(target_id, {
                 "kind": "group",
                 "frame_chain": list(frame_chain or []),
                 "itype": itype,
@@ -237,10 +238,10 @@ def _extract_focusvision_cardsort_block(driver, frame_chain: list[int] | None) -
         return None
 
     # Créer un target_id pour ce cardsort
-    target_id = dom_registry.make_target_id("cardsort", "focusvision_cardsort", question)
+    target_id = make_target_id("cardsort", "focusvision_cardsort", question)
 
     # Enregistrer dans dom_registry
-    dom_registry.register_target(target_id, {
+    register_target(target_id, {
         "kind": "cardsort",
         "frame_chain": list(frame_chain or []),
         "question": question,
@@ -367,10 +368,10 @@ def _extract_decipher_answers_list_fallback(driver, frame_chain: List[Any]) -> L
 
                     # Créer group_key et target_id
                     group_key = f"{itype}:name:{name}"
-                    target_id = dom_registry.make_target_id("group", group_key, question or name)
+                    target_id = make_target_id("group", group_key, question or name)
 
                     # Enregistrer dans dom_registry
-                    dom_registry.register_target(target_id, {
+                    register_target(target_id, {
                         "kind": "group",
                         "frame_chain": list(frame_chain or []),
                         "itype": itype,
@@ -398,5 +399,170 @@ def _extract_decipher_answers_list_fallback(driver, frame_chain: List[Any]) -> L
     except Exception as e:
         if os.getenv("RUN_ENV", "local") == "local":
             print(f"[DOM_ANALYZER][ERROR] decipher fallback outer: {type(e).__name__}: {e}")
+
+    return blocks
+
+# ================================================================================
+# DECIPHER/FOCUSVISION - SINGLE TEXT INPUT
+# ================================================================================
+
+def _extract_decipher_single_text_input(driver, frame_chain: List[Any]) -> List[Dict[str, Any]]:
+    """
+    Extracteur spécifique Decipher/FocusVision pour input text/textarea unique.
+    
+    Cas d'usage: questions Red Herring Math, validations numériques, etc.
+    Structure DOM: div.question > .answers.answers-list > input[type=text]
+    
+    Stratégie:
+    - Chercher div.question avec .answers.answers-list
+    - Vérifier qu'il contient UN SEUL input text/textarea visible
+    - Extraire question depuis .question-text (prioritaire) ou container
+    - Ignorer les erreurs et instructions de validation
+    
+    Args:
+        driver: WebDriver Selenium
+        frame_chain: Chaîne de frames
+    
+    Returns:
+        Liste de dicts avec metadata (max 1 bloc)
+    """
+    blocks: List[Dict[str, Any]] = []
+
+    try:
+        # Chercher les conteneurs .question avec .answers.answers-list
+        q_containers = driver.find_elements(By.CSS_SELECTOR, "div.question, div[class*='question']")
+        
+        for q in q_containers:
+            try:
+                # Vérifier qu'il y a .answers.answers-list
+                answers = q.find_element(By.CSS_SELECTOR, ".answers.answers-list, .answers")
+            except Exception:
+                continue
+
+            # Chercher inputs text/textarea visibles
+            inputs = []
+            try:
+                candidates = answers.find_elements(
+                    By.CSS_SELECTOR,
+                    "input[type='text'], input:not([type='radio']):not([type='checkbox']):not([type='hidden']):not([type='submit']):not([type='button']), textarea"
+                )
+                for inp in candidates:
+                    try:
+                        # Vérifier visibilité basique
+                        if inp.is_displayed() and inp.is_enabled():
+                            inputs.append(inp)
+                    except Exception:
+                        pass
+            except Exception:
+                continue
+
+            # On ne traite que le cas d'UN SEUL input
+            if len(inputs) != 1:
+                continue
+
+            el = inputs[0]
+
+            # PRIORITÉ: extraire question depuis .question-text
+            question = ""
+            try:
+                qtext_elem = q.find_element(By.CSS_SELECTOR, ".question-text, .qtext, .questiontext, h1[class*='question']")
+                question = (qtext_elem.text or "").strip()
+            except Exception:
+                pass
+
+            # Fallback: texte du container en excluant erreurs et instructions
+            if not question:
+                try:
+                    # Exclure .question-error et .instruction-text
+                    full_text = q.text or ""
+                    
+                    # Retirer les erreurs
+                    try:
+                        error_elems = q.find_elements(By.CSS_SELECTOR, ".question-error, .error, [class*='error']")
+                        for err in error_elems:
+                            err_txt = (err.text or "").strip()
+                            if err_txt:
+                                full_text = full_text.replace(err_txt, "")
+                    except Exception:
+                        pass
+                    
+                    # Retirer les instructions
+                    try:
+                        instr_elems = q.find_elements(By.CSS_SELECTOR, ".instruction-text, .instructions, [class*='instruction']")
+                        for instr in instr_elems:
+                            instr_txt = (instr.text or "").strip()
+                            if instr_txt:
+                                full_text = full_text.replace(instr_txt, "")
+                    except Exception:
+                        pass
+                    
+                    question = full_text.strip()
+                except Exception:
+                    pass
+
+            if not question or len(question) < 3:
+                continue
+
+            # Déterminer itype
+            itype = "text"
+            try:
+                tag = (el.tag_name or "").strip().lower()
+                if tag == "textarea":
+                    itype = "textarea"
+            except Exception:
+                pass
+
+            # Créer target_id
+            el_id = (el.get_attribute("id") or "").strip()
+            el_name = (el.get_attribute("name") or "").strip()
+            single_key = f"{itype}:decipher:{el_id}:{el_name}"
+            
+            target_id = make_target_id("single", single_key, question)
+
+            # XPath vers l'input
+            try:
+                from Survey.dom_utils import _best_xpath_for_element, _xpath_literal
+                xpath = _best_xpath_for_element(driver, el)
+                
+                # Locators alternatifs
+                alt_xpaths = []
+                if el_name:
+                    alt_xpaths.append(f"//input[@name={_xpath_literal(el_name)}]")
+                if el_id:
+                    alt_xpaths.append(f"//*[@id='{el_id}']")
+                
+                alt_xpaths = [x for x in dict.fromkeys(alt_xpaths) if x and x != xpath][:2]
+
+            except Exception:
+                continue
+
+            # Enregistrer dans dom_registry
+            register_target(target_id, {
+                "kind": "single",
+                "itype": itype,
+                "question": question,
+                "xpath": xpath,
+                "alt_xpaths": alt_xpaths,
+                "tag": el.tag_name,
+                "name": el_name,
+                "id": el_id,
+                "frame_chain": list(frame_chain or [])
+            })
+
+            blocks.append({
+                "target_id": target_id,
+                "kind": "single",
+                "itype": itype,
+                "question": question,
+                "options": [],
+                "max_select": 1
+            })
+
+            # Un seul bloc maximum (premier trouvé)
+            break
+
+    except Exception as e:
+        if os.getenv("RUN_ENV", "local") == "local":
+            print(f"[DOM_ANALYZER][ERROR] decipher single text: {type(e).__name__}: {e}")
 
     return blocks

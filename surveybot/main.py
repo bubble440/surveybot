@@ -1,4 +1,4 @@
-print("BOOT: container dÃƒÆ’Ã‚Â©marrÃƒÆ’Ã‚Â©.", flush=True)
+print("BOOT: container démarré.", flush=True)
 import os
 IS_LOCAL = os.getenv("RUN_ENV", "local") == "local"
 
@@ -294,7 +294,7 @@ def _attach_select_tab(driver) -> None:
                 else:
                     print(f"[ATTACH]  {i:02d} | (non-web) | title={t[:80]!r} | url={u}")
 
-            choice = (input("[ATTACH] Choisis l'index d'onglet ÃƒÆ’Ã‚Â  utiliser: ") or "").strip()
+            choice = (input("[ATTACH] Choisis l'index d'onglet à utiliser: ") or "").strip()
             if choice.isdigit():
                 idx = int(choice)
                 idx = max(0, min(idx, len(handles) - 1))
