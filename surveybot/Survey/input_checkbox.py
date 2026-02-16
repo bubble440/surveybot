@@ -19,7 +19,7 @@ import re
 import time
 
 # Import depuis input_utils
-from input_utils import (
+from Survey.input_utils import (
     norm_txt,
     norm_soft,
     norm_lc_soft,

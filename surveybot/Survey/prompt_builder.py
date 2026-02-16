@@ -93,16 +93,22 @@ def build_prompt(question_blocks: List[Dict[str, Any]]) -> str:
         "et que cette option est prÃƒÂ©sente."
     )
 
-    # Contrainte sexe/genre : toujours binaire (Homme/Femme uniquement)
+    # Contrainte sexe/genre : toujours binaire, mais utilise l'intitulé exact de l'option
     lines.append(
         "Pour toute question sur le sexe ou le genre, "
-        "reponds UNIQUEMENT 'Homme' ou 'Femme' (jamais X, Autre, Non-binaire, Prefere ne pas repondre)."
+        "choisis TOUJOURS l'option binaire masculine (Homme, Masculin, Male, M, H) ou féminine (Femme, Féminin, Female, F) "
+        "parmi les options proposées. Utilise EXACTEMENT l'intitulé tel qu'il apparaît dans la liste d'options. "
+        "Évite systématiquement: X, Autre, Non-binaire, Préfère ne pas répondre."
     )
 
     # Contrainte âge : toujours 25 ans
     lines.append(
-        "Pour toute question sur l'âge (age, années, ans, naissance, date de naissance), "
-        "réponds TOUJOURS '25' ou '25 ans' selon le format demandé."
+        "Pour toute question sur l'âge ou la date de naissance:\n"
+        "- Si champ texte (âge, années, ans): réponds '25' ou '25 ans'.\n"
+        "- Si date de naissance avec dropdowns séparés (mois + année):\n"
+        "  * Année: choisis une année cohérente pour 25 ans (2001, 2000, 1999).\n"
+        "  * Mois: choisis un mois réaliste (évite le mois en cours pour éviter des âges < 25).\n"
+        "  * Exemple: 'Juillet' pour le mois, '2000' pour l'année."
     )
 
     lines.append("\n--- QUESTIONS DISPONIBLES SUR LA PAGE ---")
@@ -177,16 +183,22 @@ def build_batch_prompt(question_blocks: list[dict]) -> str:
         "- contexte doit correspondre exactement ÃƒÂ  la question affichÃƒÂ©e"
     )
 
-    # Contrainte sexe/genre : toujours binaire (Homme/Femme uniquement)
+    # Contrainte sexe/genre : toujours binaire, mais utilise l'intitulé exact de l'option
     lines.append(
         "Pour toute question sur le sexe ou le genre, "
-        "reponds UNIQUEMENT 'Homme' ou 'Femme' (jamais X, Autre, Non-binaire, Prefere ne pas repondre)."
+        "choisis TOUJOURS l'option binaire masculine (Homme, Masculin, Male, M, H) ou féminine (Femme, Féminin, Female, F) "
+        "parmi les options proposées. Utilise EXACTEMENT l'intitulé tel qu'il apparaît dans la liste d'options. "
+        "Évite systématiquement: X, Autre, Non-binaire, Préfère ne pas répondre."
     )
 
     # Contrainte âge : toujours 25 ans
     lines.append(
-        "Pour toute question sur l'âge (age, années, ans, naissance, date de naissance), "
-        "réponds TOUJOURS '25' ou '25 ans' selon le format demandé."
+        "Pour toute question sur l'âge ou la date de naissance:\n"
+        "- Si champ texte (âge, années, ans): réponds '25' ou '25 ans'.\n"
+        "- Si date de naissance avec dropdowns séparés (mois + année):\n"
+        "  * Année: choisis une année cohérente pour 25 ans (2001, 2000, 1999).\n"
+        "  * Mois: choisis un mois réaliste (évite le mois en cours pour éviter des âges < 25).\n"
+        "  * Exemple: 'Juillet' pour le mois, '2000' pour l'année."
     )
 
     lines.append("\n--- QUESTIONS ---")

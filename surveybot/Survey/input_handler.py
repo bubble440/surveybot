@@ -35,7 +35,7 @@ from selenium.webdriver.support import expected_conditions as EC
 # =============================================================================
 
 # --- input_utils.py ---
-from input_utils import (
+from Survey.input_utils import (
     # Constantes
     DROPDOWN_PLACEHOLDERS,
     PLACEHOLDER_TOKENS,
@@ -109,7 +109,7 @@ _viewport_penalty = viewport_penalty
 _similarity = similarity
 
 # --- input_frame.py ---
-from input_frame import (
+from Survey.input_frame import (
     iter_iframes_safe,
     in_each_frame_recursive,
     click_button_by_text_any_context as _click_button_by_text_any_context_frame,
@@ -124,7 +124,7 @@ _iter_iframes_safe = iter_iframes_safe
 _in_each_frame_recursive = in_each_frame_recursive
 
 # --- input_dropdown.py ---
-from input_dropdown import (
+from Survey.input_dropdown import (
     has_native_selects,
     select_like_elements,
     element_signature_text,
@@ -134,7 +134,7 @@ from input_dropdown import (
     is_dropdown_filled,
     open_first_dropdown,
     open_dropdown_generic,
-    try_select_option_any,
+    select_option_with_hint,
     select_option_with_hint,
 )
 
@@ -147,11 +147,11 @@ _dropdown_visible_value = dropdown_visible_value
 _is_dropdown_filled = is_dropdown_filled
 _open_first_dropdown = open_first_dropdown
 _open_dropdown_generic = open_dropdown_generic
-_try_select_option_any = try_select_option_any
+_select_option_with_hint = select_option_with_hint
 _select_option_with_hint = select_option_with_hint
 
 # --- input_text.py ---
-from input_text import (
+from Survey.input_text import (
     type_via_cdp,
     react_set_value_and_fire,
     is_numeric_field,
@@ -166,7 +166,7 @@ _is_numeric_field = is_numeric_field
 _swagbucks_zip_patch = swagbucks_zip_patch
 
 # --- input_radio.py ---
-from input_radio import (
+from Survey.input_radio import (
     click_decipher_grid_radio,
     click_decipher_grid_radio_strict,
     click_radio_label_in_scope,
@@ -181,7 +181,7 @@ _click_radio_label_in_scope = click_radio_label_in_scope
 _fallback_click_radio_js_generic = fallback_click_radio_js_generic
 
 # --- input_checkbox.py ---
-from input_checkbox import (
+from Survey.input_checkbox import (
     force_checkbox_events,
     privacy_checkbox_is_accepted,
     force_label_for_checkbox_js,
@@ -200,12 +200,12 @@ _fallback_click_checkbox_js_alchemer = fallback_click_checkbox_js_alchemer
 _fallback_click_checkbox_js_generic = fallback_click_checkbox_js_generic
 
 # --- input_slider.py ---
-from input_slider import (
+from Survey.input_slider import (
     set_sliderpoints,
 )
 
 # --- input_matrix.py ---
-from input_matrix import (
+from Survey.input_matrix import (
     MATRIX_COL_SYNONYMS as MATRIX_COL_SYNONYMS_MODULE,
     looks_like_matrix,
     iter_matrix_rows,
@@ -222,7 +222,7 @@ _get_matrix_columns = get_matrix_columns
 _select_cell_action = select_cell_action
 
 # --- cta_handler.py ---
-from cta_handler import (
+from Survey.cta_handler import (
     looks_like_nav_label as cta_looks_like_nav_label,
     click_button_by_text,
     click_icon_like_button,
@@ -277,7 +277,7 @@ def handle_generic_input(driver, gpt_answer: str):
 
         # 0-bis) Si on a un select visible et une réponse non-CTA, tenter la sélection directe
         if has_native_selects(driver):
-            if try_select_option_any(driver, gpt_answer):
+            if select_option_with_hint(driver, gpt_answer):
                 return True
 
         # 1. Radios
@@ -568,7 +568,7 @@ __all__ = [
     "has_native_selects", "select_like_elements", "element_signature_text",
     "best_dropdown_for_hint", "dropdown_visible_value", "is_dropdown_filled",
     "open_first_dropdown", "open_dropdown_generic",
-    "try_select_option_any", "select_option_with_hint",
+    "select_option_with_hint", "select_option_with_hint",
     
     # Text
     "type_via_cdp", "react_set_value_and_fire", "is_numeric_field",

@@ -163,12 +163,12 @@ def _file_save(state: Dict[str, Any]) -> None:
 # Public API (utilisée partout)
 # -----------------------------
 def load_state(account_id: str) -> Dict[str, Any]:
-    """
-    Charge l'état depuis DynamoDB (prod) ou fallback fichier.
-    """
-    if IS_LOCAL:
-        return _default_state(account_id)
-    
+    # En local, utiliser le fichier fallback pour tester la logique
+    if IS_LOCAL and not os.getenv("FORCE_DYNAMODB"):
+        # Utiliser fichier local mais avec la vraie logique
+        with _FILE_LOCK:
+            return _normalize_state(_file_load(account_id), account_id)
+                
     account_id = (account_id or "").strip()
     if not account_id:
         raise ValueError("account_id vide")

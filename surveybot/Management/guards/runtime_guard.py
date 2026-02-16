@@ -182,8 +182,8 @@ class RuntimeGuard:
             cta_clicked = False
 
         if cta_clicked:
-            print("ðŸŸ¢ CTA cliquÃ© â†’ reprise via UI")
-            # pas de return : on laisse le flow soft_restart (on_soft_restart) remettre /surveys + sÃ©lection mieux payÃ©
+            time.sleep(2)  # laisser le temps au survey de se relancer
+            return # ✅ Arrêter ici si CTA a fonctionné
 
         # 2) CTA absent / inutile â†’ dÃ©lÃ©gation soft restart
         try:
@@ -277,7 +277,7 @@ class RuntimeGuard:
     def _monitor_loop(self):
         while True:
             try:
-                time.sleep(10)
+                time.sleep(30)
                 self._check_ecs_stop_desync()
                 self._check_conditions()
             except SystemExit:
