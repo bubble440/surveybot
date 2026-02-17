@@ -67,7 +67,8 @@ try:
         _extract_askandanswer_selection_list_questions,
         _extract_cmix_simple_grid_question_blocks,
         _extract_cmix_radio_question_blocks,
-        _extract_cloudresearch_sentry_blocks
+        _extract_cloudresearch_sentry_blocks,
+        _extract_purespectrum_mobile_date_blocks,
     )
     
     # Registre et utilitaires
@@ -110,7 +111,8 @@ except ImportError:
         _extract_askandanswer_selection_list_questions,
         _extract_cmix_simple_grid_question_blocks,
         _extract_cmix_radio_question_blocks,
-        _extract_cloudresearch_sentry_blocks
+        _extract_cloudresearch_sentry_blocks,
+        _extract_purespectrum_mobile_date_blocks,
     )
 
 
@@ -232,6 +234,15 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         cr_blocks = _extract_cloudresearch_sentry_blocks(driver, frame_chain)
         if cr_blocks:
             return cr_blocks
+    except Exception:
+        pass
+
+    # --- 0i) PureSpectrum mobile date picker (ps-select-scroll) ---
+    # Objectif: extraire les blocs date quand aucun input/select natif n'est présent.
+    try:
+        ps_date_blocks = _extract_purespectrum_mobile_date_blocks(driver, frame_chain)
+        if ps_date_blocks:
+            return ps_date_blocks
     except Exception:
         pass
 
@@ -716,6 +727,61 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
     except Exception:
         other_inputs = []
 
+    def _single_has_visible_proxy(el, itype: str) -> bool:
+        """
+        Pour certains dropdowns custom, le <select> natif est caché
+        alors que le proxy UI (bootstrap/select2/ng-select) est visible.
+        """
+        try:
+            if _is_actionable_visible(el):
+                return True
+        except Exception:
+            pass
+
+        if itype != "dropdown":
+            return False
+
+        try:
+            return bool(driver.execute_script(
+                """
+                const el = arguments[0];
+                if (!el) return false;
+
+                const isVisible = (node) => {
+                  if (!node || !(node instanceof Element)) return false;
+                  const st = window.getComputedStyle(node);
+                  if (!st) return false;
+                  if (st.display === 'none' || st.visibility === 'hidden' || st.opacity === '0') return false;
+                  const r = node.getBoundingClientRect();
+                  return r.width > 0 && r.height > 0;
+                };
+
+                if (isVisible(el)) return true;
+
+                const proxy = el.closest(
+                  '.bootstrap-select, .select2, .ng-select, .choices, .dropdown, [role="combobox"], mat-form-field, ps-date-picker, ps-date-picker-mobile, .date-container'
+                );
+                if (isVisible(proxy)) return true;
+
+                const parent = el.parentElement;
+                if (isVisible(parent)) return true;
+
+                const id = el.id;
+                if (id) {
+                  const cssEscape = (window.CSS && CSS.escape)
+                    ? CSS.escape(id)
+                    : id.replace(/([ #;?%&,.+*~\':"!^$\[\]()=>|\/@])/g, '\\$1');
+                  const linked = document.querySelector(`label[for="${cssEscape}"]`);
+                  if (isVisible(linked)) return true;
+                }
+
+                return false;
+                """,
+                el,
+            ))
+        except Exception:
+            return False
+
     for el in other_inputs:
         try:
             itype = _detect_itype(el)
@@ -724,8 +790,9 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             if itype == "hidden" or _looks_like_system_field(el):
                 continue
 
-            # Pattern spécifique
-            if not _is_actionable_visible(el):
+            # Inputs single: on accepte les dropdowns natifs cachés
+            # si un proxy visuel est détecté.
+            if not _single_has_visible_proxy(el, itype):
                 continue
 
             if itype in ("radio", "checkbox", "unknown"):
