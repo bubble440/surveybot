@@ -288,7 +288,8 @@ def _detect_itype(el) -> str:
     """
     try:
         tag = el.tag_name.lower()
-        
+        role = (el.get_attribute("role") or "").lower().strip()
+
         if tag == "select":
             return "dropdown"
         
@@ -303,7 +304,13 @@ def _detect_itype(el) -> str:
                 return "checkbox"
             if input_type in ("text", "email", "tel", "number", "date"):
                 return "text"
-        
+
+        # Widgets ARIA sans input natif (ex: Forsta/Confirmit answer buttons)
+        if role == "radio":
+            return "radio"
+        if role == "checkbox":
+            return "checkbox"
+
         return "unknown"
     
     except Exception:
