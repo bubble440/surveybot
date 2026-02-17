@@ -1056,9 +1056,9 @@ def _extract_cmix_radio_question_blocks(driver, frame_chain: list[int] | None) -
 
     frame_chain = list(frame_chain or [])
 
-    # Gate strict: CMIX radio wrappers
+    # Gate strict: CMIX wrappers avec labels radio/checkbox
     try:
-        if not driver.find_elements(By.CSS_SELECTOR, ".cm-question-wrapper .cm-radio-label"):
+        if not driver.find_elements(By.CSS_SELECTOR, ".cm-question-wrapper .cm-radio-label, .cm-question-wrapper .cm-checkbox-label"):
             return []
     except Exception:
         return []
@@ -1085,7 +1085,7 @@ def _extract_cmix_radio_question_blocks(driver, frame_chain: list[int] | None) -
             # question text (CMIX)
             question = ""
             try:
-                qels = w.find_elements(By.CSS_SELECTOR, ".cm-question-text")
+                qels = w.find_elements(By.CSS_SELECTOR, ".cm-question-text, .cm-qtext")
                 if qels:
                     question = _norm(qels[0].text or qels[0].get_attribute("innerText") or "")
             except Exception:
@@ -1100,18 +1100,18 @@ def _extract_cmix_radio_question_blocks(driver, frame_chain: list[int] | None) -
             if not question:
                 continue
 
-            # radios dans le wrapper
+            # inputs radio/checkbox dans le wrapper
             try:
-                radios = w.find_elements(By.CSS_SELECTOR, "input[type='radio'][id][name]")
+                inputs = w.find_elements(By.CSS_SELECTOR, "input[type='radio'][id][name], input[type='checkbox'][id][name]")
             except Exception:
-                radios = []
+                inputs = []
 
-            if len(radios) < 2:
+            if not inputs:
                 continue
 
-            # group par name (CMIX utilise name numeric pour le groupe)
-            by_name: dict[str, list[Any]] = {}
-            for r in radios:
+            # group par (type, name)
+            by_group: dict[tuple[str, str], list[Any]] = {}
+            for r in inputs:
                 try:
                     if _looks_like_system_field(r):
                         continue
@@ -1120,23 +1120,25 @@ def _extract_cmix_radio_question_blocks(driver, frame_chain: list[int] | None) -
 
                 # Input masqué
                 try:
+                    rtype = (r.get_attribute("type") or "").strip().lower()
                     rid = (r.get_attribute("id") or "").strip()
                     rname = (r.get_attribute("name") or "").strip()
-                    if not rid or not rname:
+                    if rtype not in {"radio", "checkbox"} or not rid or not rname:
                         continue
+                    label_sel = "cm-radio-label" if rtype == "radio" else "cm-checkbox-label"
                     # label texte (pas le label "cercle")
-                    lbls = w.find_elements(By.CSS_SELECTOR, f"label.cm-radio-label[for='{rid}']")
+                    lbls = w.find_elements(By.CSS_SELECTOR, f"label.{label_sel}[for='{rid}']")
                     if not lbls:
                         continue
                     t = _norm(lbls[0].text or lbls[0].get_attribute("innerText") or "")
                     if not t or len(t) < 2:
                         continue
-                    by_name.setdefault(rname, []).append(r)
+                    by_group.setdefault((rtype, rname), []).append(r)
                 except Exception:
                     continue
 
-            for rname, els in by_name.items():
-                if len(els) < 2:
+            for (rtype, rname), els in by_group.items():
+                if rtype == "radio" and len(els) < 2:
                     continue
 
                 options: list[str] = []
@@ -1144,10 +1146,11 @@ def _extract_cmix_radio_question_blocks(driver, frame_chain: list[int] | None) -
 
                 for r in els:
                     try:
+                        label_sel = "cm-radio-label" if rtype == "radio" else "cm-checkbox-label"
                         rid = (r.get_attribute("id") or "").strip()
                         if not rid:
                             continue
-                        lbls = w.find_elements(By.CSS_SELECTOR, f"label.cm-radio-label[for='{rid}']")
+                        lbls = w.find_elements(By.CSS_SELECTOR, f"label.{label_sel}[for='{rid}']")
                         if not lbls:
                             continue
                         label = _norm(lbls[0].text or lbls[0].get_attribute("innerText") or "")
@@ -1157,8 +1160,7 @@ def _extract_cmix_radio_question_blocks(driver, frame_chain: list[int] | None) -
                         # Pattern spécifique
                         rid_lit = _xpath_literal(rid)
                         xp = (
-                            f"(//label[contains(concat(' ',normalize-space(@class),' '),' cm-radio-label ') and @for={rid_lit}])[1]"
-                        )
+                            f"(//label[contains(concat(' ',normalize-space(@class),' '),' {label_sel} ') and @for={rid_lit}])[1]"                        )
 
                         nk = _norm_key(label)
                         if nk in option_xpath_map:
@@ -1169,17 +1171,17 @@ def _extract_cmix_radio_question_blocks(driver, frame_chain: list[int] | None) -
                     except Exception:
                         continue
 
-                if len(options) < 2 or not option_xpath_map:
+                if not options or not option_xpath_map:
                     continue
 
-                group_key = f"cmix_radio:name:{rname}"
+                group_key = f"cmix_{rtype}:name:{rname}"
                 target_id = make_target_id("group", group_key, question)
 
                 register_target(
                     target_id,
                     {
                         "kind": "group",
-                        "itype": "radio",
+                        "itype": "rtype",
                         "group_key": group_key,
                         "question": question,
                         "option_xpath_map": option_xpath_map,
@@ -1191,9 +1193,9 @@ def _extract_cmix_radio_question_blocks(driver, frame_chain: list[int] | None) -
                 blocks.append(
                     {
                         "question": question,
-                        "itype": "radio",
+                        "itype": rtype,
                         "options": options,
-                        "max_select": 1,
+                        "max_select": _compute_max_select(rtype, options),
                         "target_id": target_id,
                         "context": {"kind": "group", "group_key": group_key, "cmix": True},
                     }
