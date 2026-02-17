@@ -17,10 +17,10 @@ from selenium.webdriver.common.by import By
 
 # Import des utilitaires
 try:
-    from Survey.dom_utils import _norm, _norm_lc, _is_question_text
+    from Survey.dom_utils import _norm, _norm_lc, _is_question_text, _is_validation_instruction
 except ImportError:
     # Fallback pour tests locaux
-    from Survey.dom_utils import _norm, _norm_lc, _is_question_text
+    from Survey.dom_utils import _norm, _norm_lc, _is_question_text, _is_validation_instruction
 
 # ================================================================================
 # CONSTANTE
@@ -109,7 +109,18 @@ def _find_associated_label(driver, el) -> str:
     1. Label avec attribut for=id
     2. Label parent contenant l'input
     3. Label sibling proche
+
+    Note: un label d'option (ex: "homme", "femme") n'est pas une question.
+    On ne doit donc pas filtrer via _is_question_text ici.
     """
+    def _is_valid_option_label(txt: str) -> bool:
+        txt = _norm(txt)
+        if not txt:
+            return False
+        if _is_validation_instruction(txt):
+            return False
+        return True
+
     try:
         # 1) Label avec for=id
         el_id = el.get_attribute("id")
@@ -117,7 +128,7 @@ def _find_associated_label(driver, el) -> str:
             try:
                 label = driver.find_element(By.CSS_SELECTOR, f'label[for="{el_id}"]')
                 txt = _norm(label.text)
-                if txt and _is_question_text(txt):
+                if _is_valid_option_label(txt):
                     return txt
             except Exception:
                 pass
@@ -127,7 +138,7 @@ def _find_associated_label(driver, el) -> str:
             labels = el.find_elements(By.XPATH, "ancestor::label")
             for label in labels:
                 txt = _norm(label.text)
-                if txt and _is_question_text(txt):
+                if _is_valid_option_label(txt):
                     return txt
         except Exception:
             pass
@@ -140,7 +151,7 @@ def _find_associated_label(driver, el) -> str:
             )
             for label in labels:
                 txt = _norm(label.text)
-                if txt and _is_question_text(txt):
+                if _is_valid_option_label(txt):
                     return txt
         except Exception:
             pass
