@@ -6,7 +6,6 @@ $env:ACTION_DEBUG_TARGET="1"
 $env:ATTACH_TAB_SELECTOR="pick"
 $env:LOCAL_CTA_REQUIRE_ENTER="1"
 $env:ATTACH_TAB_URL_CONTAINS="none"
-$env:openai_api_key="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"
 # -----------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 # Pour lancer Chrome avec le debug remote activé (debug)
