@@ -5,12 +5,12 @@
   "sexe": "Homme",
   "niveau_etude": "Master 1",
   "statut_pro": "Étudiant",
-  "Email": "qatar.chimp729@8shield.net",
-  "Password": "P@ssw0rD!123",
-  "openai_api_key": "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",
-  "TWO_CAPTCHA_KEY": "ff2f59cd67845abf5c1b7db1c0a17cf2",
-  "payout_name": "Wilfried Jamein Saah",
-  "payout_revolut_tag": "@jameinsaah",
-  "telegram_bot_token": "8072613096:AAGlTBkJ0mQ8XWqHOK4S5vzDmPKlnBOqC9w",
-  "telegram_chat_id": "8084338378"
+  "Email": "your.email@example.com",
+  "Password": "YOUR_PASSWORD",
+  "openai_api_key": "OPENAI_API_KEY",
+  "TWO_CAPTCHA_KEY": "TWO_CAPTCHA_KEY",
+  "payout_name": "YOUR_NAME",
+  "payout_revolut_tag": "@your_tag",
+  "telegram_bot_token": "TELEGRAM_BOT_TOKEN",
+  "telegram_chat_id": "TELEGRAM_CHAT_ID"
 }
