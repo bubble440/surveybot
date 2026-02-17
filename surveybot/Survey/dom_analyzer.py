@@ -67,7 +67,8 @@ try:
         _extract_askandanswer_selection_list_questions,
         _extract_cmix_simple_grid_question_blocks,
         _extract_cmix_radio_question_blocks,
-        _extract_cloudresearch_sentry_blocks
+        _extract_cloudresearch_sentry_blocks,
+        _extract_purespectrum_mobile_date_blocks,
     )
     
     # Registre et utilitaires
@@ -110,7 +111,8 @@ except ImportError:
         _extract_askandanswer_selection_list_questions,
         _extract_cmix_simple_grid_question_blocks,
         _extract_cmix_radio_question_blocks,
-        _extract_cloudresearch_sentry_blocks
+        _extract_cloudresearch_sentry_blocks,
+        _extract_purespectrum_mobile_date_blocks,
     )
 
 
@@ -232,6 +234,15 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         cr_blocks = _extract_cloudresearch_sentry_blocks(driver, frame_chain)
         if cr_blocks:
             return cr_blocks
+    except Exception:
+        pass
+
+    # --- 0i) PureSpectrum mobile date picker (ps-select-scroll) ---
+    # Objectif: extraire les blocs date quand aucun input/select natif n'est présent.
+    try:
+        ps_date_blocks = _extract_purespectrum_mobile_date_blocks(driver, frame_chain)
+        if ps_date_blocks:
+            return ps_date_blocks
     except Exception:
         pass
 
