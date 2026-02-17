@@ -1409,24 +1409,10 @@ def _extract_purespectrum_mobile_date_blocks(driver, frame_chain: list[int] | No
 
     for date_q in date_questions:
         try:
-            # Gate robuste: version mobile (roues) OU fallback desktop (select natifs).
-            # Certains écrans PureSpectrum rendent la même question via des <select>
-            # (ex: Mois/Ans) au lieu des roues `ps-select-scroll`.
+            # Gate strict: uniquement la version mobile avec roues.
             columns = date_q.find_elements(By.CSS_SELECTOR, "ps-date-picker-mobile ps-select-scroll")
             if len(columns) < 2:
-                try:
-                    columns = date_q.find_elements(By.CSS_SELECTOR, "ps-select-scroll")
-                except Exception:
-                    columns = []
-
-            native_selects = []
-            if len(columns) < 2:
-                try:
-                    native_selects = date_q.find_elements(By.CSS_SELECTOR, "select")
-                except Exception:
-                    native_selects = []
-                if len(native_selects) < 2:
-                    continue
+                continue
 
             question = ""
             for sel in [".question-title", "[psquestiontitle]", "header [role='heading']"]:
@@ -1499,77 +1485,6 @@ def _extract_purespectrum_mobile_date_blocks(driver, frame_chain: list[int] | No
                     {
                         "question": question_col,
                         "itype": "radio",
-                        "options": options,
-                        "max_select": 1,
-                        "target_id": target_id,
-                        "context": {
-                            "kind": "group",
-                            "group_key": group_key,
-                            "purespectrum_mobile_date": True,
-                        },
-                    }
-                )
-
-            # Fallback desktop: select natifs (Mois/Année).
-            for sel_idx, sel in enumerate(native_selects, start=1):
-                options: list[str] = []
-                option_xpath_map: dict[str, str] = {}
-
-                try:
-                    opt_els = sel.find_elements(By.CSS_SELECTOR, "option")
-                except Exception:
-                    opt_els = []
-
-                for opt in opt_els:
-                    try:
-                        txt = _norm(opt.text or opt.get_attribute("innerText") or "")
-                        val = _norm((opt.get_attribute("value") or "").strip())
-
-                        if not txt or txt in {"Mois", "Ans", "Month", "Year"}:
-                            continue
-                        if not val:
-                            continue
-
-                        nk = _norm_key(txt)
-                        if nk in option_xpath_map:
-                            continue
-
-                        xp = (
-                            f"(//ps-date-question//select)[{sel_idx}]"
-                            f"/option[@value={_xpath_literal(val)}][1]"
-                        )
-                        option_xpath_map[nk] = xp
-                        options.append(txt)
-                    except Exception:
-                        continue
-
-                if len(options) < 2:
-                    continue
-
-                numeric_count = sum(1 for o in options if o.isdigit() and len(o) == 4)
-                field_hint = "Année" if numeric_count >= max(2, len(options) // 3) else "Mois"
-                question_col = f"{question} ({field_hint})"
-
-                group_key = f"purespectrum_date_select:{sel_idx}:{_norm_key(question)}"
-                target_id = make_target_id("group", group_key, question_col)
-
-                register_target(
-                    target_id,
-                    {
-                        "kind": "group",
-                        "itype": "dropdown",
-                        "group_key": group_key,
-                        "question": question_col,
-                        "option_xpath_map": option_xpath_map,
-                        "frame_chain": frame_chain,
-                        "purespectrum_mobile_date": True,
-                    },
-                )
-
-                blocks.append(
-                    {
-                        "question": question_col,
-                        "itype": "dropdown",
                         "options": options,
                         "max_select": 1,
                         "target_id": target_id,
