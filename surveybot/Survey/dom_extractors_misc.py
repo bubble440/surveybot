@@ -14,18 +14,19 @@ Ces extracteurs utilisent des patterns DOM spécifiques à chaque plateforme.
 
 from __future__ import annotations
 from typing import List, Dict, Any
-import os
+import os, time, zlib
 from selenium.webdriver.common.by import By
 
 # Import des utilitaires
 try:
-    from Survey.dom_utils import _norm_lc, _xpath_literal, _best_xpath_for_element
-    from Survey.dom_question_extractor import _find_question_text_near_element
-    from Survey.dom_registry import dom_registry
+    from Survey.dom_utils import _norm_lc, _xpath_literal, _best_xpath_for_element, _norm, _norm_key, _looks_like_system_field
+    from Survey.dom_question_extractor import _find_question_text_near_element, _compute_max_select
+    from Survey.dom_registry import register_target, make_target_id
 except ImportError:
     # Fallback pour tests locaux
-    from dom_utils import _norm_lc, _xpath_literal, _best_xpath_for_element
-    from dom_question_extractor import _find_question_text_near_element
+    from Survey.dom_utils import _norm_lc, _xpath_literal, _best_xpath_for_element, _norm, _norm_key, _looks_like_system_field
+    from Survey.dom_question_extractor import _find_question_text_near_element, _compute_max_select
+    from Survey.dom_registry import register_target, make_target_id
     # dom_registry devra être disponible
 
 
@@ -284,7 +285,7 @@ def _extract_walr_cardsort_block(driver, frame_chain: list[int] | None) -> dict 
                 txt = _norm(t.text or t.get_attribute("innerText") or "")
                 if txt and len(txt) > 5 and txt != question:
                     main_title = txt
-                    print(f"[WALR_CS] main_title trouvÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â© via '{sel}': '{main_title}'")
+                    print(f"[WALR_CS] main_title trouvé via '{sel}': '{main_title}'")
                     break
             if main_title:
                 break
@@ -294,7 +295,7 @@ def _extract_walr_cardsort_block(driver, frame_chain: list[int] | None) -> dict 
     # Combiner titre + statement si disponible
     if main_title and question:
         question = f"{main_title} {question}"
-        print(f"[WALR_CS] question combinÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©e: '{question}'")
+        print(f"[WALR_CS] question combinée: '{question}'")
     
     print(f"[WALR_CS] question finale='{question}'")
     
