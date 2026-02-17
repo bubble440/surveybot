@@ -109,11 +109,6 @@ def _find_associated_label(driver, el) -> str:
     1. Label avec attribut for=id
     2. Label parent contenant l'input
     3. Label sibling proche
-
-    IMPORTANT:
-    - Un label d'option (radio/checkbox) n'est généralement PAS une "question"
-      grammaticale. On ne doit donc pas filtrer avec `_is_question_text` ici,
-      sinon on perd des options courtes (ex: "homme", "femme").
     """
     try:
         # 1) Label avec for=id
@@ -122,7 +117,7 @@ def _find_associated_label(driver, el) -> str:
             try:
                 label = driver.find_element(By.CSS_SELECTOR, f'label[for="{el_id}"]')
                 txt = _norm(label.text)
-                if txt:
+                if txt and _is_question_text(txt):
                     return txt
             except Exception:
                 pass
@@ -132,7 +127,7 @@ def _find_associated_label(driver, el) -> str:
             labels = el.find_elements(By.XPATH, "ancestor::label")
             for label in labels:
                 txt = _norm(label.text)
-                if txt:
+                if txt and _is_question_text(txt):
                     return txt
         except Exception:
             pass
@@ -145,7 +140,7 @@ def _find_associated_label(driver, el) -> str:
             )
             for label in labels:
                 txt = _norm(label.text)
-                if txt:
+                if txt and _is_question_text(txt):
                     return txt
         except Exception:
             pass
