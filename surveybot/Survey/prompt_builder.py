@@ -2,7 +2,7 @@
 """
 Prompt Builder Ã¢â‚¬â€ DOM Ã¢â€ â€™ Prompt OpenAI (TEXT ONLY)
 
-EntrÃƒÂ©e :
+Entrée :
 - question_blocks (issus de dom_analyzer.analyze_dom)
 
 Sortie :
@@ -10,10 +10,10 @@ Sortie :
 - format STRICT : valeur //// itype //// contexte
 
 Aucune image.
-PensÃƒÂ© pour cache, robustesse, 100+ bots.
+Pensé pour cache, robustesse, 100+ bots.
 
 IMPORTANT - MULTI-SELECT:
-Pour les checkbox avec max_select > 1, le sÃƒÂ©parateur OBLIGATOIRE est "|".
+Pour les checkbox avec max_select > 1, le séparateur OBLIGATOIRE est "|".
 NE JAMAIS utiliser "," car les options peuvent contenir des virgules internes.
 """
 
@@ -38,12 +38,12 @@ def _norm(s: str) -> str:
 
 
 def _escape(s: str) -> str:
-    """EmpÃƒÂªche les dÃƒÂ©limiteurs parasites."""
+    """Empéªche les délimiteurs parasites."""
     return _norm(s).replace("////", "/").replace("\n", " ")
 
 
 # =========================
-# Heuristiques mÃƒÂ©tier
+# Heuristiques métier
 # =========================
 
 def _is_open_field(block: Dict[str, Any]) -> bool:
@@ -60,37 +60,37 @@ def _is_choice_field(block: Dict[str, Any]) -> bool:
 
 def build_prompt(question_blocks: List[Dict[str, Any]]) -> str:
     """
-    Construit le prompt texte OpenAI ÃƒÂ  partir des question_blocks.
+    Construit le prompt texte OpenAI é  partir des question_blocks.
     """
 
     lines: List[str] = []
 
-    # --------- RÃƒÂ¨gles globales (CRUCIAL) ----------
+    # --------- Règles globales (CRUCIAL) ----------
     lines.append(
-        "Tu es un rÃƒÂ©pondant ADULTE (18Ã¢â‚¬â€œ64). "
-        "Tu dois choisir UNE SEULE action applicable IMMÃƒâ€°DIATEMENT sur la page. "
-        "Ne rÃƒÂ©ponds JAMAIS par une question. "
+        "Tu es un répondant ADULTE (25 ans). "
+        "Tu dois choisir UNE SEULE action applicable IMMéDIATEMENT sur la page. "
+        "Ne réponds JAMAIS par une question. "
         "Ne renvoie JAMAIS d'explication. "
         "Ne renvoie JAMAIS plusieurs actions."
     )
 
     lines.append(
-        "Format OBLIGATOIRE de la rÃƒÂ©ponse (une seule ligne) :\n"
+        "Format OBLIGATOIRE de la réponse (une seule ligne) :\n"
         "valeur //// itype //// contexte"
     )
 
     lines.append(
         "Contraintes importantes :\n"
-        "- itype Ã¢Ë†Ë† {radio, checkbox, dropdown, text, textarea, button}\n"
+        "- itype doit être l'un de : {radio, checkbox, dropdown, text, textarea, button}\n"
         "- contexte = texte EXACT de la question\n"
         "- valeur = option existante OU valeur logique non disqualifiante"
     )
 
     lines.append(
-        "Ãƒâ€°vite toute rÃƒÂ©ponse disqualifiante "
-        "(ex: non, jamais, aucun, je prÃƒÂ©fÃƒÂ¨re ne pas rÃƒÂ©pondre), "
+        "évite toute réponse disqualifiante "
+        "(ex: non, jamais, aucun, je préfère ne pas répondre), "
         "SAUF si la question porte explicitement sur les secteurs d'emploi "
-        "et que cette option est prÃƒÂ©sente."
+        "et que cette option est présente."
     )
 
     # Contrainte sexe/genre : toujours masculin, avec l'intitulé exact de l'option
@@ -141,47 +141,47 @@ def build_prompt(question_blocks: List[Dict[str, Any]]) -> str:
 
 def build_batch_prompt(question_blocks: list[dict]) -> str:
     """
-    Construit un prompt OpenAI pour rÃƒÂ©pondre ÃƒÂ  TOUTES les questions en une fois.
+    Construit un prompt OpenAI pour répondre é  TOUTES les questions en une fois.
     Format de sortie robuste avec QID + max_select + target_id.
     
-    IMPORTANT: Pour les multi-select, le sÃƒÂ©parateur OBLIGATOIRE est "|".
+    IMPORTANT: Pour les multi-select, le séparateur OBLIGATOIRE est "|".
     """
     lines: list[str] = []
 
     lines.append(
-        "Tu es un rÃƒÂ©pondant ADULTE (18Ã¢â‚¬â€œ64). "
-        "Tu vois ci-dessous TOUTES les questions prÃƒÂ©sentes sur une page de survey."
+        "Tu es un répondant ADULTE (25 ans). "
+        "Tu vois ci-dessous TOUTES les questions présentes sur une page de survey."
     )
 
     lines.append(
-        "Tu dois rÃƒÂ©pondre ÃƒÂ  CHAQUE question.\n"
+        "Tu dois répondre é  CHAQUE question.\n"
         "Tu ne dois JAMAIS lister toutes les options.\n"
-        "Tu dois proposer uniquement la/les rÃƒÂ©ponse(s) nÃƒÂ©cessaires selon max_select."
+        "Tu dois proposer uniquement la/les réponse(s) nécessaires selon max_select."
     )
 
-    # Ã¢Å“â€¦ FORMAT RENFORCÃƒâ€°: exigence explicite de "|" comme sÃƒÂ©parateur
+    # Ã¢Å“â€¦ FORMAT RENFORCé: exigence explicite de "|" comme séparateur
     lines.append(
         "FORMAT STRICT (une ligne par question) :\n"
         "QID //// target_id //// valeur //// itype //// contexte\n\n"
-        "RÃƒË†GLES CRITIQUES:\n"
+        "RèGLES CRITIQUES:\n"
         "- Si max_select=1 => EXACTEMENT 1 ligne pour ce QID.\n"
-        "- Si max_select>1 => UNE SEULE LIGNE avec les valeurs sÃƒÂ©parÃƒÂ©es par \"|\".\n"
+        "- Si max_select>1 => UNE SEULE LIGNE avec les valeurs séparées par \"|\".\n"
         "  Exemple: Q1 //// group_abc //// Option A | Option B | Option C //// checkbox //// ...\n"
-        "- Ã¢Å¡Â Ã¯Â¸Â NE JAMAIS utiliser la virgule \",\" comme sÃƒÂ©parateur (les options peuvent en contenir).\n"
+        "- NE JAMAIS utiliser la virgule \",\" comme séparateur (les options peuvent en contenir).\n"
         "- AUCUNE explication. Aucun texte hors format."
     )
 
     lines.append(
         "Champs ouverts (text/textarea) : si la question contient un exemple (ex: 'E.g.' / 'Ex:'), "
-        "N'UTILISE PAS l'exemple comme valeur. Donne une valeur rÃƒÂ©aliste (ex: code postal FR -> 75001)."
+        "N'UTILISE PAS l'exemple comme valeur. Donne une valeur réaliste (ex: code postal FR -> 75001)."
     )
 
     lines.append(
         "Contraintes :\n"
-        "- itype Ã¢Ë†Ë† {radio, checkbox, dropdown, text, textarea, button}\n"
-        "- valeur DOIT ÃƒÂªtre une option existante (si options listÃƒÂ©es)\n"
-        "- Ãƒâ€°vite : non, jamais, aucun, je prÃƒÂ©fÃƒÂ¨re ne pas rÃƒÂ©pondre\n"
-        "- contexte doit correspondre exactement ÃƒÂ  la question affichÃƒÂ©e"
+        "- itype doit être l'un de : {radio, checkbox, dropdown, text, textarea, button}\n"
+        "- valeur DOIT éªtre une option existante (si options listées)\n"
+        "- évite : non, jamais, aucun, je préfère ne pas répondre\n"
+        "- contexte doit correspondre exactement é  la question affichée"
     )
 
     # Contrainte sexe/genre : toujours masculin, avec l'intitulé exact de l'option
@@ -224,11 +224,11 @@ def build_batch_prompt(question_blocks: list[dict]) -> str:
         else:
             lines.append("options: (champ ouvert)")
 
-    # Ã¢Å“â€¦ RAPPEL FINAL: sÃƒÂ©parateur "|" obligatoire
+    # Ã¢Å“â€¦ RAPPEL FINAL: séparateur "|" obligatoire
     lines.append(
-        "\nRÃƒÂ©ponds maintenant.\n"
+        "\nRéponds maintenant.\n"
         "Respecte STRICTEMENT le format.\n"
-        "RAPPEL: Pour max_select>1, sÃƒÂ©pare les valeurs par \"|\" (jamais par virgule).\n"
+        "RAPPEL: Pour max_select>1, sépare les valeurs par \"|\" (jamais par virgule).\n"
         "Ne renvoie rien d'autre."
     )
         
@@ -246,7 +246,7 @@ def _is_navigation_label(label: str | None) -> bool:
     # On ne doit PAS rejeter une vraie question juste parce qu'elle contient
     # un mot comme "commencer"/"continuer" dans un texte long
     # (ex: "Avant de commencer, ..." sur les pages de consentement Walr).
-    # On considÃƒÂ¨re "navigation" uniquement si le texte ressemble ÃƒÂ  un CTA court.
+    # On considère "navigation" uniquement si le texte ressemble é  un CTA court.
     if len(v) > 40:
         return False
 
@@ -255,7 +255,7 @@ def _is_navigation_label(label: str | None) -> bool:
         "envoyer", "send", "ok", "start", "commencer"
     ]
 
-    # Match strict (ou quasi-strict avec un petit suffixe de flÃƒÂ¨che/punct.)
+    # Match strict (ou quasi-strict avec un petit suffixe de flèche/punct.)
     for tok in nav_tokens:
         if v == tok:
             return True
@@ -270,7 +270,7 @@ def _is_navigation_label(label: str | None) -> bool:
 def filter_blocks_for_openai(question_blocks: list) -> list:
     """
     Garder uniquement ce qui est 'answerable' : radio/checkbox/dropdown/text.
-    Exclure les champs systÃƒÂ¨me & CTA.
+    Exclure les champs système & CTA.
     """
     kept = []
     for qb in question_blocks:
@@ -280,26 +280,26 @@ def filter_blocks_for_openai(question_blocks: list) -> list:
         it_lc = _norm_lc(it)
 
         # Normalisation: certains extracteurs renvoient "select"
-        # On le traite comme "dropdown" (sinon DOM1 -> vidÃƒÂ© -> fallback vision)
+        # On le traite comme "dropdown" (sinon DOM1 -> vidé -> fallback vision)
         if it_lc == "select":
             it_lc = "dropdown"
             if isinstance(qb, dict):
                 qb["itype"] = "dropdown"
 
-        # On n'envoie jamais les buttons ÃƒÂ  OpenAI (on les clique nous-mÃƒÂªmes)
+        # On n'envoie jamais les buttons é  OpenAI (on les clique nous-méªmes)
         if it_lc == "button":
             continue
 
-        # Si jamais un champ systÃƒÂ¨me a quand mÃƒÂªme traversÃƒÂ© (dÃƒÂ©fense en profondeur)
+        # Si jamais un champ système a quand méªme traversé (défense en profondeur)
         scope = getattr(qb, "scope_hint", None) or qb.get("scope_hint") or getattr(qb, "dom_scope_hint", None) or qb.get("dom_scope_hint")
         if scope and any(x in _norm_lc(scope) for x in ["__viewstate", "__eventvalidation", "__viewstategenerator", "__eventtarget", "__eventargument"]):
             continue
 
-        # Si label ressemble ÃƒÂ  une navigation, on skip
+        # Si label ressemble é  une navigation, on skip
         if _is_navigation_label(label):
             continue
 
-        # types acceptÃƒÂ©s
+        # types acceptés
         if it_lc in {"radio", "checkbox", "dropdown", "text", "textarea", "matrix_rows_single_choice", "matrix"}:
             kept.append(qb)
 

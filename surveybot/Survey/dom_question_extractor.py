@@ -20,7 +20,7 @@ try:
     from Survey.dom_utils import _norm, _norm_lc, _is_question_text
 except ImportError:
     # Fallback pour tests locaux
-    from dom_utils import _norm, _norm_lc, _is_question_text
+    from Survey.dom_utils import _norm, _norm_lc, _is_question_text
 
 # ================================================================================
 # CONSTANTE
