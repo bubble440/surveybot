@@ -1442,16 +1442,7 @@ def _extract_purespectrum_mobile_date_blocks(driver, frame_chain: list[int] | No
 
                 for s in slides:
                     try:
-                        # Sur les roues mobile (transform 3D), Selenium peut renvoyer
-                        # un .text vide pour les éléments hors viewport visuel.
-                        # On lit aussi textContent pour récupérer toutes les options
-                        # réellement présentes dans le DOM.
-                        txt = _norm(
-                            s.text
-                            or s.get_attribute("innerText")
-                            or s.get_attribute("textContent")
-                            or ""
-                        )
+                        txt = _norm(s.text or s.get_attribute("innerText") or "")
                         if not txt:
                             continue
                         nk = _norm_key(txt)
