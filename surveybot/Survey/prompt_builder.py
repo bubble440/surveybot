@@ -38,7 +38,7 @@ def _norm(s: str) -> str:
 
 
 def _escape(s: str) -> str:
-    """Empéªche les délimiteurs parasites."""
+    """Empêche les délimiteurs parasites."""
     return _norm(s).replace("////", "/").replace("\n", " ")
 
 
@@ -154,7 +154,7 @@ def build_batch_prompt(question_blocks: list[dict]) -> str:
     )
 
     lines.append(
-        "Tu dois répondre é  CHAQUE question.\n"
+        "Tu dois répondre à CHAQUE question.\n"
         "Tu ne dois JAMAIS lister toutes les options.\n"
         "Tu dois proposer uniquement la/les réponse(s) nécessaires selon max_select."
     )
@@ -179,7 +179,7 @@ def build_batch_prompt(question_blocks: list[dict]) -> str:
     lines.append(
         "Contraintes :\n"
         "- itype doit être l'un de : {radio, checkbox, dropdown, text, textarea, button}\n"
-        "- valeur DOIT éªtre une option existante (si options listées)\n"
+        "- valeur DOIT être une option existante (si options listées)\n"
         "- évite : non, jamais, aucun, je préfère ne pas répondre\n"
         "- contexte doit correspondre exactement é  la question affichée"
     )
@@ -286,11 +286,11 @@ def filter_blocks_for_openai(question_blocks: list) -> list:
             if isinstance(qb, dict):
                 qb["itype"] = "dropdown"
 
-        # On n'envoie jamais les buttons é  OpenAI (on les clique nous-méªmes)
+        # On n'envoie jamais les buttons é  OpenAI (on les clique nous-mêmes)
         if it_lc == "button":
             continue
 
-        # Si jamais un champ système a quand méªme traversé (défense en profondeur)
+        # Si jamais un champ système a quand même traversé (défense en profondeur)
         scope = getattr(qb, "scope_hint", None) or qb.get("scope_hint") or getattr(qb, "dom_scope_hint", None) or qb.get("dom_scope_hint")
         if scope and any(x in _norm_lc(scope) for x in ["__viewstate", "__eventvalidation", "__viewstategenerator", "__eventtarget", "__eventargument"]):
             continue
