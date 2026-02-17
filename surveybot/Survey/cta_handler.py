@@ -651,11 +651,21 @@ def try_click_navigation_cta(driver) -> bool:
                 except Exception:
                     txt = ""
             t = _norm_btn_text(txt)
-            if not t:
+
+            el_id = (el.get_attribute("id") or "").lower()
+            href = (el.get_attribute("href") or "").lower()
+            signature = " ".join(
+                part for part in [t, el_id, cls, href] if part
+            )
+
+            # Certains CTA sont purement iconiques (ex: a#cm-NextButton avec <img>)
+            # et n'ont aucun texte/alt exploitable. On ne les écarte pas d'office.
+            # On ne rejette que les éléments sans texte ET sans indice de navigation.
+            if not t and not any(k in signature for k in ["next", "continue", "submit", "suivant", "valider"]):
                 continue
 
             bad = ("refuser", "disagree", "quitter", "quit", "exit", "annuler", "cancel", "fermer", "close", "retour", "précédent", "precedent", "previous", "back")
-            if any(b in t for b in bad):
+            if any(b in signature for b in bad):
                 continue
 
             score = 0
@@ -664,11 +674,15 @@ def try_click_navigation_cta(driver) -> bool:
             if any(x in t for x in ["valider", "submit", "envoyer", "terminer", "send", "start", "commencer", "démarrer"]):
                 score += 30
 
-            el_id = (el.get_attribute("id") or "").lower()
             if el_id == "submitquestion":
                 score += 120
             elif any(k in el_id for k in ["submit", "next", "continue"]):
                 score += 60
+
+            if any(k in cls for k in ["cm-navigation-next-button", "next-button", "nav-next"]):
+                score += 70
+            if any(k in href for k in ["next", "continue", "submit"]):
+                score += 40
 
             try:
                 if el.find_elements(By.XPATH, "ancestor::form[1]"):
