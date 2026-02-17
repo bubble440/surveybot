@@ -1387,3 +1387,115 @@ def _extract_cloudresearch_sentry_blocks(driver, frame_chain: list[int] | None) 
         pass
 
     return blocks
+
+
+def _extract_purespectrum_mobile_date_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
+    """PureSpectrum mobile date picker: 2 roues (mois/année) en `ps-select-scroll`.
+
+    Objectif: éviter un résultat vide quand la question date n'expose pas d'<input>/<select>
+    natif (UI custom Angular).
+    """
+    frame_chain = list(frame_chain or [])
+
+    try:
+        date_questions = driver.find_elements(By.CSS_SELECTOR, "ps-date-question")
+    except Exception:
+        return []
+
+    if not date_questions:
+        return []
+
+    blocks: list[dict] = []
+
+    for date_q in date_questions:
+        try:
+            # Gate strict: uniquement la version mobile avec roues.
+            columns = date_q.find_elements(By.CSS_SELECTOR, "ps-date-picker-mobile ps-select-scroll")
+            if len(columns) < 2:
+                continue
+
+            question = ""
+            for sel in [".question-title", "[psquestiontitle]", "header [role='heading']"]:
+                try:
+                    q_els = date_q.find_elements(By.CSS_SELECTOR, sel)
+                    for q_el in q_els:
+                        txt = _norm(q_el.text or q_el.get_attribute("innerText") or "")
+                        if txt and len(txt) >= 3:
+                            question = txt
+                            break
+                    if question:
+                        break
+                except Exception:
+                    continue
+
+            if not question:
+                continue
+
+            for col_idx, col in enumerate(columns, start=1):
+                options: list[str] = []
+                option_xpath_map: dict[str, str] = {}
+
+                try:
+                    slides = col.find_elements(By.CSS_SELECTOR, ".select-scroll-slide")
+                except Exception:
+                    slides = []
+
+                for s in slides:
+                    try:
+                        txt = _norm(s.text or s.get_attribute("innerText") or "")
+                        if not txt:
+                            continue
+                        nk = _norm_key(txt)
+                        if nk in option_xpath_map:
+                            continue
+                        xp = (
+                            f"(//ps-date-question//ps-date-picker-mobile//ps-select-scroll)[{col_idx}]"
+                            f"//*[contains(@class,'select-scroll-slide') and normalize-space(.)={_xpath_literal(txt)}][1]"
+                        )
+                        option_xpath_map[nk] = xp
+                        options.append(txt)
+                    except Exception:
+                        continue
+
+                if len(options) < 2:
+                    continue
+
+                # Etiquette colonne: années vs mois (heuristique simple, robuste FR/EN).
+                numeric_count = sum(1 for o in options if o.isdigit() and len(o) == 4)
+                field_hint = "Année" if numeric_count >= max(2, len(options) // 3) else "Mois"
+                question_col = f"{question} ({field_hint})"
+
+                group_key = f"purespectrum_mobile_date:{col_idx}:{_norm_key(question)}"
+                target_id = make_target_id("group", group_key, question_col)
+
+                register_target(
+                    target_id,
+                    {
+                        "kind": "group",
+                        "itype": "radio",
+                        "group_key": group_key,
+                        "question": question_col,
+                        "option_xpath_map": option_xpath_map,
+                        "frame_chain": frame_chain,
+                        "purespectrum_mobile_date": True,
+                    },
+                )
+
+                blocks.append(
+                    {
+                        "question": question_col,
+                        "itype": "radio",
+                        "options": options,
+                        "max_select": 1,
+                        "target_id": target_id,
+                        "context": {
+                            "kind": "group",
+                            "group_key": group_key,
+                            "purespectrum_mobile_date": True,
+                        },
+                    }
+                )
+        except Exception:
+            continue
+
+    return blocks
