@@ -93,11 +93,12 @@ def build_prompt(question_blocks: List[Dict[str, Any]]) -> str:
         "et que cette option est prÃƒÂ©sente."
     )
 
-    # Contrainte sexe/genre : toujours binaire, mais utilise l'intitulé exact de l'option
+    # Contrainte sexe/genre : toujours masculin, avec l'intitulé exact de l'option
     lines.append(
         "Pour toute question sur le sexe ou le genre, "
-        "choisis TOUJOURS l'option binaire masculine (Homme, Masculin, Male, M, H) ou féminine (Femme, Féminin, Female, F) "
-        "parmi les options proposées. Utilise EXACTEMENT l'intitulé tel qu'il apparaît dans la liste d'options. "
+        "choisis TOUJOURS l'option qui fait référence au genre masculin "
+        "(Homme, Masculin, Male, Man, M, H, etc.) parmi les options proposées. "
+        "Utilise EXACTEMENT l'intitulé tel qu'il apparaît dans la liste d'options. "
         "Évite systématiquement: X, Autre, Non-binaire, Préfère ne pas répondre."
     )
 
@@ -183,11 +184,12 @@ def build_batch_prompt(question_blocks: list[dict]) -> str:
         "- contexte doit correspondre exactement ÃƒÂ  la question affichÃƒÂ©e"
     )
 
-    # Contrainte sexe/genre : toujours binaire, mais utilise l'intitulé exact de l'option
+    # Contrainte sexe/genre : toujours masculin, avec l'intitulé exact de l'option
     lines.append(
         "Pour toute question sur le sexe ou le genre, "
-        "choisis TOUJOURS l'option binaire masculine (Homme, Masculin, Male, M, H) ou féminine (Femme, Féminin, Female, F) "
-        "parmi les options proposées. Utilise EXACTEMENT l'intitulé tel qu'il apparaît dans la liste d'options. "
+        "choisis TOUJOURS l'option qui fait référence au genre masculin "
+        "(Homme, Masculin, Male, Man, M, H, etc.) parmi les options proposées. "
+        "Utilise EXACTEMENT l'intitulé tel qu'il apparaît dans la liste d'options. "
         "Évite systématiquement: X, Autre, Non-binaire, Préfère ne pas répondre."
     )
 
