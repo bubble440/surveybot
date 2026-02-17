@@ -636,7 +636,7 @@ def execute_survey_page(driver, api_key):
             )
             # Fallback direct par ID pour Qualtrics et CTA standards
             if not clicked:
-                for cta_id in ["NextButton", "nextButton", "continueButton", "submitButton"]:
+                for cta_id in ["cm-NextButton", "NextButton", "nextButton", "continueButton", "submitButton"]:
                     try:
                         btn = driver.find_element(By.ID, cta_id)
                         if btn.is_displayed():
