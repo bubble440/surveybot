@@ -94,7 +94,7 @@ def _attach__strip_url(u: str) -> str:
     return u
 
 def _attach_display_url(url: str) -> str:
-    """Réduit l'URL affichée au TLD (ex: .com) en mode attach."""
+    """Affiche uniquement le schéma + host (jusqu'au TLD), sans path/query."""
     u = _attach__strip_url(url)
     if not u:
         return ""
@@ -104,20 +104,17 @@ def _attach_display_url(url: str) -> str:
         return u
 
     try:
-        host = (urlparse(u).hostname or "").strip().lower()
+        parsed = urlparse(u)
     except Exception:
-        host = ""
+        return u
 
+    scheme = (parsed.scheme or "https").lower()
+    host = (parsed.hostname or "").strip().lower()
     if not host:
         return ""
 
-    if host == "localhost":
-        return host
-
-    parts = [p for p in host.split(".") if p]
-    if not parts:
-        return host
-    return f".{parts[-1]}"
+    port = f":{parsed.port}" if parsed.port else ""
+    return f"{scheme}://{host}{port}"
 
 def _attach_urls_equiv(a: str, b: str) -> bool:
     aa = _attach__strip_url(a)
