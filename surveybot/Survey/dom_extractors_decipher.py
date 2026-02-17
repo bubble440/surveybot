@@ -18,10 +18,10 @@ from selenium.webdriver.common.by import By
 # Import des utilitaires
 try:
     from Survey.dom_utils import _norm_lc, _xpath_literal
-    from Survey.dom_registry import dom_registry
+    from Survey.dom_registry import register_target, make_target_id
 except ImportError:
     # Fallback pour tests locaux
-    from dom_utils import _norm_lc, _xpath_literal
+    from Survey.dom_utils import _norm_lc, _xpath_literal
     # dom_registry devra être disponible
 
 
@@ -140,9 +140,9 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
                 continue
 
             group_key = f"{itype}:name:{name}"
-            target_id = dom_registry.make_target_id("group", group_key, question or name)
+            target_id = make_target_id("group", group_key, question or name)
 
-            dom_registry.register_target(target_id, {
+            register_target(target_id, {
                 "kind": "group",
                 "frame_chain": list(frame_chain or []),
                 "itype": itype,
@@ -237,10 +237,10 @@ def _extract_focusvision_cardsort_block(driver, frame_chain: list[int] | None) -
         return None
 
     # Créer un target_id pour ce cardsort
-    target_id = dom_registry.make_target_id("cardsort", "focusvision_cardsort", question)
+    target_id = make_target_id("cardsort", "focusvision_cardsort", question)
 
     # Enregistrer dans dom_registry
-    dom_registry.register_target(target_id, {
+    register_target(target_id, {
         "kind": "cardsort",
         "frame_chain": list(frame_chain or []),
         "question": question,
@@ -367,10 +367,10 @@ def _extract_decipher_answers_list_fallback(driver, frame_chain: List[Any]) -> L
 
                     # Créer group_key et target_id
                     group_key = f"{itype}:name:{name}"
-                    target_id = dom_registry.make_target_id("group", group_key, question or name)
+                    target_id = make_target_id("group", group_key, question or name)
 
                     # Enregistrer dans dom_registry
-                    dom_registry.register_target(target_id, {
+                    register_target(target_id, {
                         "kind": "group",
                         "frame_chain": list(frame_chain or []),
                         "itype": itype,

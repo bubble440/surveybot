@@ -513,7 +513,7 @@ def try_click_navigation_cta(driver) -> bool:
                     a.click()
                 except Exception:
                     driver.execute_script("arguments[0].click();", a)
-                print("[CTA_NAV] B3netSurvey: clicked navbar Next link")
+                print("[CTA_NAV] Survey: clicked navbar Next link")
                 return True
             except Exception:
                 continue
