@@ -1390,10 +1390,10 @@ def _extract_cloudresearch_sentry_blocks(driver, frame_chain: list[int] | None) 
 
 
 def _extract_purespectrum_mobile_date_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
-    """PureSpectrum date picker (mobile + desktop): mois/année via UI custom.
+    """PureSpectrum mobile date picker: 2 roues (mois/année) en `ps-select-scroll`.
 
-    Objectif: éviter un résultat vide quand la question date n'expose pas d'inputs
-    radio/checkbox natifs exploitables.
+    Objectif: éviter un résultat vide quand la question date n'expose pas d'<input>/<select>
+    natif (UI custom Angular).
     """
     frame_chain = list(frame_chain or [])
 
@@ -1409,18 +1409,10 @@ def _extract_purespectrum_mobile_date_blocks(driver, frame_chain: list[int] | No
 
     for date_q in date_questions:
         try:
-            # Mode mobile: roues `ps-select-scroll`.
+            # Gate strict: uniquement la version mobile avec roues.
             columns = date_q.find_elements(By.CSS_SELECTOR, "ps-date-picker-mobile ps-select-scroll")
-
-            # Mode desktop: 2 selects natifs (mois + année) dans ps-date-picker.
-            native_selects = []
             if len(columns) < 2:
-                try:
-                    native_selects = date_q.find_elements(By.CSS_SELECTOR, "ps-date-picker select")
-                except Exception:
-                    native_selects = []
-                if len(native_selects) < 2:
-                    continue
+                continue
 
             question = ""
             for sel in [".question-title", "[psquestiontitle]", "header [role='heading']"]:
@@ -1503,68 +1495,6 @@ def _extract_purespectrum_mobile_date_blocks(driver, frame_chain: list[int] | No
                         },
                     }
                 )
-
-            # Desktop natif: chaque <select> devient un bloc dropdown autonome.
-            if len(columns) < 2 and len(native_selects) >= 2:
-                for col_idx, sel in enumerate(native_selects, start=1):
-                    options: list[str] = []
-
-                    try:
-                        opt_els = sel.find_elements(By.TAG_NAME, "option")
-                    except Exception:
-                        opt_els = []
-
-                    for o in opt_els:
-                        try:
-                            txt = _norm(o.text or o.get_attribute("innerText") or "")
-                            if not txt:
-                                continue
-                            nk = _norm_key(txt)
-                            if nk in {_norm_key(x) for x in options}:
-                                continue
-                            options.append(txt)
-                        except Exception:
-                            continue
-
-                    if len(options) < 2:
-                        continue
-
-                    numeric_count = sum(1 for o in options if o.isdigit() and len(o) == 4)
-                    field_hint = "Année" if numeric_count >= max(2, len(options) // 3) else "Mois"
-                    question_col = f"{question} ({field_hint})"
-
-                    group_key = f"purespectrum_date_select:{col_idx}:{_norm_key(question)}"
-                    target_id = make_target_id("single", group_key, question_col)
-
-                    xpath = _best_xpath_for_element(driver, sel)
-                    if not xpath:
-                        continue
-
-                    register_target(
-                        target_id,
-                        {
-                            "kind": "single",
-                            "itype": "dropdown",
-                            "question": question_col,
-                            "xpath": xpath,
-                            "frame_chain": frame_chain,
-                            "purespectrum_mobile_date": True,
-                        },
-                    )
-
-                    blocks.append(
-                        {
-                            "question": question_col,
-                            "itype": "dropdown",
-                            "options": options,
-                            "max_select": 1,
-                            "target_id": target_id,
-                            "context": {
-                                "kind": "single",
-                                "purespectrum_mobile_date": True,
-                            },
-                        }
-                    )
         except Exception:
             continue
 
