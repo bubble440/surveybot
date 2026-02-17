@@ -3,6 +3,7 @@ import os
 IS_LOCAL = os.getenv("RUN_ENV", "local") == "local"
 
 import sys, json, time, traceback
+from urllib.parse import urlparse
 from preselection.config_loader import load_config
 from launch import start_heartbeat_thread, acquire_account_lock_or_exit, mark_bot_running
 from launch import install_sigterm_handler, start_runtime_guard, launch_driver_or_fail, init_session_and_enter_surveys
@@ -69,7 +70,7 @@ def _attach_select_best_tab(driver) -> None:
             driver.switch_to.window(h)
         except Exception:
             pass
-        print(f"[ATTACH] Tab sÃƒÆ’Ã‚Â©lectionnÃƒÆ’Ã‚Â© score={score} url={url}")
+        print(f"[ATTACH] Tab sÃƒÆ’Ã‚Â©lectionnÃƒÆ’Ã‚Â© score={score} url={_attach_display_url(url)}")
 
 def _attach_is_user_web_url(url: str) -> bool:
     u = (url or "").strip().lower()
@@ -91,6 +92,32 @@ def _attach__strip_url(u: str) -> str:
     if u.endswith("/") and len(u) > 8:
         u = u[:-1]
     return u
+
+def _attach_display_url(url: str) -> str:
+    """Réduit l'URL affichée au TLD (ex: .com) en mode attach."""
+    u = _attach__strip_url(url)
+    if not u:
+        return ""
+
+    lu = u.lower()
+    if not (lu.startswith("http://") or lu.startswith("https://")):
+        return u
+
+    try:
+        host = (urlparse(u).hostname or "").strip().lower()
+    except Exception:
+        host = ""
+
+    if not host:
+        return ""
+
+    if host == "localhost":
+        return host
+
+    parts = [p for p in host.split(".") if p]
+    if not parts:
+        return host
+    return f".{parts[-1]}"
 
 def _attach_urls_equiv(a: str, b: str) -> bool:
     aa = _attach__strip_url(a)
@@ -231,7 +258,7 @@ def _attach_select_tab(driver) -> None:
         if last_web is not None:
             i, _ = last_web
             _switch(i)
-            print(f"[ATTACH] Tab=last_web idx={i} url={_safe_url()}")
+            print(f"[ATTACH] Tab=last_web idx={i} url={_attach_display_url(_safe_url())}")
             return True
         return False
 
@@ -242,7 +269,7 @@ def _attach_select_tab(driver) -> None:
                 continue
             u = _safe_url()
             if _attach_is_user_web_url(u) and (url_contains in u):
-                print(f"[ATTACH] Tab=url_contains idx={i} url={u}")
+                print(f"[ATTACH] Tab=url_contains idx={i} url={_attach_display_url(u)}")
                 return
         print(f"[ATTACH] Tab=url_contains NOT FOUND ({url_contains})")
 
@@ -257,7 +284,7 @@ def _attach_select_tab(driver) -> None:
                 continue
             t = _safe_title().strip().lower()
             if needle and (needle in t):
-                print(f"[ATTACH] Tab=title_contains idx={i} title={_safe_title()!r} url={u}")
+                print(f"[ATTACH] Tab=title_contains idx={i} title={_safe_title()!r} url={_attach_display_url(u)}")
                 return
         print(f"[ATTACH] Tab=title_contains NOT FOUND ({title_contains})")
 
@@ -272,7 +299,7 @@ def _attach_select_tab(driver) -> None:
                 continue
             txt = _safe_body_text_prefix(8000).lower()
             if needle and (needle in txt):
-                print(f"[ATTACH] Tab=dom_contains idx={i} url={u}")
+                print(f"[ATTACH] Tab=dom_contains idx={i} url={_attach_display_url(u)}")
                 return
         print(f"[ATTACH] Tab=dom_contains NOT FOUND ({dom_contains})")
 
@@ -290,9 +317,9 @@ def _attach_select_tab(driver) -> None:
                 t = _safe_title().strip().replace("\n", " ")
                 if _attach_is_user_web_url(u):
                     sc = _attach_tab_score(driver)
-                    print(f"[ATTACH]  {i:02d} | score={sc} | title={t[:80]!r} | url={u}")
+                    print(f"[ATTACH]  {i:02d} | score={sc} | title={t[:80]!r} | url={_attach_display_url(u)}")
                 else:
-                    print(f"[ATTACH]  {i:02d} | (non-web) | title={t[:80]!r} | url={u}")
+                    print(f"[ATTACH]  {i:02d} | (non-web) | title={t[:80]!r} | url={_attach_display_url(u)}")
 
             choice = (input("[ATTACH] Choisis l'index d'onglet à utiliser: ") or "").strip()
             if choice.isdigit():
@@ -301,9 +328,9 @@ def _attach_select_tab(driver) -> None:
                 _switch(idx)
                 u = _safe_url()
                 if _attach_is_user_web_url(u):
-                    print(f"[ATTACH] Tab=pick idx={idx} url={u}")
+                    print(f"[ATTACH] Tab=pick idx={idx} url={_attach_display_url(u)}")
                     return
-                print(f"[ATTACH] Tab=pick idx={idx} non-web url={u} -> fallback last_web")
+                print(f"[ATTACH] Tab=pick idx={idx} non-web url={_attach_display_url(u)} -> fallback last_web")
             else:
                 print(f"[ATTACH] Tab=pick invalid={choice!r} -> fallback last_web")
 
@@ -314,7 +341,7 @@ def _attach_select_tab(driver) -> None:
         # No-op prÃƒÆ’Ã‚Â©dictible: on ne tente PAS de deviner le focus UI.
         u = _safe_url()
         if _attach_is_user_web_url(u):
-            print(f"[ATTACH] Tab=current(no-op) url={u}")
+            print(f"[ATTACH] Tab=current(no-op) url={_attach_display_url(u)}")
             return
         # si on est tombÃƒÆ’Ã‚Â© sur chrome://tab-search etc., on fallback
         if _pick_last_web():
@@ -326,7 +353,7 @@ def _attach_select_tab(driver) -> None:
             return
         # fallback brut
         _switch(len(handles) - 1)
-        print(f"[ATTACH] Tab=last idx={len(handles)-1} url={_safe_url()}")
+        print(f"[ATTACH] Tab=last idx={len(handles)-1} url={_attach_display_url(_safe_url())}")
         return
 
     if mode == "best":
@@ -339,9 +366,9 @@ def _attach_select_tab(driver) -> None:
         _switch(idx)
         u = _safe_url()
         if _attach_is_user_web_url(u):
-            print(f"[ATTACH] Tab=index idx={idx} url={u}")
+            print(f"[ATTACH] Tab=index idx={idx} url={_attach_display_url(u)}")
             return
-        print(f"[ATTACH] Tab=index idx={idx} non-web url={u} -> fallback last_web")
+        print(f"[ATTACH] Tab=index idx={idx} non-web url={_attach_display_url(u)} -> fallback last_web")
         if _pick_last_web():
             return
         return
@@ -362,7 +389,7 @@ def run_attach_takeover(driver, *, api_key: str, account_id: str) -> None:
     _attach_select_tab(driver)
 
     max_steps = int(os.getenv("ATTACH_MAX_STEPS", "10"))
-    print(f"[ATTACH] takeover loop start (max_steps={max_steps}) url={getattr(driver,'current_url','')}")
+    print(f"[ATTACH] takeover loop start (max_steps={max_steps}) url={_attach_display_url(getattr(driver,'current_url',''))}")
     for i in range(1, max_steps + 1):
         try:
             # === STRICT GUARD CHECK ===
@@ -374,7 +401,7 @@ def run_attach_takeover(driver, *, api_key: str, account_id: str) -> None:
                 break
             
             ok = survey_executor.execute_survey_page(driver, api_key)
-            print(f"[ATTACH] step={i}/{max_steps} ok={ok} url={driver.current_url}")
+            print(f"[ATTACH] step={i}/{max_steps} ok={ok} url={_attach_display_url(driver.current_url)}")
         except Exception as e:
             print(f"[ATTACH][ERROR] step={i} {type(e).__name__}: {e}")
             break
