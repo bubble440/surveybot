@@ -264,6 +264,59 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         pass
 
     groups: Dict[str, List[Any]] = {}
+
+    def _choice_has_visible_proxy(el) -> bool:
+        """
+        Certains frameworks masquent l'input radio/checkbox natif et n'affichent
+        que le label (ou un wrapper). Dans ce cas `is_displayed()` sur l'input
+        retourne False alors que l'option est bien visible et cliquable.
+        """
+        try:
+            if _is_actionable_visible(el):
+                return True
+        except Exception:
+            pass
+
+        try:
+            return bool(driver.execute_script(
+                """
+                const el = arguments[0];
+                if (!el) return false;
+
+                const isVisible = (node) => {
+                  if (!node || !(node instanceof Element)) return false;
+                  const st = window.getComputedStyle(node);
+                  if (!st) return false;
+                  if (st.display === 'none' || st.visibility === 'hidden' || st.opacity === '0') return false;
+                  const r = node.getBoundingClientRect();
+                  return r.width > 0 && r.height > 0;
+                };
+
+                if (isVisible(el)) return true;
+
+                // 1) Label englobant
+                const parentLabel = el.closest('label');
+                if (isVisible(parentLabel)) return true;
+
+                // 2) Label lié via for=id
+                const id = el.id;
+                if (id) {
+                  const cssEscape = (window.CSS && CSS.escape) ? CSS.escape(id) : id.replace(/([ #;?%&,.+*~\\':\"!^$\[\]()=>|\\/@])/g, '\\\\$1');
+                  const linked = document.querySelector(`label[for="${cssEscape}"]`);
+                  if (isVisible(linked)) return true;
+                }
+
+                // 3) Wrapper option visible (cas UI custom)
+                const optionWrapper = el.closest('[role="radio"], [role="checkbox"], .form-check, .option, li, .choice');
+                if (isVisible(optionWrapper)) return true;
+
+                return false;
+                """,
+                el,
+            ))
+        except Exception:
+            return False
+
     for el in choice_els:
         try:
             itype = _detect_itype(el)
@@ -275,7 +328,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                     continue
             except Exception:
                 pass
-            if not _is_actionable_visible(el):
+            if not _choice_has_visible_proxy(el):
                 continue
             k = _group_key_for_choice(el, itype)
             groups.setdefault(k, []).append(el)
