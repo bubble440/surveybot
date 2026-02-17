@@ -1409,10 +1409,9 @@ def _extract_purespectrum_mobile_date_blocks(driver, frame_chain: list[int] | No
 
     for date_q in date_questions:
         try:
-            # Gate élargi: accepter les roues mobile ET la variante desktop <select>.
-            columns = date_q.find_elements(By.CSS_SELECTOR, "ps-select-scroll")
-            native_selects = date_q.find_elements(By.CSS_SELECTOR, "select")
-            if len(columns) < 2 and len(native_selects) < 2:
+            # Gate strict: uniquement la version mobile avec roues.
+            columns = date_q.find_elements(By.CSS_SELECTOR, "ps-date-picker-mobile ps-select-scroll")
+            if len(columns) < 2:
                 continue
 
             question = ""
@@ -1432,7 +1431,6 @@ def _extract_purespectrum_mobile_date_blocks(driver, frame_chain: list[int] | No
             if not question:
                 continue
 
-            # 1) Variante mobile: roues `ps-select-scroll`.
             for col_idx, col in enumerate(columns, start=1):
                 options: list[str] = []
                 option_xpath_map: dict[str, str] = {}
@@ -1468,71 +1466,6 @@ def _extract_purespectrum_mobile_date_blocks(driver, frame_chain: list[int] | No
                 question_col = f"{question} ({field_hint})"
 
                 group_key = f"purespectrum_mobile_date:{col_idx}:{_norm_key(question)}"
-                target_id = make_target_id("group", group_key, question_col)
-
-                register_target(
-                    target_id,
-                    {
-                        "kind": "group",
-                        "itype": "radio",
-                        "group_key": group_key,
-                        "question": question_col,
-                        "option_xpath_map": option_xpath_map,
-                        "frame_chain": frame_chain,
-                        "purespectrum_mobile_date": True,
-                    },
-                )
-
-                blocks.append(
-                    {
-                        "question": question_col,
-                        "itype": "radio",
-                        "options": options,
-                        "max_select": 1,
-                        "target_id": target_id,
-                        "context": {
-                            "kind": "group",
-                            "group_key": group_key,
-                            "purespectrum_mobile_date": True,
-                        },
-                    }
-                )
-
-            # 2) Variante desktop: dropdowns natifs.
-            for sel_idx, sel in enumerate(native_selects, start=1):
-                options: list[str] = []
-                option_xpath_map: dict[str, str] = {}
-
-                try:
-                    option_els = sel.find_elements(By.CSS_SELECTOR, "option")
-                except Exception:
-                    option_els = []
-
-                for opt in option_els:
-                    try:
-                        txt = _norm(opt.text or opt.get_attribute("innerText") or "")
-                        if not txt:
-                            continue
-                        nk = _norm_key(txt)
-                        if nk in option_xpath_map:
-                            continue
-                        xp = (
-                            f"(//ps-date-question//select)[{sel_idx}]"
-                            f"/option[normalize-space(.)={_xpath_literal(txt)}][1]"
-                        )
-                        option_xpath_map[nk] = xp
-                        options.append(txt)
-                    except Exception:
-                        continue
-
-                if len(options) < 2:
-                    continue
-
-                numeric_count = sum(1 for o in options if o.isdigit() and len(o) == 4)
-                field_hint = "Année" if numeric_count >= max(2, len(options) // 3) else "Mois"
-                question_col = f"{question} ({field_hint})"
-
-                group_key = f"purespectrum_mobile_date:select:{sel_idx}:{_norm_key(question)}"
                 target_id = make_target_id("group", group_key, question_col)
 
                 register_target(
