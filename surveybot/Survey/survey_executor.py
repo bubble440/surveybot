@@ -445,10 +445,13 @@ def execute_survey_page(driver, api_key):
         
     dom_metrics.log_snapshot()
 
-    question_blocks = dom_analyzer.analyze_dom(driver)
-    question_blocks = prompt_builder.filter_blocks_for_openai(question_blocks)
+    extracted_question_blocks = dom_analyzer.analyze_dom(driver) or []
+    question_blocks = prompt_builder.filter_blocks_for_openai(extracted_question_blocks)
     if _env_truthy("DOM_CONTEXT_DEBUG", "0"):
-        print(f"[DOM_CONTEXT_DEBUG] question_blocks_before_openai={len(question_blocks or [])}")
+        print(
+            f"[DOM_CONTEXT_DEBUG] question_blocks_before_openai="
+            f"{len(question_blocks or [])} extracted={len(extracted_question_blocks or [])}"
+        )
 
     # =========================================================================
     # WALR IMAGE EVALUATION: Traitement Vision API AVANT le flux standard
@@ -483,7 +486,11 @@ def execute_survey_page(driver, api_key):
 
     #  SNAPSHOT DEBUG (opt-in)
     try:
-        page_snapshot.snapshot_if_enabled(driver, reason="after_dom_analyze", question_blocks=question_blocks)
+        page_snapshot.snapshot_if_enabled(
+            driver,
+            reason="after_dom_analyze",
+            question_blocks=extracted_question_blocks,
+        )
     except Exception:
         pass
 

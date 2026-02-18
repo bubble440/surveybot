@@ -1110,6 +1110,23 @@ def analyze_dom(driver) -> List[Dict[str, Any]]:
             f"selected_ps_date_question={_meta.get('selected_ps_date_question_count', 0)} "
             f"score={_meta.get('score', 0)}"
         )
+        print(
+            f"[DOM_CONTEXT_DEBUG] analyze_dom stage=context_selected "
+            f"blocks_count=0 chain_len={len(best_chain or [])}"
+        )
+
+    def _blocks_summary_preview(items: List[Dict[str, Any]], max_items: int = 3) -> str:
+        preview = []
+        for b in (items or [])[:max_items]:
+            q = _norm((b or {}).get("question") or "")
+            preview.append(
+                {
+                    "itype": (b or {}).get("itype"),
+                    "question": q[:60],
+                    "options": len((b or {}).get("options") or []),
+                }
+            )
+        return str(preview)
 
     # Pattern spécifique
     blocks: List[Dict[str, Any]] = []
@@ -1142,5 +1159,15 @@ def analyze_dom(driver) -> List[Dict[str, Any]]:
 
                 if not blocks:
                     blocks = _extract_decipher_answers_list_fallback(driver, frame_chain=chain)
+
+    if _env_truthy("DOM_CONTEXT_DEBUG", "1"):
+        print(
+            f"[DOM_CONTEXT_DEBUG] analyze_dom stage=raw_extraction "
+            f"blocks_count={len(blocks or [])} sample={_blocks_summary_preview(blocks)}"
+        )
+        print(
+            f"[DOM_CONTEXT_DEBUG] analyze_dom stage=before_return "
+            f"blocks_count={len(blocks or [])} sample={_blocks_summary_preview(blocks)}"
+        )
 
     return blocks
