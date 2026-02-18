@@ -1442,20 +1442,16 @@ def _extract_purespectrum_mobile_date_blocks(driver, frame_chain: list[int] | No
 
                 for s in slides:
                     try:
-                        txt = ""
-                        try:
-                            label_el = s.find_element(By.CSS_SELECTOR, "span")
-                            txt = _norm(label_el.get_attribute("textContent") or "")
-                        except Exception:
-                            txt = _norm(s.get_attribute("textContent") or "")
+                        txt = _norm(s.text or s.get_attribute("innerText") or "")
                         if not txt:
                             continue
                         nk = _norm_key(txt)
                         if nk in option_xpath_map:
                             continue
-                        xp = _best_xpath_for_element(driver, s)
-                        if not xp:
-                            continue
+                        xp = (
+                            f"(//ps-date-question//ps-date-picker-mobile//ps-select-scroll)[{col_idx}]"
+                            f"//*[contains(@class,'select-scroll-slide') and normalize-space(.)={_xpath_literal(txt)}][1]"
+                        )
                         option_xpath_map[nk] = xp
                         options.append(txt)
                     except Exception:
