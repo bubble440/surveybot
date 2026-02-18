@@ -19,12 +19,12 @@ from selenium.webdriver.common.by import By
 
 # Import des utilitaires
 try:
-    from Survey.dom_utils import _norm_lc, _xpath_literal, _best_xpath_for_element, _norm, _norm_key, _looks_like_system_field
+    from Survey.dom_utils import _norm_lc, _xpath_literal, _best_xpath_for_element, _norm, _norm_key, _looks_like_system_field, _env_truthy
     from Survey.dom_question_extractor import _find_question_text_near_element, _compute_max_select
     from Survey.dom_registry import register_target, make_target_id
 except ImportError:
     # Fallback pour tests locaux
-    from Survey.dom_utils import _norm_lc, _xpath_literal, _best_xpath_for_element, _norm, _norm_key, _looks_like_system_field
+    from Survey.dom_utils import _norm_lc, _xpath_literal, _best_xpath_for_element, _norm, _norm_key, _looks_like_system_field, _env_truthy
     from Survey.dom_question_extractor import _find_question_text_near_element, _compute_max_select
     from Survey.dom_registry import register_target, make_target_id
     # dom_registry devra être disponible
@@ -1402,6 +1402,9 @@ def _extract_purespectrum_mobile_date_blocks(driver, frame_chain: list[int] | No
     except Exception:
         return []
 
+    if _env_truthy("DOM_CONTEXT_DEBUG", "1"):
+        print(f"[DOM_CONTEXT_DEBUG] purespectrum_date candidates ps_date_question={len(date_questions)}")
+
     if not date_questions:
         return []
 
@@ -1409,9 +1412,17 @@ def _extract_purespectrum_mobile_date_blocks(driver, frame_chain: list[int] | No
 
     for date_q in date_questions:
         try:
-            # Gate strict: uniquement la version mobile avec roues.
-            columns = date_q.find_elements(By.CSS_SELECTOR, "ps-date-picker-mobile ps-select-scroll")
-            if len(columns) < 2:
+            wheel_columns = date_q.find_elements(By.CSS_SELECTOR, "ps-select-scroll")
+            native_select_columns = date_q.find_elements(By.CSS_SELECTOR, "select")
+
+            # Stratégie unique: date question = colonnes de choix, qu'elles soient
+            # en roues custom (`ps-select-scroll`) ou en `<select>` natifs.
+            columns: list[dict[str, Any]] = []
+            if len(wheel_columns) >= 2:
+                columns = [{"kind": "wheel", "el": c} for c in wheel_columns]
+            elif len(native_select_columns) >= 2:
+                columns = [{"kind": "select", "el": c} for c in native_select_columns]
+            else:
                 continue
 
             question = ""
@@ -1431,31 +1442,60 @@ def _extract_purespectrum_mobile_date_blocks(driver, frame_chain: list[int] | No
             if not question:
                 continue
 
-            for col_idx, col in enumerate(columns, start=1):
+            if _env_truthy("DOM_CONTEXT_DEBUG", "1"):
+                print(
+                    "[DOM_CONTEXT_DEBUG] purespectrum_date question_detected "
+                    f"question={question!r} wheel_cols={len(wheel_columns)} select_cols={len(native_select_columns)}"
+                )
+
+            for col_idx, col_info in enumerate(columns, start=1):
                 options: list[str] = []
                 option_xpath_map: dict[str, str] = {}
+                col = col_info.get("el")
+                col_kind = col_info.get("kind")
 
-                try:
-                    slides = col.find_elements(By.CSS_SELECTOR, ".select-scroll-slide")
-                except Exception:
-                    slides = []
-
-                for s in slides:
+                if col_kind == "wheel":
                     try:
-                        txt = _norm(s.text or s.get_attribute("innerText") or "")
-                        if not txt:
-                            continue
-                        nk = _norm_key(txt)
-                        if nk in option_xpath_map:
-                            continue
-                        xp = (
-                            f"(//ps-date-question//ps-date-picker-mobile//ps-select-scroll)[{col_idx}]"
-                            f"//*[contains(@class,'select-scroll-slide') and normalize-space(.)={_xpath_literal(txt)}][1]"
-                        )
-                        option_xpath_map[nk] = xp
-                        options.append(txt)
+                        slides = col.find_elements(By.CSS_SELECTOR, ".select-scroll-slide")
                     except Exception:
-                        continue
+                        slides = []
+
+                    for s in slides:
+                        try:
+                            txt = _norm(s.text or s.get_attribute("innerText") or "")
+                            if not txt:
+                                continue
+                            nk = _norm_key(txt)
+                            if nk in option_xpath_map:
+                                continue
+                            xp = (
+                                f"(//ps-date-question//ps-select-scroll)[{col_idx}]"
+                                f"//*[contains(@class,'select-scroll-slide') and normalize-space(.)={_xpath_literal(txt)}][1]"
+                            )
+                            option_xpath_map[nk] = xp
+                            options.append(txt)
+                        except Exception:
+                            continue
+                else:
+                    try:
+                        option_els = col.find_elements(By.CSS_SELECTOR, "option")
+                    except Exception:
+                        option_els = []
+
+                    for opt_idx, opt_el in enumerate(option_els, start=1):
+                        try:
+                            txt = _norm(opt_el.text or opt_el.get_attribute("innerText") or "")
+                            val = _norm(opt_el.get_attribute("value") or "")
+                            if not txt or not val:
+                                continue
+                            nk = _norm_key(txt)
+                            if nk in option_xpath_map:
+                                continue
+                            xp = f"(//ps-date-question//select)[{col_idx}]/option[{opt_idx}]"
+                            option_xpath_map[nk] = xp
+                            options.append(txt)
+                        except Exception:
+                            continue
 
                 if len(options) < 2:
                     continue
@@ -1495,7 +1535,16 @@ def _extract_purespectrum_mobile_date_blocks(driver, frame_chain: list[int] | No
                         },
                     }
                 )
+
+                if _env_truthy("DOM_CONTEXT_DEBUG", "1"):
+                    print(
+                        "[DOM_CONTEXT_DEBUG] purespectrum_date column_built "
+                        f"kind={col_kind} col_idx={col_idx} options={len(options)}"
+                    )
         except Exception:
             continue
+
+    if _env_truthy("DOM_CONTEXT_DEBUG", "1"):
+        print(f"[DOM_CONTEXT_DEBUG] purespectrum_date blocks_built={len(blocks)}")
 
     return blocks
