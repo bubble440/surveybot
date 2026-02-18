@@ -112,91 +112,94 @@ def disarm_interceptor(driver) -> bool:
         return False
 
 def arm_interceptor(driver) -> bool:
-    """Arme l'intercepteur JS pour capter/bloquer click+submit+navigations scriptées."""
+    """Arme l'intercepteur JS pour capter/bloquer click+submit de façon robuste."""
     js = """
-    (() => {
-      const mkTarget = (el) => {
+    (function() {
+      function mkTarget(el) {
         if (!el) return null;
-        const txt = (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim();
+        var txt = (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim();
         return {
           tag: (el.tagName || '').toLowerCase(),
           id: el.id || '',
           name: el.getAttribute ? (el.getAttribute('name') || '') : '',
           className: el.className || '',
-          textPreview: txt.slice(0, 120),
+          textPreview: txt.slice(0, 120)
         };
-      };
+      }
 
-      const state = {
+      function closestWithToken(node, tok) {
+        var cur = node;
+        while (cur && cur !== document) {
+          try {
+            if (cur.getAttribute && cur.getAttribute('data-sb-cta-token') === tok) return cur;
+          } catch (e) {}
+          cur = cur.parentNode;
+        }
+        return null;
+      }
+
+      var state = {
         armed: true,
         clickCaptured: false,
         submitCaptured: false,
         prevented: false,
         navigationBlocked: false,
         ts: Date.now(),
-        target: null,
+        target: null
       };
 
       window.__sbCtaIntercept = state;
-
-      // Token attendu pour filtrer l'interception au CTA ciblé uniquement.
-      // (défini côté Python juste avant le dispatch du click synthétique)
       if (window.__sbCtaInterceptToken === undefined) window.__sbCtaInterceptToken = null;
 
       if (!window.__sbCtaInterceptInstalled) {
         window.__sbCtaInterceptInstalled = true;
 
-        const safePatch = (fn) => {
-          try {
-            fn();
-          } catch (e) {
-            // Best-effort interception: un patch optionnel ne doit jamais faire échouer l'armement.
-          }
-        };
-
-        window.addEventListener('click', (evt) => {
-          const s = window.__sbCtaIntercept;
+        window.addEventListener('click', function(evt) {
+          var s = window.__sbCtaIntercept;
           if (!s || !s.armed) return;
-          // Filtrage STRICT: on ne bloque que si le clic touche le CTA ciblé (token).
-          const tok = window.__sbCtaInterceptToken;
+
+          var tok = window.__sbCtaInterceptToken;
           if (!tok) return;
-          const hit = (evt.target && evt.target.closest)
-            ? evt.target.closest(`[data-sb-cta-token="${tok}"]`)
-            : null;
+
+          var hit = closestWithToken(evt.target, tok);
           if (!hit) return;
 
           s.clickCaptured = true;
           s.prevented = true;
           s.ts = Date.now();
-          s.target = mkTarget(evt.target);
           s.target = mkTarget(hit);
+
           evt.preventDefault();
           evt.stopPropagation();
-          evt.stopImmediatePropagation();
+          if (evt.stopImmediatePropagation) evt.stopImmediatePropagation();
         }, true);
 
-        window.addEventListener('submit', (evt) => {
-          const s = window.__sbCtaIntercept;
+        window.addEventListener('submit', function(evt) {
+          var s = window.__sbCtaIntercept;
           if (!s || !s.armed) return;
-          // Même règle: ne bloquer submit que si ça vient du formulaire contenant le CTA token.
-          const tok = window.__sbCtaInterceptToken;
-          if (tok && evt.target && evt.target.querySelector) {
-            const hasTok = evt.target.querySelector(`[data-sb-cta-token="${tok}"]`);
-            if (!hasTok) return;
-          } else if (tok) {
-            return;
+
+          var tok = window.__sbCtaInterceptToken;
+          if (tok) {
+            if (!evt.target || !evt.target.querySelector) return;
+            try {
+              if (!evt.target.querySelector('[data-sb-cta-token="' + tok + '"]')) return;
+            } catch (e) {
+              return;
+            }
           }
+
           s.submitCaptured = true;
           s.prevented = true;
           s.ts = Date.now();
           s.target = mkTarget(evt.target);
+
           evt.preventDefault();
           evt.stopPropagation();
-          evt.stopImmediatePropagation();
+          if (evt.stopImmediatePropagation) evt.stopImmediatePropagation();
         }, true);
 
-        window.addEventListener('beforeunload', (evt) => {
-          const s = window.__sbCtaIntercept;
+        window.addEventListener('beforeunload', function(evt) {
+          var s = window.__sbCtaIntercept;
           if (!s || !s.armed) return;
           s.navigationBlocked = true;
           s.prevented = true;
@@ -204,78 +207,6 @@ def arm_interceptor(driver) -> bool:
           evt.preventDefault();
           evt.returnValue = '';
         }, true);
-
-        safePatch(() => {
-          if (window.__sbHistPatched) return;
-          window.__sbHistPatched = true;
-          const oldPush = history.pushState.bind(history);
-          const oldReplace = history.replaceState.bind(history);
-          history.pushState = function(...args) {
-            const s = window.__sbCtaIntercept;
-            if (s && s.armed) {
-              s.navigationBlocked = true;
-              s.prevented = true;
-              s.ts = Date.now();
-              return null;
-            }
-            return oldPush(...args);
-          };
-          history.replaceState = function(...args) {
-            const s = window.__sbCtaIntercept;
-            if (s && s.armed) {
-              s.navigationBlocked = true;
-              s.prevented = true;
-              s.ts = Date.now();
-              return null;
-            }
-            return oldReplace(...args);
-          };
-        });
-
-        safePatch(() => {
-          if (window.__sbFormSubmitPatched) return;
-          window.__sbFormSubmitPatched = true;
-          const oldSubmit = HTMLFormElement.prototype.submit;
-          HTMLFormElement.prototype.submit = function(...args) {
-            const s = window.__sbCtaIntercept;
-            if (s && s.armed) {
-              s.submitCaptured = true;
-              s.navigationBlocked = true;
-              s.prevented = true;
-              s.ts = Date.now();
-              s.target = mkTarget(this);
-              return;
-            }
-            return oldSubmit.apply(this, args);
-          };
-        });
-
-        safePatch(() => {
-          if (window.__sbLocationPatched) return;
-          window.__sbLocationPatched = true;
-          const oldAssign = window.location.assign.bind(window.location);
-          const oldReplace = window.location.replace.bind(window.location);
-          window.location.assign = function(...args) {
-            const s = window.__sbCtaIntercept;
-            if (s && s.armed) {
-              s.navigationBlocked = true;
-              s.prevented = true;
-              s.ts = Date.now();
-              return;
-            }
-            return oldAssign(...args);
-          };
-          window.location.replace = function(...args) {
-            const s = window.__sbCtaIntercept;
-            if (s && s.armed) {
-              s.navigationBlocked = true;
-              s.prevented = true;
-              s.ts = Date.now();
-              return;
-            }
-            return oldReplace(...args);
-          };
-        });
       }
 
       return true;
@@ -283,7 +214,8 @@ def arm_interceptor(driver) -> bool:
     """
     try:
         return bool(driver.execute_script(js))
-    except Exception:
+    except Exception as e:
+        print(f"[CTA_INTERCEPT] arm_error={type(e).__name__}")
         return False
 
 
