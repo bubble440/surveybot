@@ -144,7 +144,36 @@ def _is_actionable_visible(el) -> bool:
                 # Pas de wrapper cliquable visible → pas actionnable
                 return False
         
-        # 2) Cas standard: vérifier is_displayed()
+        # 2) Cas spécial: <select> natif masqué mais proxy Bootstrap-Select visible
+        #    (ex: class "bs-select-hidden" + sibling .bootstrap-select)
+        if tag == "select":
+            try:
+                if el.is_displayed():
+                    return True
+            except Exception:
+                pass
+
+            try:
+                cls = (el.get_attribute("class") or "").lower()
+            except Exception:
+                cls = ""
+
+            if "bs-select-hidden" in cls:
+                try:
+                    proxies = el.find_elements(
+                        By.XPATH,
+                        "following-sibling::*[contains(concat(' ', normalize-space(@class), ' '), ' bootstrap-select ')][1]",
+                    )
+                    if proxies:
+                        try:
+                            if proxies[0].is_displayed():
+                                return True
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+
+        # 3) Cas standard: vérifier is_displayed()
         return el.is_displayed()
     
     except Exception:
