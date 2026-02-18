@@ -35,7 +35,7 @@ def run_replay(snapshot_dir: Path) -> None:
         str(REPLAY_SNAPSHOT),
         str(snapshot_dir),
         "--use-dom-outer",
-        "--use-project-launcher",
+        # "--use-project-launcher",
     ]
     # On ne save pas baseline ici. Baseline = une action volontaire.
     r = subprocess.run(cmd, cwd=str(ROOT))

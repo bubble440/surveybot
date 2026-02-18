@@ -1,0 +1,21 @@
+{
+  "summary_before": {
+    "total": 3,
+    "by_type": {
+      "checkbox": 1,
+      "dropdown": 1,
+      "text": 1
+    }
+  },
+  "summary_after": {
+    "total": 3,
+    "by_type": {
+      "checkbox": 1,
+      "dropdown": 1,
+      "text": 1
+    }
+  },
+  "added": [],
+  "removed": [],
+  "changed": []
+}
