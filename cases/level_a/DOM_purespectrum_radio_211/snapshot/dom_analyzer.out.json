@@ -1,0 +1,31 @@
+{
+  "meta": {
+    "source_html": "dom_outer.html",
+    "file_url": "file:///C:/projects/Surveys/cases/level_a/DOM_purespectrum_radio_211/snapshot/dom_outer.html",
+    "ts": 1771419971
+  },
+  "classify_dom": null,
+  "summary": {
+    "total": 1,
+    "by_type": {
+      "checkbox": 1
+    }
+  },
+  "question_blocks": [
+    {
+      "question": "Je suis un(e):",
+      "itype": "checkbox",
+      "options": [
+        "homme",
+        "femme",
+        "Je préfère ne pas dire"
+      ],
+      "max_select": 3,
+      "target_id": "group_8c6de263c271",
+      "context": {
+        "kind": "group",
+        "group_key": "[object object]"
+      }
+    }
+  ]
+}
