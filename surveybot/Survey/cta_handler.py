@@ -90,6 +90,25 @@ def _cta_intercept_enabled() -> bool:
     raw = (os.getenv(CTA_INTERCEPT_ENV_VAR, "") or "").strip().lower()
     return raw in {"1", "true", "yes", "on"}
 
+def disarm_interceptor(driver) -> bool:
+    """Désarme l'intercepteur JS (sans retirer les listeners installés une fois)."""
+    js = """
+    (() => {
+      try {
+        const s = window.__sbCtaIntercept;
+        if (s) s.armed = false;
+        // Nettoyage soft : le token courant n'est plus actif
+        window.__sbCtaInterceptToken = null;
+        return true;
+      } catch (e) {
+        return false;
+      }
+    })();
+    """
+    try:
+        return bool(driver.execute_script(js))
+    except Exception:
+        return False
 
 def arm_interceptor(driver) -> bool:
     """Arme l'intercepteur JS pour capter/bloquer click+submit+navigations scriptées."""
@@ -119,16 +138,29 @@ def arm_interceptor(driver) -> bool:
 
       window.__sbCtaIntercept = state;
 
+      // Token attendu pour filtrer l'interception au CTA ciblé uniquement.
+      // (défini côté Python juste avant le dispatch du click synthétique)
+      if (window.__sbCtaInterceptToken === undefined) window.__sbCtaInterceptToken = null;
+
       if (!window.__sbCtaInterceptInstalled) {
         window.__sbCtaInterceptInstalled = true;
 
         window.addEventListener('click', (evt) => {
           const s = window.__sbCtaIntercept;
           if (!s || !s.armed) return;
+          // Filtrage STRICT: on ne bloque que si le clic touche le CTA ciblé (token).
+          const tok = window.__sbCtaInterceptToken;
+          if (!tok) return;
+          const hit = (evt.target && evt.target.closest)
+            ? evt.target.closest(`[data-sb-cta-token="${tok}"]`)
+            : null;
+          if (!hit) return;
+
           s.clickCaptured = true;
           s.prevented = true;
           s.ts = Date.now();
           s.target = mkTarget(evt.target);
+          s.target = mkTarget(hit);
           evt.preventDefault();
           evt.stopPropagation();
           evt.stopImmediatePropagation();
@@ -137,6 +169,14 @@ def arm_interceptor(driver) -> bool:
         window.addEventListener('submit', (evt) => {
           const s = window.__sbCtaIntercept;
           if (!s || !s.armed) return;
+          // Même règle: ne bloquer submit que si ça vient du formulaire contenant le CTA token.
+          const tok = window.__sbCtaInterceptToken;
+          if (tok && evt.target && evt.target.querySelector) {
+            const hasTok = evt.target.querySelector(`[data-sb-cta-token="${tok}"]`);
+            if (!hasTok) return;
+          } else if (tok) {
+            return;
+          }
           s.submitCaptured = true;
           s.prevented = true;
           s.ts = Date.now();
@@ -255,6 +295,18 @@ def _format_intercept_target(target) -> str:
     ]
     return " ".join(parts)
 
+def _safe_url(driver) -> str:
+    try:
+        return driver.current_url
+    except Exception:
+        return "<unknown>"
+
+def _nav_log(prefix: str, msg: str, driver=None):
+    url = ""
+    if driver is not None:
+        url = f" url={_safe_url(driver)}"
+    print(f"{prefix} {msg}{url}")
+
 
 def _click_with_intercept(driver, el) -> bool:
     """Clique un CTA en mode normal ou en mode interception non destructif."""
@@ -273,14 +325,26 @@ def _click_with_intercept(driver, el) -> bool:
                 except Exception:
                     return False
 
-    if not arm_interceptor(driver):
+    # En mode interception : on arme, on marque la cible avec un token, on dispatch,
+    # puis on désarme TOUJOURS pour ne jamais bloquer les autres inputs.
+    armed_ok = arm_interceptor(driver)
+    if not armed_ok:
+        # Même si "arm" a échoué, il peut y avoir eu une installation partielle.
+        # On désarme quand même pour éviter de geler la page.
+        disarm_interceptor(driver)
         print("[CTA_INTERCEPT] failed_to_arm=true")
         return False
+
+    token = f"{int(time.time()*1000)}_{os.getpid()}"
 
     try:
         driver.execute_script(
             """
             const el = arguments[0];
+            const tok = arguments[1];
+            // Active le filtrage d'interception et marque UNIQUEMENT cet élément.
+            window.__sbCtaInterceptToken = tok;
+            try { el.setAttribute('data-sb-cta-token', tok); } catch(e) {}
             window.__sbCtaInterceptSelected = {
               tag: (el.tagName || '').toLowerCase(),
               id: el.id || '',
@@ -292,8 +356,11 @@ def _click_with_intercept(driver, el) -> bool:
             return el.dispatchEvent(evt);
             """,
             el,
+            token,
         )
     except Exception:
+        # Désarmement garanti pour ne pas bloquer les clics utilisateur.
+        disarm_interceptor(driver)
         print("[CTA_INTERCEPT] dispatch_error=true")
         return False
 
@@ -321,7 +388,21 @@ def _click_with_intercept(driver, el) -> bool:
         f"sameTarget={same_target} "
         f"target={_format_intercept_target(report.get('target'))}"
     )
-    return bool(report.get("clickCaptured") and report.get("prevented"))
+    ok = bool(report.get("clickCaptured") and report.get("prevented"))
+
+    # Nettoyage + désarmement : CRITIQUE pour ne jamais bloquer les autres inputs.
+    try:
+        driver.execute_script(
+            """
+            const el = arguments[0];
+            try { el.removeAttribute('data-sb-cta-token'); } catch(e) {}
+            """,
+            el,
+        )
+    except Exception:
+        pass
+    disarm_interceptor(driver)
+    return ok
 
 
 # =============================================================================
@@ -505,6 +586,35 @@ def click_button_by_text(driver, text) -> bool:
 
     # Fallback 2: JS sur tous les boutons visibles
     try:
+        # IMPORTANT: en mode interception, ne jamais cliquer via JS (bypass _click_with_intercept).
+        if _cta_intercept_enabled():
+            # Mini-scan "type JS fallback" mais clic via _click_with_intercept => interception armée + pas de navigation.
+            candidates2 = []
+            candidates2 += driver.find_elements(By.TAG_NAME, "button")
+            candidates2 += driver.find_elements(By.CSS_SELECTOR, "input[type='submit'], input[type='button']")
+            candidates2 += driver.find_elements(By.CSS_SELECTOR, "[role='button']")
+
+            for el in candidates2:
+                try:
+                    if not el.is_displayed() or not el.is_enabled():
+                        continue
+                    label = (el.get_attribute("value") or el.text or el.get_attribute("aria-label") or "").strip()
+                    if not label:
+                        continue
+                    lbl_norm = _normalize_lbl(label)
+                    if lbl_norm and (lbl_norm.find(target) != -1 or target.find(lbl_norm) != -1):
+                        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
+                        time.sleep(0.1)
+                        if _click_with_intercept(driver, el):
+                            time.sleep(0.5)
+                            return True
+                except Exception:
+                    continue
+
+            # Si interception active et pas trouvé/cliqué, on n'exécute pas le JS destructif.
+            return False
+
+
         js = """
         const norm = s => (s||'').toLowerCase()
             .replaceAll('\\u00A0',' ')
@@ -735,6 +845,7 @@ def try_click_navigation_cta(driver) -> bool:
 
                 driver.execute_script("arguments[0].scrollIntoView({block:'center'});", a)
                 if _click_with_intercept(driver, a):
+                    _nav_log("[CTA_NAV]", "clicked navbar Next link", driver)
                     print("[CTA_NAV] Survey: clicked navbar Next link")
                     return True
             except Exception:
@@ -753,6 +864,7 @@ def try_click_navigation_cta(driver) -> bool:
                 el = a or img
                 driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
                 if _click_with_intercept(driver, el):
+                    _nav_log("[CTA_NAV]", "clicked nextButton image", driver)
                     print("[CTA_NAV] B3netSurvey: clicked nextButton image")
                     return True
             except Exception:
@@ -774,6 +886,7 @@ def try_click_navigation_cta(driver) -> bool:
 
             driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
             if _click_with_intercept(driver, el):
+                _nav_log("[CTA_NAV]", "clicked #btn_next", driver)
                 print("[CTA_NAV] AreYouNet: clicked #btn_next")
                 return True
     except Exception:
@@ -786,6 +899,7 @@ def try_click_navigation_cta(driver) -> bool:
             el = links[0]
             driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
             if _click_with_intercept(driver, el):
+                _nav_log("[CTA_NAV]", "clicked EnqueteDef_submit link", driver)
                 print("[CTA_NAV] AreYouNet: clicked EnqueteDef_submit link")
                 return True
     except Exception:
@@ -799,6 +913,7 @@ def try_click_navigation_cta(driver) -> bool:
             if el.is_displayed():
                 driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
                 if _click_with_intercept(driver, el):
+                    _nav_log("[CTA_NAV]", "clicked #btn_continue", driver)
                     print("[CTA_NAV] Decipher: clicked #btn_continue")
                     return True
     except Exception:
@@ -814,6 +929,7 @@ def try_click_navigation_cta(driver) -> bool:
             if el.is_displayed():
                 driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
                 if _click_with_intercept(driver, el):
+                    _nav_log("[CTA_NAV]", "clicked #btnsmall or .enterButton.submitButton", driver)
                     print("[CTA_NAV] RSCH: clicked #btnsmall or .enterButton.submitButton")
                     return True
     except Exception:
@@ -907,18 +1023,23 @@ def try_click_navigation_cta(driver) -> bool:
             continue
 
     if not candidates:
+        _nav_log("[CTA_NAV]", "NOT_FOUND (no candidates)", driver)
         return False
 
     candidates.sort(key=lambda x: x[0], reverse=True)
 
+    tried = 0
     for score, el in candidates[:6]:
         try:
             driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
+            tried += 1
             if _click_with_intercept(driver, el):
+                _nav_log("[CTA_NAV]", f"clicked candidate score={score} intercept={_cta_intercept_enabled()}", driver)
                 return True
         except Exception:
             continue
 
+    _nav_log("[CTA_NAV]", f"FOUND_BUT_NOT_CLICKED candidates={len(candidates)} tried={tried} intercept={_cta_intercept_enabled()}", driver)
     return False
 
 
