@@ -736,7 +736,33 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                 continue
 
             # Pattern spécifique
-            if not _is_actionable_visible(el):
+            # Les dropdowns IPSOS/Bootstrap Select gardent souvent un <select>
+            # masqué (.bs-select-hidden) et rendent le vrai contrôle dans
+            # un sibling .bootstrap-select visible.
+            visible_for_extraction = _is_actionable_visible(el)
+            if not visible_for_extraction and itype == "dropdown":
+                try:
+                    cls = _norm_lc(el.get_attribute("class") or "")
+                    has_bootstrap_proxy = bool(
+                        driver.execute_script(
+                            """
+                            const s = arguments[0];
+                            if (!s || !s.parentElement) return false;
+                            const proxy = s.parentElement.querySelector('.bootstrap-select');
+                            if (!proxy) return false;
+                            const st = window.getComputedStyle(proxy);
+                            const r = proxy.getBoundingClientRect();
+                            return st && st.display !== 'none' && st.visibility !== 'hidden' && r.width > 0 && r.height > 0;
+                            """,
+                            el,
+                        )
+                    )
+                    if "bs-select-hidden" in cls and has_bootstrap_proxy:
+                        visible_for_extraction = True
+                except Exception:
+                    pass
+
+            if not visible_for_extraction:
                 continue
 
             if itype in ("radio", "checkbox", "unknown"):
