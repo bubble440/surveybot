@@ -1436,13 +1436,13 @@ def _extract_purespectrum_mobile_date_blocks(driver, frame_chain: list[int] | No
                 option_xpath_map: dict[str, str] = {}
 
                 try:
-                    slide_labels = col.find_elements(By.CSS_SELECTOR, ".select-scroll-slide span")
+                    slides = col.find_elements(By.CSS_SELECTOR, ".select-scroll-slide")
                 except Exception:
-                    slide_labels = []
+                    slides = []
 
-                for s in slide_labels:
+                for s in slides:
                     try:
-                        txt = _norm((s.get_attribute("textContent") or "").strip())
+                        txt = _norm(s.text or s.get_attribute("innerText") or "")
                         if not txt:
                             continue
                         nk = _norm_key(txt)
@@ -1450,7 +1450,7 @@ def _extract_purespectrum_mobile_date_blocks(driver, frame_chain: list[int] | No
                             continue
                         xp = (
                             f"(//ps-date-question//ps-date-picker-mobile//ps-select-scroll)[{col_idx}]"
-                            f"//*[contains(@class,'select-scroll-slide')][.//span[normalize-space(.)={_xpath_literal(txt)}]][1]"
+                            f"//*[contains(@class,'select-scroll-slide') and normalize-space(.)={_xpath_literal(txt)}][1]"
                         )
                         option_xpath_map[nk] = xp
                         options.append(txt)
