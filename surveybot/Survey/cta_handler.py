@@ -18,6 +18,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.action_chains import ActionChains
 import unicodedata
 import re
+from urllib.parse import urlsplit
 import time
 import os
 
@@ -297,7 +298,14 @@ def _format_intercept_target(target) -> str:
 
 def _safe_url(driver) -> str:
     try:
-        return driver.current_url
+        u = driver.current_url
+        if not u:
+            return "<unknown>"
+        p = urlsplit(u)
+        # Format "ATTACH": scheme + host uniquement (pas de path/query)
+        if p.scheme and p.netloc:
+            return f"{p.scheme}://{p.netloc}"
+        return u
     except Exception:
         return "<unknown>"
 

@@ -1,6 +1,14 @@
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.action_chains import ActionChains
 import re, openai, time, unicodedata, os, sys, hashlib, tempfile
+from urllib.parse import urlsplit
+
+def _short_url(url: str) -> str:
+    try:
+        p = urlsplit(url or "")
+        return f"{p.scheme}://{p.netloc}" if (p.scheme and p.netloc) else (url or "<unknown>")
+    except Exception:
+        return url or "<unknown>"
 
 def _norm_lc(s: str) -> str:
     s = unicodedata.normalize("NFKC", (s or "")).lower().strip()
@@ -551,7 +559,7 @@ def execute_survey_page(driver, api_key):
             rescans = int(getattr(driver, "_dom_rescans_this_page", 0))
             if rescans:
                 # (optionnel) log local 1 ligne (utile pour debug)
-                print(f"[DOM_RESCAN] rescans_this_page={rescans} url={driver.current_url}")
+                print(f"[DOM_RESCAN] rescans_this_page={rescans} url={_short_url(driver.current_url)}")
                 dom_metrics.export_dom_rescans(rescans)
         except Exception:
             pass
