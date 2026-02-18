@@ -1390,16 +1390,12 @@ def _extract_cloudresearch_sentry_blocks(driver, frame_chain: list[int] | None) 
 
 
 def _extract_purespectrum_mobile_date_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
-    """PureSpectrum date picker (mobile wheels + desktop dropdowns).
+    """PureSpectrum mobile date picker: 2 roues (mois/année) en `ps-select-scroll`.
 
-    Correction principale:
-    - l'implémentation précédente gateait strictement sur `ps-date-picker-mobile ps-select-scroll`
-      et retournait 0 bloc dès que PureSpectrum rendait la variante desktop (`<select>` natifs).
-    - on détecte maintenant les 2 variantes dans `ps-date-question` et on construit des blocks
-      exploitables pour chacune.
+    Objectif: éviter un résultat vide quand la question date n'expose pas d'<input>/<select>
+    natif (UI custom Angular).
     """
     frame_chain = list(frame_chain or [])
-    debug_ctx = os.getenv("DOM_CONTEXT_DEBUG", "0").strip().lower() in {"1", "true", "yes", "on"}
 
     try:
         date_questions = driver.find_elements(By.CSS_SELECTOR, "ps-date-question")
@@ -1413,7 +1409,11 @@ def _extract_purespectrum_mobile_date_blocks(driver, frame_chain: list[int] | No
 
     for date_q in date_questions:
         try:
-            blocks_before_question = len(blocks)
+            # Gate strict: uniquement la version mobile avec roues.
+            columns = date_q.find_elements(By.CSS_SELECTOR, "ps-date-picker-mobile ps-select-scroll")
+            if len(columns) < 2:
+                continue
+
             question = ""
             for sel in [".question-title", "[psquestiontitle]", "header [role='heading']"]:
                 try:
@@ -1431,18 +1431,7 @@ def _extract_purespectrum_mobile_date_blocks(driver, frame_chain: list[int] | No
             if not question:
                 continue
 
-            wheel_columns = date_q.find_elements(By.CSS_SELECTOR, "ps-date-picker-mobile ps-select-scroll")
-            native_selects = date_q.find_elements(By.CSS_SELECTOR, "select")
-
-            if debug_ctx:
-                print(
-                    f"[DOM_CONTEXT_DEBUG] purespectrum_date candidates "
-                    f"wheel_columns={len(wheel_columns)} native_selects={len(native_selects)} "
-                    f"question='{question[:60]}'"
-                )
-
-            # Variante mobile: roues `ps-select-scroll`
-            for col_idx, col in enumerate(wheel_columns, start=1):
+            for col_idx, col in enumerate(columns, start=1):
                 options: list[str] = []
                 option_xpath_map: dict[str, str] = {}
 
@@ -1453,12 +1442,7 @@ def _extract_purespectrum_mobile_date_blocks(driver, frame_chain: list[int] | No
 
                 for s in slides:
                     try:
-                        txt = _norm(
-                            s.text
-                            or s.get_attribute("innerText")
-                            or s.get_attribute("textContent")
-                            or ""
-                        )
+                        txt = _norm(s.text or s.get_attribute("innerText") or "")
                         if not txt:
                             continue
                         nk = _norm_key(txt)
@@ -1476,11 +1460,12 @@ def _extract_purespectrum_mobile_date_blocks(driver, frame_chain: list[int] | No
                 if len(options) < 2:
                     continue
 
+                # Etiquette colonne: années vs mois (heuristique simple, robuste FR/EN).
                 numeric_count = sum(1 for o in options if o.isdigit() and len(o) == 4)
                 field_hint = "Année" if numeric_count >= max(2, len(options) // 3) else "Mois"
                 question_col = f"{question} ({field_hint})"
 
-                group_key = f"purespectrum_date_wheel:{col_idx}:{_norm_key(question)}"
+                group_key = f"purespectrum_mobile_date:{col_idx}:{_norm_key(question)}"
                 target_id = make_target_id("group", group_key, question_col)
 
                 register_target(
@@ -1509,67 +1494,6 @@ def _extract_purespectrum_mobile_date_blocks(driver, frame_chain: list[int] | No
                             "purespectrum_mobile_date": True,
                         },
                     }
-                )
-
-            # Variante desktop: deux `<select>` (mois/année)
-            for sel_idx, sel in enumerate(native_selects, start=1):
-                try:
-                    option_labels: list[str] = []
-                    for opt in sel.find_elements(By.TAG_NAME, "option"):
-                        txt = _norm(opt.text or opt.get_attribute("innerText") or "")
-                        if not txt:
-                            continue
-                        option_labels.append(txt)
-                    option_labels = list(dict.fromkeys(option_labels))
-                except Exception:
-                    option_labels = []
-
-                if len(option_labels) < 2:
-                    continue
-
-                sel_name = (sel.get_attribute("name") or "").strip()
-                sel_id = (sel.get_attribute("id") or "").strip()
-                xpath = _best_xpath_for_element(driver, sel)
-
-                single_key = f"purespectrum_date_select:{sel_idx}:{sel_id}:{sel_name}"
-                target_id = make_target_id("single", single_key, question)
-
-                register_target(
-                    target_id,
-                    {
-                        "kind": "single",
-                        "itype": "dropdown",
-                        "question": question,
-                        "xpath": xpath,
-                        "alt_xpaths": [],
-                        "tag": "select",
-                        "name": sel_name,
-                        "id": sel_id,
-                        "frame_chain": frame_chain,
-                        "purespectrum_date_select": True,
-                    },
-                )
-
-                blocks.append(
-                    {
-                        "question": question,
-                        "itype": "dropdown",
-                        "options": option_labels,
-                        "max_select": 1,
-                        "target_id": target_id,
-                        "context": {
-                            "kind": "single",
-                            "name": sel_name,
-                            "id": sel_id,
-                            "purespectrum_date_select": True,
-                        },
-                    }
-                )
-
-            if debug_ctx:
-                print(
-                    f"[DOM_CONTEXT_DEBUG] purespectrum_date built_blocks_for_question="
-                    f"{len(blocks) - blocks_before_question}"
                 )
         except Exception:
             continue
