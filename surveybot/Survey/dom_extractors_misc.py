@@ -19,12 +19,12 @@ from selenium.webdriver.common.by import By
 
 # Import des utilitaires
 try:
-    from Survey.dom_utils import _norm_lc, _xpath_literal, _best_xpath_for_element, _norm, _norm_key, _looks_like_system_field
+    from Survey.dom_utils import _norm_lc, _xpath_literal, _best_xpath_for_element, _norm, _norm_key, _looks_like_system_field, _env_truthy
     from Survey.dom_question_extractor import _find_question_text_near_element, _compute_max_select
     from Survey.dom_registry import register_target, make_target_id
 except ImportError:
     # Fallback pour tests locaux
-    from Survey.dom_utils import _norm_lc, _xpath_literal, _best_xpath_for_element, _norm, _norm_key, _looks_like_system_field
+    from Survey.dom_utils import _norm_lc, _xpath_literal, _best_xpath_for_element, _norm, _norm_key, _looks_like_system_field, _env_truthy
     from Survey.dom_question_extractor import _find_question_text_near_element, _compute_max_select
     from Survey.dom_registry import register_target, make_target_id
     # dom_registry devra être disponible
@@ -1409,9 +1409,20 @@ def _extract_purespectrum_mobile_date_blocks(driver, frame_chain: list[int] | No
 
     for date_q in date_questions:
         try:
-            # Gate strict: uniquement la version mobile avec roues.
-            columns = date_q.find_elements(By.CSS_SELECTOR, "ps-date-picker-mobile ps-select-scroll")
-            if len(columns) < 2:
+            # PureSpectrum expose 2 variantes pour la DOB:
+            # 1) mobile wheel => ps-select-scroll
+            # 2) desktop select => <select> (souvent dans ps-date-picker-desktop)
+            # Le bug "0 blocks" venait du gate mobile-only qui ignorait la variante desktop.
+            scroll_columns = date_q.find_elements(By.CSS_SELECTOR, "ps-date-picker-mobile ps-select-scroll")
+            select_columns = date_q.find_elements(By.CSS_SELECTOR, "select")
+
+            if _env_truthy("DOM_CONTEXT_DEBUG"):
+                print(
+                    "[DOM_CONTEXT_DEBUG] purespectrum_date stage=candidates "
+                    f"scroll_columns={len(scroll_columns)} select_columns={len(select_columns)}"
+                )
+
+            if len(scroll_columns) < 2 and len(select_columns) < 2:
                 continue
 
             question = ""
@@ -1431,7 +1442,105 @@ def _extract_purespectrum_mobile_date_blocks(driver, frame_chain: list[int] | No
             if not question:
                 continue
 
-            for col_idx, col in enumerate(columns, start=1):
+            # Priorité à la variante desktop <select> quand disponible.
+            if len(select_columns) >= 2:
+                for col_idx, sel in enumerate(select_columns[:2], start=1):
+                    options: list[str] = []
+                    option_xpath_map: dict[str, str] = {}
+
+                    try:
+                        option_nodes = sel.find_elements(By.CSS_SELECTOR, "option")
+                    except Exception:
+                        option_nodes = []
+
+                    select_id = (sel.get_attribute("id") or "").strip()
+                    select_name = (sel.get_attribute("name") or "").strip()
+
+                    if select_id:
+                        select_xpath = f"//select[@id={_xpath_literal(select_id)}]"
+                    elif select_name:
+                        select_xpath = f"(//select[@name={_xpath_literal(select_name)}])[1]"
+                    else:
+                        select_xpath = f"(//ps-date-question//select)[{col_idx}]"
+
+                    for opt_idx, opt in enumerate(option_nodes, start=1):
+                        try:
+                            txt = _norm(
+                                opt.text
+                                or opt.get_attribute("textContent")
+                                or opt.get_attribute("innerText")
+                                or ""
+                            )
+                            val = (opt.get_attribute("value") or "").strip()
+                            if not txt:
+                                continue
+
+                            # Ignore placeholder vide ("Mois", "Ans", etc.) quand value vide.
+                            if not val and _norm_key(txt) in {"mois", "ans", "month", "year", "select", "choose"}:
+                                continue
+
+                            k = _norm_key(f"{txt}|{val or opt_idx}")
+                            if k in option_xpath_map:
+                                continue
+
+                            option_xpath_map[k] = f"{select_xpath}/option[{opt_idx}]"
+                            options.append(txt)
+                        except Exception:
+                            continue
+
+                    if len(options) < 2:
+                        if _env_truthy("DOM_CONTEXT_DEBUG"):
+                            print(
+                                "[DOM_CONTEXT_DEBUG] purespectrum_date stage=select_column_skip "
+                                f"col_idx={col_idx} options_count={len(options)}"
+                            )
+                        continue
+
+                    numeric_count = sum(1 for o in options if o.isdigit() and len(o) == 4)
+                    field_hint = "Année" if numeric_count >= max(2, len(options) // 3) else "Mois"
+                    question_col = f"{question} ({field_hint})"
+
+                    group_key = f"purespectrum_date_select:{col_idx}:{_norm_key(question)}"
+                    target_id = make_target_id("group", group_key, question_col)
+
+                    register_target(
+                        target_id,
+                        {
+                            "kind": "group",
+                            "itype": "dropdown",
+                            "group_key": group_key,
+                            "question": question_col,
+                            "option_xpath_map": option_xpath_map,
+                            "frame_chain": frame_chain,
+                            "purespectrum_mobile_date": True,
+                            "purespectrum_date_select": True,
+                        },
+                    )
+
+                    blocks.append(
+                        {
+                            "question": question_col,
+                            "itype": "dropdown",
+                            "options": options,
+                            "max_select": 1,
+                            "target_id": target_id,
+                            "context": {
+                                "kind": "group",
+                                "group_key": group_key,
+                                "purespectrum_mobile_date": True,
+                                "purespectrum_date_select": True,
+                            },
+                        }
+                    )
+
+                if _env_truthy("DOM_CONTEXT_DEBUG"):
+                    print(
+                        "[DOM_CONTEXT_DEBUG] purespectrum_date stage=select_blocks "
+                        f"built_blocks={len(blocks)}"
+                    )
+                continue
+
+            for col_idx, col in enumerate(scroll_columns, start=1):
                 options: list[str] = []
                 option_xpath_map: dict[str, str] = {}
 
@@ -1442,7 +1551,12 @@ def _extract_purespectrum_mobile_date_blocks(driver, frame_chain: list[int] | No
 
                 for s in slides:
                     try:
-                        txt = _norm(s.text or s.get_attribute("innerText") or "")
+                        txt = _norm(
+                            s.text
+                            or s.get_attribute("textContent")
+                            or s.get_attribute("innerText")
+                            or ""
+                        )
                         if not txt:
                             continue
                         nk = _norm_key(txt)
@@ -1494,6 +1608,12 @@ def _extract_purespectrum_mobile_date_blocks(driver, frame_chain: list[int] | No
                             "purespectrum_mobile_date": True,
                         },
                     }
+                )
+
+            if _env_truthy("DOM_CONTEXT_DEBUG"):
+                print(
+                    "[DOM_CONTEXT_DEBUG] purespectrum_date stage=scroll_blocks "
+                    f"built_blocks={len(blocks)}"
                 )
         except Exception:
             continue
