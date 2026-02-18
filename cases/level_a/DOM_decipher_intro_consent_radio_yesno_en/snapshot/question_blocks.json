@@ -1,0 +1,26 @@
+[
+  {
+    "question": "Select one",
+    "itype": "checkbox",
+    "options": [
+      "Yes, I consent to take part in this survey",
+      "No, I do not wish to take part in this survey"
+    ],
+    "max_select": 2,
+    "target_id": "group_0b9079c4cc50",
+    "context": {
+      "kind": "group",
+      "group_key": "ans11.0.0"
+    }
+  },
+  {
+    "target_id": "group_3c870e4a3110",
+    "kind": "group",
+    "itype": "radio",
+    "question": "Thank you for your interest in our research!\n  \nThis survey should take approximately ~15 minutes to complete and is focused on electronics and appliances. \n  \nYour participation in this research is entirely voluntary. If you decide during this survey you no longer wish to take part in this research, just close the browser page. To move through the survey, please use the next arrow at the bottom right hand side of the screen. \n \nDo you agree to participate in this survey on the basis of the conditions outlined above?",
+    "options": [
+      "Yes, I consent to take part in this survey",
+      "No, I do not wish to take part in this survey"
+    ]
+  }
+]
