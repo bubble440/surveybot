@@ -447,6 +447,8 @@ def execute_survey_page(driver, api_key):
 
     question_blocks = dom_analyzer.analyze_dom(driver)
     question_blocks = prompt_builder.filter_blocks_for_openai(question_blocks)
+    if _env_truthy("DOM_CONTEXT_DEBUG", "0"):
+        print(f"[DOM_CONTEXT_DEBUG] question_blocks_before_openai={len(question_blocks or [])}")
 
     # =========================================================================
     # WALR IMAGE EVALUATION: Traitement Vision API AVANT le flux standard
