@@ -19,6 +19,7 @@ from selenium.webdriver.common.action_chains import ActionChains
 import unicodedata
 import re
 import time
+import os
 
 
 # =============================================================================
@@ -31,6 +32,8 @@ CTA_SYNONYMS = {
     "submit", "soumettre", "valider", "proceed", "begin",
     "envoyer", "terminer", "send",
 }
+
+CTA_INTERCEPT_ENV_VAR = "CTA_INTERCEPT_ONLY"
 
 
 # =============================================================================
@@ -80,6 +83,245 @@ def _is_visible(driver, el) -> bool:
         return box and box.get("width", 0) > 5 and box.get("height", 0) > 5
     except Exception:
         return False
+
+
+def _cta_intercept_enabled() -> bool:
+    """Retourne True si le mode interception CTA est activé via variable d'environnement."""
+    raw = (os.getenv(CTA_INTERCEPT_ENV_VAR, "") or "").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
+def arm_interceptor(driver) -> bool:
+    """Arme l'intercepteur JS pour capter/bloquer click+submit+navigations scriptées."""
+    js = """
+    (() => {
+      const mkTarget = (el) => {
+        if (!el) return null;
+        const txt = (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim();
+        return {
+          tag: (el.tagName || '').toLowerCase(),
+          id: el.id || '',
+          name: el.getAttribute ? (el.getAttribute('name') || '') : '',
+          className: el.className || '',
+          textPreview: txt.slice(0, 120),
+        };
+      };
+
+      const state = {
+        armed: true,
+        clickCaptured: false,
+        submitCaptured: false,
+        prevented: false,
+        navigationBlocked: false,
+        ts: Date.now(),
+        target: null,
+      };
+
+      window.__sbCtaIntercept = state;
+
+      if (!window.__sbCtaInterceptInstalled) {
+        window.__sbCtaInterceptInstalled = true;
+
+        window.addEventListener('click', (evt) => {
+          const s = window.__sbCtaIntercept;
+          if (!s || !s.armed) return;
+          s.clickCaptured = true;
+          s.prevented = true;
+          s.ts = Date.now();
+          s.target = mkTarget(evt.target);
+          evt.preventDefault();
+          evt.stopPropagation();
+          evt.stopImmediatePropagation();
+        }, true);
+
+        window.addEventListener('submit', (evt) => {
+          const s = window.__sbCtaIntercept;
+          if (!s || !s.armed) return;
+          s.submitCaptured = true;
+          s.prevented = true;
+          s.ts = Date.now();
+          s.target = mkTarget(evt.target);
+          evt.preventDefault();
+          evt.stopPropagation();
+          evt.stopImmediatePropagation();
+        }, true);
+
+        window.addEventListener('beforeunload', (evt) => {
+          const s = window.__sbCtaIntercept;
+          if (!s || !s.armed) return;
+          s.navigationBlocked = true;
+          s.prevented = true;
+          s.ts = Date.now();
+          evt.preventDefault();
+          evt.returnValue = '';
+        }, true);
+
+        if (!window.__sbHistPatched) {
+          window.__sbHistPatched = true;
+          const oldPush = history.pushState.bind(history);
+          const oldReplace = history.replaceState.bind(history);
+          history.pushState = function(...args) {
+            const s = window.__sbCtaIntercept;
+            if (s && s.armed) {
+              s.navigationBlocked = true;
+              s.prevented = true;
+              s.ts = Date.now();
+              return null;
+            }
+            return oldPush(...args);
+          };
+          history.replaceState = function(...args) {
+            const s = window.__sbCtaIntercept;
+            if (s && s.armed) {
+              s.navigationBlocked = true;
+              s.prevented = true;
+              s.ts = Date.now();
+              return null;
+            }
+            return oldReplace(...args);
+          };
+        }
+
+        if (!window.__sbFormSubmitPatched) {
+          window.__sbFormSubmitPatched = true;
+          const oldSubmit = HTMLFormElement.prototype.submit;
+          HTMLFormElement.prototype.submit = function(...args) {
+            const s = window.__sbCtaIntercept;
+            if (s && s.armed) {
+              s.submitCaptured = true;
+              s.navigationBlocked = true;
+              s.prevented = true;
+              s.ts = Date.now();
+              s.target = mkTarget(this);
+              return;
+            }
+            return oldSubmit.apply(this, args);
+          };
+        }
+
+        if (!window.__sbLocationPatched) {
+          window.__sbLocationPatched = true;
+          const oldAssign = window.location.assign.bind(window.location);
+          const oldReplace = window.location.replace.bind(window.location);
+          window.location.assign = function(...args) {
+            const s = window.__sbCtaIntercept;
+            if (s && s.armed) {
+              s.navigationBlocked = true;
+              s.prevented = true;
+              s.ts = Date.now();
+              return;
+            }
+            return oldAssign(...args);
+          };
+          window.location.replace = function(...args) {
+            const s = window.__sbCtaIntercept;
+            if (s && s.armed) {
+              s.navigationBlocked = true;
+              s.prevented = true;
+              s.ts = Date.now();
+              return;
+            }
+            return oldReplace(...args);
+          };
+        }
+      }
+
+      return true;
+    })();
+    """
+    try:
+        return bool(driver.execute_script(js))
+    except Exception:
+        return False
+
+
+def read_intercept_report(driver):
+    """Retourne le rapport d'interception CTA depuis window.__sbCtaIntercept."""
+    try:
+        return driver.execute_script("return window.__sbCtaIntercept || null;")
+    except Exception:
+        return None
+
+
+def _format_intercept_target(target) -> str:
+    if not isinstance(target, dict):
+        return "<none>"
+    parts = [
+        f"tag={target.get('tag') or ''}",
+        f"id={target.get('id') or ''}",
+        f"name={target.get('name') or ''}",
+        f"class={target.get('className') or ''}",
+        f"text={target.get('textPreview') or ''}",
+    ]
+    return " ".join(parts)
+
+
+def _click_with_intercept(driver, el) -> bool:
+    """Clique un CTA en mode normal ou en mode interception non destructif."""
+    if not _cta_intercept_enabled():
+        try:
+            el.click()
+            return True
+        except Exception:
+            try:
+                ActionChains(driver).move_to_element(el).click().perform()
+                return True
+            except Exception:
+                try:
+                    driver.execute_script("arguments[0].click();", el)
+                    return True
+                except Exception:
+                    return False
+
+    if not arm_interceptor(driver):
+        print("[CTA_INTERCEPT] failed_to_arm=true")
+        return False
+
+    try:
+        driver.execute_script(
+            """
+            const el = arguments[0];
+            window.__sbCtaInterceptSelected = {
+              tag: (el.tagName || '').toLowerCase(),
+              id: el.id || '',
+              name: (el.getAttribute && el.getAttribute('name')) || '',
+              className: el.className || '',
+              textPreview: ((el.innerText || el.textContent || '').replace(/\s+/g,' ').trim()).slice(0,120),
+            };
+            const evt = new MouseEvent('click', { bubbles: true, cancelable: true, view: window });
+            return el.dispatchEvent(evt);
+            """,
+            el,
+        )
+    except Exception:
+        print("[CTA_INTERCEPT] dispatch_error=true")
+        return False
+
+    report = None
+    deadline = time.time() + 0.5
+    while time.time() < deadline:
+        report = read_intercept_report(driver)
+        if isinstance(report, dict) and report.get("clickCaptured"):
+            break
+        time.sleep(0.05)
+
+    report = report if isinstance(report, dict) else {}
+    selected = None
+    try:
+        selected = driver.execute_script("return window.__sbCtaInterceptSelected || null;")
+    except Exception:
+        selected = None
+
+    same_target = bool(selected and report.get("target") == selected)
+    print(
+        "[CTA_INTERCEPT] "
+        f"captured={bool(report.get('clickCaptured'))} "
+        f"submitCaptured={bool(report.get('submitCaptured'))} "
+        f"prevented={bool(report.get('prevented'))} "
+        f"sameTarget={same_target} "
+        f"target={_format_intercept_target(report.get('target'))}"
+    )
+    return bool(report.get("clickCaptured") and report.get("prevented"))
 
 
 # =============================================================================
@@ -230,15 +472,9 @@ def click_button_by_text(driver, text) -> bool:
                     "arguments[0].scrollIntoView({block:'center'});", el
                 )
                 time.sleep(0.1)
-                try:
-                    el.click()
-                except Exception:
-                    try:
-                        ActionChains(driver).move_to_element(el).click().perform()
-                    except Exception:
-                        driver.execute_script("arguments[0].click();", el)
-                time.sleep(0.8)
-                return True
+                if _click_with_intercept(driver, el):
+                    time.sleep(0.8)
+                    return True
         except Exception:
             continue
 
@@ -259,16 +495,11 @@ def click_button_by_text(driver, text) -> bool:
                     "arguments[0].scrollIntoView({block:'center'});", el
                 )
                 time.sleep(0.1)
-                el.click()
-                time.sleep(0.6)
-                return True
-            except Exception:
-                try:
-                    ActionChains(driver).move_to_element(el).click().perform()
+                if _click_with_intercept(driver, el):
                     time.sleep(0.6)
                     return True
-                except Exception:
-                    continue
+            except Exception:
+                continue
     except Exception:
         pass
 
@@ -379,12 +610,9 @@ def click_icon_like_button(driver, hints=None) -> bool:
         try:
             driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
             time.sleep(0.1)
-            try:
-                el.click()
-            except Exception:
-                ActionChains(driver).move_to_element(el).click().perform()
-            time.sleep(0.5)
-            return True
+            if _click_with_intercept(driver, el):
+                time.sleep(0.5)
+                return True
         except Exception:
             continue
 
@@ -452,13 +680,10 @@ def click_primary_cta(driver) -> bool:
         try:
             driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
             time.sleep(0.1)
-            try:
-                el.click()
-            except Exception:
-                ActionChains(driver).move_to_element(el).click().perform()
-            time.sleep(0.6)
-            print("✓ CTA principal cliqué. source: cta_handler.py")
-            return True
+            if _click_with_intercept(driver, el):
+                time.sleep(0.6)
+                print("✓ CTA principal cliqué. source: cta_handler.py")
+                return True
         except Exception:
             continue
 
@@ -509,12 +734,9 @@ def try_click_navigation_cta(driver) -> bool:
                     continue
 
                 driver.execute_script("arguments[0].scrollIntoView({block:'center'});", a)
-                try:
-                    a.click()
-                except Exception:
-                    driver.execute_script("arguments[0].click();", a)
-                print("[CTA_NAV] Survey: clicked navbar Next link")
-                return True
+                if _click_with_intercept(driver, a):
+                    print("[CTA_NAV] Survey: clicked navbar Next link")
+                    return True
             except Exception:
                 continue
 
@@ -530,12 +752,9 @@ def try_click_navigation_cta(driver) -> bool:
                     a = None
                 el = a or img
                 driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
-                try:
-                    el.click()
-                except Exception:
-                    driver.execute_script("arguments[0].click();", el)
-                print("[CTA_NAV] B3netSurvey: clicked nextButton image")
-                return True
+                if _click_with_intercept(driver, el):
+                    print("[CTA_NAV] B3netSurvey: clicked nextButton image")
+                    return True
             except Exception:
                 continue
     except Exception:
@@ -554,12 +773,9 @@ def try_click_navigation_cta(driver) -> bool:
                 pass
 
             driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
-            try:
-                el.click()
-            except Exception:
-                driver.execute_script("arguments[0].click();", el)
-            print("[CTA_NAV] AreYouNet: clicked #btn_next")
-            return True
+            if _click_with_intercept(driver, el):
+                print("[CTA_NAV] AreYouNet: clicked #btn_next")
+                return True
     except Exception:
         pass
 
@@ -569,12 +785,9 @@ def try_click_navigation_cta(driver) -> bool:
         if links:
             el = links[0]
             driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
-            try:
-                el.click()
-            except Exception:
-                driver.execute_script("arguments[0].click();", el)
-            print("[CTA_NAV] AreYouNet: clicked EnqueteDef_submit link")
-            return True
+            if _click_with_intercept(driver, el):
+                print("[CTA_NAV] AreYouNet: clicked EnqueteDef_submit link")
+                return True
     except Exception:
         pass
 
@@ -585,12 +798,9 @@ def try_click_navigation_cta(driver) -> bool:
             el = btns[0]
             if el.is_displayed():
                 driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
-                try:
-                    el.click()
-                except Exception:
-                    driver.execute_script("arguments[0].click();", el)
-                print("[CTA_NAV] Decipher: clicked #btn_continue")
-                return True
+                if _click_with_intercept(driver, el):
+                    print("[CTA_NAV] Decipher: clicked #btn_continue")
+                    return True
     except Exception:
         pass
 
@@ -603,12 +813,9 @@ def try_click_navigation_cta(driver) -> bool:
             el = btns[0]
             if el.is_displayed():
                 driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
-                try:
-                    el.click()
-                except Exception:
-                    driver.execute_script("arguments[0].click();", el)
-                print("[CTA_NAV] RSCH: clicked #btnsmall or .enterButton.submitButton")
-                return True
+                if _click_with_intercept(driver, el):
+                    print("[CTA_NAV] RSCH: clicked #btnsmall or .enterButton.submitButton")
+                    return True
     except Exception:
         pass
 
@@ -707,11 +914,8 @@ def try_click_navigation_cta(driver) -> bool:
     for score, el in candidates[:6]:
         try:
             driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
-            try:
-                el.click()
-            except Exception:
-                driver.execute_script("arguments[0].click();", el)
-            return True
+            if _click_with_intercept(driver, el):
+                return True
         except Exception:
             continue
 
@@ -856,13 +1060,8 @@ def click_cta_strong_any_context(driver, text=None, label_hint=None, depth: int 
                     except Exception:
                         pass
 
-                    try:
-                        driver.execute_script("arguments[0].click();", el)
-                    except Exception:
-                        try:
-                            el.click()
-                        except Exception:
-                            continue
+                    if not _click_with_intercept(driver, el):
+                        continue
 
                     try:
                         setattr(driver, "last_action_success", True)
