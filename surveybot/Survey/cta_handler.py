@@ -146,6 +146,14 @@ def arm_interceptor(driver) -> bool:
       if (!window.__sbCtaInterceptInstalled) {
         window.__sbCtaInterceptInstalled = true;
 
+        const safePatch = (fn) => {
+          try {
+            fn();
+          } catch (e) {
+            // Best-effort interception: un patch optionnel ne doit jamais faire échouer l'armement.
+          }
+        };
+
         window.addEventListener('click', (evt) => {
           const s = window.__sbCtaIntercept;
           if (!s || !s.armed) return;
@@ -197,7 +205,8 @@ def arm_interceptor(driver) -> bool:
           evt.returnValue = '';
         }, true);
 
-        if (!window.__sbHistPatched) {
+        safePatch(() => {
+          if (window.__sbHistPatched) return;
           window.__sbHistPatched = true;
           const oldPush = history.pushState.bind(history);
           const oldReplace = history.replaceState.bind(history);
@@ -221,9 +230,10 @@ def arm_interceptor(driver) -> bool:
             }
             return oldReplace(...args);
           };
-        }
+        });
 
-        if (!window.__sbFormSubmitPatched) {
+        safePatch(() => {
+          if (window.__sbFormSubmitPatched) return;
           window.__sbFormSubmitPatched = true;
           const oldSubmit = HTMLFormElement.prototype.submit;
           HTMLFormElement.prototype.submit = function(...args) {
@@ -238,9 +248,10 @@ def arm_interceptor(driver) -> bool:
             }
             return oldSubmit.apply(this, args);
           };
-        }
+        });
 
-        if (!window.__sbLocationPatched) {
+        safePatch(() => {
+          if (window.__sbLocationPatched) return;
           window.__sbLocationPatched = true;
           const oldAssign = window.location.assign.bind(window.location);
           const oldReplace = window.location.replace.bind(window.location);
@@ -264,7 +275,7 @@ def arm_interceptor(driver) -> bool:
             }
             return oldReplace(...args);
           };
-        }
+        });
       }
 
       return true;
