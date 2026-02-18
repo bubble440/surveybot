@@ -1436,13 +1436,23 @@ def _extract_purespectrum_mobile_date_blocks(driver, frame_chain: list[int] | No
                 option_xpath_map: dict[str, str] = {}
 
                 try:
-                    slides = col.find_elements(By.CSS_SELECTOR, ".select-scroll-slide")
+                    raw_values = driver.execute_script(
+                        """
+                        const root = arguments[0];
+                        if (!root) return [];
+                        const spans = Array.from(root.querySelectorAll('.select-scroll-slide span'));
+                        return spans
+                          .map((el) => (el.textContent || '').trim())
+                          .filter((txt) => txt.length > 0);
+                        """,
+                        col,
+                    )
                 except Exception:
-                    slides = []
+                    raw_values = []
 
-                for s in slides:
+                for raw_txt in raw_values:
                     try:
-                        txt = _norm(s.text or s.get_attribute("innerText") or "")
+                        txt = _norm(raw_txt)
                         if not txt:
                             continue
                         nk = _norm_key(txt)
@@ -1450,7 +1460,8 @@ def _extract_purespectrum_mobile_date_blocks(driver, frame_chain: list[int] | No
                             continue
                         xp = (
                             f"(//ps-date-question//ps-date-picker-mobile//ps-select-scroll)[{col_idx}]"
-                            f"//*[contains(@class,'select-scroll-slide') and normalize-space(.)={_xpath_literal(txt)}][1]"
+                            f"//*[contains(@class,'select-scroll-slide')]//span[normalize-space(.)={_xpath_literal(raw_txt)}]"
+                            f"/ancestor::*[contains(@class,'select-scroll-slide')][1]"
                         )
                         option_xpath_map[nk] = xp
                         options.append(txt)
