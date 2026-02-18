@@ -1,0 +1,22 @@
+{
+  "name": "ipsos_birthdate_dropdown_fr",
+  "snapshot_dir": "snapshot",
+  "assert": {
+    "summary": {
+      "total": 3,
+      "by_type": {
+        "dropdown": 2,
+        "button": 1
+      }
+    },
+    "must_have_dropdown_input": {
+      "question_contains": "date de naissance",
+      "min_options": 12,
+      "max_select": 1
+    },
+    "must_have_continue_button": {
+      "id": "submitQuestion",
+      "name": "submitQuestion"
+    }
+  }
+}
