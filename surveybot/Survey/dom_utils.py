@@ -144,7 +144,32 @@ def _is_actionable_visible(el) -> bool:
                 # Pas de wrapper cliquable visible → pas actionnable
                 return False
         
-        # 2) Cas standard: vérifier is_displayed()
+        # 2) Cas spécial: <select> masqué mais widget visible (bootstrap-select / custom select)
+        if tag == "select":
+            try:
+                if el.is_displayed():
+                    return True
+            except Exception:
+                pass
+
+            try:
+                wrappers = el.find_elements(
+                    By.XPATH,
+                    (
+                        "ancestor-or-self::*[contains(concat(' ', normalize-space(@class), ' '), ' bootstrap-select ') "
+                        "or contains(concat(' ', normalize-space(@class), ' '), ' bs-select-hidden ') "
+                        "or contains(concat(' ', normalize-space(@class), ' '), ' selectpicker ')][1]"
+                        "|following-sibling::*[contains(concat(' ', normalize-space(@class), ' '), ' bootstrap-select ')][1]"
+                    ),
+                )
+                for wrapper in wrappers:
+                    if wrapper.is_displayed():
+                        return True
+            except Exception:
+                pass
+            return False
+
+        # 3) Cas standard: vérifier is_displayed()
         return el.is_displayed()
     
     except Exception:
