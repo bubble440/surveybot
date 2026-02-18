@@ -91,6 +91,15 @@ def _cta_intercept_enabled() -> bool:
     raw = (os.getenv(CTA_INTERCEPT_ENV_VAR, "") or "").strip().lower()
     return raw in {"1", "true", "yes", "on"}
 
+def _read_arm_error(driver) -> str:
+    """Retourne le dernier message d'erreur d'armement JS si présent."""
+    try:
+        err = driver.execute_script("return window.__sbCtaInterceptLastError || null;")
+        if isinstance(err, str) and err.strip():
+            return err.strip()
+    except Exception:
+        pass
+    return ""
 def disarm_interceptor(driver) -> bool:
     """Désarme l'intercepteur JS (sans retirer les listeners installés une fois)."""
     js = """
@@ -115,6 +124,7 @@ def arm_interceptor(driver) -> bool:
     """Arme l'intercepteur JS pour capter/bloquer click+submit+navigations scriptées."""
     js = """
     (() => {
+    try {
       const mkTarget = (el) => {
         if (!el) return null;
         const txt = (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim();
@@ -138,6 +148,9 @@ def arm_interceptor(driver) -> bool:
       };
 
       window.__sbCtaIntercept = state;
+      // Status / debug : permet de diagnostiquer les pages "restrictive".
+      window.__sbCtaInterceptArmedOk = true;
+      window.__sbCtaInterceptLastError = null;
 
       // Token attendu pour filtrer l'interception au CTA ciblé uniquement.
       // (défini côté Python juste avant le dispatch du click synthétique)
@@ -279,6 +292,17 @@ def arm_interceptor(driver) -> bool:
       }
 
       return true;
+      } catch (e) {
+        // Important: on ne doit pas "hard fail" côté Python (sinon failed_to_arm=true et aucun clic).
+        // On enregistre l'erreur et on retourne true pour garder un comportement prédictible.
+        try {
+          window.__sbCtaInterceptArmedOk = false;
+          const msg = (e && (e.message || e.toString)) ? (e.message || e.toString()) : 'unknown';
+          const name = (e && e.name) ? e.name : 'Error';
+          window.__sbCtaInterceptLastError = `${name}: ${msg}`.slice(0, 400);
+        } catch (_e2) {}
+        return true;
+      }
     })();
     """
     try:
@@ -294,6 +318,33 @@ def read_intercept_report(driver):
     except Exception:
         return None
 
+def _probe_interceptor_state(driver):
+    """
+    Probe robuste (best-effort) pour savoir si l'intercepteur est réellement armé,
+    au lieu de se fier uniquement au retour de arm_interceptor() qui peut être trompeur
+    (pages restrictives / execute_script partiellement bloqué).
+    """
+    js = """
+    return (function () {
+      try {
+        const s = window.__sbCtaIntercept || null;
+        return {
+          hasState: !!s,
+          armed: !!(s && s.armed),
+          installed: !!window.__sbCtaInterceptInstalled,
+          armedOk: (window.__sbCtaInterceptArmedOk !== false),
+          lastError: window.__sbCtaInterceptLastError || null,
+        };
+      } catch (e) {
+        return { probeError: true, msg: (e && (e.message || String(e))) || "unknown" };
+      }
+    })();
+    """
+    try:
+        v = driver.execute_script(js)
+        return v if isinstance(v, dict) else {"probeError": True, "msg": "non-dict"}
+    except Exception as e:
+        return {"probeError": True, "msg": str(e)}
 
 def _format_intercept_target(target) -> str:
     if not isinstance(target, dict):
@@ -346,13 +397,60 @@ def _click_with_intercept(driver, el) -> bool:
 
     # En mode interception : on arme, on marque la cible avec un token, on dispatch,
     # puis on désarme TOUJOURS pour ne jamais bloquer les autres inputs.
-    armed_ok = arm_interceptor(driver)
-    if not armed_ok:
-        # Même si "arm" a échoué, il peut y avoir eu une installation partielle.
-        # On désarme quand même pour éviter de geler la page.
+    try:
+        armed_ok = arm_interceptor(driver)
+    except Exception:
+        armed_ok = False
+
+    # ✅ Ne pas se fier au booléen: on probe l'état réel après tentative d'armement.
+    probe = _probe_interceptor_state(driver)
+    is_armed = bool(
+        isinstance(probe, dict)
+        and probe.get("hasState")
+        and probe.get("installed")
+        and probe.get("armed")
+        and probe.get("armedOk")
+    )
+
+    # Si Selenium signale un souci MAIS que le probe dit "armé", alors l'armement a réussi.
+    # On ne doit PAS logger failed_to_arm=true dans ce cas (sinon faux diagnostic).
+    if (not armed_ok) and is_armed:
+        err = _read_arm_error(driver)
+        perr = probe.get("msg") if isinstance(probe, dict) else None
+        last_js_err = probe.get("lastError") if isinstance(probe, dict) else None
+        print(
+            "[CTA_INTERCEPT] "
+            "arm_warn=true reason=selenium_execute_script_failed "
+            f"probe={probe if isinstance(probe, dict) else '<none>'} "
+            f"err={err or last_js_err or perr or '<none>'}"
+        )
+
+    if not is_armed:
+        # Armement absent (confirmé par probe) → fallback sur clic normal (budget=1).
+        err = _read_arm_error(driver)
         disarm_interceptor(driver)
-        print("[CTA_INTERCEPT] failed_to_arm=true")
-        return False
+        perr = probe.get("msg") if isinstance(probe, dict) else None
+        last_js_err = probe.get("lastError") if isinstance(probe, dict) else None
+        print(
+            "[CTA_INTERCEPT] "
+            "failed_to_arm=true reason=probe_not_armed "
+            f"selenium_error={str(not armed_ok).lower()} "
+            f"probe={probe if isinstance(probe, dict) else '<none>'} "
+            f"err={err or last_js_err or perr or '<none>'}"
+        )
+        try:
+            el.click()
+            return True
+        except Exception:
+            try:
+                ActionChains(driver).move_to_element(el).click().perform()
+                return True
+            except Exception:
+                try:
+                    driver.execute_script("arguments[0].click();", el)
+                    return True
+                except Exception:
+                    return False
 
     token = f"{int(time.time()*1000)}_{os.getpid()}"
 
@@ -392,6 +490,12 @@ def _click_with_intercept(driver, el) -> bool:
         time.sleep(0.05)
 
     report = report if isinstance(report, dict) else {}
+    # Si l'armement JS a eu une erreur interne, on la log (utile pour Ipsos).
+    try:
+        if driver.execute_script("return window.__sbCtaInterceptArmedOk === false;"):
+            _nav_log("[CTA_INTERCEPT]", f"arm_internal_error=true err={_read_arm_error(driver) or '<none>'}", driver)
+    except Exception:
+        pass
     selected = None
     try:
         selected = driver.execute_script("return window.__sbCtaInterceptSelected || null;")
