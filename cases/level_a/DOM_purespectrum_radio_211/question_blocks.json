@@ -1,0 +1,17 @@
+[
+  {
+    "question": "Je suis un(e):",
+    "itype": "checkbox",
+    "options": [
+      "homme",
+      "femme",
+      "Je préfère ne pas dire"
+    ],
+    "max_select": 3,
+    "target_id": "group_8c6de263c271",
+    "context": {
+      "kind": "group",
+      "group_key": "[object object]"
+    }
+  }
+]

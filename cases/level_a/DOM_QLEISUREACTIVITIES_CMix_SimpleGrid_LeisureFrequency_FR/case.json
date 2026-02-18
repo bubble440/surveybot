@@ -1,0 +1,18 @@
+{
+  "name": "cmix_simple_grid_qleisureactivities_frequency_fr",
+  "snapshot_dir": "snapshot",
+  "assert": {
+    "summary": {
+      "total": 1,
+      "by_type": {
+        "grid": 1
+      }
+    },
+    "must_have_grid": {
+      "question_id": "QLEISUREACTIVITIES",
+      "min_rows": 3,
+      "min_columns": 5,
+      "max_select_per_row": 1
+    }
+  }
+}

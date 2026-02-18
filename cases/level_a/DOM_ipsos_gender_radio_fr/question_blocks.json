@@ -1,0 +1,13 @@
+[
+  {
+    "question": "Êtes-vous ? Une femme Un homme",
+    "itype": "checkbox",
+    "options": [],
+    "max_select": 1,
+    "target_id": "group_7c4ff786632b",
+    "context": {
+      "kind": "group",
+      "group_key": "questioncontainer:optionspanel:question:0:actualquestionpanel:radiogroup"
+    }
+  }
+]

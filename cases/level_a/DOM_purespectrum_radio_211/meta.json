@@ -1,0 +1,8 @@
+{
+  "ts": "20260218_003724",
+  "ready_state": "complete",
+  "dom_sig": "complete|65316|96|5",
+  "reason": "after_dom_analyze",
+  "url": "https://screener.purespectrum.com/?survey_id=47417096&supplier_id=2904&surveySig=d7308e5a01e10878ff9d9edb1bfa004b5abb4f33ebce7568bbcef77fbce9901b&ps_supplier_sid=a917ea1b-2d27-433e-a289-ba8c90a085ca&ps_supplier_respondent_id=136fc72f-39ea-4a81-ba8e-df43d502e93b&hashed_id=0f0c16fb110aa0da69223e86b1f33eb067b18e5457cd1c6bd588816eb99146b9&270=118&212=21&211=112&sub_supplier_id=5",
+  "title": "PureSpectrum"
+}
