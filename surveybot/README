@@ -122,5 +122,3 @@ python surveybot\tools\replay_snapshot.py cases\level_a\aa_mobile_matrix_celebs_
 
 # 
 python surveybot\tools\replay_snapshot.py snapshots\20260120_112345_after_dom_analyze --use-dom-outer --save-baseline
-# Pour lancer le niveau B CTA (non-régression clic + effet)
-python surveybot/tools/run_level_b_cta.py --url "https://<survey-step-url>" --timeout 12
