@@ -1,0 +1,16 @@
+[
+  {
+    "question": "Veuillez fournir une réponse à cette équation mathématique : 6 + 6 = ?? Veuillez saisir un nombre entier. Entrez votre réponse ci-dessous",
+    "itype": "text",
+    "options": [],
+    "max_select": 1,
+    "target_id": "single_e2c4019e0b28",
+    "context": {
+      "kind": "single",
+      "tag": "input",
+      "name": "ans383.0.0",
+      "id": "ans383.0.0",
+      "role": null
+    }
+  }
+]

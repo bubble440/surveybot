@@ -1,0 +1,472 @@
+<html><head>
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<meta http-equiv="Imagetoolbar" content="no">
+<meta name="ROBOTS" content="NOINDEX, NOFOLLOW">
+<meta name="viewport" content="width=710px">
+<meta name="keywords" content="20161206">
+<meta name="format-detection" content="telephone=no">
+<link rel="stylesheet" type="text/css" href="../common/jq/jquery-ui.min.css">
+<script type="text/javascript" src="../common/jq/jquery-1.8.3.min.js"></script>
+<script type="text/javascript" src="../common/jq/jquery-ui.min.js"></script>
+<script type="text/javascript" src="../common/jq/jquery.cookie.js"></script>
+<script type="text/javascript" src="../common/jq/jquery.ui.touch-punch.min.js"></script>
+<script type="text/javascript" src="js/enquete.js?1770976286"></script>
+<link rel="stylesheet" type="text/css" media="all" href="css/style.css?1770976286">
+<script type="text/javascript" src="js/popup.js?1770976286"></script>
+<link rel="stylesheet" type="text/css" media="all" href="css/html_editor_p2.css?1770976286">
+
+
+<style>
+html *.fontF {
+	font-family: "verdana", "arial", "sans-serif";
+	letter-spacing: normal;
+}
+div#attention {
+	width:676px;
+	margin:15px auto 0px auto;
+	border:2px dashed #D4D4D4;
+	padding:10px;
+	font-size:12px;
+	text-align:center;
+}
+div#progressbar{
+	width:700px;
+	margin:15px auto 0px auto;
+}
+div#progressbar table#progress{
+	margin-left:auto;
+	margin-right:0px;
+}
+
+
+/* ポップアップの「スクロールさせて全体をご確認ください」画像 */
+.page_default .scImg.scrollImg,
+#miz-dialog .scImg.scrollImg {
+	margin:3px auto;
+	width: 100%;
+	max-width: 280px !important;
+	height: 28px;
+	background-size:contain;
+	background-position: center center;
+	background-repeat: no-repeat;
+}
+
+.page_default .scImg.scrollImg,
+#miz-dialog .scImg.scrollImg {
+	background-image:url('./img/scroll_g_ltr.png');
+}
+</style>
+
+<script language="JavaScript">
+<!--
+/*******************************************************************************
+ JavaScript設定ファイル
+ 
+ *******************************************************************************/
+px2 = {};
+px2.survey = {};
+
+
+/*=============================================================================*
+ マトリクスの設定
+ *=============================================================================*/
+px2.survey.matrix = {};
+
+/*-----------------------------------------------------------------------------*
+ セルクリックの設定
+ *-----------------------------------------------------------------------------*/
+px2.survey.matrix.cellcheck = {};
+
+// セルクリックを有効にするか
+px2.survey.matrix.cellcheck.enable = true;
+
+/*-----------------------------------------------------------------------------*
+ ハイライトの設定
+ *-----------------------------------------------------------------------------*/
+px2.survey.matrix.highlight = {};
+px2.survey.matrix.highlight.cell = {};
+px2.survey.matrix.highlight.row = {};
+px2.survey.matrix.highlight.column = {};
+px2.survey.matrix.highlight.header = {};
+
+
+// セルハイライトを有効にするか
+px2.survey.matrix.highlight.cell.enable = true;
+
+// セルハイライトのスタイル
+px2.survey.matrix.highlight.cell.classname = 'mxCellHighlight';
+// 行ハイライトを有効にするか
+px2.survey.matrix.highlight.row.enable = true;
+// 行ハイライトのスタイル
+px2.survey.matrix.highlight.row.classname = 'mxRowHighlight';
+// 列ハイライトを有効にするか
+px2.survey.matrix.highlight.column.enable = true;
+// 列ハイライトのスタイル
+px2.survey.matrix.highlight.column.classname = 'mxColumnHighlight';
+// 表頭ハイライトを有効にするか (使用する場合は列ハイライトを無効にすること)
+px2.survey.matrix.highlight.header.enable = true;
+// 表頭ハイライトのスタイル
+px2.survey.matrix.highlight.header.classname = 'mxHeaderHighlight';
+// CSSから適用するプロパティのリスト (全てのプロパティを適用すると遅くなるので)
+px2.survey.matrix.highlight.applyProps = [
+    'background-color'
+];
+
+
+
+/*-----------------------------------------------------------------------------*
+ 表頭固定の設定
+ *-----------------------------------------------------------------------------*/
+px2.survey.matrix.headerfix = {};
+
+// 表頭固定を有効にするか
+px2.survey.matrix.headerfix.enable = false;
+// 下までスクロールした時に残す行数 (初期値5、1～行数-1)
+px2.survey.matrix.headerfix.bottomrows = 1;
+
+/*-----------------------------------------------------------------------------*
+ 複数表頭の設定
+ *-----------------------------------------------------------------------------*/
+px2.survey.matrix.headermulti = {};
+
+// 複数表頭を有効にするか (使用する場合は表頭固定を無効にすること)
+px2.survey.matrix.headermulti.enable = false;
+// マトリクスの末尾に表示するか
+px2.survey.matrix.headermulti.bottom = false;
+// 何設問毎に表頭を挿入するか (0は挿入しない)
+px2.survey.matrix.headermulti.each = 15;
+
+/*=============================================================================*
+ なんとかの設定
+ *=============================================================================*/
+px2.survey.nantoka = {};
+
+/*-----------------------------------------------------------------------------*
+ なんとかのサブ設定
+ *-----------------------------------------------------------------------------*/
+px2.survey.nantoka.sabu = {};
+// なんとかのサブ設定を有効にするか
+px2.survey.nantoka.sabu.enable = true;
+
+
+/*=============================================================================*
+ テキストフィールドの誤送信防止処理
+ *=============================================================================*/
+
+/*-----------------------------------------------------------------------------*
+ テキストフィールドを検出し、関数の呼び出しを組み込む
+ *-----------------------------------------------------------------------------*/
+function attachBlockSubmit( form_id ) {
+	var elements = document.forms[form_id].elements;
+	for (var i=0; i < elements.length; i++) {
+		var e = elements[i];	
+		if (e.type == 'text'){
+			e.onkeypress=KeyPressBlock;
+		}
+	}
+}
+
+/*-----------------------------------------------------------------------------*
+ エンターキーの入力時に無効化
+ *-----------------------------------------------------------------------------*/
+function KeyPressBlock( evt ){
+	evt = ( evt ) ? evt : event; 
+	var charCode= ( evt.charCode ) ? evt.charCode : 
+		( ( evt.which ) ? evt.which : evt.keyCode );
+	if ( Number( charCode ) == 13 || Number( charCode ) == 3) {
+		return false;
+	} else {
+		return true;
+	}
+}
+
+/*=============================================================================*
+ window.onload に関数を追加登録する関数
+ *=============================================================================*/
+
+function addOnload(entry) {
+	var stack = window.onload;
+	
+	if(typeof window.onload != 'function') {
+		window.onload = entry;
+	}
+	else {
+		window.onload = function() {
+			stack();
+			entry();
+		};
+	}
+}
+var miz_part = 1508284;
+var miz_page = 1;
+var miz_auto = false;
+var enquete_id = 796295;
+
+var miz_cookie_time;
+if($.cookie("p2_timerpage"+enquete_id)){
+	var miz_array = $.cookie("p2_timerpage"+enquete_id).split("/");
+	// 違うページのCookieだった場合は消す
+	if(miz_array[0] != miz_part || miz_array[1] != miz_page){
+		$.removeCookie("p2_timerpage"+enquete_id, { path: "/" });
+	}
+	// 使えるCookieがある（強制送信の場合はCookieが設定されていない）
+	else{
+		// 許容範囲（1日）内
+		// miz_cookie_timeに何も入らなければあとで「今の時間を使いCookieを設定」される
+		if(new Date().getTime() < (1000*60*60*24) + parseInt(miz_array[2],10)){
+			miz_cookie_time = parseInt(miz_array[2],10);
+		}
+	}
+}
+var chkMailAddr = false; 
+var mailFaName  = ''; 
+var chkSubmit = false; 
+var isSubmit = false; 
+function clickCheck( btnName ) { 
+	if ( isSubmit ) { return false; }
+	if( btnName == 'back_button' ){ chkSubmit = true; } 
+
+	if( !chkSubmit && chkMailAddr && mailFaName != '') { 
+		Addr        = document.formQ[ mailFaName ].value.replace(/^\s+|\s+$/g, '');
+		Addrconfirm = document.formQ[ 'addrconfirm' ].value.replace(/^\s+|\s+$/g, '');
+		if (Addr != Addrconfirm ) {
+			alert( 'L’adresse e-mail est incorrecte. Veuillez revérifier.' );
+			return false;
+		}
+	}
+	document.formQ[btnName].value = 'val'; 
+chkSubmit = true; 
+isSubmit = true; 
+document.formQ.submit(); 
+return true; 
+}
+$( window ).on( "load" , function () {
+	if( window.innerWidth<=768 ){
+		$( "#loader" ).fadeOut( 500 , function () {
+			$( "#main" ).css( "visibility" , "visible" ).css( "opacity","1" );
+		} );
+	} else {
+		$( "#loader" ).fadeOut( 0 , function () {
+			$( "#main" ).css( "visibility" , "visible" ).css( "opacity","1" );
+		} );
+	}
+} );
+//-->
+</script>
+
+</head>
+<body oncontextmenu="return false" oncopy="return false" class="fontF">
+<div class="page_default">
+<div id="wrapper">
+
+
+	<div id="header">
+	</div>
+	<div id="loader" style="display: none;"></div><!-- loading画像 -->
+	<div id="contents">
+
+				<div id="main" style="visibility: visible; opacity: 1;"><!--main start-->
+			<form name="formQ" id="mainForm" method="post" action="./index.php" onsubmit="return chkSubmit;" autocomplete="OFF">
+
+				<div id="attention">
+				Veuillez ne pas utiliser le bouton Back de votre navigateur.				</div>
+
+				<div id="progressbar">
+					 
+				</div>
+
+<div class="question_default" data-survey-uid="c0">
+<a name="sc1_ap"></a>
+
+<div id="sc1_question" class="question" data-survey-uid="c1">
+
+
+
+
+
+<div class="utils_design"></div><!--utils_design end-->
+
+<div class="for_sticky" id="stickyID_sc1"></div>
+
+
+<div class="content_default" data-survey-uid="c2">
+<div class="content" data-survey-uid="c3">
+	<div class="qno" data-survey-uid="c4">SC1</div>
+	<div class="content_note note" data-survey-uid="c5">Quel est votre genre ?	</div>
+</div>
+</div><!--content_default end-->
+
+
+
+<div class="answer" data-survey-uid="c6">
+	
+<div class="categories_rbck_default" data-survey-uid="c7">
+<table class="categories" style=" width:500px; ">
+
+	<tbody><tr>
+			<td class="rdck_input_sp" data-survey-uid="c8">
+			<div class="rdck_height_sp" data-survey-uid="c9">
+				<span class="rdck_category_sp">
+<input id="sc1-1" type="radio" name="sc1" value="1" data-survey-uid="i0">				</span><label for="sc1-1" class="rdck_label_sp" onclick="" data-survey-uid="c10">Homme</label></div></td></tr>	<tr>
+			<td class="rdck_input_sp" data-survey-uid="c11">
+			<div class="rdck_height_sp" data-survey-uid="c12">
+				<span class="rdck_category_sp">
+<input id="sc1-2" type="radio" name="sc1" value="2" data-survey-uid="i1">				</span><label for="sc1-2" class="rdck_label_sp" onclick="" data-survey-uid="c13">Femme</label></div></td></tr>	<tr>
+			<td class="rdck_input_sp" data-survey-uid="c14">
+			<div class="rdck_height_sp" data-survey-uid="c15">
+				<span class="rdck_category_sp">
+<input id="sc1-3" type="radio" name="sc1" value="3" data-survey-uid="i2">				</span><label for="sc1-3" class="rdck_label_sp" onclick="" data-survey-uid="c16">Je ne souhaite pas répondre</label></div></td></tr></tbody></table>
+</div><!--categories_rbck_default end-->
+</div>
+
+
+</div>
+</div><!--question_default end-->
+<input type="hidden" name="sc1_count" value="3">
+<div class="question_default" data-survey-uid="c17">
+<a name="sc2_ap"></a>
+
+<div id="sc2_question" class="question" data-survey-uid="c18">
+
+
+
+
+
+<div class="utils_design"></div><!--utils_design end-->
+
+<div class="for_sticky" id="stickyID_sc2"></div>
+
+
+<div class="content_default" data-survey-uid="c19">
+<div class="content" data-survey-uid="c20">
+	<div class="qno" data-survey-uid="c21">SC2</div>
+	<div class="content_note note" data-survey-uid="c22">Quel est votre âge ?	</div>
+</div>
+</div><!--content_default end-->
+
+
+
+<div class="answer" data-survey-uid="c23">
+	
+<div class="categories_text_default" data-survey-uid="c24">
+
+<table class="categories" style=" width:500px; ">
+
+	
+	<tbody><tr>
+		<td class="categorie_text rp_cate_head " style="vertical-align:middle; padding-left:4px; width:1px; padding:0px;">
+<div class="note"><nobr></nobr></div></td><td class="categorie_text" data-survey-uid="c25"><div class="note" data-survey-uid="c26"><input type="text" name="sc2_1" maxlength="2" value="" style="width:35px"> ans</div>
+		</td>
+	</tr>	
+</tbody></table>
+</div><!--categories_text_default end-->
+</div>
+
+
+</div>
+</div><!--question_default end-->
+<div class="question_default">
+<a name="sc3_ap"></a>
+
+<div id="sc3_question" class="question">
+
+
+
+
+
+<div class="utils_design"></div><!--utils_design end-->
+
+<div class="for_sticky" id="stickyID_sc3"></div>
+
+
+<div class="content_default" data-survey-uid="c27">
+<div class="content" data-survey-uid="c28">
+	<div class="qno" data-survey-uid="c29">SC3</div>
+	<div class="content_note note" data-survey-uid="c30">Où habitez-vous&nbsp;?	</div>
+</div>
+</div><!--content_default end-->
+
+
+
+<div class="answer">
+	<div class="categories_pl_default">
+<table class="categories" style=" width:500px; ">
+	<tbody><tr>
+		<td>
+		<div class="note"><select name="sc3"><option value="">--- </option><option value="1">Auvergne-Rhône-Alpes</option><option value="2">Bourgogne-Franche-Comté</option><option value="3">Bretagne</option><option value="4">Centre-Val de Loire</option><option value="5">Corse</option><option value="6">Grand Est</option><option value="7">Hauts-de-France</option><option value="8">Île-de-France</option><option value="9">Normandie</option><option value="10">Nouvelle-Aquitaine</option><option value="11">Occitanie</option><option value="12">Pays de la Loire</option><option value="13">Provence-Alpes-Côte d'Azur</option><option value="14">Autres régions</option></select>
+</div>
+		</td>
+	</tr>
+</tbody></table>
+</div><!--categories_pl_default end-->
+</div>
+
+
+</div>
+</div><!--question_default end-->
+<input type="hidden" name="sc3_count" value="14">
+
+				<a name="Send_ap"></a>
+				<div id="buttonArea">
+					<input id="btnsmall" type="button" name="next" class="enterButton submitButton fontF" value="&gt;&gt;" onclick="return clickCheck( 'next_button' )">
+				</div>
+
+									<div id="progressbar" data-survey-uid="c31">
+						<table border="0" cellspacing="0" cellpadding="0" id="progress">
+	<tbody><tr>
+		<td data-survey-uid="c32">
+			<table border="0" cellspacing="0" cellpadding="1">
+				<tbody><tr>
+					<td>
+						<table width="204" border="0" cellspacing="1" cellpadding="0" bgcolor="#0068B7">
+							<tbody><tr>
+								<td bgcolor="#EEEEEE" align="left">
+									<div style="width:0px; height:20px; background-color:#5191D6;"></div>
+								</td>
+							</tr>
+						</tbody></table>
+					</td>
+					<td></td>
+				</tr>
+				<tr>
+					<td data-survey-uid="c33">
+						<table width="204" border="0" cellspacing="0" cellpadding="0">
+							<tbody><tr>
+								<td width="68" align="left" data-survey-uid="c34">  <font size="2">0  </font></td>
+								<td width="68" align="center" data-survey-uid="c35"><font size="2">50 </font></td>
+								<td width="68" align="right" data-survey-uid="c36"> <font size="2">100</font></td>
+							</tr>
+						</tbody></table>
+					</td>
+					<td data-survey-uid="c37"><font size="2">(%)</font></td>
+				</tr>
+			</tbody></table>
+		</td>
+	</tr>
+</tbody></table>
+				</div>
+					 
+
+				<input type="hidden" name="nextdata" value="953aa0322351c84046ceb08e1c508071380f934c5633351d7c313451887f59a4a5cea16d4394f5849476083c4aef64707cb5fbf4ff64904fdac6caf21a768e7370c6dc0b260fa652c7f267cbafb611572ae1a3c5ad4725ee1614e838">
+				<input type="hidden" name="back_button" value="">
+				<input type="hidden" name="next_button" value="">
+
+			</form>
+
+				<script>
+		attachBlockSubmit('formQ');
+		</script>
+		
+		</div><!--main end-->
+		
+	</div><!--contents end-->
+
+    <div id="footer">
+    </div>
+
+</div>
+
+</div><!--page_default end-->
+
+</body></html>

@@ -16,22 +16,15 @@ Tout patch proposé **DOIT** être validé contre ces DOMs pour garantir :
 
 | Fichier | Plateforme | Type de Question | Points de Validation Clés |
 |---------|------------|------------------|---------------------------|
-| `DOM_radio_dom7.txt` | **Decipher** | Radio (consent) | Extraction `input[type=radio]`, labels via `<label for>` |
-| `DOM_multi_checkbox.txt` | **Decipher** | Checkbox multi-select | Options exclusives (`class="exclusive"`), champ "Autre" avec input text |
-| `DOM_362624.txt` | **Decipher** | Slider Points (échelle) | `<select>` caché sous slider UI, classes `sq-sliderpoints`, valeurs 0-4 |
-| `DOM_cint_q1.txt` | **Cint** | Checkbox multi-select | Structure simple `div.answer`, extraction via `label > span` |
-| `DOM_dynata.txt` | **Dynata** | Dropdown (single select) | `<select>` Angular (`ng-model`), options via `<option value="string:...">` |
-| `DOM_ipso_birthdate.txt` | **IPSOS** | Multi-dropdown (date) | 2 `<select>` liés (mois + année), Bootstrap Select overlay |
-| `DOM_aa.txt` | **Ask&Answer** | Multi-select (mat-list) | Angular Material `mat-selection-list`, `mat-list-option`, aria-selected |
-| `DOM_aa_28.txt` | **Ask&Answer** | Matrix (grille radio) | `mat-radio-group`, sous-questions par ligne, responsive mobile/desktop |
-| `DOM_645.txt` | **Walr** | Radio (single select) | Structure ASP.NET, `input[type=radio]` avec `onclick`, labels imbriqués |
-| `DOM_1249.txt` | **Lucid/Samplicio** | Checkbox multi-select | Template JS (`var question = {...}`), labels `label.checkbox` |
-| `DOM_12415.txt` | **Lucid/Samplicio** | Radio (single select) | Même structure que 1249, `label.radio`, template SINGLE |
-| `DOM_ssi_confirmit_textarea.txt` | **SSI/Confirmit** | Textarea (open-ended) | Question dans `h1.qtext`, filtrage instructions validation, fieldset séparé |
-| `DOM_ovey_radio.txt` | **ovey.kr** | Radio (single select) | Inputs display:none, wrappers .radio-wrapper, labels span.answer-label > p.fr-tag |
-| `DOM_cloudresearch_sentry_radio.txt` | **CloudResearch/Sentry** | Radio (single select) | Vue.js, `div[role="button"].choice-option`, texte dans `.cr-ct`, question `h1.question-prompt` |
-| `DOM_walr_cardsort.txt` | **Walr** | CardSort (single select) | `#cardSortContainer`, question `.statement-box`, options `button.answer-button` |
-| `DOM_cmix_simplegrid_QLEISUREACTIVITIES_60524984.txt` | **cmix** | Matrix/Grille (SIMPLE_GRID) | Table HTML classique, radios groupés par ligne via `name`, `data-type="SIMPLE_GRID"` |
+| `DOM_QLEISUREACTIVITIES_CMix_SimpleGrid_LeisureFrequency_FR.txt` | **cmix** | Matrix/Grille (SIMPLE_GRID) | Table HTML classique, radios groupés par ligne via `name`, `data-type="SIMPLE_GRID"`, fréquence loisirs |
+| `DOM_purespectrum_radio_211.txt` | **Purespectrum** | Radio (single select) | Angular, `ps-single-choice-question`, `input[type=radio]` dans `label`, `data-e2e` sur les inputs |
+| `DOM_confirmit_children_household_multi_exclusive_fr.txt` | **Forsta/Confirmit** | Checkbox multi-select + exclusives | `cf-answer-button--exclusive`, structure `cf-question`, options exclusives CSS-driven |
+| `DOM_cmix_language_selector_radio_60552194.txt` | **cmix** | Radio (single select) | `data-type="RADIO"`, `cm-radio-label`, sélecteur de langue bilingue EN/FR |
+| `DOM_cmix_intro_consent_checkbox_60552196.txt` | **cmix** | Checkbox (consentement) | `data-type="CHECKBOX"`, intro/welcome page, case à cocher unique de consentement |
+| `DOM_rsch_demographics_fr.txt` | **Rsch (Research System)** | Multi-type (radio + text + dropdown) | Page démographique multi-questions (genre SC1, âge SC2, région SC3), mix radio/text/select |
+| `DOM_ipsos_gender_radio_fr.txt` | **IPSOS** | Radio (single select) | `h3.question-title-frontend`, `input[type=radio]` dans `.radio > label`, Wicket framework |
+| `DOM_decipher_red_herring_math_text_fr.txt` | **Decipher** | Text input (red herring math) | `input[type=text]`, question `h1.question-text`, validation erreur `div.question-error`, anti-bot |
+| `DOM_angular_material_radio_fruits.txt` | **Angular Material (custom)** | Radio (single select) | `mat-radio-button`, `mat-mdc-radio-checked` sur option sélectionnée, `value` numérique, red herring fruits |
 
 ---
 
@@ -39,155 +32,183 @@ Tout patch proposé **DOIT** être validé contre ces DOMs pour garantir :
 
 | Type | DOMs Concernés | Spécificités |
 |------|----------------|--------------|
-| **Radio (single)** | `radio_dom7`, `645`, `12415`, `ovey_radio`, `cloudresearch_sentry_radio` | Un seul choix, `input[type=radio]` ou `div[role=button]` |
-| **Checkbox (multi)** | `multi_checkbox`, `cint_q1`, `aa`, `1249` | Plusieurs choix, options exclusives possibles |
-| **Dropdown** | `dynata` | `<select>` natif ou stylé |
-| **Multi-dropdown** | `ipso_birthdate` | Plusieurs `<select>` liés (ex: date) |
-| **Slider/Échelle** | `362624` | UI slider + `<select>` caché fallback |
-| **Matrix/Grille** | `aa_28`, `cmix_simplegrid` | Sous-questions × options, radio par ligne |
-| **Textarea (open-ended)** | `ssi_confirmit_textarea` | Texte libre, compteur caractères, question hors fieldset |
+| **Radio (single)** | `purespectrum_radio_211`, `cmix_language_selector_radio_60552194`, `ipsos_gender_radio_fr`, `angular_material_radio_fruits` | Un seul choix possible |
+| **Checkbox (multi)** | `confirmit_children_household_multi_exclusive_fr`, `cmix_intro_consent_checkbox_60552196` | Plusieurs choix, options exclusives possibles |
+| **Text input** | `decipher_red_herring_math_text_fr` | Saisie libre d'un nombre, anti-bot/attention check |
+| **Multi-type (page démographique)** | `rsch_demographics_fr` | Radio + text + select sur une même page |
+| **Matrix/Grille** | `QLEISUREACTIVITIES_CMix_SimpleGrid_LeisureFrequency_FR` | Sous-questions × options, radio par ligne |
+
 ---
 
 ## Patterns d'Extraction par Plateforme
 
-### Decipher (`selfserve/53b/`, `selfserve/3507/`)
-```
-Question:     h1.question-text
-Options:      div.element > span.cell-text > label
-Inputs:       input.radio | input.checkbox
-Exclusives:   input.exclusive
-```
-
-### Cint (`/survey/`)
-```
-Question:     h2#label
-Options:      div.answer > label
-Inputs:       input[type=checkbox]
-```
-
-### Dynata (`rsncdn.com`)
-```
-Question:     div.questionText
-Options:      select > option
-Inputs:       select (ng-model)
-```
-
-### IPSOS (`ipsosinteractive.com`)
-```
-Question:     h3.question-title-frontend
-Options:      select > option (multiple selects)
-Inputs:       select.form-control
-```
-
-### Ask&Answer (`/askandanswer/`)
-```
-Question:     mat-card-title > div
-Options:      mat-list-option > div.mat-list-text
-Inputs:       mat-pseudo-checkbox | mat-radio-button
-Matrix:       mat-table ou accordion mobile
-```
-
-### Walr (`walr.com`, `azurewebsites.net`)
-```
-Question:     div.cQuestionText
-Options:      tr.rsRow > td.cCellRowText > label
-Inputs:       input.cRadio
-```
-
-### Walr CardSort (`walr.com`, `azurewebsites.net`)
-```
-Conteneur:    div#cardSortContainer
-Question:     div.statement-box
-Options:      button.answer-button (clic direct, pas d'input natif)
-```
-
-**Particularités:**
-- Pas d'inputs `<input type="radio">` traditionnels
-- Les options sont des `<button>` cliquables directement
-- UI de type "card sort" avec statement unique + boutons de réponse
-- Pattern similaire à CloudResearch mais avec des boutons au lieu de divs
-
-### Lucid/Samplicio (`samplicio.us`)
-```
-Question:     div.question (texte direct)
-Options:      label.radio | label.checkbox > span
-Inputs:       input[type=radio|checkbox]
-Data JSON:    var question = {...} (backup)
-```
-
-### SSI/Confirmit (`ssisurveys.com`, `researchnow.com`, `surveymonkey.com`)
-```
-Question:     h1.qtext > label > div.header-text-qs
-              OU h1#*_text (ex: h1#HealthWellness_text)
-Options:      N/A (open-ended)
-Inputs:       textarea.confirmit-textarea
-Fieldset:    fieldset#fieldset_* (contient l'input, PAS la question)
-```
-
-**⚠ Particularité SSI/Confirmit :**
-- La question est **HORS** du `<fieldset>` contenant le textarea
-- Le `<p>` adjacent au textarea contient souvent une instruction de validation (ex: "Please enter at least 40 characters") qui n'est **PAS** la question
-- Utiliser `_extract_ssi_confirmit_question()` pour remonter au `h1.qtext`
-
-
-### ovey.kr (`ovey.kr/ovey/mobile/`)
-```
-Question:     div.question-description > h4.fr-tag
-Options:      div.answer-choice-wrapper (contient input caché + wrapper visible)
-Inputs:       input[type=radio|checkbox] avec style="display: none;"
-Labels:       span.answer-label > p.fr-tag
-Wrappers:     div.radio-wrapper | div.checkbox-wrapper
-CTA:          div.next-btn-wrapper onclick="goNext()"
-Survey actif: div#surveyN.survey[style*="display: block"]
-```
-
-**Particularités:**
-- Inputs TOUJOURS cachés (`style="display: none;"`)
-- Le clic doit se faire via `label[for=input_id]`
-- Plusieurs surveys dans le DOM, seul celui avec `display: block` est actif
-- Questions en coréen/français (i18n via `<p class="fr-tag">`)
-
-### CloudResearch/Sentry (`sentry.cloudresearch.com`)
-```
-Question:     h1[class*='question-prompt'] | h1[id*='QuestionLabel'] | h1.cr-custom-qt
-Options:      .choice-option[role='button'] .cr-ct | [class*='answer-choice']
-Inputs:       div[role='button'].choice-option (clic direct, pas d'input natif)
-Conteneur:    #sentry | .cr-question-card
-CTA:          button.next (disabled tant qu'aucune option sélectionnée)
-```
-
-**Particularités:**
-- Framework Vue.js, PAS d'inputs `<input type="radio">` traditionnels
-- Les options sont des `<div role="button">` cliquables
-- Le texte de l'option est dans `.cr-ct` (CloudResearch content)
-- Chaque bouton a un `tabindex` unique (2, 3, 4, 5...)
-- SVG d'icône cercle dans chaque option (à ignorer pour l'extraction texte)
-- Le bouton "Next" est désactivé (`disabled`) tant qu'aucune option n'est sélectionnée
-
-### cmix (`cdn2.cmix.com`, `cmix.com`)
+### cmix (`cdn2.cmix.com`, `cmix.com`, `dynata.com`)
 ```
 Conteneur:    div.cm-survey-container
 Question:     div.cm-qtext
-Type détect:  div.cm-element[data-type="SIMPLE_GRID"]
+Type détect:  div.cm-element[data-type="RADIO|CHECKBOX|SIMPLE_GRID"]
+
+— RADIO —
+Options:      div.cm-radio-label (texte de l'option)
+Inputs:       input[type=radio]
+CTA:          a#cm-NextButton.cm-navigation-next-button
+
+— CHECKBOX —
+Options:      label (contient le texte de consentement ou l'option à cocher)
+Inputs:       input[type=checkbox]
+Particularité: Sur les pages d'intro/consentement, le texte de la question peut être
+              dans des blocs de type cm-intro ou dans des paragraphes libres du DOM,
+              en dehors du bloc cm-qtext habituel.
+
+— SIMPLE_GRID —
 Grille:       div.cm-simple-grid > table.cm-simple-grid__table
 Headers col:  th.cm-simple-grid__column-header > div
 Headers row:  td.cm-simple-grid__row-header > div[data-subquestionname]
 Cellules:     td.cm-simple-grid__cell > div.cm-radio-input-container
-Inputs:       input[type=radio] avec questionid, name (groupage par ligne)
-CTA:          a#cm-NextButton.cm-navigation-next-button
-Progress:     div.cm-progress-bar .determinate[style*="width:"]
+Inputs:       input[type=radio] (name unique par ligne = groupage automatique)
+Attributs:    data-subquestionname (ex: QLEISUREACTIVITIES_4), questionid
 ```
 
-**Particularités:**
-- Structure table HTML classique (pas Angular Material comme Ask&Answer)
-- Attribut `data-type="SIMPLE_GRID"` sur `div.cm-element.cm-question` identifie le type matrix
-- Chaque ligne (sous-question) a son propre `name` pour les radios → groupage automatique
-- `questionid` attribut sur les containers `.cm-radio-input-container` identifie la sous-question
-- `data-subquestionname` sur les headers de ligne (ex: `QLEISUREACTIVITIES_4`)
-- Inputs radios standards avec `value` et `data-response-id`
-- Labels vides (`.cm-radio-input`) servent uniquement au styling
-- Bouton "Suivant" via `a#cm-NextButton` (lien stylé en bouton)
-- Progress bar avec pourcentage visible
+**Particularités cmix :**
+- `data-type` sur `div.cm-element.cm-question` identifie systématiquement le type de question
+- Pour les SIMPLE_GRID : chaque ligne a son propre `name` de radio → groupage automatique
+- Labels radio (`.cm-radio-input`) souvent vides → ne pas les utiliser pour le texte
+- Progress bar avec pourcentage visible : `div.cm-progress-bar .determinate[style*="width:"]`
+- Bouton "Suivant" = `a#cm-NextButton` (lien stylé en bouton, pas un `<button>`)
+- Sur les pages de consentement/intro, le texte explicatif précède le bloc question et peut contenir des balises `<a>` (liens politique de confidentialité)
+
+---
+
+### Purespectrum (`purespectrum.com`)
+```
+Framework:    Angular (ps-root, ps-single-choice-question, ps-question-orchestrator)
+Question:     p[psquestiontitle] | p#single-choice-question-title.question-title
+Options:      label.form-check (contient input + texte directement)
+Inputs:       input[type=radio].form-check-input (data-e2e="111|112|113...")
+Sélectionné:  label.active-bg (vs label.inactive-bg pour les non-sélectionnés)
+CTA:          ps-next-button > ps-button > button (aria-label="Go to next question")
+Progress:     ngb-progressbar[aria-valuenow]
+```
+
+**Particularités Purespectrum :**
+- Framework Angular avec composants custom (`ps-*`)
+- `value="[object Object]"` sur les inputs — ne pas utiliser `value` pour identifier l'option, utiliser `data-e2e` à la place
+- L'option sélectionnée est identifiable par la classe `active-bg` sur le `<label>`
+- Les radios ont `name="[object Object]"` (non discriminant), utiliser `id` (`choice-0`, `choice-1`...)
+- Cookie consent overlay (CookieYes) présent dans le DOM mais sans impact sur la question
+
+---
+
+### Forsta / Confirmit (`qubiq-surveys.com`, `ssisurveys.com`, `forsta.com`)
+```
+Framework:    Confirmit/Forsta (renommage de SSI/Confirmit)
+Question:     div.cf-question__text (texte de la question)
+              div.cf-question__instruction (instruction optionnelle)
+Options:      div.cf-list__item.cf-answer-button (chaque option = un div cliquable)
+Texte option: div.cf-answer-button__label (texte visible de l'option)
+Inputs:       input[type=checkbox] (masqués, interaction via le div parent)
+Exclusives:   div.cf-answer-button--exclusive (désélectionne les autres au clic)
+Sélectionné:  div.cf-answer-button--selected
+CTA:          bouton/lien de navigation Forsta (cf. structure de la page)
+```
+
+**Particularités Forsta/Confirmit :**
+- Les inputs `<input type="checkbox">` sont masqués — l'interaction se fait via clic sur le `div.cf-answer-button` parent
+- Les options exclusives portent la classe `cf-answer-button--exclusive` ET `cf-answer-button--selected` quand cochées
+- La logique exclusive est gérée via JS custom injecté dans la page (`Fix the exclusive button for Multis`)
+- Structure CSS-driven : l'état sélectionné/désélectionné est géré par les classes CSS, pas par `checked` sur l'input
+- Différent de Decipher (selfserve) malgré une parenté historique — patterns d'extraction distincts
+
+---
+
+### Rsch / Research System (`index.php`)
+```
+Framework:    PHP custom (formulaire HTML classique)
+Question:     div.content_note.note (texte de la question)
+N° question:  div.qno (ex: SC1, SC2, SC3)
+
+— Radio (SC1 genre) —
+Options:      label.rdck_label_sp (associé via for=)
+Inputs:       input[type=radio] (name=sc1, values=1/2/3)
+
+— Text input (SC2 âge) —
+Inputs:       input[type=text] (name=sc2_1, maxlength=2)
+Unité:        texte adjacent " ans"
+
+— Dropdown (SC3 région) —
+Inputs:       select[name=sc3] > option[value=1..14]
+Options:      textes des <option> (régions françaises)
+
+CTA:          input#btnsmall[type=button].submitButton (value=">>")
+Progress:     div#progressbar (barre 0-100%)
+```
+
+**Particularités Rsch :**
+- Plusieurs questions sur une même page (SC1, SC2, SC3) — extraire chaque `div.question_default` séparément
+- Encodage UTF-8 parfois altéré dans les caractères accentués (`Ã©` pour `é`, etc.)
+- Les `<input type="hidden">` (nextdata, back_button) ne sont pas des questions
+- `data-survey-uid` présent sur tous les éléments (utile pour le ciblage précis)
+- La region est via un `<select>` natif avec `<option value="">--- </option>` comme placeholder
+
+---
+
+### IPSOS (`ipsosinteractive.com`)
+```
+Framework:    Apache Wicket (Java) + Bootstrap
+Question:     h3.question-title-frontend
+Options:      div.radio > label > span.font-weight-light (texte de l'option)
+Inputs:       input[type=radio] (name long Wicket, value="radio0"|"radio1"...)
+CTA:          a#submitQuestion.btn.btn-primary (texte span#submitLabel)
+```
+
+**Particularités IPSOS :**
+- `name` des inputs = chemin Wicket complet (ex: `questionContainer:optionsPanel:question:0:actualQuestionPanel:radioGroup`) — non lisible mais cohérent
+- `value` = `"radio0"`, `"radio1"` etc. (index numérique, pas le texte)
+- Le texte de l'option est dans `<span class="font-weight-light text-hard-light">` à l'intérieur du `<label>`
+- Footer contient un lien "Politique de confidentialité" (ne pas confondre avec une option)
+- Indicateur AJAX : `img#ajaxLoadingImage.ajaxIndicator` (présent deux fois dans le DOM)
+
+---
+
+### Decipher (`selfserve/1da7/`)
+```
+Question:     h1.question-text (peut contenir des balises <p>)
+Instructions: h2.instruction-text
+Erreur:       div.question-error > h2.question-error-text (visible si validation échouée)
+
+— Text input (red herring / attention check) —
+Type detect:  div.question.number (classe "number" = saisie numérique)
+Inputs:       input[type=text].text-input (name=ans383.0.0, size=2)
+CTA:          input[type=submit]#btn_continue.button.continue (value="Continuer »")
+```
+
+**Particularités Decipher (text/math) :**
+- Question de type "red herring" / attention check : math simple (ex: 6+6=??)
+- Classe `number` sur le div question indique une réponse numérique attendue
+- `name` de l'input suit le pattern `ans[pageId].[row].[col]` (ex: `ans383.0.0`)
+- L'erreur de validation (`div.question-error`) est présente dans le DOM même si cachée
+- `input[type=hidden]` `state` et `start_time` = données de session (ne pas interagir)
+
+---
+
+### Angular Material (custom/generic)
+```
+Framework:    Angular 19 + Angular Material (mat-radio-*)
+Question:     h5.question-text (texte de la question)
+Options:      label.mdc-label[for=mat-radio-N-input] (texte de l'option)
+Inputs:       input[type=radio].mdc-radio__native-control (id=mat-radio-N-input)
+Sélectionné:  mat-radio-button.mat-mdc-radio-checked (classe sur le composant parent)
+              + input avec tabindex="0" (vs tabindex="-1" pour les non-sélectionnés)
+CTA:          button.next_btn (texte "SUIVANT")
+```
+
+**Particularités Angular Material :**
+- Les `value` des inputs sont numériques (`"1"`, `"2"`, `"3"`, `"4"`) — correspondent à un ordre logique, pas au texte
+- La bonne réponse est identifiable via `mat-mdc-radio-checked` sur le `<mat-radio-button>` parent
+- `tabindex="0"` sur l'input sélectionné vs `tabindex="-1"` sur les autres (utile en fallback)
+- Question de type "red herring fruits" : vérification d'attention sur des achats (pomme/bananes/raisins)
+- Structure Angular Material encapsulée : `mat-radio-group > mat-radio-button > div.mdc-radio > input`
+- Le composant est rendu dans `app-survey` (application Angular standalone)
 
 ---
 
@@ -206,7 +227,7 @@ blocks = extract_question_blocks(dom_content)
 #    - Nombre de blocks correct
 #    - Question text extrait
 #    - Options complètes (texte + value)
-#    - Type d'input détecté (radio/checkbox/select)
+#    - Type d'input détecté (radio/checkbox/select/text)
 
 # 4. Simuler réponse OpenAI et vérifier:
 #    - Sélection correcte des inputs
@@ -218,42 +239,29 @@ blocks = extract_question_blocks(dom_content)
 | Test | Critère de Succès |
 |------|-------------------|
 | Extraction question | Texte non vide, sans balises HTML parasites |
-| Extraction options | ≥ 2 options, chaque option a texte + value |
-| Détection type | Correct parmi: radio, checkbox, select, slider, matrix, textarea |
+| Extraction options | ≥ 2 options (sauf consentement unique), chaque option a texte + value |
+| Détection type | Correct parmi : radio, checkbox, select, text, matrix |
 | Application réponse | Input sélectionné correspond à l'instruction |
-| Filtrage validation | Instructions "minimum X characters" ne sont PAS des questions |
+| Exclusives Forsta | Option exclusive désélectionne les autres (class-driven, pas checked) |
+| Red herring | Réponse correcte au calcul ou à la question d'attention identifiée |
 
 ---
 
 ## Notes Importantes
 
-1. **Encodage** : Certains DOMs contiennent des caractères UTF-8 mal encodés (ex: `ÃƒÆ'Ã†â€™Ãƒâ€šÃ‚©` pour `é`). Le code doit être robuste à ces variations.
+1. **Encodage** : `DOM_rsch_demographics_fr.txt` contient des caractères UTF-8 mal encodés (`Ã©` pour `é`, etc.). Le code doit être robuste à ces variations.
 
-2. **Éléments cachés** : Les sliders Decipher ont des `<select>` cachés - le code doit pouvoir les exploiter en fallback.
+2. **Éléments masqués** : Sur Forsta/Confirmit, les `<input type="checkbox">` sont masqués — interaction obligatoirement via le `div.cf-answer-button` parent.
 
-3. **Options dynamiques** : Ask&Answer et Dynata utilisent Angular - les options peuvent être rendues dynamiquement.
+3. **Value non fiable** : Sur Purespectrum, `value="[object Object]"` — utiliser `data-e2e` ou `id` pour identifier et interagir avec les options.
 
-4. **Mobile vs Desktop** : Ask&Answer a des structures différentes selon le viewport (`fxhide.lt-md`).
+4. **Exclusives CSS-driven** : Sur Forsta, l'exclusivité est gérée par classes CSS + JS custom, non par l'attribut HTML `disabled` ou `exclusive`.
 
-5. **Options exclusives** : Decipher marque certaines options avec `class="exclusive"` - elles doivent désélectionner les autres.
+5. **Page multi-questions** : `DOM_rsch_demographics_fr.txt` contient 3 questions (SC1, SC2, SC3) sur une seule page — itérer sur chaque `div.question_default`.
 
-6. **Instructions de validation** : Sur SSI/Confirmit, les `<p>` adjacents aux textareas contiennent souvent des compteurs de caractères ("Please enter at least 40 characters"). Ces textes doivent être filtrés via `_is_validation_instruction()` pour ne pas être confondus avec la vraie question.
+6. **Page d'intro cmix** : `DOM_cmix_intro_consent_checkbox_60552196.txt` est une page de bienvenue + consentement — le texte "question" est dispersé dans des blocs libres, pas dans un `div.cm-qtext` standard.
 
-7. **Grilles cmix** : Structure table HTML classique avec `data-type="SIMPLE_GRID"`. Les radios sont groupés par `name` (un par ligne/sous-question). Utiliser `questionid` pour identifier la sous-question associée.
-
----
-
-## Ajout de Nouveaux DOMs
-
-Pour ajouter un nouveau DOM de référence :
-
-1. Sauvegarder le HTML `<body>` complet
-2. Nommer : `DOM_[plateforme]_[type]_[id].txt`
-3. Documenter dans ce README :
-   - Plateforme identifiée
-   - Type de question
-   - Patterns d'extraction spécifiques
-4. Ajouter un test de non-régression correspondant
+7. **Red herring / attention checks** : `DOM_decipher_red_herring_math_text_fr.txt` et `DOM_angular_material_radio_fruits.txt` sont des questions de contrôle qualité. La bonne réponse doit être calculée/identifiée avant soumission.
 
 ---
 
@@ -261,7 +269,12 @@ Pour ajouter un nouveau DOM de référence :
 
 | Date | DOM | Raison |
 |------|-----|--------|
-| 2025-02 | `DOM_ssi_confirmit_textarea.txt` | Bug extraction question textarea - instruction validation capturée au lieu de la vraie question |
-| 2025-02 | `DOM_cloudresearch_sentry_radio.txt` | Support CloudResearch/Sentry - radios Vue.js via div[role="button"].choice-option |
-| 2025-02 | `DOM_walr_cardsort.txt` | Support Walr CardSort - boutons answer-button sans inputs natifs |
-| 2025-02 | `DOM_cmix_simplegrid_QLEISUREACTIVITIES_60524984.txt` | Support cmix SIMPLE_GRID - matrix table HTML avec radios groupés par ligne |
+| 2025-02 | `DOM_QLEISUREACTIVITIES_CMix_SimpleGrid_LeisureFrequency_FR.txt` | Support cmix SIMPLE_GRID — matrix table HTML avec radios groupés par ligne (fréquence loisirs, FR) |
+| 2025-02 | `DOM_purespectrum_radio_211.txt` | Support Purespectrum Angular — radio single select, value=[object Object], data-e2e pour identification |
+| 2025-02 | `DOM_confirmit_children_household_multi_exclusive_fr.txt` | Support Forsta/Confirmit multi+exclusives — checkbox masqués, interaction CSS-driven via cf-answer-button |
+| 2025-02 | `DOM_cmix_language_selector_radio_60552194.txt` | Support cmix RADIO — sélecteur de langue bilingue, pattern cm-radio-label |
+| 2025-02 | `DOM_cmix_intro_consent_checkbox_60552196.txt` | Support cmix CHECKBOX intro/consent — page bienvenue, texte question hors cm-qtext |
+| 2025-02 | `DOM_rsch_demographics_fr.txt` | Support Rsch PHP custom — page multi-questions (radio + text + select), encodage UTF-8 dégradé |
+| 2025-02 | `DOM_ipsos_gender_radio_fr.txt` | Support IPSOS Wicket — radio genre FR, name Wicket long, value=radio0/radio1 |
+| 2025-02 | `DOM_decipher_red_herring_math_text_fr.txt` | Support Decipher text/number — attention check math, input[type=text], validation error visible |
+| 2025-02 | `DOM_angular_material_radio_fruits.txt` | Support Angular Material radio — red herring fruits, mat-mdc-radio-checked, tabindex comme signal sélection |

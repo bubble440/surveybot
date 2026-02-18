@@ -1,0 +1,7 @@
+Commençons cette enquête !
+Si tu es allé à l'épicerie et as acheté une pomme rouge, trois bananes jaunes et deux raisins verts, laquelle des options suivantes résume le mieux tes achats ?
+3 bananes, 1 raisin, 1 pomme
+2 bananes, 3 raisins, 1 pomme
+1 raisin, 2 pommes, 1 banane
+1 pomme, 3 bananes, 2 raisins
+SUIVANT
