@@ -1104,6 +1104,12 @@ def analyze_dom(driver) -> List[Dict[str, Any]]:
     _wait_for_survey_dom(driver)
     max_depth = int(os.getenv("DOM_FRAME_MAX_DEPTH", "2") or "2")
     best_chain, _meta = _select_best_frame_chain(driver, max_depth=max_depth)
+    if _env_truthy("DOM_CONTEXT_DEBUG", "0"):
+        print(
+            f"[DOM_CONTEXT_DEBUG] analyze_dom selected_chain={best_chain} "
+            f"selected_ps_date_question={_meta.get('selected_ps_date_question_count', 0)} "
+            f"score={_meta.get('score', 0)}"
+        )
 
     # Pattern spécifique
     blocks: List[Dict[str, Any]] = []

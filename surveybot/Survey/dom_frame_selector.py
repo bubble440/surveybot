@@ -116,6 +116,12 @@ def _score_dom_context(driver) -> Dict[str, Any]:
             const selects = document.querySelectorAll('select');
             const textareas = document.querySelectorAll('textarea');
             const buttons = document.querySelectorAll('button, input[type=submit], input[type=button]');
+            const psRoot = document.querySelectorAll('ps-root').length;
+            const psDateQuestion = document.querySelectorAll('ps-date-question').length;
+            const psQuestionOrchestrator = document.querySelectorAll('ps-question-orchestrator').length;
+            const psSelectScroll = document.querySelectorAll('ps-select-scroll').length;
+            const questionTitle = document.querySelectorAll('.question-title').length;
+            const selectScrollSlide = document.querySelectorAll('.select-scroll-slide').length;
             
             // Détecter submit/next
             let hasSubmit = false;
@@ -136,7 +142,13 @@ def _score_dom_context(driver) -> Dict[str, Any]:
                 button_count: buttons.length,
                 has_submit: hasSubmit,
                 has_next: hasNext,
-                text_length: textLength
+                text_length: textLength,
+                ps_root_count: psRoot,
+                ps_date_question_count: psDateQuestion,
+                ps_question_orchestrator_count: psQuestionOrchestrator,
+                ps_select_scroll_count: psSelectScroll,
+                question_title_count: questionTitle,
+                select_scroll_slide_count: selectScrollSlide
             };
         """)
         
@@ -167,6 +179,26 @@ def _score_dom_context(driver) -> Dict[str, Any]:
                 score += 20
             elif ratio > 0.05:
                 score += 10
+
+        # PureSpectrum custom UI (Angular, sans inputs natifs)
+        pure_custom_score = 0
+        if result.get('ps_root_count', 0) > 0:
+            pure_custom_score += 10
+        if result.get('ps_question_orchestrator_count', 0) > 0:
+            pure_custom_score += 10
+        if result.get('ps_date_question_count', 0) > 0:
+            pure_custom_score += 25
+        if result.get('ps_select_scroll_count', 0) > 0:
+            pure_custom_score += 20
+        if result.get('question_title_count', 0) > 0:
+            pure_custom_score += 8
+        if result.get('select_scroll_slide_count', 0) > 0:
+            pure_custom_score += 12
+
+        if pure_custom_score:
+            score += min(55, pure_custom_score)
+
+        result['pure_custom_score'] = min(55, pure_custom_score)
         
         result['score'] = min(100, score)
         return result
@@ -207,6 +239,7 @@ def _select_best_frame_chain(driver, max_depth: int = 2) -> Tuple[List[int], Dic
         - context_info: Dict avec score et métadonnées
     """
     try:
+        debug_ctx = _env_truthy("DOM_CONTEXT_DEBUG", "0")
         best_chain = []
         best_score = 0
         best_context = None
@@ -222,6 +255,13 @@ def _select_best_frame_chain(driver, max_depth: int = 2) -> Tuple[List[int], Dic
                 
                 # Scorer le contexte
                 context = _score_dom_context(driver)
+                if debug_ctx:
+                    print(
+                        f"[DOM_CONTEXT_DEBUG] candidate_chain={chain} score={context.get('score', 0)} "
+                        f"inputs={context.get('input_count', 0)} selects={context.get('select_count', 0)} "
+                        f"ps_date_question={context.get('ps_date_question_count', 0)} "
+                        f"ps_select_scroll={context.get('ps_select_scroll_count', 0)}"
+                    )
                 
                 # Vérifier si c'est le meilleur
                 if context['score'] > best_score:
@@ -249,6 +289,20 @@ def _select_best_frame_chain(driver, max_depth: int = 2) -> Tuple[List[int], Dic
             driver.switch_to.default_content()
             best_context = _score_dom_context(driver)
             best_chain = []
+
+        try:
+            best_context['selected_chain'] = list(best_chain)
+            best_context['selected_ps_date_question_count'] = int(
+                driver.execute_script("return document.querySelectorAll('ps-date-question').length;") or 0
+            )
+        except Exception:
+            best_context['selected_ps_date_question_count'] = best_context.get('ps_date_question_count', 0)
+
+        if debug_ctx:
+            print(
+                f"[DOM_CONTEXT_DEBUG] selected_chain={best_chain} score={best_context.get('score', 0)} "
+                f"selected_ps_date_question={best_context.get('selected_ps_date_question_count', 0)}"
+            )
         
         return best_chain, best_context
     
@@ -267,5 +321,6 @@ def _select_best_frame_chain(driver, max_depth: int = 2) -> Tuple[List[int], Dic
             'button_count': 0,
             'has_submit': False,
             'has_next': False,
-            'text_length': 0
+            'text_length': 0,
+            'selected_ps_date_question_count': 0
         }
