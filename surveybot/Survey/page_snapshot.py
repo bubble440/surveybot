@@ -322,10 +322,17 @@ def dump_page_snapshot(
     # Question blocks (super important pour valider dom_analyzer/prompt_builder)
     if question_blocks is not None:
         try:
-            (folder / "question_blocks.json").write_text(
+            qb_path = folder / "question_blocks.json"
+            qb_path.write_text(
                 json.dumps(question_blocks, ensure_ascii=False, indent=2),
                 encoding="utf-8",
             )
+            dbg = (os.getenv("DOM_CONTEXT_DEBUG", "0") or "").strip().lower()
+            if dbg in {"1", "true", "yes", "on"}:
+                print(
+                    f"[DOM_CONTEXT_DEBUG] snapshot_write question_blocks_path={qb_path} "
+                    f"blocks_count={len(question_blocks or [])}"
+                )
         except Exception:
             pass
 
