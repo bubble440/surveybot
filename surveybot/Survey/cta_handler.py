@@ -112,162 +112,101 @@ def disarm_interceptor(driver) -> bool:
         return False
 
 def arm_interceptor(driver) -> bool:
-    """Arme l'intercepteur JS pour capter/bloquer click+submit+navigations scriptées."""
+    """Arme l'intercepteur JS pour capter/bloquer click+submit CTA de manière robuste."""
     js = """
     (() => {
-      const mkTarget = (el) => {
-        if (!el) return null;
-        const txt = (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim();
-        return {
-          tag: (el.tagName || '').toLowerCase(),
-          id: el.id || '',
-          name: el.getAttribute ? (el.getAttribute('name') || '') : '',
-          className: el.className || '',
-          textPreview: txt.slice(0, 120),
+      try {
+        const mkTarget = (el) => {
+          if (!el) return null;
+          const txt = (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim();
+          return {
+            tag: (el.tagName || '').toLowerCase(),
+            id: el.id || '',
+            name: el.getAttribute ? (el.getAttribute('name') || '') : '',
+            className: el.className || '',
+            textPreview: txt.slice(0, 120),
+          };
         };
-      };
 
-      const state = {
-        armed: true,
-        clickCaptured: false,
-        submitCaptured: false,
-        prevented: false,
-        navigationBlocked: false,
-        ts: Date.now(),
-        target: null,
-      };
+        const state = {
+          armed: true,
+          clickCaptured: false,
+          submitCaptured: false,
+          prevented: false,
+          navigationBlocked: false,
+          ts: Date.now(),
+          target: null,
+        };
 
-      window.__sbCtaIntercept = state;
+        window.__sbCtaIntercept = state;
+        if (window.__sbCtaInterceptToken === undefined) window.__sbCtaInterceptToken = null;
 
-      // Token attendu pour filtrer l'interception au CTA ciblé uniquement.
-      // (défini côté Python juste avant le dispatch du click synthétique)
-      if (window.__sbCtaInterceptToken === undefined) window.__sbCtaInterceptToken = null;
+        if (!window.__sbCtaInterceptInstalled) {
+          window.__sbCtaInterceptInstalled = true;
 
-      if (!window.__sbCtaInterceptInstalled) {
-        window.__sbCtaInterceptInstalled = true;
+          const safeInstall = (fn) => {
+            try { fn(); } catch (e) {}
+          };
 
-        window.addEventListener('click', (evt) => {
-          const s = window.__sbCtaIntercept;
-          if (!s || !s.armed) return;
-          // Filtrage STRICT: on ne bloque que si le clic touche le CTA ciblé (token).
-          const tok = window.__sbCtaInterceptToken;
-          if (!tok) return;
-          const hit = (evt.target && evt.target.closest)
-            ? evt.target.closest(`[data-sb-cta-token="${tok}"]`)
-            : null;
-          if (!hit) return;
+          safeInstall(() => {
+            window.addEventListener('click', (evt) => {
+              const s = window.__sbCtaIntercept;
+              if (!s || !s.armed) return;
+              const tok = window.__sbCtaInterceptToken;
+              if (!tok) return;
+              const hit = (evt.target && evt.target.closest)
+                ? evt.target.closest(`[data-sb-cta-token="${tok}"]`)
+                : null;
+              if (!hit) return;
 
-          s.clickCaptured = true;
-          s.prevented = true;
-          s.ts = Date.now();
-          s.target = mkTarget(evt.target);
-          s.target = mkTarget(hit);
-          evt.preventDefault();
-          evt.stopPropagation();
-          evt.stopImmediatePropagation();
-        }, true);
-
-        window.addEventListener('submit', (evt) => {
-          const s = window.__sbCtaIntercept;
-          if (!s || !s.armed) return;
-          // Même règle: ne bloquer submit que si ça vient du formulaire contenant le CTA token.
-          const tok = window.__sbCtaInterceptToken;
-          if (tok && evt.target && evt.target.querySelector) {
-            const hasTok = evt.target.querySelector(`[data-sb-cta-token="${tok}"]`);
-            if (!hasTok) return;
-          } else if (tok) {
-            return;
-          }
-          s.submitCaptured = true;
-          s.prevented = true;
-          s.ts = Date.now();
-          s.target = mkTarget(evt.target);
-          evt.preventDefault();
-          evt.stopPropagation();
-          evt.stopImmediatePropagation();
-        }, true);
-
-        window.addEventListener('beforeunload', (evt) => {
-          const s = window.__sbCtaIntercept;
-          if (!s || !s.armed) return;
-          s.navigationBlocked = true;
-          s.prevented = true;
-          s.ts = Date.now();
-          evt.preventDefault();
-          evt.returnValue = '';
-        }, true);
-
-        if (!window.__sbHistPatched) {
-          window.__sbHistPatched = true;
-          const oldPush = history.pushState.bind(history);
-          const oldReplace = history.replaceState.bind(history);
-          history.pushState = function(...args) {
-            const s = window.__sbCtaIntercept;
-            if (s && s.armed) {
-              s.navigationBlocked = true;
+              s.clickCaptured = true;
               s.prevented = true;
               s.ts = Date.now();
-              return null;
-            }
-            return oldPush(...args);
-          };
-          history.replaceState = function(...args) {
-            const s = window.__sbCtaIntercept;
-            if (s && s.armed) {
-              s.navigationBlocked = true;
-              s.prevented = true;
-              s.ts = Date.now();
-              return null;
-            }
-            return oldReplace(...args);
-          };
-        }
+              s.target = mkTarget(hit);
+              evt.preventDefault();
+              evt.stopPropagation();
+              evt.stopImmediatePropagation();
+            }, true);
+          });
 
-        if (!window.__sbFormSubmitPatched) {
-          window.__sbFormSubmitPatched = true;
-          const oldSubmit = HTMLFormElement.prototype.submit;
-          HTMLFormElement.prototype.submit = function(...args) {
-            const s = window.__sbCtaIntercept;
-            if (s && s.armed) {
+          safeInstall(() => {
+            window.addEventListener('submit', (evt) => {
+              const s = window.__sbCtaIntercept;
+              if (!s || !s.armed) return;
+              const tok = window.__sbCtaInterceptToken;
+              if (tok && evt.target && evt.target.querySelector) {
+                const hasTok = evt.target.querySelector(`[data-sb-cta-token="${tok}"]`);
+                if (!hasTok) return;
+              } else if (tok) {
+                return;
+              }
               s.submitCaptured = true;
+              s.prevented = true;
+              s.ts = Date.now();
+              s.target = mkTarget(evt.target);
+              evt.preventDefault();
+              evt.stopPropagation();
+              evt.stopImmediatePropagation();
+            }, true);
+          });
+
+          safeInstall(() => {
+            window.addEventListener('beforeunload', (evt) => {
+              const s = window.__sbCtaIntercept;
+              if (!s || !s.armed) return;
               s.navigationBlocked = true;
               s.prevented = true;
               s.ts = Date.now();
-              s.target = mkTarget(this);
-              return;
-            }
-            return oldSubmit.apply(this, args);
-          };
+              evt.preventDefault();
+              evt.returnValue = '';
+            }, true);
+          });
         }
 
-        if (!window.__sbLocationPatched) {
-          window.__sbLocationPatched = true;
-          const oldAssign = window.location.assign.bind(window.location);
-          const oldReplace = window.location.replace.bind(window.location);
-          window.location.assign = function(...args) {
-            const s = window.__sbCtaIntercept;
-            if (s && s.armed) {
-              s.navigationBlocked = true;
-              s.prevented = true;
-              s.ts = Date.now();
-              return;
-            }
-            return oldAssign(...args);
-          };
-          window.location.replace = function(...args) {
-            const s = window.__sbCtaIntercept;
-            if (s && s.armed) {
-              s.navigationBlocked = true;
-              s.prevented = true;
-              s.ts = Date.now();
-              return;
-            }
-            return oldReplace(...args);
-          };
-        }
+        return true;
+      } catch (e) {
+        return false;
       }
-
-      return true;
     })();
     """
     try:
@@ -337,11 +276,23 @@ def _click_with_intercept(driver, el) -> bool:
     # puis on désarme TOUJOURS pour ne jamais bloquer les autres inputs.
     armed_ok = arm_interceptor(driver)
     if not armed_ok:
-        # Même si "arm" a échoué, il peut y avoir eu une installation partielle.
-        # On désarme quand même pour éviter de geler la page.
+        # Fallback unique et borné: si l'armement est impossible dans ce contexte,
+        # on tente un clic direct pour ne pas bloquer la navigation CTA.
         disarm_interceptor(driver)
-        print("[CTA_INTERCEPT] failed_to_arm=true")
-        return False
+        print("[CTA_INTERCEPT] failed_to_arm=true fallback_direct_click=true")
+        try:
+            el.click()
+            return True
+        except Exception:
+            try:
+                ActionChains(driver).move_to_element(el).click().perform()
+                return True
+            except Exception:
+                try:
+                    driver.execute_script("arguments[0].click();", el)
+                    return True
+                except Exception:
+                    return False
 
     token = f"{int(time.time()*1000)}_{os.getpid()}"
 
