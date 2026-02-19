@@ -295,6 +295,48 @@ def is_consent_screen(driver) -> bool:
         return True
 
     # -------------------------------------------------------------------------
+    # Survey-final redirect gate (Angular):
+    # écran intermédiaire "Vous y êtes presque" / "Let's do this" qui ne contient
+    # pas de questions mais un CTA pour poursuivre vers l'enquête.
+    # Sans ce signal, la page tombe en "unclassified" et le CTA n'est pas cliqué.
+    # -------------------------------------------------------------------------
+    def _is_survey_redirect_gate() -> bool:
+        try:
+            return bool(driver.execute_script(r"""
+                const isVisible = (el) => {
+                    if (!el) return false;
+                    const s = window.getComputedStyle(el);
+                    if (!s || s.display === 'none' || s.visibility === 'hidden') return false;
+                    const r = el.getBoundingClientRect();
+                    return !!(r && r.width > 20 && r.height > 20);
+                };
+
+                const root = document.querySelector('app-survey-final, app-survey-final-page, [class*="survey-final"]');
+                const txt = ((root?.innerText || document.body?.innerText || '')).toLowerCase();
+
+                const hasRedirectSignal = [
+                  'vous y êtes presque', 'vous y etes presque', 'you are almost there',
+                  'redirigé', 'redirected', 'qualification'
+                ].some(k => txt.includes(k));
+                if (!hasRedirectSignal) return false;
+
+                const ctas = Array.from(document.querySelectorAll(
+                  'button.next_btn, button[type="submit"], button, a[role="button"], input[type="submit"]'
+                )).filter(isVisible);
+                if (ctas.length < 1) return false;
+
+                const answerables = Array.from(document.querySelectorAll(
+                  'input[type="radio"], input[type="checkbox"], select, textarea, input[type="text"], input[type="number"], input[type="email"], input[type="tel"], input[type="search"]'
+                )).filter(isVisible);
+                return answerables.length === 0;
+            """))
+        except Exception:
+            return False
+
+    if _is_survey_redirect_gate():
+        return True
+
+    # -------------------------------------------------------------------------
     # Affinnova / NIQ launch interstitial:
     # page "LANCER L'ÉTUDE" qui ouvre la survey en popup (window.open).
     # Ce n'est pas un end_screen même si un "Merci pour votre participation"
