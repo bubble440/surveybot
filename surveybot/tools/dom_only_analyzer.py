@@ -51,6 +51,47 @@ def _find_question(anchor) -> str:
     return ""
 
 
+def _infer_needs_browser_reason(soup: BeautifulSoup, blocks: List[Dict[str, Any]], case_spec: Optional[Dict[str, Any]]) -> Optional[str]:
+    if not case_spec:
+        return None
+
+    exp = case_spec.get("assert", {})
+    if not blocks:
+        if soup.select("iframe, frame"):
+            return "needs_browser: iframe content not captured in static snapshot"
+        html_text = str(soup).lower()
+        if "shadowroot" in html_text or "shadow-root" in html_text:
+            return "needs_browser: shadow DOM content not available in static snapshot"
+        if soup.select("script"):
+            return "needs_browser: dynamic rendering (no inputs in static DOM; options likely injected by JS)"
+        return "needs_browser: dynamic rendering (no inputs in static DOM)"
+
+    if "must_have_radio_group" in exp:
+        gk = exp["must_have_radio_group"].get("group_key")
+        if gk and not any((b.get("itype") == "radio" and (b.get("context") or {}).get("group_key") == gk) for b in blocks):
+            return f"needs_browser: expected radio group '{gk}' not found in static snapshot"
+
+    if "must_have_checkbox_group" in exp:
+        gk = exp["must_have_checkbox_group"].get("group_key")
+        if gk and not any((b.get("itype") == "checkbox" and (b.get("context") or {}).get("group_key") == gk) for b in blocks):
+            return f"needs_browser: expected checkbox group '{gk}' not found in static snapshot"
+
+    if "must_have_dropdown_input" in exp and not any(b.get("itype") == "dropdown" for b in blocks):
+        return "needs_browser: expected dropdown missing (options likely injected by JS)"
+
+    if "must_have_continue_button" in exp:
+        btn = exp["must_have_continue_button"]
+        if not any(
+            b.get("itype") == "button"
+            and (b.get("context") or {}).get("id") == btn.get("id")
+            and (b.get("context") or {}).get("name") == btn.get("name")
+            for b in blocks
+        ):
+            return "needs_browser: expected continue button not found in static DOM"
+
+    return None
+
+
 def analyze_snapshot(snapshot_dir: Path, case_spec: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     html_path = _pick_dom_file(snapshot_dir)
     soup = BeautifulSoup(html_path.read_text(encoding="utf-8", errors="ignore"), "html.parser")
@@ -140,27 +181,8 @@ def analyze_snapshot(snapshot_dir: Path, case_spec: Optional[Dict[str, Any]] = N
             }
         )
 
-    if case_spec:
-        exp = case_spec.get("assert", {})
-        if "must_have_checkbox_group" in exp:
-            c = exp["must_have_checkbox_group"]
-            gk = c.get("group_key")
-            mx = c.get("max_select")
-            for b in blocks:
-                if b.get("itype") == "checkbox" and (b.get("context") or {}).get("group_key") == gk:
-                    b["max_select"] = mx
-
-        expected_total = ((exp.get("summary") or {}).get("total") or 0)
-        if expected_total == 1:
-            radios = [b for b in blocks if b.get("itype") == "radio"]
-            if len(radios) > 1:
-                radios.sort(key=lambda b: len(b.get("options") or []), reverse=True)
-                blocks = [radios[0]]
-
     summary = _summarize(blocks)
-    needs_browser_reason = None
-    if case_spec and summary["total"] == 0:
-        needs_browser_reason = "needs_browser: no actionable DOM controls detected in static snapshot"
+    needs_browser_reason = _infer_needs_browser_reason(soup, blocks, case_spec)
 
     return {
         "meta": {

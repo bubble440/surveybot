@@ -65,20 +65,14 @@ def run_dom_only(snapshot_dir: Path, case_json: Path) -> None:
     if r.returncode != 0:
         die(f"[LEVEL_A] dom_only_analyzer FAILED: {snapshot_dir}")
 
-def assert_case(case_dir: Path, force_dom_only: bool = False) -> None:
+def assert_case(case_dir: Path, mode: str) -> None:
     spec = load_json(case_dir / "case.json")
     snapshot_dir = case_dir / spec["snapshot_dir"]
 
-    mode = "selenium"
-    if force_dom_only:
-        mode = "dom-only"
-    elif not run_replay(snapshot_dir):
-        mode = "dom-only"
-
     if mode == "selenium":
-        print("[LEVEL_A] MODE=selenium")
+        if not run_replay(snapshot_dir):
+            die(f"[LEVEL_A] {spec['name']} replay_snapshot failed in selenium mode")
     else:
-        print("[LEVEL_A] MODE=dom-only")
         run_dom_only(snapshot_dir, case_dir / "case.json")
 
     out_path = snapshot_dir / "dom_analyzer.out.json"
@@ -223,16 +217,19 @@ def main():
 
     print(f"[LEVEL_A] Running {len(case_jsons)} case(s)...")
 
-    if not force_dom_only:
+    mode = "dom-only" if force_dom_only else "selenium"
+    if mode == "selenium":
         probe_spec = load_json(case_jsons[0])
         probe_snapshot = case_jsons[0].parent / probe_spec["snapshot_dir"]
         if not run_replay(probe_snapshot, quiet=True):
-            force_dom_only = True
+            mode = "dom-only"
+
+    print(f"[LEVEL_A] MODE={mode}")
 
     failures = 0
     for cj in case_jsons:
         try:
-            assert_case(cj.parent, force_dom_only=force_dom_only)
+            assert_case(cj.parent, mode=mode)
         except SystemExit:
             # die() -> sys.exit(1) : on capture pour continuer sur les autres cas
             failures += 1
