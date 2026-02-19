@@ -1,4 +1,5 @@
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -13,6 +14,7 @@ if ROOT is None:
 
 CASES_DIR = ROOT / "cases" / "level_a"
 REPLAY_SNAPSHOT = THIS_DIR / "replay_snapshot.py"
+DOM_ONLY_ANALYZER = THIS_DIR / "dom_only_analyzer.py"
 
 def die(msg: str) -> None:
     print(msg)
@@ -29,7 +31,7 @@ def find_block(blocks, itype: str, predicate):
             return b
     return None
 
-def run_replay(snapshot_dir: Path) -> None:
+def run_replay(snapshot_dir: Path, quiet: bool = False) -> bool:
     cmd = [
         sys.executable,
         str(REPLAY_SNAPSHOT),
@@ -38,15 +40,46 @@ def run_replay(snapshot_dir: Path) -> None:
         # "--use-project-launcher",
     ]
     # On ne save pas baseline ici. Baseline = une action volontaire.
+    r = subprocess.run(
+        cmd,
+        cwd=str(ROOT),
+        capture_output=quiet,
+        text=True,
+    )
+    if r.returncode != 0 and quiet:
+        err = (r.stderr or r.stdout or "").strip().splitlines()
+        snippet = err[-1] if err else "unknown error"
+        print(f"[LEVEL_A] Selenium replay unavailable: {snippet}")
+    return r.returncode == 0
+
+
+def run_dom_only(snapshot_dir: Path, case_json: Path) -> None:
+    cmd = [
+        sys.executable,
+        str(DOM_ONLY_ANALYZER),
+        str(snapshot_dir),
+        "--case-json",
+        str(case_json),
+    ]
     r = subprocess.run(cmd, cwd=str(ROOT))
     if r.returncode != 0:
-        die(f"[LEVEL_A] replay_snapshot FAILED: {snapshot_dir}")
+        die(f"[LEVEL_A] dom_only_analyzer FAILED: {snapshot_dir}")
 
-def assert_case(case_dir: Path) -> None:
+def assert_case(case_dir: Path, force_dom_only: bool = False) -> None:
     spec = load_json(case_dir / "case.json")
     snapshot_dir = case_dir / spec["snapshot_dir"]
 
-    run_replay(snapshot_dir)
+    mode = "selenium"
+    if force_dom_only:
+        mode = "dom-only"
+    elif not run_replay(snapshot_dir):
+        mode = "dom-only"
+
+    if mode == "selenium":
+        print("[LEVEL_A] MODE=selenium")
+    else:
+        print("[LEVEL_A] MODE=dom-only")
+        run_dom_only(snapshot_dir, case_dir / "case.json")
 
     out_path = snapshot_dir / "dom_analyzer.out.json"
     if not out_path.exists():
@@ -55,17 +88,24 @@ def assert_case(case_dir: Path) -> None:
     out = load_json(out_path)
     blocks = out.get("question_blocks", [])
     summary = out.get("summary", {})
+    needs_browser_reason = ((out.get("meta") or {}).get("needs_browser_reason") or "").strip()
+
+    def fail(msg: str) -> None:
+        if mode == "dom-only":
+            reason = needs_browser_reason or "needs_browser: DOM-only extraction did not satisfy assertion"
+            die(f"[LEVEL_A] {spec['name']} {reason} ({msg})")
+        die(msg)
 
     exp = spec["assert"]
 
     # 1) Summary
     if summary.get("total") != exp["summary"]["total"]:
-        die(f"[LEVEL_A] {spec['name']} summary.total mismatch: {summary.get('total')} != {exp['summary']['total']}")
+        fail(f"[LEVEL_A] {spec['name']} summary.total mismatch: {summary.get('total')} != {exp['summary']['total']}")
 
     by_type = summary.get("by_type", {})
     for k, v in exp["summary"]["by_type"].items():
         if by_type.get(k) != v:
-            die(f"[LEVEL_A] {spec['name']} summary.by_type[{k}] mismatch: {by_type.get(k)} != {v}")
+            fail(f"[LEVEL_A] {spec['name']} summary.by_type[{k}] mismatch: {by_type.get(k)} != {v}")
 
     # 2) Un seul "must_have_*" requis : radio OU checkbox OU text OU dropdown (prédictible)
     if "must_have_radio_group" in exp:
@@ -78,14 +118,14 @@ def assert_case(case_dir: Path) -> None:
             lambda b: (b.get("context") or {}).get("group_key") == gk
         )
         if not radio:
-            die(f"[LEVEL_A] {spec['name']} missing radio group_key={gk}")
+            fail(f"[LEVEL_A] {spec['name']} missing radio group_key={gk}")
 
         if radio.get("max_select") != max_select:
-            die(f"[LEVEL_A] {spec['name']} radio.max_select mismatch: {radio.get('max_select')} != {max_select}")
+            fail(f"[LEVEL_A] {spec['name']} radio.max_select mismatch: {radio.get('max_select')} != {max_select}")
 
         opts = radio.get("options") or []
         if len(opts) < min_opts:
-            die(f"[LEVEL_A] {spec['name']} radio.options too small: {len(opts)} < {min_opts}")
+            fail(f"[LEVEL_A] {spec['name']} radio.options too small: {len(opts)} < {min_opts}")
 
     elif "must_have_checkbox_group" in exp:
         gk = exp["must_have_checkbox_group"]["group_key"]
@@ -97,14 +137,14 @@ def assert_case(case_dir: Path) -> None:
             lambda b: (b.get("context") or {}).get("group_key") == gk
         )
         if not cb:
-            die(f"[LEVEL_A] {spec['name']} missing checkbox group_key={gk}")
+            fail(f"[LEVEL_A] {spec['name']} missing checkbox group_key={gk}")
 
         if cb.get("max_select") != max_select:
-            die(f"[LEVEL_A] {spec['name']} checkbox.max_select mismatch: {cb.get('max_select')} != {max_select}")
+            fail(f"[LEVEL_A] {spec['name']} checkbox.max_select mismatch: {cb.get('max_select')} != {max_select}")
 
         opts = cb.get("options") or []
         if len(opts) < min_opts:
-            die(f"[LEVEL_A] {spec['name']} checkbox.options too small: {len(opts)} < {min_opts}")
+            fail(f"[LEVEL_A] {spec['name']} checkbox.options too small: {len(opts)} < {min_opts}")
 
     elif "must_have_text_input" in exp:
         exp_txt = exp["must_have_text_input"]
@@ -119,12 +159,12 @@ def assert_case(case_dir: Path) -> None:
                    and ((b.get("context") or {}).get("name") == exp_name)
         )
         if not txt:
-            die(f"[LEVEL_A] {spec['name']} missing text input id={exp_id} name={exp_name}")
+            fail(f"[LEVEL_A] {spec['name']} missing text input id={exp_id} name={exp_name}")
 
         if q_contains:
             q = (txt.get("question") or "").strip().lower()
             if q_contains not in q:
-                die(f"[LEVEL_A] {spec['name']} text.question mismatch: expected contains '{q_contains}' got '{q}'")
+                fail(f"[LEVEL_A] {spec['name']} text.question mismatch: expected contains '{q_contains}' got '{q}'")
 
     elif "must_have_dropdown_input" in exp:
         exp_dd = exp["must_have_dropdown_input"]
@@ -144,14 +184,14 @@ def assert_case(case_dir: Path) -> None:
             )
 
         if not dd:
-            die(f"[LEVEL_A] {spec['name']} missing dropdown (question_contains='{q_contains}')")
+            fail(f"[LEVEL_A] {spec['name']} missing dropdown (question_contains='{q_contains}')")
 
         if int(dd.get("max_select", 1) or 1) != max_select:
-            die(f"[LEVEL_A] {spec['name']} dropdown.max_select mismatch: {dd.get('max_select')} != {max_select}")
+            fail(f"[LEVEL_A] {spec['name']} dropdown.max_select mismatch: {dd.get('max_select')} != {max_select}")
 
         opts = dd.get("options") or []
         if len(opts) < min_opts:
-            die(f"[LEVEL_A] {spec['name']} dropdown.options too small: {len(opts)} < {min_opts}")
+            fail(f"[LEVEL_A] {spec['name']} dropdown.options too small: {len(opts)} < {min_opts}")
 
     else:
         die(f"[LEVEL_A] {spec['name']} missing must_have_radio_group or must_have_checkbox_group or must_have_text_input or must_have_dropdown_input in case.json")
@@ -165,11 +205,15 @@ def assert_case(case_dir: Path) -> None:
                       and ((b.get("context") or {}).get("name") == exp_btn["name"])
         )
         if not btn:
-            die(f"[LEVEL_A] {spec['name']} missing Continue button id={exp_btn['id']} name={exp_btn['name']}")
+            fail(f"[LEVEL_A] {spec['name']} missing Continue button id={exp_btn['id']} name={exp_btn['name']}")
 
     print(f"[LEVEL_A] PASS: {spec['name']}")
 
 def main():
+    force_dom_only = ("--dom-only" in sys.argv) or (os.getenv("LEVEL_A_DOM_ONLY") == "1")
+    if "--dom-only" in sys.argv:
+        sys.argv.remove("--dom-only")
+
     if not CASES_DIR.exists():
         die(f"Missing cases dir: {CASES_DIR}")
 
@@ -179,10 +223,16 @@ def main():
 
     print(f"[LEVEL_A] Running {len(case_jsons)} case(s)...")
 
+    if not force_dom_only:
+        probe_spec = load_json(case_jsons[0])
+        probe_snapshot = case_jsons[0].parent / probe_spec["snapshot_dir"]
+        if not run_replay(probe_snapshot, quiet=True):
+            force_dom_only = True
+
     failures = 0
     for cj in case_jsons:
         try:
-            assert_case(cj.parent)
+            assert_case(cj.parent, force_dom_only=force_dom_only)
         except SystemExit:
             # die() -> sys.exit(1) : on capture pour continuer sur les autres cas
             failures += 1
