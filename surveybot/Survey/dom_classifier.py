@@ -294,6 +294,43 @@ def is_consent_screen(driver) -> bool:
     if _is_confirmit_welcome_gdpr_with_next():
         return True
 
+    # -------------------------------------------------------------------------
+    # Affinnova / NIQ launch interstitial:
+    # page "LANCER L'ÉTUDE" qui ouvre la survey en popup (window.open).
+    # Ce n'est pas un end_screen même si un "Merci pour votre participation"
+    # est présent dans un bloc secondaire masqué avant le clic.
+    # -------------------------------------------------------------------------
+    def _is_affinnova_launch_gate() -> bool:
+        try:
+            return bool(driver.execute_script(r"""
+                const isVisible = (el) => {
+                    if (!el) return false;
+                    const s = window.getComputedStyle(el);
+                    if (!s || s.display === 'none' || s.visibility === 'hidden') return false;
+                    const r = el.getBoundingClientRect();
+                    return !!(r && r.width > 20 && r.height > 20);
+                };
+
+                const launchBtn = document.querySelector('a.launchButton[onclick*="showSurvey" i], a.launchButton');
+                if (!isVisible(launchBtn)) return false;
+
+                const blob = ((launchBtn.innerText || '') + ' ' + (document.body?.innerText || '')).toLowerCase();
+                const hasLaunchText = ["lancer l'étude", "lancer l etude", 'launch', 'démarrer', 'commencer']
+                  .some(k => blob.includes(k));
+                if (!hasLaunchText) return false;
+
+                // Signal technique robuste de la mécanique popup Affinnova
+                const hasShowSurveyFn = /function\s+showSurvey\s*\(/i.test(document.documentElement?.innerHTML || '');
+                if (!hasShowSurveyFn) return false;
+
+                return true;
+            """))
+        except Exception:
+            return False
+
+    if _is_affinnova_launch_gate():
+        return True
+
     # --- contrôle explicite type consent (checkbox/radio avec libellé agree/accept/consent) ---
     def _has_explicit_consent_control() -> bool:
         """

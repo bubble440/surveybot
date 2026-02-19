@@ -1894,6 +1894,60 @@ def handle_consent_screen(driver):
     if _handle_ipsos_privacy_policy_page():
         return True
 
+    # 0bis) Affinnova / NIQ launch gate: CTA "LANCER L'ÉTUDE" (popup + switch main/secondary)
+    def _handle_affinnova_launch_gate() -> bool:
+        try:
+            launch = driver.find_element(By.CSS_SELECTOR, "a.launchButton[onclick*='showSurvey'], a.launchButton")
+        except Exception:
+            return False
+
+        try:
+            if not launch.is_displayed():
+                return False
+        except Exception:
+            return False
+
+        handles_before = set()
+        try:
+            handles_before = set(driver.window_handles)
+        except Exception:
+            pass
+
+        if not _click_best_effort(launch):
+            return False
+
+        # Effet attendu: nouvelle fenêtre OU transition visuelle main->secondary
+        end = time.time() + 7.0
+        while time.time() < end:
+            time.sleep(0.2)
+
+            try:
+                if set(driver.window_handles) != handles_before:
+                    return True
+            except Exception:
+                pass
+
+            try:
+                transitioned = bool(driver.execute_script(r"""
+                    const main = document.querySelector('#main');
+                    const secondary = document.querySelector('#secondary');
+                    if (!main || !secondary) return false;
+                    const ms = window.getComputedStyle(main);
+                    const ss = window.getComputedStyle(secondary);
+                    const mainHidden = !!ms && (ms.display === 'none' || ms.visibility === 'hidden');
+                    const secondaryShown = !!ss && (ss.display !== 'none' && ss.visibility !== 'hidden');
+                    return mainHidden && secondaryShown;
+                """))
+                if transitioned:
+                    return True
+            except Exception:
+                pass
+
+        return _wait_change(before_sig, before_url, timeout_s=2.0)
+
+    if _handle_affinnova_launch_gate():
+        return True
+
     # 1) Chercher le plus grand overlay CMP visible
     #    IMPORTANT: on ignore les containers cachés (ex: CookieYes avec .cky-hide)
     def _has_hidden_ancestor(el) -> bool:
