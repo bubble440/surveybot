@@ -1951,11 +1951,28 @@ def handle_consent_screen(driver):
         cands = sorted(cands, key=_score, reverse=True)
         if cands and _score(cands[0]) >= 0:
             btn = cands[0]
+            # En mode CTA_INTERCEPT_ONLY=1 (tests/non-régression), on force un clic via input_handler
+            # pour que le CTA passe par cta_handler et soit intercepté.
+            intercept_only = (os.getenv("CTA_INTERCEPT_ONLY", "") or "").strip().lower() in {"1", "true", "yes", "on"}
             try:
-                btn.click()
+                if intercept_only:
+                    label = _norm_lc(btn.text or btn.get_attribute('value') or btn.get_attribute('innerText') or "")
+                    if label:
+                        Survey.input_handler.click_cta_strong_any_context(driver, label)
+                    else:
+                        btn.click()
+                else:
+                    btn.click()
             except Exception:
                 try:
-                    driver.execute_script("arguments[0].click();", btn)
+                    if intercept_only:
+                        label = _norm_lc(btn.text or btn.get_attribute('value') or btn.get_attribute('innerText') or "")
+                        if label:
+                            Survey.input_handler.click_cta_strong_any_context(driver, label)
+                        else:
+                            driver.execute_script("arguments[0].click();", btn)
+                    else:
+                        driver.execute_script("arguments[0].click();", btn)
                 except Exception:
                     pass
 
