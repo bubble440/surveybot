@@ -9,6 +9,7 @@ Retour :
 
 from __future__ import annotations
 from typing import Tuple, Optional
+from urllib.parse import parse_qs, urlparse
 
 from selenium.webdriver.common.by import By
 
@@ -130,6 +131,42 @@ def _is_element_visible(el) -> bool:
         return False
 
 
+def _is_actionable_captcha_element(el) -> bool:
+    """
+    Évite les faux positifs sur les badges/passive widgets (ex: reCAPTCHA invisible en footer).
+    On ne garde que les éléments qui ressemblent à un challenge utilisateur réel.
+    """
+    try:
+        tag = (el.tag_name or "").lower()
+        cls = (el.get_attribute("class") or "").lower()
+        el_id = (el.get_attribute("id") or "").lower()
+        src = (el.get_attribute("src") or "").lower()
+
+        # Badge reCAPTCHA v3/invisible (footer), non bloquant pour la progression.
+        if "g-recaptcha-badge" in cls:
+            return False
+
+        # Textarea/token caché injecté par reCAPTCHA (jamais un challenge à résoudre).
+        if tag == "textarea" and (
+            "g-recaptcha-response" in el_id
+            or "g-recaptcha-response" in (el.get_attribute("name") or "").lower()
+        ):
+            return False
+
+        # Anchor iframe invisible -> pas de challenge (simple initialisation widget).
+        if tag == "iframe" and "recaptcha" in src and "api2/anchor" in src:
+            try:
+                size = (parse_qs(urlparse(src).query).get("size", [""])[0] or "").lower()
+            except Exception:
+                size = ""
+            if size == "invisible":
+                return False
+
+        return True
+    except Exception:
+        return False
+
+
 def detect_strict_survey(driver) -> Tuple[bool, Optional[str]]:
     """
     Détecte si la page demande une interaction "stricte".
@@ -173,7 +210,7 @@ def detect_strict_survey(driver) -> Tuple[bool, Optional[str]]:
             for sel in matches:
                 try:
                     for el in driver.find_elements(By.CSS_SELECTOR, sel):
-                        if el.is_displayed():
+                        if _is_element_visible(el) and _is_actionable_captcha_element(el):
                             return True, "captcha"
                 except Exception:
                     continue
