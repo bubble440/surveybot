@@ -141,9 +141,22 @@ def _is_actionable_captcha_element(el) -> bool:
         cls = (el.get_attribute("class") or "").lower()
         el_id = (el.get_attribute("id") or "").lower()
         src = (el.get_attribute("src") or "").lower()
+        try:
+            badge_ancestor = bool(
+                el.parent.execute_script(
+                    "return !!arguments[0].closest('.g-recaptcha-badge, .grecaptcha-badge');",
+                    el,
+                )
+            )
+        except Exception:
+            badge_ancestor = False
 
         # Badge reCAPTCHA v3/invisible (footer), non bloquant pour la progression.
         if "g-recaptcha-badge" in cls:
+            return False
+
+        # Iframe placé dans le badge reCAPTCHA footer (v3/enterprise invisible).
+        if badge_ancestor:
             return False
 
         # Textarea/token caché injecté par reCAPTCHA (jamais un challenge à résoudre).
@@ -154,7 +167,7 @@ def _is_actionable_captcha_element(el) -> bool:
             return False
 
         # Anchor iframe invisible -> pas de challenge (simple initialisation widget).
-        if tag == "iframe" and "recaptcha" in src and "api2/anchor" in src:
+        if tag == "iframe" and "recaptcha" in src and ("/anchor" in src):
             try:
                 size = (parse_qs(urlparse(src).query).get("size", [""])[0] or "").lower()
             except Exception:
