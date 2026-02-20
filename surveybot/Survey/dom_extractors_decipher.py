@@ -35,7 +35,7 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
     
     Pattern DOM FocusVision:
     - Conteneurs: div.question[role='radiogroup'] / div.question.radio / div.question.checkbox
-    - Liste d'options: .answers.answers-list
+    - Liste d'options: .answers.answers-list OU .answers.answers-table
     - Inputs masqués avec wrappers cliquables (.clickableCell ou .element)
     - Labels: label[for=id] ou dans .clickableCell
     
@@ -58,7 +58,7 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
     q_containers = driver.find_elements(By.CSS_SELECTOR, "div.question[role='radiogroup'], div.question.radio, div.question.checkbox")
     for q in q_containers:
         try:
-            answers = q.find_element(By.CSS_SELECTOR, ".answers.answers-list")
+            answers = q.find_element(By.CSS_SELECTOR, ".answers.answers-list, .answers.answers-table")
         except Exception:
             continue
 
@@ -86,6 +86,23 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
             if not name:
                 continue
             by_name.setdefault(name, []).append(inp)
+
+        # Decipher "answers-table" peut utiliser un name unique par ligne
+        # (ex: ans421.0.0 / ans421.0.1 / ...). Dans ce cas, grouper par préfixe
+        # logique de question pour conserver un seul question_block.
+        if by_name and all(len(v) == 1 for v in by_name.values()) and len(by_name) >= 2:
+            by_prefix: dict[str, list] = {}
+            for inps in by_name.values():
+                inp = inps[0]
+                raw_name = (inp.get_attribute("name") or "").strip()
+                parts = [p for p in raw_name.split(".") if p != ""]
+                if len(parts) >= 2:
+                    prefix = ".".join(parts[:2])
+                else:
+                    prefix = raw_name
+                by_prefix.setdefault(prefix, []).append(inp)
+            if any(len(v) >= 2 for v in by_prefix.values()):
+                by_name = by_prefix
 
         for name, inps in by_name.items():
             # itype
