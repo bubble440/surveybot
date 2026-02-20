@@ -1183,6 +1183,37 @@ def analyze_dom(driver) -> List[Dict[str, Any]]:
                 if not blocks:
                     blocks = _extract_decipher_answers_list_fallback(driver, frame_chain=chain)
 
+    # Dédup ciblée FocusVision/Decipher:
+    # sur certains DOMs, l'extraction générique peut créer un bloc "group" incomplet
+    # (context.group_key vide) avant l'extracteur FocusVision dédié.
+    # Cela peut pousser OpenAI à renvoyer un target_id non applicable.
+    # Règle: pour une même question/itype/options, on garde la variante avec group_key non vide.
+    dedup_map: dict[tuple[str, str, tuple[str, ...]], dict] = {}
+    for b in (blocks or []):
+        if not isinstance(b, dict):
+            continue
+        q_sig = _norm((b.get("question") or "")).lower()
+        t_sig = _norm((b.get("itype") or "")).lower()
+        o_sig = tuple(sorted(_norm((o or "")).lower() for o in (b.get("options") or []) if _norm(o)))
+        sig = (q_sig, t_sig, o_sig)
+        cur = dedup_map.get(sig)
+
+        def _group_key_len(x: dict) -> int:
+            try:
+                return len(((x.get("context") or {}).get("group_key") or "").strip())
+            except Exception:
+                return 0
+
+        if cur is None:
+            dedup_map[sig] = b
+            continue
+
+        if _group_key_len(b) > _group_key_len(cur):
+            dedup_map[sig] = b
+
+    if dedup_map:
+        blocks = list(dedup_map.values())
+
     if _env_truthy("DOM_CONTEXT_DEBUG", "1"):
         print(
             f"[DOM_CONTEXT_DEBUG] analyze_dom stage=raw_extraction "
