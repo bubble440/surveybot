@@ -337,6 +337,44 @@ def is_consent_screen(driver) -> bool:
         return True
 
     # -------------------------------------------------------------------------
+    # Walr country-routing interstitial:
+    # Page Walr avec routage automatique par pays (.cRef / .cRadio / #btnNext).
+    # Le JS de la page auto-sélectionne le pays et clique #btnNext, mais le bot
+    # doit aussi pouvoir intercepter/cliquer ce CTA si le JS n'a pas encore agi.
+    # Signal distinctif: présence de .cRadio (pays) + .cRef + #btnNext visible.
+    # -------------------------------------------------------------------------
+    def _is_walr_country_routing_gate() -> bool:
+        try:
+            return bool(driver.execute_script(r"""
+                const isVisible = (el) => {
+                    if (!el) return false;
+                    const s = window.getComputedStyle(el);
+                    if (!s || s.display === 'none' || s.visibility === 'hidden') return false;
+                    const r = el.getBoundingClientRect();
+                    return !!(r && r.width > 10 && r.height > 10);
+                };
+
+                // Signal fort 1: inputs .cRadio (liste pays Walr, auto-sélectionnés par JS)
+                const cRadios = document.querySelectorAll('.cRadio');
+                if (cRadios.length < 10) return false;
+
+                // Signal fort 2: élément .cRef (code pays injecté côté serveur)
+                const cRef = document.querySelector('.cRef');
+                if (!cRef) return false;
+
+                // Signal fort 3: bouton #btnNext visible
+                const btnNext = document.querySelector('#btnNext');
+                if (!isVisible(btnNext)) return false;
+
+                return true;
+            """))
+        except Exception:
+            return False
+
+    if _is_walr_country_routing_gate():
+        return True
+
+    # -------------------------------------------------------------------------
     # Affinnova / NIQ launch interstitial:
     # page "LANCER L'ÉTUDE" qui ouvre la survey en popup (window.open).
     # Ce n'est pas un end_screen même si un "Merci pour votre participation"
