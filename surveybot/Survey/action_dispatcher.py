@@ -1948,6 +1948,46 @@ def handle_consent_screen(driver):
     if _handle_affinnova_launch_gate():
         return True
 
+    # 0ter) Walr country-routing gate: cliquer #btnNext (le JS de la page auto-sélectionne
+    #        le pays via .cRadio, le bot doit juste déclencher le bouton Suivant).
+    def _handle_walr_country_routing_gate() -> bool:
+        # Vérifier le signal Walr distinctif (.cRadio + .cRef) avant de chercher #btnNext
+        try:
+            has_walr_signal = bool(driver.execute_script(
+                "return document.querySelectorAll('.cRadio').length >= 10 && !!document.querySelector('.cRef');"
+            ))
+        except Exception:
+            has_walr_signal = False
+        if not has_walr_signal:
+            return False
+
+        try:
+            btn = driver.find_element(By.CSS_SELECTOR, "#btnNext")
+        except Exception:
+            return False
+        try:
+            if not btn.is_displayed():
+                return False
+        except Exception:
+            return False
+
+        intercept_only = (os.getenv("CTA_INTERCEPT_ONLY", "") or "").strip().lower() in {"1", "true", "yes", "on"}
+        if intercept_only:
+            label = _norm_lc(btn.get_attribute("value") or btn.text or "suivant")
+            try:
+                import Survey.input_handler
+                Survey.input_handler.click_cta_strong_any_context(driver, label)
+            except Exception:
+                pass
+            return True  # interception signalée
+
+        if not _click_best_effort(btn):
+            return False
+        return _wait_change(before_sig, before_url, timeout_s=8.0)
+
+    if _handle_walr_country_routing_gate():
+        return True
+
     # 1) Chercher le plus grand overlay CMP visible
     #    IMPORTANT: on ignore les containers cachés (ex: CookieYes avec .cky-hide)
     def _has_hidden_ancestor(el) -> bool:
