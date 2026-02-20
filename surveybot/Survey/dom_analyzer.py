@@ -363,6 +363,29 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             # Pattern spécifique
             options = list(dict.fromkeys([o for o in options if o]))
 
+            # Fallback Decipher/FocusVision: certains widgets custom (ex: tiled checkbox)
+            # exposent des inputs exploitables mais sans label associé directement.
+            # Dans ce cas, on récupère les libellés visibles depuis le conteneur réponse.
+            if not options:
+                try:
+                    container = _nearest_question_container(els[0])
+                    if container:
+                        label_nodes = container.find_elements(
+                            By.CSS_SELECTOR,
+                            ".answers.answers-table .row-legend, "
+                            ".answers.answers-table label[for], "
+                            ".sq-atm1d-legend"
+                        )
+                        fallback_options: List[str] = []
+                        for node in label_nodes:
+                            txt = _norm((node.text or "").strip())
+                            if txt and txt not in fallback_options:
+                                fallback_options.append(txt)
+                        if len(fallback_options) >= 2:
+                            options = fallback_options
+                except Exception:
+                    pass
+
             # question = depuis conteneur (et on exclut options)
             # Tentative prioritaire: pattern SurveyWriter/SSI (#QText_{N})
             question = _extract_surveywriter_ssi_question(driver, els[0])
