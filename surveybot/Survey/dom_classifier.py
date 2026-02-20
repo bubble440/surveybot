@@ -859,6 +859,16 @@ def is_captcha_screen(driver) -> bool:
                 for (const e of els){
                 const r = e.getBoundingClientRect();
                 const tn = (e.tagName||"").toLowerCase();
+
+                // Ignorer le badge reCAPTCHA v3/invisible (présence passive en bas de page)
+                if (e.closest && e.closest('.grecaptcha-badge')) continue;
+
+                if (tn === "iframe") {
+                    const src = (e.src || e.getAttribute('src') || '').toLowerCase();
+                    // Anchor invisible => pas un challenge bloquant
+                    if (src.includes('recaptcha') && src.includes('size=invisible')) continue;
+                }
+
                 // Seuils : iframe/widget doit être "grand", input captcha peut être petit
                 if (tn === "iframe" || e.classList.contains("g-recaptcha") || e.classList.contains("h-captcha")) {
                     if (r.width >= 60 && r.height >= 40) return true;
