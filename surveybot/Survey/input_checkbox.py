@@ -47,7 +47,9 @@ def force_checkbox_events(driver, checkbox_el):
         cb.checked = true;
         cb.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
         cb.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
-        cb.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        // IMPORTANT: pas de click synthétique sur checkbox.
+        // Sur certains widgets (ex: Decipher/FocusVision), cela retoggle
+        // la valeur et annule une instruction juste appliquée.
         cb.dispatchEvent(new Event('change', { bubbles: true }));
         cb.dispatchEvent(new Event('input', { bubbles: true }));
         """,
