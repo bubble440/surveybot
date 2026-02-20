@@ -375,6 +375,47 @@ def is_consent_screen(driver) -> bool:
         return True
 
     # -------------------------------------------------------------------------
+    # Walr intro/final interstitial:
+    # certaines pages Walr d'entrée exposent Q=FINAL + message intro + CTA #btnNext,
+    # sans .cRadio/.cRef. Elles doivent être traitées comme consent_screen pour
+    # permettre le clic/interception du CTA (notamment en mode CTA_INTERCEPT_ONLY).
+    # -------------------------------------------------------------------------
+    def _is_walr_intro_final_gate() -> bool:
+        try:
+            return bool(driver.execute_script(r"""
+                const isVisible = (el) => {
+                    if (!el) return false;
+                    const s = window.getComputedStyle(el);
+                    if (!s || s.display === 'none' || s.visibility === 'hidden') return false;
+                    const r = el.getBoundingClientRect();
+                    return !!(r && r.width > 10 && r.height > 10);
+                };
+
+                const hasWalrFooter = !!document.querySelector('a.logo2link[href*="walr.com"]');
+                if (!hasWalrFooter) return false;
+
+                const q = document.querySelector('input[type="hidden"]#Q');
+                if (!q || (q.value || '').toUpperCase() !== 'FINAL') return false;
+
+                const btnNext = document.querySelector('#btnNext');
+                if (!isVisible(btnNext)) return false;
+
+                const answerables = Array.from(document.querySelectorAll(
+                  'input[type="radio"], input[type="checkbox"], select, textarea, input[type="text"], input[type="number"], input[type="email"], input[type="tel"], input[type="search"]'
+                )).filter(isVisible);
+                if (answerables.length > 0) return false;
+
+                const txt = (document.querySelector('#rsPanelMain')?.innerText || document.body?.innerText || '').toLowerCase();
+                const hasIntroSignal = ['veuillez cliquer', 'please click', 'suivant', 'next'].some(k => txt.includes(k));
+                return hasIntroSignal;
+            """))
+        except Exception:
+            return False
+
+    if _is_walr_intro_final_gate():
+        return True
+
+    # -------------------------------------------------------------------------
     # Affinnova / NIQ launch interstitial:
     # page "LANCER L'ÉTUDE" qui ouvre la survey en popup (window.open).
     # Ce n'est pas un end_screen même si un "Merci pour votre participation"
