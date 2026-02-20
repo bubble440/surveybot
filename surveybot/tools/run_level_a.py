@@ -31,7 +31,7 @@ def find_block(blocks, itype: str, predicate):
             return b
     return None
 
-def run_replay(snapshot_dir: Path, quiet: bool = False) -> bool:
+def run_replay(snapshot_dir: Path, quiet: bool = False, return_error: bool = False):
     cmd = [
         sys.executable,
         str(REPLAY_SNAPSHOT),
@@ -46,10 +46,12 @@ def run_replay(snapshot_dir: Path, quiet: bool = False) -> bool:
         capture_output=quiet,
         text=True,
     )
+    err_lines = (r.stderr or r.stdout or "").strip().splitlines() if quiet else []
+    snippet = (err_lines[-1] if err_lines else "")
     if r.returncode != 0 and quiet:
-        err = (r.stderr or r.stdout or "").strip().splitlines()
-        snippet = err[-1] if err else "unknown error"
-        print(f"[LEVEL_A] Selenium replay unavailable: {snippet}")
+        print(f"[LEVEL_A] Selenium replay unavailable: {snippet or 'unknown error'}")
+    if return_error:
+        return (r.returncode == 0, (snippet or "unknown error"))
     return r.returncode == 0
 
 
@@ -70,10 +72,13 @@ def assert_case(case_dir: Path, mode: str) -> None:
     snapshot_dir = case_dir / spec["snapshot_dir"]
 
     if mode == "selenium":
+        # En mode selenium, tout échec de replay est un FAIL explicite (pas de fallback dom-only).
         if not run_replay(snapshot_dir):
-            die(f"[LEVEL_A] {spec['name']} replay_snapshot failed in selenium mode")
-    else:
+            die(f"[LEVEL_A] {spec['name']} needs_browser: selenium replay failed")
+    elif mode == "dom-only":
         run_dom_only(snapshot_dir, case_dir / "case.json")
+    else:
+        die(f"[LEVEL_A] Unknown mode: {mode}")
 
     out_path = snapshot_dir / "dom_analyzer.out.json"
     if not out_path.exists():
@@ -217,14 +222,18 @@ def main():
 
     print(f"[LEVEL_A] Running {len(case_jsons)} case(s)...")
 
+    # Décision de mode GLOBAL, une seule fois, au début.
     mode = "dom-only" if force_dom_only else "selenium"
+    mode_msg = mode
     if mode == "selenium":
         probe_spec = load_json(case_jsons[0])
         probe_snapshot = case_jsons[0].parent / probe_spec["snapshot_dir"]
-        if not run_replay(probe_snapshot, quiet=True):
+        ok, probe_err = run_replay(probe_snapshot, quiet=True, return_error=True)
+        if not ok:
             mode = "dom-only"
+            mode_msg = f"dom-only (probe_selenium_failed: {probe_err})"
 
-    print(f"[LEVEL_A] MODE={mode}")
+    print(f"[LEVEL_A] MODE={mode_msg}")
 
     failures = 0
     for cj in case_jsons:
