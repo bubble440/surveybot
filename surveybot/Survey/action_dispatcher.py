@@ -888,6 +888,49 @@ def _apply_by_target_id(driver, target_id: str, itype: str, value: str) -> bool:
                         time.sleep(0.05)
                     return False
 
+                def _ipsos_slider_value_matches(node, expected: str) -> bool:
+                    """Validation DOM pour les sliders Likert IPSOS (bootstrap-slider)."""
+                    if not payload.get("ipsos_slider"):
+                        return False
+                    exp = (expected or "").strip()
+                    if not exp:
+                        return False
+                    try:
+                        ok = driver.execute_script(
+                            """
+                            const marker = arguments[0];
+                            const expected = String(arguments[1] || '').trim();
+                            if (!expected) return false;
+
+                            let container = marker;
+                            for (let i = 0; i < 10 && container; i++) {
+                              if (container.querySelector && container.querySelector('input.slider-form-field.bs-slider')) break;
+                              container = container.parentElement;
+                            }
+
+                            let field = container && container.querySelector
+                              ? container.querySelector('input.slider-form-field.bs-slider')
+                              : null;
+                            if (!field) {
+                              field = document.querySelector('#questionContent input.slider-form-field.bs-slider, input.slider-form-field.bs-slider');
+                            }
+                            if (!field) return false;
+
+                            const current = String(field.value || field.getAttribute('value') || field.getAttribute('data-value') || '').trim();
+                            if (current === expected) return true;
+
+                            const scope = field.parentElement || container || document;
+                            const handle = scope.querySelector && scope.querySelector('.slider-handle[aria-valuenow]');
+                            const ariaNow = handle ? String(handle.getAttribute('aria-valuenow') || '').trim() : '';
+                            return ariaNow === expected;
+                            """,
+                            node,
+                            exp,
+                        )
+                        return bool(ok)
+                    except Exception:
+                        return False
+
                 inp = _first_input_under(el)
                 if not inp:
                     if _wait_selected_like(el, timeout_s=1.0):
@@ -1010,6 +1053,9 @@ def _apply_by_target_id(driver, target_id: str, itype: str, value: str) -> bool:
                     pass
 
                 if _wait_checked(inp_id, inp_name, timeout_s=1.2):
+                    return True
+
+                if _ipsos_slider_value_matches(el, value):
                     return True
 
                 if debug_target:
