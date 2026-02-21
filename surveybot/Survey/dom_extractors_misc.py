@@ -1207,6 +1207,115 @@ def _extract_cmix_radio_question_blocks(driver, frame_chain: list[int] | None) -
     return blocks
 
 
+def _extract_ipsos_slider_question_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
+    """IPSOS sliders (bootstrap-slider): extraction DOM-only en blocs exploitables.
+
+    Cas visé: pages IPSOS avec plusieurs questions Likert 1-5 rendues via
+    `input.slider-form-field.bs-slider` (input hidden) + labels de ticks visibles.
+    L'extraction générique radio/checkbox retourne alors 0 bloc.
+    """
+    frame_chain = list(frame_chain or [])
+
+    try:
+        if not driver.find_elements(By.CSS_SELECTOR, "h3.question-title-frontend"):
+            return []
+        if not driver.find_elements(By.CSS_SELECTOR, "input.slider-form-field.bs-slider"):
+            return []
+    except Exception:
+        return []
+
+    blocks: list[dict] = []
+    seen_group_keys: set[str] = set()
+
+    try:
+        question_titles = driver.find_elements(By.CSS_SELECTOR, "h3.question-title-frontend")
+    except Exception:
+        question_titles = []
+
+    for qh in question_titles[:20]:
+        try:
+            question = _norm(qh.text or qh.get_attribute("innerText") or "")
+            if not question:
+                continue
+
+            try:
+                wrapper = qh.find_element(By.XPATH, "ancestor::div[1]")
+            except Exception:
+                wrapper = None
+            if not wrapper:
+                continue
+
+            try:
+                sliders = wrapper.find_elements(By.CSS_SELECTOR, "input.slider-form-field.bs-slider[name]")
+            except Exception:
+                sliders = []
+            if not sliders:
+                continue
+
+            slider = sliders[0]
+            slider_name = (slider.get_attribute("name") or "").strip()
+            if not slider_name:
+                continue
+
+            group_key = f"ipsos_slider:name:{slider_name}"
+            if group_key in seen_group_keys:
+                continue
+
+            ticks_raw = (slider.get_attribute("data-slider-ticks") or "").strip()
+            ticks = [t for t in [x.strip() for x in ticks_raw.strip("[]").split(",")] if t]
+            options = [t.strip('"\' ') for t in ticks if t.strip('"\' ')]
+            if len(options) < 2:
+                continue
+
+            option_xpath_map: dict[str, str] = {}
+            name_lit = _xpath_literal(slider_name)
+
+            for opt in options:
+                try:
+                    opt_lit = _xpath_literal(opt)
+                    xp = (
+                        f"(//input[@name={name_lit}]/preceding::h3[contains(@class,'question-title-frontend')][1]"
+                        f"/ancestor::div[1]//*[contains(@class,'slider-tick-label') and normalize-space(.)={opt_lit}])[1]"
+                    )
+                    option_xpath_map[_norm_key(opt)] = xp
+                except Exception:
+                    continue
+
+            if len(option_xpath_map) < 2:
+                continue
+
+            target_id = make_target_id("group", group_key, question)
+            register_target(
+                target_id,
+                {
+                    "kind": "group",
+                    "itype": "radio",
+                    "group_key": group_key,
+                    "question": question,
+                    "option_xpath_map": option_xpath_map,
+                    "frame_chain": frame_chain,
+                    "ipsos_slider": True,
+                },
+            )
+
+            blocks.append(
+                {
+                    "question": question,
+                    "itype": "radio",
+                    "options": options,
+                    "max_select": 1,
+                    "target_id": target_id,
+                    "context": {"kind": "group", "group_key": group_key, "ipsos_slider": True},
+                }
+            )
+            seen_group_keys.add(group_key)
+
+        except Exception:
+            continue
+
+    return blocks
+
+
 
 # ================================================================================
 # CLOUDRESEARCH SENTRY - VUE.JS BLOCKS

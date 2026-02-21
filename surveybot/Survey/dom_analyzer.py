@@ -67,6 +67,7 @@ try:
         _extract_askandanswer_selection_list_questions,
         _extract_cmix_simple_grid_question_blocks,
         _extract_cmix_radio_question_blocks,
+        _extract_ipsos_slider_question_blocks,
         _extract_cloudresearch_sentry_blocks,
         _extract_purespectrum_mobile_date_blocks,
     )
@@ -111,6 +112,7 @@ except ImportError:
         _extract_askandanswer_selection_list_questions,
         _extract_cmix_simple_grid_question_blocks,
         _extract_cmix_radio_question_blocks,
+        _extract_ipsos_slider_question_blocks,
         _extract_cloudresearch_sentry_blocks,
         _extract_purespectrum_mobile_date_blocks,
     )
@@ -197,6 +199,15 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         cmix_blocks = _extract_cmix_radio_question_blocks(driver, frame_chain)
         if cmix_blocks:
             return cmix_blocks
+    except Exception:
+        pass
+
+    # --- 0d-3) IPSOS sliders (bootstrap-slider 1..N) ---
+    # Objectif: extraire les questions IPSOS sans radios natives (input hidden bs-slider).
+    try:
+        ipsos_slider_blocks = _extract_ipsos_slider_question_blocks(driver, frame_chain)
+        if ipsos_slider_blocks:
+            return ipsos_slider_blocks
     except Exception:
         pass
 
