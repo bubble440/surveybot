@@ -1,0 +1,18 @@
+[
+  {
+    "question": "Au cours des 2 dernières semaines, avez-vous participé à une étude de marché portant sur l’un des sujets suivants? Veuillez sélectionner toutes les réponses pertinentes.",
+    "itype": "checkbox",
+    "options": [
+      "Crème hydratante",
+      "Aliments pour animaux de compagnie",
+      "Produits de soins capillaires",
+      "Aucune de ces réponses"
+    ],
+    "max_select": 4,
+    "target_id": "group_f51f80e26f09",
+    "context": {
+      "kind": "group",
+      "group_key": ""
+    }
+  }
+]

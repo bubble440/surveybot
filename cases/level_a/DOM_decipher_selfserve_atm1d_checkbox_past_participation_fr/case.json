@@ -1,0 +1,17 @@
+{
+  "name": "decipher_selfserve_atm1d_checkbox_past_participation_fr",
+  "snapshot_dir": "snapshot",
+  "assert": {
+    "summary": {
+      "total": 1,
+      "by_type": {
+        "checkbox": 1
+      }
+    },
+    "must_have_checkbox_group": {
+      "group_key": "S_PastParticipation",
+      "min_options": 4,
+      "max_select": 3
+    }
+  }
+}
