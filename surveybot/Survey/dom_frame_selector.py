@@ -243,6 +243,41 @@ def _select_best_frame_chain(driver, max_depth: int = 2) -> Tuple[List[int], Dic
         best_chain = []
         best_score = 0
         best_context = None
+
+        # Ciblage DOM explicite: frameset avec frame#mainFrame
+        # (cas observé: top-level quasi vide et contenu survey dans ce frame).
+        main_frame_idx = None
+        try:
+            driver.switch_to.default_content()
+            main_frame_idx = driver.execute_script(
+                """
+                const frames = Array.from(document.querySelectorAll('iframe, frame'));
+                if (!frames.length) return null;
+                const idx = frames.findIndex(f => {
+                    const id = (f.id || '').trim().toLowerCase();
+                    const name = (f.getAttribute('name') || '').trim().toLowerCase();
+                    return id === 'mainframe' || name === 'mainframe';
+                });
+                return idx >= 0 ? idx : null;
+                """
+            )
+        except Exception:
+            main_frame_idx = None
+
+        if isinstance(main_frame_idx, int) and main_frame_idx >= 0:
+            forced_chain = [main_frame_idx]
+            with switch_to_frame_chain(driver, forced_chain) as ok:
+                if ok:
+                    _wait_for_survey_dom(driver, timeout_s=0.5, step_s=0.1)
+                    forced_context = _score_dom_context(driver)
+                    forced_context["selected_chain"] = forced_chain.copy()
+                    forced_context["selected_by"] = "frame#mainFrame"
+                    if debug_ctx:
+                        print(
+                            f"[DOM_CONTEXT_DEBUG] forced_chain={forced_chain} selected_by=frame#mainFrame "
+                            f"score={forced_context.get('score', 0)} inputs={forced_context.get('input_count', 0)}"
+                        )
+                    return forced_chain, forced_context
         
         # Parcourir toutes les chaînes de frames
         for chain in iter_frame_chains(driver, max_depth=max_depth):
