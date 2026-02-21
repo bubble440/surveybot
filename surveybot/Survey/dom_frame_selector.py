@@ -248,13 +248,15 @@ def _select_best_frame_chain(driver, max_depth: int = 2) -> Tuple[List[int], Dic
         for chain in iter_frame_chains(driver, max_depth=max_depth):
             try:
                 # Switcher vers cette chaîne
-                switch_to_frame_chain(driver, chain)
-                
-                # Attendre stabilité
-                _wait_for_survey_dom(driver, timeout_s=0.5, step_s=0.1)
-                
-                # Scorer le contexte
-                context = _score_dom_context(driver)
+                with switch_to_frame_chain(driver, chain) as ok:
+                    if not ok:
+                        continue
+
+                    # Attendre stabilité
+                    _wait_for_survey_dom(driver, timeout_s=0.5, step_s=0.1)
+
+                    # Scorer le contexte
+                    context = _score_dom_context(driver)
                 if debug_ctx:
                     print(
                         f"[DOM_CONTEXT_DEBUG] candidate_chain={chain} score={context.get('score', 0)} "
@@ -278,10 +280,6 @@ def _select_best_frame_chain(driver, max_depth: int = 2) -> Tuple[List[int], Dic
                     driver.switch_to.default_content()
                 except Exception:
                     pass
-        
-        # Retourner au meilleur contexte trouvé
-        if best_chain:
-            switch_to_frame_chain(driver, best_chain)
         
         # Si aucun bon contexte trouvé, rester sur main
         if best_context is None:
