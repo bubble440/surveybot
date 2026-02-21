@@ -1,0 +1,607 @@
+<html lang="fr"><!--<![endif]--><head>
+<meta name="robots" content="noindex, nofollow, noarchive">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+
+<!-- respview.client.meta -->
+
+
+<title>Enquête</title>
+
+
+<!-- respview.css -->
+<link rel="stylesheet" href="/s/support/jquery-ui-1.9.2.custom/css/smoothness/jquery-ui-1.9.2.custom.min.css?ad7753b880">
+<link rel="stylesheet" href="/s/support/jquery-ui-1.9.2.custom/css/smoothness/jquery-ui-1.9.2.beacon.css?4ddb951d43">
+
+<!-- generated from: static/support/font-awesome-4.2.0/less/font-awesome.less, static/support/select2-4.0.1/select2.min.css, static/survey.respondent-post143.less, selfserve/1da7/ai383/static/theme.less, lib/steam/atm1d/v9/static/atm1d.less, lib/steam/cardrating/v1/static/cardrating.less, lib/steam/cardsort/v6/static/cardsort.less, selfserve/1da7/lib/imgmap/v2020/static/dq_styles.less and 0 themevars -->
+<link rel="stylesheet" href="/survey/selfserve/1da7/ai383/less-compiled.css?3b29963f4831a5f426c9d2acbd796781">
+
+
+<!-- extra CSS -->
+
+
+
+<!-- respview.client.css -->
+<link href="/survey/selfserve/1da7/ai383/hover.css?be6bff74da" rel="stylesheet" media="all">
+
+<style type="text/css">
+.sq-mgshelf-cart-view-content table td input {
+  width: 50px !important;
+}  
+.modal-body {
+  text-align:center;
+}  
+.sq-atm1d-button-align-center .sq-atm1d-buttons {
+  text-align: center
+}   
+.instruction-text {
+  text-align: center
+}  
+.sq-atm1d-td {
+  vertical-align: middle;
+}  
+.sq-atm1d-block {
+  text-align: center
+}
+#comment_Intro {
+  margin:0 auto;
+  opacity: 1;
+  border-radius: 30px;
+}
+.sq-cardsort-Q_PackAtt .sq-cardsort-bucket{
+  overflow: visible;
+}
+.sq-cardsort-buckets .sq-cardsort-bucket {
+  border-color: transparent;
+}
+.grid.grid-table-mode .col-legend{
+  background-color: transparent;
+  border-top-color: transparent;
+  border-left-color: transparent;
+  border-right-color: transparent;
+}
+.comment-text{
+ text-align: center;
+ color: black;
+ padding: 12px;
+ font-family: 'arial';
+ }
+.survey-body{
+ background-color: transparent;
+}
+.question-text{
+ text-align: center;
+}
+.question-error-text{
+ text-align: center;
+}
+.sq-atm1d-vertical .sq-atm1d-td, .sq-atm1d-vertical .oe{
+      text-align: center;
+}
+</style>
+
+<!-- client.css -->
+<style media="screen">
+
+</style>
+
+<!-- JQuery -->
+<!--
+/s/jquery183.all.js
+-->
+<script src="//uk.surveyfiles.com/s/exp/tmp/5b828fdc794109aa5163e1058aaa5818.js"></script>
+
+
+<!-- respview.js -->
+<script>
+(function(){
+if (!window.location.hash) {
+var fragmentPattern = '_?$&\')*,(;=.-~:@!';
+for (var i = 1, result = ''; i <= Math.floor(6 / fragmentPattern.length); i++) {
+result += fragmentPattern.slice(-1);
+}
+result += fragmentPattern.charAt((6 % fragmentPattern.length) - 1);
+window.location.hash = result;
+}
+})();
+</script>
+
+<!--[if lte IE 8]><script src="/s/support/respond/respond-1.4.2.min.js"></script><script src="/s/support/rem-unit-polyfill/rem.min.js"></script><![endif]-->
+
+
+<!--
+/s/support/jquery-ui-1.9.2.custom/js/jquery-ui-1.9.2.custom.min.js
+/s/common.js
+/s/respview-post132.js
+/s/survey.respondent-post143.js
+-->
+<script src="//uk.surveyfiles.com/s/exp/tmp/83966fabe04ef9915813ebfc3ee89176.js"></script>
+
+
+<!-- extra JS -->
+<!-- lib/steam/atm1d/v9/styles.xml -->
+  <script src="/survey/lib/steam/atm1d/v9/atm1d.js?d15042fd95"></script>
+
+
+
+
+
+
+<!-- respview.client.js -->
+
+<script type="text/javascript" src="/survey/selfserve/1da7/ai383/jquery.jloupe.js?98ebd045b1"></script>
+<script type="text/javascript">
+
+document.oncontextmenu = function(e) {
+    e = e || window.event;
+    if (/^img$/i.test((e.target || e.srcElement).nodeName)) return false;
+};
+
+$ (function() {
+    $ (".jloupeme").jloupe({
+        radiusLT: 150,
+        radiusRT: 150,
+        radiusRB: 150,
+        radiusLB: 150,     
+        width: 300,
+        height: 300,
+        borderColor: "#666",
+        backgroundColor: "#fff",
+     margin:2,
+     cursorOffsetX: 10,
+     cursorOffsetY: -100,
+        fade: false
+    });
+});
+</script>
+<script>
+$ (document).ready(function() {
+
+  $ (".clickable").addClass( "hvr-underline-from-center" )
+  $ (".sq-cardrating-button").addClass( "hvr-underline-from-center" )
+  
+  if(!$ (".sq-cardsort-Q_PackAtt").length){
+    $ (".sq-cardsort-bucket").addClass( "hvr-underline-from-center" )
+  }
+  
+  if($ (".p1").length){
+      $ (".survey-page").css("background", "url('/survey/selfserve/1da7/ai383/IntroPage2025.jpg?90b45b6834') no-repeat center center fixed");
+      $ (".survey-page").css("background-size", "cover");
+      $ (".survey-page").css("-webkit-background-size", "cover");
+      $ (".survey-page").css("-moz-background-size", "cover");
+      $ (".survey-page").css("-o-background-size", "cover");
+      $ (".comment-text").css("font-size", "x-large");      
+      $ (".comment-text").css("color", "black");
+      $ (".comment-text").css("background-color","lightgrey");
+      $ (".comment-text").css("border-radius","15px");
+        $ (".comment-text").css("opacity",".82");
+    }
+    
+    if($ (".label_Agreement").length){
+      $ (".survey-page").css("background", "url('/survey/selfserve/1da7/ai383/IntroPage2025.jpg?90b45b6834') no-repeat center center fixed");
+      $ (".survey-page").css("background-size", "cover");
+      $ (".survey-page").css("-webkit-background-size", "cover");
+      $ (".survey-page").css("-moz-background-size", "cover");
+      $ (".survey-page").css("-o-background-size", "cover");
+      $ (".comment-text").css("font-size", "x-large");
+      $ (".question").css("background-color","lightgrey");
+      $ (".question-text").css("color","black");
+      $ (".question").css("border-radius","15px");
+        $ (".question").css("opacity",".82");
+    }
+
+/*Gender 1*/
+  if($ (".radio .sq-atm1d-button").length){
+      $ ("#btn_continue").hide();
+    } 
+  $ (document).on('click', '.radio .sq-atm1d-button', function() {
+    $ ("#btn_continue").click();
+  })
+
+/*Gender 2*/       
+    if($ (".radio .sq-atmtable-btn").length){
+      $ ("#btn_continue").hide();
+    }
+  $ (document).on('click', '.sq-atmtable-btn', function() {
+    $ ("#btn_continue").click();
+  })
+
+/*Slider*/       
+    if($ (".select .sq-sliderpoints-container").length){
+      $ ("#btn_continue").hide();
+    }
+  $ (document).on('click', '.sq-sliderpoints-container', function() {
+    $ ("#btn_continue").click();
+  })
+       
+/*Textbox*/
+  $ ('.element').css('text-align','center');
+  
+/*Rating Q_OA Auto Advance 
+    if($ (".sq-atmrating-container").length){
+      $ ("#btn_continue").hide();
+    }
+  $ (document).on('click', '.sq-atmrating-container', function() {
+    $ ("#btn_continue").click();
+  })
+*/
+
+/*Change Font*/
+  $ ('.dropdown').css("font-family", "Verdana");
+});
+ 
+ 
+</script>
+
+<!-- client.javascript -->
+
+
+<script>
+function goForward(){window.history.forward();}
+goForward();
+addHandler(goForward);
+window.onpageshow=function(evt){if(evt.persisted) goForward();}
+window.onunload=function(){void(0);}
+</script>
+
+<!-- extra Head -->
+
+
+</head>
+
+<body class="survey-page non-touch" data-device="">
+
+
+<div id="survey" class="survey-container">
+<div class="survey-section"><div class="page-header"></div>
+<!-- /.page-header --></div>
+<div class="survey-section">
+<div class="survey-body">
+<div class="survey-header">
+<div class="logo logo-left">
+<img src="/survey/selfserve/1da7/191272/Behaviorally_HeaderLogo.jpg" class="logo-image" alt="Logo">
+</div>
+<!-- /.logo -->
+
+</div>
+<!-- /.survey-header -->
+
+<form id="primary" name="primary" method="post" action="/survey/selfserve/1da7/ai383" enctype="application/x-www-form-urlencoded">
+<input type="hidden" name="_v2_counter" value="6">
+<!-- @@XYZZY@@ -->
+<div id="question_S_PastParticipation" class="question checkbox label_S_PastParticipation   noRows noCols sq-atm1d">
+<h1 title="question" class="question-text" id="question_text_S_PastParticipation">Au cours des 2&nbsp;dernières semaines, avez-vous participé à une étude de marché portant sur l’un des sujets suivants?</h1>
+<!-- /.question-text -->
+
+<h2 title="instructions" class="instruction-text">Veuillez sélectionner toutes les réponses pertinentes.</h2>
+<!-- /.instruction-text -->
+<div class="sq-atm1d-widget sq-atm1d-show-input-0 sq-atm1d-large" data-label="S_PastParticipation" data-uid="421" data-survey-uid="c0">
+<div class="sq-atm1d-breakpoint"></div>
+<div class="sq-atm1d-block" data-survey-uid="c1">
+
+<ul class="sq-atm1d-buttons sq-atm1d-tiled" data-label="S_PastParticipation" data-uid="421"><!--
+  --><li class="sq-atm1d-button clickable hvr-underline-from-center" data-index="0" data-label="r1" data-ordinal="0" data-uid="422" style="" data-survey-uid="c2">
+
+      <table class="sq-atm1d-table" style="">
+	<tbody><tr class="sq-atm1d-tr sq-atm1d-tr-top">
+	  <td class="sq-atm1d-td sq-atm1d-icon sq-atm1d-icon-left">
+	    <span class="add-fir">
+	      <input autocomplete="off" class="input clickable hvr-underline-from-center" type="checkbox" value="1">
+                    </span>
+
+                    <span class="sq-atm1d-fctl">
+                      <i class="sq-atm1d-icon-unselected fa fa-square-o fa-icon-square-o"></i>
+                      <i class="sq-atm1d-icon-selected fa fa-check-square-o fa-icon-check-square-o"></i>
+                    </span>
+
+                    <span class="fir-cover"></span>
+                  </td>
+
+                  <td class="sq-atm1d-td sq-atm1d-content" data-survey-uid="c3">
+                    <table class="grid setWidth"><tbody><tr><td><span class="qaCode label">[r1]</span></td></tr></tbody></table>
+
+                    <hr class="sq-atm1d-hr">
+
+                    <span class="sq-atm1d-legend" data-survey-uid="c4">
+                     Crème hydratante             
+                    </span>
+                  </td>
+                </tr>
+
+                <tr class="sq-atm1d-tr sq-atm1d-tr-bottom">
+                  <td class="sq-atm1d-td sq-atm1d-empty"></td>
+
+                  <td class="sq-atm1d-td sq-atm1d-icon sq-atm1d-icon-bottom">
+                    <span class="add-fir">
+                      <input autocomplete="off" class="input clickable hvr-underline-from-center" type="checkbox" value="1">
+                    </span>
+
+                    <span class="sq-atm1d-fctl">
+                      <i class="sq-atm1d-icon-unselected fa fa-square-o fa-icon-square-o"></i>
+                      <i class="sq-atm1d-icon-selected fa fa-check-square-o fa-icon-check-square-o"></i>
+                    </span>
+
+                    <span class="fir-cover"></span>
+                  </td>
+                </tr>
+              </tbody></table>
+
+          </li><!--
+  --><li class="sq-atm1d-button clickable hvr-underline-from-center" data-index="1" data-label="r2" data-ordinal="1" data-uid="423" style="" data-survey-uid="c5">
+
+      <table class="sq-atm1d-table" style="">
+	<tbody><tr class="sq-atm1d-tr sq-atm1d-tr-top">
+	  <td class="sq-atm1d-td sq-atm1d-icon sq-atm1d-icon-left">
+	    <span class="add-fir">
+	      <input autocomplete="off" class="input clickable hvr-underline-from-center" type="checkbox" value="1">
+                    </span>
+
+                    <span class="sq-atm1d-fctl">
+                      <i class="sq-atm1d-icon-unselected fa fa-square-o fa-icon-square-o"></i>
+                      <i class="sq-atm1d-icon-selected fa fa-check-square-o fa-icon-check-square-o"></i>
+                    </span>
+
+                    <span class="fir-cover"></span>
+                  </td>
+
+                  <td class="sq-atm1d-td sq-atm1d-content" data-survey-uid="c6">
+                    <table class="grid setWidth"><tbody><tr><td><span class="qaCode label">[r2]</span></td></tr></tbody></table>
+
+                    <hr class="sq-atm1d-hr">
+
+                    <span class="sq-atm1d-legend" data-survey-uid="c7">
+                     Aliments pour animaux de compagnie             
+                    </span>
+                  </td>
+                </tr>
+
+                <tr class="sq-atm1d-tr sq-atm1d-tr-bottom">
+                  <td class="sq-atm1d-td sq-atm1d-empty"></td>
+
+                  <td class="sq-atm1d-td sq-atm1d-icon sq-atm1d-icon-bottom">
+                    <span class="add-fir">
+                      <input autocomplete="off" class="input clickable hvr-underline-from-center" type="checkbox" value="1">
+                    </span>
+
+                    <span class="sq-atm1d-fctl">
+                      <i class="sq-atm1d-icon-unselected fa fa-square-o fa-icon-square-o"></i>
+                      <i class="sq-atm1d-icon-selected fa fa-check-square-o fa-icon-check-square-o"></i>
+                    </span>
+
+                    <span class="fir-cover"></span>
+                  </td>
+                </tr>
+              </tbody></table>
+
+          </li><!--
+  --><li class="sq-atm1d-button clickable hvr-underline-from-center" data-index="2" data-label="r3" data-ordinal="2" data-uid="424" style="" data-survey-uid="c8">
+
+      <table class="sq-atm1d-table" style="">
+	<tbody><tr class="sq-atm1d-tr sq-atm1d-tr-top">
+	  <td class="sq-atm1d-td sq-atm1d-icon sq-atm1d-icon-left">
+	    <span class="add-fir">
+	      <input autocomplete="off" class="input clickable hvr-underline-from-center" type="checkbox" value="1">
+                    </span>
+
+                    <span class="sq-atm1d-fctl">
+                      <i class="sq-atm1d-icon-unselected fa fa-square-o fa-icon-square-o"></i>
+                      <i class="sq-atm1d-icon-selected fa fa-check-square-o fa-icon-check-square-o"></i>
+                    </span>
+
+                    <span class="fir-cover"></span>
+                  </td>
+
+                  <td class="sq-atm1d-td sq-atm1d-content" data-survey-uid="c9">
+                    <table class="grid setWidth"><tbody><tr><td><span class="qaCode label">[r3]</span></td></tr></tbody></table>
+
+                    <hr class="sq-atm1d-hr">
+
+                    <span class="sq-atm1d-legend" data-survey-uid="c10">
+                     Produits de soins capillaires             
+                    </span>
+                  </td>
+                </tr>
+
+                <tr class="sq-atm1d-tr sq-atm1d-tr-bottom">
+                  <td class="sq-atm1d-td sq-atm1d-empty"></td>
+
+                  <td class="sq-atm1d-td sq-atm1d-icon sq-atm1d-icon-bottom">
+                    <span class="add-fir">
+                      <input autocomplete="off" class="input clickable hvr-underline-from-center" type="checkbox" value="1">
+                    </span>
+
+                    <span class="sq-atm1d-fctl">
+                      <i class="sq-atm1d-icon-unselected fa fa-square-o fa-icon-square-o"></i>
+                      <i class="sq-atm1d-icon-selected fa fa-check-square-o fa-icon-check-square-o"></i>
+                    </span>
+
+                    <span class="fir-cover"></span>
+                  </td>
+                </tr>
+              </tbody></table>
+
+          </li><!--
+  --><li class="sq-atm1d-button clickable hvr-underline-from-center" data-index="3" data-label="None" data-ordinal="3" data-uid="425" style="" data-survey-uid="c11">
+
+      <table class="sq-atm1d-table" style="">
+	<tbody><tr class="sq-atm1d-tr sq-atm1d-tr-top">
+	  <td class="sq-atm1d-td sq-atm1d-icon sq-atm1d-icon-left">
+	    <span class="add-fir">
+	      <input autocomplete="off" class="input clickable hvr-underline-from-center" type="checkbox" value="1">
+                    </span>
+
+                    <span class="sq-atm1d-fctl">
+                      <i class="sq-atm1d-icon-unselected fa fa-square-o fa-icon-square-o"></i>
+                      <i class="sq-atm1d-icon-selected fa fa-check-square-o fa-icon-check-square-o"></i>
+                    </span>
+
+                    <span class="fir-cover"></span>
+                  </td>
+
+                  <td class="sq-atm1d-td sq-atm1d-content" data-survey-uid="c12">
+                    <table class="grid setWidth"><tbody><tr><td><span class="qaCode label">[None]</span></td></tr></tbody></table>
+
+                    <hr class="sq-atm1d-hr">
+
+                    <span class="sq-atm1d-legend" data-survey-uid="c13">
+                     Aucune de ces réponses             
+                    </span>
+                  </td>
+                </tr>
+
+                <tr class="sq-atm1d-tr sq-atm1d-tr-bottom">
+                  <td class="sq-atm1d-td sq-atm1d-empty"></td>
+
+                  <td class="sq-atm1d-td sq-atm1d-icon sq-atm1d-icon-bottom">
+                    <span class="add-fir">
+                      <input autocomplete="off" class="input clickable hvr-underline-from-center" type="checkbox" value="1">
+                    </span>
+
+                    <span class="sq-atm1d-fctl">
+                      <i class="sq-atm1d-icon-unselected fa fa-square-o fa-icon-square-o"></i>
+                      <i class="sq-atm1d-icon-selected fa fa-check-square-o fa-icon-check-square-o"></i>
+                    </span>
+
+                    <span class="fir-cover"></span>
+                  </td>
+                </tr>
+              </tbody></table>
+
+          </li><!--
+        --></ul>
+
+      </div>
+
+      <div class="sq-atm1d-loading-cover"></div>
+    <style>
+.label_S_PastParticipation .sq-atm1d-large .sq-atm1d-button {
+    max-height: ;
+    max-width: 200px;
+}
+</style><style>
+.label_S_PastParticipation .sq-atm1d-vertical .sq-atm1d-button {
+    width: 288px;
+}
+</style><style>
+.label_S_PastParticipation .sq-atm1d-vertical .sq-atm1d-button {
+    height: 56px;
+}
+</style><style>
+.label_S_PastParticipation .sq-atm1d-tiled .sq-atm1d-button {
+    width: 208px;
+}
+</style><style>
+.label_S_PastParticipation .sq-atm1d-tiled .sq-atm1d-button {
+    height: 88px;
+}
+</style></div>
+<div class="answers answers-table">
+
+<table class="grid grid-table-mode setWidth" data-settings="auto-optimize desktop-mode single-col table-mode" data-height="" summary="This table contains form elements to answer the survey question">
+<tbody>
+<tr class="row mobile-top-border-row">
+<td colspan="2" class="cell nonempty mobile-top-border-cell"></td>
+</tr><tr class="row row-elements even colCount-1">
+<th scope="row" class="cell nonempty legend row-legend row-legend-left row-legend-basic legend-level-1 desktop border-collapse  ">
+Crème hydratante
+</th>
+<td class="cell nonempty element indent-1 desktop border-collapse groupingCols OneColumnEl    clickableCell" style="text-align: center;">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input autocomplete="off" type="checkbox" name="ans421.0.0" id="ans421.0.0" value="1" class=" input checkbox">
+</span>
+<span class="cell-text cell-sub-column"><label for="ans421.0.0">Crème hydratante</label> </span>
+</span>
+</td>
+
+</tr><tr class="row row-elements odd colCount-1">
+<th scope="row" class="cell nonempty legend row-legend row-legend-left row-legend-basic legend-level-1 desktop border-collapse  ">
+Aliments pour animaux de compagnie
+</th>
+<td class="cell nonempty element indent-1 desktop border-collapse groupingCols OneColumnEl    clickableCell" style="text-align: center;">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input autocomplete="off" type="checkbox" name="ans421.0.1" id="ans421.0.1" value="1" class=" input checkbox">
+</span>
+<span class="cell-text cell-sub-column"><label for="ans421.0.1">Aliments pour animaux de compagnie</label> </span>
+</span>
+</td>
+
+</tr><tr class="row row-elements even colCount-1">
+<th scope="row" class="cell nonempty legend row-legend row-legend-left row-legend-basic legend-level-1 desktop border-collapse  ">
+Produits de soins capillaires
+</th>
+<td class="cell nonempty element indent-1 desktop border-collapse groupingCols OneColumnEl    clickableCell" style="text-align: center;">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input autocomplete="off" type="checkbox" name="ans421.0.2" id="ans421.0.2" value="1" class=" input checkbox">
+</span>
+<span class="cell-text cell-sub-column"><label for="ans421.0.2">Produits de soins capillaires</label> </span>
+</span>
+</td>
+
+</tr><tr class="row row-elements odd colCount-1">
+<th scope="row" class="cell nonempty legend row-legend row-legend-left row-legend-basic legend-level-1 desktop border-collapse  ">
+Aucune de ces réponses
+</th>
+<td class="cell nonempty element indent-1 desktop border-collapse groupingCols OneColumnEl    clickableCell" style="text-align: center;">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input autocomplete="off" type="checkbox" name="ans421.0.3" id="ans421.0.3" value="1" class="exclusive input checkbox">
+</span>
+<span class="cell-text cell-sub-column"><label for="ans421.0.3">Aucune de ces réponses</label> </span>
+</span>
+</td>
+
+</tr></tbody>
+</table>
+<!-- /.grid -->
+</div>
+<!-- /.answers -->
+</div>
+<!-- /.question --><script>
+    (function($){
+        var jsexport = {"comment": "Veuillez s\u00e9lectionner toutes les r\u00e9ponses pertinentes.", "haveRightLegend": false, "rows": [{"index": 0, "rightLegend": "", "uid": 422, "open": 0, "exclusive": 0, "text": "Cr\u00e8me hydratante", "label": "r1", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 1, "rightLegend": "", "uid": 423, "open": 0, "exclusive": 0, "text": "Aliments pour animaux de compagnie", "label": "r2", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 2, "rightLegend": "", "uid": 424, "open": 0, "exclusive": 0, "text": "Produits de soins capillaires", "label": "r3", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 3, "rightLegend": "", "uid": 425, "open": 0, "exclusive": 1, "text": "Aucune de ces r\u00e9ponses", "label": "None", "openOptional": 0, "amount": 0, "optional": 0}], "noanswers": [], "atm1d:large_maxWidth": "200px", "title": "Au cours des 2\u00a0derni\u00e8res semaines, avez-vous particip\u00e9 \u00e0 une \u00e9tude de march\u00e9 portant sur l\u2019un des sujets suivants?", "totalColCount": 2, "atm1d:viewMode": "tiled", "cols": [{"index": 0, "uid": 426, "open": 0, "exclusive": 0, "text": "", "label": "", "openOptional": 0, "amount": 0, "optional": 0}], "choices": [{"index": 0, "uid": 427, "open": 0, "exclusive": 0, "text": "", "label": "", "openOptional": 0, "amount": 0, "optional": 0}], "haveLeftLegend": true, "errors": [], "verifiers": {}, "atm1d:showInput": "0", "device": {"category": "", "smartphone": false, "tablet": false, "otherMobile": false, "mobileDevice": false, "desktop": true, "width": "0", "iphone": false, "featurephone": false, "android": false, "height": "0", "blackberry": false}, "uid": 421, "label": "S_PastParticipation", "type": "checkbox", "grouping": "cols"};
+
+        var qnexport = {
+            answers: [false, false, false, false],
+            atleast: 1,
+            atmost: 3,
+            debug: false,
+            fir: false,
+            openends: ["", "", "", ""],
+            touch: false
+        };
+
+        var options = $.extend({}, jsexport, qnexport);
+
+        $ (function(){
+            Survey.question.atm1d.setup(options);
+        });
+    })(jQuery);
+    </script><script type="text/javascript">
+setupExclusive('cols','ans421.0.3');
+</script>
+<div class="survey-buttons">
+<input type="submit" name="continue" id="btn_continue" class="button continue" value="Continuer »" onclick="var i = document.createElement('input'); i.setAttribute('type', 'hidden');i.setAttribute('value', '1');i.setAttribute('name', '__has_javascript');document.forms.primary.appendChild(i);">
+
+</div>
+<!-- #surveyButtons --><input type="hidden" name="state" value="f1f981cd-318e-435b-b93c-5fa8cf84904b">
+<input type="hidden" name="start_time" value="1771437231">
+<input type="hidden" name="_ptime" value="0">
+<script>addHandler(Survey.capturePreciseTime)</script><script>
+$ (window).on("load", function() { setTimeout(function() { Survey.recordPageTiming("selfserve/1da7/ai383", "exm1eue2s2hnqjh9", "6p6r61y2f0nkk11g");}, 100); });
+</script>
+</form>
+
+
+</div>
+<!-- /.survey-body -->
+</div>
+<div class="survey-section"><div class="footer"><br data-mce-bogus="1"></div>
+<!-- /.footer --></div>
+</div>
+<div id="detectBreakpoint"></div>
+<!-- /.survey-container -->
+
+
+<div class="thejloupe" style="position: absolute; width: 200px; height: 200px; background-color: rgb(153, 153, 153); display: none; background-repeat: no-repeat; border-radius: 0px 100px 100px;"><div class="thejloupeview" style="width: 188px; height: 188px; background-repeat: no-repeat; margin-left: 6px; margin-top: 6px; background-color: rgb(221, 221, 221); border-radius: 0px 100px 100px;"></div></div><div class="thejloupe" style="position: absolute; width: 300px; height: 300px; background-color: rgb(102, 102, 102); display: none; background-repeat: no-repeat; border-radius: 150px;"><div class="thejloupeview" style="width: 296px; height: 296px; background-repeat: no-repeat; margin-left: 2px; margin-top: 2px; background-color: rgb(255, 255, 255); border-radius: 150px;"></div></div></body></html>
