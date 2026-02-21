@@ -1,0 +1,23 @@
+{
+  "name": "DOM_ipsos_wicket_slider_likert_multi_fr",
+  "snapshot_dir": "snapshot",
+  "assert": {
+    "summary": {
+      "total": 8,
+      "by_type": {
+        "text": 7,
+        "button": 1
+      }
+    },
+    "must_have_text_input": {
+      "itype": "text",
+      "id": "sliderFormField32",
+      "name": "questionContainer:optionsPanel:question:0:actualQuestionPanel:content:sliderFormField",
+      "question_contains": "junk-food"
+    },
+    "must_have_continue_button": {
+      "id": "submitQuestion",
+      "name": "submitQuestion"
+    }
+  }
+}
