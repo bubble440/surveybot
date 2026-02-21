@@ -83,6 +83,6 @@ def iter_frame_chains(driver, max_depth: int = 2) -> Iterator[FrameChain]:
         for i in range(n):
             chain = prefix + [i]
             yield chain
-            yield from rec(chain, depth + 1)
+            rec(chain, depth + 1)
 
-    yield from rec([], 0)
+    rec([], 0)
