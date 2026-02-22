@@ -59,7 +59,10 @@ STRICT_SELECTORS = {
 STRICT_KEYWORDS = {
     "captcha": ["captcha", "recaptcha", "i am not a robot", "je ne suis pas un robot"],
     "hold_button": ["press and hold", "maintenir", "appuyez et maintenez"],
-    "audio_video": ["listen", "écoutez", "watch", "regardez", "video", "audio"],
+    # NOTE: pas de fallback générique "audio/video" ici.
+    # Les mots "video" / "audio" créent des faux positifs sur des questions standards
+    # (ex: "Amazon Prime Video"). Le blocage média est géré plus bas avec des signaux
+    # explicites de permission/capture ou de lecture obligatoire (<audio>/<video> + consigne).
 }
 
 
