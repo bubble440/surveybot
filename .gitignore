@@ -31,3 +31,5 @@ surveybot/README.ps1
 surveybot/README
 .claude
 surveybot/nul
+
+surveybot/run_tabs.ps1

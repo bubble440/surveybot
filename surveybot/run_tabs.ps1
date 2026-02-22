@@ -1,6 +1,6 @@
 # 1 fenêtre Windows Terminal, 1 tab par port, chaque tab exécute tools\attach_tab.ps1
 
-$ports = 9223..9225
+$ports = 9223..9232
 $projectDir = "C:\projects\Surveys"
 $tabScript  = "C:\projects\Surveys\surveybot\tools\attach_tab.ps1"
 
@@ -8,17 +8,17 @@ if(-not (Test-Path $tabScript)){
   throw "Script introuvable: $tabScript"
 }
 
-$args = @()
+$wtArgs = @()
 $first = $true
 
 foreach($p in $ports){
   $cmd = "& `"$tabScript`" -Port $p -ProjectDir `"$projectDir`" -TargetUrl `"$("https://www.topsurveys.app")`" -AttachTabSelector pick"
   if($first){
-    $args += @("new-tab","--title","bot:$p","powershell.exe","-NoExit","-Command",$cmd)
+    $wtArgs += @("new-tab","--title","bot:$p","powershell.exe","-NoExit","-Command",$cmd)
     $first = $false
   } else {
-    $args += @(";","new-tab","--title","bot:$p","powershell.exe","-NoExit","-Command",$cmd)
+    $wtArgs += @(";","new-tab","--title","bot:$p","powershell.exe","-NoExit","-Command",$cmd)
   }
 }
 
-Start-Process "wt.exe" -ArgumentList $args
+Start-Process "wt.exe" -ArgumentList $wtArgs
