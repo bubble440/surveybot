@@ -731,6 +731,7 @@ def _extract_askandanswer_selection_list_questions(driver, frame_chain: list[int
         return []
 
     blocks: list[dict] = []
+    processed_container_ids: set[str] = set()
 
     # Pattern spécifique
     try:
@@ -844,6 +845,9 @@ def _extract_askandanswer_selection_list_questions(driver, frame_chain: list[int
             except Exception:
                 cont_id = ""
 
+            if cont_id:
+                processed_container_ids.add(cont_id)
+
             group_key = f"aa_selection_list:{cont_id}:{sl_id}".strip(":")
             target_id = make_target_id("group", group_key, question)
 
@@ -871,6 +875,126 @@ def _extract_askandanswer_selection_list_questions(driver, frame_chain: list[int
                 }
             )
 
+        except Exception:
+            continue
+
+    # Même survey Angular Material: certaines questions sont rendues en mat-radio-group
+    # (data-question-type=PULLDOWN) sous le même pattern appQuestionContainer-*.
+    try:
+        rg_containers = driver.find_elements(
+            By.CSS_SELECTOR,
+            "div[id^='appQuestionContainer-'] mat-radio-group[role='radiogroup']",
+        )
+    except Exception:
+        rg_containers = []
+
+    for rg in rg_containers[:20]:
+        try:
+            q_container = None
+            try:
+                q_container = rg.find_element(
+                    By.XPATH,
+                    "ancestor::div[starts-with(@id,'appQuestionContainer-')][1]",
+                )
+            except Exception:
+                q_container = None
+
+            cont_id = ""
+            try:
+                cont_id = (q_container.get_attribute("id") or "").strip() if q_container else ""
+            except Exception:
+                cont_id = ""
+
+            if cont_id and cont_id in processed_container_ids:
+                continue
+
+            question = ""
+            try:
+                scope = q_container or rg
+                titles = scope.find_elements(By.CSS_SELECTOR, "mat-card-title div")
+                if titles:
+                    question = _norm(titles[0].text or titles[0].get_attribute("innerText") or "")
+            except Exception:
+                question = ""
+
+            if not question:
+                continue
+
+            options: list[str] = []
+            option_xpath_map: dict[str, str] = {}
+            try:
+                rb_els = rg.find_elements(By.CSS_SELECTOR, "mat-radio-button")
+            except Exception:
+                rb_els = []
+
+            for rb in rb_els:
+                try:
+                    label = _norm(rb.text or rb.get_attribute("innerText") or "")
+                    if label:
+                        label = _norm(label.splitlines()[-1])
+                    if not label:
+                        continue
+
+                    xp = ""
+                    try:
+                        rid = (rb.get_attribute("id") or "").strip()
+                        if rid:
+                            xp = f"(//*[@id={_xpath_literal(rid)}])[1]"
+                        else:
+                            xp = _best_xpath_for_element(driver, rb)
+                    except Exception:
+                        xp = ""
+
+                    if not xp:
+                        continue
+
+                    nk = _norm_key(label)
+                    if nk in option_xpath_map:
+                        continue
+
+                    option_xpath_map[nk] = xp
+                    options.append(label)
+                except Exception:
+                    continue
+
+            if len(options) < 2 or not option_xpath_map:
+                continue
+
+            rg_id = ""
+            try:
+                rg_id = (rg.get_attribute("id") or "").strip()
+            except Exception:
+                rg_id = ""
+
+            group_key = f"aa_selection_list:{cont_id}:{rg_id}".strip(":")
+            target_id = make_target_id("group", group_key, question)
+
+            register_target(
+                target_id,
+                {
+                    "kind": "group",
+                    "itype": "radio",
+                    "group_key": group_key,
+                    "question": question,
+                    "option_xpath_map": option_xpath_map,
+                    "frame_chain": frame_chain,
+                    "aa_selection_list": True,
+                },
+            )
+
+            blocks.append(
+                {
+                    "question": question,
+                    "itype": "radio",
+                    "options": options,
+                    "max_select": 1,
+                    "target_id": target_id,
+                    "context": {"kind": "group", "group_key": group_key, "aa_selection_list": True},
+                }
+            )
+
+            if cont_id:
+                processed_container_ids.add(cont_id)
         except Exception:
             continue
 
