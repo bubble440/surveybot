@@ -62,6 +62,105 @@ def _is_visible_js(driver, el) -> bool:
         """, el)
     except Exception:
         return False
+
+
+def _detect_rate_rank_image_eval_dom(driver) -> tuple[bool, str]:
+    """
+    Détecte un pattern DOM de type "image/product evaluation" (rate & rank)
+    qui doit déclencher un abandon DOM-only (sans Vision fallback).
+    """
+    try:
+        dom = driver.execute_script(
+            """
+            const txt = (el) => ((el && (el.innerText || el.textContent)) || '').trim();
+            const isVisible = (el) => {
+              if (!el) return false;
+              const s = window.getComputedStyle(el);
+              if (!s || s.display === 'none' || s.visibility === 'hidden') return false;
+              const r = el.getBoundingClientRect();
+              return !!(r && r.width > 0 && r.height > 0);
+            };
+            const candidates = Array.from(document.querySelectorAll('button, [role="button"], .mat-fab'));
+            const buttonTexts = candidates.filter(isVisible).map(txt).filter(Boolean).slice(0, 30);
+            return {
+              button_texts: buttonTexts,
+              has_product_page: !!document.querySelector('app-product-page, [data-total-items]'),
+              has_rate_rank_hint: /rate\s*and\s*rank/i.test(document.body?.innerText || ''),
+              has_visual_media_hint: !!document.querySelector('app-game-item-media, .zoom-gallery, .MagicZoom, img[src*="imageviewer"], img[src*="firstinsight"]'),
+            };
+            """
+        ) or {}
+    except Exception:
+        dom = {}
+
+    button_texts = [_norm_lc(t) for t in (dom.get("button_texts") or []) if t]
+    has_like = any(t == "aime" or " like" in f" {t}" for t in button_texts)
+    has_dislike = any(
+        ("n'aime pas" in t)
+        or ("n aime pas" in t)
+        or ("aime pas" in t)
+        or ("dislike" in t)
+        for t in button_texts
+    )
+
+    if (
+        bool(dom.get("has_product_page"))
+        and bool(dom.get("has_visual_media_hint"))
+        and (bool(dom.get("has_rate_rank_hint")) or (has_like and has_dislike))
+        and has_like
+        and has_dislike
+    ):
+        return True, "rate_rank_image_eval_pair_buttons"
+
+    return False, ""
+
+
+def _budgeted_dom_only_abort_for_image_eval(driver) -> str:
+    """
+    Retourne:
+      - "restarted" si pattern détecté + soft_restart demandé,
+      - "budget_exhausted" si pattern détecté mais budget dépassé,
+      - "no_match" sinon.
+    """
+    is_match, pattern_reason = _detect_rate_rank_image_eval_dom(driver)
+    if not is_match:
+        return "no_match"
+
+    try:
+        current_url = driver.current_url or ""
+    except Exception:
+        current_url = ""
+    up = urlsplit(current_url)
+    budget_key = f"{up.scheme}://{up.netloc}{up.path}"
+
+    try:
+        counters = getattr(driver, "_dom_only_abort_seen", None)
+        if not isinstance(counters, dict):
+            counters = {}
+        current = int(counters.get(budget_key, 0) or 0)
+        max_hits = 1
+        if current >= max_hits:
+            print(
+                f"[DOM_ONLY_ABORT] image_eval_detected budget_exhausted key={budget_key} "
+                f"hits={current}/{max_hits} -> abort_without_vision"
+            )
+            driver._dom_only_abort_seen = counters
+            return "budget_exhausted"
+        counters[budget_key] = current + 1
+        driver._dom_only_abort_seen = counters
+    except Exception:
+        pass
+
+    reason = f"dom_only_abort_image_eval:{pattern_reason}"
+    print(
+        f"[DOM_ONLY_ABORT] image_eval_detected -> soft_restart(reason={reason}) key={budget_key}"
+    )
+    try:
+        import Management.guards.runtime_guard as runtime_guard
+        runtime_guard.get_guard().request_survey_restart(reason)
+    except Exception as e:
+        print(f"[DOM_ONLY_ABORT][WARN] soft_restart request failed: {type(e).__name__}: {e}")
+    return "restarted"
     
 def _coerce_safe_value_if_questionish(raw_line: str) -> str:
     """
@@ -566,6 +665,12 @@ def execute_survey_page(driver, api_key):
 
         return result    
     else:
+        dom_only_abort = _budgeted_dom_only_abort_for_image_eval(driver)
+        if dom_only_abort == "restarted":
+            return True
+        if dom_only_abort == "budget_exhausted":
+            return False
+
         # fallback vision (existant)  mais on  le plein-page si possible (moins cher + moins de bruit)
         print(" Fallback vision (DOM insuffisant). source: survey_executor.py")
 
