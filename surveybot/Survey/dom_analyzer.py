@@ -65,6 +65,7 @@ try:
         _extract_walr_cardsort_block,
         _extract_askandanswer_mobile_matrix_rows,
         _extract_askandanswer_selection_list_questions,
+        _extract_table_matrix_radio_rows,
         _extract_cmix_simple_grid_question_blocks,
         _extract_cmix_radio_question_blocks,
         _extract_ipsos_slider_question_blocks,
@@ -110,6 +111,7 @@ except ImportError:
         _extract_walr_cardsort_block,
         _extract_askandanswer_mobile_matrix_rows,
         _extract_askandanswer_selection_list_questions,
+        _extract_table_matrix_radio_rows,
         _extract_cmix_simple_grid_question_blocks,
         _extract_cmix_radio_question_blocks,
         _extract_ipsos_slider_question_blocks,
@@ -190,6 +192,15 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         cmix_sg_blocks = _extract_cmix_simple_grid_question_blocks(driver, frame_chain)
         if cmix_sg_blocks:
             return cmix_sg_blocks
+    except Exception:
+        pass
+
+    # --- 0d-1bis) Matrices HTML génériques (table + radios groupés par ligne) ---
+    # Objectif: éviter l'aplatissement en bloc checkbox sur certaines grilles provider-variants.
+    try:
+        table_matrix_blocks = _extract_table_matrix_radio_rows(driver, frame_chain)
+        if table_matrix_blocks:
+            return table_matrix_blocks
     except Exception:
         pass
 
