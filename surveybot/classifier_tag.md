@@ -1,7 +1,8 @@
 # CLASSIFIER_TAG — Référence DOM SurveyBot
 
-> **Version** : 3.0.0 — Session 3 : +10 DOMs (textarea, slider, confirmit, mat-list, dropdown, text-input, RSCH, instructions, consent)
+> **Version** : 3.2.0
 > **Règle générale** : Le DOM est la source principale. Un marker est retenu seulement s'il est robuste sur les variantes probables de la plateforme (pas de tokens dynamiques, pas d'IDs générés). Une famille = un pattern structurel distinct. Priorité à la prédictibilité sur l'exhaustivité.
+> **DOMs couverts** : 28 · **Familles** : A → V
 
 ---
 
@@ -581,6 +582,153 @@ Ou click sur `div.bootstrap-select button.dropdown-toggle` → `li[data-original
 
 ---
 
+### FAMILLE U — `kantar_liverecruit_single` *(Kantar LiveRecruit)*
+**Description** : Questions à widget unique Kantar LiveRecruit (une question par page). Couvre trois sous-types de widget selon la question : saisie numérique/texte, dropdown natif, checkbox multi avec option exclusive. La structure HTML enveloppe est **identique** pour tous les sous-types — seul l'élément de réponse dans `div.form-group.question` change.
+
+**Marqueurs plateforme communs** :
+- `body.live-recruit`
+- `form[action^="/ix/Q/"]`
+- `input[name="mobileMode"][value="False"]`
+- `input[name="ViewState"]` (JSON base64)
+- `input#submit-button.btn.btn-primary[value="Question suivante"]`
+- Copyright `a[href*="kantar.com/global-survey-privacy-notice"]`
+
+**Sous-type : numeric / text**
+```html
+<div class="form-group question" data-position="[N]" id="question-[N]">
+  <div class="question-label" id="question-label-[N]">Texte question</div>
+  <input class="formatted NumericInput form-control" type="number"
+         name="Q[N+1]" aria-labelledby="question-label-[N]">
+</div>
+```
+Critère spécifique : `input.NumericInput.form-control[type=number]`
+
+**Sous-type : dropdown**
+```html
+<div class="form-group question" data-position="[N]" id="question-[N]">
+  <div class="question-label" id="question-label-[N]">Texte question</div>
+  <select name="Q[N+1]" id="Q[N+1]" class="form-control dropdownlist">
+    <option value="">Non choisi</option>
+    <option data-category="" value="[0..N]">Texte option</option>
+  </select>
+</div>
+```
+Critère spécifique : `select.form-control.dropdownlist[name^="Q"]`
+
+**Sous-type : checkbox multi + exclusif**
+```html
+<div class="form-group question" data-position="[N]" id="question-[N]">
+  <div class="question-label" id="question-label-[N]">Texte question</div>
+  <div class="checkboxes checkboxes-" aria-labelledby="question-label-[N]">
+    <label class="input form-inline" id="label-Q[N+1]_[K]">
+      <input type="checkbox" value="1" id="Q[N+1]_[K]" name="Q[N+1]_[K]">
+      <span class="form-ui"></span> Texte option
+    </label>
+    <div class="mutually-exclusive-divider"></div>  <!-- séparateur avant exclusifs -->
+    <label class="input form-inline" id="label-Q[N+1]_[M]">
+      <input type="checkbox" class="mutually-exclusive" value="1" id="Q[N+1]_[M]" name="Q[N+1]_[M]">
+      Aucune de ces réponses
+    </label>
+  </div>
+</div>
+```
+Critère spécifique : `div.checkboxes[aria-labelledby]` + `input[type=checkbox][name^="Q"]` + `div.mutually-exclusive-divider` + `input.mutually-exclusive`
+
+**Critères de détection (tous sous-types)** : `body.live-recruit` + `form[action^="/ix/Q/"]` + `input#submit-button[value="Question suivante"]`
+
+**Interaction** :
+- Numeric : `clear()` + `send_keys()` sur `input.NumericInput.form-control`
+- Dropdown : `Select(el).select_by_value(v)` sur `select.form-control.dropdownlist`
+- Checkbox : `.click()` sur `label.input.form-inline` contenant le `input[name^="Q"]` souhaité. Règle exclusive : si option `input.mutually-exclusive` choisie → décocher toutes les autres d'abord.
+
+**Extraction** :
+- Texte question : `div.question-label[id^="question-label-"]` (texte brut)
+- Options dropdown : `option[value!=""]` du select
+- Options checkbox : `label.input.form-inline` → texte + `input.mutually-exclusive` présent ou non
+
+**Submit** : `input#submit-button[type=submit]`
+
+**⚠️ Points critiques** :
+- `name="Q[N+1]"` : le numéro dans le name = `data-position + 1`. Cibler par classe, pas par name exact.
+- `input[name="Seed[N]"]` hidden = token anti-replay par question — ne jamais modifier.
+- `noBack()` JS bloque navigation arrière — pas d'impact Selenium.
+- Option exclusive après `div.mutually-exclusive-divider` : ne **jamais** cocher une normale ET une exclusive simultanément.
+
+**Plateformes** : Kantar LiveRecruit
+
+---
+
+### FAMILLE V — `grid_kantar_liverecruit` *(Kantar LiveRecruit)*
+**Description** : Grille radio Kantar LiveRecruit. Table HTML standard avec ARIA complet. Une colonne de labels de lignes, N colonnes de réponse. Chaque cellule contient un `input[type=radio]` dont le `name` = `Q[questionId]_[K]` où **K est l'index 1-based de la ligne dans l'ordre DOM** (≠ suffixe du rowlabel id qui est un identifiant de catégorie non ordonné). La valeur du radio = index 0-based de la colonne.
+
+**Signature HTML** :
+```html
+<div class="form-group question" data-position="[N]" id="question-[N]">
+  <div class="question-label" id="question-label-[N]">Texte question</div>
+  <input type="hidden" name="GridColumnHiddenQ[N+1]_[colIdx]" value="false">
+  <!-- un hidden par colonne -->
+  <table class="grid" id="grid-[tableId]" role="presentation">
+    <thead>
+      <tr>
+        <th><!-- cellule vide (row labels) --></th>
+        <th id="columnlabel-[tableId]-0">Libellé col 0</th>
+        <th id="columnlabel-[tableId]-1">Libellé col 1</th>
+        ...
+      </tr>
+    </thead>
+    <tbody>
+      <tr role="group" aria-labelledby="rowlabel[tableId]-[catId]" data-group="">
+        <td>
+          <span id="rowlabel[tableId]-[catId]">Libellé ligne</span>
+        </td>
+        <td>
+          <label class="input">
+            <input type="radio" name="Q[N+1]_[K]"
+                   aria-labelledby="rowlabel[tableId]-[catId] columnlabel-[tableId]-0"
+                   value="0">
+            <span class="form-ui"></span>
+            <span class="column-label">Libellé col 0</span>
+          </label>
+        </td>
+        ...
+      </tr>
+    </tbody>
+  </table>
+</div>
+```
+
+**Critères de détection** : `body.live-recruit` + `table.grid[id^="grid-"][role="presentation"]` + `tr[role="group"][data-group]` + `input[type=radio][name^="Q"][aria-labelledby]` + `input[name^="GridColumnHidden"]`
+
+**Extraction** :
+```
+1. table_id   = table.grid[id] → ex "grid-23224549"
+2. col_labels = th[id^="columnlabel-[tableId]-"] dans l'ordre DOM → mapping index → texte
+3. Pour chaque tr[role="group"] EN ORDRE DOM (index K = 1, 2, 3...) :
+   - row_text  = span[id^="rowlabel"].text_content
+   - radios    = input[type=radio][name] dans ce tr → name = Q[N]_[K]
+   - mapping   value → colonne via col_labels[value]
+```
+
+**Interaction** :
+```
+Pour chaque ligne K (en ordre DOM) :
+  Cliquer input[type=radio][name="Q[N]_[K]"][value="[colIndex]"]
+  ou son label.input wrapping
+```
+
+**Submit** : `input#submit-button[type=submit]`
+
+**⚠️ Points critiques** :
+- **`name` ≠ rowlabel suffix** : rowlabel id contient un catId (`rowlabel23224549-3`) ≠ K dans le name `Q126_2`. Seule la position dans l'ordre DOM de `tr[role=group]` donne K.
+- `GridColumnHiddenQ[N]_[M]` = `value="false"` si colonne visible, `value="true"` si masquée. Vérifier avant extraction.
+- Toutes les lignes doivent avoir un radio sélectionné avant submit (validation JS côté client probable).
+- IDs de table (`grid-23224549`) dynamiques — cibler par classe `table.grid` uniquement.
+
+**Plateformes** : Kantar LiveRecruit
+
+---
+
+
 ## 2. GROUPES D'APPLICATION
 
 | Groupe d'application | Sous-chemin module | DOM(s) concernés | Mécanisme d'interaction |
@@ -617,8 +765,14 @@ Ou click sur `div.bootstrap-select button.dropdown-toggle` → `li[data-original
 | `submit.confirmit_next` | `input_handler.py` → `submit_via_button` | DOM-18 | `button.cf-navigation-next` |
 | `submit.rateandrank_submit` | `input_handler.py` → `submit_via_button` | DOM-19 | `button#survey-submit-button` |
 | `submit.rsch_button` | `input_handler.py` → `submit_via_button` | DOM-22 | `input#btnsmall[type=button]` |
+| `text.kantar_numeric` | `input_text.py` → `fill_kantar_numeric` | DOM-25 | `clear()` + `send_keys()` sur `input.NumericInput.form-control` |
+| `dropdown.kantar` | `input_dropdown.py` → `fill_kantar_dropdown` | DOM-26 | `Select(el).select_by_value()` sur `select.form-control.dropdownlist` |
+| `checkbox.kantar` | `input_checkbox.py` → `click_kantar_checkbox` | DOM-27 | `.click()` sur `label.input.form-inline` + règle `mutually-exclusive` |
+| `grid.kantar` | `input_matrix.py` → `fill_kantar_grid` | DOM-28 | `.click()` sur `input[type=radio][name="Q[N]_[K]"][value="[col]"]` par ordre DOM |
+| `submit.kantar_next` | `input_handler.py` → `submit_via_button` | DOM-25, 26, 27, 28 | `input#submit-button[type=submit]` |
 
 ---
+
 
 ## 3. CATALOGUE DES DOMs DE RÉFÉRENCE
 
@@ -717,19 +871,12 @@ Ou click sur `div.bootstrap-select button.dropdown-toggle` → `li[data-original
 | **Type** | Radio simple — sélecteur de langue |
 | **Famille** | F — `radio_standard_html` (variante CMIX) |
 | **Application** | `radio.standard` + `submit.button_next` |
-| **Fichier référence** | `DOM_cmix_language_selector_radio_60552194.txt` |
 
-**Markers** :
-- `body.cm-Survey[ng-app="cmix.tasks"]`
-- `div.cm-element[data-type="RADIO"]` (distingue du checkbox `data-type="CHECKBOX"`)
-- `ul.cm-radio-response-set` contenant les options
-- Input : `name="[questionId]"` (chiffres seuls, sans `[]`), `id="[qId]_[responseId]"`, `value="[responseId]"`, `class="with-gap"`
-- `span.cm-radio-label-text` pour le texte
-- `div.cm-response-container.selectedElem` = option sélectionnée
+**Markers** : `body.cm-Survey[ng-app="cmix.tasks"]` · `div.cm-element[data-type="RADIO"]` · `ul.cm-radio-response-set` · `name="[questionId]"` (chiffres seuls, sans `[]`) · `class="with-gap"` · `span.cm-radio-label-text`
 
 **Submit** : `a#cm-NextButton`
 
-**Comportements spéciaux** : `data-hideifvalid="true"`. Navigation AJAX. **Distinction checkbox/radio** : `data-type` + présence/absence de `[]` dans le `name`.
+**Comportements spéciaux** : `data-hideifvalid="true"`. Navigation AJAX. Distinction checkbox/radio : `data-type` + présence/absence de `[]` dans le `name`.
 
 ---
 
@@ -741,18 +888,12 @@ Ou click sur `div.bootstrap-select button.dropdown-toggle` → `li[data-original
 | **Type** | Radio simple — genre |
 | **Famille** | G — `radio_angular_ps` |
 | **Application** | `radio.angular_ps` + `submit.ps_next` |
-| **Fichier référence** | `DOM_purespectrum_radio_211.txt` |
 
-**Markers** :
-- `ps-root[ng-version]` + `ps-single-choice-question[qualificationid]`
-- `div[role=radiogroup]` dans `ps-single-choice`
-- `input.form-check-input.handset-choice-view[data-e2e]`
-- Label wrapping : `label.form-check.hide-button[for="choice-[n]"]`
-- `class="active-bg fw-bold"` sur le label sélectionné
+**Markers** : `ps-root[ng-version]` · `ps-single-choice-question[qualificationid]` · `div[role=radiogroup]` · `input.form-check-input.handset-choice-view[data-e2e]` · `label.form-check.hide-button[for="choice-[n]"]`
 
 **Submit** : `ps-next-button button[aria-label*="next"]`
 
-**Comportements spéciaux** : `name="[object Object]"` — non stable, ne jamais utiliser. Texte directement dans le `<label>` (pas dans `<span>`). Cliquer sur `<label>` pour l'interaction.
+**Comportements spéciaux** : `name="[object Object]"` — non stable, ne jamais utiliser. Cliquer sur `<label>` pour l'interaction.
 
 ---
 
@@ -764,19 +905,12 @@ Ou click sur `div.bootstrap-select button.dropdown-toggle` → `li[data-original
 | **Type** | Grille radio — fréquence loisirs |
 | **Famille** | J — `grid_cmix_simple` |
 | **Application** | `grid.cmix_simple` + `submit.button_next` |
-| **Fichier référence** | `DOM_QLEISUREACTIVITIES_CMix_SimpleGrid_LeisureFrequency_FR.txt` |
 
-**Markers** :
-- `body.cm-Survey` + `div[data-type="SIMPLE_GRID"]`
-- `div.cm-simple-grid > table.cm-simple-grid__table`
-- `th.cm-simple-grid__column-header` pour labels colonnes
-- `td.cm-simple-grid__row-header > div[data-subquestionname]` pour labels lignes
-- `div.cm-radio-input-container.cm-grid-cell[questionid]` pour chaque cellule
-- Input : `name="[numericSubQId]"`, `data-parent-id="[numericSubQId]"`, `data-response-id="[responseId]"`, `class="with-gap"`
+**Markers** : `body.cm-Survey` · `div[data-type="SIMPLE_GRID"]` · `div.cm-simple-grid > table.cm-simple-grid__table` · `th.cm-simple-grid__column-header` · `div.cm-radio-input-container.cm-grid-cell[questionid]`
 
 **Submit** : `a#cm-NextButton`
 
-**Comportements spéciaux** : Chaque ligne est une sous-question indépendante avec son propre `name` numérique. Navigation AJAX → attendre stabilisation.
+**Comportements spéciaux** : Chaque ligne = sous-question indépendante avec son propre `name` numérique. Navigation AJAX → attendre stabilisation.
 
 ---
 
@@ -788,18 +922,12 @@ Ou click sur `div.bootstrap-select button.dropdown-toggle` → `li[data-original
 | **Type** | Radio simple — région (27 options) |
 | **Famille** | F — `radio_standard_html` (variante Samplicious) |
 | **Application** | `radio.standard` + `submit.aspnet_continue` |
-| **Fichier référence** | `DOM_samplicious_profiler_region_fr_radio_27_options.txt` |
 
-**Markers** :
-- `body#ctl00_supplierBranding` + `form#aspnetForm[action*="Profiler.aspx"]`
-- `div.options.js-question-options`
-- Input : `type=radio`, `id="option-[n]"`, `name="question_[id]"`, `value="[n]"` (index 1-based)
-- Label : `label.radio[for="option-[n]"] > span`
-- `input[name="__VIEWSTATE"]` (ASP.NET WebForms)
+**Markers** : `body#ctl00_supplierBranding` · `form#aspnetForm[action*="Profiler.aspx"]` · `div.options.js-question-options` · `input[type=radio][name^="question_"]` · `input[name="__VIEWSTATE"]`
 
-**Submit** : `input#ctl00_Content_btnContinue[type=submit]` (CSS : `input[name="ctl00$Content$btnContinue"]`)
+**Submit** : `input#ctl00_Content_btnContinue[type=submit]`
 
-**Comportements spéciaux** : 27 options → scroller si nécessaire. `value` = index (pas ID sémantique). Submit = rechargement page entière (pas AJAX).
+**Comportements spéciaux** : 27 options → scroller si nécessaire. `value` = index (pas ID sémantique). Submit = rechargement page entière.
 
 ---
 
@@ -811,19 +939,12 @@ Ou click sur `div.bootstrap-select button.dropdown-toggle` → `li[data-original
 | **Type** | Grille radio card-séquentielle — fréquence |
 | **Famille** | K — `grid_walr_card_sequential` |
 | **Application** | `grid.walr_card` + `submit.walr_next` |
-| **Fichier référence** | `DOM_walr_QCGridCheck_French_frequency_grid_radio_fr.txt` |
 
-**Markers** :
-- `form#rsForm[action*="./c?rs="]`
-- `table.cTable.rsSingleGrid.rsProcessedGrid`
-- `th.cCellRowText[id^="r_"]` pour labels lignes
-- `th.cCellHeader[id^="h_"]` pour labels colonnes
-- `input.cRadio[onclick*="clearAll"]`
-- `input#btnNext[onclick*="WebForm_DoPostBackWithOptions"]`
+**Markers** : `form#rsForm[action*="./c?rs="]` · `table.cTable.rsSingleGrid.rsProcessedGrid` · `input.cRadio[onclick*="clearAll"]` · `input#btnNext[onclick*="WebForm_DoPostBackWithOptions"]`
 
 **Submit** : `input#btnNext[type=button]`
 
-**Comportements spéciaux** : Table cachée par CSS. JS crée `.answer-button` dynamiques par ligne (un à la fois). IDs radio dupliqués dans le DOM — `getElementById` inopérant. `#btnNext` peut s'auto-cliquer quand toutes les lignes sont répondues. reCAPTCHA présent — ne pas aller trop vite.
+**Comportements spéciaux** : Table cachée par CSS. JS crée `.answer-button` dynamiques par ligne. IDs radio dupliqués — `getElementById` inopérant. `#btnNext` peut s'auto-cliquer quand toutes les lignes sont répondues. reCAPTCHA présent.
 
 ---
 
@@ -831,23 +952,16 @@ Ou click sur `div.bootstrap-select button.dropdown-toggle` → `li[data-original
 
 | Attribut | Valeur |
 |---|---|
-| **Plateforme** | Angular Material (interne/custom) |
+| **Plateforme** | Angular Material (custom) |
 | **Type** | Radio simple — question logique |
 | **Famille** | H — `radio_angular_material` |
 | **Application** | `radio.angular_material` + `submit.angular_next` |
-| **Fichier référence** | `DOM_angular_material_radio_fruits.txt` |
 
-**Markers** :
-- `app-root[ng-version]` + `app-survey`
-- `mat-radio-group[role=radiogroup]`
-- `mat-radio-button.mat-mdc-radio-button.theme-radio`
-- `input.mdc-radio__native-control[tabindex="-1"]` (non sélectionné) / `[tabindex="0"]` (sélectionné)
-- `label.mdc-label[for="mat-radio-[n]-input"]`
-- Option sélectionnée : `mat-radio-button.mat-mdc-radio-checked`
+**Markers** : `app-root[ng-version]` · `app-survey` · `mat-radio-group[role=radiogroup]` · `mat-radio-button.mat-mdc-radio-button.theme-radio` · `input.mdc-radio__native-control` · `label.mdc-label[for="mat-radio-[n]-input"]`
 
 **Submit** : `button.next_btn[translate="srvyPrcs.nextBtn"]`
 
-**Comportements spéciaux** : Cliquer sur `label.mdc-label` (plus fiable que l'input). `translate="srvyPrcs.nextBtn"` = framework i18n propre — indicateur de plateforme custom.
+**Comportements spéciaux** : Cliquer sur `label.mdc-label` (plus fiable que l'input). `translate="srvyPrcs.nextBtn"` = framework i18n custom.
 
 ---
 
@@ -859,19 +973,12 @@ Ou click sur `div.bootstrap-select button.dropdown-toggle` → `li[data-original
 | **Type** | Radio simple — consentement oui/non |
 | **Famille** | F — `radio_standard_html` (variante Decipher) |
 | **Application** | `radio.standard` + `submit.input_continue` |
-| **Fichier référence** | `DOM_decipher_intro_consent_radio_yesno_en.txt` |
 
-**Markers** :
-- `body.survey-page` + `div#survey.survey-container`
-- `div.question.radio[role=radiogroup]` (présence de `role=radiogroup` sur la div question)
-- **Absence** de `div.sq-atm1d-widget` → confirme Decipher standard (pas ATM1D)
-- Input : `name="ans[N].[row].[col]"` (dots notation), `class="input radio"`
-- `div.element.clickableCell` — cellule entière cliquable
-- `span.cell-text > label[for] > p` pour le texte
+**Markers** : `body.survey-page` · `div#survey.survey-container` · `div.question.radio[role=radiogroup]` · **absence** de `div.sq-atm1d-widget` · `name="ans[N].[row].[col]"` · `div.element.clickableCell`
 
 **Submit** : `input#btn_continue[type=submit][name=continue]`
 
-**Comportements spéciaux** : `class="hasError"` sur la div question si non répondu. `div.clickableCell` → clic sur la cellule entière fonctionne. `_v2_counter` hidden input anti-double-submit.
+**Comportements spéciaux** : `class="hasError"` si non répondu. `div.clickableCell` entière cliquable. `_v2_counter` hidden anti-double-submit.
 
 ---
 
@@ -883,18 +990,12 @@ Ou click sur `div.bootstrap-select button.dropdown-toggle` → `li[data-original
 | **Type** | Radio simple — consentement collecte données |
 | **Famille** | I — `radio_vue_dynata_profiler` |
 | **Application** | `radio.vue_dynata` + `submit.vue_dynata` |
-| **Fichier référence** | `DOM_dynata_profiler_consent_radio_oui_non_fr.txt` |
 
-**Markers** :
-- `div#app[data-v-app]`
-- `div#profiler-choice`
-- `div.row.single-choice-container`
-- `input.form-check-input.btn-check.choice-input[type=radio]`
-- `label.form-label[for="single_choice_[float]_[n]"] > span`
+**Markers** : `div#app[data-v-app]` · `div#profiler-choice` · `div.row.single-choice-container` · `input.form-check-input.btn-check.choice-input[type=radio]` · `label.form-label[for="single_choice_[float]_[n]"]`
 
-**Submit** : Bouton dans `div.profiler-choice > div.d-grid` (v-if Vue — absent au chargement). **Comportement à confirmer en prod** : auto-advance ou attendre apparition du bouton.
+**Submit** : Bouton dans `div.profiler-choice > div.d-grid` (v-if Vue — absent au chargement).
 
-**Comportements spéciaux** : `name` aléatoire — **ne jamais utiliser**. Evidon banner (`div#_evidon-barrier-wrapper`) peut bloquer → cliquer "Agree and Access Site" (`button._evidon-banner-acceptbutton`) si présent.
+**Comportements spéciaux** : `name` aléatoire — **ne jamais utiliser**. Evidon banner (`div#_evidon-barrier-wrapper`) → cliquer `button._evidon-banner-acceptbutton` si présent.
 
 ---
 
@@ -906,163 +1007,12 @@ Ou click sur `div.bootstrap-select button.dropdown-toggle` → `li[data-original
 | **Type** | Radio simple — genre |
 | **Famille** | F — `radio_standard_html` (variante IPSOS Cortex) |
 | **Application** | `radio.standard` + `submit.anchor` |
-| **Fichier référence** | `DOM_ipsos_gender_radio_fr.txt` |
 
-**Markers** :
-- `body.screening-body` + assets `ipsosinteractive.com`
-- `div[role=tablist][aria-multiselectable=true]#radioGroup[N]`
-- `div.radio > label > input[type=radio]` (pas de `span.multipleChoice-checkbox` — pattern légèrement différent du checkbox IPSOS)
-- Input : `name="questionContainer:...:radioGroup"` (Wicket, contient `radioGroup`), `value="radio[N]"`
-- `span.font-weight-light.text-hard-light` pour le texte
+**Markers** : `body.screening-body` · assets `ipsosinteractive.com` · `div[role=tablist][aria-multiselectable=true]#radioGroup[N]` · `input[name*="radioGroup"]` · `span.font-weight-light`
 
 **Submit** : `a#submitQuestion`
 
-**Comportements spéciaux** : Même submit que checkbox IPSOS. `[name*="radioGroup"]` comme sélecteur partiel robuste. AJAX indicator `#ajaxLoadingImage`.
-
----
-
-## 4. ARBRE DE DÉCISION
-
-```
-ROOT : Type d'input et contexte détectés dans le DOM ?
-│
-├─► input[type=checkbox] présent ?
-│   │
-│   ├─► body.cm-Survey ET ng-app="cmix.tasks" ?
-│   │   └─► FAMILLE A | CMIX checkbox | input[name*="[]"].filled-in | submit: a#cm-NextButton
-│   │
-│   ├─► body.screening-body ET assets ipsosinteractive ?
-│   │   └─► FAMILLE E | IPSOS Cortex | input[name*="checkGroup"] | submit: a#submitQuestion
-│   │       └─► Vérifier input.logic.exclusive → gestion option exclusive obligatoire
-│   │
-│   ├─► ps-root[ng-version] ET ps-multi-choice-question[qualificationid] ?
-│   │   └─► FAMILLE D | PureSpectrum | input.multi-select-input[data-e2e] | submit: ps-next-button button
-│   │       └─► Vérifier data-e2e="998/999" et class="none-of-the-above-input"
-│   │       └─► Vérifier input#search-input → champ recherche présent
-│   │
-│   ├─► ng-controller="autoScreenerController" ?
-│   │   └─► FAMILLE C | Dynata Auto-Screener | input[name^="ms_"][checklist-value] | submit: button.button-yellow
-│   │
-│   └─► div.sq-atm1d-widget ET ul.sq-atm1d-buttons ?
-│       └─► FAMILLE B | Decipher ATM1D | li.sq-atm1d-button[data-label] | submit: input#btn_continue
-│           └─► Clic sur <li>, PAS sur les <input> internes
-│
-├─► input[type=radio] présent ?
-│   │
-│   ├─► body.cm-Survey ET ng-app="cmix.tasks" ?
-│   │   ├─► div[data-type="SIMPLE_GRID"] présent ?
-│   │   │   └─► FAMILLE J | CMIX Simple Grid | div.cm-grid-cell[questionid] | submit: a#cm-NextButton
-│   │   └─► div[data-type="RADIO"] présent ?
-│   │       └─► FAMILLE F (CMIX) | ul.cm-radio-response-set | submit: a#cm-NextButton
-│   │
-│   ├─► body.screening-body ET assets ipsosinteractive ?
-│   │   └─► FAMILLE F (IPSOS) | input[name*="radioGroup"] | submit: a#submitQuestion
-│   │
-│   ├─► ps-root[ng-version] ET ps-single-choice-question[qualificationid] ?
-│   │   └─► FAMILLE G | PureSpectrum | input.handset-choice-view[data-e2e] | submit: ps-next-button button
-│   │
-│   ├─► app-root[ng-version] ET mat-radio-group ?
-│   │   └─► FAMILLE H | Angular Material | input.mdc-radio__native-control | submit: button.next_btn
-│   │
-│   ├─► div#app[data-v-app] ET div#profiler-choice ?
-│   │   └─► FAMILLE I | Dynata Profiler Vue | input.choice-input | submit: attendre bouton v-if
-│   │
-│   ├─► body.survey-page ET div#survey.survey-container ?
-│   │   └─► Vérifier ABSENCE de sq-atm1d-widget (sinon → entrée checkbox ATM1D)
-│   │       └─► FAMILLE F (Decipher) | div.question.radio[role=radiogroup] | input[name^="ans"] | submit: input#btn_continue
-│   │
-│   ├─► body#ctl00_supplierBranding ET form#aspnetForm[action*="Profiler.aspx"] ?
-│   │   └─► FAMILLE F (Samplicious) | input[name^="question_"] | submit: input#ctl00_Content_btnContinue
-│   │
-│   └─► form#rsForm[action*="./c?rs="] ET table.cTable.rsSingleGrid ?
-│       └─► FAMILLE K | Walr Card Grid | .answer-button dynamique | submit: input#btnNext
-│
-└─► Aucune famille reconnue → LOG "dom_unclassified" + abandon contrôlé (pas de retry)
-```
-
----
-
-## 5. TABLEAU RÉCAPITULATIF
-
-| # | Nom DOM | Plateforme | Type question | Famille | Groupe application | Submit sélecteur |
-|---|---|---|---|---|---|---|
-| 01 | `DOM_cmix_intro_consent_checkbox_60552196` | CMIX | Checkbox consentement | A | `checkbox.standard` | `a#cm-NextButton` |
-| 02 | `DOM_decipher_selfserve_atm1d_checkbox_past_participation_fr` | Decipher | Checkbox multi ATM1D | B | `checkbox.atm1d` | `input#btn_continue` |
-| 03 | `DOM_dynata_autoscreener_multi_select_streaming_checkboxes_fr` | Dynata Auto-Screener | Checkbox multi AngularJS | C | `checkbox.angular_ng` | `button.button-yellow[type=submit]` |
-| 04 | `DOM_purespectrum_multiselect_pathologies_search_checkbox_fr` | PureSpectrum | Checkbox multi + recherche | D | `checkbox.angular_component` | `ps-next-button button` |
-| 05 | `DOM_ipsos_leisure_activities_checkbox_multi_exclusive_fr` | IPSOS Cortex | Checkbox multi + exclusive | E | `checkbox.standard` | `a#submitQuestion` |
-| 06 | `DOM_cmix_language_selector_radio_60552194` | CMIX | Radio simple | F | `radio.standard` | `a#cm-NextButton` |
-| 07 | `DOM_purespectrum_radio_211` | PureSpectrum | Radio simple | G | `radio.angular_ps` | `ps-next-button button` |
-| 08 | `DOM_QLEISUREACTIVITIES_CMix_SimpleGrid_LeisureFrequency_FR` | CMIX | Grille radio simple | J | `grid.cmix_simple` | `a#cm-NextButton` |
-| 09 | `DOM_samplicious_profiler_region_fr_radio_27_options` | Samplicious | Radio 27 options | F | `radio.standard` | `input#ctl00_Content_btnContinue` |
-| 10 | `DOM_walr_QCGridCheck_French_frequency_grid_radio_fr` | Walr | Grille radio card-séq. | K | `grid.walr_card` | `input#btnNext` |
-| 11 | `DOM_angular_material_radio_fruits` | Angular Material | Radio simple | H | `radio.angular_material` | `button.next_btn` |
-| 12 | `DOM_decipher_intro_consent_radio_yesno_en` | Decipher | Radio simple (standard) | F | `radio.standard` | `input#btn_continue` |
-| 13 | `DOM_dynata_profiler_consent_radio_oui_non_fr` | Dynata Profiler (Vue 3) | Radio simple | I | `radio.vue_dynata` | Bouton v-if (à confirmer) |
-| 14 | `DOM_ipsos_gender_radio_fr` | IPSOS Cortex | Radio simple | F | `radio.standard` | `a#submitQuestion` |
-
----
-
-## 6. POINTS CRITIQUES PAR PLATEFORME
-
-### CMIX *(DOMs 01, 06, 08)*
-- **AJAX navigation** : Attendre stabilisation DOM (disparition `div.cm-loader-wrapper`) après `#cm-NextButton`.
-- **hideifvalid** : `data-hideifvalid="true"` — question disparaît après sélection valide.
-- **Radio vs Checkbox** : `data-type="RADIO"` vs `"CHECKBOX"` sur `.cm-element`. `name` radio = `[qId]` seul, `name` checkbox = `[qId][]` (crochets).
-- **Simple Grid** : Chaque ligne = sous-question propre (`data-parent-id`). Cibler par `div.cm-grid-cell[questionid]`.
-
----
-
-### Decipher *(DOMs 02, 12)*
-- **ATM1D vs Standard** : Tester `div.sq-atm1d-widget` en premier. Absence → standard.
-- **ATM1D** : Cliquer sur `<li>`. Deux `<input>` par tile — ne jamais les cibler directement.
-- **Standard** : `div.clickableCell` cliquable en entier. `_v2_counter` hidden = anti-double-submit.
-
----
-
-### Dynata *(DOMs 03, 13)*
-- **Auto-Screener (AngularJS)** : `ng-change` nécessite un clic Selenium natif. Plusieurs questions par page.
-- **Profiler (Vue 3)** : `name` aléatoire — jamais utiliser. Bouton submit conditionnel `v-if` — attendre après sélection (timeout 2-3s). Evidon banner → `button._evidon-banner-acceptbutton` si présent.
-
----
-
-### PureSpectrum *(DOMs 04, 07)*
-- **IDs non fiables** : Contiennent `-undefined` (multi) ou sont séquentiels (single). Préférer `data-e2e`.
-- **name non fiable (single-choice)** : `name="[object Object]"` — ne jamais utiliser.
-- **Radio vs Checkbox** : `ps-single-choice-question` vs `ps-multi-choice-question`. Submit identique.
-- **Options exclusives** (multi) : `data-e2e="998/999"`. Vider le champ recherche avant interaction.
-
----
-
-### IPSOS Cortex *(DOMs 05, 14)*
-- **Submit = `<a>`** : `a#submitQuestion`, pas `button` ni `input[type=submit]`.
-- **Name Wicket** : Utiliser `[name*="checkGroup"]` / `[name*="radioGroup"]` (match partiel).
-- **AJAX indicator** : Attendre disparition de `img#ajaxLoadingImage` après submit.
-- **Option exclusive checkbox** : `input.logic.exclusive` → décocher tout le reste avant de cocher l'exclusive.
-
----
-
-### Samplicious *(DOM 09)*
-- **ASP.NET WebForms** : Submit = rechargement page entière. `__VIEWSTATE` présent.
-- **Valeur = index** : `value="1"` = 1ère option. Mapping texte ↔ valeur dans le DOM via `label.radio > span`.
-- **Submit selector CSS** : `input[name="ctl00$Content$btnContinue"]` (les `$` remplacent les `.` de l'ID ASP.NET).
-- **27+ options** : Scroller avant de cliquer si option hors viewport.
-
----
-
-### Angular Material *(DOM 11)*
-- **tabindex="-1"** sur les inputs non sélectionnés — ne pas cibler par tabindex.
-- **Cliquer sur `label.mdc-label`** plus fiable que l'input natif pour déclencher le binding.
-- **Plateforme custom** : `translate="srvyPrcs.nextBtn"` = i18n propriétaire. Pas de panel externe connu.
-
----
-
-### Walr *(DOM 10)*
-- **Table cachée par CSS** : Interagir uniquement via `.answer-button` dynamiques.
-- **IDs radio dupliqués** : `getElementById` inopérant. Cibler via `querySelectorAll('input.cRadio')` sur le `<tr>` parent.
-- **Card séquentielle** : Ordre des `.answer-button` = ordre des colonnes headers. Vérifier l'ordre.
-- **btnNext auto-click** : Peut se déclencher automatiquement après dernière réponse — vérifier si navigation déjà effectuée avant clic manuel.
-- **reCAPTCHA** (`grecaptcha-badge`) : Ne pas aller trop vite entre les interactions.
+**Comportements spéciaux** : Même submit que checkbox IPSOS. `[name*="radioGroup"]` comme sélecteur partiel. AJAX indicator `#ajaxLoadingImage`.
 
 ---
 
@@ -1075,11 +1025,11 @@ ROOT : Type d'input et contexte détectés dans le DOM ?
 | **Famille** | L — `text_ps_open_ended` |
 | **Application** | `text.ps_open_ended` + `submit.ps_next` |
 
-**Markers** : `ps-root[ng-version="19.2.11"]` · `ps-open-ended-question[qualificationid="4377"]` · `ps-textarea-input` · `textarea.form-control`
+**Markers** : `ps-root[ng-version]` · `ps-open-ended-question[qualificationid]` · `ps-textarea-input` · `textarea.form-control`
 
 **Submit** : `ps-next-button ps-button[data-e2e="next-button"] button`
 
-**Comportements spéciaux** : Validation "≥ 5 mots". CookieYes banner présent mais état fermé dans cette capture.
+**Comportements spéciaux** : Validation "≥ 5 mots". CookieYes banner présent mais fermé dans cette capture.
 
 ---
 
@@ -1088,15 +1038,15 @@ ROOT : Type d'input et contexte détectés dans le DOM ?
 | Attribut | Valeur |
 |---|---|
 | **Plateforme** | PureSpectrum (Angular 19) |
-| **Type** | Texte libre — textarea open-ended (avec CookieYes actif) |
+| **Type** | Texte libre — textarea open-ended (CookieYes actif) |
 | **Famille** | L — `text_ps_open_ended` |
 | **Application** | `text.ps_open_ended` + `submit.ps_next` |
 
-**Markers** : Identiques DOM-15. Différence : CookieYes overlay `div.cky-notice` visible.
+**Markers** : Identiques DOM-15. Différence : overlay CookieYes `div.cky-notice` visible.
 
-**Overlay** : `button[data-cky-tag="accept-button"]` → cliquer avant interaction avec la textarea.
+**Overlay** : `button[data-cky-tag="accept-button"]` → cliquer avant interaction textarea.
 
-**Comportements spéciaux** : Contenu de survey 100% identique à DOM-15. Même famille, même extraction.
+**Comportements spéciaux** : Contenu survey 100% identique à DOM-15. Même famille, même extraction.
 
 ---
 
@@ -1128,11 +1078,11 @@ ROOT : Type d'input et contexte détectés dans le DOM ?
 | **Famille** | N — `checkbox_confirmit_answer_button` |
 | **Application** | `checkbox.confirmit` + `submit.confirmit_next` |
 
-**Markers** : `div.cf-question.cf-question--answer-buttons-multi#QHIDSAMPLEChildren` · `div.cf-answer-button[role=checkbox][aria-checked]` · `div.cf-answer-button.cf-answer-button--exclusive` · `button.cf-navigation-next`
+**Markers** : `div.cf-question.cf-question--answer-buttons-multi[id]` · `div.cf-answer-button[role=checkbox][aria-checked]` · `div.cf-answer-button.cf-answer-button--exclusive` · `button.cf-navigation-next`
 
-**Submit** : `button.cf-navigation-next` (contient img "Suivant", pas de texte)
+**Submit** : `button.cf-navigation-next` (contient img, pas de texte stable)
 
-**Comportements spéciaux** : Option exclusive (`"Pas d'enfants dans le foyer"`) détectable par class `cf-answer-button--exclusive` ET `"isExclusive":true` dans `window.Confirmit` JSON. Option 4 pré-sélectionnée (`aria-checked="true"`).
+**Comportements spéciaux** : Option exclusive détectable par `cf-answer-button--exclusive` ET `"isExclusive":true` dans `window.Confirmit`. Option peut être pré-sélectionnée (`aria-checked="true"`).
 
 ---
 
@@ -1141,24 +1091,15 @@ ROOT : Type d'input et contexte détectés dans le DOM ?
 | Attribut | Valeur |
 |---|---|
 | **Plateforme** | RateAndRank (Angular Material 14) |
-| **Type** | Page mixte : 3x MULTI (mat-selection-list) + 2x PULLDOWN (mat-radio-group) |
+| **Type** | Page mixte : 3× MULTI (mat-selection-list) + 2× PULLDOWN (mat-radio-group) |
 | **Famille** | O — `checkbox_angular_mat_list` (MULTI) + H-variant (PULLDOWN) |
 | **Application** | `checkbox.angular_mat_list` + `radio.angular_material` + `submit.rateandrank_submit` |
 
 **Markers** : `app-root[ng-version="14.1.0"]` · `div[data-question-type="MULTI"]` · `mat-selection-list[id^="multi-question-"]` · `mat-list-option[role=option][id^="answer-"]` · `button#survey-submit-button`
 
-**Questions MULTI** :
-- Q-0 (id=806929) : 7 options occasions port vêtements → bouton `#okButton-806929` présent (validé)
-- Q-1 (id=806930) : 31 options marques + "Autres" text input `#mat-input-0`
-- Q-2 (id=806931) : 10 options lieux d'achat
-
-**Questions PULLDOWN (radio)** :
-- Q-3 (id=806932) : `mat-radio-group#radio-question-3` — 3 options intensité
-- Q-4 (id=806933) : `mat-radio-group#radio-question-4` — 5 options qualité
-
 **Submit** : `button#survey-submit-button` (disabled tant que tous non répondus)
 
-**Comportements spéciaux** : reCAPTCHA présent. Bouton "Ok" intermédiaire par bloc MULTI. "Autres" = sélectionner option + remplir `input#mat-input-0`.
+**Comportements spéciaux** : Bouton "Ok" intermédiaire par bloc MULTI. Option "Autres" = sélectionner + remplir `input#mat-input-[N]`. reCAPTCHA présent.
 
 ---
 
@@ -1171,9 +1112,7 @@ ROOT : Type d'input et contexte détectés dans le DOM ?
 | **Famille** | P — `dropdown_ipsos_wicket_bs_select` |
 | **Application** | `dropdown.ipsos_bs` + `submit.anchor` |
 
-**Markers** : `body.screening-body` · `select.form-control.bs-select-hidden[id="months18"]` + `select[id="years17"]` · `div.bootstrap-select` · Wicket AJAX `c="months18"`, `c="years17"` · `a#submitQuestion`
-
-**Extraction** : `option[value]` du select caché (ex. mois `value="6"` → "Juillet", valeur 0-indexée).
+**Markers** : `body.screening-body` · `select.form-control.bs-select-hidden[name*="dropdownsContainer"]` · `div.bootstrap-select` · `a#submitQuestion`
 
 **Submit** : `a#submitQuestion`
 
@@ -1190,11 +1129,11 @@ ROOT : Type d'input et contexte détectés dans le DOM ?
 | **Famille** | Q — `text_decipher_standard` |
 | **Application** | `text.decipher` + `submit.input_continue` |
 
-**Markers** : `form#primary[action*="/survey/selfserve/"]` · `div#question_Red_Herring_Math.question.number.hasError` · `input.text-input[name="ans383.0.0"]` · `input#btn_continue`
+**Markers** : `form#primary[action*="/survey/selfserve/"]` · `div.question.number[id^="question_"]` · `input.text-input[name^="ans"]` · `input#btn_continue`
 
 **Submit** : `input#btn_continue[type=submit]`
 
-**Comportements spéciaux** : `class="hasError"` présent = état d'erreur (réponse manquante). `size="2"` = réponse courte (1-2 chiffres). Exemple : "6 + 6 = ??" → répondre "12".
+**Comportements spéciaux** : `class="hasError"` = état erreur (réponse manquante). `size="2"` = réponse courte (1-2 chiffres). `_v2_counter` hidden anti-double-submit.
 
 ---
 
@@ -1203,20 +1142,15 @@ ROOT : Type d'input et contexte détectés dans le DOM ?
 | Attribut | Valeur |
 |---|---|
 | **Plateforme** | RSCH (PHP custom) |
-| **Type** | Page demographics mixte : SC1 radio + SC2 texte + SC3 select |
+| **Type** | Page demographics mixte : radio + texte + select natif |
 | **Famille** | R — `mixed_rsch_page` |
 | **Application** | `radio.standard` + `text.rsch` + `dropdown.native` + `submit.rsch_button` |
 
-**Markers** : `body.fontF` · `form#mainForm[action="./index.php"]` · `div.question_default[data-survey-uid]` · `input[type=radio][name^="sc"]` · `input[type=text][name^="sc"]` · `select[name^="sc"]` · `input#btnsmall.enterButton.submitButton`
-
-**Sous-questions** :
-- SC1 (genre) : radio `name="sc1"`, `id="sc1-[N]"`, `value="1|2|3"` + `label[for]`
-- SC2 (âge) : text `name="sc2_1"` `maxlength="2"` (saisie "XX ans")
-- SC3 (région) : select `name="sc3"` avec 14 `option[value="1..14"]`
+**Markers** : `body.fontF` · `form#mainForm[action="./index.php"]` · `div.question_default[data-survey-uid]` · `input[type=radio][name^="sc"]` · `input#btnsmall.enterButton.submitButton`
 
 **Submit** : `input#btnsmall[type=button]` onclick → `clickCheck('next_button')`
 
-**Comportements spéciaux** : Soumettre toutes les questions ensemble. Rechargement page entière. `oncontextmenu/oncopy` bloqués (pas d'impact Selenium).
+**Comportements spéciaux** : Toutes les sous-questions soumises ensemble. Rechargement page entière. SC1=radio, SC2=texte, SC3=select natif.
 
 ---
 
@@ -1229,11 +1163,11 @@ ROOT : Type d'input et contexte détectés dans le DOM ?
 | **Famille** | S — `navigation_instructions` |
 | **Application** | `navigation.instructions` |
 
-**Markers** : `div#app[data-v-app]` · `div#sentry` · `div.instructions-card` · `button.next-button.next[type=button]` · absence de `input[type=radio/checkbox]`
+**Markers** : `div#app[data-v-app]` · `div#sentry` · `div.instructions-card` · `button.next-button.next[type=button]` · **absence** de `input[type=radio/checkbox]`
 
-**Submit** / Action : `button.next-button.next` ("Suivant →")
+**Action** : `button.next-button.next` ("Suivant →")
 
-**Comportements spéciaux** : Aucune réponse à générer. reCAPTCHA invisible (`grecaptcha-badge`). Même stack Vue 3 que DOM-13 (Dynata Profiler) mais pattern différent.
+**Comportements spéciaux** : Aucune réponse à générer. reCAPTCHA invisible.
 
 ---
 
@@ -1246,14 +1180,319 @@ ROOT : Type d'input et contexte détectés dans le DOM ?
 | **Famille** | T — `consent_grx_nextjs` |
 | **Application** | `consent.grx` |
 
-**Markers** : `div#__next` · `div[class*="grx-"]` · `button#gtm-agree-button` "Accepter et continuer" · `a#gtm-disagree-button` "Refuser et quitter l'enquête"
+**Markers** : `div#__next` · `div[class*="grx-"]` · `button#gtm-agree-button` · `a#gtm-disagree-button`
 
-**Action** : Cliquer `button#gtm-agree-button` (toujours).
+**Action** : `button#gtm-agree-button` (toujours accepter).
 
-**Comportements spéciaux** : URL contient tokens Cint (`cint_panelist_id`, `SID`, `PID`, `MID`). Aucune réponse à générer. Refuser = abandon de session.
-
-
+**Comportements spéciaux** : Refuser = abandon session. URL contient tokens Cint (`cint_panelist_id`, `SID`, `PID`).
 
 ---
 
-*Fin du fichier — Version 3.0.0*
+### DOM-25 · `DOM_kantar_liverecruit_numeric_age_fr`
+
+| Attribut | Valeur |
+|---|---|
+| **Plateforme** | Kantar LiveRecruit |
+| **Type** | Saisie numérique — âge |
+| **Famille** | U — `kantar_liverecruit_single` |
+| **Application** | `text.kantar_numeric` + `submit.kantar_next` |
+
+**Markers** : `body.live-recruit` · `form[action^="/ix/Q/"]` · `div.form-group.question[data-position]` · `input.NumericInput.form-control[type=number][name^="Q"]` · `input#submit-button[value="Question suivante"]` · `a[href*="kantar.com/global-survey-privacy-notice"]`
+
+**Submit** : `input#submit-button[type=submit]`
+
+**Comportements spéciaux** : `name="Q[position+1]"` — cibler par classe, pas par name. `input[name="Seed[N]"]` hidden anti-replay. `noBack()` JS bloque navigation arrière (sans impact Selenium).
+
+---
+
+### DOM-26 · `DOM_kantar_liverecruit_dropdown_region_fr`
+
+| Attribut | Valeur |
+|---|---|
+| **Plateforme** | Kantar LiveRecruit |
+| **Type** | Dropdown natif — région |
+| **Famille** | U — `kantar_liverecruit_single` |
+| **Application** | `dropdown.kantar` + `submit.kantar_next` |
+
+**Markers** : `body.live-recruit` · `form[action^="/ix/Q/"]` · `select.form-control.dropdownlist[name^="Q"]` · `option[data-category][value]` · `input#submit-button[value="Question suivante"]`
+
+**Submit** : `input#submit-button[type=submit]`
+
+**Comportements spéciaux** : Option vide `value=""` = "Non choisi" (état initial). `option[data-category=""]` = catégorie vide, pas un groupe. `ViewState` JSON base64 encode `Position`, `TotalQuestions`, `TotalPages`.
+
+---
+
+### DOM-27 · `DOM_kantar_liverecruit_checkbox_multi_exclusive_interests_fr`
+
+| Attribut | Valeur |
+|---|---|
+| **Plateforme** | Kantar LiveRecruit |
+| **Type** | Checkbox multi — avec option exclusive |
+| **Famille** | U — `kantar_liverecruit_single` |
+| **Application** | `checkbox.kantar` + `submit.kantar_next` |
+
+**Markers** : `body.live-recruit` · `form[action^="/ix/Q/"]` · `div.checkboxes[aria-labelledby]` · `label.input.form-inline[id^="label-Q"]` · `input[type=checkbox][name^="Q"]` · `div.mutually-exclusive-divider` · `input.mutually-exclusive`
+
+**Submit** : `input#submit-button[type=submit]`
+
+**Comportements spéciaux** : Options après `div.mutually-exclusive-divider` portent `class="mutually-exclusive"`. Règle : si option exclusive sélectionnée → ne cocher qu'elle. `value="1"` pour toutes les options (pas de valeur sémantique — le `name` est la clé).
+
+---
+
+### DOM-28 · `DOM_kantar_liverecruit_grid_radio_website_frequency_fr`
+
+| Attribut | Valeur |
+|---|---|
+| **Plateforme** | Kantar LiveRecruit |
+| **Type** | Grille radio — fréquence visites sites web (7 lignes × 6 colonnes) |
+| **Famille** | V — `grid_kantar_liverecruit` |
+| **Application** | `grid.kantar` + `submit.kantar_next` |
+
+**Markers** : `body.live-recruit` · `form[action^="/ix/Q/"]` · `table.grid[id^="grid-"][role="presentation"]` · `tr[role="group"][data-group]` · `input[type=radio][name^="Q"][aria-labelledby]` · `input[name^="GridColumnHidden"]`
+
+**Submit** : `input#submit-button[type=submit]`
+
+**Colonnes** : Plusieurs fois par jour · Une fois par jour · 4 à 6 fois par semaine · 1 à 3 fois par semaine · Moins d'une fois par semaine · Ne jamais visiter
+
+**Lignes (DOM order → name)** : Q126_1=Nouvelles · Q126_2=Mode de vie · Q126_3=Fashion beauté · Q126_4=Divertissement · Q126_5=Des sports · Q126_6=Santé · Q126_7=Nutrition
+
+**Comportements spéciaux** : `name="Q[N]_[K]"` où K = index 1-based **ordre DOM** des `tr[role=group]` — ≠ suffixe du `rowlabel[tableId]-[catId]`. `GridColumnHiddenQ[N]_[M]="true"` → colonne masquée, à ignorer. IDs table dynamiques — ne pas cibler par `id`.
+
+---
+
+## 4. ARBRE DE DÉCISION
+
+```
+ROOT — Identifier la plateforme, puis le type d'input
+│
+├─► body.live-recruit ET form[action^="/ix/Q/"] ? → KANTAR LIVERECRUIT
+│   ├─► table.grid[role="presentation"] + tr[role="group"] ?
+│   │   └─► FAMILLE V | grid.kantar | Q[N]_[K] par ordre DOM | submit: input#submit-button
+│   ├─► div.checkboxes[aria-labelledby] + div.mutually-exclusive-divider ?
+│   │   └─► FAMILLE U / checkbox | checkbox.kantar | submit: input#submit-button
+│   ├─► select.form-control.dropdownlist ?
+│   │   └─► FAMILLE U / dropdown | dropdown.kantar | submit: input#submit-button
+│   └─► input.NumericInput.form-control[type=number] ?
+│       └─► FAMILLE U / text | text.kantar_numeric | submit: input#submit-button
+│
+├─► body.cm-Survey[ng-app="cmix.tasks"] ? → CMIX
+│   ├─► div[data-type="SIMPLE_GRID"] ?
+│   │   └─► FAMILLE J | grid.cmix_simple | div.cm-grid-cell[questionid] | submit: a#cm-NextButton
+│   ├─► div[data-type="RADIO"] ?
+│   │   └─► FAMILLE F (CMIX) | radio.standard | input[name sans []] | submit: a#cm-NextButton
+│   └─► div[data-type="CHECKBOX"] ?
+│       └─► FAMILLE A | checkbox.standard | input[name avec []] | submit: a#cm-NextButton
+│
+├─► body.screening-body ET assets ipsosinteractive ? → IPSOS CORTEX
+│   ├─► input.slider-form-field.bs-slider ?
+│   │   └─► FAMILLE M | slider.ipsos | JS .value + dispatchEvent | submit: a#submitQuestion
+│   ├─► select.form-control.bs-select-hidden[name*="dropdownsContainer"] ?
+│   │   └─► FAMILLE P | dropdown.ipsos_bs | JS .value + dispatchEvent | submit: a#submitQuestion
+│   ├─► input[name*="checkGroup"] ?
+│   │   └─► FAMILLE E | checkbox.standard | + input.logic.exclusive | submit: a#submitQuestion
+│   └─► input[name*="radioGroup"] ?
+│       └─► FAMILLE F (IPSOS) | radio.standard | submit: a#submitQuestion
+│
+├─► form#primary[action*="/survey/selfserve/"] → DECIPHER
+│   ├─► div.sq-atm1d-widget ET ul.sq-atm1d-buttons ?
+│   │   └─► FAMILLE B | checkbox.atm1d | li.sq-atm1d-button | submit: input#btn_continue
+│   ├─► div.question.radio[role=radiogroup] ?
+│   │   └─► FAMILLE F (Decipher) | radio.standard | input[name^="ans"] | submit: input#btn_continue
+│   └─► div.question.number[id^="question_"] ?
+│       └─► FAMILLE Q | text.decipher | input.text-input[name^="ans"] | submit: input#btn_continue
+│
+├─► ps-root[ng-version] ? → PURESPECTRUM
+│   ├─► ps-multi-choice-question[qualificationid] ?
+│   │   └─► FAMILLE D | checkbox.angular_component | input.multi-select-input[data-e2e] | submit: ps-next-button button
+│   ├─► ps-single-choice-question[qualificationid] ?
+│   │   └─► FAMILLE G | radio.angular_ps | input.handset-choice-view[data-e2e] | submit: ps-next-button button
+│   └─► ps-open-ended-question[qualificationid] ?
+│       └─► FAMILLE L | text.ps_open_ended | ps-textarea-input textarea | submit: ps-next-button button
+│           └─► Vérifier div.cky-notice visible → dismiss CookieYes d'abord
+│
+├─► div.auto-screener[ng-controller*="autoScreenerController"] ? → DYNATA AUTO-SCREENER
+│   └─► FAMILLE C | checkbox.angular_ng | input[name^="ms_"][checklist-value] | submit: button.button-yellow
+│
+├─► div#app[data-v-app] ?
+│   ├─► div#sentry ET div.instructions-card ? → CLOUDRESEARCH SENTRY
+│   │   └─► FAMILLE S | navigation.instructions | button.next-button.next | (pas de réponse)
+│   └─► div#profiler-choice ? → DYNATA PROFILER
+│       └─► FAMILLE I | radio.vue_dynata | input.choice-input | submit: bouton v-if (attendre)
+│
+├─► app-root[ng-version] ?
+│   ├─► div[data-question-type="MULTI"] ET mat-selection-list ? → RATEANDRANK
+│   │   └─► FAMILLE O | checkbox.angular_mat_list | mat-list-option | submit: button#survey-submit-button
+│   └─► mat-radio-group ET app-survey ? → ANGULAR MATERIAL
+│       └─► FAMILLE H | radio.angular_material | label.mdc-label | submit: button.next_btn
+│
+├─► body#ctl00_supplierBranding ET form#aspnetForm[action*="Profiler.aspx"] ? → SAMPLICIOUS
+│   └─► FAMILLE F (Samplicious) | radio.standard | input[name^="question_"] | submit: input#ctl00_Content_btnContinue
+│
+├─► form#rsForm[action*="./c?rs="] ET table.cTable.rsSingleGrid ? → WALR
+│   └─► FAMILLE K | grid.walr_card | .answer-button dynamique | submit: input#btnNext
+│
+├─► div.cf-question.cf-question--answer-buttons-multi ? → CONFIRMIT
+│   └─► FAMILLE N | checkbox.confirmit | div.cf-answer-button[role=checkbox] | submit: button.cf-navigation-next
+│
+├─► div#__next ET div[class*="grx-"] ? → GRX / CINT
+│   └─► FAMILLE T | consent.grx | button#gtm-agree-button | (pas de réponse)
+│
+├─► body.fontF ET form#mainForm[action="./index.php"] ? → RSCH
+│   └─► FAMILLE R | radio+text+select | mixed_rsch_page | submit: input#btnsmall
+│
+└─► Aucune famille reconnue → LOG "dom_unclassified" + abandon contrôlé (pas de retry)
+```
+
+---
+
+## 5. TABLEAU RÉCAPITULATIF
+
+| # | Nom DOM | Plateforme | Type question | Famille | Groupe application | Submit sélecteur |
+|---|---|---|---|---|---|---|
+| 01 | `DOM_cmix_intro_consent_checkbox_60552196` | CMIX | Checkbox consentement | A | `checkbox.standard` | `a#cm-NextButton` |
+| 02 | `DOM_decipher_selfserve_atm1d_checkbox_past_participation_fr` | Decipher | Checkbox multi ATM1D | B | `checkbox.atm1d` | `input#btn_continue` |
+| 03 | `DOM_dynata_autoscreener_multi_select_streaming_checkboxes_fr` | Dynata Auto-Screener | Checkbox multi AngularJS | C | `checkbox.angular_ng` | `button.button-yellow[type=submit]` |
+| 04 | `DOM_purespectrum_multiselect_pathologies_search_checkbox_fr` | PureSpectrum | Checkbox multi + recherche | D | `checkbox.angular_component` | `ps-next-button button` |
+| 05 | `DOM_ipsos_leisure_activities_checkbox_multi_exclusive_fr` | IPSOS Cortex | Checkbox multi + exclusive | E | `checkbox.standard` | `a#submitQuestion` |
+| 06 | `DOM_cmix_language_selector_radio_60552194` | CMIX | Radio simple | F | `radio.standard` | `a#cm-NextButton` |
+| 07 | `DOM_purespectrum_radio_211` | PureSpectrum | Radio simple | G | `radio.angular_ps` | `ps-next-button button` |
+| 08 | `DOM_QLEISUREACTIVITIES_CMix_SimpleGrid_LeisureFrequency_FR` | CMIX | Grille radio | J | `grid.cmix_simple` | `a#cm-NextButton` |
+| 09 | `DOM_samplicious_profiler_region_fr_radio_27_options` | Samplicious | Radio 27 options | F | `radio.standard` | `input#ctl00_Content_btnContinue` |
+| 10 | `DOM_walr_QCGridCheck_French_frequency_grid_radio_fr` | Walr | Grille radio card-séq. | K | `grid.walr_card` | `input#btnNext` |
+| 11 | `DOM_angular_material_radio_fruits` | Angular Material | Radio simple | H | `radio.angular_material` | `button.next_btn` |
+| 12 | `DOM_decipher_intro_consent_radio_yesno_en` | Decipher | Radio simple | F | `radio.standard` | `input#btn_continue` |
+| 13 | `DOM_dynata_profiler_consent_radio_oui_non_fr` | Dynata Profiler (Vue 3) | Radio simple | I | `radio.vue_dynata` | Bouton v-if |
+| 14 | `DOM_ipsos_gender_radio_fr` | IPSOS Cortex | Radio simple | F | `radio.standard` | `a#submitQuestion` |
+| 15 | `DOM_purespectrum_open_ended_textarea_next_fr` | PureSpectrum | Texte libre textarea | L | `text.ps_open_ended` | `ps-next-button button` |
+| 16 | `DOM_purespectrum_open_ended_textarea_next_cookieyes_fr` | PureSpectrum | Texte libre textarea + CookieYes | L | `text.ps_open_ended` | `ps-next-button button` |
+| 17 | `DOM_ipsos_wicket_slider_likert_multi_fr` | IPSOS Cortex | Slider Likert multi | M | `slider.ipsos` | `a#submitQuestion` |
+| 18 | `DOM_confirmit_children_household_multi_exclusive_fr` | Confirmit | Checkbox multi ARIA + exclusive | N | `checkbox.confirmit` | `button.cf-navigation-next` |
+| 19 | `DOM_rateandrank_multi_checklists_radio_autres_text_fr` | RateAndRank | Page mixte MULTI+radio | O+H | `checkbox.angular_mat_list` + `radio.angular_material` | `button#survey-submit-button` |
+| 20 | `DOM_ipsos_birthdate_dropdown_fr` | IPSOS Cortex | Dropdown date BS Select | P | `dropdown.ipsos_bs` | `a#submitQuestion` |
+| 21 | `DOM_decipher_red_herring_math_text_fr` | Decipher | Texte numérique | Q | `text.decipher` | `input#btn_continue` |
+| 22 | `DOM_rsch_demographics_fr` | RSCH | Page mixte radio+texte+select | R | `radio.standard`+`text.rsch`+`dropdown.native` | `input#btnsmall` |
+| 23 | `DOM_cloudresearch_sentry_instructions_cta_suivant_fr` | CloudResearch Sentry | Instructions/CTA uniquement | S | `navigation.instructions` | `button.next-button.next` |
+| 24 | `DOM_grx_consent_accepter_et_continuer_refuser_quitter_fr` | GRX / Cint | Consentement RGPD | T | `consent.grx` | `button#gtm-agree-button` |
+| 25 | `DOM_kantar_liverecruit_numeric_age_fr` | Kantar LiveRecruit | Saisie numérique | U | `text.kantar_numeric` | `input#submit-button` |
+| 26 | `DOM_kantar_liverecruit_dropdown_region_fr` | Kantar LiveRecruit | Dropdown natif | U | `dropdown.kantar` | `input#submit-button` |
+| 27 | `DOM_kantar_liverecruit_checkbox_multi_exclusive_interests_fr` | Kantar LiveRecruit | Checkbox multi + exclusive | U | `checkbox.kantar` | `input#submit-button` |
+| 28 | `DOM_kantar_liverecruit_grid_radio_website_frequency_fr` | Kantar LiveRecruit | Grille radio | V | `grid.kantar` | `input#submit-button` |
+
+---
+
+## 6. POINTS CRITIQUES PAR PLATEFORME
+
+### CMIX *(DOMs 01, 06, 08)*
+- **AJAX navigation** : Attendre stabilisation DOM (disparition `div.cm-loader-wrapper`) après `#cm-NextButton`.
+- **hideifvalid** : `data-hideifvalid="true"` — question disparaît après sélection valide.
+- **Radio vs Checkbox** : `data-type="RADIO"` vs `"CHECKBOX"` sur `.cm-element`. `name` radio = `[qId]` seul, `name` checkbox = `[qId][]` (crochets).
+- **Simple Grid** : Chaque ligne = sous-question propre (`data-parent-id`). Cibler par `div.cm-grid-cell[questionid]`.
+
+---
+
+### Decipher *(DOMs 02, 12, 21)*
+- **ATM1D vs Standard** : Tester `div.sq-atm1d-widget` en premier. Absence → standard.
+- **ATM1D** : Cliquer sur `<li>`. Deux `<input>` par tile — ne jamais les cibler directement.
+- **Standard radio** : `div.clickableCell` cliquable en entier. `_v2_counter` hidden = anti-double-submit.
+- **Texte numérique** : `class="hasError"` → erreur de validation. Réponse courte (size=2 = 1-2 chiffres).
+
+---
+
+### Dynata *(DOMs 03, 13)*
+- **Auto-Screener (AngularJS)** : `ng-change` nécessite clic Selenium natif. Plusieurs questions par page.
+- **Profiler (Vue 3)** : `name` aléatoire — jamais utiliser. Bouton submit conditionnel `v-if` — attendre après sélection (timeout 2-3s). Evidon banner → `button._evidon-banner-acceptbutton` si présent.
+
+---
+
+### PureSpectrum *(DOMs 04, 07, 15, 16)*
+- **IDs non fiables** : Contiennent `-undefined` (multi) ou sont séquentiels (single). Préférer `data-e2e`.
+- **name non fiable** : `name="[object Object]"` — ne jamais utiliser.
+- **Radio vs Checkbox** : `ps-single-choice-question` vs `ps-multi-choice-question`. Submit identique.
+- **Options exclusives** (multi) : `data-e2e="998/999"`. Vider le champ recherche avant interaction.
+- **CookieYes overlay** (DOM-16) : `div.cky-notice` visible → cliquer `button[data-cky-tag="accept-button"]` avant toute interaction.
+- **Validation textarea** : "≥ 5 mots" — vérifier longueur de la réponse générée avant submit.
+
+---
+
+### IPSOS Cortex *(DOMs 05, 14, 17, 20)*
+- **Submit = `<a>`** : `a#submitQuestion`, pas `button` ni `input[type=submit]`.
+- **Name Wicket** : Utiliser `[name*="checkGroup"]` / `[name*="radioGroup"]` (match partiel).
+- **AJAX indicator** : Attendre disparition `img#ajaxLoadingImage` après submit.
+- **Exclusive checkbox** : `input.logic.exclusive` → décocher tout avant de cocher l'exclusive.
+- **Slider (DOM-17)** : Input natif masqué (`display:none`). Interagir via JS `input.value = v; dispatchEvent(new Event('change'))`.
+- **BS Select (DOM-20)** : Select natif masqué. Même stratégie JS. Mois 0-indexé. Changer année avant mois (chaînage Wicket AJAX).
+
+---
+
+### Samplicious *(DOM 09)*
+- **ASP.NET WebForms** : Submit = rechargement page entière. `__VIEWSTATE` présent.
+- **Valeur = index** : `value="1"` = 1ère option. Mapping texte ↔ valeur via `label.radio > span`.
+- **Submit CSS** : `input[name="ctl00$Content$btnContinue"]` (les `$` remplacent les `.` de l'ID ASP.NET).
+- **27+ options** : Scroller avant de cliquer si option hors viewport.
+
+---
+
+### Angular Material *(DOM 11)*
+- **tabindex="-1"** sur les inputs non sélectionnés — ne pas cibler par tabindex.
+- **Cliquer sur `label.mdc-label`** plus fiable que l'input natif pour déclencher le binding.
+- **Plateforme custom** : `translate="srvyPrcs.nextBtn"` = i18n propriétaire.
+
+---
+
+### Walr *(DOM 10)*
+- **Table cachée par CSS** : Interagir uniquement via `.answer-button` dynamiques.
+- **IDs radio dupliqués** : `getElementById` inopérant. Cibler via `querySelectorAll('input.cRadio')` sur le `<tr>` parent.
+- **Card séquentielle** : Ordre des `.answer-button` = ordre des colonnes headers.
+- **btnNext auto-click** : Peut se déclencher automatiquement après dernière réponse.
+- **reCAPTCHA** : Ne pas aller trop vite entre les interactions.
+
+---
+
+### Confirmit / Forsta *(DOM 18)*
+- **Pas d'`<input>` exploitable** : Tout passe par `.click()` sur les divs ARIA `role="checkbox"`.
+- **Option exclusive** : `cf-answer-button--exclusive` + `"isExclusive":true` dans `window.Confirmit`.
+- **Submit image** : `button.cf-navigation-next` contient une `<img>`, pas de texte stable — cibler par classe CSS.
+- **Pré-sélection** : Vérifier `aria-checked="true"` sur les options au chargement.
+
+---
+
+### RateAndRank *(DOM 19)*
+- **Page multi-types** : Itérer sur `div[data-question-type]` pour détecter MULTI vs PULLDOWN.
+- **Bouton Ok intermédiaire** : `button#okButton-[ID]` apparaît quand ≥1 option MULTI sélectionnée — obligatoire avant submit global.
+- **submit disabled** : `button#survey-submit-button[disabled]` tant que tous les blocs non répondus.
+- **Radios non-MDC (Angular 14)** : `label.mat-radio-label` (sans préfixe mdc-), `input.mat-radio-input`.
+
+---
+
+### RSCH *(DOM 22)*
+- **Page entière en une fois** : Répondre à SC1, SC2, SC3 avant de soumettre. Pas de validation partielle.
+- **`oncontextmenu/oncopy` bloqués** côté client : sans impact Selenium.
+- **Rechargement complet** : pas d'AJAX — attendre `document.readyState == "complete"`.
+
+---
+
+### CloudResearch Sentry *(DOM 23)*
+- **Aucune réponse à générer** : détecter par absence de `input[type=radio]`, `input[type=checkbox]`, `select`, `textarea`.
+- **Distinguer de Dynata (Vue 3)** : CloudResearch = `div#sentry` + `div.instructions-card`; Dynata = `div#profiler-choice`.
+
+---
+
+### GRX / Cint *(DOM 24)*
+- **Toujours accepter** : `button#gtm-agree-button`. Ne jamais cliquer `a#gtm-disagree-button`.
+- **Tokens Cint dans URL** : `cint_panelist_id`, `SID`, `PID`, `MID` — indicateurs d'entrée via panel Cint.
+
+---
+
+### Kantar LiveRecruit *(DOMs 25, 26, 27, 28)*
+- **`name="Q[position+1]"`** : Le numéro dans le name = data-position + 1. Cibler par classe CSS uniquement (`input.NumericInput`, `select.dropdownlist`, `input[type=checkbox][name^="Q"]`).
+- **`input[name="Seed[N]"]`** hidden = token anti-replay par question — ne jamais modifier ni cibler.
+- **`noBack()` JS** : Bloque navigation arrière navigateur — sans impact Selenium.
+- **Option exclusive checkbox** : `div.mutually-exclusive-divider` = séparateur visuel. Options après = `input.mutually-exclusive`. Règle stricte : exclusive sélectionnée → décocher tout le reste.
+- **`value="1"` pour tous les checkboxes** : La clé de réponse est le `name` (ex. `Q224_3`), pas la `value`. Le serveur reçoit `name=1` si coché, absent si non coché.
+- **Grille Kantar — piège rowlabel** : Le suffixe de `rowlabel[tableId]-[catId]` est un identifiant de catégorie non ordonné. K dans `Q[N]_[K]` = position 1-based dans l'ordre DOM des `tr[role="group"]`. Les deux ne se correspondent pas.
+- **`GridColumnHidden[Q][N]_[M]="true"`** : Colonne masquée côté serveur. Vérifier avant extraction pour éviter d'interagir avec une colonne inexistante.
+- **Submit = `input[type=submit]`** : Contrairement à la plupart des autres plateformes (Decipher, IPSOS), Kantar utilise un `input[type=submit]` standard, pas un `<a>` ni un `<button>`.
+
+---
+
+*Fin du fichier — Version 3.2.0*
