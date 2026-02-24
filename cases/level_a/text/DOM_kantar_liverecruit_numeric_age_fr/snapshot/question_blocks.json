@@ -1,0 +1,16 @@
+[
+  {
+    "question": "Veuillez saisir votre âge...",
+    "itype": "text",
+    "options": [],
+    "max_select": 1,
+    "target_id": "single_472b59bfea26",
+    "context": {
+      "kind": "single",
+      "tag": "input",
+      "name": "Q123",
+      "id": "",
+      "role": null
+    }
+  }
+]
