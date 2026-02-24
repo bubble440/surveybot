@@ -1,0 +1,16 @@
+{
+  "name": "dynata_autoscreener_multi_select_streaming_checkboxes_fr",
+  "snapshot_dir": "snapshot",
+  "assert": {
+    "summary": {
+      "total": 1,
+      "by_type": {
+        "checkbox": 1
+      }
+    },
+    "must_have_checkbox_group": {
+      "group_key": "checkbox:name:ms_233176",
+      "min_options": 6
+    }
+  }
+}

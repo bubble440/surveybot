@@ -1,0 +1,32 @@
+[
+  {
+    "question": "A-t-on diagnostiqué chez vous, ou chez une personne dont vous vous occupez, certaines des pathologies ou maladies suivantes? (Veuillez sélectionner toutes les réponses qui s’appliquent.): Suivant",
+    "itype": "checkbox",
+    "options": [
+      "Dépendance",
+      "Allergie/asthme/troubles respiratoires",
+      "Arthrite/douleurs articulaires",
+      "Maladie auto-immune/sanguine",
+      "Cancer",
+      "Maladie cardiovasculaire/cardiaque",
+      "Troubles dentaires",
+      "Diabète/maladie thyroïdienne/obésité",
+      "Troubles gastriques/digestifs/urinaires (p. ex. maladie de Crohn, brûlures d’estomac, insuffisance rénale)",
+      "Troubles de la santé masculine/féminine (p. ex. dysfonction érectile (DE), carence en testostérone, ménopause, ostéoporose)",
+      "Troubles de la santé mentale (p. ex. anxiété, TDA/TDAH, dépression)",
+      "Troubles neurologiques/nerveux (p. ex. migraines, SEP, AVC)",
+      "Aucune des réponses ci-dessus",
+      "Douleurs (p. ex. fibromyalgie, goutte)",
+      "Je préfère ne pas répondre",
+      "Affections cutanées/dermatologiques",
+      "Troubles du sommeil",
+      "Troubles visuels/auditifs"
+    ],
+    "max_select": 18,
+    "target_id": "group_5291cdd0e4d7",
+    "context": {
+      "kind": "group",
+      "group_key": ""
+    }
+  }
+]
