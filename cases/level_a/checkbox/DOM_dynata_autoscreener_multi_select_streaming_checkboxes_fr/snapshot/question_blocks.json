@@ -1,0 +1,22 @@
+[
+  {
+    "question": "Parmi les chaînes premium ou services de streaming suivants, auquel/auxquels êtes-vous abonné(e) actuellement, testez-vous gratuitement ou avez-vous accès via le compte d'une autre personne en dehors de votre foyer ? Veuillez sélectionner toutes les réponses qui s'appliquent. Max",
+    "itype": "checkbox",
+    "options": [
+      "Amazon Prime Video",
+      "Disney+",
+      "HBO",
+      "HBO Max",
+      "Hulu",
+      "Netflix",
+      "Showtime",
+      "Aucune des réponses ci-dessus"
+    ],
+    "max_select": 8,
+    "target_id": "group_8011aeeb3cee",
+    "context": {
+      "kind": "group",
+      "group_key": "ms_233176"
+    }
+  }
+]

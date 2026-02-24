@@ -1,0 +1,41 @@
+[
+  {
+    "question": "Dans quelle région habitez-vous ?",
+    "itype": "checkbox",
+    "options": [
+      "Alsace",
+      "Aquitaine",
+      "Auvergne",
+      "Bourgogne",
+      "Bretagne",
+      "Centre",
+      "Champagne-Ardenne",
+      "Corse",
+      "Franche-Comté",
+      "Guadeloupe",
+      "Guyane",
+      "Île-de-France",
+      "Languedoc-Roussillon",
+      "Limousin",
+      "Lorraine",
+      "Martinique",
+      "Mayotte",
+      "Midi-Pyrénées",
+      "Nord-Pas-de-Calais",
+      "Basse-Normandie",
+      "Haute-Normandie",
+      "PAYS de la Loire",
+      "Picardie",
+      "Poitou-Charentes",
+      "Provence-Alpes-Côte d'Azur",
+      "La Réunion",
+      "Rhône-Alpes"
+    ],
+    "max_select": 27,
+    "target_id": "group_095a25f852f0",
+    "context": {
+      "kind": "group",
+      "group_key": "question_12414"
+    }
+  }
+]
