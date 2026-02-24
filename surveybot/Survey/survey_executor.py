@@ -161,6 +161,106 @@ def _budgeted_dom_only_abort_for_image_eval(driver) -> str:
     except Exception as e:
         print(f"[DOM_ONLY_ABORT][WARN] soft_restart request failed: {type(e).__name__}: {e}")
     return "restarted"
+
+
+def _handle_forcewatch_video_gate(driver) -> str:
+    """
+    Détection/traitement DOM-only d'un écran vidéo avec gate forcewatch.
+
+    Retourne:
+      - "resolved": question vidéo répondue via DOM,
+      - "soft_restart": gate vidéo détecté sans action exploitable,
+      - "no_match": aucun gate vidéo de ce type détecté.
+    """
+    try:
+        has_forcewatch_video = bool(driver.execute_script(
+            """
+            const isVisible = (el) => {
+              if (!el) return false;
+              const s = window.getComputedStyle(el);
+              if (!s || s.display === 'none' || s.visibility === 'hidden') return false;
+              const r = el.getBoundingClientRect();
+              return !!(r && r.width > 0 && r.height > 0);
+            };
+            const videos = Array.from(document.querySelectorAll('video[data-forcewatch]'));
+            return videos.some(v => isVisible(v));
+            """
+        ))
+    except Exception:
+        has_forcewatch_video = False
+
+    if not has_forcewatch_video:
+        return "no_match"
+
+    try:
+        radios = [
+            el for el in driver.find_elements(By.CSS_SELECTOR, "input[type='radio'][name]")
+            if el.is_enabled() and el.is_displayed()
+        ]
+    except Exception:
+        radios = []
+
+    groups: dict[str, list] = {}
+    for r in radios:
+        name = (r.get_attribute("name") or "").strip()
+        if not name:
+            continue
+        groups.setdefault(name, []).append(r)
+
+    if not groups:
+        print("[VIDEO_GATE] video_gate detected -> soft_restart")
+        try:
+            import Management.guards.runtime_guard as runtime_guard
+            runtime_guard.get_guard().request_survey_restart("video_gate_forcewatch")
+        except Exception as e:
+            print(f"[VIDEO_GATE][WARN] soft_restart request failed: {type(e).__name__}: {e}")
+        return "soft_restart"
+
+    def _input_score(inp) -> int:
+        score = 0
+        try:
+            aria = _norm_lc(inp.get_attribute("aria-labelledby") or "")
+            col_txt = ""
+            for tok in aria.split():
+                if "columnlabel" in tok:
+                    try:
+                        txt = driver.find_element(By.ID, tok).text
+                        col_txt += f" {txt}"
+                    except Exception:
+                        pass
+            label_txt = _norm_lc(inp.find_element(By.XPATH, "ancestor::label[1]").text)
+            blob = f"{label_txt} {_norm_lc(col_txt)}"
+            if "oui" in blob or "yes" in blob:
+                score += 100
+            if "non" in blob or "no" in blob:
+                score -= 10
+        except Exception:
+            pass
+        return score
+
+    clicked_groups = 0
+    for _, inputs in groups.items():
+        ordered = sorted(inputs, key=_input_score, reverse=True)
+        target = ordered[0] if ordered else None
+        if not target:
+            continue
+        try:
+            driver.execute_script("arguments[0].click();", target)
+            clicked_groups += 1
+        except Exception:
+            continue
+
+    if clicked_groups <= 0:
+        print("[VIDEO_GATE] video_gate detected -> soft_restart")
+        try:
+            import Management.guards.runtime_guard as runtime_guard
+            runtime_guard.get_guard().request_survey_restart("video_gate_forcewatch")
+        except Exception as e:
+            print(f"[VIDEO_GATE][WARN] soft_restart request failed: {type(e).__name__}: {e}")
+        return "soft_restart"
+
+    print("[VIDEO_GATE] video_question resolved via DOM -> continue")
+    return "resolved"
     
 def _coerce_safe_value_if_questionish(raw_line: str) -> str:
     """
@@ -549,7 +649,11 @@ def execute_survey_page(driver, api_key):
         if not allow_openai:
             # handler local direct
             return getattr(action_dispatcher, handler_name)(driver)
-        
+
+    video_gate_state = _handle_forcewatch_video_gate(driver)
+    if video_gate_state == "soft_restart":
+        return True
+
     dom_metrics.log_snapshot()
 
     extracted_question_blocks = dom_analyzer.analyze_dom(driver) or []
