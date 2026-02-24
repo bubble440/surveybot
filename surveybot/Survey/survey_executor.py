@@ -115,6 +115,103 @@ def _detect_rate_rank_image_eval_dom(driver) -> tuple[bool, str]:
     return False, ""
 
 
+def _detect_image_only_unresolvable_dom(driver, question_blocks: list[dict]) -> tuple[bool, str, str]:
+    """
+    Détecte un écran avec choix visuels (images/icônes) non résolus par l'analyse DOM.
+    Critères explicites:
+      1) le DOM expose un groupe radio/checkbox visible avec >=2 options image-only,
+      2) l'extraction ne contient aucun bloc radio/checkbox exploitable (>=2 options).
+    """
+    try:
+        dom = driver.execute_script(
+            """
+            const isVisible = (el) => {
+              if (!el) return false;
+              const s = window.getComputedStyle(el);
+              if (!s || s.display === 'none' || s.visibility === 'hidden') return false;
+              const r = el.getBoundingClientRect();
+              return !!(r && r.width > 0 && r.height > 0);
+            };
+            const norm = (s) => (s || '').replace(/\s+/g, ' ').trim();
+            const inputs = Array.from(document.querySelectorAll("input[type='radio'][name], input[type='checkbox'][name]"));
+            const groups = new Map();
+
+            for (const inp of inputs) {
+              if (!isVisible(inp)) continue;
+              const type = (inp.type || '').toLowerCase();
+              const name = norm(inp.name || inp.id || '');
+              if (!name) continue;
+              const key = `${type}::${name}`;
+              if (!groups.has(key)) groups.set(key, []);
+
+              let label = null;
+              if (inp.id) label = document.querySelector(`label[for="${CSS.escape(inp.id)}"]`);
+              if (!label) label = inp.closest('label');
+
+              const labelText = norm((label && (label.innerText || label.textContent)) || '');
+              const hasImage = !!(label && label.querySelector('img, svg, i[class*="icon"], [class*="icon-"]'));
+              const imgHint = norm((label && (label.querySelector('img')?.getAttribute('src') || label.querySelector('img')?.getAttribute('alt'))) || '');
+
+              groups.get(key).push({
+                labelText,
+                hasImage,
+                imgHint,
+              });
+            }
+
+            const imageOnly = [];
+            for (const [groupKey, opts] of groups.entries()) {
+              if (!opts || opts.length < 2) continue;
+              const imageOnlyCount = opts.filter(o => o.hasImage && !o.labelText).length;
+              if (imageOnlyCount >= 2) {
+                imageOnly.push({
+                  groupKey,
+                  optionCount: opts.length,
+                  imgHints: opts.map(o => o.imgHint).filter(Boolean).slice(0, 6),
+                });
+              }
+            }
+
+            return {
+              image_only_groups: imageOnly,
+              project: norm(document.querySelector("input[name='I.Project']")?.value || ''),
+            };
+            """
+        ) or {}
+    except Exception:
+        dom = {}
+
+    image_groups = dom.get("image_only_groups") or []
+    if not image_groups:
+        return False, "", ""
+
+    has_exploitable_choice_block = False
+    for b in question_blocks or []:
+        it = _norm_lc((b.get("itype") or ""))
+        if it not in {"radio", "checkbox"}:
+            continue
+        if len(b.get("options") or []) >= 2:
+            has_exploitable_choice_block = True
+            break
+
+    if has_exploitable_choice_block:
+        return False, "", ""
+
+    fp_payload = {
+        "project": dom.get("project") or "",
+        "groups": [
+            {
+                "group": (g.get("groupKey") or ""),
+                "count": int(g.get("optionCount") or 0),
+                "hints": g.get("imgHints") or [],
+            }
+            for g in image_groups
+        ],
+    }
+    fingerprint = hashlib.sha1(repr(fp_payload).encode("utf-8", errors="ignore")).hexdigest()[:12]
+    return True, "image_only_inputs", fingerprint
+
+
 def _budgeted_dom_only_abort_for_image_eval(driver) -> str:
     """
     Retourne:
@@ -154,6 +251,54 @@ def _budgeted_dom_only_abort_for_image_eval(driver) -> str:
     reason = f"dom_only_abort_image_eval:{pattern_reason}"
     print(
         f"[DOM_ONLY_ABORT] image_eval_detected -> soft_restart(reason={reason}) key={budget_key}"
+    )
+    try:
+        import Management.guards.runtime_guard as runtime_guard
+        runtime_guard.get_guard().request_survey_restart(reason)
+    except Exception as e:
+        print(f"[DOM_ONLY_ABORT][WARN] soft_restart request failed: {type(e).__name__}: {e}")
+    return "restarted"
+
+
+def _budgeted_soft_restart_for_image_only_inputs(driver, question_blocks: list[dict]) -> str:
+    """
+    Retourne:
+      - "restarted" si image-only non résoluble + soft_restart demandé,
+      - "budget_exhausted" si budget anti-boucle dépassé,
+      - "no_match" sinon.
+    """
+    is_match, pattern_reason, dom_fp = _detect_image_only_unresolvable_dom(driver, question_blocks)
+    if not is_match:
+        return "no_match"
+
+    try:
+        current_url = driver.current_url or ""
+    except Exception:
+        current_url = ""
+    up = urlsplit(current_url)
+    budget_key = f"{up.scheme}://{up.netloc}{up.path}#{dom_fp}"
+
+    try:
+        counters = getattr(driver, "_dom_only_abort_seen", None)
+        if not isinstance(counters, dict):
+            counters = {}
+        current = int(counters.get(budget_key, 0) or 0)
+        max_hits = 2
+        if current >= max_hits:
+            print(
+                f"[DOM_ONLY_ABORT] {pattern_reason} budget_exhausted key={budget_key} "
+                f"hits={current}/{max_hits} needs_browser_reason={pattern_reason}"
+            )
+            driver._dom_only_abort_seen = counters
+            return "budget_exhausted"
+        counters[budget_key] = current + 1
+        driver._dom_only_abort_seen = counters
+    except Exception:
+        pass
+
+    reason = f"dom_only_abort:{pattern_reason}"
+    print(
+        f"[DOM_ONLY_ABORT] {pattern_reason} -> soft_restart(reason={reason}) key={budget_key}"
     )
     try:
         import Management.guards.runtime_guard as runtime_guard
@@ -663,6 +808,12 @@ def execute_survey_page(driver, api_key):
             f"[DOM_CONTEXT_DEBUG] question_blocks_before_openai="
             f"{len(question_blocks or [])} extracted={len(extracted_question_blocks or [])}"
         )
+
+    image_only_abort = _budgeted_soft_restart_for_image_only_inputs(driver, question_blocks)
+    if image_only_abort == "restarted":
+        return True
+    if image_only_abort == "budget_exhausted":
+        return False
 
     # =========================================================================
     # WALR IMAGE EVALUATION: Traitement Vision API AVANT le flux standard
