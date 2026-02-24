@@ -163,6 +163,139 @@ def _budgeted_dom_only_abort_for_image_eval(driver) -> str:
     return "restarted"
 
 
+def _has_resolvable_choice_block(question_blocks: list) -> bool:
+    """Vrai si on a au moins un bloc de choix textuellement exploitable en DOM-only."""
+    for b in (question_blocks or []):
+        itype = _norm_lc((b or {}).get("itype") or "")
+        if itype not in {"radio", "checkbox", "dropdown", "matrix", "matrix_rows_single_choice"}:
+            continue
+        opts = (b or {}).get("options") or []
+        if len(opts) < 2:
+            continue
+        for opt in opts:
+            lbl = _norm_lc((opt or {}).get("label") or "")
+            if len(lbl) < 2:
+                continue
+            if lbl.startswith("http://") or lbl.startswith("https://"):
+                continue
+            if re.search(r"[a-zA-ZÀ-ÿ0-9]", lbl):
+                return True
+    return False
+
+
+def _detect_image_only_choice_dom(driver) -> dict:
+    """
+    Détecte explicitement les pages où les choix radio/checkbox sont rendus via images/icônes
+    sans texte exploitable côté DOM.
+    """
+    try:
+        data = driver.execute_script(
+            """
+            const isVisible = (el) => {
+              if (!el) return false;
+              const s = window.getComputedStyle(el);
+              if (!s || s.display === 'none' || s.visibility === 'hidden') return false;
+              const r = el.getBoundingClientRect();
+              return !!(r && r.width > 0 && r.height > 0);
+            };
+            const controls = Array.from(document.querySelectorAll("input[type='radio'][name], input[type='checkbox'][name]"))
+              .filter(isVisible);
+            const groups = new Map();
+            for (const input of controls) {
+              const k = `${(input.type || '').toLowerCase()}::${(input.name || '').trim()}`;
+              if (!groups.has(k)) groups.set(k, []);
+              groups.get(k).push(input);
+            }
+            let imageOnlyGroups = 0;
+            const groupFingerprints = [];
+            for (const [k, items] of groups.entries()) {
+              if (!items || items.length < 2) continue;
+              let nonTextCount = 0;
+              let hasVisual = false;
+              for (const input of items) {
+                let label = null;
+                const id = (input.id || '').trim();
+                if (id) label = document.querySelector(`label[for="${CSS.escape(id)}"]`);
+                if (!label) label = input.closest('label');
+                const txt = ((label?.innerText || label?.textContent) || '').replace(/\s+/g, ' ').trim();
+                if (!txt || txt.length < 2) nonTextCount += 1;
+                if (label && label.querySelector('img,svg,canvas,[class*=icon],i')) {
+                  hasVisual = true;
+                }
+              }
+              if (nonTextCount === items.length && hasVisual) {
+                imageOnlyGroups += 1;
+                groupFingerprints.push(`${k}:${items.length}`);
+              }
+            }
+            return {
+              image_only_groups: imageOnlyGroups,
+              fingerprint: groupFingerprints.sort().join('|'),
+            };
+            """
+        ) or {}
+        return {
+            "image_only_groups": int(data.get("image_only_groups") or 0),
+            "fingerprint": (data.get("fingerprint") or "")[:300],
+        }
+    except Exception:
+        return {"image_only_groups": 0, "fingerprint": ""}
+
+
+def _budgeted_soft_restart_for_image_only_inputs(driver, extracted_question_blocks: list, question_blocks: list) -> str:
+    """
+    Retourne:
+      - "restarted" si soft-restart déclenché,
+      - "budget_exhausted" si limite atteinte,
+      - "no_match" sinon.
+    """
+    has_resolvable = _has_resolvable_choice_block(question_blocks) or _has_resolvable_choice_block(extracted_question_blocks)
+    if has_resolvable:
+        return "no_match"
+
+    dom_eval = _detect_image_only_choice_dom(driver)
+    if int(dom_eval.get("image_only_groups") or 0) <= 0:
+        return "no_match"
+
+    try:
+        current_url = driver.current_url or ""
+    except Exception:
+        current_url = ""
+    up = urlsplit(current_url)
+    fp = dom_eval.get("fingerprint") or "no_fp"
+    budget_key = f"{up.scheme}://{up.netloc}{up.path}|{fp}"
+
+    try:
+        counters = getattr(driver, "_image_only_restart_seen", None)
+        if not isinstance(counters, dict):
+            counters = {}
+        current = int(counters.get(budget_key, 0) or 0)
+        max_hits = int(os.getenv("IMAGE_ONLY_SOFT_RESTART_MAX", "2") or "2")
+        if current >= max_hits:
+            print(
+                f"[DOM_IMAGE_ONLY] detected budget_exhausted key={budget_key} hits={current}/{max_hits} "
+                f"needs_browser_reason=image_only_inputs"
+            )
+            driver._image_only_restart_seen = counters
+            return "budget_exhausted"
+        counters[budget_key] = current + 1
+        driver._image_only_restart_seen = counters
+    except Exception:
+        pass
+
+    reason = "needs_browser_reason=image_only_inputs"
+    print(
+        f"[DOM_IMAGE_ONLY] detected -> soft_restart(reason={reason}) key={budget_key} "
+        f"image_only_groups={dom_eval.get('image_only_groups')}"
+    )
+    try:
+        import Management.guards.runtime_guard as runtime_guard
+        runtime_guard.get_guard().request_survey_restart(reason)
+    except Exception as e:
+        print(f"[DOM_IMAGE_ONLY][WARN] soft_restart request failed: {type(e).__name__}: {e}")
+    return "restarted"
+
+
 def _handle_forcewatch_video_gate(driver) -> str:
     """
     Détection/traitement DOM-only d'un écran vidéo avec gate forcewatch.
@@ -704,6 +837,16 @@ def execute_survey_page(driver, api_key):
         )
     except Exception:
         pass
+
+    image_only_restart_state = _budgeted_soft_restart_for_image_only_inputs(
+        driver,
+        extracted_question_blocks=extracted_question_blocks,
+        question_blocks=question_blocks,
+    )
+    if image_only_restart_state == "restarted":
+        return True
+    if image_only_restart_state == "budget_exhausted":
+        return False
 
     client = openai.OpenAI(api_key=api_key)
 
