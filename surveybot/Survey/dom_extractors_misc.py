@@ -1001,6 +1001,192 @@ def _extract_askandanswer_selection_list_questions(driver, frame_chain: list[int
     return blocks
 
 
+# ================================================================================
+# GENERIC TABLE MATRIX (RADIO PER ROW)
+# ================================================================================
+
+def _extract_table_matrix_radio_rows(driver, frame_chain: list[int] | None) -> list[dict]:
+    """
+    Extraction DOM-only pour matrices HTML classiques:
+    - table avec thead (colonnes)
+    - tbody avec lignes
+    - radios groupés par ligne (name identique dans une ligne, différent entre lignes)
+
+    Retourne 1 question_block radio par ligne (stable pour le pipeline existant),
+    avec métadonnées de matrice (matrix_question / matrix_row / matrix_columns).
+    """
+    frame_chain = list(frame_chain or [])
+
+    try:
+        tables = driver.find_elements(By.CSS_SELECTOR, "table")
+    except Exception:
+        return []
+
+    blocks: list[dict] = []
+
+    for table in tables[:20]:  # budget anti-explosion
+        try:
+            table_cls = _norm_lc(table.get_attribute("class") or "")
+            if "cm-simple-grid__table" in table_cls:
+                # Déjà géré par _extract_cmix_simple_grid_question_blocks
+                continue
+
+            col_headers: list[str] = []
+            try:
+                ths = table.find_elements(By.CSS_SELECTOR, "thead tr th")
+            except Exception:
+                ths = []
+
+            if len(ths) < 3:
+                continue
+
+            for th in ths[1:]:
+                txt = _norm(th.text or th.get_attribute("innerText") or "")
+                if txt:
+                    col_headers.append(txt)
+
+            if len(col_headers) < 2:
+                continue
+
+            try:
+                rows = table.find_elements(By.CSS_SELECTOR, "tbody tr")
+            except Exception:
+                rows = []
+
+            if len(rows) < 2:
+                continue
+
+            row_candidates: list[dict[str, Any]] = []
+            row_names_seen: set[str] = set()
+
+            for row in rows[:30]:
+                try:
+                    row_cells = row.find_elements(By.CSS_SELECTOR, "td, th")
+                    if len(row_cells) < 2:
+                        continue
+
+                    row_label = _norm(row_cells[0].text or row_cells[0].get_attribute("innerText") or "")
+                    if not row_label:
+                        continue
+
+                    radios = row.find_elements(By.CSS_SELECTOR, "input[type='radio']")
+                    if len(radios) < 2:
+                        continue
+
+                    row_name = _norm_lc(radios[0].get_attribute("name") or "")
+                    if not row_name:
+                        continue
+
+                    # Tous les radios de la ligne doivent partager le même name.
+                    same_name = True
+                    for radio in radios:
+                        if _norm_lc(radio.get_attribute("name") or "") != row_name:
+                            same_name = False
+                            break
+                    if not same_name:
+                        continue
+
+                    row_names_seen.add(row_name)
+                    row_candidates.append({
+                        "row": row,
+                        "row_label": row_label,
+                        "row_name": row_name,
+                        "radios": radios,
+                    })
+                except Exception:
+                    continue
+
+            # Vrai pattern matrice: au moins 2 lignes distinctes de radios groupés.
+            if len(row_candidates) < 2 or len(row_names_seen) < 2:
+                continue
+
+            matrix_question = _norm(_find_question_text_near_element(driver, table))
+            if not matrix_question:
+                matrix_question = _norm(table.get_attribute("aria-label") or "")
+
+            for row_data in row_candidates:
+                try:
+                    row_label = row_data["row_label"]
+                    row_name = row_data["row_name"]
+                    radios = row_data["radios"]
+
+                    option_xpath_map: dict[str, str] = {}
+                    options: list[str] = []
+
+                    num_options = min(len(col_headers), len(radios))
+                    if num_options < 2:
+                        continue
+
+                    for idx in range(num_options):
+                        opt_text = col_headers[idx]
+                        radio = radios[idx]
+
+                        radio_id = (radio.get_attribute("id") or "").strip()
+                        if radio_id:
+                            xp = f"(//*[@id={_xpath_literal(radio_id)}])[1]"
+                        else:
+                            radio_value = (radio.get_attribute("value") or "").strip()
+                            if not radio_value:
+                                continue
+                            xp = (
+                                f"(//input[@type='radio' and @name={_xpath_literal(row_name)} "
+                                f"and @value={_xpath_literal(radio_value)}])[1]"
+                            )
+
+                        nk = _norm_key(opt_text)
+                        if not nk or nk in option_xpath_map:
+                            continue
+                        option_xpath_map[nk] = xp
+                        options.append(opt_text)
+
+                    if len(options) < 2 or not option_xpath_map:
+                        continue
+
+                    question = f"{matrix_question} | {row_label}" if matrix_question else row_label
+                    group_key = f"table_matrix_radio:name:{row_name}"
+                    target_id = make_target_id("group", group_key, question)
+
+                    register_target(
+                        target_id,
+                        {
+                            "kind": "group",
+                            "itype": "radio",
+                            "group_key": group_key,
+                            "question": question,
+                            "option_xpath_map": option_xpath_map,
+                            "frame_chain": frame_chain,
+                            "matrix_question": matrix_question,
+                            "matrix_row": row_label,
+                            "matrix_columns": col_headers,
+                            "table_matrix_radio": True,
+                        },
+                    )
+
+                    blocks.append(
+                        {
+                            "question": question,
+                            "itype": "radio",
+                            "options": options,
+                            "max_select": 1,
+                            "target_id": target_id,
+                            "context": {
+                                "kind": "group",
+                                "group_key": group_key,
+                                "matrix_question": matrix_question,
+                                "matrix_row": row_label,
+                                "matrix_columns": col_headers,
+                                "table_matrix_radio": True,
+                            },
+                        }
+                    )
+                except Exception:
+                    continue
+        except Exception:
+            continue
+
+    return blocks
+
+
 
 # ================================================================================
 # CMIX - SIMPLE GRID QUESTION BLOCKS
