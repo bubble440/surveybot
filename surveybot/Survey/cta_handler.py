@@ -426,7 +426,8 @@ def _click_with_intercept(driver, el) -> bool:
         )
 
     if not is_armed:
-        # Armement absent (confirmé par probe) → fallback sur clic normal (budget=1).
+        # Armement absent (confirmé par probe) : en mode CTA_INTERCEPT_ONLY,
+        # on n'a PAS le droit de faire un clic réel potentiellement destructif.
         err = _read_arm_error(driver)
         disarm_interceptor(driver)
         perr = probe.get("msg") if isinstance(probe, dict) else None
@@ -438,19 +439,8 @@ def _click_with_intercept(driver, el) -> bool:
             f"probe={probe if isinstance(probe, dict) else '<none>'} "
             f"err={err or last_js_err or perr or '<none>'}"
         )
-        try:
-            el.click()
-            return True
-        except Exception:
-            try:
-                ActionChains(driver).move_to_element(el).click().perform()
-                return True
-            except Exception:
-                try:
-                    driver.execute_script("arguments[0].click();", el)
-                    return True
-                except Exception:
-                    return False
+        print("[CTA_INTERCEPT] result=INTERCEPTION_IMPOSSIBLE")
+        return False
 
     token = f"{int(time.time()*1000)}_{os.getpid()}"
 
@@ -512,6 +502,10 @@ def _click_with_intercept(driver, el) -> bool:
         f"target={_format_intercept_target(report.get('target'))}"
     )
     ok = bool(report.get("clickCaptured") and report.get("prevented"))
+    if ok:
+        print("[CTA_INTERCEPT] result=INTERCEPTED_OK")
+    else:
+        print("[CTA_INTERCEPT] result=INTERCEPTION_IMPOSSIBLE")
 
     # Nettoyage + désarmement : CRITIQUE pour ne jamais bloquer les autres inputs.
     try:
@@ -1065,6 +1059,7 @@ def try_click_navigation_cta(driver) -> bool:
         "|//input[@type='submit' or @type='button']"
         "|//a[@role='button']"
         "|//a[contains(concat(' ', normalize-space(@class), ' '), ' btn ')]"
+        "|//*[@tabindex and not(self::input or self::textarea or self::select)]"
     )
 
     for el in driver.find_elements(By.XPATH, nav_xpath):
@@ -1100,8 +1095,10 @@ def try_click_navigation_cta(driver) -> bool:
 
             el_id = (el.get_attribute("id") or "").lower()
             href = (el.get_attribute("href") or "").lower()
+            role = (el.get_attribute("role") or "").lower()
+            tabindex = (el.get_attribute("tabindex") or "").strip()
             signature = " ".join(
-                part for part in [t, el_id, cls, href] if part
+                part for part in [t, el_id, cls, href, role] if part
             )
 
             # Certains CTA sont purement iconiques (ex: a#cm-NextButton avec <img>)
@@ -1127,6 +1124,10 @@ def try_click_navigation_cta(driver) -> bool:
 
             if any(k in cls for k in ["cm-navigation-next-button", "next-button", "nav-next"]):
                 score += 70
+            if role == "button":
+                score += 20
+            if tabindex == "0":
+                score += 10
             if any(k in href for k in ["next", "continue", "submit"]):
                 score += 40
 
@@ -1157,7 +1158,10 @@ def try_click_navigation_cta(driver) -> bool:
             driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
             tried += 1
             if _click_with_intercept(driver, el):
-                _nav_log("[CTA_NAV]", f"clicked candidate score={score} intercept={_cta_intercept_enabled()}", driver)
+                if _cta_intercept_enabled():
+                    _nav_log("[CTA_NAV]", f"INTERCEPTED candidate score={score}", driver)
+                else:
+                    _nav_log("[CTA_NAV]", f"CLICKED candidate score={score}", driver)
                 return True
         except Exception:
             continue
