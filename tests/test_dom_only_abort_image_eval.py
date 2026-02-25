@@ -124,3 +124,78 @@ def test_budgeted_soft_restart_for_image_only_inputs(monkeypatch):
     assert third == "budget_exhausted"
     assert len(calls) == 2
     assert all(r == "dom_only_abort:image_only_inputs" for r in calls)
+
+
+def test_detect_image_only_unresolvable_dom_clickable_icons_positive():
+    driver = _FakeDriver(
+        {
+            "project": "FR278423108S07",
+            "image_only_groups": [],
+            "clickable_image_only_groups": [
+                {
+                    "containerSig": "DIV|container_rs1|__flexgrid_row|",
+                    "optionCount": 2,
+                    "textlessCount": 2,
+                    "hasImageNodeCount": 2,
+                    "hasBackgroundImageCount": 0,
+                }
+            ],
+            "has_question_hint": True,
+            "clickable_visible_count": 2,
+        }
+    )
+
+    is_match, reason, fingerprint = survey_executor._detect_image_only_unresolvable_dom(driver, question_blocks=[])
+
+    assert is_match is True
+    assert reason == "image_only_clickable_options"
+    assert len(fingerprint) == 12
+
+
+def test_detect_image_only_unresolvable_dom_clickable_icons_requires_question_hint():
+    driver = _FakeDriver(
+        {
+            "project": "FR278423108S07",
+            "image_only_groups": [],
+            "clickable_image_only_groups": [
+                {"containerSig": "DIV|container_rs1|__flexgrid_row|", "optionCount": 2, "textlessCount": 2}
+            ],
+            "has_question_hint": False,
+            "clickable_visible_count": 2,
+        }
+    )
+
+    is_match, reason, fingerprint = survey_executor._detect_image_only_unresolvable_dom(driver, question_blocks=[])
+
+    assert is_match is False
+    assert reason == ""
+    assert fingerprint == ""
+
+
+def test_budgeted_soft_restart_for_clickable_image_only_inputs(monkeypatch):
+    driver = _FakeDriver(
+        {
+            "project": "FR278423108S07",
+            "image_only_groups": [],
+            "clickable_image_only_groups": [
+                {"containerSig": "DIV|container_rs1|__flexgrid_row|", "optionCount": 2, "textlessCount": 2}
+            ],
+            "has_question_hint": True,
+            "clickable_visible_count": 2,
+        },
+        url="https://sb.ktrmr.com/mrIWeb/mrIWeb.srf",
+    )
+
+    calls = []
+
+    class _Guard:
+        def request_survey_restart(self, reason):
+            calls.append(reason)
+
+    import Management.guards.runtime_guard as runtime_guard
+    monkeypatch.setattr(runtime_guard, "get_guard", lambda: _Guard())
+
+    result = survey_executor._budgeted_soft_restart_for_image_only_inputs(driver, question_blocks=[])
+
+    assert result == "restarted"
+    assert calls == ["dom_only_abort:image_only_clickable_options"]
