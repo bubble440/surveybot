@@ -327,13 +327,6 @@ def _group_key_for_choice(el, itype: str) -> str:
         if itype in ("radio", "checkbox"):
             name = el.get_attribute("name") or ""
             if name:
-                # LimeSurvey-like multi checkbox pattern:
-                # chaque option a un name distinct avec suffixe SQxxx,
-                # mais toutes appartiennent à la même question.
-                if itype == "checkbox":
-                    m = re.match(r"^(.*?)(?:SQ\d+)$", name, flags=re.IGNORECASE)
-                    if m and (m.group(1) or "").strip():
-                        name = m.group(1).strip()
                 # Nettoyer le name (enlever les indices si présents)
                 # Ex: "Q1[0]" -> "Q1", "question_1" -> "question_1"
                 clean_name = re.sub(r"\[\d+\]$", "", name)
