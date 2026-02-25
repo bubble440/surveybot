@@ -1067,6 +1067,12 @@ def try_click_navigation_cta(driver) -> bool:
             if not el.is_displayed() or not el.is_enabled():
                 continue
 
+            tag = ""
+            try:
+                tag = (el.tag_name or "").lower()
+            except Exception:
+                tag = ""
+
             if (el.get_attribute("aria-disabled") or "").lower() == "true":
                 continue
 
@@ -1100,6 +1106,18 @@ def try_click_navigation_cta(driver) -> bool:
             signature = " ".join(
                 part for part in [t, el_id, cls, href, role] if part
             )
+
+            # Garde-fou anti-wrapper: certains conteneurs focusables (tabindex)
+            # héritent de tout le texte de la page, y compris "Suivant".
+            # Ces wrappers sont souvent non actionnables et provoquent la boucle
+            # click -> rescan sans progression. On ne garde que les labels courts
+            # pour les éléments non sémantiques.
+            if (
+                len(t) > 40
+                and tag not in {"button", "a", "input"}
+                and role != "button"
+            ):
+                continue
 
             # Certains CTA sont purement iconiques (ex: a#cm-NextButton avec <img>)
             # et n'ont aucun texte/alt exploitable. On ne les écarte pas d'office.

@@ -65,6 +65,26 @@ def test_try_click_navigation_cta_detects_tabindex_suivant(monkeypatch):
     assert suivant.clicked == 1
 
 
+def test_try_click_navigation_cta_skips_long_text_tabindex_wrapper(monkeypatch):
+    monkeypatch.delenv("CTA_INTERCEPT_ONLY", raising=False)
+
+    wrapper = _FakeElement(
+        text="Quel âge as-tu ? Réponse libre. Suivant Politique de confidentialité",
+        attrs={"tabindex": "0", "class": "r-13awgt0", "role": ""},
+    )
+    vrai_cta = _FakeElement(
+        text="Suivant",
+        attrs={"tabindex": "0", "class": "r-1i6wzkk", "role": ""},
+    )
+    driver = _FakeDriver(xpath_elements=[wrapper, vrai_cta])
+
+    ok = cta_handler.try_click_navigation_cta(driver)
+
+    assert ok is True
+    assert wrapper.clicked == 0
+    assert vrai_cta.clicked == 1
+
+
 def test_click_with_intercept_does_not_fallback_to_real_click_when_arm_fails(monkeypatch):
     monkeypatch.setenv("CTA_INTERCEPT_ONLY", "1")
 
