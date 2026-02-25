@@ -79,3 +79,49 @@ def test_generic_grouping_keeps_radio_type_for_radio_name_groups(monkeypatch):
     assert blocks[0]["max_select"] == 1
     assert blocks[0]["options"] == ["Homme", "Femme", "Non binaire", "Non listé"]
     assert (blocks[0].get("context") or {}).get("group_key") == "radio:name:ans139.0.0"
+
+
+class _FakeContainer:
+    tag_name = "div"
+
+    def __init__(self, cls):
+        self._cls = cls
+
+    def get_attribute(self, name):
+        if name == "class":
+            return self._cls
+        return ""
+
+    def find_elements(self, by=None, value=None):
+        return []
+
+
+def test_generic_grouping_accepts_visible_question_container_when_input_not_displayed(monkeypatch):
+    _patch_non_generic_extractors(monkeypatch)
+
+    container = _FakeContainer("row list-radio question-container")
+
+    def _fake_visible(el):
+        return isinstance(el, _FakeContainer)
+
+    monkeypatch.setattr(da, "_is_actionable_visible", _fake_visible)
+    monkeypatch.setattr(da, "_looks_like_system_field", lambda _el: False)
+    monkeypatch.setattr(da, "_extract_surveywriter_ssi_question", lambda *_: "")
+    monkeypatch.setattr(da, "_nearest_question_container", lambda *_: container)
+    monkeypatch.setattr(da, "_extract_question_from_container", lambda *_: "Quel type de logement avez-vous?")
+    monkeypatch.setattr(da, "_find_question_text_near_element", lambda *_: "")
+    monkeypatch.setattr(da, "_find_associated_label", lambda _driver, el: "Oui" if el.get_attribute("id") == "r1" else "Non")
+
+    driver = _FakeDriver(
+        [
+            _FakeInput({"type": "radio", "name": "q_lime_1", "id": "r1", "value": "1"}),
+            _FakeInput({"type": "radio", "name": "q_lime_1", "id": "r2", "value": "2"}),
+        ]
+    )
+
+    blocks = da._analyze_dom_current_context(driver)
+
+    assert len(blocks) == 1
+    assert blocks[0]["itype"] == "radio"
+    assert blocks[0]["options"] == ["Oui", "Non"]
+    assert (blocks[0].get("context") or {}).get("group_key") == "radio:name:q_lime_1"
