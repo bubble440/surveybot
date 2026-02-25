@@ -6,7 +6,7 @@ from selenium.webdriver.common.by import By
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "surveybot"))
 
-from Survey import cta_handler
+from surveybot.Survey import cta_handler
 
 
 class _FakeElement:
