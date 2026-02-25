@@ -373,7 +373,22 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             except Exception:
                 pass
             if not _choice_has_visible_proxy(el):
-                continue
+                # LimeSurvey (et variants proches) peut cacher l'input natif
+                # tout en rendant la question/option cliquable via wrapper CSS.
+                # On autorise alors l'option si son conteneur de question est
+                # visiblement rendu, sans élargir cette règle aux autres structures.
+                container = _nearest_question_container(el)
+                container_cls = ""
+                try:
+                    container_cls = _norm_lc(container.get_attribute("class") or "") if container else ""
+                except Exception:
+                    container_cls = ""
+                if not (
+                    container
+                    and "question-container" in container_cls
+                    and _is_actionable_visible(container)
+                ):
+                    continue
             raw_name_key = _group_key_for_choice(el, itype)
             if not raw_name_key:
                 continue
