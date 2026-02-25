@@ -307,7 +307,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
     except Exception:
         pass
 
-    groups: Dict[str, List[Any]] = {}
+    groups: Dict[tuple[str, str], List[Any]] = {}
 
     def _choice_has_visible_proxy(el) -> bool:
         """
@@ -374,19 +374,19 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                 pass
             if not _choice_has_visible_proxy(el):
                 continue
-            k = _group_key_for_choice(el, itype)
-            groups.setdefault(k, []).append(el)
+            raw_name_key = _group_key_for_choice(el, itype)
+            if not raw_name_key:
+                continue
+            group_key = f"{itype}:name:{raw_name_key}"
+            groups.setdefault((itype, group_key), []).append(el)
         except Exception:
             continue
 
     seen_signatures = set()
     seen_multi_text_groups = set()
 
-    for k, els in groups.items():
+    for (itype, group_key), els in groups.items():
         try:
-            # Pattern spécifique
-            itype = "radio" if k.startswith("radio:") else "checkbox"
-
             # options = labels des inputs
             options: List[str] = []
             for e in els:
@@ -468,13 +468,13 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
 
             # Pattern spécifique
             # Pattern spécifique
-            sig = k if k.startswith(f"{itype}:name:") else (question, itype)
+            sig = group_key if group_key.startswith(f"{itype}:name:") else (question, itype)
             if sig in seen_signatures:
                 continue
             seen_signatures.add(sig)
 
             # --- target_id + registry pour group (radio/checkbox)
-            target_id = make_target_id("group", k, question)
+            target_id = make_target_id("group", group_key, question)
 
             # map option -> xpath de l'input correspondant
             option_xpath_map = {}
@@ -567,7 +567,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                 {
                     "kind": "group",
                     "itype": itype,
-                    "group_key": k,
+                    "group_key": group_key,
                     "question": question,
                     "option_xpath_map": option_xpath_map,  # {norm(label)->xpath}
                     "frame_chain": frame_chain,
@@ -582,7 +582,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                 "target_id": target_id,
                 "context": {
                     "kind": "group",
-                    "group_key": k,
+                    "group_key": group_key,
                 },
             }
 
