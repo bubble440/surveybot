@@ -122,6 +122,18 @@ def _detect_image_only_unresolvable_dom(driver, question_blocks: list[dict]) -> 
       1) le DOM expose un groupe radio/checkbox visible avec >=2 options image-only,
       2) l'extraction ne contient aucun bloc radio/checkbox exploitable (>=2 options).
     """
+    has_exploitable_choice_block = False
+    for b in question_blocks or []:
+        it = _norm_lc((b.get("itype") or ""))
+        if it not in {"radio", "checkbox"}:
+            continue
+        if len(b.get("options") or []) >= 2:
+            has_exploitable_choice_block = True
+            break
+
+    if has_exploitable_choice_block:
+        return False, "", ""
+
     try:
         dom = driver.execute_script(
             """
@@ -133,6 +145,10 @@ def _detect_image_only_unresolvable_dom(driver, question_blocks: list[dict]) -> 
               return !!(r && r.width > 0 && r.height > 0);
             };
             const norm = (s) => (s || '').replace(/\s+/g, ' ').trim();
+            const shortText = (s, maxLen = 24) => {
+              const t = norm(s);
+              return t.length <= maxLen ? t : '';
+            };
             const inputs = Array.from(document.querySelectorAll("input[type='radio'][name], input[type='checkbox'][name]"));
             const groups = new Map();
 
@@ -172,8 +188,64 @@ def _detect_image_only_unresolvable_dom(driver, question_blocks: list[dict]) -> 
               }
             }
 
+            const clickableCandidates = Array.from(document.querySelectorAll(
+              'button, [role="button"], a, [tabindex], div[onclick]'
+            ));
+            const clickableByContainer = new Map();
+            let clickableVisibleCount = 0;
+            for (const el of clickableCandidates) {
+              if (!isVisible(el)) continue;
+              clickableVisibleCount += 1;
+              const text = shortText(el.innerText || el.textContent || '');
+              const hasImageNode = !!el.querySelector('img, svg');
+              const style = window.getComputedStyle(el);
+              const hasBackgroundImage = !!(style && style.backgroundImage && style.backgroundImage !== 'none');
+              const isVisualOption = (hasImageNode || hasBackgroundImage) && text.length <= 2;
+              if (!isVisualOption) continue;
+
+              const container = el.closest('[data-test="main-contain"], .__flexgrid_row, .mrQuestionTable, .question-component, .questionContainer')
+                || el.parentElement;
+              if (!container) continue;
+
+              const key =
+                container.getAttribute('data-test')
+                || container.id
+                || container.getAttribute('questionname')
+                || container.className
+                || container.tagName;
+              if (!clickableByContainer.has(key)) clickableByContainer.set(key, []);
+              clickableByContainer.get(key).push({
+                hasImageNode,
+                hasBackgroundImage,
+                text,
+                containerSig: `${container.tagName}|${container.id || ''}|${container.className || ''}|${container.getAttribute('questionname') || ''}`,
+              });
+            }
+
+            const clickableImageOnlyGroups = [];
+            for (const [containerKey, opts] of clickableByContainer.entries()) {
+              if (!opts || opts.length < 2) continue;
+              const textless = opts.filter(o => !o.text).length;
+              if (textless < 2) continue;
+              const sig = (opts[0] && opts[0].containerSig) || containerKey;
+              clickableImageOnlyGroups.push({
+                containerKey,
+                optionCount: opts.length,
+                textlessCount: textless,
+                hasImageNodeCount: opts.filter(o => o.hasImageNode).length,
+                hasBackgroundImageCount: opts.filter(o => o.hasBackgroundImage).length,
+                containerSig: sig,
+              });
+            }
+
+            const bodyText = norm((document.body && document.body.innerText) || '');
+            const hasQuestionHint = /etes[-\s]*vous|quel\s+age|quel\s+âge|how\s+old|are\s+you/i.test(bodyText);
+
             return {
               image_only_groups: imageOnly,
+              clickable_image_only_groups: clickableImageOnlyGroups,
+              has_question_hint: hasQuestionHint,
+              clickable_visible_count: clickableVisibleCount,
               project: norm(document.querySelector("input[name='I.Project']")?.value || ''),
             };
             """
@@ -182,20 +254,44 @@ def _detect_image_only_unresolvable_dom(driver, question_blocks: list[dict]) -> 
         dom = {}
 
     image_groups = dom.get("image_only_groups") or []
-    if not image_groups:
+    clickable_groups = dom.get("clickable_image_only_groups") or []
+
+    has_question_hint = bool(dom.get("has_question_hint"))
+    if clickable_groups and not has_question_hint:
+        print("[DOM_ONLY_ABORT] detector_no_match source=clickable_icons reason=missing_question_hint")
+        clickable_groups = []
+
+    if not image_groups and not clickable_groups:
+        print(
+            "[DOM_ONLY_ABORT] detector_no_match "
+            f"input_groups={len(image_groups)} clickable_groups={len(clickable_groups)} "
+            f"clickable_visible={int(dom.get('clickable_visible_count') or 0)}"
+        )
         return False, "", ""
 
-    has_exploitable_choice_block = False
-    for b in question_blocks or []:
-        it = _norm_lc((b.get("itype") or ""))
-        if it not in {"radio", "checkbox"}:
-            continue
-        if len(b.get("options") or []) >= 2:
-            has_exploitable_choice_block = True
-            break
+    clickable_groups_norm = []
+    for g in clickable_groups:
+        sig = (g.get("containerSig") or g.get("containerKey") or "")
+        gk_hash = hashlib.sha1(sig.encode("utf-8", errors="ignore")).hexdigest()[:12]
+        clickable_groups_norm.append(
+            {
+                "groupKey": f"clickable_icons::{gk_hash}",
+                "optionCount": int(g.get("optionCount") or 0),
+                "textlessCount": int(g.get("textlessCount") or 0),
+                "hasImageNodeCount": int(g.get("hasImageNodeCount") or 0),
+                "hasBackgroundImageCount": int(g.get("hasBackgroundImageCount") or 0),
+            }
+        )
 
-    if has_exploitable_choice_block:
-        return False, "", ""
+    image_groups_all = list(image_groups) + clickable_groups_norm
+    pattern_reason = "image_only_inputs"
+    if clickable_groups_norm:
+        pattern_reason = "image_only_clickable_options"
+        print(
+            "[DOM_ONLY_ABORT] detector_match_clickable_icons "
+            f"groups={len(clickable_groups_norm)} options={sum(g['optionCount'] for g in clickable_groups_norm)} "
+            f"textless={sum(g['textlessCount'] for g in clickable_groups_norm)}"
+        )
 
     fp_payload = {
         "project": dom.get("project") or "",
@@ -205,11 +301,11 @@ def _detect_image_only_unresolvable_dom(driver, question_blocks: list[dict]) -> 
                 "count": int(g.get("optionCount") or 0),
                 "hints": g.get("imgHints") or [],
             }
-            for g in image_groups
+            for g in image_groups_all
         ],
     }
     fingerprint = hashlib.sha1(repr(fp_payload).encode("utf-8", errors="ignore")).hexdigest()[:12]
-    return True, "image_only_inputs", fingerprint
+    return True, pattern_reason, fingerprint
 
 
 def _budgeted_dom_only_abort_for_image_eval(driver) -> str:
