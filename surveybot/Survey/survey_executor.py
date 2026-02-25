@@ -1118,6 +1118,8 @@ def execute_survey_page(driver, api_key):
         NAV_BUTTON_SELECTORS = [
             "#cm-NextButton",                    # CMIX
             ".cm-navigation-next-button",        # CMIX alt
+            ".cf-question--info button.cf-navigation-next",  # Confirmit intro CTA inline
+            ".cf-page__question-list button.cf-navigation-next",  # Confirmit fallback scope
             "#btn_continue",                     # Decipher
             "input.continue",                    # Decipher alt
             "[data-role='next']",                # Generic data-role
@@ -1150,11 +1152,19 @@ def execute_survey_page(driver, api_key):
                         btn_text = (btn.text or btn.get_attribute("value") or "").lower()
                         if any(bad in btn_text for bad in ["exit", "quit", "refuse", "disagree"]):
                             continue
-                        
+
                         driver.execute_script("arguments[0].scrollIntoView({block:'center'});", btn)
-                        driver.execute_script("arguments[0].click();", btn)
-                        print(f" CTA  via  CSS: {selector}")
-                        
+                        intercept_only = (os.getenv("CTA_INTERCEPT_ONLY", "") or "").strip().lower() in {"1", "true", "yes", "on"}
+                        if intercept_only:
+                            clicked = input_handler.try_click_navigation_cta_any_context(driver)
+                            if not clicked:
+                                print(f"[CTA_NAV] found via selector but INTERCEPT FAILED: {selector}")
+                                continue
+                            print(f"[CTA_NAV] FOUND+INTERCEPTED via CSS: {selector}")
+                        else:
+                            driver.execute_script("arguments[0].click();", btn)
+                            print(f" CTA  via  CSS: {selector}")
+
                         try:
                             redirect_watcher.wait_for_navigation_or_dom_change(
                                 driver, before_url=before_url, before_sig=before_sig, timeout=10
