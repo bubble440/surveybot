@@ -1216,36 +1216,7 @@ def analyze_dom(driver) -> List[Dict[str, Any]]:
                 if not blocks:
                     blocks = _extract_decipher_answers_list_fallback(driver, frame_chain=chain)
 
-    # Dédup ciblée FocusVision/Decipher:
-    # sur certains DOMs, l'extraction générique peut créer un bloc "group" incomplet
-    # (context.group_key vide) avant l'extracteur FocusVision dédié.
-    # Cela peut pousser OpenAI à renvoyer un target_id non applicable.
-    # Règle: pour une même question/itype/options, on garde la variante avec group_key non vide.
-    dedup_map: dict[tuple[str, str, tuple[str, ...]], dict] = {}
-    for b in (blocks or []):
-        if not isinstance(b, dict):
-            continue
-        q_sig = _norm((b.get("question") or "")).lower()
-        t_sig = _norm((b.get("itype") or "")).lower()
-        o_sig = tuple(sorted(_norm((o or "")).lower() for o in (b.get("options") or []) if _norm(o)))
-        sig = (q_sig, t_sig, o_sig)
-        cur = dedup_map.get(sig)
-
-        def _group_key_len(x: dict) -> int:
-            try:
-                return len(((x.get("context") or {}).get("group_key") or "").strip())
-            except Exception:
-                return 0
-
-        if cur is None:
-            dedup_map[sig] = b
-            continue
-
-        if _group_key_len(b) > _group_key_len(cur):
-            dedup_map[sig] = b
-
-    if dedup_map:
-        blocks = list(dedup_map.values())
+    blocks = _dedupe_question_blocks(blocks)
 
     blocks = _prune_focusvision_fragmented_groups(blocks)
 
@@ -1260,6 +1231,93 @@ def analyze_dom(driver) -> List[Dict[str, Any]]:
         )
 
     return blocks
+
+
+def _dedupe_question_blocks(blocks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Déduplique les blocs équivalents générés par plusieurs extracteurs.
+
+    Stratégie principale (radio/checkbox):
+    - même itype
+    - même context.group_key (quand présent)
+    - même signature d'options normalisées
+    -> on garde le "meilleur" bloc.
+
+    Compatibilité legacy:
+    - fallback sur (question, itype, options) pour les autres types.
+    """
+    if not blocks:
+        return blocks
+
+    def _options_sig(block: Dict[str, Any]) -> tuple[str, ...]:
+        return tuple(sorted(_norm((o or "")).lower() for o in (block.get("options") or []) if _norm(o)))
+
+    def _dedup_signature(block: Dict[str, Any]) -> tuple[str, str, tuple[str, ...]]:
+        itype = _norm((block.get("itype") or "")).lower()
+        options_sig = _options_sig(block)
+        group_key = _norm((((block.get("context") or {}).get("group_key")) or "")).lower()
+        question = _norm((block.get("question") or "")).lower()
+
+        if itype in {"radio", "checkbox"} and group_key and options_sig:
+            return (itype, f"group_key:{group_key}", options_sig)
+        return (itype, f"question:{question}", options_sig)
+
+    def _question_pollution_penalty(question: str) -> int:
+        q = _norm((question or "")).lower()
+        if not q:
+            return 50
+        tokens = [t for t in re.findall(r"[a-zà-ÿ0-9]+", q, flags=re.IGNORECASE) if t]
+        if not tokens:
+            return 50
+        penalty = 0
+        low_signal_tokens = {"radio", "checkbox", "input", "button"}
+        for bad in low_signal_tokens:
+            bad_count = sum(1 for t in tokens if t == bad)
+            if bad_count > 1:
+                penalty += (bad_count - 1) * 8
+        unique_ratio = len(set(tokens)) / max(len(tokens), 1)
+        if len(tokens) >= 10 and unique_ratio < 0.6:
+            penalty += 12
+        if len(tokens) >= 18:
+            penalty += 8
+        return penalty
+
+    def _block_quality_score(block: Dict[str, Any]) -> tuple[int, int, int, int]:
+        context = (block.get("context") or {}) if isinstance(block.get("context"), dict) else {}
+        focusvision_priority = 1 if context.get("focusvision_answers_list") is True else 0
+        pollution_score = -_question_pollution_penalty(_norm((block.get("question") or "")))
+        target_score = 1 if _norm((block.get("target_id") or "")) else 0
+        option_xpath_map = block.get("option_xpath_map")
+        xpath_score = len(option_xpath_map) if isinstance(option_xpath_map, dict) else 0
+        return (focusvision_priority, pollution_score, target_score, xpath_score)
+
+    dedup_map: dict[tuple[str, str, tuple[str, ...]], Dict[str, Any]] = {}
+    for b in (blocks or []):
+        if not isinstance(b, dict):
+            continue
+
+        sig = _dedup_signature(b)
+        cur = dedup_map.get(sig)
+        if cur is None:
+            dedup_map[sig] = b
+            continue
+
+        cur_score = _block_quality_score(cur)
+        new_score = _block_quality_score(b)
+        if new_score > cur_score:
+            if _env_truthy("DOM_CONTEXT_DEBUG", "1"):
+                print(
+                    f"[DOM_DEDUP_DEBUG] discard_duplicate keep=new sig={sig[:2]} "
+                    f"old_score={cur_score} new_score={new_score}"
+                )
+            dedup_map[sig] = b
+        elif _env_truthy("DOM_CONTEXT_DEBUG", "1"):
+            print(
+                f"[DOM_DEDUP_DEBUG] discard_duplicate keep=current sig={sig[:2]} "
+                f"old_score={cur_score} new_score={new_score}"
+            )
+
+    return list(dedup_map.values()) if dedup_map else blocks
 
 
 def _prune_focusvision_fragmented_groups(blocks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
