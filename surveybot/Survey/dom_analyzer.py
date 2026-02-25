@@ -290,7 +290,10 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                 pass
             if not _is_actionable_visible(el):
                 continue
-            k = _group_key_for_choice(el, itype)
+            base_key = _group_key_for_choice(el, itype)
+            if not base_key:
+                continue
+            k = f"{itype}:{base_key}"
             groups.setdefault(k, []).append(el)
         except Exception:
             continue
