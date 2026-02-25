@@ -1278,6 +1278,21 @@ def _prune_focusvision_fragmented_groups(blocks: List[Dict[str, Any]]) -> List[D
     if not rich_focusvision:
         return blocks
 
+    rich_by_type: dict[str, list[dict[str, Any]]] = {}
+    for rb in rich_focusvision:
+        r_t = _norm((rb.get("itype") or "")).lower()
+        if r_t not in {"checkbox", "radio"}:
+            continue
+        rich_by_type.setdefault(r_t, []).append(rb)
+
+    def _extract_base_name(group_key: str) -> str:
+        gk = (group_key or "").strip()
+        if not gk:
+            return ""
+        if ":name:" in gk:
+            return gk.split(":name:", 1)[1].strip()
+        return ""
+
     pruned: list[dict] = []
     for b in (blocks or []):
         if not isinstance(b, dict):
@@ -1286,16 +1301,33 @@ def _prune_focusvision_fragmented_groups(blocks: List[Dict[str, Any]]) -> List[D
         b_q = _norm((b.get("question") or "")).lower()
         b_t = _norm((b.get("itype") or "")).lower()
         b_opts = {_norm((o or "")).lower() for o in (b.get("options") or []) if _norm(o)}
+        b_group_key = _norm(((b.get("context") or {}).get("group_key") or "")).strip()
 
         drop_fragment = False
-        if len(b_opts) <= 1 and b_t in {"checkbox", "radio"}:
-            for rb in rich_focusvision:
-                r_q = _norm((rb.get("question") or "")).lower()
-                r_t = _norm((rb.get("itype") or "")).lower()
-                r_opts = {_norm((o or "")).lower() for o in (rb.get("options") or []) if _norm(o)}
-                if b_q == r_q and b_t == r_t and b_opts and b_opts.issubset(r_opts):
-                    drop_fragment = True
-                    break
+        fragment_like = (
+            b_t in {"checkbox", "radio"}
+            and len(b_opts) <= 1
+            and bool(b_group_key)
+            and ":name:" not in b_group_key
+        )
+        if fragment_like:
+            for rb in rich_by_type.get(b_t, []):
+                r_opts = {_norm_lc(o or "") for o in (rb.get("options") or []) if _norm(o)}
+                rb_group_key = _norm(((rb.get("context") or {}).get("group_key") or "")).strip()
+                base_name = _extract_base_name(rb_group_key)
+
+                # DOM-first: mapping fragment ans1025.0.X vers groupe riche checkbox:name:ans1025.0
+                if base_name and b_group_key.startswith(f"{base_name}."):
+                    if b_opts and b_opts.issubset(r_opts):
+                        drop_fragment = True
+                        break
+
+                # Fallback legacy: match par texte si base_name absent/non détectable.
+                if not base_name:
+                    r_q = _norm((rb.get("question") or "")).lower()
+                    if b_q == r_q and b_opts and b_opts.issubset(r_opts):
+                        drop_fragment = True
+                        break
 
         if not drop_fragment:
             pruned.append(b)
