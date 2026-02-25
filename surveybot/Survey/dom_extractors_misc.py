@@ -1002,6 +1002,167 @@ def _extract_askandanswer_selection_list_questions(driver, frame_chain: list[int
 
 
 # ================================================================================
+# REACT-NATIVE-WEB - IONICON MULTI-CHOICE
+# ================================================================================
+
+def _extract_rnw_ionicon_multi_choice_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
+    """Extraction DOM-only des listes choix custom React-Native-Web (sans input natif).
+
+    Pattern ciblé (strict, sans logique provider):
+    - options rendues par des wrappers `div[tabindex="0"]` ayant les classes `r-rnv2vh` et `r-rs99b7`
+    - chaque option contient une icône ionicons (`font-family: ionicons`)
+    - une question visible est trouvable près du groupe
+
+    Retourne un bloc group checkbox/radio selon l'indice de multisélection.
+    """
+    frame_chain = list(frame_chain or [])
+
+    try:
+        option_nodes = driver.find_elements(By.CSS_SELECTOR, "div[tabindex='0'].r-rnv2vh.r-rs99b7")
+    except Exception:
+        return []
+
+    if len(option_nodes) < 3:
+        return []
+
+    blocks: list[dict] = []
+    seen_group_keys: set[str] = set()
+
+    for opt in option_nodes[:80]:
+        try:
+            container = opt.find_element(By.XPATH, "ancestor::div[.//div[@tabindex='0' and contains(@class,'r-rnv2vh') and contains(@class,'r-rs99b7')]][1]")
+        except Exception:
+            container = None
+
+        if not container:
+            continue
+
+        try:
+            rows = container.find_elements(By.CSS_SELECTOR, "div[tabindex='0'].r-rnv2vh.r-rs99b7")
+        except Exception:
+            rows = []
+
+        if len(rows) < 3:
+            continue
+
+        option_xpath_map: dict[str, str] = {}
+        options: list[str] = []
+
+        for row in rows[:50]:
+            try:
+                # garde-fou DOM: ce pattern doit afficher une icône ionicons par option
+                if not row.find_elements(By.XPATH, ".//*[contains(translate(@style, 'IONICS', 'ionics'),'font-family: ionicons')]"):
+                    continue
+            except Exception:
+                continue
+
+            label = ""
+            try:
+                txt_nodes = row.find_elements(By.XPATH, ".//div[normalize-space()] | .//span[normalize-space()]")
+            except Exception:
+                txt_nodes = []
+
+            for node in txt_nodes:
+                try:
+                    candidate = _norm(node.text or node.get_attribute("innerText") or "")
+                except Exception:
+                    candidate = ""
+                if not candidate:
+                    continue
+                if "ionicons" in _norm_lc(node.get_attribute("style") or ""):
+                    continue
+                if len(candidate) <= 1:
+                    continue
+                label = candidate
+                break
+
+            if not label:
+                continue
+
+            try:
+                xp = _best_xpath_for_element(driver, row)
+            except Exception:
+                xp = ""
+
+            if not xp:
+                continue
+
+            nk = _norm_key(label)
+            if nk in option_xpath_map:
+                continue
+
+            option_xpath_map[nk] = xp
+            options.append(label)
+
+        if len(options) < 3 or len(option_xpath_map) < 3:
+            continue
+
+        question = ""
+        try:
+            q_nodes = container.find_elements(By.XPATH, ".//div[contains(normalize-space(), '?')]")
+        except Exception:
+            q_nodes = []
+
+        for qn in q_nodes:
+            qtxt = _norm(qn.text or qn.get_attribute("innerText") or "")
+            if qtxt and len(qtxt) >= 12:
+                question = qtxt
+                break
+
+        if not question:
+            try:
+                question = _norm(_find_question_text_near_element(driver, rows[0]) or "")
+            except Exception:
+                question = ""
+
+        if not question:
+            continue
+
+        hint_text = ""
+        try:
+            hint_nodes = container.find_elements(By.XPATH, ".//div[contains(translate(normalize-space(.), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'réponses possibles') or contains(translate(normalize-space(.), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'multiple') or contains(translate(normalize-space(.), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'plusieurs')]")
+            if hint_nodes:
+                hint_text = _norm(hint_nodes[0].text or hint_nodes[0].get_attribute("innerText") or "")
+        except Exception:
+            hint_text = ""
+
+        is_multi = bool(hint_text)
+        itype = "checkbox" if is_multi else "radio"
+
+        group_key = f"rnw_ionicon:{itype}:{_norm_key(question[:120])}:{len(options)}"
+        if group_key in seen_group_keys:
+            continue
+
+        target_id = make_target_id("group", group_key, question)
+        register_target(
+            target_id,
+            {
+                "kind": "group",
+                "itype": itype,
+                "group_key": group_key,
+                "question": question,
+                "option_xpath_map": option_xpath_map,
+                "frame_chain": frame_chain,
+                "rnw_ionicon": True,
+            },
+        )
+
+        blocks.append(
+            {
+                "question": question,
+                "itype": itype,
+                "options": options,
+                "max_select": _compute_max_select(itype, options),
+                "target_id": target_id,
+                "context": {"kind": "group", "group_key": group_key, "rnw_ionicon": True},
+            }
+        )
+        seen_group_keys.add(group_key)
+
+    return blocks
+
+
+# ================================================================================
 # GENERIC TABLE MATRIX (RADIO PER ROW)
 # ================================================================================
 
