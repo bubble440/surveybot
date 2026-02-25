@@ -321,6 +321,37 @@ def _group_key_for_choice(el, itype: str) -> str:
                 # Ex: "Q1[0]" -> "Q1", "question_1" -> "question_1"
                 clean_name = re.sub(r"\[\d+\]$", "", name)
                 return _norm_lc(clean_name)
+
+            # Fallback DOM-first: certains providers (ex: Quantilope) n'exposent
+            # aucun `name` sur les radios mais regroupent visuellement les options
+            # dans un conteneur commun (aria-labelledby / question-items / options).
+            # On dérive alors une clé stable à partir de cet ancêtre.
+            try:
+                container = None
+                container_xpaths = [
+                    "ancestor::*[@role='radiogroup' or @role='group' or @aria-labelledby][1]",
+                    "ancestor::*[contains(@class,'question-items') or contains(@class,'answers') or contains(@class,'options') or contains(@class,'choices')][1]",
+                ]
+                for xp in container_xpaths:
+                    nodes = el.find_elements(By.XPATH, xp)
+                    if nodes:
+                        container = nodes[0]
+                        break
+
+                if container:
+                    key_parts = [
+                        container.get_attribute("aria-labelledby") or "",
+                        container.get_attribute("name") or "",
+                        container.get_attribute("id") or "",
+                        container.get_attribute("data-testid") or "",
+                        container.get_attribute("data-cy") or "",
+                        container.get_attribute("class") or "",
+                    ]
+                    key = _norm_lc("|".join([p for p in key_parts if p]))
+                    if key:
+                        return f"dom:{key}"
+            except Exception:
+                pass
         
         return ""
     
