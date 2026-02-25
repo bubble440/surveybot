@@ -320,6 +320,17 @@ def _group_key_for_choice(el, itype: str) -> str:
                 # Nettoyer le name (enlever les indices si présents)
                 # Ex: "Q1[0]" -> "Q1", "question_1" -> "question_1"
                 clean_name = re.sub(r"\[\d+\]$", "", name)
+                clean_name = _norm_lc(clean_name)
+
+                # Cas observé sur certains DOMs: les checkboxes d'une même question
+                # ont des noms suffixés par option (ex: ...A1, ...A2, ...SQ001).
+                # Sans normalisation, chaque option devient un groupe distinct.
+                # On compacte donc la clé sur la racine commune du name.
+                if itype == "checkbox":
+                    base_name = re.sub(r"(?:sq\d+|a\d+)$", "", clean_name, flags=re.IGNORECASE)
+                    if base_name and base_name != clean_name:
+                        clean_name = base_name
+
                 return _norm_lc(clean_name)
 
             # Fallback DOM-first: certains providers (ex: Quantilope) n'exposent
