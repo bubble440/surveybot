@@ -62,6 +62,18 @@ class SurveyDifficultyGuardTests(unittest.TestCase):
         self.assertTrue(is_strict)
         self.assertEqual(reason, "audio_capture")
 
+    def test_audio_legal_disclaimer_is_not_flagged(self):
+        page_text = (
+            "Vous ne ferez aucun enregistrement audio ou visuel des informations, "
+            "sauf instructions contraires."
+        )
+        driver = _FakeDriver(text=page_text)
+
+        is_strict, reason = detect_strict_survey(driver)
+
+        self.assertFalse(is_strict)
+        self.assertIsNone(reason)
+
     def test_watch_video_instruction_with_video_tag_is_flagged(self):
         page_text = "Please watch the video before answering"
         driver = _FakeDriver(text=page_text, by_tag={"video": [_FakeElement()]})
