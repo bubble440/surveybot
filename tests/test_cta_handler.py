@@ -132,3 +132,29 @@ def test_click_with_intercept_does_not_fallback_to_real_click_when_arm_fails(mon
 
     assert ok is False
     assert el.clicked == 0
+
+
+def test_try_click_navigation_cta_skips_internal_task_carousel_arrows(monkeypatch):
+    monkeypatch.setattr(cta_handler, "ActionChains", _FakeActionChains)
+    monkeypatch.delenv("CTA_INTERCEPT_ONLY", raising=False)
+
+    carousel_arrow = _FakeElement(
+        text="",
+        attrs={"data-cy": "right-arrow", "aria-label": "next", "class": "_chevron-right"},
+    )
+    page_cta = _FakeElement(
+        text="Suivant",
+        attrs={"class": "_next-button", "data-cy": "next-button"},
+    )
+    counter = _FakeElement(text="3/12")
+
+    driver = _FakeDriver(
+        xpath_elements=[carousel_arrow, page_cta],
+        css_elements={'p[data-cy="task-counter"]': [counter]},
+    )
+
+    ok = cta_handler.try_click_navigation_cta(driver)
+
+    assert ok is True
+    assert carousel_arrow.clicked == 0
+    assert page_cta.clicked == 1
