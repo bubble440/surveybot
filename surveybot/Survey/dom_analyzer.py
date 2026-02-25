@@ -1247,6 +1247,8 @@ def analyze_dom(driver) -> List[Dict[str, Any]]:
     if dedup_map:
         blocks = list(dedup_map.values())
 
+    blocks = _prune_focusvision_fragmented_groups(blocks)
+
     if _env_truthy("DOM_CONTEXT_DEBUG", "1"):
         print(
             f"[DOM_CONTEXT_DEBUG] analyze_dom stage=raw_extraction "
@@ -1258,3 +1260,44 @@ def analyze_dom(driver) -> List[Dict[str, Any]]:
         )
 
     return blocks
+
+
+def _prune_focusvision_fragmented_groups(blocks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Supprime les fragments mono-option d'un même groupe FocusVision/Decipher.
+
+    Le prune est strictement déclenché quand un bloc "riche" est marqué
+    `context.focusvision_answers_list=True` (créé par l'extracteur dédié).
+    """
+    rich_focusvision = [
+        b for b in (blocks or [])
+        if isinstance(b, dict)
+        and ((b.get("context") or {}).get("focusvision_answers_list") is True)
+        and len((b.get("options") or [])) >= 2
+    ]
+    if not rich_focusvision:
+        return blocks
+
+    pruned: list[dict] = []
+    for b in (blocks or []):
+        if not isinstance(b, dict):
+            continue
+
+        b_q = _norm((b.get("question") or "")).lower()
+        b_t = _norm((b.get("itype") or "")).lower()
+        b_opts = {_norm((o or "")).lower() for o in (b.get("options") or []) if _norm(o)}
+
+        drop_fragment = False
+        if len(b_opts) <= 1 and b_t in {"checkbox", "radio"}:
+            for rb in rich_focusvision:
+                r_q = _norm((rb.get("question") or "")).lower()
+                r_t = _norm((rb.get("itype") or "")).lower()
+                r_opts = {_norm((o or "")).lower() for o in (rb.get("options") or []) if _norm(o)}
+                if b_q == r_q and b_t == r_t and b_opts and b_opts.issubset(r_opts):
+                    drop_fragment = True
+                    break
+
+        if not drop_fragment:
+            pruned.append(b)
+
+    return pruned
