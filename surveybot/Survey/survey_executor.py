@@ -127,7 +127,12 @@ def _detect_image_only_unresolvable_dom(driver, question_blocks: list[dict]) -> 
         it = _norm_lc((b.get("itype") or ""))
         if it not in {"radio", "checkbox"}:
             continue
-        if len(b.get("options") or []) >= 2:
+        options = [
+            _norm_lc(str(o))
+            for o in (b.get("options") or [])
+            if _norm_lc(str(o))
+        ]
+        if len(set(options)) >= 2:
             has_exploitable_choice_block = True
             break
 
@@ -149,62 +154,102 @@ def _detect_image_only_unresolvable_dom(driver, question_blocks: list[dict]) -> 
               const t = norm(s);
               return t.length <= maxLen ? t : '';
             };
+            const hasQuestionContainer = !!document.querySelector('[questionname], .questionContainer, .mrQuestionTable, .question-component');
+            const findStableContainer = (el) => {
+              if (!el) return null;
+              return (
+                el.closest('.mrQuestionTable')
+                || el.closest('[questionname]')
+                || el.closest('[data-test="main-contain"]')
+                || el.closest('.__flexgrid_row')
+                || el.closest('.question-component')
+                || el.closest('.questionContainer')
+                || el.parentElement
+              );
+            };
+            const wrapperForInput = (inp) => {
+              if (!inp) return null;
+              if (inp.id) {
+                const explicit = document.querySelector(`label[for="${CSS.escape(inp.id)}"]`);
+                if (explicit) return explicit;
+              }
+              return (
+                inp.closest('label')
+                || inp.closest('[tabindex], [role="radio"], [role="checkbox"], button, a')
+              );
+            };
+            const wrapperMeta = (wrapper) => {
+              const txt = norm((wrapper && (wrapper.innerText || wrapper.textContent)) || '');
+              const hasImageNode = !!(wrapper && wrapper.querySelector('img, svg'));
+              const style = wrapper ? window.getComputedStyle(wrapper) : null;
+              const hasBackgroundImage = !!(style && style.backgroundImage && style.backgroundImage !== 'none');
+              return {
+                text: txt,
+                hasImageNode,
+                hasBackgroundImage,
+                isImageOnly: (hasImageNode || hasBackgroundImage) && txt.length <= 2,
+              };
+            };
             const inputs = Array.from(document.querySelectorAll("input[type='radio'][name], input[type='checkbox'][name]"));
             const groups = new Map();
+            let visibleWrapperCount = 0;
 
             for (const inp of inputs) {
-              if (!isVisible(inp)) continue;
+              const wrapper = wrapperForInput(inp);
+              if (!isVisible(wrapper)) continue;
+              visibleWrapperCount += 1;
               const type = (inp.type || '').toLowerCase();
-              const name = norm(inp.name || inp.id || '');
-              if (!name) continue;
-              const key = `${type}::${name}`;
+              const container = findStableContainer(wrapper || inp);
+              const groupName = norm(inp.name || '');
+              const containerSig = container
+                ? `${container.tagName}|${container.id || ''}|${container.className || ''}|${container.getAttribute('questionname') || ''}|${container.getAttribute('data-test') || ''}`
+                : '';
+              const key = groupName ? `${type}::name::${groupName}` : `${type}::container::${containerSig || (inp.id || '')}`;
               if (!groups.has(key)) groups.set(key, []);
-
-              let label = null;
-              if (inp.id) label = document.querySelector(`label[for="${CSS.escape(inp.id)}"]`);
-              if (!label) label = inp.closest('label');
-
-              const labelText = norm((label && (label.innerText || label.textContent)) || '');
-              const hasImage = !!(label && label.querySelector('img, svg, i[class*="icon"], [class*="icon-"]'));
-              const imgHint = norm((label && (label.querySelector('img')?.getAttribute('src') || label.querySelector('img')?.getAttribute('alt'))) || '');
+              const meta = wrapperMeta(wrapper);
+              const imgHint = norm((wrapper && (wrapper.querySelector('img')?.getAttribute('src') || wrapper.querySelector('img')?.getAttribute('alt'))) || '');
 
               groups.get(key).push({
-                labelText,
-                hasImage,
+                wrapperVisible: true,
+                isImageOnly: meta.isImageOnly,
+                wrapperText: shortText(meta.text),
+                hasImageNode: meta.hasImageNode,
+                hasBackgroundImage: meta.hasBackgroundImage,
                 imgHint,
+                containerSig,
               });
             }
 
             const imageOnly = [];
+            let imageOnlyOptionCount = 0;
             for (const [groupKey, opts] of groups.entries()) {
               if (!opts || opts.length < 2) continue;
-              const imageOnlyCount = opts.filter(o => o.hasImage && !o.labelText).length;
+              const imageOnlyCount = opts.filter(o => o.isImageOnly).length;
               if (imageOnlyCount >= 2) {
+                imageOnlyOptionCount += imageOnlyCount;
                 imageOnly.push({
                   groupKey,
                   optionCount: opts.length,
+                  imageOnlyCount,
                   imgHints: opts.map(o => o.imgHint).filter(Boolean).slice(0, 6),
                 });
               }
             }
 
             const clickableCandidates = Array.from(document.querySelectorAll(
-              'button, [role="button"], a, [tabindex], div[onclick]'
+              'button, [role="button"], [role="radio"], [role="checkbox"], a, span[tabindex], div[tabindex], div[onclick]'
             ));
             const clickableByContainer = new Map();
             let clickableVisibleCount = 0;
             for (const el of clickableCandidates) {
               if (!isVisible(el)) continue;
               clickableVisibleCount += 1;
-              const text = shortText(el.innerText || el.textContent || '');
-              const hasImageNode = !!el.querySelector('img, svg');
-              const style = window.getComputedStyle(el);
-              const hasBackgroundImage = !!(style && style.backgroundImage && style.backgroundImage !== 'none');
-              const isVisualOption = (hasImageNode || hasBackgroundImage) && text.length <= 2;
+              const meta = wrapperMeta(el);
+              const text = shortText(meta.text);
+              const isVisualOption = meta.isImageOnly;
               if (!isVisualOption) continue;
 
-              const container = el.closest('[data-test="main-contain"], .__flexgrid_row, .mrQuestionTable, .question-component, .questionContainer')
-                || el.parentElement;
+              const container = findStableContainer(el);
               if (!container) continue;
 
               const key =
@@ -215,18 +260,20 @@ def _detect_image_only_unresolvable_dom(driver, question_blocks: list[dict]) -> 
                 || container.tagName;
               if (!clickableByContainer.has(key)) clickableByContainer.set(key, []);
               clickableByContainer.get(key).push({
-                hasImageNode,
-                hasBackgroundImage,
+                hasImageNode: meta.hasImageNode,
+                hasBackgroundImage: meta.hasBackgroundImage,
                 text,
                 containerSig: `${container.tagName}|${container.id || ''}|${container.className || ''}|${container.getAttribute('questionname') || ''}`,
               });
             }
 
             const clickableImageOnlyGroups = [];
+            let clickableImageOnlyOptionCount = 0;
             for (const [containerKey, opts] of clickableByContainer.entries()) {
               if (!opts || opts.length < 2) continue;
               const textless = opts.filter(o => !o.text).length;
               if (textless < 2) continue;
+              clickableImageOnlyOptionCount += textless;
               const sig = (opts[0] && opts[0].containerSig) || containerKey;
               clickableImageOnlyGroups.push({
                 containerKey,
@@ -240,15 +287,28 @@ def _detect_image_only_unresolvable_dom(driver, question_blocks: list[dict]) -> 
 
             const bodyText = norm((document.body && document.body.innerText) || '');
             const hasQuestionHint = /etes[-\s]*vous|quel\s+age|quel\s+âge|how\s+old|are\s+you/i.test(bodyText);
+            const questionHints = (arguments[0] || []).map(q => norm(q)).filter(Boolean);
+            const hasQuestionTextHint = questionHints.some(q => q.length >= 8 && bodyText.includes(q.slice(0, 48)));
 
             return {
               image_only_groups: imageOnly,
               clickable_image_only_groups: clickableImageOnlyGroups,
-              has_question_hint: hasQuestionHint,
+              has_question_hint: hasQuestionHint || hasQuestionTextHint || hasQuestionContainer,
               clickable_visible_count: clickableVisibleCount,
+              input_count: inputs.length,
+              visible_wrapper_count: visibleWrapperCount,
+              input_group_count: groups.size,
+              image_only_option_count: imageOnlyOptionCount,
+              clickable_group_count: clickableImageOnlyGroups.length,
+              clickable_image_only_option_count: clickableImageOnlyOptionCount,
               project: norm(document.querySelector("input[name='I.Project']")?.value || ''),
             };
             """
+            , [
+                _norm_lc((b.get("question") or ""))
+                for b in (question_blocks or [])
+                if _norm_lc((b.get("question") or ""))
+            ]
         ) or {}
     except Exception:
         dom = {}
@@ -264,7 +324,10 @@ def _detect_image_only_unresolvable_dom(driver, question_blocks: list[dict]) -> 
     if not image_groups and not clickable_groups:
         print(
             "[DOM_ONLY_ABORT] detector_no_match "
-            f"input_groups={len(image_groups)} clickable_groups={len(clickable_groups)} "
+            f"inputs={int(dom.get('input_count') or 0)} visible_wrappers={int(dom.get('visible_wrapper_count') or 0)} "
+            f"input_groups={int(dom.get('input_group_count') or 0)} image_groups={len(image_groups)} "
+            f"image_options={int(dom.get('image_only_option_count') or 0)} clickable_groups={len(clickable_groups)} "
+            f"clickable_image_options={int(dom.get('clickable_image_only_option_count') or 0)} "
             f"clickable_visible={int(dom.get('clickable_visible_count') or 0)}"
         )
         return False, "", ""
@@ -287,11 +350,18 @@ def _detect_image_only_unresolvable_dom(driver, question_blocks: list[dict]) -> 
     pattern_reason = "image_only_inputs"
     if clickable_groups_norm:
         pattern_reason = "image_only_clickable_options"
-        print(
-            "[DOM_ONLY_ABORT] detector_match_clickable_icons "
-            f"groups={len(clickable_groups_norm)} options={sum(g['optionCount'] for g in clickable_groups_norm)} "
-            f"textless={sum(g['textlessCount'] for g in clickable_groups_norm)}"
-        )
+    elif image_groups:
+        pattern_reason = "image_only_wrapped_inputs"
+
+    print(
+        "[DOM_ONLY_ABORT] detector_match "
+        f"reason={pattern_reason} inputs={int(dom.get('input_count') or 0)} "
+        f"visible_wrappers={int(dom.get('visible_wrapper_count') or 0)} "
+        f"input_groups={int(dom.get('input_group_count') or 0)} "
+        f"image_groups={len(image_groups)} image_options={int(dom.get('image_only_option_count') or 0)} "
+        f"clickable_groups={len(clickable_groups_norm)} "
+        f"clickable_image_options={int(dom.get('clickable_image_only_option_count') or 0)}"
+    )
 
     fp_payload = {
         "project": dom.get("project") or "",
