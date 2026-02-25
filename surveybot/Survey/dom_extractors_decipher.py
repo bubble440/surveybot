@@ -166,7 +166,7 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
                 "group_key": group_key,
                 "question": question,
                 "input_name": name,
-                "max_select": 1,
+                "max_select": 1 if itype == "radio" else len(options),
                 "options": options,
                 "option_xpath_map": option_xpath_map
             })
@@ -176,7 +176,13 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
                 "kind": "group",
                 "itype": itype,
                 "question": question,
-                "options": options
+                "options": options,
+                "max_select": 1 if itype == "radio" else len(options),
+                "context": {
+                    "kind": "group",
+                    "group_key": group_key,
+                    "focusvision_answers_list": True,
+                },
             })
 
     return blocks
