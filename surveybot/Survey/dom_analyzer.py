@@ -65,6 +65,7 @@ try:
         _extract_walr_cardsort_block,
         _extract_askandanswer_mobile_matrix_rows,
         _extract_askandanswer_selection_list_questions,
+        _extract_rnw_ionicon_multi_choice_blocks,
         _extract_table_matrix_radio_rows,
         _extract_cmix_simple_grid_question_blocks,
         _extract_cmix_radio_question_blocks,
@@ -111,6 +112,7 @@ except ImportError:
         _extract_walr_cardsort_block,
         _extract_askandanswer_mobile_matrix_rows,
         _extract_askandanswer_selection_list_questions,
+        _extract_rnw_ionicon_multi_choice_blocks,
         _extract_table_matrix_radio_rows,
         _extract_cmix_simple_grid_question_blocks,
         _extract_cmix_radio_question_blocks,
@@ -182,6 +184,15 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         aa_sl_blocks = _extract_askandanswer_selection_list_questions(driver, frame_chain)
         if aa_sl_blocks:
             return aa_sl_blocks
+    except Exception:
+        pass
+
+    # --- 0c-bis) React-Native-Web: listes multi avec wrappers tabindex + icône ionicons ---
+    # Objectif: extraire les checkboxes custom sans <input> natif.
+    try:
+        rnw_multi_blocks = _extract_rnw_ionicon_multi_choice_blocks(driver, frame_chain)
+        if rnw_multi_blocks:
+            return rnw_multi_blocks
     except Exception:
         pass
 
