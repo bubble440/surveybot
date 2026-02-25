@@ -324,35 +324,16 @@ def _group_key_for_choice(el, itype: str) -> str:
     Basé sur le name attribute pour radio/checkbox.
     """
     try:
-        if itype not in ("radio", "checkbox"):
-            return ""
-
-        # Pour les checkbox, certaines plateformes donnent un `name` unique
-        # par option (ex: ...A1, ...A2, ...SQ001, ...SQ002), ce qui fragmente
-        # une seule question en plusieurs blocs. Le conteneur de question est
-        # un meilleur ancrage quand il est présent.
-        if itype == "checkbox":
-            try:
-                container = el.find_elements(
-                    By.XPATH,
-                    "ancestor::*[contains(@class,'question-container') or starts-with(@id,'question')][1]",
-                )
-                if container:
-                    cid = _norm_lc(container[0].get_attribute("id") or "")
-                    if cid:
-                        return f"checkbox:container:{cid}"
-            except Exception:
-                pass
-
-        name = el.get_attribute("name") or ""
-        if name:
-            # Nettoyer le name (enlever les indices si présents)
-            # Ex: "Q1[0]" -> "Q1", "question_1" -> "question_1"
-            clean_name = re.sub(r"\[\d+\]$", "", name)
-            return _norm_lc(clean_name)
-
+        if itype in ("radio", "checkbox"):
+            name = el.get_attribute("name") or ""
+            if name:
+                # Nettoyer le name (enlever les indices si présents)
+                # Ex: "Q1[0]" -> "Q1", "question_1" -> "question_1"
+                clean_name = re.sub(r"\[\d+\]$", "", name)
+                return _norm_lc(clean_name)
+        
         return ""
-
+    
     except Exception:
         return ""
 
