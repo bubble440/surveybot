@@ -378,22 +378,121 @@ def _nav_log(prefix: str, msg: str, driver=None):
     print(f"{prefix} {msg}{url}")
 
 
+def _dom_progress_marker(driver):
+    """Construit un marqueur léger pour détecter une progression de page."""
+    js = """
+    return (function () {
+      try {
+        const url = String(location.href || '');
+        const root = document.querySelector('#root') || document.body;
+        const txt = ((root && (root.innerText || root.textContent)) || '')
+          .replace(/\s+/g, ' ')
+          .trim()
+          .slice(0, 220);
+        const qNodes = document.querySelectorAll(
+          'input, textarea, select, [role="radio"], [role="checkbox"], [data-testid*="question"], [class*="question"]'
+        ).length;
+        return { url, txt, qNodes };
+      } catch (e) {
+        return { url: '', txt: '', qNodes: -1 };
+      }
+    })();
+    """
+    try:
+        marker = driver.execute_script(js)
+        return marker if isinstance(marker, dict) else {"url": "", "txt": "", "qNodes": -1}
+    except Exception:
+        return {"url": "", "txt": "", "qNodes": -1}
+
+
+def _did_progress(before_marker, after_marker) -> bool:
+    """Détecte une progression via URL ou fingerprint DOM léger."""
+    if not isinstance(before_marker, dict) or not isinstance(after_marker, dict):
+        return False
+
+    # Contexte sans marqueur exploitable (ex: driver de test minimal):
+    # on évite un 2e clic inutile.
+    if (
+        int(before_marker.get("qNodes") or -1) == -1
+        and int(after_marker.get("qNodes") or -1) == -1
+        and not (before_marker.get("url") or "")
+        and not (after_marker.get("url") or "")
+    ):
+        return True
+
+    before_url = before_marker.get("url") or ""
+    after_url = after_marker.get("url") or ""
+    if before_url and after_url and before_url != after_url:
+        return True
+    return (
+        (before_marker.get("txt") or "") != (after_marker.get("txt") or "")
+        or int(before_marker.get("qNodes") or -1) != int(after_marker.get("qNodes") or -1)
+    )
+
+
+def _press_click_release(driver, el):
+    """Séquence CTA déterministe: down -> pause -> up, puis release JS safety net."""
+    release_sent = False
+    try:
+        ActionChains(driver).move_to_element(el).click_and_hold(el).pause(0.06).release(el).perform()
+        click_ok = True
+    except Exception:
+        click_ok = False
+
+    try:
+        release_sent = bool(driver.execute_script(
+            """
+            const el = arguments[0];
+            const mk = (Ctor, type) => {
+              try { return new Ctor(type, { bubbles: true, cancelable: true, view: window }); }
+              catch(e) { return null; }
+            };
+            const push = (target, evt) => {
+              if (!target || !evt) return;
+              try { target.dispatchEvent(evt); } catch(e) {}
+            };
+            push(el, mk(PointerEvent, 'pointerup'));
+            push(document, mk(PointerEvent, 'pointerup'));
+            push(el, mk(MouseEvent, 'mouseup'));
+            push(document, mk(MouseEvent, 'mouseup'));
+            return true;
+            """,
+            el,
+        ))
+    except Exception:
+        release_sent = False
+
+    return bool(click_ok), bool(release_sent)
+
+
 def _click_with_intercept(driver, el) -> bool:
     """Clique un CTA en mode normal ou en mode interception non destructif."""
     if not _cta_intercept_enabled():
-        try:
-            el.click()
+        before = _dom_progress_marker(driver)
+        used = "press_click_release"
+
+        first_ok, first_release = _press_click_release(driver, el)
+        time.sleep(0.25)
+        after_first = _dom_progress_marker(driver)
+        progressed = _did_progress(before, after_first)
+        print(
+            f"[CTA_CLICK] strategy={used} attempt=1 "
+            f"release_sent={str(first_release).lower()} progressed={str(progressed).lower()}"
+        )
+
+        if progressed:
             return True
-        except Exception:
-            try:
-                ActionChains(driver).move_to_element(el).click().perform()
-                return True
-            except Exception:
-                try:
-                    driver.execute_script("arguments[0].click();", el)
-                    return True
-                except Exception:
-                    return False
+
+        # Budget anti-boucle: 1 tentative additionnelle max si pas de progression.
+        second_ok, second_release = _press_click_release(driver, el)
+        time.sleep(0.25)
+        after_second = _dom_progress_marker(driver)
+        progressed = _did_progress(before, after_second)
+        print(
+            f"[CTA_CLICK] strategy={used} attempt=2 "
+            f"release_sent={str(second_release).lower()} progressed={str(progressed).lower()}"
+        )
+        return bool(first_ok or second_ok)
 
     # En mode interception : on arme, on marque la cible avec un token, on dispatch,
     # puis on désarme TOUJOURS pour ne jamais bloquer les autres inputs.
