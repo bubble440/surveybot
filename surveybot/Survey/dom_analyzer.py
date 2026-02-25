@@ -72,6 +72,7 @@ try:
         _extract_ipsos_slider_question_blocks,
         _extract_cloudresearch_sentry_blocks,
         _extract_purespectrum_mobile_date_blocks,
+        _extract_custom_testid_single_select_radio_blocks,
     )
     
     # Registre et utilitaires
@@ -119,6 +120,7 @@ except ImportError:
         _extract_ipsos_slider_question_blocks,
         _extract_cloudresearch_sentry_blocks,
         _extract_purespectrum_mobile_date_blocks,
+        _extract_custom_testid_single_select_radio_blocks,
     )
 
 
@@ -267,6 +269,15 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         cr_blocks = _extract_cloudresearch_sentry_blocks(driver, frame_chain)
         if cr_blocks:
             return cr_blocks
+    except Exception:
+        pass
+
+    # --- 0h-bis) Angular custom data-testid radios (sans input natif) ---
+    # Objectif: extraire les blocs radio pilotés par wrappers + labels data-testid.
+    try:
+        custom_testid_blocks = _extract_custom_testid_single_select_radio_blocks(driver, frame_chain)
+        if custom_testid_blocks:
+            return custom_testid_blocks
     except Exception:
         pass
 
