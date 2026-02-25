@@ -91,6 +91,39 @@ def _cta_intercept_enabled() -> bool:
     raw = (os.getenv(CTA_INTERCEPT_ENV_VAR, "") or "").strip().lower()
     return raw in {"1", "true", "yes", "on"}
 
+
+def _is_internal_task_carousel_arrow(driver, el) -> bool:
+    """
+    Exclut les flèches de carousel de tâche (ex: Quantilope x/12)
+    du ciblage CTA de navigation page.
+    Critères DOM minimaux et observables:
+    - bouton avec data-cy=left-arrow|right-arrow
+    - présence d'un compteur p[data-cy="task-counter"] au format x/y (y >= 2)
+    """
+    try:
+        data_cy = (el.get_attribute("data-cy") or "").strip().lower()
+    except Exception:
+        data_cy = ""
+
+    if data_cy not in {"left-arrow", "right-arrow"}:
+        return False
+
+    try:
+        counters = driver.find_elements(By.CSS_SELECTOR, 'p[data-cy="task-counter"]')
+    except Exception:
+        counters = []
+
+    for counter in counters:
+        try:
+            txt = _norm_btn_text(counter.text or "")
+            m = re.search(r"\b(\d{1,3})\s*/\s*(\d{1,3})\b", txt)
+            if m and int(m.group(2)) >= 2:
+                return True
+        except Exception:
+            continue
+    return False
+
+
 def _read_arm_error(driver) -> str:
     """Retourne le dernier message d'erreur d'armement JS si présent."""
     try:
@@ -1173,6 +1206,9 @@ def try_click_navigation_cta(driver) -> bool:
                 tag = ""
 
             if (el.get_attribute("aria-disabled") or "").lower() == "true":
+                continue
+
+            if _is_internal_task_carousel_arrow(driver, el):
                 continue
 
             cls = (el.get_attribute("class") or "").lower()
