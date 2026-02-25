@@ -903,6 +903,27 @@ def _handle_topsurveys_exclusion_popup(driver) -> bool:
     
     return True  # La boucle takeover continuera sur le nouveau survey
 
+
+def _should_skip_post_actions_navigation(driver, question_blocks: list[dict]) -> bool:
+    """
+    Garde-fou minimal: sur Walr cardsort, l'avancement se fait via les
+    boutons de réponse (answer-button). La routine CTA post-actions ne doit
+    pas tourner, sinon elle peut re-cliquer une réponse.
+    """
+    for block in question_blocks or []:
+        try:
+            ctx = block.get("context") if isinstance(block, dict) else None
+            if isinstance(ctx, dict) and ctx.get("walr_cardsort") is True:
+                return True
+        except Exception:
+            continue
+
+    # Critère DOM explicite (défense en profondeur si le contexte est absent)
+    try:
+        return bool(driver.find_elements(By.CSS_SELECTOR, "#cardSortContainer button.answer-button"))
+    except Exception:
+        return False
+
 def execute_survey_page(driver, api_key):
     """
     Nouvelle version : capture , demande GPT-4o quoi faire, puis applique l'action.
@@ -1053,26 +1074,29 @@ def execute_survey_page(driver, api_key):
         #  "plan" (multi actions) + anti-double-fallback par action
         result = action_dispatcher.execute_actions_plan(driver, actions, stop_on_navigation=True)
 
-        # --- Si on a  0 la page mais qu'on n'a pas, on tente CTA nav ---
-        try:
-            before_url = driver.current_url
-            before_sig = redirect_watcher._dom_signature(driver)  # ou recalc local si tu veux optimiser
+        # --- Post-actions CTA nav (sauf Walr cardsort géré par answer-button) ---
+        if _should_skip_post_actions_navigation(driver, question_blocks):
+            print("[WALR_CS] skip post-actions CTA navigation (cardsort flow)")
+        else:
+            try:
+                before_url = driver.current_url
+                before_sig = redirect_watcher._dom_signature(driver)  # ou recalc local si tu veux optimiser
 
-            # iframe-safe
-            _local_pause_before_cta("navigation_cta")
-            clicked = input_handler.try_click_navigation_cta_any_context(driver)
+                # iframe-safe
+                _local_pause_before_cta("navigation_cta")
+                clicked = input_handler.try_click_navigation_cta_any_context(driver)
 
-            if clicked:
-                changed = redirect_watcher.wait_for_navigation_or_dom_change(
-                    driver,
-                    before_url=before_url,
-                    before_sig=before_sig,
-                    timeout=10,
-                )
-                if changed:
-                    print(" Navigation/DOM change   CTA.")
-        except Exception:
-            pass
+                if clicked:
+                    changed = redirect_watcher.wait_for_navigation_or_dom_change(
+                        driver,
+                        before_url=before_url,
+                        before_sig=before_sig,
+                        timeout=10,
+                    )
+                    if changed:
+                        print(" Navigation/DOM change   CTA.")
+            except Exception:
+                pass
 
         #  Export DynamoDB : compteur unique des rescans DOM (si > 0)
         try:
