@@ -33,6 +33,34 @@ class _FakeElement:
         return []
 
 
+
+
+class _FakeActionChains:
+    def __init__(self, driver):
+        self._target = None
+
+    def move_to_element(self, el):
+        self._target = el
+        return self
+
+    def click_and_hold(self, el=None):
+        if el is not None:
+            self._target = el
+        return self
+
+    def pause(self, _seconds):
+        return self
+
+    def release(self, el=None):
+        if el is not None:
+            self._target = el
+        return self
+
+    def perform(self):
+        if self._target is not None:
+            self._target.clicked += 1
+        return None
+
 class _FakeDriver:
     def __init__(self, xpath_elements=None, css_elements=None):
         self.current_url = "https://sondage.selityvs.fr/survey"
@@ -51,6 +79,7 @@ class _FakeDriver:
 
 
 def test_try_click_navigation_cta_detects_tabindex_suivant(monkeypatch):
+    monkeypatch.setattr(cta_handler, "ActionChains", _FakeActionChains)
     monkeypatch.delenv("CTA_INTERCEPT_ONLY", raising=False)
 
     suivant = _FakeElement(
@@ -66,6 +95,7 @@ def test_try_click_navigation_cta_detects_tabindex_suivant(monkeypatch):
 
 
 def test_try_click_navigation_cta_skips_long_text_tabindex_wrapper(monkeypatch):
+    monkeypatch.setattr(cta_handler, "ActionChains", _FakeActionChains)
     monkeypatch.delenv("CTA_INTERCEPT_ONLY", raising=False)
 
     wrapper = _FakeElement(
