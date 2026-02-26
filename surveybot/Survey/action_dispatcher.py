@@ -1859,9 +1859,15 @@ def handle_consent_screen(driver):
 
     def _handle_ipsos_privacy_policy_page() -> bool:
         # DÃ©tection volontairement stricte (Ã©vite les faux positifs sur d'autres consent screens)
+        intercept_only = (os.getenv("CTA_INTERCEPT_ONLY", "") or "").strip().lower() in {"1", "true", "yes", "on"}
         try:
-            cta = driver.find_element(By.CSS_SELECTOR, "#acceptAndTakeSurveyLink2")
+            cta = driver.find_element(
+                By.CSS_SELECTOR,
+                "a.btn.btn-primary[id^='acceptAndTakeSurveyLink']",
+            )
         except Exception:
+            if intercept_only:
+                print("[CTA_INTERCEPT] ipsos_privacy_policy cta_not_found")
             return False
 
         try:
@@ -1925,6 +1931,18 @@ def handle_consent_screen(driver):
             return False
 
         # 2) Cliquer "Accepter et commencer" + valider un effet (URL/spinner/disparition)
+        if intercept_only:
+            try:
+                import Survey.input_handler
+                if Survey.input_handler.click_cta_strong_any_context(driver, "accepter et commencer"):
+                    print("[CTA_INTERCEPT] ipsos_privacy_policy cta_found intercept_ok")
+                    return True
+                print("[CTA_INTERCEPT] ipsos_privacy_policy cta_found intercept_impossible")
+                return False
+            except Exception:
+                print("[CTA_INTERCEPT] ipsos_privacy_policy cta_found intercept_impossible")
+                return False
+
         if not _click_best_effort(cta):
             return False
 
