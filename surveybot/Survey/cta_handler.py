@@ -404,6 +404,35 @@ def _safe_url(driver) -> str:
     except Exception:
         return "<unknown>"
 
+
+def _recover_overlay_cta_text(driver, el) -> str:
+    """
+    Récupère le texte CTA depuis un label frère pour les overlays cliquables
+    de type "oc_inX" / "oc_tX" (DOM start_screen observé).
+    """
+    try:
+        el_id = (el.get_attribute("id") or "").strip()
+    except Exception:
+        return ""
+
+    m = re.fullmatch(r"oc_in(\d+)", el_id)
+    if not m:
+        return ""
+
+    idx = m.group(1)
+    try:
+        labels = driver.find_elements(By.CSS_SELECTOR, f"#oc_t{idx}")
+    except Exception:
+        labels = []
+
+    if not labels:
+        return ""
+
+    try:
+        return (labels[0].text or labels[0].get_attribute("innerText") or "").strip()
+    except Exception:
+        return ""
+
 def _nav_log(prefix: str, msg: str, driver=None):
     url = ""
     if driver is not None:
@@ -1191,6 +1220,7 @@ def try_click_navigation_cta(driver) -> bool:
         "|//input[@type='submit' or @type='button']"
         "|//a[@role='button']"
         "|//a[contains(concat(' ', normalize-space(@class), ' '), ' btn ')]"
+        "|//*[contains(@onmousedown, 'ToggSel')]"
         "|//*[@tabindex and not(self::input or self::textarea or self::select)]"
     )
 
@@ -1232,6 +1262,8 @@ def try_click_navigation_cta(driver) -> bool:
                     txt = img.get_attribute("alt") or img.get_attribute("title") or ""
                 except Exception:
                     txt = ""
+            if not txt:
+                txt = _recover_overlay_cta_text(driver, el)
             t = _norm_btn_text(txt)
 
             el_id = (el.get_attribute("id") or "").lower()
