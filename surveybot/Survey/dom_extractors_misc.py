@@ -1930,6 +1930,149 @@ def _extract_ipsos_slider_question_blocks(driver, frame_chain: list[int] | None)
     return blocks
 
 
+def _extract_confirmit_slider_grid_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
+    """Forsta/Confirmit slider-grid: 1 ligne = 1 bloc radio exploitable.
+
+    Gate DOM strict (provider-agnostic):
+    - conteneur `.cf-question--slider-grid`
+    - présence de sliders custom `.cf-slider__handle[role='slider']`
+    """
+    frame_chain = list(frame_chain or [])
+
+    try:
+        questions = driver.find_elements(By.CSS_SELECTOR, ".cf-question.cf-question--slider-grid")
+    except Exception:
+        return []
+
+    if not questions:
+        return []
+
+    blocks: list[dict] = []
+
+    for q in questions:
+        try:
+            try:
+                handles = q.find_elements(By.CSS_SELECTOR, ".cf-slider__handle[role='slider']")
+            except Exception:
+                handles = []
+            if not handles:
+                continue
+
+            question = ""
+            for sel in (".cf-question__text", ".cf-question__title"):
+                try:
+                    q_el = q.find_element(By.CSS_SELECTOR, sel)
+                    txt = _norm(q_el.text or q_el.get_attribute("innerText") or "")
+                    if txt:
+                        question = txt
+                        break
+                except Exception:
+                    continue
+
+            scale_labels: list[str] = []
+            seen_scale: set[str] = set()
+            for sel in (
+                ".cf-slider-grid-answer--fake-for-panel .cf-slider-grid-answer__scale-label",
+                ".cf-slider-grid-answer__scale-label",
+            ):
+                try:
+                    labels = q.find_elements(By.CSS_SELECTOR, sel)
+                except Exception:
+                    labels = []
+                for label in labels:
+                    txt = _norm(label.text or label.get_attribute("innerText") or "")
+                    key = _norm_key(txt)
+                    if not txt or not key or key in seen_scale:
+                        continue
+                    seen_scale.add(key)
+                    scale_labels.append(txt)
+                if len(scale_labels) >= 2:
+                    break
+
+            if len(scale_labels) < 2:
+                continue
+
+            try:
+                rows = q.find_elements(
+                    By.CSS_SELECTOR,
+                    ".cf-grid-layout__row.cf-slider-grid-answer[id]:not(.cf-slider-grid-answer--fake-for-panel)",
+                )
+            except Exception:
+                rows = []
+
+            for row in rows:
+                try:
+                    row_id = (row.get_attribute("id") or "").strip()
+                    if not row_id:
+                        continue
+
+                    try:
+                        row_handles = row.find_elements(By.CSS_SELECTOR, ".cf-slider__handle[role='slider']")
+                    except Exception:
+                        row_handles = []
+                    if not row_handles:
+                        continue
+
+                    row_text = ""
+                    for sel in (".cf-slider-grid-answer__text", ".cf-grid-layout__row-text"):
+                        try:
+                            row_el = row.find_element(By.CSS_SELECTOR, sel)
+                            txt = _norm(row_el.text or row_el.get_attribute("innerText") or "")
+                            if txt:
+                                row_text = txt
+                                break
+                        except Exception:
+                            continue
+
+                    full_question = _norm(f"{question} {row_text}") if question else row_text
+                    if not full_question:
+                        full_question = question
+                    if not full_question:
+                        continue
+
+                    group_key = f"confirmit_slider_grid:row:{row_id}"
+                    row_lit = _xpath_literal(row_id)
+                    option_xpath_map = {
+                        _norm_key(opt): f"//*[@id={row_lit}]//*[contains(@class,'cf-slider-grid-answer__label')][{idx}]"
+                        for idx, opt in enumerate(scale_labels, start=1)
+                    }
+
+                    target_id = make_target_id("group", group_key, full_question)
+                    register_target(
+                        target_id,
+                        {
+                            "kind": "group",
+                            "itype": "radio",
+                            "group_key": group_key,
+                            "question": full_question,
+                            "option_xpath_map": option_xpath_map,
+                            "frame_chain": frame_chain,
+                            "confirmit_slider_grid": True,
+                        },
+                    )
+
+                    blocks.append(
+                        {
+                            "question": full_question,
+                            "itype": "radio",
+                            "options": list(scale_labels),
+                            "max_select": 1,
+                            "target_id": target_id,
+                            "context": {
+                                "kind": "group",
+                                "group_key": group_key,
+                                "confirmit_slider_grid": True,
+                            },
+                        }
+                    )
+                except Exception:
+                    continue
+        except Exception:
+            continue
+
+    return blocks
+
+
 def _extract_custom_testid_single_select_radio_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
     """Questions radio custom sans <input> natif, pilotées par data-testid.
 
