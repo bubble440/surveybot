@@ -1678,6 +1678,149 @@ def _extract_cmix_radio_question_blocks(driver, frame_chain: list[int] | None) -
     return blocks
 
 
+def _extract_single_consent_checkbox_block(driver, frame_chain: list[int] | None) -> list[dict]:
+    """Extraction ciblée d'un écran consentement checkbox+CTA.
+
+    Scope volontairement minimal:
+    - un seul input checkbox dans un conteneur de consentement explicite
+      (id/class contenant consent/privacy-policy)
+    - présence d'un CTA d'acceptation "accept/start" (id ou texte)
+
+    Objectif: produire un question_block exploitable (1 option) même si
+    l'extraction générique échoue sur certains écrans Wicket dynamiques.
+    """
+
+    frame_chain = list(frame_chain or [])
+
+    try:
+        checkboxes = driver.find_elements(
+            By.CSS_SELECTOR,
+            "#consentContainer25 input[type='checkbox'], "
+            "[id*='consentContainer'] input[type='checkbox'], "
+            ".river-sampling-privacy-policy input[type='checkbox'], "
+            "input[type='checkbox'][id*='consentCheckbox'], "
+            "input[type='checkbox'][name*='consentCheckbox'], "
+            "input[type='checkbox'][name*='consentContainer']",
+        )
+    except Exception:
+        return []
+
+    if len(checkboxes) != 1:
+        return []
+
+    cb = checkboxes[0]
+
+    try:
+        ctas = driver.find_elements(
+            By.CSS_SELECTOR,
+            "a[id*='acceptAndTakeSurveyLink'], button[id*='acceptAndTakeSurveyLink'], "
+            "a.btn-primary, button.btn-primary",
+        )
+    except Exception:
+        ctas = []
+
+    has_accept_cta = False
+    for cta in ctas:
+        try:
+            txt = _norm_lc(cta.text or cta.get_attribute("innerText") or "")
+            cta_id = _norm_lc(cta.get_attribute("id") or "")
+            if (
+                "acceptandtakesurveylink" in cta_id
+                or "accepter et commencer" in txt
+                or "accept and start" in txt
+                or "accept and begin" in txt
+            ):
+                has_accept_cta = True
+                break
+        except Exception:
+            continue
+
+    if not has_accept_cta:
+        return []
+
+    try:
+        cb_id = (cb.get_attribute("id") or "").strip()
+        cb_name = (cb.get_attribute("name") or "").strip()
+    except Exception:
+        cb_id = ""
+        cb_name = ""
+
+    label_txt = ""
+    if cb_id:
+        try:
+            lbl = driver.find_element(By.CSS_SELECTOR, f"label[for='{cb_id}']")
+            label_txt = _norm(lbl.text or lbl.get_attribute("innerText") or "")
+        except Exception:
+            label_txt = ""
+
+    if not label_txt:
+        try:
+            parent_labels = cb.find_elements(By.XPATH, "ancestor::label[1]")
+            if parent_labels:
+                label_txt = _norm(parent_labels[0].text or parent_labels[0].get_attribute("innerText") or "")
+        except Exception:
+            label_txt = ""
+
+    if not label_txt:
+        return []
+
+    question = ""
+    try:
+        container = cb.find_element(By.XPATH, "ancestor::*[@id='consentContainer25' or contains(@id,'consentContainer') or contains(@class,'privacy-policy')][1]")
+        raw = _norm(container.text or container.get_attribute("innerText") or "")
+        if raw:
+            question = "Politique de confidentialité / consentement" if "politique de confidentialité" in _norm_lc(raw) else raw
+    except Exception:
+        question = ""
+
+    if not question:
+        question = "Politique de confidentialité / consentement"
+
+    group_base = cb_name or cb_id
+    if not group_base:
+        return []
+
+    group_key = f"checkbox:name:{_norm_lc(group_base)}"
+    target_id = make_target_id("group", group_key, question)
+
+    if cb_id:
+        id_lit = _xpath_literal(cb_id)
+        option_xpath = f"(//label[@for={id_lit}] | //*[@id={id_lit}])[1]"
+    else:
+        name_lit = _xpath_literal(cb_name)
+        option_xpath = f"(//input[@type='checkbox' and @name={name_lit}]/ancestor::label[1] | //input[@type='checkbox' and @name={name_lit}])[1]"
+
+    option_xpath_map = {_norm_key(label_txt): option_xpath}
+
+    register_target(
+        target_id,
+        {
+            "kind": "group",
+            "itype": "checkbox",
+            "group_key": group_key,
+            "question": question,
+            "option_xpath_map": option_xpath_map,
+            "frame_chain": frame_chain,
+            "single_consent_checkbox": True,
+        },
+    )
+
+    return [
+        {
+            "question": question,
+            "itype": "checkbox",
+            "options": [label_txt],
+            "max_select": _compute_max_select("checkbox", [label_txt]),
+            "target_id": target_id,
+            "context": {
+                "kind": "group",
+                "group_key": group_key,
+                "single_consent_checkbox": True,
+            },
+        }
+    ]
+
+
 def _extract_ipsos_slider_question_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
     """IPSOS sliders (bootstrap-slider): extraction DOM-only en blocs exploitables.
 
