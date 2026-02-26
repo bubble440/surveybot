@@ -70,6 +70,7 @@ try:
         _extract_cmix_simple_grid_question_blocks,
         _extract_cmix_radio_question_blocks,
         _extract_ipsos_slider_question_blocks,
+        _extract_confirmit_slider_grid_blocks,
         _extract_cloudresearch_sentry_blocks,
         _extract_purespectrum_mobile_date_blocks,
         _extract_custom_testid_single_select_radio_blocks,
@@ -120,6 +121,7 @@ except ImportError:
         _extract_cmix_simple_grid_question_blocks,
         _extract_cmix_radio_question_blocks,
         _extract_ipsos_slider_question_blocks,
+        _extract_confirmit_slider_grid_blocks,
         _extract_cloudresearch_sentry_blocks,
         _extract_purespectrum_mobile_date_blocks,
         _extract_custom_testid_single_select_radio_blocks,
@@ -236,6 +238,15 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         ipsos_slider_blocks = _extract_ipsos_slider_question_blocks(driver, frame_chain)
         if ipsos_slider_blocks:
             return ipsos_slider_blocks
+    except Exception:
+        pass
+
+    # --- 0d-4) Forsta/Confirmit slider-grid (cf-question--slider-grid) ---
+    # Objectif: extraire les lignes slider custom (role=slider) en blocs radio DOM-first.
+    try:
+        confirmit_slider_blocks = _extract_confirmit_slider_grid_blocks(driver, frame_chain)
+        if confirmit_slider_blocks:
+            return confirmit_slider_blocks
     except Exception:
         pass
 
