@@ -16,6 +16,8 @@ class _FakeElement:
         self._displayed = displayed
         self._enabled = enabled
         self.clicked = 0
+        self.rect = {"x": 0, "y": 0, "width": 100, "height": 30}
+        self.tag_name = "div"
 
     def is_displayed(self):
         return self._displayed
@@ -203,3 +205,47 @@ def test_press_click_release_uses_native_click_for_forsta_next_button(monkeypatc
     assert click_ok is True
     assert release_sent is False
     assert el.clicked == 1
+
+
+def test_click_with_intercept_returns_false_when_no_progress(monkeypatch):
+    monkeypatch.setattr(cta_handler, "ActionChains", _FakeActionChains)
+    monkeypatch.delenv("CTA_INTERCEPT_ONLY", raising=False)
+
+    el = _FakeElement(text="Suivant", attrs={"class": "next"})
+    el.tag_name = "div"
+
+    marker = {"url": "https://example.test/q1", "txt": "Question 1", "qNodes": 3}
+    monkeypatch.setattr(cta_handler, "_dom_progress_marker", lambda _d: dict(marker))
+
+    ok = cta_handler._click_with_intercept(_FakeDriver(), el)
+
+    assert ok is False
+    assert el.clicked == 2
+
+
+def test_try_click_navigation_cta_prioritizes_forsta_real_next_button(monkeypatch):
+    monkeypatch.setattr(cta_handler, "ActionChains", _FakeActionChains)
+    monkeypatch.delenv("CTA_INTERCEPT_ONLY", raising=False)
+
+    wrapper = _FakeElement(
+        text="Question … Suivant",
+        attrs={"tabindex": "0", "class": "focus-wrapper"},
+    )
+    wrapper.tag_name = "div"
+
+    forsta_next = _FakeElement(
+        text=">>",
+        attrs={"class": "cf-navigation__button cf-navigation-next", "aria-label": ""},
+    )
+    forsta_next.tag_name = "button"
+
+    driver = _FakeDriver(
+        xpath_elements=[wrapper],
+        css_elements={"button.cf-navigation__button.cf-navigation-next": [forsta_next]},
+    )
+
+    ok = cta_handler.try_click_navigation_cta(driver)
+
+    assert ok is True
+    assert forsta_next.clicked == 1
+    assert wrapper.clicked == 0
