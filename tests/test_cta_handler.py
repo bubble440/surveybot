@@ -207,6 +207,22 @@ def test_press_click_release_uses_native_click_for_forsta_next_button(monkeypatc
     assert el.clicked == 1
 
 
+def test_press_click_release_uses_native_click_for_forsta_ok_button(monkeypatch):
+    monkeypatch.setattr(cta_handler, "ActionChains", _FailingActionChains)
+
+    el = _FakeElement(
+        text="OK",
+        attrs={"class": "cf-navigation__button cf-navigation-ok"},
+    )
+    el.tag_name = "button"
+
+    click_ok, release_sent = cta_handler._press_click_release(_FakeDriver(), el)
+
+    assert click_ok is True
+    assert release_sent is False
+    assert el.clicked == 1
+
+
 def test_click_with_intercept_returns_false_when_no_progress(monkeypatch):
     monkeypatch.setattr(cta_handler, "ActionChains", _FakeActionChains)
     monkeypatch.delenv("CTA_INTERCEPT_ONLY", raising=False)
@@ -241,11 +257,41 @@ def test_try_click_navigation_cta_prioritizes_forsta_real_next_button(monkeypatc
 
     driver = _FakeDriver(
         xpath_elements=[wrapper],
-        css_elements={"button.cf-navigation__button.cf-navigation-next": [forsta_next]},
+        css_elements={"button.cf-navigation__button.cf-navigation-next, button.cf-navigation__button.cf-navigation-ok": [forsta_next]},
     )
 
     ok = cta_handler.try_click_navigation_cta(driver)
 
     assert ok is True
     assert forsta_next.clicked == 1
+    assert wrapper.clicked == 0
+
+
+def test_try_click_navigation_cta_prioritizes_forsta_ok_button(monkeypatch):
+    monkeypatch.setattr(cta_handler, "ActionChains", _FakeActionChains)
+    monkeypatch.delenv("CTA_INTERCEPT_ONLY", raising=False)
+
+    wrapper = _FakeElement(
+        text="Question ... Suivant",
+        attrs={"tabindex": "0", "class": "focus-wrapper"},
+    )
+    wrapper.tag_name = "div"
+
+    forsta_ok = _FakeElement(
+        text="OK",
+        attrs={"class": "cf-navigation__button cf-navigation-ok", "aria-label": ""},
+    )
+    forsta_ok.tag_name = "button"
+
+    driver = _FakeDriver(
+        xpath_elements=[wrapper],
+        css_elements={
+            "button.cf-navigation__button.cf-navigation-next, button.cf-navigation__button.cf-navigation-ok": [forsta_ok]
+        },
+    )
+
+    ok = cta_handler.try_click_navigation_cta(driver)
+
+    assert ok is True
+    assert forsta_ok.clicked == 1
     assert wrapper.clicked == 0
