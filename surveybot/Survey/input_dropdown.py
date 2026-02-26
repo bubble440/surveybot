@@ -652,6 +652,47 @@ def select_option_with_hint(
     forced_hint = _forced_hint_from_value(target)
     effective_hint = forced_hint or field_hint or option_text
 
+    def _select_bootstrap_option(anchor_el, wanted_text: str) -> bool:
+        """Sélection stricte d'une option bootstrap-select via l'ancre <a> de menu ouvert."""
+        try:
+            aid = (anchor_el.get_attribute("id") or "").strip()
+        except Exception:
+            aid = ""
+        if not aid:
+            return False
+
+        try:
+            menu_anchors = driver.find_elements(
+                By.XPATH,
+                (
+                    "//button[@data-id=" + repr(aid) + "]"
+                    "/following-sibling::div[contains(@class,'dropdown-menu') and contains(@class,'open')]"
+                    "//ul[contains(@class,'dropdown-menu') and contains(@class,'inner')]"
+                    "//li[not(contains(@class,'disabled'))]/a"
+                ),
+            )
+        except Exception:
+            menu_anchors = []
+
+        for a in menu_anchors:
+            try:
+                txt = norm_txt(a.get_attribute("innerText") or a.text)
+                if not txt:
+                    continue
+                if wanted_text == txt or wanted_text in txt:
+                    driver.execute_script("arguments[0].scrollIntoView({block:'nearest'});", a)
+                    a.click()
+                    print(f"✓ Option sélectionnée (bootstrap-select) : {option_text}. source: input_dropdown.py")
+                    try:
+                        driver._ui_overlay_opened = None
+                    except Exception:
+                        pass
+                    return True
+            except Exception:
+                continue
+
+        return False
+
     # --- NATIF <select>: sélection directe (sans ouvrir)
     selects = driver.find_elements(By.TAG_NAME, "select")
     if selects:
@@ -688,6 +729,18 @@ def select_option_with_hint(
     # --- CUSTOM: ouvrir puis sélectionner (avec retries)
     for attempt in range(2):
         opened = open_dropdown_generic(driver, hint=effective_hint, context_hint=context_hint)
+
+        if opened:
+            try:
+                ov = getattr(driver, "_ui_overlay_opened", None) or {}
+                anchor = ov.get("anchor")
+                if anchor is not None:
+                    anchor_cls = norm_txt(anchor.get_attribute("class") or "")
+                    if anchor.tag_name.lower() == "select" and ("bs-select-hidden" in anchor_cls or "bootstrap-select" in anchor_cls):
+                        if _select_bootstrap_option(anchor, target):
+                            return True
+            except Exception:
+                pass
         
         # Si aucune option à appliquer et champ déjà rempli, skip
         if not option_text:
