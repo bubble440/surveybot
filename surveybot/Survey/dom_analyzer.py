@@ -73,6 +73,7 @@ try:
         _extract_cloudresearch_sentry_blocks,
         _extract_purespectrum_mobile_date_blocks,
         _extract_custom_testid_single_select_radio_blocks,
+        _extract_custom_testid_multi_select_checkbox_blocks,
     )
     
     # Registre et utilitaires
@@ -121,6 +122,7 @@ except ImportError:
         _extract_cloudresearch_sentry_blocks,
         _extract_purespectrum_mobile_date_blocks,
         _extract_custom_testid_single_select_radio_blocks,
+        _extract_custom_testid_multi_select_checkbox_blocks,
     )
 
 
@@ -278,6 +280,15 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         custom_testid_blocks = _extract_custom_testid_single_select_radio_blocks(driver, frame_chain)
         if custom_testid_blocks:
             return custom_testid_blocks
+    except Exception:
+        pass
+
+    # --- 0h-ter) Angular custom data-testid checkboxes (sans input natif) ---
+    # Objectif: extraire les blocs checkbox pilotés par wrappers + labels data-testid.
+    try:
+        custom_testid_checkbox_blocks = _extract_custom_testid_multi_select_checkbox_blocks(driver, frame_chain)
+        if custom_testid_checkbox_blocks:
+            return custom_testid_checkbox_blocks
     except Exception:
         pass
 
