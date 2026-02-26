@@ -580,7 +580,7 @@ def _click_with_intercept(driver, el) -> bool:
             f"[CTA_CLICK] strategy={used} attempt=2 "
             f"release_sent={str(second_release).lower()} progressed={str(progressed).lower()}"
         )
-        return bool(first_ok or second_ok)
+        return bool(progressed)
 
     # En mode interception : on arme, on marque la cible avec un token, on dispatch,
     # puis on désarme TOUJOURS pour ne jamais bloquer les autres inputs.
@@ -1176,6 +1176,44 @@ def try_click_navigation_cta(driver) -> bool:
     except Exception:
         pass
 
+    # --- Forsta/Confirmit: prioriser STRICTEMENT le vrai bouton Next ---
+    # DOM observé: button.cf-navigation__button.cf-navigation-next
+    # Objectif: éviter les wrappers tabindex/focusables qui captent "Suivant"
+    # dans leur texte agrégé mais ne déclenchent pas la navigation réelle.
+    try:
+        forsta_next = driver.find_elements(
+            By.CSS_SELECTOR,
+            "button.cf-navigation__button.cf-navigation-next",
+        )
+        for btn in forsta_next:
+            try:
+                if not btn.is_displayed() or not btn.is_enabled():
+                    continue
+                if (btn.get_attribute("aria-disabled") or "").lower() == "true":
+                    continue
+                _nav_log(
+                    "[CTA_NAV]",
+                    (
+                        "CTA_FOUND provider_hint=forsta "
+                        f"tag={btn.tag_name} "
+                        f"class={(btn.get_attribute('class') or '').strip()} "
+                        f"aria={(btn.get_attribute('aria-label') or '').strip() or '<none>'} "
+                        f"rect={btn.rect}"
+                    ),
+                    driver,
+                )
+                driver.execute_script("arguments[0].scrollIntoView({block:'center'});", btn)
+                clicked = _click_with_intercept(driver, btn)
+                _nav_log("[CTA_NAV]", f"CTA_CLICKED provider_hint=forsta PROGRESSED={str(bool(clicked)).lower()}", driver)
+                if _cta_intercept_enabled() and clicked:
+                    _nav_log("[CTA_NAV]", "INTERCEPTED_OK provider_hint=forsta", driver)
+                if clicked:
+                    return True
+            except Exception:
+                continue
+    except Exception:
+        pass
+
     # --- AreYouNet / runet : CTA image sans texte ---
     try:
         btns = driver.find_elements(By.CSS_SELECTOR, "#btn_next")
@@ -1366,9 +1404,22 @@ def try_click_navigation_cta(driver) -> bool:
     tried = 0
     for score, el in candidates[:6]:
         try:
+            _nav_log(
+                "[CTA_NAV]",
+                (
+                    f"CTA_FOUND candidate score={score} "
+                    f"tag={(el.tag_name or '').lower()} "
+                    f"class={(el.get_attribute('class') or '').strip()} "
+                    f"aria={(el.get_attribute('aria-label') or '').strip() or '<none>'} "
+                    f"rect={el.rect}"
+                ),
+                driver,
+            )
             driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
             tried += 1
-            if _click_with_intercept(driver, el):
+            clicked = _click_with_intercept(driver, el)
+            _nav_log("[CTA_NAV]", f"CTA_CLICKED candidate score={score} PROGRESSED={str(bool(clicked)).lower()}", driver)
+            if clicked:
                 if _cta_intercept_enabled():
                     _nav_log("[CTA_NAV]", f"INTERCEPTED candidate score={score}", driver)
                 else:
