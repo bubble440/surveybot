@@ -74,6 +74,7 @@ try:
         _extract_purespectrum_mobile_date_blocks,
         _extract_custom_testid_single_select_radio_blocks,
         _extract_custom_testid_multi_select_checkbox_blocks,
+        _extract_single_consent_checkbox_block,
     )
     
     # Registre et utilitaires
@@ -123,6 +124,7 @@ except ImportError:
         _extract_purespectrum_mobile_date_blocks,
         _extract_custom_testid_single_select_radio_blocks,
         _extract_custom_testid_multi_select_checkbox_blocks,
+        _extract_single_consent_checkbox_block,
     )
 
 
@@ -289,6 +291,15 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         custom_testid_checkbox_blocks = _extract_custom_testid_multi_select_checkbox_blocks(driver, frame_chain)
         if custom_testid_checkbox_blocks:
             return custom_testid_checkbox_blocks
+    except Exception:
+        pass
+
+    # --- 0h-quater) Consent checkbox unique + CTA accept/start ---
+    # Objectif: couvrir les écrans de consentement qui ne ressortent pas via le générique.
+    try:
+        consent_checkbox_blocks = _extract_single_consent_checkbox_block(driver, frame_chain)
+        if consent_checkbox_blocks:
+            return consent_checkbox_blocks
     except Exception:
         pass
 
