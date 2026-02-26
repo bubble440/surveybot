@@ -122,6 +122,23 @@ def _find_associated_label(driver, el) -> str:
         return True
 
     try:
+        # 0) Widgets ARIA custom: label via aria-labelledby (Forsta/Confirmit, etc.)
+        aria_labelledby = (el.get_attribute("aria-labelledby") or "").strip()
+        if aria_labelledby:
+            try:
+                parts = [p for p in aria_labelledby.split() if p]
+                texts = []
+                for ref_id in parts:
+                    node = driver.find_element(By.ID, ref_id)
+                    txt = _norm(node.text or node.get_attribute("innerText") or "")
+                    if txt and txt not in texts:
+                        texts.append(txt)
+                joined = _norm(" ".join(texts))
+                if _is_valid_option_label(joined):
+                    return joined
+            except Exception:
+                pass
+
         # 1) Label avec for=id
         el_id = el.get_attribute("id")
         if el_id:

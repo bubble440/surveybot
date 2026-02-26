@@ -950,6 +950,46 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             if not question:
                 continue
 
+            # Champs "other/specify" attachés à une option radio/checkbox custom:
+            # ne pas les remonter comme question autonome.
+            if itype in ("text", "textarea"):
+                try:
+                    el_id_lc = _norm_lc(el.get_attribute("id") or "")
+                    el_name_lc = _norm_lc(el.get_attribute("name") or "")
+                    cls_lc = _norm_lc(el.get_attribute("class") or "")
+                    looks_like_other = (
+                        el_id_lc.endswith("_other")
+                        or el_name_lc.endswith("_other")
+                        or "__other" in el_id_lc
+                        or "__other" in el_name_lc
+                        or "answer__other" in cls_lc
+                    )
+                    if looks_like_other:
+                        linked_to_choice = bool(driver.execute_script(
+                            """
+                            const el = arguments[0];
+                            if (!el) return false;
+
+                            const wrappers = [
+                              '.cf-radio-answer', '.cf-checkbox-answer',
+                              '[role="radio"]', '[role="checkbox"]'
+                            ];
+
+                            for (const sel of wrappers) {
+                              if (el.closest(sel)) return true;
+                            }
+
+                            const parent = el.parentElement;
+                            if (!parent) return false;
+                            return !!parent.querySelector('[role="radio"], [role="checkbox"], .cf-radio, .cf-checkbox');
+                            """,
+                            el,
+                        ))
+                        if linked_to_choice:
+                            continue
+                except Exception:
+                    pass
+
             # Pattern spécifique
             if itype in ("text", "textarea"):                
                 try:
