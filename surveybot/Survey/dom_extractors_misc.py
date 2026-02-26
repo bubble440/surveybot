@@ -1926,6 +1926,145 @@ def _extract_custom_testid_single_select_radio_blocks(driver, frame_chain: list[
     return blocks
 
 
+def _extract_custom_testid_multi_select_checkbox_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
+    """Questions checkbox custom sans <input> natif, pilotées par data-testid.
+
+    Cas visé (Angular custom):
+    - question: label[data-testid='common-question-label-text']
+    - options: div[data-testid='answer-checkbox-div-container']
+    - libellé option: label[data-testid='answer-checkbox-label-checkboxtext']
+
+    Gate strict: n'active l'extracteur que si ces data-testid sont présents.
+    """
+    frame_chain = list(frame_chain or [])
+
+    try:
+        containers = driver.find_elements(By.CSS_SELECTOR, "div[data-testid='common-question-div-container']")
+    except Exception:
+        return []
+
+    if not containers:
+        return []
+
+    blocks: list[dict] = []
+
+    for idx, container in enumerate(containers, start=1):
+        try:
+            question = ""
+            for qsel in (
+                "label[data-testid='common-question-label-text']",
+                "[data-testid='common-question-div-text'] label",
+            ):
+                try:
+                    q_els = container.find_elements(By.CSS_SELECTOR, qsel)
+                except Exception:
+                    q_els = []
+                for q_el in q_els:
+                    txt = _norm(q_el.text or q_el.get_attribute("innerText") or "")
+                    if txt and len(txt) >= 5:
+                        question = txt
+                        break
+                if question:
+                    break
+
+            if not question:
+                continue
+
+            try:
+                option_nodes = container.find_elements(By.CSS_SELECTOR, "div[data-testid='answer-checkbox-div-container']")
+            except Exception:
+                option_nodes = []
+            if len(option_nodes) < 2:
+                continue
+
+            options: list[str] = []
+            option_xpath_map: dict[str, str] = {}
+
+            for opt in option_nodes:
+                try:
+                    label_text = ""
+                    for lsel in (
+                        "label[data-testid='answer-checkbox-label-checkboxtext']",
+                        "label",
+                    ):
+                        try:
+                            labels = opt.find_elements(By.CSS_SELECTOR, lsel)
+                        except Exception:
+                            labels = []
+                        for lab in labels:
+                            cand = _norm(lab.text or lab.get_attribute("innerText") or "")
+                            if cand:
+                                label_text = cand
+                                break
+                        if label_text:
+                            break
+
+                    if not label_text:
+                        continue
+
+                    nk = _norm_key(label_text)
+                    if not nk or nk in option_xpath_map:
+                        continue
+
+                    xp = _best_xpath_for_element(driver, opt)
+                    if not xp:
+                        continue
+
+                    option_xpath_map[nk] = xp
+                    options.append(label_text)
+                except Exception:
+                    continue
+
+            if len(options) < 2 or len(option_xpath_map) < 2:
+                continue
+
+            container_id = ""
+            try:
+                q_containers = container.find_elements(By.CSS_SELECTOR, ".multi-select-container[id]")
+                if q_containers:
+                    container_id = (q_containers[0].get_attribute("id") or "").strip()
+            except Exception:
+                container_id = ""
+
+            if not container_id:
+                container_id = f"idx{idx}_{zlib.crc32(question.encode('utf-8')):x}"
+
+            group_key = f"custom_testid_multi_select:checkbox:{container_id}"
+            target_id = make_target_id("group", group_key, question)
+
+            register_target(
+                target_id,
+                {
+                    "kind": "group",
+                    "itype": "checkbox",
+                    "group_key": group_key,
+                    "question": question,
+                    "option_xpath_map": option_xpath_map,
+                    "frame_chain": frame_chain,
+                    "custom_testid_multi_select": True,
+                },
+            )
+
+            blocks.append(
+                {
+                    "question": question,
+                    "itype": "checkbox",
+                    "options": options,
+                    "max_select": _compute_max_select("checkbox", options),
+                    "target_id": target_id,
+                    "context": {
+                        "kind": "group",
+                        "group_key": group_key,
+                        "custom_testid_multi_select": True,
+                    },
+                }
+            )
+        except Exception:
+            continue
+
+    return blocks
+
+
 
 # ================================================================================
 # CLOUDRESEARCH SENTRY - VUE.JS BLOCKS
