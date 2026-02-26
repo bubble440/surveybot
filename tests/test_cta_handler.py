@@ -32,6 +32,9 @@ class _FakeElement:
     def find_elements(self, by, value):
         return []
 
+    def find_element(self, by, value):
+        raise Exception("not found")
+
 
 
 
@@ -158,3 +161,24 @@ def test_try_click_navigation_cta_skips_internal_task_carousel_arrows(monkeypatc
     assert ok is True
     assert carousel_arrow.clicked == 0
     assert page_cta.clicked == 1
+
+
+def test_try_click_navigation_cta_detects_oc_overlay_continue(monkeypatch):
+    monkeypatch.setattr(cta_handler, "ActionChains", _FakeActionChains)
+    monkeypatch.delenv("CTA_INTERCEPT_ONLY", raising=False)
+
+    oc_overlay = _FakeElement(
+        text="",
+        attrs={"id": "oc_in4", "class": "ocin", "onmousedown": "oc._.C[4].O.ToggSel();"},
+    )
+    oc_label = _FakeElement(text="CONTINUER")
+
+    driver = _FakeDriver(
+        xpath_elements=[oc_overlay],
+        css_elements={"#oc_t4": [oc_label]},
+    )
+
+    ok = cta_handler.try_click_navigation_cta(driver)
+
+    assert ok is True
+    assert oc_overlay.clicked == 1
