@@ -1144,6 +1144,9 @@ def execute_survey_page(driver, api_key):
             ".cm-navigation-next-button",        # CMIX alt
             ".cf-question--info button.cf-navigation-next",  # Confirmit intro CTA inline
             ".cf-page__question-list button.cf-navigation-next",  # Confirmit fallback scope
+            ".cf-question--info button.cf-navigation-ok",  # Confirmit/Forsta info gate "OK"
+            ".cf-page__question-list button.cf-navigation-ok",  # Confirmit/Forsta fallback scope
+            "button.cf-navigation__button.cf-navigation-ok",  # Confirmit/Forsta nav button explicit
             "#btn_continue",                     # Decipher
             "input.continue",                    # Decipher alt
             "[data-role='next']",                # Generic data-role
