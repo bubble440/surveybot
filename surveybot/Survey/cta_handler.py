@@ -497,7 +497,8 @@ def _press_click_release(driver, el):
     release_sent = False
 
     # Forsta/Confirmit (DOM observé):
-    # button.cf-navigation__button.cf-navigation-next avec texte symbolique (>>).
+    # - button.cf-navigation__button.cf-navigation-next (texte symbolique >>)
+    # - button.cf-navigation__button.cf-navigation-ok (texte "OK" sur page info)
     # Le cycle press/release Selenium peut ne pas déclencher le handler attendu,
     # alors qu'un click natif WebElement fonctionne.
     try:
@@ -508,13 +509,13 @@ def _press_click_release(driver, el):
         cls = (el.get_attribute("class") or "").lower()
     except Exception:
         cls = ""
-    is_forsta_next = (
+    is_forsta_navigation_button = (
         tag == "button"
-        and "cf-navigation-next" in cls
         and "cf-navigation__button" in cls
+        and ("cf-navigation-next" in cls or "cf-navigation-ok" in cls)
     )
 
-    if is_forsta_next:
+    if is_forsta_navigation_button:
         try:
             el.click()
             return True, False
@@ -1176,14 +1177,16 @@ def try_click_navigation_cta(driver) -> bool:
     except Exception:
         pass
 
-    # --- Forsta/Confirmit: prioriser STRICTEMENT le vrai bouton Next ---
-    # DOM observé: button.cf-navigation__button.cf-navigation-next
+    # --- Forsta/Confirmit: prioriser STRICTEMENT le vrai bouton de navigation ---
+    # DOM observé:
+    # - button.cf-navigation__button.cf-navigation-next
+    # - button.cf-navigation__button.cf-navigation-ok
     # Objectif: éviter les wrappers tabindex/focusables qui captent "Suivant"
     # dans leur texte agrégé mais ne déclenchent pas la navigation réelle.
     try:
         forsta_next = driver.find_elements(
             By.CSS_SELECTOR,
-            "button.cf-navigation__button.cf-navigation-next",
+            "button.cf-navigation__button.cf-navigation-next, button.cf-navigation__button.cf-navigation-ok",
         )
         for btn in forsta_next:
             try:
