@@ -88,3 +88,52 @@ def test_analyze_dom_extracts_custom_testid_single_select(monkeypatch):
     assert blocks[0]["options"] == ["J’accepte", "Je n’accepte pas"]
     assert (blocks[0].get("context") or {}).get("custom_testid_single_select") is True
     assert (blocks[0].get("context") or {}).get("group_key") == "custom_testid_single_select:radio:20526249"
+
+
+
+def test_analyze_dom_extracts_custom_testid_multi_select(monkeypatch):
+    _patch_non_generic_extractors(monkeypatch)
+
+    monkeypatch.setattr(da, "_best_xpath_for_element", lambda _driver, el: el.xpath)
+
+    option_a = _FakeElement(
+        by_selector={
+            "label[data-testid='answer-checkbox-label-checkboxtext']": [_FakeElement(text="Option A")],
+            "label": [_FakeElement(text="Option A")],
+        },
+        xpath="//div[@data-testid='answer-checkbox-div-container'][1]",
+    )
+    option_b = _FakeElement(
+        by_selector={
+            "label[data-testid='answer-checkbox-label-checkboxtext']": [_FakeElement(text="Option B")],
+            "label": [_FakeElement(text="Option B")],
+        },
+        xpath="//div[@data-testid='answer-checkbox-div-container'][2]",
+    )
+
+    container = _FakeElement(
+        by_selector={
+            "label[data-testid='common-question-label-text']": [
+                _FakeElement(text="Vous pouvez donner autant de réponses que vous le souhaitez.")
+            ],
+            "div[data-testid='answer-checkbox-div-container']": [option_a, option_b],
+            ".multi-select-container[id]": [_FakeElement(attrs={"id": "20526268"})],
+        }
+    )
+
+    driver = _FakeDriver(
+        by_selector={
+            "div[data-testid='common-question-div-container']": [container],
+            "input[type='radio'], input[type='checkbox'], [role='radio']:not(svg), [role='checkbox']:not(svg)": [],
+            "button, a[role='button'], [role='button'], .sq-cardrating-button": [],
+        }
+    )
+
+    blocks = da._analyze_dom_current_context(driver)
+
+    assert len(blocks) == 1
+    assert blocks[0]["itype"] == "checkbox"
+    assert blocks[0]["options"] == ["Option A", "Option B"]
+    assert blocks[0]["max_select"] == 2
+    assert (blocks[0].get("context") or {}).get("custom_testid_multi_select") is True
+    assert (blocks[0].get("context") or {}).get("group_key") == "custom_testid_multi_select:checkbox:20526268"
