@@ -81,6 +81,11 @@ class _FakeDriver:
         return None
 
 
+class _FailingActionChains(_FakeActionChains):
+    def perform(self):
+        raise Exception("action chain failed")
+
+
 def test_try_click_navigation_cta_detects_tabindex_suivant(monkeypatch):
     monkeypatch.setattr(cta_handler, "ActionChains", _FakeActionChains)
     monkeypatch.delenv("CTA_INTERCEPT_ONLY", raising=False)
@@ -182,3 +187,19 @@ def test_try_click_navigation_cta_detects_oc_overlay_continue(monkeypatch):
 
     assert ok is True
     assert oc_overlay.clicked == 1
+
+
+def test_press_click_release_uses_native_click_for_forsta_next_button(monkeypatch):
+    monkeypatch.setattr(cta_handler, "ActionChains", _FailingActionChains)
+
+    el = _FakeElement(
+        text=">>",
+        attrs={"class": "cf-navigation__button cf-navigation-next"},
+    )
+    el.tag_name = "button"
+
+    click_ok, release_sent = cta_handler._press_click_release(_FakeDriver(), el)
+
+    assert click_ok is True
+    assert release_sent is False
+    assert el.clicked == 1
