@@ -42,6 +42,48 @@ def _escape(s: str) -> str:
     return _norm(s).replace("////", "/").replace("\n", " ")
 
 
+def _norm_folded_lc(s: str | None) -> str:
+    """Lowercase + suppression des accents pour matching robuste FR/EN."""
+    base = unicodedata.normalize("NFKD", s or "")
+    no_marks = "".join(ch for ch in base if not unicodedata.combining(ch))
+    return re.sub(r"\s+", " ", no_marks).strip().lower()
+
+
+_EXPLICIT_MULTI_PATTERNS = [
+    # FR
+    r"\bplusieurs\s+(reponses?|choix|options?)\b",
+    r"\bcochez\s+tout(?:es)?\s+ce\s+qui\s+s['’]?applique\b",
+    r"\bselectionnez\s+tout(?:es)?\s+ce\s+qui\s+s['’]?applique\b",
+    r"\bvous\s+pouvez\s+(?:selectionner|choisir|cocher|donner)\s+plusieurs\s+(?:reponses?|choix|options?)\b",
+    r"\b(?:vous\s+pouvez\s+)?donner\s+autant\s+de\s+reponses?\s+que\s+vous\s+le\s+souhaitez\b",
+    r"\b(?:jusqu['’]?a|maximum)\s*\d+\s*(?:reponses?|choix|options?)\b",
+    # EN
+    r"\b(?:select|choose|check)\s+all\s+that\s+apply\b",
+    r"\bmultiple\s+(?:answers?|choices?|options?)\s+(?:allowed|possible)\b",
+    r"\bmore\s+than\s+one\s+(?:answer|choice|option)\b",
+    r"\byou\s+may\s+select\s+up\s+to\s+\d+\s*(?:answers?|choices?|options?)\b",
+]
+
+
+def _has_explicit_multi_indicator(question_text: str | None) -> bool:
+    text = _norm_folded_lc(question_text)
+    if not text:
+        return False
+    return any(re.search(p, text) for p in _EXPLICIT_MULTI_PATTERNS)
+
+
+def _selection_rule_for_block(block: Dict[str, Any]) -> str:
+    """
+    Règle cible pour le nombre de réponses:
+    - checkbox/radio/button + indicateur multi explicite dans le libellé => 1..3
+    - sinon => exactement 1
+    """
+    itype = _norm_folded_lc(block.get("itype"))
+    if itype in {"checkbox", "radio", "button"} and _has_explicit_multi_indicator(block.get("question")):
+        return "multi_1_to_3"
+    return "exactly_1"
+
+
 # =========================
 # Heuristiques métier
 # =========================
@@ -156,7 +198,7 @@ def build_batch_prompt(question_blocks: list[dict]) -> str:
     lines.append(
         "Tu dois répondre à CHAQUE question.\n"
         "Tu ne dois JAMAIS lister toutes les options.\n"
-        "Tu dois proposer uniquement la/les réponse(s) nécessaires selon max_select."
+        "Tu dois proposer uniquement la/les réponse(s) nécessaires selon la règle de sélection."
     )
 
     # Ã¢Å“â€¦ FORMAT RENFORCé: exigence explicite de "|" comme séparateur
@@ -164,11 +206,18 @@ def build_batch_prompt(question_blocks: list[dict]) -> str:
         "FORMAT STRICT (une ligne par question) :\n"
         "QID //// target_id //// valeur //// itype //// contexte\n\n"
         "RèGLES CRITIQUES:\n"
-        "- Si max_select=1 => EXACTEMENT 1 ligne pour ce QID.\n"
-        "- Si max_select>1 => UNE SEULE LIGNE avec les valeurs séparées par \"|\".\n"
+        "- Si la question autorise plusieurs choix (indicateur explicite dans le libellé), réponds sur UNE SEULE LIGNE avec 1 à 3 valeurs séparées par \"|\".\n"
+        "- Sans indicateur multi explicite, réponds avec EXACTEMENT 1 valeur.\n"
         "  Exemple: Q1 //// group_abc //// Option A | Option B | Option C //// checkbox //// ...\n"
         "- NE JAMAIS utiliser la virgule \",\" comme séparateur (les options peuvent en contenir).\n"
         "- AUCUNE explication. Aucun texte hors format."
+    )
+
+    lines.append(
+        "RèGLE NOMBRE DE RéPONSES (checkbox/radio/button uniquement) :\n"
+        "- Si le libellé contient un indicateur explicite de multi-sélection (ex: 'plusieurs réponses', 'cochez tout ce qui s'applique', 'select all that apply'), choisis entre 1 et 3 options maximum (idéalement 2-3, jamais >3).\n"
+        "- Sinon, choisis exactement 1 option.\n"
+        "- Ne déduis PAS le multi-choix depuis le provider/source: base-toi uniquement sur le texte de la question."
     )
 
     lines.append(
@@ -218,6 +267,11 @@ def build_batch_prompt(question_blocks: list[dict]) -> str:
         lines.append(f"contexte: {q}")
         lines.append(f"itype: {itype}")
         lines.append(f"max_select: {max_sel}")
+        selection_rule = _selection_rule_for_block(block)
+        if selection_rule == "multi_1_to_3":
+            lines.append("selection_rule: MULTI explicite -> choisir 1 à 3 options (idéalement 2-3, jamais >3)")
+        else:
+            lines.append("selection_rule: choisir EXACTEMENT 1 option")
 
         if opts:
             lines.append("options: " + " | ".join(opts))
@@ -228,7 +282,7 @@ def build_batch_prompt(question_blocks: list[dict]) -> str:
     lines.append(
         "\nRéponds maintenant.\n"
         "Respecte STRICTEMENT le format.\n"
-        "RAPPEL: Pour max_select>1, sépare les valeurs par \"|\" (jamais par virgule).\n"
+        "RAPPEL: Quand plusieurs valeurs sont requises, sépare-les par \"|\" (jamais par virgule).\n"
         "Ne renvoie rien d'autre."
     )
         
