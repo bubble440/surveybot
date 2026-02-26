@@ -495,6 +495,32 @@ def _did_progress(before_marker, after_marker) -> bool:
 def _press_click_release(driver, el):
     """Séquence CTA déterministe: down -> pause -> up, puis release JS safety net."""
     release_sent = False
+
+    # Forsta/Confirmit (DOM observé):
+    # button.cf-navigation__button.cf-navigation-next avec texte symbolique (>>).
+    # Le cycle press/release Selenium peut ne pas déclencher le handler attendu,
+    # alors qu'un click natif WebElement fonctionne.
+    try:
+        tag = (el.tag_name or "").lower()
+    except Exception:
+        tag = ""
+    try:
+        cls = (el.get_attribute("class") or "").lower()
+    except Exception:
+        cls = ""
+    is_forsta_next = (
+        tag == "button"
+        and "cf-navigation-next" in cls
+        and "cf-navigation__button" in cls
+    )
+
+    if is_forsta_next:
+        try:
+            el.click()
+            return True, False
+        except Exception:
+            pass
+
     try:
         ActionChains(driver).move_to_element(el).click_and_hold(el).pause(0.06).release(el).perform()
         click_ok = True
