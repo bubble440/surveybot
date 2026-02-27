@@ -1093,9 +1093,56 @@ def is_captcha_screen(driver) -> bool:
     return False
 
 def is_drag_drop(driver) -> bool:
-    return bool(
-        driver.find_elements(By.CSS_SELECTOR, "[draggable='true'], .cdk-drag")
-    )
+    def _read_text(el) -> str:
+        for getter in (
+            lambda: el.text,
+            lambda: el.get_attribute("innerText"),
+            lambda: el.get_attribute("textContent"),
+        ):
+            try:
+                txt = getter() or ""
+                txt = re.sub(r"\s+", " ", txt).strip().lower()
+                if txt:
+                    return txt
+            except Exception:
+                continue
+        return ""
+
+    def _visible_count(elements) -> int:
+        count = 0
+        for el in elements:
+            try:
+                if el.is_displayed():
+                    count += 1
+            except Exception:
+                count += 1
+        return count
+
+    try:
+        titles = driver.find_elements(
+            By.CSS_SELECTOR,
+            "p.question-title[psquestiontitle], p.question-title, [psquestiontitle]",
+        )
+        has_instruction = False
+        for t in titles:
+            txt = _read_text(t)
+            if not txt:
+                continue
+            if not re.search(r"\b\d+\b", txt):
+                continue
+            if any(v in txt for v in ("déposer", "deposer", "glisser", "drag", "drop")):
+                has_instruction = True
+                break
+
+        draggables = driver.find_elements(By.CSS_SELECTOR, "[cdkdrag], .cdk-drag, [draggable='true']")
+        drop_zones = driver.find_elements(
+            By.CSS_SELECTOR,
+            "#dropZoneList, [cdkdroplist].drop-zone, [cdkdroplist][aria-label*='Drop zone'], [cdkdroplist]",
+        )
+
+        return has_instruction and _visible_count(draggables) >= 2 and _visible_count(drop_zones) >= 1
+    except Exception:
+        return False
 
 def is_matrix(driver) -> bool:
     radios = driver.find_elements(By.CSS_SELECTOR, "input[type='radio'], [role='radio']")
