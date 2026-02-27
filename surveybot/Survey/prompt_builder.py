@@ -334,7 +334,7 @@ def filter_blocks_for_openai(question_blocks: list) -> list:
         it_lc = _norm_lc(it)
 
         # Normalisation: certains extracteurs renvoient "select"
-        # On le traite comme "dropdown" (sinon DOM1 -> vidé -> fallback vision)
+        # On le traite comme "dropdown" (sinon DOM1 -> vidé -> abandon DOM-only)
         if it_lc == "select":
             it_lc = "dropdown"
             if isinstance(qb, dict):
