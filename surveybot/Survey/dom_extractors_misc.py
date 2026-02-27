@@ -14,7 +14,7 @@ Ces extracteurs utilisent des patterns DOM spécifiques à chaque plateforme.
 
 from __future__ import annotations
 from typing import List, Dict, Any
-import os, time, zlib
+import os, re, time, zlib
 from selenium.webdriver.common.by import By
 
 # Import des utilitaires
@@ -1970,6 +1970,7 @@ def _extract_confirmit_slider_grid_blocks(driver, frame_chain: list[int] | None)
                     continue
 
             scale_labels: list[str] = []
+            scale_code_to_index: dict[str, int] = {}
             seen_scale: set[str] = set()
             for sel in (
                 ".cf-slider-grid-answer--fake-for-panel .cf-slider-grid-answer__scale-label",
@@ -1986,6 +1987,14 @@ def _extract_confirmit_slider_grid_blocks(driver, frame_chain: list[int] | None)
                         continue
                     seen_scale.add(key)
                     scale_labels.append(txt)
+                    idx = len(scale_labels)
+                    try:
+                        lid = (label.get_attribute("id") or "").strip()
+                        m = re.search(r"_scale_([^_]+)_text$", lid)
+                        if m:
+                            scale_code_to_index[(m.group(1) or "").strip().lower()] = idx
+                    except Exception:
+                        pass
                 if len(scale_labels) >= 2:
                     break
 
@@ -2046,6 +2055,9 @@ def _extract_confirmit_slider_grid_blocks(driver, frame_chain: list[int] | None)
                             "group_key": group_key,
                             "question": full_question,
                             "option_xpath_map": option_xpath_map,
+                            "slider_grid_row_id": row_id,
+                            "slider_grid_scale_labels": list(scale_labels),
+                            "slider_grid_code_to_index": dict(scale_code_to_index),
                             "frame_chain": frame_chain,
                             "confirmit_slider_grid": True,
                         },
