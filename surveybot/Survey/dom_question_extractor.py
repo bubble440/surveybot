@@ -295,21 +295,24 @@ def _extract_question_from_container(container, options: List[str]) -> str:
         if not container:
             return ""
         
-        full_text = _norm(container.text)
-        if not full_text:
+        raw_text = container.text or ""
+        if not _norm(raw_text):
             return ""
-        
-        # Retirer les options du texte
-        question_text = full_text
-        for opt in options:
-            if not opt:
+
+        # Retirer les lignes qui correspondent exactement à des options
+        # sans supprimer les mots-clés d'une consigne (ex: "sélectionnez violet").
+        option_keys = {_norm_lc(opt) for opt in options if _norm(opt)}
+        kept_lines = []
+        for line in raw_text.splitlines():
+            line_norm = _norm(line)
+            if not line_norm:
                 continue
-            # Retirer toutes les occurrences de l'option
-            opt_pattern = re.escape(opt)
-            question_text = re.sub(opt_pattern, "", question_text, flags=re.IGNORECASE)
-        
+            if _norm_lc(line_norm) in option_keys:
+                continue
+            kept_lines.append(line_norm)
+
         # Nettoyer
-        question_text = _norm(question_text)
+        question_text = _norm(" ".join(kept_lines))
         
         # Vérifier que ce qui reste ressemble à une question
         if question_text and len(question_text) > 5 and _is_question_text(question_text):
