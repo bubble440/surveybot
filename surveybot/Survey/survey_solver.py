@@ -669,7 +669,7 @@ def solve_full_survey(driver, api_key, *, account_id: str):
         
         # -------------------------------------------------------------------
         # CHECK TOPSURVEYS AVANT execute_survey_page
-        # Evite le fallback vision sur le popup "Bon travail !" (disqualification)
+        # Evite tout chemin alternatif sur le popup "Bon travail !" (disqualification)
         # -------------------------------------------------------------------
         try:
             current_url_check = (driver.current_url or "").lower()

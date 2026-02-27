@@ -67,7 +67,7 @@ def _is_visible_js(driver, el) -> bool:
 def _detect_rate_rank_image_eval_dom(driver) -> tuple[bool, str]:
     """
     Détecte un pattern DOM de type "image/product evaluation" (rate & rank)
-    qui doit déclencher un abandon DOM-only (sans Vision fallback).
+    qui doit déclencher un abandon DOM-only (sans stratégie alternative).
     """
     try:
         dom = driver.execute_script(
@@ -1116,14 +1116,14 @@ def execute_survey_page(driver, api_key):
         if dom_only_abort == "budget_exhausted":
             return False
 
-        # fallback vision (existant)  mais on  le plein-page si possible (moins cher + moins de bruit)
-        print(" Fallback vision (DOM insuffisant). source: survey_executor.py")
+        # DOM-only: si le DOM est insuffisant, on abandonne proprement.
+        print("DOM-only: aucun input exploitable (abort). source: survey_executor.py")
 
         screenshot_path = None
 
         # ------------------------------------------------------------
         # FALLBACK LOCAL "CTA-only" (question mais un bouton existe)
-        # Objectif:  un appel vision sur des pages comme "Consent"
+        # Objectif: éviter un abandon prématuré sur des pages comme "Consent"
         # ------------------------------------------------------------
         try:
             before_url = driver.current_url
@@ -1138,7 +1138,7 @@ def execute_survey_page(driver, api_key):
         # Essayer de cliquer sur un CTA de navigation (ex: "Start Survey", "Continue", "Next", etc.)
         # PHASE 1: Fallback CSS direct (connus de boutons nav)
         # Plus fiable que la recherche par texte pour les frameworks connus
-        # PHASE 2: Si pas de bouton trouvé, on peut envisager une recherche plus générique (ex: boutons avec texte "next", "continue", etc.) ou un fallback vision plein-page
+        # PHASE 2: Si pas de bouton trouvé, recherche générique DOM (ex: boutons avec texte "next", "continue", etc.)
         NAV_BUTTON_SELECTORS = [
             "#cm-NextButton",                    # CMIX
             ".cm-navigation-next-button",        # CMIX alt
@@ -1242,12 +1242,12 @@ def execute_survey_page(driver, api_key):
             print(f" Fallback CTA-only : {type(e).__name__}: {e}")
 
 
-        #  Vision fallback = OFF par  (V1 stable)
-        if not _env_truthy("SURVEY_VISION_FALLBACK", "0"):
-            print(" Vision fallback  (SURVEY_VISION_FALLBACK=0) -> abandon .")
+        # DOM-only: abandon explicite si aucun CTA DOM exploitable.
+        if _env_truthy("SURVEY_DOM_ONLY_ABORT", "1"):
+            print("DOM-only: abort_reason=dom_no_match_abort (SURVEY_DOM_ONLY_ABORT=1).")
             return False
 
-        # Import lazy:  d'embarquer screenshot_analyzer / PIL si on n'a pas explicitement  la vision
+        # Import lazy: n'embarquer screenshot_analyzer / PIL que si un traitement image est explicitement activé
         import Survey.screenshot_analyzer as screenshot_analyzer
         # 1) Tentative screenshot  (EdgeSurvey/InnovateMR : question souvent dans img.taImage)
         try:
