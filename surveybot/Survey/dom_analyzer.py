@@ -667,6 +667,59 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         ]
         return any(tok in v for tok in nav_tokens)
 
+    def _resolve_button_group_container(el, fallback_container):
+        """
+        Trouve le plus petit ancêtre DOM qui représente un groupe d'options bouton.
+
+        Cas ciblé: single-choice custom rendu via plusieurs <button> (options)
+        + un input texte auxiliaire. Sans ce regroupement, chaque bouton peut être
+        vu isolément et le fallback texte prend la main.
+        """
+        try:
+            host = driver.execute_script(
+                """
+                const el = arguments[0];
+                if (!el || !el.parentElement) return null;
+
+                const navTokens = ['next','suivant','continue','continuer','submit','start','back','retour','previous'];
+                const norm = (s) => (s || '').replace(/\s+/g, ' ').trim().toLowerCase();
+                const isVisible = (node) => {
+                  if (!node || !(node instanceof Element)) return false;
+                  const st = window.getComputedStyle(node);
+                  if (!st) return false;
+                  if (st.display === 'none' || st.visibility === 'hidden') return false;
+                  const r = node.getBoundingClientRect();
+                  return r.width > 0 && r.height > 0;
+                };
+
+                let cur = el.parentElement;
+                for (let depth = 0; cur && depth < 7; depth++, cur = cur.parentElement) {
+                  if (!isVisible(cur)) continue;
+                  const btns = Array.from(cur.querySelectorAll('button, [role="button"], a[role="button"]'));
+                  if (btns.length < 2 || btns.length > 12) continue;
+
+                  let nonNav = 0;
+                  for (const b of btns) {
+                    if (!isVisible(b)) continue;
+                    const txt = norm(b.innerText || b.textContent || '');
+                    if (!txt || txt.length < 2) continue;
+                    if (navTokens.some(tok => txt.includes(tok))) continue;
+                    nonNav += 1;
+                  }
+
+                  if (nonNav >= 2) return cur;
+                }
+
+                return null;
+                """,
+                el,
+            )
+            if host:
+                return host
+        except Exception:
+            pass
+        return fallback_container
+
     def _stable_xpath_for_buttonish(el) -> str:
         """
         Locator stable prioritaire pour Decipher:
@@ -733,6 +786,8 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                     cont = None
             if not cont:
                 continue
+
+            cont = _resolve_button_group_container(b, cont)
 
             cid = (cont.get_attribute("id") or "").strip()
             ccl = _norm_lc(cont.get_attribute("class") or "")
