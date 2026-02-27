@@ -746,7 +746,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         try:
             cont = g.get("container")
             btns = g.get("buttons") or []
-            if len(btns) < 3:
+            if len(btns) < 2:
                 continue
 
             # Pattern spécifique
@@ -758,7 +758,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                 if tt not in options:
                     options.append(tt)
 
-            if len(options) < 3:
+            if len(options) < 2:
                 continue
 
             question = ""
