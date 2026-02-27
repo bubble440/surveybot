@@ -2336,6 +2336,165 @@ def handle_consent_screen(driver):
         pass
     return False
 
+
+
+def _extract_drag_drop_target_value(instruction_text: str) -> Optional[str]:
+    text = _norm(instruction_text or "")
+    if not text:
+        return None
+
+    keyed = re.search(r"(?:num[eé]ro|nombre|valeur)\s*[:=\-]?\s*(\d+)", text, flags=re.IGNORECASE)
+    if keyed:
+        return keyed.group(1)
+
+    any_num = re.search(r"\b(\d+)\b", text)
+    return any_num.group(1) if any_num else None
+
+
+def handle_drag_drop_logic(driver):
+    def _el_text(el) -> str:
+        for getter in (
+            lambda: el.text,
+            lambda: el.get_attribute("innerText"),
+            lambda: el.get_attribute("textContent"),
+        ):
+            try:
+                txt = _norm(getter() or "")
+                if txt:
+                    return txt
+            except Exception:
+                continue
+        return ""
+
+    def _is_enabled(btn) -> bool:
+        if not btn:
+            return False
+        try:
+            if not btn.is_displayed():
+                return False
+        except Exception:
+            pass
+        attrs = []
+        for k in ("disabled", "aria-disabled", "class"):
+            try:
+                attrs.append((btn.get_attribute(k) or "").strip().lower())
+            except Exception:
+                attrs.append("")
+        disabled_attr, aria_disabled, cls = attrs
+        if disabled_attr and disabled_attr not in ("false", "0"):
+            return False
+        if aria_disabled in ("true", "1"):
+            return False
+        if "disabled" in cls:
+            return False
+        return True
+
+    title_candidates = driver.find_elements(
+        By.CSS_SELECTOR,
+        "p.question-title[psquestiontitle], p.question-title, [psquestiontitle]",
+    )
+    instruction = ""
+    for title in title_candidates:
+        txt = _el_text(title)
+        if any(v in txt.lower() for v in ("deposer", "déposer", "glisser", "drag", "drop")):
+            instruction = txt
+            break
+    if not instruction and title_candidates:
+        instruction = _el_text(title_candidates[0])
+
+    target_value = _extract_drag_drop_target_value(instruction)
+    print(f'[DRAGDROP] target_value={target_value} extracted_from="{instruction}"')
+    if not target_value:
+        return False
+
+    draggables = driver.find_elements(By.CSS_SELECTOR, "[cdkdrag], .cdk-drag, [draggable='true']")
+    drop_zones = driver.find_elements(
+        By.CSS_SELECTOR,
+        "#dropZoneList[cdkdroplist], #dropZoneList, [cdkdroplist].drop-zone, [cdkdroplist]",
+    )
+    drop_zone = drop_zones[0] if drop_zones else None
+    if not draggables or not drop_zone:
+        return False
+
+    source = None
+    source_selector = ""
+    for drag in draggables:
+        try:
+            imgs = drag.find_elements(By.CSS_SELECTOR, f'img[alt="{target_value}"]')
+            if imgs:
+                source = drag
+                source_selector = f'img[alt="{target_value}"]'
+                break
+        except Exception:
+            continue
+
+    if source is None:
+        for drag in draggables:
+            try:
+                imgs = drag.find_elements(By.CSS_SELECTOR, "img")
+            except Exception:
+                imgs = []
+            for img in imgs:
+                try:
+                    src = (img.get_attribute("src") or "")
+                except Exception:
+                    src = ""
+                if f'/{target_value}.png' in src or target_value in src:
+                    source = drag
+                    source_selector = f'img[src*="{target_value}"]'
+                    break
+            if source is not None:
+                break
+
+    if source is None:
+        for drag in draggables:
+            txt = _el_text(drag)
+            if target_value in txt:
+                source = drag
+                source_selector = "draggable_text"
+                break
+
+    if source is None:
+        return False
+
+    print(f"[DRAGDROP] source_found selector={source_selector}")
+
+    next_buttons = driver.find_elements(By.CSS_SELECTOR, "button[aria-label='Go to next question']")
+    next_button = next_buttons[0] if next_buttons else None
+
+    offsets = [(0, 0), (10, 10)]
+    for idx, (ox, oy) in enumerate(offsets, start=1):
+        print(f"[DRAGDROP] attempt={idx} start")
+        try:
+            driver.execute_script("arguments[0].scrollIntoView({block:'center'});", source)
+            driver.execute_script("arguments[0].scrollIntoView({block:'center'});", drop_zone)
+            ActionChains(driver)\
+                .move_to_element(source)\
+                .click_and_hold(source)\
+                .pause(0.12)\
+                .move_to_element_with_offset(drop_zone, ox, oy)\
+                .pause(0.12)\
+                .release()\
+                .perform()
+            print(f"[DRAGDROP] attempt={idx} dropped")
+        except Exception as e:
+            print(f"[DRAGDROP] attempt={idx} dropped error={_short_exc(e)}")
+            continue
+
+        deadline = time.time() + 3.0
+        enabled = False
+        while time.time() < deadline:
+            if next_button is not None and _is_enabled(next_button):
+                enabled = True
+                break
+            time.sleep(0.2)
+
+        print(f"[DRAGDROP] attempt={idx} next_enabled={str(enabled).lower()}")
+        if enabled:
+            return True
+
+    return False
+
 def handle_start_screen(driver):
     """
     Start screen: accepter cookies si besoin, puis cliquer Start/Commencer.
