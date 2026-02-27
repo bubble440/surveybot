@@ -1214,7 +1214,7 @@ def execute_survey_page(driver, api_key):
                 or input_handler.click_cta_strong_any_context(driver, text="lets go")
                 or input_handler.click_cta_strong_any_context(driver, text="next")
                 or input_handler.click_cta_strong_any_context(driver, text="suivant")
-                or input_handler.click_cta_strong_any_context(driver, text="dÃ©marrer")
+                or input_handler.click_cta_strong_any_context(driver, text="démarrer")
                 or input_handler.click_cta_strong_any_context(driver, text="commencer")
             )
             # Fallback direct par ID pour Qualtrics et CTA standards
