@@ -962,6 +962,16 @@ def execute_survey_page(driver, api_key):
         print(f"[URL_GUARD] Page hors , aucune action: {cur}")
         return False
 
+    # =========================================================================
+    # CAPTCHA: Détection et résolution automatique (no-op si aucun captcha)
+    # =========================================================================
+    try:
+        from captcha.normal_captcha import handle_captcha
+        if handle_captcha(driver):
+            print("[CAPTCHA] Captcha traité → reprise du flux")
+    except Exception as _cap_exc:
+        print(f"[CAPTCHA][WARN] {_cap_exc}")
+
     #  micro-: compteur rescans DOM sur CETTE page (reset  chaque page)
     try:
         driver._dom_rescans_this_page = 0
