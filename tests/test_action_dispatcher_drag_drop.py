@@ -34,32 +34,6 @@ class _FakeElement:
         return []
 
 
-class _FakeActionChains:
-    def __init__(self, driver):
-        self.driver = driver
-
-    def move_to_element(self, _el):
-        return self
-
-    def click_and_hold(self, _el):
-        return self
-
-    def pause(self, _seconds):
-        return self
-
-    def move_to_element_with_offset(self, _el, _x, _y):
-        return self
-
-    def release(self):
-        return self
-
-    def perform(self):
-        self.driver.next_button._attrs["disabled"] = ""
-        self.driver.next_button._attrs["aria-disabled"] = "false"
-        self.driver.next_button._attrs["class"] = "btn"
-        return None
-
-
 class _FakeDriver:
     def __init__(self):
         self.title = _FakeElement("Veuillez déposer le numéro 42 dans la case vide:")
@@ -84,11 +58,17 @@ class _FakeDriver:
         return []
 
     def execute_script(self, _script, *_args):
+        if "js_pointer_drag_failed" in (_script or ""):
+            return False
+        if "mkMouse('mousedown'" in (_script or ""):
+            self.next_button._attrs["disabled"] = ""
+            self.next_button._attrs["aria-disabled"] = "false"
+            self.next_button._attrs["class"] = "btn"
+            return True
         return None
 
 
-def test_handle_drag_drop_logic_enables_next(monkeypatch):
-    monkeypatch.setattr(ad, "ActionChains", _FakeActionChains)
+def test_handle_drag_drop_logic_enables_next():
     driver = _FakeDriver()
 
     assert ad.handle_drag_drop_logic(driver) is True
