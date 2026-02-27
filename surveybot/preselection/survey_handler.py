@@ -63,6 +63,17 @@ def run_survey(driver, api_key, *, account_id: str):
     snap(driver, "before_survey_loop")
     try:
         while True:
+            # =================================================================
+            # CAPTCHA: Résolution automatique si captcha détecté (no-op sinon)
+            # =================================================================
+            try:
+                from captcha.normal_captcha import handle_captcha
+                if handle_captcha(driver):
+                    print("[CAPTCHA] Captcha préselection traité → relance boucle")
+                    continue
+            except Exception as _cap_exc:
+                print(f"[CAPTCHA][WARN] {_cap_exc}")
+
             question, answer = preselection.question_analyzer.get_response_for_question(driver, api_key)
 
             # ✅ 1) Actions de contrôle renvoyées par l'analyzer.
