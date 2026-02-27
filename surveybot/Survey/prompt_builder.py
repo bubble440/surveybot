@@ -84,6 +84,40 @@ def _selection_rule_for_block(block: Dict[str, Any]) -> str:
     return "exactly_1"
 
 
+_TIER_ENTRY_QUESTION_KEYWORDS = [
+    # FR
+    "tranche", "categorie", "fourchette", "classe", "niveau",
+    "combien de salaries", "combien de salarie", "combien d'employes", "combien d employes",
+    "taille de l'entreprise", "taille de l entreprise",
+    "budget", "depenses", "charges", "chiffre d'affaires", "chiffre d affaires", "ca", "revenu", "salaire",
+    # EN
+    "range", "bracket", "band", "category", "company size", "employees",
+    "revenue", "expenses", "budget", "income", "salary",
+]
+
+
+def _looks_like_tier_entry_question(block: Dict[str, Any]) -> bool:
+    itype = _norm_folded_lc(block.get("itype"))
+    if itype not in {"radio", "checkbox", "dropdown", "select", "button"}:
+        return False
+    options = [o for o in (block.get("options") or []) if _norm(str(o))]
+    if not options:
+        return False
+    question = _norm_folded_lc(block.get("question"))
+    return any(k in question for k in _TIER_ENTRY_QUESTION_KEYWORDS)
+
+
+def _tier_entry_option(options: list[str]) -> tuple[int, str]:
+    n = len(options)
+    if n <= 1:
+        k = 1
+    elif n in {2, 3}:
+        k = n
+    else:
+        k = int(-(-3 * n // 4))
+    return k, options[k - 1]
+
+
 # =========================
 # Heuristiques métier
 # =========================
@@ -267,11 +301,18 @@ def build_batch_prompt(question_blocks: list[dict]) -> str:
         lines.append(f"contexte: {q}")
         lines.append(f"itype: {itype}")
         lines.append(f"max_select: {max_sel}")
-        selection_rule = _selection_rule_for_block(block)
-        if selection_rule == "multi_1_to_3":
-            lines.append("selection_rule: MULTI explicite -> choisir 1 à 3 options (idéalement 2-3, jamais >3)")
+        if _looks_like_tier_entry_question(block) and opts:
+            k, picked = _tier_entry_option(opts)
+            print(f"[PROMPT_BUILDER] tier_entry_rule=1 N={len(opts)} k={k} picked='{picked}'")
+            lines.append(f"selection_rule: TIER_ENTRY strict -> répondre EXACTEMENT avec '{picked}'")
+            lines.append(f"allowed_values_strict: {picked}")
+            lines.append("instruction_stricte: Tu dois répondre EXACTEMENT avec l'un des libellés suivants : {" + picked + "}. Ne paraphrase pas. Ne renvoie rien d'autre.")
         else:
-            lines.append("selection_rule: choisir EXACTEMENT 1 option")
+            selection_rule = _selection_rule_for_block(block)
+            if selection_rule == "multi_1_to_3":
+                lines.append("selection_rule: MULTI explicite -> choisir 1 à 3 options (idéalement 2-3, jamais >3)")
+            else:
+                lines.append("selection_rule: choisir EXACTEMENT 1 option")
 
         if opts:
             lines.append("options: " + " | ".join(opts))
