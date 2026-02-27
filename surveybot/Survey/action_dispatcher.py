@@ -570,6 +570,128 @@ def _apply_by_target_id(driver, target_id: str, itype: str, value: str) -> bool:
             v_norm = _norm_lc(value)
             v_fold = _fold_norm_lc(value)
 
+            if payload.get("confirmit_slider_grid") and resolved_itype == "radio":
+                row_id = (payload.get("slider_grid_row_id") or "").strip()
+                scale_labels = [str(x or "").strip() for x in (payload.get("slider_grid_scale_labels") or []) if str(x or "").strip()]
+                code_to_index = {
+                    (str(k or "").strip().lower()): int(v)
+                    for k, v in (payload.get("slider_grid_code_to_index") or {}).items()
+                    if str(k or "").strip()
+                }
+
+                selected_index: int | None = None
+
+                if not selected_index and v_norm:
+                    try:
+                        digits = re.sub(r"\D+", "", v_norm)
+                    except Exception:
+                        digits = ""
+                    if digits:
+                        if digits in code_to_index:
+                            selected_index = code_to_index.get(digits)
+                        else:
+                            try:
+                                maybe_idx = int(digits)
+                                if 1 <= maybe_idx <= max(1, len(scale_labels)):
+                                    selected_index = maybe_idx
+                            except Exception:
+                                pass
+
+                if selected_index is None and scale_labels:
+                    for idx, opt in enumerate(scale_labels, start=1):
+                        o_norm = _norm_lc(opt)
+                        o_fold = _fold_norm_lc(opt)
+                        if not o_norm:
+                            continue
+                        if v_norm and (v_norm == o_norm or v_norm in o_norm or o_norm in v_norm):
+                            selected_index = idx
+                            break
+                        if v_fold and (v_fold == o_fold or v_fold in o_fold or o_fold in v_fold):
+                            selected_index = idx
+                            break
+
+                if not row_id:
+                    print(f"[TARGET_DEBUG] slider-grid row skipped row_id=<missing> value='{value}' reason='missing_row_id'")
+                    return False
+                if selected_index is None:
+                    print(f"[TARGET_DEBUG] slider-grid row skipped row_id={row_id} value='{value}' reason='unmapped_value'")
+                    return False
+
+                try:
+                    js_result = driver.execute_script(
+                        """
+                        // confirmit_slider_grid_apply_v1
+                        const rowId = arguments[0];
+                        const selectedIndex = Number(arguments[1]);
+                        const row = document.getElementById(rowId);
+                        if (!row) return {ok:false, reason:'row_not_found'};
+
+                        const handle = row.querySelector('.cf-slider__handle[role="slider"]');
+                        const track = row.querySelector('.cf-slider__track');
+                        if (!handle || !track) return {ok:false, reason:'slider_parts_missing'};
+
+                        const tr = track.getBoundingClientRect();
+                        const hr = handle.getBoundingClientRect();
+                        if (!tr || tr.width < 4 || tr.height < 2) return {ok:false, reason:'track_not_interactable'};
+
+                        const min = Number(handle.getAttribute('aria-valuemin') || 0);
+                        const max = Number(handle.getAttribute('aria-valuemax') || 0);
+                        if (!Number.isFinite(min) || !Number.isFinite(max) || max < min) {
+                          return {ok:false, reason:'invalid_slider_bounds'};
+                        }
+
+                        const desired = Math.max(min, Math.min(max, min + Math.max(0, selectedIndex - 1)));
+                        const ratio = (max === min) ? 0 : ((desired - min) / (max - min));
+                        const targetX = tr.left + (tr.width * ratio);
+                        const targetY = tr.top + (tr.height / 2);
+
+                        const fire = (el, type, x, y, buttons) => {
+                          el.dispatchEvent(new MouseEvent(type, {
+                            bubbles: true,
+                            cancelable: true,
+                            clientX: x,
+                            clientY: y,
+                            buttons: buttons,
+                          }));
+                        };
+
+                        const startX = hr.left + (hr.width / 2);
+                        const startY = hr.top + (hr.height / 2);
+                        fire(handle, 'mousedown', startX, startY, 1);
+                        fire(document, 'mousemove', targetX, targetY, 1);
+                        fire(document, 'mouseup', targetX, targetY, 0);
+                        fire(track, 'click', targetX, targetY, 0);
+
+                        try { handle.focus(); } catch(e) {}
+                        try { handle.dispatchEvent(new Event('input', { bubbles: true })); } catch(e) {}
+                        try { handle.dispatchEvent(new Event('change', { bubbles: true })); } catch(e) {}
+
+                        const now = String(handle.getAttribute('aria-valuenow') || '');
+                        const desiredText = String(desired);
+                        if (now === desiredText) {
+                          return {ok:true, desired:desiredText, now:now};
+                        }
+
+                        return {ok:false, reason:'aria_mismatch', desired:desiredText, now:now};
+                        """,
+                        row_id,
+                        int(selected_index),
+                    )
+                except Exception as e:
+                    print(f"[TARGET_DEBUG] slider-grid row skipped row_id={row_id} value='{value}' reason='script_error:{_short_exc(e)}'")
+                    return False
+
+                ok = bool((js_result or {}).get("ok")) if isinstance(js_result, dict) else False
+                if ok:
+                    print(f"[TARGET_DEBUG] slider-grid row applied row_id={row_id} value='{value}'")
+                    return True
+
+                reason = "unknown"
+                if isinstance(js_result, dict):
+                    reason = (js_result.get("reason") or reason)
+                print(f"[TARGET_DEBUG] slider-grid row skipped row_id={row_id} value='{value}' reason='{reason}'")
+                return False
+
             # --- cas "options map" (radio/checkbox)
             # IMPORTANT: on n'exige pas kind=="group" pour éviter le couplage ÃƒÂ  la classification (ex: matrix_rows_single_choice)
             opt_map = payload.get("option_xpath_map") or {}
