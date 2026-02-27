@@ -24,13 +24,6 @@ SENSITIVE_PATTERNS = [
     r"\bcaptcha\b",
     r"\brecaptcha\b",
 
-    # Actions humaines risquées (drag/hold)
-    r"\bglisser\b",
-    r"\bdrag\b",
-    r"\bmaintenir\b",
-    r"\bpress\s+and\s+hold\b",
-    r"\bhold\b",
-
     # Permissions / enregistrement
     r"\bautoriser\b",
     r"\bpermission\b",
