@@ -215,8 +215,11 @@ def detect_strict_survey(driver) -> Tuple[bool, Optional[str]]:
                         if _is_element_visible(el):
                             visible_count += 1
                             if visible_count >= 2:
-                                print(f"[DIFFICULTY_GUARD] drag_drop détecté: {visible_count} éléments visibles")
-                                return True, "drag_drop"
+                                print(
+                                    f"[DIFFICULTY_GUARD] drag_drop detected -> allowed (supported), "
+                                    f"visible_elements={visible_count}"
+                                )
+                                return False, None
                 except Exception:
                     continue
             continue

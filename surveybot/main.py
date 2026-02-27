@@ -393,6 +393,9 @@ def run_attach_takeover(driver, *, api_key: str, account_id: str) -> None:
             # Détecte les pages non supportées (image_evaluation, drag_drop, etc.)
             is_strict, reason = difficulty_guard.detect_strict_survey(driver)
             if is_strict:
+                if reason == "drag_drop":
+                    print("[ATTACH][STRICT] drag_drop strict reason ignored -> continue")
+                    continue
                 print(f"[ATTACH][STRICT] Détecté: {reason} -> abandon du survey")
                 print(f"[ATTACH][STRICT] Ce type de survey n'est pas supporté en V1")
                 break
