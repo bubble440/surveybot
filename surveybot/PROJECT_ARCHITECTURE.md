@@ -48,7 +48,7 @@ SurveyBot est un systeme automatise de completion de sondages web. Il utilise:
 |  PRINCIPES CLES                                                  |
 +------------------------------------------------------------------+
 |  - Stabilite 80-90% > Couverture 100%                            |
-|  - DOM = source principale (pas de fallback Vision)              |
+|  - DOM = source principale (DOM-only, sans fallback)              |
 |  - 1 bot = 1 proxy (isolation)                                   |
 |  - Anti-boucles : budget de tentatives strict                    |
 |  - Approche generaliste : corrections robustes, pas de patchs    |
