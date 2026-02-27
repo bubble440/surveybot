@@ -83,6 +83,29 @@ class SurveyDifficultyGuardTests(unittest.TestCase):
         self.assertTrue(is_strict)
         self.assertEqual(reason, "audio_video_required")
 
+    def test_visible_drag_drop_is_allowed(self):
+        selectors = {
+            "[cdkdrag]": [_FakeElement(), _FakeElement()],
+            "[cdkdroplist]": [_FakeElement()],
+        }
+        driver = _FakeDriver(text="Veuillez déposer le numéro 42", by_selector=selectors)
+
+        is_strict, reason = detect_strict_survey(driver)
+
+        self.assertFalse(is_strict)
+        self.assertIsNone(reason)
+
+    def test_visible_captcha_remains_blocking(self):
+        selectors = {
+            "iframe[src*='recaptcha']": [_FakeElement(width=320, height=80)],
+        }
+        driver = _FakeDriver(text="", by_selector=selectors)
+
+        is_strict, reason = detect_strict_survey(driver)
+
+        self.assertTrue(is_strict)
+        self.assertEqual(reason, "captcha")
+
 
 if __name__ == "__main__":
     unittest.main()
