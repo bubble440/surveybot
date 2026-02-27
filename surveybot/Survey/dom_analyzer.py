@@ -791,7 +791,8 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
 
             cid = (cont.get_attribute("id") or "").strip()
             ccl = _norm_lc(cont.get_attribute("class") or "")
-            gk = f"btn_group:{cid}:{ccl}:{id(cont)}"
+            cont_xpath = _best_xpath_for_element(driver, cont) or ""
+            gk = f"btn_group:{cid}:{ccl}:{cont_xpath}"
             g = btn_groups.setdefault(gk, {"container": cont, "buttons": []})
             g["buttons"].append(b)
         except Exception:
