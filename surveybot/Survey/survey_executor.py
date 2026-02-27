@@ -1210,6 +1210,8 @@ def execute_survey_page(driver, api_key):
                 or input_handler.click_cta_strong_any_context(driver, text="continuer")
                 or input_handler.click_cta_strong_any_context(driver, text="accept")
                 or input_handler.click_cta_strong_any_context(driver, text="agree")
+                or input_handler.click_cta_strong_any_context(driver, text="let's go")
+                or input_handler.click_cta_strong_any_context(driver, text="lets go")
                 or input_handler.click_cta_strong_any_context(driver, text="next")
                 or input_handler.click_cta_strong_any_context(driver, text="suivant")
                 or input_handler.click_cta_strong_any_context(driver, text="dÃ©marrer")
