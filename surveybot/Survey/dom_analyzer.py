@@ -18,7 +18,7 @@ Architecture:
 """
 
 from __future__ import annotations
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any, Tuple, Set
 import os, re
 
 from selenium.webdriver.common.by import By
@@ -128,6 +128,99 @@ except ImportError:
         _extract_custom_testid_multi_select_checkbox_blocks,
         _extract_single_consent_checkbox_block,
     )
+
+
+def _is_auxiliary_text_for_choice_group(driver, el, container, question: str) -> bool:
+    """
+    Détecte les champs texte auxiliaires affichés dans le même bloc qu'une question
+    principale à options (radio/checkbox/boutons).
+
+    Stratégie unique (score) :
+      - prérequis strict: le container contient déjà >=2 options de choix
+      - score >=3 sur 4 signaux DOM pour classer le champ comme auxiliaire
+    """
+    if not container:
+        return False
+
+    try:
+        choice_nodes = container.find_elements(
+            By.CSS_SELECTOR,
+            "input[type='radio'], input[type='checkbox'], [role='radio'], [role='checkbox'], button, a[role='button']",
+        )
+    except Exception:
+        return False
+
+    option_words: Set[str] = set()
+    choice_count = 0
+    for node in choice_nodes or []:
+        try:
+            txt = _norm(node.text or node.get_attribute("innerText") or node.get_attribute("value") or "")
+            if not txt:
+                txt = _norm(_find_associated_label(driver, node) or "")
+            if not txt:
+                continue
+            tlc = _norm_lc(txt)
+            if tlc in {"next", "suivant", "continue", "continuer", "back", "retour", "submit", "valider"}:
+                continue
+            choice_count += 1
+            option_words.update(re.findall(r"[a-z0-9à-ÿ]{2,}", tlc))
+        except Exception:
+            continue
+
+    if choice_count < 2:
+        return False
+
+    el_aria_label = _norm(el.get_attribute("aria-label") or "")
+    el_aria_labelledby = _norm(el.get_attribute("aria-labelledby") or "")
+    own_label = _norm(_find_associated_label(driver, el) or "")
+    has_own_label = bool(own_label or el_aria_label or el_aria_labelledby)
+
+    qlc = _norm_lc(question or "")
+    q_words = set(re.findall(r"[a-z0-9à-ÿ]{2,}", qlc))
+    overlap = 0.0
+    if q_words:
+        overlap = len(q_words & option_words) / max(1, len(q_words))
+
+    generic_q = (
+        not qlc
+        or qlc in {"other", "autre", "enter your answer here", "type your answer", "please specify"}
+        or "choose" in qlc
+        or "select" in qlc
+        or overlap >= 0.7
+    )
+
+    placeholder = _norm_lc(el.get_attribute("placeholder") or "")
+    generic_placeholder = placeholder in {
+        "enter your answer here",
+        "type your answer",
+        "other",
+        "please specify",
+    }
+    required_attr = _norm_lc(el.get_attribute("required") or "")
+    is_required = required_attr in {"true", "required", "1"}
+
+    try:
+        container_text = _norm_lc(container.text or container.get_attribute("innerText") or "")
+    except Exception:
+        container_text = ""
+
+    has_choice_instruction = (
+        "choose exactly" in container_text
+        or "select all that apply" in container_text
+        or "select one" in container_text
+        or "choose one" in container_text
+    )
+
+    score = 0
+    if not has_own_label:
+        score += 1
+    if generic_q:
+        score += 1
+    if generic_placeholder or not is_required:
+        score += 1
+    if has_choice_instruction:
+        score += 1
+    return score >= 3
 
 
 # ================================================================================
@@ -1015,6 +1108,10 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                     continue
 
             if not question:
+                continue
+
+            if itype in ("text", "textarea") and _is_auxiliary_text_for_choice_group(driver, el, container, question):
+                print("[DOM_DEBUG] skip_aux_text_with_choice_group")
                 continue
 
             # Champs "other/specify" attachés à une option radio/checkbox custom:
