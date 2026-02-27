@@ -4,7 +4,7 @@
 #
 # Objectif :
 # - Représenter UNE action à appliquer sur la page
-# - Découpler l’exécution DOM du format texte "////" (fallback vision)
+# - Découpler l’exécution DOM du format texte "////" (ancien fallback retiré)
 # - Être sérialisable (logs / metrics / replay / DynamoDB plus tard)
 # ------------------------------------------------------------
 
