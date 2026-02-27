@@ -125,51 +125,6 @@ def solve_normal_captcha(image_base64: str) -> str:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Soumission
-# ──────────────────────────────────────────────────────────────────────────────
-
-def _try_submit_captcha_form(driver, input_el) -> bool:
-    """
-    Cherche le bouton de validation CAPTCHA le plus proche et le clique.
-    Retourne True si un bouton a été cliqué.
-    """
-    btn = driver.execute_script(
-        """
-        var inp = arguments[0];
-        // 1) bouton de soumission dans le même <form>
-        var form = inp.closest('form');
-        if (form) {
-            var b = form.querySelector(
-                "button[type='submit'], input[type='submit'], button:not([type='button'])"
-            );
-            if (b) return b;
-        }
-        // 2) bouton dans les ancêtres directs
-        var el = inp;
-        for (var i = 0; i < 6; i++) {
-            el = el.parentElement;
-            if (!el) break;
-            var btns = Array.from(el.querySelectorAll("button, input[type='submit']"));
-            for (var b of btns) {
-                if (b !== inp) return b;
-            }
-        }
-        return null;
-        """,
-        input_el,
-    )
-    if btn is None:
-        return False
-    try:
-        if btn.is_displayed():
-            driver.execute_script("arguments[0].click();", btn)
-            return True
-    except Exception:
-        pass
-    return False
-
-
-# ──────────────────────────────────────────────────────────────────────────────
 # Orchestrateur principal
 # ──────────────────────────────────────────────────────────────────────────────
 
@@ -182,17 +137,19 @@ def handle_captcha(driver) -> bool:
 
     Conçu pour être appelé en début de chaque itération de boucle survey :
     si aucun CAPTCHA n'est présent, le coût est quasi nul (quelques find_elements).
+
+    Saisie via Survey.input_text.fill_text_input  (même logique que les questions normales).
+    CTA    via Survey.cta_handler.try_click_navigation_cta_any_context (même logique que nav).
     """
     info = detect_normal_captcha(driver)
     if info is None:
         return False
 
     img_el = info["img_el"]
-    input_el = info["input_el"]
 
     print("[CAPTCHA] CAPTCHA image-texte détecté — résolution via 2Captcha…")
 
-    # 1) Capture de l'image CAPTCHA en base64
+    # 1) Capture de l'image CAPTCHA en base64 (screenshot de l'élément DOM)
     try:
         image_b64 = img_el.screenshot_as_base64
     except Exception as exc:
@@ -207,28 +164,31 @@ def handle_captcha(driver) -> bool:
         print(f"[CAPTCHA] Échec de résolution 2Captcha : {exc}")
         return True
 
-    # 3) Saisie de la solution dans le champ texte
+    # 3) Saisie via fill_text_input — même gestionnaire que les questions texte normales.
+    #    context_hint="captcha" active le chemin rapide dédié aux CAPTCHAs (ex. PureSpectrum)
+    #    et assure scroll + focus + clear + fallback JS/React.
     try:
-        driver.execute_script(
-            "arguments[0].scrollIntoView({block: 'center'});", input_el
-        )
-        time.sleep(0.2)
-        input_el.clear()
-        input_el.send_keys(solution)
-        print("[CAPTCHA] Solution saisie dans le champ.")
+        from Survey.input_text import fill_text_input
+        filled = fill_text_input(driver, solution, context_hint="captcha")
+        if filled:
+            print("[CAPTCHA] Solution saisie via fill_text_input.")
+        else:
+            print("[CAPTCHA][WARN] fill_text_input n'a pas trouvé de champ à remplir.")
     except Exception as exc:
-        print(f"[CAPTCHA] Impossible de saisir la solution : {exc}")
+        print(f"[CAPTCHA] Saisie via fill_text_input échouée : {exc}")
         return True
 
-    # 4) Soumission (best-effort — si aucun bouton trouvé, le flux normal continue)
+    # 4) Clic CTA via try_click_navigation_cta_any_context — même gestionnaire que les boutons
+    #    de navigation sondage ; explore le contenu principal et les iframes.
     try:
-        submitted = _try_submit_captcha_form(driver, input_el)
-        if submitted:
-            print("[CAPTCHA] Formulaire CAPTCHA soumis.")
-            time.sleep(1.0)  # laisser le DOM se stabiliser
+        from Survey.cta_handler import try_click_navigation_cta_any_context
+        clicked = try_click_navigation_cta_any_context(driver)
+        if clicked:
+            print("[CAPTCHA] CTA soumis via try_click_navigation_cta_any_context.")
+            time.sleep(1.0)  # laisser le DOM se stabiliser après navigation
         else:
-            print("[CAPTCHA] Aucun bouton de soumission trouvé — le flux normal gère la suite.")
+            print("[CAPTCHA] Aucun CTA de navigation trouvé — le flux normal gère la suite.")
     except Exception as exc:
-        print(f"[CAPTCHA][WARN] Soumission échouée (non bloquant) : {exc}")
+        print(f"[CAPTCHA][WARN] Clic CTA échoué (non bloquant) : {exc}")
 
     return True
