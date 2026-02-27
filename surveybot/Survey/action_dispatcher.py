@@ -2468,14 +2468,59 @@ def handle_drag_drop_logic(driver):
         try:
             driver.execute_script("arguments[0].scrollIntoView({block:'center'});", source)
             driver.execute_script("arguments[0].scrollIntoView({block:'center'});", drop_zone)
-            ActionChains(driver)\
-                .move_to_element(source)\
-                .click_and_hold(source)\
-                .pause(0.12)\
-                .move_to_element_with_offset(drop_zone, ox, oy)\
-                .pause(0.12)\
-                .release()\
-                .perform()
+            drag_done = driver.execute_script(
+                """
+                const src = arguments[0];
+                const dst = arguments[1];
+                const ox = arguments[2] || 0;
+                const oy = arguments[3] || 0;
+
+                if (!src || !dst) return false;
+
+                const srcRect = src.getBoundingClientRect();
+                const dstRect = dst.getBoundingClientRect();
+                const startX = Math.floor(srcRect.left + srcRect.width / 2);
+                const startY = Math.floor(srcRect.top + srcRect.height / 2);
+                const endX = Math.floor(dstRect.left + dstRect.width / 2 + ox);
+                const endY = Math.floor(dstRect.top + dstRect.height / 2 + oy);
+
+                const mkMouse = (type, x, y, target) => {
+                    const e = new MouseEvent(type, {
+                        bubbles: true,
+                        cancelable: true,
+                        composed: true,
+                        clientX: x,
+                        clientY: y,
+                        button: 0,
+                        buttons: 1,
+                        view: window,
+                    });
+                    (target || document).dispatchEvent(e);
+                };
+
+                mkMouse('mousemove', startX, startY, src);
+                mkMouse('mousedown', startX, startY, src);
+
+                const steps = 6;
+                for (let i = 1; i <= steps; i++) {
+                    const x = Math.floor(startX + ((endX - startX) * i) / steps);
+                    const y = Math.floor(startY + ((endY - startY) * i) / steps);
+                    const t = document.elementFromPoint(x, y) || document;
+                    mkMouse('mousemove', x, y, t);
+                }
+
+                const dropTarget = document.elementFromPoint(endX, endY) || dst;
+                mkMouse('mouseup', endX, endY, dropTarget);
+
+                return true;
+                """,
+                source,
+                drop_zone,
+                ox,
+                oy,
+            )
+            if not drag_done:
+                raise RuntimeError("js_pointer_drag_failed")
             print(f"[DRAGDROP] attempt={idx} dropped")
         except Exception as e:
             print(f"[DRAGDROP] attempt={idx} dropped error={_short_exc(e)}")
