@@ -2408,11 +2408,15 @@ def handle_drag_drop_logic(driver):
         return False
 
     draggables = driver.find_elements(By.CSS_SELECTOR, "[cdkdrag], .cdk-drag, [draggable='true']")
-    drop_zones = driver.find_elements(
-        By.CSS_SELECTOR,
-        "#dropZoneList[cdkdroplist], #dropZoneList, [cdkdroplist].drop-zone, [cdkdroplist]",
-    )
-    drop_zone = drop_zones[0] if drop_zones else None
+    try:
+        drop_zone = driver.find_element(
+            By.CSS_SELECTOR,
+            "#dropZoneList.cdk-drop-list.drop-zone, #dropZoneList.drop-zone, #dropZoneList",
+        )
+        print("[DRAGDROP] drop_zone_selected id=dropZoneList ok=true")
+    except Exception:
+        print("[DRAGDROP] drop_zone_selected id=dropZoneList ok=false")
+        return False
     if not draggables or not drop_zone:
         return False
 
@@ -2462,7 +2466,7 @@ def handle_drag_drop_logic(driver):
     next_buttons = driver.find_elements(By.CSS_SELECTOR, "button[aria-label='Go to next question']")
     next_button = next_buttons[0] if next_buttons else None
 
-    offsets = [(0, 0), (10, 10)]
+    offsets = [(0, 0), (15, 0), (-15, 0), (0, 15), (0, -15)]
     can_use_cdp = hasattr(driver, "execute_cdp_cmd")
     is_local_env = (os.getenv("RUN_ENV", "local") or "local").strip().lower() == "local"
     for idx, (ox, oy) in enumerate(offsets, start=1):
@@ -2479,11 +2483,20 @@ def handle_drag_drop_logic(driver):
                 if (!src || !dst) return null;
                 const srcRect = src.getBoundingClientRect();
                 const dstRect = dst.getBoundingClientRect();
+                const endX = Math.floor(dstRect.left + dstRect.width / 2 + ox);
+                const endY = Math.floor(dstRect.top + dstRect.height / 2 + oy);
+                const atPoint = document.elementFromPoint(endX, endY);
+                const insideDropZone = !!(atPoint && (atPoint === dst || dst.contains(atPoint)));
+                const insideDraggable = !!(atPoint && atPoint.closest('[cdkdrag], .cdk-drag, [draggable="true"]'));
                 return {
                     startX: Math.floor(srcRect.left + srcRect.width / 2),
                     startY: Math.floor(srcRect.top + srcRect.height / 2),
-                    endX: Math.floor(dstRect.left + dstRect.width / 2 + ox),
-                    endY: Math.floor(dstRect.top + dstRect.height / 2 + oy),
+                    endX,
+                    endY,
+                    verified: insideDropZone && !insideDraggable,
+                    elementTag: atPoint ? atPoint.tagName.toLowerCase() : '',
+                    elementId: atPoint && atPoint.id ? atPoint.id : '',
+                    elementClass: atPoint && atPoint.className ? String(atPoint.className) : '',
                 };
                 """,
                 source,
@@ -2493,6 +2506,12 @@ def handle_drag_drop_logic(driver):
             )
             if not points:
                 raise RuntimeError("drag_points_unavailable")
+
+            element_desc = f"{points.get('elementTag', '')}#{points.get('elementId', '')}.{points.get('elementClass', '')}".strip(".")
+            point_ok = bool(points.get("verified"))
+            print(f"[DRAGDROP] end_point_verified ok={str(point_ok).lower()} elementFromPoint={element_desc}")
+            if not point_ok:
+                continue
 
             if can_use_cdp:
                 start_x = int(points.get("startX", 0))
@@ -2542,14 +2561,30 @@ def handle_drag_drop_logic(driver):
 
         deadline = time.time() + 3.0
         enabled = False
+        in_drop_zone = False
         while time.time() < deadline:
+            try:
+                in_drop_zone = bool(
+                    driver.execute_script(
+                        """
+                        const dst = arguments[0];
+                        if (!dst) return false;
+                        const draggableInZone = dst.querySelector('[cdkdrag], .cdk-drag, [draggable="true"]');
+                        const hasVisibleContent = (dst.innerText || '').trim().length > 0;
+                        return !!(draggableInZone || hasVisibleContent);
+                        """,
+                        drop_zone,
+                    )
+                )
+            except Exception:
+                in_drop_zone = False
             if next_button is not None and _is_enabled(next_button):
                 enabled = True
                 break
             time.sleep(0.2)
 
         print(f"[DRAGDROP] attempt={idx} next_enabled={str(enabled).lower()}")
-        if enabled:
+        if enabled and in_drop_zone:
             return True
 
     return False
