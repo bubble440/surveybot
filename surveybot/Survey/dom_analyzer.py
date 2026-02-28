@@ -223,6 +223,45 @@ def _is_auxiliary_text_for_choice_group(driver, el, container, question: str) ->
     return score >= 3
 
 
+def _is_modal_related_control(driver, el) -> bool:
+    """
+    Ignore les contrôles UI liés à des modals/dialogs (confirmation/info)
+    pour éviter de les interpréter comme des questions.
+    """
+    try:
+        in_modal = driver.execute_script(
+            """
+            const el = arguments[0];
+            if (!el || !el.closest) return false;
+            return !!el.closest(
+              '.modal, [role="dialog"], [role="alertdialog"], [aria-modal="true"], '\
+              '[id*="modal" i], [id*="dialog" i], [id*="overlay" i], '\
+              '[id*="refuse" i], [id*="confirm" i]'
+            );
+            """,
+            el,
+        )
+        if bool(in_modal):
+            return True
+    except Exception:
+        pass
+
+    try:
+        ref_candidates = [
+            el.get_attribute("href") or "",
+            el.get_attribute("aria-controls") or "",
+            el.get_attribute("data-target") or "",
+            el.get_attribute("data-bs-target") or "",
+            el.get_attribute("id") or "",
+            el.get_attribute("name") or "",
+        ]
+    except Exception:
+        ref_candidates = []
+
+    joined = _norm_lc(" ".join(v for v in ref_candidates if v))
+    return any(k in joined for k in ("modal", "dialog", "overlay", "refuse", "confirm"))
+
+
 # ================================================================================
 # FONCTION PRINCIPALE - ANALYSE CONTEXTE DOM ACTUEL
 # ================================================================================
@@ -848,6 +887,8 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         try:
             if not _is_actionable_visible(b):
                 continue
+            if _is_modal_related_control(driver, b):
+                continue
 
             # Filtre Decipher cardrating : ignore disabled / non-clickable
             cls = _norm_lc(b.get_attribute("class") or "")
@@ -1008,6 +1049,8 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
 
             # on ne veut pas transformer un "bouton next" en question
             if itype == "button":
+                if _is_modal_related_control(driver, el):
+                    continue
                 # 1) filtres structurels (navigation)
                 bid = (el.get_attribute("id") or "").strip().lower()
                 bname = (el.get_attribute("name") or "").strip().lower()
