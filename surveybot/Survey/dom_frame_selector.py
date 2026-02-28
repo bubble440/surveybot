@@ -122,6 +122,8 @@ def _score_dom_context(driver) -> Dict[str, Any]:
             const psSelectScroll = document.querySelectorAll('ps-select-scroll').length;
             const questionTitle = document.querySelectorAll('.question-title').length;
             const selectScrollSlide = document.querySelectorAll('.select-scroll-slide').length;
+            const runtimeAnswerRows = document.querySelectorAll(".answer[data-aut='Runtime_AnswerRow']").length;
+            const runtimeRadioWrappers = document.querySelectorAll(".radio_button[data-aut='Runtime_Wrapper']").length;
             
             // Détecter submit/next
             let hasSubmit = false;
@@ -148,7 +150,9 @@ def _score_dom_context(driver) -> Dict[str, Any]:
                 ps_question_orchestrator_count: psQuestionOrchestrator,
                 ps_select_scroll_count: psSelectScroll,
                 question_title_count: questionTitle,
-                select_scroll_slide_count: selectScrollSlide
+                select_scroll_slide_count: selectScrollSlide,
+                runtime_answer_rows_count: runtimeAnswerRows,
+                runtime_radio_wrappers_count: runtimeRadioWrappers,
             };
         """)
         
@@ -198,7 +202,19 @@ def _score_dom_context(driver) -> Dict[str, Any]:
         if pure_custom_score:
             score += min(55, pure_custom_score)
 
+        # Toluna Runtime custom radio wrappers (sans input radio natif exploitable)
+        runtime_custom_score = 0
+        runtime_rows = int(result.get('runtime_answer_rows_count', 0) or 0)
+        runtime_wrappers = int(result.get('runtime_radio_wrappers_count', 0) or 0)
+        if runtime_rows >= 2:
+            runtime_custom_score += 25
+        if runtime_wrappers >= 2:
+            runtime_custom_score += 20
+        if runtime_custom_score:
+            score += min(45, runtime_custom_score)
+
         result['pure_custom_score'] = min(55, pure_custom_score)
+        result['runtime_custom_score'] = min(45, runtime_custom_score)
         
         result['score'] = min(100, score)
         return result
@@ -297,7 +313,9 @@ def _select_best_frame_chain(driver, max_depth: int = 2) -> Tuple[List[int], Dic
                         f"[DOM_CONTEXT_DEBUG] candidate_chain={chain} score={context.get('score', 0)} "
                         f"inputs={context.get('input_count', 0)} selects={context.get('select_count', 0)} "
                         f"ps_date_question={context.get('ps_date_question_count', 0)} "
-                        f"ps_select_scroll={context.get('ps_select_scroll_count', 0)}"
+                        f"ps_select_scroll={context.get('ps_select_scroll_count', 0)} "
+                        f"runtime_rows={context.get('runtime_answer_rows_count', 0)} "
+                        f"runtime_wrappers={context.get('runtime_radio_wrappers_count', 0)}"
                     )
                 
                 # Vérifier si c'est le meilleur
@@ -334,7 +352,9 @@ def _select_best_frame_chain(driver, max_depth: int = 2) -> Tuple[List[int], Dic
         if debug_ctx:
             print(
                 f"[DOM_CONTEXT_DEBUG] selected_chain={best_chain} score={best_context.get('score', 0)} "
-                f"selected_ps_date_question={best_context.get('selected_ps_date_question_count', 0)}"
+                f"selected_ps_date_question={best_context.get('selected_ps_date_question_count', 0)} "
+                f"runtime_rows={best_context.get('runtime_answer_rows_count', 0)} "
+                f"runtime_wrappers={best_context.get('runtime_radio_wrappers_count', 0)}"
             )
         
         return best_chain, best_context
