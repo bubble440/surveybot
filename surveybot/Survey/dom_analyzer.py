@@ -1491,6 +1491,13 @@ def analyze_dom(driver) -> List[Dict[str, Any]]:
     max_depth = int(os.getenv("DOM_FRAME_MAX_DEPTH", "2") or "2")
     best_chain, _meta = _select_best_frame_chain(driver, max_depth=max_depth)
     if _env_truthy("DOM_CONTEXT_DEBUG", "1"):
+        runtime_rows = int(_meta.get("runtime_answer_rows_count", 0) or 0)
+        runtime_wrappers = int(_meta.get("runtime_radio_wrappers_count", 0) or 0)
+        runtime_sig_in_selected_context = runtime_rows >= 2 and runtime_wrappers >= 2
+        print(
+            f"[DOM_CONTEXT_DEBUG] runtime_signature rows={runtime_rows} wrappers={runtime_wrappers} "
+            f"in_selected_context={runtime_sig_in_selected_context}"
+        )
         print(
             f"[DOM_CONTEXT_DEBUG] analyze_dom selected_chain={best_chain} "
             f"selected_ps_date_question={_meta.get('selected_ps_date_question_count', 0)} "
@@ -1545,6 +1552,10 @@ def analyze_dom(driver) -> List[Dict[str, Any]]:
 
                 if not blocks:
                     blocks = _extract_decipher_answers_list_fallback(driver, frame_chain=chain)
+
+    if _env_truthy("DOM_CONTEXT_DEBUG", "1"):
+        itypes = sorted({str((b or {}).get("itype") or "") for b in (blocks or []) if (b or {}).get("itype")})
+        print(f"[DOM_CONTEXT_DEBUG] extracted_blocks count={len(blocks or [])} itypes={itypes}")
 
     blocks = _dedupe_question_blocks(blocks)
 
