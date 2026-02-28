@@ -351,6 +351,28 @@ def _group_key_for_choice(el, itype: str) -> str:
                     if base_name and base_name != clean_name:
                         clean_name = base_name
 
+                    # Tivian/CustomerVoice pattern: chaque option checkbox d'une même
+                    # question porte un name distinct "v_115", "v_116", etc.
+                    # On regroupe alors par identifiant de conteneur question-* quand
+                    # ce pattern DOM précis est observé (scope minimal).
+                    if re.match(r"^v_\d+$", clean_name):
+                        try:
+                            containers = el.find_elements(
+                                By.XPATH,
+                                "ancestor::*[contains(@class,'type-multi') and contains(@class,'question-')][1]",
+                            )
+                        except Exception:
+                            containers = []
+
+                        if containers:
+                            try:
+                                cls = _norm_lc(containers[0].get_attribute("class") or "")
+                            except Exception:
+                                cls = ""
+                            m = re.search(r"\bquestion-(\d+)\b", cls)
+                            if m:
+                                return f"question_{m.group(1)}"
+
                 return _norm_lc(clean_name)
 
             # Fallback DOM-first: certains providers (ex: Quantilope) n'exposent
