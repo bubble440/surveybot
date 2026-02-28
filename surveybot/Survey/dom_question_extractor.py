@@ -358,18 +358,19 @@ def _find_group_heading_text_near_element(driver, el, options: List[str]) -> str
             const groupName = el.getAttribute('name') || '';
             const root = el.closest('#app, form, main, [role="main"], body') || document.body;
 
+            const sharedGroupSelectors = 'fieldset, .choice-list-full, .question, .question-container, #profiler-choice';
+
             const sameChoices = Array.from(root.querySelectorAll('input[type="radio"],input[type="checkbox"],[role="radio"],[role="checkbox"]'))
               .filter((n) => {
                 const t = ((n.getAttribute('type') || '').toLowerCase() || (n.getAttribute('role') || '').toLowerCase());
                 if (t !== groupType) return false;
                 const nName = n.getAttribute('name') || '';
                 if (groupName && nName) return nName === groupName;
-                return n.closest('[data-survey-uid], fieldset, .choice-list-full, .question, .question-container') ===
-                       el.closest('[data-survey-uid], fieldset, .choice-list-full, .question, .question-container');
+                return n.closest(sharedGroupSelectors) === el.closest(sharedGroupSelectors);
               });
 
-            const groupRoot = (sameChoices[0] && sameChoices[0].closest('[data-survey-uid], fieldset, .choice-list-full, .question, .question-container, #profiler-choice'))
-              || el.closest('[data-survey-uid], fieldset, .choice-list-full, .question, .question-container, #profiler-choice')
+            const groupRoot = (sameChoices[0] && sameChoices[0].closest(sharedGroupSelectors))
+              || el.closest(sharedGroupSelectors)
               || el.parentElement;
             if (!groupRoot) return '';
 
@@ -383,7 +384,11 @@ def _find_group_heading_text_near_element(driver, el, options: List[str]) -> str
               'p'
             ];
 
-            const scanRoots = [groupRoot, groupRoot.parentElement].filter(Boolean);
+            const scanRoots = [
+              groupRoot,
+              groupRoot.parentElement,
+              groupRoot.parentElement ? groupRoot.parentElement.parentElement : null,
+            ].filter(Boolean);
             const candidates = [];
             for (const scanRoot of scanRoots) {
               for (const sel of qSelectors) {
