@@ -438,8 +438,9 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         runtime_answerrow_blocks = _extract_runtime_answerrow_radio_blocks(driver, frame_chain)
         if runtime_answerrow_blocks:
             return runtime_answerrow_blocks
-    except Exception:
-        pass
+    except Exception as e:
+        if _env_truthy("DOM_CONTEXT_DEBUG", "1"):
+            print(f"[DOM_CONTEXT_DEBUG] runtime_extractor_exception={type(e).__name__}: {e}")
 
     # --- 0h-ter) Angular custom data-testid checkboxes (sans input natif) ---
     # Objectif: extraire les blocs checkbox pilotés par wrappers + labels data-testid.
