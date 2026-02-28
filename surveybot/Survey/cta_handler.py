@@ -21,7 +21,6 @@ import re
 from urllib.parse import urlsplit
 import time
 import os
-import sys
 
 
 # =============================================================================
@@ -91,32 +90,6 @@ def _cta_intercept_enabled() -> bool:
     """Retourne True si le mode interception CTA est activé via variable d'environnement."""
     raw = (os.getenv(CTA_INTERCEPT_ENV_VAR, "") or "").strip().lower()
     return raw in {"1", "true", "yes", "on"}
-
-
-def _local_pause_before_cta(reason: str = "") -> None:
-    """
-    LOCAL ONLY: pause avant clic CTA si demandé explicitement.
-    Ne bloque jamais en prod/docker/CI (stdin non interactif). 
-    """
-    try:
-        run_env = (os.getenv("RUN_ENV", "local") or "local").strip().lower()
-        require_enter = (os.getenv("LOCAL_CTA_REQUIRE_ENTER", "0") or "0").strip().lower()
-        if run_env != "local":
-            return
-        if require_enter not in {"1", "true", "yes", "on"}:
-            return
-        if not sys.stdin or not sys.stdin.isatty():
-            return
-
-        msg = "[LOCAL][PAUSE] Appuie sur Entrée pour autoriser le clic CTA"
-        if reason:
-            msg += f" ({reason})"
-        print(msg, flush=True)
-        input()
-    except KeyboardInterrupt:
-        raise
-    except Exception:
-        return
 
 
 def _is_internal_task_carousel_arrow(driver, el) -> bool:
@@ -583,8 +556,6 @@ def _press_click_release(driver, el):
 
 def _click_with_intercept(driver, el) -> bool:
     """Clique un CTA en mode normal ou en mode interception non destructif."""
-    _local_pause_before_cta("nav_cta_click")
-
     if not _cta_intercept_enabled():
         before = _dom_progress_marker(driver)
         used = "press_click_release"

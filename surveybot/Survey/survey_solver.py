@@ -7,7 +7,6 @@ from selenium.webdriver.support import expected_conditions as EC  # [AJOUT]
 from selenium.webdriver.common.action_chains import ActionChains  # [AJOUT]
 from selenium.webdriver.common.by import By
 import time, os, sys
-import Survey.cta_handler as cta_handler
 from preselection.question_validation import detect_disqualification_reason
 
 # ÃƒÂ¢Ã…Â¡Ã¢â€žÂ¢ÃƒÂ¯Ã‚Â¸Ã‚Â ParamÃƒÆ’Ã‚Â¨tres de boucle pour ÃƒÆ’Ã‚Â©viter les boucles infinies
@@ -713,19 +712,8 @@ def solve_full_survey(driver, api_key, *, account_id: str):
 
         # y a-t-il encore des ÃƒÆ’Ã‚Â©lÃƒÆ’Ã‚Â©ments actionnables visibles ?
         has_more_to_do = _has_actionable_elements(driver)
-        cta_clicked = False
-        cta_attempted = False
-        if just_succeeded:
-            cta_attempted = True
-            cta_clicked = bool(cta_handler.try_click_navigation_cta(driver))
-            print(
-                "[POST_ACTION_CTA] "
-                f"attempted={str(cta_attempted).lower()} "
-                f"clicked={str(cta_clicked).lower()} "
-                f"intercept={str((os.getenv('CTA_INTERCEPT_ONLY', '') or '').strip().lower() in {'1', 'true', 'yes', 'on'}).lower()}"
-            )
 
-        if just_succeeded and has_more_to_do and not cta_clicked:
+        if just_succeeded and has_more_to_do:
             print(
                 "ÃƒÂ¢Ã‚ÂÃ‚Â­ÃƒÂ¯Ã‚Â¸Ã‚Â Action en-page rÃƒÆ’Ã‚Â©ussie et autres ÃƒÆ’Ã‚Â©lÃƒÆ’Ã‚Â©ments visibles ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ pas d'attente de navigation."
             )
