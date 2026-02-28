@@ -12,6 +12,8 @@ class _FakeChoice:
     def find_elements(self, by=None, value=None):
         if by == "xpath" and value and "type-multi" in value and "question-" in value:
             return self._containers
+        if by == "xpath" and value and ("role='listbox'" in value or "multi-select-container" in value):
+            return self._containers
         return []
 
 
@@ -42,3 +44,13 @@ def test_checkbox_group_key_uses_question_container_for_tivian_names():
     container = _FakeContainer({"class": "question question-121131 type-multi-121"})
     el = _FakeChoice({"name": "v_115"}, containers=[container])
     assert _group_key_for_choice(el, "checkbox") == "question_121131"
+
+
+def test_checkbox_group_key_uses_listbox_container_when_name_missing():
+    container = _FakeContainer({
+        "role": "listbox",
+        "class": "multi-select-container",
+        "id": "ps-multi-select-1",
+    })
+    el = _FakeChoice({"name": ""}, containers=[container])
+    assert _group_key_for_choice(el, "checkbox") == "dom:ps-multi-select-1|multi-select-container"
