@@ -480,6 +480,7 @@ def _group_key_for_choice(el, itype: str) -> str:
                 container = None
                 container_xpaths = [
                     "ancestor::*[@role='radiogroup' or @role='group' or @aria-labelledby][1]",
+                    "ancestor::*[@role='listbox' or contains(@class,'multi-select-container') or contains(@class,'single-choice-container')][1]",
                     "ancestor::*[contains(@class,'question-items') or contains(@class,'answers') or contains(@class,'options') or contains(@class,'choices')][1]",
                 ]
                 for xp in container_xpaths:
