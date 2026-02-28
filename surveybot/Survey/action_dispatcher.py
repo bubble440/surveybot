@@ -2389,6 +2389,36 @@ def handle_drag_drop_logic(driver):
             return False
         return True
 
+    def _attempt_cta_once() -> bool:
+        intercept_only = (os.getenv("CTA_INTERCEPT_ONLY", "") or "").strip().lower() in {"1", "true", "yes", "on"}
+        cta_found = False
+        try:
+            candidates = driver.find_elements(By.CSS_SELECTOR, "button[aria-label='Go to next question']")
+            cta_found = any(_is_enabled(btn) for btn in candidates)
+        except Exception:
+            cta_found = False
+
+        clicked = False
+        try:
+            clicked = bool(Survey.input_handler.try_click_navigation_cta_any_context(driver))
+        except Exception:
+            clicked = False
+
+        if intercept_only:
+            print(
+                "[DRAGDROP][CTA] "
+                f"cta_found={str(cta_found).lower()} "
+                f"clicked={str(clicked).lower()} "
+                f"intercept_ok={str(clicked).lower()}"
+            )
+        else:
+            print(
+                "[DRAGDROP][CTA] "
+                f"cta_found={str(cta_found).lower()} "
+                f"clicked={str(clicked).lower()}"
+            )
+        return clicked
+
     title_candidates = driver.find_elements(
         By.CSS_SELECTOR,
         "p.question-title[psquestiontitle], p.question-title, [psquestiontitle]",
@@ -2466,7 +2496,7 @@ def handle_drag_drop_logic(driver):
     next_buttons = driver.find_elements(By.CSS_SELECTOR, "button[aria-label='Go to next question']")
     next_button = next_buttons[0] if next_buttons else None
 
-    offsets = [(0, 0), (15, 0), (-15, 0), (0, 15), (0, -15)]
+    offsets = [(0, 0), (15, 0)]
     can_use_cdp = hasattr(driver, "execute_cdp_cmd")
     is_local_env = (os.getenv("RUN_ENV", "local") or "local").strip().lower() == "local"
     for idx, (ox, oy) in enumerate(offsets, start=1):
@@ -2583,8 +2613,9 @@ def handle_drag_drop_logic(driver):
                 break
             time.sleep(0.2)
 
-        print(f"[DRAGDROP] attempt={idx} next_enabled={str(enabled).lower()}")
-        if enabled and in_drop_zone:
+        print(f"[DRAGDROP] attempt={idx} next_enabled={str(enabled).lower()} in_drop_zone={str(in_drop_zone).lower()}")
+        if enabled or in_drop_zone:
+            _attempt_cta_once()
             return True
 
     return False
