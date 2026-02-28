@@ -77,6 +77,7 @@ try:
         _extract_custom_testid_single_select_radio_blocks,
         _extract_custom_testid_multi_select_checkbox_blocks,
         _extract_single_consent_checkbox_block,
+        _extract_runtime_answerrow_radio_blocks,
     )
     
     # Registre et utilitaires
@@ -129,6 +130,7 @@ except ImportError:
         _extract_custom_testid_single_select_radio_blocks,
         _extract_custom_testid_multi_select_checkbox_blocks,
         _extract_single_consent_checkbox_block,
+        _extract_runtime_answerrow_radio_blocks,
     )
 
 
@@ -427,6 +429,15 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         custom_testid_blocks = _extract_custom_testid_single_select_radio_blocks(driver, frame_chain)
         if custom_testid_blocks:
             return custom_testid_blocks
+    except Exception:
+        pass
+
+    # --- 0h-bis-2) Runtime answers rows + radio wrapper (sans input radio natif) ---
+    # Objectif: extraire les groupes radio custom où les options sont des rows cliquables.
+    try:
+        runtime_answerrow_blocks = _extract_runtime_answerrow_radio_blocks(driver, frame_chain)
+        if runtime_answerrow_blocks:
+            return runtime_answerrow_blocks
     except Exception:
         pass
 
