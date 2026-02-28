@@ -324,6 +324,98 @@ def _extract_question_from_container(container, options: List[str]) -> str:
         return ""
 
 
+def _find_group_heading_text_near_element(driver, el, options: List[str]) -> str:
+    """
+    Récupère un texte d'intitulé quand les radios/checkbox sont visibles mais que
+    la question n'est pas dans le même conteneur direct que les inputs.
+
+    Critères DOM observables:
+    - texte candidat porté par un heading/label/legend/question-like node
+    - candidat situé dans l'ancêtre visuel du groupe de choix
+    - exclusion stricte des labels d'options du groupe
+    """
+    try:
+        option_keys = [_norm_lc(opt) for opt in (options or []) if _norm(opt)]
+        txt = driver.execute_script(
+            """
+            const el = arguments[0];
+            const optionKeys = Array.isArray(arguments[1]) ? arguments[1] : [];
+            if (!el) return "";
+
+            const norm = (v) => (v || "").replace(/\s+/g, " ").trim();
+            const normLc = (v) => norm(v).toLowerCase();
+
+            const isVisible = (node) => {
+              if (!node || !(node instanceof Element)) return false;
+              const st = window.getComputedStyle(node);
+              if (!st) return false;
+              if (st.display === 'none' || st.visibility === 'hidden' || st.opacity === '0') return false;
+              const r = node.getBoundingClientRect();
+              return r.width > 0 && r.height > 0;
+            };
+
+            const groupType = ((el.getAttribute('type') || '').toLowerCase() || (el.getAttribute('role') || '').toLowerCase());
+            const groupName = el.getAttribute('name') || '';
+            const root = el.closest('#app, form, main, [role="main"], body') || document.body;
+
+            const sameChoices = Array.from(root.querySelectorAll('input[type="radio"],input[type="checkbox"],[role="radio"],[role="checkbox"]'))
+              .filter((n) => {
+                const t = ((n.getAttribute('type') || '').toLowerCase() || (n.getAttribute('role') || '').toLowerCase());
+                if (t !== groupType) return false;
+                const nName = n.getAttribute('name') || '';
+                if (groupName && nName) return nName === groupName;
+                return n.closest('[data-survey-uid], fieldset, .choice-list-full, .question, .question-container') ===
+                       el.closest('[data-survey-uid], fieldset, .choice-list-full, .question, .question-container');
+              });
+
+            const groupRoot = (sameChoices[0] && sameChoices[0].closest('[data-survey-uid], fieldset, .choice-list-full, .question, .question-container, #profiler-choice'))
+              || el.closest('[data-survey-uid], fieldset, .choice-list-full, .question, .question-container, #profiler-choice')
+              || el.parentElement;
+            if (!groupRoot) return '';
+
+            const qSelectors = [
+              '.question-label',
+              '.question-description',
+              'legend',
+              'h1,h2,h3,h4,h5',
+              '[role="heading"]',
+              'label',
+              'p'
+            ];
+
+            const scanRoots = [groupRoot, groupRoot.parentElement].filter(Boolean);
+            const candidates = [];
+            for (const scanRoot of scanRoots) {
+              for (const sel of qSelectors) {
+                for (const node of Array.from(scanRoot.querySelectorAll(sel))) {
+                  if (!isVisible(node)) continue;
+                  if (groupRoot.contains(node) && node.matches('label[for], .single-choice-container label')) continue;
+                  const t = norm(node.textContent || node.innerText || '');
+                  const tLc = normLc(t);
+                  if (!t || t.length < 8) continue;
+                  if (optionKeys.includes(tLc)) continue;
+                  if (Array.from((groupRoot || document).querySelectorAll('label[for]')).some((ln) => normLc(ln.textContent || '') === tLc)) continue;
+                  candidates.push({
+                    t,
+                    priority: node.matches('.question-label,.question-description,legend,h1,h2,h3,h4,h5,[role="heading"]') ? 1 : 0,
+                    len: t.length,
+                  });
+                }
+              }
+              if (candidates.length) break;
+            }
+
+            candidates.sort((a,b) => (b.priority - a.priority) || (a.len - b.len));
+            return candidates.length ? candidates[0].t : '';
+            """,
+            el,
+            option_keys,
+        )
+        return _norm(txt) if txt else ""
+    except Exception:
+        return ""
+
+
 # ================================================================================
 # GROUPEMENT ET CARDINALITÉ
 # ================================================================================

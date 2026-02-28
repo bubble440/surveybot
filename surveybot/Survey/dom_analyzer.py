@@ -39,6 +39,7 @@ try:
         _find_question_text_near_element, _find_associated_label,
         _extract_ssi_confirmit_question, _extract_surveywriter_ssi_question,
         _nearest_question_container, _extract_question_from_container,
+        _find_group_heading_text_near_element,
         _group_key_for_choice, _compute_max_select
     )
     
@@ -96,6 +97,7 @@ except ImportError:
         _find_question_text_near_element, _find_associated_label,
         _extract_ssi_confirmit_question, _extract_surveywriter_ssi_question,
         _nearest_question_container, _extract_question_from_container,
+        _find_group_heading_text_near_element,
         _group_key_for_choice, _compute_max_select
     )
     from Survey.dom_frame_selector import (
@@ -645,6 +647,14 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                             is_meta = True
                     if (near_lc not in opt_lc) and (not is_meta):
                         question = near
+
+                if not question:
+                    heading = _norm(_find_group_heading_text_near_element(driver, els[0], options))
+                    if heading:
+                        heading_lc = _norm_lc(heading)
+                        opt_lc = {_norm_lc(o) for o in (options or []) if o}
+                        if heading_lc not in opt_lc:
+                            question = heading
 
             if not question:
                 # dernier recours: bloc "1 option" (rare, mais utile)

@@ -125,3 +125,36 @@ def test_generic_grouping_accepts_visible_question_container_when_input_not_disp
     assert blocks[0]["itype"] == "radio"
     assert blocks[0]["options"] == ["Oui", "Non"]
     assert (blocks[0].get("context") or {}).get("group_key") == "radio:name:q_lime_1"
+
+
+def test_generic_grouping_recovers_question_from_group_heading_when_near_text_is_option(monkeypatch):
+    _patch_non_generic_extractors(monkeypatch)
+
+    monkeypatch.setattr(da, "_is_actionable_visible", lambda _el: True)
+    monkeypatch.setattr(da, "_looks_like_system_field", lambda _el: False)
+    monkeypatch.setattr(da, "_extract_surveywriter_ssi_question", lambda *_: "")
+    monkeypatch.setattr(da, "_nearest_question_container", lambda *_: None)
+    monkeypatch.setattr(da, "_extract_question_from_container", lambda *_: "")
+    monkeypatch.setattr(da, "_find_question_text_near_element", lambda *_: "Oui")
+    monkeypatch.setattr(
+        da,
+        "_find_group_heading_text_near_element",
+        lambda *_: "J'autorise la collecte des données de profil",
+    )
+
+    labels = {"r1": "Oui", "r2": "Non"}
+    monkeypatch.setattr(da, "_find_associated_label", lambda _driver, el: labels.get(el.get_attribute("id"), ""))
+
+    driver = _FakeDriver(
+        [
+            _FakeInput({"type": "radio", "name": "single_choice_0.1", "id": "r1", "value": "296151"}),
+            _FakeInput({"type": "radio", "name": "single_choice_0.1", "id": "r2", "value": "296153"}),
+        ]
+    )
+
+    blocks = da._analyze_dom_current_context(driver)
+
+    assert len(blocks) == 1
+    assert blocks[0]["itype"] == "radio"
+    assert blocks[0]["options"] == ["Oui", "Non"]
+    assert da._norm(blocks[0]["question"]) == da._norm("J'autorise la collecte des données de profil")
