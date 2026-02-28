@@ -578,6 +578,9 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
     seen_signatures = set()
     seen_multi_text_groups = set()
 
+    group_reject_reasons: Dict[str, int] = {}
+    created_group_count = 0
+
     for (itype, group_key), els in groups.items():
         try:
             # options = labels des inputs
@@ -661,6 +664,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                 if len(options) == 1 and len(els) == 1:
                     question = options[0]
                 else:
+                    group_reject_reasons["missing_question"] = group_reject_reasons.get("missing_question", 0) + 1
                     continue
 
             # Pattern spécifique
@@ -671,6 +675,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             # Pattern spécifique
             sig = group_key if group_key.startswith(f"{itype}:name:") else (question, itype)
             if sig in seen_signatures:
+                group_reject_reasons["duplicate_signature"] = group_reject_reasons.get("duplicate_signature", 0) + 1
                 continue
             seen_signatures.add(sig)
 
@@ -788,8 +793,17 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             }
 
             question_blocks.append(block)
+            created_group_count += 1
         except Exception:
+            group_reject_reasons["group_exception"] = group_reject_reasons.get("group_exception", 0) + 1
             continue
+
+    if _env_truthy("DOM_CONTEXT_DEBUG", "1"):
+        print(
+            "[DOM_CONTEXT_DEBUG] analyze_dom choice_groups "
+            f"detected={len(groups)} created={created_group_count} "
+            f"rejected={group_reject_reasons}"
+        )
 
     # Pattern spécifique
     # Objectif: quand les options ne sont PAS des <input type=radio> visibles,
