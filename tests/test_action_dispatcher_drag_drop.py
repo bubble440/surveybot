@@ -40,10 +40,14 @@ class _FakeDriver:
         self.drop_zone = _FakeElement()
         self.next_button = _FakeElement(attrs={"disabled": "true", "aria-disabled": "true", "class": "btn disabled"})
         self.draggables = [
-            _FakeElement(images=[_FakeImage("66", "https://x/66.png")]),
             _FakeElement(images=[_FakeImage("42", "https://x/42.png")]),
-            _FakeElement(images=[_FakeImage("59", "https://x/59.png")]),
         ]
+        self.attempts = 0
+
+    def find_element(self, by=None, value=None):
+        if "#dropZoneList" in (value or ""):
+            return self.drop_zone
+        raise RuntimeError("not found")
 
     def find_elements(self, by=None, value=None):
         v = value or ""
@@ -51,25 +55,46 @@ class _FakeDriver:
             return [self.title]
         if "[cdkdrag]" in v:
             return self.draggables
-        if "[cdkdroplist]" in v or "#dropZoneList" in v:
-            return [self.drop_zone]
         if "Go to next question" in v:
             return [self.next_button]
         return []
 
-    def execute_script(self, _script, *_args):
-        if "js_pointer_drag_failed" in (_script or ""):
+    def execute_script(self, script, *_args):
+        s = script or ""
+        if "getBoundingClientRect" in s:
+            self.attempts += 1
+            if self.attempts == 2:
+                self.next_button._attrs["disabled"] = ""
+                self.next_button._attrs["aria-disabled"] = "false"
+                self.next_button._attrs["class"] = "btn"
+            return {
+                "startX": 5,
+                "startY": 5,
+                "endX": 10,
+                "endY": 10,
+                "verified": True,
+                "elementTag": "img",
+                "elementId": "",
+                "elementClass": "ng-star-inserted",
+            }
+        if "draggableInZone" in s:
             return False
-        if "mkMouse('mousedown'" in (_script or ""):
-            self.next_button._attrs["disabled"] = ""
-            self.next_button._attrs["aria-disabled"] = "false"
-            self.next_button._attrs["class"] = "btn"
-            return True
+        return None
+
+    def execute_cdp_cmd(self, _name, _payload):
         return None
 
 
-def test_handle_drag_drop_logic_enables_next():
+def test_handle_drag_drop_logic_attempt_budget_and_cta_once(monkeypatch):
     driver = _FakeDriver()
+    calls = {"cta": 0}
+
+    def _fake_cta(_driver):
+        calls["cta"] += 1
+        return True
+
+    monkeypatch.setattr(ad.Survey.input_handler, "try_click_navigation_cta_any_context", _fake_cta)
 
     assert ad.handle_drag_drop_logic(driver) is True
-    assert driver.next_button.get_attribute("disabled") == ""
+    assert driver.attempts == 2
+    assert calls["cta"] == 1
