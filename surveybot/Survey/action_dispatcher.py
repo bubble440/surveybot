@@ -2463,64 +2463,78 @@ def handle_drag_drop_logic(driver):
     next_button = next_buttons[0] if next_buttons else None
 
     offsets = [(0, 0), (10, 10)]
+    can_use_cdp = hasattr(driver, "execute_cdp_cmd")
+    is_local_env = (os.getenv("RUN_ENV", "local") or "local").strip().lower() == "local"
     for idx, (ox, oy) in enumerate(offsets, start=1):
         print(f"[DRAGDROP] attempt={idx} start")
         try:
             driver.execute_script("arguments[0].scrollIntoView({block:'center'});", source)
             driver.execute_script("arguments[0].scrollIntoView({block:'center'});", drop_zone)
-            drag_done = driver.execute_script(
+            points = driver.execute_script(
                 """
                 const src = arguments[0];
                 const dst = arguments[1];
                 const ox = arguments[2] || 0;
                 const oy = arguments[3] || 0;
-
-                if (!src || !dst) return false;
-
+                if (!src || !dst) return null;
                 const srcRect = src.getBoundingClientRect();
                 const dstRect = dst.getBoundingClientRect();
-                const startX = Math.floor(srcRect.left + srcRect.width / 2);
-                const startY = Math.floor(srcRect.top + srcRect.height / 2);
-                const endX = Math.floor(dstRect.left + dstRect.width / 2 + ox);
-                const endY = Math.floor(dstRect.top + dstRect.height / 2 + oy);
-
-                const mkMouse = (type, x, y, target) => {
-                    const e = new MouseEvent(type, {
-                        bubbles: true,
-                        cancelable: true,
-                        composed: true,
-                        clientX: x,
-                        clientY: y,
-                        button: 0,
-                        buttons: 1,
-                        view: window,
-                    });
-                    (target || document).dispatchEvent(e);
+                return {
+                    startX: Math.floor(srcRect.left + srcRect.width / 2),
+                    startY: Math.floor(srcRect.top + srcRect.height / 2),
+                    endX: Math.floor(dstRect.left + dstRect.width / 2 + ox),
+                    endY: Math.floor(dstRect.top + dstRect.height / 2 + oy),
                 };
-
-                mkMouse('mousemove', startX, startY, src);
-                mkMouse('mousedown', startX, startY, src);
-
-                const steps = 6;
-                for (let i = 1; i <= steps; i++) {
-                    const x = Math.floor(startX + ((endX - startX) * i) / steps);
-                    const y = Math.floor(startY + ((endY - startY) * i) / steps);
-                    const t = document.elementFromPoint(x, y) || document;
-                    mkMouse('mousemove', x, y, t);
-                }
-
-                const dropTarget = document.elementFromPoint(endX, endY) || dst;
-                mkMouse('mouseup', endX, endY, dropTarget);
-
-                return true;
                 """,
                 source,
                 drop_zone,
                 ox,
                 oy,
             )
+            if not points:
+                raise RuntimeError("drag_points_unavailable")
+
+            if can_use_cdp:
+                start_x = int(points.get("startX", 0))
+                start_y = int(points.get("startY", 0))
+                end_x = int(points.get("endX", 0))
+                end_y = int(points.get("endY", 0))
+
+                driver.execute_cdp_cmd(
+                    "Input.dispatchMouseEvent",
+                    {"type": "mouseMoved", "x": start_x, "y": start_y, "button": "none"},
+                )
+                driver.execute_cdp_cmd(
+                    "Input.dispatchMouseEvent",
+                    {"type": "mousePressed", "x": start_x, "y": start_y, "button": "left", "clickCount": 1},
+                )
+
+                steps = 8
+                for step in range(1, steps + 1):
+                    x = int(start_x + ((end_x - start_x) * step) / steps)
+                    y = int(start_y + ((end_y - start_y) * step) / steps)
+                    driver.execute_cdp_cmd(
+                        "Input.dispatchMouseEvent",
+                        {"type": "mouseMoved", "x": x, "y": y, "button": "left", "buttons": 1},
+                    )
+                    time.sleep(0.02)
+
+                driver.execute_cdp_cmd(
+                    "Input.dispatchMouseEvent",
+                    {"type": "mouseReleased", "x": end_x, "y": end_y, "button": "left", "clickCount": 1},
+                )
+                drag_done = True
+            elif is_local_env:
+                chain = ActionChains(driver).click_and_hold(source).move_to_element(drop_zone)
+                if ox or oy:
+                    chain = chain.move_by_offset(ox, oy)
+                chain.release().perform()
+                drag_done = True
+            else:
+                raise RuntimeError("cdp_unavailable_non_local")
+
             if not drag_done:
-                raise RuntimeError("js_pointer_drag_failed")
+                raise RuntimeError("pointer_drag_failed")
             print(f"[DRAGDROP] attempt={idx} dropped")
         except Exception as e:
             print(f"[DRAGDROP] attempt={idx} dropped error={_short_exc(e)}")
