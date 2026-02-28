@@ -2233,6 +2233,7 @@ def _extract_runtime_answerrow_radio_blocks(driver, frame_chain: list[int] | Non
     - contrôle radio custom via `.radio_button[data-aut='Runtime_Wrapper']`
     """
     frame_chain = list(frame_chain or [])
+    debug = (os.getenv("DOM_CONTEXT_DEBUG", "") or "").strip().lower() in {"1", "true", "yes", "on"}
 
     try:
         question_nodes = driver.find_elements(
@@ -2240,8 +2241,16 @@ def _extract_runtime_answerrow_radio_blocks(driver, frame_chain: list[int] | Non
             "[data-aut='Runtime_QuestionTitleAndDescriptionWrapper'] [data-aut='Runtime-TextComponent']",
         )
         answer_rows = driver.find_elements(By.CSS_SELECTOR, ".answer[data-aut='Runtime_AnswerRow']")
-    except Exception:
+    except Exception as e:
+        if debug:
+            print(f"[DOM_CONTEXT_DEBUG] runtime_answerrow extractor_exception={type(e).__name__}: {e}")
         return []
+
+    if debug:
+        print(
+            f"[DOM_CONTEXT_DEBUG] runtime_answerrow counts "
+            f"question_nodes={len(question_nodes)} answer_rows={len(answer_rows)}"
+        )
 
     if not question_nodes or len(answer_rows) < 2:
         return []
@@ -2255,12 +2264,27 @@ def _extract_runtime_answerrow_radio_blocks(driver, frame_chain: list[int] | Non
             if not radio_wrappers:
                 continue
 
-            question_container_id = ""
+            question_container = None
             try:
-                question_container = row.find_element(By.XPATH, "ancestor::*[@id][starts-with(@id, 'question_')][1]")
-                question_container_id = (question_container.get_attribute("id") or "").strip()
+                question_container = row.find_element(
+                    By.XPATH,
+                    "ancestor::*[@id][starts-with(@id, 'question_') and not(starts-with(@id, 'question_container_'))][1]",
+                )
             except Exception:
-                question_container_id = ""
+                question_container = None
+
+            if question_container is None:
+                try:
+                    question_container = row.find_element(
+                        By.XPATH,
+                        "ancestor::*[@data-aut='Runtime_QuestionWrapper'][1]",
+                    )
+                except Exception:
+                    question_container = None
+
+            question_container_id = ""
+            if question_container is not None:
+                question_container_id = (question_container.get_attribute("id") or "").strip()
 
             if not question_container_id:
                 question_container_id = "runtime_question_default"
@@ -2269,93 +2293,125 @@ def _extract_runtime_answerrow_radio_blocks(driver, frame_chain: list[int] | Non
         except Exception:
             continue
 
-    for qid, rows in grouped_rows.items():
-        if len(rows) < 2:
-            continue
+    if debug:
+        print(f"[DOM_CONTEXT_DEBUG] runtime_answerrow grouped_rows keys={sorted(grouped_rows.keys())}")
 
-        question = ""
-        try:
-            question_container = rows[0].find_element(By.XPATH, "ancestor::*[@id][starts-with(@id, 'question_')][1]")
-            q_nodes = question_container.find_elements(
-                By.CSS_SELECTOR,
-                "[data-aut='Runtime_QuestionTitleAndDescriptionWrapper'] [data-aut='Runtime-TextComponent']",
-            )
-            for qn in q_nodes:
-                txt = _norm(qn.text or qn.get_attribute("innerText") or "")
-                if txt and len(txt) >= 5:
-                    question = txt
-                    break
-        except Exception:
-            question = ""
-
-        if not question:
-            continue
-
-        options: list[str] = []
-        option_xpath_map: dict[str, str] = {}
-
-        for row in rows:
-            try:
-                text_nodes = row.find_elements(
-                    By.CSS_SELECTOR,
-                    "[data-aut='Runtime_AnswerText'] [data-aut='Runtime-TextComponent']",
-                )
-                label_text = ""
-                for tn in text_nodes:
-                    txt = _norm(tn.text or tn.get_attribute("innerText") or "")
-                    if txt:
-                        label_text = txt
-                        break
-
-                if not label_text:
-                    continue
-
-                nk = _norm_key(label_text)
-                if not nk or nk in option_xpath_map:
-                    continue
-
-                xp = _best_xpath_for_element(driver, row)
-                if not xp:
-                    continue
-
-                option_xpath_map[nk] = xp
-                options.append(label_text)
-            except Exception:
+    try:
+        for qid, rows in grouped_rows.items():
+            if len(rows) < 2:
                 continue
 
-        if len(options) < 2 or len(option_xpath_map) < 2:
-            continue
+            question = ""
+            try:
+                question_container = rows[0].find_element(
+                    By.XPATH,
+                    "ancestor::*[@id][starts-with(@id, 'question_') and not(starts-with(@id, 'question_container_'))][1]",
+                )
+            except Exception:
+                question_container = None
 
-        group_key = f"runtime_answerrow:radio:{qid}"
-        target_id = make_target_id("group", group_key, question)
+            if question_container is None:
+                try:
+                    question_container = rows[0].find_element(
+                        By.XPATH,
+                        "ancestor::*[@data-aut='Runtime_QuestionWrapper'][1]",
+                    )
+                except Exception:
+                    question_container = None
 
-        register_target(
-            target_id,
-            {
-                "kind": "group",
-                "itype": "radio",
-                "group_key": group_key,
-                "question": question,
-                "option_xpath_map": option_xpath_map,
-                "frame_chain": frame_chain,
-                "runtime_answerrow_radio": True,
-            },
-        )
+            if question_container is not None:
+                q_nodes = question_container.find_elements(
+                    By.CSS_SELECTOR,
+                    "[data-aut='Runtime_QuestionTitleAndDescriptionWrapper'] [data-aut='Runtime-TextComponent']",
+                )
+                for qn in q_nodes:
+                    txt = _norm(qn.text or qn.get_attribute("innerText") or "")
+                    if txt and len(txt) >= 5:
+                        question = txt
+                        break
 
-        blocks.append(
-            {
-                "question": question,
-                "itype": "radio",
-                "options": options,
-                "max_select": 1,
-                "target_id": target_id,
-                "context": {
+            options: list[str] = []
+            option_xpath_map: dict[str, str] = {}
+
+            for row in rows:
+                try:
+                    text_nodes = row.find_elements(
+                        By.CSS_SELECTOR,
+                        "[data-aut='Runtime_AnswerText'] [data-aut='Runtime-TextComponent']",
+                    )
+                    label_text = ""
+                    for tn in text_nodes:
+                        txt = _norm(tn.text or tn.get_attribute("innerText") or "")
+                        if txt:
+                            label_text = txt
+                            break
+
+                    if not label_text:
+                        continue
+
+                    nk = _norm_key(label_text)
+                    if not nk or nk in option_xpath_map:
+                        continue
+
+                    row_id = (row.get_attribute("id") or "").strip()
+                    if row_id:
+                        xp = f"//*[@id={_xpath_literal(row_id)}]"
+                    else:
+                        xp = _best_xpath_for_element(driver, row)
+                    if not xp:
+                        continue
+
+                    option_xpath_map[nk] = xp
+                    options.append(label_text)
+                except Exception:
+                    continue
+
+            if debug:
+                print(
+                    f"[DOM_CONTEXT_DEBUG] runtime_answerrow group qid={qid} rows={len(rows)} "
+                    f"question_found={bool(question)} options_count={len(options)} "
+                    f"xpath_map_count={len(option_xpath_map)}"
+                )
+
+            if not question:
+                continue
+
+            if len(options) < 2 or len(option_xpath_map) < 2:
+                continue
+
+            group_key = f"runtime_answerrow:radio:{qid}"
+            target_id = make_target_id("group", group_key, question)
+
+            register_target(
+                target_id,
+                {
                     "kind": "group",
+                    "itype": "radio",
                     "group_key": group_key,
+                    "question": question,
+                    "option_xpath_map": option_xpath_map,
+                    "frame_chain": frame_chain,
                     "runtime_answerrow_radio": True,
                 },
-            }
-        )
+            )
+
+            blocks.append(
+                {
+                    "question": question,
+                    "itype": "radio",
+                    "options": options,
+                    "max_select": 1,
+                    "target_id": target_id,
+                    "context": {
+                        "kind": "group",
+                        "group_key": group_key,
+                        "runtime_answerrow_radio": True,
+                    },
+                }
+            )
+    except Exception as e:
+        if debug:
+            print(f"[DOM_CONTEXT_DEBUG] runtime_answerrow extractor_exception={type(e).__name__}: {e}")
 
     return blocks
 
