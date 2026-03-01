@@ -396,9 +396,85 @@ def run_attach_takeover(driver, *, api_key: str, account_id: str) -> None:
                 if reason == "drag_drop":
                     print("[ATTACH][STRICT] drag_drop strict reason ignored -> continue")
                     continue
-                print(f"[ATTACH][STRICT] Détecté: {reason} -> abandon du survey")
-                print(f"[ATTACH][STRICT] Ce type de survey n'est pas supporté en V1")
-                break
+
+                # Captcha : tentative de résolution automatique via 2Captcha
+                if reason == "captcha":
+                    from config import get_captcha_behavior
+                    captcha_behavior = get_captcha_behavior()
+
+                    if captcha_behavior == "auto_2captcha":
+                        print("[ATTACH][CAPTCHA] reCAPTCHA détecté → tentative 2Captcha...")
+                        try:
+                            from captcha.recaptcha_handler import solve_recaptcha_v2_auto
+                            resolved = solve_recaptcha_v2_auto(driver)
+                        except Exception as e:
+                            print(f"[ATTACH][CAPTCHA] Erreur recaptcha_handler: {e}")
+                            resolved = False
+
+                        if resolved:
+                            # CRITIQUE : le callback CMIX a bien mis pass=true, MAIS
+                            # [data-sitekey] reste dans le DOM même après résolution.
+                            # Si on fait continue() directement, detect_strict_survey()
+                            # re-détecte le captcha → boucle infinie + coût 2Captcha.
+                            # Solution : cliquer le CTA et ATTENDRE que l'URL change
+                            # (confirmation que la page suivante est chargée) avant continue.
+                            print("[ATTACH][CAPTCHA] ✅ pass=true set → clic CTA pour avancer la page...")
+                            try:
+                                from Survey.cta_handler import try_click_navigation_cta_any_context
+                                cta_clicked = try_click_navigation_cta_any_context(driver)
+                                if cta_clicked:
+                                    print("[ATTACH][CAPTCHA] ✅ CTA cliqué → attente changement URL...")
+                                    # Attente active : l'URL doit changer (max 10s).
+                                    # Sleep fixe insuffisant — Decipher peut prendre 3-8s
+                                    # pour soumettre le formulaire et charger la page suivante.
+                                    # On attend le changement d'URL plutôt qu'un délai arbitraire.
+                                    _url_before = driver.current_url
+                                    from selenium.webdriver.support.ui import WebDriverWait
+                                    try:
+                                        WebDriverWait(driver, 10).until(
+                                            lambda d: d.current_url != _url_before
+                                        )
+                                        print(f"[ATTACH][CAPTCHA] ✅ URL changée → {driver.current_url[:60]}")
+                                    except Exception:
+                                        # Pas de changement d'URL dans les 10s — on continue quand même
+                                        # (certaines plateformes rechargent la même URL sans captcha)
+                                        print("[ATTACH][CAPTCHA] ⚠️ URL inchangée après 10s — on continue")
+                                    time.sleep(0.5)  # micro-pause DOM post-navigation
+                                else:
+                                    print("[ATTACH][CAPTCHA] ⚠️ Aucun CTA trouvé (non bloquant)")
+                            except Exception as e:
+                                print(f"[ATTACH][CAPTCHA] CTA click erreur (non bloquant): {e}")
+                            continue  # reprend la boucle — page suivante sans [data-sitekey]
+                        else:
+                            print("[ATTACH][CAPTCHA] ❌ Échec → abandon du survey")
+                            break
+
+                    elif captcha_behavior == "pause":
+                        # LOCAL interactif : pause manuelle (anti-boucle sur même URL)
+                        captcha_url = driver.current_url or ""
+                        last_captcha_url = getattr(driver, "_last_captcha_pause_url", None)
+                        if last_captcha_url == captcha_url:
+                            print("[ATTACH][CAPTCHA] Déjà traité sur cette URL → continue")
+                        else:
+                            setattr(driver, "_last_captcha_pause_url", captcha_url)
+                            try:
+                                input("[ATTACH][PAUSE] Résous le CAPTCHA dans le navigateur, puis appuie sur Entrée...\n")
+                            except (KeyboardInterrupt, EOFError):
+                                print("[ATTACH] Abandon demandé")
+                                break
+                        continue
+
+                    else:  # "restart" = pas de clé 2Captcha
+                        print("[ATTACH][STRICT] captcha détecté → abandon (pas de clé 2Captcha)")
+                        break
+
+                else:
+                    # Autres raisons (image_evaluation, hold_button...) → abandon immédiat
+                    print(f"[ATTACH][STRICT] Détecté: {reason} -> abandon du survey")
+                    print(f"[ATTACH][STRICT] Ce type de survey n'est pas supporté en V1")
+                    break
+
+        ### Résultat attendu dans les logs avec clé 2Captcha configurée
             
             ok = survey_executor.execute_survey_page(driver, api_key)
             print(f"[ATTACH] step={i}/{max_steps} ok={ok} url={_attach_display_url(driver.current_url)}")
