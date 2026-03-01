@@ -17,14 +17,17 @@ from selenium.webdriver.common.by import By
 # ✅ Selectors "forts" (si présents → très probable que ce soit strict)
 STRICT_SELECTORS = {
     # Captcha / anti-bot classique
+    # IMPORTANT : [class*='captcha'] RETIRÉ — trop générique.
+    # Decipher encode le type de bloc dans les classes CSS (ex: label_Recaptcha_Human)
+    # ce qui fait matcher n'importe quelle page Decipher contenant un bloc "Recaptcha".
+    # On ne garde que les sélecteurs qui ciblent des WIDGETS réels et interactifs.
     "captcha": [
-        "iframe[src*='captcha']",
         "iframe[src*='recaptcha']",
+        "iframe[src*='captcha']",
         "iframe[title*='recaptcha']",
-        "[class*='captcha']",
-        "#captcha",
         ".g-recaptcha",
         "[data-sitekey]",
+        "#captcha",
     ],
 
     # Drag & drop (très fréquent dans les contrôles humains)
