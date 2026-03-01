@@ -22,6 +22,7 @@ class _FakeDriver:
 
 
 def test_apply_by_target_id_confirmit_slider_grid_uses_slider_handle(monkeypatch, capsys):
+    monkeypatch.setenv("LOG_LEVEL", "DEBUG")
     payload = {
         "kind": "group",
         "itype": "radio",
