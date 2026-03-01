@@ -22,6 +22,8 @@ from urllib.parse import urlsplit
 import time
 import os
 
+from Survey.log_utils import log_debug, log_info
+
 
 # =============================================================================
 # CONSTANTES CTA
@@ -437,7 +439,7 @@ def _nav_log(prefix: str, msg: str, driver=None):
     url = ""
     if driver is not None:
         url = f" url={_safe_url(driver)}"
-    print(f"{prefix} {msg}{url}")
+    log_info(prefix, f"{msg}{url}")
 
 
 def _dom_progress_marker(driver):
@@ -564,10 +566,7 @@ def _click_with_intercept(driver, el) -> bool:
         time.sleep(0.25)
         after_first = _dom_progress_marker(driver)
         progressed = _did_progress(before, after_first)
-        print(
-            f"[CTA_CLICK] strategy={used} attempt=1 "
-            f"release_sent={str(first_release).lower()} progressed={str(progressed).lower()}"
-        )
+        log_debug("[CTA_CLICK]", f"strategy={used} attempt=1 release_sent={str(first_release).lower()} progressed={str(progressed).lower()}")
 
         if progressed:
             return True
@@ -577,9 +576,9 @@ def _click_with_intercept(driver, el) -> bool:
         time.sleep(0.25)
         after_second = _dom_progress_marker(driver)
         progressed = _did_progress(before, after_second)
-        print(
-            f"[CTA_CLICK] strategy={used} attempt=2 "
-            f"release_sent={str(second_release).lower()} progressed={str(progressed).lower()}"
+        log_debug(
+            "[CTA_CLICK]",
+            f"strategy={used} attempt=2 release_sent={str(second_release).lower()} progressed={str(progressed).lower()}",
         )
         return bool(progressed)
 
@@ -606,12 +605,9 @@ def _click_with_intercept(driver, el) -> bool:
         err = _read_arm_error(driver)
         perr = probe.get("msg") if isinstance(probe, dict) else None
         last_js_err = probe.get("lastError") if isinstance(probe, dict) else None
-        print(
-            "[CTA_INTERCEPT] "
-            "arm_warn=true reason=selenium_execute_script_failed "
+        log_debug("[CTA_INTERCEPT]", "arm_warn=true reason=selenium_execute_script_failed "
             f"probe={probe if isinstance(probe, dict) else '<none>'} "
-            f"err={err or last_js_err or perr or '<none>'}"
-        )
+            f"err={err or last_js_err or perr or '<none>'}")
 
     if not is_armed:
         # Armement absent (confirmé par probe) : en mode CTA_INTERCEPT_ONLY,
@@ -620,14 +616,11 @@ def _click_with_intercept(driver, el) -> bool:
         disarm_interceptor(driver)
         perr = probe.get("msg") if isinstance(probe, dict) else None
         last_js_err = probe.get("lastError") if isinstance(probe, dict) else None
-        print(
-            "[CTA_INTERCEPT] "
-            "failed_to_arm=true reason=probe_not_armed "
+        log_debug("[CTA_INTERCEPT]", "failed_to_arm=true reason=probe_not_armed "
             f"selenium_error={str(not armed_ok).lower()} "
             f"probe={probe if isinstance(probe, dict) else '<none>'} "
-            f"err={err or last_js_err or perr or '<none>'}"
-        )
-        print("[CTA_INTERCEPT] result=INTERCEPTION_IMPOSSIBLE")
+            f"err={err or last_js_err or perr or '<none>'}")
+        log_info("[CTA_INTERCEPT]", "result=INTERCEPTION_IMPOSSIBLE")
         return False
 
     token = f"{int(time.time()*1000)}_{os.getpid()}"
@@ -656,7 +649,7 @@ def _click_with_intercept(driver, el) -> bool:
     except Exception:
         # Désarmement garanti pour ne pas bloquer les clics utilisateur.
         disarm_interceptor(driver)
-        print("[CTA_INTERCEPT] dispatch_error=true")
+        log_debug("[CTA_INTERCEPT]", "dispatch_error=true")
         return False
 
     report = None
@@ -671,7 +664,7 @@ def _click_with_intercept(driver, el) -> bool:
     # Si l'armement JS a eu une erreur interne, on la log (utile pour Ipsos).
     try:
         if driver.execute_script("return window.__sbCtaInterceptArmedOk === false;"):
-            _nav_log("[CTA_INTERCEPT]", f"arm_internal_error=true err={_read_arm_error(driver) or '<none>'}", driver)
+            log_debug("[CTA_INTERCEPT]", f"arm_internal_error=true err={_read_arm_error(driver) or '<none>'}")
     except Exception:
         pass
     selected = None
@@ -681,19 +674,16 @@ def _click_with_intercept(driver, el) -> bool:
         selected = None
 
     same_target = bool(selected and report.get("target") == selected)
-    print(
-        "[CTA_INTERCEPT] "
-        f"captured={bool(report.get('clickCaptured'))} "
+    log_debug("[CTA_INTERCEPT]", f"captured={bool(report.get('clickCaptured'))} "
         f"submitCaptured={bool(report.get('submitCaptured'))} "
         f"prevented={bool(report.get('prevented'))} "
         f"sameTarget={same_target} "
-        f"target={_format_intercept_target(report.get('target'))}"
-    )
+        f"target={_format_intercept_target(report.get('target'))}")
     ok = bool(report.get("clickCaptured") and report.get("prevented"))
     if ok:
-        print("[CTA_INTERCEPT] result=INTERCEPTED_OK")
+        log_info("[CTA_INTERCEPT]", "result=INTERCEPTED_OK")
     else:
-        print("[CTA_INTERCEPT] result=INTERCEPTION_IMPOSSIBLE")
+        log_info("[CTA_INTERCEPT]", "result=INTERCEPTION_IMPOSSIBLE")
 
     # Nettoyage + désarmement : CRITIQUE pour ne jamais bloquer les autres inputs.
     try:
@@ -1151,7 +1141,7 @@ def try_click_navigation_cta(driver) -> bool:
                 driver.execute_script("arguments[0].scrollIntoView({block:'center'});", a)
                 if _click_with_intercept(driver, a):
                     _nav_log("[CTA_NAV]", "clicked navbar Next link", driver)
-                    print("[CTA_NAV] Survey: clicked navbar Next link")
+                    log_info("[CTA_NAV]", "Survey: clicked navbar Next link")
                     return True
             except Exception:
                 continue
@@ -1170,7 +1160,7 @@ def try_click_navigation_cta(driver) -> bool:
                 driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
                 if _click_with_intercept(driver, el):
                     _nav_log("[CTA_NAV]", "clicked nextButton image", driver)
-                    print("[CTA_NAV] B3netSurvey: clicked nextButton image")
+                    log_info("[CTA_NAV]", "B3netSurvey: clicked nextButton image")
                     return True
             except Exception:
                 continue
@@ -1196,13 +1186,7 @@ def try_click_navigation_cta(driver) -> bool:
                     continue
                 _nav_log(
                     "[CTA_NAV]",
-                    (
-                        "CTA_FOUND provider_hint=forsta "
-                        f"tag={btn.tag_name} "
-                        f"class={(btn.get_attribute('class') or '').strip()} "
-                        f"aria={(btn.get_attribute('aria-label') or '').strip() or '<none>'} "
-                        f"rect={btn.rect}"
-                    ),
+"CTA_FOUND provider_hint=forsta button=cf-navigation",
                     driver,
                 )
                 driver.execute_script("arguments[0].scrollIntoView({block:'center'});", btn)
@@ -1232,7 +1216,7 @@ def try_click_navigation_cta(driver) -> bool:
             driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
             if _click_with_intercept(driver, el):
                 _nav_log("[CTA_NAV]", "clicked #btn_next", driver)
-                print("[CTA_NAV] AreYouNet: clicked #btn_next")
+                log_info("[CTA_NAV]", "AreYouNet: clicked #btn_next")
                 return True
     except Exception:
         pass
@@ -1245,7 +1229,7 @@ def try_click_navigation_cta(driver) -> bool:
             driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
             if _click_with_intercept(driver, el):
                 _nav_log("[CTA_NAV]", "clicked EnqueteDef_submit link", driver)
-                print("[CTA_NAV] AreYouNet: clicked EnqueteDef_submit link")
+                log_info("[CTA_NAV]", "AreYouNet: clicked EnqueteDef_submit link")
                 return True
     except Exception:
         pass
@@ -1259,7 +1243,7 @@ def try_click_navigation_cta(driver) -> bool:
                 driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
                 if _click_with_intercept(driver, el):
                     _nav_log("[CTA_NAV]", "clicked #btn_continue", driver)
-                    print("[CTA_NAV] Decipher: clicked #btn_continue")
+                    log_info("[CTA_NAV]", "Decipher: clicked #btn_continue")
                     return True
     except Exception:
         pass
@@ -1275,7 +1259,7 @@ def try_click_navigation_cta(driver) -> bool:
                 driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
                 if _click_with_intercept(driver, el):
                     _nav_log("[CTA_NAV]", "clicked #btnsmall or .enterButton.submitButton", driver)
-                    print("[CTA_NAV] RSCH: clicked #btnsmall or .enterButton.submitButton")
+                    log_info("[CTA_NAV]", "RSCH: clicked #btnsmall or .enterButton.submitButton")
                     return True
     except Exception:
         pass
@@ -1409,13 +1393,7 @@ def try_click_navigation_cta(driver) -> bool:
         try:
             _nav_log(
                 "[CTA_NAV]",
-                (
-                    f"CTA_FOUND candidate score={score} "
-                    f"tag={(el.tag_name or '').lower()} "
-                    f"class={(el.get_attribute('class') or '').strip()} "
-                    f"aria={(el.get_attribute('aria-label') or '').strip() or '<none>'} "
-                    f"rect={el.rect}"
-                ),
+f"CTA_FOUND candidate score={score}",
                 driver,
             )
             driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
@@ -1424,7 +1402,7 @@ def try_click_navigation_cta(driver) -> bool:
             _nav_log("[CTA_NAV]", f"CTA_CLICKED candidate score={score} PROGRESSED={str(bool(clicked)).lower()}", driver)
             if clicked:
                 if _cta_intercept_enabled():
-                    _nav_log("[CTA_NAV]", f"INTERCEPTED candidate score={score}", driver)
+                    _nav_log("[CTA_NAV]", f"INTERCEPTED_OK candidate score={score}", driver)
                 else:
                     _nav_log("[CTA_NAV]", f"CLICKED candidate score={score}", driver)
                 return True

@@ -59,6 +59,7 @@ $env:ATTACH_DEBUGGER_ADDRESS="127.0.0.1:$Port"
 $env:ATTACH_TAB_SELECTOR=$AttachTabSelector
 
 # Tes vars debug
+$env:LOG_LEVEL="INFO"
 $env:DOM_DEBUG_FRAMES="1"
 $env:CTA_INTERCEPT_ONLY="1"
 $env:ACTION_DEBUG_TARGET="1"

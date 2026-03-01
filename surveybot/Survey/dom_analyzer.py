@@ -22,6 +22,7 @@ from typing import List, Dict, Any, Tuple, Set
 import os, re
 
 from selenium.webdriver.common.by import By
+from Survey.log_utils import is_debug, log_debug, log_info
 
 # Imports des modules DOM
 try:
@@ -439,8 +440,8 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         if runtime_answerrow_blocks:
             return runtime_answerrow_blocks
     except Exception as e:
-        if _env_truthy("DOM_CONTEXT_DEBUG", "1"):
-            print(f"[DOM_CONTEXT_DEBUG] runtime_extractor_exception={type(e).__name__}: {e}")
+        if is_debug():
+            log_debug("[DOM_CONTEXT_DEBUG]", f"runtime_extractor_exception={type(e).__name__}: {e}")
 
     # --- 0h-ter) Angular custom data-testid checkboxes (sans input natif) ---
     # Objectif: extraire les blocs checkbox pilotés par wrappers + labels data-testid.
@@ -810,7 +811,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             group_reject_reasons["group_exception"] = group_reject_reasons.get("group_exception", 0) + 1
             continue
 
-    if _env_truthy("DOM_CONTEXT_DEBUG", "1"):
+    if is_debug():
         print(
             "[DOM_CONTEXT_DEBUG] analyze_dom choice_groups "
             f"detected={len(groups)} created={created_group_count} "
@@ -1491,23 +1492,13 @@ def analyze_dom(driver) -> List[Dict[str, Any]]:
     _wait_for_survey_dom(driver)
     max_depth = int(os.getenv("DOM_FRAME_MAX_DEPTH", "2") or "2")
     best_chain, _meta = _select_best_frame_chain(driver, max_depth=max_depth)
-    if _env_truthy("DOM_CONTEXT_DEBUG", "1"):
+    if is_debug():
         runtime_rows = int(_meta.get("runtime_answer_rows_count", 0) or 0)
         runtime_wrappers = int(_meta.get("runtime_radio_wrappers_count", 0) or 0)
         runtime_sig_in_selected_context = runtime_rows >= 2 and runtime_wrappers >= 2
-        print(
-            f"[DOM_CONTEXT_DEBUG] runtime_signature rows={runtime_rows} wrappers={runtime_wrappers} "
-            f"in_selected_context={runtime_sig_in_selected_context}"
-        )
-        print(
-            f"[DOM_CONTEXT_DEBUG] analyze_dom selected_chain={best_chain} "
-            f"selected_ps_date_question={_meta.get('selected_ps_date_question_count', 0)} "
-            f"score={_meta.get('score', 0)}"
-        )
-        print(
-            f"[DOM_CONTEXT_DEBUG] analyze_dom stage=context_selected "
-            f"blocks_count=0 chain_len={len(best_chain or [])}"
-        )
+        log_debug("[DOM_CONTEXT_DEBUG]", f"runtime_signature rows={runtime_rows} wrappers={runtime_wrappers} in_selected_context={runtime_sig_in_selected_context}")
+        log_debug("[DOM_CONTEXT_DEBUG]", f"analyze_dom selected_chain={best_chain} selected_ps_date_question={_meta.get('selected_ps_date_question_count', 0)} score={_meta.get('score', 0)}")
+        log_debug("[DOM_CONTEXT_DEBUG]", f"analyze_dom stage=context_selected blocks_count=0 chain_len={len(best_chain or [])}")
 
     def _blocks_summary_preview(items: List[Dict[str, Any]], max_items: int = 3) -> str:
         preview = []
@@ -1554,23 +1545,22 @@ def analyze_dom(driver) -> List[Dict[str, Any]]:
                 if not blocks:
                     blocks = _extract_decipher_answers_list_fallback(driver, frame_chain=chain)
 
-    if _env_truthy("DOM_CONTEXT_DEBUG", "1"):
+    if is_debug():
         itypes = sorted({str((b or {}).get("itype") or "") for b in (blocks or []) if (b or {}).get("itype")})
-        print(f"[DOM_CONTEXT_DEBUG] extracted_blocks count={len(blocks or [])} itypes={itypes}")
+        log_debug("[DOM_CONTEXT_DEBUG]", f"extracted_blocks count={len(blocks or [])} itypes={itypes}")
 
     blocks = _dedupe_question_blocks(blocks)
 
     blocks = _prune_focusvision_fragmented_groups(blocks)
 
-    if _env_truthy("DOM_CONTEXT_DEBUG", "1"):
-        print(
-            f"[DOM_CONTEXT_DEBUG] analyze_dom stage=raw_extraction "
-            f"blocks_count={len(blocks or [])} sample={_blocks_summary_preview(blocks)}"
-        )
-        print(
-            f"[DOM_CONTEXT_DEBUG] analyze_dom stage=before_return "
-            f"blocks_count={len(blocks or [])} sample={_blocks_summary_preview(blocks)}"
-        )
+    summary_itypes = sorted({str((b or {}).get("itype") or "") for b in (blocks or []) if (b or {}).get("itype")})
+    options_count = sum(len((b or {}).get("options") or []) for b in (blocks or []))
+    first_question_len = len(((blocks or [{}])[0].get("question") or "")) if blocks else 0
+    log_info("[DOM_CONTEXT]", f"extracted_blocks count={len(blocks or [])} itypes={summary_itypes} question_len={first_question_len} options_count={options_count}")
+
+    if is_debug():
+        log_debug("[DOM_CONTEXT_DEBUG]", f"analyze_dom stage=raw_extraction blocks_count={len(blocks or [])} sample={_blocks_summary_preview(blocks)}")
+        log_debug("[DOM_CONTEXT_DEBUG]", f"analyze_dom stage=before_return blocks_count={len(blocks or [])} sample={_blocks_summary_preview(blocks)}")
 
     return blocks
 
@@ -1647,13 +1637,13 @@ def _dedupe_question_blocks(blocks: List[Dict[str, Any]]) -> List[Dict[str, Any]
         cur_score = _block_quality_score(cur)
         new_score = _block_quality_score(b)
         if new_score > cur_score:
-            if _env_truthy("DOM_CONTEXT_DEBUG", "1"):
+            if is_debug():
                 print(
                     f"[DOM_DEDUP_DEBUG] discard_duplicate keep=new sig={sig[:2]} "
                     f"old_score={cur_score} new_score={new_score}"
                 )
             dedup_map[sig] = b
-        elif _env_truthy("DOM_CONTEXT_DEBUG", "1"):
+        elif is_debug():
             print(
                 f"[DOM_DEDUP_DEBUG] discard_duplicate keep=current sig={sig[:2]} "
                 f"old_score={cur_score} new_score={new_score}"
