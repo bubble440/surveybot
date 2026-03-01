@@ -594,14 +594,33 @@ def solve_full_survey(driver, api_key, *, account_id: str):
             if reason == "captcha":
                 from config import should_pause_for_captcha, get_captcha_behavior
                 captcha_behavior = get_captcha_behavior()
-                
-                # PROD/DOCKER : arrÃƒÆ’Ã‚Âªt contrÃƒÆ’Ã‚Â´lÃƒÆ’Ã‚Â© immÃƒÆ’Ã‚Â©diat (inchangÃƒÆ’Ã‚Â©)
-                if captcha_behavior == "restart":
-                    print(f"[STRICT_SURVEY][MID] DÃƒÆ’Ã‚Â©tectÃƒÆ’Ã‚Â© en cours de survey (captcha) -> restart propre")
+
+                # === AUTO : résolution 2Captcha (local + prod) ===
+                if captcha_behavior == "auto_2captcha":
+                    print("[CAPTCHA] Tentative de résolution automatique via 2Captcha...")
+                    try:
+                        from captcha.recaptcha_handler import solve_recaptcha_v2_auto
+                        resolved = solve_recaptcha_v2_auto(driver)
+                    except Exception as e:
+                        print(f"[CAPTCHA] Erreur inattendue recaptcha_handler: {e}")
+                        resolved = False
+                    if resolved:
+                        print("[CAPTCHA] ✅ reCAPTCHA résolu — reprise du survey")
+                        continue  # retour au début de la boucle principale
+                    else:
+                        print("[CAPTCHA] ❌ Échec résolution automatique → abandon survey")
+                        Management.guards.runtime_guard.get_guard().record_success()
+                        Management.guards.runtime_guard.get_guard().signal_strict_survey("captcha_auto_failed")
+                        return
+
+                # === PROD sans clé : restart immédiat (inchangé) ===
+                elif captcha_behavior == "restart":
+                    print(f"[STRICT_SURVEY][MID] Captcha détecté -> restart propre")
                     Management.guards.runtime_guard.get_guard().record_success()
                     Management.guards.runtime_guard.get_guard().signal_strict_survey(f"strict_mid_captcha")
                     return
-                
+
+                # === LOCAL interactif : pause manuelle (inchangé, fall-through) ===
                 # LOCAL : pause manuelle pour rÃƒÆ’Ã‚Â©solution utilisateur
                 print("[LOCAL][CAPTCHA] ÃƒÂ¢Ã…Â¡Ã‚Â ÃƒÂ¯Ã‚Â¸Ã‚Â  CAPTCHA dÃƒÆ’Ã‚Â©tectÃƒÆ’Ã‚Â© ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ rÃƒÆ’Ã‚Â©solution MANUELLE requise")
                 

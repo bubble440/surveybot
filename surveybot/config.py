@@ -124,8 +124,15 @@ def should_run_hot_reload() -> bool:
 def get_captcha_behavior() -> str:
     """
     Retourne le comportement à adopter face à un CAPTCHA.
-    "pause" = attendre résolution manuelle, "restart" = abandonner le survey
+    "auto_2captcha" = résolution automatique via 2Captcha (local + prod si clé disponible)
+    "pause"         = attendre résolution manuelle (local interactif, fallback si pas de clé)
+    "restart"       = abandonner le survey (prod sans clé)
     """
+    # Priorité : résolution automatique si clé 2Captcha disponible
+    from captcha.captcha_solver import TWO_CAPTCHA_KEY
+    if TWO_CAPTCHA_KEY:
+        return "auto_2captcha"
+    # Fallback : comportement existant inchangé
     if should_pause_for_captcha():
         return "pause"
     return "restart"
