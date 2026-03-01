@@ -95,6 +95,34 @@ _TIER_ENTRY_QUESTION_KEYWORDS = [
     "revenue", "expenses", "budget", "income", "salary",
 ]
 
+_CLASSIFICATION_QUESTION_KEYWORDS = [
+    # FR - poste/fonction/statut
+    "poste", "fonction", "profession", "metier", "occupation", "categorie socioprofessionnelle", "csp", "statut",
+    # FR - éducation
+    "niveau d'etude", "niveau d etude", "diplome", "etudes", "formation",
+    # FR/EN - hiérarchie
+    "cadre", "direction", "manager", "executive", "senior", "lead", "head", "director", "owner", "founder",
+    # EN
+    "job", "position", "role", "education level", "degree", "highest education",
+]
+
+_CLASSIFICATION_DISQUALIFIERS = [
+    "autre", "other", "aucun", "none", "ne sais pas", "don't know", "dont know",
+    "prefere ne pas", "prefer not", "sans activite", "no activity", "n/a", "na",
+]
+
+_CLASSIFICATION_SCORING = [
+    # Très haut
+    (120, ["direction generale", "executive", "c-level", "ceo", "founder", "owner", "head", "director", "partner"]),
+    (110, ["direction", "directeur", "administrative", "professionnelle"]),
+    # Haut
+    (90, ["cadre", "manager", "lead", "supervisor", "chef d'entreprise", "chef d entreprise"]),
+    # Moyen
+    (60, ["profession liberale", "profession intermediaire", "technicien", "contremaitre", "agent de maitrise"]),
+    # Bas
+    (20, ["employe", "ouvrier", "etudiant", "sans activite", "foyer", "retraite", "premier emploi"]),
+]
+
 
 def _looks_like_tier_entry_question(block: Dict[str, Any]) -> bool:
     itype = _norm_folded_lc(block.get("itype"))
@@ -105,6 +133,41 @@ def _looks_like_tier_entry_question(block: Dict[str, Any]) -> bool:
         return False
     question = _norm_folded_lc(block.get("question"))
     return any(k in question for k in _TIER_ENTRY_QUESTION_KEYWORDS)
+
+
+def _looks_like_classification_question(block: Dict[str, Any]) -> bool:
+    itype = _norm_folded_lc(block.get("itype"))
+    if itype not in {"radio", "checkbox", "dropdown", "select", "button"}:
+        return False
+    options = [o for o in (block.get("options") or []) if _norm(str(o))]
+    if not options:
+        return False
+    question = _norm_folded_lc(block.get("question"))
+    return any(k in question for k in _CLASSIFICATION_QUESTION_KEYWORDS)
+
+
+def _pick_best_classification_option(options: list[str]) -> str:
+    best_option = options[0]
+    best_score = float("-inf")
+
+    for option in options:
+        folded = _norm_folded_lc(option)
+        if not folded:
+            continue
+
+        score = 0
+        if any(bad in folded for bad in _CLASSIFICATION_DISQUALIFIERS):
+            score -= 200
+
+        for weight, keywords in _CLASSIFICATION_SCORING:
+            if any(keyword in folded for keyword in keywords):
+                score += weight
+
+        if score > best_score:
+            best_score = score
+            best_option = option
+
+    return best_option
 
 
 def _tier_entry_option(options: list[str]) -> tuple[int, str]:
@@ -301,7 +364,13 @@ def build_batch_prompt(question_blocks: list[dict]) -> str:
         lines.append(f"contexte: {q}")
         lines.append(f"itype: {itype}")
         lines.append(f"max_select: {max_sel}")
-        if _looks_like_tier_entry_question(block) and opts:
+        if _looks_like_classification_question(block) and opts:
+            picked = _pick_best_classification_option(opts)
+            print(f"[PROMPT_BUILDER] classification_rule=1 N={len(opts)} picked='{picked}'")
+            lines.append(f"selection_rule: CLASSIFICATION_BEST strict -> répondre EXACTEMENT avec '{picked}'")
+            lines.append(f"allowed_values_strict: {picked}")
+            lines.append("instruction_stricte: Tu dois répondre EXACTEMENT avec l'un des libellés suivants : {" + picked + "}. Ne paraphrase pas. Ne renvoie rien d'autre.")
+        elif _looks_like_tier_entry_question(block) and opts:
             k, picked = _tier_entry_option(opts)
             print(f"[PROMPT_BUILDER] tier_entry_rule=1 N={len(opts)} k={k} picked='{picked}'")
             lines.append(f"selection_rule: TIER_ENTRY strict -> répondre EXACTEMENT avec '{picked}'")
