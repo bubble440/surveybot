@@ -2851,3 +2851,148 @@ def _extract_purespectrum_mobile_date_blocks(driver, frame_chain: list[int] | No
             continue
 
     return blocks
+
+
+def _extract_decipher_clickable_ranking_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
+    """Decipher clickable ranking text tool (`#customToolArea` + `.customItem`).
+
+    Gate DOM strict:
+    - `div#customToolArea div#itemArea .customItem` (>=2)
+    - au moins un `.customRank` (UI de ranking)
+
+    Le champ "Autre - préciser" (input texte inline) reste auxiliaire et ne doit
+    pas empêcher l'extraction des options visibles.
+    """
+    frame_chain = list(frame_chain or [])
+
+    try:
+        item_area = driver.find_elements(By.CSS_SELECTOR, "#customToolArea #itemArea")
+    except Exception:
+        item_area = []
+    if not item_area:
+        return []
+
+    container = item_area[0]
+
+    try:
+        rank_nodes = container.find_elements(By.CSS_SELECTOR, ".customItem .customRank")
+    except Exception:
+        rank_nodes = []
+    if not rank_nodes:
+        return []
+
+    try:
+        items = container.find_elements(By.CSS_SELECTOR, ".customItem")
+    except Exception:
+        items = []
+    if len(items) < 2:
+        return []
+
+    question = ""
+    for sel in ("#question_text_Q4", "h1.question-text", "h1", "h2"):
+        try:
+            q_candidates = driver.find_elements(By.CSS_SELECTOR, sel)
+        except Exception:
+            q_candidates = []
+        for q in q_candidates:
+            txt = _norm(q.text or q.get_attribute("innerText") or "")
+            if txt and len(txt) >= 8:
+                question = txt
+                break
+        if question:
+            break
+    if not question:
+        return []
+
+    options: list[str] = []
+    option_xpath_map: dict[str, str] = {}
+    for item in items:
+        try:
+            label_text = ""
+            statement_id = ""
+            try:
+                statement = item.find_element(By.CSS_SELECTOR, ".customStatement")
+                statement_id = (statement.get_attribute("id") or "").strip()
+                label_text = _norm(statement.text or statement.get_attribute("innerText") or "")
+            except Exception:
+                pass
+
+            if not label_text:
+                continue
+
+            # Nettoyage cas "Autre - préciser <input>"
+            label_text = _norm(re.sub(r"\s+", " ", label_text))
+            if not label_text:
+                continue
+
+            nk = _norm_key(label_text)
+            if not nk or nk in option_xpath_map:
+                continue
+
+            xp = ""
+            if statement_id:
+                xp = f"//*[@id={_xpath_literal(statement_id)}]"
+            if not xp:
+                try:
+                    xp = _best_xpath_for_element(driver, item) or ""
+                except Exception:
+                    xp = ""
+            if not xp:
+                continue
+
+            options.append(label_text)
+            option_xpath_map[nk] = xp
+        except Exception:
+            continue
+
+    if len(options) < 2 or len(option_xpath_map) < 2:
+        return []
+
+    max_select = 3
+    try:
+        script_text = driver.execute_script(
+            """
+            const scripts = Array.from(document.querySelectorAll('script'));
+            for (const s of scripts) {
+              const t = (s.textContent || '');
+              if (/maxNrAnswer\s*:\s*\d+/i.test(t)) return t;
+            }
+            return '';
+            """
+        )
+        m = re.search(r"maxNrAnswer\s*:\s*(\d+)", str(script_text or ""), flags=re.IGNORECASE)
+        if m:
+            max_select = max(1, int(m.group(1)))
+    except Exception:
+        pass
+
+    group_key = f"decipher_clickable_ranking:{_norm_key(question)}"
+    target_id = make_target_id("group", group_key, question)
+
+    register_target(
+        target_id,
+        {
+            "kind": "group",
+            "itype": "checkbox",
+            "group_key": group_key,
+            "question": question,
+            "option_xpath_map": option_xpath_map,
+            "frame_chain": frame_chain,
+            "decipher_clickable_ranking": True,
+        },
+    )
+
+    return [
+        {
+            "question": question,
+            "itype": "checkbox",
+            "options": options,
+            "max_select": max_select,
+            "target_id": target_id,
+            "context": {
+                "kind": "group",
+                "group_key": group_key,
+                "decipher_clickable_ranking": True,
+            },
+        }
+    ]
