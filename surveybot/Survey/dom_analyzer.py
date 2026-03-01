@@ -305,14 +305,15 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
     # Pas de radios natifs, on clique directement sur les boutons.
     try:
         walr_cs_block = _extract_walr_cardsort_block(driver, frame_chain)
-        print(f"[WALR_CS] bloc retourné: {walr_cs_block is not None}")
+        log_debug("[WALR_CS]", f"bloc retourné: {walr_cs_block is not None}")
         if walr_cs_block:
-            print(f"[WALR_CS] SUCCESS - returning block with {len(walr_cs_block.get('options', []))} options")
+            log_debug("[WALR_CS]", f"SUCCESS - returning block with {len(walr_cs_block.get('options', []))} options")
             return [walr_cs_block]
     except Exception as e:
-        print(f"[WALR_CS] EXCEPTION dans appel: {type(e).__name__}: {e}")
-        import traceback
-        traceback.print_exc()
+        log_debug("[WALR_CS]", f"exception={type(e).__name__}: {e}")
+        if is_debug():
+            import traceback
+            traceback.print_exc()
 
     # --- 0b) Ask&Answer / FirstInsight : matrice mobile (expansion panels) ---
     # Pattern spécifique
