@@ -79,6 +79,7 @@ try:
         _extract_custom_testid_multi_select_checkbox_blocks,
         _extract_single_consent_checkbox_block,
         _extract_runtime_answerrow_radio_blocks,
+        _extract_decipher_clickable_ranking_blocks,
     )
     
     # Registre et utilitaires
@@ -132,6 +133,7 @@ except ImportError:
         _extract_custom_testid_multi_select_checkbox_blocks,
         _extract_single_consent_checkbox_block,
         _extract_runtime_answerrow_radio_blocks,
+        _extract_decipher_clickable_ranking_blocks,
     )
 
 
@@ -353,6 +355,15 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         pass
 
     # --- 0d-1bis) Matrices HTML génériques (table + radios groupés par ligne) ---
+    # Objectif: éviter l'aplatissement en bloc checkbox sur certaines grilles provider-variants.
+    try:
+        decipher_rank_blocks = _extract_decipher_clickable_ranking_blocks(driver, frame_chain)
+        if decipher_rank_blocks:
+            return decipher_rank_blocks
+    except Exception:
+        pass
+
+    # --- 0d-1ter) Matrices HTML génériques (table + radios groupés par ligne) ---
     # Objectif: éviter l'aplatissement en bloc checkbox sur certaines grilles provider-variants.
     try:
         table_matrix_blocks = _extract_table_matrix_radio_rows(driver, frame_chain)
