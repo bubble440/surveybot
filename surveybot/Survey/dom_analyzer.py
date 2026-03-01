@@ -1120,9 +1120,25 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
 
             container = _nearest_question_container(el) or el
 
+            dropdown_options_for_question: List[str] = []
+            if itype == "dropdown":
+                try:
+                    for o in el.find_elements(By.TAG_NAME, "option"):
+                        if o.get_attribute("disabled"):
+                            continue
+                        t = _norm(o.text or o.get_attribute("innerText") or "")
+                        if t:
+                            dropdown_options_for_question.append(t)
+                    dropdown_options_for_question = list(dict.fromkeys(dropdown_options_for_question))
+                except Exception:
+                    dropdown_options_for_question = []
+
             question = ""
             if container:
-                question = _extract_question_from_container(container, options=[]) or ""
+                question = _extract_question_from_container(
+                    container,
+                    options=dropdown_options_for_question if itype == "dropdown" else [],
+                ) or ""
 
             # Pattern spécifique
             # Pattern spécifique
@@ -1400,16 +1416,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
 
             options: List[str] = []
             if itype == "dropdown":
-                try:
-                    for o in el.find_elements(By.TAG_NAME, "option"):
-                        if o.get_attribute("disabled"):
-                            continue
-                        t = _norm(o.text or o.get_attribute("innerText") or "")
-                        if t:
-                            options.append(t)
-                    options = list(dict.fromkeys(options))
-                except Exception:
-                    pass
+                options = dropdown_options_for_question
 
             # --- target_id + registry pour single input
             el_id = (el.get_attribute("id") or "").strip()
