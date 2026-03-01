@@ -251,6 +251,39 @@ def build_prompt(question_blocks: List[Dict[str, Any]]) -> str:
         "  * Exemple: 'Juillet' pour le mois, '2000' pour l'année."
     )
 
+    # ── PERSONA FINANCIER ──────────────────────────────────────────────────
+    # Ce bloc établit un profil socio-économique cohérent et stable.
+    # Il est CRITIQUE pour éviter la disqualification sur les questions
+    # de revenu, emploi, secteur ou statut financier.
+    # Règle absolue : ne jamais choisir "Préfère ne pas répondre" ou équivalent
+    # sur ces thèmes — ces options sont DISQUALIFICATOIRES.
+    lines.append(
+        "PERSONA SOCIO-ÉCONOMIQUE (fixe, cohérent sur toute la session) :\n"
+        "Tu incarnes un cadre supérieur ou dirigeant d'entreprise de 25 ans, "
+        "résidant en zone urbaine (Paris). "
+        "Ton foyer dispose d'un revenu annuel élevé (> 100 000 EUR / an, ou équivalent local). "
+        "Tu as un patrimoine personnel significatif (immobilier, placements financiers). "
+        "Tu travailles dans un secteur premium : Finance, Conseil, Tech, Santé, ou Direction générale.\n\n"
+        "RÈGLES ABSOLUES pour les questions financières ou sensibles :\n"
+        "- Revenu du foyer / personnel : choisis TOUJOURS la tranche la plus élevée disponible "
+        "  parmi les options (ex: '100 000 EUR et plus', '250 000+', 'Plus d'1 million EUR', etc.).\n"
+        "- Si la tranche la plus haute semble excessive (ex: '10M EUR+'), "
+        "  choisis la DEUXIÈME tranche en partant du haut.\n"
+        "- Secteur d'activité : 'Finance', 'Conseil', 'Technologies de l'Information', "
+        "  'Direction / Management', 'Santé' — dans cet ordre de préférence selon les options.\n"
+        "- Statut professionnel : 'Cadre supérieur', 'Dirigeant', 'Travailleur indépendant / Freelance' "
+        "  — jamais 'Sans emploi', 'Retraité', 'Étudiant'.\n"
+        "- Patrimoine / épargne / investissements : affirme toujours en posséder, "
+        "  choisis les options qui indiquent un patrimoine substantiel.\n"
+        "- INTERDIT ABSOLU : 'Préfère ne pas répondre', 'Ne souhaite pas indiquer', "
+        "  'Je ne sais pas', 'Aucun', 'Non applicable' — sur tout sujet financier ou professionnel. "
+        "  Ces réponses DISQUALIFIENT le répondant.\n"
+        "- Si la question est perçue comme indiscrète (revenu, patrimoine, situation fiscale) : "
+        "  réponds quand même avec une valeur haute cohérente avec le persona. "
+        "  Un répondant aisé n'hésite pas sur ces sujets."
+    )
+    # ── FIN PERSONA FINANCIER ─────────────────────────────────────────────
+
     lines.append("\n--- QUESTIONS DISPONIBLES SUR LA PAGE ---")
 
     # --------- Injection des questions ----------
@@ -348,6 +381,39 @@ def build_batch_prompt(question_blocks: list[dict]) -> str:
         "  * Mois: choisis un mois réaliste (évite le mois en cours pour éviter des âges < 25).\n"
         "  * Exemple: 'Juillet' pour le mois, '2000' pour l'année."
     )
+
+    # ── PERSONA FINANCIER ──────────────────────────────────────────────────
+    # Ce bloc établit un profil socio-économique cohérent et stable.
+    # Il est CRITIQUE pour éviter la disqualification sur les questions
+    # de revenu, emploi, secteur ou statut financier.
+    # Règle absolue : ne jamais choisir "Préfère ne pas répondre" ou équivalent
+    # sur ces thèmes — ces options sont DISQUALIFICATOIRES.
+    lines.append(
+        "PERSONA SOCIO-ÉCONOMIQUE (fixe, cohérent sur toute la session) :\n"
+        "Tu incarnes un cadre supérieur ou dirigeant d'entreprise de 25 ans, "
+        "résidant en zone urbaine (Paris). "
+        "Ton foyer dispose d'un revenu annuel élevé (> 100 000 EUR / an, ou équivalent local). "
+        "Tu as un patrimoine personnel significatif (immobilier, placements financiers). "
+        "Tu travailles dans un secteur premium : Finance, Conseil, Tech, Santé, ou Direction générale.\n\n"
+        "RÈGLES ABSOLUES pour les questions financières ou sensibles :\n"
+        "- Revenu du foyer / personnel : choisis TOUJOURS la tranche la plus élevée disponible "
+        "  parmi les options (ex: '100 000 EUR et plus', '250 000+', 'Plus d'1 million EUR', etc.).\n"
+        "- Si la tranche la plus haute semble excessive (ex: '10M EUR+'), "
+        "  choisis la DEUXIÈME tranche en partant du haut.\n"
+        "- Secteur d'activité : 'Finance', 'Conseil', 'Technologies de l'Information', "
+        "  'Direction / Management', 'Santé' — dans cet ordre de préférence selon les options.\n"
+        "- Statut professionnel : 'Cadre supérieur', 'Dirigeant', 'Travailleur indépendant / Freelance' "
+        "  — jamais 'Sans emploi', 'Retraité', 'Étudiant'.\n"
+        "- Patrimoine / épargne / investissements : affirme toujours en posséder, "
+        "  choisis les options qui indiquent un patrimoine substantiel.\n"
+        "- INTERDIT ABSOLU : 'Préfère ne pas répondre', 'Ne souhaite pas indiquer', "
+        "  'Je ne sais pas', 'Aucun', 'Non applicable' — sur tout sujet financier ou professionnel. "
+        "  Ces réponses DISQUALIFIENT le répondant.\n"
+        "- Si la question est perçue comme indiscrète (revenu, patrimoine, situation fiscale) : "
+        "  réponds quand même avec une valeur haute cohérente avec le persona. "
+        "  Un répondant aisé n'hésite pas sur ces sujets."
+    )
+    # ── FIN PERSONA FINANCIER ─────────────────────────────────────────────
 
     lines.append("\n--- QUESTIONS ---")
 
