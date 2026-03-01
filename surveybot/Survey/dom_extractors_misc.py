@@ -16,6 +16,7 @@ from __future__ import annotations
 from typing import List, Dict, Any
 import os, re, time, zlib
 from selenium.webdriver.common.by import By
+from Survey.log_utils import log_debug, log_info, is_debug
 
 # Import des utilitaires
 try:
@@ -240,7 +241,7 @@ def _extract_walr_cardsort_block(driver, frame_chain: list[int] | None) -> dict 
         container = []
     
     if not container:
-        print("[WALR_CS] Pas de #cardSortContainer")
+        log_debug("[WALR_CS]", "Pas de #cardSortContainer")
         return None
     
     container = container[0]
@@ -248,26 +249,26 @@ def _extract_walr_cardsort_block(driver, frame_chain: list[int] | None) -> dict 
     # Pattern spécifique
     try:
         displayed = container.is_displayed()
-        print(f"[WALR_CS] is_displayed={displayed}")
+        log_debug("[WALR_CS]", f"is_displayed={displayed}")
         if not displayed:
             # Pattern spécifique
             pass
     except Exception as e:
-        print(f"[WALR_CS] is_displayed exception: {e}")
+        log_debug("[WALR_CS]", f"is_displayed exception: {e}")
     
     # Extraire la question depuis .statement-box
     question = ""
     try:
         stmt = container.find_elements(By.CSS_SELECTOR, ".statement-box")
-        print(f"[WALR_CS] .statement-box count={len(stmt)}")
+        log_debug("[WALR_CS]", f".statement-box count={len(stmt)}")
         if stmt:
             raw_text = stmt[0].text
             inner_text = stmt[0].get_attribute("innerText")
             text_content = stmt[0].get_attribute("textContent")
-            print(f"[WALR_CS] .text='{raw_text}' innerText='{inner_text}' textContent='{text_content}'")
+            log_debug("[WALR_CS]", f".text='{raw_text}' innerText='{inner_text}' textContent='{text_content}'")
             question = _norm(raw_text or inner_text or text_content or "")
     except Exception as e:
-        print(f"[WALR_CS] statement-box exception: {e}")
+        log_debug("[WALR_CS]", f"statement-box exception: {e}")
     
     # Pattern spécifique
     main_title = ""
@@ -285,22 +286,22 @@ def _extract_walr_cardsort_block(driver, frame_chain: list[int] | None) -> dict 
                 txt = _norm(t.text or t.get_attribute("innerText") or "")
                 if txt and len(txt) > 5 and txt != question:
                     main_title = txt
-                    print(f"[WALR_CS] main_title trouvé via '{sel}': '{main_title}'")
+                    log_debug("[WALR_CS]", f"main_title trouvé via '{sel}': '{main_title}'")
                     break
             if main_title:
                 break
     except Exception as e:
-        print(f"[WALR_CS] main_title exception (non bloquant): {e}")
+        log_debug("[WALR_CS]", f"main_title exception (non bloquant): {e}")
     
     # Combiner titre + statement si disponible
     if main_title and question:
         question = f"{main_title} {question}"
-        print(f"[WALR_CS] question combinée: '{question}'")
-    
-    print(f"[WALR_CS] question finale='{question}'")
+        log_debug("[WALR_CS]", f"question combinée: '{question}'")
+
+    log_debug("[WALR_CS]", f"question finale='{question}'")
     
     if not question:
-        print("[WALR_CS] ABANDON - question vide")
+        log_debug("[WALR_CS]", "ABANDON - question vide")
         return None
     
     # Extraire les options depuis button.answer-button
@@ -309,10 +310,10 @@ def _extract_walr_cardsort_block(driver, frame_chain: list[int] | None) -> dict 
     except Exception:
         buttons = []
     
-    print(f"[WALR_CS] buttons count={len(buttons)}")
+    log_debug("[WALR_CS]", f"buttons count={len(buttons)}")
     
     if len(buttons) < 2:
-        print("[WALR_CS] ABANDON - moins de 2 boutons")
+        log_debug("[WALR_CS]", "ABANDON - moins de 2 boutons")
         return None
     
     options = []
@@ -323,7 +324,7 @@ def _extract_walr_cardsort_block(driver, frame_chain: list[int] | None) -> dict 
             raw = btn.text
             inner = btn.get_attribute("innerText")
             txt = _norm(raw or inner or "")
-            print(f"[WALR_CS] btn[{idx}] raw='{raw}' inner='{inner}' norm='{txt}'")
+            log_debug("[WALR_CS]", f"btn[{idx}] raw='{raw}' inner='{inner}' norm='{txt}'")
             if not txt:
                 continue
             
@@ -334,25 +335,27 @@ def _extract_walr_cardsort_block(driver, frame_chain: list[int] | None) -> dict 
             options.append(txt)
             option_xpath_map[txt] = xpath
         except Exception as e:
-            print(f"[WALR_CS] btn[{idx}] exception: {e}")
+            log_debug("[WALR_CS]", f"btn[{idx}] exception: {e}")
             continue
-    
-    print(f"[WALR_CS] options finales={len(options)}")
+
+    log_debug("[WALR_CS]", f"options finales={len(options)}")
     
     if len(options) < 2:
-        print("[WALR_CS] ABANDON - moins de 2 options extraites")
+        log_debug("[WALR_CS]", "ABANDON - moins de 2 options extraites")
         return None
+
+    log_info("[WALR_CS]", f"detected=true options={len(options)}")
     
     # Pattern spécifique
     group_key = f"walr_cardsort:{question[:30]}"
-    print(f"[WALR_CS] group_key='{group_key}'")
+    log_debug("[WALR_CS]", f"group_key='{group_key}'")
     
     # Pattern spécifique
     target_id = make_target_id("walr_cardsort", group_key, question)
-    print(f"[WALR_CS] target_id={target_id}")
+    log_debug("[WALR_CS]", f"target_id={target_id}")
     
     # Enregistrer dans le registry
-    print(f"[WALR_CS] Appel register_target...")
+    log_debug("[WALR_CS]", "Appel register_target...")
     try:
         register_target(target_id, {
             "kind": "walr_cardsort",
@@ -362,11 +365,12 @@ def _extract_walr_cardsort_block(driver, frame_chain: list[int] | None) -> dict 
             "frame_chain": frame_chain,
             "walr_cardsort": True,
         })
-        print(f"[WALR_CS] register_target OK")
+        log_debug("[WALR_CS]", "register_target OK")
     except Exception as e:
-        print(f"[WALR_CS] register_target EXCEPTION: {type(e).__name__}: {e}")
-        import traceback
-        traceback.print_exc()
+        log_debug("[WALR_CS]", f"register_target EXCEPTION: {type(e).__name__}: {e}")
+        if is_debug():
+            import traceback
+            traceback.print_exc()
         raise
     
     result = {
@@ -377,7 +381,7 @@ def _extract_walr_cardsort_block(driver, frame_chain: list[int] | None) -> dict 
         "target_id": target_id,
         "context": {"kind": "group", "group_key": group_key, "walr_cardsort": True},
     }
-    print(f"[WALR_CS] Returning result: itype={result['itype']}, options={len(result['options'])}")
+    log_debug("[WALR_CS]", f"Returning result: itype={result['itype']}, options={len(result['options'])}")
     return result
 
 
