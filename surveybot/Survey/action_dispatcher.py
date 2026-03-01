@@ -5,6 +5,7 @@ import Survey.input_handler
 from Survey.dom_registry import get_target
 from typing import Optional
 from selenium.webdriver.common.action_chains import ActionChains
+from Survey.log_utils import is_debug, log_debug, log_info
 
 def _short_exc(e: Exception) -> str:
     """Rend les exceptions Selenium lisibles (sans Stacktrace bruyant)."""
@@ -499,7 +500,7 @@ def _apply_by_target_id(driver, target_id: str, itype: str, value: str) -> bool:
             reg_itype = (payload.get("itype") or "").lower()
             resolved_itype = (itype or reg_itype).lower().strip()
 
-            debug_target = (os.getenv("ACTION_DEBUG_TARGET", "0") or "").strip().lower() in ("1", "true", "yes", "on")
+            debug_target = is_debug()
 
             def _find_best_visible(xpath: str):
                 try:
@@ -611,10 +612,10 @@ def _apply_by_target_id(driver, target_id: str, itype: str, value: str) -> bool:
                             break
 
                 if not row_id:
-                    print(f"[TARGET_DEBUG] slider-grid row skipped row_id=<missing> value='{value}' reason='missing_row_id'")
+                    log_debug("[TARGET_DEBUG]", f"slider-grid row skipped row_id=<missing> value='{value}' reason='missing_row_id'")
                     return False
                 if selected_index is None:
-                    print(f"[TARGET_DEBUG] slider-grid row skipped row_id={row_id} value='{value}' reason='unmapped_value'")
+                    log_debug("[TARGET_DEBUG]", f"slider-grid row skipped row_id={row_id} value='{value}' reason='unmapped_value'")
                     return False
 
                 try:
@@ -678,18 +679,18 @@ def _apply_by_target_id(driver, target_id: str, itype: str, value: str) -> bool:
                         int(selected_index),
                     )
                 except Exception as e:
-                    print(f"[TARGET_DEBUG] slider-grid row skipped row_id={row_id} value='{value}' reason='script_error:{_short_exc(e)}'")
+                    log_debug("[TARGET_DEBUG]", f"slider-grid row skipped row_id={row_id} value='{value}' reason='script_error:{_short_exc(e)}'")
                     return False
 
                 ok = bool((js_result or {}).get("ok")) if isinstance(js_result, dict) else False
                 if ok:
-                    print(f"[TARGET_DEBUG] slider-grid row applied row_id={row_id} value='{value}'")
+                    log_debug("[TARGET_DEBUG]", f"slider-grid row applied row_id={row_id} value='{value}'")
                     return True
 
                 reason = "unknown"
                 if isinstance(js_result, dict):
                     reason = (js_result.get("reason") or reason)
-                print(f"[TARGET_DEBUG] slider-grid row skipped row_id={row_id} value='{value}' reason='{reason}'")
+                log_debug("[TARGET_DEBUG]", f"slider-grid row skipped row_id={row_id} value='{value}' reason='{reason}'")
                 return False
 
             # --- cas "options map" (radio/checkbox)
@@ -726,7 +727,7 @@ def _apply_by_target_id(driver, target_id: str, itype: str, value: str) -> bool:
 
                 if not xp:
                     if debug_target:
-                        print(f"[TARGET_DEBUG] target_id='{target_id}' kind='{kind}' itype='{resolved_itype}' value='{value}' -> option introuvable (opt_map={len(opt_map)})")
+                        log_debug("[TARGET_DEBUG]", f"target_id='{target_id}' kind='{kind}' itype='{resolved_itype}' value='{value}' -> option introuvable (opt_map={len(opt_map)})")
                     return False
 
                 def _first_input_under(node):
@@ -799,7 +800,7 @@ def _apply_by_target_id(driver, target_id: str, itype: str, value: str) -> bool:
 
                         if not hasattr(driver, "execute_cdp_cmd"):
                             if debug_target:
-                                print("[TARGET_DEBUG] CDP click unavailable: driver has no execute_cdp_cmd()")
+                                log_debug("[TARGET_DEBUG]", "CDP click unavailable: driver has no execute_cdp_cmd()")
                             return False
 
                         rect = driver.execute_script(
@@ -816,7 +817,7 @@ def _apply_by_target_id(driver, target_id: str, itype: str, value: str) -> bool:
                         return True
                     except Exception as e:
                         if debug_target:
-                            print(f"[TARGET_DEBUG] CDP click failed: {_short_exc(e)}")
+                            log_debug("[TARGET_DEBUG]", f"CDP click failed: {_short_exc(e)}")
                         return False
 
                 def _ensure_pre_clicks_ready(target_xpath: str) -> None:
@@ -893,7 +894,7 @@ def _apply_by_target_id(driver, target_id: str, itype: str, value: str) -> bool:
                         return True
                     except Exception as e:
                         if debug_target:
-                            print(f"[TARGET_DEBUG] native click failed on {label}: {_short_exc(e)}")
+                            log_debug("[TARGET_DEBUG]", f"native click failed on {label}: {_short_exc(e)}")
 
                     # 2) ActionChains (souvent plus robuste quand le DOM est Ã¢â‚¬Å“capricieuxÃ¢â‚¬Â)
                     try:
@@ -902,7 +903,7 @@ def _apply_by_target_id(driver, target_id: str, itype: str, value: str) -> bool:
                         return True
                     except Exception as e:
                         if debug_target:
-                            print(f"[TARGET_DEBUG] actionchains click failed on {label}: {_short_exc(e)}")
+                            log_debug("[TARGET_DEBUG]", f"actionchains click failed on {label}: {_short_exc(e)}")
 
                     # 3) CDP click (trusted-ish)
                     if _cdp_click(node):
@@ -914,7 +915,7 @@ def _apply_by_target_id(driver, target_id: str, itype: str, value: str) -> bool:
                         return True
                     except Exception as e:
                         if debug_target:
-                            print(f"[TARGET_DEBUG] js click failed on {label}: {_short_exc(e)}")
+                            log_debug("[TARGET_DEBUG]", f"js click failed on {label}: {_short_exc(e)}")
                         return False
 
                 # 0) pre-clicks (ex: ouvrir un panneau accordéon AVANT de chercher l'option)
@@ -951,11 +952,11 @@ def _apply_by_target_id(driver, target_id: str, itype: str, value: str) -> bool:
                     el = _find_best_visible(xp)
                     if not el:
                         if debug_target:
-                            print(f"[TARGET_DEBUG] element not found for xpath: {xp}")
+                            log_debug("[TARGET_DEBUG]", f"element not found for xpath: {xp}")
                         return False
                 except Exception as ex:
                     if debug_target:
-                        print(f"[TARGET_DEBUG] element not found for xpath={xp} ({type(ex).__name__}: {_short_exc(ex)})")
+                        log_debug("[TARGET_DEBUG]", f"element not found for xpath={xp} ({type(ex).__name__}: {_short_exc(ex)})")
                     return False
 
                 # 2) clic Ã¢â‚¬Å“normalÃ¢â‚¬Â sur la cible
@@ -1181,7 +1182,7 @@ def _apply_by_target_id(driver, target_id: str, itype: str, value: str) -> bool:
                     return True
 
                 if debug_target:
-                    print(f"[TARGET_DEBUG] selection failed after waits: value='{value}' xpath='{xp}' inp_id='{inp_id}' inp_name='{inp_name}'")
+                    log_debug("[TARGET_DEBUG]", f"selection failed after waits: value='{value}' xpath='{xp}' inp_id='{inp_id}' inp_name='{inp_name}'")
                 return False
 
             # --- cas multi_text : plusieurs cases texte pour UNE meme question (OpenTextMultiLines)
@@ -2802,7 +2803,10 @@ def _try(driver, name: str, fn):
         return False
 
     ctx["attempted"].add(name)
-    return fn()
+    ok = bool(fn())
+    if ok:
+        log_info("[TARGET]", f"apply ok=true strategy={name} reason=applied")
+    return ok
 
 # --------------------------- Dispatcher principal ---------------------------
 def _aa__norm_ws(s: str) -> str:
@@ -3048,18 +3052,17 @@ def execute_action(driver, instruction: str) -> bool:
     from Survey.action_types import Action as ActionModel
 
     import os
-    debug_target = (os.getenv("ACTION_DEBUG_TARGET", "0") or "").strip().lower() in ("1", "true", "yes", "on")
+    debug_target = is_debug()
 
     # Print 1 seule fois pour prouver que CE fichier est chargé
     if debug_target and not getattr(driver, "_target_debug_header_printed", False):
-        print(f"[TARGET_DEBUG] action_dispatcher file={__file__}")
+        log_debug("[TARGET_DEBUG]", f"action_dispatcher file={__file__}")
         driver._target_debug_header_printed = True
 
     if isinstance(instruction, ActionModel):
         instruction = instruction.to_dispatcher_line()
 
-    if debug_target:
-        print(f"[TARGET_DEBUG] execute_action raw={instruction!r}")
+    log_info("[TARGET]", f"execute_action raw={instruction!r}")
 
     if not instruction or not instruction.strip():
         return False
@@ -3074,6 +3077,8 @@ def execute_action(driver, instruction: str) -> bool:
         raw_itype = (parsed.get("itype") or "").strip()
         _, itype, _ = _parse_typed_instruction3(f"x //// {raw_itype} //// y")
         itype = (itype or "").strip()
+
+        log_info("[TARGET]", f"parsed target_id={target_id!r} itype={itype!r} value={value!r} context_len={len(ctx)}")
 
         if not value and not target_id:
             continue
@@ -3108,6 +3113,7 @@ def execute_action(driver, instruction: str) -> bool:
                     # sinon on peut écraser une sélection correcte (ex: valeur contenant une virgule).
                     ok_sp = Survey.input_handler.set_sliderpoints(driver, value, context_hint=ctx)
                     if ok_sp:
+                        log_info("[TARGET]", "apply ok=true strategy=target_id_sliderpoints reason=applied")
                         return True
                     continue
 
@@ -3118,10 +3124,11 @@ def execute_action(driver, instruction: str) -> bool:
         if target_id and not skip_apply_by_target_id:
             try:
                 if _apply_by_target_id(driver, target_id, itype, value):
+                    log_info("[TARGET]", "apply ok=true strategy=target_id reason=applied")
                     return True
             except Exception as e:
                 if debug_target:
-                    print(f"[TARGET_DEBUG] _apply_by_target_id exception: {type(e).__name__}: {e}")
+                    log_debug("[TARGET_DEBUG]", f"_apply_by_target_id exception: {type(e).__name__}: {e}")
 
         # 2) fallback legacy: label == valeur (IMPORTANT: pas QID)
         label = value
@@ -3137,6 +3144,7 @@ def execute_action(driver, instruction: str) -> bool:
                     col_label=label,
                     debug=True,
                 ):
+                    log_info("[TARGET]", "apply ok=true strategy=matrix_visual_map reason=applied")
                     return True
         except Exception:
             pass
@@ -3144,6 +3152,7 @@ def execute_action(driver, instruction: str) -> bool:
         try:
             if (ctx or "").strip() and itype in ("checkbox", "radio") and Survey.input_handler._looks_like_matrix(driver):
                 if Survey.input_handler.click_matrix_cell_by_row_and_col(driver, row_label=ctx, col_label=label):
+                    log_info("[TARGET]", "apply ok=true strategy=matrix_cell reason=applied")
                     return True
         except Exception:
             pass
@@ -3288,6 +3297,7 @@ def execute_action(driver, instruction: str) -> bool:
             question_text = ctx or ""
             answer_text = label or ""
             if question_text and answer_text and _aa__try_answer_matrix(driver, question_text, answer_text):
+                log_info("[TARGET]", "apply ok=true strategy=aa_answer_matrix reason=applied")
                 return True
 
             if _try(driver, "radio_slider", lambda:
@@ -3319,6 +3329,7 @@ def execute_action(driver, instruction: str) -> bool:
                     debug=True,
                 )
                 if resolved:
+                    log_info("[TARGET]", "apply ok=true strategy=number_block_resolver reason=applied")
                     return True
             except Exception:
                 pass
@@ -3328,11 +3339,9 @@ def execute_action(driver, instruction: str) -> bool:
             ):
                 return True
 
-        if debug_target:
-            print(f"[TARGET_DEBUG] parsed target_id={target_id!r} itype={itype!r} value={value!r} context={ctx!r}")
-
         # si cette ligne échoue, on tente la suivante (au lieu de return False)
-        print("Aucune stratégie n'a abouti pour :", raw, " source: action_dispatcher.py")
+        log_info("[TARGET]", f"apply ok=false reason=no_strategy strategy=none itype={itype!r} target_id={target_id!r}")
+        log_debug("[TARGET_DEBUG]", f"Aucune stratégie n'a abouti pour: {raw}")
         continue
 
     # --- Fallback vidéo (Video.js / Brightcove) ----------------------
@@ -3532,9 +3541,9 @@ def execute_actions_plan(
 
         except Exception as e:
             try:
-                debug_target = (os.getenv("ACTION_DEBUG_TARGET", "0") or "").strip().lower() in ("1", "true", "yes", "on")
+                debug_target = is_debug()
                 if debug_target:
-                    print(f"[TARGET_DEBUG] execute_actions_plan idx={idx} crashed: {type(e).__name__}: {e}")
+                    log_debug("[TARGET_DEBUG]", f"execute_actions_plan idx={idx} crashed: {type(e).__name__}: {e}")
             except Exception:
                 pass
             continue
