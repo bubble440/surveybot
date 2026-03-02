@@ -518,24 +518,59 @@ def _apply_by_target_id(driver, target_id: str, itype: str, value: str) -> bool:
                     except Exception:
                         return False
 
+                def _click_priority(el) -> int:
+                    """Priorise les nœuds réellement cliquables pour radios/checkbox matrix."""
+                    try:
+                        tag = (el.tag_name or "").lower()
+                    except Exception:
+                        tag = ""
+                    try:
+                        cls = ((el.get_attribute("class") or "").lower())
+                    except Exception:
+                        cls = ""
+
+                    score = 0
+                    if tag in ("label", "input", "button"):
+                        score += 100
+                    if "clickablecell" in cls or "cell-sub-wrapper" in cls:
+                        score += 80
+                    if tag == "td" and "clickablecell" not in cls:
+                        score -= 40
+                    return score
+
+                def _pick_best(scored):
+                    if not scored:
+                        return None
+                    # max(..., key=...) garde le 1er élément en cas d'égalité:
+                    # on conserve l'ordre DOM comme tie-breaker stable.
+                    return max(scored, key=lambda item: item[0])[1]
+
                 # 1) affiché + taille > 2px (évite label 0x0)
+                visible_rect = []
                 for c in cands:
                     try:
                         if c.is_displayed() and _rect_ok(c):
-                            return c
+                            visible_rect.append((_click_priority(c), c))
                     except Exception:
                         continue
+                best = _pick_best(visible_rect)
+                if best:
+                    return best
 
                 # 2) affiché
+                visible_any = []
                 for c in cands:
                     try:
                         if c.is_displayed():
-                            return c
+                            visible_any.append((_click_priority(c), c))
                     except Exception:
                         continue
+                best = _pick_best(visible_any)
+                if best:
+                    return best
 
                 # 3) fallback
-                return cands[0]
+                return _pick_best([(_click_priority(c), c) for c in cands])
 
             def _wait_checked(input_id: str | None, input_name: str | None, timeout_s: float = 1.2) -> bool:
                 import time
