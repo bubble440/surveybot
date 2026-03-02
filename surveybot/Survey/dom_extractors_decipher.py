@@ -122,6 +122,62 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
             question = (q.text or "").strip().split("\n")[0].strip()
 
         # Regrouper par name logique
+        matrix_mode = False
+        matrix_group_name = ""
+        matrix_row_labels: dict[str, str] = {}
+        matrix_col_labels: dict[str, str] = {}
+        matrix_table = None
+        try:
+            candidate_tables = answers.find_elements(By.CSS_SELECTOR, "table.grid")
+            matrix_table = candidate_tables[0] if candidate_tables else None
+        except Exception:
+            matrix_table = None
+
+        raw_triplets: list[tuple[str, str, str]] = []
+        if matrix_table is not None:
+            for inp in inputs:
+                raw_name = (inp.get_attribute("name") or "").strip()
+                m = re.fullmatch(r"(ans\d+)\.(\d+)\.(\d+)", raw_name)
+                if not m:
+                    raw_triplets = []
+                    break
+                raw_triplets.append((m.group(1), m.group(2), m.group(3)))
+
+        if raw_triplets:
+            stems = {t[0] for t in raw_triplets}
+            col_idx = {t[1] for t in raw_triplets}
+            row_idx = {t[2] for t in raw_triplets}
+            if len(stems) == 1 and len(col_idx) >= 2 and len(row_idx) >= 2:
+                matrix_mode = True
+                matrix_group_name = next(iter(stems))
+
+                # Headers de colonnes observables dans les grilles FocusVision/Decipher.
+                try:
+                    col_headers = matrix_table.find_elements(By.CSS_SELECTOR, "th[id*='_c']")
+                except Exception:
+                    col_headers = []
+                for h in col_headers:
+                    hid = (h.get_attribute("id") or "").strip()
+                    m = re.search(r"_c(\d+)$", hid)
+                    if not m:
+                        continue
+                    txt = (h.text or h.get_attribute("innerText") or h.get_attribute("textContent") or "").strip()
+                    if txt:
+                        matrix_col_labels[m.group(1)] = txt
+
+                try:
+                    row_headers = matrix_table.find_elements(By.CSS_SELECTOR, "th[id$='_left']")
+                except Exception:
+                    row_headers = []
+                for h in row_headers:
+                    hid = (h.get_attribute("id") or "").strip()
+                    m = re.search(r"_r(\d+)_left$", hid)
+                    if not m:
+                        continue
+                    txt = (h.text or h.get_attribute("innerText") or h.get_attribute("textContent") or "").strip()
+                    if txt:
+                        matrix_row_labels[m.group(1)] = txt
+
         by_name: dict[str, list] = {}
         all_raw_names = {
             (inp.get_attribute("name") or "").strip()
@@ -132,7 +188,10 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
             name = (inp.get_attribute("name") or "").strip()
             if not name:
                 continue
-            name = _logical_answers_list_group_name(name, all_raw_names)
+            if matrix_mode:
+                name = matrix_group_name
+            else:
+                name = _logical_answers_list_group_name(name, all_raw_names)
             by_name.setdefault(name, []).append(inp)
 
         for name, inps in by_name.items():
@@ -148,7 +207,9 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
 
             options: list[str] = []
             option_xpath_map: dict[str, str] = {}
+            matrix_cell_xpath_map: dict[str, dict[str, str]] = {}
             aux_openended_input_names: set[str] = set()
+            seen_options: set[str] = set()
 
             for inp in inps:
                 inp_id = (inp.get_attribute("id") or "").strip()
@@ -195,7 +256,23 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
                     except Exception:
                         pass
 
-                options.append(label_txt)
+                cell_col_label = label_txt
+                cell_row_label = ""
+                raw_name = (inp.get_attribute("name") or "").strip()
+                if matrix_mode:
+                    m = re.fullmatch(r"ans\d+\.(\d+)\.(\d+)", raw_name)
+                    if m:
+                        row_key = m.group(2)
+                        cell_row_label = (
+                            matrix_row_labels.get(row_key)
+                            or matrix_row_labels.get(str(int(row_key) + 1))
+                            or ""
+                        )
+
+                cell_col_norm = _norm_lc(cell_col_label)
+                if cell_col_norm and cell_col_norm not in seen_options:
+                    options.append(cell_col_label)
+                    seen_options.add(cell_col_norm)
 
                 # IMPORTANT: on clique un wrapper cliquable (pas l'input masqué).
                 # Fallback: si clickableCell absent, on remonte sur .element.
@@ -206,38 +283,46 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
                     f" or contains(concat(' ',normalize-space(@class),' '),' element ')"
                     f"][1]"
                 )
-                option_xpath_map[_norm_lc(label_txt)] = xp
+                option_xpath_map[cell_col_norm or _norm_lc(label_txt)] = xp
+                if matrix_mode and cell_row_label and cell_col_norm:
+                    matrix_cell_xpath_map.setdefault(_norm_lc(cell_row_label), {})[cell_col_norm] = xp
 
             if len(options) < 2:
                 continue
 
-            group_key = f"{itype}:name:{name}"
+            resolved_itype = "matrix" if matrix_mode and itype == "checkbox" else itype
+            group_key = f"{resolved_itype}:name:{name}"
             target_id = make_target_id("group", group_key, question or name)
 
             register_target(target_id, {
                 "kind": "group",
                 "frame_chain": list(frame_chain or []),
-                "itype": itype,
+                "itype": resolved_itype,
                 "group_key": group_key,
                 "question": question,
                 "input_name": name,
-                "max_select": 1 if itype == "radio" else len(options),
+                "max_select": 1 if resolved_itype == "radio" else len(options),
                 "options": options,
-                "option_xpath_map": option_xpath_map
+                "option_xpath_map": option_xpath_map,
+                "matrix_rows": list(matrix_row_labels.values()) if matrix_mode else [],
+                "matrix_columns": options if matrix_mode else [],
+                "matrix_cell_xpath_map": matrix_cell_xpath_map if matrix_mode else {},
             })
 
             blocks.append({
                 "target_id": target_id,
                 "kind": "group",
-                "itype": itype,
+                "itype": resolved_itype,
                 "question": question,
                 "options": options,
-                "max_select": 1 if itype == "radio" else len(options),
+                "max_select": 1 if resolved_itype == "radio" else len(options),
                 "context": {
                     "kind": "group",
                     "group_key": group_key,
                     "focusvision_answers_list": True,
                     "aux_openended_names": sorted(aux_openended_input_names),
+                    "matrix_rows": list(matrix_row_labels.values()) if matrix_mode else [],
+                    "matrix_columns": options if matrix_mode else [],
                 },
             })
 
