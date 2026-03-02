@@ -375,6 +375,13 @@ def build_batch_prompt(question_blocks: list[dict]) -> str:
         "- contexte doit correspondre exactement é  la question affichée"
     )
 
+    lines.append(
+        "RÈGLE SPÉCIALE MATRICES (itype=matrix) :\n"
+        "- valeur DOIT être au format STRICT: row_label || col_label\n"
+        "- Exemple attendu: Crédit consommation || Transféré vers Revolut\n"
+        "- INTERDIT: répondre uniquement une colonne (ex: 'Transféré vers Revolut')."
+    )
+
     # Contrainte sexe/genre : toujours masculin, avec l'intitulé exact de l'option
     lines.append(
         "Pour toute question sur le sexe ou le genre, "
@@ -443,6 +450,7 @@ def build_batch_prompt(question_blocks: list[dict]) -> str:
         lines.append(f"contexte: {q}")
         if matrix_rows:
             lines.append(f"sous_questions_matrix: {' | '.join(matrix_rows)}")
+            lines.append("matrix_answer_format: row_label || col_label (row obligatoire, jamais col seule)")
         lines.append(f"itype: {itype}")
         lines.append(f"max_select: {max_sel}")
         if _looks_like_classification_question(block) and opts:
