@@ -480,7 +480,155 @@ def _parse_matrix_value_parts(value: str) -> tuple[str, str]:
 def _try_gridclick_matrix_set(driver, row_label: str, col_label: str) -> bool:
     row_label = (row_label or "").strip()
     col_label = (col_label or "").strip()
-    if not row_label or not col_label:
+    if not col_label:
+        return False
+
+    try:
+        is_gridclick = bool(
+            driver.execute_script(
+                """
+                const root = document.querySelector('.gridclick.horizontal.text-version');
+                if (!root) return false;
+                return root.querySelectorAll('.scale-button').length >= 2;
+                """
+            )
+        )
+    except Exception:
+        is_gridclick = False
+
+    if is_gridclick:
+        row_ai = row_label
+        try:
+            out = driver.execute_script(
+                """
+                const norm = (s) => String(s || '')
+                  .normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
+                  .replace(/\s+/g, ' ').trim().toLowerCase();
+
+                const colNeedle = norm(arguments[0]);
+                const rowAi = String(arguments[1] || '');
+                const root = document.querySelector('.gridclick.horizontal.text-version');
+                if (!root) return {ok:false, reason:'no_gridclick_root'};
+
+                const activeRowEl = root.querySelector('.item.current .text-content') || root.querySelector('.item.current');
+                const activeRow = activeRowEl ? String(activeRowEl.innerText || activeRowEl.textContent || '').replace(/\s+/g, ' ').trim() : '';
+                if (!activeRow) return {ok:false, reason:'no_active_row'};
+
+                const rowAiNorm = norm(rowAi);
+                const rowDomNorm = norm(activeRow);
+
+                const buttons = Array.from(root.querySelectorAll('.scale-button'));
+                if (!buttons.length) return {ok:false, reason:'no_scale_buttons'};
+
+                const matchLabel = (candidate, needle) => {
+                  const a = norm(candidate);
+                  if (!a || !needle) return false;
+                  return a === needle || a.includes(needle) || needle.includes(a);
+                };
+
+                const candidates = [];
+                for (const b of buttons) {
+                  const txtEl = b.querySelector('.text-content') || b;
+                  const txt = String(txtEl.innerText || txtEl.textContent || '').replace(/\s+/g, ' ').trim();
+                  if (!txt) continue;
+                  const isDk = b.classList.contains('dk-button');
+                  if (isDk && !matchLabel(txt, colNeedle)) continue;
+                  if (matchLabel(txt, colNeedle)) {
+                    candidates.push({btn: b, text: txt});
+                  }
+                }
+
+                if (!candidates.length) return {ok:false, reason:'col_not_found', active_row:activeRow};
+                const picked = candidates[0];
+                const btn = picked.btn;
+                const btnIndex = btn.getAttribute('data-index');
+
+                try { btn.scrollIntoView({block:'center', inline:'center'}); } catch(e) {}
+
+                let clickMethod = 'native';
+                try {
+                  btn.click();
+                } catch(e) {
+                  clickMethod = 'js';
+                  btn.dispatchEvent(new MouseEvent('click', {bubbles:true, cancelable:true}));
+                }
+
+                return {
+                  ok: true,
+                  reason: 'clicked',
+                  row_ai: rowAi,
+                  active_row: activeRow,
+                  row_override: !!rowAiNorm && rowAiNorm !== rowDomNorm,
+                  col: picked.text,
+                  btn_index: btnIndex,
+                  selected: btn.classList.contains('selected'),
+                  click_method: clickMethod,
+                };
+                """,
+                col_label,
+                row_label,
+            )
+        except Exception as e:
+            log_info("[GRIDCLICK]", f"col_click_failed col={col_label!r} active_row='' reason={_short_exc(e)!r}")
+            return False
+
+        if isinstance(out, dict) and out.get("row_override"):
+            log_info(
+                "[GRIDCLICK]",
+                f"row_override row_ai={row_ai!r} row_dom={out.get('active_row', '')!r} row_used={out.get('active_row', '')!r}",
+            )
+
+        if isinstance(out, dict) and out.get("ok"):
+            btn_index = out.get("btn_index")
+            selected = False
+            deadline = time.time() + 0.6
+            while time.time() < deadline:
+                try:
+                    selected = bool(
+                        driver.execute_script(
+                            """
+                            const root = document.querySelector('.gridclick.horizontal.text-version');
+                            if (!root) return false;
+                            const idx = arguments[0];
+                            let btn = null;
+                            if (idx !== null && idx !== undefined && String(idx) !== '') {
+                              btn = root.querySelector(`.scale-button[data-index='${String(idx)}']`);
+                            }
+                            if (!btn) return false;
+                            return btn.classList.contains('selected');
+                            """,
+                            btn_index,
+                        )
+                    )
+                except Exception:
+                    selected = False
+                if selected:
+                    break
+                time.sleep(0.05)
+
+            if selected:
+                out["selected"] = True
+            else:
+                out["ok"] = False
+                out["reason"] = "no_selected_class"
+
+        if isinstance(out, dict) and out.get("ok"):
+            log_info(
+                "[GRIDCLICK]",
+                f"col_click_ok col={out.get('col', col_label)!r} active_row={out.get('active_row', '')!r} "
+                f"btn_index={out.get('btn_index')!r} selected={bool(out.get('selected'))}",
+            )
+            return True
+
+        reason = out.get("reason") if isinstance(out, dict) else "unknown"
+        active_row = out.get("active_row", "") if isinstance(out, dict) else ""
+        log_info(
+            "[GRIDCLICK]",
+            f"col_click_failed col={col_label!r} active_row={active_row!r} reason={reason!r}",
+        )
+        return False
+
+    if not row_label:
         return False
 
     row_ai = row_label
