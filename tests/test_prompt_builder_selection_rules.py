@@ -105,3 +105,6 @@ def test_batch_prompt_exposes_matrix_row_labels_for_llm_context():
 
     assert "contexte: Vous avez changé de banque principale : qu’avez-vous transféré ?" in prompt
     assert "sous_questions_matrix: Épargne | Crédit consommation" in prompt
+    assert "RÈGLE SPÉCIALE MATRICES (itype=matrix)" in prompt
+    assert "Crédit consommation || Transféré vers Revolut" in prompt
+    assert "matrix_answer_format: row_label || col_label (row obligatoire, jamais col seule)" in prompt
