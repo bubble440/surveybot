@@ -117,6 +117,7 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
 
             options: list[str] = []
             option_xpath_map: dict[str, str] = {}
+            aux_openended_input_names: set[str] = set()
 
             for inp in inps:
                 inp_id = (inp.get_attribute("id") or "").strip()
@@ -128,10 +129,24 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
                 try:
                     lab = answers.find_element(By.CSS_SELECTOR, f"label[for='{inp_id}']")
                     label_txt = (lab.text or "").strip()
+                    try:
+                        for oe in lab.find_elements(By.CSS_SELECTOR, "input[type='text'], textarea"):
+                            oe_name = (oe.get_attribute("name") or "").strip()
+                            if oe_name:
+                                aux_openended_input_names.add(oe_name)
+                    except Exception:
+                        pass
                 except Exception:
                     try:
                         lab = inp.find_element(By.XPATH, "ancestor::*[contains(@class,'clickableCell')][1]//label")
                         label_txt = (lab.text or "").strip()
+                        try:
+                            for oe in lab.find_elements(By.CSS_SELECTOR, "input[type='text'], textarea"):
+                                oe_name = (oe.get_attribute("name") or "").strip()
+                                if oe_name:
+                                    aux_openended_input_names.add(oe_name)
+                        except Exception:
+                            pass
                     except Exception as e:
                         if os.getenv("RUN_ENV", "local") == "local":
                             print(f"[DOM_ANALYZER][WARN] focusvision extract: {type(e).__name__}: {e}")
@@ -139,6 +154,15 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
 
                 if not label_txt:
                     continue
+
+                # Option "Autre ... préciser" avec champ open-ended dans le même label:
+                # on exclut cette option du bloc group principal (non gérée en action group ici).
+                if lab is not None:
+                    try:
+                        if lab.find_elements(By.CSS_SELECTOR, "input[type='text'], textarea"):
+                            continue
+                    except Exception:
+                        pass
 
                 options.append(label_txt)
 
@@ -182,6 +206,7 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
                     "kind": "group",
                     "group_key": group_key,
                     "focusvision_answers_list": True,
+                    "aux_openended_names": sorted(aux_openended_input_names),
                 },
             })
 

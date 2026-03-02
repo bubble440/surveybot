@@ -1571,6 +1571,7 @@ def analyze_dom(driver) -> List[Dict[str, Any]]:
     blocks = _dedupe_question_blocks(blocks)
 
     blocks = _prune_focusvision_fragmented_groups(blocks)
+    blocks = _prune_focusvision_auxiliary_openended_singles(blocks)
 
     summary_itypes = sorted({str((b or {}).get("itype") or "") for b in (blocks or []) if (b or {}).get("itype")})
     options_count = sum(len((b or {}).get("options") or []) for b in (blocks or []))
@@ -1739,6 +1740,46 @@ def _prune_focusvision_fragmented_groups(blocks: List[Dict[str, Any]]) -> List[D
                         break
 
         if not drop_fragment:
+            pruned.append(b)
+
+    return pruned
+
+
+def _prune_focusvision_auxiliary_openended_singles(blocks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Supprime les blocs single text/textarea auxiliaires liés aux options
+    "Autre ... préciser" déjà détectées dans un groupe FocusVision answers-list.
+    """
+    aux_names: set[str] = set()
+    for b in (blocks or []):
+        if not isinstance(b, dict):
+            continue
+        context = (b.get("context") or {}) if isinstance(b.get("context"), dict) else {}
+        if context.get("focusvision_answers_list") is not True:
+            continue
+        for nm in (context.get("aux_openended_names") or []):
+            nm_norm = _norm((nm or "")).strip()
+            if nm_norm:
+                aux_names.add(nm_norm)
+
+    if not aux_names:
+        return blocks
+
+    pruned: list[dict] = []
+    for b in (blocks or []):
+        if not isinstance(b, dict):
+            continue
+        itype = _norm((b.get("itype") or "")).lower()
+        context = (b.get("context") or {}) if isinstance(b.get("context"), dict) else {}
+        input_name = _norm((context.get("name") or "")).strip()
+
+        drop = (
+            itype in {"text", "textarea"}
+            and bool(input_name)
+            and input_name in aux_names
+            and context.get("kind") == "single"
+        )
+        if not drop:
             pruned.append(b)
 
     return pruned
