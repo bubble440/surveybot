@@ -11,7 +11,7 @@ pour identifier et extraire les questions/options de manière fiable.
 """
 
 from __future__ import annotations
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Set
 import os
 import re
 from selenium.webdriver.common.by import By
@@ -29,6 +29,33 @@ except ImportError:
 # ================================================================================
 # FOCUSVISION / DECIPHER - ANSWERS LIST GROUPS
 # ================================================================================
+
+def _logical_answers_list_group_name(raw_name: str, all_raw_names: Set[str]) -> str:
+    """Retourne le nom de groupe logique pour les names Decipher answers-list.
+
+    Règle DOM-first:
+    - si plusieurs names siblings `ans<d>.<d>.<d>` partagent la même base
+      (`ans<d>.<d>`), on regroupe sur cette base;
+    - sinon on conserve le name réel tel quel.
+
+    Cette garde évite de fabriquer un alias artificiel (ex: `ans10538.0`)
+    quand le DOM n'expose qu'un seul name réel (`ans10538.0.0`).
+    """
+    name = (raw_name or "").strip()
+    if not re.fullmatch(r"ans\d+\.\d+\.\d+", name):
+        return name
+
+    base = ".".join(name.split(".")[:2])
+    sibling_count = 0
+    for raw in all_raw_names:
+        raw_norm = (raw or "").strip()
+        if not re.fullmatch(r"ans\d+\.\d+\.\d+", raw_norm):
+            continue
+        if raw_norm.startswith(f"{base}."):
+            sibling_count += 1
+            if sibling_count >= 2:
+                return base
+    return name
 
 def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | None) -> list[dict]:
     """
@@ -80,28 +107,18 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
         except Exception:
             question = (q.text or "").strip().split("\n")[0].strip()
 
-        def _logical_group_name(raw_name: str) -> str:
-            """Normalise les names Decipher answers-list éclatés par option.
-
-            Cas visé: `ans10518.0.0`, `ans10518.0.1`, ...
-            -> un seul groupe logique `ans10518.0`.
-
-            Scope strict: uniquement les patterns observables Decipher `ans<digits>.<digits>.<digits>`.
-            Les autres names restent inchangés pour éviter toute régression.
-            """
-            name = (raw_name or "").strip()
-            if re.fullmatch(r"ans\d+\.\d+\.\d+", name):
-                parts = name.split(".")
-                return ".".join(parts[:2])
-            return name
-
         # Regrouper par name logique
         by_name: dict[str, list] = {}
+        all_raw_names = {
+            (inp.get_attribute("name") or "").strip()
+            for inp in inputs
+            if (inp.get_attribute("name") or "").strip()
+        }
         for inp in inputs:
             name = (inp.get_attribute("name") or "").strip()
             if not name:
                 continue
-            name = _logical_group_name(name)
+            name = _logical_answers_list_group_name(name, all_raw_names)
             by_name.setdefault(name, []).append(inp)
 
         for name, inps in by_name.items():
