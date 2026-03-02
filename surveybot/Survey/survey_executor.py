@@ -1102,11 +1102,12 @@ def execute_survey_page(driver, api_key):
                 "itype": (b.get("itype") or ""),
                 "options": (b.get("options") or []),
                 "max_select": int(b.get("max_select", 1) or 1),
+                "target_id": (b.get("target_id") or ""),
             }
             for i, b in enumerate(question_blocks, start=1)
         }
 
-        actions = batch_response_parser.parse_batch_response(raw_text, constraints=qid_constraints)
+        actions = batch_response_parser.parse_batch_response(raw_text, constraints=qid_constraints, qid_meta=qid_meta)
         actions = batch_response_parser.sanitize_actions(actions, qid_meta=qid_meta)
 
         #  "plan" (multi actions) + anti-double-fallback par action

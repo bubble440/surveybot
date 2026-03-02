@@ -467,6 +467,91 @@ def _xpath_literal(s: str) -> str:
             out.append("\"'\"")
     return "concat(" + ", ".join(out) + ")"
 
+
+
+def _parse_matrix_value_parts(value: str) -> tuple[str, str]:
+    raw = (value or "").strip()
+    if "||" not in raw:
+        return "", raw
+    left, right = raw.split("||", 1)
+    return (left or "").strip(), (right or "").strip()
+
+
+def _try_gridclick_matrix_set(driver, row_label: str, col_label: str) -> bool:
+    row_label = (row_label or "").strip()
+    col_label = (col_label or "").strip()
+    if not row_label or not col_label:
+        return False
+
+    try:
+        out = driver.execute_script(
+            """
+            const norm = (s) => String(s || '')
+              .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+              .replace(/\s+/g, ' ').trim().toLowerCase();
+
+            const rowNeedle = norm(arguments[0]);
+            const colNeedle = norm(arguments[1]);
+            const qDefs = (window.lukanka && window.lukanka.qDefs) || {};
+            const qids = Object.keys(qDefs || {});
+            if (!qids.length) return {ok:false, reason:'no_qdefs'};
+
+            const matchLabel = (label, needle) => {
+              const n = norm(label);
+              return !!n && (n === needle || n.includes(needle) || needle.includes(n));
+            };
+
+            for (const qid of qids) {
+              const def = qDefs[qid] || {};
+              const rows = Array.isArray(def.rows) ? def.rows : [];
+              const cols = Array.isArray(def.cols) ? def.cols : [];
+              const uid = def.uid;
+              if (!uid || !rows.length || !cols.length) continue;
+
+              let row = null;
+              for (const r of rows) {
+                if (matchLabel(r.text, rowNeedle)) { row = r; break; }
+              }
+              if (!row) continue;
+
+              let col = null;
+              for (const c of cols) {
+                if (matchLabel(c.text, colNeedle)) { col = c; break; }
+              }
+              if (!col) continue;
+
+              const inputId = `ans${uid}.${col.index}.${row.index}`;
+              const input = document.getElementById(inputId);
+              if (!input) return {ok:false, reason:'input_not_found', inputId};
+
+              input.checked = true;
+              input.dispatchEvent(new Event('input', {bubbles:true}));
+              input.dispatchEvent(new Event('change', {bubbles:true}));
+              input.dispatchEvent(new MouseEvent('click', {bubbles:true, cancelable:true}));
+
+              return {
+                ok: !!input.checked,
+                inputId,
+                qid,
+                row: row.text || '',
+                col: col.text || ''
+              };
+            }
+
+            return {ok:false, reason:'row_or_col_not_found'};
+            """,
+            row_label,
+            col_label,
+        )
+    except Exception:
+        return False
+
+    if isinstance(out, dict) and out.get("ok"):
+        log_info("[GRIDCLICK_MATRIX]", f"input_id={out.get('inputId')!r} checked=true")
+        return True
+
+    return False
+
 def _apply_by_target_id(driver, target_id: str, itype: str, value: str) -> bool:
     """
     Applique l'action directement via DOM_REGISTRY (target_id -> xpath).
@@ -3156,19 +3241,43 @@ def execute_action(driver, instruction: str) -> bool:
         raw_itype_norm = _norm_lc(raw_itype)
         matrix_like_itype = bool(raw_itype_norm and ("matrix" in raw_itype_norm or "grille" in raw_itype_norm))
 
+        parsed_row, parsed_col = _parse_matrix_value_parts(value)
+        matrix_row = parsed_row or ctx
+        matrix_col = parsed_col or value
+
+        matrix_by_target = False
+        if target_id:
+            try:
+                p = get_target(target_id) or {}
+                p_itype = (p.get("itype") or "").strip().lower()
+                matrix_by_target = p_itype == "matrix"
+            except Exception:
+                matrix_by_target = False
+
+        matrix_intent = matrix_like_itype or matrix_by_target
+
         log_info("[TARGET]", f"parsed target_id={target_id!r} itype={itype!r} value={value!r} context_len={len(ctx)}")
 
         if not value and not target_id:
             continue
 
-        # Priorité aux matrices row->col quand le contexte est une ligne explicite.
-        # Évite le chemin target_id "group" qui peut appliquer une colonne sans cibler la bonne ligne.
-        if (ctx or "").strip() and (itype in ("checkbox", "radio") or matrix_like_itype):
+        # Matrix: row + col obligatoires. Pas de clic aveugle.
+        if matrix_intent:
+            if not (matrix_row or "").strip():
+                log_info("[MATRIX_ABORT]", "reason='missing_row'")
+                return False
+            if not (matrix_col or "").strip():
+                log_info("[MATRIX_ABORT]", "reason='missing_col'")
+                return False
+
+            if _try_gridclick_matrix_set(driver, matrix_row, matrix_col):
+                return True
+
             try:
                 if dom_context_mapper.try_click_matrix_by_visual_mapping(
                     driver,
-                    row_label=ctx,
-                    col_label=value,
+                    row_label=matrix_row,
+                    col_label=matrix_col,
                     debug=True,
                 ):
                     log_info("[TARGET]", "apply ok=true strategy=matrix_visual_map reason=applied")
@@ -3179,8 +3288,8 @@ def execute_action(driver, instruction: str) -> bool:
             try:
                 if Survey.input_handler._looks_like_matrix(driver) and Survey.input_handler.click_matrix_cell_by_row_and_col(
                     driver,
-                    row_label=ctx,
-                    col_label=value,
+                    row_label=matrix_row,
+                    col_label=matrix_col,
                 ):
                     log_info("[TARGET]", "apply ok=true strategy=matrix_cell reason=applied")
                     return True
@@ -3529,6 +3638,13 @@ def execute_actions_plan(
             value = (act.get("value") or "").strip()
             itype = (act.get("itype") or "").strip()
             context = (act.get("context") or "").strip()
+
+            matrix_row = (act.get("matrix_row_label") or "").strip()
+            matrix_col = (act.get("matrix_col_label") or "").strip()
+            if matrix_row:
+                context = matrix_row
+            if matrix_col:
+                value = matrix_col
 
             if not value or not itype:
                 continue
