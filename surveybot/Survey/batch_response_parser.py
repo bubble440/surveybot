@@ -21,7 +21,7 @@ La fonction filter_exclusive_conflicts() élimine ces conflits AVANT exécution.
 
 from __future__ import annotations
 import re, datetime
-from typing import Dict, Optional, List
+from typing import Dict, Optional, List, Any
 _ALLOWED_ITYPES = {"radio", "checkbox", "dropdown", "text", "textarea", "button", "number"}
 _QID_RE = re.compile(r"\bQ\d+\b", re.IGNORECASE)
 
@@ -318,7 +318,42 @@ def _split_values(value: str, itype: str = "", max_select: int = 1) -> List[str]
 
     return [v]
 
-def parse_batch_response(raw: str, constraints: Optional[Dict[str, int]] = None) -> list[dict]:
+
+def _is_matrix_action(itype: str, qid: str | None, target_id: str | None, qid_meta: dict | None) -> bool:
+    it = (itype or "").strip().lower()
+    if it == "matrix":
+        return True
+
+    if it not in {"radio", "checkbox"}:
+        return False
+
+    meta = (qid_meta or {})
+    qmeta = meta.get((qid or "").upper()) if qid else None
+    if isinstance(qmeta, dict) and (qmeta.get("itype") or "").strip().lower() == "matrix":
+        return True
+
+    if target_id:
+        for v in meta.values():
+            if not isinstance(v, dict):
+                continue
+            if (v.get("target_id") or "").strip() == target_id and (v.get("itype") or "").strip().lower() == "matrix":
+                return True
+
+    return False
+
+
+def _parse_matrix_value(value: str) -> tuple[str, str] | tuple[None, None]:
+    txt = (value or "").strip()
+    if not txt or "||" not in txt:
+        return None, None
+    left, right = txt.split("||", 1)
+    row_label = (left or "").strip()
+    col_label = (right or "").strip()
+    if not row_label or not col_label:
+        return None, None
+    return row_label, col_label
+
+def parse_batch_response(raw: str, constraints: Optional[Dict[str, int]] = None, qid_meta: Optional[Dict[str, Any]] = None) -> list[dict]:
     """
     Transforme la réponse OpenAI en liste d'instructions exécutables.
 
@@ -393,7 +428,19 @@ def parse_batch_response(raw: str, constraints: Optional[Dict[str, int]] = None)
         if qid and constraints:
             mx = int(constraints.get(qid, 1) or 1)
 
-        values = _split_values(value, itype=itype, max_select=mx)
+        is_matrix = _is_matrix_action(itype=itype, qid=qid, target_id=target_id, qid_meta=qid_meta)
+        matrix_row_label = None
+        matrix_col_label = None
+        if is_matrix:
+            matrix_row_label, matrix_col_label = _parse_matrix_value(value)
+            ok = bool(matrix_row_label and matrix_col_label)
+            print(
+                f"[PARSER_MATRIX] target_id={target_id!r} row={matrix_row_label!r} col={matrix_col_label!r} ok={ok}"
+            )
+            if not ok:
+                continue
+
+        values = [matrix_col_label] if is_matrix else _split_values(value, itype=itype, max_select=mx)
 
         for v in values:
             v = (v or "").strip()
@@ -436,6 +483,8 @@ def parse_batch_response(raw: str, constraints: Optional[Dict[str, int]] = None)
                     "value": v,
                     "itype": itype,
                     "context": context,
+                    "matrix_row_label": matrix_row_label,
+                    "matrix_col_label": matrix_col_label if is_matrix else None,
                     "raw": line,
                 }
             )
