@@ -230,6 +230,46 @@ def _is_auxiliary_text_for_choice_group(driver, el, container, question: str) ->
     return score >= 3
 
 
+def _is_open_ended_choice_companion(el, container) -> bool:
+    """
+    Détecte les champs open-end de type oeXXXX.Y liés à une option de choix ansXXXX.*
+    dans le même bloc de question (cas FocusVision/Forsta "Autre - préciser").
+    """
+    if not container:
+        return False
+
+    try:
+        el_id_lc = _norm_lc(el.get_attribute("id") or "")
+        el_name_lc = _norm_lc(el.get_attribute("name") or "")
+        cls_lc = _norm_lc(el.get_attribute("class") or "")
+    except Exception:
+        return False
+
+    marker = el_name_lc or el_id_lc
+    match = re.match(r"^oe(\d+)(?:\.\d+)?$", marker)
+    if not match:
+        return False
+
+    has_oe_class = bool(re.search(r"(?:^|\s)oe(?:\s|$)", cls_lc))
+    if not has_oe_class:
+        return False
+
+    stem = match.group(1)
+    try:
+        choice_inputs = container.find_elements(By.CSS_SELECTOR, "input[type='radio'][name], input[type='checkbox'][name]")
+    except Exception:
+        return False
+
+    for choice in choice_inputs or []:
+        try:
+            nm = _norm_lc(choice.get_attribute("name") or "")
+            if re.match(rf"^ans{re.escape(stem)}\.", nm):
+                return True
+        except Exception:
+            continue
+    return False
+
+
 def _is_modal_related_control(driver, el) -> bool:
     """
     Ignore les contrôles UI liés à des modals/dialogs (confirmation/info)
@@ -1220,6 +1260,9 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
 
             if itype in ("text", "textarea") and _is_auxiliary_text_for_choice_group(driver, el, container, question):
                 print("[DOM_DEBUG] skip_aux_text_with_choice_group")
+                continue
+
+            if itype in ("text", "textarea") and _is_open_ended_choice_companion(el, container):
                 continue
 
             # Champs "other/specify" attachés à une option radio/checkbox custom:
