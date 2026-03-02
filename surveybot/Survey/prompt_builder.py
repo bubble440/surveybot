@@ -378,6 +378,7 @@ def build_batch_prompt(question_blocks: list[dict]) -> str:
     lines.append(
         "RÈGLE SPÉCIALE MATRICES (itype=matrix) :\n"
         "- valeur DOIT être au format STRICT: row_label || col_label\n"
+        "- Si matrix_active_row est fourni dans le contexte, row_label DOIT être EXACTEMENT cette valeur (ne choisis jamais une autre ligne).\n"
         "- Exemple attendu: Crédit consommation || Transféré vers Revolut\n"
         "- INTERDIT: répondre uniquement une colonne (ex: 'Transféré vers Revolut')."
     )
@@ -444,6 +445,7 @@ def build_batch_prompt(question_blocks: list[dict]) -> str:
         max_sel = int(block.get("max_select", 1) or 1)
         target_id = _escape(block.get("target_id", ""))
         matrix_rows = _matrix_row_labels(block)
+        matrix_active_row = _escape((block.get("context") or {}).get("matrix_active_row", ""))
 
         lines.append(f"\n{qid}")
         lines.append(f"target_id: {target_id}")
@@ -451,6 +453,10 @@ def build_batch_prompt(question_blocks: list[dict]) -> str:
         if matrix_rows:
             lines.append(f"sous_questions_matrix: {' | '.join(matrix_rows)}")
             lines.append("matrix_answer_format: row_label || col_label (row obligatoire, jamais col seule)")
+        if matrix_active_row:
+            lines.append(f"matrix_active_row: {matrix_active_row}")
+            lines.append("matrix_rule_active_row: row_label DOIT être EXACTEMENT matrix_active_row")
+            lines.append(f"matrix_example_active_row: {matrix_active_row} || Transféré vers Revolut")
         lines.append(f"itype: {itype}")
         lines.append(f"max_select: {max_sel}")
         if _looks_like_classification_question(block) and opts:

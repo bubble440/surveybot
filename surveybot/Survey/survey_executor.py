@@ -1081,6 +1081,45 @@ def execute_survey_page(driver, api_key):
     except Exception:
         pass
 
+    try:
+        has_gridclick = bool(driver.execute_script("return !!document.querySelector('.gridclick');"))
+    except Exception:
+        has_gridclick = False
+
+    for block in (question_blocks or []):
+        if (block.get("itype") or "").strip().lower() != "matrix":
+            continue
+
+        ctx = block.get("context")
+        if not isinstance(ctx, dict):
+            ctx = {}
+            block["context"] = ctx
+
+        wants_active_row = bool(ctx.get("focusvision_answers_list")) or has_gridclick
+        if not wants_active_row:
+            continue
+
+        try:
+            active_row = driver.execute_script(
+                """
+                const el = document.querySelector('.gridclick .item.current .text-content')
+                    || document.querySelector('.gridclick .item.current');
+                return el ? String(el.textContent || el.innerText || '') : '';
+                """
+            )
+        except Exception:
+            active_row = ""
+
+        active_row = re.sub(r"\s+", " ", str(active_row or "")).strip()
+        if not active_row:
+            continue
+
+        ctx["matrix_active_row"] = active_row
+        print(
+            f"[MATRIX_ACTIVE_ROW] target_id={block.get('target_id', '')} "
+            f"row_active={active_row!r}"
+        )
+
     client = openai.OpenAI(api_key=api_key)
 
     if question_blocks:

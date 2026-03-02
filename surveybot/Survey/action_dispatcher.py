@@ -483,6 +483,27 @@ def _try_gridclick_matrix_set(driver, row_label: str, col_label: str) -> bool:
     if not row_label or not col_label:
         return False
 
+    row_ai = row_label
+    try:
+        row_active = driver.execute_script(
+            """
+            const el = document.querySelector('.gridclick .item.current .text-content')
+                || document.querySelector('.gridclick .item.current');
+            return el ? String(el.textContent || el.innerText || '') : '';
+            """
+        )
+    except Exception:
+        row_active = ""
+
+    row_active = _norm(str(row_active or ""))
+    if row_active:
+        if _fold_norm_lc(row_active) != _fold_norm_lc(row_label):
+            row_label = row_active
+        log_info(
+            "[GRIDCLICK_MATRIX_ROW_OVERRIDE]",
+            f"row_ai={row_ai!r} row_active={row_active!r} row_used={row_label!r}",
+        )
+
     try:
         out = driver.execute_script(
             """
