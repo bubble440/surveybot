@@ -77,7 +77,7 @@ class _FakeTable(_FakeNode):
 
 def test_focusvision_answers_list_matrix_groups_into_single_matrix_block():
     i11 = _FakeInput(attrs={"id": "ans10544.0.1", "name": "ans10544.0.1", "type": "checkbox"})
-    i21 = _FakeInput(attrs={"id": "ans10544.1.1", "name": "ans10544.1.1", "type": "checkbox"})
+    i21 = _FakeInput(attrs={"id": "ans10544.0.2", "name": "ans10544.0.2", "type": "checkbox"})
     i12 = _FakeInput(attrs={"id": "ans10544.0.2", "name": "ans10544.0.2", "type": "checkbox"})
     i22 = _FakeInput(attrs={"id": "ans10544.1.2", "name": "ans10544.1.2", "type": "checkbox"})
 
@@ -96,7 +96,7 @@ def test_focusvision_answers_list_matrix_groups_into_single_matrix_block():
         "input[type='radio'], input[type='checkbox']": [i11, i21, i12, i22],
         "table.grid": [table],
         "label[for='ans10544.0.1']": [_FakeNode(text="Transféré vers Revolut")],
-        "label[for='ans10544.1.1']": [_FakeNode(text="Laissé chez Société Générale")],
+        "label[for='ans10544.0.2']": [_FakeNode(text="Laissé chez Société Générale")],
         "label[for='ans10544.0.2']": [_FakeNode(text="Transféré vers Revolut")],
         "label[for='ans10544.1.2']": [_FakeNode(text="Laissé chez Société Générale")],
     })
@@ -120,3 +120,33 @@ def test_focusvision_answers_list_matrix_groups_into_single_matrix_block():
     assert block["options"] == ["Transféré vers Revolut", "Laissé chez Société Générale"]
     assert block["context"]["matrix_rows"] == ["Épargne", "Crédit conso"]
     assert block["context"]["group_key"] == "matrix:name:ans10544"
+
+
+
+def test_focusvision_gridclick_prefixes_current_segment_in_question_context():
+    first = _FakeInput(attrs={"id": "ans10544.0.1", "name": "ans10544.0.1", "type": "checkbox"})
+    second = _FakeInput(attrs={"id": "ans10544.0.2", "name": "ans10544.0.2", "type": "checkbox"})
+
+    answers = _FakeNode(children={
+        "input[type='radio'], input[type='checkbox']": [first, second],
+        "label[for='ans10544.0.1']": [_FakeNode(text="Transféré vers Revolut")],
+        "label[for='ans10544.0.2']": [_FakeNode(text="Laissé chez Société Générale")],
+    })
+
+    q = _FakeNode(children={
+        ".answers.answers-list, .answers.answers-table": [answers],
+        ".question-text": [_FakeNode(text="Vous avez changé de banque principale ?")],
+        ".gridclick .scale-container .scale-button[data-index]": [_FakeNode()],
+        ".gridclick .item.current .text-content": [_FakeNode(text="Épargne (Livret A)")],
+    })
+
+    class _D:
+        def find_elements(self, by=None, value=None):
+            if value == "div.question[role='radiogroup'], div.question.radio, div.question.checkbox":
+                return [q]
+            return []
+
+    blocks = _extract_focusvision_answers_list_groups(_D(), frame_chain=[])
+
+    assert len(blocks) == 1
+    assert blocks[0]["question"] == "Épargne (Livret A) — Vous avez changé de banque principale ?"
