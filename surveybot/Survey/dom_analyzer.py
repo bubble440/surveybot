@@ -1610,8 +1610,8 @@ def _dedupe_question_blocks(blocks: List[Dict[str, Any]]) -> List[Dict[str, Any]
         group_key = _norm((((block.get("context") or {}).get("group_key")) or "")).lower()
         question = _norm((block.get("question") or "")).lower()
 
-        if itype in {"radio", "checkbox"} and group_key and options_sig:
-            return (itype, f"group_key:{group_key}", options_sig)
+        if itype in {"radio", "checkbox"} and group_key:
+            return (itype, f"group_key:{group_key}", tuple())
         return (itype, f"question:{question}", options_sig)
 
     def _question_pollution_penalty(question: str) -> int:
@@ -1652,6 +1652,42 @@ def _dedupe_question_blocks(blocks: List[Dict[str, Any]]) -> List[Dict[str, Any]
         cur = dedup_map.get(sig)
         if cur is None:
             dedup_map[sig] = b
+            continue
+
+        sig_is_named_group = sig[1].startswith("group_key:")
+        if sig_is_named_group:
+            cur_opts = [o for o in (cur.get("options") or []) if _norm(o)]
+            new_opts = [o for o in (b.get("options") or []) if _norm(o)]
+
+            richer, other = (cur, b) if len(cur_opts) >= len(new_opts) else (b, cur)
+
+            merged_options: list[str] = []
+            seen_opt_keys: set[str] = set()
+            for src in (richer, other):
+                for opt in (src.get("options") or []):
+                    opt_norm = _norm(opt)
+                    if not opt_norm:
+                        continue
+                    opt_key = opt_norm.lower()
+                    if opt_key in seen_opt_keys:
+                        continue
+                    seen_opt_keys.add(opt_key)
+                    merged_options.append(opt_norm)
+
+            cleaner = cur
+            if _question_pollution_penalty(_norm((b.get("question") or ""))) < _question_pollution_penalty(
+                _norm((cur.get("question") or ""))
+            ):
+                cleaner = b
+
+            merged = dict(richer)
+            merged["question"] = _norm((cleaner.get("question") or "")) or _norm((richer.get("question") or ""))
+            merged["options"] = merged_options
+            merged["max_select"] = _compute_max_select(
+                _norm((merged.get("itype") or "")) or _norm((richer.get("itype") or "")),
+                merged_options,
+            )
+            dedup_map[sig] = merged
             continue
 
         cur_score = _block_quality_score(cur)
