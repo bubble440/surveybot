@@ -356,6 +356,13 @@ def build_batch_prompt(question_blocks: list[dict]) -> str:
     )
 
     lines.append(
+        "RÈGLE CHAMP MULTI-CASES (context.kind=multi_text) :\n"
+        "- Ce n'est PAS une multi-sélection checkbox: c'est un champ composé de plusieurs cases texte.\n"
+        "- Si max_select >= 2, valeur DOIT contenir EXACTEMENT max_select segments séparés par \"|\".\n"
+        "- Exemple DOB (3 cases): 03|02|2001"
+    )
+
+    lines.append(
         "RèGLE NOMBRE DE RéPONSES (checkbox/radio/button uniquement) :\n"
         "- Si le libellé contient un indicateur explicite de multi-sélection (ex: 'plusieurs réponses', 'cochez tout ce qui s'applique', 'select all that apply'), choisis entre 1 et 3 options maximum (idéalement 2-3, jamais >3).\n"
         "- Sinon, choisis exactement 1 option.\n"
@@ -459,6 +466,11 @@ def build_batch_prompt(question_blocks: list[dict]) -> str:
             lines.append(f"matrix_example_active_row: {matrix_active_row} || Transféré vers Revolut")
         lines.append(f"itype: {itype}")
         lines.append(f"max_select: {max_sel}")
+        ctx = block.get("context") if isinstance(block.get("context"), dict) else {}
+        if (ctx or {}).get("kind") == "multi_text" and max_sel >= 2:
+            lines.append(
+                f"CHAMP MULTI-CASES: fournir {max_sel} valeurs séparées par | (ex: 03|02|2001)"
+            )
         if _looks_like_classification_question(block) and opts:
             picked = _pick_best_classification_option(opts)
             print(f"[PROMPT_BUILDER] classification_rule=1 N={len(opts)} picked='{picked}'")

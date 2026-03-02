@@ -21,6 +21,7 @@ La fonction filter_exclusive_conflicts() élimine ces conflits AVANT exécution.
 
 from __future__ import annotations
 import re, datetime
+import os
 from typing import Dict, Optional, List, Any
 _ALLOWED_ITYPES = {"radio", "checkbox", "dropdown", "text", "textarea", "button", "number"}
 _QID_RE = re.compile(r"\bQ\d+\b", re.IGNORECASE)
@@ -319,6 +320,78 @@ def _split_values(value: str, itype: str = "", max_select: int = 1) -> List[str]
     return [v]
 
 
+_MONTHS_EN = {
+    "january": 1,
+    "jan": 1,
+    "february": 2,
+    "feb": 2,
+    "march": 3,
+    "mar": 3,
+    "april": 4,
+    "apr": 4,
+    "may": 5,
+    "june": 6,
+    "jun": 6,
+    "july": 7,
+    "jul": 7,
+    "august": 8,
+    "aug": 8,
+    "september": 9,
+    "sep": 9,
+    "sept": 9,
+    "october": 10,
+    "oct": 10,
+    "november": 11,
+    "nov": 11,
+    "december": 12,
+    "dec": 12,
+}
+
+
+def _debug_enabled() -> bool:
+    lvl = (os.getenv("LOG_LEVEL") or "").strip().lower()
+    return lvl == "debug"
+
+
+def _debug_log(msg: str) -> None:
+    if _debug_enabled():
+        print(f"[batch_response_parser][debug] {msg}")
+
+
+def _normalize_date_triplet_for_multi_text(value: str) -> str | None:
+    txt = (value or "").strip()
+    if not txt:
+        return None
+
+    m = re.match(r"^([A-Za-z]+)\s+(\d{1,2}),?\s+(\d{4})$", txt)
+    if m:
+        month_token = m.group(1).lower()
+        month = _MONTHS_EN.get(month_token)
+        day = int(m.group(2))
+        year = int(m.group(3))
+        if month and 1 <= day <= 31:
+            return f"{month:02d}|{day:02d}|{year:04d}"
+
+    m = re.match(r"^(\d{4})-(\d{1,2})-(\d{1,2})$", txt)
+    if m:
+        year, month, day = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        if 1 <= month <= 12 and 1 <= day <= 31:
+            return f"{month:02d}|{day:02d}|{year:04d}"
+
+    m = re.match(r"^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$", txt)
+    if m:
+        a, b, year = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        if 1 <= a <= 31 and 1 <= b <= 31:
+            if a > 12 and 1 <= b <= 12:
+                month, day = b, a
+            else:
+                month, day = a, b
+            if 1 <= month <= 12 and 1 <= day <= 31:
+                return f"{month:02d}|{day:02d}|{year:04d}"
+
+    return None
+
+
 def _is_matrix_action(itype: str, qid: str | None, target_id: str | None, qid_meta: dict | None) -> bool:
     it = (itype or "").strip().lower()
     if it == "matrix":
@@ -427,6 +500,29 @@ def parse_batch_response(raw: str, constraints: Optional[Dict[str, int]] = None,
         mx = 1
         if qid and constraints:
             mx = int(constraints.get(qid, 1) or 1)
+
+        meta = qid_meta or {}
+        qmeta = meta.get(qid) if qid else None
+        kind = ((qmeta or {}).get("context") or {}).get("kind") if isinstance(qmeta, dict) else None
+        if not kind and target_id:
+            for vv in meta.values():
+                if not isinstance(vv, dict):
+                    continue
+                if (vv.get("target_id") or "").strip() == target_id:
+                    kind = ((vv.get("context") or {}).get("kind") or "").strip()
+                    if kind:
+                        break
+
+        is_multi_text_target = (
+            itype in {"text", "textarea", "number"}
+            and mx >= 2
+            and (str(target_id or "").startswith("multi_") or str(kind or "") == "multi_text")
+        )
+        if is_multi_text_target and "|" not in value:
+            normalized = _normalize_date_triplet_for_multi_text(value)
+            if normalized:
+                _debug_log(f"normalized multi_text date triplet: {value!r} -> {normalized!r}")
+                value = normalized
 
         is_matrix = _is_matrix_action(itype=itype, qid=qid, target_id=target_id, qid_meta=qid_meta)
         matrix_row_label = None
