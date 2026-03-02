@@ -1387,7 +1387,10 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
 
                     # Pattern spécifique
                     try:
-                        peers = container.find_elements(By.CSS_SELECTOR, "input[type='text'], textarea")
+                        peers = container.find_elements(
+                            By.CSS_SELECTOR,
+                            "input:not([type='radio']):not([type='checkbox']):not([type='hidden']):not([type='button']):not([type='submit']):not([type='reset']):not([type='file']):not([type='image']), textarea",
+                        )
                     except Exception:
                         peers = []
 
@@ -1425,9 +1428,52 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                                 if mm and mm.group(1) == prefix:
                                     same_prefix_count += 1
 
-                        if has_one_per_box or same_prefix_count >= 2:
+                        date_tokens = {
+                            "month": ("month", "mois", "mm", "date_m", "dobmonth"),
+                            "day": ("day", "jour", "dd", "date_d", "dobday"),
+                            "year": ("year", "annee", "année", "yyyy", "yy", "date_y", "dobyear"),
+                        }
+
+                        def _field_blob(x):
+                            try:
+                                parts = [
+                                    x.get_attribute("name") or "",
+                                    x.get_attribute("id") or "",
+                                    x.get_attribute("placeholder") or "",
+                                    x.get_attribute("aria-label") or "",
+                                ]
+                                try:
+                                    lbl = _find_associated_label(driver, x) or ""
+                                    if lbl:
+                                        parts.append(lbl)
+                                except Exception:
+                                    pass
+                                return _norm_lc(" ".join(parts))
+                            except Exception:
+                                return ""
+
+                        field_blobs = [_field_blob(f) for f in fields]
+                        has_date_triplet = bool(
+                            len(fields) >= 3
+                            and any(any(tok in blob for tok in date_tokens["month"]) for blob in field_blobs)
+                            and any(any(tok in blob for tok in date_tokens["day"]) for blob in field_blobs)
+                            and any(any(tok in blob for tok in date_tokens["year"]) for blob in field_blobs)
+                        )
+
+                        date_group_key = f"multitext_date:{cont_id}" if has_date_triplet else ""
+                        effective_group_key = date_group_key or group_key
+
+                        if effective_group_key in seen_multi_text_groups:
+                            continue
+
+                        if has_one_per_box or same_prefix_count >= 2 or has_date_triplet:
+                            if has_date_triplet:
+                                log_debug(
+                                    "[DOM_DATE_MULTI_TEXT]",
+                                    f"detected date triplet fields={len(fields)} names={[((f.get_attribute('name') or '').strip()) for f in fields][:5]}",
+                                )
                             max_items = min(3, len(fields))
-                            multi_target_id = make_target_id("multi", group_key, question)
+                            multi_target_id = make_target_id("multi", effective_group_key, question)
 
                             field_payloads = []
                             for f in fields:
@@ -1488,7 +1534,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                                     }
                                 )
 
-                                seen_multi_text_groups.add(group_key)
+                                seen_multi_text_groups.add(effective_group_key)
                                 continue
                 except Exception:
                     pass
