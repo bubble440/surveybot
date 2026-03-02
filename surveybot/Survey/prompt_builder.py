@@ -181,6 +181,15 @@ def _tier_entry_option(options: list[str]) -> tuple[int, str]:
     return k, options[k - 1]
 
 
+def _matrix_row_labels(block: Dict[str, Any]) -> list[str]:
+    """Retourne les libellés de lignes matrix si disponibles dans le contexte extracteur."""
+    context = block.get("context") or {}
+    rows = context.get("matrix_rows") if isinstance(context, dict) else None
+    if not isinstance(rows, list):
+        return []
+    return [_escape(str(r)) for r in rows if _norm(str(r))]
+
+
 # =========================
 # Heuristiques métier
 # =========================
@@ -291,9 +300,12 @@ def build_prompt(question_blocks: List[Dict[str, Any]]) -> str:
         q = _escape(block.get("question", ""))
         itype = block.get("itype", "")
         options = block.get("options") or []
+        matrix_rows = _matrix_row_labels(block)
 
         lines.append(f"\n{idx}) Question : {q}")
         lines.append(f"   Type attendu : {itype}")
+        if matrix_rows:
+            lines.append(f"   Sous-questions (lignes matrix) : {' | '.join(matrix_rows)}")
 
         if options:
             opts = ", ".join(_escape(o) for o in options)
@@ -424,10 +436,13 @@ def build_batch_prompt(question_blocks: list[dict]) -> str:
         opts = [_escape(o) for o in (block.get("options") or []) if o]
         max_sel = int(block.get("max_select", 1) or 1)
         target_id = _escape(block.get("target_id", ""))
+        matrix_rows = _matrix_row_labels(block)
 
         lines.append(f"\n{qid}")
         lines.append(f"target_id: {target_id}")
         lines.append(f"contexte: {q}")
+        if matrix_rows:
+            lines.append(f"sous_questions_matrix: {' | '.join(matrix_rows)}")
         lines.append(f"itype: {itype}")
         lines.append(f"max_select: {max_sel}")
         if _looks_like_classification_question(block) and opts:
