@@ -13,6 +13,7 @@ pour identifier et extraire les questions/options de manière fiable.
 from __future__ import annotations
 from typing import List, Dict, Any
 import os
+import re
 from selenium.webdriver.common.by import By
 
 # Import des utilitaires
@@ -79,30 +80,29 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
         except Exception:
             question = (q.text or "").strip().split("\n")[0].strip()
 
-        # Regrouper par name
+        def _logical_group_name(raw_name: str) -> str:
+            """Normalise les names Decipher answers-list éclatés par option.
+
+            Cas visé: `ans10518.0.0`, `ans10518.0.1`, ...
+            -> un seul groupe logique `ans10518.0`.
+
+            Scope strict: uniquement les patterns observables Decipher `ans<digits>.<digits>.<digits>`.
+            Les autres names restent inchangés pour éviter toute régression.
+            """
+            name = (raw_name or "").strip()
+            if re.fullmatch(r"ans\d+\.\d+\.\d+", name):
+                parts = name.split(".")
+                return ".".join(parts[:2])
+            return name
+
+        # Regrouper par name logique
         by_name: dict[str, list] = {}
         for inp in inputs:
             name = (inp.get_attribute("name") or "").strip()
             if not name:
                 continue
+            name = _logical_group_name(name)
             by_name.setdefault(name, []).append(inp)
-
-        # Decipher "answers-table" peut utiliser un name unique par ligne
-        # (ex: ans421.0.0 / ans421.0.1 / ...). Dans ce cas, grouper par préfixe
-        # logique de question pour conserver un seul question_block.
-        if by_name and all(len(v) == 1 for v in by_name.values()) and len(by_name) >= 2:
-            by_prefix: dict[str, list] = {}
-            for inps in by_name.values():
-                inp = inps[0]
-                raw_name = (inp.get_attribute("name") or "").strip()
-                parts = [p for p in raw_name.split(".") if p != ""]
-                if len(parts) >= 2:
-                    prefix = ".".join(parts[:2])
-                else:
-                    prefix = raw_name
-                by_prefix.setdefault(prefix, []).append(inp)
-            if any(len(v) >= 2 for v in by_prefix.values()):
-                by_name = by_prefix
 
         for name, inps in by_name.items():
             # itype
