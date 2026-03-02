@@ -448,6 +448,14 @@ def _group_key_for_choice(el, itype: str) -> str:
                     if base_name and base_name != clean_name:
                         clean_name = base_name
 
+                    # Decipher/FocusVision pattern: checkboxes d'une même question
+                    # nommés `ans10518.0.0`, `ans10518.0.1`, etc. Le suffixe final
+                    # identifie l'option et ne doit pas créer un groupement distinct.
+                    # Scope minimal: uniquement si le name se termine par `.<digits>`.
+                    dotted_base_name = re.sub(r"\.\d+$", "", clean_name)
+                    if dotted_base_name and dotted_base_name != clean_name:
+                        clean_name = dotted_base_name
+
                     # Tivian/CustomerVoice pattern: chaque option checkbox d'une même
                     # question porte un name distinct "v_115", "v_116", etc.
                     # On regroupe alors par identifiant de conteneur question-* quand
