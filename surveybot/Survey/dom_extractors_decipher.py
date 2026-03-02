@@ -225,6 +225,24 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
             except Exception:
                 has_gridclick_widget = False
 
+            # Dans GridClick, l'item/segment courant (tuile active) apporte le contexte
+            # de ligne sélectionnée (ex: "Épargne ...") qui n'est pas dans <h1>.
+            # On préfixe la question uniquement quand ce libellé est observable dans le DOM,
+            # pour éviter toute heuristique globale par provider.
+            if has_gridclick_widget:
+                try:
+                    segment_txt = (
+                        q.find_element(By.CSS_SELECTOR, ".gridclick .item.current .text-content").text
+                        or ""
+                    ).strip()
+                except Exception:
+                    segment_txt = ""
+                if segment_txt:
+                    q_norm = _norm_lc(question)
+                    s_norm = _norm_lc(segment_txt)
+                    if s_norm and s_norm not in q_norm:
+                        question = f"{segment_txt} — {question}" if question else segment_txt
+
             for inp in inps:
                 inp_id = (inp.get_attribute("id") or "").strip()
                 if not inp_id:
