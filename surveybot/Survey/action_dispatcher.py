@@ -3153,11 +3153,39 @@ def execute_action(driver, instruction: str) -> bool:
         raw_itype = (parsed.get("itype") or "").strip()
         _, itype, _ = _parse_typed_instruction3(f"x //// {raw_itype} //// y")
         itype = (itype or "").strip()
+        raw_itype_norm = _norm_lc(raw_itype)
+        matrix_like_itype = bool(raw_itype_norm and ("matrix" in raw_itype_norm or "grille" in raw_itype_norm))
 
         log_info("[TARGET]", f"parsed target_id={target_id!r} itype={itype!r} value={value!r} context_len={len(ctx)}")
 
         if not value and not target_id:
             continue
+
+        # Priorité aux matrices row->col quand le contexte est une ligne explicite.
+        # Évite le chemin target_id "group" qui peut appliquer une colonne sans cibler la bonne ligne.
+        if (ctx or "").strip() and (itype in ("checkbox", "radio") or matrix_like_itype):
+            try:
+                if dom_context_mapper.try_click_matrix_by_visual_mapping(
+                    driver,
+                    row_label=ctx,
+                    col_label=value,
+                    debug=True,
+                ):
+                    log_info("[TARGET]", "apply ok=true strategy=matrix_visual_map reason=applied")
+                    return True
+            except Exception:
+                pass
+
+            try:
+                if Survey.input_handler._looks_like_matrix(driver) and Survey.input_handler.click_matrix_cell_by_row_and_col(
+                    driver,
+                    row_label=ctx,
+                    col_label=value,
+                ):
+                    log_info("[TARGET]", "apply ok=true strategy=matrix_cell reason=applied")
+                    return True
+            except Exception:
+                pass
 
         # 1) target_id => application directe via DOM_REGISTRY
         # IMPORTANT: sliderpoints (FocusVision/Decipher) ne doivent PAS passer par le chemin dropdown générique,
@@ -3210,28 +3238,6 @@ def execute_action(driver, instruction: str) -> bool:
         label = value
 
         _new_attempt_context(driver)
-
-        # 1Ã¯Â¸ÂÃ¢Æ’Â£ MATRICES
-        try:
-            if (ctx or "").strip() and itype in ("checkbox", "radio"):
-                if dom_context_mapper.try_click_matrix_by_visual_mapping(
-                    driver,
-                    row_label=ctx,
-                    col_label=label,
-                    debug=True,
-                ):
-                    log_info("[TARGET]", "apply ok=true strategy=matrix_visual_map reason=applied")
-                    return True
-        except Exception:
-            pass
-
-        try:
-            if (ctx or "").strip() and itype in ("checkbox", "radio") and Survey.input_handler._looks_like_matrix(driver):
-                if Survey.input_handler.click_matrix_cell_by_row_and_col(driver, row_label=ctx, col_label=label):
-                    log_info("[TARGET]", "apply ok=true strategy=matrix_cell reason=applied")
-                    return True
-        except Exception:
-            pass
 
         # 2Ã¯Â¸ÂÃ¢Æ’Â£ SANITIZER
         try:
