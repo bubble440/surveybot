@@ -1,4 +1,7 @@
-from surveybot.Survey.dom_analyzer import _prune_focusvision_fragmented_groups
+from surveybot.Survey.dom_analyzer import (
+    _prune_focusvision_auxiliary_openended_singles,
+    _prune_focusvision_fragmented_groups,
+)
 
 
 def test_prune_focusvision_fragmented_groups_removes_single_option_fragments():
@@ -36,3 +39,32 @@ def test_prune_focusvision_fragmented_groups_no_rich_marker_no_prune():
     out = _prune_focusvision_fragmented_groups([b1, b2])
 
     assert out == [b1, b2]
+
+
+def test_prune_focusvision_auxiliary_openended_singles_removes_matching_text_single():
+    rich = {
+        "itype": "radio",
+        "question": "Quelle était votre ancienne banque principale ?",
+        "options": ["Banque Populaire", "BforBank", "Je ne suis client d’aucune banque"],
+        "context": {
+            "focusvision_answers_list": True,
+            "group_key": "radio:name:ans10221.0.0",
+            "aux_openended_names": ["oe10221.1", "oe10221.2"],
+        },
+    }
+    aux_text = {
+        "itype": "text",
+        "question": "Quelle était votre ancienne banque principale ? ...",
+        "context": {"kind": "single", "name": "oe10221.1", "id": "oe10221.1"},
+    }
+    unrelated_text = {
+        "itype": "text",
+        "question": "Votre âge",
+        "context": {"kind": "single", "name": "age", "id": "age"},
+    }
+
+    out = _prune_focusvision_auxiliary_openended_singles([rich, aux_text, unrelated_text])
+
+    assert rich in out
+    assert aux_text not in out
+    assert unrelated_text in out
