@@ -54,3 +54,8 @@ def test_checkbox_group_key_uses_listbox_container_when_name_missing():
     })
     el = _FakeChoice({"name": ""}, containers=[container])
     assert _group_key_for_choice(el, "checkbox") == "dom:ps-multi-select-1|multi-select-container"
+
+
+def test_checkbox_group_key_normalizes_decipher_dot_index_suffix():
+    el = _FakeChoice({"name": "ans10518.0.11"})
+    assert _group_key_for_choice(el, "checkbox") == "ans10518.0"
