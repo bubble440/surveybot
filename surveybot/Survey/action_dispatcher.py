@@ -959,9 +959,6 @@ def _apply_by_target_id(driver, target_id: str, itype: str, value: str) -> bool:
                         log_debug("[TARGET_DEBUG]", f"element not found for xpath={xp} ({type(ex).__name__}: {_short_exc(ex)})")
                     return False
 
-                # 2) clic Ã¢â‚¬Å“normalÃ¢â‚¬Â sur la cible
-                _click_candidate(el, "target")
-
                 # Cas widgets sans <input> sous l'option (ex: Decipher cardrating):
                 # la sélection est reflétée par data-selected / aria-selected / aria-checked.
                 def _selected_like(node) -> bool:
@@ -1010,6 +1007,50 @@ def _apply_by_target_id(driver, target_id: str, itype: str, value: str) -> bool:
                             pass
                         time.sleep(0.05)
                     return False
+
+                def _wait_decipher_clickable_ranking_effect(node, timeout_s: float = 1.0) -> bool:
+                    """Validation DOM stricte pour Decipher clickable ranking."""
+                    import time
+                    end = time.time() + timeout_s
+                    while time.time() < end:
+                        try:
+                            ok = driver.execute_script(
+                                """
+                                const node = arguments[0];
+                                if (!node) return false;
+                                const item = node.closest ? node.closest('.customItem') : null;
+                                if (!item) return false;
+                                const rank = item.querySelector('.customRank');
+                                if (!rank) return false;
+                                const txt = String(rank.textContent || '').trim();
+                                if (/^\d+$/.test(txt)) return true;
+                                const cls = String(rank.className || '').toLowerCase();
+                                if (cls.includes('customrankselected')) return true;
+                                return false;
+                                """,
+                                node,
+                            )
+                            if ok:
+                                return True
+                        except Exception:
+                            pass
+                        time.sleep(0.05)
+                    return False
+
+                if payload.get("decipher_clickable_ranking"):
+                    clicked = _click_candidate(el, "decipher_clickable_ranking")
+                    if not clicked:
+                        if debug_target:
+                            log_debug("[TARGET_DEBUG]", f"decipher_clickable_ranking click failed: value='{value}' xpath='{xp}'")
+                        return False
+                    if _wait_decipher_clickable_ranking_effect(el, timeout_s=1.0):
+                        return True
+                    if debug_target:
+                        log_debug("[TARGET_DEBUG]", f"decipher_clickable_ranking no rank signal after click: value='{value}' xpath='{xp}'")
+                    return False
+
+                # 2) clic Ã¢â‚¬Å“normalÃ¢â‚¬Â sur la cible
+                _click_candidate(el, "target")
 
                 def _ipsos_slider_value_matches(node, expected: str) -> bool:
                     """Validation DOM pour les sliders Likert IPSOS (bootstrap-slider)."""
