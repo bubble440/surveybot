@@ -270,6 +270,66 @@ def _is_open_ended_choice_companion(el, container) -> bool:
     return False
 
 
+def _choice_option_has_inline_open_text(driver, choice_el) -> bool:
+    """
+    Détecte si une option radio/checkbox embarque un champ texte inline visible
+    (cas "Autre - préciser"), auquel cas l'option ne doit pas être proposée
+    comme choix fermé.
+    """
+    try:
+        return bool(driver.execute_script(
+            """
+            const el = arguments[0];
+            if (!el) return false;
+
+            const isVisible = (node) => {
+              if (!node || !(node instanceof Element)) return false;
+              const st = window.getComputedStyle(node);
+              if (!st) return false;
+              if (st.display === 'none' || st.visibility === 'hidden' || st.opacity === '0') return false;
+              const r = node.getBoundingClientRect();
+              return r.width > 0 && r.height > 0;
+            };
+
+            const roots = [];
+            const directLabel = el.closest('label');
+            if (directLabel) roots.push(directLabel);
+
+            const id = el.id || '';
+            if (id) {
+              try {
+                const esc = (window.CSS && CSS.escape)
+                  ? CSS.escape(id)
+                  : id.replace(/([ #;?%&,.+*~\\':\"!^$\[\]()=>|\\/@])/g, '\\\\$1');
+                const linked = document.querySelector(`label[for="${esc}"]`);
+                if (linked) roots.push(linked);
+              } catch (_) {}
+            }
+
+            const wrapper = el.closest('.element, .option, li, .choice, .cell-sub-wrapper, .form-check, [role="radio"], [role="checkbox"]');
+            if (wrapper) roots.push(wrapper);
+
+            const seen = new Set();
+            for (const root of roots) {
+              if (!root) continue;
+              if (seen.has(root)) continue;
+              seen.add(root);
+
+              const fields = root.querySelectorAll('input[type="text"], textarea');
+              for (const f of fields) {
+                if (f === el) continue;
+                if (isVisible(f)) return true;
+              }
+            }
+
+            return false;
+            """,
+            choice_el,
+        ))
+    except Exception:
+        return False
+
+
 def _is_modal_related_control(driver, el) -> bool:
     """
     Ignore les contrôles UI liés à des modals/dialogs (confirmation/info)
@@ -650,9 +710,11 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         try:
             # options = labels des inputs
             options: List[str] = []
+            option_elements: List[Tuple[Any, str]] = []
             for e in els:
                 lbl = _find_associated_label(driver, e)
-                if lbl:
+                if lbl and not _choice_option_has_inline_open_text(driver, e):
+                    option_elements.append((e, lbl))
                     options.append(lbl)
             # Pattern spécifique
             options = list(dict.fromkeys([o for o in options if o]))
@@ -749,16 +811,11 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
 
             # map option -> xpath de l'input correspondant
             option_xpath_map = {}
-            for e in els:
+            for e, lbl in option_elements:
                 try:
-                    lbl = _find_associated_label(driver, e)
-
                     # Pattern spécifique
                     if not lbl and len(els) == 1 and question:
                         lbl = question
-
-                    if not lbl:
-                        continue
 
                     # Pattern spécifique
                     inp_id = ""
