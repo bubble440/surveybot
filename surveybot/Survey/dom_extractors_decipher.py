@@ -211,6 +211,20 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
             aux_openended_input_names: set[str] = set()
             seen_options: set[str] = set()
 
+            # Confirmit GridClick: la table .answers peut être masquée (display:none)
+            # et les seuls éléments réellement interactifs sont les boutons .scale-button.
+            # On active ce mode uniquement si le widget est détecté dans ce bloc.
+            has_gridclick_widget = False
+            try:
+                has_gridclick_widget = bool(
+                    q.find_elements(
+                        By.CSS_SELECTOR,
+                        ".gridclick .scale-container .scale-button[data-index]",
+                    )
+                )
+            except Exception:
+                has_gridclick_widget = False
+
             for inp in inps:
                 inp_id = (inp.get_attribute("id") or "").strip()
                 if not inp_id:
@@ -283,6 +297,24 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
                     f" or contains(concat(' ',normalize-space(@class),' '),' element ')"
                     f"][1]"
                 )
+
+                # Cas spécifique GridClick (DOM-only, déclenché par pattern DOM explicite):
+                # on mappe l'option vers le bouton d'échelle visible au lieu du <td> caché.
+                if has_gridclick_widget:
+                    try:
+                        raw_col_idx = ""
+                        m_col = re.fullmatch(r"ans\d+\.(\d+)\.\d+", raw_name)
+                        if m_col:
+                            raw_col_idx = m_col.group(1)
+                        if raw_col_idx != "":
+                            xp = (
+                                "(//div[contains(@class,'gridclick')]"
+                                "//div[contains(@class,'scale-button') and @data-index="
+                                f"{_xpath_literal(raw_col_idx)}])[1]"
+                            )
+                    except Exception:
+                        pass
+
                 option_xpath_map[cell_col_norm or _norm_lc(label_txt)] = xp
                 if matrix_mode and cell_row_label and cell_col_norm:
                     matrix_cell_xpath_map.setdefault(_norm_lc(cell_row_label), {})[cell_col_norm] = xp
