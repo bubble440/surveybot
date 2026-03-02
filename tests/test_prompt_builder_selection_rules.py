@@ -82,3 +82,26 @@ def test_batch_prompt_enforces_tier_entry_option_for_category_range_questions():
     assert "selection_rule: TIER_ENTRY strict -> répondre EXACTEMENT avec '1000-4999 employés'" in prompt
     assert "allowed_values_strict: 1000-4999 employés" in prompt
     assert "Tu dois répondre EXACTEMENT avec l'un des libellés suivants : {1000-4999 employés}" in prompt
+
+
+def test_batch_prompt_exposes_matrix_row_labels_for_llm_context():
+    blocks = [
+        {
+            "question": "Vous avez changé de banque principale : qu’avez-vous transféré ?",
+            "itype": "matrix",
+            "options": ["Transféré vers Revolut", "Laissé chez Société Générale"],
+            "max_select": 4,
+            "target_id": "group_8cf616bcb0fc",
+            "context": {
+                "matrix_rows": [
+                    "Épargne",
+                    "Crédit consommation",
+                ]
+            },
+        }
+    ]
+
+    prompt = build_batch_prompt(blocks)
+
+    assert "contexte: Vous avez changé de banque principale : qu’avez-vous transféré ?" in prompt
+    assert "sous_questions_matrix: Épargne | Crédit consommation" in prompt
