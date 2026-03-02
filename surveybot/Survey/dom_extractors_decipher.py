@@ -82,6 +82,20 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
     """
     blocks: list[dict] = []
 
+    def _extract_label_text(label_el) -> str:
+        """Lit le texte d'un label même quand son conteneur est masqué (display:none)."""
+        txt = (label_el.text or "").strip()
+        if txt:
+            return txt
+        for attr in ("innerText", "textContent"):
+            try:
+                raw = (label_el.get_attribute(attr) or "").strip()
+            except Exception:
+                raw = ""
+            if raw:
+                return raw
+        return ""
+
     # Question containers FocusVision
     q_containers = driver.find_elements(By.CSS_SELECTOR, "div.question[role='radiogroup'], div.question.radio, div.question.checkbox")
     for q in q_containers:
@@ -145,7 +159,7 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
                 label_txt = ""
                 try:
                     lab = answers.find_element(By.CSS_SELECTOR, f"label[for='{inp_id}']")
-                    label_txt = (lab.text or "").strip()
+                    label_txt = _extract_label_text(lab)
                     try:
                         for oe in lab.find_elements(By.CSS_SELECTOR, "input[type='text'], textarea"):
                             oe_name = (oe.get_attribute("name") or "").strip()
@@ -156,7 +170,7 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
                 except Exception:
                     try:
                         lab = inp.find_element(By.XPATH, "ancestor::*[contains(@class,'clickableCell')][1]//label")
-                        label_txt = (lab.text or "").strip()
+                        label_txt = _extract_label_text(lab)
                         try:
                             for oe in lab.find_elements(By.CSS_SELECTOR, "input[type='text'], textarea"):
                                 oe_name = (oe.get_attribute("name") or "").strip()
