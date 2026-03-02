@@ -155,6 +155,11 @@ def _detect_image_only_unresolvable_dom(driver, question_blocks: list[dict]) -> 
               return t.length <= maxLen ? t : '';
             };
             const hasQuestionContainer = !!document.querySelector('[questionname], .questionContainer, .mrQuestionTable, .question-component');
+            const pageText = norm((document.body && (document.body.innerText || document.body.textContent)) || '').toLowerCase();
+            const hasSelectVerb = /\b(veuillez\s+selectionner|veuillez\s+sélectionner|select\s+the|please\s+select|choose)\b/i.test(pageText);
+            const hasImageWord = /\b(images?|picture|photos?|representing|représentant|correspond(?:ing|ant))\b/i.test(pageText);
+            const hasCountWord = /\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten|un|une|deux|trois|quatre|cinq|six|sept|huit|neuf|dix)\b/i.test(pageText);
+            const hasVisualChallengeInstruction = hasSelectVerb && hasImageWord && hasCountWord;
             const findStableContainer = (el) => {
               if (!el) return null;
               return (
@@ -239,6 +244,14 @@ def _detect_image_only_unresolvable_dom(driver, question_blocks: list[dict]) -> 
             const clickableCandidates = Array.from(document.querySelectorAll(
               'button, [role="button"], [role="radio"], [role="checkbox"], a, span[tabindex], div[tabindex], div[onclick]'
             ));
+
+            const visibleImgCount = Array.from(document.querySelectorAll('img')).filter(isVisible).length;
+            const visibleBgTileCount = clickableCandidates.filter((el) => {
+              if (!isVisible(el)) return false;
+              const style = window.getComputedStyle(el);
+              return !!(style && style.backgroundImage && style.backgroundImage !== 'none');
+            }).length;
+
             const clickableByContainer = new Map();
             let clickableVisibleCount = 0;
             for (const el of clickableCandidates) {
@@ -301,6 +314,9 @@ def _detect_image_only_unresolvable_dom(driver, question_blocks: list[dict]) -> 
               image_only_option_count: imageOnlyOptionCount,
               clickable_group_count: clickableImageOnlyGroups.length,
               clickable_image_only_option_count: clickableImageOnlyOptionCount,
+              visible_img_count: visibleImgCount,
+              visible_bg_tile_count: visibleBgTileCount,
+              has_visual_challenge_instruction: hasVisualChallengeInstruction,
               project: norm(document.querySelector("input[name='I.Project']")?.value || ''),
             };
             """
@@ -321,14 +337,19 @@ def _detect_image_only_unresolvable_dom(driver, question_blocks: list[dict]) -> 
         print("[DOM_ONLY_ABORT] detector_no_match source=clickable_icons reason=missing_question_hint")
         clickable_groups = []
 
-    if not image_groups and not clickable_groups:
+    has_visual_challenge_instruction = bool(dom.get("has_visual_challenge_instruction"))
+    visual_tile_count = int(dom.get("visible_img_count") or 0) + int(dom.get("visible_bg_tile_count") or 0)
+    is_visual_challenge = has_visual_challenge_instruction and visual_tile_count >= 6
+
+    if not image_groups and not clickable_groups and not is_visual_challenge:
         print(
             "[DOM_ONLY_ABORT] detector_no_match "
             f"inputs={int(dom.get('input_count') or 0)} visible_wrappers={int(dom.get('visible_wrapper_count') or 0)} "
             f"input_groups={int(dom.get('input_group_count') or 0)} image_groups={len(image_groups)} "
             f"image_options={int(dom.get('image_only_option_count') or 0)} clickable_groups={len(clickable_groups)} "
             f"clickable_image_options={int(dom.get('clickable_image_only_option_count') or 0)} "
-            f"clickable_visible={int(dom.get('clickable_visible_count') or 0)}"
+            f"clickable_visible={int(dom.get('clickable_visible_count') or 0)} "
+            f"instruction={1 if has_visual_challenge_instruction else 0} visual_tiles={visual_tile_count}"
         )
         return False, "", ""
 
@@ -348,7 +369,14 @@ def _detect_image_only_unresolvable_dom(driver, question_blocks: list[dict]) -> 
 
     image_groups_all = list(image_groups) + clickable_groups_norm
     pattern_reason = "image_only_inputs"
-    if clickable_groups_norm:
+    if is_visual_challenge:
+        pattern_reason = "captcha_image_selection"
+        image_groups_all.append({
+            "groupKey": "visual_challenge::instruction_plus_tiles",
+            "optionCount": visual_tile_count,
+            "imgHints": [],
+        })
+    elif clickable_groups_norm:
         pattern_reason = "image_only_clickable_options"
     elif image_groups:
         pattern_reason = "image_only_wrapped_inputs"
@@ -449,7 +477,7 @@ def _budgeted_soft_restart_for_image_only_inputs(driver, question_blocks: list[d
         if not isinstance(counters, dict):
             counters = {}
         current = int(counters.get(budget_key, 0) or 0)
-        max_hits = 2
+        max_hits = 1 if pattern_reason == "captcha_image_selection" else 2
         if current >= max_hits:
             print(
                 f"[DOM_ONLY_ABORT] {pattern_reason} budget_exhausted key={budget_key} "
@@ -462,7 +490,7 @@ def _budgeted_soft_restart_for_image_only_inputs(driver, question_blocks: list[d
     except Exception:
         pass
 
-    reason = f"dom_only_abort:{pattern_reason}"
+    reason = "captcha_image_selection" if pattern_reason == "captcha_image_selection" else f"dom_only_abort:{pattern_reason}"
     print(
         f"[DOM_ONLY_ABORT] {pattern_reason} -> soft_restart(reason={reason}) key={budget_key}"
     )
