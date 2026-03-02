@@ -1,0 +1,658 @@
+<body class="survey-page non-touch" data-device="" style="user-select: none;">
+
+
+<div id="survey" class="survey-container">
+<div class="survey-section"><div class="page-header"></div>
+<!-- /.page-header --></div>
+<div class="survey-section">
+<div class="survey-body">
+<div class="survey-header" data-survey-uid="c0">
+
+<div role="progressbar" aria-valuenow="55" aria-valuemin="0" aria-valuemax="100" class="progress-bar progress-top" title="barre de progression - 55% terminer" data-survey-uid="c1">
+<div class="progress-box-outer" aria-hidden="true"><span class="progress-box-completed" style="width: 55%;"></span></div>
+<div class="progress-text" aria-hidden="true" data-survey-uid="c2">55%</div>
+</div>
+<!-- /.progress-bar -->
+</div>
+<!-- /.survey-header -->
+
+<form id="primary" name="primary" method="post" action="/survey/selfserve/53b/260133" enctype="application/x-www-form-urlencoded" novalidate="">
+<input type="hidden" name="_v2_counter" value="4">
+<!-- @@XYZZY@@ -->
+<div id="question_Q10C" class="question checkbox label_Q10C  " data-survey-uid="c3">
+<h1 title="question" class="question-text" id="question_text_Q10C">Vous avez changé de banque principale : qu’avez-vous avez transféré de l’ancienne à la nouvelle ?</h1>
+<!-- /.question-text -->
+
+<h2 title="instructions" class="instruction-text"></h2>
+<!-- /.instruction-text -->
+<div class="answers answers-list" style="display: none;">
+
+<table class="grid setWidth grid-list-mode" data-settings="auto-optimize mobile-mode group-by-row table-mode" data-height="" summary="This table contains form elements to answer the survey question">
+<tbody>
+<tr class="row mobile-top-border-row">
+<td colspan="5" class="cell nonempty mobile-top-border-cell"></td>
+</tr><tr class="row row-col-legends row-col-legends-top colCount-4">
+<td class="cell empty empty-left empty-top unused mobile border-collapse"></td>
+<th scope="col" id="Q10C_c1" class="cell nonempty legend col-legend col-legend-top col-legend-basic legend-level-1 mobile border-collapse   " style="">
+Transféré vers  <b>Revolut</b>
+</th><th scope="col" id="Q10C_c2" class="cell nonempty legend col-legend col-legend-top col-legend-basic legend-level-1 mobile border-collapse   " style="">
+Laissé chez <b>Société Générale</b>
+</th><th scope="col" id="Q10C_c3" class="cell nonempty legend col-legend col-legend-top col-legend-basic legend-level-1 mobile border-collapse   " style="">
+Transféré vers un autre établissement
+</th><th scope="col" id="Q10C_c99" class="cell nonempty legend col-legend col-legend-top col-legend-basic legend-level-1 mobile border-collapse   " style="">
+Je ne possédais pas ce produit chez <b>Société Générale</b>
+</th>
+
+</tr>
+</tbody>
+<tbody><tr class="row row-elements even colCount-4">
+<th scope="row" id="Q10C_r2_left" class="cell nonempty legend row-legend row-legend-left row-legend-basic legend-level-1 mobile border-collapse  ">
+Épargne (ex : Livret A, LDD, Livret d’épargne, PEL, comptes à terme) et produits d’investissement (ex : assurance-vie, plan d’épargne retraite (PER), actions, obligations, ETFs, cryptos, SICAV/OPCVM/FCP, mandat de gestion de portefeuille)
+</th>
+<td headers="Q10C_c1" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="checkbox" name="ans10544.0.1" id="ans10544.0.1" value="1" class=" input checkbox" aria-labelledby="Q10C_r2_left Q10C_c1">
+</span>
+<span class="cell-text cell-sub-column" style="min-height: 0px;"><label for="ans10544.0.1">Transféré vers  <b>Revolut</b></label> </span>
+</span>
+</td><td headers="Q10C_c2" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="checkbox" name="ans10544.1.1" id="ans10544.1.1" value="1" class=" input checkbox" aria-labelledby="Q10C_r2_left Q10C_c2">
+</span>
+<span class="cell-text cell-sub-column" style="min-height: 0px;"><label for="ans10544.1.1">Laissé chez <b>Société Générale</b></label> </span>
+</span>
+</td><td headers="Q10C_c3" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="checkbox" name="ans10544.2.1" id="ans10544.2.1" value="1" class=" input checkbox" aria-labelledby="Q10C_r2_left Q10C_c3">
+</span>
+<span class="cell-text cell-sub-column" style="min-height: 0px;"><label for="ans10544.2.1">Transféré vers un autre établissement</label> </span>
+</span>
+</td><td headers="Q10C_c99" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="checkbox" name="ans10544.3.1" id="ans10544.3.1" value="1" class="exclusive input checkbox" aria-labelledby="Q10C_r2_left Q10C_c99">
+</span>
+<span class="cell-text cell-sub-column" style="min-height: 0px;"><label for="ans10544.3.1">Je ne possédais pas ce produit chez <b>Société Générale</b></label> </span>
+</span>
+</td>
+
+</tr><tr class="row row-elements odd colCount-4">
+<th scope="row" id="Q10C_r4_left" class="cell nonempty legend row-legend row-legend-left row-legend-basic legend-level-1 mobile border-collapse  ">
+Crédit consommation
+</th>
+<td headers="Q10C_c1" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="checkbox" name="ans10544.0.3" id="ans10544.0.3" value="1" class=" input checkbox" aria-labelledby="Q10C_r4_left Q10C_c1">
+</span>
+<span class="cell-text cell-sub-column" style="min-height: 0px;"><label for="ans10544.0.3">Transféré vers  <b>Revolut</b></label> </span>
+</span>
+</td><td headers="Q10C_c2" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="checkbox" name="ans10544.1.3" id="ans10544.1.3" value="1" class=" input checkbox" aria-labelledby="Q10C_r4_left Q10C_c2">
+</span>
+<span class="cell-text cell-sub-column" style="min-height: 0px;"><label for="ans10544.1.3">Laissé chez <b>Société Générale</b></label> </span>
+</span>
+</td><td headers="Q10C_c3" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="checkbox" name="ans10544.2.3" id="ans10544.2.3" value="1" class=" input checkbox" aria-labelledby="Q10C_r4_left Q10C_c3">
+</span>
+<span class="cell-text cell-sub-column" style="min-height: 0px;"><label for="ans10544.2.3">Transféré vers un autre établissement</label> </span>
+</span>
+</td><td headers="Q10C_c99" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="checkbox" name="ans10544.3.3" id="ans10544.3.3" value="1" class="exclusive input checkbox" aria-labelledby="Q10C_r4_left Q10C_c99">
+</span>
+<span class="cell-text cell-sub-column" style="min-height: 0px;"><label for="ans10544.3.3">Je ne possédais pas ce produit chez <b>Société Générale</b></label> </span>
+</span>
+</td>
+
+</tr><tr class="row row-elements even colCount-4">
+<th scope="row" id="Q10C_r8_left" class="cell nonempty legend row-legend row-legend-left row-legend-basic legend-level-1 mobile border-collapse  ">
+Une assurance de personnes (ex : santé, prévoyance, décès, obsèques)
+</th>
+<td headers="Q10C_c1" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="checkbox" name="ans10544.0.7" id="ans10544.0.7" value="1" class=" input checkbox" aria-labelledby="Q10C_r8_left Q10C_c1">
+</span>
+<span class="cell-text cell-sub-column" style="min-height: 0px;"><label for="ans10544.0.7">Transféré vers  <b>Revolut</b></label> </span>
+</span>
+</td><td headers="Q10C_c2" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="checkbox" name="ans10544.1.7" id="ans10544.1.7" value="1" class=" input checkbox" aria-labelledby="Q10C_r8_left Q10C_c2">
+</span>
+<span class="cell-text cell-sub-column" style="min-height: 0px;"><label for="ans10544.1.7">Laissé chez <b>Société Générale</b></label> </span>
+</span>
+</td><td headers="Q10C_c3" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="checkbox" name="ans10544.2.7" id="ans10544.2.7" value="1" class=" input checkbox" aria-labelledby="Q10C_r8_left Q10C_c3">
+</span>
+<span class="cell-text cell-sub-column" style="min-height: 0px;"><label for="ans10544.2.7">Transféré vers un autre établissement</label> </span>
+</span>
+</td><td headers="Q10C_c99" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="checkbox" name="ans10544.3.7" id="ans10544.3.7" value="1" class="exclusive input checkbox" aria-labelledby="Q10C_r8_left Q10C_c99">
+</span>
+<span class="cell-text cell-sub-column" style="min-height: 0px;"><label for="ans10544.3.7">Je ne possédais pas ce produit chez <b>Société Générale</b></label> </span>
+</span>
+</td>
+
+</tr><tr class="row row-elements odd colCount-4">
+<th scope="row" id="Q10C_r3_left" class="cell nonempty legend row-legend row-legend-left row-legend-basic legend-level-1 mobile border-collapse  ">
+Crédit immobilier
+</th>
+<td headers="Q10C_c1" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="checkbox" name="ans10544.0.2" id="ans10544.0.2" value="1" class=" input checkbox" aria-labelledby="Q10C_r3_left Q10C_c1">
+</span>
+<span class="cell-text cell-sub-column" style="min-height: 0px;"><label for="ans10544.0.2">Transféré vers  <b>Revolut</b></label> </span>
+</span>
+</td><td headers="Q10C_c2" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="checkbox" name="ans10544.1.2" id="ans10544.1.2" value="1" class=" input checkbox" aria-labelledby="Q10C_r3_left Q10C_c2">
+</span>
+<span class="cell-text cell-sub-column" style="min-height: 0px;"><label for="ans10544.1.2">Laissé chez <b>Société Générale</b></label> </span>
+</span>
+</td><td headers="Q10C_c3" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="checkbox" name="ans10544.2.2" id="ans10544.2.2" value="1" class=" input checkbox" aria-labelledby="Q10C_r3_left Q10C_c3">
+</span>
+<span class="cell-text cell-sub-column" style="min-height: 0px;"><label for="ans10544.2.2">Transféré vers un autre établissement</label> </span>
+</span>
+</td><td headers="Q10C_c99" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="checkbox" name="ans10544.3.2" id="ans10544.3.2" value="1" class="exclusive input checkbox" aria-labelledby="Q10C_r3_left Q10C_c99">
+</span>
+<span class="cell-text cell-sub-column" style="min-height: 0px;"><label for="ans10544.3.2">Je ne possédais pas ce produit chez <b>Société Générale</b></label> </span>
+</span>
+</td>
+
+</tr><tr class="row row-elements even colCount-4">
+<th scope="row" id="Q10C_r6_left" class="cell nonempty legend row-legend row-legend-left row-legend-basic legend-level-1 mobile border-collapse  ">
+Assurance auto
+</th>
+<td headers="Q10C_c1" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="checkbox" name="ans10544.0.5" id="ans10544.0.5" value="1" class=" input checkbox" aria-labelledby="Q10C_r6_left Q10C_c1">
+</span>
+<span class="cell-text cell-sub-column" style="min-height: 0px;"><label for="ans10544.0.5">Transféré vers  <b>Revolut</b></label> </span>
+</span>
+</td><td headers="Q10C_c2" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="checkbox" name="ans10544.1.5" id="ans10544.1.5" value="1" class=" input checkbox" aria-labelledby="Q10C_r6_left Q10C_c2">
+</span>
+<span class="cell-text cell-sub-column" style="min-height: 0px;"><label for="ans10544.1.5">Laissé chez <b>Société Générale</b></label> </span>
+</span>
+</td><td headers="Q10C_c3" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="checkbox" name="ans10544.2.5" id="ans10544.2.5" value="1" class=" input checkbox" aria-labelledby="Q10C_r6_left Q10C_c3">
+</span>
+<span class="cell-text cell-sub-column" style="min-height: 0px;"><label for="ans10544.2.5">Transféré vers un autre établissement</label> </span>
+</span>
+</td><td headers="Q10C_c99" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="checkbox" name="ans10544.3.5" id="ans10544.3.5" value="1" class="exclusive input checkbox" aria-labelledby="Q10C_r6_left Q10C_c99">
+</span>
+<span class="cell-text cell-sub-column" style="min-height: 0px;"><label for="ans10544.3.5">Je ne possédais pas ce produit chez <b>Société Générale</b></label> </span>
+</span>
+</td>
+
+</tr><tr class="row row-elements odd colCount-4">
+<th scope="row" id="Q10C_r5_left" class="cell nonempty legend row-legend row-legend-left row-legend-basic legend-level-1 mobile border-collapse  ">
+Assurance habitation
+</th>
+<td headers="Q10C_c1" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="checkbox" name="ans10544.0.4" id="ans10544.0.4" value="1" class=" input checkbox" aria-labelledby="Q10C_r5_left Q10C_c1">
+</span>
+<span class="cell-text cell-sub-column" style="min-height: 0px;"><label for="ans10544.0.4">Transféré vers  <b>Revolut</b></label> </span>
+</span>
+</td><td headers="Q10C_c2" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="checkbox" name="ans10544.1.4" id="ans10544.1.4" value="1" class=" input checkbox" aria-labelledby="Q10C_r5_left Q10C_c2">
+</span>
+<span class="cell-text cell-sub-column" style="min-height: 0px;"><label for="ans10544.1.4">Laissé chez <b>Société Générale</b></label> </span>
+</span>
+</td><td headers="Q10C_c3" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="checkbox" name="ans10544.2.4" id="ans10544.2.4" value="1" class=" input checkbox" aria-labelledby="Q10C_r5_left Q10C_c3">
+</span>
+<span class="cell-text cell-sub-column" style="min-height: 0px;"><label for="ans10544.2.4">Transféré vers un autre établissement</label> </span>
+</span>
+</td><td headers="Q10C_c99" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="checkbox" name="ans10544.3.4" id="ans10544.3.4" value="1" class="exclusive input checkbox" aria-labelledby="Q10C_r5_left Q10C_c99">
+</span>
+<span class="cell-text cell-sub-column" style="min-height: 0px;"><label for="ans10544.3.4">Je ne possédais pas ce produit chez <b>Société Générale</b></label> </span>
+</span>
+</td>
+
+</tr><tr class="row row-elements even colCount-4">
+<th scope="row" id="Q10C_r7_left" class="cell nonempty legend row-legend row-legend-left row-legend-basic legend-level-1 mobile border-collapse  ">
+Un crédit automobile
+</th>
+<td headers="Q10C_c1" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="checkbox" name="ans10544.0.6" id="ans10544.0.6" value="1" class=" input checkbox" aria-labelledby="Q10C_r7_left Q10C_c1">
+</span>
+<span class="cell-text cell-sub-column" style="min-height: 0px;"><label for="ans10544.0.6">Transféré vers  <b>Revolut</b></label> </span>
+</span>
+</td><td headers="Q10C_c2" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="checkbox" name="ans10544.1.6" id="ans10544.1.6" value="1" class=" input checkbox" aria-labelledby="Q10C_r7_left Q10C_c2">
+</span>
+<span class="cell-text cell-sub-column" style="min-height: 0px;"><label for="ans10544.1.6">Laissé chez <b>Société Générale</b></label> </span>
+</span>
+</td><td headers="Q10C_c3" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="checkbox" name="ans10544.2.6" id="ans10544.2.6" value="1" class=" input checkbox" aria-labelledby="Q10C_r7_left Q10C_c3">
+</span>
+<span class="cell-text cell-sub-column" style="min-height: 0px;"><label for="ans10544.2.6">Transféré vers un autre établissement</label> </span>
+</span>
+</td><td headers="Q10C_c99" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="checkbox" name="ans10544.3.6" id="ans10544.3.6" value="1" class="exclusive input checkbox" aria-labelledby="Q10C_r7_left Q10C_c99">
+</span>
+<span class="cell-text cell-sub-column" style="min-height: 0px;"><label for="ans10544.3.6">Je ne possédais pas ce produit chez <b>Société Générale</b></label> </span>
+</span>
+</td>
+
+</tr><tr class="row row-elements odd colCount-4">
+<th scope="row" id="Q10C_r1_left" class="cell nonempty legend row-legend row-legend-left row-legend-basic legend-level-1 mobile border-collapse  ">
+Compte courant et moyens de paiement (CB, chèque, virements)
+</th>
+<td headers="Q10C_c1" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="checkbox" name="ans10544.0.0" id="ans10544.0.0" value="1" class=" input checkbox" aria-labelledby="Q10C_r1_left Q10C_c1">
+</span>
+<span class="cell-text cell-sub-column" style="min-height: 0px;"><label for="ans10544.0.0">Transféré vers  <b>Revolut</b></label> </span>
+</span>
+</td><td headers="Q10C_c2" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="checkbox" name="ans10544.1.0" id="ans10544.1.0" value="1" class=" input checkbox" aria-labelledby="Q10C_r1_left Q10C_c2">
+</span>
+<span class="cell-text cell-sub-column" style="min-height: 0px;"><label for="ans10544.1.0">Laissé chez <b>Société Générale</b></label> </span>
+</span>
+</td><td headers="Q10C_c3" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="checkbox" name="ans10544.2.0" id="ans10544.2.0" value="1" class=" input checkbox" aria-labelledby="Q10C_r1_left Q10C_c3">
+</span>
+<span class="cell-text cell-sub-column" style="min-height: 0px;"><label for="ans10544.2.0">Transféré vers un autre établissement</label> </span>
+</span>
+</td><td headers="Q10C_c99" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="checkbox" name="ans10544.3.0" id="ans10544.3.0" value="1" class="exclusive input checkbox" aria-labelledby="Q10C_r1_left Q10C_c99">
+</span>
+<span class="cell-text cell-sub-column" style="min-height: 0px;"><label for="ans10544.3.0">Je ne possédais pas ce produit chez <b>Société Générale</b></label> </span>
+</span>
+</td>
+
+</tr><tr class="row row-elements even colCount-4">
+<th scope="row" id="Q10C_r98_left" class="cell nonempty legend row-legend row-legend-left row-legend-basic legend-level-1 mobile border-collapse  ">
+Autre <br><i>Optionnel</i> <input type="text" name="oe10544.0" id="oe10544.0" value="" data-cell="Q10C_r98" size="25" class="input text-input oe oe-left imperium-ra-question">
+
+</th>
+<td headers="Q10C_c1" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell selected">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="checkbox" name="ans10544.0.8" id="ans10544.0.8" value="1" class=" input checkbox" aria-labelledby="Q10C_r98_left Q10C_c1">
+</span>
+<span class="cell-text cell-sub-column" style="min-height: 0px;"><label for="ans10544.0.8">Transféré vers  <b>Revolut</b></label> </span>
+</span>
+</td><td headers="Q10C_c2" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="checkbox" name="ans10544.1.8" id="ans10544.1.8" value="1" class=" input checkbox" aria-labelledby="Q10C_r98_left Q10C_c2">
+</span>
+<span class="cell-text cell-sub-column" style="min-height: 0px;"><label for="ans10544.1.8">Laissé chez <b>Société Générale</b></label> </span>
+</span>
+</td><td headers="Q10C_c3" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="checkbox" name="ans10544.2.8" id="ans10544.2.8" value="1" class=" input checkbox" aria-labelledby="Q10C_r98_left Q10C_c3">
+</span>
+<span class="cell-text cell-sub-column" style="min-height: 0px;"><label for="ans10544.2.8">Transféré vers un autre établissement</label> </span>
+</span>
+</td><td headers="Q10C_c99" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="checkbox" name="ans10544.3.8" id="ans10544.3.8" value="1" class="exclusive input checkbox" aria-labelledby="Q10C_r98_left Q10C_c99">
+</span>
+<span class="cell-text cell-sub-column" style="min-height: 0px;"><label for="ans10544.3.8">Je ne possédais pas ce produit chez <b>Société Générale</b></label> </span>
+</span>
+</td>
+
+</tr></tbody>
+</table>
+<!-- /.grid -->
+</div>
+<!-- /.answers -->
+</div>
+<!-- /.question --><style>.answers{visibility:hidden;}</style>
+    <script type="text/javascript" src="//d2n88fe5uqdqty.cloudfront.net/ssi_js/decipher/ssi_ALLInOne_Confirmit_2.0_groups_decipher.js"></script>
+    <script type="text/javascript">
+    var lukanka;
+    (function (lukanka) {
+      if (!lukanka.qDefs)
+        lukanka.qDefs = {};
+        lukanka.qDefs["Q10C"] = {"comment": "", "haveRightLegend": false, "rows": [{"index": 1, "rightLegend": "", "uid": 10551, "open": 0, "exclusive": 0, "text": "\u00c9pargne (ex : Livret A, LDD, Livret d\u2019\u00e9pargne, PEL, comptes \u00e0 terme) et produits d\u2019investissement (ex : assurance-vie, plan d\u2019\u00e9pargne retraite (PER), actions, obligations, ETFs, cryptos, SICAV/OPCVM/FCP, mandat de gestion de portefeuille)", "label": "r2", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 3, "rightLegend": "", "uid": 10553, "open": 0, "exclusive": 0, "text": "Cr\u00e9dit consommation", "label": "r4", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 7, "rightLegend": "", "uid": 11979, "open": 0, "exclusive": 0, "text": "Une assurance de personnes (ex : sant\u00e9, pr\u00e9voyance, d\u00e9c\u00e8s, obs\u00e8ques)", "label": "r8", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 2, "rightLegend": "", "uid": 10552, "open": 0, "exclusive": 0, "text": "Cr\u00e9dit immobilier", "label": "r3", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 5, "rightLegend": "", "uid": 10555, "open": 0, "exclusive": 0, "text": "Assurance auto", "label": "r6", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 4, "rightLegend": "", "uid": 10554, "open": 0, "exclusive": 0, "text": "Assurance habitation", "label": "r5", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 6, "rightLegend": "", "uid": 11978, "open": 0, "exclusive": 0, "text": "Un cr\u00e9dit automobile", "label": "r7", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 0, "rightLegend": "", "uid": 10550, "open": 0, "exclusive": 0, "text": "Compte courant et moyens de paiement (CB, ch\u00e8que, virements)", "label": "r1", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 8, "rightLegend": "", "uid": 10556, "open": 1, "exclusive": 0, "text": "Autre \u003cbr /\u003e\u003ci\u003eOptionnel\u003c/i\u003e", "openValue": null, "label": "r98", "openOptional": 1, "openName": "oe10544.0", "amount": 0, "openIndex": 0, "optional": 1}], "noanswers": [], "title": "Vous avez chang\u00e9 de banque principale : qu\u2019avez-vous avez transf\u00e9r\u00e9 de l\u2019ancienne \u00e0 la nouvelle ?", "totalColCount": 5, "cols": [{"index": 0, "uid": 10546, "open": 0, "exclusive": 0, "text": "Transf\u00e9r\u00e9 vers  \u003cb\u003eRevolut\u003c/b\u003e", "label": "c1", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 1, "uid": 10547, "open": 0, "exclusive": 0, "text": "Laiss\u00e9 chez \u003cb\u003eSoci\u00e9t\u00e9 G\u00e9n\u00e9rale\u003c/b\u003e", "label": "c2", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 2, "uid": 10548, "open": 0, "exclusive": 0, "text": "Transf\u00e9r\u00e9 vers un autre \u00e9tablissement", "label": "c3", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 3, "uid": 10549, "open": 0, "exclusive": 1, "text": "Je ne poss\u00e9dais pas ce produit chez \u003cb\u003eSoci\u00e9t\u00e9 G\u00e9n\u00e9rale\u003c/b\u003e", "label": "c99", "openOptional": 0, "amount": 0, "optional": 0}], "choices": [{"index": 0, "uid": 10559, "open": 0, "exclusive": 0, "text": "", "label": "", "openOptional": 0, "amount": 0, "optional": 0}], "haveLeftLegend": true, "errors": [], "verifiers": {}, "device": {"category": "", "smartphone": false, "tablet": false, "otherMobile": false, "mobileDevice": false, "desktop": true, "width": "0", "iphone": false, "featurephone": false, "android": false, "height": "0", "blackberry": false}, "uid": 10544, "label": "Q10C", "type": "checkbox", "grouping": "rows"}; 
+      $ (document).ready(function(){
+        if ($ ('.colGroup').length) $ ('.colGroup').remove();
+        parseJsexportData();
+      });
+    })(lukanka || (lukanka = {}));  
+    </script>
+ 
+    <div class="gridclick horizontal text-version" style="margin-bottom: 50px; max-width: 950px; font-size: 14px;" data-index="1"><img class="img-responsive loading-container" style="margin: 40px auto; display: none;" src="//d2n88fe5uqdqty.cloudfront.net/rnd/tools/images/loading.gif"><div class="gridclick-container" style="opacity: 1;"><div class="progress-container"><div class="progress-indicator"><div class="node-container answeredNode" data-code="2" data-index="0"><div class="progress-node"></div></div><div class="node-container currentNode answeredNode" data-code="4" data-index="1"><div class="progress-node"></div></div><div class="node-container" data-code="8" data-index="2"><div class="progress-node"></div></div><div class="node-container" data-code="3" data-index="3"><div class="progress-node"></div></div><div class="node-container" data-code="6" data-index="4"><div class="progress-node"></div></div><div class="node-container" data-code="5" data-index="5"><div class="progress-node"></div></div><div class="node-container" data-code="7" data-index="6"><div class="progress-node"></div></div><div class="node-container" data-code="1" data-index="7"><div class="progress-node"></div></div><div class="node-container" data-code="98" data-index="8"><div class="progress-node"></div></div></div></div><div class="item-outer-container"><div class="item-container"><div class="arrow-marker"></div><div class="prev-nav"><div class="nav-container ion-android-arrow-back"></div></div><div class="item-body-container scroll-container"><div class="item-inner-container" style="width: 2520px; left: -28.5px;"><div class="item item-text answered" data-code="2" data-index="0" style="width: 250px; margin: 5px 15px; height: 120px;"><div class="item-box"><div class="item-box-container"><div class="element-container"><div class="element-content"><div class="text-content">Épargne (ex : Livret A, LDD, Livret d’épargne, PEL, comptes à terme) et produits d’investissement (ex : assurance-vie, plan d’épargne retraite (PER), actions, obligations, ETFs, cryptos, SICAV/OPCVM/FCP, mandat de gestion de portefeuille)</div></div><div class="item-ticker ion-ios-checkmark-empty"></div></div></div></div></div><div class="item item-text current answered" data-code="4" data-index="1" style="width: 250px; margin: 5px 15px; height: 120px;" data-survey-uid="c4"><div class="item-box" data-survey-uid="c5"><div class="item-box-container" data-survey-uid="c6"><div class="element-container" data-survey-uid="c7"><div class="element-content" data-survey-uid="c8"><div class="text-content" data-survey-uid="c9">Crédit consommation</div></div><div class="item-ticker ion-ios-checkmark-empty"></div></div></div></div></div><div class="item item-text" data-code="8" data-index="2" style="width: 250px; margin: 5px 15px; height: 120px;" data-survey-uid="c10"><div class="item-box" data-survey-uid="c11"><div class="item-box-container" data-survey-uid="c12"><div class="element-container" data-survey-uid="c13"><div class="element-content" data-survey-uid="c14"><div class="text-content" data-survey-uid="c15">Une assurance de personnes (ex : santé, prévoyance, décès, obsèques)</div></div><div class="item-ticker ion-ios-checkmark-empty"></div></div></div></div></div><div class="item item-text" data-code="3" data-index="3" style="width: 250px; margin: 5px 15px; height: 120px;" data-survey-uid="c16"><div class="item-box" data-survey-uid="c17"><div class="item-box-container" data-survey-uid="c18"><div class="element-container" data-survey-uid="c19"><div class="element-content" data-survey-uid="c20"><div class="text-content" data-survey-uid="c21">Crédit immobilier</div></div><div class="item-ticker ion-ios-checkmark-empty"></div></div></div></div></div><div class="item item-text" data-code="6" data-index="4" style="width: 250px; margin: 5px 15px; height: 120px;" data-survey-uid="c22"><div class="item-box" data-survey-uid="c23"><div class="item-box-container" data-survey-uid="c24"><div class="element-container" data-survey-uid="c25"><div class="element-content" data-survey-uid="c26"><div class="text-content" data-survey-uid="c27">Assurance auto</div></div><div class="item-ticker ion-ios-checkmark-empty"></div></div></div></div></div><div class="item item-text" data-code="5" data-index="5" style="width: 250px; margin: 5px 15px; height: 120px;" data-survey-uid="c28"><div class="item-box" data-survey-uid="c29"><div class="item-box-container" data-survey-uid="c30"><div class="element-container" data-survey-uid="c31"><div class="element-content" data-survey-uid="c32"><div class="text-content" data-survey-uid="c33">Assurance habitation</div></div><div class="item-ticker ion-ios-checkmark-empty"></div></div></div></div></div><div class="item item-text" data-code="7" data-index="6" style="width: 250px; margin: 5px 15px; height: 120px;" data-survey-uid="c34"><div class="item-box" data-survey-uid="c35"><div class="item-box-container" data-survey-uid="c36"><div class="element-container" data-survey-uid="c37"><div class="element-content" data-survey-uid="c38"><div class="text-content" data-survey-uid="c39">Un crédit automobile</div></div><div class="item-ticker ion-ios-checkmark-empty"></div></div></div></div></div><div class="item item-text" data-code="1" data-index="7" style="width: 250px; margin: 5px 15px; height: 120px;" data-survey-uid="c40"><div class="item-box" data-survey-uid="c41"><div class="item-box-container" data-survey-uid="c42"><div class="element-container" data-survey-uid="c43"><div class="element-content" data-survey-uid="c44"><div class="text-content" data-survey-uid="c45">Compte courant et moyens de paiement (CB, chèque, virements)</div></div><div class="item-ticker ion-ios-checkmark-empty"></div></div></div></div></div><div class="item item-text" data-code="98" data-index="8" style="width: 250px; margin: 5px 15px; height: 120px;" data-survey-uid="c46"><div class="item-box" data-survey-uid="c47"><div class="item-box-container" data-survey-uid="c48"><div class="element-container" data-survey-uid="c49"><div class="element-content" data-survey-uid="c50"><div class="text-outer-container" data-survey-uid="c51"><div class="text-content" data-survey-uid="c52">Autre <br><i>Optionnel</i></div><div class="item-oe-container"><input data-code="98" data-openid="oe10544.0" data-index="8" class="item-oe2" type="text" value="" placeholder="........"></div></div></div><div class="item-ticker ion-ios-checkmark-empty"></div></div></div></div></div></div></div><div class="next-nav active"><div class="nav-container ion-android-arrow-forward blink"></div></div></div></div><div class="scale-container scale-text"><div class="scale-body-container"><div class="scale-button selected" data-index="0" data-code="1" style="width: 162px; margin: 5px; height: 56px;" data-survey-uid="c53"><div class="button-content-wrapper" data-survey-uid="c54"><div class="button-content-wrapper-cell" data-survey-uid="c55"><div class="text-content" data-survey-uid="c56">Transféré vers  <b>Revolut</b></div></div></div></div><div class="scale-button" data-index="1" data-code="2" style="width: 162px; margin: 5px; height: 56px;" data-survey-uid="c57"><div class="button-content-wrapper" data-survey-uid="c58"><div class="button-content-wrapper-cell" data-survey-uid="c59"><div class="text-content" data-survey-uid="c60">Laissé chez <b>Société Générale</b></div></div></div></div><div class="scale-button" data-index="2" data-code="3" style="width: 162px; margin: 5px; height: 56px;" data-survey-uid="c61"><div class="button-content-wrapper" data-survey-uid="c62"><div class="button-content-wrapper-cell" data-survey-uid="c63"><div class="text-content" data-survey-uid="c64">Transféré vers un autre établissement</div></div></div></div><div class="scale-button dk-button" data-index="3" data-code="99" style="background: rgb(233, 236, 239); width: 162px; margin: 5px; height: 56px;" data-survey-uid="c65"><div class="button-content-wrapper" data-survey-uid="c66"><div class="button-content-wrapper-cell" data-survey-uid="c67"><div class="text-content" data-survey-uid="c68">Je ne possédais pas ce produit chez <b>Société Générale</b></div></div></div></div></div></div></div></div>
+    <link rel="stylesheet" type="text/css" href="//d2n88fe5uqdqty.cloudfront.net/rnd/tools/gridclick/gridClick_v2.9.4_d.min.css">
+    <link rel="stylesheet" type="text/css" href="//d2n88fe5uqdqty.cloudfront.net/rnd/plugins/ionicons/ionicons-2.0.1/css/ionicons.min.css">
+    <link rel="stylesheet" type="text/css" href="//d2n88fe5uqdqty.cloudfront.net/rnd/plugins/fancybox/3.x.x/3.1.20/jquery.fancybox.css">
+    <script type="text/javascript" src="//d2n88fe5uqdqty.cloudfront.net/rnd/tools/gridclick/gridClick_v2.9.4_d.min.js"></script>
+    <script type="text/javascript" src="//d2n88fe5uqdqty.cloudfront.net/rnd/plugins/fancybox/3.x.x/3.1.20/jquery.fancybox.js"></script>
+       
+<script type="text/javascript">
+var navigationIsActive=false;
+var formID, formElem;
+  
+$ (function() {
+    formID = getFormName(1);
+    formElem = getToolDataInGroups(getFormName(1),ssiQuestionType().MIP)
+ 
+        var config = {
+         
+          // =============== DOCUMENTATION ===============> https://confluence.surveysampling.com/x/hq17AQ
+         
+          sForm : getFormName(1), // form name of the grid
+          sSplitter : '$', // splitter for images
+          sOrientation : 'horizontal', // 'horizontal', 'vertical'
+          sProgressSepText : ' / ', // separator text between item progress
+          sTxtProgress : '', // text after progress text
+          sForwardButton : '#btn_continue',  // forward button jQuery selector - used for toggling the next button
+          sHideScaleType : 'keepAlignment', // method to hide the scales - 'keepAlignment', 'newAlignment'
+          sDkScaleBgColor : '#E9ECEF', // background color for the DK scale
+          iMinAnswersPerItem : 1, // minumum answers per item required to make the item "answered" - default is 1
+          iMaxAnswersPerItem: null, // maximum allowed answers per item - default is null
+          iMinItemsRequired : null, // minimum answered items required to toggle the next button - default is null - all required
+          iAnimationTime : 400, // animation time in ms
+          iMaxContainerWidth : 950, // maximum tool container width - can be used to enlarge/shrink the tool
+          iVertItemContainPerc : 45, // vertical item container percentage width
+          iVertItemContainMarginPerc : 5, // vertical item container percentage margin
+          iFontSize : 14, // font size for the tool in px
+          aDkScale : [99], // dk codes for scale - for example: [99,999]
+          aOtherNotRequired : [98], // other not required item codes - for example: [99,999]
+          aHideScaleCodes: [], // [{98:[1,3]},{1:[2,4]}] (hides scales with codes 1 and 3 from Answer code 98 and codes 2 and 4 from Answers code 1
+   
+          oElementConfig : { // element/item config object
+            bImages : false, // images as options - using the splitter
+            bShowLabel : true, // show labels for the options
+            bShowOeImage : false, // if OE - should it show an image for the other option
+            bZoomEnabled : true, // is zoom enabled
+            sZoomImage : '//d2n88fe5uqdqty.cloudfront.net/rnd/tools/images/zoom_icon2.png', // zoom icon image path
+            sZoomPosition : 'br', // position for the zoom icon - 'br', 'bl', 'tl'
+            sImagePath : '/survey/selfserve/53b/260133/', // path for the images to be used with the splitter
+            sSmallImageExtension : '.jpg', // extension for the small image (default shown)
+            sLargeImageExtension : '.jpg', // extension for the zoomed image
+            iMaxImageWidth: 100, // maximum image width - needs to be lower than iWidth
+            iMaxImageHeight: 100, // maximum image height - needs to be lower than iHeight
+            iWidth : 250, // overall item container width
+            iHeight : 120, // overall item container height
+            iHorizontalSpacing : 15, // horizontal spacing between items
+            iVerticalSpacing : 5, // vertical spacing between items
+            iFontSize: null // font size for the item container
+          },
+ 
+          oScaleConfig : { // scale config object
+            bImages : false, // images as options - using the splitter
+            bShowLabel : true, // show labels for the options
+            bZoomEnabled : false, // is zoom enabled
+            sZoomImage : '//d2n88fe5uqdqty.cloudfront.net/rnd/tools/images/zoom_icon2.png', // zoom icon image path
+            sZoomPosition : 'br', // position for the zoom icon - 'br', 'bl', 'tl'
+            sImagePath : '/survey/selfserve/53b/260133/', // path for the images to be used with the splitter
+            sSmallImageExtension : '.jpg', // extension for the small image (default shown)
+            sLargeImageExtension : '.jpg', // extension for the zoomed image
+            iMaxImageWidth: 62, // maximum image width - needs to be lower than iWidth
+            iMaxImageHeight: 62, // maximum image height - needs to be lower than iHeight
+            iWidth : 162, // scale button width
+            iHeight : 35, // scale button height
+            iHorizontalSpacing : 5, // horizontal scale spacing
+            iVerticalSpacing : 5, // vertical scale spacing
+            iFontSize: null // font size for the scale container
+          },
+ 
+          oFancyBoxConfig : {}, // config for adding custom fancybox parameters - //fancyapps.com/fancybox/3/docs/
+          bInvertItemScale : false, // invert the item/scale containers - top/bottom for horizontal, left/right for vertical
+          bHeightAuto  : false, // make the items/scales have auto height for horizontal view - should not be used for vertical
+          bScaleNewLine: false, // make the scale in horizontal mode render vertically (one below the other) when not enough horizontal space for all scales
+          bReverse : true, // reverse the direction of the items/navigation arrows
+          bShowProgressText : false, // show the progress text progress
+          bShowProgressIndicator :  true, // show the progress indicator
+          bDisableNavigation : false, // disable navigation arrows - will only be allowed for multi or when no AutoNext item is false
+          bAutoNextItem : true, // automatically go to next item when selected - working on multi only when DK scale is selected
+          bDisableBlinkNav: false, // disables the blink navigation assistance for multi
+          bInitialNavigation : false, // initial navigation toggle
+          bEnableNavAnswered : false, // Enable navigation for already answered items only. Not applicable when bDisableNavigation or bInitialNavigation is enabled
+          bMultiple : true, // is the grid multiple
+          bAutoSizeScales : false, //Automatically re-render scales to fit the width. Not applicable when bScaleNewLine is enabled or when oScaleConfig.iFirstLastWidth is set.
+          bIsTest : true, // if set to true the tool warnings will appear as alerts
+          onStart : function() {}, // function called before the tool starts generating
+          onAnswer : function(e) {setTimeout(function(){ isOtherValid(formElem ,config) },100)}, // function called when an answer is given (click on scale)
+          onInput : function(e) {}, // function called on OE input (item)
+          onCompleted : function() {}, // function called when all items are answered (unless OE not required codes are defined) before next button is toggled
+           
+          onTransitionEnd: function() { setTimeout(function(){ isOtherValid(formElem ,config) },100) },
+           
+          onReady : function() {
+          for(var i=0;i<formElem.rows[0].items.length;i++) {
+    if(formElem.rows[0].items[i].isOE) {
+        $ (".item[data-code='"+formElem.rows[0].items[i].code+"'] .text-content").wrap("<div class='text-outer-container'>").after("<div class='item-oe-container'><input data-code='"+formElem.rows[0].items[i].code+"' data-openid='"+formElem.rows[0].items[i].otherName+"' data-index='"+i+"' class='item-oe2' type='text' value='"+getOpenValue(formElem.rows[0].items[i].otherName)+"' placeholder='........'></div>")    }
+}
+$ (".item-oe2").on("keyup change",function(){ isOtherValid(formElem,config) })
+            $ ('.answers').hide();
+          }, // function called after tool is fully loaded
+        }
+        $ ('body').gridClick(config);
+         
+        var project_id = 'selfserve/53b/260133';
+        var toolId;toolId=config.bMultiple?config.oElementConfig.bImages?"jMGTI001":"jMGTT001":config.oElementConfig.bImages?"jGTI001":"jGTT001";
+ 
+        countIt({
+          "tool-id" : toolId,
+          "project-id"  :  project_id,
+          "order-id"  :  'ORD-12345-ABCD'
+        });
+      });
+    </script>
+<script type="text/javascript">
+function getCheckboxID(qid,row,col){return "ans"+lukanka.qDefs[qid].uid+"."+lukanka.qDefs[qid].cols[col].index+"."+lukanka.qDefs[qid].rows[row].index;}
+function getOpenValue(id){return $ ("input[name='"+id+"']").val(); }
+function setOpenValue(id,val){$ ("input[name='"+id+"']").val(val); }
+function getMRStatus(qid,row,col){ return $ ("input[name='"+getCheckboxID(qid,row,col)+"']").prop("checked")}
+function setMRStatus(qid,row,col,status){ $ ("input[name='"+getCheckboxID(qid,row,col)+"']").prop("checked",status) }
+function isOtherValid(formElem,config){
+    var code=$ (".item.current").data("index")
+    var isLast = config.bReverse?$ (".item").size()-1==$ (".item.current").data("index"):0==$ (".item.current").data("index");
+    if(isLast) navigationIsActive= true
+    if(formElem.rows[0].items[code] && formElem.rows[0].items[code].isOE){
+        var isOtherValid = false;
+        var otherVal = $ (".item.current .item-oe2").val();
+        var aScaleGroups = formElem.cols[0].items
+                   
+        for(var j=0, notDK=0,dkOnly=0;j<aScaleGroups.length;j++){
+            var scale=aScaleGroups[j].code
+            if(in_array(scale,config.aDkScale)) dkOnly += getMRStatus(formID,code,j)?1:0;
+            else                                notDK += getMRStatus(formID,code,j)?1:0;
+        }
+        var isDKselected=dkOnly>0
+        var isnotDKselected=notDK>0
+        if(otherVal=="" && (isDKselected || (!isDKselected && !isnotDKselected))) isOtherValid=true;
+        if(otherVal!="" && (isDKselected || isnotDKselected)) isOtherValid=true;
+        if(otherVal=="" &&  isnotDKselected) $ (".item-oe2[data-index='"+code+"']").addClass("blink")
+        if(otherVal!="" && (!isDKselected && !isnotDKselected)) $ (".scale-body-container").addClass("blink")
+        console.log($ (".item.current").data("code"),code, otherVal,isDKselected,isnotDKselected, dkOnly, notDK, isOtherValid)
+   
+        if(!isOtherValid){       
+            $ (".next-nav,.prev-nav").removeClass("active")
+            $ (".item.current").removeClass("answered")
+            $ (".answeredNode").removeClass("node-clickable")
+            $ (".node-container.currentNode").removeClass("answeredNode")
+        }else{       
+            if(!isLast) $ (".next-nav").addClass("active")
+            $ (".currentNode").addClass("answeredNode");
+            if(navigationIsActive){
+                $ (".prev-nav").addClass("active")
+                $ (".node-container").addClass("node-clickable")
+            }
+            $ (".item.current").addClass("answered")
+            if(!isDKselected && !isnotDKselected) $ (".node-container.currentNode").addClass("answeredNode") 
+             }
+        setOpenValue(formElem.rows[0].items[code].otherName,otherVal);
+    }
+    if($ (".node-container").size()==$ (".answeredNode").size())  $ (config.sForwardButton).removeClass("hidden").addClass("show");
+    else   $ (config.sForwardButton).removeClass("show").addClass("hidden");
+}
+function in_array(n,hay){
+    for(var i=0;i<hay.length;i++) if(n==hay[i]) return true;
+    return false
+}
+</script>   
+<script type="text/javascript">
+addHandler(function() {
+var o;
+var excl = [3];
+var otherThan3 = [0,1,2];
+o = document.forms[0]["ans10544.0.0"];
+if (o) o.onclick = o.onchange = function() { if (this.checked) uncheck("ans10544.@.0", excl); };
+o = document.forms[0]["ans10544.1.0"];
+if (o) o.onclick = o.onchange = function() { if (this.checked) uncheck("ans10544.@.0", excl); };
+o = document.forms[0]["ans10544.2.0"];
+if (o) o.onclick = o.onchange = function() { if (this.checked) uncheck("ans10544.@.0", excl); };
+o = document.forms[0]["ans10544.3.0"];
+if (o) o.onclick = o.onchange = function() { if (this.checked) uncheck("ans10544.@.0", otherThan3); };
+o = document.forms[0]["ans10544.0.1"];
+if (o) o.onclick = o.onchange = function() { if (this.checked) uncheck("ans10544.@.1", excl); };
+o = document.forms[0]["ans10544.1.1"];
+if (o) o.onclick = o.onchange = function() { if (this.checked) uncheck("ans10544.@.1", excl); };
+o = document.forms[0]["ans10544.2.1"];
+if (o) o.onclick = o.onchange = function() { if (this.checked) uncheck("ans10544.@.1", excl); };
+o = document.forms[0]["ans10544.3.1"];
+if (o) o.onclick = o.onchange = function() { if (this.checked) uncheck("ans10544.@.1", otherThan3); };
+o = document.forms[0]["ans10544.0.2"];
+if (o) o.onclick = o.onchange = function() { if (this.checked) uncheck("ans10544.@.2", excl); };
+o = document.forms[0]["ans10544.1.2"];
+if (o) o.onclick = o.onchange = function() { if (this.checked) uncheck("ans10544.@.2", excl); };
+o = document.forms[0]["ans10544.2.2"];
+if (o) o.onclick = o.onchange = function() { if (this.checked) uncheck("ans10544.@.2", excl); };
+o = document.forms[0]["ans10544.3.2"];
+if (o) o.onclick = o.onchange = function() { if (this.checked) uncheck("ans10544.@.2", otherThan3); };
+o = document.forms[0]["ans10544.0.3"];
+if (o) o.onclick = o.onchange = function() { if (this.checked) uncheck("ans10544.@.3", excl); };
+o = document.forms[0]["ans10544.1.3"];
+if (o) o.onclick = o.onchange = function() { if (this.checked) uncheck("ans10544.@.3", excl); };
+o = document.forms[0]["ans10544.2.3"];
+if (o) o.onclick = o.onchange = function() { if (this.checked) uncheck("ans10544.@.3", excl); };
+o = document.forms[0]["ans10544.3.3"];
+if (o) o.onclick = o.onchange = function() { if (this.checked) uncheck("ans10544.@.3", otherThan3); };
+o = document.forms[0]["ans10544.0.4"];
+if (o) o.onclick = o.onchange = function() { if (this.checked) uncheck("ans10544.@.4", excl); };
+o = document.forms[0]["ans10544.1.4"];
+if (o) o.onclick = o.onchange = function() { if (this.checked) uncheck("ans10544.@.4", excl); };
+o = document.forms[0]["ans10544.2.4"];
+if (o) o.onclick = o.onchange = function() { if (this.checked) uncheck("ans10544.@.4", excl); };
+o = document.forms[0]["ans10544.3.4"];
+if (o) o.onclick = o.onchange = function() { if (this.checked) uncheck("ans10544.@.4", otherThan3); };
+o = document.forms[0]["ans10544.0.5"];
+if (o) o.onclick = o.onchange = function() { if (this.checked) uncheck("ans10544.@.5", excl); };
+o = document.forms[0]["ans10544.1.5"];
+if (o) o.onclick = o.onchange = function() { if (this.checked) uncheck("ans10544.@.5", excl); };
+o = document.forms[0]["ans10544.2.5"];
+if (o) o.onclick = o.onchange = function() { if (this.checked) uncheck("ans10544.@.5", excl); };
+o = document.forms[0]["ans10544.3.5"];
+if (o) o.onclick = o.onchange = function() { if (this.checked) uncheck("ans10544.@.5", otherThan3); };
+o = document.forms[0]["ans10544.0.6"];
+if (o) o.onclick = o.onchange = function() { if (this.checked) uncheck("ans10544.@.6", excl); };
+o = document.forms[0]["ans10544.1.6"];
+if (o) o.onclick = o.onchange = function() { if (this.checked) uncheck("ans10544.@.6", excl); };
+o = document.forms[0]["ans10544.2.6"];
+if (o) o.onclick = o.onchange = function() { if (this.checked) uncheck("ans10544.@.6", excl); };
+o = document.forms[0]["ans10544.3.6"];
+if (o) o.onclick = o.onchange = function() { if (this.checked) uncheck("ans10544.@.6", otherThan3); };
+o = document.forms[0]["ans10544.0.7"];
+if (o) o.onclick = o.onchange = function() { if (this.checked) uncheck("ans10544.@.7", excl); };
+o = document.forms[0]["ans10544.1.7"];
+if (o) o.onclick = o.onchange = function() { if (this.checked) uncheck("ans10544.@.7", excl); };
+o = document.forms[0]["ans10544.2.7"];
+if (o) o.onclick = o.onchange = function() { if (this.checked) uncheck("ans10544.@.7", excl); };
+o = document.forms[0]["ans10544.3.7"];
+if (o) o.onclick = o.onchange = function() { if (this.checked) uncheck("ans10544.@.7", otherThan3); };
+o = document.forms[0]["ans10544.0.8"];
+if (o) o.onclick = o.onchange = function() { if (this.checked) uncheck("ans10544.@.8", excl); };
+o = document.forms[0]["ans10544.1.8"];
+if (o) o.onclick = o.onchange = function() { if (this.checked) uncheck("ans10544.@.8", excl); };
+o = document.forms[0]["ans10544.2.8"];
+if (o) o.onclick = o.onchange = function() { if (this.checked) uncheck("ans10544.@.8", excl); };
+o = document.forms[0]["ans10544.3.8"];
+if (o) o.onclick = o.onchange = function() { if (this.checked) uncheck("ans10544.@.8", otherThan3); };
+});
+</script>
+<div class="survey-buttons">
+<input type="submit" name="continue" id="btn_continue" class="button continue hidden" value="Continuer &gt;" onclick="var i = document.createElement('input'); i.setAttribute('type', 'hidden');i.setAttribute('value', '1');i.setAttribute('name', '__has_javascript');document.forms.primary.appendChild(i);" style="display: none;">
+
+</div>
+<!-- #surveyButtons --><input type="hidden" name="state" value="72734322-f449-4a2d-a52f-8517e9db337c">
+<input type="hidden" name="start_time" value="1772427952">
+<input type="hidden" name="_ptime" value="0">
+<script>addHandler(Survey.capturePreciseTime)</script><script>
+$ (window).on("load", function() { setTimeout(function() { Survey.recordPageTiming("selfserve/53b/260133", "phd713vz4v7pc92z", "s8y3erkbej9npn1q");}, 100); });
+</script>
+<label for="ra__398191" aria-hidden="true" style="display: inline-block !important; height: 0 !important; width: 0 !important; border: 0 !important; padding: 0 !important; margin: 0 !important" tabindex="-1"></label><input type="text" id="ra__398191" data-exclude="1" aria-hidden="true" style="height: 0 !important; width: 0 !important; border: 0 !important; padding: 0 !important; margin: 0 !important" tabindex="-1"></form>
+
+
+</div>
+<!-- /.survey-body -->
+</div>
+<div class="survey-section">
+<input type="hidden" id="AcceptNotSupportedLanguages" name="AcceptNotSupportedLanguages" value="0">
+        <input type="hidden" id="ClientID" name="ClientID" value="32F0DF3C-D504-46E9-999F-AE32A3D57A44">
+        <input type="hidden" id="CollectCompleted" name="CollectCompleted" value="0">
+        <input type="hidden" id="LangCode" name="LangCode" value="FR">
+        <input type="hidden" id="PanelID" name="PanelID" value="101">
+        <input type="hidden" id="PanelistID" name="PanelistID" value="88T5gGccDJCyHV4jVWEdloiT">
+        <input type="hidden" id="SurveyID" name="SurveyID" value="survey-uk.yoursurveynow.com/selfserve/53b/260133">
+
+        <script src="/survey/lib/sys/qualityscore/v3/qualityscore.js?61df6dd275" data-debug-level="0" data-persistent-variable="client_relevantid_results" data-qslib-path="/survey/lib/sys/qualityscore/v3/qslib1.0.js?791cc48fa2" data-timeout="6"></script></div>
+</div>
+<div id="detectBreakpoint"></div>
+<!-- /.survey-container -->
+
+
+<script src="/survey/lib/sys/qualityscore/v3/qslib1.0.js?791cc48fa2"></script><input type="hidden" name="imperium_qs_time_start" id="imperium_qs_time_start" value="1772427953408"><input type="hidden" name="ra_1" id="ra_1" style="width:1200px" value="{&quot;oe10544.0&quot;:&quot;176.186.86.39_5B8E36EB0BDF643F734DDBCAE1D0094F020304BEEAB011F307F597728DDBB6FF&quot;}"><input type="hidden" name="ra_2" id="ra_2" style="width:1200px" value="{&quot;oe10544.0&quot;:&quot;97a2c430-32e7-47f5-aea1-fcc72e4d290b&quot;}"><input type="hidden" name="ra_3" id="ra_3" style="width:1200px" value="{&quot;oe10544.0&quot;:&quot;2d2b0afd-94d1-632c-b58f-e8ded5c24b83&quot;}"><input type="hidden" name="ra_4" id="ra_4" style="width:1200px" value="{&quot;oe10544.0&quot;:&quot;bb885373-c8bd-4adf-bb6c-91f1b7498018&quot;}"></body>
