@@ -11,7 +11,7 @@ class _FakeDriver:
         self._payload = payload
         self.current_url = url
 
-    def execute_script(self, script):
+    def execute_script(self, script, *args):
         return self._payload
 
 
@@ -77,7 +77,7 @@ def test_detect_image_only_unresolvable_dom_positive():
     is_match, reason, fingerprint = survey_executor._detect_image_only_unresolvable_dom(driver, question_blocks=[])
 
     assert is_match is True
-    assert reason == "image_only_inputs"
+    assert reason == "image_only_wrapped_inputs"
     assert len(fingerprint) == 12
 
 
@@ -123,7 +123,7 @@ def test_budgeted_soft_restart_for_image_only_inputs(monkeypatch):
     assert second == "restarted"
     assert third == "budget_exhausted"
     assert len(calls) == 2
-    assert all(r == "dom_only_abort:image_only_inputs" for r in calls)
+    assert all(r == "dom_only_abort:image_only_wrapped_inputs" for r in calls)
 
 
 def test_detect_image_only_unresolvable_dom_clickable_icons_positive():
@@ -199,3 +199,52 @@ def test_budgeted_soft_restart_for_clickable_image_only_inputs(monkeypatch):
 
     assert result == "restarted"
     assert calls == ["dom_only_abort:image_only_clickable_options"]
+
+
+def test_detect_image_only_unresolvable_dom_visual_challenge_instruction():
+    driver = _FakeDriver(
+        {
+            "project": "FR278423108S07",
+            "image_only_groups": [],
+            "clickable_image_only_groups": [],
+            "has_visual_challenge_instruction": True,
+            "visible_img_count": 12,
+            "visible_bg_tile_count": 0,
+        }
+    )
+
+    is_match, reason, fingerprint = survey_executor._detect_image_only_unresolvable_dom(driver, question_blocks=[])
+
+    assert is_match is True
+    assert reason == "captcha_image_selection"
+    assert len(fingerprint) == 12
+
+
+def test_budgeted_soft_restart_visual_challenge_uses_explicit_reason(monkeypatch):
+    driver = _FakeDriver(
+        {
+            "project": "FR278423108S07",
+            "image_only_groups": [],
+            "clickable_image_only_groups": [],
+            "has_visual_challenge_instruction": True,
+            "visible_img_count": 10,
+            "visible_bg_tile_count": 0,
+        },
+        url="https://ex-plorsurvey.com/survey/selfserve/210e/260106",
+    )
+
+    calls = []
+
+    class _Guard:
+        def request_survey_restart(self, reason):
+            calls.append(reason)
+
+    import Management.guards.runtime_guard as runtime_guard
+    monkeypatch.setattr(runtime_guard, "get_guard", lambda: _Guard())
+
+    first = survey_executor._budgeted_soft_restart_for_image_only_inputs(driver, question_blocks=[])
+    second = survey_executor._budgeted_soft_restart_for_image_only_inputs(driver, question_blocks=[])
+
+    assert first == "restarted"
+    assert second == "budget_exhausted"
+    assert calls == ["captcha_image_selection"]
