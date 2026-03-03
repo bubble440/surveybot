@@ -2044,6 +2044,102 @@ def handle_consent_screen(driver):
     def _norm_lc(s: str) -> str:
         return " ".join((s or "").lower().split()).strip()
 
+    # 0) Toluna/MetrixLab consent modal (radio + "Confirmez")
+    #    IMPORTANT: radios potentiellement cachés (display:none), cliquer le label puis fallback JS.
+    def _handle_toluna_consent_modal() -> bool:
+        try:
+            detected = bool(driver.execute_script(r"""
+                const confirm = document.querySelector('#consent-button-confirm');
+                const hasRadio = !!document.querySelector("input[name='consent']") || !!document.querySelector('.consent-form-radiogroup');
+                const hasLabel = !!document.querySelector('.consent-option-label');
+                return !!(confirm && hasRadio && hasLabel);
+            """))
+        except Exception:
+            detected = False
+
+        if not detected:
+            return False
+
+        print("[CONSENT][TOLUNA] detected")
+        intercept_only = (os.getenv("CTA_INTERCEPT_ONLY", "") or "").strip().lower() in {"1", "true", "yes", "on"}
+
+        for _ in range(2):
+            try:
+                checked_ok = bool(driver.execute_script(r"""
+                    const norm = (s) => (s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+                    const confirm = document.querySelector('#consent-button-confirm');
+                    const accept = document.querySelector('#consent-radio-accept') || document.querySelector("input[type='radio'][name='consent'][value='accept']");
+                    if (!confirm || !accept) return false;
+
+                    let label = null;
+                    try { label = accept.closest('label.consent-option-label'); } catch(_) {}
+
+                    if (!label) {
+                        const labels = Array.from(document.querySelectorAll('label.consent-option-label'));
+                        label = labels.find((l) => {
+                            const t = norm(l.innerText || l.textContent || '');
+                            return t.includes('je consens') || t.includes('i consent') || t.includes('agree');
+                        }) || null;
+                    }
+
+                    if (label) {
+                        try { label.click(); } catch(_) {}
+                    }
+
+                    if (!accept.checked) {
+                        try { accept.checked = true; } catch(_) {}
+                        try { accept.dispatchEvent(new Event('input', { bubbles: true })); } catch(_) {}
+                        try { accept.dispatchEvent(new Event('change', { bubbles: true })); } catch(_) {}
+                    }
+                    return !!accept.checked;
+                """))
+            except Exception:
+                checked_ok = False
+
+            print(f"[CONSENT][TOLUNA] selected=accept checked_ok={str(checked_ok).lower()}")
+
+            clicked = False
+            if intercept_only:
+                try:
+                    clicked = bool(Survey.input_handler.try_click_navigation_cta_any_context(driver))
+                except Exception:
+                    clicked = False
+            else:
+                try:
+                    btn = driver.find_element(By.CSS_SELECTOR, "#consent-button-confirm")
+                    try:
+                        btn.click()
+                    except Exception:
+                        driver.execute_script("arguments[0].click();", btn)
+                    clicked = True
+                except Exception:
+                    clicked = False
+
+            print(f"[CONSENT][TOLUNA] confirm clicked intercept_only={str(intercept_only).lower()}")
+
+            try:
+                err_visible = bool(driver.execute_script(r"""
+                    const err = document.querySelector('#consent-error-message-container');
+                    if (!err) return false;
+                    const s = window.getComputedStyle(err);
+                    if (!s || s.display === 'none' || s.visibility === 'hidden') return false;
+                    const r = err.getBoundingClientRect();
+                    return !!(r && r.width > 1 && r.height > 1);
+                """))
+            except Exception:
+                err_visible = False
+
+            if not err_visible and (checked_ok or clicked):
+                return True
+
+            time.sleep(0.2)
+
+        print("[CONSENT][TOLUNA] reason=toluna_consent_not_resolved")
+        return False
+
+    if _handle_toluna_consent_modal():
+        return True
+
     CMP_CONTAINER_SELECTORS = [
         "#onetrust-banner-sdk",
         "#onetrust-consent-sdk",
