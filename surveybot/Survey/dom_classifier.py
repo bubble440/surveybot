@@ -175,6 +175,31 @@ def _is_formal_survey_question_page(driver) -> bool:
                 const radios = sq.querySelectorAll('input[type="radio"], input[type="checkbox"]');
                 if (radios.length >= 2) return true;
             }
+
+            // --- YouGov single-choice question layout ---
+            // Pattern observé: .question-container > fieldset.question-single
+            // + legend.question-text + liste de réponses radio avec labels textuels.
+            const ygFieldsets = document.querySelectorAll(
+                '.question-container fieldset.question-single, fieldset.question.question-single'
+            );
+            for (const fs of ygFieldsets) {
+                const legend = fs.querySelector('legend.question-text, .question-text');
+                if (!legend || (legend.innerText || '').trim().length < 8) continue;
+
+                const radios = fs.querySelectorAll('input[type="radio"]');
+                if (radios.length < 2) continue;
+
+                let textLabels = 0;
+                for (const radio of radios) {
+                    const id = radio.id;
+                    if (!id) continue;
+                    const lab = fs.querySelector(`label[for="${id}"] .label-text, label[for="${id}"]`);
+                    if (lab && (lab.innerText || '').trim().length > 5) {
+                        textLabels++;
+                    }
+                }
+                if (textLabels >= 2) return true;
+            }
             
             // --- Generic survey question structure ---
             // Pattern: élément .question-text + inputs radio/checkbox visibles dans un container survey
