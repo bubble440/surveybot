@@ -456,6 +456,39 @@ def _group_key_for_choice(el, itype: str) -> str:
                     if dotted_base_name and dotted_base_name != clean_name:
                         clean_name = dotted_base_name
 
+                    # YouGov-like pattern: une question checkbox rend chaque option
+                    # avec un name distinct suffixé par index (`w38-response-1`, `...-2`, ...)
+                    # à l'intérieur d'un `fieldset.question-multiple` unique.
+                    # Scope DOM strict: on normalise uniquement si ce fieldset contient
+                    # >=2 checkboxes partageant la même racine `prefix-<digits>`.
+                    suffix_num_base = re.sub(r"-\d+$", "", clean_name)
+                    if suffix_num_base and suffix_num_base != clean_name:
+                        try:
+                            fieldsets = el.find_elements(
+                                By.XPATH,
+                                "ancestor::fieldset[contains(@class,'question-multiple')][1]",
+                            )
+                        except Exception:
+                            fieldsets = []
+
+                        if fieldsets:
+                            try:
+                                sibling_boxes = fieldsets[0].find_elements(By.XPATH, ".//input[@type='checkbox'][@name]")
+                            except Exception:
+                                sibling_boxes = []
+
+                            prefixed = 0
+                            for sib in sibling_boxes:
+                                try:
+                                    sib_name = _norm_lc(sib.get_attribute("name") or "")
+                                except Exception:
+                                    sib_name = ""
+                                if sib_name and re.match(rf"^{re.escape(suffix_num_base)}-\d+$", sib_name):
+                                    prefixed += 1
+
+                            if prefixed >= 2:
+                                clean_name = suffix_num_base
+
                     # Tivian/CustomerVoice pattern: chaque option checkbox d'une même
                     # question porte un name distinct "v_115", "v_116", etc.
                     # On regroupe alors par identifiant de conteneur question-* quand
