@@ -22,6 +22,8 @@ La fonction filter_exclusive_conflicts() élimine ces conflits AVANT exécution.
 from __future__ import annotations
 import re, datetime
 import os
+import math
+import unicodedata
 from typing import Dict, Optional, List, Any
 _ALLOWED_ITYPES = {"radio", "checkbox", "dropdown", "text", "textarea", "button", "number"}
 _QID_RE = re.compile(r"\bQ\d+\b", re.IGNORECASE)
@@ -590,6 +592,129 @@ def parse_batch_response(raw: str, constraints: Optional[Dict[str, int]] = None,
 def _norm_lc(s: str | None) -> str:
     return re.sub(r"\s+", " ", (s or "")).strip().lower()
 
+
+_MULTI_HINT_PATTERNS = (
+    r"veuillez\s+selectionner\s+toutes?\s+les\s+reponses?\s+pertinentes?",
+    r"plusieurs\s+reponses?\s+possibles?",
+)
+
+_BULK_EXCLUSIVE_PATTERNS = (
+    r"aucun",
+    r"aucune",
+    r"aucune\s+de\s+ces",
+    r"aucun\s+de\s+ces",
+    r"ne\s+sait\s+pas",
+    r"nspp",
+    r"autre",
+    r"autres",
+    r"preciser",
+    r"je\s+prefere\s+ne\s+pas\s+repondre",
+)
+
+
+def _fold_lc(s: str | None) -> str:
+    base = (s or "")
+    base = unicodedata.normalize("NFKD", base)
+    base = "".join(ch for ch in base if not unicodedata.combining(ch))
+    return _norm_lc(base)
+
+
+def _is_checkbox_bulk_multi_target(meta: dict | None) -> bool:
+    if not isinstance(meta, dict):
+        return False
+    if _norm_lc(meta.get("itype") or "") != "checkbox":
+        return False
+    max_select = int(meta.get("max_select", 1) or 1)
+    if max_select <= 1:
+        return False
+    qtxt = _fold_lc(meta.get("question") or "")
+    if not qtxt:
+        return False
+    return any(re.search(pat, qtxt) for pat in _MULTI_HINT_PATTERNS)
+
+
+def _is_bulk_exclusive_option(label: str) -> bool:
+    folded = _fold_lc(label)
+    if not folded:
+        return True
+    return any(re.search(pat, folded, re.IGNORECASE) for pat in _BULK_EXCLUSIVE_PATTERNS)
+
+
+def _expand_checkbox_bulk_actions(actions: list, qid_meta: dict | None = None) -> list:
+    """
+    Policy ciblée (DOM-first):
+    - checkbox multi-select avec indice explicite dans la question
+    - exclure options exclusives (aucune/autre/nspp/...)
+    - si <=15 options non exclusives: cocher ceil(90%) des premières (ordre DOM)
+    """
+    if not actions:
+        return actions
+
+    qid_meta = qid_meta or {}
+
+    # Une seule passe bornée: pas de retry / pas de boucle infinie
+    transformed = list(actions)
+    planned_by_qid: dict[str, tuple[list[str], dict]] = {}
+
+    for a in actions:
+        if not isinstance(a, dict):
+            continue
+        if _norm_lc(a.get("itype") or "") != "checkbox":
+            continue
+        qid = (a.get("qid") or "").strip().upper()
+        if not qid or qid in planned_by_qid:
+            continue
+        meta = qid_meta.get(qid)
+        if not _is_checkbox_bulk_multi_target(meta):
+            continue
+
+        options = [str(o or "").strip() for o in (meta.get("options") or []) if str(o or "").strip()]
+        if not options:
+            continue
+
+        non_exclusive = [opt for opt in options if not _is_bulk_exclusive_option(opt)]
+        excluded_count = len(options) - len(non_exclusive)
+
+        if not non_exclusive or len(non_exclusive) > 15:
+            print(
+                f"[CHECKBOX_BULK] qid={qid} total_options={len(options)} "
+                f"excluded={excluded_count} k_requested=0 k_selected=0 reason=outside_policy"
+            )
+            continue
+
+        k_requested = max(1, int(math.ceil(0.9 * len(non_exclusive))))
+        k_selected = min(k_requested, len(non_exclusive))
+        picked = non_exclusive[:k_selected]
+        planned_by_qid[qid] = (picked, a)
+        print(
+            f"[CHECKBOX_BULK] qid={qid} total_options={len(options)} excluded={excluded_count} "
+            f"k_requested={k_requested} k_selected={k_selected}"
+        )
+
+    if not planned_by_qid:
+        return transformed
+
+    replaced: list = []
+    replaced_done: set[str] = set()
+    for a in transformed:
+        if not isinstance(a, dict):
+            replaced.append(a)
+            continue
+        qid = (a.get("qid") or "").strip().upper()
+        if qid in planned_by_qid:
+            if qid in replaced_done:
+                continue
+            picked, seed = planned_by_qid[qid]
+            for val in picked:
+                new_a = dict(seed)
+                new_a["value"] = val
+                replaced.append(new_a)
+            replaced_done.add(qid)
+            continue
+        replaced.append(a)
+
+    return replaced
+
 def _is_system_scope(scope: str | None) -> bool:
     v = _norm_lc(scope)
     return any(x in v for x in ["__viewstate", "__eventvalidation", "__viewstategenerator", "__eventtarget", "__eventargument"])
@@ -795,6 +920,11 @@ def sanitize_actions(actions: list, qid_meta: dict | None = None) -> list:
                     a = dict(a); a["value"] = months_en_to_fr[v_lc]
 
         cleaned.append(a)
+
+    # =========================================================================
+    # ÉTAPE FINALE (1): expansion deterministic des checkbox multi ciblées
+    # =========================================================================
+    cleaned = _expand_checkbox_bulk_actions(cleaned, qid_meta)
 
     # =========================================================================
     # ÉTAPE FINALE: Filtrage des conflits d'options exclusives
