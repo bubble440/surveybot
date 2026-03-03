@@ -808,6 +808,10 @@ def is_captcha_screen(driver) -> bool:
     Évite les faux positifs quand reCAPTCHA est chargé en background (invisible/1x1).
     """
 
+    def _captcha_result(detected: bool, reason: str) -> bool:
+        print(f"[DOM_CLASSIFIER][CAPTCHA] captcha_detected={'true' if detected else 'false'} reason={reason}")
+        return detected
+
     # 1) Signal texte fort (visible seulement, via _page_text_lc)
     txt = _page_text_lc(driver)
     robot_kw = [
@@ -820,7 +824,7 @@ def is_captcha_screen(driver) -> bool:
         "verification humaine",
     ]
     if any(k in txt for k in robot_kw):
-        return True
+        return _captcha_result(True, "robot_keyword_visible")
 
     # 1a) PureSpectrum CAPTCHA (ps-captcha-question)
     # Important: le mot "captcha" n'est pas forcément présent dans le texte visible,
@@ -858,7 +862,7 @@ def is_captcha_screen(driver) -> bool:
                     continue
                 try:
                     if driver.execute_script(js_ps):
-                        return True
+                        return _captcha_result(True, "ps_captcha_widget_visible")
                 except Exception:
                     continue
     except Exception:
@@ -902,6 +906,11 @@ def is_captcha_screen(driver) -> bool:
                 const tn = (e.tagName||"").toLowerCase();
                 // Seuils : iframe/widget doit être "grand", input captcha peut être petit
                 if (tn === "iframe" || e.classList.contains("g-recaptcha") || e.classList.contains("h-captcha")) {
+                    if (tn === "iframe") {
+                        const src = (e.src || e.getAttribute("src") || "").toLowerCase();
+                        // Un iframe /anchor seul est souvent un artefact non bloquant.
+                        if (src.includes("recaptcha") && src.includes("/anchor")) continue;
+                    }
                     if (r.width >= 60 && r.height >= 40) return true;
                 } else {
                     if (r.width >= 10 && r.height >= 10) return true;
@@ -913,14 +922,14 @@ def is_captcha_screen(driver) -> bool:
             has_visible_captcha = False
 
         if has_visible_captcha:
-            return True
+            return _captcha_result(True, "captcha_keyword_with_visible_widget")
 
         # Pas de widget visible => on ne classe pas captcha si on peut répondre à la page
         if _has_visible_answerables(driver):
-            return False
+            return _captcha_result(False, "captcha_keyword_but_answerables_present")
 
         # Sinon (page stérile + mot captcha) => on garde captcha
-        return True
+        return _captcha_result(True, "captcha_keyword_sterile_page")
 
     # 1bis) CAPTCHA arithmétique via image (ex: "Veuillez saisir le résultat" + image)
     # On le traite comme CAPTCHA car la donnée à saisir n'est pas dans le DOM texte.
@@ -972,7 +981,7 @@ def is_captcha_screen(driver) -> bool:
                 return false;
             """))
             if has_img_math:
-                return True
+                return _captcha_result(True, "arithmetic_captcha_widget")
     except Exception:
         pass
 
@@ -1010,7 +1019,7 @@ def is_captcha_screen(driver) -> bool:
                 return !!root.querySelector(".verify-img-panel") && !!root.querySelector(".verify-gap") && !!root.querySelector(".verify-bar-area");
             """))
             if has_slider_puzzle:
-                return True
+                return _captcha_result(True, "slider_captcha_widget")
     except Exception:
         pass
 
@@ -1044,6 +1053,9 @@ def is_captcha_screen(driver) -> bool:
               const tn = (e.tagName || "").toLowerCase();
               if (tn === "iframe") {
                 const src = (e.src || e.getAttribute("src") || "").toLowerCase();
+                if (src.includes("recaptcha") && src.includes("/anchor")) {
+                  continue;
+                }
                 if (src.includes("recaptcha") && src.includes("size=invisible")) {
                   continue;
                 }
@@ -1070,7 +1082,7 @@ def is_captcha_screen(driver) -> bool:
             }
             return false;
         """)):
-            return True
+            return _captcha_result(True, "visible_captcha_widget")
     except Exception:
         # Fallback Selenium (moins précis, mais garde les seuils taille/visibilité)
         try:
@@ -1083,14 +1095,17 @@ def is_captcha_screen(driver) -> bool:
                     if not fr.is_displayed():
                         continue
                     r = fr.rect or {}
+                    src = (fr.get_attribute("src") or "").lower()
+                    if "recaptcha" in src and "/anchor" in src:
+                        continue
                     if (r.get("width", 0) or 0) >= 60 and (r.get("height", 0) or 0) >= 40:
-                        return True
+                        return _captcha_result(True, "selenium_visible_captcha_iframe")
                 except Exception:
                     continue
         except Exception:
             pass
 
-    return False
+    return _captcha_result(False, "no_visible_captcha_challenge")
 
 def is_drag_drop(driver) -> bool:
     def _read_text(el) -> str:
