@@ -484,242 +484,147 @@ def _try_gridclick_matrix_set(driver, row_label: str, col_label: str) -> bool:
         return False
 
     try:
-        is_gridclick = bool(
-            driver.execute_script(
-                """
-                const root = document.querySelector('.gridclick.horizontal.text-version');
-                if (!root) return false;
-                return root.querySelectorAll('.scale-button').length >= 2;
-                """
-            )
-        )
-    except Exception:
-        is_gridclick = False
-
-    if is_gridclick:
-        row_ai = row_label
-        try:
-            out = driver.execute_script(
-                """
-                const norm = (s) => String(s || '')
-                  .normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
-                  .replace(/\s+/g, ' ').trim().toLowerCase();
-
-                const colNeedle = norm(arguments[0]);
-                const rowAi = String(arguments[1] || '');
-                const root = document.querySelector('.gridclick.horizontal.text-version');
-                if (!root) return {ok:false, reason:'no_gridclick_root'};
-
-                const activeRowEl = root.querySelector('.item.current .text-content') || root.querySelector('.item.current');
-                const activeRow = activeRowEl ? String(activeRowEl.innerText || activeRowEl.textContent || '').replace(/\s+/g, ' ').trim() : '';
-                if (!activeRow) return {ok:false, reason:'no_active_row'};
-
-                const rowAiNorm = norm(rowAi);
-                const rowDomNorm = norm(activeRow);
-
-                const buttons = Array.from(root.querySelectorAll('.scale-button'));
-                if (!buttons.length) return {ok:false, reason:'no_scale_buttons'};
-
-                const matchLabel = (candidate, needle) => {
-                  const a = norm(candidate);
-                  if (!a || !needle) return false;
-                  return a === needle || a.includes(needle) || needle.includes(a);
-                };
-
-                const candidates = [];
-                for (const b of buttons) {
-                  const txtEl = b.querySelector('.text-content') || b;
-                  const txt = String(txtEl.innerText || txtEl.textContent || '').replace(/\s+/g, ' ').trim();
-                  if (!txt) continue;
-                  const isDk = b.classList.contains('dk-button');
-                  if (isDk && !matchLabel(txt, colNeedle)) continue;
-                  if (matchLabel(txt, colNeedle)) {
-                    candidates.push({btn: b, text: txt});
-                  }
-                }
-
-                if (!candidates.length) return {ok:false, reason:'col_not_found', active_row:activeRow};
-                const picked = candidates[0];
-                const btn = picked.btn;
-                const btnIndex = btn.getAttribute('data-index');
-
-                try { btn.scrollIntoView({block:'center', inline:'center'}); } catch(e) {}
-
-                let clickMethod = 'native';
-                try {
-                  btn.click();
-                } catch(e) {
-                  clickMethod = 'js';
-                  btn.dispatchEvent(new MouseEvent('click', {bubbles:true, cancelable:true}));
-                }
-
-                return {
-                  ok: true,
-                  reason: 'clicked',
-                  row_ai: rowAi,
-                  active_row: activeRow,
-                  row_override: !!rowAiNorm && rowAiNorm !== rowDomNorm,
-                  col: picked.text,
-                  btn_index: btnIndex,
-                  selected: btn.classList.contains('selected'),
-                  click_method: clickMethod,
-                };
-                """,
-                col_label,
-                row_label,
-            )
-        except Exception as e:
-            log_info("[GRIDCLICK]", f"col_click_failed col={col_label!r} active_row='' reason={_short_exc(e)!r}")
-            return False
-
-        if isinstance(out, dict) and out.get("row_override"):
-            log_info(
-                "[GRIDCLICK]",
-                f"row_override row_ai={row_ai!r} row_dom={out.get('active_row', '')!r} row_used={out.get('active_row', '')!r}",
-            )
-
-        if isinstance(out, dict) and out.get("ok"):
-            btn_index = out.get("btn_index")
-            selected = False
-            deadline = time.time() + 0.6
-            while time.time() < deadline:
-                try:
-                    selected = bool(
-                        driver.execute_script(
-                            """
-                            const root = document.querySelector('.gridclick.horizontal.text-version');
-                            if (!root) return false;
-                            const idx = arguments[0];
-                            let btn = null;
-                            if (idx !== null && idx !== undefined && String(idx) !== '') {
-                              btn = root.querySelector(`.scale-button[data-index='${String(idx)}']`);
-                            }
-                            if (!btn) return false;
-                            return btn.classList.contains('selected');
-                            """,
-                            btn_index,
-                        )
-                    )
-                except Exception:
-                    selected = False
-                if selected:
-                    break
-                time.sleep(0.05)
-
-            if selected:
-                out["selected"] = True
-            else:
-                out["ok"] = False
-                out["reason"] = "no_selected_class"
-
-        if isinstance(out, dict) and out.get("ok"):
-            log_info(
-                "[GRIDCLICK]",
-                f"col_click_ok col={out.get('col', col_label)!r} active_row={out.get('active_row', '')!r} "
-                f"btn_index={out.get('btn_index')!r} selected={bool(out.get('selected'))}",
-            )
-            return True
-
-        reason = out.get("reason") if isinstance(out, dict) else "unknown"
-        active_row = out.get("active_row", "") if isinstance(out, dict) else ""
-        log_info(
-            "[GRIDCLICK]",
-            f"col_click_failed col={col_label!r} active_row={active_row!r} reason={reason!r}",
-        )
-        return False
-
-    if not row_label:
-        return False
-
-    row_ai = row_label
-    try:
-        row_active = driver.execute_script(
-            """
-            const el = document.querySelector('.gridclick .item.current .text-content')
-                || document.querySelector('.gridclick .item.current');
-            return el ? String(el.textContent || el.innerText || '') : '';
-            """
-        )
-    except Exception:
-        row_active = ""
-
-    row_active = _norm(str(row_active or ""))
-    if row_active:
-        if _fold_norm_lc(row_active) != _fold_norm_lc(row_label):
-            row_label = row_active
-        log_info(
-            "[GRIDCLICK_MATRIX_ROW_OVERRIDE]",
-            f"row_ai={row_ai!r} row_active={row_active!r} row_used={row_label!r}",
-        )
-
-    try:
         out = driver.execute_script(
             """
             const norm = (s) => String(s || '')
-              .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+              .normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
+              .replace(/\u00a0/g, ' ')
               .replace(/\s+/g, ' ').trim().toLowerCase();
-
-            const rowNeedle = norm(arguments[0]);
-            const colNeedle = norm(arguments[1]);
-            const qDefs = (window.lukanka && window.lukanka.qDefs) || {};
-            const qids = Object.keys(qDefs || {});
-            if (!qids.length) return {ok:false, reason:'no_qdefs'};
-
-            const matchLabel = (label, needle) => {
-              const n = norm(label);
-              return !!n && (n === needle || n.includes(needle) || needle.includes(n));
+            const matchLabel = (candidate, needle) => {
+              const a = norm(candidate);
+              const b = norm(needle);
+              if (!a || !b) return false;
+              return a === b || a.includes(b) || b.includes(a);
             };
 
-            for (const qid of qids) {
-              const def = qDefs[qid] || {};
-              const rows = Array.isArray(def.rows) ? def.rows : [];
-              const cols = Array.isArray(def.cols) ? def.cols : [];
-              const uid = def.uid;
-              if (!uid || !rows.length || !cols.length) continue;
-
-              let row = null;
-              for (const r of rows) {
-                if (matchLabel(r.text, rowNeedle)) { row = r; break; }
-              }
-              if (!row) continue;
-
-              let col = null;
-              for (const c of cols) {
-                if (matchLabel(c.text, colNeedle)) { col = c; break; }
-              }
-              if (!col) continue;
-
-              const inputId = `ans${uid}.${col.index}.${row.index}`;
-              const input = document.getElementById(inputId);
-              if (!input) return {ok:false, reason:'input_not_found', inputId};
-
-              input.checked = true;
-              input.dispatchEvent(new Event('input', {bubbles:true}));
-              input.dispatchEvent(new Event('change', {bubbles:true}));
-              input.dispatchEvent(new MouseEvent('click', {bubbles:true, cancelable:true}));
-
-              return {
-                ok: !!input.checked,
-                inputId,
-                qid,
-                row: row.text || '',
-                col: col.text || ''
-              };
+            const colNeedle = arguments[0] || '';
+            const rowAi = arguments[1] || '';
+            const root = document.querySelector('.gridclick.horizontal.text-version');
+            if (!root || root.querySelectorAll('.scale-button').length < 2) {
+              return {ok:false, reason:'no_gridclick_root'};
             }
 
-            return {ok:false, reason:'row_or_col_not_found'};
+            const activeRowEl = root.querySelector('.item.current .text-content') || root.querySelector('.item.current');
+            const rowDom = activeRowEl ? String(activeRowEl.innerText || activeRowEl.textContent || '').replace(/\s+/g, ' ').trim() : '';
+            if (!rowDom) return {ok:false, reason:'no_active_row'};
+
+            const buttons = Array.from(root.querySelectorAll('.scale-button'));
+            let picked = null;
+            for (const b of buttons) {
+              const textEl = b.querySelector('.text-content') || b;
+              const txt = String(textEl.innerText || textEl.textContent || '').replace(/\s+/g, ' ').trim();
+              if (matchLabel(txt, colNeedle)) {
+                picked = {btn: b, text: txt};
+                break;
+              }
+            }
+            if (!picked) return {ok:false, reason:'col_not_found', row_dom:rowDom};
+
+            const btn = picked.btn;
+            const btnIndex = String(btn.getAttribute('data-index') || '');
+            try { btn.scrollIntoView({block:'center', inline:'center'}); } catch(e) {}
+
+            const dispatch = (type, Cls) => btn.dispatchEvent(new Cls(type, {bubbles:true, cancelable:true, composed:true, button:0}));
+            if (window.PointerEvent) dispatch('pointerdown', PointerEvent);
+            dispatch('mousedown', MouseEvent);
+            dispatch('mouseup', MouseEvent);
+            dispatch('click', MouseEvent);
+
+            const qDefs = (window.lukanka && window.lukanka.qDefs) || {};
+            const rowNeedle = norm(rowDom);
+            const colNeedleNorm = norm(picked.text);
+            let targetInput = null;
+            for (const qid of Object.keys(qDefs)) {
+              const def = qDefs[qid] || {};
+              const uid = def.uid;
+              const rows = Array.isArray(def.rows) ? def.rows : [];
+              const cols = Array.isArray(def.cols) ? def.cols : [];
+              if (!uid || !rows.length || !cols.length) continue;
+              const row = rows.find(r => matchLabel(r.text || '', rowNeedle));
+              const col = cols.find(c => matchLabel(c.text || '', colNeedleNorm));
+              if (!row || !col) continue;
+              targetInput = document.getElementById(`ans${uid}.${col.index}.${row.index}`);
+              if (targetInput) break;
+            }
+
+            const btnSelected = btn.classList.contains('selected');
+            const inputChecked = !!(targetInput && targetInput.checked);
+            const cellSelected = !!(targetInput && targetInput.closest('td.clickableCell') && targetInput.closest('td.clickableCell').classList.contains('selected'));
+
+            return {
+              ok: true,
+              row_ai: String(rowAi || ''),
+              row_dom: rowDom,
+              row_override: !!norm(rowAi) && norm(rowAi) !== norm(rowDom),
+              row_used: rowDom,
+              picked_button_text: picked.text,
+              btn_index: btnIndex,
+              input_checked: inputChecked,
+              cell_selected: cellSelected,
+              btn_selected: btnSelected,
+            };
             """,
-            row_label,
             col_label,
+            row_label,
         )
-    except Exception:
+    except Exception as e:
+        log_info("[GRIDCLICK]", f"apply_failed reason={_short_exc(e)!r} signals=input_checked=False cell_selected=False btn_selected=False")
         return False
 
-    if isinstance(out, dict) and out.get("ok"):
-        log_info("[GRIDCLICK_MATRIX]", f"input_id={out.get('inputId')!r} checked=true")
+    if isinstance(out, dict):
+        log_info("[MATRIX_ACTIVE_ROW]", f"row_active={out.get('row_dom', '')!r}")
+        log_info("[GRIDCLICK]", f"picked_button_text={out.get('picked_button_text', '')!r} btn_index={out.get('btn_index', '')!r}")
+        if out.get("row_override"):
+            log_info(
+                "[GRIDCLICK]",
+                f"row_override row_ai={out.get('row_ai', '')!r} row_dom={out.get('row_dom', '')!r} row_used={out.get('row_used', '')!r}",
+            )
+
+    if not (isinstance(out, dict) and out.get("ok")):
+        reason = out.get("reason") if isinstance(out, dict) else "unknown"
+        log_info("[GRIDCLICK]", f"apply_failed reason={reason!r} signals=input_checked=False cell_selected=False btn_selected=False")
+        return False
+
+    time.sleep(0.45)
+    try:
+        verify = driver.execute_script(
+            """
+            const root = document.querySelector('.gridclick.horizontal.text-version');
+            const idx = String(arguments[0] || '');
+            let btn = null;
+            if (root && idx) btn = root.querySelector(`.scale-button[data-index='${idx}']`);
+            if (!btn && root) btn = root.querySelector('.scale-button.selected');
+            const btnSelected = !!(btn && btn.classList.contains('selected'));
+            let inputChecked = false;
+            let cellSelected = false;
+            const selectedInput = document.querySelector("td.clickableCell.selected input[type='checkbox']");
+            if (selectedInput) {
+              inputChecked = !!selectedInput.checked;
+              cellSelected = true;
+            }
+            return {input_checked: inputChecked, cell_selected: cellSelected, btn_selected: btnSelected};
+            """,
+            out.get("btn_index", ""),
+        )
+    except Exception:
+        verify = {"input_checked": False, "cell_selected": False, "btn_selected": False}
+
+    input_checked = bool((verify or {}).get("input_checked"))
+    cell_selected = bool((verify or {}).get("cell_selected"))
+    btn_selected = bool((verify or {}).get("btn_selected"))
+    log_info(
+        "[GRIDCLICK]",
+        f"verify signals: input_checked={input_checked} cell_selected={cell_selected} btn_selected={btn_selected}",
+    )
+    if btn_selected:
         return True
 
+    log_info(
+        "[GRIDCLICK]",
+        f"apply_failed reason='verify_failed' signals=input_checked={input_checked} cell_selected={cell_selected} btn_selected={btn_selected}",
+    )
     return False
+
 
 def _apply_by_target_id(driver, target_id: str, itype: str, value: str) -> bool:
     """
