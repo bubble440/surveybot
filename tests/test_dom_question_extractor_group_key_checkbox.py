@@ -12,17 +12,25 @@ class _FakeChoice:
     def find_elements(self, by=None, value=None):
         if by == "xpath" and value and "type-multi" in value and "question-" in value:
             return self._containers
+        if by == "xpath" and value and "fieldset[contains(@class,'question-multiple')]" in value:
+            return self._containers
         if by == "xpath" and value and ("role='listbox'" in value or "multi-select-container" in value):
             return self._containers
         return []
 
 
 class _FakeContainer:
-    def __init__(self, attrs):
+    def __init__(self, attrs, checkboxes=None):
         self._attrs = attrs
+        self._checkboxes = checkboxes or []
 
     def get_attribute(self, name):
         return self._attrs.get(name, "")
+
+    def find_elements(self, by=None, value=None):
+        if by == "xpath" and value == ".//input[@type='checkbox'][@name]":
+            return self._checkboxes
+        return []
 
 
 def test_checkbox_group_key_normalizes_limesurvey_sq_suffix():
@@ -59,3 +67,14 @@ def test_checkbox_group_key_uses_listbox_container_when_name_missing():
 def test_checkbox_group_key_normalizes_decipher_dot_index_suffix():
     el = _FakeChoice({"name": "ans10518.0.11"})
     assert _group_key_for_choice(el, "checkbox") == "ans10518.0"
+
+
+def test_checkbox_group_key_normalizes_yougov_question_multiple_suffixes():
+    siblings = [
+        _FakeChoice({"name": "w38-response-1"}),
+        _FakeChoice({"name": "w38-response-2"}),
+        _FakeChoice({"name": "w38-response-3"}),
+    ]
+    fieldset = _FakeContainer({"class": "question question-multiple"}, checkboxes=siblings)
+    el = _FakeChoice({"name": "w38-response-2"}, containers=[fieldset])
+    assert _group_key_for_choice(el, "checkbox") == "w38-response"
