@@ -124,6 +124,27 @@ _CLASSIFICATION_SCORING = [
 ]
 
 
+_PERSONA_RESIDENCE_COUNTRY = "France"
+_PERSONA_RESIDENCE_CITY = "Paris"
+
+_RESIDENCE_COUNTRY_PATTERNS = [
+    # FR
+    "pays habitez",
+    "pays de residence",
+    "pays de résidence",
+    "dans quel pays",
+    "quel pays",
+    "pays residez",
+    "pays résidez",
+    # EN
+    "country of residence",
+    "country do you live",
+    "which country",
+    "where do you live",
+    "live in",
+]
+
+
 def _looks_like_tier_entry_question(block: Dict[str, Any]) -> bool:
     itype = _norm_folded_lc(block.get("itype"))
     if itype not in {"radio", "checkbox", "dropdown", "select", "button"}:
@@ -179,6 +200,27 @@ def _tier_entry_option(options: list[str]) -> tuple[int, str]:
     else:
         k = int(-(-3 * n // 4))
     return k, options[k - 1]
+
+
+def _find_option_exact(options: list[str], expected_value: str) -> str | None:
+    expected_folded = _norm_folded_lc(expected_value)
+    for option in options or []:
+        if _norm_folded_lc(option) == expected_folded:
+            return option
+    return None
+
+
+def _is_residence_country_question(block: Dict[str, Any]) -> bool:
+    itype = _norm_folded_lc(block.get("itype"))
+    if itype not in {"radio", "checkbox", "dropdown", "select", "button"}:
+        return False
+    question = _norm_folded_lc(block.get("question"))
+    if not question:
+        return False
+    has_country_token = any(tok in question for tok in ("pays", "country"))
+    if not has_country_token:
+        return False
+    return any(p in question for p in _RESIDENCE_COUNTRY_PATTERNS)
 
 
 def _matrix_row_labels(block: Dict[str, Any]) -> list[str]:
@@ -332,6 +374,11 @@ def build_batch_prompt(question_blocks: list[dict]) -> str:
     """
     lines: list[str] = []
 
+    print(
+        f"[PROMPT_PERSONA] residence_country={_PERSONA_RESIDENCE_COUNTRY} "
+        f"residence_city={_PERSONA_RESIDENCE_CITY}"
+    )
+
     lines.append(
         "Tu es un répondant ADULTE (25 ans). "
         "Tu vois ci-dessous TOUTES les questions présentes sur une page de survey."
@@ -471,7 +518,26 @@ def build_batch_prompt(question_blocks: list[dict]) -> str:
             lines.append(
                 f"CHAMP MULTI-CASES: fournir {max_sel} valeurs séparées par | (ex: 03|02|2001)"
             )
-        if _looks_like_classification_question(block) and opts:
+        forced_country = None
+        if _is_residence_country_question(block) and opts:
+            forced_country = _find_option_exact(opts, _PERSONA_RESIDENCE_COUNTRY)
+            print(
+                f"[PROMPT_PERSONA] residence_country_question=1 target_id={target_id} "
+                f"option_present={bool(forced_country)}"
+            )
+
+        if forced_country:
+            lines.append(
+                f"selection_rule: RESIDENCE_COUNTRY strict -> répondre EXACTEMENT avec '{forced_country}'"
+            )
+            lines.append(f"allowed_values_strict: {forced_country}")
+            lines.append(
+                "instruction_stricte: Persona résidence prioritaire. "
+                "Tu dois répondre EXACTEMENT avec {"
+                + forced_country
+                + "}. Ne paraphrase pas."
+            )
+        elif _looks_like_classification_question(block) and opts:
             picked = _pick_best_classification_option(opts)
             print(f"[PROMPT_BUILDER] classification_rule=1 N={len(opts)} picked='{picked}'")
             lines.append(f"selection_rule: CLASSIFICATION_BEST strict -> répondre EXACTEMENT avec '{picked}'")
