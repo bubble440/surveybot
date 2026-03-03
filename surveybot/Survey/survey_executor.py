@@ -150,15 +150,37 @@ def _detect_image_only_unresolvable_dom(driver, question_blocks: list[dict]) -> 
               return !!(r && r.width > 0 && r.height > 0);
             };
             const norm = (s) => (s || '').replace(/\s+/g, ' ').trim();
+            const fold = (s) => {
+              const base = norm(s).toLowerCase();
+              try {
+                return base.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+              } catch (e) {
+                return base;
+              }
+            };
             const shortText = (s, maxLen = 24) => {
               const t = norm(s);
               return t.length <= maxLen ? t : '';
             };
             const hasQuestionContainer = !!document.querySelector('[questionname], .questionContainer, .mrQuestionTable, .question-component');
-            const pageText = norm((document.body && (document.body.innerText || document.body.textContent)) || '').toLowerCase();
-            const hasSelectVerb = /\b(veuillez\s+selectionner|veuillez\s+sélectionner|select\s+the|please\s+select|choose)\b/i.test(pageText);
-            const hasImageWord = /\b(images?|picture|photos?|representing|représentant|correspond(?:ing|ant))\b/i.test(pageText);
-            const hasCountWord = /\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten|un|une|deux|trois|quatre|cinq|six|sept|huit|neuf|dix)\b/i.test(pageText);
+            const pageTextFold = fold((document.body && (document.body.innerText || document.body.textContent)) || '');
+            const hasSelectVerb = (
+              pageTextFold.includes('veuillez selectionner')
+              || pageTextFold.includes('please select')
+              || pageTextFold.includes('select the')
+              || pageTextFold.includes('choose')
+            );
+            const hasImageWord = (
+              pageTextFold.includes(' image')
+              || pageTextFold.includes(' images')
+              || pageTextFold.includes('picture')
+              || pageTextFold.includes('photo')
+              || pageTextFold.includes('representing')
+              || pageTextFold.includes('representant')
+              || pageTextFold.includes('corresponding')
+              || pageTextFold.includes('correspondant')
+            );
+            const hasCountWord = /(\b\d+\b|\bone\b|\btwo\b|\bthree\b|\bfour\b|\bfive\b|\bsix\b|\bseven\b|\beight\b|\bnine\b|\bten\b|\bun\b|\bune\b|\bdeux\b|\btrois\b|\bquatre\b|\bcinq\b|\bsept\b|\bhuit\b|\bneuf\b|\bdix\b)/i.test(pageTextFold);
             const hasVisualChallengeInstruction = hasSelectVerb && hasImageWord && hasCountWord;
             const findStableContainer = (el) => {
               if (!el) return null;
@@ -370,7 +392,7 @@ def _detect_image_only_unresolvable_dom(driver, question_blocks: list[dict]) -> 
     image_groups_all = list(image_groups) + clickable_groups_norm
     pattern_reason = "image_only_inputs"
     if is_visual_challenge:
-        pattern_reason = "captcha_image_selection"
+        pattern_reason = "image_selection_challenge"
         image_groups_all.append({
             "groupKey": "visual_challenge::instruction_plus_tiles",
             "optionCount": visual_tile_count,
@@ -477,7 +499,7 @@ def _budgeted_soft_restart_for_image_only_inputs(driver, question_blocks: list[d
         if not isinstance(counters, dict):
             counters = {}
         current = int(counters.get(budget_key, 0) or 0)
-        max_hits = 1 if pattern_reason == "captcha_image_selection" else 2
+        max_hits = 1 if pattern_reason == "image_selection_challenge" else 2
         if current >= max_hits:
             print(
                 f"[DOM_ONLY_ABORT] {pattern_reason} budget_exhausted key={budget_key} "
@@ -490,7 +512,7 @@ def _budgeted_soft_restart_for_image_only_inputs(driver, question_blocks: list[d
     except Exception:
         pass
 
-    reason = "captcha_image_selection" if pattern_reason == "captcha_image_selection" else f"dom_only_abort:{pattern_reason}"
+    reason = f"dom_only_abort:{pattern_reason}"
     print(
         f"[DOM_ONLY_ABORT] {pattern_reason} -> soft_restart(reason={reason}) key={budget_key}"
     )
