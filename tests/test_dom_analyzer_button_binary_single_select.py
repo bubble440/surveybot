@@ -185,3 +185,33 @@ def test_analyze_dom_groups_buttons_when_shared_host_is_rewrapped_each_time(monk
 
     assert len(radio_blocks) == 1
     assert radio_blocks[0]["options"] == ["Female", "Male"]
+
+
+def test_analyze_dom_ignores_bootstrap_select_toggles_in_button_radio_grouping(monkeypatch):
+    _patch_non_generic_extractors(monkeypatch)
+
+    month_toggle = _FakeElement(
+        tag_name="button",
+        text="Mois",
+        attrs={"class": "btn dropdown-toggle btn-default", "data-toggle": "dropdown", "data-id": "months11"},
+    )
+    year_toggle = _FakeElement(
+        tag_name="button",
+        text="Année",
+        attrs={"class": "btn dropdown-toggle btn-default", "data-toggle": "dropdown", "data-id": "years10"},
+    )
+
+    monkeypatch.setattr(da, "_is_actionable_visible", lambda _el: True)
+    monkeypatch.setattr(da, "_looks_like_system_field", lambda _el: False)
+    monkeypatch.setattr(da, "_nearest_question_container", lambda *_: None)
+    monkeypatch.setattr(da, "_extract_surveywriter_ssi_question", lambda *_: "")
+    monkeypatch.setattr(da, "_best_xpath_for_element", lambda *_: "//fake")
+    monkeypatch.setattr(da, "_find_question_text_near_element", lambda *_: "Quelle est votre date de naissance ?")
+    monkeypatch.setattr(da, "_extract_question_from_container", lambda *_args, **_kwargs: "")
+
+    driver = _FakeDriver(buttons=[month_toggle, year_toggle], other_inputs=[])
+
+    blocks = da._analyze_dom_current_context(driver)
+    radio_blocks = [b for b in blocks if b.get("itype") == "radio"]
+
+    assert radio_blocks == []
