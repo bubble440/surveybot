@@ -1114,6 +1114,35 @@ def try_click_navigation_cta(driver) -> bool:
     Returns:
         True si CTA navigation cliqué
     """
+    # --- MetrixLab / Toluna: CTA icon-only <div id="next" class="next ..."> ---
+    # DOM observé:
+    #   <div class="next arrow_on" id="next" style="display:block !important"> ... </div>
+    # CTA sans texte => doit être ciblé par signature DOM précise, pas par label.
+    try:
+        next_nodes = driver.find_elements(By.CSS_SELECTOR, ".footer #next, #next.next")
+        for el in next_nodes:
+            try:
+                if not el.is_displayed() or not el.is_enabled():
+                    continue
+                cls = (el.get_attribute("class") or "").lower()
+                if "next" not in cls:
+                    continue
+                rect = el.rect or {}
+                if rect.get("width", 0) < 24 or rect.get("height", 0) < 24:
+                    continue
+                driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
+                _nav_log("[CTA_NAV]", "CTA_FOUND pattern=icon_div_next id=next", driver)
+                clicked = _click_with_intercept(driver, el)
+                _nav_log("[CTA_NAV]", f"CTA_CLICKED pattern=icon_div_next id=next PROGRESSED={str(bool(clicked)).lower()}", driver)
+                if clicked:
+                    if _cta_intercept_enabled():
+                        _nav_log("[CTA_NAV]", "INTERCEPT_OK pattern=icon_div_next id=next", driver)
+                    return True
+            except Exception:
+                continue
+    except Exception:
+        pass
+
     # --- B3netSurvey / ask.dll : CTA image (Play) dans #NAVBAR ---
     # Exemple DOM:
     #   <table id="NAVBAR"> ... <a href="javascript:Next();" title="Page suivante">
