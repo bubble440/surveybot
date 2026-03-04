@@ -31,6 +31,17 @@ except ImportError:
     def log_debug(tag: str, msg: str) -> None:
         return None
 
+try:
+    from Survey.dom_selection_rules import (
+        explicit_exact_count_from_question,
+        has_explicit_multi_indicator,
+    )
+except ImportError:
+    from surveybot.Survey.dom_selection_rules import (
+        explicit_exact_count_from_question,
+        has_explicit_multi_indicator,
+    )
+
 # ================================================================================
 # CONSTANTE
 # ================================================================================
@@ -648,60 +659,6 @@ def _group_key_for_choice(el, itype: str) -> str:
         return ""
 
 
-_EXACT_COUNT_WORD_TO_INT = {
-    "one": 1,
-    "un": 1,
-    "une": 1,
-    "two": 2,
-    "deux": 2,
-    "three": 3,
-    "trois": 3,
-    "four": 4,
-    "quatre": 4,
-    "five": 5,
-    "cinq": 5,
-}
-
-
-def _infer_exact_choice_count(question_text: str | None) -> Optional[int]:
-    """
-    Infère une cardinalité *exacte* depuis le libellé de question (DOM text).
-
-    Exemples ciblés:
-    - "sélectionnez les deux réponses"
-    - "choose two answers"
-    - "select exactly 2"
-    """
-    text = _norm_lc(question_text or "")
-    if not text:
-        return None
-
-    exact_patterns = [
-        r"\bexact(?:ement|ly)?\s+(\d+)\b",
-        r"\b(?:select|choose|pick|check)\s+(\d+)\b",
-        r"\b(?:selectionnez|sélectionnez|selectionner|sélectionner|choisissez|cochez)\s+(\d+)\b",
-        r"\b(?:select|choose|pick|check)\s+(?:exactly\s+)?(one|two|three|four|five)\b",
-        r"\b(?:selectionnez|sélectionnez|selectionner|sélectionner|choisissez|cochez)\s+(?:exactement\s+)?(un|une|deux|trois|quatre|cinq)\b",
-        r"\bles\s+(un|une|deux|trois|quatre|cinq)\s+r[ée]ponses?\b",
-        r"\bles\s+(un|une|deux|trois|quatre|cinq)\b",
-        r"\bthe\s+(one|two|three|four|five)\s+(?:answers?|choices?|options?)\b",
-    ]
-
-    for pat in exact_patterns:
-        m = re.search(pat, text, flags=re.IGNORECASE)
-        if not m:
-            continue
-        raw = (m.group(1) or "").strip().lower()
-        if raw.isdigit():
-            n = int(raw)
-        else:
-            n = _EXACT_COUNT_WORD_TO_INT.get(raw)
-        if n and n >= 1:
-            return n
-
-    return None
-
-
 def _compute_max_select(itype: str, options: List[str], question_text: str | None = None) -> int:
     """
     Calcule max_select (cardinalité maximale de sélection).
@@ -711,14 +668,24 @@ def _compute_max_select(itype: str, options: List[str], question_text: str | Non
     - checkbox: len(options) (tout peut être sélectionné)
     - autres: 1 (par défaut)
     """
-    if itype == "radio":
-        return 1
-    elif itype == "checkbox":
-        exact_count = _infer_exact_choice_count(question_text)
+    if itype in {"checkbox", "radio", "button"}:
+        exact_count = explicit_exact_count_from_question(question_text)
         if exact_count is not None:
             if options:
                 return max(1, min(exact_count, len(options)))
             return max(1, exact_count)
+        if has_explicit_multi_indicator(question_text):
+            if options:
+                max_select = min(3, len(options))
+            else:
+                max_select = 3
+            if is_debug() and max_select == 3:
+                print(
+                    f"[max_select][debug] rule=multi_explicit_force_3 "
+                    f"itype={itype} max_select=3 question=\"{_norm(question_text or '')}\""
+                )
+            return max_select
+        if itype in {"radio", "button"}:
+            return 1
         return max(len(options), 1)
-    else:
-        return 1
+    return 1
