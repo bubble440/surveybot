@@ -161,12 +161,12 @@ def test_compute_max_select_forces_three_on_explicit_multi_checkbox():
 
 def test_compute_max_select_forces_three_on_explicit_multi_radio():
     options = [str(i) for i in range(5)]
-    assert _compute_max_select("radio", options, "Plusieurs réponses possibles") == 3
+    assert _compute_max_select("radio", options, "Plusieurs réponses possibles") == 1
 
 
-def test_compute_max_select_keeps_existing_checkbox_default_without_multi_hint():
+def test_compute_max_select_caps_checkbox_without_explicit_count():
     options = [str(i) for i in range(10)]
-    assert _compute_max_select("checkbox", options, "Rien n’indique multi") == 10
+    assert _compute_max_select("checkbox", options, "Rien n’indique multi") == 3
 
 
 def test_explicit_multi_indicator_and_max_select_for_reponses_appropriees():
@@ -192,4 +192,3 @@ def test_compute_max_select_from_decipher_dom_instruction_text_fixture():
 
     options = [str(i) for i in range(10)]
     assert _compute_max_select("checkbox", options, signal_text) == 3
-
