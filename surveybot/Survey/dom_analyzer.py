@@ -707,6 +707,14 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             if not raw_name_key:
                 continue
             group_key = f"{itype}:name:{raw_name_key}"
+            if is_debug() and raw_name_key.startswith("dom_container:"):
+                try:
+                    log_debug(
+                        "[DOM_GROUPING] checkbox_container_pattern_detected "
+                        f"key={raw_name_key}"
+                    )
+                except Exception:
+                    pass
             groups.setdefault((itype, group_key), []).append(el)
         except Exception:
             continue
@@ -927,6 +935,15 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
 
             question_blocks.append(block)
             created_group_count += 1
+
+            if is_debug() and group_key.startswith("checkbox:name:dom_container:"):
+                try:
+                    log_debug(
+                        "[DOM_GROUPING] checkbox_container_group_created "
+                        f"group_key={group_key} options={len(options)}"
+                    )
+                except Exception:
+                    pass
         except Exception:
             group_reject_reasons["group_exception"] = group_reject_reasons.get("group_exception", 0) + 1
             continue
