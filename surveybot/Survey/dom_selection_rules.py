@@ -29,6 +29,7 @@ _EXPLICIT_MULTI_PATTERNS = [
     r"\bplusieurs\s+(?:reponses?|choix|options?)\s+(?:possibles?|autorisees?)\b",
     r"\b(?:selectionnez|selectionner|choisissez|cochez)\s+tout(?:es)?\s+ce\s+qui\s+s['’]?applique\b",
     r"\b(?:selectionnez|selectionner|choisissez|cochez)\s+toutes?\s+les\s+(?:reponses?|options?)\s+qui\s+s['’]?appliquent?\b",
+    r"\b(?:selectionnez|selectionner|choisissez|cochez)\s+toutes?\s+les\s+reponses?\s+approprie(?:e|es)s?\b",
     r"\bselect(?:ion)?nez\s+toutes?\s+les\s+options\s+valides\b",
     r"\bselectionner\s+plusieurs\b",
     r"\bvous\s+pouvez\s+cocher\s+plusieurs\b",
