@@ -678,29 +678,21 @@ def _compute_max_select(itype: str, options: List[str], question_text: str | Non
     Calcule max_select (cardinalité maximale de sélection).
     
     Règles:
-    - radio: 1 (exclusif)
-    - checkbox: len(options) (tout peut être sélectionné)
+    - radio / button: 1 (exclusif)
+    - checkbox:
+      - exact_count explicite dans le texte => exact_count borné au nombre d'options
+      - sinon => plafond métier min(3, len(options))
     - autres: 1 (par défaut)
     """
-    if itype in {"checkbox", "radio", "button"}:
+    if itype in {"radio", "button"}:
+        return 1
+    if itype == "checkbox":
         exact_count = explicit_exact_count_from_question(question_text)
         if exact_count is not None:
             if options:
                 return max(1, min(exact_count, len(options)))
             return max(1, exact_count)
-        if has_explicit_multi_indicator(question_text):
-            if options:
-                max_select = min(3, len(options))
-            else:
-                max_select = 3
-            if is_debug() and max_select == 3:
-                log_debug(
-                    "[max_select][debug]",
-                    f"rule=multi_explicit_force_3 itype={itype} "
-                    f"max_select=3 question=\"{_norm(question_text or '')}\"",
-                )
-            return max_select
-        if itype in {"radio", "button"}:
-            return 1
-        return max(len(options), 1)
+        if options:
+            return min(3, len(options))
+        return 3
     return 1
