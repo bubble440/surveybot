@@ -14,6 +14,22 @@ class _FakeChoice:
         return self._displayed
 
     def find_elements(self, by=None, value=None):
+        if by == "xpath" and value and "ancestor::form[@id='mrForm' or @name='mrForm']" in value:
+            for c in self._containers:
+                if (c.get_attribute("id") or "") == "mrForm" or (c.get_attribute("name") or "") == "mrForm":
+                    return [c]
+            return []
+        if by == "xpath" and value and value == "ancestor::fieldset[1]":
+            for c in self._containers:
+                if (getattr(c, "tag_name", "") or "").lower() == "fieldset":
+                    return [c]
+            return []
+        if by == "xpath" and value and "ancestor::*[contains(@class,'mrQuestionTable')][1]" in value:
+            for c in self._containers:
+                cls = (c.get_attribute("class") or "").lower()
+                if "mrquestiontable" in cls:
+                    return [c]
+            return []
         if by == "xpath" and value and "type-multi" in value and "question-" in value:
             return self._containers
         if by == "xpath" and value and "fieldset[contains(@class,'question-multiple')]" in value:
@@ -41,6 +57,11 @@ class _FakeContainer:
         return self._attrs.get(name, "")
 
     def find_elements(self, by=None, value=None):
+        if by == "xpath" and value == ".//*[contains(@class,'mrQuestionTable') or contains(@class,'mrMultiple')]":
+            cls = (self.get_attribute("class") or "").lower()
+            if "mrquestiontable" in cls or "mrmultiple" in cls:
+                return [self]
+            return []
         if by == "xpath" and value == ".//input[@type='checkbox'][@name]":
             return self._checkboxes
         if by == "xpath" and value == ".//input[@type='checkbox']":
@@ -126,5 +147,6 @@ def test_checkbox_group_key_uses_dom_container_when_checkbox_names_are_all_disti
         legends=[_FakeLegend("Sélectionnez toutes les réponses appropriées")],
         tag_name="fieldset",
     )
-    el = _FakeChoice({"name": "_QQ1_Cr2"}, containers=[fieldset])
+    form = _FakeContainer({"id": "mrForm", "name": "mrForm"})
+    el = _FakeChoice({"name": "_QQ1_Cr2"}, containers=[fieldset, form])
     assert _group_key_for_choice(el, "checkbox").startswith("dom_container:fieldset|")

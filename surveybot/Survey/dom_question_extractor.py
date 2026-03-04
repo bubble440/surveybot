@@ -22,6 +22,15 @@ except ImportError:
     # Fallback pour tests locaux
     from Survey.dom_utils import _norm, _norm_lc, _is_question_text, _is_validation_instruction
 
+try:
+    from Survey.log_utils import is_debug, log_debug
+except ImportError:
+    def is_debug() -> bool:
+        return False
+
+    def log_debug(tag: str, msg: str) -> None:
+        return None
+
 # ================================================================================
 # CONSTANTE
 # ================================================================================
@@ -450,62 +459,87 @@ def _group_key_for_choice(el, itype: str) -> str:
                     # casse la question en N blocs mono-option.
                     # Scope DOM strict: uniquement si on trouve un conteneur
                     # question stable (fieldset/.mrQuestionTable), >=2 checkboxes
-                    # visibles et des names non vides tous distincts.
+                    # avec names non vides tous distincts et des marqueurs DOM
+                    # SPSSMR/HTMLPlayer observables (mrForm / classes mr*).
                     try:
-                        scoped = el.find_elements(
+                        fieldsets = el.find_elements(By.XPATH, "ancestor::fieldset[1]")
+                    except Exception:
+                        fieldsets = []
+
+                    try:
+                        mr_tables = el.find_elements(
                             By.XPATH,
-                            "ancestor::*[self::fieldset or contains(@class,'mrQuestionTable')][1]",
+                            "ancestor::*[contains(@class,'mrQuestionTable')][1]",
                         )
                     except Exception:
-                        scoped = []
+                        mr_tables = []
 
-                    if scoped:
-                        group_container = scoped[0]
+                    group_container = fieldsets[0] if fieldsets else (mr_tables[0] if mr_tables else None)
+
+                    if group_container is not None:
                         try:
-                            scoped_boxes = group_container.find_elements(By.XPATH, ".//input[@type='checkbox']")
+                            in_mr_form = bool(
+                                el.find_elements(By.XPATH, "ancestor::form[@id='mrForm' or @name='mrForm'][1]")
+                            )
                         except Exception:
-                            scoped_boxes = []
+                            in_mr_form = False
 
-                        visible_boxes = []
-                        for b in scoped_boxes:
-                            try:
-                                if b.is_displayed():
-                                    visible_boxes.append(b)
-                            except Exception:
-                                continue
+                        c_class = _norm_lc(group_container.get_attribute("class") or "")
+                        has_mr_class = ("mrquestiontable" in c_class) or ("mrmultiple" in c_class)
 
-                        scoped_names = []
-                        for b in visible_boxes:
+                        if not has_mr_class:
                             try:
-                                nm = _norm_lc(b.get_attribute("name") or "")
+                                has_mr_class = bool(
+                                    group_container.find_elements(
+                                        By.XPATH,
+                                        ".//*[contains(@class,'mrQuestionTable') or contains(@class,'mrMultiple')]",
+                                    )
+                                )
                             except Exception:
-                                nm = ""
-                            if nm:
-                                scoped_names.append(nm)
+                                has_mr_class = False
 
-                        if (
-                            len(visible_boxes) >= 2
-                            and len(scoped_names) == len(visible_boxes)
-                            and len(set(scoped_names)) == len(scoped_names)
-                        ):
-                            c_tag = _norm_lc(group_container.tag_name or "")
-                            c_id = _norm_lc(group_container.get_attribute("id") or "")
-                            c_class = _norm_lc(group_container.get_attribute("class") or "")
-                            c_legend = ""
+                        is_spssmr_like = in_mr_form or has_mr_class
+
+                        if is_spssmr_like:
                             try:
-                                legends = group_container.find_elements(By.XPATH, ".//legend[1]")
-                                if legends:
-                                    c_legend = _norm_lc((legends[0].text or "").strip())
+                                scoped_boxes = group_container.find_elements(By.XPATH, ".//input[@type='checkbox'][@name]")
                             except Exception:
+                                scoped_boxes = []
+
+                            scoped_names = []
+                            for b in scoped_boxes:
+                                try:
+                                    nm = _norm_lc(b.get_attribute("name") or "")
+                                except Exception:
+                                    nm = ""
+                                if nm:
+                                    scoped_names.append(nm)
+
+                            names_distinct = (
+                                len(scoped_names) == len(scoped_boxes)
+                                and len(set(scoped_names)) == len(scoped_names)
+                            )
+
+                            if len(scoped_boxes) >= 2 and names_distinct:
+                                c_tag = _norm_lc(group_container.tag_name or "")
+                                c_id = _norm_lc(group_container.get_attribute("id") or "")
                                 c_legend = ""
+                                try:
+                                    legends = group_container.find_elements(By.XPATH, ".//legend[1]")
+                                    if legends:
+                                        c_legend = _norm_lc((legends[0].text or "").strip())
+                                except Exception:
+                                    c_legend = ""
 
-                            container_bits = [
-                                x
-                                for x in [c_tag, c_id, c_class, c_legend[:120]]
-                                if x
-                            ]
-                            if container_bits:
-                                return f"dom_container:{'|'.join(container_bits)}"
+                                container_bits = [x for x in [c_tag, c_id, c_class, c_legend[:120]] if x]
+                                if container_bits:
+                                    dom_container_key = f"dom_container:{'|'.join(container_bits)}"
+                                    if is_debug():
+                                        log_debug(
+                                            "[DOM_GROUPING]",
+                                            f"spssmr_container_group key={dom_container_key} boxes={len(scoped_boxes)} names_distinct={names_distinct}",
+                                        )
+                                    return dom_container_key
 
                     base_name = re.sub(r"(?:sq\d+|a\d+)$", "", clean_name, flags=re.IGNORECASE)
                     if base_name and base_name != clean_name:
