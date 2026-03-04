@@ -1837,6 +1837,16 @@ def _extract_consent_modal_radio_block(driver, frame_chain: list[int] | None) ->
     frame_chain = list(frame_chain or [])
 
     try:
+        if not driver.find_elements(By.CSS_SELECTOR, "#modal-container"):
+            return []
+        if not driver.find_elements(By.CSS_SELECTOR, ".consent-form-radiogroup"):
+            return []
+        if not driver.find_elements(By.CSS_SELECTOR, "#consent-button-confirm"):
+            return []
+    except Exception:
+        return []
+
+    try:
         radio_inputs = driver.find_elements(
             By.CSS_SELECTOR,
             ".consent-form-radiogroup input[type='radio'][name]",
@@ -1845,12 +1855,6 @@ def _extract_consent_modal_radio_block(driver, frame_chain: list[int] | None) ->
         return []
 
     if len(radio_inputs) < 2:
-        return []
-
-    try:
-        if not driver.find_elements(By.CSS_SELECTOR, "#consent-button-confirm"):
-            return []
-    except Exception:
         return []
 
     grouped: dict[str, list[Any]] = {}
@@ -1888,7 +1892,11 @@ def _extract_consent_modal_radio_block(driver, frame_chain: list[int] | None) ->
                     lbl = driver.find_element(By.CSS_SELECTOR, f"label[for='{rid}']")
                     label = _norm(lbl.text or lbl.get_attribute("innerText") or "")
                 except Exception:
-                    label = ""
+                    try:
+                        lbl = radio.find_element(By.XPATH, "ancestor::label[contains(@class,'consent-option-label')][1]")
+                        label = _norm(lbl.text or lbl.get_attribute("innerText") or "")
+                    except Exception:
+                        label = ""
 
             if not label:
                 continue
@@ -1898,7 +1906,17 @@ def _extract_consent_modal_radio_block(driver, frame_chain: list[int] | None) ->
                 continue
 
             rid_lit = _xpath_literal(rid)
-            option_xpath_map[key] = f"(//label[@for={rid_lit}] | //*[@id={rid_lit}])[1]"
+            label_by_for = f"//label[@for={rid_lit}]"
+            label_ancestor = f"//*[@id={rid_lit}]/ancestor::label[contains(@class,'consent-option-label')][1]"
+            span_txt = (
+                "//span[contains(@class,'consent-option-text') and "
+                "normalize-space()=\"JE CONSENS et continue l'enquête\"]"
+                if "je consens" in key
+                else None
+            )
+            option_xpath_map[key] = (
+                f"({label_by_for} | {label_ancestor}{' | ' + span_txt if span_txt else ''})[1]"
+            )
             options.append(label)
         except Exception:
             continue
@@ -1931,6 +1949,8 @@ def _extract_consent_modal_radio_block(driver, frame_chain: list[int] | None) ->
             "consent_modal_radio": True,
         },
     )
+
+    print(f"[CONSENT_MODAL] detected=true options={len(options)}")
 
     return [
         {
