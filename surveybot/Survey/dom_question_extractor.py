@@ -680,9 +680,10 @@ def _compute_max_select(itype: str, options: List[str], question_text: str | Non
             else:
                 max_select = 3
             if is_debug() and max_select == 3:
-                print(
-                    f"[max_select][debug] rule=multi_explicit_force_3 "
-                    f"itype={itype} max_select=3 question=\"{_norm(question_text or '')}\""
+                log_debug(
+                    "[max_select][debug]",
+                    f"rule=multi_explicit_force_3 itype={itype} "
+                    f"max_select=3 question=\"{_norm(question_text or '')}\"",
                 )
             return max_select
         if itype in {"radio", "button"}:
