@@ -1242,6 +1242,8 @@ def execute_survey_page(driver, api_key):
         # Plus fiable que la recherche par texte pour les frameworks connus
         # PHASE 2: Si pas de bouton trouvé, recherche générique DOM (ex: boutons avec texte "next", "continue", etc.)
         NAV_BUTTON_SELECTORS = [
+            ".footer #next",                   # MetrixLab/Toluna intro CTA icon-only (div#next)
+            "#next.next",                      # MetrixLab/Toluna variant
             "#cm-NextButton",                    # CMIX
             ".cm-navigation-next-button",        # CMIX alt
             ".cf-question--info button.cf-navigation-next",  # Confirmit intro CTA inline
