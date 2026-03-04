@@ -442,9 +442,9 @@ def build_batch_prompt(question_blocks: list[dict]) -> str:
         "FORMAT STRICT (une ligne par question) :\n"
         "QID //// target_id //// valeur //// itype //// contexte\n\n"
         "RèGLES CRITIQUES:\n"
-        "- Si la question autorise plusieurs choix (indicateur explicite dans le libellé), réponds sur UNE SEULE LIGNE avec 1 à 3 valeurs séparées par \"|\".\n"
-        "- Sans indicateur multi explicite, réponds avec EXACTEMENT 1 valeur.\n"
-        "  Exemple: Q1 //// group_abc //// Option A | Option B | Option C //// checkbox //// ...\n"
+        "- Pour CHAQUE QID, renvoie EXACTEMENT le nombre de valeurs demandé par max_select.\n"
+        "- Le nombre de segments séparés par \"|\" dans valeur doit être EXACTEMENT celui demandé pour ce QID.\n"
+        "- Exemple: Q1 //// group_abc //// Option A|Option B|Option C //// checkbox //// ...\n"
         "- NE JAMAIS utiliser la virgule \",\" comme séparateur (les options peuvent en contenir).\n"
         "- AUCUNE explication. Aucun texte hors format."
     )
@@ -457,10 +457,9 @@ def build_batch_prompt(question_blocks: list[dict]) -> str:
     )
 
     lines.append(
-        "RèGLE NOMBRE DE RéPONSES (checkbox/radio/button uniquement) :\n"
-        "- Si le libellé contient un indicateur explicite de multi-sélection (ex: 'plusieurs réponses', 'cochez tout ce qui s'applique', 'select all that apply'), choisis entre 1 et 3 options maximum (idéalement 2-3, jamais >3).\n"
-        "- Sinon, choisis exactement 1 option.\n"
-        "- Ne déduis PAS le multi-choix depuis le provider/source: base-toi uniquement sur le texte de la question."
+        "RèGLE NOMBRE DE RéPONSES:\n"
+        "- Ne déduis PAS le nombre depuis le provider/source.\n"
+        "- Utilise STRICTEMENT max_select fourni pour chaque QID."
     )
 
     lines.append(
@@ -573,11 +572,10 @@ def build_batch_prompt(question_blocks: list[dict]) -> str:
                 f"option_present={bool(forced_country)}"
             )
 
-        selection_rule = _selection_rule_for_block(block)
-        if selection_rule.startswith("exactly_") and selection_rule != "exactly_1":
-            exact_n = int(selection_rule.split("_", 1)[1] or "1")
-            lines.append(f"selection_rule: choisir EXACTEMENT {exact_n} option(s), séparées par |")
-        elif forced_country:
+        lines.append(
+            f"selection_rule: Pour QID={qid}, renvoyer EXACTEMENT {max_sel} valeur(s) séparée(s) par |"
+        )
+        if forced_country:
             lines.append(
                 f"selection_rule: RESIDENCE_COUNTRY strict -> répondre EXACTEMENT avec '{forced_country}'"
             )
@@ -607,11 +605,7 @@ def build_batch_prompt(question_blocks: list[dict]) -> str:
                 lines.append(f"allowed_values_strict: {forced_consent}")
                 lines.append("instruction_stricte: Consent modal. Tu dois choisir l'option de consentement positive et jamais l'option de refus.")
             else:
-                lines.append("selection_rule: choisir EXACTEMENT 1 option")
-        elif selection_rule == "multi_1_to_3":
-            lines.append("selection_rule: MULTI explicite -> choisir 1 à 3 options (idéalement 2-3, jamais >3)")
-        else:
-            lines.append("selection_rule: choisir EXACTEMENT 1 option")
+                lines.append("selection_rule: choisir une option valide de la liste")
 
         if opts:
             lines.append("options: " + " | ".join(opts))

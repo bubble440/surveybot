@@ -32,7 +32,7 @@ def test_parse_batch_response_normalizes_month_name_date_for_multi_text():
     assert [a["value"] for a in actions] == ["03", "02", "2001"]
 
 
-def test_parse_batch_response_does_not_invent_values_when_single_number_for_multi_text():
+def test_parse_batch_response_pads_deterministically_when_single_number_for_multi_text():
     raw = (
         "Q1 //// multi_xxx //// 25 //// text //// "
         "When were you born? Month Day Year"
@@ -40,5 +40,5 @@ def test_parse_batch_response_does_not_invent_values_when_single_number_for_mult
 
     actions = parse_batch_response(raw, constraints={"Q1": 3})
 
-    assert len(actions) == 1
-    assert actions[0]["value"] == "25"
+    assert len(actions) == 3
+    assert [a["value"] for a in actions] == ["25", "25", "25"]
