@@ -520,6 +520,7 @@ def build_batch_prompt(question_blocks: list[dict]) -> str:
         itype = _escape(block.get("itype", ""))
         opts = [_escape(o) for o in (block.get("options") or []) if o]
         max_sel = int(block.get("max_select", 1) or 1)
+        min_sel = int(block.get("min_select", 1) or 1)
         target_id = _escape(block.get("target_id", ""))
         matrix_rows = _matrix_row_labels(block)
         matrix_active_row = _escape((block.get("context") or {}).get("matrix_active_row", ""))
@@ -536,6 +537,7 @@ def build_batch_prompt(question_blocks: list[dict]) -> str:
             lines.append(f"matrix_example_active_row: {matrix_active_row} || Transféré vers Revolut")
         lines.append(f"itype: {itype}")
         lines.append(f"max_select: {max_sel}")
+        lines.append(f"min_select: {min_sel}")
         ctx = block.get("context") if isinstance(block.get("context"), dict) else {}
         if (ctx or {}).get("kind") == "multi_text" and max_sel >= 2:
             lines.append(
@@ -549,9 +551,18 @@ def build_batch_prompt(question_blocks: list[dict]) -> str:
                 f"option_present={bool(forced_country)}"
             )
 
-        lines.append(
-            f"selection_rule: Pour QID={qid}, renvoyer EXACTEMENT {max_sel} valeur(s) séparée(s) par |"
-        )
+        if min_sel == max_sel and min_sel > 1:
+            lines.append(
+                f"selection_rule: Pour QID={qid}, renvoyer EXACTEMENT {max_sel} valeur(s) séparée(s) par |. Sélectionne exactement {max_sel} réponses (toutes les options applicables). / Select exactly {max_sel} answers (all applicable options)."
+            )
+        elif 1 < min_sel < max_sel:
+            lines.append(
+                f"selection_rule: Pour QID={qid}, renvoyer entre {min_sel} et {max_sel} valeur(s) séparée(s) par |. Sélectionne entre {min_sel} et {max_sel} réponses. / Select between {min_sel} and {max_sel} answers."
+            )
+        else:
+            lines.append(
+                f"selection_rule: Pour QID={qid}, renvoyer EXACTEMENT {max_sel} valeur(s) séparée(s) par |"
+            )
         if forced_country:
             lines.append(
                 f"selection_rule: RESIDENCE_COUNTRY strict -> répondre EXACTEMENT avec '{forced_country}'"
