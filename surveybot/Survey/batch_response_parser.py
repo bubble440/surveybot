@@ -360,6 +360,116 @@ def _debug_log(msg: str) -> None:
         print(f"[batch_response_parser][debug] {msg}")
 
 
+def _warn_log(msg: str) -> None:
+    print(f"[batch_response_parser][warn] {msg}")
+
+
+def _build_filler_values(
+    qid: str,
+    selected_values: list[str],
+    options: list[str],
+    expected_count: int,
+) -> list[str]:
+    """Complète de manière déterministe jusqu'à expected_count."""
+    if len(selected_values) >= expected_count:
+        return selected_values[:expected_count]
+
+    result = list(selected_values)
+    selected_folded = {str(v or "").strip().lower() for v in result if str(v or "").strip()}
+    option_pool = [str(opt or "").strip() for opt in options if str(opt or "").strip()]
+
+    for opt in option_pool:
+        if len(result) >= expected_count:
+            break
+        if opt.lower() in selected_folded:
+            continue
+        result.append(opt)
+        selected_folded.add(opt.lower())
+
+    if len(result) < expected_count:
+        fallback_value = ""
+        if result:
+            fallback_value = result[-1]
+        elif option_pool:
+            fallback_value = option_pool[0]
+
+        if fallback_value:
+            _warn_log(
+                f"qid={qid} fill_shortfall_without_enough_unique_options expected={expected_count} "
+                f"current={len(result)} fallback_repeat={fallback_value!r}"
+            )
+            while len(result) < expected_count:
+                result.append(fallback_value)
+
+    return result
+
+
+def _enforce_exact_counts(actions: list[dict], constraints: dict[str, int], qid_meta: dict | None = None) -> list[dict]:
+    if not constraints:
+        return actions
+
+    qid_meta = qid_meta or {}
+    by_qid: dict[str, list[dict]] = {}
+    for a in actions:
+        qid = (a.get("qid") or "").strip().upper()
+        if not qid:
+            continue
+        by_qid.setdefault(qid, []).append(a)
+
+    final_actions: list[dict] = []
+    for qid, raw_max in constraints.items():
+        expected = max(1, int(raw_max or 1))
+        q_actions = by_qid.get(qid, [])
+        qmeta = qid_meta.get(qid) if isinstance(qid_meta, dict) else None
+        qmeta = qmeta if isinstance(qmeta, dict) else {}
+        itype = str((qmeta.get("itype") or (q_actions[0].get("itype") if q_actions else "") or "")).strip().lower()
+
+        # Matrices: conserver le comportement actuel (une action = une cellule)
+        if itype == "matrix":
+            final_actions.extend(q_actions[:expected])
+            continue
+
+        if len(q_actions) > expected:
+            _warn_log(f"qid={qid} too_many_values expected={expected} received={len(q_actions)} action=truncate")
+            q_actions = q_actions[:expected]
+
+        raw_values = [str((a.get("value") or "")).strip() for a in q_actions if str((a.get("value") or "")).strip()]
+        options = [str(o or "").strip() for o in (qmeta.get("options") or []) if str(o or "").strip()]
+        completed_values = _build_filler_values(qid=qid, selected_values=raw_values, options=options, expected_count=expected)
+
+        if len(raw_values) < expected:
+            _warn_log(
+                f"qid={qid} too_few_values expected={expected} received={len(raw_values)} "
+                f"action=pad final={completed_values}"
+            )
+
+        _debug_log(
+            f"qid={qid} max_select={expected} received={len(raw_values)} final_count={len(completed_values)} values={completed_values}"
+        )
+
+        template = q_actions[-1] if q_actions else {
+            "qid": qid,
+            "target_id": qmeta.get("target_id"),
+            "value": "",
+            "itype": itype,
+            "context": qmeta.get("question", ""),
+            "matrix_row_label": None,
+            "matrix_col_label": None,
+            "raw": "",
+        }
+
+        for idx, val in enumerate(completed_values):
+            if idx < len(q_actions):
+                cloned = dict(q_actions[idx])
+            else:
+                cloned = dict(template)
+            cloned["qid"] = qid
+            cloned["value"] = val
+            final_actions.append(cloned)
+
+    return final_actions
+
+
 def _normalize_date_triplet_for_multi_text(value: str) -> str | None:
     txt = (value or "").strip()
     if not txt:
@@ -568,9 +678,6 @@ def parse_batch_response(raw: str, constraints: Optional[Dict[str, int]] = None,
                 keyv = v.strip().lower()
                 if keyv in kept_values[qid]:
                     continue
-                if kept_count[qid] >= mx:
-                    continue
-
                 kept_values[qid].add(keyv)
                 kept_count[qid] += 1
 
@@ -586,6 +693,9 @@ def parse_batch_response(raw: str, constraints: Optional[Dict[str, int]] = None,
                     "raw": line,
                 }
             )
+
+    if constraints:
+        actions = _enforce_exact_counts(actions, constraints=constraints, qid_meta=qid_meta)
 
     return actions
 
