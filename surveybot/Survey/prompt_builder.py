@@ -69,6 +69,27 @@ def _explicit_exact_count_from_question(question_text: str | None) -> int | None
     return explicit_exact_count_from_question(question_text)
 
 
+def _selection_signal_text(block: Dict[str, Any]) -> str:
+    parts: list[str] = []
+
+    q = _norm(block.get("question", ""))
+    if q:
+        parts.append(q)
+
+    instruction = _norm(block.get("instruction", ""))
+    if instruction:
+        parts.append(instruction)
+
+    ctx = block.get("context")
+    if isinstance(ctx, dict):
+        for key in ("instruction", "instruction_text"):
+            value = _norm(ctx.get(key, ""))
+            if value:
+                parts.append(value)
+
+    return " ".join(parts)
+
+
 def _selection_rule_for_block(block: Dict[str, Any]) -> str:
     """
     Règle cible pour le nombre de réponses:
@@ -78,10 +99,11 @@ def _selection_rule_for_block(block: Dict[str, Any]) -> str:
     """
     itype = _norm_folded_lc(block.get("itype"))
     if itype in {"checkbox", "radio", "button"}:
-        exact_count = _explicit_exact_count_from_question(block.get("question"))
+        signal_text = _selection_signal_text(block)
+        exact_count = _explicit_exact_count_from_question(signal_text)
         if exact_count and exact_count > 1:
             return f"exactly_{exact_count}"
-        if _has_explicit_multi_indicator(block.get("question")):
+        if _has_explicit_multi_indicator(signal_text):
             return "multi_1_to_3"
     return "exactly_1"
 
