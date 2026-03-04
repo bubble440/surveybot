@@ -34,6 +34,7 @@ _EXPLICIT_MULTI_PATTERNS = [
     r"\bselectionner\s+plusieurs\b",
     r"\bvous\s+pouvez\s+cocher\s+plusieurs\b",
     r"\bvous\s+pouvez\s+(?:choisir|selectionner|cocher)\s+plusieurs\s+(?:reponses?|choix|options?)\b",
+    r"\bvous\s+pouvez\s+choisir\s+plusieurs\s+reponses?\s+parmi\s+celles\s+proposees\b",
     # EN
     r"\b(?:select|choose|check)\s+all\s+that\s+apply\b",
     r"\bmultiple\s+(?:answers?|choices?|options?)\s+(?:allowed|possible)\b",
