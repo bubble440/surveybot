@@ -1085,6 +1085,12 @@ def execute_survey_page(driver, api_key):
         print(f"[CARDSORT] solver failed: {e}")
 
     if not question_blocks:
+        try:
+            modal_nodes = driver.find_elements(By.CSS_SELECTOR, "#modal-container")
+            if modal_nodes and not any(m.is_displayed() for m in modal_nodes):
+                print("[CONSENT_MODAL] post-consent state -> navigation_only")
+        except Exception:
+            pass
         #  NEW: Decipher cardrating multi-rows (DOM-only) avant vision
         try:
             from Survey.action_dispatcher import solve_decipher_cardrating_rows
