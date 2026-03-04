@@ -20,12 +20,12 @@ from Survey.log_utils import log_debug, log_info, is_debug
 
 # Import des utilitaires
 try:
-    from Survey.dom_utils import _norm_lc, _xpath_literal, _best_xpath_for_element, _norm, _norm_key, _looks_like_system_field, _is_actionable_visible
+    from Survey.dom_utils import _norm_lc, _xpath_literal, _best_xpath_for_element, _norm, _norm_key, _looks_like_system_field
     from Survey.dom_question_extractor import _find_question_text_near_element, _compute_max_select
     from Survey.dom_registry import register_target, make_target_id
 except ImportError:
     # Fallback pour tests locaux
-    from Survey.dom_utils import _norm_lc, _xpath_literal, _best_xpath_for_element, _norm, _norm_key, _looks_like_system_field, _is_actionable_visible
+    from Survey.dom_utils import _norm_lc, _xpath_literal, _best_xpath_for_element, _norm, _norm_key, _looks_like_system_field
     from Survey.dom_question_extractor import _find_question_text_near_element, _compute_max_select
     from Survey.dom_registry import register_target, make_target_id
     # dom_registry devra être disponible
@@ -1837,23 +1837,11 @@ def _extract_consent_modal_radio_block(driver, frame_chain: list[int] | None) ->
     frame_chain = list(frame_chain or [])
 
     try:
-        modal_candidates = driver.find_elements(By.CSS_SELECTOR, "#modal-container")
-        if not modal_candidates:
+        if not driver.find_elements(By.CSS_SELECTOR, "#modal-container"):
             return []
-        if not any(_is_actionable_visible(el) for el in modal_candidates):
-            print("[CONSENT_MODAL] consent_modal stale/hidden -> ignored")
+        if not driver.find_elements(By.CSS_SELECTOR, ".consent-form-radiogroup"):
             return []
-
-        radio_groups = driver.find_elements(By.CSS_SELECTOR, ".consent-form-radiogroup")
-        if not radio_groups or not any(_is_actionable_visible(el) for el in radio_groups):
-            print("[CONSENT_MODAL] consent_modal stale/hidden -> ignored")
-            return []
-
-        confirm_buttons = driver.find_elements(By.CSS_SELECTOR, "#consent-button-confirm")
-        if not confirm_buttons:
-            return []
-        if not any(_is_actionable_visible(el) for el in confirm_buttons):
-            print("[CONSENT_MODAL] consent_modal stale/hidden -> ignored")
+        if not driver.find_elements(By.CSS_SELECTOR, "#consent-button-confirm"):
             return []
     except Exception:
         return []
@@ -1866,9 +1854,7 @@ def _extract_consent_modal_radio_block(driver, frame_chain: list[int] | None) ->
     except Exception:
         return []
 
-    radio_inputs = [r for r in (radio_inputs or []) if _is_actionable_visible(r)]
     if len(radio_inputs) < 2:
-        print("[CONSENT_MODAL] consent_modal stale/hidden -> ignored")
         return []
 
     grouped: dict[str, list[Any]] = {}
