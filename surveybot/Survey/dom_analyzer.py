@@ -179,6 +179,34 @@ def _is_auxiliary_text_for_choice_group(driver, el, container, question: str) ->
     if choice_count < 2:
         return False
 
+    # Cas inline "Autre, précisez" : le champ texte est rendu dans le même
+    # wrapper d'option qu'un contrôle radio/checkbox. Dans ce cas, on le
+    # classe directement en auxiliaire pour éviter un bloc single parasite.
+    try:
+        inline_with_choice = bool(driver.execute_script(
+            """
+            const el = arguments[0];
+            const container = arguments[1];
+            if (!el || !container || !el.closest || !container.contains) return false;
+
+            const optionRoot = el.closest(
+              '.answer_options, label, li, .option, .form-check, '\
+              '[role="radio"], [role="checkbox"], .cf-radio-answer, .cf-checkbox-answer'
+            );
+            if (!optionRoot || !container.contains(optionRoot)) return false;
+
+            return !!optionRoot.querySelector(
+              'input[type="radio"], input[type="checkbox"], [role="radio"], [role="checkbox"]'
+            );
+            """,
+            el,
+            container,
+        ))
+        if inline_with_choice:
+            return True
+    except Exception:
+        pass
+
     el_aria_label = _norm(el.get_attribute("aria-label") or "")
     el_aria_labelledby = _norm(el.get_attribute("aria-labelledby") or "")
     own_label = _norm(_find_associated_label(driver, el) or "")
