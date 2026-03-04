@@ -2,12 +2,16 @@ from surveybot.Survey.dom_question_extractor import _group_key_for_choice, _comp
 
 
 class _FakeChoice:
-    def __init__(self, attrs, containers=None):
+    def __init__(self, attrs, containers=None, displayed=True):
         self._attrs = attrs
         self._containers = containers or []
+        self._displayed = displayed
 
     def get_attribute(self, name):
         return self._attrs.get(name, "")
+
+    def is_displayed(self):
+        return self._displayed
 
     def find_elements(self, by=None, value=None):
         if by == "xpath" and value and "type-multi" in value and "question-" in value:
@@ -16,13 +20,22 @@ class _FakeChoice:
             return self._containers
         if by == "xpath" and value and ("role='listbox'" in value or "multi-select-container" in value):
             return self._containers
+        if by == "xpath" and value and "self::fieldset or contains(@class,'mrQuestionTable')" in value:
+            scoped = []
+            for c in self._containers:
+                cls = (c.get_attribute("class") or "").lower()
+                if (getattr(c, "tag_name", "") or "").lower() == "fieldset" or "mrquestiontable" in cls:
+                    scoped.append(c)
+            return scoped
         return []
 
 
 class _FakeContainer:
-    def __init__(self, attrs, checkboxes=None):
+    def __init__(self, attrs, checkboxes=None, legends=None, tag_name="div"):
         self._attrs = attrs
         self._checkboxes = checkboxes or []
+        self._legends = legends or []
+        self.tag_name = tag_name
 
     def get_attribute(self, name):
         return self._attrs.get(name, "")
@@ -30,7 +43,16 @@ class _FakeContainer:
     def find_elements(self, by=None, value=None):
         if by == "xpath" and value == ".//input[@type='checkbox'][@name]":
             return self._checkboxes
+        if by == "xpath" and value == ".//input[@type='checkbox']":
+            return self._checkboxes
+        if by == "xpath" and value == ".//legend[1]":
+            return self._legends
         return []
+
+
+class _FakeLegend:
+    def __init__(self, text):
+        self.text = text
 
 
 def test_checkbox_group_key_normalizes_limesurvey_sq_suffix():
@@ -90,3 +112,19 @@ def test_compute_max_select_keeps_open_multi_when_no_exact_count_in_question_tex
     question = "Sélectionnez toutes les réponses qui s'appliquent."
     options = ["A", "B", "C", "D"]
     assert _compute_max_select("checkbox", options, question) == 4
+
+
+def test_checkbox_group_key_uses_dom_container_when_checkbox_names_are_all_distinct():
+    siblings = [
+        _FakeChoice({"name": "_QQ1_Cr1"}),
+        _FakeChoice({"name": "_QQ1_Cr2"}),
+        _FakeChoice({"name": "_QQ1_Cr3"}),
+    ]
+    fieldset = _FakeContainer(
+        {"id": "", "class": ""},
+        checkboxes=siblings,
+        legends=[_FakeLegend("Sélectionnez toutes les réponses appropriées")],
+        tag_name="fieldset",
+    )
+    el = _FakeChoice({"name": "_QQ1_Cr2"}, containers=[fieldset])
+    assert _group_key_for_choice(el, "checkbox").startswith("dom_container:fieldset|")
