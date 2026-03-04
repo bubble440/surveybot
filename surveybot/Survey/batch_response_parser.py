@@ -792,7 +792,16 @@ def _expand_checkbox_bulk_actions(actions: list, qid_meta: dict | None = None) -
             )
             continue
 
-        k_requested = max(1, int(math.ceil(0.9 * len(non_exclusive))))
+        max_select_raw = meta.get("max_select")
+        try:
+            max_select = int(max_select_raw)
+        except Exception:
+            max_select = 0
+
+        if max_select > 0:
+            k_requested = min(max_select, len(non_exclusive))
+        else:
+            k_requested = len(non_exclusive)
         k_selected = min(k_requested, len(non_exclusive))
         picked = non_exclusive[:k_selected]
         planned_by_qid[qid] = (picked, a)

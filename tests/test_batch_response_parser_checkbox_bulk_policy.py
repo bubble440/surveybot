@@ -1,7 +1,7 @@
 from surveybot.Survey.batch_response_parser import sanitize_actions
 
 
-def test_checkbox_bulk_policy_selects_90_percent_non_exclusive_first_dom_order():
+def test_checkbox_bulk_policy_caps_selection_to_max_select_first_dom_order():
     actions = [
         {
             "qid": "Q1",
@@ -17,7 +17,7 @@ def test_checkbox_bulk_policy_selects_90_percent_non_exclusive_first_dom_order()
         "Q1": {
             "question": "Travaillez-vous... Veuillez sélectionner toutes les réponses pertinentes.",
             "itype": "checkbox",
-            "max_select": 9,
+            "max_select": 3,
             "target_id": "group_1",
             "options": [
                 "Agence de relations publiques",
@@ -35,9 +35,9 @@ def test_checkbox_bulk_policy_selects_90_percent_non_exclusive_first_dom_order()
 
     cleaned = sanitize_actions(actions, qid_meta=qid_meta)
 
-    assert len(cleaned) == 8
+    assert len(cleaned) == 3
     assert all(a["itype"] == "checkbox" for a in cleaned)
-    assert [a["value"] for a in cleaned] == qid_meta["Q1"]["options"][:8]
+    assert [a["value"] for a in cleaned] == qid_meta["Q1"]["options"][:3]
     assert "Aucune de ces propositions" not in [a["value"] for a in cleaned]
 
 
