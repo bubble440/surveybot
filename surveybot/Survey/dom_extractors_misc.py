@@ -3031,6 +3031,145 @@ def _extract_purespectrum_mobile_date_blocks(driver, frame_chain: list[int] | No
     return blocks
 
 
+def _extract_collapsed_section_radio_rows(driver, frame_chain: list[int] | None) -> list[dict]:
+    """
+    Extrait les matrices radio rendues en accordéon via paires:
+      - div[data-ref-id='section-header'][role='button']
+      - div[data-ref-id='section-content']
+
+    Garde-fous DOM (additif, non provider-based):
+      - au moins 3 headers dans un même .section-container
+      - chaque header possède un data-id
+      - les contenus contiennent des radios name='.../...'
+    """
+    blocks: list[dict] = []
+
+    try:
+        containers = driver.find_elements(By.CSS_SELECTOR, "div.section-container")
+    except Exception:
+        return blocks
+
+    for container in containers:
+        try:
+            headers = container.find_elements(By.CSS_SELECTOR, "div[data-ref-id='section-header'][role='button'][data-id]")
+            if len(headers) < 3:
+                continue
+
+            contents = container.find_elements(By.CSS_SELECTOR, "div[data-ref-id='section-content']")
+            if len(contents) != len(headers):
+                continue
+
+            question = ""
+            try:
+                q_nodes = container.find_elements(
+                    By.XPATH,
+                    "ancestor::*[@data-ref-id][1]//*[contains(@class,'question-caption')][1]",
+                )
+                if q_nodes:
+                    question = _norm(q_nodes[0].text or q_nodes[0].get_attribute("innerText") or "")
+            except Exception:
+                question = ""
+
+            candidate_rows: list[dict[str, Any]] = []
+            named_group_hits = 0
+
+            for idx, header in enumerate(headers):
+                row_label = _norm(header.text or header.get_attribute("innerText") or "")
+                if not row_label:
+                    continue
+
+                panel = contents[idx]
+                radios = panel.find_elements(By.CSS_SELECTOR, "input[type='radio'][name]")
+                if len(radios) < 2:
+                    continue
+
+                first_name = (radios[0].get_attribute("name") or "").strip()
+                if "/" in first_name:
+                    named_group_hits += 1
+
+                option_xpath_map: dict[str, str] = {}
+                options: list[str] = []
+
+                for radio in radios:
+                    try:
+                        rname = (radio.get_attribute("name") or "").strip()
+                        rval = (radio.get_attribute("value") or "").strip()
+                        if not rname or not rval:
+                            continue
+
+                        label_txt = ""
+                        try:
+                            label = radio.find_element(By.XPATH, "ancestor::label[1]")
+                            label_txt = _norm(label.text or label.get_attribute("innerText") or "")
+                        except Exception:
+                            label_txt = ""
+                        if not label_txt:
+                            continue
+
+                        key = _norm_key(label_txt)
+                        if key in option_xpath_map:
+                            continue
+
+                        xp = (
+                            f"(//input[@type='radio' and @name={_xpath_literal(rname)} and @value={_xpath_literal(rval)}]"
+                            f"/ancestor::label[1] | "
+                            f"//input[@type='radio' and @name={_xpath_literal(rname)} and @value={_xpath_literal(rval)}])[1]"
+                        )
+                        option_xpath_map[key] = xp
+                        options.append(label_txt)
+                    except Exception:
+                        continue
+
+                if len(options) < 2:
+                    continue
+
+                header_xpath = _best_xpath_for_element(driver, header)
+                group_name = (radios[0].get_attribute("name") or "").strip()
+                group_key = f"radio:name:{group_name}"
+                row_question = _norm(f"{question} {row_label}" if question else row_label)
+                if not row_question:
+                    continue
+
+                target_id = make_target_id("group", group_key, row_question)
+
+                payload = {
+                    "kind": "group",
+                    "itype": "radio",
+                    "group_key": group_key,
+                    "question": row_question,
+                    "option_xpath_map": option_xpath_map,
+                    "frame_chain": frame_chain or [],
+                }
+                if header_xpath:
+                    payload["pre_click_xpaths"] = [header_xpath]
+
+                register_target(target_id, payload)
+
+                candidate_rows.append(
+                    {
+                        "question": row_question,
+                        "itype": "radio",
+                        "options": options,
+                        "max_select": 1,
+                        "target_id": target_id,
+                        "context": {
+                            "kind": "group",
+                            "group_key": group_key,
+                        },
+                    }
+                )
+
+            if len(candidate_rows) >= 3 and named_group_hits >= 2:
+                blocks.extend(candidate_rows)
+        except Exception:
+            continue
+
+    if blocks:
+        log_debug("[DOM_SECTION_MATRIX]", f"rows_extracted={len(blocks)}")
+
+    return blocks
+
+
 def _extract_decipher_clickable_ranking_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
     """Decipher clickable ranking text tool (`#customToolArea` + `.customItem`).
 
