@@ -1825,6 +1825,129 @@ def _extract_single_consent_checkbox_block(driver, frame_chain: list[int] | None
     ]
 
 
+def _extract_consent_modal_radio_block(driver, frame_chain: list[int] | None) -> list[dict]:
+    """Extraction ciblée d'un écran consentement modal radio + bouton confirmer.
+
+    Scope minimal et déclenché uniquement par critères DOM observables:
+    - présence d'un radiogroup de consentement (`.consent-form-radiogroup`)
+    - >=2 radios partageant le même name
+    - présence d'un bouton de confirmation (`#consent-button-confirm`)
+    """
+
+    frame_chain = list(frame_chain or [])
+
+    try:
+        radio_inputs = driver.find_elements(
+            By.CSS_SELECTOR,
+            ".consent-form-radiogroup input[type='radio'][name]",
+        )
+    except Exception:
+        return []
+
+    if len(radio_inputs) < 2:
+        return []
+
+    try:
+        if not driver.find_elements(By.CSS_SELECTOR, "#consent-button-confirm"):
+            return []
+    except Exception:
+        return []
+
+    grouped: dict[str, list[Any]] = {}
+    for radio in radio_inputs:
+        try:
+            name = _norm_lc(radio.get_attribute("name") or "")
+        except Exception:
+            name = ""
+        if not name:
+            continue
+        grouped.setdefault(name, []).append(radio)
+
+    if not grouped:
+        return []
+
+    group_name, radios = max(grouped.items(), key=lambda kv: len(kv[1]))
+    if len(radios) < 2:
+        return []
+
+    options: list[str] = []
+    option_xpath_map: dict[str, str] = {}
+
+    for radio in radios:
+        try:
+            rid = (radio.get_attribute("id") or "").strip()
+            if not rid:
+                continue
+
+            label = ""
+            try:
+                lbl = driver.find_element(By.CSS_SELECTOR, f"label[for='{rid}'] .consent-option-text")
+                label = _norm(lbl.text or lbl.get_attribute("innerText") or "")
+            except Exception:
+                try:
+                    lbl = driver.find_element(By.CSS_SELECTOR, f"label[for='{rid}']")
+                    label = _norm(lbl.text or lbl.get_attribute("innerText") or "")
+                except Exception:
+                    label = ""
+
+            if not label:
+                continue
+
+            key = _norm_key(label)
+            if key in option_xpath_map:
+                continue
+
+            rid_lit = _xpath_literal(rid)
+            option_xpath_map[key] = f"(//label[@for={rid_lit}] | //*[@id={rid_lit}])[1]"
+            options.append(label)
+        except Exception:
+            continue
+
+    if len(options) < 2:
+        return []
+
+    question = "Consentement RGPD"
+    try:
+        error_msg = driver.find_elements(By.CSS_SELECTOR, "#consent-error-message-container")
+        if error_msg:
+            txt = _norm(error_msg[0].text or error_msg[0].get_attribute("innerText") or "")
+            if txt:
+                question = txt
+    except Exception:
+        pass
+
+    group_key = f"radio:name:{group_name}"
+    target_id = make_target_id("group", group_key, question)
+
+    register_target(
+        target_id,
+        {
+            "kind": "group",
+            "itype": "radio",
+            "group_key": group_key,
+            "question": question,
+            "option_xpath_map": option_xpath_map,
+            "frame_chain": frame_chain,
+            "consent_modal_radio": True,
+        },
+    )
+
+    return [
+        {
+            "question": question,
+            "itype": "radio",
+            "options": options,
+            "max_select": _compute_max_select("radio", options),
+            "target_id": target_id,
+            "context": {
+                "kind": "group",
+                "group_key": group_key,
+                "consent_modal_radio": True,
+            },
+        }
+    ]
+
+
 def _extract_ipsos_slider_question_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
     """IPSOS sliders (bootstrap-slider): extraction DOM-only en blocs exploitables.
 
