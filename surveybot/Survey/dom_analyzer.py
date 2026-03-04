@@ -75,6 +75,7 @@ try:
         _extract_confirmit_slider_grid_blocks,
         _extract_cloudresearch_sentry_blocks,
         _extract_purespectrum_mobile_date_blocks,
+        _extract_collapsed_section_radio_rows,
         _extract_custom_testid_single_select_radio_blocks,
         _extract_custom_testid_multi_select_checkbox_blocks,
         _extract_single_consent_checkbox_block,
@@ -130,6 +131,7 @@ except ImportError:
         _extract_confirmit_slider_grid_blocks,
         _extract_cloudresearch_sentry_blocks,
         _extract_purespectrum_mobile_date_blocks,
+        _extract_collapsed_section_radio_rows,
         _extract_custom_testid_single_select_radio_blocks,
         _extract_custom_testid_multi_select_checkbox_blocks,
         _extract_single_consent_checkbox_block,
@@ -754,6 +756,15 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         ps_date_blocks = _extract_purespectrum_mobile_date_blocks(driver, frame_chain)
         if ps_date_blocks:
             return ps_date_blocks
+    except Exception:
+        pass
+
+    # --- 0i-bis) Matrice radio en sections repliées (header/content) ---
+    # Objectif: isoler chaque ligne d'accordéon en bloc radio indépendant.
+    try:
+        section_matrix_blocks = _extract_collapsed_section_radio_rows(driver, frame_chain)
+        if section_matrix_blocks:
+            return section_matrix_blocks
     except Exception:
         pass
 
