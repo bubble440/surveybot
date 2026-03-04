@@ -2,6 +2,7 @@ from surveybot.Survey.prompt_builder import (
     _has_explicit_multi_indicator,
     _tier_entry_option,
     _selection_rule_for_block,
+    _explicit_exact_count_from_question,
     build_batch_prompt,
 )
 
@@ -108,3 +109,34 @@ def test_batch_prompt_exposes_matrix_row_labels_for_llm_context():
     assert "RÈGLE SPÉCIALE MATRICES (itype=matrix)" in prompt
     assert "Crédit consommation || Transféré vers Revolut" in prompt
     assert "matrix_answer_format: row_label || col_label (row obligatoire, jamais col seule)" in prompt
+
+
+def test_detects_explicit_exact_count_from_text_fr_and_en():
+    assert _explicit_exact_count_from_question("Merci de sélectionner les deux réponses pertinentes") == 2
+    assert _explicit_exact_count_from_question("Please select exactly 2 answers") == 2
+
+
+def test_selection_rule_prefers_exact_count_for_checkbox_when_question_requests_two_choices():
+    block = {
+        "question": "Quels sont les deux animaux ? Merci de sélectionner les deux réponses pertinentes.",
+        "itype": "checkbox",
+        "options": ["Train", "Ours", "Canard"],
+        "max_select": 5,
+    }
+    assert _selection_rule_for_block(block) == "exactly_2"
+
+
+def test_batch_prompt_requires_exactly_two_values_for_exact_count_checkbox():
+    blocks = [
+        {
+            "question": "Quels sont les deux animaux parmi les propositions suivantes ? Merci de sélectionner les deux réponses pertinentes.",
+            "itype": "checkbox",
+            "options": ["Train", "Ours", "Chaise", "Canard", "Piano"],
+            "max_select": 2,
+            "target_id": "group_animaux",
+        }
+    ]
+
+    prompt = build_batch_prompt(blocks)
+
+    assert "selection_rule: choisir EXACTEMENT 2 option(s), séparées par |" in prompt

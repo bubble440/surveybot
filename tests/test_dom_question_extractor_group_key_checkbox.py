@@ -1,4 +1,4 @@
-from surveybot.Survey.dom_question_extractor import _group_key_for_choice
+from surveybot.Survey.dom_question_extractor import _group_key_for_choice, _compute_max_select
 
 
 class _FakeChoice:
@@ -78,3 +78,15 @@ def test_checkbox_group_key_normalizes_yougov_question_multiple_suffixes():
     fieldset = _FakeContainer({"class": "question question-multiple"}, checkboxes=siblings)
     el = _FakeChoice({"name": "w38-response-2"}, containers=[fieldset])
     assert _group_key_for_choice(el, "checkbox") == "w38-response"
+
+
+def test_compute_max_select_uses_explicit_exact_count_from_question_text():
+    question = "Quels sont les deux animaux parmi les propositions suivantes ? Merci de sélectionner les deux réponses pertinentes."
+    options = ["Train", "Ours", "Chaise", "Canard", "Piano"]
+    assert _compute_max_select("checkbox", options, question) == 2
+
+
+def test_compute_max_select_keeps_open_multi_when_no_exact_count_in_question_text():
+    question = "Sélectionnez toutes les réponses qui s'appliquent."
+    options = ["A", "B", "C", "D"]
+    assert _compute_max_select("checkbox", options, question) == 4
