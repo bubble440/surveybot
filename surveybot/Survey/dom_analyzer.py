@@ -78,6 +78,7 @@ try:
         _extract_custom_testid_single_select_radio_blocks,
         _extract_custom_testid_multi_select_checkbox_blocks,
         _extract_single_consent_checkbox_block,
+        _extract_consent_modal_radio_block,
         _extract_runtime_answerrow_radio_blocks,
         _extract_decipher_clickable_ranking_blocks,
     )
@@ -132,6 +133,7 @@ except ImportError:
         _extract_custom_testid_single_select_radio_blocks,
         _extract_custom_testid_multi_select_checkbox_blocks,
         _extract_single_consent_checkbox_block,
+        _extract_consent_modal_radio_block,
         _extract_runtime_answerrow_radio_blocks,
         _extract_decipher_clickable_ranking_blocks,
     )
@@ -570,6 +572,15 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         consent_checkbox_blocks = _extract_single_consent_checkbox_block(driver, frame_chain)
         if consent_checkbox_blocks:
             return consent_checkbox_blocks
+    except Exception:
+        pass
+
+    # --- 0h-quinquies) Consent modal radio + bouton confirmer ---
+    # Objectif: couvrir les modals RGPD avec radios masquées + labels custom.
+    try:
+        consent_modal_blocks = _extract_consent_modal_radio_block(driver, frame_chain)
+        if consent_modal_blocks:
+            return consent_modal_blocks
     except Exception:
         pass
 
