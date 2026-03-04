@@ -300,6 +300,61 @@ def _is_open_ended_choice_companion(el, container) -> bool:
     return False
 
 
+def _selection_signal_text(driver, el, question_text: str | None = None) -> str:
+    """
+    Construit un signal texte pour les règles de cardinalité:
+    question + instruction DOM (si présente).
+    """
+    parts: list[str] = []
+    q = _norm(question_text or "")
+    if q:
+        parts.append(q)
+
+    try:
+        instruction = _norm(driver.execute_script(
+            """
+            const el = arguments[0];
+            if (!el) return '';
+
+            const norm = (v) => (v || '').replace(/\s+/g, ' ').trim();
+            const isVisible = (node) => {
+              if (!node || !(node instanceof Element)) return false;
+              const st = window.getComputedStyle(node);
+              if (!st || st.display === 'none' || st.visibility === 'hidden' || st.opacity === '0') return false;
+              const r = node.getBoundingClientRect();
+              return r.width > 0 && r.height > 0;
+            };
+
+            const roots = [
+              el.closest('[id^="question_"]'),
+              el.closest('.question'),
+              el.closest('fieldset'),
+              el.closest('form'),
+            ].filter(Boolean);
+
+            const selectors = ['.instruction-text', '.instruction', '[class*="instruction"]'];
+            for (const root of roots) {
+              for (const sel of selectors) {
+                for (const node of root.querySelectorAll(sel)) {
+                  if (!isVisible(node)) continue;
+                  const t = norm(node.textContent || node.innerText || '');
+                  if (t.length >= 8) return t;
+                }
+              }
+            }
+            return '';
+            """,
+            el,
+        ))
+    except Exception:
+        instruction = ""
+
+    if instruction and instruction not in parts:
+        parts.append(instruction)
+
+    return _norm(" ".join(parts))
+
+
 def _choice_option_has_inline_open_text(driver, choice_el) -> bool:
     """
     Détecte si une option radio/checkbox embarque un champ texte inline visible
@@ -955,7 +1010,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                 "question": question,
                 "itype": itype,
                 "options": options,
-                "max_select": _compute_max_select(itype, options, question),
+                "max_select": _compute_max_select(itype, options, _selection_signal_text(driver, els[0], question)),
                 "target_id": target_id,
                 "context": {
                     "kind": "group",
@@ -1681,7 +1736,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                 "question": question,
                 "itype": itype,
                 "options": options,
-                "max_select": _compute_max_select(itype, options, question),
+                "max_select": _compute_max_select(itype, options, _selection_signal_text(driver, el, question)),
                 "target_id": target_id,
                 "context": {
                     "kind": "single",
