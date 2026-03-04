@@ -33,7 +33,7 @@ CTA_SYNONYMS = {
     "continuer", "suivant", "start", "commencer", "démarrer",
     "accepter", "accepter et commencer", "next", "continue",
     "submit", "soumettre", "valider", "proceed", "begin",
-    "envoyer", "terminer", "send",
+    "envoyer", "terminer", "send", "confirmer", "confirmez", "confirm",
 }
 
 CTA_INTERCEPT_ENV_VAR = "CTA_INTERCEPT_ONLY"
@@ -72,7 +72,7 @@ def looks_like_nav_label(s: str) -> bool:
     nav_kw = {
         "continuer", "suivant", "start", "commencer", "démarrer",
         "accepter", "accepter et commencer", "next", "continue",
-        "submit", "soumettre", "valider",
+        "submit", "soumettre", "valider", "confirmer", "confirmez", "confirm",
     }
     return any(k in s for k in nav_kw)
 
@@ -1201,6 +1201,24 @@ def try_click_navigation_cta(driver) -> bool:
     except Exception:
         pass
 
+    # --- Consent modal (RGPD): bouton Confirmer explicite ---
+    try:
+        consent_btns = driver.find_elements(By.CSS_SELECTOR, "#consent-button-confirm")
+        for btn in consent_btns:
+            try:
+                if not btn.is_displayed() or not btn.is_enabled():
+                    continue
+                driver.execute_script("arguments[0].scrollIntoView({block:'center'});", btn)
+                if _click_with_intercept(driver, btn):
+                    _nav_log("[CTA_NAV]", "CTA_FOUND provider_hint=consent_modal button=consent-button-confirm", driver)
+                    if _cta_intercept_enabled():
+                        _nav_log("[CTA_NAV]", "INTERCEPTED_OK provider_hint=consent_modal", driver)
+                    return True
+            except Exception:
+                continue
+    except Exception:
+        pass
+
     # --- AreYouNet / runet : CTA image sans texte ---
     try:
         btns = driver.find_elements(By.CSS_SELECTOR, "#btn_next")
@@ -1340,7 +1358,7 @@ def try_click_navigation_cta(driver) -> bool:
             # Certains CTA sont purement iconiques (ex: a#cm-NextButton avec <img>)
             # et n'ont aucun texte/alt exploitable. On ne les écarte pas d'office.
             # On ne rejette que les éléments sans texte ET sans indice de navigation.
-            if not t and not any(k in signature for k in ["next", "continue", "submit", "suivant", "valider"]):
+            if not t and not any(k in signature for k in ["next", "continue", "submit", "suivant", "valider", "confirm", "confirmer", "confirmez"]):
                 continue
 
             bad = ("refuser", "disagree", "quitter", "quit", "exit", "annuler", "cancel", "fermer", "close", "retour", "précédent", "precedent", "previous", "back")
@@ -1350,12 +1368,12 @@ def try_click_navigation_cta(driver) -> bool:
             score = 0
             if any(x in t for x in ["continue", "continuer", "next", "suivant", "proceed"]):
                 score += 50
-            if any(x in t for x in ["valider", "submit", "envoyer", "terminer", "send", "start", "commencer", "démarrer"]):
+            if any(x in t for x in ["valider", "submit", "envoyer", "terminer", "send", "start", "commencer", "démarrer", "confirm", "confirmer", "confirmez"]):
                 score += 30
 
             if el_id == "submitquestion":
                 score += 120
-            elif any(k in el_id for k in ["submit", "next", "continue"]):
+            elif any(k in el_id for k in ["submit", "next", "continue", "confirm"]):
                 score += 60
 
             if any(k in cls for k in ["cm-navigation-next-button", "next-button", "nav-next"]):
@@ -1364,7 +1382,7 @@ def try_click_navigation_cta(driver) -> bool:
                 score += 20
             if tabindex == "0":
                 score += 10
-            if any(k in href for k in ["next", "continue", "submit"]):
+            if any(k in href for k in ["next", "continue", "submit", "confirm"]):
                 score += 40
 
             try:

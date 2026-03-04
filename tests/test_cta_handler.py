@@ -295,3 +295,20 @@ def test_try_click_navigation_cta_prioritizes_forsta_ok_button(monkeypatch):
     assert ok is True
     assert forsta_ok.clicked == 1
     assert wrapper.clicked == 0
+
+def test_try_click_navigation_cta_detects_consent_confirm_button(monkeypatch):
+    monkeypatch.setattr(cta_handler, "ActionChains", _FakeActionChains)
+    monkeypatch.delenv("CTA_INTERCEPT_ONLY", raising=False)
+
+    confirm_btn = _FakeElement(
+        text="Confirmez",
+        attrs={"id": "consent-button-confirm", "class": "consent-form-button"},
+    )
+    confirm_btn.tag_name = "button"
+
+    driver = _FakeDriver(css_elements={"#consent-button-confirm": [confirm_btn]})
+
+    ok = cta_handler.try_click_navigation_cta(driver)
+
+    assert ok is True
+    assert confirm_btn.clicked == 1
