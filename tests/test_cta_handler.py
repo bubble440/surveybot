@@ -312,3 +312,22 @@ def test_try_click_navigation_cta_detects_consent_confirm_button(monkeypatch):
 
     assert ok is True
     assert confirm_btn.clicked == 1
+
+
+def test_try_click_navigation_cta_detects_icon_only_div_next(monkeypatch):
+    monkeypatch.setattr(cta_handler, "ActionChains", _FakeActionChains)
+    monkeypatch.delenv("CTA_INTERCEPT_ONLY", raising=False)
+
+    next_div = _FakeElement(
+        text="",
+        attrs={"id": "next", "class": "next arrow_on"},
+    )
+    next_div.tag_name = "div"
+    next_div.rect = {"x": 1200, "y": 700, "width": 72, "height": 60}
+
+    driver = _FakeDriver(css_elements={".footer #next, #next.next": [next_div]})
+
+    ok = cta_handler.try_click_navigation_cta(driver)
+
+    assert ok is True
+    assert next_div.clicked == 1
