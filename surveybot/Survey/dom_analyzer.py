@@ -1142,11 +1142,48 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         btn_like = []
 
     btn_groups: Dict[str, Dict[str, Any]] = {}
+
+    def _is_bootstrap_select_toggle(el) -> bool:
+        """Ignore bootstrap-select toggle buttons to avoid fake radio groups.
+
+        These controls mirror native <select> options and must not be treated as
+        standalone radio/button-choice options.
+        """
+        try:
+            tag = _norm_lc(getattr(el, "tag_name", "") or "")
+            cls = _norm_lc(el.get_attribute("class") or "")
+            data_toggle = _norm_lc(el.get_attribute("data-toggle") or "")
+
+            if "bootstrap-select" in cls:
+                return True
+            if data_toggle == "dropdown" and "dropdown-toggle" in cls:
+                return True
+            if tag == "button" and "dropdown-toggle" in cls and (el.get_attribute("data-id") or "").strip():
+                return True
+
+            return bool(
+                driver.execute_script(
+                    """
+                    const el = arguments[0];
+                    if (!el || !(el instanceof Element)) return false;
+                    if (el.closest('div.bootstrap-select')) return true;
+                    const dt = (el.getAttribute('data-toggle') || '').trim().toLowerCase();
+                    if (dt === 'dropdown' && el.classList.contains('dropdown-toggle')) return true;
+                    return false;
+                    """,
+                    el,
+                )
+            )
+        except Exception:
+            return False
+
     for b in btn_like:
         try:
             if not _is_actionable_visible(b):
                 continue
             if _is_modal_related_control(driver, b):
+                continue
+            if _is_bootstrap_select_toggle(b):
                 continue
 
             # Filtre Decipher cardrating : ignore disabled / non-clickable
