@@ -1286,7 +1286,7 @@ def try_click_navigation_cta(driver) -> bool:
 
     nav_xpath = (
         "//button"
-        "|//input[@type='submit' or @type='button']"
+        "|//input[@type='submit' or @type='button' or @type='image']"
         "|//a[@role='button']"
         "|//a[contains(concat(' ', normalize-space(@class), ' '), ' btn ')]"
         "|//*[contains(@onmousedown, 'ToggSel')]"
@@ -1321,6 +1321,7 @@ def try_click_navigation_cta(driver) -> bool:
             txt = (
                 el.text
                 or el.get_attribute("value")
+                or el.get_attribute("alt")
                 or el.get_attribute("aria-label")
                 or el.get_attribute("title")
                 or ""
@@ -1336,11 +1337,12 @@ def try_click_navigation_cta(driver) -> bool:
             t = _norm_btn_text(txt)
 
             el_id = (el.get_attribute("id") or "").lower()
+            el_name = (el.get_attribute("name") or "").lower()
             href = (el.get_attribute("href") or "").lower()
             role = (el.get_attribute("role") or "").lower()
             tabindex = (el.get_attribute("tabindex") or "").strip()
             signature = " ".join(
-                part for part in [t, el_id, cls, href, role] if part
+                part for part in [t, el_id, el_name, cls, href, role] if part
             )
 
             # Garde-fou anti-wrapper: certains conteneurs focusables (tabindex)
@@ -1374,6 +1376,9 @@ def try_click_navigation_cta(driver) -> bool:
             if el_id == "submitquestion":
                 score += 120
             elif any(k in el_id for k in ["submit", "next", "continue", "confirm"]):
+                score += 60
+
+            if any(k in el_name for k in ["submit", "next", "continue", "confirm"]):
                 score += 60
 
             if any(k in cls for k in ["cm-navigation-next-button", "next-button", "nav-next"]):
