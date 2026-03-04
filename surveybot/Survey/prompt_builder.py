@@ -72,15 +72,62 @@ def _has_explicit_multi_indicator(question_text: str | None) -> bool:
     return any(re.search(p, text) for p in _EXPLICIT_MULTI_PATTERNS)
 
 
+def _explicit_exact_count_from_question(question_text: str | None) -> int | None:
+    text = _norm_folded_lc(question_text)
+    if not text:
+        return None
+
+    word_to_int = {
+        "one": 1,
+        "un": 1,
+        "une": 1,
+        "two": 2,
+        "deux": 2,
+        "three": 3,
+        "trois": 3,
+        "four": 4,
+        "quatre": 4,
+        "five": 5,
+        "cinq": 5,
+    }
+    patterns = [
+        r"\bexact(?:ement|ly)?\s+(\d+)\b",
+        r"\b(?:select|choose|pick|check)\s+(\d+)\b",
+        r"\b(?:selectionnez|selectionner|choisissez|cochez)\s+(\d+)\b",
+        r"\b(?:select|choose|pick|check)\s+(?:exactly\s+)?(one|two|three|four|five)\b",
+        r"\b(?:selectionnez|selectionner|choisissez|cochez)\s+(?:exactement\s+)?(un|une|deux|trois|quatre|cinq)\b",
+        r"\bles\s+(un|une|deux|trois|quatre|cinq)\s+r[ée]ponses?\b",
+        r"\bles\s+(un|une|deux|trois|quatre|cinq)\b",
+        r"\bthe\s+(one|two|three|four|five)\s+(?:answers?|choices?|options?)\b",
+    ]
+    for pat in patterns:
+        m = re.search(pat, text, flags=re.IGNORECASE)
+        if not m:
+            continue
+        raw = (m.group(1) or "").strip().lower()
+        if raw.isdigit():
+            n = int(raw)
+        else:
+            n = word_to_int.get(raw)
+        if n and n >= 1:
+            return n
+    return None
+
+
 def _selection_rule_for_block(block: Dict[str, Any]) -> str:
     """
     Règle cible pour le nombre de réponses:
-    - checkbox/radio/button + indicateur multi explicite dans le libellé => 1..3
+    - checkbox/radio/button + cardinalité exacte explicite dans le libellé => exactly_N
+    - checkbox/radio/button + indicateur multi explicite => 1..3
     - sinon => exactement 1
     """
     itype = _norm_folded_lc(block.get("itype"))
-    if itype in {"checkbox", "radio", "button"} and _has_explicit_multi_indicator(block.get("question")):
-        return "multi_1_to_3"
+    if itype in {"checkbox", "radio", "button"}:
+        exact_count = _explicit_exact_count_from_question(block.get("question"))
+        if exact_count and exact_count > 1:
+            return f"exactly_{exact_count}"
+        if _has_explicit_multi_indicator(block.get("question")):
+            return "multi_1_to_3"
     return "exactly_1"
 
 
@@ -526,7 +573,11 @@ def build_batch_prompt(question_blocks: list[dict]) -> str:
                 f"option_present={bool(forced_country)}"
             )
 
-        if forced_country:
+        selection_rule = _selection_rule_for_block(block)
+        if selection_rule.startswith("exactly_") and selection_rule != "exactly_1":
+            exact_n = int(selection_rule.split("_", 1)[1] or "1")
+            lines.append(f"selection_rule: choisir EXACTEMENT {exact_n} option(s), séparées par |")
+        elif forced_country:
             lines.append(
                 f"selection_rule: RESIDENCE_COUNTRY strict -> répondre EXACTEMENT avec '{forced_country}'"
             )
@@ -549,12 +600,10 @@ def build_batch_prompt(question_blocks: list[dict]) -> str:
             lines.append(f"selection_rule: TIER_ENTRY strict -> répondre EXACTEMENT avec '{picked}'")
             lines.append(f"allowed_values_strict: {picked}")
             lines.append("instruction_stricte: Tu dois répondre EXACTEMENT avec l'un des libellés suivants : {" + picked + "}. Ne paraphrase pas. Ne renvoie rien d'autre.")
+        elif selection_rule == "multi_1_to_3":
+            lines.append("selection_rule: MULTI explicite -> choisir 1 à 3 options (idéalement 2-3, jamais >3)")
         else:
-            selection_rule = _selection_rule_for_block(block)
-            if selection_rule == "multi_1_to_3":
-                lines.append("selection_rule: MULTI explicite -> choisir 1 à 3 options (idéalement 2-3, jamais >3)")
-            else:
-                lines.append("selection_rule: choisir EXACTEMENT 1 option")
+            lines.append("selection_rule: choisir EXACTEMENT 1 option")
 
         if opts:
             lines.append("options: " + " | ".join(opts))
