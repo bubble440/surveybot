@@ -17,6 +17,37 @@ _EXACT_COUNT_WORD_TO_INT = {
     "cinq": 5,
 }
 
+_EXCLUSIVE_OPTION_PREFIXES = [
+    "aucun",
+    "aucune",
+    "aucune de ces",
+    "none",
+    "none of the above",
+    "pas applicable",
+    "n/a",
+    "autre",
+    "other",
+    "je ne sais pas",
+    "prefer not",
+]
+
+_SECTOR_ACTIVITY_PATTERNS = [
+    # FR
+    r"\bsecteurs?\s+d['’]?activite\b",
+    r"\bdomaines?\s+d['’]?activite\b",
+    r"\bsecteurs?\s+professionnels?\b",
+    r"\btravaillez[-\s]?vous\s+pour\s+une\s+entreprise\b",
+    r"\btravaille\s+pour\s+une\s+entreprise\b",
+    r"\btravaille[-\s]?t[-\s]?elle\s+pour\s+une\s+entreprise\b",
+    r"\bfoyer\s+travaille\b",
+    # EN
+    r"\bindustr(?:y|ies)\b",
+    r"\bsectors?\s+of\s+activity\b",
+    r"\bwork\s+for\s+a\s+company\b",
+    r"\bwork\s+in\s+the\s+following\b",
+    r"\bhousehold\s+work\b",
+]
+
 
 def _norm_folded_lc(text: str | None) -> str:
     base = unicodedata.normalize("NFKD", text or "")
@@ -78,3 +109,40 @@ def explicit_exact_count_from_question(question_text: str | None) -> int | None:
             return n
 
     return None
+
+
+def is_sector_activity_question(question_text: str | None) -> bool:
+    text = _norm_folded_lc(question_text)
+    if not text:
+        return False
+    return any(re.search(pat, text) for pat in _SECTOR_ACTIVITY_PATTERNS)
+
+
+def _is_exclusive_option_text(option_text: str | None) -> bool:
+    folded = _norm_folded_lc(option_text)
+    if not folded:
+        return False
+    return any(folded.startswith(prefix) for prefix in _EXCLUSIVE_OPTION_PREFIXES)
+
+
+def compute_min_select(question_text: str | None, options: list[str], max_select: int) -> int:
+    bounded_max = max(1, int(max_select or 1))
+
+    if is_sector_activity_question(question_text):
+        return bounded_max
+
+    exact_count = explicit_exact_count_from_question(question_text)
+    if exact_count is not None:
+        return max(1, min(int(exact_count), bounded_max))
+
+    if has_explicit_multi_indicator(question_text):
+        return max(1, min(3, bounded_max))
+
+    return 1
+
+
+def compute_checkbox_max_select(options: list[str]) -> int:
+    if not options:
+        return 1
+    exclusive_count = sum(1 for opt in options if _is_exclusive_option_text(opt))
+    return max(1, len(options) - exclusive_count)
