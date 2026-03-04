@@ -1254,6 +1254,7 @@ def execute_survey_page(driver, api_key):
             "#btn_next",                         # AreYouNet (img inside <a>)
             '[data-testid="start-button"]',      # Quantilope coversheet
             "#bnNext", # Primis/Primisoft (bouton "Suivant")
+            "#consent-button-confirm",        # Consent modal RGPD (Toluna-like UI)
         ]
         
         try:
@@ -1316,6 +1317,9 @@ def execute_survey_page(driver, api_key):
                 or input_handler.click_cta_strong_any_context(driver, text="suivant")
                 or input_handler.click_cta_strong_any_context(driver, text="démarrer")
                 or input_handler.click_cta_strong_any_context(driver, text="commencer")
+                or input_handler.click_cta_strong_any_context(driver, text="confirmer")
+                or input_handler.click_cta_strong_any_context(driver, text="confirmez")
+                or input_handler.click_cta_strong_any_context(driver, text="confirm")
             )
             # Fallback direct par ID pour Qualtrics et CTA standards
             if not clicked:
