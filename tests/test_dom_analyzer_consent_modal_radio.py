@@ -131,3 +131,23 @@ def test_extracts_consent_modal_radio_block_without_label_for_attribute(monkeypa
     block = blocks[0]
     assert any("je consens" in opt.lower() for opt in block["options"])
     assert any("je ne consens pas" in opt.lower() for opt in block["options"])
+
+
+def test_skips_hidden_consent_modal_radio_block(monkeypatch):
+    _patch_non_generic_extractors(monkeypatch)
+
+    radio_accept = _FakeElement(attrs={"id": "consent-radio-accept", "name": "consent", "type": "radio"})
+    radio_reject = _FakeElement(attrs={"id": "consent-radio-reject", "name": "consent", "type": "radio"})
+
+    driver = _FakeDriver(
+        by_selector={
+            "#modal-container": [_FakeElement(attrs={"style": "display: none;"})],
+            ".consent-form-radiogroup": [_FakeElement(attrs={"style": "display: none;"})],
+            ".consent-form-radiogroup input[type='radio'][name]": [radio_accept, radio_reject],
+            "#consent-button-confirm": [_FakeElement(text="Confirmez", attrs={"style": "display: none;"})],
+        }
+    )
+
+    blocks = da._analyze_dom_current_context(driver)
+
+    assert blocks == []

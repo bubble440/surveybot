@@ -681,7 +681,7 @@ def _click_with_intercept(driver, el) -> bool:
         f"target={_format_intercept_target(report.get('target'))}")
     ok = bool(report.get("clickCaptured") and report.get("prevented"))
     if ok:
-        log_info("[CTA_INTERCEPT]", "result=INTERCEPTED_OK")
+        log_info("[CTA_INTERCEPT]", "result=INTERCEPT_OK")
     else:
         log_info("[CTA_INTERCEPT]", "result=INTERCEPTION_IMPOSSIBLE")
 
@@ -1193,7 +1193,7 @@ def try_click_navigation_cta(driver) -> bool:
                 clicked = _click_with_intercept(driver, btn)
                 _nav_log("[CTA_NAV]", f"CTA_CLICKED provider_hint=forsta PROGRESSED={str(bool(clicked)).lower()}", driver)
                 if _cta_intercept_enabled() and clicked:
-                    _nav_log("[CTA_NAV]", "INTERCEPTED_OK provider_hint=forsta", driver)
+                    _nav_log("[CTA_NAV]", "INTERCEPT_OK provider_hint=forsta", driver)
                 if clicked:
                     return True
             except Exception:
@@ -1212,7 +1212,7 @@ def try_click_navigation_cta(driver) -> bool:
                 if _click_with_intercept(driver, btn):
                     _nav_log("[CTA_NAV]", "CTA_FOUND provider_hint=consent_modal button=consent-button-confirm", driver)
                     if _cta_intercept_enabled():
-                        _nav_log("[CTA_NAV]", "INTERCEPTED_OK provider_hint=consent_modal", driver)
+                        _nav_log("[CTA_NAV]", "INTERCEPT_OK provider_hint=consent_modal", driver)
                     return True
             except Exception:
                 continue
@@ -1406,7 +1406,7 @@ def try_click_navigation_cta(driver) -> bool:
             continue
 
     if not candidates:
-        _nav_log("[CTA_NAV]", "NOT_FOUND (no candidates)", driver)
+        _nav_log("[CTA_NAV]", "CTA_NOT_FOUND (no candidates)", driver)
         return False
 
     candidates.sort(key=lambda x: x[0], reverse=True)
@@ -1425,14 +1425,17 @@ f"CTA_FOUND candidate score={score}",
             _nav_log("[CTA_NAV]", f"CTA_CLICKED candidate score={score} PROGRESSED={str(bool(clicked)).lower()}", driver)
             if clicked:
                 if _cta_intercept_enabled():
-                    _nav_log("[CTA_NAV]", f"INTERCEPTED_OK candidate score={score}", driver)
+                    _nav_log("[CTA_NAV]", f"INTERCEPT_OK candidate score={score}", driver)
                 else:
                     _nav_log("[CTA_NAV]", f"CLICKED candidate score={score}", driver)
                 return True
         except Exception:
             continue
 
-    _nav_log("[CTA_NAV]", f"FOUND_BUT_NOT_CLICKED candidates={len(candidates)} tried={tried} intercept={_cta_intercept_enabled()}", driver)
+    if _cta_intercept_enabled():
+        _nav_log("[CTA_NAV]", f"CTA_FOUND INTERCEPT_IMPOSSIBLE candidates={len(candidates)} tried={tried}", driver)
+    else:
+        _nav_log("[CTA_NAV]", f"CTA_FOUND CLICK_IMPOSSIBLE candidates={len(candidates)} tried={tried}", driver)
     return False
 
 
