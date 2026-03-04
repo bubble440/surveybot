@@ -1,3 +1,4 @@
+import re
 from surveybot.Survey.dom_question_extractor import _group_key_for_choice, _compute_max_select
 from surveybot.Survey.dom_selection_rules import has_explicit_multi_indicator
 
@@ -173,4 +174,22 @@ def test_explicit_multi_indicator_and_max_select_for_reponses_appropriees():
     options = [str(i) for i in range(12)]
     assert has_explicit_multi_indicator(question)
     assert _compute_max_select("checkbox", options, question) == 3
+
+def test_compute_max_select_from_decipher_dom_instruction_text_fixture():
+    dom_text = """
+    <div id="question_Q10" class="question checkbox" role="radiogroup">
+      <h1 class="question-text">Pourquoi avez-vous changé de banque principale ?</h1>
+      <h2 class="instruction-text">Vous pouvez choisir plusieurs réponses parmi celles proposées</h2>
+    </div>
+    """
+
+    q = re.search(r'<h1[^>]*>(.*?)</h1>', dom_text, flags=re.IGNORECASE | re.DOTALL)
+    instr = re.search(r'<h2[^>]*class="instruction-text"[^>]*>(.*?)</h2>', dom_text, flags=re.IGNORECASE | re.DOTALL)
+
+    question = re.sub(r"\s+", " ", (q.group(1) if q else "")).strip()
+    instruction = re.sub(r"\s+", " ", (instr.group(1) if instr else "")).strip()
+    signal_text = f"{question} {instruction}".strip()
+
+    options = [str(i) for i in range(10)]
+    assert _compute_max_select("checkbox", options, signal_text) == 3
 
