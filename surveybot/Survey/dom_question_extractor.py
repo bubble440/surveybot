@@ -11,7 +11,7 @@ Ce module contient les fonctions spécialisées pour :
 """
 
 from __future__ import annotations
-from typing import List
+from typing import List, Optional
 import re
 from selenium.webdriver.common.by import By
 
@@ -551,7 +551,61 @@ def _group_key_for_choice(el, itype: str) -> str:
         return ""
 
 
-def _compute_max_select(itype: str, options: List[str]) -> int:
+_EXACT_COUNT_WORD_TO_INT = {
+    "one": 1,
+    "un": 1,
+    "une": 1,
+    "two": 2,
+    "deux": 2,
+    "three": 3,
+    "trois": 3,
+    "four": 4,
+    "quatre": 4,
+    "five": 5,
+    "cinq": 5,
+}
+
+
+def _infer_exact_choice_count(question_text: str | None) -> Optional[int]:
+    """
+    Infère une cardinalité *exacte* depuis le libellé de question (DOM text).
+
+    Exemples ciblés:
+    - "sélectionnez les deux réponses"
+    - "choose two answers"
+    - "select exactly 2"
+    """
+    text = _norm_lc(question_text or "")
+    if not text:
+        return None
+
+    exact_patterns = [
+        r"\bexact(?:ement|ly)?\s+(\d+)\b",
+        r"\b(?:select|choose|pick|check)\s+(\d+)\b",
+        r"\b(?:selectionnez|sélectionnez|selectionner|sélectionner|choisissez|cochez)\s+(\d+)\b",
+        r"\b(?:select|choose|pick|check)\s+(?:exactly\s+)?(one|two|three|four|five)\b",
+        r"\b(?:selectionnez|sélectionnez|selectionner|sélectionner|choisissez|cochez)\s+(?:exactement\s+)?(un|une|deux|trois|quatre|cinq)\b",
+        r"\bles\s+(un|une|deux|trois|quatre|cinq)\s+r[ée]ponses?\b",
+        r"\bles\s+(un|une|deux|trois|quatre|cinq)\b",
+        r"\bthe\s+(one|two|three|four|five)\s+(?:answers?|choices?|options?)\b",
+    ]
+
+    for pat in exact_patterns:
+        m = re.search(pat, text, flags=re.IGNORECASE)
+        if not m:
+            continue
+        raw = (m.group(1) or "").strip().lower()
+        if raw.isdigit():
+            n = int(raw)
+        else:
+            n = _EXACT_COUNT_WORD_TO_INT.get(raw)
+        if n and n >= 1:
+            return n
+
+    return None
+
+
+def _compute_max_select(itype: str, options: List[str], question_text: str | None = None) -> int:
     """
     Calcule max_select (cardinalité maximale de sélection).
     
@@ -563,6 +617,11 @@ def _compute_max_select(itype: str, options: List[str]) -> int:
     if itype == "radio":
         return 1
     elif itype == "checkbox":
+        exact_count = _infer_exact_choice_count(question_text)
+        if exact_count is not None:
+            if options:
+                return max(1, min(exact_count, len(options)))
+            return max(1, exact_count)
         return max(len(options), 1)
     else:
         return 1

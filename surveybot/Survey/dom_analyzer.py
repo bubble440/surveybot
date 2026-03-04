@@ -906,7 +906,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                 "question": question,
                 "itype": itype,
                 "options": options,
-                "max_select": _compute_max_select(itype, options),
+                "max_select": _compute_max_select(itype, options, question),
                 "target_id": target_id,
                 "context": {
                     "kind": "group",
@@ -1623,7 +1623,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                 "question": question,
                 "itype": itype,
                 "options": options,
-                "max_select": _compute_max_select(itype, options),
+                "max_select": _compute_max_select(itype, options, question),
                 "target_id": target_id,
                 "context": {
                     "kind": "single",
@@ -1832,6 +1832,7 @@ def _dedupe_question_blocks(blocks: List[Dict[str, Any]]) -> List[Dict[str, Any]
             merged["max_select"] = _compute_max_select(
                 _norm((merged.get("itype") or "")) or _norm((richer.get("itype") or "")),
                 merged_options,
+                merged.get("question") or richer.get("question"),
             )
             dedup_map[sig] = merged
             continue
