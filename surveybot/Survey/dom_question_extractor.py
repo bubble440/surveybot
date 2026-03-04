@@ -192,6 +192,20 @@ def _find_associated_label(driver, el) -> str:
                     return txt
         except Exception:
             pass
+
+        # 4) Variants custom: libellé dans un sibling non-<label>
+        # ex: <div class="answer_options"><div class="option_label"><span>...</span></div><input ...></div>
+        try:
+            custom_label_nodes = el.find_elements(
+                By.XPATH,
+                "ancestor::*[contains(@class,'answer_options')][1]//*[contains(@class,'option_label')]"
+            )
+            for node in custom_label_nodes:
+                txt = _norm(node.text or node.get_attribute("innerText") or "")
+                if _is_valid_option_label(txt):
+                    return txt
+        except Exception:
+            pass
         
         return ""
     

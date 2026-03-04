@@ -665,7 +665,9 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                 }
 
                 // 3) Wrapper option visible (cas UI custom)
-                const optionWrapper = el.closest('[role="radio"], [role="checkbox"], .form-check, .option, li, .choice');
+                const optionWrapper = el.closest(
+                  '[role="radio"], [role="checkbox"], .form-check, .option, li, .choice, .answer_options, [class*="answer_options"]'
+                );
                 if (isVisible(optionWrapper)) return true;
 
                 return false;
@@ -1344,7 +1346,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                 continue
 
             if itype in ("text", "textarea") and _is_auxiliary_text_for_choice_group(driver, el, container, question):
-                print("[DOM_DEBUG] skip_aux_text_with_choice_group")
+                log_debug("[DOM_DEBUG]", "skip_aux_text_with_choice_group")
                 continue
 
             if itype in ("text", "textarea") and _is_open_ended_choice_companion(el, container):
