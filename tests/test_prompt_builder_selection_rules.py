@@ -140,3 +140,25 @@ def test_batch_prompt_requires_exactly_two_values_for_exact_count_checkbox():
     prompt = build_batch_prompt(blocks)
 
     assert "selection_rule: choisir EXACTEMENT 2 option(s), séparées par |" in prompt
+
+
+
+def test_batch_prompt_forces_accept_on_consent_modal_radio():
+    blocks = [
+        {
+            "question": "Merci de répondre à cette question",
+            "itype": "radio",
+            "options": [
+                "JE CONSENS et continue l'enquête",
+                "JE NE CONSENS PAS et quitte l'enquête",
+            ],
+            "max_select": 1,
+            "target_id": "group_consent",
+            "context": {"consent_modal_radio": True},
+        }
+    ]
+
+    prompt = build_batch_prompt(blocks)
+
+    assert "selection_rule: CONSENT_ACCEPT strict" in prompt
+    assert "allowed_values_strict: JE CONSENS et continue l'enquête" in prompt
