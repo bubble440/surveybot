@@ -444,6 +444,69 @@ def _group_key_for_choice(el, itype: str) -> str:
                 # Sans normalisation, chaque option devient un groupe distinct.
                 # On compacte donc la clé sur la racine commune du name.
                 if itype == "checkbox":
+                    # SPSSMR/HTMLPlayer pattern (ex: Escalent): les options d'une
+                    # même question checkbox peuvent avoir des names tous distincts
+                    # (`_QQ1_Cr1`, `_QQ1_Cr2`, ...). Dans ce cas, grouper par `name`
+                    # casse la question en N blocs mono-option.
+                    # Scope DOM strict: uniquement si on trouve un conteneur
+                    # question stable (fieldset/.mrQuestionTable), >=2 checkboxes
+                    # visibles et des names non vides tous distincts.
+                    try:
+                        scoped = el.find_elements(
+                            By.XPATH,
+                            "ancestor::*[self::fieldset or contains(@class,'mrQuestionTable')][1]",
+                        )
+                    except Exception:
+                        scoped = []
+
+                    if scoped:
+                        group_container = scoped[0]
+                        try:
+                            scoped_boxes = group_container.find_elements(By.XPATH, ".//input[@type='checkbox']")
+                        except Exception:
+                            scoped_boxes = []
+
+                        visible_boxes = []
+                        for b in scoped_boxes:
+                            try:
+                                if b.is_displayed():
+                                    visible_boxes.append(b)
+                            except Exception:
+                                continue
+
+                        scoped_names = []
+                        for b in visible_boxes:
+                            try:
+                                nm = _norm_lc(b.get_attribute("name") or "")
+                            except Exception:
+                                nm = ""
+                            if nm:
+                                scoped_names.append(nm)
+
+                        if (
+                            len(visible_boxes) >= 2
+                            and len(scoped_names) == len(visible_boxes)
+                            and len(set(scoped_names)) == len(scoped_names)
+                        ):
+                            c_tag = _norm_lc(group_container.tag_name or "")
+                            c_id = _norm_lc(group_container.get_attribute("id") or "")
+                            c_class = _norm_lc(group_container.get_attribute("class") or "")
+                            c_legend = ""
+                            try:
+                                legends = group_container.find_elements(By.XPATH, ".//legend[1]")
+                                if legends:
+                                    c_legend = _norm_lc((legends[0].text or "").strip())
+                            except Exception:
+                                c_legend = ""
+
+                            container_bits = [
+                                x
+                                for x in [c_tag, c_id, c_class, c_legend[:120]]
+                                if x
+                            ]
+                            if container_bits:
+                                return f"dom_container:{'|'.join(container_bits)}"
+
                     base_name = re.sub(r"(?:sq\d+|a\d+)$", "", clean_name, flags=re.IGNORECASE)
                     if base_name and base_name != clean_name:
                         clean_name = base_name
