@@ -148,3 +148,48 @@ def test_keep_real_text_question_with_own_label_even_if_choices_exist(monkeypatc
 
     assert any(b["itype"] == "radio" for b in blocks)
     assert any(b["itype"] == "text" for b in blocks)
+
+
+def test_skip_inline_other_text_with_own_label_inside_choice_option(monkeypatch):
+    _patch_non_generic_extractors(monkeypatch)
+
+    container = _FakeNode(
+        "div",
+        attrs={"id": "question1001", "class": "question radio_question"},
+        text="Pour commencer... Etes-vous...?",
+    )
+    text_input = _FakeNode(
+        "input",
+        attrs={"type": "text", "id": "t1001_4", "name": "t1001_4", "required": "required"},
+        text="",
+        container=container,
+    )
+
+    monkeypatch.setattr(da, "_is_actionable_visible", lambda _el: True)
+    monkeypatch.setattr(da, "_looks_like_system_field", lambda _el: False)
+    monkeypatch.setattr(da, "_detect_itype", lambda el: "text" if el is text_input else "radio")
+    monkeypatch.setattr(da, "_extract_surveywriter_ssi_question", lambda *_: "")
+    monkeypatch.setattr(da, "_extract_ssi_confirmit_question", lambda *_: "")
+    monkeypatch.setattr(da, "_find_question_text_near_element", lambda *_: "")
+    monkeypatch.setattr(da, "_best_xpath_for_element", lambda _driver, el: f"//*[@id='{el.get_attribute('id') or 'aux'}']")
+    monkeypatch.setattr(da, "_nearest_question_container", lambda _el: container)
+    monkeypatch.setattr(da, "_extract_question_from_container", lambda *_args, **_kwargs: "Pour commencer... Etes-vous...?")
+
+    def _label(_driver, el):
+        if el is text_input:
+            return "Autre, merci de préciser:"
+        return el.text or ""
+
+    monkeypatch.setattr(da, "_find_associated_label", _label)
+
+    class _DriverInline(_FakeDriver):
+        def execute_script(self, script, *args, **kwargs):
+            if "optionRoot" in script:
+                return True
+            return False
+
+    driver = _DriverInline(text_input=text_input)
+    blocks = da._analyze_dom_current_context(driver)
+
+    assert len(blocks) == 1
+    assert blocks[0]["itype"] == "radio"
