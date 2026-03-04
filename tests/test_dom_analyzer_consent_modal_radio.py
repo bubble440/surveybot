@@ -78,6 +78,8 @@ def test_extracts_consent_modal_radio_block(monkeypatch):
 
     driver = _FakeDriver(
         by_selector={
+            "#modal-container": [_FakeElement()],
+            ".consent-form-radiogroup": [_FakeElement()],
             ".consent-form-radiogroup input[type='radio'][name]": [radio_accept, radio_reject],
             "#consent-button-confirm": [cta_confirm],
             "label[for='consent-radio-accept'] .consent-option-text": [label_accept_text],
@@ -96,3 +98,36 @@ def test_extracts_consent_modal_radio_block(monkeypatch):
     assert any("je consens" in opt.lower() for opt in block["options"])
     assert any("je ne consens pas" in opt.lower() for opt in block["options"])
     assert (block.get("context") or {}).get("consent_modal_radio") is True
+
+
+
+def test_extracts_consent_modal_radio_block_without_label_for_attribute(monkeypatch):
+    _patch_non_generic_extractors(monkeypatch)
+
+    accept_label = _FakeElement(text="JE CONSENS et continue l'enquête")
+    reject_label = _FakeElement(text="JE NE CONSENS PAS et quitte l'enquête")
+
+    radio_accept = _FakeElement(
+        attrs={"id": "consent-radio-accept", "name": "consent", "type": "radio"},
+        by_xpath={"ancestor::label[contains(@class,'consent-option-label')][1]": [accept_label]},
+    )
+    radio_reject = _FakeElement(
+        attrs={"id": "consent-radio-reject", "name": "consent", "type": "radio"},
+        by_xpath={"ancestor::label[contains(@class,'consent-option-label')][1]": [reject_label]},
+    )
+
+    driver = _FakeDriver(
+        by_selector={
+            "#modal-container": [_FakeElement()],
+            ".consent-form-radiogroup": [_FakeElement()],
+            ".consent-form-radiogroup input[type='radio'][name]": [radio_accept, radio_reject],
+            "#consent-button-confirm": [_FakeElement(text="Confirmez")],
+        }
+    )
+
+    blocks = da._analyze_dom_current_context(driver)
+
+    assert len(blocks) == 1
+    block = blocks[0]
+    assert any("je consens" in opt.lower() for opt in block["options"])
+    assert any("je ne consens pas" in opt.lower() for opt in block["options"])
