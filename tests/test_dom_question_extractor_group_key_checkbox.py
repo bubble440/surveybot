@@ -132,7 +132,7 @@ def test_compute_max_select_uses_explicit_exact_count_from_question_text():
 def test_compute_max_select_keeps_open_multi_when_no_exact_count_in_question_text():
     question = "Sélectionnez toutes les réponses qui s'appliquent."
     options = ["A", "B", "C", "D"]
-    assert _compute_max_select("checkbox", options, question) == 4
+    assert _compute_max_select("checkbox", options, question) == 3
 
 
 def test_checkbox_group_key_uses_dom_container_when_checkbox_names_are_all_distinct():
@@ -150,3 +150,18 @@ def test_checkbox_group_key_uses_dom_container_when_checkbox_names_are_all_disti
     form = _FakeContainer({"id": "mrForm", "name": "mrForm"})
     el = _FakeChoice({"name": "_QQ1_Cr2"}, containers=[fieldset, form])
     assert _group_key_for_choice(el, "checkbox").startswith("dom_container:fieldset|")
+
+
+def test_compute_max_select_forces_three_on_explicit_multi_checkbox():
+    options = [str(i) for i in range(10)]
+    assert _compute_max_select("checkbox", options, "Cochez tout ce qui s'applique") == 3
+
+
+def test_compute_max_select_forces_three_on_explicit_multi_radio():
+    options = [str(i) for i in range(5)]
+    assert _compute_max_select("radio", options, "Plusieurs réponses possibles") == 3
+
+
+def test_compute_max_select_keeps_existing_checkbox_default_without_multi_hint():
+    options = [str(i) for i in range(10)]
+    assert _compute_max_select("checkbox", options, "Rien n’indique multi") == 10

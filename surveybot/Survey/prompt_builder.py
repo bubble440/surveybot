@@ -22,6 +22,17 @@ from typing import List, Dict, Any
 import unicodedata
 import re
 
+try:
+    from Survey.dom_selection_rules import (
+        explicit_exact_count_from_question,
+        has_explicit_multi_indicator,
+    )
+except ImportError:
+    from surveybot.Survey.dom_selection_rules import (
+        explicit_exact_count_from_question,
+        has_explicit_multi_indicator,
+    )
+
 
 # =========================
 # Utils texte
@@ -42,6 +53,7 @@ def _escape(s: str) -> str:
     return _norm(s).replace("////", "/").replace("\n", " ")
 
 
+
 def _norm_folded_lc(s: str | None) -> str:
     """Lowercase + suppression des accents pour matching robuste FR/EN."""
     base = unicodedata.normalize("NFKD", s or "")
@@ -49,69 +61,12 @@ def _norm_folded_lc(s: str | None) -> str:
     return re.sub(r"\s+", " ", no_marks).strip().lower()
 
 
-_EXPLICIT_MULTI_PATTERNS = [
-    # FR
-    r"\bplusieurs\s+(reponses?|choix|options?)\b",
-    r"\bcochez\s+tout(?:es)?\s+ce\s+qui\s+s['’]?applique\b",
-    r"\bselectionnez\s+tout(?:es)?\s+ce\s+qui\s+s['’]?applique\b",
-    r"\bvous\s+pouvez\s+(?:selectionner|choisir|cocher|donner)\s+plusieurs\s+(?:reponses?|choix|options?)\b",
-    r"\b(?:vous\s+pouvez\s+)?donner\s+autant\s+de\s+reponses?\s+que\s+vous\s+le\s+souhaitez\b",
-    r"\b(?:jusqu['’]?a|maximum)\s*\d+\s*(?:reponses?|choix|options?)\b",
-    # EN
-    r"\b(?:select|choose|check)\s+all\s+that\s+apply\b",
-    r"\bmultiple\s+(?:answers?|choices?|options?)\s+(?:allowed|possible)\b",
-    r"\bmore\s+than\s+one\s+(?:answer|choice|option)\b",
-    r"\byou\s+may\s+select\s+up\s+to\s+\d+\s*(?:answers?|choices?|options?)\b",
-]
-
-
 def _has_explicit_multi_indicator(question_text: str | None) -> bool:
-    text = _norm_folded_lc(question_text)
-    if not text:
-        return False
-    return any(re.search(p, text) for p in _EXPLICIT_MULTI_PATTERNS)
+    return has_explicit_multi_indicator(question_text)
 
 
 def _explicit_exact_count_from_question(question_text: str | None) -> int | None:
-    text = _norm_folded_lc(question_text)
-    if not text:
-        return None
-
-    word_to_int = {
-        "one": 1,
-        "un": 1,
-        "une": 1,
-        "two": 2,
-        "deux": 2,
-        "three": 3,
-        "trois": 3,
-        "four": 4,
-        "quatre": 4,
-        "five": 5,
-        "cinq": 5,
-    }
-    patterns = [
-        r"\bexact(?:ement|ly)?\s+(\d+)\b",
-        r"\b(?:select|choose|pick|check)\s+(\d+)\b",
-        r"\b(?:selectionnez|selectionner|choisissez|cochez)\s+(\d+)\b",
-        r"\b(?:select|choose|pick|check)\s+(?:exactly\s+)?(one|two|three|four|five)\b",
-        r"\b(?:selectionnez|selectionner|choisissez|cochez)\s+(?:exactement\s+)?(un|une|deux|trois|quatre|cinq)\b",
-        r"\bles\s+(un|une|deux|trois|quatre|cinq)\s+r[ée]ponses?\b",
-        r"\bles\s+(un|une|deux|trois|quatre|cinq)\b",
-        r"\bthe\s+(one|two|three|four|five)\s+(?:answers?|choices?|options?)\b",
-    ]
-    for pat in patterns:
-        m = re.search(pat, text, flags=re.IGNORECASE)
-        if not m:
-            continue
-        raw = (m.group(1) or "").strip().lower()
-        if raw.isdigit():
-            n = int(raw)
-        else:
-            n = word_to_int.get(raw)
-        if n and n >= 1:
-            return n
-    return None
+    return explicit_exact_count_from_question(question_text)
 
 
 def _selection_rule_for_block(block: Dict[str, Any]) -> str:
