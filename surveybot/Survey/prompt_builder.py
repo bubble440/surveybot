@@ -600,6 +600,14 @@ def build_batch_prompt(question_blocks: list[dict]) -> str:
             lines.append(f"selection_rule: TIER_ENTRY strict -> répondre EXACTEMENT avec '{picked}'")
             lines.append(f"allowed_values_strict: {picked}")
             lines.append("instruction_stricte: Tu dois répondre EXACTEMENT avec l'un des libellés suivants : {" + picked + "}. Ne paraphrase pas. Ne renvoie rien d'autre.")
+        elif bool((ctx or {}).get("consent_modal_radio")) and opts:
+            forced_consent = _preferred_consent_option(opts)
+            if forced_consent:
+                lines.append(f"selection_rule: CONSENT_ACCEPT strict -> répondre EXACTEMENT avec '{forced_consent}'")
+                lines.append(f"allowed_values_strict: {forced_consent}")
+                lines.append("instruction_stricte: Consent modal. Tu dois choisir l'option de consentement positive et jamais l'option de refus.")
+            else:
+                lines.append("selection_rule: choisir EXACTEMENT 1 option")
         elif selection_rule == "multi_1_to_3":
             lines.append("selection_rule: MULTI explicite -> choisir 1 à 3 options (idéalement 2-3, jamais >3)")
         else:
@@ -622,6 +630,21 @@ def build_batch_prompt(question_blocks: list[dict]) -> str:
 
 def _norm_lc(s: str | None) -> str:
     return re.sub(r"\s+", " ", (s or "")).strip().lower()
+
+def _preferred_consent_option(options: list[str]) -> str | None:
+    """Retourne l'option consentement positive à forcer, si détectée."""
+    if not options:
+        return None
+
+    for opt in options:
+        v = _norm_lc(opt)
+        if not v:
+            continue
+        if "je consens" in v or "i consent" in v or "i agree" in v:
+            if "je ne consens pas" in v or "i do not consent" in v or "disagree" in v:
+                continue
+            return opt
+    return None
 
 def _is_navigation_label(label: str | None) -> bool:
     v = _norm_lc(label)
