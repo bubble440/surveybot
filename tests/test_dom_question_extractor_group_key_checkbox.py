@@ -1,4 +1,5 @@
 from surveybot.Survey.dom_question_extractor import _group_key_for_choice, _compute_max_select
+from surveybot.Survey.dom_selection_rules import has_explicit_multi_indicator
 
 
 class _FakeChoice:
@@ -165,3 +166,11 @@ def test_compute_max_select_forces_three_on_explicit_multi_radio():
 def test_compute_max_select_keeps_existing_checkbox_default_without_multi_hint():
     options = [str(i) for i in range(10)]
     assert _compute_max_select("checkbox", options, "Rien n’indique multi") == 10
+
+
+def test_explicit_multi_indicator_and_max_select_for_reponses_appropriees():
+    question = "Sélectionnez toutes les réponses appropriées."
+    options = [str(i) for i in range(12)]
+    assert has_explicit_multi_indicator(question)
+    assert _compute_max_select("checkbox", options, question) == 3
+
