@@ -1836,12 +1836,47 @@ def _extract_consent_modal_radio_block(driver, frame_chain: list[int] | None) ->
 
     frame_chain = list(frame_chain or [])
 
+    def _is_dom_visible(el: Any) -> bool:
+        """Best-effort visibilité DOM sans hypothèse provider globale."""
+        if el is None:
+            return False
+        try:
+            if hasattr(el, "is_displayed") and not el.is_displayed():
+                return False
+        except Exception:
+            return False
+        try:
+            style = _norm_lc(el.get_attribute("style") or "")
+        except Exception:
+            style = ""
+        if "display:none" in style or "visibility:hidden" in style:
+            return False
+        try:
+            aria_hidden = _norm_lc(el.get_attribute("aria-hidden") or "")
+        except Exception:
+            aria_hidden = ""
+        if aria_hidden == "true":
+            return False
+        return True
+
     try:
-        if not driver.find_elements(By.CSS_SELECTOR, "#modal-container"):
+        modal_nodes = driver.find_elements(By.CSS_SELECTOR, "#modal-container")
+        if not modal_nodes:
             return []
-        if not driver.find_elements(By.CSS_SELECTOR, ".consent-form-radiogroup"):
+        visible_modals = [el for el in modal_nodes if _is_dom_visible(el)]
+        if not visible_modals:
             return []
-        if not driver.find_elements(By.CSS_SELECTOR, "#consent-button-confirm"):
+
+        radiogroups = driver.find_elements(By.CSS_SELECTOR, ".consent-form-radiogroup")
+        if not radiogroups:
+            return []
+        if not any(_is_dom_visible(el) for el in radiogroups):
+            return []
+
+        confirm_buttons = driver.find_elements(By.CSS_SELECTOR, "#consent-button-confirm")
+        if not confirm_buttons:
+            return []
+        if not any(_is_dom_visible(el) for el in confirm_buttons):
             return []
     except Exception:
         return []
