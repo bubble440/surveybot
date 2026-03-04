@@ -2,11 +2,13 @@ from surveybot.Survey import dom_analyzer as da
 
 
 class _FakeElement:
-    def __init__(self, text="", attrs=None, by_selector=None, by_xpath=None):
+    def __init__(self, text="", attrs=None, by_selector=None, by_xpath=None, displayed=True, tag_name="div"):
         self.text = text
         self._attrs = attrs or {}
         self._by_selector = by_selector or {}
         self._by_xpath = by_xpath or {}
+        self._displayed = displayed
+        self.tag_name = tag_name
 
     def get_attribute(self, name):
         return self._attrs.get(name, "")
@@ -24,6 +26,9 @@ class _FakeElement:
         if key in self._by_selector and self._by_selector[key]:
             return self._by_selector[key][0]
         raise Exception("not found")
+
+    def is_displayed(self):
+        return bool(self._displayed)
 
 
 class _FakeDriver:
@@ -68,8 +73,8 @@ def _patch_non_generic_extractors(monkeypatch):
 def test_extracts_consent_modal_radio_block(monkeypatch):
     _patch_non_generic_extractors(monkeypatch)
 
-    radio_accept = _FakeElement(attrs={"id": "consent-radio-accept", "name": "consent", "type": "radio"})
-    radio_reject = _FakeElement(attrs={"id": "consent-radio-reject", "name": "consent", "type": "radio"})
+    radio_accept = _FakeElement(attrs={"id": "consent-radio-accept", "name": "consent", "type": "radio"}, tag_name="input")
+    radio_reject = _FakeElement(attrs={"id": "consent-radio-reject", "name": "consent", "type": "radio"}, tag_name="input")
 
     label_accept_text = _FakeElement(text="JE CONSENS et continue l'enquête")
     label_reject_text = _FakeElement(text="JE NE CONSENS PAS et quitte l'enquête")
@@ -110,10 +115,12 @@ def test_extracts_consent_modal_radio_block_without_label_for_attribute(monkeypa
     radio_accept = _FakeElement(
         attrs={"id": "consent-radio-accept", "name": "consent", "type": "radio"},
         by_xpath={"ancestor::label[contains(@class,'consent-option-label')][1]": [accept_label]},
+        tag_name="input",
     )
     radio_reject = _FakeElement(
         attrs={"id": "consent-radio-reject", "name": "consent", "type": "radio"},
         by_xpath={"ancestor::label[contains(@class,'consent-option-label')][1]": [reject_label]},
+        tag_name="input",
     )
 
     driver = _FakeDriver(
@@ -131,3 +138,23 @@ def test_extracts_consent_modal_radio_block_without_label_for_attribute(monkeypa
     block = blocks[0]
     assert any("je consens" in opt.lower() for opt in block["options"])
     assert any("je ne consens pas" in opt.lower() for opt in block["options"])
+
+
+def test_ignores_hidden_stale_consent_modal(monkeypatch):
+    _patch_non_generic_extractors(monkeypatch)
+
+    radio_accept = _FakeElement(attrs={"id": "consent-radio-accept", "name": "consent", "type": "radio"}, displayed=False, tag_name="input")
+    radio_reject = _FakeElement(attrs={"id": "consent-radio-reject", "name": "consent", "type": "radio"}, displayed=False, tag_name="input")
+
+    driver = _FakeDriver(
+        by_selector={
+            "#modal-container": [_FakeElement(displayed=False)],
+            ".consent-form-radiogroup": [_FakeElement(displayed=False)],
+            ".consent-form-radiogroup input[type='radio'][name]": [radio_accept, radio_reject],
+            "#consent-button-confirm": [_FakeElement(text="Confirmez", displayed=False)],
+        }
+    )
+
+    blocks = da._analyze_dom_current_context(driver)
+
+    assert blocks == []
