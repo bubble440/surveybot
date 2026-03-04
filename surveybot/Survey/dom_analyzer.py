@@ -41,7 +41,7 @@ try:
         _extract_ssi_confirmit_question, _extract_surveywriter_ssi_question,
         _nearest_question_container, _extract_question_from_container,
         _find_group_heading_text_near_element,
-        _group_key_for_choice, _compute_max_select
+        _group_key_for_choice, _compute_max_select, _compute_min_select
     )
     
     # Gestion des frames
@@ -103,7 +103,7 @@ except ImportError:
         _extract_ssi_confirmit_question, _extract_surveywriter_ssi_question,
         _nearest_question_container, _extract_question_from_container,
         _find_group_heading_text_near_element,
-        _group_key_for_choice, _compute_max_select
+        _group_key_for_choice, _compute_max_select, _compute_min_select
     )
     from Survey.dom_frame_selector import (
         _wait_for_survey_dom, _score_dom_context, _select_best_frame_chain
@@ -1963,6 +1963,15 @@ def analyze_dom(driver) -> List[Dict[str, Any]]:
 
     blocks = _prune_focusvision_fragmented_groups(blocks)
     blocks = _prune_focusvision_auxiliary_openended_singles(blocks)
+
+    for block in blocks or []:
+        if not isinstance(block, dict):
+            continue
+        max_select = int(block.get("max_select", 1) or 1)
+        itype = _norm_lc(block.get("itype") or "")
+        question_text = block.get("question")
+        options = [str(o) for o in (block.get("options") or []) if str(o).strip()]
+        block["min_select"] = _compute_min_select(itype, question_text, options, max_select)
 
     summary_itypes = sorted({str((b or {}).get("itype") or "") for b in (blocks or []) if (b or {}).get("itype")})
     options_count = sum(len((b or {}).get("options") or []) for b in (blocks or []))

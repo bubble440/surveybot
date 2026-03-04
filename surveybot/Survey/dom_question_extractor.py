@@ -33,13 +33,13 @@ except ImportError:
 
 try:
     from Survey.dom_selection_rules import (
-        explicit_exact_count_from_question,
-        has_explicit_multi_indicator,
+        compute_checkbox_max_select,
+        compute_min_select,
     )
 except ImportError:
     from surveybot.Survey.dom_selection_rules import (
-        explicit_exact_count_from_question,
-        has_explicit_multi_indicator,
+        compute_checkbox_max_select,
+        compute_min_select,
     )
 
 # ================================================================================
@@ -679,20 +679,19 @@ def _compute_max_select(itype: str, options: List[str], question_text: str | Non
     
     Règles:
     - radio / button: 1 (exclusif)
-    - checkbox:
-      - exact_count explicite dans le texte => exact_count borné au nombre d'options
-      - sinon => plafond métier min(3, len(options))
+    - checkbox: nombre total d'options moins options exclusives
     - autres: 1 (par défaut)
     """
     if itype in {"radio", "button"}:
         return 1
     if itype == "checkbox":
-        exact_count = explicit_exact_count_from_question(question_text)
-        if exact_count is not None:
-            if options:
-                return max(1, min(exact_count, len(options)))
-            return max(1, exact_count)
-        if options:
-            return min(3, len(options))
-        return 3
+        return compute_checkbox_max_select(options)
+    return 1
+
+
+def _compute_min_select(itype: str, question_text: str | None, options: List[str], max_select: int) -> int:
+    if itype in {"radio", "button"}:
+        return 1
+    if itype == "checkbox":
+        return compute_min_select(question_text, options, max_select)
     return 1
