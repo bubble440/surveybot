@@ -1,5 +1,6 @@
 from surveybot.Survey.prompt_builder import (
     _has_explicit_multi_indicator,
+    _selection_rule_for_block,
     _tier_entry_option,
     _explicit_exact_count_from_question,
     build_batch_prompt,
@@ -8,8 +9,22 @@ from surveybot.Survey.prompt_builder import (
 
 def test_detects_explicit_multi_indicators_fr_and_en():
     assert _has_explicit_multi_indicator("Vous pouvez sélectionner plusieurs réponses.")
+    assert _has_explicit_multi_indicator("Vous pouvez choisir plusieurs réponses parmi celles proposées")
     assert _has_explicit_multi_indicator("Cochez tout ce qui s’applique.")
     assert _has_explicit_multi_indicator("Select all that apply")
+
+
+def test_selection_rule_reads_multi_instruction_from_context_when_question_is_plain():
+    block = {
+        "question": "Pourquoi avez-vous changé de banque principale ?",
+        "itype": "checkbox",
+        "options": ["A", "B", "C"],
+        "context": {
+            "instruction_text": "Vous pouvez choisir plusieurs réponses parmi celles proposées",
+        },
+    }
+
+    assert _selection_rule_for_block(block) == "multi_1_to_3"
 
 
 def test_batch_prompt_applies_per_qid_exact_rule_from_max_select():
