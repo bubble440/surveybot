@@ -300,6 +300,87 @@ def _is_open_ended_choice_companion(el, container) -> bool:
     return False
 
 
+def _is_other_specify_choice_companion(driver, el, container, question: str) -> bool:
+    """
+    Détecte un champ texte compagnon d'une option "Autre/Other/Précisez" dans un
+    groupe radio/checkbox pour éviter un bloc text autonome parasite.
+    """
+    if not container:
+        return False
+
+    try:
+        choice_inputs = container.find_elements(By.CSS_SELECTOR, "input[type='radio'], input[type='checkbox']")
+    except Exception:
+        return False
+    if len(choice_inputs or []) < 2:
+        return False
+
+    try:
+        is_other_context = bool(driver.execute_script(
+            """
+            const el = arguments[0];
+            const container = arguments[1];
+            if (!el || !container || !container.contains(el)) return false;
+
+            const norm = (v) => (v || '').toLowerCase().replace(/\s+/g, ' ').trim();
+            const kw = ['other', 'autre', 'précisez', 'precisez', 'specify', 'please specify'];
+
+            const wrappers = [
+              el.closest('label'),
+              el.closest('.answer-container'),
+              el.closest('li'),
+              el.parentElement,
+            ].filter(Boolean);
+
+            for (const node of wrappers) {
+              const hasChoice = !!node.querySelector('input[type="radio"], input[type="checkbox"], [role="radio"], [role="checkbox"]');
+              if (!hasChoice) continue;
+              const txt = norm(node.textContent || node.innerText || '');
+              if (kw.some(k => txt.includes(k))) return true;
+            }
+
+            const prev = el.previousElementSibling;
+            const prevTxt = norm(prev ? (prev.textContent || prev.innerText || '') : '');
+            if (kw.some(k => prevTxt.includes(k))) return true;
+
+            return false;
+            """,
+            el,
+            container,
+        ))
+    except Exception:
+        is_other_context = False
+
+    if not is_other_context:
+        return False
+
+    parent_question = _norm(_extract_question_from_container(container, options=[]) or "")
+    question_norm = _norm(question or "")
+    parent_cmp = re.sub(r"\W+", "", _norm_lc(parent_question))
+    question_cmp = re.sub(r"\W+", "", _norm_lc(question_norm))
+
+    if not question_cmp:
+        return True
+
+    if parent_cmp and (question_cmp == parent_cmp or question_cmp in parent_cmp or parent_cmp in question_cmp):
+        return True
+
+    option_texts: List[str] = []
+    for choice in choice_inputs or []:
+        try:
+            label_txt = _norm(_find_associated_label(driver, choice) or choice.text or choice.get_attribute("value") or "")
+            if label_txt:
+                option_texts.append(_norm_lc(label_txt))
+        except Exception:
+            continue
+    option_texts = list(dict.fromkeys(option_texts))
+    if not option_texts:
+        return False
+
+    option_hits = sum(1 for txt in option_texts if txt and txt in _norm_lc(question_norm))
+    return option_hits >= max(2, min(4, len(option_texts) // 2))
+
+
 def _selection_signal_text(driver, el, question_text: str | None = None) -> str:
     """
     Construit un signal texte pour les règles de cardinalité:
@@ -1470,6 +1551,9 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                 continue
 
             if itype in ("text", "textarea") and _is_open_ended_choice_companion(el, container):
+                continue
+
+            if itype in ("text", "textarea") and _is_other_specify_choice_companion(driver, el, container, question):
                 continue
 
             # Champs "other/specify" attachés à une option radio/checkbox custom:
