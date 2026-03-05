@@ -52,13 +52,32 @@ def test_batch_prompt_applies_per_qid_exact_rule_from_max_select():
     assert 'Le nombre de segments séparés par "|" dans valeur doit être EXACTEMENT celui demandé' in prompt
 
 
-def test_tier_entry_option_uses_first_choice_of_last_quarter():
+def test_tier_entry_option_uses_first_choice_of_last_quarter_for_non_frequency_scales():
     assert _tier_entry_option([str(i) for i in range(1, 10)])[0] == 7
     assert _tier_entry_option([str(i) for i in range(1, 9)])[0] == 6
     assert _tier_entry_option([str(i) for i in range(1, 5)])[0] == 3
     assert _tier_entry_option(["a"])[0] == 1
     assert _tier_entry_option(["a", "b"])[0] == 2
     assert _tier_entry_option(["a", "b", "c"])[0] == 3
+
+
+def test_tier_entry_option_prefers_top_third_for_frequency_scales():
+    options = [
+        "Plusieurs fois par jour",
+        "Tous les jours",
+        "La plupart des jours (4 à 6 fois par semaine)",
+        "Plusieurs fois par semaine (2-3 fois)",
+        "Environ une fois par semaine",
+        "Plusieurs fois ce mois-ci",
+        "Une fois ce mois-ci",
+        "Je n'en ai pas acheté/bu au cours du mois dernier",
+        "Je ne sais pas/je ne m’en souviens pas",
+    ]
+
+    k, picked = _tier_entry_option(options)
+
+    assert 1 <= k <= 3
+    assert picked in options[:3]
 
 
 def test_batch_prompt_enforces_tier_entry_option_for_category_range_questions():
