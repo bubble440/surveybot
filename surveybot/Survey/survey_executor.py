@@ -1165,7 +1165,9 @@ def execute_survey_page(driver, api_key):
                 "itype": (b.get("itype") or ""),
                 "options": (b.get("options") or []),
                 "max_select": int(b.get("max_select", 1) or 1),
+                "min_select": int(b.get("min_select", 1) or 1),
                 "target_id": (b.get("target_id") or ""),
+                "context": (b.get("context") or {}),
             }
             for i, b in enumerate(question_blocks, start=1)
         }

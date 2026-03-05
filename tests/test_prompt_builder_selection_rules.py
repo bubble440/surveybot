@@ -27,13 +27,14 @@ def test_selection_rule_reads_multi_instruction_from_context_when_question_is_pl
     assert _selection_rule_for_block(block) == "multi_1_to_3"
 
 
-def test_batch_prompt_applies_per_qid_exact_rule_from_max_select():
+def test_batch_prompt_applies_per_qid_range_rule_without_using_max_as_exact_count():
     blocks = [
         {
             "question": "Vous pouvez donner autant de réponses que vous le souhaitez.",
             "itype": "checkbox",
             "options": ["A", "B", "C", "D"],
             "max_select": 16,
+            "min_select": 1,
             "target_id": "group_multi",
         },
         {
@@ -41,15 +42,16 @@ def test_batch_prompt_applies_per_qid_exact_rule_from_max_select():
             "itype": "radio",
             "options": ["Homme", "Femme"],
             "max_select": 1,
+            "min_select": 1,
             "target_id": "group_single",
         },
     ]
 
     prompt = build_batch_prompt(blocks)
 
-    assert "selection_rule: Pour QID=Q1, renvoyer EXACTEMENT 16 valeur(s) séparée(s) par |" in prompt
-    assert "selection_rule: Pour QID=Q2, renvoyer EXACTEMENT 1 valeur(s) séparée(s) par |" in prompt
-    assert 'Le nombre de segments séparés par "|" dans valeur doit être EXACTEMENT celui demandé' in prompt
+    assert "selection_rule: Pour QID=Q1, renvoyer entre 1 et 16 valeur(s) séparée(s) par |" in prompt
+    assert "selection_rule: Pour QID=Q2, renvoyer EXACTEMENT 1 valeur" in prompt
+    assert "Si plusieurs valeurs sont nécessaires, les séparer UNIQUEMENT par \"|\"." in prompt
 
 
 def test_tier_entry_option_uses_first_choice_of_last_quarter_for_non_frequency_scales():
@@ -146,6 +148,7 @@ def test_batch_prompt_requires_exactly_two_values_for_exact_count_checkbox():
             "itype": "checkbox",
             "options": ["Train", "Ours", "Chaise", "Canard", "Piano"],
             "max_select": 2,
+            "min_select": 2,
             "target_id": "group_animaux",
         }
     ]
