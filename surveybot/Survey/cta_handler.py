@@ -16,9 +16,11 @@ Dépendances:
 
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.action_chains import ActionChains
+from selenium.webdriver.support.ui import WebDriverWait
 import unicodedata
 import re
 import time
+import os
 
 
 # =============================================================================
@@ -80,6 +82,146 @@ def _is_visible(driver, el) -> bool:
         return box and box.get("width", 0) > 5 and box.get("height", 0) > 5
     except Exception:
         return False
+
+
+def _is_truthy_env(name: str) -> bool:
+    """Retourne True si une variable d'env est truthy (1/true/yes/on)."""
+    return (os.getenv(name, "") or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _wait_cta_settle(driver, clicked_el, before_url: str, timeout_s: float = 5.0) -> bool:
+    """
+    Attend la stabilisation après clic CTA: changement d'URL ou disparition/remplacement
+    du bouton cliqué (DOM mutation).
+    """
+    try:
+        return bool(driver.execute_async_script(
+            """
+            const [el, beforeUrl, timeoutMs, done] = arguments;
+            const start = Date.now();
+
+            const isGone = () => {
+              try {
+                if (!el || !el.isConnected) return true;
+                if (el.getClientRects().length === 0) return true;
+                return false;
+              } catch (_e) {
+                return true;
+              }
+            };
+
+            const progressed = () => window.location.href !== beforeUrl || isGone();
+
+            if (progressed()) {
+              done(true);
+              return;
+            }
+
+            let finished = false;
+            const finish = (value) => {
+              if (finished) return;
+              finished = true;
+              try { observer.disconnect(); } catch (_e) {}
+              try { window.removeEventListener('hashchange', onNav, true); } catch (_e) {}
+              try { window.removeEventListener('popstate', onNav, true); } catch (_e) {}
+              done(!!value);
+            };
+
+            const onNav = () => finish(true);
+            const observer = new MutationObserver(() => {
+              if (progressed()) finish(true);
+            });
+
+            try {
+              observer.observe(document.documentElement || document.body, {
+                subtree: true,
+                childList: true,
+                attributes: true,
+              });
+            } catch (_e) {
+              finish(progressed());
+              return;
+            }
+
+            window.addEventListener('hashchange', onNav, true);
+            window.addEventListener('popstate', onNav, true);
+
+            const tick = () => {
+              if (progressed()) {
+                finish(true);
+                return;
+              }
+              if (Date.now() - start >= timeoutMs) {
+                finish(false);
+                return;
+              }
+              window.requestAnimationFrame(tick);
+            };
+            tick();
+            """,
+            clicked_el,
+            before_url,
+            int(timeout_s * 1000),
+        ))
+    except Exception:
+        try:
+            WebDriverWait(driver, timeout_s).until(lambda d: d.current_url != before_url)
+            return True
+        except Exception:
+            return False
+
+
+def _click_cta_and_settle(driver, el) -> bool:
+    """Clique un CTA (ou l'intercepte) puis attend la stabilisation DOM/URL."""
+    before_url = driver.current_url
+
+    if _is_truthy_env("CTA_INTERCEPT_ONLY"):
+        try:
+            intercepted = driver.execute_async_script(
+                """
+                const [el, done] = arguments;
+                try {
+                  if (!el) {
+                    done(false);
+                    return;
+                  }
+                  const blocker = (ev) => {
+                    ev.preventDefault();
+                    ev.stopPropagation();
+                    if (typeof ev.stopImmediatePropagation === 'function') {
+                      ev.stopImmediatePropagation();
+                    }
+                  };
+                  el.addEventListener('click', blocker, {capture: true, once: true});
+                  const ev = new MouseEvent('click', {bubbles: true, cancelable: true, view: window});
+                  el.dispatchEvent(ev);
+                  done(true);
+                } catch (_e) {
+                  done(false);
+                }
+                """,
+                el,
+            )
+            if not intercepted:
+                print("[CTA_NAV] CTA_FOUND + interception impossible")
+                return False
+            _wait_cta_settle(driver, el, before_url, timeout_s=5.0)
+            print("[CTA_NAV] CTA_FOUND + interception OK")
+            return True
+        except Exception:
+            print("[CTA_NAV] CTA_FOUND + interception impossible")
+            return False
+
+    try:
+        el.click()
+    except Exception:
+        try:
+            ActionChains(driver).move_to_element(el).click().perform()
+        except Exception:
+            driver.execute_script("arguments[0].click();", el)
+
+    _wait_cta_settle(driver, el, before_url, timeout_s=5.0)
+    return True
 
 
 # =============================================================================
@@ -509,10 +651,8 @@ def try_click_navigation_cta(driver) -> bool:
                     continue
 
                 driver.execute_script("arguments[0].scrollIntoView({block:'center'});", a)
-                try:
-                    a.click()
-                except Exception:
-                    driver.execute_script("arguments[0].click();", a)
+                if not _click_cta_and_settle(driver, a):
+                    continue
                 print("[CTA_NAV] B3netSurvey: clicked navbar Next link")
                 return True
             except Exception:
@@ -530,10 +670,8 @@ def try_click_navigation_cta(driver) -> bool:
                     a = None
                 el = a or img
                 driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
-                try:
-                    el.click()
-                except Exception:
-                    driver.execute_script("arguments[0].click();", el)
+                if not _click_cta_and_settle(driver, el):
+                    continue
                 print("[CTA_NAV] B3netSurvey: clicked nextButton image")
                 return True
             except Exception:
@@ -554,10 +692,8 @@ def try_click_navigation_cta(driver) -> bool:
                 pass
 
             driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
-            try:
-                el.click()
-            except Exception:
-                driver.execute_script("arguments[0].click();", el)
+            if not _click_cta_and_settle(driver, el):
+                return False
             print("[CTA_NAV] AreYouNet: clicked #btn_next")
             return True
     except Exception:
@@ -569,10 +705,8 @@ def try_click_navigation_cta(driver) -> bool:
         if links:
             el = links[0]
             driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
-            try:
-                el.click()
-            except Exception:
-                driver.execute_script("arguments[0].click();", el)
+            if not _click_cta_and_settle(driver, el):
+                return False
             print("[CTA_NAV] AreYouNet: clicked EnqueteDef_submit link")
             return True
     except Exception:
@@ -585,10 +719,8 @@ def try_click_navigation_cta(driver) -> bool:
             el = btns[0]
             if el.is_displayed():
                 driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
-                try:
-                    el.click()
-                except Exception:
-                    driver.execute_script("arguments[0].click();", el)
+                if not _click_cta_and_settle(driver, el):
+                    return False
                 print("[CTA_NAV] Decipher: clicked #btn_continue")
                 return True
     except Exception:
@@ -603,10 +735,8 @@ def try_click_navigation_cta(driver) -> bool:
             el = btns[0]
             if el.is_displayed():
                 driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
-                try:
-                    el.click()
-                except Exception:
-                    driver.execute_script("arguments[0].click();", el)
+                if not _click_cta_and_settle(driver, el):
+                    return False
                 print("[CTA_NAV] RSCH: clicked #btnsmall or .enterButton.submitButton")
                 return True
     except Exception:
@@ -693,10 +823,8 @@ def try_click_navigation_cta(driver) -> bool:
     for score, el in candidates[:6]:
         try:
             driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
-            try:
-                el.click()
-            except Exception:
-                driver.execute_script("arguments[0].click();", el)
+            if not _click_cta_and_settle(driver, el):
+                continue
             return True
         except Exception:
             continue
