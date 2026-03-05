@@ -25,7 +25,7 @@ import os
 import math
 import unicodedata
 from typing import Dict, Optional, List, Any
-_ALLOWED_ITYPES = {"radio", "checkbox", "dropdown", "text", "textarea", "button", "number"}
+_ALLOWED_ITYPES = {"radio", "checkbox", "dropdown", "text", "textarea", "button", "number", "matrix"}
 _QID_RE = re.compile(r"\bQ\d+\b", re.IGNORECASE)
 
 
