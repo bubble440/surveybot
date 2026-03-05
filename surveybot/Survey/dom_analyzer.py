@@ -184,6 +184,29 @@ def _is_auxiliary_text_for_choice_group(driver, el, container, question: str) ->
     # Cas inline "Autre, précisez" : le champ texte est rendu dans le même
     # wrapper d'option qu'un contrôle radio/checkbox. Dans ce cas, on le
     # classe directement en auxiliaire pour éviter un bloc single parasite.
+    # Détection DOM-first via ancêtres/wrappers d'option observables.
+    try:
+        option_roots = el.find_elements(
+            By.XPATH,
+            "ancestor::*[self::label or self::li or contains(concat(' ', normalize-space(@class), ' '), ' answer_options ') or contains(concat(' ', normalize-space(@class), ' '), ' option ') or contains(concat(' ', normalize-space(@class), ' '), ' form-check ') ]",
+        )
+    except Exception:
+        option_roots = []
+
+    for root in option_roots or []:
+        try:
+            if container and root == container:
+                continue
+            has_choice_in_root = bool(root.find_elements(
+                By.CSS_SELECTOR,
+                "input[type='radio'], input[type='checkbox'], [role='radio'], [role='checkbox']",
+            ))
+            if has_choice_in_root:
+                return True
+        except Exception:
+            continue
+
+    # Garde-fou JS pour les structures qui n'exposent pas bien les ancêtres.
     try:
         inline_with_choice = bool(driver.execute_script(
             """
