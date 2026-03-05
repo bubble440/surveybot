@@ -578,6 +578,40 @@ def _group_key_for_choice(el, itype: str) -> str:
                     if dotted_base_name and dotted_base_name != clean_name:
                         clean_name = dotted_base_name
 
+                    # Alchemer/Forsta-like pattern: les options checkbox d'une même
+                    # question portent un `name` distinct de forme `sgE-...-<optionId>`.
+                    # Scope DOM strict: uniquement dans un fieldset de question sg-question
+                    # quand >=2 checkboxes partagent la même racine `sgE-...`.
+                    if re.match(r"^sge-\d+-\d+-\d+-\d+$", clean_name):
+                        try:
+                            sg_fieldsets = el.find_elements(
+                                By.XPATH,
+                                "ancestor::fieldset[contains(@class,'sg-question') and starts-with(@id,'sgE-')][1]",
+                            )
+                        except Exception:
+                            sg_fieldsets = []
+
+                        if sg_fieldsets:
+                            try:
+                                sibling_boxes = sg_fieldsets[0].find_elements(By.XPATH, ".//input[@type='checkbox'][@name]")
+                            except Exception:
+                                sibling_boxes = []
+
+                            prefixes: list[str] = []
+                            for sib in sibling_boxes:
+                                try:
+                                    sib_name = _norm_lc(sib.get_attribute("name") or "")
+                                except Exception:
+                                    sib_name = ""
+                                if not re.match(r"^sge-\d+-\d+-\d+-\d+$", sib_name):
+                                    continue
+                                sib_prefix = re.sub(r"-\d+$", "", sib_name)
+                                if sib_prefix:
+                                    prefixes.append(sib_prefix)
+
+                            if len(prefixes) >= 2 and len(set(prefixes)) == 1:
+                                clean_name = prefixes[0]
+
                     # YouGov-like pattern: une question checkbox rend chaque option
                     # avec un name distinct suffixé par index (`w38-response-1`, `...-2`, ...)
                     # à l'intérieur d'un `fieldset.question-multiple` unique.
