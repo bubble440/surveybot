@@ -228,25 +228,40 @@ def solve_recaptcha_v2_auto(driver) -> bool:
     Navigation : déléguée au flux survey (cta_handler) — 0 clic CTA ici.
     """
     # 1. Extraire le sitekey
-    sitekey, invisible = extract_recaptcha_v2_sitekey(driver)
+    sitekey, invisible, is_enterprise = extract_recaptcha_v2_sitekey(driver)
     if not sitekey:
         print("[RECAPTCHA_HANDLER] sitekey introuvable")
         return False
 
     inv_label = "invisible" if invisible else "visible"
-    print(f"[RECAPTCHA_HANDLER] sitekey extrait : {sitekey} ({inv_label})")
+    variant = "enterprise" if is_enterprise else "standard"
+    print(f"[RECAPTCHA_HANDLER] sitekey extrait : {sitekey} ({inv_label}, {variant})")
 
     # 2. Résoudre via 2Captcha — avec proxy si disponible, sinon Proxyless
     # Certaines plateformes (Decipher) valident l'IP côté serveur : le token doit
     # être généré depuis la même IP que la soumission du formulaire.
     # Si PROXY_HOST est défini → RecaptchaV2Task (proxy) ; sinon → Proxyless (CMIX, etc.)
+    # Si is_enterprise → RecaptchaV2EnterpriseTask / RecaptchaV2EnterpriseTaskProxyless
     current_url = driver.current_url
     proxy_cfg = _get_proxy_config()
     mode = "proxy" if proxy_cfg else "proxyless"
-    print(f"[RECAPTCHA_HANDLER] Envoi à 2Captcha (mode={mode}, url={current_url})")
+    print(f"[RECAPTCHA_HANDLER] Envoi à 2Captcha (mode={mode}, variant={variant}, url={current_url})")
     try:
         client = TwoCaptchaClient()
-        if proxy_cfg:
+        if is_enterprise:
+            if proxy_cfg:
+                token = client.solve_recaptcha_v2_enterprise_with_proxy(
+                    sitekey, current_url,
+                    proxy_type=proxy_cfg["proxy_type"],
+                    proxy_address=proxy_cfg["proxy_address"],
+                    proxy_port=proxy_cfg["proxy_port"],
+                    proxy_login=proxy_cfg["proxy_login"],
+                    proxy_password=proxy_cfg["proxy_password"],
+                    invisible=invisible,
+                )
+            else:
+                token = client.solve_recaptcha_v2_enterprise(sitekey, current_url, invisible)
+        elif proxy_cfg:
             token = client.solve_recaptcha_v2_with_proxy(
                 sitekey, current_url,
                 proxy_type=proxy_cfg["proxy_type"],
