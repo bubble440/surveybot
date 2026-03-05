@@ -1478,11 +1478,8 @@ def _extract_cmix_simple_grid_question_blocks(driver, frame_chain: list[int] | N
                 try:
                     # 2a) Extraire le texte de la question (row-header)
                     question = ""
-                    row_hdr = None
                     try:
                         row_hdr = row.find_element(By.CSS_SELECTOR, "td.cm-simple-grid__row-header")
-                        if row_hdr.find_elements(By.CSS_SELECTOR, "input.cm-other-specify"):
-                            continue
                         question = _norm(row_hdr.text or row_hdr.get_attribute("innerText") or "")
                     except Exception:
                         pass
