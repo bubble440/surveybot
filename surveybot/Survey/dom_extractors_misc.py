@@ -1619,15 +1619,29 @@ def _extract_cmix_grid_question_blocks(driver, frame_chain: list[int] | None) ->
 
     blocks: list[dict] = []
 
+    def _is_data_option_header_cell(cell) -> bool:
+        """CMIX GRID: colonnes options = classes cm-grid-column-N (N>=1), hors colonne header."""
+        try:
+            cls = (cell.get_attribute("class") or "").strip()
+        except Exception:
+            cls = ""
+        if not cls:
+            return False
+        if "cm-grid-column-header" in cls:
+            return False
+        return bool(re.search(r"(?:^|\s)cm-grid-column-\d+(?:\s|$)", cls))
+
     for table in tables[:10]:  # Limite anti-explosion
         try:
             col_headers: list[str] = []
             try:
-                header_cells = table.find_elements(
-                    By.CSS_SELECTOR,
-                    "tr.cm-grid-row-header td.cm-grid-column-header, tr.cm-grid-row-header th.cm-grid-column-header",
-                )
+                header_cells = table.find_elements(By.CSS_SELECTOR, "tr.cm-grid-row-header td, tr.cm-grid-row-header th")
+                if not header_cells:
+                    # Variante DOM CMIX: première ligne = entêtes colonnes, sans classes header dédiées.
+                    header_cells = table.find_elements(By.CSS_SELECTOR, "tr:first-child td, tr:first-child th")
                 for cell in header_cells:
+                    if not _is_data_option_header_cell(cell):
+                        continue
                     txt = _norm(cell.text or cell.get_attribute("innerText") or "")
                     if txt:
                         col_headers.append(txt)
@@ -1638,7 +1652,9 @@ def _extract_cmix_grid_question_blocks(driver, frame_chain: list[int] | None) ->
                 continue
 
             try:
-                rows = table.find_elements(By.CSS_SELECTOR, "tr.cm-grid-row")
+                rows = table.find_elements(By.CSS_SELECTOR, "tr[data-response-batch]")
+                if not rows:
+                    rows = table.find_elements(By.CSS_SELECTOR, "tr.cm-grid-row")
             except Exception:
                 rows = []
 
