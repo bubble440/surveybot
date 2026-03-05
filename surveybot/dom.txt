@@ -14,7 +14,7 @@
     }
   })();
 </script>
-<div class="cm-loader-wrapper" style="width: 900px; height: 470px; left: 510px; display: none;">
+<div class="cm-loader-wrapper" style="width: 900px; height: 493px; left: 510px; display: none;">
   <div class="cm-form-cover">
     <div class="cm-message" style="display: none;">
               <div class="cm-message__content">
