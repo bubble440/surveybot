@@ -619,7 +619,7 @@ def _try_table_matrix_sge_set(driver, target_payload: dict, row_label: str, col_
 
     Garde-fous DOM:
     - activé uniquement si le target payload est marqué table_matrix_sge
-    - nécessite un <tr> contenant des radios avec @name ou @sge:name
+    - nécessite un <tr> contenant des radios avec @name
     - cible la radio par croisement row label + aria-label (colonne)
     """
     if not isinstance(target_payload, dict) or not target_payload.get("table_matrix_sge"):
@@ -639,14 +639,16 @@ def _try_table_matrix_sge_set(driver, target_payload: dict, row_label: str, col_
     try:
         rows = driver.find_elements(
             By.XPATH,
-            "//tr[.//input[@type='radio'][@name or @sge:name]]",
+            "//tr[.//input[@type='radio'][@name]]",
         )
     except Exception:
         rows = []
 
     if not rows:
+        log_debug("[SGE_MATRIX]", "rows empty for table_matrix_sge candidate")
         return False
 
+    matched_row = False
     for row in rows:
         try:
             row_text = driver.execute_script(
@@ -664,13 +666,15 @@ def _try_table_matrix_sge_set(driver, target_payload: dict, row_label: str, col_
         if not _matches(row_text, row_need):
             continue
 
+        matched_row = True
+
         try:
             radio = driver.execute_script(
                 """
                 const tr = arguments[0];
                 const need = arguments[1];
                 if (!tr) return null;
-                const radios = Array.from(tr.querySelectorAll("input[type='radio'][name], input[type='radio'][sge\\:name]"));
+                const radios = Array.from(tr.querySelectorAll("input[type='radio'][name]"));
                 const pick = radios.find((r) => {
                   const aria = (r.getAttribute('aria-label') || r.getAttribute('data-label') || '').trim();
                   const v = aria
@@ -688,6 +692,7 @@ def _try_table_matrix_sge_set(driver, target_payload: dict, row_label: str, col_
             radio = None
 
         if radio is None:
+            log_debug("[SGE_MATRIX]", f"no radio matched col_need='{col_need}' in matched row")
             continue
 
         try:
@@ -720,6 +725,9 @@ def _try_table_matrix_sge_set(driver, target_payload: dict, row_label: str, col_
         if ok:
             log_info("[TARGET]", "apply ok=true strategy=table_matrix_sge reason=applied")
             return True
+
+    if not matched_row:
+        log_debug("[SGE_MATRIX]", f"no row matched row_need='{row_need}'")
 
     return False
 
