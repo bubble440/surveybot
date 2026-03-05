@@ -200,6 +200,39 @@ _RESIDENCE_COUNTRY_PATTERNS = [
     "live in",
 ]
 
+_HOUSEHOLD_DECISION_PATTERNS = [
+    # FR
+    "au sein de votre foyer",
+    "dans votre foyer",
+    "qui serait le plus susceptible",
+    "qui est le plus susceptible",
+    "decideur principal",
+    "décideur principal",
+    "qui decide",
+    "qui décide",
+    # EN
+    "in your household",
+    "decision maker",
+    "who decides",
+    "most likely to choose",
+]
+
+_RESPONDENT_SELF_OPTION_PATTERNS = [
+    # FR
+    "principalement moi",
+    "moi",
+    "moi-meme",
+    "moi même",
+    "moi meme",
+    "je decide",
+    "je décide",
+    # EN
+    "primarily me",
+    "mostly me",
+    "myself",
+    "i decide",
+]
+
 _FREQ_HIGH_MARKERS = [
     "plusieurs fois par jour", "tous les jours", "quotidien", "daily", "every day",
     "plusieurs fois par semaine", "most days", "often", "souvent",
@@ -307,6 +340,24 @@ def _is_residence_country_question(block: Dict[str, Any]) -> bool:
     if not has_country_token:
         return False
     return any(p in question for p in _RESIDENCE_COUNTRY_PATTERNS)
+
+
+def _is_household_decision_maker_question(block: Dict[str, Any]) -> bool:
+    itype = _norm_folded_lc(block.get("itype"))
+    if itype not in {"radio", "checkbox", "dropdown", "select", "button"}:
+        return False
+    question = _norm_folded_lc(block.get("question"))
+    if not question:
+        return False
+    return any(pattern in question for pattern in _HOUSEHOLD_DECISION_PATTERNS)
+
+
+def _find_respondent_self_option(options: list[str]) -> str | None:
+    for option in options or []:
+        folded = _norm_folded_lc(option)
+        if folded and any(pattern in folded for pattern in _RESPONDENT_SELF_OPTION_PATTERNS):
+            return option
+    return None
 
 
 def _matrix_row_labels(block: Dict[str, Any]) -> list[str]:
@@ -606,12 +657,15 @@ def build_batch_prompt(question_blocks: list[dict]) -> str:
                 f"CHAMP MULTI-CASES: fournir {max_sel} valeurs séparées par | (ex: 03|02|2001)"
             )
         forced_country = None
+        forced_household_decider = None
         if _is_residence_country_question(block) and opts:
             forced_country = _find_option_exact(opts, _PERSONA_RESIDENCE_COUNTRY)
             print(
                 f"[PROMPT_PERSONA] residence_country_question=1 target_id={target_id} "
                 f"option_present={bool(forced_country)}"
             )
+        if _is_household_decision_maker_question(block) and opts:
+            forced_household_decider = _find_respondent_self_option(opts)
 
         if itype == "checkbox":
             if min_sel == 0:
@@ -640,6 +694,15 @@ def build_batch_prompt(question_blocks: list[dict]) -> str:
                 "Tu dois répondre EXACTEMENT avec {"
                 + forced_country
                 + "}. Ne paraphrase pas."
+            )
+        elif forced_household_decider:
+            lines.append(
+                f"selection_rule: HOUSEHOLD_DECISION_MAKER_SELF strict -> répondre EXACTEMENT avec '{forced_household_decider}'"
+            )
+            lines.append(f"allowed_values_strict: {forced_household_decider}")
+            lines.append(
+                "instruction_stricte: Question décideur du foyer. "
+                "Tu dois répondre EXACTEMENT avec l'option qui désigne le répondant lui-même."
             )
         elif _looks_like_classification_question(block) and opts:
             picked = _pick_best_classification_option(opts)

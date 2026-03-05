@@ -178,3 +178,44 @@ def test_batch_prompt_forces_accept_on_consent_modal_radio():
 
     assert "selection_rule: CONSENT_ACCEPT strict" in prompt
     assert "allowed_values_strict: JE CONSENS et continue l'enquête" in prompt
+
+
+def test_batch_prompt_forces_self_for_household_decision_maker_question_fr():
+    blocks = [
+        {
+            "question": "Au sein de votre foyer qui serait le plus susceptible de choisir l’application de paris sportif ou de poker à utiliser ?",
+            "itype": "radio",
+            "options": [
+                "Principalement moi",
+                "Principalement quelqu'un d'autre",
+            ],
+            "max_select": 1,
+            "min_select": 1,
+            "target_id": "group_household_dm",
+        }
+    ]
+
+    prompt = build_batch_prompt(blocks)
+
+    assert "selection_rule: HOUSEHOLD_DECISION_MAKER_SELF strict -> répondre EXACTEMENT avec 'Principalement moi'" in prompt
+    assert "allowed_values_strict: Principalement moi" in prompt
+
+
+def test_batch_prompt_does_not_force_household_rule_without_self_option():
+    blocks = [
+        {
+            "question": "Au sein de votre foyer, qui décide le plus souvent des abonnements ?",
+            "itype": "radio",
+            "options": [
+                "Mon conjoint",
+                "Quelqu'un d'autre",
+            ],
+            "max_select": 1,
+            "min_select": 1,
+            "target_id": "group_household_dm_no_self",
+        }
+    ]
+
+    prompt = build_batch_prompt(blocks)
+
+    assert "HOUSEHOLD_DECISION_MAKER_SELF" not in prompt
