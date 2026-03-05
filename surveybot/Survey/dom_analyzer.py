@@ -74,6 +74,7 @@ try:
         _extract_ipsos_slider_question_blocks,
         _extract_confirmit_slider_grid_blocks,
         _extract_cloudresearch_sentry_blocks,
+        _extract_purespectrum_date_dropdown_blocks,
         _extract_purespectrum_mobile_date_blocks,
         _extract_collapsed_section_radio_rows,
         _extract_custom_testid_single_select_radio_blocks,
@@ -130,6 +131,7 @@ except ImportError:
         _extract_ipsos_slider_question_blocks,
         _extract_confirmit_slider_grid_blocks,
         _extract_cloudresearch_sentry_blocks,
+        _extract_purespectrum_date_dropdown_blocks,
         _extract_purespectrum_mobile_date_blocks,
         _extract_collapsed_section_radio_rows,
         _extract_custom_testid_single_select_radio_blocks,
@@ -808,7 +810,16 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
     except Exception:
         pass
 
-    # --- 0i) PureSpectrum mobile date picker (ps-select-scroll) ---
+    # --- 0i) PureSpectrum date picker (dropdown desktop) ---
+    # Objectif: extraire les blocs date `month/year` sur ps-select-dropdown custom.
+    try:
+        ps_date_dropdown_blocks = _extract_purespectrum_date_dropdown_blocks(driver, frame_chain)
+        if ps_date_dropdown_blocks:
+            return ps_date_dropdown_blocks
+    except Exception:
+        pass
+
+    # --- 0i-bis) PureSpectrum mobile date picker (ps-select-scroll) ---
     # Objectif: extraire les blocs date quand aucun input/select natif n'est présent.
     try:
         ps_date_blocks = _extract_purespectrum_mobile_date_blocks(driver, frame_chain)

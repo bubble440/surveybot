@@ -3113,6 +3113,141 @@ def _extract_purespectrum_mobile_date_blocks(driver, frame_chain: list[int] | No
     return blocks
 
 
+def _extract_purespectrum_date_dropdown_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
+    """PureSpectrum date picker desktop: `ps-select-dropdown[data-e2e=month|year]`.
+
+    Garde-fous DOM (additif, non provider-based):
+      - conteneur `ps-date-question[qualificationid]`
+      - présence de dropdowns `data-e2e="month"|"year"`
+      - options explicites `button[ngbdropdownitem][data-e2e]`
+    """
+    frame_chain = list(frame_chain or [])
+
+    try:
+        date_questions = driver.find_elements(By.CSS_SELECTOR, "ps-date-question[qualificationid]")
+    except Exception:
+        return []
+
+    if not date_questions:
+        return []
+
+    blocks: list[dict] = []
+
+    for date_q in date_questions:
+        try:
+            dropdowns = date_q.find_elements(By.CSS_SELECTOR, "ps-select-dropdown[data-e2e='month'], ps-select-dropdown[data-e2e='year']")
+        except Exception:
+            dropdowns = []
+
+        if not dropdowns:
+            continue
+
+        question = ""
+        for sel in [".question-title", "[psquestiontitle]", "header [role='heading']"]:
+            try:
+                q_els = date_q.find_elements(By.CSS_SELECTOR, sel)
+            except Exception:
+                q_els = []
+            for q_el in q_els:
+                try:
+                    txt = _norm(q_el.text or q_el.get_attribute("innerText") or "")
+                except Exception:
+                    txt = ""
+                if txt and len(txt) >= 3:
+                    question = txt
+                    break
+            if question:
+                break
+
+        if not question:
+            continue
+
+        for dd in dropdowns:
+            try:
+                dd_kind = _norm_lc(dd.get_attribute("data-e2e") or "")
+            except Exception:
+                dd_kind = ""
+            if dd_kind not in {"month", "year"}:
+                continue
+
+            try:
+                toggle = dd.find_element(By.CSS_SELECTOR, "button.dropdown-toggle")
+                dropdown_toggle_xpath = _best_xpath_for_element(driver, toggle)
+            except Exception:
+                continue
+
+            option_xpath_map: dict[str, str] = {}
+            options: list[str] = []
+
+            try:
+                option_btns = dd.find_elements(By.CSS_SELECTOR, "button[ngbdropdownitem][data-e2e]")
+            except Exception:
+                option_btns = []
+
+            for opt in option_btns:
+                try:
+                    opt_code = (opt.get_attribute("data-e2e") or "").strip()
+                    opt_label = _norm(opt.text or opt.get_attribute("innerText") or "")
+                    if not opt_code and not opt_label:
+                        continue
+                    xp = _best_xpath_for_element(driver, opt)
+                    if not xp:
+                        continue
+
+                    if opt_label:
+                        nk_label = _norm_key(opt_label)
+                        if nk_label and nk_label not in option_xpath_map:
+                            option_xpath_map[nk_label] = xp
+                        if opt_label not in options:
+                            options.append(opt_label)
+
+                    if opt_code:
+                        nk_code = _norm_key(opt_code)
+                        if nk_code and nk_code not in option_xpath_map:
+                            option_xpath_map[nk_code] = xp
+                except Exception:
+                    continue
+
+            if len(options) < 2:
+                continue
+
+            field_hint = "Mois" if dd_kind == "month" else "Année"
+            question_col = f"{question} ({field_hint})"
+            group_key = f"purespectrum_date_dropdown:{dd_kind}:{_norm_key(question)}"
+            target_id = make_target_id("group", group_key, question_col)
+
+            register_target(
+                target_id,
+                {
+                    "kind": "group",
+                    "itype": "radio",
+                    "group_key": group_key,
+                    "question": question_col,
+                    "option_xpath_map": option_xpath_map,
+                    "dropdown_toggle_xpath": dropdown_toggle_xpath,
+                    "frame_chain": frame_chain,
+                    "purespectrum_date_dropdown": True,
+                },
+            )
+
+            blocks.append(
+                {
+                    "question": question_col,
+                    "itype": "radio",
+                    "options": options,
+                    "max_select": 1,
+                    "target_id": target_id,
+                    "context": {
+                        "kind": "group",
+                        "group_key": group_key,
+                        "purespectrum_date_dropdown": True,
+                    },
+                }
+            )
+
+    return blocks
+
+
 def _extract_collapsed_section_radio_rows(driver, frame_chain: list[int] | None) -> list[dict]:
     """
     Extrait les matrices radio rendues en accordéon via paires:
