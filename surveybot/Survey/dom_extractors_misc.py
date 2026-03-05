@@ -1205,7 +1205,7 @@ def _extract_table_matrix_radio_rows(driver, frame_chain: list[int] | None) -> l
             if len(ths) < 3:
                 continue
 
-            for th in ths[1:]:
+            for th in ths:
                 txt = _norm(th.text or th.get_attribute("innerText") or "")
                 if txt:
                     col_headers.append(txt)
@@ -1277,6 +1277,16 @@ def _extract_table_matrix_radio_rows(driver, frame_chain: list[int] | None) -> l
             )
 
             if (len(row_candidates) < 2 or len(row_names_seen) < 2) and not sge_like_matrix:
+                continue
+
+            # Aligner les en-têtes sur le vrai nombre de colonnes de réponse observé
+            # dans le DOM de la matrice. Certaines pages ont un th supplémentaire
+            # (libellé de ligne), d'autres non.
+            max_radio_count = max((len(c.get("radios") or []) for c in row_candidates), default=0)
+            if max_radio_count >= 2 and len(col_headers) > max_radio_count:
+                col_headers = col_headers[-max_radio_count:]
+
+            if len(col_headers) < 2:
                 continue
 
             matrix_question = _norm(_find_question_text_near_element(driver, table))
