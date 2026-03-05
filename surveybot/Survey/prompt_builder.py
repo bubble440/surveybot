@@ -449,7 +449,7 @@ def build_batch_prompt(question_blocks: list[dict]) -> str:
         "FORMAT STRICT (une ligne par question) :\n"
         "QID //// target_id //// valeur //// itype //// contexte\n\n"
         "RèGLES CRITIQUES:\n"
-        "- Pour CHAQUE QID, renvoie EXACTEMENT le nombre de valeurs demandé par max_select.\n"
+        "- Pour chaque QID, le nombre de valeurs à renvoyer est défini par la selection_rule de ce QID. Ne pas utiliser max_select comme cible à atteindre : c'est un plafond, pas une obligation.\n"
         "- Le nombre de segments séparés par \"|\" dans valeur doit être EXACTEMENT celui demandé pour ce QID.\n"
         "- Exemple: Q1 //// group_abc //// Option A|Option B|Option C //// checkbox //// ...\n"
         "- NE JAMAIS utiliser la virgule \",\" comme séparateur (les options peuvent en contenir).\n"
@@ -466,7 +466,7 @@ def build_batch_prompt(question_blocks: list[dict]) -> str:
     lines.append(
         "RèGLE NOMBRE DE RéPONSES:\n"
         "- Ne déduis PAS le nombre depuis le provider/source.\n"
-        "- Utilise STRICTEMENT max_select fourni pour chaque QID."
+        "- Pour chaque QID, le nombre de valeurs à renvoyer est défini par la selection_rule de ce QID. Ne pas utiliser max_select comme cible à atteindre : c'est un plafond, pas une obligation."
     )
 
     lines.append(
@@ -566,7 +566,8 @@ def build_batch_prompt(question_blocks: list[dict]) -> str:
             lines.append("matrix_rule_active_row: row_label DOIT être EXACTEMENT matrix_active_row")
             lines.append(f"matrix_example_active_row: {matrix_active_row} || Transféré vers Revolut")
         lines.append(f"itype: {itype}")
-        lines.append(f"max_select: {max_sel}")
+        display_max_sel = min(max_sel, 5) if (min_sel == 1 and max_sel > 3) else max_sel
+        lines.append(f"max_select: {display_max_sel}")
         lines.append(f"min_select: {min_sel}")
         ctx = block.get("context") if isinstance(block.get("context"), dict) else {}
         if (ctx or {}).get("kind") == "multi_text" and max_sel >= 2:
