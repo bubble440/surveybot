@@ -109,3 +109,37 @@ def test_dropdown_question_extraction_passes_option_texts_to_container_extractor
     assert len(blocks[0]["options"] or []) == 3
     assert "proposition" in (blocks[0]["options"][0] or "").lower()
     assert blocks[0]["options"][1:] == ["Grand Est", "Nouvelle Aquitaine"]
+
+
+def test_dropdown_bootstrap_selectpicker_uses_zlabel_fallback_when_question_empty(monkeypatch):
+    _patch_non_generic_extractors(monkeypatch)
+
+    option_a = _FakeElement(tag_name="option", text="Audi")
+    option_b = _FakeElement(tag_name="option", text="BMW")
+    select_el = _FakeElement(
+        tag_name="select",
+        attrs={"id": "k3wJy", "name": "k3wJy", "class": "selectpicker my-2 z-select"},
+        options=[option_a, option_b],
+    )
+
+    monkeypatch.setattr(da, "_is_actionable_visible", lambda _el: True)
+    monkeypatch.setattr(da, "_looks_like_system_field", lambda _el: False)
+    monkeypatch.setattr(da, "_detect_itype", lambda _el: "dropdown")
+    monkeypatch.setattr(da, "_nearest_question_container", lambda _el: _FakeElement(tag_name="div", text=""))
+    monkeypatch.setattr(da, "_extract_question_from_container", lambda *_a, **_k: "")
+    monkeypatch.setattr(da, "_find_question_text_near_element", lambda *_a, **_k: "")
+    monkeypatch.setattr(da, "_find_associated_label", lambda *_a, **_k: "")
+    monkeypatch.setattr(da, "_extract_ssi_confirmit_question", lambda *_a, **_k: "")
+    monkeypatch.setattr(da, "_best_xpath_for_element", lambda *_: "//select[@id='k3wJy']")
+    monkeypatch.setattr(
+        da,
+        "_find_bootstrap_selectpicker_question_label",
+        lambda _el: "Quelle est la marque de votre automobile (principal)actuelle?",
+    )
+
+    blocks = da._analyze_dom_current_context(_FakeDriver(select_el=select_el))
+
+    assert len(blocks) == 1
+    assert blocks[0]["itype"] == "dropdown"
+    assert blocks[0]["question"] == "Quelle est la marque de votre automobile (principal)actuelle?"
+    assert blocks[0]["options"] == ["Audi", "BMW"]
