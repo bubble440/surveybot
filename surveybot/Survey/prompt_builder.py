@@ -168,6 +168,20 @@ _RESIDENCE_COUNTRY_PATTERNS = [
     "live in",
 ]
 
+_FREQ_HIGH_MARKERS = [
+    "plusieurs fois par jour", "tous les jours", "quotidien", "daily", "every day",
+    "plusieurs fois par semaine", "most days", "often", "souvent",
+]
+
+_FREQ_LOW_MARKERS = [
+    "une fois ce mois", "plusieurs fois ce mois", "once this month", "this month",
+    "jamais", "never", "pas achete", "pas acheté", "ne sais pas", "dont know", "don't know",
+]
+
+_FREQ_UNIT_MARKERS = [
+    "jour", "jours", "day", "week", "semaine", "month", "mois", "fois",
+]
+
 
 def _looks_like_tier_entry_question(block: Dict[str, Any]) -> bool:
     itype = _norm_folded_lc(block.get("itype"))
@@ -219,11 +233,27 @@ def _tier_entry_option(options: list[str]) -> tuple[int, str]:
     n = len(options)
     if n <= 1:
         k = 1
+    elif _looks_like_frequency_scale(options):
+        top_third = max(1, -(-n // 3))
+        k = max(1, (top_third + 1) // 2)
     elif n in {2, 3}:
         k = n
     else:
         k = int(-(-3 * n // 4))
     return k, options[k - 1]
+
+
+def _looks_like_frequency_scale(options: list[str]) -> bool:
+    if not options:
+        return False
+
+    folded_options = [_norm_folded_lc(opt) for opt in options]
+    high = any(any(marker in opt for marker in _FREQ_HIGH_MARKERS) for opt in folded_options)
+    low = any(any(marker in opt for marker in _FREQ_LOW_MARKERS) for opt in folded_options)
+    has_units = sum(
+        1 for opt in folded_options if any(marker in opt for marker in _FREQ_UNIT_MARKERS)
+    )
+    return high and low and has_units >= 2
 
 
 def _find_option_exact(options: list[str], expected_value: str) -> str | None:
