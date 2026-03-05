@@ -77,6 +77,11 @@ def looks_like_matrix(driver) -> bool:
     )
     if tables:
         return True
+    label_tables = driver.find_elements(
+        By.XPATH, "//table[.//thead//th and .//tbody//label[@for]]"
+    )
+    if label_tables:
+        return True
     # Matrices Qualtrics/dynata styles (div grids)
     grids = driver.find_elements(
         By.CSS_SELECTOR, ".q-matrix, .Matrix, .grid, .question-matrix, .matrix"
@@ -359,6 +364,11 @@ def click_matrix_cell_by_row_and_col(driver, row_label: str, col_label: str) -> 
                             except Exception:
                                 continue
                         if not has_input:
+                            try:
+                                inp = cell.find_element(By.XPATH, ".//label[@for]")
+                            except Exception:
+                                inp = None
+                        if inp is None:
                             continue
                         
                         sc = 0.0
@@ -386,7 +396,7 @@ def click_matrix_cell_by_row_and_col(driver, row_label: str, col_label: str) -> 
                 if best_cell is not None:
                     try:
                         tgt = None
-                        for xp in [".//input[@type='radio']", ".//input[@type='checkbox']", ".//*[@role='radio']", ".//*[@role='checkbox']"]:
+                        for xp in [".//input[@type='radio']", ".//input[@type='checkbox']", ".//*[@role='radio']", ".//*[@role='checkbox']", ".//label[@for]"]:
                             try:
                                 tgt = best_cell.find_element(By.XPATH, xp)
                                 break
