@@ -3,7 +3,19 @@ import re, json
 from selenium.webdriver.common.by import By
 
 def extract_recaptcha_v2_sitekey(driver):
-    """Retourne (sitekey, is_invisible) ou (None, None) si introuvable."""
+    """Retourne (sitekey, is_invisible, is_enterprise) ou (None, None, False) si introuvable."""
+    # Détection Enterprise : iframe src contenant /recaptcha/enterprise/
+    is_enterprise = False
+    try:
+        frames = driver.find_elements(By.CSS_SELECTOR, 'iframe[src*="recaptcha"]')
+        for fr in frames:
+            src = fr.get_attribute("src") or ""
+            if "/recaptcha/enterprise/" in src:
+                is_enterprise = True
+                break
+    except Exception:
+        pass
+
     # 1) balises avec data-sitekey
     try:
         els = driver.find_elements(By.CSS_SELECTOR, "[data-sitekey]")
@@ -12,7 +24,7 @@ def extract_recaptcha_v2_sitekey(driver):
             if sk:
                 inv = (el.get_attribute("data-size") == "invisible") or \
                       ("g-recaptcha-badge" in (el.get_attribute("class") or ""))
-                return sk, bool(inv)
+                return sk, bool(inv), is_enterprise
     except Exception:
         pass
 
@@ -24,7 +36,7 @@ def extract_recaptcha_v2_sitekey(driver):
             m = re.search(r"[?&]k=([A-Za-z0-9_-]+)", src)
             if m:
                 inv = ("size=invisible" in src) or ("invisible" in src)
-                return m.group(1), bool(inv)
+                return m.group(1), bool(inv), is_enterprise
     except Exception:
         pass
 
@@ -44,8 +56,8 @@ def extract_recaptcha_v2_sitekey(driver):
     out = driver.execute_script(js)
     if out:
         d = json.loads(out)
-        return d["sitekey"], bool(d.get("invisible"))
-    return None, None
+        return d["sitekey"], bool(d.get("invisible")), is_enterprise
+    return None, None, False
 
 
 def inject_recaptcha_token(driver, token: str):

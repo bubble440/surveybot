@@ -138,3 +138,83 @@ class TwoCaptchaClient:
             if res.get("status") == "processing":
                 continue
             raise RuntimeError(f"getTaskResult (proxy) error: {res}")
+
+    def solve_recaptcha_v2_enterprise(self, sitekey: str, url: str, invisible: bool = False) -> str:
+        """Résout reCAPTCHA V2 Enterprise via RecaptchaV2EnterpriseTaskProxyless."""
+        payload = {
+            "clientKey": self.api_key,
+            "task": {
+                "type": "RecaptchaV2EnterpriseTaskProxyless",
+                "websiteURL": url,
+                "websiteKey": sitekey,
+                "isInvisible": bool(invisible),
+            }
+        }
+        r = requests.post(f"{self.base_url}/createTask", json=payload, timeout=30).json()
+        if r.get("errorId"):
+            raise RuntimeError(f"createTask error: {r}")
+        task_id = r["taskId"]
+
+        start = time.time()
+        while True:
+            if time.time() - start > self.timeout:
+                raise TimeoutError("2Captcha délai dépassé (Enterprise Proxyless)")
+            time.sleep(self.poll_interval)
+            res = requests.post(
+                f"{self.base_url}/getTaskResult",
+                json={"clientKey": self.api_key, "taskId": task_id},
+                timeout=30,
+            ).json()
+            if res.get("status") == "ready":
+                return res["solution"]["gRecaptchaResponse"]
+            if res.get("status") == "processing":
+                continue
+            raise RuntimeError(f"getTaskResult error: {res}")
+
+    def solve_recaptcha_v2_enterprise_with_proxy(
+        self,
+        sitekey: str,
+        url: str,
+        proxy_type: str,
+        proxy_address: str,
+        proxy_port: int,
+        proxy_login: str = "",
+        proxy_password: str = "",
+        invisible: bool = False,
+    ) -> str:
+        """Résout reCAPTCHA V2 Enterprise via RecaptchaV2EnterpriseTask (avec proxy)."""
+        task = {
+            "type": "RecaptchaV2EnterpriseTask",
+            "websiteURL": url,
+            "websiteKey": sitekey,
+            "isInvisible": bool(invisible),
+            "proxyType": proxy_type,
+            "proxyAddress": proxy_address,
+            "proxyPort": int(proxy_port),
+        }
+        if proxy_login:
+            task["proxyLogin"] = proxy_login
+        if proxy_password:
+            task["proxyPassword"] = proxy_password
+
+        payload = {"clientKey": self.api_key, "task": task}
+        r = requests.post(f"{self.base_url}/createTask", json=payload, timeout=30).json()
+        if r.get("errorId"):
+            raise RuntimeError(f"createTask (enterprise proxy) error: {r}")
+        task_id = r["taskId"]
+
+        start = time.time()
+        while True:
+            if time.time() - start > self.timeout:
+                raise TimeoutError("2Captcha délai dépassé (Enterprise proxy task)")
+            time.sleep(self.poll_interval)
+            res = requests.post(
+                f"{self.base_url}/getTaskResult",
+                json={"clientKey": self.api_key, "taskId": task_id},
+                timeout=30,
+            ).json()
+            if res.get("status") == "ready":
+                return res["solution"]["gRecaptchaResponse"]
+            if res.get("status") == "processing":
+                continue
+            raise RuntimeError(f"getTaskResult (enterprise proxy) error: {res}")
