@@ -193,3 +193,62 @@ def test_skip_inline_other_text_with_own_label_inside_choice_option(monkeypatch)
 
     assert len(blocks) == 1
     assert blocks[0]["itype"] == "radio"
+
+
+def test_skip_inline_other_text_when_js_probe_unavailable(monkeypatch):
+    _patch_non_generic_extractors(monkeypatch)
+
+    class _OptionRoot(_FakeNode):
+        def find_elements(self, by=None, value=None):
+            value = value or ""
+            if "input[type='radio'], input[type='checkbox']" in value:
+                return [_FakeNode("input", {"type": "checkbox", "id": "q1001_a4"})]
+            return []
+
+    option_root = _OptionRoot("div", attrs={"class": "answer_options answer_options1001"})
+    container = _FakeNode(
+        "div",
+        attrs={"id": "question1001", "class": "question radio_question"},
+        text="Pour commencer... Etes-vous...?",
+    )
+
+    class _InlineTextInput(_FakeNode):
+        def find_elements(self, by=None, value=None):
+            value = value or ""
+            if "ancestor::*" in value:
+                return [option_root, container]
+            return []
+
+    text_input = _InlineTextInput(
+        "input",
+        attrs={"type": "text", "id": "t1001_4", "name": "t1001_4", "required": "required"},
+        text="",
+        container=container,
+    )
+
+    monkeypatch.setattr(da, "_is_actionable_visible", lambda _el: True)
+    monkeypatch.setattr(da, "_looks_like_system_field", lambda _el: False)
+    monkeypatch.setattr(da, "_detect_itype", lambda el: "text" if el is text_input else "radio")
+    monkeypatch.setattr(da, "_extract_surveywriter_ssi_question", lambda *_: "")
+    monkeypatch.setattr(da, "_extract_ssi_confirmit_question", lambda *_: "")
+    monkeypatch.setattr(da, "_find_question_text_near_element", lambda *_: "")
+    monkeypatch.setattr(da, "_best_xpath_for_element", lambda _driver, el: f"//*[@id='{el.get_attribute('id') or 'aux'}']")
+    monkeypatch.setattr(da, "_nearest_question_container", lambda _el: container)
+    monkeypatch.setattr(da, "_extract_question_from_container", lambda *_args, **_kwargs: "Pour commencer... Etes-vous...?")
+
+    def _label(_driver, el):
+        if el is text_input:
+            return "Autre, merci de préciser:"
+        return el.text or ""
+
+    monkeypatch.setattr(da, "_find_associated_label", _label)
+
+    class _DriverNoInlineJs(_FakeDriver):
+        def execute_script(self, *_args, **_kwargs):
+            raise RuntimeError("js unavailable")
+
+    driver = _DriverNoInlineJs(text_input=text_input)
+    blocks = da._analyze_dom_current_context(driver)
+
+    assert len(blocks) == 1
+    assert blocks[0]["itype"] == "radio"
