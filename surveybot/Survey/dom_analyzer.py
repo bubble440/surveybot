@@ -70,6 +70,7 @@ try:
         _extract_rnw_ionicon_multi_choice_blocks,
         _extract_table_matrix_radio_rows,
         _extract_cmix_simple_grid_question_blocks,
+        _extract_cmix_grid_question_blocks,
         _extract_cmix_radio_question_blocks,
         _extract_ipsos_slider_question_blocks,
         _extract_confirmit_slider_grid_blocks,
@@ -127,6 +128,7 @@ except ImportError:
         _extract_rnw_ionicon_multi_choice_blocks,
         _extract_table_matrix_radio_rows,
         _extract_cmix_simple_grid_question_blocks,
+        _extract_cmix_grid_question_blocks,
         _extract_cmix_radio_question_blocks,
         _extract_ipsos_slider_question_blocks,
         _extract_confirmit_slider_grid_blocks,
@@ -682,7 +684,16 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
     except Exception:
         pass
 
-    # --- 0d-1bis) Matrices HTML génériques (table + radios groupés par ligne) ---
+    # --- 0d-1bis) CMIX GRID : matrices table.cm-grid-response-set ---
+    # Objectif: extraire data-type=GRID (lignes x colonnes) avant les extracteurs génériques radio.
+    try:
+        cmix_grid_blocks = _extract_cmix_grid_question_blocks(driver, frame_chain)
+        if cmix_grid_blocks:
+            return cmix_grid_blocks
+    except Exception:
+        pass
+
+    # --- 0d-1ter) Matrices HTML génériques (table + radios groupés par ligne) ---
     # Objectif: éviter l'aplatissement en bloc checkbox sur certaines grilles provider-variants.
     try:
         decipher_rank_blocks = _extract_decipher_clickable_ranking_blocks(driver, frame_chain)
@@ -691,7 +702,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
     except Exception:
         pass
 
-    # --- 0d-1ter) Matrices HTML génériques (table + radios groupés par ligne) ---
+    # --- 0d-1quater) Matrices HTML génériques (table + radios groupés par ligne) ---
     # Objectif: éviter l'aplatissement en bloc checkbox sur certaines grilles provider-variants.
     try:
         table_matrix_blocks = _extract_table_matrix_radio_rows(driver, frame_chain)
