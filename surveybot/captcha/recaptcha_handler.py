@@ -249,18 +249,11 @@ def solve_recaptcha_v2_auto(driver) -> bool:
     try:
         client = TwoCaptchaClient()
         if is_enterprise:
-            if proxy_cfg:
-                token = client.solve_recaptcha_v2_enterprise_with_proxy(
-                    sitekey, current_url,
-                    proxy_type=proxy_cfg["proxy_type"],
-                    proxy_address=proxy_cfg["proxy_address"],
-                    proxy_port=proxy_cfg["proxy_port"],
-                    proxy_login=proxy_cfg["proxy_login"],
-                    proxy_password=proxy_cfg["proxy_password"],
-                    invisible=invisible,
-                )
-            else:
-                token = client.solve_recaptcha_v2_enterprise(sitekey, current_url, invisible)
+            # Enterprise : Proxyless forcé — RecaptchaV2EnterpriseTaskProxyless est
+            # le type correct pour les sites survey (IPSOS, Qualtrics...) qui n'exigent
+            # pas de matching IP. RecaptchaV2EnterpriseTask retourne errorId=12 sur ces sites.
+            print("[RECAPTCHA_HANDLER] enterprise détecté → mode proxyless forcé")
+            token = client.solve_recaptcha_v2_enterprise(sitekey, current_url, invisible)
         elif proxy_cfg:
             token = client.solve_recaptcha_v2_with_proxy(
                 sitekey, current_url,
