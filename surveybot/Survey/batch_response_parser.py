@@ -40,9 +40,9 @@ _EXCLUSIVE_PATTERNS_FR = (
     r"aucun(e)?\s+(de\s+)?(ces|ceux|celles)",  # "Aucune de ces activités"
     r"^autre(\s|$|[^s])",                   # "Autre" mais pas "Autres"
     r"^pas\s+(de|d')",                      # "Pas de...", "Pas d'..."
-    r"^je\s+ne\s+sais\s+pas",               # "Je ne sais pas"
-    r"^ne\s+sais\s+pas",                    # "Ne sais pas"
-    r"^nsp$",                               # NSP (Ne Sais Pas)
+    r"^je\s+ne\s+sais\s+pas(\s|$)",         # "Je ne sais pas"
+    r"^ne\s+sai(?:s|t)\s+pas(\s|$)",              # "Ne sait pas", "Ne sais pas"
+    r"^nsp(\s|$)",                           # NSP (Ne Sais Pas)
     r"^n/?a$",                              # N/A
     r"^sans\s+(avis|opinion|réponse)",      # "Sans avis", "Sans opinion"
     r"^refus",                              # "Refus", "Refuse"
@@ -57,14 +57,16 @@ _EXCLUSIVE_PATTERNS_EN = (
     r"^none(\s|$)",                         # "None", "None of the above"
     r"^none\s+of\s+(the|these|those)",      # "None of the above", "None of these"
     r"^other(\s|$)",                        # "Other" seul
-    r"^i\s+don'?t\s+know",                  # "I don't know"
-    r"^don'?t\s+know",                      # "Don't know"
+    r"^i\s+don'?t\s+know(\s|$)",            # "I don't know"
+    r"^don'?t\s+know(\s|$)",                # "Don't know"
+    r"^dk(\s|$)",                            # DK (Don't know)
     r"^not\s+applicable",                   # "Not applicable"
     r"^n/?a$",                              # N/A
     r"^prefer\s+not\s+to",                  # "Prefer not to say"
     r"^i\s+prefer\s+not",                   # "I prefer not to..."
     r"^refuse",                             # "Refuse"
-    r"^not\s+sure",                         # "Not sure"
+    r"^not\s+sure(\s|$)",                   # "Not sure"
+    r"^unsure(\s|$)",                        # "Unsure"
     r"^no\s+opinion",                       # "No opinion"
 )
 
