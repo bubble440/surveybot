@@ -1646,7 +1646,11 @@ def _extract_cmix_grid_question_blocks(driver, frame_chain: list[int] | None) ->
                 try:
                     row_label = ""
                     try:
-                        row_hdr = row.find_element(By.CSS_SELECTOR, "td.cm-grid-column-header-1, th.cm-grid-column-header-1")
+                        row_hdr = row.find_element(
+                            By.CSS_SELECTOR,
+                            "td.cm-grid-column-header-1, th.cm-grid-column-header-1, "
+                            "td.cm-grid-column-header, th.cm-grid-column-header",
+                        )
                         row_label = _norm(row_hdr.text or row_hdr.get_attribute("innerText") or "")
                     except Exception:
                         pass
