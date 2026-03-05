@@ -36,6 +36,8 @@ class _FakeChoice:
             return self._containers
         if by == "xpath" and value and "fieldset[contains(@class,'question-multiple')]" in value:
             return self._containers
+        if by == "xpath" and value and "fieldset[contains(@class,'sg-question') and starts-with(@id,'sgE-')]" in value:
+            return self._containers
         if by == "xpath" and value and ("role='listbox'" in value or "multi-select-container" in value):
             return self._containers
         if by == "xpath" and value and "self::fieldset or contains(@class,'mrQuestionTable')" in value:
@@ -123,6 +125,21 @@ def test_checkbox_group_key_normalizes_yougov_question_multiple_suffixes():
     fieldset = _FakeContainer({"class": "question question-multiple"}, checkboxes=siblings)
     el = _FakeChoice({"name": "w38-response-2"}, containers=[fieldset])
     assert _group_key_for_choice(el, "checkbox") == "w38-response"
+
+
+def test_checkbox_group_key_normalizes_alchemer_sge_option_suffixes():
+    siblings = [
+        _FakeChoice({"name": "sgE-8714385-12-16-10089"}),
+        _FakeChoice({"name": "sgE-8714385-12-16-10090"}),
+        _FakeChoice({"name": "sgE-8714385-12-16-10100"}),
+    ]
+    fieldset = _FakeContainer(
+        {"id": "sgE-8714385-12-16-box", "class": "sg-question sg-type-checkbox"},
+        checkboxes=siblings,
+        tag_name="fieldset",
+    )
+    el = _FakeChoice({"name": "sgE-8714385-12-16-10090"}, containers=[fieldset])
+    assert _group_key_for_choice(el, "checkbox") == "sge-8714385-12-16"
 
 
 def test_compute_max_select_uses_explicit_exact_count_from_question_text():
