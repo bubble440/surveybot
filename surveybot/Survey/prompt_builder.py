@@ -589,6 +589,10 @@ def build_batch_prompt(question_blocks: list[dict]) -> str:
             lines.append(
                 f"selection_rule: Pour QID={qid}, renvoyer entre {min_sel} et {max_sel} valeur(s) séparée(s) par |. Sélectionne entre {min_sel} et {max_sel} réponses. / Select between {min_sel} and {max_sel} answers."
             )
+        elif min_sel == 1 and max_sel > 1:
+            lines.append(
+                f"selection_rule: Pour QID={qid}, renvoyer entre 1 et {max_sel} valeur(s) séparée(s) par | selon le contexte. Choisis un nombre naturel et réaliste, pas le maximum. Pour un checkbox de marques/plateformes, 2 à 5 choix sont attendus sauf indication contraire dans la question. / For QID={qid}, return between 1 and {max_sel} value(s) separated by | according to context. Choose a natural and realistic count, not the maximum. For brand/platform checkboxes, 2 to 5 choices are expected unless the question says otherwise."
+            )
         else:
             lines.append(
                 f"selection_rule: Pour QID={qid}, renvoyer EXACTEMENT {max_sel} valeur(s) séparée(s) par |"
