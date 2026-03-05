@@ -1593,6 +1593,150 @@ def _extract_cmix_simple_grid_question_blocks(driver, frame_chain: list[int] | N
     return blocks
 
 
+def _extract_cmix_grid_question_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
+    """CMIX GRID : extraction des matrices table.cm-grid-response-set.
+
+    Gate DOM strict:
+    - div.cm-element[data-type='GRID']
+    - table.cm-grid-response-set
+
+    Chaque ligne (.cm-grid-row) produit un bloc radio:
+    - question = libellé de ligne (cm-grid-column-header-1)
+    - options = libellés de colonnes (header Oui/Non/...)
+    - target_id = groupe radio de la ligne (name partagé)
+    """
+    frame_chain = list(frame_chain or [])
+
+    try:
+        tables = driver.find_elements(
+            By.CSS_SELECTOR,
+            "div.cm-element[data-type='GRID'] table.cm-grid-response-set",
+        )
+        if not tables:
+            return []
+    except Exception:
+        return []
+
+    blocks: list[dict] = []
+
+    for table in tables[:10]:  # Limite anti-explosion
+        try:
+            col_headers: list[str] = []
+            try:
+                header_cells = table.find_elements(
+                    By.CSS_SELECTOR,
+                    "tr.cm-grid-row-header td.cm-grid-column-header, tr.cm-grid-row-header th.cm-grid-column-header",
+                )
+                for cell in header_cells:
+                    txt = _norm(cell.text or cell.get_attribute("innerText") or "")
+                    if txt:
+                        col_headers.append(txt)
+            except Exception:
+                pass
+
+            if len(col_headers) < 2:
+                continue
+
+            try:
+                rows = table.find_elements(By.CSS_SELECTOR, "tr.cm-grid-row")
+            except Exception:
+                rows = []
+
+            for row in rows[:30]:  # Limite anti-explosion
+                try:
+                    row_label = ""
+                    try:
+                        row_hdr = row.find_element(By.CSS_SELECTOR, "td.cm-grid-column-header-1, th.cm-grid-column-header-1")
+                        row_label = _norm(row_hdr.text or row_hdr.get_attribute("innerText") or "")
+                    except Exception:
+                        pass
+
+                    if not row_label:
+                        continue
+
+                    try:
+                        radios = row.find_elements(By.CSS_SELECTOR, "input[type='radio'][name][value]")
+                    except Exception:
+                        radios = []
+
+                    if len(radios) < 2:
+                        continue
+
+                    num_options = min(len(col_headers), len(radios))
+                    if num_options < 2:
+                        continue
+
+                    options: list[str] = []
+                    option_xpath_map: dict[str, str] = {}
+                    radio_name = ""
+
+                    for idx in range(num_options):
+                        radio = radios[idx]
+                        opt_text = col_headers[idx]
+                        if not radio_name:
+                            radio_name = (radio.get_attribute("name") or "").strip()
+
+                        val = (radio.get_attribute("value") or "").strip()
+                        if not radio_name or not val:
+                            continue
+
+                        xp = (
+                            f"(//input[@type='radio' and @name={_xpath_literal(radio_name)} "
+                            f"and @value={_xpath_literal(val)}])[1]"
+                        )
+
+                        nk = _norm_key(opt_text)
+                        if not nk or nk in option_xpath_map:
+                            continue
+                        option_xpath_map[nk] = xp
+                        options.append(opt_text)
+
+                    if len(options) < 2 or not option_xpath_map:
+                        continue
+
+                    group_key = f"cmix_grid:name:{radio_name}"
+                    target_id = make_target_id("group", group_key, row_label)
+
+                    register_target(
+                        target_id,
+                        {
+                            "kind": "group",
+                            "itype": "radio",
+                            "group_key": group_key,
+                            "question": row_label,
+                            "option_xpath_map": option_xpath_map,
+                            "frame_chain": frame_chain,
+                            "cmix": True,
+                            "cmix_grid": True,
+                            "matrix_columns": col_headers,
+                        },
+                    )
+
+                    blocks.append(
+                        {
+                            "question": row_label,
+                            "itype": "radio",
+                            "options": options,
+                            "max_select": 1,
+                            "target_id": target_id,
+                            "context": {
+                                "kind": "group",
+                                "group_key": group_key,
+                                "cmix": True,
+                                "cmix_grid": True,
+                                "matrix_columns": col_headers,
+                            },
+                        }
+                    )
+                except Exception:
+                    continue
+
+        except Exception:
+            continue
+
+    return blocks
+
+
 
 # ================================================================================
 # CMIX - RADIO QUESTION BLOCKS
