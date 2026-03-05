@@ -1,5 +1,5 @@
 <body class="sg-body sg-page-15 sg-pageid-48 sg-webkit sg-ltr sg-int-virtual-page sg-replace-icons " id="sgbody-8714385"><noscript><div id="no-js-warning"><p>We've detected that Javascript is not enabled. It is required for an optimal survey taking experience.<br /> Please check your browser's settings and make sure Javascript is turned on. <a href='http://www.enable-javascript.com/' target='_blank' >Learn how to enable Javascript.</a></p></div></noscript><div class="sg-skipnav-container">
-						<a id="sg-skipnav" class="sg-screenreader-only" href="#sg-skipnav-target">Skip survey header</a>
+						<a id="sg-skipnav" class="sg-screenreader-only" href="#sg-skipnav-target" tabindex="0">Skip survey header</a>
 					</div><form action="/s3/8714385/Pluraisme" method="post" enctype="multipart/form-data" class="sg-survey-form" id="sg_FormFor8714385" novalidate="">
 <div class="sg-hidden-inputs"><input type="hidden" name="sg_navchoice" id="sg_navchoice" value=""><input type="hidden" name="sg_currentpageid" id="sg_currentpageid" value="48"><input type="hidden" name="sg_surveyident" id="sg_surveyident" value="8714385"><input type="hidden" name="sg_sessionid" id="sg_sessionid" value="1772670471_69a8ce07058f44.21626796"><input type="hidden" name="sg_high_contrast" id="sg_high_contrast" value="false"><input type="hidden" name="sg_cint_panelist" id="sg_cint_panelist" value=""><input type="hidden" name="sg_interactionlevel" id="sg_interactionlevel" value="13"><input type="hidden" name="sg_interactionlevel_sig" id="sg_interactionlevel_sig" value="origin-13"><input type="hidden" name="sg3aa906cfb396815bba131697c61535fa" id="sg3aa906cfb396815bba131697c61535fa" value="3017658668"><script>window["Fingerprint"] && (document.getElementById("sg3aa906cfb396815bba131697c61535fa").value = new Fingerprint({canvas: true}).get());</script></div>  <div class="sg-wrapper">
 <div class="sg-header">
@@ -50,7 +50,7 @@
 			</thead>
 		
 		<tbody>
-					<tr class="sg-odd-row sg-first-row row-61 sg-mobile-table-row-current">
+					<tr class="sg-odd-row sg-first-row row-61 sg-row-shown sg-mobile-table-row" aria-hidden="true">
 
 								<th class="sg-first-cell" id="row-61" scope="row">
 						Netflix											</th>
@@ -86,7 +86,7 @@
 										</label>						</td>
 								</tr>
 
-						<tr class="sg-even-row row-62 sg-mobile-table-row">
+						<tr class="sg-even-row row-62 sg-mobile-table-row-current sg-row-shown">
 
 								<th class="sg-first-cell" id="row-62" scope="row">
 						Amazon Prime Video											</th>
@@ -122,7 +122,7 @@
 										</label>						</td>
 								</tr>
 
-						<tr class="sg-odd-row row-63 sg-mobile-table-row">
+						<tr class="sg-odd-row row-63 sg-mobile-table-row" aria-hidden="true">
 
 								<th class="sg-first-cell" id="row-63" scope="row">
 						Disney+											</th>
@@ -158,7 +158,7 @@
 										</label>						</td>
 								</tr>
 
-						<tr class="sg-even-row row-64 sg-mobile-table-row">
+						<tr class="sg-even-row row-64 sg-mobile-table-row" aria-hidden="true">
 
 								<th class="sg-first-cell" id="row-64" scope="row">
 						Apple TV+											</th>
@@ -194,7 +194,7 @@
 										</label>						</td>
 								</tr>
 
-						<tr class="sg-odd-row row-65 sg-mobile-table-row">
+						<tr class="sg-odd-row row-65 sg-mobile-table-row" aria-hidden="true">
 
 								<th class="sg-first-cell" id="row-65" scope="row">
 						Paramount											</th>
@@ -230,7 +230,7 @@
 										</label>						</td>
 								</tr>
 
-						<tr class="sg-even-row sg-last-row row-66 sg-mobile-table-row">
+						<tr class="sg-even-row sg-last-row row-66 sg-mobile-table-row" aria-hidden="true">
 
 								<th class="sg-first-cell" id="row-66" scope="row">
 						Canal+ / myCANAL											</th>
@@ -266,7 +266,7 @@
 										</label>						</td>
 								</tr>
 
-						<tr class="sg-odd-row row-67 sg-mobile-table-row">
+						<tr class="sg-odd-row row-67 sg-mobile-table-row" aria-hidden="true">
 
 								<th class="sg-first-cell" id="row-67" scope="row">
 						TF1+											</th>
@@ -302,7 +302,7 @@
 										</label>						</td>
 								</tr>
 
-						<tr class="sg-even-row row-68 sg-mobile-table-row">
+						<tr class="sg-even-row row-68 sg-mobile-table-row" aria-hidden="true">
 
 								<th class="sg-first-cell" id="row-68" scope="row">
 						France.tv											</th>
@@ -338,7 +338,7 @@
 										</label>						</td>
 								</tr>
 
-						<tr class="sg-odd-row row-69 sg-mobile-table-row">
+						<tr class="sg-odd-row row-69 sg-mobile-table-row" aria-hidden="true">
 
 								<th class="sg-first-cell" id="row-69" scope="row">
 						6play / M6+											</th>
@@ -374,7 +374,7 @@
 										</label>						</td>
 								</tr>
 
-						<tr class="sg-even-row row-70 sg-mobile-table-row">
+						<tr class="sg-even-row row-70 sg-mobile-table-row" aria-hidden="true">
 
 								<th class="sg-first-cell" id="row-70" scope="row">
 						Arte.tv											</th>
@@ -410,7 +410,7 @@
 										</label>						</td>
 								</tr>
 
-						<tr class="sg-odd-row row-71 sg-mobile-table-row">
+						<tr class="sg-odd-row row-71 sg-mobile-table-row" aria-hidden="true">
 
 								<th class="sg-first-cell" id="row-71" scope="row">
 						OCS											</th>
@@ -446,7 +446,7 @@
 										</label>						</td>
 								</tr>
 
-						<tr class="sg-even-row row-72 sg-mobile-table-row">
+						<tr class="sg-even-row row-72 sg-mobile-table-row" aria-hidden="true">
 
 								<th class="sg-first-cell" id="row-72" scope="row">
 						Filmo											</th>
@@ -482,7 +482,7 @@
 										</label>						</td>
 								</tr>
 
-						<tr class="sg-odd-row row-73 sg-mobile-table-row">
+						<tr class="sg-odd-row row-73 sg-mobile-table-row" aria-hidden="true">
 
 								<th class="sg-first-cell" id="row-73" scope="row">
 						LaCinetek											</th>
@@ -518,7 +518,7 @@
 										</label>						</td>
 								</tr>
 
-						<tr class="sg-even-row row-74 sg-mobile-table-row">
+						<tr class="sg-even-row row-74 sg-mobile-table-row" aria-hidden="true">
 
 								<th class="sg-first-cell" id="row-74" scope="row">
 						UniversCiné											</th>
@@ -554,7 +554,7 @@
 										</label>						</td>
 								</tr>
 
-						<tr class="sg-odd-row row-75 sg-mobile-table-row">
+						<tr class="sg-odd-row row-75 sg-mobile-table-row" aria-hidden="true">
 
 								<th class="sg-first-cell" id="row-75" scope="row">
 						Pluto TV											</th>
@@ -590,7 +590,7 @@
 										</label>						</td>
 								</tr>
 
-						<tr class="sg-even-row row-76 sg-mobile-table-row">
+						<tr class="sg-even-row row-76 sg-mobile-table-row" aria-hidden="true">
 
 								<th class="sg-first-cell" id="row-76" scope="row">
 						Rakuten TV											</th>
@@ -626,7 +626,7 @@
 										</label>						</td>
 								</tr>
 
-						<tr class="sg-odd-row row-77 sg-mobile-table-row">
+						<tr class="sg-odd-row row-77 sg-mobile-table-row" aria-hidden="true">
 
 								<th class="sg-first-cell" id="row-77" scope="row">
 						Molotov TV											</th>
@@ -662,7 +662,7 @@
 										</label>						</td>
 								</tr>
 
-						<tr class="sg-even-row row-80 sg-mobile-table-row">
+						<tr class="sg-even-row row-80 sg-mobile-table-row" aria-hidden="true">
 
 								<th class="sg-first-cell" id="row-80" scope="row">
 						HBO											</th>
@@ -711,8 +711,8 @@
 <div class="sg-footer">        
 <div class="sg-footer-hook-1"></div>
 
-<div class="sg-button-bar"><input type="submit" class="sg-button sg-next-button" id="sg_NextButton" name="sGizmoNextButton" onclick="$SG('sg_navchoice').value='sGizmoNextButton';return(true);" aria-label="Next" value="Next" style="display: none;"><input type="button" role="button" class="sg-button sg-next-button sg-mobile-next" value="▶" aria-label="next button" style="display: block;"><input type="submit" class="sg-button sg-back-button" id="sg_BackButton" formnovalidate="" name="sGizmoBackButton" onclick="$SG('sg_navchoice').value='sGizmoBackButton';return(true);" aria-label="Back" value="Back" style="display: block;"><input type="button" class="sg-button sg-back-button sg-mobile-back" value="◀" aria-label="back button" style="display: none;"></div>
-<div class="sg-progress-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="22"><div class="sg-progress-bar-text">22%</div><div class="sg-progress-bar-background"><div class="sg-progress-bar-inner" style="width:22%;"></div></div></div>
+<div class="sg-button-bar"><input type="submit" class="sg-button sg-next-button" id="sg_NextButton" name="sGizmoNextButton" onclick="$SG('sg_navchoice').value='sGizmoNextButton';return(true);" aria-label="Next" value="Next" style="display: none;"><input type="button" role="button" class="sg-button sg-next-button sg-mobile-next" value="▶" aria-label="next button" style="display: block;"><input type="submit" class="sg-button sg-back-button" id="sg_BackButton" formnovalidate="" name="sGizmoBackButton" onclick="$SG('sg_navchoice').value='sGizmoBackButton';return(true);" aria-label="Back" value="Back" style="display: none;"><input type="button" class="sg-button sg-back-button sg-mobile-back" value="◀" aria-label="back button" style="display: block;"></div>
+<div class="sg-progress-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="22"><div class="sg-progress-bar-text">22%</div><div class="sg-progress-bar-background"><div class="sg-progress-bar-inner" style="width: 22.1%;"></div></div></div>
 
 
 <div class="sg-footer-hook-2"></div>
