@@ -1487,7 +1487,11 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                 continue
 
             # Pattern spécifique
-            if not _is_actionable_visible(el):
+            is_bootstrap_selectpicker = (
+                (el.tag_name or "").strip().lower() == "select"
+                and "selectpicker" in _norm_lc(el.get_attribute("class") or "")
+            )
+            if not is_bootstrap_selectpicker and not _is_actionable_visible(el):
                 continue
 
             if itype in ("radio", "checkbox", "unknown"):
