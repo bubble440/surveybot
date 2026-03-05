@@ -1476,6 +1476,15 @@ def _extract_cmix_simple_grid_question_blocks(driver, frame_chain: list[int] | N
 
             for row in rows[:25]:  # Limite anti-explosion
                 try:
+                    subquestion_name = (row.get_attribute("data-subquestionname") or "").strip()
+                    has_other_specify_input = False
+                    try:
+                        has_other_specify_input = bool(
+                            row.find_elements(By.CSS_SELECTOR, "input[type='text'].cm-other-specify")
+                        )
+                    except Exception:
+                        has_other_specify_input = False
+
                     # 2a) Extraire le texte de la question (row-header)
                     question = ""
                     try:
@@ -1552,6 +1561,8 @@ def _extract_cmix_simple_grid_question_blocks(driver, frame_chain: list[int] | N
                             "frame_chain": frame_chain,
                             "cmix": True,
                             "cmix_simple_grid": True,
+                            "subquestion_name": subquestion_name,
+                            "has_other_specify_input": has_other_specify_input,
                         },
                     )
 
@@ -1567,6 +1578,8 @@ def _extract_cmix_simple_grid_question_blocks(driver, frame_chain: list[int] | N
                                 "group_key": group_key,
                                 "cmix": True,
                                 "cmix_simple_grid": True,
+                                "subquestion_name": subquestion_name,
+                                "has_other_specify_input": has_other_specify_input,
                             },
                         }
                     )

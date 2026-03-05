@@ -27,6 +27,8 @@ import unicodedata
 from typing import Dict, Optional, List, Any
 _ALLOWED_ITYPES = {"radio", "checkbox", "dropdown", "text", "textarea", "button", "number", "matrix"}
 _QID_RE = re.compile(r"\bQ\d+\b", re.IGNORECASE)
+_OTHER_SPECIFY_TEXT_RE = re.compile(r"autre.*pr[eé]cis|other.*specify", re.IGNORECASE)
+_NEGATIVE_FREQ_RE = re.compile(r"jamais|never", re.IGNORECASE)
 
 
 # =============================================================================
@@ -592,6 +594,73 @@ def _parse_matrix_value(value: str) -> tuple[str, str] | tuple[None, None]:
         return None, None
     return row_label, col_label
 
+
+def _is_cmix_simple_grid_other_specify_block(qmeta: dict | None) -> bool:
+    if not isinstance(qmeta, dict):
+        return False
+
+    context = qmeta.get("context") if isinstance(qmeta.get("context"), dict) else {}
+    if not context.get("cmix_simple_grid"):
+        return False
+
+    subquestion_name = str(context.get("subquestion_name") or "").strip()
+    has_other_specify_input = bool(context.get("has_other_specify_input"))
+    question_txt = str(qmeta.get("question") or "").strip()
+
+    return bool(
+        (subquestion_name and subquestion_name.lower().endswith("_98"))
+        or has_other_specify_input
+        or _OTHER_SPECIFY_TEXT_RE.search(question_txt)
+    )
+
+
+def _coerce_to_negative_frequency_option(actions: list[dict], qid_meta: dict | None) -> list[dict]:
+    if not actions:
+        return actions
+
+    meta = qid_meta or {}
+    target_to_meta = {
+        (m.get("target_id") or "").strip(): m
+        for m in meta.values()
+        if isinstance(m, dict) and (m.get("target_id") or "").strip()
+    }
+
+    coerced: list[dict] = []
+    for action in actions:
+        if not isinstance(action, dict):
+            coerced.append(action)
+            continue
+
+        if (action.get("itype") or "").strip().lower() != "radio":
+            coerced.append(action)
+            continue
+
+        qid = (action.get("qid") or "").strip().upper()
+        target_id = (action.get("target_id") or "").strip()
+        qmeta = meta.get(qid) if qid else None
+        if not isinstance(qmeta, dict) and target_id:
+            qmeta = target_to_meta.get(target_id)
+
+        if not _is_cmix_simple_grid_other_specify_block(qmeta):
+            coerced.append(action)
+            continue
+
+        options = [str(o or "").strip() for o in ((qmeta or {}).get("options") or []) if str(o or "").strip()]
+        if not options:
+            coerced.append(action)
+            continue
+
+        forced_value = next((opt for opt in options if _NEGATIVE_FREQ_RE.search(opt)), options[-1])
+        if forced_value and (action.get("value") or "").strip() != forced_value:
+            patched = dict(action)
+            patched["value"] = forced_value
+            coerced.append(patched)
+            continue
+
+        coerced.append(action)
+
+    return coerced
+
 def parse_batch_response(raw: str, constraints: Optional[Dict[str, int]] = None, qid_meta: Optional[Dict[str, Any]] = None) -> list[dict]:
     """
     Transforme la réponse OpenAI en liste d'instructions exécutables.
@@ -747,6 +816,8 @@ def parse_batch_response(raw: str, constraints: Optional[Dict[str, int]] = None,
                     "raw": line,
                 }
             )
+
+    actions = _coerce_to_negative_frequency_option(actions, qid_meta=qid_meta)
 
     if constraints:
         actions = _enforce_selection_ranges(actions, constraints=constraints, qid_meta=qid_meta)
