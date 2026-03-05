@@ -108,6 +108,38 @@ def _selection_rule_for_block(block: Dict[str, Any]) -> str:
     return "exactly_1"
 
 
+def _selection_bounds_for_prompt(block: Dict[str, Any]) -> tuple[int, int]:
+    """Normalise min_select/max_select pour les consignes de prompt."""
+    itype = _norm_folded_lc(block.get("itype"))
+    try:
+        max_sel = int(block.get("max_select", 1) or 1)
+    except Exception:
+        max_sel = 1
+    max_sel = max(1, max_sel)
+
+    ctx = block.get("context") if isinstance(block.get("context"), dict) else {}
+    is_multi_text = (
+        itype in {"text", "textarea", "number"}
+        and max_sel >= 2
+        and (str(block.get("target_id") or "").startswith("multi_") or str((ctx or {}).get("kind") or "") == "multi_text")
+    )
+    if is_multi_text:
+        return max_sel, max_sel
+
+    if itype != "checkbox":
+        return 1, 1
+
+    min_raw = block.get("min_select", 1)
+    try:
+        min_sel = int(min_raw)
+    except Exception:
+        min_sel = 1
+
+    min_sel = max(0, min_sel)
+    min_sel = min(min_sel, max_sel)
+    return min_sel, max_sel
+
+
 _TIER_ENTRY_QUESTION_KEYWORDS = [
     # FR
     "tranche", "categorie", "fourchette", "classe", "niveau",
@@ -450,7 +482,7 @@ def build_batch_prompt(question_blocks: list[dict]) -> str:
         "QID //// target_id //// valeur //// itype //// contexte\n\n"
         "RèGLES CRITIQUES:\n"
         "- Pour chaque QID, le nombre de valeurs à renvoyer est défini par la selection_rule de ce QID. Ne pas utiliser max_select comme cible à atteindre : c'est un plafond, pas une obligation.\n"
-        "- Le nombre de segments séparés par \"|\" dans valeur doit être EXACTEMENT celui demandé pour ce QID.\n"
+        "- Si plusieurs valeurs sont nécessaires, les séparer UNIQUEMENT par \"|\".\n"
         "- Exemple: Q1 //// group_abc //// Option A|Option B|Option C //// checkbox //// ...\n"
         "- NE JAMAIS utiliser la virgule \",\" comme séparateur (les options peuvent en contenir).\n"
         "- AUCUNE explication. Aucun texte hors format."
@@ -549,8 +581,7 @@ def build_batch_prompt(question_blocks: list[dict]) -> str:
         q = _escape(block.get("question", ""))
         itype = _escape(block.get("itype", ""))
         opts = [_escape(o) for o in (block.get("options") or []) if o]
-        max_sel = int(block.get("max_select", 1) or 1)
-        min_sel = int(block.get("min_select", 1) or 1)
+        min_sel, max_sel = _selection_bounds_for_prompt(block)
         target_id = _escape(block.get("target_id", ""))
         matrix_rows = _matrix_row_labels(block)
         matrix_active_row = _escape((block.get("context") or {}).get("matrix_active_row", ""))
@@ -582,21 +613,22 @@ def build_batch_prompt(question_blocks: list[dict]) -> str:
                 f"option_present={bool(forced_country)}"
             )
 
-        if min_sel == max_sel and min_sel > 1:
-            lines.append(
-                f"selection_rule: Pour QID={qid}, renvoyer EXACTEMENT {max_sel} valeur(s) séparée(s) par |. Sélectionne exactement {max_sel} réponses (toutes les options applicables). / Select exactly {max_sel} answers (all applicable options)."
-            )
-        elif 1 < min_sel < max_sel:
-            lines.append(
-                f"selection_rule: Pour QID={qid}, renvoyer entre {min_sel} et {max_sel} valeur(s) séparée(s) par |. Sélectionne entre {min_sel} et {max_sel} réponses. / Select between {min_sel} and {max_sel} answers."
-            )
-        elif min_sel == 1 and max_sel > 1:
-            lines.append(
-                f"selection_rule: Pour QID={qid}, renvoyer entre 1 et {max_sel} valeur(s) séparée(s) par | selon le contexte. Choisis un nombre naturel et réaliste, pas le maximum. Pour un checkbox de marques/plateformes, 2 à 5 choix sont attendus sauf indication contraire dans la question. / For QID={qid}, return between 1 and {max_sel} value(s) separated by | according to context. Choose a natural and realistic count, not the maximum. For brand/platform checkboxes, 2 to 5 choices are expected unless the question says otherwise."
-            )
+        if itype == "checkbox":
+            if min_sel == 0:
+                lines.append(
+                    f"selection_rule: Pour QID={qid}, renvoyer entre 0 et {max_sel} valeur(s) séparée(s) par |. Préfère 1 choix sûr si des options existent, sauf indication explicite autorisant 0 réponse. / For QID={qid}, return between 0 and {max_sel} values separated by |. Prefer 1 safe choice when options exist, unless the UI/text explicitly allows 0 answer."
+                )
+            elif min_sel == max_sel:
+                lines.append(
+                    f"selection_rule: Pour QID={qid}, renvoyer EXACTEMENT {max_sel} valeur(s) séparée(s) par |. / For QID={qid}, return exactly {max_sel} values separated by |."
+                )
+            else:
+                lines.append(
+                    f"selection_rule: Pour QID={qid}, renvoyer entre {min_sel} et {max_sel} valeur(s) séparée(s) par |. / For QID={qid}, return between {min_sel} and {max_sel} values separated by |."
+                )
         else:
             lines.append(
-                f"selection_rule: Pour QID={qid}, renvoyer EXACTEMENT {max_sel} valeur(s) séparée(s) par |"
+                f"selection_rule: Pour QID={qid}, renvoyer EXACTEMENT 1 valeur"
             )
         if forced_country:
             lines.append(

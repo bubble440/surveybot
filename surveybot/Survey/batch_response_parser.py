@@ -406,7 +406,37 @@ def _build_filler_values(
     return result
 
 
-def _enforce_exact_counts(actions: list[dict], constraints: dict[str, int], qid_meta: dict | None = None) -> list[dict]:
+def _selection_bounds_for_qid(qid: str, raw_max: int, qmeta: dict | None, itype_hint: str = "") -> tuple[int, int]:
+    """Retourne (min_select, max_select) bornés de manière prévisible."""
+    max_select = max(1, int(raw_max or 1))
+    qmeta = qmeta if isinstance(qmeta, dict) else {}
+    itype = str((qmeta.get("itype") or itype_hint or "")).strip().lower()
+
+    context = qmeta.get("context") if isinstance(qmeta.get("context"), dict) else {}
+    is_multi_text = (
+        itype in {"text", "textarea", "number"}
+        and max_select >= 2
+        and (str(qmeta.get("target_id") or "").startswith("multi_") or str((context or {}).get("kind") or "") == "multi_text")
+    )
+    if is_multi_text:
+        return max_select, max_select
+
+    # Par défaut explicite et stable: 1
+    if itype != "checkbox":
+        return 1, 1
+
+    min_raw = qmeta.get("min_select", 1)
+    try:
+        min_select = int(min_raw)
+    except Exception:
+        min_select = 1
+
+    min_select = max(0, min_select)
+    min_select = min(min_select, max_select)
+    return min_select, max_select
+
+
+def _enforce_selection_ranges(actions: list[dict], constraints: dict[str, int], qid_meta: dict | None = None) -> list[dict]:
     if not constraints:
         return actions
 
@@ -420,33 +450,55 @@ def _enforce_exact_counts(actions: list[dict], constraints: dict[str, int], qid_
 
     final_actions: list[dict] = []
     for qid, raw_max in constraints.items():
-        expected = max(1, int(raw_max or 1))
         q_actions = by_qid.get(qid, [])
         qmeta = qid_meta.get(qid) if isinstance(qid_meta, dict) else None
         qmeta = qmeta if isinstance(qmeta, dict) else {}
         itype = str((qmeta.get("itype") or (q_actions[0].get("itype") if q_actions else "") or "")).strip().lower()
+        inferred_qmeta = dict(qmeta)
+        if not inferred_qmeta.get("target_id") and q_actions:
+            inferred_qmeta["target_id"] = q_actions[0].get("target_id")
+        min_select, max_select = _selection_bounds_for_qid(
+            qid=qid,
+            raw_max=raw_max,
+            qmeta=inferred_qmeta,
+            itype_hint=itype,
+        )
 
         # Matrices: conserver le comportement actuel (une action = une cellule)
         if itype == "matrix":
-            final_actions.extend(q_actions[:expected])
+            final_actions.extend(q_actions[:max_select])
             continue
 
-        if len(q_actions) > expected:
-            _warn_log(f"qid={qid} too_many_values expected={expected} received={len(q_actions)} action=truncate")
-            q_actions = q_actions[:expected]
+        if len(q_actions) > max_select:
+            _debug_log(
+                f"qid={qid} too_many_values max_select={max_select} received={len(q_actions)} action=truncate"
+            )
+            q_actions = q_actions[:max_select]
 
         raw_values = [str((a.get("value") or "")).strip() for a in q_actions if str((a.get("value") or "")).strip()]
         options = [str(o or "").strip() for o in (qmeta.get("options") or []) if str(o or "").strip()]
-        completed_values = _build_filler_values(qid=qid, selected_values=raw_values, options=options, expected_count=expected)
-
-        if len(raw_values) < expected:
+        completed_values = list(raw_values)
+        if len(completed_values) < min_select:
+            completed_values = _build_filler_values(
+                qid=qid,
+                selected_values=completed_values,
+                options=options,
+                expected_count=min_select,
+            )
             _warn_log(
-                f"qid={qid} too_few_values expected={expected} received={len(raw_values)} "
+                f"qid={qid} too_few_values min_select={min_select} received={len(raw_values)} "
                 f"action=pad final={completed_values}"
             )
 
+        if len(completed_values) > max_select:
+            completed_values = completed_values[:max_select]
+
+        if max_select == 0:
+            completed_values = []
+
         _debug_log(
-            f"qid={qid} max_select={expected} received={len(raw_values)} final_count={len(completed_values)} values={completed_values}"
+            f"qid={qid} min_select={min_select} max_select={max_select} "
+            f"received={len(raw_values)} final_count={len(completed_values)} values={completed_values}"
         )
 
         template = q_actions[-1] if q_actions else {
@@ -544,7 +596,7 @@ def parse_batch_response(raw: str, constraints: Optional[Dict[str, int]] = None,
     """
     Transforme la réponse OpenAI en liste d'instructions exécutables.
 
-    constraints: dict { "Q1": 1, "Q2": 3, ... } pour appliquer max_select.
+    constraints: dict { "Q1": 1, "Q2": 3, ... } pour appliquer max_select (plafond).
     Si constraints est fourni => mode BATCH STRICT:
       - ignore toute ligne sans QID valide (Qn)
       - ignore les QID inconnus (non présents dans constraints)
@@ -697,7 +749,7 @@ def parse_batch_response(raw: str, constraints: Optional[Dict[str, int]] = None,
             )
 
     if constraints:
-        actions = _enforce_exact_counts(actions, constraints=constraints, qid_meta=qid_meta)
+        actions = _enforce_selection_ranges(actions, constraints=constraints, qid_meta=qid_meta)
 
     return actions
 
