@@ -1262,12 +1262,71 @@ def _extract_table_matrix_radio_rows(driver, frame_chain: list[int] | None) -> l
                     continue
 
             # Vrai pattern matrice: au moins 2 lignes distinctes de radios groupés.
-            if len(row_candidates) < 2 or len(row_names_seen) < 2:
+            # Exception DOM-scopée: Alchemer/SurveyGizmo peut afficher une matrice
+            # radio mono-ligne (même structure de grille + en-têtes de colonnes),
+            # avec des names `sge-<id>-<qid>-<rowid>`.
+            sge_like_row_names = [
+                c["row_name"]
+                for c in row_candidates
+                if re.match(r"^sge-\d+-\d+-\d+$", c.get("row_name", ""))
+            ]
+            sge_like_matrix = (
+                bool(row_candidates)
+                and len(sge_like_row_names) == len(row_candidates)
+                and len(set(sge_like_row_names)) == len(sge_like_row_names)
+            )
+
+            if (len(row_candidates) < 2 or len(row_names_seen) < 2) and not sge_like_matrix:
                 continue
 
             matrix_question = _norm(_find_question_text_near_element(driver, table))
             if not matrix_question:
                 matrix_question = _norm(table.get_attribute("aria-label") or "")
+
+            if sge_like_matrix:
+                first = row_candidates[0]
+                row_count = len(row_candidates)
+                matrix_rows = [r["row_label"] for r in row_candidates]
+                matrix_key = re.sub(r"-\d+$", "", first["row_name"])
+                group_key = f"table_matrix_sge:name:{matrix_key}"
+                target_id = make_target_id("group", group_key, matrix_question or matrix_key)
+
+                register_target(
+                    target_id,
+                    {
+                        "kind": "group",
+                        "itype": "matrix",
+                        "group_key": group_key,
+                        "question": matrix_question,
+                        "frame_chain": frame_chain,
+                        "matrix_question": matrix_question,
+                        "matrix_rows": matrix_rows,
+                        "matrix_columns": col_headers,
+                        "table_matrix_radio": True,
+                        "table_matrix_sge": True,
+                    },
+                )
+
+                blocks.append(
+                    {
+                        "question": matrix_question,
+                        "itype": "matrix",
+                        "options": col_headers,
+                        "max_select": 1,
+                        "target_id": target_id,
+                        "context": {
+                            "kind": "group",
+                            "group_key": group_key,
+                            "matrix_question": matrix_question,
+                            "matrix_rows": matrix_rows,
+                            "matrix_columns": col_headers,
+                            "table_matrix_radio": True,
+                            "table_matrix_sge": True,
+                            "matrix_row_count": row_count,
+                        },
+                    }
+                )
+                continue
 
             for row_data in row_candidates:
                 try:
