@@ -16,6 +16,8 @@ Dépendances:
 
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.action_chains import ActionChains
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.common.exceptions import TimeoutException, StaleElementReferenceException
 import unicodedata
 import re
 from urllib.parse import urlsplit
@@ -494,6 +496,70 @@ def _did_progress(before_marker, after_marker) -> bool:
     )
 
 
+def _wait_post_click_stabilization(driver, el, before_marker, timeout_s=5.0):
+    """
+    Attend une réaction post-clic avant l'évaluation PROGRESSED.
+    Critères d'attente (DOM-first) :
+    - changement d'URL
+    - mutation DOM observable sur la cible cliquée (stale/déconnectée/remplacée/cachée)
+    """
+    before_url = (before_marker or {}).get("url") or ""
+    before_outer = ""
+    try:
+        before_outer = driver.execute_script("return arguments[0] ? (arguments[0].outerHTML || '') : '';", el) or ""
+    except Exception:
+        before_outer = ""
+
+    state = {
+        "after_marker": _dom_progress_marker(driver),
+        "target_changed": False,
+        "reason": "timeout",
+    }
+
+    def _condition(_):
+        after_marker = _dom_progress_marker(driver)
+        state["after_marker"] = after_marker
+
+        after_url = after_marker.get("url") or ""
+        if before_url and after_url and before_url != after_url:
+            state["reason"] = "url_changed"
+            return True
+
+        try:
+            is_connected = driver.execute_script("return (arguments[0] && arguments[0].isConnected);", el)
+            if is_connected is False:
+                state["target_changed"] = True
+                state["reason"] = "target_disconnected"
+                return True
+
+            if not _is_visible(driver, el):
+                state["target_changed"] = True
+                state["reason"] = "target_hidden"
+                return True
+
+            if before_outer:
+                after_outer = driver.execute_script("return arguments[0] ? (arguments[0].outerHTML || '') : '';", el) or ""
+                if after_outer and after_outer != before_outer:
+                    state["target_changed"] = True
+                    state["reason"] = "target_replaced"
+                    return True
+        except StaleElementReferenceException:
+            state["target_changed"] = True
+            state["reason"] = "target_stale"
+            return True
+        except Exception:
+            pass
+
+        return False
+
+    try:
+        WebDriverWait(driver, timeout_s, poll_frequency=0.1).until(_condition)
+    except TimeoutException:
+        pass
+
+    return state["after_marker"], bool(state["target_changed"]), state["reason"]
+
+
 def _press_click_release(driver, el):
     """Séquence CTA déterministe: down -> pause -> up, puis release JS safety net."""
     release_sent = False
@@ -563,22 +629,23 @@ def _click_with_intercept(driver, el) -> bool:
         used = "press_click_release"
 
         first_ok, first_release = _press_click_release(driver, el)
-        time.sleep(0.25)
-        after_first = _dom_progress_marker(driver)
-        progressed = _did_progress(before, after_first)
-        log_debug("[CTA_CLICK]", f"strategy={used} attempt=1 release_sent={str(first_release).lower()} progressed={str(progressed).lower()}")
+        after_first, first_target_changed, first_wait_reason = _wait_post_click_stabilization(driver, el, before, timeout_s=5.0)
+        progressed = _did_progress(before, after_first) or first_target_changed
+        log_debug(
+            "[CTA_CLICK]",
+            f"strategy={used} attempt=1 release_sent={str(first_release).lower()} wait_reason={first_wait_reason} progressed={str(progressed).lower()}",
+        )
 
         if progressed:
             return True
 
         # Budget anti-boucle: 1 tentative additionnelle max si pas de progression.
         second_ok, second_release = _press_click_release(driver, el)
-        time.sleep(0.25)
-        after_second = _dom_progress_marker(driver)
-        progressed = _did_progress(before, after_second)
+        after_second, second_target_changed, second_wait_reason = _wait_post_click_stabilization(driver, el, before, timeout_s=5.0)
+        progressed = _did_progress(before, after_second) or second_target_changed
         log_debug(
             "[CTA_CLICK]",
-            f"strategy={used} attempt=2 release_sent={str(second_release).lower()} progressed={str(progressed).lower()}",
+            f"strategy={used} attempt=2 release_sent={str(second_release).lower()} wait_reason={second_wait_reason} progressed={str(progressed).lower()}",
         )
         return bool(progressed)
 
