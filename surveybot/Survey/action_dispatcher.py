@@ -417,7 +417,16 @@ def _fold_norm_lc(s: str) -> str:
     if not s:
         return ""
     s = unicodedata.normalize("NFKD", s)
+    # Harmoniser les apostrophes/quotes typographiques pour fiabiliser
+    # le matching option_xpath_map (ex: "J’y" vs "J'y" sur CMIX SIMPLE_GRID).
+    s = (
+        s.replace("’", "'")
+         .replace("`", "'")
+         .replace("´", "'")
+         .replace("ʼ", "'")
+    )
     s = "".join(c for c in s if not unicodedata.combining(c))
+    s = re.sub(r"[\u2026]", "...", s)
     s = s.replace("\xa0", " ").strip()
     s = re.sub(r"\s+", " ", s)
     return s.lower()
