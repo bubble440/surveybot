@@ -22,12 +22,21 @@ class _FakeRadio:
 
 
 class _FakeRow:
-    def __init__(self, row_label: str, radios: list[_FakeRadio]):
+    def __init__(self, row_label: str, radios: list[_FakeRadio], generic_row_header_only: bool = False):
         self._row_hdr = _FakeCell(row_label)
         self._radios = radios
+        self._generic_row_header_only = generic_row_header_only
 
     def find_element(self, by=None, value=None):
-        if value == "td.cm-grid-column-header-1, th.cm-grid-column-header-1":
+        if self._generic_row_header_only and value == (
+            "td.cm-grid-column-header-1, th.cm-grid-column-header-1, "
+            "td.cm-grid-column-header, th.cm-grid-column-header"
+        ):
+            return self._row_hdr
+        if value == (
+            "td.cm-grid-column-header-1, th.cm-grid-column-header-1, "
+            "td.cm-grid-column-header, th.cm-grid-column-header"
+        ):
             return self._row_hdr
         raise Exception("not found")
 
@@ -86,3 +95,26 @@ def test_extract_cmix_grid_question_blocks_builds_one_radio_block_per_row(monkey
     assert blocks[0]["context"]["cmix_grid"] is True
     assert "publicite" in _strip_accents(blocks[1]["question"]).lower()
     assert blocks[1]["options"] == ["Oui", "Non"]
+
+
+def test_extract_cmix_grid_question_blocks_accepts_generic_row_header_class(monkeypatch):
+    table = _FakeTable(
+        headers=["Oui", "Non"],
+        rows=[
+            _FakeRow(
+                "Studios / Films / Promotion cinématographique",
+                [_FakeRadio("60973699", "225375886"), _FakeRadio("60973699", "225375887")],
+                generic_row_header_only=True,
+            ),
+        ],
+    )
+    driver = _FakeDriver([table])
+
+    monkeypatch.setattr(dem, "register_target", lambda *_, **__: None)
+    monkeypatch.setattr(dem, "make_target_id", lambda *_, **__: "cmix_grid_target")
+
+    blocks = dem._extract_cmix_grid_question_blocks(driver, frame_chain=[])
+
+    assert len(blocks) == 1
+    assert "studios / films" in _strip_accents(blocks[0]["question"]).lower()
+    assert blocks[0]["options"] == ["Oui", "Non"]
