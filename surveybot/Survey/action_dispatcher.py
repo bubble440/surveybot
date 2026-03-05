@@ -880,6 +880,70 @@ def _apply_by_target_id(driver, target_id: str, itype: str, value: str) -> bool:
             v_norm = _norm_lc(value)
             v_fold = _fold_norm_lc(value)
 
+            if payload.get("purespectrum_date_dropdown") and resolved_itype == "radio":
+                opt_map = payload.get("option_xpath_map") or {}
+                toggle_xpath = (payload.get("dropdown_toggle_xpath") or "").strip()
+
+                xp = opt_map.get(v_norm) or (opt_map.get(v_fold) if v_fold else None)
+                if not xp:
+                    for k, x in opt_map.items():
+                        if not k:
+                            continue
+                        k_norm = _norm_lc(k)
+                        k_fold = _fold_norm_lc(k)
+                        if v_norm and (v_norm == k_norm or v_norm in k_norm or k_norm in v_norm):
+                            xp = x
+                            break
+                        if v_fold and (
+                            v_fold == k_norm or v_fold in k_norm or k_norm in v_fold
+                            or v_fold == k_fold or v_fold in k_fold or k_fold in v_fold
+                        ):
+                            xp = x
+                            break
+
+                if not xp:
+                    if debug_target:
+                        log_debug("[TARGET_DEBUG]", f"target_id='{target_id}' kind='{kind}' itype='{resolved_itype}' value='{value}' -> purespectrum dropdown option introuvable")
+                    return False
+
+                def _click_xpath(xpath: str) -> bool:
+                    if not xpath:
+                        return False
+                    node = _find_best_visible(xpath)
+                    if node is None:
+                        try:
+                            cands = driver.find_elements(By.XPATH, xpath)
+                            node = cands[0] if cands else None
+                        except Exception:
+                            node = None
+                    if node is None:
+                        return False
+                    try:
+                        driver.execute_script("arguments[0].scrollIntoView({block:'center', inline:'center'});", node)
+                    except Exception:
+                        pass
+                    try:
+                        node.click()
+                        return True
+                    except Exception:
+                        try:
+                            driver.execute_script("arguments[0].click();", node)
+                            return True
+                        except Exception:
+                            return False
+
+                if toggle_xpath:
+                    _click_xpath(toggle_xpath)
+                    time.sleep(0.1)
+
+                clicked = _click_xpath(xp)
+                if clicked:
+                    return True
+
+                if debug_target:
+                    log_debug("[TARGET_DEBUG]", f"target_id='{target_id}' value='{value}' -> purespectrum dropdown click failed")
+                return False
+
             if payload.get("confirmit_slider_grid") and resolved_itype == "radio":
                 row_id = (payload.get("slider_grid_row_id") or "").strip()
                 scale_labels = [str(x or "").strip() for x in (payload.get("slider_grid_scale_labels") or []) if str(x or "").strip()]
