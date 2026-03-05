@@ -4,12 +4,15 @@ from surveybot.Survey import dom_extractors_misc as dem
 
 
 class _FakeCell:
-    def __init__(self, text: str):
+    def __init__(self, text: str, class_name: str = ""):
         self.text = text
+        self.class_name = class_name
 
     def get_attribute(self, name):
         if name == "innerText":
             return self.text
+        if name == "class":
+            return self.class_name
         return ""
 
 
@@ -47,13 +50,20 @@ class _FakeRow:
 
 
 class _FakeTable:
-    def __init__(self, headers: list[str], rows: list[_FakeRow]):
-        self._headers = [_FakeCell("")] + [_FakeCell(h) for h in headers]
+    def __init__(self, headers: list[str], rows: list[_FakeRow], header_row_classed: bool = True):
+        self._headers = [_FakeCell("", "cm-grid-column-header cm-grid-column-header-1")] + [
+            _FakeCell(h, f"cm-grid-column-{idx}") for idx, h in enumerate(headers, start=1)
+        ]
         self._rows = rows
+        self._header_row_classed = header_row_classed
 
     def find_elements(self, by=None, value=None):
-        if value == "tr.cm-grid-row-header td.cm-grid-column-header, tr.cm-grid-row-header th.cm-grid-column-header":
+        if value == "tr.cm-grid-row-header td, tr.cm-grid-row-header th":
+            return self._headers if self._header_row_classed else []
+        if value == "tr:first-child td, tr:first-child th":
             return self._headers
+        if value == "tr[data-response-batch]":
+            return self._rows
         if value == "tr.cm-grid-row":
             return self._rows
         return []
@@ -117,4 +127,24 @@ def test_extract_cmix_grid_question_blocks_accepts_generic_row_header_class(monk
 
     assert len(blocks) == 1
     assert "studios / films" in _strip_accents(blocks[0]["question"]).lower()
+    assert blocks[0]["options"] == ["Oui", "Non"]
+
+
+def test_extract_cmix_grid_question_blocks_uses_first_row_headers_when_row_header_class_missing(monkeypatch):
+    table = _FakeTable(
+        headers=["Oui", "Non"],
+        rows=[
+            _FakeRow("Banque", [_FakeRadio("60973698", "225375884"), _FakeRadio("60973698", "225375885")]),
+        ],
+        header_row_classed=False,
+    )
+    driver = _FakeDriver([table])
+
+    monkeypatch.setattr(dem, "register_target", lambda *_, **__: None)
+    monkeypatch.setattr(dem, "make_target_id", lambda *_, **__: "cmix_grid_target")
+
+    blocks = dem._extract_cmix_grid_question_blocks(driver, frame_chain=[])
+
+    assert len(blocks) == 1
+    assert blocks[0]["question"] == "Banque"
     assert blocks[0]["options"] == ["Oui", "Non"]
