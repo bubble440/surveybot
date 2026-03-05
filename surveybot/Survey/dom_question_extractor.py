@@ -719,7 +719,7 @@ def _compute_max_select(itype: str, options: List[str], question_text: str | Non
     if itype in {"radio", "button"}:
         return 1
     if itype == "checkbox":
-        return compute_checkbox_max_select(options)
+        return compute_checkbox_max_select(options, question_text)
     return 1
 
 

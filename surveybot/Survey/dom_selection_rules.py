@@ -141,8 +141,15 @@ def compute_min_select(question_text: str | None, options: list[str], max_select
     return 1
 
 
-def compute_checkbox_max_select(options: list[str]) -> int:
+def compute_checkbox_max_select(options: list[str], question_text: str | None = None) -> int:
     if not options:
         return 1
+
+    explicit_exact_count = explicit_exact_count_from_question(question_text)
     exclusive_count = sum(1 for opt in options if _is_exclusive_option_text(opt))
-    return max(1, len(options) - exclusive_count)
+    natural_max = max(1, len(options) - exclusive_count)
+
+    if explicit_exact_count is not None:
+        return max(1, min(int(explicit_exact_count), natural_max))
+
+    return natural_max
