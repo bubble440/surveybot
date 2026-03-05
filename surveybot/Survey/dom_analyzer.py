@@ -560,6 +560,41 @@ def _is_modal_related_control(driver, el) -> bool:
     return any(k in joined for k in ("modal", "dialog", "overlay", "refuse", "confirm"))
 
 
+def _find_bootstrap_selectpicker_question_label(el) -> str:
+    """
+    Fallback DOM-first ciblé pour Bootstrap Select:
+    - <select class="selectpicker"> potentiellement masqué
+    - question portée par un <span class="z-label"> proche dans le même bloc
+    """
+    try:
+        cls = _norm_lc(el.get_attribute("class") or "")
+        if "selectpicker" not in cls:
+            return ""
+
+        wrappers = el.find_elements(
+            By.XPATH,
+            "ancestor::*[contains(concat(' ', normalize-space(@class), ' '), ' bootstrap-select ')][1]",
+        )
+        if not wrappers:
+            return ""
+
+        labels = el.find_elements(
+            By.XPATH,
+            (
+                "ancestor::*[.//span[contains(concat(' ', normalize-space(@class), ' '), ' z-label ')]]"
+                "[1]//span[contains(concat(' ', normalize-space(@class), ' '), ' z-label ')]"
+            ),
+        )
+        for lb in labels or []:
+            txt = _norm(lb.text or lb.get_attribute("innerText") or "")
+            if txt:
+                return txt
+    except Exception:
+        return ""
+
+    return ""
+
+
 # ================================================================================
 # FONCTION PRINCIPALE - ANALYSE CONTEXTE DOM ACTUEL
 # ================================================================================
@@ -1562,6 +1597,9 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             if not question:
                 # Pattern spécifique
                 question = _find_question_text_near_element(driver, el) or ""
+
+            if itype == "dropdown" and not question:
+                question = _find_bootstrap_selectpicker_question_label(el) or ""
 
             if not question:
                 question = _find_associated_label(driver, el) or ""
