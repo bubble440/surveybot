@@ -614,6 +614,116 @@ def _try_gridclick_matrix_set(driver, row_label: str, col_label: str) -> bool:
     return bool(btn_selected or item_answered or progress_answered)
 
 
+def _try_table_matrix_sge_set(driver, target_payload: dict, row_label: str, col_label: str) -> bool:
+    """Applique une cellule de matrice sur le pattern table_matrix_sge (Alchemer/SGE-like).
+
+    Garde-fous DOM:
+    - activé uniquement si le target payload est marqué table_matrix_sge
+    - nécessite un <tr> contenant des radios avec @name ou @sge:name
+    - cible la radio par croisement row label + aria-label (colonne)
+    """
+    if not isinstance(target_payload, dict) or not target_payload.get("table_matrix_sge"):
+        return False
+
+    row_need = _fold_norm_lc(row_label)
+    col_need = _fold_norm_lc(col_label)
+    if not row_need or not col_need:
+        return False
+
+    def _matches(candidate: str, needle: str) -> bool:
+        cand = _fold_norm_lc(candidate)
+        if not cand or not needle:
+            return False
+        return cand == needle or cand in needle or needle in cand
+
+    try:
+        rows = driver.find_elements(
+            By.XPATH,
+            "//tr[.//input[@type='radio'][@name or @sge:name]]",
+        )
+    except Exception:
+        rows = []
+
+    if not rows:
+        return False
+
+    for row in rows:
+        try:
+            row_text = driver.execute_script(
+                """
+                const tr = arguments[0];
+                if (!tr) return '';
+                const labelCell = tr.querySelector('th, td');
+                return (labelCell && (labelCell.innerText || labelCell.textContent) || '').trim();
+                """,
+                row,
+            ) or ""
+        except Exception:
+            row_text = ""
+
+        if not _matches(row_text, row_need):
+            continue
+
+        try:
+            radio = driver.execute_script(
+                """
+                const tr = arguments[0];
+                const need = arguments[1];
+                if (!tr) return null;
+                const radios = Array.from(tr.querySelectorAll("input[type='radio'][name], input[type='radio'][sge\\:name]"));
+                const pick = radios.find((r) => {
+                  const aria = (r.getAttribute('aria-label') || r.getAttribute('data-label') || '').trim();
+                  const v = aria
+                    .normalize('NFD')
+                    .replace(/[\u0300-\u036f]/g, '')
+                    .toLowerCase();
+                  return !!v && (v === need || v.includes(need) || need.includes(v));
+                });
+                return pick || null;
+                """,
+                row,
+                col_need,
+            )
+        except Exception:
+            radio = None
+
+        if radio is None:
+            continue
+
+        try:
+            ok = bool(driver.execute_script(
+                """
+                const input = arguments[0];
+                if (!input) return false;
+                try { input.scrollIntoView({block:'center', inline:'center'}); } catch(e) {}
+                const id = input.getAttribute('id') || '';
+                const label = id ? document.querySelector(`label[for="${CSS.escape(id)}"]`) : null;
+                try {
+                  if (label) {
+                    label.click();
+                  } else {
+                    input.click();
+                  }
+                } catch(e) {}
+                if (!input.checked) {
+                  try { input.checked = true; } catch(e) {}
+                  try { input.dispatchEvent(new Event('input', { bubbles: true })); } catch(e) {}
+                  try { input.dispatchEvent(new Event('change', { bubbles: true })); } catch(e) {}
+                }
+                return !!input.checked;
+                """,
+                radio,
+            ))
+        except Exception:
+            ok = False
+
+        if ok:
+            log_info("[TARGET]", "apply ok=true strategy=table_matrix_sge reason=applied")
+            return True
+
+    return False
+
+
 def _apply_by_target_id(driver, target_id: str, itype: str, value: str) -> bool:
     """
     Applique l'action directement via DOM_REGISTRY (target_id -> xpath).
@@ -3413,6 +3523,12 @@ def execute_action(driver, instruction: str) -> bool:
                 matrix_by_target = False
 
         matrix_intent = matrix_like_itype or matrix_by_target
+        target_payload = None
+        if target_id:
+            try:
+                target_payload = get_target(target_id) or None
+            except Exception:
+                target_payload = None
 
         log_info("[TARGET]", f"parsed target_id={target_id!r} itype={itype!r} value={value!r} context_len={len(ctx)}")
 
@@ -3429,6 +3545,9 @@ def execute_action(driver, instruction: str) -> bool:
                 return False
 
             if _try_gridclick_matrix_set(driver, matrix_row, matrix_col):
+                return True
+
+            if _try_table_matrix_sge_set(driver, target_payload or {}, matrix_row, matrix_col):
                 return True
 
             try:
