@@ -32,3 +32,21 @@ def test_parse_matrix_value_without_separator_is_dropped():
     actions = parse_batch_response(raw, constraints=constraints, qid_meta=qid_meta)
 
     assert actions == []
+
+
+def test_parse_matrix_value_accepts_matrix_itype_from_llm():
+    raw = "Q1 //// group_046fe0b2d616 //// Amazon Prime Video || Très favorable //// matrix //// Dans quelle mesure..."
+    constraints = {"Q1": 1}
+    qid_meta = {
+        "Q1": {
+            "itype": "matrix",
+            "target_id": "group_046fe0b2d616",
+        }
+    }
+
+    actions = parse_batch_response(raw, constraints=constraints, qid_meta=qid_meta)
+
+    assert len(actions) == 1
+    assert actions[0]["itype"] == "matrix"
+    assert actions[0]["matrix_row_label"] == "Amazon Prime Video"
+    assert actions[0]["matrix_col_label"] == "Très favorable"
