@@ -3899,6 +3899,152 @@ def _extract_collapsed_section_radio_rows(driver, frame_chain: list[int] | None)
     return blocks
 
 
+def _extract_jqm_lrw_collapsible_radio_rows(driver, frame_chain: list[int] | None) -> list[dict]:
+    """Extrait les blocs radio LRW/jQuery Mobile rendus en accordéon.
+
+    Gate DOM strict (additif):
+    - `div.collapsible-container.ui-collapsible-set`
+    - au moins 2 `div.collapsible-button-group`
+    - chaque ligne expose un `input[type='radio'][name]` + labels textuels
+    """
+    blocks: list[dict] = []
+
+    try:
+        containers = driver.find_elements(By.CSS_SELECTOR, "div.collapsible-container.ui-collapsible-set")
+    except Exception:
+        return blocks
+
+    for container in containers:
+        try:
+            rows = container.find_elements(By.XPATH, "./div[contains(@class,'collapsible-button-group')]")
+        except Exception:
+            rows = []
+        if len(rows) < 2:
+            continue
+
+        main_question = ""
+        try:
+            wrappers = container.find_elements(By.XPATH, "ancestor::*[contains(@class,'content-wrapper')][1]")
+            if wrappers:
+                q_nodes = wrappers[0].find_elements(
+                    By.XPATH,
+                    ".//span[contains(@class,'mrQuestionText')][not(ancestor::div[contains(@class,'collapsible-container')])]",
+                )
+                for node in q_nodes:
+                    txt = _norm(node.text or node.get_attribute("innerText") or "")
+                    if txt and len(txt) >= 8:
+                        main_question = txt
+                        break
+        except Exception:
+            main_question = ""
+
+        candidate_blocks: list[dict] = []
+        for row in rows:
+            try:
+                header = ""
+                try:
+                    h = row.find_element(
+                        By.CSS_SELECTOR,
+                        "div.ui-collapsible-heading button.ui-collapsible-heading-toggle span.mrQuestionText",
+                    )
+                    header = _norm(h.text or h.get_attribute("innerText") or "")
+                except Exception:
+                    header = ""
+                if not header:
+                    continue
+
+                try:
+                    radios = row.find_elements(By.CSS_SELECTOR, "div.ui-collapsible-content input[type='radio'][name]")
+                except Exception:
+                    radios = []
+                if len(radios) < 2:
+                    continue
+
+                group_name = _norm_lc((radios[0].get_attribute("name") or "").strip())
+                if not group_name:
+                    continue
+
+                options: list[str] = []
+                option_xpath_map: dict[str, str] = {}
+                for radio in radios:
+                    try:
+                        radio_name = (radio.get_attribute("name") or "").strip()
+                        if _norm_lc(radio_name) != group_name:
+                            continue
+                        radio_id = (radio.get_attribute("id") or "").strip()
+                        value = (radio.get_attribute("value") or "").strip()
+
+                        label_txt = ""
+                        if radio_id:
+                            try:
+                                label = row.find_element(By.CSS_SELECTOR, f"label[for='{radio_id}']")
+                                label_txt = _norm(label.text or label.get_attribute("innerText") or "")
+                            except Exception:
+                                label_txt = ""
+                        if not label_txt:
+                            continue
+
+                        norm_key = _norm_key(label_txt)
+                        if norm_key in option_xpath_map:
+                            continue
+
+                        xp = (
+                            f"(//input[@type='radio' and @name={_xpath_literal(radio_name)}"
+                            + (f" and @value={_xpath_literal(value)}" if value else "")
+                            + "]/ancestor::label[1] | "
+                            f"//input[@type='radio' and @name={_xpath_literal(radio_name)}"
+                            + (f" and @value={_xpath_literal(value)}" if value else "")
+                            + "])[1]"
+                        )
+                        option_xpath_map[norm_key] = xp
+                        options.append(label_txt)
+                    except Exception:
+                        continue
+
+                if len(options) < 2:
+                    continue
+
+                full_question = _norm(f"{main_question} {header}" if main_question else header)
+                if not full_question:
+                    continue
+
+                group_key = f"radio:name:{group_name}"
+                target_id = make_target_id("group", group_key, full_question)
+
+                register_target(
+                    target_id,
+                    {
+                        "kind": "group",
+                        "itype": "radio",
+                        "group_key": group_key,
+                        "question": full_question,
+                        "option_xpath_map": option_xpath_map,
+                        "frame_chain": frame_chain or [],
+                    },
+                )
+
+                candidate_blocks.append(
+                    {
+                        "question": full_question,
+                        "itype": "radio",
+                        "options": options,
+                        "max_select": 1,
+                        "target_id": target_id,
+                        "context": {"kind": "group", "group_key": group_key},
+                    }
+                )
+            except Exception:
+                continue
+
+        if len(candidate_blocks) >= 2:
+            blocks.extend(candidate_blocks)
+
+    if blocks:
+        log_debug("[DOM_JQM_COLLAPSIBLE]", f"rows_extracted={len(blocks)}")
+
+    return blocks
+
+
 def _extract_decipher_clickable_ranking_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
     """Decipher clickable ranking text tool (`#customToolArea` + `.customItem`).
 
