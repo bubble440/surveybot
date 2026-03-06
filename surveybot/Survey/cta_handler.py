@@ -1415,6 +1415,7 @@ def try_click_navigation_cta(driver) -> bool:
     nav_xpath = (
         "//button"
         "|//input[@type='submit' or @type='button' or @type='image']"
+        "|//span[contains(concat(' ', normalize-space(@class), ' '), ' fakeNextButton ')]"
         "|//a[@role='button']"
         "|//a[contains(concat(' ', normalize-space(@class), ' '), ' btn ')]"
         "|//*[contains(@onmousedown, 'ToggSel')]"
