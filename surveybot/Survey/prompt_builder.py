@@ -58,7 +58,8 @@ def _norm_folded_lc(s: str | None) -> str:
     """Lowercase + suppression des accents pour matching robuste FR/EN."""
     base = unicodedata.normalize("NFKD", s or "")
     no_marks = "".join(ch for ch in base if not unicodedata.combining(ch))
-    return re.sub(r"\s+", " ", no_marks).strip().lower()
+    normalized = re.sub(r"\s+", " ", no_marks).strip().lower()
+    return normalized.replace("’", "'").replace("`", "'").replace("´", "'")
 
 
 def _contains_keyword_phrase(text: str, keyword: str) -> bool:
@@ -257,6 +258,23 @@ _FREQ_UNIT_MARKERS = [
     "jour", "jours", "day", "week", "semaine", "month", "mois", "fois",
 ]
 
+_SURVEY_CONSENT_CONTEXT_PATTERNS = [
+    # FR
+    "sondage", "survey", "participation", "confidentialite", "confidentialité",
+    "contenu", "regles", "règles", "preserver", "préserver",
+]
+
+_CONSENT_ACCEPT_PATTERNS = [
+    "j'accepte", "j accepte", "i agree", "i accept", "je consens", "oui, je consens",
+    "accepter et continuer", "accept and continue",
+]
+
+_CONSENT_REJECT_PATTERNS = [
+    "je n'accepte pas", "je n accepte pas", "je refuse", "i do not accept", "i don't accept",
+    "i disagree", "disagree", "ne souhaite pas poursuivre", "ne pas poursuivre",
+    "do not continue", "not continue", "quitter", "exit",
+]
+
 
 def _looks_like_tier_entry_question(block: Dict[str, Any]) -> bool:
     itype = _norm_folded_lc(block.get("itype"))
@@ -368,6 +386,34 @@ def _find_respondent_self_option(options: list[str]) -> str | None:
         if folded and any(pattern in folded for pattern in _RESPONDENT_SELF_OPTION_PATTERNS):
             return option
     return None
+
+
+def _preferred_survey_consent_option(block: Dict[str, Any], options: list[str]) -> str | None:
+    """Retourne l'option d'acceptation pour consentement participation/confidentialité, si détectée."""
+    if not options:
+        return None
+
+    question = _norm_folded_lc(block.get("question"))
+    instruction = _norm_folded_lc(block.get("instruction"))
+    context_signal = f"{question} {instruction}".strip()
+    has_context_signal = any(tok in context_signal for tok in _SURVEY_CONSENT_CONTEXT_PATTERNS)
+
+    accept_option = None
+    has_reject_option = False
+
+    for option in options:
+        folded_option = _norm_folded_lc(option)
+        if not folded_option:
+            continue
+        if accept_option is None and any(pat in folded_option for pat in _CONSENT_ACCEPT_PATTERNS):
+            accept_option = option
+        if any(pat in folded_option for pat in _CONSENT_REJECT_PATTERNS):
+            has_reject_option = True
+
+    if not has_context_signal or not accept_option or not has_reject_option:
+        return None
+
+    return accept_option
 
 
 def _matrix_row_labels(block: Dict[str, Any]) -> list[str]:
@@ -714,6 +760,10 @@ def build_batch_prompt(question_blocks: list[dict]) -> str:
                 "instruction_stricte: Question décideur du foyer. "
                 "Tu dois répondre EXACTEMENT avec l'option qui désigne le répondant lui-même."
             )
+        elif (forced_consent := _preferred_survey_consent_option(block, opts)):
+            lines.append(f"selection_rule: SURVEY_CONSENT_ACCEPT strict -> répondre EXACTEMENT avec '{forced_consent}'")
+            lines.append(f"allowed_values_strict: {forced_consent}")
+            lines.append("instruction_stricte: Consentement de participation/confidentialité détecté. Tu dois choisir l'option d'acceptation et jamais l'option de refus.")
         elif _looks_like_classification_question(block) and opts:
             picked = _pick_best_classification_option(opts)
             print(f"[PROMPT_BUILDER] classification_rule=1 N={len(opts)} picked='{picked}'")
