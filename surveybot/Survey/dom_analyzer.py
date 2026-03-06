@@ -69,6 +69,7 @@ try:
         _extract_askandanswer_selection_list_questions,
         _extract_rnw_ionicon_multi_choice_blocks,
         _extract_table_matrix_radio_rows,
+        _extract_yougov_grid_text_question_blocks,
         _extract_cmix_simple_grid_question_blocks,
         _extract_cmix_grid_question_blocks,
         _extract_cmix_radio_question_blocks,
@@ -128,6 +129,7 @@ except ImportError:
         _extract_askandanswer_selection_list_questions,
         _extract_rnw_ionicon_multi_choice_blocks,
         _extract_table_matrix_radio_rows,
+        _extract_yougov_grid_text_question_blocks,
         _extract_cmix_simple_grid_question_blocks,
         _extract_cmix_grid_question_blocks,
         _extract_cmix_radio_question_blocks,
@@ -710,6 +712,15 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         table_matrix_blocks = _extract_table_matrix_radio_rows(driver, frame_chain)
         if table_matrix_blocks:
             return table_matrix_blocks
+    except Exception:
+        pass
+
+    # --- 0d-1quinter) YouGov grid text (fieldset.question-grid-text) ---
+    # Objectif: extraire 1 bloc text par ligne (input texte) au lieu d'un single aplati.
+    try:
+        yougov_grid_text_blocks = _extract_yougov_grid_text_question_blocks(driver, frame_chain)
+        if yougov_grid_text_blocks:
+            return yougov_grid_text_blocks
     except Exception:
         pass
 
