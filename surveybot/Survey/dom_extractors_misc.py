@@ -2853,6 +2853,157 @@ def _extract_runtime_answerrow_radio_blocks(driver, frame_chain: list[int] | Non
     return blocks
 
 
+def _extract_qualtrics_choice_structure_radio_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
+    """Extraction ciblée des radios Qualtrics `ul.ChoiceStructure`.
+
+    Gate DOM strict (additif, sans hypothèse provider globale):
+    - `div.QuestionOuter`
+    - `ul.ChoiceStructure`
+    - `input[type=radio][name^="QR~"]`
+    """
+    frame_chain = list(frame_chain or [])
+    blocks: list[dict] = []
+
+    try:
+        containers = driver.find_elements(By.CSS_SELECTOR, "div.QuestionOuter")
+    except Exception:
+        return blocks
+
+    for idx, container in enumerate(containers):
+        try:
+            radios = container.find_elements(
+                By.CSS_SELECTOR,
+                "ul.ChoiceStructure li.Selection input[type='radio'][name^='QR~']",
+            )
+        except Exception:
+            radios = []
+
+        if len(radios) < 2:
+            continue
+
+        question = ""
+        for q_sel in (
+            "div.Inner fieldset legend div.QuestionText",
+            "fieldset legend div.QuestionText",
+            "div.QuestionText",
+        ):
+            try:
+                q_nodes = container.find_elements(By.CSS_SELECTOR, q_sel)
+            except Exception:
+                q_nodes = []
+            for qn in q_nodes:
+                txt = _norm(qn.text or qn.get_attribute("innerText") or "")
+                if txt:
+                    question = txt
+                    break
+            if question:
+                break
+
+        if not question:
+            continue
+
+        group_name = ""
+        options: list[str] = []
+        option_xpath_map: dict[str, str] = {}
+
+        for radio in radios:
+            try:
+                radio_name = (radio.get_attribute("name") or "").strip()
+                if not radio_name:
+                    continue
+                if not group_name:
+                    group_name = radio_name
+                if radio_name != group_name:
+                    continue
+
+                radio_id = (radio.get_attribute("id") or "").strip()
+
+                label_text = ""
+                if radio_id:
+                    for lsel in (
+                        f"label.SingleAnswer[for='{radio_id}'] span",
+                        f"label[for='{radio_id}'].SingleAnswer span",
+                    ):
+                        try:
+                            lbl_nodes = container.find_elements(By.CSS_SELECTOR, lsel)
+                        except Exception:
+                            lbl_nodes = []
+                        for lbl in lbl_nodes:
+                            cand = _norm(lbl.text or lbl.get_attribute("innerText") or "")
+                            if cand:
+                                label_text = cand
+                                break
+                        if label_text:
+                            break
+
+                if not label_text:
+                    try:
+                        parent_li = radio.find_element(By.XPATH, "ancestor::li[contains(@class,'Selection')][1]")
+                        text_nodes = parent_li.find_elements(By.CSS_SELECTOR, "label.SingleAnswer span")
+                    except Exception:
+                        text_nodes = []
+                    for tn in text_nodes:
+                        cand = _norm(tn.text or tn.get_attribute("innerText") or "")
+                        if cand:
+                            label_text = cand
+                            break
+
+                if not label_text:
+                    continue
+
+                nk = _norm_key(label_text)
+                if not nk or nk in option_xpath_map:
+                    continue
+
+                if radio_id:
+                    xp = f"//*[@id={_xpath_literal(radio_id)}]"
+                else:
+                    xp = _best_xpath_for_element(driver, radio)
+                if not xp:
+                    continue
+
+                options.append(label_text)
+                option_xpath_map[nk] = xp
+            except Exception:
+                continue
+
+        if len(options) < 2 or len(option_xpath_map) < 2 or not group_name:
+            continue
+
+        group_key = f"qualtrics_choice_structure:radio:{group_name}"
+        target_id = make_target_id("group", group_key, question)
+        register_target(
+            target_id,
+            {
+                "kind": "group",
+                "itype": "radio",
+                "group_key": group_key,
+                "question": question,
+                "option_xpath_map": option_xpath_map,
+                "frame_chain": frame_chain,
+                "qualtrics_choice_structure_radio": True,
+            },
+        )
+
+        blocks.append(
+            {
+                "question": question,
+                "itype": "radio",
+                "options": options,
+                "max_select": _compute_max_select("radio", options),
+                "target_id": target_id,
+                "context": {
+                    "kind": "group",
+                    "group_key": group_key,
+                    "qualtrics_choice_structure_radio": True,
+                    "container_index": idx,
+                },
+            }
+        )
+
+    return blocks
+
+
 def _extract_custom_testid_multi_select_checkbox_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
     """Questions checkbox custom sans <input> natif, pilotées par data-testid.
 
