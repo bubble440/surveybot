@@ -369,6 +369,20 @@ def _find_group_heading_text_near_element(driver, el, options: List[str]) -> str
     - exclusion stricte des labels d'options du groupe
     """
     try:
+        # Priorité DOM stricte: si un fieldset parent expose un legend non-option,
+        # c'est l'intitulé de question le plus fiable (ex: YouGov question-multiple).
+        try:
+            legends = el.find_elements(By.XPATH, "ancestor::fieldset[1]/legend[1]")
+        except Exception:
+            legends = []
+
+        if legends:
+            legend_text = _norm(legends[0].text or legends[0].get_attribute("innerText") or "")
+            legend_lc = _norm_lc(legend_text)
+            option_lc = {_norm_lc(opt) for opt in (options or []) if _norm(opt)}
+            if legend_text and legend_lc not in option_lc and _is_question_text(legend_text):
+                return legend_text
+
         option_keys = [_norm_lc(opt) for opt in (options or []) if _norm(opt)]
         txt = driver.execute_script(
             """
