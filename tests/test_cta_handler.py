@@ -391,3 +391,29 @@ def test_try_click_navigation_cta_decipher_gridclick_widget_not_ready_returns_fa
 
     assert ok is False
     assert generic_suivant.clicked == 0
+
+
+def test_try_click_navigation_cta_detects_qualtrics_fake_next_button_span(monkeypatch):
+    monkeypatch.setattr(cta_handler, "ActionChains", _FakeActionChains)
+    monkeypatch.delenv("CTA_INTERCEPT_ONLY", raising=False)
+
+    hidden_input_next = _FakeElement(
+        text="",
+        attrs={"id": "NextButton", "type": "button", "aria-disabled": "true"},
+        displayed=False,
+    )
+    fake_next_span = _FakeElement(
+        text=">>",
+        attrs={"id": "NextButton", "class": "fakeNextButton", "title": ">>"},
+    )
+    fake_next_span.tag_name = "span"
+
+    driver = _FakeDriver(
+        xpath_elements=[hidden_input_next, fake_next_span],
+    )
+
+    ok = cta_handler.try_click_navigation_cta(driver)
+
+    assert ok is True
+    assert hidden_input_next.clicked == 0
+    assert fake_next_span.clicked == 1
