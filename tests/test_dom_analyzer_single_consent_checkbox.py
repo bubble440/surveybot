@@ -101,3 +101,49 @@ def test_extracts_single_consent_checkbox_block_with_accept_cta(monkeypatch):
     assert "j'ai lu et j'accepte" in block["options"][0].lower()
     assert "politique de confidential" in block["question"].lower()
     assert (block.get("context") or {}).get("single_consent_checkbox") is True
+
+
+def test_extracts_standalone_checkbox_when_cta_disabled_in_same_form(monkeypatch):
+    _patch_non_generic_extractors(monkeypatch)
+
+    label = _FakeElement(text="Je comprends que des informations personnelles peuvent être sollicitées")
+    form = _FakeElement(
+        by_selector={
+            "input[type='radio']": [],
+            "input[type='checkbox']": [],
+        }
+    )
+    checkbox = _FakeElement(
+        attrs={"id": "confirmationCheckbox", "type": "checkbox"},
+        by_xpath={
+            "ancestor::label[1]": [label],
+            "ancestor::form[1]": [form],
+        },
+    )
+    cta_disabled = _FakeElement(
+        attrs={"id": "submitOk", "disabled": ""},
+        by_xpath={"ancestor::form[1]": [form]},
+    )
+    form._by_selector["input[type='checkbox']"] = [checkbox]
+
+    driver = _FakeDriver(
+        by_selector={
+            "#consentContainer25 input[type='checkbox'], [id*='consentContainer'] input[type='checkbox'], .river-sampling-privacy-policy input[type='checkbox'], input[type='checkbox'][id*='consentCheckbox'], input[type='checkbox'][name*='consentCheckbox'], input[type='checkbox'][name*='consentContainer']": [],
+            "a[id*='acceptAndTakeSurveyLink'], button[id*='acceptAndTakeSurveyLink'], a.btn-primary, button.btn-primary": [],
+            "form button[disabled], form input[type='submit'][disabled], form input[type='button'][disabled]": [cta_disabled],
+            "label[for='confirmationCheckbox']": [label],
+            "input[type='radio'], input[type='checkbox'], [role='radio']:not(svg), [role='checkbox']:not(svg)": [],
+            "button, a[role='button'], [role='button'], .sq-cardrating-button": [],
+            "input:not([type='radio']):not([type='checkbox']):not([type='hidden']), textarea, select, button, a[role='button']": [],
+        }
+    )
+
+    blocks = da._analyze_dom_current_context(driver)
+
+    assert len(blocks) == 1
+    block = blocks[0]
+    assert block["itype"] == "checkbox"
+    assert block["max_select"] == 1
+    assert len(block["options"]) == 1
+    assert "informations personnelles" in block["options"][0].lower()
+    assert (block.get("context") or {}).get("single_consent_checkbox") is True
