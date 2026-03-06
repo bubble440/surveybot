@@ -40,7 +40,7 @@ try:
         _find_question_text_near_element, _find_associated_label,
         _extract_ssi_confirmit_question, _extract_surveywriter_ssi_question,
         _nearest_question_container, _extract_question_from_container,
-        _find_group_heading_text_near_element,
+        _find_group_heading_text_near_element, _extract_mriweb_grid_question_text,
         _group_key_for_choice, _compute_max_select, _compute_min_select
     )
     
@@ -108,7 +108,7 @@ except ImportError:
         _find_question_text_near_element, _find_associated_label,
         _extract_ssi_confirmit_question, _extract_surveywriter_ssi_question,
         _nearest_question_container, _extract_question_from_container,
-        _find_group_heading_text_near_element,
+        _find_group_heading_text_near_element, _extract_mriweb_grid_question_text,
         _group_key_for_choice, _compute_max_select, _compute_min_select
     )
     from Survey.dom_frame_selector import (
@@ -1668,6 +1668,11 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                 # Pattern spécifique
                 question = _find_question_text_near_element(driver, el) or ""
 
+            if itype in ("text", "textarea"):
+                mriweb_grid_question = _extract_mriweb_grid_question_text(el)
+                if mriweb_grid_question:
+                    question = mriweb_grid_question
+
             if itype == "dropdown" and not question:
                 question = _find_bootstrap_selectpicker_question_label(el) or ""
 
@@ -1942,6 +1947,21 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                     )
                 except Exception:
                     sig = (question, itype)
+            elif itype in ("text", "textarea"):
+                try:
+                    in_mriweb_grid = bool(el.find_elements(By.XPATH, "ancestor::table[contains(@class,'mrGridTable')][1]"))
+                except Exception:
+                    in_mriweb_grid = False
+                if in_mriweb_grid:
+                    try:
+                        sig = (
+                            question,
+                            itype,
+                            (el.get_attribute("name") or "").strip(),
+                            (el.get_attribute("id") or "").strip(),
+                        )
+                    except Exception:
+                        sig = (question, itype)
 
             if sig in seen_signatures:
                 continue
