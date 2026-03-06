@@ -119,8 +119,8 @@ def _selection_rule_for_block(block: Dict[str, Any]) -> str:
     return "exactly_1"
 
 
-def _selection_bounds_for_prompt(block: Dict[str, Any]) -> tuple[int, int]:
-    """Normalise min_select/max_select pour les consignes de prompt."""
+def _selection_max_for_prompt(block: Dict[str, Any]) -> int:
+    """Normalise max_select pour les consignes de prompt."""
     itype = _norm_folded_lc(block.get("itype"))
     try:
         max_sel = int(block.get("max_select", 1) or 1)
@@ -135,20 +135,12 @@ def _selection_bounds_for_prompt(block: Dict[str, Any]) -> tuple[int, int]:
         and (str(block.get("target_id") or "").startswith("multi_") or str((ctx or {}).get("kind") or "") == "multi_text")
     )
     if is_multi_text:
-        return max_sel, max_sel
+        return max_sel
 
     if itype != "checkbox":
-        return 1, 1
+        return 1
 
-    min_raw = block.get("min_select", 1)
-    try:
-        min_sel = int(min_raw)
-    except Exception:
-        min_sel = 1
-
-    min_sel = max(0, min_sel)
-    min_sel = min(min_sel, max_sel)
-    return min_sel, max_sel
+    return max_sel
 
 
 _CLASSIFICATION_QUESTION_KEYWORDS = [
@@ -732,7 +724,7 @@ def build_batch_prompt(question_blocks: list[dict]) -> str:
         q = _escape(block.get("question", ""))
         itype = _escape(block.get("itype", ""))
         opts = [_escape(o) for o in (block.get("options") or []) if o]
-        min_sel, max_sel = _selection_bounds_for_prompt(block)
+        max_sel = _selection_max_for_prompt(block)
         target_id = _escape(block.get("target_id", ""))
         matrix_rows = _matrix_row_labels(block)
         matrix_active_row = _escape((block.get("context") or {}).get("matrix_active_row", ""))
@@ -748,9 +740,8 @@ def build_batch_prompt(question_blocks: list[dict]) -> str:
             lines.append("matrix_rule_active_row: row_label DOIT être EXACTEMENT matrix_active_row")
             lines.append(f"matrix_example_active_row: {matrix_active_row} || Transféré vers Revolut")
         lines.append(f"itype: {itype}")
-        display_max_sel = min(max_sel, 5) if (min_sel == 1 and max_sel > 3) else max_sel
+        display_max_sel = min(max_sel, 5) if max_sel > 3 else max_sel
         lines.append(f"max_select: {display_max_sel}")
-        lines.append(f"min_select: {min_sel}")
         ctx = block.get("context") if isinstance(block.get("context"), dict) else {}
         is_multi_text = (
             itype in {"text", "textarea", "number"}
@@ -775,18 +766,9 @@ def build_batch_prompt(question_blocks: list[dict]) -> str:
             forced_recent_participation_safe = _find_recent_participation_safe_option(opts)
 
         if itype == "checkbox":
-            if min_sel == 0:
-                lines.append(
-                    f"selection_rule: Pour QID={qid}, renvoyer entre 0 et {max_sel} valeur(s) séparée(s) par |. Préfère 1 choix sûr si des options existent, sauf indication explicite autorisant 0 réponse. / For QID={qid}, return between 0 and {max_sel} values separated by |. Prefer 1 safe choice when options exist, unless the UI/text explicitly allows 0 answer."
-                )
-            elif min_sel == max_sel:
-                lines.append(
-                    f"selection_rule: Pour QID={qid}, renvoyer EXACTEMENT {max_sel} valeur(s) séparée(s) par |. / For QID={qid}, return exactly {max_sel} values separated by |."
-                )
-            else:
-                lines.append(
-                    f"selection_rule: Pour QID={qid}, renvoyer entre {min_sel} et {max_sel} valeur(s) séparée(s) par |. / For QID={qid}, return between {min_sel} and {max_sel} values separated by |."
-                )
+            lines.append(
+                f"selection_rule: Pour QID={qid}, renvoyer entre 1 et {max_sel} valeur(s) séparée(s) par |. / For QID={qid}, return between 1 and {max_sel} values separated by |."
+            )
         else:
             if is_multi_text:
                 lines.append(
@@ -852,6 +834,10 @@ def build_batch_prompt(question_blocks: list[dict]) -> str:
 
         if opts:
             lines.append("options: " + " | ".join(opts))
+            if itype == "checkbox":
+                lines.append(
+                    f"Plusieurs réponses possibles (max {max_sel}). Sélectionne uniquement les options cohérentes avec le profil du répondant. Ne sélectionne pas plus que nécessaire."
+                )
         else:
             lines.append("options: (champ ouvert)")
 
