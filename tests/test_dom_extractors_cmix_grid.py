@@ -50,12 +50,30 @@ class _FakeRow:
 
 
 class _FakeTable:
-    def __init__(self, headers: list[str], rows: list[_FakeRow], header_row_classed: bool = True):
+    def __init__(self, headers: list[str], rows: list[_FakeRow], header_row_classed: bool = True, parent_qtext: str = ""):
         self._headers = [_FakeCell("", "cm-grid-column-header cm-grid-column-header-1")] + [
             _FakeCell(h, f"cm-grid-column-{idx}") for idx, h in enumerate(headers, start=1)
         ]
         self._rows = rows
         self._header_row_classed = header_row_classed
+        self._parent_qtext = parent_qtext
+
+    def find_element(self, by=None, value=None):
+        if by == dem.By.XPATH and value == "ancestor::div[contains(@class,'cm-element')][1]":
+            if self._parent_qtext is None:
+                raise Exception("container not found")
+
+            class _Container:
+                def __init__(self, parent_qtext: str):
+                    self._parent_qtext = parent_qtext
+
+                def find_element(self, by=None, value=None):
+                    if by == dem.By.CSS_SELECTOR and value == "div.cm-qtext":
+                        return _FakeCell(self._parent_qtext)
+                    raise Exception("not found")
+
+            return _Container(self._parent_qtext)
+        raise Exception("not found")
 
     def find_elements(self, by=None, value=None):
         if value == "tr.cm-grid-row-header td, tr.cm-grid-row-header th":
@@ -90,6 +108,7 @@ def test_extract_cmix_grid_question_blocks_builds_one_radio_block_per_row(monkey
             _FakeRow("Études de marché", [_FakeRadio("60973696", "225375880"), _FakeRadio("60973696", "225375881")]),
             _FakeRow("Publicité", [_FakeRadio("60973697", "225375882"), _FakeRadio("60973697", "225375883")]),
         ],
+        parent_qtext="Une personne de votre foyer, vous y compris, travaille-t-elle dans l'un des secteurs suivants",
     )
     driver = _FakeDriver([table])
 
@@ -99,6 +118,8 @@ def test_extract_cmix_grid_question_blocks_builds_one_radio_block_per_row(monkey
     blocks = dem._extract_cmix_grid_question_blocks(driver, frame_chain=[])
 
     assert len(blocks) == 2
+    assert blocks[0]["question"].startswith("Une personne de votre foyer")
+    assert ":" in blocks[0]["question"]
     assert "etudes de marche" in _strip_accents(blocks[0]["question"]).lower()
     assert blocks[0]["itype"] == "radio"
     assert blocks[0]["options"] == ["Oui", "Non"]
@@ -148,3 +169,22 @@ def test_extract_cmix_grid_question_blocks_uses_first_row_headers_when_row_heade
     assert len(blocks) == 1
     assert blocks[0]["question"] == "Banque"
     assert blocks[0]["options"] == ["Oui", "Non"]
+
+
+def test_extract_cmix_grid_question_blocks_falls_back_to_row_label_when_parent_missing(monkeypatch):
+    table = _FakeTable(
+        headers=["Oui", "Non"],
+        rows=[
+            _FakeRow("Assurance", [_FakeRadio("60973702", "225375892"), _FakeRadio("60973702", "225375893")]),
+        ],
+        parent_qtext=None,
+    )
+    driver = _FakeDriver([table])
+
+    monkeypatch.setattr(dem, "register_target", lambda *_, **__: None)
+    monkeypatch.setattr(dem, "make_target_id", lambda *_, **__: "cmix_grid_target")
+
+    blocks = dem._extract_cmix_grid_question_blocks(driver, frame_chain=[])
+
+    assert len(blocks) == 1
+    assert blocks[0]["question"] == "Assurance"
