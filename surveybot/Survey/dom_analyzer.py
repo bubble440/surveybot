@@ -337,6 +337,92 @@ def _is_open_ended_choice_companion(el, container) -> bool:
     return False
 
 
+def _is_angular_material_image_only_textarea_question(
+    driver,
+    el,
+    question: str,
+) -> bool:
+    """
+    Détecte le cas Angular Material où la "question" est une image (img.taImage)
+    et le texte extrait n'est qu'un heading de page (ou vide).
+
+    Critères DOM stricts (additif, scope minimal):
+    - input courant = textarea dans un wrapper mat-form-field,
+    - présence de img.taImage dans le conteneur survey local,
+    - aucun texte question lisible proche du mat-form-field,
+    - texte extrait vide OU identique au heading local.
+    """
+    try:
+        tag = (el.tag_name or "").strip().lower()
+        if tag != "textarea":
+            return False
+
+        survey_scope = None
+        try:
+            survey_scope = el.find_element(
+                By.XPATH,
+                "ancestor::*[self::app-survey or contains(@class,'survey-window') or contains(@class,'survey-section')][1]",
+            )
+        except Exception:
+            survey_scope = None
+        if not survey_scope:
+            return False
+
+        # Garde-fou Angular Material textarea
+        has_mat_form_field = False
+        try:
+            has_mat_form_field = bool(el.find_elements(By.XPATH, "ancestor::mat-form-field[1]"))
+        except Exception:
+            has_mat_form_field = False
+        if not has_mat_form_field:
+            return False
+
+        # Question rendue via image
+        try:
+            ta_images = survey_scope.find_elements(By.CSS_SELECTOR, "img.taImage, img[class*='taImage']")
+        except Exception:
+            ta_images = []
+        if not ta_images:
+            return False
+
+        q_norm = _norm(question)
+        q_lc = _norm_lc(q_norm)
+
+        # Heading local (h1/h2) : souvent "Commençons cette enquête !"
+        heading = ""
+        try:
+            heading_nodes = survey_scope.find_elements(
+                By.CSS_SELECTOR,
+                ".header-window h1, .header-window h2, h1[translate], h1, h2",
+            )
+            for hn in heading_nodes:
+                heading_txt = _norm(hn.text or hn.get_attribute("innerText") or "")
+                if heading_txt:
+                    heading = heading_txt
+                    break
+        except Exception:
+            heading = ""
+
+        # Vérifier qu'il n'existe pas de texte question exploitable à proximité du champ
+        # (hors heading et hors texte du textarea lui-même)
+        near_text = ""
+        try:
+            near_text = _norm(_find_question_text_near_element(driver, el) or "")
+        except Exception:
+            near_text = ""
+
+        near_lc = _norm_lc(near_text)
+        heading_lc = _norm_lc(heading)
+        has_readable_near_question = bool(near_text) and near_lc not in {"", heading_lc}
+
+        if has_readable_near_question:
+            return False
+
+        return (not q_norm) or (bool(heading_lc) and q_lc == heading_lc)
+    except Exception:
+        return False
+
+
 def _is_other_specify_choice_companion(driver, el, container, question: str) -> bool:
     """
     Détecte un champ texte compagnon d'une option "Autre/Other/Précisez" dans un
@@ -1698,6 +1784,13 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                 continue
 
             if itype in ("text", "textarea") and _is_open_ended_choice_companion(el, container):
+                continue
+
+            if itype in ("text", "textarea") and _is_angular_material_image_only_textarea_question(driver, el, question):
+                log_info(
+                    "[DOM_UNSUPPORTED]",
+                    "angular_material_taimage_textarea_detected -> skip_block (question_dom_unreadable_image_only)",
+                )
                 continue
 
             if itype in ("text", "textarea") and _is_other_specify_choice_companion(driver, el, container, question):
