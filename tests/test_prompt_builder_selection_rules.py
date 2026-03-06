@@ -158,6 +158,23 @@ def test_batch_prompt_requires_exactly_two_values_for_exact_count_checkbox():
     assert "selection_rule: Pour QID=Q1, renvoyer EXACTEMENT 2 valeur(s) séparée(s) par |" in prompt
 
 
+def test_batch_prompt_requires_four_digit_year_for_birth_year_questions():
+    blocks = [
+        {
+            "question": "Quelle est votre année de naissance ?",
+            "itype": "text",
+            "options": [],
+            "max_select": 1,
+            "min_select": 1,
+            "target_id": "single_birth_year",
+        }
+    ]
+
+    prompt = build_batch_prompt(blocks)
+
+    assert "réponds UNIQUEMENT avec une année sur 4 chiffres (YYYY), jamais un âge" in prompt
+
+
 
 def test_batch_prompt_forces_accept_on_consent_modal_radio():
     blocks = [

@@ -25,6 +25,7 @@ import os
 import math
 import unicodedata
 from typing import Dict, Optional, List, Any
+from .log_utils import log_debug, log_info
 _ALLOWED_ITYPES = {"radio", "checkbox", "dropdown", "text", "textarea", "button", "number", "matrix"}
 _QID_RE = re.compile(r"\bQ\d+\b", re.IGNORECASE)
 _OTHER_SPECIFY_TEXT_RE = re.compile(r"autre.*pr[eé]cis|other.*specify", re.IGNORECASE)
@@ -361,11 +362,29 @@ def _debug_enabled() -> bool:
 
 def _debug_log(msg: str) -> None:
     if _debug_enabled():
-        print(f"[batch_response_parser][debug] {msg}")
+        log_debug("batch_response_parser", msg)
 
 
 def _warn_log(msg: str) -> None:
-    print(f"[batch_response_parser][warn] {msg}")
+    log_info("batch_response_parser", f"[warn] {msg}")
+
+
+_BIRTH_YEAR_HINTS = (
+    "annee de naissance",
+    "année de naissance",
+    "year of birth",
+    "birth year",
+    "born in",
+    "né en",
+    "nee en",
+)
+
+
+def _is_birth_year_question_text(*texts: str) -> bool:
+    haystack = " ".join(_fold_lc(t) for t in texts if t)
+    if not haystack:
+        return False
+    return any(_fold_lc(hint) in haystack for hint in _BIRTH_YEAR_HINTS)
 
 
 def _build_filler_values(
@@ -1094,7 +1113,23 @@ def sanitize_actions(actions: list, qid_meta: dict | None = None) -> list:
         act_qid = (a.get("qid") or "").strip().upper()
         meta = qid_meta.get(act_qid) if act_qid else None
         meta_opts = (meta.get("options") or []) if isinstance(meta, dict) else []
+        meta_question = (meta.get("question") or "") if isinstance(meta, dict) else ""
         meta_year_span = _year_span_from_options(meta_opts)
+
+        if it in {"text", "textarea", "number"} and _is_birth_year_question_text(ctx_lc, raw_lc, meta_question):
+            maybe_year = re.search(r"\b\d{1,4}\b", str(v or ""))
+            if maybe_year:
+                parsed_num = int(maybe_year.group(0))
+                if parsed_num < 1900 or parsed_num > now_year:
+                    corrected_year = (now_year - parsed_num) if 0 < parsed_num < 120 else (now_year - 25)
+                    if corrected_year < 1900 or corrected_year > now_year:
+                        corrected_year = now_year - 25
+                    _warn_log(
+                        f"qid={act_qid or '?'} invalid_birth_year_value={parsed_num} corrected_to={corrected_year}"
+                    )
+                    a = dict(a)
+                    a["value"] = str(corrected_year)
+                    a["raw"] = (a.get("raw") or "") + f" [sanitized_birth_year:{parsed_num}->{corrected_year}]"
 
         # DOB "explicite" (keywords/range) OU DOB "implicite" (options années sur grande plage + mois sur la page)
         is_dob_like_by_options = bool(
