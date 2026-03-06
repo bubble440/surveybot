@@ -1332,6 +1332,34 @@ def _apply_by_target_id(driver, target_id: str, itype: str, value: str) -> bool:
                         log_debug("[TARGET_DEBUG]", f"element not found for xpath={xp} ({type(ex).__name__}: {_short_exc(ex)})")
                     return False
 
+                if (
+                    (payload.get("meta") or {}).get("source") == "sq-atm1d"
+                    and v_norm
+                    and v_norm in set((payload.get("meta") or {}).get("exclusive_options_norm") or [])
+                ):
+                    try:
+                        driver.execute_script(
+                            """
+                            const target = arguments[0];
+                            if (!target) return;
+                            const targetLi = target.closest ? target.closest('li.sq-atm1d-button') : null;
+                            if (!targetLi) return;
+                            const all = Array.from(document.querySelectorAll('li.sq-atm1d-button.sq-atm1d-selected'));
+                            for (const li of all) {
+                              if (li === targetLi) continue;
+                              li.classList.remove('sq-atm1d-selected');
+                              for (const inp of li.querySelectorAll('input[type="checkbox"], input[type="radio"]')) {
+                                try { inp.checked = false; } catch(e) {}
+                                try { inp.dispatchEvent(new Event('input', { bubbles: true })); } catch(e) {}
+                                try { inp.dispatchEvent(new Event('change', { bubbles: true })); } catch(e) {}
+                              }
+                            }
+                            """,
+                            el,
+                        )
+                    except Exception:
+                        pass
+
                 # Cas widgets sans <input> sous l'option (ex: Decipher cardrating):
                 # la sélection est reflétée par data-selected / aria-selected / aria-checked.
                 def _selected_like(node) -> bool:

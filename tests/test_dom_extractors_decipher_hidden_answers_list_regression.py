@@ -150,3 +150,53 @@ def test_focusvision_gridclick_prefixes_current_segment_in_question_context():
 
     assert len(blocks) == 1
     assert blocks[0]["question"] == "Épargne (Livret A) — Vous avez changé de banque principale ?"
+
+
+def test_focusvision_atm1d_prefers_tile_xpath_over_hidden_fallback_inputs():
+    from Survey.dom_registry import clear_registry, get_target
+
+    clear_registry()
+
+    class _FakeAtm1dButton(_FakeNode):
+        def __init__(self, data_label, legend):
+            super().__init__(attrs={"data-label": data_label}, children={".sq-atm1d-legend": [_FakeNode(text=legend)]})
+
+    first = _FakeInput(attrs={"id": "ans404.0.0", "name": "ans404.0.0", "type": "checkbox"})
+    second = _FakeInput(attrs={"id": "ans404.0.3", "name": "ans404.0.3", "type": "checkbox"})
+
+    answers = _FakeNode(children={
+        "input[type='radio'], input[type='checkbox']": [first, second],
+        "label[for='ans404.0.0']": [_FakeNode(text="En-cas salés")],
+        "label[for='ans404.0.3']": [_FakeNode(text="Aucune de ces propositions")],
+    })
+
+    q = _FakeNode(
+        attrs={"id": "question_S_PastParticipation"},
+        children={
+            ".answers.answers-list, .answers.answers-table": [answers],
+            ".question-text": [_FakeNode(text="Avez-vous participé ?")],
+            ".sq-atm1d-widget .sq-atm1d-buttons .sq-atm1d-button[data-label]": [
+                _FakeAtm1dButton("r1", "En-cas salés"),
+                _FakeAtm1dButton("None", "Aucune de ces propositions"),
+            ],
+        },
+    )
+
+    class _D:
+        def find_elements(self, by=None, value=None):
+            if value == "div.question[role='radiogroup'], div.question.radio, div.question.checkbox":
+                return [q]
+            return []
+
+    blocks = _extract_focusvision_answers_list_groups(_D(), frame_chain=[])
+
+    assert len(blocks) == 1
+    target_id = blocks[0]["target_id"]
+
+    payload = get_target(target_id)
+    assert payload is not None
+    opt_map = payload["option_xpath_map"]
+    assert any("li[contains(concat(' ',normalize-space(@class),' '),' sq-atm1d-button ')" in xp for xp in opt_map.values())
+    assert any("@data-label=" in xp and "r1" in xp for xp in opt_map.values())
+    assert any("@data-label=" in xp and "None" in xp for xp in opt_map.values())
+    assert payload["meta"]["exclusive_options_norm"] == ["aucune de ces propositions"]
