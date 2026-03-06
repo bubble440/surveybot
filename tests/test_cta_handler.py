@@ -331,3 +331,63 @@ def test_try_click_navigation_cta_detects_icon_only_div_next(monkeypatch):
 
     assert ok is True
     assert next_div.clicked == 1
+
+
+def test_try_click_navigation_cta_decipher_gridclick_clicks_widget_arrow(monkeypatch):
+    monkeypatch.setattr(cta_handler, "ActionChains", _FakeActionChains)
+    monkeypatch.delenv("CTA_INTERCEPT_ONLY", raising=False)
+
+    hidden_btn_continue = _FakeElement(
+        text="",
+        attrs={"id": "btn_continue", "class": "hidden"},
+        displayed=False,
+    )
+    gridclick_marker = _FakeElement(text="", attrs={"class": "gridclick-container"})
+    widget_arrow = _FakeElement(
+        text="",
+        attrs={"class": "nav-container ion-android-arrow-forward"},
+    )
+    widget_arrow.tag_name = "div"
+
+    driver = _FakeDriver(
+        css_elements={
+            "input#btn_continue": [hidden_btn_continue],
+            "div.gridclick-container": [gridclick_marker],
+            "div.next-nav.active > div.nav-container[class*='ion-android-arrow-forward']": [widget_arrow],
+        }
+    )
+
+    ok = cta_handler.try_click_navigation_cta(driver)
+
+    assert ok is True
+    assert widget_arrow.clicked == 1
+
+
+def test_try_click_navigation_cta_decipher_gridclick_widget_not_ready_returns_false(monkeypatch):
+    monkeypatch.setattr(cta_handler, "ActionChains", _FakeActionChains)
+    monkeypatch.delenv("CTA_INTERCEPT_ONLY", raising=False)
+
+    hidden_btn_continue = _FakeElement(
+        text="",
+        attrs={"id": "btn_continue", "class": "hidden"},
+        displayed=False,
+    )
+    gridclick_marker = _FakeElement(text="", attrs={"class": "gridclick-container"})
+    generic_suivant = _FakeElement(
+        text="Suivant",
+        attrs={"tabindex": "0", "class": "generic-next"},
+    )
+
+    driver = _FakeDriver(
+        xpath_elements=[generic_suivant],
+        css_elements={
+            "input#btn_continue": [hidden_btn_continue],
+            "div.gridclick-container": [gridclick_marker],
+            "div.next-nav.active > div.nav-container[class*='ion-android-arrow-forward']": [],
+        },
+    )
+
+    ok = cta_handler.try_click_navigation_cta(driver)
+
+    assert ok is False
+    assert generic_suivant.clicked == 0

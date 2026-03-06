@@ -1362,6 +1362,38 @@ def try_click_navigation_cta(driver) -> bool:
     except Exception:
         pass
 
+    # --- Decipher gridClick: CTA réel sur div.next-nav.active ---
+    # Activation UNIQUEMENT sur signature DOM stricte:
+    # 1) présence du widget `div.gridclick-container`
+    # 2) `input#btn_continue` présent mais masqué
+    try:
+        gridclick_widget = driver.find_elements(By.CSS_SELECTOR, "div.gridclick-container")
+        btn_continue_nodes = driver.find_elements(By.CSS_SELECTOR, "input#btn_continue")
+        if gridclick_widget and btn_continue_nodes and not btn_continue_nodes[0].is_displayed():
+            widget_cta = driver.find_elements(
+                By.CSS_SELECTOR,
+                "div.next-nav.active > div.nav-container[class*='ion-android-arrow-forward']",
+            )
+            if not widget_cta:
+                _nav_log("[CTA_NAV]", "CTA_FOUND gridclick_widget INTERCEPT_IMPOSSIBLE reason=widget_not_ready", driver)
+                return False
+
+            el = widget_cta[0]
+            if not el.is_displayed() or not el.is_enabled():
+                _nav_log("[CTA_NAV]", "CTA_FOUND gridclick_widget INTERCEPT_IMPOSSIBLE reason=widget_not_visible", driver)
+                return False
+
+            driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
+            clicked = _click_with_intercept(driver, el)
+            if clicked:
+                _nav_log("[CTA_NAV]", "CTA_FOUND gridclick_widget INTERCEPT_OK", driver)
+                return True
+
+            _nav_log("[CTA_NAV]", "CTA_FOUND gridclick_widget INTERCEPT_IMPOSSIBLE reason=click_failed", driver)
+            return False
+    except Exception:
+        return False
+
     # --- RSCH / Survey japonais ---
     try:
         btns = driver.find_elements(By.CSS_SELECTOR, "#btnsmall")
