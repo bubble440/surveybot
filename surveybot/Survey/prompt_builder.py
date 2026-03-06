@@ -61,6 +61,16 @@ def _norm_folded_lc(s: str | None) -> str:
     return re.sub(r"\s+", " ", no_marks).strip().lower()
 
 
+def _contains_keyword_phrase(text: str, keyword: str) -> bool:
+    """Match mot/phrase avec bornes pour eviter les faux positifs en sous-chaine."""
+    normalized_text = _norm_folded_lc(text)
+    normalized_keyword = _norm_folded_lc(keyword)
+    if not normalized_text or not normalized_keyword:
+        return False
+    pattern = rf"(?<![a-z0-9]){re.escape(normalized_keyword)}(?![a-z0-9])"
+    return re.search(pattern, normalized_text) is not None
+
+
 def _has_explicit_multi_indicator(question_text: str | None) -> bool:
     return has_explicit_multi_indicator(question_text)
 
@@ -267,7 +277,7 @@ def _looks_like_classification_question(block: Dict[str, Any]) -> bool:
     if not options:
         return False
     question = _norm_folded_lc(block.get("question"))
-    return any(k in question for k in _CLASSIFICATION_QUESTION_KEYWORDS)
+    return any(_contains_keyword_phrase(question, k) for k in _CLASSIFICATION_QUESTION_KEYWORDS)
 
 
 def _pick_best_classification_option(options: list[str]) -> str:
