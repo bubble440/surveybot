@@ -574,7 +574,7 @@ def build_prompt(question_blocks: List[Dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
-def build_batch_prompt(question_blocks: list[dict]) -> str:
+def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
     """
     Construit un prompt OpenAI pour répondre é  TOUTES les questions en une fois.
     Format de sortie robuste avec QID + max_select + target_id.
@@ -582,6 +582,16 @@ def build_batch_prompt(question_blocks: list[dict]) -> str:
     IMPORTANT: Pour les multi-select, le séparateur OBLIGATOIRE est "|".
     """
     lines: list[str] = []
+
+    # Inject survey session context if available (coherence across pages)
+    if ctx is not None:
+        try:
+            snippet = ctx.get_context_snippet()
+            if snippet:
+                lines.append(snippet)
+                lines.append("")  # blank separator
+        except Exception:
+            pass
 
     print(
         f"[PROMPT_PERSONA] residence_country={_PERSONA_RESIDENCE_COUNTRY} "
