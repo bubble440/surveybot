@@ -647,10 +647,14 @@ def build_batch_prompt(question_blocks: list[dict]) -> str:
         lines.append(f"max_select: {display_max_sel}")
         lines.append(f"min_select: {min_sel}")
         ctx = block.get("context") if isinstance(block.get("context"), dict) else {}
-        if (ctx or {}).get("kind") == "multi_text" and max_sel >= 2:
-            lines.append(
-                f"CHAMP MULTI-CASES: fournir {max_sel} valeurs séparées par | (ex: 03|02|2001)"
+        is_multi_text = (
+            itype in {"text", "textarea", "number"}
+            and max_sel >= 2
+            and (
+                str(block.get("target_id") or "").startswith("multi_")
+                or str((ctx or {}).get("kind") or "") == "multi_text"
             )
+        )
         forced_country = None
         forced_household_decider = None
         if _is_residence_country_question(block) and opts:
@@ -676,9 +680,19 @@ def build_batch_prompt(question_blocks: list[dict]) -> str:
                     f"selection_rule: Pour QID={qid}, renvoyer entre {min_sel} et {max_sel} valeur(s) séparée(s) par |. / For QID={qid}, return between {min_sel} and {max_sel} values separated by |."
                 )
         else:
-            lines.append(
-                f"selection_rule: Pour QID={qid}, renvoyer EXACTEMENT 1 valeur"
-            )
+            if is_multi_text:
+                lines.append(
+                    f"CHAMP MULTI-CASES: fournir EXACTEMENT {max_sel} valeurs séparées par | "
+                    f"(ex pour marques de sport: Nike|Adidas|Puma|Reebok|Under Armour)"
+                )
+                lines.append(
+                    f"selection_rule: Pour QID={qid}, renvoyer EXACTEMENT {max_sel} valeurs "
+                    f"séparées par |. Pas de répétition. Valeurs différentes obligatoires."
+                )
+            else:
+                lines.append(
+                    f"selection_rule: Pour QID={qid}, renvoyer EXACTEMENT 1 valeur"
+                )
         if forced_country:
             lines.append(
                 f"selection_rule: RESIDENCE_COUNTRY strict -> répondre EXACTEMENT avec '{forced_country}'"
