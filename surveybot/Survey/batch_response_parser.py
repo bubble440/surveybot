@@ -401,6 +401,13 @@ def _build_filler_values(
     selected_folded = {str(v or "").strip().lower() for v in result if str(v or "").strip()}
     option_pool = [str(opt or "").strip() for opt in options if str(opt or "").strip()]
 
+    if not option_pool:
+        _warn_log(
+            f"qid={qid} fill_shortfall_no_option_pool expected={expected_count} "
+            f"current={len(result)} -> returning partial result without padding"
+        )
+        return result
+
     for opt in option_pool:
         if len(result) >= expected_count:
             break
