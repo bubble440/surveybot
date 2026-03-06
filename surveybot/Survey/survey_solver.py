@@ -519,6 +519,7 @@ def _if_on_topsurveys_handle(driver, api_key, account_id) -> bool:
 
 def solve_full_survey(driver, api_key, *, account_id: str):
     import Management.redirect_watcher as redirect_watcher
+    from Survey.survey_context import SurveyContext
     import Survey.survey_executor  
     import Management.guards.survey_difficulty_guard
     import Management.guards.runtime_guard
@@ -533,6 +534,8 @@ def solve_full_survey(driver, api_key, *, account_id: str):
       - seuil MAX_TOTAL_STEPS atteint (sÃƒÆ’Ã‚Â©curitÃƒÆ’Ã‚Â©)
     """
     print("ÃƒÂ°Ã…Â¸Ã‚Â§Ã‚Âª [solve_full_survey] DÃƒÆ’Ã‚Â©but de traitement du survey...")
+    # One SurveyContext per survey run — tracks Q/R history for coherent OpenAI responses
+    _survey_ctx = SurveyContext(session_id=account_id, openai_api_key=api_key)
     # ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ‚Â SÃƒÆ’Ã‚Â©curitÃƒÆ’Ã‚Â© : si plusieurs onglets existent, on prend le dernier
     try:
         if len(driver.window_handles) > 1:
@@ -557,6 +560,12 @@ def solve_full_survey(driver, api_key, *, account_id: str):
     while steps_total < MAX_TOTAL_STEPS:
         steps_total += 1
         steps_on_url += 1
+        # LOCAL DEBUG: print survey context on demand via env var
+        if (os.getenv("SURVEY_CTX_DEBUG") or "").strip() == "1":
+            try:
+                _survey_ctx.print_debug()
+            except Exception:
+                pass
         print(
             f"ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ‚Â ÃƒÆ’Ã¢â‚¬Â°tape {steps_total}/{MAX_TOTAL_STEPS} "
             f"(page {steps_on_url}/{MAX_STEPS_PER_URL}) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â exÃƒÆ’Ã‚Â©cution de la page courante"
@@ -701,7 +710,7 @@ def solve_full_survey(driver, api_key, *, account_id: str):
 
         # -------------------------------------------------------------------
         # a) Laisser GPT dÃƒÆ’Ã‚Â©cider de lÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢action ÃƒÆ’Ã‚Â  partir de la capture dÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã‚Â©cran
-        success = Survey.survey_executor.execute_survey_page(driver, api_key)
+        success = Survey.survey_executor.execute_survey_page(driver, api_key, ctx=_survey_ctx)
 
         # [PATCH] Mode "overlay ouvert" ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ recapture rapide
         try:
@@ -808,5 +817,10 @@ def solve_full_survey(driver, api_key, *, account_id: str):
             print("ÃƒÂ¢Ã…Â¡Ã‚Â ÃƒÂ¯Ã‚Â¸Ã‚Â Ni changement dÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢URL ni action rÃƒÆ’Ã‚Â©ussie. Nouvelle tentativeÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦")
             # on laisse encore 1 tour; si ÃƒÆ’Ã‚Â§a persiste, la condition ciÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Ëœdessus arrÃƒÆ’Ã‚Âªtera.
         last_url = current_url
+        # Non-blocking: triggers async summary generation every N pages
+        try:
+            _survey_ctx.maybe_update_summary()
+        except Exception:
+            pass
 
     print("ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ [solve_full_survey] Survey traitÃƒÆ’Ã‚Â©.")

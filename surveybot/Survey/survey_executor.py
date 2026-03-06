@@ -974,7 +974,7 @@ def _should_skip_post_actions_navigation(driver, question_blocks: list[dict]) ->
     except Exception:
         return False
 
-def execute_survey_page(driver, api_key):
+def execute_survey_page(driver, api_key, ctx=None):
     """
     Nouvelle version : capture , demande GPT-4o quoi faire, puis applique l'action.
     """
@@ -1112,12 +1112,12 @@ def execute_survey_page(driver, api_key):
         if (block.get("itype") or "").strip().lower() != "matrix":
             continue
 
-        ctx = block.get("context")
-        if not isinstance(ctx, dict):
-            ctx = {}
-            block["context"] = ctx
+        block_ctx = block.get("context")
+        if not isinstance(block_ctx, dict):
+            block_ctx = {}
+            block["context"] = block_ctx
 
-        wants_active_row = bool(ctx.get("focusvision_answers_list")) or has_gridclick
+        wants_active_row = bool(block_ctx.get("focusvision_answers_list")) or has_gridclick
         if not wants_active_row:
             continue
 
@@ -1136,7 +1136,7 @@ def execute_survey_page(driver, api_key):
         if not active_row:
             continue
 
-        ctx["matrix_active_row"] = active_row
+        block_ctx["matrix_active_row"] = active_row
         print(
             f"[MATRIX_ACTIVE_ROW] target_id={block.get('target_id', '')} "
             f"row_active={active_row!r}"
@@ -1145,7 +1145,7 @@ def execute_survey_page(driver, api_key):
     client = openai.OpenAI(api_key=api_key)
 
     if question_blocks:
-        prompt = prompt_builder.build_batch_prompt(question_blocks)
+        prompt = prompt_builder.build_batch_prompt(question_blocks, ctx=ctx)
 
         instruction_raw = client.responses.create(
             input=prompt,
@@ -1177,6 +1177,21 @@ def execute_survey_page(driver, api_key):
 
         #  "plan" (multi actions) + anti-double-fallback par action
         result = action_dispatcher.execute_actions_plan(driver, actions, stop_on_navigation=True)
+
+        # Record answered Q/R in session context for coherence (non-blocking)
+        if ctx is not None:
+            try:
+                for action in (actions or []):
+                    qid = getattr(action, "qid", "") or ""
+                    meta = qid_meta.get(qid) if qid else None
+                    if meta:
+                        ctx.record(
+                            question=meta.get("question", ""),
+                            options=meta.get("options") or [],
+                            answer=getattr(action, "value", "") or "",
+                        )
+            except Exception:
+                pass
 
         # --- Post-actions CTA nav (sauf Walr cardsort géré par answer-button) ---
         if _should_skip_post_actions_navigation(driver, question_blocks):
