@@ -13,6 +13,7 @@ Ce module contient les fonctions spécialisées pour :
 from __future__ import annotations
 from typing import List, Optional
 import re
+import html
 from selenium.webdriver.common.by import By
 
 # Import des utilitaires
@@ -356,6 +357,62 @@ def _extract_question_from_container(container, options: List[str]) -> str:
     
     except Exception:
         return ""
+
+
+def _extract_mriweb_grid_question_text(el) -> str:
+    """
+    Material/mrIWeb: récupère le texte de question principal d'une grille
+    `table.mrGridTable` (inputs texte par ligne), sans inclure les messages d'erreur.
+
+    Critères DOM stricts:
+    - input dans `table.mrGridTable`
+    - priorité au `summary` de la table (texte question canonical)
+    - fallback sur `span.mrQuestionText` visible dans le `content-wrapper`
+      en excluant explicitement le bloc `.error-block`
+    """
+    try:
+        grids = el.find_elements(By.XPATH, "ancestor::table[contains(@class,'mrGridTable')][1]")
+    except Exception:
+        grids = []
+
+    if not grids:
+        return ""
+
+    grid = grids[0]
+
+    try:
+        summary_raw = grid.get_attribute("summary") or ""
+        summary_txt = _norm(re.sub(r"<[^>]+>", " ", html.unescape(summary_raw)))
+        if summary_txt and _is_question_text(summary_txt) and not _is_validation_instruction(summary_txt):
+            return summary_txt
+    except Exception:
+        pass
+
+    try:
+        candidates = grid.find_elements(
+            By.XPATH,
+            "ancestor::div[contains(@class,'content-wrapper')][1]"
+            "//span[contains(@class,'mrQuestionText') and normalize-space(.)!='' and "
+            "not(ancestor::td[contains(@class,'error-block')])]",
+        )
+    except Exception:
+        candidates = []
+
+    for node in candidates:
+        try:
+            txt = _norm(node.text or node.get_attribute("innerText") or "")
+        except Exception:
+            txt = ""
+        if not txt:
+            continue
+        if re.fullmatch(r"\d+", txt):
+            continue
+        if _is_validation_instruction(txt):
+            continue
+        if _is_question_text(txt):
+            return txt
+
+    return ""
 
 
 def _find_group_heading_text_near_element(driver, el, options: List[str]) -> str:
