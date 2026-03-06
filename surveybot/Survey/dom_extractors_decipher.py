@@ -122,6 +122,95 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
             question = (q.text or "").strip().split("\n")[0].strip()
 
         # Regrouper par name logique
+        atm1d_buttons = []
+        try:
+            atm1d_buttons = q.find_elements(
+                By.CSS_SELECTOR,
+                ".sq-atm1d-widget .sq-atm1d-buttons .sq-atm1d-button[data-label]",
+            )
+        except Exception:
+            atm1d_buttons = []
+
+        if len(atm1d_buttons) >= 2:
+            options: list[str] = []
+            option_xpath_map: dict[str, str] = {}
+            exclusive_options_norm: list[str] = []
+            question_id = (q.get_attribute("id") or "").strip()
+
+            for btn in atm1d_buttons:
+                data_label = (btn.get_attribute("data-label") or "").strip()
+                if not data_label:
+                    continue
+
+                legend = ""
+                try:
+                    legend = (btn.find_element(By.CSS_SELECTOR, ".sq-atm1d-legend").text or "").strip()
+                except Exception:
+                    legend = ""
+                if not legend:
+                    continue
+
+                legend_norm = _norm_lc(legend)
+                if not legend_norm or legend_norm in option_xpath_map:
+                    continue
+
+                if question_id:
+                    xp = (
+                        f"//div[@id={_xpath_literal(question_id)}]"
+                        "//li[contains(concat(' ',normalize-space(@class),' '),' sq-atm1d-button ') and @data-label="
+                        f"{_xpath_literal(data_label)}][1]"
+                    )
+                else:
+                    xp = (
+                        "(//li[contains(concat(' ',normalize-space(@class),' '),' sq-atm1d-button ') and @data-label="
+                        f"{_xpath_literal(data_label)}])[1]"
+                    )
+
+                options.append(legend)
+                option_xpath_map[legend_norm] = xp
+
+                if _norm_lc(data_label) == "none":
+                    exclusive_options_norm.append(legend_norm)
+
+            if len(options) >= 2:
+                group_key = "checkbox:atm1d"
+                target_id = make_target_id("group", group_key, question or "atm1d")
+                register_target(
+                    target_id,
+                    {
+                        "kind": "group",
+                        "frame_chain": list(frame_chain or []),
+                        "itype": "checkbox",
+                        "group_key": group_key,
+                        "question": question,
+                        "input_name": "atm1d",
+                        "max_select": len(options),
+                        "options": options,
+                        "option_xpath_map": option_xpath_map,
+                        "meta": {
+                            "source": "sq-atm1d",
+                            "exclusive_options_norm": exclusive_options_norm,
+                        },
+                    },
+                )
+
+                blocks.append(
+                    {
+                        "target_id": target_id,
+                        "kind": "group",
+                        "itype": "checkbox",
+                        "question": question,
+                        "options": options,
+                        "max_select": len(options),
+                        "context": {
+                            "kind": "group",
+                            "group_key": group_key,
+                            "focusvision_answers_list": True,
+                        },
+                    }
+                )
+                continue
+
         matrix_mode = False
         matrix_group_name = ""
         matrix_row_labels: dict[str, str] = {}
