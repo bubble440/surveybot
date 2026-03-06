@@ -1421,6 +1421,126 @@ def _extract_table_matrix_radio_rows(driver, frame_chain: list[int] | None) -> l
     return blocks
 
 
+def _extract_yougov_grid_text_question_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
+    """YouGov grid-text: 1 bloc `text` par ligne de grille (input texte libre).
+
+    Gate DOM strict (additif, non provider-wide):
+    - fieldset.question-grid.question-grid-text
+    - legend.question-text (question parent)
+    - lignes contenant `th.grid-item-text-left` + `td.grid-cell.open-cell input[type=text]`
+
+    Résultat attendu:
+    - question = legend + " — " + libellé de ligne
+    - itype = text
+    - options = []
+    - target_id unique par input (name/id/xpath)
+    """
+    frame_chain = list(frame_chain or [])
+
+    try:
+        fieldsets = driver.find_elements(
+            By.CSS_SELECTOR,
+            "fieldset.question.question-grid.question-grid-text",
+        )
+    except Exception:
+        return []
+
+    if not fieldsets:
+        return []
+
+    blocks: list[dict] = []
+
+    for fs in fieldsets[:8]:  # budget anti-explosion
+        try:
+            legend = ""
+            try:
+                legend_el = fs.find_element(By.CSS_SELECTOR, "legend.question-text")
+                legend = _norm(legend_el.text or legend_el.get_attribute("innerText") or "")
+            except Exception:
+                legend = ""
+
+            if not legend:
+                continue
+
+            try:
+                rows = fs.find_elements(By.CSS_SELECTOR, "tbody tr")
+            except Exception:
+                rows = []
+
+            for row in rows[:40]:  # budget anti-explosion
+                try:
+                    inputs = row.find_elements(
+                        By.CSS_SELECTOR,
+                        "td.grid-cell.open-cell input[type='text']",
+                    )
+                except Exception:
+                    inputs = []
+
+                if not inputs:
+                    continue
+
+                input_el = inputs[0]
+
+                row_label = ""
+                try:
+                    row_label_el = row.find_element(By.CSS_SELECTOR, "th.grid-item-text-left")
+                    row_label = _norm(row_label_el.text or row_label_el.get_attribute("innerText") or "")
+                except Exception:
+                    row_label = ""
+
+                question = legend if not row_label else _norm(f"{legend} — {row_label}")
+                if not question:
+                    continue
+
+                name = (input_el.get_attribute("name") or "").strip()
+                el_id = (input_el.get_attribute("id") or "").strip()
+                aria_role = (input_el.get_attribute("role") or "").strip() or None
+                xpath = _best_xpath_for_element(driver, input_el)
+
+                uniq = name or el_id or xpath
+                if not uniq:
+                    continue
+
+                target_id = make_target_id("single", f"yougov_grid_text:{uniq}", question)
+
+                register_target(
+                    target_id,
+                    {
+                        "kind": "single",
+                        "tag": "input",
+                        "name": name,
+                        "id": el_id,
+                        "role": aria_role,
+                        "xpath": xpath,
+                        "frame_chain": frame_chain,
+                        "yougov_grid_text": True,
+                    },
+                )
+
+                blocks.append(
+                    {
+                        "question": question,
+                        "itype": "text",
+                        "options": [],
+                        "max_select": 1,
+                        "target_id": target_id,
+                        "context": {
+                            "kind": "single",
+                            "tag": "input",
+                            "name": name,
+                            "id": el_id,
+                            "role": aria_role,
+                            "yougov_grid_text": True,
+                        },
+                        "min_select": 1,
+                    }
+                )
+        except Exception:
+            continue
+
+    return blocks
+
+
 
 # ================================================================================
 # CMIX - SIMPLE GRID QUESTION BLOCKS
