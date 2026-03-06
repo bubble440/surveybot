@@ -1746,6 +1746,117 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             # Pattern spécifique
             if itype in ("text", "textarea"):                
                 try:
+                    # Material/mrIWeb: grille texte (table.mrGridTable) avec names
+                    # de type `<var>_Q__N_QAnswer` => un seul bloc multi_text.
+                    try:
+                        mriweb_grids = el.find_elements(By.XPATH, "ancestor::table[contains(@class,'mrGridTable')][1]")
+                    except Exception:
+                        mriweb_grids = []
+
+                    if mriweb_grids:
+                        grid = mriweb_grids[0]
+                        grid_id = (grid.get_attribute("id") or "").strip()
+                        if not grid_id:
+                            try:
+                                grid_id = _best_xpath_for_element(driver, grid) or ""
+                            except Exception:
+                                grid_id = ""
+
+                        try:
+                            grid_inputs = grid.find_elements(By.CSS_SELECTOR, "input.mrEdit[type='text'][name]")
+                        except Exception:
+                            grid_inputs = []
+
+                        mriweb_rows = []
+                        for gi in grid_inputs:
+                            try:
+                                if _looks_like_system_field(gi):
+                                    continue
+                                nm = (gi.get_attribute("name") or "").strip()
+                                mt = re.match(r"^(?P<prefix>.+)_Q__(?P<idx>\d+)_QAnswer$", nm)
+                                if not mt:
+                                    continue
+                                mriweb_rows.append((int(mt.group("idx")), mt.group("prefix"), gi))
+                            except Exception:
+                                continue
+
+                        if len(mriweb_rows) >= 2:
+                            prefixes = {row[1] for row in mriweb_rows}
+                            if len(prefixes) == 1:
+                                prefix = next(iter(prefixes))
+                                group_key = f"mriweb_grid:{grid_id}:{prefix}"
+                                if group_key in seen_multi_text_groups:
+                                    continue
+
+                                mriweb_rows.sort(key=lambda row: row[0])
+                                max_items = len(mriweb_rows)
+                                multi_target_id = make_target_id("multi", group_key, question)
+
+                                field_payloads = []
+                                for _idx, _pref, fld in mriweb_rows:
+                                    try:
+                                        fid = (fld.get_attribute("id") or "").strip()
+                                        fname = (fld.get_attribute("name") or "").strip()
+                                        ftag = (fld.tag_name or "").strip().lower()
+                                        fxp = _best_xpath_for_element(driver, fld)
+
+                                        falt = []
+                                        try:
+                                            if ftag and fname:
+                                                falt.append(f"//{ftag}[@name={_xpath_literal(fname)}]")
+                                            elif fname:
+                                                falt.append(f"//*[@name={_xpath_literal(fname)}]")
+                                        except Exception:
+                                            pass
+                                        try:
+                                            if fid:
+                                                falt.append(f"//*[@id='{fid}']")
+                                        except Exception:
+                                            pass
+
+                                        falt = [x for x in dict.fromkeys(falt) if x and x != fxp][:4]
+                                        field_payloads.append(
+                                            {"xpath": fxp, "alt_xpaths": falt, "name": fname, "id": fid, "tag": ftag}
+                                        )
+                                    except Exception:
+                                        continue
+
+                                if field_payloads:
+                                    register_target(
+                                        multi_target_id,
+                                        {
+                                            "kind": "multi_text",
+                                            "itype": itype,
+                                            "question": question,
+                                            "fields": field_payloads,
+                                            "frame_chain": frame_chain,
+                                            "meta": {
+                                                "max_items": max_items,
+                                                "multi_text": True,
+                                                "mriweb_grid": True,
+                                            },
+                                        },
+                                    )
+
+                                    question_blocks.append(
+                                        {
+                                            "question": question,
+                                            "itype": itype,
+                                            "options": [],
+                                            "max_select": max_items,
+                                            "target_id": multi_target_id,
+                                            "context": {
+                                                "kind": "multi_text",
+                                                "fields_count": len(field_payloads),
+                                                "max_items": max_items,
+                                                "name_prefix": prefix,
+                                            },
+                                        }
+                                    )
+
+                                    seen_multi_text_groups.add(group_key)
+                                    continue
+
                     cont_id = (container.get_attribute("id") or "").strip()
                     nm = (el.get_attribute("name") or "").strip()
 
