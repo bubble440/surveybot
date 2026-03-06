@@ -151,17 +151,6 @@ def _selection_bounds_for_prompt(block: Dict[str, Any]) -> tuple[int, int]:
     return min_sel, max_sel
 
 
-_TIER_ENTRY_QUESTION_KEYWORDS = [
-    # FR
-    "tranche", "categorie", "fourchette", "classe", "niveau",
-    "combien de salaries", "combien de salarie", "combien d'employes", "combien d employes",
-    "taille de l'entreprise", "taille de l entreprise",
-    "budget", "depenses", "charges", "chiffre d'affaires", "chiffre d affaires", "ca", "revenu", "salaire",
-    # EN
-    "range", "bracket", "band", "category", "company size", "employees",
-    "revenue", "expenses", "budget", "income", "salary",
-]
-
 _CLASSIFICATION_QUESTION_KEYWORDS = [
     # FR - poste/fonction/statut
     "poste", "fonction", "profession", "metier", "occupation", "categorie socioprofessionnelle", "csp", "statut",
@@ -244,20 +233,6 @@ _RESPONDENT_SELF_OPTION_PATTERNS = [
     "i decide",
 ]
 
-_FREQ_HIGH_MARKERS = [
-    "plusieurs fois par jour", "tous les jours", "quotidien", "daily", "every day",
-    "plusieurs fois par semaine", "most days", "often", "souvent",
-]
-
-_FREQ_LOW_MARKERS = [
-    "une fois ce mois", "plusieurs fois ce mois", "once this month", "this month",
-    "jamais", "never", "pas achete", "pas acheté", "ne sais pas", "dont know", "don't know",
-]
-
-_FREQ_UNIT_MARKERS = [
-    "jour", "jours", "day", "week", "semaine", "month", "mois", "fois",
-]
-
 _SURVEY_CONSENT_CONTEXT_PATTERNS = [
     # FR
     "sondage", "survey", "participation", "confidentialite", "confidentialité",
@@ -274,17 +249,6 @@ _CONSENT_REJECT_PATTERNS = [
     "i disagree", "disagree", "ne souhaite pas poursuivre", "ne pas poursuivre",
     "do not continue", "not continue", "quitter", "exit",
 ]
-
-
-def _looks_like_tier_entry_question(block: Dict[str, Any]) -> bool:
-    itype = _norm_folded_lc(block.get("itype"))
-    if itype not in {"radio", "checkbox", "dropdown", "select", "button"}:
-        return False
-    options = [o for o in (block.get("options") or []) if _norm(str(o))]
-    if not options:
-        return False
-    question = _norm_folded_lc(block.get("question"))
-    return any(k in question for k in _TIER_ENTRY_QUESTION_KEYWORDS)
 
 
 def _looks_like_classification_question(block: Dict[str, Any]) -> bool:
@@ -320,33 +284,6 @@ def _pick_best_classification_option(options: list[str]) -> str:
             best_option = option
 
     return best_option
-
-
-def _tier_entry_option(options: list[str]) -> tuple[int, str]:
-    n = len(options)
-    if n <= 1:
-        k = 1
-    elif _looks_like_frequency_scale(options):
-        top_third = max(1, -(-n // 3))
-        k = max(1, (top_third + 1) // 2)
-    elif n in {2, 3}:
-        k = n
-    else:
-        k = int(-(-3 * n // 4))
-    return k, options[k - 1]
-
-
-def _looks_like_frequency_scale(options: list[str]) -> bool:
-    if not options:
-        return False
-
-    folded_options = [_norm_folded_lc(opt) for opt in options]
-    high = any(any(marker in opt for marker in _FREQ_HIGH_MARKERS) for opt in folded_options)
-    low = any(any(marker in opt for marker in _FREQ_LOW_MARKERS) for opt in folded_options)
-    has_units = sum(
-        1 for opt in folded_options if any(marker in opt for marker in _FREQ_UNIT_MARKERS)
-    )
-    return high and low and has_units >= 2
 
 
 def _find_option_exact(options: list[str], expected_value: str) -> str | None:
@@ -770,12 +707,6 @@ def build_batch_prompt(question_blocks: list[dict]) -> str:
             picked = _pick_best_classification_option(opts)
             print(f"[PROMPT_BUILDER] classification_rule=1 N={len(opts)} picked='{picked}'")
             lines.append(f"selection_rule: CLASSIFICATION_BEST strict -> répondre EXACTEMENT avec '{picked}'")
-            lines.append(f"allowed_values_strict: {picked}")
-            lines.append("instruction_stricte: Tu dois répondre EXACTEMENT avec l'un des libellés suivants : {" + picked + "}. Ne paraphrase pas. Ne renvoie rien d'autre.")
-        elif _looks_like_tier_entry_question(block) and opts:
-            k, picked = _tier_entry_option(opts)
-            print(f"[PROMPT_BUILDER] tier_entry_rule=1 N={len(opts)} k={k} picked='{picked}'")
-            lines.append(f"selection_rule: TIER_ENTRY strict -> répondre EXACTEMENT avec '{picked}'")
             lines.append(f"allowed_values_strict: {picked}")
             lines.append("instruction_stricte: Tu dois répondre EXACTEMENT avec l'un des libellés suivants : {" + picked + "}. Ne paraphrase pas. Ne renvoie rien d'autre.")
         elif bool((ctx or {}).get("consent_modal_radio")) and opts:
