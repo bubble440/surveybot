@@ -251,6 +251,37 @@ _CONSENT_REJECT_PATTERNS = [
 ]
 
 
+_RECENT_PARTICIPATION_MARKERS = {
+    "participation": [
+        "participe",
+        "participated",
+        "take part",
+        "taken part",
+    ],
+    "study": [
+        "etude de marche",
+        "market research",
+        "sondage",
+        "survey",
+    ],
+    "recency": [
+        "au cours des",
+        "dernieres semaines",
+        "last two weeks",
+        "past two weeks",
+    ],
+}
+
+_RECENT_PARTICIPATION_SAFE_OPTION_PATTERNS = [
+    "aucune de ces propositions",
+    "none of the above",
+    "none",
+    "aucun",
+    "aucune",
+    "non",
+]
+
+
 def _looks_like_classification_question(block: Dict[str, Any]) -> bool:
     itype = _norm_folded_lc(block.get("itype"))
     if itype not in {"radio", "checkbox", "dropdown", "select", "button"}:
@@ -351,6 +382,41 @@ def _preferred_survey_consent_option(block: Dict[str, Any], options: list[str]) 
         return None
 
     return accept_option
+
+
+def _is_recent_participation_screener_question(block: Dict[str, Any]) -> bool:
+    """Détecte les screeners "participation récente à une étude/sondage"."""
+    itype = _norm_folded_lc(block.get("itype"))
+    if itype not in {"radio", "checkbox", "dropdown", "select", "button"}:
+        return False
+
+    question = _norm_folded_lc(block.get("question"))
+    if not question:
+        return False
+
+    return all(
+        any(marker in question for marker in markers)
+        for markers in _RECENT_PARTICIPATION_MARKERS.values()
+    )
+
+
+def _find_recent_participation_safe_option(options: list[str]) -> str | None:
+    if not options:
+        return None
+
+    normalized_options = [(_norm_folded_lc(opt), opt) for opt in options]
+    for pattern in _RECENT_PARTICIPATION_SAFE_OPTION_PATTERNS:
+        folded_pattern = _norm_folded_lc(pattern)
+        if not folded_pattern:
+            continue
+        for folded_opt, original_opt in normalized_options:
+            if folded_opt == folded_pattern:
+                return original_opt
+        for folded_opt, original_opt in normalized_options:
+            if folded_pattern in folded_opt:
+                return original_opt
+
+    return None
 
 
 def _matrix_row_labels(block: Dict[str, Any]) -> list[str]:
@@ -657,6 +723,7 @@ def build_batch_prompt(question_blocks: list[dict]) -> str:
         )
         forced_country = None
         forced_household_decider = None
+        forced_recent_participation_safe = None
         if _is_residence_country_question(block) and opts:
             forced_country = _find_option_exact(opts, _PERSONA_RESIDENCE_COUNTRY)
             print(
@@ -665,6 +732,8 @@ def build_batch_prompt(question_blocks: list[dict]) -> str:
             )
         if _is_household_decision_maker_question(block) and opts:
             forced_household_decider = _find_respondent_self_option(opts)
+        if _is_recent_participation_screener_question(block) and opts:
+            forced_recent_participation_safe = _find_recent_participation_safe_option(opts)
 
         if itype == "checkbox":
             if min_sel == 0:
@@ -712,6 +781,16 @@ def build_batch_prompt(question_blocks: list[dict]) -> str:
             lines.append(
                 "instruction_stricte: Question décideur du foyer. "
                 "Tu dois répondre EXACTEMENT avec l'option qui désigne le répondant lui-même."
+            )
+        elif forced_recent_participation_safe:
+            lines.append(
+                "selection_rule: RECENT_PARTICIPATION_SAFE strict -> répondre EXACTEMENT "
+                f"avec '{forced_recent_participation_safe}'"
+            )
+            lines.append(f"allowed_values_strict: {forced_recent_participation_safe}")
+            lines.append(
+                "instruction_stricte: Screener de participation récente détecté. "
+                "Tu dois choisir l'option exclusive négative (none/aucune/non) pour éviter la disqualification."
             )
         elif (forced_consent := _preferred_survey_consent_option(block, opts)):
             lines.append(f"selection_rule: SURVEY_CONSENT_ACCEPT strict -> répondre EXACTEMENT avec '{forced_consent}'")
