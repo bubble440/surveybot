@@ -532,6 +532,26 @@ def build_prompt(question_blocks: List[Dict[str, Any]]) -> str:
     )
     # ── FIN PERSONA FINANCIER ─────────────────────────────────────────────
 
+    lines.append(
+        "RÈGLE OPTIONS EXCLUSIVES :\n"
+        "Une option exclusive est une option qui, par nature, annule toutes les autres "
+        "(exemples : 'Aucun', 'Aucune', 'Aucune de ces propositions', 'Aucun de ces sujets', "
+        "'None', 'None of the above', 'Je ne sais pas', 'NSP', 'N/A', 'Pas applicable', "
+        "'Préfère ne pas répondre', 'Don't know', 'Not applicable').\n\n"
+        "RÈGLE GÉNÉRALE : Ne retourne JAMAIS une option exclusive. "
+        "Ces options sont disqualificatoires dans la grande majorité des cas.\n\n"
+        "EXCEPTION UNIQUE — Screener de participation récente :\n"
+        "Si la question demande explicitement si tu as participé à une étude de marché, "
+        "un sondage, ou une recherche portant sur un ou plusieurs sujets d'une liste "
+        "(signaux : 'participé', 'participated', 'étude de marché', 'market research', "
+        "'sondage', 'survey', 'au cours des', 'dernières semaines', 'last weeks', 'past weeks'), "
+        "ET que la liste d'options contient une option exclusive négative "
+        "('Aucune de ces propositions', 'Aucun de ces sujets', 'None of the above', 'Aucun', 'Non'), "
+        "alors tu DOIS choisir UNIQUEMENT cette option exclusive, sans aucune autre valeur. "
+        "Ce type de question est un screener anti-participation : "
+        "répondre avec un sujet de la liste entraîne une disqualification immédiate."
+    )
+
     lines.append("\n--- QUESTIONS DISPONIBLES SUR LA PAGE ---")
 
     # --------- Injection des questions ----------
@@ -686,6 +706,25 @@ def build_batch_prompt(question_blocks: list[dict]) -> str:
     )
     # ── FIN PERSONA FINANCIER ─────────────────────────────────────────────
 
+    lines.append(
+        "RÈGLE OPTIONS EXCLUSIVES :\n"
+        "Une option exclusive est une option qui, par nature, annule toutes les autres "
+        "(exemples : 'Aucun', 'Aucune', 'Aucune de ces propositions', 'Aucun de ces sujets', "
+        "'None', 'None of the above', 'Je ne sais pas', 'NSP', 'N/A', 'Pas applicable', "
+        "'Préfère ne pas répondre', 'Don't know', 'Not applicable').\n\n"
+        "RÈGLE GÉNÉRALE : Ne retourne JAMAIS une option exclusive. "
+        "Ces options sont disqualificatoires dans la grande majorité des cas.\n\n"
+        "EXCEPTION UNIQUE — Screener de participation récente :\n"
+        "Si la question demande explicitement si tu as participé à une étude de marché, "
+        "un sondage, ou une recherche portant sur un ou plusieurs sujets d'une liste "
+        "(signaux : 'participé', 'participated', 'étude de marché', 'market research', "
+        "'sondage', 'survey', 'au cours des', 'dernières semaines', 'last weeks', 'past weeks'), "
+        "ET que la liste d'options contient une option exclusive négative "
+        "('Aucune de ces propositions', 'Aucun de ces sujets', 'None of the above', 'Aucun', 'Non'), "
+        "alors tu DOIS choisir UNIQUEMENT cette option exclusive, sans aucune autre valeur. "
+        "Ce type de question est un screener anti-participation : "
+        "répondre avec un sujet de la liste entraîne une disqualification immédiate."
+    )
     lines.append("\n--- QUESTIONS ---")
 
     for i, block in enumerate(question_blocks or [], start=1):
