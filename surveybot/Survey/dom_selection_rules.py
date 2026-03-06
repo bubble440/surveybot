@@ -17,6 +17,8 @@ _EXACT_COUNT_WORD_TO_INT = {
     "cinq": 5,
 }
 
+_DEFAULT_REASONABLE_MULTI_CAP = 5
+
 _EXCLUSIVE_OPTION_PREFIXES = [
     "aucun",
     "aucune",
@@ -152,4 +154,4 @@ def compute_checkbox_max_select(options: list[str], question_text: str | None = 
     if explicit_exact_count is not None:
         return max(1, min(int(explicit_exact_count), natural_max))
 
-    return natural_max
+    return max(1, min(natural_max, _DEFAULT_REASONABLE_MULTI_CAP))
