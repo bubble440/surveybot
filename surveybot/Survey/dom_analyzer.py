@@ -80,6 +80,7 @@ try:
         _extract_purespectrum_mobile_date_blocks,
         _extract_collapsed_section_radio_rows,
         _extract_jqm_lrw_collapsible_radio_rows,
+        _extract_jqm_lrw_collapsible_checkbox_rows,
         _extract_custom_testid_single_select_radio_blocks,
         _extract_custom_testid_multi_select_checkbox_blocks,
         _extract_single_consent_checkbox_block,
@@ -141,6 +142,7 @@ except ImportError:
         _extract_purespectrum_mobile_date_blocks,
         _extract_collapsed_section_radio_rows,
         _extract_jqm_lrw_collapsible_radio_rows,
+        _extract_jqm_lrw_collapsible_checkbox_rows,
         _extract_custom_testid_single_select_radio_blocks,
         _extract_custom_testid_multi_select_checkbox_blocks,
         _extract_single_consent_checkbox_block,
@@ -869,6 +871,15 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         section_matrix_blocks = _extract_collapsed_section_radio_rows(driver, frame_chain)
         if section_matrix_blocks:
             return section_matrix_blocks
+    except Exception:
+        pass
+
+    # --- 0i-ter) jQuery Mobile LRW: lignes checkbox dans accordéon collapsible ---
+    # Objectif: isoler chaque section de checkbox et ignorer les boutons toggle d'accordéon.
+    try:
+        jqm_collapsible_checkbox_blocks = _extract_jqm_lrw_collapsible_checkbox_rows(driver, frame_chain)
+        if jqm_collapsible_checkbox_blocks:
+            return jqm_collapsible_checkbox_blocks
     except Exception:
         pass
 
