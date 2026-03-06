@@ -1216,7 +1216,7 @@ def sanitize_actions(actions: list, qid_meta: dict | None = None) -> list:
     # ÉTAPE FINALE: Filtrage des conflits d'options exclusives
     # =========================================================================
     # Après nettoyage individuel, on filtre les combinaisons impossibles
-    # (ex: "Aucune de ces réponses" + autres options pour le même QID)
-    cleaned = filter_exclusive_conflicts(cleaned, qid_meta)
+    # (ex: "Aucune de ces réponses" + autres options pour le même QID) 
+    #cleaned = filter_exclusive_conflicts(cleaned, qid_meta)
 
     return cleaned
