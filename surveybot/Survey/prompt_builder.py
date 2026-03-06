@@ -485,10 +485,11 @@ def build_prompt(question_blocks: List[Dict[str, Any]]) -> str:
         "Évite systématiquement: X, Autre, Non-binaire, Préfère ne pas répondre."
     )
 
-    # Contrainte âge : toujours 25 ans
+    # Contrainte âge / année de naissance
     lines.append(
         "Pour toute question sur l'âge ou la date de naissance:\n"
-        "- Si champ texte (âge, années, ans): réponds '25' ou '25 ans'.\n"
+        "- Si la question demande explicitement l'ANNÉE de naissance (ex: 'année de naissance', 'year of birth', 'birth year', 'born in', 'né en'), réponds UNIQUEMENT avec une année sur 4 chiffres (YYYY), jamais un âge.\n"
+        "- Si la question demande l'âge (âge, years old, ans), réponds '25' ou '25 ans'.\n"
         "- Si date de naissance avec dropdowns séparés (mois + année):\n"
         "  * Année: choisis une année cohérente pour 25 ans (2001, 2000, 1999).\n"
         "  * Mois: choisis un mois réaliste (évite le mois en cours pour éviter des âges < 25).\n"
@@ -638,10 +639,11 @@ def build_batch_prompt(question_blocks: list[dict]) -> str:
         "Évite systématiquement: X, Autre, Non-binaire, Préfère ne pas répondre."
     )
 
-    # Contrainte âge : toujours 25 ans
+    # Contrainte âge / année de naissance
     lines.append(
         "Pour toute question sur l'âge ou la date de naissance:\n"
-        "- Si champ texte (âge, années, ans): réponds '25' ou '25 ans'.\n"
+        "- Si la question demande explicitement l'ANNÉE de naissance (ex: 'année de naissance', 'year of birth', 'birth year', 'born in', 'né en'), réponds UNIQUEMENT avec une année sur 4 chiffres (YYYY), jamais un âge.\n"
+        "- Si la question demande l'âge (âge, years old, ans), réponds '25' ou '25 ans'.\n"
         "- Si date de naissance avec dropdowns séparés (mois + année):\n"
         "  * Année: choisis une année cohérente pour 25 ans (2001, 2000, 1999).\n"
         "  * Mois: choisis un mois réaliste (évite le mois en cours pour éviter des âges < 25).\n"

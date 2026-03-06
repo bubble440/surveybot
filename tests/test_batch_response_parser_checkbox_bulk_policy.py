@@ -1,3 +1,5 @@
+import datetime
+
 from surveybot.Survey.batch_response_parser import sanitize_actions
 
 
@@ -66,3 +68,32 @@ def test_checkbox_bulk_policy_does_not_apply_without_explicit_multi_hint():
     cleaned = sanitize_actions(actions, qid_meta=qid_meta)
 
     assert cleaned == actions
+
+
+def test_sanitize_birth_year_text_converts_age_to_four_digit_year():
+    actions = [
+        {
+            "qid": "Q1",
+            "target_id": "single_007c206eb4da",
+            "value": "25",
+            "itype": "text",
+            "context": "Quelle est votre année de naissance ? Saisissez une réponse numérique.",
+            "raw": "Q1 //// single_007c206eb4da //// 25 //// text //// Quelle est votre année de naissance ?",
+        }
+    ]
+
+    qid_meta = {
+        "Q1": {
+            "question": "Quelle est votre année de naissance ?",
+            "itype": "text",
+            "max_select": 1,
+            "min_select": 1,
+            "target_id": "single_007c206eb4da",
+            "options": [],
+        }
+    }
+
+    cleaned = sanitize_actions(actions, qid_meta=qid_meta)
+
+    assert cleaned[0]["value"] == str(datetime.datetime.utcnow().year - 25)
+    assert "sanitized_birth_year" in cleaned[0]["raw"]
