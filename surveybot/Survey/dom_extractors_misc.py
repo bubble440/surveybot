@@ -1633,6 +1633,13 @@ def _extract_cmix_grid_question_blocks(driver, frame_chain: list[int] | None) ->
 
     for table in tables[:10]:  # Limite anti-explosion
         try:
+            parent_q = ""
+            try:
+                container = table.find_element(By.XPATH, "ancestor::div[contains(@class,'cm-element')][1]")
+                parent_q = _norm(container.find_element(By.CSS_SELECTOR, "div.cm-qtext").text or "")
+            except Exception:
+                parent_q = ""
+
             col_headers: list[str] = []
             try:
                 header_cells = table.find_elements(By.CSS_SELECTOR, "tr.cm-grid-row-header td, tr.cm-grid-row-header th")
@@ -1714,6 +1721,8 @@ def _extract_cmix_grid_question_blocks(driver, frame_chain: list[int] | None) ->
                     if len(options) < 2 or not option_xpath_map:
                         continue
 
+                    question = f"{parent_q} : {row_label}" if parent_q else row_label
+
                     group_key = f"cmix_grid:name:{radio_name}"
                     target_id = make_target_id("group", group_key, row_label)
 
@@ -1723,7 +1732,7 @@ def _extract_cmix_grid_question_blocks(driver, frame_chain: list[int] | None) ->
                             "kind": "group",
                             "itype": "radio",
                             "group_key": group_key,
-                            "question": row_label,
+                            "question": question,
                             "option_xpath_map": option_xpath_map,
                             "frame_chain": frame_chain,
                             "cmix": True,
@@ -1734,7 +1743,7 @@ def _extract_cmix_grid_question_blocks(driver, frame_chain: list[int] | None) ->
 
                     blocks.append(
                         {
-                            "question": row_label,
+                            "question": question,
                             "itype": "radio",
                             "options": options,
                             "max_select": 1,
