@@ -2071,8 +2071,11 @@ def _extract_single_consent_checkbox_block(driver, frame_chain: list[int] | None
 
     frame_chain = list(frame_chain or [])
 
+    cb = None
+
+    # Pattern historique (Wicket consentContainer) conservé tel quel.
     try:
-        checkboxes = driver.find_elements(
+        explicit_consent_checkboxes = driver.find_elements(
             By.CSS_SELECTOR,
             "#consentContainer25 input[type='checkbox'], "
             "[id*='consentContainer'] input[type='checkbox'], "
@@ -2082,12 +2085,51 @@ def _extract_single_consent_checkbox_block(driver, frame_chain: list[int] | None
             "input[type='checkbox'][name*='consentContainer']",
         )
     except Exception:
-        return []
+        explicit_consent_checkboxes = []
 
-    if len(checkboxes) != 1:
-        return []
+    if len(explicit_consent_checkboxes) == 1:
+        cb = explicit_consent_checkboxes[0]
 
-    cb = checkboxes[0]
+    # Pattern DOM minimal et additif:
+    # - bouton CTA disabled dans un form
+    # - un checkbox unique dans ce même form
+    # - pas de structure radio/groupe classique autour
+    if cb is None:
+        try:
+            disabled_ctas = driver.find_elements(
+                By.CSS_SELECTOR,
+                "form button[disabled], "
+                "form input[type='submit'][disabled], "
+                "form input[type='button'][disabled]",
+            )
+        except Exception:
+            disabled_ctas = []
+
+        for cta in disabled_ctas:
+            try:
+                form = cta.find_element(By.XPATH, "ancestor::form[1]")
+            except Exception:
+                continue
+
+            try:
+                radios_in_form = form.find_elements(By.CSS_SELECTOR, "input[type='radio']")
+            except Exception:
+                radios_in_form = []
+            if radios_in_form:
+                continue
+
+            try:
+                form_checkboxes = form.find_elements(By.CSS_SELECTOR, "input[type='checkbox']")
+            except Exception:
+                form_checkboxes = []
+            if len(form_checkboxes) != 1:
+                continue
+
+            cb = form_checkboxes[0]
+            break
+
+    if cb is None:
+        return []
 
     try:
         ctas = driver.find_elements(
@@ -2113,6 +2155,17 @@ def _extract_single_consent_checkbox_block(driver, frame_chain: list[int] | None
                 break
         except Exception:
             continue
+
+    if not has_accept_cta:
+        try:
+            ctas = driver.find_elements(
+                By.CSS_SELECTOR,
+                "form button[disabled], form input[type='submit'][disabled], form input[type='button'][disabled]",
+            )
+        except Exception:
+            ctas = []
+
+        has_accept_cta = len(ctas) > 0
 
     if not has_accept_cta:
         return []
@@ -2153,9 +2206,22 @@ def _extract_single_consent_checkbox_block(driver, frame_chain: list[int] | None
         question = ""
 
     if not question:
+        try:
+            inferred = _norm(_find_question_text_near_element(cb) or "")
+            if inferred:
+                question = inferred
+        except Exception:
+            question = ""
+
+    if not question:
         question = "Politique de confidentialité / consentement"
 
     group_base = cb_name or cb_id
+    if not group_base:
+        try:
+            group_base = _best_xpath_for_element(driver, cb)
+        except Exception:
+            group_base = ""
     if not group_base:
         return []
 
@@ -2165,9 +2231,11 @@ def _extract_single_consent_checkbox_block(driver, frame_chain: list[int] | None
     if cb_id:
         id_lit = _xpath_literal(cb_id)
         option_xpath = f"(//label[@for={id_lit}] | //*[@id={id_lit}])[1]"
-    else:
+    elif cb_name:
         name_lit = _xpath_literal(cb_name)
         option_xpath = f"(//input[@type='checkbox' and @name={name_lit}]/ancestor::label[1] | //input[@type='checkbox' and @name={name_lit}])[1]"
+    else:
+        option_xpath = _best_xpath_for_element(driver, cb)
 
     option_xpath_map = {_norm_key(label_txt): option_xpath}
 
