@@ -4045,6 +4045,130 @@ def _extract_jqm_lrw_collapsible_radio_rows(driver, frame_chain: list[int] | Non
     return blocks
 
 
+def _extract_jqm_lrw_collapsible_checkbox_rows(driver, frame_chain: list[int] | None) -> list[dict]:
+    """Extrait les blocs checkbox LRW/jQuery Mobile rendus en accordéon.
+
+    Gate DOM strict (additif):
+    - `div.collapsible-container.ui-collapsible-set`
+    - au moins 2 `div.collapsible-button-group`
+    - chaque ligne expose un `input[type='checkbox'][name]` + labels textuels
+    """
+    blocks: list[dict] = []
+
+    try:
+        containers = driver.find_elements(By.CSS_SELECTOR, "div.collapsible-container.ui-collapsible-set")
+    except Exception:
+        return blocks
+
+    for container in containers:
+        try:
+            rows = container.find_elements(By.XPATH, "./div[contains(@class,'collapsible-button-group')]")
+        except Exception:
+            rows = []
+        if len(rows) < 2:
+            continue
+
+        candidate_blocks: list[dict] = []
+        for row in rows:
+            try:
+                try:
+                    heading_span = row.find_element(
+                        By.CSS_SELECTOR,
+                        "div.ui-collapsible-heading button.ui-collapsible-heading-toggle span.mrQuestionText",
+                    )
+                    header = _norm(heading_span.text or heading_span.get_attribute("innerText") or "")
+                except Exception:
+                    header = ""
+
+                # jQuery Mobile ajoute parfois un texte annexe de statut:
+                # "click to expand contents".
+                header = _norm(re.sub(r"\bclick to expand contents\b", "", header, flags=re.IGNORECASE))
+                if not header:
+                    continue
+
+                try:
+                    checkboxes = row.find_elements(By.CSS_SELECTOR, "div.ui-collapsible-content input[type='checkbox'][name]")
+                except Exception:
+                    checkboxes = []
+                if len(checkboxes) < 2:
+                    continue
+
+                options: list[str] = []
+                option_xpath_map: dict[str, str] = {}
+
+                for checkbox in checkboxes:
+                    try:
+                        c_name = (checkbox.get_attribute("name") or "").strip()
+                        c_id = (checkbox.get_attribute("id") or "").strip()
+                        c_value = (checkbox.get_attribute("value") or "").strip()
+                        if not c_name or not c_id:
+                            continue
+
+                        try:
+                            label = row.find_element(By.CSS_SELECTOR, f"label[for='{c_id}']")
+                            label_txt = _norm(label.text or label.get_attribute("innerText") or "")
+                        except Exception:
+                            label_txt = ""
+                        if not label_txt:
+                            continue
+
+                        norm_key = _norm_key(label_txt)
+                        if norm_key in option_xpath_map:
+                            continue
+
+                        xp = (
+                            f"(//input[@type='checkbox' and @name={_xpath_literal(c_name)}"
+                            + (f" and @value={_xpath_literal(c_value)}" if c_value else "")
+                            + "]/ancestor::label[1] | "
+                            f"//input[@type='checkbox' and @name={_xpath_literal(c_name)}"
+                            + (f" and @value={_xpath_literal(c_value)}" if c_value else "")
+                            + "])[1]"
+                        )
+                        option_xpath_map[norm_key] = xp
+                        options.append(label_txt)
+                    except Exception:
+                        continue
+
+                if len(options) < 2:
+                    continue
+
+                group_key = f"checkbox:jqm_collapsible:{_norm_key(header)}"
+                target_id = make_target_id("group", group_key, header)
+
+                register_target(
+                    target_id,
+                    {
+                        "kind": "group",
+                        "itype": "checkbox",
+                        "group_key": group_key,
+                        "question": header,
+                        "option_xpath_map": option_xpath_map,
+                        "frame_chain": frame_chain or [],
+                    },
+                )
+
+                candidate_blocks.append(
+                    {
+                        "question": header,
+                        "itype": "checkbox",
+                        "options": options,
+                        "max_select": _compute_max_select("checkbox", options, header),
+                        "target_id": target_id,
+                        "context": {"kind": "group", "group_key": group_key},
+                    }
+                )
+            except Exception:
+                continue
+
+        if len(candidate_blocks) >= 2:
+            blocks.extend(candidate_blocks)
+
+    if blocks:
+        log_debug("[DOM_JQM_COLLAPSIBLE]", f"checkbox_rows_extracted={len(blocks)}")
+
+    return blocks
+
+
 def _extract_decipher_clickable_ranking_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
     """Decipher clickable ranking text tool (`#customToolArea` + `.customItem`).
 
