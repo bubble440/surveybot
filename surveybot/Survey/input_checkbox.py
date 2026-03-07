@@ -524,7 +524,8 @@ def click_checkbox_by_label(driver, target_text: str, context_hint: str | None =
             best.wrap.scrollIntoView({block: 'center', inline: 'center'});
             best.wrap.click();
 
-            if (!best.inp.checked) {
+            const selectedRadio = best.wrap.querySelector('div.option_radio');
+            if (!(selectedRadio && selectedRadio.classList.contains('input_on'))) {
               return null;
             }
 
