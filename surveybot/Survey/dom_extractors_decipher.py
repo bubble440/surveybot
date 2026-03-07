@@ -150,10 +150,14 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
             except Exception:
                 col_header_nodes = []
             col_labels: list[str] = []
+            col_labels_by_header_id: dict[str, str] = {}
             for h in col_header_nodes:
                 txt = _visible_text(h)
+                hid = (h.get_attribute("id") or "").strip()
                 if txt and txt not in col_labels:
                     col_labels.append(txt)
+                if txt and hid:
+                    col_labels_by_header_id[hid] = txt
 
             if len(col_labels) >= 2:
                 try:
@@ -196,14 +200,30 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
                         if inp_name != row_name or not inp_id:
                             continue
 
+                        col_label = ""
                         try:
-                            label_txt = _visible_text(answers.find_element(By.CSS_SELECTOR, f"label[for='{inp_id}']"))
+                            cell = inp.find_element(By.XPATH, "ancestor::td[1]")
+                            headers_attr = (cell.get_attribute("headers") or "").strip()
                         except Exception:
-                            label_txt = ""
-                        if not label_txt:
+                            headers_attr = ""
+                        if headers_attr:
+                            for header_id in headers_attr.split():
+                                candidate = col_labels_by_header_id.get(header_id)
+                                if candidate:
+                                    col_label = candidate
+                                    break
+
+                        if not col_label:
+                            raw_value = (inp.get_attribute("value") or "").strip()
+                            if raw_value.isdigit():
+                                idx = int(raw_value)
+                                if 0 <= idx < len(col_labels):
+                                    col_label = col_labels[idx]
+
+                        if not col_label:
                             continue
 
-                        label_norm = _norm_lc(label_txt)
+                        label_norm = _norm_lc(col_label)
                         if not label_norm or label_norm in option_xpath_map:
                             continue
 
@@ -212,7 +232,7 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
                             "//ancestor::*[contains(concat(' ',normalize-space(@class),' '),' clickableCell ')"
                             " or contains(concat(' ',normalize-space(@class),' '),' element ')][1]"
                         )
-                        options.append(label_txt)
+                        options.append(col_label)
                         option_xpath_map[label_norm] = xp
 
                     if len(options) < 2:
