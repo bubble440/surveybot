@@ -1184,15 +1184,30 @@ def execute_survey_page(driver, api_key, ctx=None):
                 for action in (actions or []):
                     qid = getattr(action, "qid", "") or ""
                     meta = qid_meta.get(qid) if qid else None
+                    if not meta:
+                        # Fallback: chercher par target_id si qid absent
+                        tid = getattr(action, "target_id", "") or ""
+                        if tid:
+                            meta = next(
+                                (m for m in qid_meta.values() if m.get("target_id") == tid),
+                                None,
+                            )
                     if meta:
                         ctx.record(
                             question=meta.get("question", ""),
                             options=meta.get("options") or [],
                             answer=getattr(action, "value", "") or "",
                         )
-            except Exception:
-                pass
-
+                    else:
+                        # Dernier recours : on enregistre ce qu'on a
+                        ctx.record(
+                            question=qid or "unknown",
+                            options=[],
+                            answer=getattr(action, "value", "") or "",
+                        )
+            except Exception as e:
+                print(f"[SURVEY_CTX] record error: {e}")
+                
         # --- Post-actions CTA nav (sauf Walr cardsort géré par answer-button) ---
         if _should_skip_post_actions_navigation(driver, question_blocks):
             print("[WALR_CS] skip post-actions CTA navigation (cardsort flow)")
