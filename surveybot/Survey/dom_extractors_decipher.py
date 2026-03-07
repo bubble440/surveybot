@@ -628,10 +628,10 @@ def _extract_focusvision_cardsort_block(driver, frame_chain: list[int] | None) -
     """
     Extrait un bloc cardsort FocusVision (drag & drop de cartes).
     
-    Pattern DOM:
-    - Container: div.question.cardsort
-    - Cards à déplacer: .cardsort__card
-    - Buckets cibles: .cardsort__bucket
+    Pattern DOM (2 variantes observables):
+    - Legacy: div.question.cardsort + .cardsort__card/.cardsort__bucket
+    - Decipher sq-cardsort: div.question .sq-cardsort +
+      .sq-cardsort-card/.sq-cardsort-bucket
     - Question: .question-text
     
     Stratégie:
@@ -647,25 +647,58 @@ def _extract_focusvision_cardsort_block(driver, frame_chain: list[int] | None) -
     Returns:
         Dict avec metadata ou None si pas trouvé
     """
-    try:
-        # Chercher conteneur cardsort
-        container = driver.find_element(By.CSS_SELECTOR, "div.question.cardsort")
-    except Exception:
+    selector_profiles = (
+        {
+            "container": "div.question.cardsort",
+            "cards": ".cardsort__card",
+            "buckets": ".cardsort__bucket",
+            "bucket_label": ".cardsort__bucket-label",
+        },
+        {
+            # Scope DOM minimal: widget Decipher sq-cardsort explicitement présent.
+            "container": ".sq-cardsort",
+            "cards": ".sq-cardsort-card",
+            "buckets": ".sq-cardsort-bucket",
+            "bucket_label": ".sq-cardsort-bucket-legend",
+        },
+    )
+
+    container = None
+    profile = None
+    for candidate in selector_profiles:
+        try:
+            container = driver.find_element(By.CSS_SELECTOR, candidate["container"])
+            profile = candidate
+            break
+        except Exception:
+            continue
+
+    if container is None or profile is None:
         return None
 
     # Question text
     question = ""
+    question_root = container
+    if profile["container"] == ".sq-cardsort":
+        try:
+            question_root = container.find_element(By.XPATH, "ancestor::div[contains(concat(' ',normalize-space(@class),' '),' question ')][1]")
+        except Exception:
+            question_root = container
     try:
-        question = (container.find_element(By.CSS_SELECTOR, ".question-text").text or "").strip()
+        question = (question_root.find_element(By.CSS_SELECTOR, ".question-text").text or "").strip()
     except Exception:
-        question = (container.text or "").strip().split("\n")[0].strip()
+        question = (question_root.text or "").strip().split("\n")[0].strip()
 
     # Cartes
     cards = []
     try:
-        card_elements = container.find_elements(By.CSS_SELECTOR, ".cardsort__card")
+        card_elements = container.find_elements(By.CSS_SELECTOR, profile["cards"])
         for card in card_elements:
             card_text = (card.text or "").strip()
+            # sq-cardsort injecte un faux item de complétion: on l'ignore explicitement.
+            card_class = (card.get_attribute("class") or "").lower()
+            if "sq-cardsort-completion" in card_class:
+                continue
             if card_text:
                 cards.append(card_text)
     except Exception:
@@ -674,11 +707,11 @@ def _extract_focusvision_cardsort_block(driver, frame_chain: list[int] | None) -
     # Buckets (catégories de destination)
     buckets = []
     try:
-        bucket_elements = container.find_elements(By.CSS_SELECTOR, ".cardsort__bucket")
+        bucket_elements = container.find_elements(By.CSS_SELECTOR, profile["buckets"])
         for bucket in bucket_elements:
             # Chercher le label du bucket
             try:
-                bucket_label = bucket.find_element(By.CSS_SELECTOR, ".cardsort__bucket-label")
+                bucket_label = bucket.find_element(By.CSS_SELECTOR, profile["bucket_label"])
                 bucket_text = (bucket_label.text or "").strip()
             except Exception:
                 bucket_text = (bucket.text or "").strip()
