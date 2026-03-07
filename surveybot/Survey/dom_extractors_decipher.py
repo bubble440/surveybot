@@ -657,8 +657,8 @@ def _extract_focusvision_cardsort_block(driver, frame_chain: list[int] | None) -
         {
             # Scope DOM minimal: widget Decipher sq-cardsort explicitement présent.
             "container": ".sq-cardsort",
-            "cards": ".sq-cardsort-card",
-            "buckets": ".sq-cardsort-bucket",
+            "cards": ".sq-cardsort-card-legend",
+            "buckets": ".sq-cardsort-bucket-legend",
             "bucket_label": ".sq-cardsort-bucket-legend",
         },
     )
@@ -694,11 +694,15 @@ def _extract_focusvision_cardsort_block(driver, frame_chain: list[int] | None) -
     try:
         card_elements = container.find_elements(By.CSS_SELECTOR, profile["cards"])
         for card in card_elements:
-            card_text = (card.text or "").strip()
-            # sq-cardsort injecte un faux item de complétion: on l'ignore explicitement.
-            card_class = (card.get_attribute("class") or "").lower()
-            if "sq-cardsort-completion" in card_class:
-                continue
+            if profile["container"] == ".sq-cardsort":
+                try:
+                    card_root = card.find_element(By.XPATH, "ancestor::li[contains(concat(' ',normalize-space(@class),' '),' sq-cardsort-card ')][1]")
+                    card_class = (card_root.get_attribute("class") or "").lower()
+                    if "sq-cardsort-completion" in card_class:
+                        continue
+                except Exception:
+                    pass
+            card_text = (card.text or card.get_attribute("innerText") or "").strip()
             if card_text:
                 cards.append(card_text)
     except Exception:
@@ -709,13 +713,8 @@ def _extract_focusvision_cardsort_block(driver, frame_chain: list[int] | None) -
     try:
         bucket_elements = container.find_elements(By.CSS_SELECTOR, profile["buckets"])
         for bucket in bucket_elements:
-            # Chercher le label du bucket
-            try:
-                bucket_label = bucket.find_element(By.CSS_SELECTOR, profile["bucket_label"])
-                bucket_text = (bucket_label.text or "").strip()
-            except Exception:
-                bucket_text = (bucket.text or "").strip()
-            
+            bucket_text = (bucket.text or bucket.get_attribute("innerText") or "").strip()
+
             if bucket_text:
                 buckets.append(bucket_text)
     except Exception:
