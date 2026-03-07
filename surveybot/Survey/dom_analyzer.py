@@ -1008,6 +1008,35 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
 
     groups: Dict[tuple[str, str], List[Any]] = {}
 
+    def _is_focusvision_table_mode_matrix_cell(el) -> bool:
+        """
+        Détecte les cellules d'une grille Decipher/FocusVision `table-mode`
+        déjà couvertes par l'extracteur dédié `_extract_focusvision_answers_list_groups`.
+
+        Garde-fou DOM-first strict:
+        - input radio/checkbox au format name `ans<d>.<d>.<d>`
+        - dans une table `table.grid.grid-table-mode[data-settings*='table-mode']`
+        """
+        try:
+            raw_name = (el.get_attribute("name") or "").strip()
+        except Exception:
+            return False
+
+        if not re.fullmatch(r"ans\d+\.\d+\.\d+", raw_name):
+            return False
+
+        try:
+            return bool(
+                el.find_elements(
+                    By.XPATH,
+                    "ancestor::table[contains(concat(' ', normalize-space(@class), ' '), ' grid ') and "
+                    "contains(concat(' ', normalize-space(@class), ' '), ' grid-table-mode ') and "
+                    "contains(@data-settings, 'table-mode')][1]",
+                )
+            )
+        except Exception:
+            return False
+
     def _choice_has_visible_proxy(el) -> bool:
         """
         Certains frameworks masquent l'input radio/checkbox natif et n'affichent
@@ -1066,6 +1095,8 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         try:
             itype = _detect_itype(el)
             if itype not in ("radio", "checkbox"):
+                continue
+            if _is_focusvision_table_mode_matrix_cell(el):
                 continue
             # Masqué
             try:
