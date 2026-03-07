@@ -1145,7 +1145,8 @@ def execute_survey_page(driver, api_key, ctx=None):
     client = openai.OpenAI(api_key=api_key)
 
     if question_blocks:
-        prompt = prompt_builder.build_batch_prompt(question_blocks, ctx=ctx)
+        question_blocks_for_batch = prompt_builder.expand_question_blocks_for_batch(question_blocks)
+        prompt = prompt_builder.build_batch_prompt(question_blocks_for_batch, ctx=ctx)
 
         instruction_raw = client.responses.create(
             input=prompt,
@@ -1154,7 +1155,10 @@ def execute_survey_page(driver, api_key, ctx=None):
 
         raw_text = instruction_raw.output_text
         # contraintes max_select par QID (doit matcher le build_batch_prompt)
-        qid_constraints = {f"Q{i}": int((b.get("max_select", 1) or 1)) for i, b in enumerate(question_blocks, start=1)}
+        qid_constraints = {
+            f"Q{i}": int((b.get("max_select", 1) or 1))
+            for i, b in enumerate(question_blocks_for_batch, start=1)
+        }
         if (os.getenv("LOG_LEVEL") or "").strip().lower() == "debug":
             print(f"[survey_executor][debug] qid_constraints={qid_constraints}")
 
@@ -1169,7 +1173,7 @@ def execute_survey_page(driver, api_key, ctx=None):
                 "target_id": (b.get("target_id") or ""),
                 "context": (b.get("context") or {}),
             }
-            for i, b in enumerate(question_blocks, start=1)
+            for i, b in enumerate(question_blocks_for_batch, start=1)
         }
 
         actions = batch_response_parser.parse_batch_response(raw_text, constraints=qid_constraints, qid_meta=qid_meta)

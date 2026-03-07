@@ -19,6 +19,7 @@ NE JAMAIS utiliser "," car les options peuvent contenir des virgules internes.
 
 from __future__ import annotations
 from typing import List, Dict, Any
+from copy import deepcopy
 import unicodedata
 import re
 
@@ -420,6 +421,48 @@ def _matrix_row_labels(block: Dict[str, Any]) -> list[str]:
     return [_escape(str(r)) for r in rows if _norm(str(r))]
 
 
+def expand_question_blocks_for_batch(question_blocks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Déplie les matrices multi-lignes en entrées QID unitaires (1 QID par ligne matrix).
+
+    Garde-fou DOM : on n'active ce comportement que pour les blocks matrix qui exposent
+    explicitement context.matrix_rows et qui n'ont pas déjà une matrix_active_row.
+    """
+    expanded: List[Dict[str, Any]] = []
+    for block in question_blocks or []:
+        if not isinstance(block, dict):
+            expanded.append(block)
+            continue
+
+        itype = _norm_folded_lc(block.get("itype"))
+        context = block.get("context") if isinstance(block.get("context"), dict) else {}
+        matrix_rows = context.get("matrix_rows") if isinstance(context, dict) else None
+        active_row = _norm(str((context or {}).get("matrix_active_row", "")))
+
+        should_expand = (
+            itype == "matrix"
+            and isinstance(matrix_rows, list)
+            and bool(matrix_rows)
+            and not active_row
+        )
+        if not should_expand:
+            expanded.append(block)
+            continue
+
+        for raw_row in matrix_rows:
+            row_label = _norm(str(raw_row or ""))
+            if not row_label:
+                continue
+            cloned = deepcopy(block)
+            cloned_context = cloned.get("context") if isinstance(cloned.get("context"), dict) else {}
+            cloned_context["matrix_active_row"] = row_label
+            cloned["context"] = cloned_context
+            cloned["max_select"] = 1
+            expanded.append(cloned)
+
+    return expanded
+
+
 # =========================
 # Heuristiques métier
 # =========================
@@ -582,6 +625,7 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
     IMPORTANT: Pour les multi-select, le séparateur OBLIGATOIRE est "|".
     """
     lines: list[str] = []
+    question_blocks = expand_question_blocks_for_batch(question_blocks)
 
     # Inject survey session context if available (coherence across pages)
     if ctx is not None:
