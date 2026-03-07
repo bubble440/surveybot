@@ -6,8 +6,8 @@ import sys, json, time, traceback
 from urllib.parse import urlparse
 from preselection.config_loader import load_config
 from launch import start_heartbeat_thread, acquire_account_lock_or_exit, mark_bot_running
-from launch import install_sigterm_handler, start_runtime_guard, launch_driver_or_fail, init_session_and_enter_surveys
-from launch import start_hot_reload_thread, run_main_loop, build_notifier, soft_restart
+from launch import install_sigterm_handler, start_runtime_guard, launch_driver_or_fail, init_session_and_enter_surveys, install_sigusr1_handler
+from launch import start_hot_reload_thread, run_main_loop, build_notifier, soft_restart, start_debug_http_server
 from Management.guards.runtime_guard import get_guard
 from config import is_attach_mode, RUN_ENV, RUN_MODE, BROWSER_MODE, is_prod_like, should_run_guard_monitor, should_run_heartbeat, should_run_hot_reload, log_config_summary
 
@@ -382,6 +382,12 @@ def run_attach_takeover(driver, *, api_key: str, account_id: str) -> None:
     import time
     import Survey.survey_executor as survey_executor
     import Management.guards.survey_difficulty_guard as difficulty_guard
+    from Survey.survey_context import SurveyContext
+    import Survey.survey_solver as survey_solver
+
+    # Instancier et exposer le contexte dès le début du takeover
+    _ctx = SurveyContext(session_id=account_id, openai_api_key=api_key)
+    survey_solver._current_survey_ctx = _ctx
 
     _attach_select_tab(driver)
 
@@ -476,7 +482,7 @@ def run_attach_takeover(driver, *, api_key: str, account_id: str) -> None:
 
         ### Résultat attendu dans les logs avec clé 2Captcha configurée
             
-            ok = survey_executor.execute_survey_page(driver, api_key)
+            ok = survey_executor.execute_survey_page(driver, api_key, ctx=_ctx)
             print(f"[ATTACH] step={i}/{max_steps} ok={ok} url={_attach_display_url(driver.current_url)}")
         except Exception as e:
             print(f"[ATTACH][ERROR] step={i} {type(e).__name__}: {e}")
@@ -513,6 +519,8 @@ def main():
         # - pas de navigation TopSurveys
         # - pas de quit() (sinon tu fermes ton Chrome)
         driver = launch_driver_or_fail(config, account_id)
+        from Survey.survey_solver import get_current_survey_ctx
+        start_debug_http_server(get_current_survey_ctx)
 
         api_key = (
             os.getenv("OPENAI_API_KEY")
@@ -530,6 +538,10 @@ def main():
     acquire_account_lock_or_exit(account_id)
     mark_bot_running(account_id)
     install_sigterm_handler(account_id)
+    install_sigusr1_handler()
+
+    from Survey.survey_solver import get_current_survey_ctx
+    start_debug_http_server(get_current_survey_ctx)
 
     notify_fn = build_notifier(config)
 
