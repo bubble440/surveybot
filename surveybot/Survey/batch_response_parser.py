@@ -449,6 +449,9 @@ def _selection_bounds_for_qid(qid: str, raw_max: int, qmeta: dict | None, itype_
     if is_multi_text:
         return max_select, max_select
 
+    if itype == "matrix":
+        return 1, max_select
+
     # Par défaut explicite et stable: 1
     if itype != "checkbox":
         return 1, 1
@@ -609,16 +612,57 @@ def _is_matrix_action(itype: str, qid: str | None, target_id: str | None, qid_me
     return False
 
 
-def _parse_matrix_value(value: str) -> tuple[str, str] | tuple[None, None]:
+def _parse_matrix_pairs(value: str) -> list[tuple[str, str]]:
+    """
+    Parse une valeur matrix en liste de paires (row, col).
+
+    Format canonique supporté:
+      - row_label || col_label
+      - row_label || col1|col2|col3   (matrix checkbox multi-colonnes)
+
+    Compatibilité contrôlée (même ligne uniquement):
+      - row || col1 || row || col2
+    """
     txt = (value or "").strip()
     if not txt or "||" not in txt:
-        return None, None
-    left, right = txt.split("||", 1)
-    row_label = (left or "").strip()
-    col_label = (right or "").strip()
-    if not row_label or not col_label:
-        return None, None
-    return row_label, col_label
+        return []
+
+    parts = [p.strip() for p in txt.split("||")]
+    if len(parts) < 2:
+        return []
+
+    # Compatibilité input ambigu: row || col1 || row || col2
+    if len(parts) >= 4 and len(parts) % 2 == 0:
+        pairs: list[tuple[str, str]] = []
+        first_row = parts[0]
+        if not first_row:
+            return []
+        for i in range(0, len(parts), 2):
+            row = parts[i]
+            col = parts[i + 1]
+            if not row or not col or row != first_row:
+                return []
+            pairs.append((row, col))
+        return pairs
+
+    row_label = parts[0]
+    right = "||".join(parts[1:]).strip()
+    if not row_label or not right:
+        return []
+
+    col_labels = [c.strip() for c in right.split("|") if c.strip()]
+    if not col_labels:
+        return []
+
+    seen: set[str] = set()
+    pairs: list[tuple[str, str]] = []
+    for col in col_labels:
+        key = col.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        pairs.append((row_label, col))
+    return pairs
 
 
 def _is_cmix_simple_grid_other_specify_block(qmeta: dict | None) -> bool:
@@ -786,20 +830,19 @@ def parse_batch_response(raw: str, constraints: Optional[Dict[str, int]] = None,
                 value = normalized
 
         is_matrix = _is_matrix_action(itype=itype, qid=qid, target_id=target_id, qid_meta=qid_meta)
-        matrix_row_label = None
-        matrix_col_label = None
+        matrix_pairs: list[tuple[str, str]] = []
         if is_matrix:
-            matrix_row_label, matrix_col_label = _parse_matrix_value(value)
-            ok = bool(matrix_row_label and matrix_col_label)
+            matrix_pairs = _parse_matrix_pairs(value)
+            ok = bool(matrix_pairs)
             print(
-                f"[PARSER_MATRIX] target_id={target_id!r} row={matrix_row_label!r} col={matrix_col_label!r} ok={ok}"
+                f"[PARSER_MATRIX] target_id={target_id!r} pairs={matrix_pairs!r} ok={ok}"
             )
             if not ok:
                 continue
 
-        values = [matrix_col_label] if is_matrix else _split_values(value, itype=itype, max_select=mx)
+        values = [col for _, col in matrix_pairs] if is_matrix else _split_values(value, itype=itype, max_select=mx)
 
-        for v in values:
+        for idx_v, v in enumerate(values):
             v = (v or "").strip()
             if not v and not target_id:
                 continue
@@ -837,8 +880,8 @@ def parse_batch_response(raw: str, constraints: Optional[Dict[str, int]] = None,
                     "value": v,
                     "itype": itype,
                     "context": context,
-                    "matrix_row_label": matrix_row_label,
-                    "matrix_col_label": matrix_col_label if is_matrix else None,
+                    "matrix_row_label": matrix_pairs[idx_v][0] if is_matrix else None,
+                    "matrix_col_label": matrix_pairs[idx_v][1] if is_matrix else None,
                     "raw": line,
                 }
             )

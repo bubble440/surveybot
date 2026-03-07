@@ -50,3 +50,39 @@ def test_parse_matrix_value_accepts_matrix_itype_from_llm():
     assert actions[0]["itype"] == "matrix"
     assert actions[0]["matrix_row_label"] == "Amazon Prime Video"
     assert actions[0]["matrix_col_label"] == "Très favorable"
+
+
+def test_parse_matrix_value_supports_multiple_columns_for_same_row():
+    raw = "Q1 //// group_d83814e34163 //// Whey protéines || En ligne, sur Amazon|En magasin, chez Decathlon, Intersport ou  Fitness Boutique //// matrix //// Où avez-vous acheté chacun de ces produits ?"
+    constraints = {"Q1": 12}
+    qid_meta = {
+        "Q1": {
+            "itype": "matrix",
+            "target_id": "group_d83814e34163",
+        }
+    }
+
+    actions = parse_batch_response(raw, constraints=constraints, qid_meta=qid_meta)
+
+    assert len(actions) == 2
+    assert actions[0]["matrix_row_label"] == "Whey protéines"
+    assert actions[0]["matrix_col_label"] == "En ligne, sur Amazon"
+    assert actions[1]["matrix_row_label"] == "Whey protéines"
+    assert actions[1]["matrix_col_label"] == "En magasin, chez Decathlon, Intersport ou  Fitness Boutique"
+
+
+def test_parse_matrix_value_accepts_repeated_row_pair_compat_mode():
+    raw = "Q1 //// group_d83814e34163 //// Whey protéines || En ligne, sur Amazon || Whey protéines || En magasin, chez Decathlon, Intersport ou  Fitness Boutique //// matrix //// Où avez-vous acheté chacun de ces produits ?"
+    constraints = {"Q1": 12}
+    qid_meta = {
+        "Q1": {
+            "itype": "matrix",
+            "target_id": "group_d83814e34163",
+        }
+    }
+
+    actions = parse_batch_response(raw, constraints=constraints, qid_meta=qid_meta)
+
+    assert len(actions) == 2
+    assert actions[0]["matrix_row_label"] == "Whey protéines"
+    assert actions[1]["matrix_row_label"] == "Whey protéines"
