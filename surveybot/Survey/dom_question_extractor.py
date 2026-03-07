@@ -549,6 +549,15 @@ def _group_key_for_choice(el, itype: str) -> str:
                 # Sans normalisation, chaque option devient un groupe distinct.
                 # On compacte donc la clé sur la racine commune du name.
                 if itype == "checkbox":
+                    # CloudResearch/Sentry-like pattern: les options d'une même
+                    # question partagent `data-checkbox-group`, tandis que `name`
+                    # est suffixé par option (`...selection.opt_xxx`).
+                    # Scope DOM strict: uniquement si l'attribut groupe existe ET
+                    # le `name` suit explicitement le pattern `.opt_`.
+                    data_checkbox_group = _norm_lc(el.get_attribute("data-checkbox-group") or "")
+                    if data_checkbox_group and re.search(r"\.opt_[a-z0-9_-]+$", clean_name, flags=re.IGNORECASE):
+                        clean_name = data_checkbox_group
+
                     # SPSSMR/HTMLPlayer pattern (ex: Escalent): les options d'une
                     # même question checkbox peuvent avoir des names tous distincts
                     # (`_QQ1_Cr1`, `_QQ1_Cr2`, ...). Dans ce cas, grouper par `name`

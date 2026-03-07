@@ -116,6 +116,16 @@ def test_checkbox_group_key_normalizes_decipher_dot_index_suffix():
     assert _group_key_for_choice(el, "checkbox") == "ans10518.0"
 
 
+def test_checkbox_group_key_prefers_data_checkbox_group_for_option_suffixed_names():
+    el = _FakeChoice(
+        {
+            "name": "eeb1a543046e48e2a1fdb26140c66fd2.selection.opt_BB9OQpYLRNQPB",
+            "data-checkbox-group": "eeb1a543046e48e2a1fdb26140c66fd2.selection",
+        }
+    )
+    assert _group_key_for_choice(el, "checkbox") == "eeb1a543046e48e2a1fdb26140c66fd2.selection"
+
+
 def test_checkbox_group_key_normalizes_yougov_question_multiple_suffixes():
     siblings = [
         _FakeChoice({"name": "w38-response-1"}),
