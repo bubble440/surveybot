@@ -794,7 +794,56 @@ def _has_visible_answerables(driver) -> bool:
 
     return False
 
+
+def _has_visible_active_cardsort(driver) -> bool:
+    """
+    Détecte un widget cardsort réellement actif/visible.
+
+    Objectif: empêcher un faux `end_screen` quand un cardsort FocusVision/Decipher
+    affiche un texte de complétion interne (ex: "Vous avez terminé !") ou un
+    bouton continue masqué, alors que la question est encore en cours.
+    """
+    js = r"""
+      const isVisible = (e) => {
+        if (!e) return false;
+        const s = window.getComputedStyle(e);
+        if (!s) return false;
+        if (s.display === 'none' || s.visibility === 'hidden' || s.opacity === '0') return false;
+        const r = e.getBoundingClientRect();
+        return r && r.width > 20 && r.height > 20;
+      };
+
+      const widgets = Array.from(document.querySelectorAll('.sq-cardsort'));
+      for (const widget of widgets) {
+        if (!isVisible(widget)) continue;
+
+        // Signaux DOM minimaux d'une question cardsort active
+        const hasBuckets = widget.querySelectorAll('.sq-cardsort-bucket').length >= 2;
+        const hasCards = widget.querySelectorAll('.sq-cardsort-card, .sq-cardsort-card-item').length >= 1;
+
+        if (hasBuckets && hasCards) return true;
+      }
+
+      return false;
+    """
+
+    for chain in iter_frame_chains(driver, max_depth=2):
+        with switch_to_frame_chain(driver, chain) as ok:
+            if not ok:
+                continue
+            try:
+                if driver.execute_script(js):
+                    return True
+            except Exception:
+                continue
+
+    return False
+
 def is_end_screen(driver):
+    # Hard guard: un cardsort visible/actif n'est pas un écran de fin.
+    if _has_visible_active_cardsort(driver):
+        return False
+
     # 1) Un end-screen doit contenir un signal explicite de fin (pas juste "merci")
     txt = _page_text_lc(driver)
 
