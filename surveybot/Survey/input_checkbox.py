@@ -566,6 +566,29 @@ def click_checkbox_by_label(driver, target_text: str, context_hint: str | None =
 
             scroll_into_view(driver, cb)
 
+            # Guard DOM minimal: si le label contient un lien (<a>), on évite tout
+            # clic sur le label/texte pour ne jamais déclencher de navigation parasite.
+            # On agit uniquement sur l'input checkbox lié.
+            label_has_link = False
+            try:
+                label_has_link = bool(label.find_elements(By.XPATH, ".//a[@href]"))
+            except Exception:
+                label_has_link = False
+
+            if label_has_link:
+                try:
+                    driver.execute_script(
+                        """
+                        const cb = arguments[0];
+                        if (!cb.checked) cb.checked = true;
+                        cb.dispatchEvent(new Event('input', { bubbles: true }));
+                        cb.dispatchEvent(new Event('change', { bubbles: true }));
+                        """,
+                        cb,
+                    )
+                except Exception:
+                    pass
+
             if not is_checked(cb):
                 try:
                     cb.click()
