@@ -418,6 +418,14 @@ def _is_angular_material_image_only_textarea_question(
         if has_readable_near_question:
             return False
 
+        # Cas nominal du bug ciblé:
+        # - image taImage présente dans le scope de question,
+        # - aucun texte de question lisible près du textarea.
+        # Dans ce contexte DOM-only, on considère la question non exploitable
+        # même si un texte générique court a été extrait ailleurs.
+        if not has_readable_near_question:
+            return True
+
         return (not q_norm) or (bool(heading_lc) and q_lc == heading_lc)
     except Exception:
         return False
