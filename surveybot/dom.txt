@@ -8,26 +8,323 @@
 <div class="survey-body">
 <div class="survey-header no-select" unselectable="on">
 <div class="logo logo-left no-select" unselectable="on">
-        <img src="/survey/selfserve/1819/logo_6f97a8cc1003fe3a2de3a9761701e069.png?cbst_=yrNYrN" class="logo-image no-select" alt="logo" unselectable="on">
+        <img src="/survey/selfserve/1819/logo_6f97a8cc1003fe3a2de3a9761701e069.png?cbst_=951Y8P" class="logo-image no-select" alt="logo" unselectable="on">
     </div>
     <!-- /.logo -->
-<div role="progressbar" aria-valuenow="13" aria-valuemin="0" aria-valuemax="100" class="progress-bar progress-top no-select" title="barre de progression - 13% terminer" unselectable="on">
-<div class="progress-box-outer no-select" aria-hidden="true" unselectable="on"><span class="progress-box-completed no-select" style="width: 13%;" unselectable="on"></span></div>
-<div class="progress-text no-select" aria-hidden="true" unselectable="on">13%</div>
+<div role="progressbar" aria-valuenow="23" aria-valuemin="0" aria-valuemax="100" class="progress-bar progress-top no-select" title="barre de progression - 23% terminer" unselectable="on">
+<div class="progress-box-outer no-select" aria-hidden="true" unselectable="on"><span class="progress-box-completed no-select" style="width: 23%;" unselectable="on"></span></div>
+<div class="progress-text no-select" aria-hidden="true" unselectable="on">23%</div>
 </div>
 <!-- /.progress-bar -->
 </div>
 <!-- /.survey-header -->
 
 <form id="primary" name="primary" method="post" action="/survey/selfserve/1a7f/260223" enctype="application/x-www-form-urlencoded" novalidate="">
-<input type="hidden" name="_v2_counter" value="10">
+<input type="hidden" name="_v2_counter" value="17">
 <!-- @@XYZZY@@ -->
-<div id="question_S6" class="question radio label_S6  ">
-<h1 title="question" class="question-text no-select" id="question_text_S6" unselectable="on">À quelle fréquence en moyenne achetez-vous chacun des produits suivants&nbsp;?</h1>
+<style type="text/css">
+    #question_S8c_1 .answers-table,.question-source {
+        display: none;
+    }
+    /* cardsort top-level container */
+    .sq-cardsort-S8c_1.sq-cardsort-desktop {
+    }
+    /* all cards */
+    .sq-cardsort-S8c_1 .sq-cardsort-card-item {
+        
+        /* bug #21065 fix - limit the width of the card if max-width is specified */
+        max-width: 500px;
+    }
+    /* each individual card */
+
+    /* disabled card */
+    .sq-cardsort-S8c_1 .sq-cardsort-card.sq-cardsort-state-disabled .sq-cardsort-card-item {
+        
+    }
+    /* hovered card */
+    .sq-cardsort-S8c_1 .sq-cardsort-card.sq-cardsort-state-hovered .sq-cardsort-card-item {
+        
+    }
+    /* selected card */
+    .sq-cardsort-S8c_1 .sq-cardsort-card.sq-cardsort-state-selected .sq-cardsort-card-item {
+        
+    }
+    /* card in bucket contents view */
+    /* bug 13492 fix starts here */
+    .sq-cardsort-S8c_1 .sq-cardsort-contents-overlay .sq-cardsort-card {
+        /* bug #20850 - use theme colors */
+        /*background-color: #ffffff;*/
+        min-height: 48px;
+        height: auto !important;
+        height: 48px;
+        text-align: left;
+    }
+    .sq-cardsort-S8c_1 .sq-cardsort-contents-overlay .sq-cardsort-card-item { /* this line is not part of the bug 13492 fix */
+        /* bug #20850 - use theme colors */
+        /*color: #454545;*/
+        display: block;
+        min-height: 48px;
+        height: auto !important;
+        height: 48px;
+        text-align: left;
+        width: auto;
+         /* this line is not part of the bug 13492 fix */
+    }
+    .sq-cardsort-S8c_1 .sq-cardsort-contents-overlay .sq-cardsort-card-legend {
+        display: inline-block;
+        height: auto;
+        line-height: normal;
+        margin-left: 50px;
+        min-height: auto;
+        text-align: left;
+    }
+    /* bug 13492 fix ends here */
+
+    /* buckets container */
+    .sq-cardsort-S8c_1.sq-cardsort-desktop .sq-cardsort-buckets {
+    }
+    /* all buckets */
+    .sq-cardsort-S8c_1 .sq-cardsort-bucket {
+        /* bug #20850 - use theme colors */
+        /*background-color: #ffffff;*/
+        /*color: #454545;*/
+        width:15%; height:70px; text-align:center !important; overflow:hidden; padding:0 !important;
+        /* bug #21065 fix - limit the width of the bucket if max-width is specified */
+    }
+    .sq-cardsort-S8c_1 .sq-cardsort-bucket-item {
+        margin-right: 5px;
+    }
+    /* each individual bucket */
+
+
+
+
+
+
+
+    /* disabled bucket */
+    .sq-cardsort-S8c_1 .sq-cardsort-bucket.sq-cardsort-state-disabled {
+        /* bug #20850 - use theme colors */
+        /*background-color: #bfbfbf;*/
+        /*color: #636363;*/
+        
+    }
+    /* hovered bucket */
+    .sq-cardsort-S8c_1 .sq-cardsort-bucket.sq-cardsort-state-hovered {
+        /* bug #20850 - use theme colors */
+        /*background-color: #d8d8d8;*/
+        /*color: #454545;*/
+        
+    }
+    /* selected bucket */
+    .sq-cardsort-S8c_1 .sq-cardsort-bucket.sq-cardsort-state-selected {
+        /* bug #20850 - use theme colors */
+        /*background-color: #d8d8d8;*/
+        /*color: #454545;*/
+        
+    }
+    /* card counter on bucket */
+    .sq-cardsort-S8c_1 .sq-cardsort-bucket-count {
+        /* bug #20850 - use theme colors */
+        /*color: #ffffff;*/
+        
+        display: none;
+    }
+    /* disabled card counter on bucket */
+    .sq-cardsort-S8c_1 .sq-cardsort-bucket-count.sq-cardsort-state-disabled {
+        /* bug #20850 - use theme colors */
+        /*color: #bfbfbf;*/
+        
+    }
+    /* hovered card counter on bucket */
+    .sq-cardsort-S8c_1 .sq-cardsort-bucket-count.sq-cardsort-state-hovered {
+        /* bug #20850 - use theme colors */
+        /*color: #d8d8d8;*/
+        
+    }
+    /* progress indicator */
+    .sq-cardsort-S8c_1 .sq-cardsort-progress {
+        ;
+        display: none;
+    }
+    /* navigation (previous, next) buttons */
+    .sq-cardsort-S8c_1 .sq-cardsort-previous,.sq-cardsort-S8c_1 .sq-cardsort-next {
+        /* bug #20850 - use theme colors */
+        /*background-color: #ffffff;*/
+        /*color: #454545;*/
+        ;
+    }
+    /* navigation previous button not shown via disableNavigation style variable */
+    .sq-cardsort-S8c_1 .sq-cardsort-previous {
+        display: none;
+    }
+    /* disabled navigation (previous, next) buttons */
+    .sq-cardsort-S8c_1 .sq-cardsort-previous.sq-cardsort-state-disabled,.sq-cardsort-S8c_1 .sq-cardsort-next.sq-cardsort-state-disabled {
+        /* bug #20850 - use theme colors */
+        /*background-color: #bfbfbf;*/
+        /*color: #636363;*/
+        
+    }
+    /* hovered navigation (previous, next) buttons */
+    .sq-cardsort-S8c_1 .sq-cardsort-previous.sq-cardsort-state-hovered,.sq-cardsort-S8c_1 .sq-cardsort-next.sq-cardsort-state-hovered {
+        /* bug #20850 - use theme colors */
+        /*background-color: #d8d8d8;*/
+        /*color: #454545;*/
+        
+    }
+    /* completion message */
+    .sq-cardsort-S8c_1 .sq-cardsort-completion-item {
+        
+    }
+    </style>
+
+    <script type="text/javascript">
+    (function($) {
+        var setupOptions = {
+ "displayCounter": false,
+ "buttonNextHTML": "Suivant <i class=\"fa-icon-chevron-right\"></i>",
+ "bucketSelectCSS": {},
+ "cardDisableCSS": {},
+ "contentsCardCSS": {},
+ "cardCSS": {},
+ "completionHTML": "<b>Vous avez termin\u00e9\u00a0!</b> <br/><i>Veuillez cliquer sur le bouton \u00ab\u00a0Continuer\u00a0\u00bb pour poursuivre.</i>",
+ "buttonPreviousHTML": "<i class=\"fa-icon-chevron-left\"></i> Prev",
+ "animationDuration": 500,
+ "wrapBuckets": true,
+ "bucketCountCSS": {},
+ "iconButtonCSS": {},
+ "progressCSS": {},
+ "completionCSS": {},
+ "displayProgress": false,
+ "iconButtonHoverCSS": {},
+ "iconButtonDisableCSS": {},
+ "dragAndDrop": true,
+ "bucketMaxWidth": "",
+ "cardHoverCSS": {},
+ "bucketHoverCSS": {},
+ "bucketCountDisableCSS": {},
+ "cardMaxWidth": "500px",
+ "cardSelectCSS": {},
+ "bucketCountHoverCSS": {},
+ "bucketDisableCSS": {},
+ "themeFile": "",
+ "autoSubmit": false,
+ "bucketsPerRow": 0,
+ "automaticAdvance": true,
+ "bucketCSS": {
+  "padding": "0 !important",
+  "width": "15%",
+  "overflow": "hidden",
+  "height": "70px",
+  "text-align": "center !important"
+ },
+ "displayNavigation": false
+};
+        $.extend(setupOptions, {
+            // bug 16635: add autoadvance and drag and drop begin
+            automaticAdvance: 0,
+            dragAndDrop: 1,
+            // bug 16635: add autoadvance and drag and drop end
+            debug: false,
+            deviceClass: "desktop",
+            grouping: "rows",
+            infiniteScroll: 0,
+            label: "S8c_1",
+            style: "cardsort",
+            type: "checkbox",
+            uniformBucketSize: 1,
+            uniformCardSize: 1
+        });
+        $ (function() {
+            Survey.question.cardsort.setup(setupOptions);
+        });
+    })(jQuery);
+    </script>
+<div id="question_S8c_1" class="question checkbox label_S8c_1  ">
+<h1 title="question" class="question-text no-select" id="question_text_S8c_1" unselectable="on">Dans lesquels des  <b class="no-select" unselectable="on">magasins</b> suivants avez-vous acheté chacun de ces produits au cours des <b class="no-select" unselectable="on">trois derniers mois</b>, le cas échéant&nbsp;?</h1>
 <!-- /.question-text -->
 
-<h2 title="instructions" class="instruction-text no-select" unselectable="on">Veuillez sélectionner une réponse par produit.</h2>
+<h2 title="instructions" class="instruction-text no-select" unselectable="on">Veuillez sélectionner toutes les réponses pertinentes pour chaque ligne.</h2>
 <!-- /.instruction-text -->
+<!-- assign sq-cardsort-mobile class if mobile device -->
+    <!-- assign sq-cardsort-desktop class if not mobile device -->
+    <div class="sq-cardsort sq-cardsort-S8c_1 sq-cardsort-desktop">
+      <div class="sq-cardsort-body">
+        <div class="sq-cardsort-cards-view">
+          <ul class="sq-cardsort-cards" style="display: block; width: 500px;">
+            <li atleast="1" atmost="7" class="sq-cardsort-card sq-cardsort-card-r1 ui-draggable sq-cardsort-state-selected" index="0" selections="1" style="display: inline-block;">
+              <span class="sq-cardsort-card-remove sq-cardsort-card-remove-r1 sq-cardsort-icon-button"><i class="fa-icon-ban-circle"></i></span>
+              <div class="sq-cardsort-card-item sq-cardsort-card-item-r1" index="0" style="height: 77px; width: 501px;"><p class="sq-cardsort-card-legend sq-cardsort-card-legend-left" style="margin-bottom: 10px; margin-top: 10px;">
+        Whey protéines en poudre (à base de produits laitiers / de lactosérum)
+    </p></div>
+            </li>
+            <!-- completion message - not actually a card -->
+            <li class="sq-cardsort-completion">
+              <div class="sq-cardsort-completion-item" aria-live="assertive"><b>Vous avez terminé&nbsp;!</b> <br><i>Veuillez cliquer sur le bouton «&nbsp;Continuer&nbsp;» pour poursuivre.</i></div>
+            </li>
+          </ul>
+          <span class="sq-cardsort-progress">1/1</span>
+          <span class="sq-cardsort-icon-button sq-cardsort-previous sq-cardsort-state-disabled" disabled="disabled" style=""><i class="fa-icon-chevron-left"></i> Prev</span>
+          <span class="sq-cardsort-icon-button sq-cardsort-next">Suivant <i class="fa-icon-chevron-right"></i></span>
+        </div>
+        <div class="sq-cardsort-buckets-view">
+          <ul class="sq-cardsort-buckets">
+            <li class="sq-cardsort-bucket sq-cardsort-bucket-c2 ui-droppable sq-cardsort-bucket-selected sq-cardsort-state-selected" index="1" style="display: inline-block; height: 73px; width: 139px; pointer-events: none;">
+              <div class="sq-cardsort-bucket-item sq-cardsort-bucket-item-c2" index="1" style="margin-bottom: 9px; margin-top: 9px;"><p class="sq-cardsort-bucket-legend sq-cardsort-bucket-legend-top">
+Directement sur le site Web de la marque
+<div class="force-width" style="width:9.5px"></div></p></div>
+              <span class="sq-cardsort-bucket-count sq-cardsort-bucket-count-c2 sq-cardsort-icon-button">1</span>
+            </li>
+            <li class="sq-cardsort-bucket sq-cardsort-bucket-c3 ui-droppable" index="2" style="display: inline-block; height: 73px; width: 139px;">
+              <div class="sq-cardsort-bucket-item sq-cardsort-bucket-item-c3" index="2" style="margin-bottom: 23px; margin-top: 23px;"><p class="sq-cardsort-bucket-legend sq-cardsort-bucket-legend-top">
+Leclerc
+<div class="force-width" style="width:9.5px"></div></p></div>
+              <span class="sq-cardsort-bucket-count sq-cardsort-bucket-count-c3 sq-cardsort-icon-button sq-cardsort-state-disabled" disabled="disabled">0</span>
+            </li>
+            <li class="sq-cardsort-bucket sq-cardsort-bucket-c4 ui-droppable" index="3" style="display: inline-block; height: 73px; width: 139px;">
+              <div class="sq-cardsort-bucket-item sq-cardsort-bucket-item-c4" index="3" style="margin-bottom: 9px; margin-top: 9px;"><p class="sq-cardsort-bucket-legend sq-cardsort-bucket-legend-top">
+Carrefour (y compris Carrefour Market)
+<div class="force-width" style="width:9.5px"></div></p></div>
+              <span class="sq-cardsort-bucket-count sq-cardsort-bucket-count-c4 sq-cardsort-icon-button sq-cardsort-state-disabled" disabled="disabled">0</span>
+            </li>
+            <li class="sq-cardsort-bucket sq-cardsort-bucket-c5 ui-droppable" index="4" style="display: inline-block; height: 73px; width: 139px;">
+              <div class="sq-cardsort-bucket-item sq-cardsort-bucket-item-c5" index="4" style="margin-bottom: 23px; margin-top: 23px;"><p class="sq-cardsort-bucket-legend sq-cardsort-bucket-legend-top">
+Auchan
+<div class="force-width" style="width:9.5px"></div></p></div>
+              <span class="sq-cardsort-bucket-count sq-cardsort-bucket-count-c5 sq-cardsort-icon-button sq-cardsort-state-disabled" disabled="disabled">0</span>
+            </li>
+            <li class="sq-cardsort-bucket sq-cardsort-bucket-c6 ui-droppable" index="5" style="display: inline-block; height: 73px; width: 139px;">
+              <div class="sq-cardsort-bucket-item sq-cardsort-bucket-item-c6" index="5" style="margin-bottom: 23px; margin-top: 23px;"><p class="sq-cardsort-bucket-legend sq-cardsort-bucket-legend-top">
+Intermarché
+<div class="force-width" style="width:9.5px"></div></p></div>
+              <span class="sq-cardsort-bucket-count sq-cardsort-bucket-count-c6 sq-cardsort-icon-button sq-cardsort-state-disabled" disabled="disabled">0</span>
+            </li>
+            <li class="sq-cardsort-bucket sq-cardsort-bucket-c7 ui-droppable" index="6" style="display: inline-block; height: 73px; width: 139px;">
+              <div class="sq-cardsort-bucket-item sq-cardsort-bucket-item-c7" index="6" style="margin-bottom: 16px; margin-top: 16px;"><p class="sq-cardsort-bucket-legend sq-cardsort-bucket-legend-top">
+Hyper et supermarchés U
+<div class="force-width" style="width:9.5px"></div></p></div>
+              <span class="sq-cardsort-bucket-count sq-cardsort-bucket-count-c7 sq-cardsort-icon-button sq-cardsort-state-disabled" disabled="disabled">0</span>
+            </li>
+            <li class="sq-cardsort-bucket sq-cardsort-bucket-c8 ui-droppable" index="7" style="display: inline-block; height: 73px; width: 139px;">
+              <div class="sq-cardsort-bucket-item sq-cardsort-bucket-item-c8" index="7" style="margin-bottom: 23px; margin-top: 23px;"><p class="sq-cardsort-bucket-legend sq-cardsort-bucket-legend-top">
+Monoprix
+<div class="force-width" style="width:9.5px"></div></p></div>
+              <span class="sq-cardsort-bucket-count sq-cardsort-bucket-count-c8 sq-cardsort-icon-button sq-cardsort-state-disabled" disabled="disabled">0</span>
+            </li>
+          </ul>
+        </div>
+      </div>
+      <!-- used to diplay the contents of a bucket -->
+      <div class="sq-cardsort-contents-overlay">
+        <div class="sq-cardsort-contents-bg"></div>
+        <span class="sq-cardsort-icon-button sq-cardsort-contents-close"><i class="fa-icon-remove"></i></span>
+        <div class="sq-cardsort-contents-view">
+          <div class="sq-cardsort-contents-title"></div>
+          <ul class="sq-cardsort-contents-cards"></ul>
+        </div>
+      </div>
+      <!-- used to diplay the contents of a bucket -->
+    </div>
 <div class="answers answers-table">
 <div class="fir fir-checkbox" style="display: none;">
 <span class="fir-icon">
@@ -49,501 +346,128 @@
 </svg>
 </span>
 </div>
-<table class="grid setWidth grid-table-mode" data-settings="auto-optimize mobile-mode group-by-row table-mode" data-height="" summary="This table contains form elements to answer the survey question">
-<tbody>
-<tr class="row mobile-top-border-row">
-<td colspan="9" class="cell nonempty mobile-top-border-cell"></td>
-</tr><tr class="row row-col-legends row-col-legends-top colCount-8">
+<table class="grid setWidth grid-table-mode" data-settings="force-desktop mobile-mode group-by-row table-mode" data-height="" summary="This table contains form elements to answer the survey question">
+<tbody><tr class="row row-col-legends row-col-legends-top colCount-7">
 <td class="cell empty empty-left empty-top unused mobile border-collapse"></td>
-<th scope="col" id="S6_c1" class="cell nonempty legend col-legend col-legend-top col-legend-basic legend-level-1 mobile border-collapse    no-select" unselectable="on" style="width: 89px; min-width: 89px;">
-Une fois par semaine ou plus
-</th><th scope="col" id="S6_c2" class="cell nonempty legend col-legend col-legend-top col-legend-basic legend-level-1 mobile border-collapse    no-select" unselectable="on" style="width: 89px; min-width: 89px;">
-Toutes les 2&nbsp;semaines
-</th><th scope="col" id="S6_c3" class="cell nonempty legend col-legend col-legend-top col-legend-basic legend-level-1 mobile border-collapse    no-select" unselectable="on" style="width: 89px; min-width: 89px;">
-Toutes les 3&nbsp;semaines
-</th><th scope="col" id="S6_c4" class="cell nonempty legend col-legend col-legend-top col-legend-basic legend-level-1 mobile border-collapse    no-select" unselectable="on" style="width: 89px; min-width: 89px;">
-Une fois par mois
-</th><th scope="col" id="S6_c5" class="cell nonempty legend col-legend col-legend-top col-legend-basic legend-level-1 mobile border-collapse    no-select" unselectable="on" style="width: 89px; min-width: 89px;">
-Une fois tous les 2&nbsp;à 3&nbsp;mois
-</th><th scope="col" id="S6_c6" class="cell nonempty legend col-legend col-legend-top col-legend-basic legend-level-1 mobile border-collapse    no-select" unselectable="on" style="width: 89px; min-width: 89px;">
-Une fois tous les 4&nbsp;à 6&nbsp;mois
-</th><th scope="col" id="S6_c7" class="cell nonempty legend col-legend col-legend-top col-legend-basic legend-level-1 mobile border-collapse    no-select" unselectable="on" style="width: 89px; min-width: 89px;">
-Moins souvent
-</th><th scope="col" id="S6_c8" class="cell nonempty legend col-legend col-legend-top col-legend-basic legend-level-1 mobile border-collapse    no-select" unselectable="on" style="width: 89px; min-width: 89px;">
-Je n’ai acheté ce produit qu’une seule fois.
-</th>
+<th scope="col" id="S8c_1_c2" class="cell nonempty legend col-legend col-legend-top col-legend-basic legend-level-1 mobile border-collapse    no-select" unselectable="on">
+Directement sur le site Web de la marque
+<div class="force-width" style="width:9.5px"></div></th><th scope="col" id="S8c_1_c3" class="cell nonempty legend col-legend col-legend-top col-legend-basic legend-level-1 mobile border-collapse    no-select" unselectable="on">
+Leclerc
+<div class="force-width" style="width:9.5px"></div></th><th scope="col" id="S8c_1_c4" class="cell nonempty legend col-legend col-legend-top col-legend-basic legend-level-1 mobile border-collapse    no-select" unselectable="on">
+Carrefour (y compris Carrefour Market)
+<div class="force-width" style="width:9.5px"></div></th><th scope="col" id="S8c_1_c5" class="cell nonempty legend col-legend col-legend-top col-legend-basic legend-level-1 mobile border-collapse    no-select" unselectable="on">
+Auchan
+<div class="force-width" style="width:9.5px"></div></th><th scope="col" id="S8c_1_c6" class="cell nonempty legend col-legend col-legend-top col-legend-basic legend-level-1 mobile border-collapse    no-select" unselectable="on">
+Intermarché
+<div class="force-width" style="width:9.5px"></div></th><th scope="col" id="S8c_1_c7" class="cell nonempty legend col-legend col-legend-top col-legend-basic legend-level-1 mobile border-collapse    no-select" unselectable="on">
+Hyper et supermarchés U
+<div class="force-width" style="width:9.5px"></div></th><th scope="col" id="S8c_1_c8" class="cell nonempty legend col-legend col-legend-top col-legend-basic legend-level-1 mobile border-collapse    no-select" unselectable="on">
+Monoprix
+<div class="force-width" style="width:9.5px"></div></th>
 
 </tr>
 </tbody>
-<tbody><tr class="row row-elements even colCount-8">
-<th scope="row" id="S6_r1_left" class="cell nonempty legend row-legend row-legend-left row-legend-basic legend-level-1 mobile border-collapse   no-select" unselectable="on">
-Whey protéines en poudre (à base de produits laitiers / de lactosérum)
-</th>
-<td headers="S6_c1" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+<tbody><tr class="row row-elements even colCount-7">
+<th scope="row" id="S8c_1_r1_left" class="cell nonempty legend row-legend row-legend-left row-legend-basic legend-level-1 mobile border-collapse   no-select" unselectable="on">
+        Whey protéines en poudre (à base de produits laitiers / de lactosérum)
+    </th>
+<td headers="S8c_1_c2" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
 <span class="cell-sub-wrapper cell-legend-right">
 <span class="cell-input cell-sub-column">
-<input type="radio" name="ans899.0.0" value="0" id="ans899.0.0" class="input radio fir-hidden" aria-labelledby="S6_r1_left S6_c1"><span class="fir-icon">
+<input type="checkbox" name="ans6890.1.0" id="ans6890.1.0" value="1" checked="checked" class="input checkbox fir-hidden" aria-labelledby="S8c_1_r1_left S8c_1_c2"><span class="fir-icon selected">
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
-<title> radio </title>
-<circle cx="10" cy="10" r="10" class="fir-base"></circle>
-<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
-<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+<title> checkbox </title>
+<path d="M15.8,0H3.9C1.8,0,0,2,0,4.1V16c0,2.2,1.8,4,3.9,4h11.8c2.2,0,4.2-1.8,4.2-4V4.1C20,2,18,0,15.8,0z M19,16 c0,1.6-1.6,3-3.2,3H3.9C2.3,19,1,17.7,1,16V4.1C1,2.5,2.3,1,3.9,1h11.8C17.4,1,19,2.5,19,4.1V16z" class="fir-base"></path>
+<path d="M19,16c0,1.6-1.6,3-3.2,3H3.9C2.3,19,1,17.7,1,16V4.1C1,2.5,2.3,1,3.9,1h11.8C17.4,1,19,2.5,19,4.1V16z" class="fir-bg"></path>
+<polygon points="9.1,16.3 2.5,11 4.1,9 8.7,12.6 15.6,3.7 17.7,5.2 " class="fir-selected"></polygon>
 </svg>
 </span>
 </span>
-<span class="cell-text cell-sub-column no-select" unselectable="on"><label for="ans899.0.0">Une fois par semaine ou plus</label> </span>
+<span class="cell-text cell-sub-column no-select" unselectable="on"><label for="ans6890.1.0">Directement sur le site Web de la marque</label> </span>
 </span>
-</td><td headers="S6_c2" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+</td><td headers="S8c_1_c3" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
 <span class="cell-sub-wrapper cell-legend-right">
 <span class="cell-input cell-sub-column">
-<input type="radio" name="ans899.0.0" value="1" id="ans899.1.0" class="input radio fir-hidden" aria-labelledby="S6_r1_left S6_c2"><span class="fir-icon">
+<input type="checkbox" name="ans6890.2.0" id="ans6890.2.0" value="1" class="input checkbox fir-hidden" aria-labelledby="S8c_1_r1_left S8c_1_c3"><span class="fir-icon">
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
-<title> radio </title>
-<circle cx="10" cy="10" r="10" class="fir-base"></circle>
-<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
-<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+<title> checkbox </title>
+<path d="M15.8,0H3.9C1.8,0,0,2,0,4.1V16c0,2.2,1.8,4,3.9,4h11.8c2.2,0,4.2-1.8,4.2-4V4.1C20,2,18,0,15.8,0z M19,16 c0,1.6-1.6,3-3.2,3H3.9C2.3,19,1,17.7,1,16V4.1C1,2.5,2.3,1,3.9,1h11.8C17.4,1,19,2.5,19,4.1V16z" class="fir-base"></path>
+<path d="M19,16c0,1.6-1.6,3-3.2,3H3.9C2.3,19,1,17.7,1,16V4.1C1,2.5,2.3,1,3.9,1h11.8C17.4,1,19,2.5,19,4.1V16z" class="fir-bg"></path>
+<polygon points="9.1,16.3 2.5,11 4.1,9 8.7,12.6 15.6,3.7 17.7,5.2 " class="fir-selected"></polygon>
 </svg>
 </span>
 </span>
-<span class="cell-text cell-sub-column no-select" unselectable="on"><label for="ans899.1.0">Toutes les 2&nbsp;semaines</label> </span>
+<span class="cell-text cell-sub-column no-select" unselectable="on"><label for="ans6890.2.0">Leclerc</label> </span>
 </span>
-</td><td headers="S6_c3" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+</td><td headers="S8c_1_c4" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
 <span class="cell-sub-wrapper cell-legend-right">
 <span class="cell-input cell-sub-column">
-<input type="radio" name="ans899.0.0" value="2" id="ans899.2.0" class="input radio fir-hidden" aria-labelledby="S6_r1_left S6_c3"><span class="fir-icon">
+<input type="checkbox" name="ans6890.3.0" id="ans6890.3.0" value="1" class="input checkbox fir-hidden" aria-labelledby="S8c_1_r1_left S8c_1_c4"><span class="fir-icon">
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
-<title> radio </title>
-<circle cx="10" cy="10" r="10" class="fir-base"></circle>
-<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
-<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+<title> checkbox </title>
+<path d="M15.8,0H3.9C1.8,0,0,2,0,4.1V16c0,2.2,1.8,4,3.9,4h11.8c2.2,0,4.2-1.8,4.2-4V4.1C20,2,18,0,15.8,0z M19,16 c0,1.6-1.6,3-3.2,3H3.9C2.3,19,1,17.7,1,16V4.1C1,2.5,2.3,1,3.9,1h11.8C17.4,1,19,2.5,19,4.1V16z" class="fir-base"></path>
+<path d="M19,16c0,1.6-1.6,3-3.2,3H3.9C2.3,19,1,17.7,1,16V4.1C1,2.5,2.3,1,3.9,1h11.8C17.4,1,19,2.5,19,4.1V16z" class="fir-bg"></path>
+<polygon points="9.1,16.3 2.5,11 4.1,9 8.7,12.6 15.6,3.7 17.7,5.2 " class="fir-selected"></polygon>
 </svg>
 </span>
 </span>
-<span class="cell-text cell-sub-column no-select" unselectable="on"><label for="ans899.2.0">Toutes les 3&nbsp;semaines</label> </span>
+<span class="cell-text cell-sub-column no-select" unselectable="on"><label for="ans6890.3.0">Carrefour (y compris Carrefour Market)</label> </span>
 </span>
-</td><td headers="S6_c4" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+</td><td headers="S8c_1_c5" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
 <span class="cell-sub-wrapper cell-legend-right">
 <span class="cell-input cell-sub-column">
-<input type="radio" name="ans899.0.0" value="3" id="ans899.3.0" class="input radio fir-hidden" aria-labelledby="S6_r1_left S6_c4"><span class="fir-icon">
+<input type="checkbox" name="ans6890.4.0" id="ans6890.4.0" value="1" class="input checkbox fir-hidden" aria-labelledby="S8c_1_r1_left S8c_1_c5"><span class="fir-icon">
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
-<title> radio </title>
-<circle cx="10" cy="10" r="10" class="fir-base"></circle>
-<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
-<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+<title> checkbox </title>
+<path d="M15.8,0H3.9C1.8,0,0,2,0,4.1V16c0,2.2,1.8,4,3.9,4h11.8c2.2,0,4.2-1.8,4.2-4V4.1C20,2,18,0,15.8,0z M19,16 c0,1.6-1.6,3-3.2,3H3.9C2.3,19,1,17.7,1,16V4.1C1,2.5,2.3,1,3.9,1h11.8C17.4,1,19,2.5,19,4.1V16z" class="fir-base"></path>
+<path d="M19,16c0,1.6-1.6,3-3.2,3H3.9C2.3,19,1,17.7,1,16V4.1C1,2.5,2.3,1,3.9,1h11.8C17.4,1,19,2.5,19,4.1V16z" class="fir-bg"></path>
+<polygon points="9.1,16.3 2.5,11 4.1,9 8.7,12.6 15.6,3.7 17.7,5.2 " class="fir-selected"></polygon>
 </svg>
 </span>
 </span>
-<span class="cell-text cell-sub-column no-select" unselectable="on"><label for="ans899.3.0">Une fois par mois</label> </span>
+<span class="cell-text cell-sub-column no-select" unselectable="on"><label for="ans6890.4.0">Auchan</label> </span>
 </span>
-</td><td headers="S6_c5" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+</td><td headers="S8c_1_c6" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
 <span class="cell-sub-wrapper cell-legend-right">
 <span class="cell-input cell-sub-column">
-<input type="radio" name="ans899.0.0" value="4" id="ans899.4.0" class="input radio fir-hidden" aria-labelledby="S6_r1_left S6_c5"><span class="fir-icon">
+<input type="checkbox" name="ans6890.5.0" id="ans6890.5.0" value="1" class="input checkbox fir-hidden" aria-labelledby="S8c_1_r1_left S8c_1_c6"><span class="fir-icon">
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
-<title> radio </title>
-<circle cx="10" cy="10" r="10" class="fir-base"></circle>
-<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
-<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+<title> checkbox </title>
+<path d="M15.8,0H3.9C1.8,0,0,2,0,4.1V16c0,2.2,1.8,4,3.9,4h11.8c2.2,0,4.2-1.8,4.2-4V4.1C20,2,18,0,15.8,0z M19,16 c0,1.6-1.6,3-3.2,3H3.9C2.3,19,1,17.7,1,16V4.1C1,2.5,2.3,1,3.9,1h11.8C17.4,1,19,2.5,19,4.1V16z" class="fir-base"></path>
+<path d="M19,16c0,1.6-1.6,3-3.2,3H3.9C2.3,19,1,17.7,1,16V4.1C1,2.5,2.3,1,3.9,1h11.8C17.4,1,19,2.5,19,4.1V16z" class="fir-bg"></path>
+<polygon points="9.1,16.3 2.5,11 4.1,9 8.7,12.6 15.6,3.7 17.7,5.2 " class="fir-selected"></polygon>
 </svg>
 </span>
 </span>
-<span class="cell-text cell-sub-column no-select" unselectable="on"><label for="ans899.4.0">Une fois tous les 2&nbsp;à 3&nbsp;mois</label> </span>
+<span class="cell-text cell-sub-column no-select" unselectable="on"><label for="ans6890.5.0">Intermarché</label> </span>
 </span>
-</td><td headers="S6_c6" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+</td><td headers="S8c_1_c7" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
 <span class="cell-sub-wrapper cell-legend-right">
 <span class="cell-input cell-sub-column">
-<input type="radio" name="ans899.0.0" value="5" id="ans899.5.0" class="input radio fir-hidden" aria-labelledby="S6_r1_left S6_c6"><span class="fir-icon">
+<input type="checkbox" name="ans6890.6.0" id="ans6890.6.0" value="1" class="input checkbox fir-hidden" aria-labelledby="S8c_1_r1_left S8c_1_c7"><span class="fir-icon">
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
-<title> radio </title>
-<circle cx="10" cy="10" r="10" class="fir-base"></circle>
-<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
-<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+<title> checkbox </title>
+<path d="M15.8,0H3.9C1.8,0,0,2,0,4.1V16c0,2.2,1.8,4,3.9,4h11.8c2.2,0,4.2-1.8,4.2-4V4.1C20,2,18,0,15.8,0z M19,16 c0,1.6-1.6,3-3.2,3H3.9C2.3,19,1,17.7,1,16V4.1C1,2.5,2.3,1,3.9,1h11.8C17.4,1,19,2.5,19,4.1V16z" class="fir-base"></path>
+<path d="M19,16c0,1.6-1.6,3-3.2,3H3.9C2.3,19,1,17.7,1,16V4.1C1,2.5,2.3,1,3.9,1h11.8C17.4,1,19,2.5,19,4.1V16z" class="fir-bg"></path>
+<polygon points="9.1,16.3 2.5,11 4.1,9 8.7,12.6 15.6,3.7 17.7,5.2 " class="fir-selected"></polygon>
 </svg>
 </span>
 </span>
-<span class="cell-text cell-sub-column no-select" unselectable="on"><label for="ans899.5.0">Une fois tous les 4&nbsp;à 6&nbsp;mois</label> </span>
+<span class="cell-text cell-sub-column no-select" unselectable="on"><label for="ans6890.6.0">Hyper et supermarchés U</label> </span>
 </span>
-</td><td headers="S6_c7" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+</td><td headers="S8c_1_c8" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
 <span class="cell-sub-wrapper cell-legend-right">
 <span class="cell-input cell-sub-column">
-<input type="radio" name="ans899.0.0" value="6" id="ans899.6.0" class="input radio fir-hidden" aria-labelledby="S6_r1_left S6_c7"><span class="fir-icon">
+<input type="checkbox" name="ans6890.7.0" id="ans6890.7.0" value="1" class="input checkbox fir-hidden" aria-labelledby="S8c_1_r1_left S8c_1_c8"><span class="fir-icon">
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
-<title> radio </title>
-<circle cx="10" cy="10" r="10" class="fir-base"></circle>
-<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
-<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+<title> checkbox </title>
+<path d="M15.8,0H3.9C1.8,0,0,2,0,4.1V16c0,2.2,1.8,4,3.9,4h11.8c2.2,0,4.2-1.8,4.2-4V4.1C20,2,18,0,15.8,0z M19,16 c0,1.6-1.6,3-3.2,3H3.9C2.3,19,1,17.7,1,16V4.1C1,2.5,2.3,1,3.9,1h11.8C17.4,1,19,2.5,19,4.1V16z" class="fir-base"></path>
+<path d="M19,16c0,1.6-1.6,3-3.2,3H3.9C2.3,19,1,17.7,1,16V4.1C1,2.5,2.3,1,3.9,1h11.8C17.4,1,19,2.5,19,4.1V16z" class="fir-bg"></path>
+<polygon points="9.1,16.3 2.5,11 4.1,9 8.7,12.6 15.6,3.7 17.7,5.2 " class="fir-selected"></polygon>
 </svg>
 </span>
 </span>
-<span class="cell-text cell-sub-column no-select" unselectable="on"><label for="ans899.6.0">Moins souvent</label> </span>
-</span>
-</td><td headers="S6_c8" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
-<span class="cell-sub-wrapper cell-legend-right">
-<span class="cell-input cell-sub-column">
-<input type="radio" name="ans899.0.0" value="7" id="ans899.7.0" class="input radio fir-hidden" aria-labelledby="S6_r1_left S6_c8"><span class="fir-icon">
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
-<title> radio </title>
-<circle cx="10" cy="10" r="10" class="fir-base"></circle>
-<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
-<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
-</svg>
-</span>
-</span>
-<span class="cell-text cell-sub-column no-select" unselectable="on"><label for="ans899.7.0">Je n’ai acheté ce produit qu’une seule fois.</label> </span>
-</span>
-</td>
-
-</tr><tr class="row row-elements odd colCount-8">
-<th scope="row" id="S6_r18_left" class="cell nonempty legend row-legend row-legend-left row-legend-basic legend-level-1 mobile border-collapse   no-select" unselectable="on">
-Collagène (boisson, poudre ou comprimés)
-</th>
-<td headers="S6_c1" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
-<span class="cell-sub-wrapper cell-legend-right">
-<span class="cell-input cell-sub-column">
-<input type="radio" name="ans899.0.17" value="0" id="ans899.0.17" class="input radio fir-hidden" aria-labelledby="S6_r18_left S6_c1"><span class="fir-icon">
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
-<title> radio </title>
-<circle cx="10" cy="10" r="10" class="fir-base"></circle>
-<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
-<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
-</svg>
-</span>
-</span>
-<span class="cell-text cell-sub-column no-select" unselectable="on"><label for="ans899.0.17">Une fois par semaine ou plus</label> </span>
-</span>
-</td><td headers="S6_c2" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
-<span class="cell-sub-wrapper cell-legend-right">
-<span class="cell-input cell-sub-column">
-<input type="radio" name="ans899.0.17" value="1" id="ans899.1.17" class="input radio fir-hidden" aria-labelledby="S6_r18_left S6_c2"><span class="fir-icon">
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
-<title> radio </title>
-<circle cx="10" cy="10" r="10" class="fir-base"></circle>
-<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
-<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
-</svg>
-</span>
-</span>
-<span class="cell-text cell-sub-column no-select" unselectable="on"><label for="ans899.1.17">Toutes les 2&nbsp;semaines</label> </span>
-</span>
-</td><td headers="S6_c3" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
-<span class="cell-sub-wrapper cell-legend-right">
-<span class="cell-input cell-sub-column">
-<input type="radio" name="ans899.0.17" value="2" id="ans899.2.17" class="input radio fir-hidden" aria-labelledby="S6_r18_left S6_c3"><span class="fir-icon">
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
-<title> radio </title>
-<circle cx="10" cy="10" r="10" class="fir-base"></circle>
-<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
-<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
-</svg>
-</span>
-</span>
-<span class="cell-text cell-sub-column no-select" unselectable="on"><label for="ans899.2.17">Toutes les 3&nbsp;semaines</label> </span>
-</span>
-</td><td headers="S6_c4" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
-<span class="cell-sub-wrapper cell-legend-right">
-<span class="cell-input cell-sub-column">
-<input type="radio" name="ans899.0.17" value="3" id="ans899.3.17" class="input radio fir-hidden" aria-labelledby="S6_r18_left S6_c4"><span class="fir-icon">
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
-<title> radio </title>
-<circle cx="10" cy="10" r="10" class="fir-base"></circle>
-<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
-<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
-</svg>
-</span>
-</span>
-<span class="cell-text cell-sub-column no-select" unselectable="on"><label for="ans899.3.17">Une fois par mois</label> </span>
-</span>
-</td><td headers="S6_c5" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
-<span class="cell-sub-wrapper cell-legend-right">
-<span class="cell-input cell-sub-column">
-<input type="radio" name="ans899.0.17" value="4" id="ans899.4.17" class="input radio fir-hidden" aria-labelledby="S6_r18_left S6_c5"><span class="fir-icon">
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
-<title> radio </title>
-<circle cx="10" cy="10" r="10" class="fir-base"></circle>
-<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
-<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
-</svg>
-</span>
-</span>
-<span class="cell-text cell-sub-column no-select" unselectable="on"><label for="ans899.4.17">Une fois tous les 2&nbsp;à 3&nbsp;mois</label> </span>
-</span>
-</td><td headers="S6_c6" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
-<span class="cell-sub-wrapper cell-legend-right">
-<span class="cell-input cell-sub-column">
-<input type="radio" name="ans899.0.17" value="5" id="ans899.5.17" class="input radio fir-hidden" aria-labelledby="S6_r18_left S6_c6"><span class="fir-icon">
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
-<title> radio </title>
-<circle cx="10" cy="10" r="10" class="fir-base"></circle>
-<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
-<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
-</svg>
-</span>
-</span>
-<span class="cell-text cell-sub-column no-select" unselectable="on"><label for="ans899.5.17">Une fois tous les 4&nbsp;à 6&nbsp;mois</label> </span>
-</span>
-</td><td headers="S6_c7" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
-<span class="cell-sub-wrapper cell-legend-right">
-<span class="cell-input cell-sub-column">
-<input type="radio" name="ans899.0.17" value="6" id="ans899.6.17" class="input radio fir-hidden" aria-labelledby="S6_r18_left S6_c7"><span class="fir-icon">
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
-<title> radio </title>
-<circle cx="10" cy="10" r="10" class="fir-base"></circle>
-<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
-<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
-</svg>
-</span>
-</span>
-<span class="cell-text cell-sub-column no-select" unselectable="on"><label for="ans899.6.17">Moins souvent</label> </span>
-</span>
-</td><td headers="S6_c8" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
-<span class="cell-sub-wrapper cell-legend-right">
-<span class="cell-input cell-sub-column">
-<input type="radio" name="ans899.0.17" value="7" id="ans899.7.17" class="input radio fir-hidden" aria-labelledby="S6_r18_left S6_c8"><span class="fir-icon">
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
-<title> radio </title>
-<circle cx="10" cy="10" r="10" class="fir-base"></circle>
-<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
-<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
-</svg>
-</span>
-</span>
-<span class="cell-text cell-sub-column no-select" unselectable="on"><label for="ans899.7.17">Je n’ai acheté ce produit qu’une seule fois.</label> </span>
-</span>
-</td>
-
-</tr><tr class="row row-elements even colCount-8">
-<th scope="row" id="S6_r8_left" class="cell nonempty legend row-legend row-legend-left row-legend-basic legend-level-1 mobile border-collapse   no-select" unselectable="on">
-Pré-workouts (poudre ou boisson)
-</th>
-<td headers="S6_c1" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
-<span class="cell-sub-wrapper cell-legend-right">
-<span class="cell-input cell-sub-column">
-<input type="radio" name="ans899.0.7" value="0" id="ans899.0.7" class="input radio fir-hidden" aria-labelledby="S6_r8_left S6_c1"><span class="fir-icon">
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
-<title> radio </title>
-<circle cx="10" cy="10" r="10" class="fir-base"></circle>
-<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
-<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
-</svg>
-</span>
-</span>
-<span class="cell-text cell-sub-column no-select" unselectable="on"><label for="ans899.0.7">Une fois par semaine ou plus</label> </span>
-</span>
-</td><td headers="S6_c2" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
-<span class="cell-sub-wrapper cell-legend-right">
-<span class="cell-input cell-sub-column">
-<input type="radio" name="ans899.0.7" value="1" id="ans899.1.7" class="input radio fir-hidden" aria-labelledby="S6_r8_left S6_c2"><span class="fir-icon">
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
-<title> radio </title>
-<circle cx="10" cy="10" r="10" class="fir-base"></circle>
-<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
-<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
-</svg>
-</span>
-</span>
-<span class="cell-text cell-sub-column no-select" unselectable="on"><label for="ans899.1.7">Toutes les 2&nbsp;semaines</label> </span>
-</span>
-</td><td headers="S6_c3" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
-<span class="cell-sub-wrapper cell-legend-right">
-<span class="cell-input cell-sub-column">
-<input type="radio" name="ans899.0.7" value="2" id="ans899.2.7" class="input radio fir-hidden" aria-labelledby="S6_r8_left S6_c3"><span class="fir-icon">
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
-<title> radio </title>
-<circle cx="10" cy="10" r="10" class="fir-base"></circle>
-<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
-<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
-</svg>
-</span>
-</span>
-<span class="cell-text cell-sub-column no-select" unselectable="on"><label for="ans899.2.7">Toutes les 3&nbsp;semaines</label> </span>
-</span>
-</td><td headers="S6_c4" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
-<span class="cell-sub-wrapper cell-legend-right">
-<span class="cell-input cell-sub-column">
-<input type="radio" name="ans899.0.7" value="3" id="ans899.3.7" class="input radio fir-hidden" aria-labelledby="S6_r8_left S6_c4"><span class="fir-icon">
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
-<title> radio </title>
-<circle cx="10" cy="10" r="10" class="fir-base"></circle>
-<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
-<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
-</svg>
-</span>
-</span>
-<span class="cell-text cell-sub-column no-select" unselectable="on"><label for="ans899.3.7">Une fois par mois</label> </span>
-</span>
-</td><td headers="S6_c5" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
-<span class="cell-sub-wrapper cell-legend-right">
-<span class="cell-input cell-sub-column">
-<input type="radio" name="ans899.0.7" value="4" id="ans899.4.7" class="input radio fir-hidden" aria-labelledby="S6_r8_left S6_c5"><span class="fir-icon">
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
-<title> radio </title>
-<circle cx="10" cy="10" r="10" class="fir-base"></circle>
-<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
-<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
-</svg>
-</span>
-</span>
-<span class="cell-text cell-sub-column no-select" unselectable="on"><label for="ans899.4.7">Une fois tous les 2&nbsp;à 3&nbsp;mois</label> </span>
-</span>
-</td><td headers="S6_c6" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
-<span class="cell-sub-wrapper cell-legend-right">
-<span class="cell-input cell-sub-column">
-<input type="radio" name="ans899.0.7" value="5" id="ans899.5.7" class="input radio fir-hidden" aria-labelledby="S6_r8_left S6_c6"><span class="fir-icon">
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
-<title> radio </title>
-<circle cx="10" cy="10" r="10" class="fir-base"></circle>
-<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
-<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
-</svg>
-</span>
-</span>
-<span class="cell-text cell-sub-column no-select" unselectable="on"><label for="ans899.5.7">Une fois tous les 4&nbsp;à 6&nbsp;mois</label> </span>
-</span>
-</td><td headers="S6_c7" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
-<span class="cell-sub-wrapper cell-legend-right">
-<span class="cell-input cell-sub-column">
-<input type="radio" name="ans899.0.7" value="6" id="ans899.6.7" class="input radio fir-hidden" aria-labelledby="S6_r8_left S6_c7"><span class="fir-icon">
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
-<title> radio </title>
-<circle cx="10" cy="10" r="10" class="fir-base"></circle>
-<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
-<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
-</svg>
-</span>
-</span>
-<span class="cell-text cell-sub-column no-select" unselectable="on"><label for="ans899.6.7">Moins souvent</label> </span>
-</span>
-</td><td headers="S6_c8" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
-<span class="cell-sub-wrapper cell-legend-right">
-<span class="cell-input cell-sub-column">
-<input type="radio" name="ans899.0.7" value="7" id="ans899.7.7" class="input radio fir-hidden" aria-labelledby="S6_r8_left S6_c8"><span class="fir-icon">
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
-<title> radio </title>
-<circle cx="10" cy="10" r="10" class="fir-base"></circle>
-<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
-<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
-</svg>
-</span>
-</span>
-<span class="cell-text cell-sub-column no-select" unselectable="on"><label for="ans899.7.7">Je n’ai acheté ce produit qu’une seule fois.</label> </span>
-</span>
-</td>
-
-</tr><tr class="row row-elements odd colCount-8">
-<th scope="row" id="S6_r2_left" class="cell nonempty legend row-legend row-legend-left row-legend-basic legend-level-1 mobile border-collapse   no-select" unselectable="on">
-Créatine en poudre
-</th>
-<td headers="S6_c1" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
-<span class="cell-sub-wrapper cell-legend-right">
-<span class="cell-input cell-sub-column">
-<input type="radio" name="ans899.0.1" value="0" id="ans899.0.1" class="input radio fir-hidden" aria-labelledby="S6_r2_left S6_c1"><span class="fir-icon">
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
-<title> radio </title>
-<circle cx="10" cy="10" r="10" class="fir-base"></circle>
-<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
-<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
-</svg>
-</span>
-</span>
-<span class="cell-text cell-sub-column no-select" unselectable="on"><label for="ans899.0.1">Une fois par semaine ou plus</label> </span>
-</span>
-</td><td headers="S6_c2" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
-<span class="cell-sub-wrapper cell-legend-right">
-<span class="cell-input cell-sub-column">
-<input type="radio" name="ans899.0.1" value="1" id="ans899.1.1" class="input radio fir-hidden" aria-labelledby="S6_r2_left S6_c2"><span class="fir-icon">
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
-<title> radio </title>
-<circle cx="10" cy="10" r="10" class="fir-base"></circle>
-<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
-<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
-</svg>
-</span>
-</span>
-<span class="cell-text cell-sub-column no-select" unselectable="on"><label for="ans899.1.1">Toutes les 2&nbsp;semaines</label> </span>
-</span>
-</td><td headers="S6_c3" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
-<span class="cell-sub-wrapper cell-legend-right">
-<span class="cell-input cell-sub-column">
-<input type="radio" name="ans899.0.1" value="2" id="ans899.2.1" class="input radio fir-hidden" aria-labelledby="S6_r2_left S6_c3"><span class="fir-icon">
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
-<title> radio </title>
-<circle cx="10" cy="10" r="10" class="fir-base"></circle>
-<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
-<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
-</svg>
-</span>
-</span>
-<span class="cell-text cell-sub-column no-select" unselectable="on"><label for="ans899.2.1">Toutes les 3&nbsp;semaines</label> </span>
-</span>
-</td><td headers="S6_c4" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
-<span class="cell-sub-wrapper cell-legend-right">
-<span class="cell-input cell-sub-column">
-<input type="radio" name="ans899.0.1" value="3" id="ans899.3.1" class="input radio fir-hidden" aria-labelledby="S6_r2_left S6_c4"><span class="fir-icon">
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
-<title> radio </title>
-<circle cx="10" cy="10" r="10" class="fir-base"></circle>
-<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
-<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
-</svg>
-</span>
-</span>
-<span class="cell-text cell-sub-column no-select" unselectable="on"><label for="ans899.3.1">Une fois par mois</label> </span>
-</span>
-</td><td headers="S6_c5" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
-<span class="cell-sub-wrapper cell-legend-right">
-<span class="cell-input cell-sub-column">
-<input type="radio" name="ans899.0.1" value="4" id="ans899.4.1" class="input radio fir-hidden" aria-labelledby="S6_r2_left S6_c5"><span class="fir-icon">
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
-<title> radio </title>
-<circle cx="10" cy="10" r="10" class="fir-base"></circle>
-<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
-<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
-</svg>
-</span>
-</span>
-<span class="cell-text cell-sub-column no-select" unselectable="on"><label for="ans899.4.1">Une fois tous les 2&nbsp;à 3&nbsp;mois</label> </span>
-</span>
-</td><td headers="S6_c6" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
-<span class="cell-sub-wrapper cell-legend-right">
-<span class="cell-input cell-sub-column">
-<input type="radio" name="ans899.0.1" value="5" id="ans899.5.1" class="input radio fir-hidden" aria-labelledby="S6_r2_left S6_c6"><span class="fir-icon">
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
-<title> radio </title>
-<circle cx="10" cy="10" r="10" class="fir-base"></circle>
-<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
-<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
-</svg>
-</span>
-</span>
-<span class="cell-text cell-sub-column no-select" unselectable="on"><label for="ans899.5.1">Une fois tous les 4&nbsp;à 6&nbsp;mois</label> </span>
-</span>
-</td><td headers="S6_c7" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
-<span class="cell-sub-wrapper cell-legend-right">
-<span class="cell-input cell-sub-column">
-<input type="radio" name="ans899.0.1" value="6" id="ans899.6.1" class="input radio fir-hidden" aria-labelledby="S6_r2_left S6_c7"><span class="fir-icon">
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
-<title> radio </title>
-<circle cx="10" cy="10" r="10" class="fir-base"></circle>
-<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
-<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
-</svg>
-</span>
-</span>
-<span class="cell-text cell-sub-column no-select" unselectable="on"><label for="ans899.6.1">Moins souvent</label> </span>
-</span>
-</td><td headers="S6_c8" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
-<span class="cell-sub-wrapper cell-legend-right">
-<span class="cell-input cell-sub-column">
-<input type="radio" name="ans899.0.1" value="7" id="ans899.7.1" class="input radio fir-hidden" aria-labelledby="S6_r2_left S6_c8"><span class="fir-icon">
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
-<title> radio </title>
-<circle cx="10" cy="10" r="10" class="fir-base"></circle>
-<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
-<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
-</svg>
-</span>
-</span>
-<span class="cell-text cell-sub-column no-select" unselectable="on"><label for="ans899.7.1">Je n’ai acheté ce produit qu’une seule fois.</label> </span>
+<span class="cell-text cell-sub-column no-select" unselectable="on"><label for="ans6890.7.0">Monoprix</label> </span>
 </span>
 </td>
 
@@ -553,8 +477,30 @@ Créatine en poudre
 </div>
 <!-- /.answers -->
 </div>
-<!-- /.question --><div class="survey-buttons">
-<input type="submit" name="continue" id="btn_continue" class="button continue" value="Continuer »" onclick="var i = document.createElement('input'); i.setAttribute('type', 'hidden');i.setAttribute('value', '1');i.setAttribute('name', '__has_javascript');document.forms.primary.appendChild(i);">
+<!-- /.question -->
+<script>
+jQuery(document).ready(
+  function() {
+    /* survey.xml line 1083 */
+    setInterval(function(){
+$ (".sq-cardsort-bucket-c2").css("pointer-events","none");
+$ (".sq-cardsort-bucket-c18").css("pointer-events","none");
+
+})
+  }
+);
+</script>
+
+<script>
+jQuery(document).ready(
+  function() {
+    /* survey.xml line 1098 */
+    
+  }
+);
+</script>
+<div class="survey-buttons">
+<input type="submit" name="continue" id="btn_continue" class="button continue" value="Continuer »" onclick="var i = document.createElement('input'); i.setAttribute('type', 'hidden');i.setAttribute('value', '1');i.setAttribute('name', '__has_javascript');document.forms.primary.appendChild(i);" style="display: none;">
 
 </div>
 <!-- #surveyButtons -->
@@ -648,20 +594,38 @@ body > .ui-tooltip,
 	-webkit-user-select: none;
 	-ms-user-select: none;	
 }
-</style><input type="hidden" name="state" value="a99bc267-f334-4bd0-8b72-f321eff00efa">
-<input type="hidden" name="start_time" value="1772842603">
+</style><input type="hidden" name="state" value="7e085515-0021-4ee4-ac96-347563eea4bc">
+<input type="hidden" name="start_time" value="1772852294">
 <input type="hidden" name="_ptime" value="0">
 <script>addHandler(Survey.capturePreciseTime)</script><script>
-$ (window).on("load", function() { setTimeout(function() { Survey.recordPageTiming("selfserve/1a7f/260223", "nvmkyvpkb4ucfebm", "exrqvdkm4ega5fza");}, 100); });
+$ (window).on("load", function() { setTimeout(function() { Survey.recordPageTiming("selfserve/1a7f/260223", "nvmkyvpkb4ucfebm", "6zejf89ap7zzp4b4");}, 100); });
 </script>
-</form>
+<input type="hidden" value="1" name="__has_javascript"></form>
 
 
 </div>
 <!-- /.survey-body -->
 </div>
 <div class="survey-section"><div class="footer"><a href="https://www.focusgroup.com/Page/PrivacyPolicy" target="_blank">Politique de confidentialité</a> - <a href="mailto:help@focusgroup.com?Subject=XXXX" target="_blank">Aide</a></div>
-<!-- /.footer --></div>
+<!-- /.footer -->
+
+<script>
+jQuery(document).ready(
+  function() {
+    /* survey.xml line 1047 */
+    var i = document.createElement('input'); i.setAttribute('type', 'hidden');i.setAttribute('value', '1');i.setAttribute('name', '__has_javascript');document.forms.primary.appendChild(i);
+jQuery('#btn_continue').hide();
+var timeOut = setInterval(checking,150);
+function checking(){
+if (jQuery('.sq-cardsort-completion-item').is(':visible')) {
+jQuery('#btn_continue').click();
+clearInterval(timeOut);
+}
+}
+  }
+);
+</script>
+</div>
 </div>
 <div id="detectBreakpoint"></div>
 <!-- /.survey-container -->
