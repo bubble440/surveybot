@@ -43,3 +43,45 @@ def test_dedupe_same_group_key_merges_options_and_keeps_clean_question():
         da._norm("Autre - préciser"),
     ]
     assert block["max_select"] == 4
+
+
+def test_dedupe_named_group_prefers_focusvision_block_without_option_union():
+    group_key = "radio:name:ans899.0.0"
+    blocks = [
+        {
+            "question": "Whey protéines en poudre",
+            "itype": "radio",
+            "options": [
+                "Une fois par semaine ou plus",
+                "Toutes les 2 semaines",
+            ],
+            "max_select": 1,
+            "target_id": "group_focusvision",
+            "context": {
+                "kind": "group",
+                "group_key": group_key,
+                "focusvision_answers_list": True,
+            },
+        },
+        {
+            "question": "Whey protéines en poudre",
+            "itype": "radio",
+            "options": [
+                "Whey protéines en poudre Une fois par semaine ou plus",
+                "Whey protéines en poudre Toutes les 2 semaines",
+            ],
+            "max_select": 1,
+            "target_id": "group_generic",
+            "context": {"kind": "group", "group_key": group_key},
+        },
+    ]
+
+    deduped = da._dedupe_question_blocks(blocks)
+
+    assert len(deduped) == 1
+    block = deduped[0]
+    assert block["target_id"] == "group_focusvision"
+    assert [da._norm(o) for o in block["options"]] == [
+        da._norm("Une fois par semaine ou plus"),
+        da._norm("Toutes les 2 semaines"),
+    ]
