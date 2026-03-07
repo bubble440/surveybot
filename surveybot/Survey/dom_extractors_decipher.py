@@ -167,10 +167,14 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
 
                 for row in row_nodes:
                     row_label = ""
+                    row_header_id = ""
                     try:
-                        row_label = _visible_text(row.find_element(By.CSS_SELECTOR, "th[scope='row']"))
+                        row_header = row.find_element(By.CSS_SELECTOR, "th[scope='row']")
+                        row_label = _visible_text(row_header)
+                        row_header_id = (row_header.get_attribute("id") or "").strip()
                     except Exception:
                         row_label = ""
+                        row_header_id = ""
                     if not row_label:
                         continue
 
@@ -179,10 +183,6 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
                     except Exception:
                         row_inputs = []
                     if len(row_inputs) < 2:
-                        continue
-
-                    row_name = (row_inputs[0].get_attribute("name") or "").strip()
-                    if not row_name:
                         continue
 
                     itype = "radio"
@@ -194,10 +194,9 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
 
                     options: list[str] = []
                     option_xpath_map: dict[str, str] = {}
-                    for inp in row_inputs:
-                        inp_name = (inp.get_attribute("name") or "").strip()
+                    for row_col_idx, inp in enumerate(row_inputs):
                         inp_id = (inp.get_attribute("id") or "").strip()
-                        if inp_name != row_name or not inp_id:
+                        if not inp_id:
                             continue
 
                         col_label = ""
@@ -220,6 +219,9 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
                                 if 0 <= idx < len(col_labels):
                                     col_label = col_labels[idx]
 
+                        if not col_label and 0 <= row_col_idx < len(col_labels):
+                            col_label = col_labels[row_col_idx]
+
                         if not col_label:
                             continue
 
@@ -239,7 +241,8 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
                         continue
 
                     row_question = row_label
-                    group_key = f"{itype}:name:{row_name}"
+                    row_input_name = row_header_id or f"row:{_norm_lc(row_label)}"
+                    group_key = f"{itype}:name:{row_input_name}"
                     target_id = make_target_id("group", group_key, row_question)
                     register_target(
                         target_id,
@@ -249,7 +252,7 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
                             "itype": itype,
                             "group_key": group_key,
                             "question": row_question,
-                            "input_name": row_name,
+                            "input_name": row_input_name,
                             "max_select": 1 if itype == "radio" else len(options),
                             "options": options,
                             "option_xpath_map": option_xpath_map,

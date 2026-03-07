@@ -276,3 +276,57 @@ def test_focusvision_group_by_row_radio_table_emits_one_block_per_row():
     assert [b["question"] for b in blocks] == [row_label for _, row_label in row_defs]
     assert all(len(b["options"]) == 8 for b in blocks)
     assert all(b["max_select"] == 1 for b in blocks)
+
+
+def test_focusvision_group_by_row_checkbox_table_accepts_per_cell_names():
+    col_headers = [
+        _FakeNode(text="Bulk", attrs={"id": "S12_c4"}),
+        _FakeNode(text="ESN", attrs={"id": "S12_c10"}),
+        _FakeNode(text="Nutrimuscle", attrs={"id": "S12_c21"}),
+    ]
+
+    row_inputs = [
+        _FakeInput(attrs={"id": "ans1352.3.0", "name": "ans1352.3.0", "type": "checkbox"}, children={"ancestor::td[1]": [_FakeNode(attrs={"headers": "S12_c4"})]}),
+        _FakeInput(attrs={"id": "ans1352.9.0", "name": "ans1352.9.0", "type": "checkbox"}, children={"ancestor::td[1]": [_FakeNode(attrs={"headers": "S12_c10"})]}),
+        _FakeInput(attrs={"id": "ans1352.20.0", "name": "ans1352.20.0", "type": "checkbox"}, children={"ancestor::td[1]": [_FakeNode(attrs={"headers": "S12_c21"})]}),
+    ]
+
+    row = _FakeNode(
+        children={
+            "th[scope='row']": [_FakeNode(text="Whey protéines en poudre", attrs={"id": "S12_r1_left"})],
+            "input[type='radio'], input[type='checkbox']": row_inputs,
+        }
+    )
+
+    table = _FakeTable(
+        children={
+            "th[scope='col']": col_headers,
+            "tr.row-elements": [row],
+        }
+    )
+
+    answers = _FakeNode(
+        children={
+            "table.grid[data-settings*='group-by-row'][data-settings*='table-mode']": [table],
+            "input[type='radio'], input[type='checkbox']": row_inputs,
+        }
+    )
+
+    q = _FakeNode(children={
+        ".answers.answers-list, .answers.answers-table": [answers],
+        ".question-text": [_FakeNode(text="Enfin, lesquelles des marques suivantes avez-vous achetées ?")],
+    })
+
+    class _D:
+        def find_elements(self, by=None, value=None):
+            if value == "div.question[role='radiogroup'], div.question.radio, div.question.checkbox":
+                return [q]
+            return []
+
+    blocks = _extract_focusvision_answers_list_groups(_D(), frame_chain=[])
+
+    assert len(blocks) == 1
+    block = blocks[0]
+    assert block["itype"] == "checkbox"
+    assert block["question"] == "Whey protéines en poudre"
+    assert block["options"] == ["Bulk", "ESN", "Nutrimuscle"]
