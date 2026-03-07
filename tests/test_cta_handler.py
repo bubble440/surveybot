@@ -333,6 +333,24 @@ def test_try_click_navigation_cta_detects_icon_only_div_next(monkeypatch):
     assert next_div.clicked == 1
 
 
+def test_try_click_navigation_cta_detects_li_next_button_submitform(monkeypatch):
+    monkeypatch.setattr(cta_handler, "ActionChains", _FakeActionChains)
+    monkeypatch.delenv("CTA_INTERCEPT_ONLY", raising=False)
+
+    li_next = _FakeElement(
+        text="Suivant",
+        attrs={"id": "next", "class": "next-button", "onclick": "submitForm(''); return false;"},
+    )
+    li_next.tag_name = "li"
+
+    driver = _FakeDriver(xpath_elements=[li_next])
+
+    ok = cta_handler.try_click_navigation_cta(driver)
+
+    assert ok is True
+    assert li_next.clicked == 1
+
+
 def test_try_click_navigation_cta_decipher_gridclick_clicks_widget_arrow(monkeypatch):
     monkeypatch.setattr(cta_handler, "ActionChains", _FakeActionChains)
     monkeypatch.delenv("CTA_INTERCEPT_ONLY", raising=False)

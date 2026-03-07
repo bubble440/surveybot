@@ -1418,6 +1418,7 @@ def try_click_navigation_cta(driver) -> bool:
         "|//span[contains(concat(' ', normalize-space(@class), ' '), ' fakeNextButton ')]"
         "|//a[@role='button']"
         "|//a[contains(concat(' ', normalize-space(@class), ' '), ' btn ')]"
+        "|//li[@id='next' or contains(concat(' ', normalize-space(@class), ' '), ' next-button ') or contains(@onclick, 'submitForm')]"
         "|//*[contains(@onmousedown, 'ToggSel')]"
         "|//*[@tabindex and not(self::input or self::textarea or self::select)]"
     )
