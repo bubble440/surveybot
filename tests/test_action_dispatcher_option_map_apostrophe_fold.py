@@ -96,3 +96,39 @@ def test_apply_by_target_id_option_map_matches_typographic_apostrophe(monkeypatc
 
 def test_fold_norm_lc_normalizes_typographic_apostrophe():
     assert ad._fold_norm_lc("J’y ai joué") == ad._fold_norm_lc("J'y ai joue")
+
+
+def test_apply_by_target_id_option_map_matches_frequency_unit_when_unique(monkeypatch):
+    payload = {
+        "kind": "group",
+        "itype": "radio",
+        "question": "CMIX frequency",
+        "option_xpath_map": {
+            "Au moins une fois par jour": "//*[@id='opt-day']",
+            "Au moins une fois par semaine": "//*[@id='opt-week']",
+            "Plusieurs fois par mois": "//*[@id='opt-month']",
+            "Moins souvent/Jamais": "//*[@id='opt-never']",
+        },
+        "frame_chain": [],
+    }
+    monkeypatch.setattr(ad, "get_target", lambda _tid: payload)
+
+    el = _FakeInput()
+    driver = _FakeDriver(el)
+
+    def _find_elements(by, value):
+        if by == By.XPATH and value == "//*[@id='opt-week']":
+            return [el]
+        return []
+
+    driver.find_elements = _find_elements
+
+    ok = ad._apply_by_target_id(
+        driver,
+        "tid-cmix-frequency",
+        "radio",
+        "Plusieurs fois par semaine",
+    )
+
+    assert ok is True
+    assert el.selected is True
