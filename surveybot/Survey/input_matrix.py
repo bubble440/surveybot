@@ -284,6 +284,25 @@ def click_matrix_cell_by_row_and_col(driver, row_label: str, col_label: str) -> 
     rneedle = _norm(row_label)
     cneedle = _norm(col_label)
 
+    def _resolve_click_target(cell, target):
+        """
+        Si l'input est masqué via classe `fir-hidden` (pattern Decipher/FocusVision),
+        cliquer son wrapper interactif au lieu de l'input.
+        """
+        try:
+            classes = _norm(target.get_attribute("class") or "")
+        except Exception:
+            classes = ""
+        if "fir-hidden" not in classes:
+            return target
+
+        for css in ["td.clickableCell", ".clickableCell", "span.fir-icon"]:
+            try:
+                return cell.find_element(By.CSS_SELECTOR, css)
+            except Exception:
+                continue
+        return target
+
     # 1) Tenter les <table> classiques
     try:
         # a) récupérer index de colonne
@@ -403,12 +422,13 @@ def click_matrix_cell_by_row_and_col(driver, row_label: str, col_label: str) -> 
                             except Exception:
                                 continue
                         if tgt is not None:
-                            driver.execute_script("arguments[0].scrollIntoView({block:'center'});", tgt)
+                            click_target = _resolve_click_target(best_cell, tgt)
+                            driver.execute_script("arguments[0].scrollIntoView({block:'center'});", click_target)
                             time.sleep(0.05)
                             try:
-                                tgt.click()
+                                click_target.click()
                             except Exception:
-                                ActionChains(driver).move_to_element(tgt).click().perform()
+                                ActionChains(driver).move_to_element(click_target).click().perform()
                             try:
                                 setattr(driver, "last_action_success", True)
                                 setattr(driver, "_post_action_t0", time.time())
@@ -465,12 +485,13 @@ def click_matrix_cell_by_row_and_col(driver, row_label: str, col_label: str) -> 
                             continue
                     if not tgt:
                         continue
-                    driver.execute_script("arguments[0].scrollIntoView({block:'center'});", tgt)
+                    click_target = _resolve_click_target(best, tgt)
+                    driver.execute_script("arguments[0].scrollIntoView({block:'center'});", click_target)
                     time.sleep(0.05)
                     try:
-                        tgt.click()
+                        click_target.click()
                     except Exception:
-                        ActionChains(driver).move_to_element(tgt).click().perform()
+                        ActionChains(driver).move_to_element(click_target).click().perform()
                     try:
                         setattr(driver, "last_action_success", True)
                         setattr(driver, "_post_action_t0", time.time())
