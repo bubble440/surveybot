@@ -471,6 +471,73 @@ def click_checkbox_by_label(driver, target_text: str, context_hint: str | None =
 
     scope = find_context_container(driver, context_hint)
 
+    # 0) DOM ciblé: wrappers .answer_options avec input.checkbox.radioQT (Metrix-like single-select)
+    #    Critères strictement DOM (pas de règle provider globale).
+    try:
+        clicked_input = driver.execute_script(
+            r"""
+            const root = arguments[0] || document;
+            const norm = s => (s || '')
+              .toLowerCase()
+              .normalize('NFKC')
+              .replace(/\u00A0/g, ' ')
+              .replace(/\s+/g, ' ')
+              .trim();
+            const needle = norm(arguments[1]);
+            if (!needle) return null;
+
+            const wrappers = Array.from(root.querySelectorAll('div.answer_options'));
+            if (!wrappers.length) return null;
+
+            // Guard DOM: on active cette logique uniquement si la structure radioQT est observée.
+            const radioQtInputs = wrappers
+              .map(w => w.querySelector('input[type="checkbox"].radioQT[name]'))
+              .filter(Boolean);
+            if (radioQtInputs.length < 2) return null;
+
+            const nameCounts = new Map();
+            for (const inp of radioQtInputs) {
+              const k = (inp.getAttribute('name') || '').trim();
+              if (!k) continue;
+              nameCounts.set(k, (nameCounts.get(k) || 0) + 1);
+            }
+            const hasSharedName = Array.from(nameCounts.values()).some(v => v >= 2);
+            if (!hasSharedName) return null;
+
+            const candidates = [];
+            for (const wrap of wrappers) {
+              const inp = wrap.querySelector('input[type="checkbox"].radioQT[name]');
+              if (!inp) continue;
+
+              const labelNode = wrap.querySelector('.option_label, .option_label span, span');
+              const txt = norm((labelNode && (labelNode.innerText || labelNode.textContent)) || wrap.innerText || wrap.textContent || '');
+              if (!txt) continue;
+              if (!(txt === needle || txt.includes(needle) || needle.includes(txt))) continue;
+
+              candidates.push({wrap, inp, score: txt === needle ? 2 : 1, len: txt.length});
+            }
+            if (!candidates.length) return null;
+
+            candidates.sort((a, b) => (b.score - a.score) || (b.len - a.len));
+            const best = candidates[0];
+
+            best.wrap.scrollIntoView({block: 'center', inline: 'center'});
+            best.wrap.click();
+
+            if (!best.inp.checked) {
+              return null;
+            }
+
+            return best.inp;
+            """,
+            scope,
+            target_text,
+        )
+        if clicked_input:
+            return clicked_input
+    except Exception:
+        pass
+
     # 1) Cas standard : <label for="id"> → <input id="id" type="checkbox">
     try:
         labels = (scope or driver).find_elements(
