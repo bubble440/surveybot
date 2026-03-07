@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nFix Walr country-routing interstitial not detected as consent_screen\n\nAdd _is_walr_country_routing_gate\\(\\) to is_consent_screen\\(\\) to detect\nWalr pages that auto-route by country \\(.cRadio/.cRef/#btnNext\\) and\nwere previously falling through to unclassified, leaving the CTA\nunclicked.\n\nAdd matching _handle_walr_country_routing_gate\\(\\) in handle_consent_screen\\(\\)\nto click #btnNext on these pages, with CTA_INTERCEPT_ONLY support.\n\nCo-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git push:*)",
+      "Bash(gh pr create --title \"Fix Walr country-routing interstitial not detected as consent_screen\" --body \"$\\(cat <<''EOF''\n## Summary\n\n- Walr country-routing interstitial pages \\(`.cRadio` + `.cRef` + `#btnNext`\\) were falling through to `unclassified`, leaving the CTA never clicked\n- Add `_is_walr_country_routing_gate\\(\\)` in `is_consent_screen\\(\\)` to detect this pattern with 3 tight DOM signals exclusive to Walr\n- Add matching `_handle_walr_country_routing_gate\\(\\)` in `handle_consent_screen\\(\\)` to click `#btnNext`, with `CTA_INTERCEPT_ONLY` support\n\n## Test plan\n\n- [ ] Load `DOM_original.txt` in a live session — page should classify as `consent_screen` \\(not `unclassified`\\)\n- [ ] `CTA_INTERCEPT_ONLY=1`: handler returns `True` and logs interception without navigating\n- [ ] `CTA_INTERCEPT_ONLY=0`: `#btnNext` is clicked and `_wait_change` confirms navigation\n- [ ] Non-regression: all 9 reference DOMs in `cases/level_a` unaffected \\(none contain `.cRadio`/`.cRef`\\)\n\n🤖 Generated with [Claude Code]\\(https://claude.com/claude-code\\)\nEOF\n\\)\")",
+      "Bash(where:*)",
+      "Bash(ls:*)",
+      "Bash(git checkout:*)",
+      "Bash(git commit:*)",
+      "Bash(gh pr:*)",
+      "Bash(python -m gh:*)",
+      "Bash(curl:*)",
+      "Bash(git remote:*)",
+      "Bash(git reset:*)",
+      "Bash(git stash)",
+      "Bash(git stash pop)"
+    ]
+  }
+}
