@@ -84,6 +84,7 @@ def test_extracts_runtime_answerrow_radio_group(monkeypatch):
             },
             by_xpath={
                 "ancestor::*[@id][starts-with(@id, 'question_')][1]": [question_container],
+                "ancestor::*[@id][starts-with(@id, 'question_') and not(starts-with(@id, 'question_container_'))][1]": [question_container],
             },
             xpath=f"//div[@class='answer'][{idx}]",
         )

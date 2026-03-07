@@ -3041,6 +3041,124 @@ def _extract_runtime_answerrow_radio_blocks(driver, frame_chain: list[int] | Non
     return blocks
 
 
+def _extract_label_radio_list_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
+    """Extraction radio pour listes `label.radio` sans input natif.
+
+    Cas ciblé (Angular custom observé):
+    - conteneur question: `div.step1`
+    - titre question: `h3.title`
+    - options: `ul.option_container label.radio`
+    - pas de `input[type=radio]` exploitable dans ce conteneur.
+    """
+    frame_chain = list(frame_chain or [])
+
+    try:
+        step_nodes = driver.find_elements(By.CSS_SELECTOR, "div.step1")
+    except Exception:
+        return []
+
+    if not step_nodes:
+        return []
+
+    blocks: list[dict] = []
+    nav_tokens = {"next", "suivant", "continue", "continuer", "submit", "valider", "envoyer", "start"}
+
+    for idx, step in enumerate(step_nodes, start=1):
+        try:
+            q_nodes = step.find_elements(By.CSS_SELECTOR, "h3.title")
+        except Exception:
+            q_nodes = []
+
+        question = ""
+        for qn in q_nodes:
+            txt = _norm(qn.text or qn.get_attribute("innerText") or "")
+            if txt and len(txt) >= 5:
+                question = txt
+                break
+        if not question:
+            continue
+
+        try:
+            native_choices = step.find_elements(
+                By.CSS_SELECTOR,
+                "input[type='radio'], input[type='checkbox'], [role='radio'], [role='checkbox']",
+            )
+        except Exception:
+            native_choices = []
+        if native_choices:
+            continue
+
+        try:
+            labels = step.find_elements(By.CSS_SELECTOR, "ul.option_container label.radio")
+        except Exception:
+            labels = []
+        if len(labels) < 2:
+            continue
+
+        options: list[str] = []
+        option_xpath_map: dict[str, str] = {}
+
+        for lbl in labels:
+            try:
+                label_text = _norm(lbl.text or lbl.get_attribute("innerText") or "")
+                if not label_text:
+                    continue
+                if _norm_lc(label_text) in nav_tokens:
+                    continue
+
+                nk = _norm_key(label_text)
+                if not nk or nk in option_xpath_map:
+                    continue
+
+                xp = _best_xpath_for_element(driver, lbl)
+                if not xp:
+                    continue
+
+                option_xpath_map[nk] = xp
+                options.append(label_text)
+            except Exception:
+                continue
+
+        if len(options) < 2 or len(option_xpath_map) < 2:
+            continue
+
+        step_id = (step.get_attribute("id") or "").strip()
+        if not step_id:
+            step_id = f"step{idx}_{zlib.crc32(question.encode('utf-8')):x}"
+
+        group_key = f"label_radio_list:radio:{step_id}"
+        target_id = make_target_id("group", group_key, question)
+
+        register_target(
+            target_id,
+            {
+                "kind": "group",
+                "itype": "radio",
+                "group_key": group_key,
+                "question": question,
+                "option_xpath_map": option_xpath_map,
+                "frame_chain": frame_chain,
+                "label_radio_list": True,
+            },
+        )
+
+        blocks.append(
+            {
+                "question": question,
+                "itype": "radio",
+                "options": options,
+                "max_select": _compute_max_select("radio", options),
+                "target_id": target_id,
+                "context": {
+                    "kind": "group",
+                    "group_key": group_key,
+                    "label_radio_list": True,
+                },
+            }
+        )
+    return blocks
+
+
 def _extract_qualtrics_choice_structure_radio_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
     """Extraction ciblée des radios Qualtrics `ul.ChoiceStructure`.
 
