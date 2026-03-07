@@ -181,6 +181,27 @@ def test_expand_question_blocks_for_batch_keeps_already_scoped_matrix_unchanged(
     assert expanded[0]["context"]["matrix_active_row"] == "Ligne 1"
 
 
+def test_batch_prompt_matrix_active_row_requires_column_only_value():
+    blocks = [
+        {
+            "question": "Où avez-vous acheté chacun de ces produits ?",
+            "itype": "matrix",
+            "options": ["En ligne, sur Amazon", "En magasin, dans un supermarché"],
+            "max_select": 12,
+            "target_id": "group_matrix_active",
+            "context": {
+                "matrix_rows": ["Whey protéines", "créatine en poudre"],
+                "matrix_active_row": "créatine en poudre",
+            },
+        }
+    ]
+
+    prompt = build_batch_prompt(blocks)
+
+    assert "matrix_active_row_value_rule: valeur DOIT contenir UNIQUEMENT la/les colonne(s), sans row_label" in prompt
+    assert "selection_rule: Pour QID=Q1, renvoyer entre 1 et 12 valeur(s) colonne(s) séparée(s) par | pour matrix_active_row." in prompt
+
+
 def test_detects_explicit_exact_count_from_text_fr_and_en():
     assert _explicit_exact_count_from_question("Merci de sélectionner les deux réponses pertinentes") == 2
     assert _explicit_exact_count_from_question("Please select exactly 2 answers") == 2

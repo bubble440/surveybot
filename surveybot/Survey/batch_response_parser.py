@@ -612,7 +612,7 @@ def _is_matrix_action(itype: str, qid: str | None, target_id: str | None, qid_me
     return False
 
 
-def _parse_matrix_pairs(value: str) -> list[tuple[str, str]]:
+def _parse_matrix_pairs(value: str, matrix_active_row: str = "") -> list[tuple[str, str]]:
     """
     Parse une valeur matrix en liste de paires (row, col).
 
@@ -624,6 +624,26 @@ def _parse_matrix_pairs(value: str) -> list[tuple[str, str]]:
       - row || col1 || row || col2
     """
     txt = (value or "").strip()
+    active_row = (matrix_active_row or "").strip()
+    if not txt:
+        return []
+
+    if "||" not in txt:
+        if not active_row:
+            return []
+        col_labels = [c.strip() for c in txt.split("|") if c.strip()]
+        if not col_labels:
+            return []
+        seen: set[str] = set()
+        pairs: list[tuple[str, str]] = []
+        for col in col_labels:
+            key = col.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            pairs.append((active_row, col))
+        return pairs
+
     if not txt or "||" not in txt:
         return []
 
@@ -832,7 +852,12 @@ def parse_batch_response(raw: str, constraints: Optional[Dict[str, int]] = None,
         is_matrix = _is_matrix_action(itype=itype, qid=qid, target_id=target_id, qid_meta=qid_meta)
         matrix_pairs: list[tuple[str, str]] = []
         if is_matrix:
-            matrix_pairs = _parse_matrix_pairs(value)
+            qmeta = (qid_meta or {}).get((qid or "").upper()) if isinstance(qid_meta, dict) else None
+            matrix_active_row = ""
+            if isinstance(qmeta, dict):
+                qmeta_ctx = qmeta.get("context") if isinstance(qmeta.get("context"), dict) else {}
+                matrix_active_row = str(qmeta_ctx.get("matrix_active_row") or "").strip()
+            matrix_pairs = _parse_matrix_pairs(value, matrix_active_row=matrix_active_row)
             ok = bool(matrix_pairs)
             print(
                 f"[PARSER_MATRIX] target_id={target_id!r} pairs={matrix_pairs!r} ok={ok}"
