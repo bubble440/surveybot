@@ -237,6 +237,9 @@ def solve_recaptcha_v2_auto(driver) -> bool:
     variant = "enterprise" if is_enterprise else "standard"
     print(f"[RECAPTCHA_HANDLER] sitekey extrait : {sitekey} ({inv_label}, {variant})")
 
+    # Chronomètre global — démarre après validation du sitekey
+    _t_start = time.time()
+
     # 2. Résoudre via 2Captcha — avec proxy si disponible, sinon Proxyless
     # Certaines plateformes (Decipher) valident l'IP côté serveur : le token doit
     # être généré depuis la même IP que la soumission du formulaire.
@@ -248,6 +251,7 @@ def solve_recaptcha_v2_auto(driver) -> bool:
     print(f"[RECAPTCHA_HANDLER] Envoi à 2Captcha (mode={mode}, variant={variant}, url={current_url})")
     try:
         client = TwoCaptchaClient()
+        _t_2captcha = time.time()
         if is_enterprise:
             # Enterprise : Proxyless forcé — RecaptchaV2EnterpriseTaskProxyless est
             # le type correct pour les sites survey (IPSOS, Qualtrics...) qui n'exigent
@@ -267,17 +271,18 @@ def solve_recaptcha_v2_auto(driver) -> bool:
         else:
             token = client.solve_recaptcha_v2(sitekey, current_url, invisible)
     except TimeoutError as e:
-        print(f"[RECAPTCHA_HANDLER] Timeout 2Captcha : {e}")
+        print(f"[RECAPTCHA_HANDLER] Timeout 2Captcha ({time.time() - _t_2captcha:.1f}s) : {e}")
         return False
     except Exception as e:
-        print(f"[RECAPTCHA_HANDLER] Erreur 2Captcha : {e}")
+        print(f"[RECAPTCHA_HANDLER] Erreur 2Captcha ({time.time() - _t_2captcha:.1f}s) : {e}")
         return False
 
     if not token:
         print("[RECAPTCHA_HANDLER] Token vide reçu de 2Captcha")
         return False
 
-    print(f"[RECAPTCHA_HANDLER] Token reçu ({len(token)} chars), injection...")
+    _dur_2captcha = time.time() - _t_2captcha
+    print(f"[RECAPTCHA_HANDLER] Token reçu en {_dur_2captcha:.1f}s ({len(token)} chars), injection...")
 
     # 3. Injecter le token dans #g-recaptcha-response
     try:
@@ -301,5 +306,7 @@ def solve_recaptcha_v2_auto(driver) -> bool:
         return False
 
     # 6. Navigation déléguée au flux survey — 0 clic CTA ici
-    print("[RECAPTCHA_HANDLER] ✅ Résolution terminée → navigation déléguée au flux survey")
+    _dur_total = time.time() - _t_start
+    print(f"[RECAPTCHA_HANDLER] ✅ Résolution terminée en {_dur_total:.1f}s "
+          f"(2Captcha: {_dur_2captcha:.1f}s) → navigation déléguée au flux survey")
     return True
