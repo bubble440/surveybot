@@ -4,6 +4,7 @@ from surveybot.Survey.prompt_builder import (
     _tier_entry_option,
     _explicit_exact_count_from_question,
     build_batch_prompt,
+    expand_question_blocks_for_batch,
 )
 
 
@@ -134,6 +135,50 @@ def test_batch_prompt_exposes_matrix_row_labels_for_llm_context():
     assert "RÈGLE SPÉCIALE MATRICES (itype=matrix)" in prompt
     assert "Crédit consommation || Transféré vers Revolut" in prompt
     assert "matrix_answer_format: row_label || col_label (row obligatoire, jamais col seule)" in prompt
+
+
+def test_expand_question_blocks_for_batch_splits_matrix_rows_into_distinct_entries():
+    blocks = [
+        {
+            "question": "Où avez-vous acheté chacun de ces produits ?",
+            "itype": "matrix",
+            "options": ["En ligne", "En magasin"],
+            "max_select": 12,
+            "target_id": "group_matrix",
+            "context": {
+                "matrix_rows": ["Whey", "Créatine"],
+            },
+        }
+    ]
+
+    expanded = expand_question_blocks_for_batch(blocks)
+
+    assert len(expanded) == 2
+    assert expanded[0]["context"]["matrix_active_row"] == "Whey"
+    assert expanded[1]["context"]["matrix_active_row"] == "Créatine"
+    assert expanded[0]["max_select"] == 1
+    assert expanded[1]["max_select"] == 1
+
+
+def test_expand_question_blocks_for_batch_keeps_already_scoped_matrix_unchanged():
+    blocks = [
+        {
+            "question": "Test matrix row active",
+            "itype": "matrix",
+            "options": ["A", "B"],
+            "max_select": 1,
+            "target_id": "group_matrix_active",
+            "context": {
+                "matrix_rows": ["Ligne 1", "Ligne 2"],
+                "matrix_active_row": "Ligne 1",
+            },
+        }
+    ]
+
+    expanded = expand_question_blocks_for_batch(blocks)
+
+    assert len(expanded) == 1
+    assert expanded[0]["context"]["matrix_active_row"] == "Ligne 1"
 
 
 def test_detects_explicit_exact_count_from_text_fr_and_en():
