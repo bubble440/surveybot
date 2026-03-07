@@ -95,6 +95,33 @@ class SurveyDifficultyGuardTests(unittest.TestCase):
         self.assertFalse(is_strict)
         self.assertIsNone(reason)
 
+
+    def test_large_ta_image_with_textarea_and_no_choices_is_flagged(self):
+        selectors = {
+            "img.taImage": [_FakeElement(width=1200, height=420)],
+            "textarea[required], textarea.mat-mdc-input-element, textarea[name='selectedOptField']": [_FakeElement()],
+            "input[type='radio'], input[type='checkbox'], [role='radio'], [role='checkbox'], div.rsBtn": [],
+        }
+        driver = _FakeDriver(text="Décrivez ce que vous voyez", by_selector=selectors)
+
+        is_strict, reason = detect_strict_survey(driver)
+
+        self.assertTrue(is_strict)
+        self.assertEqual(reason, "image_evaluation")
+
+    def test_small_ta_image_is_not_flagged(self):
+        selectors = {
+            "img.taImage": [_FakeElement(width=90, height=60)],
+            "textarea[required], textarea.mat-mdc-input-element, textarea[name='selectedOptField']": [_FakeElement()],
+            "input[type='radio'], input[type='checkbox'], [role='radio'], [role='checkbox'], div.rsBtn": [],
+        }
+        driver = _FakeDriver(text="Question texte standard", by_selector=selectors)
+
+        is_strict, reason = detect_strict_survey(driver)
+
+        self.assertFalse(is_strict)
+        self.assertIsNone(reason)
+
     def test_visible_captcha_remains_blocking(self):
         selectors = {
             "iframe[src*='recaptcha']": [_FakeElement(width=320, height=80)],

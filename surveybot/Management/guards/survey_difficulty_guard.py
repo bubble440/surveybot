@@ -116,11 +116,61 @@ def _detect_image_evaluation(driver) -> bool:
         if has_walr_image:
             print(f"[DIFFICULTY_GUARD] ✓ Image evaluation: rsScrollGrid + {len(rsBtn_els)} rsBtn + image")
             return True
-        
+
         return False
-        
+
     except Exception as e:
         print(f"[DIFFICULTY_GUARD] Exception _detect_image_evaluation: {e}")
+        return False
+
+
+def _is_large_visible_image(el) -> bool:
+    """Détecte une image réellement centrale (pas un petit logo décoratif)."""
+    try:
+        if not el.is_displayed():
+            return False
+        rect = el.rect or {}
+        width = rect.get("width", 0) or 0
+        height = rect.get("height", 0) or 0
+        return width >= 220 and height >= 120
+    except Exception:
+        return False
+
+
+def _detect_ta_image_only_question(driver) -> bool:
+    """
+    Détecte un pattern DOM précis observé sur certaines pages:
+      - image centrale avec class taImage
+      - zone de réponse texte
+      - absence d'options radio/checkbox visibles
+
+    Ce pattern indique une question dépendante de l'image (DOM-only insuffisant).
+    """
+    try:
+        ta_images = driver.find_elements(By.CSS_SELECTOR, "img.taImage")
+        has_large_ta_image = any(_is_large_visible_image(img) for img in ta_images)
+        if not has_large_ta_image:
+            return False
+
+        textareas = driver.find_elements(
+            By.CSS_SELECTOR,
+            "textarea[required], textarea.mat-mdc-input-element, textarea[name='selectedOptField']",
+        )
+        if not textareas:
+            return False
+
+        option_inputs = driver.find_elements(
+            By.CSS_SELECTOR,
+            "input[type='radio'], input[type='checkbox'], [role='radio'], [role='checkbox'], div.rsBtn",
+        )
+        if option_inputs:
+            return False
+
+        print("[DIFFICULTY_GUARD] ✓ Image evaluation: taImage + textarea + no_choice_options")
+        return True
+
+    except Exception as e:
+        print(f"[DIFFICULTY_GUARD] Exception _detect_ta_image_only_question: {e}")
         return False
 
 
@@ -194,7 +244,7 @@ def detect_strict_survey(driver) -> Tuple[bool, Optional[str]]:
     - 2) Fallback keywords (texte)
     """
     # === 0) IMAGE EVALUATION (Walr) - Non supporté en V1 prod ===
-    if _detect_image_evaluation(driver):
+    if _detect_image_evaluation(driver) or _detect_ta_image_only_question(driver):
         return True, "image_evaluation"
     
     # === 1) DOM selectors ===
