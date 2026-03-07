@@ -695,8 +695,10 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
         "RÈGLE SPÉCIALE MATRICES (itype=matrix) :\n"
         "- valeur DOIT être au format STRICT: row_label || col_label (ou row_label || col1|col2|col3 pour matrices checkbox multi-colonnes)\n"
         "- Si matrix_active_row est fourni dans le contexte, row_label DOIT être EXACTEMENT cette valeur (ne choisis jamais une autre ligne).\n"
+        "- EXCEPTION matrix_active_row: quand matrix_active_row est fourni, valeur DOIT contenir UNIQUEMENT la/les colonne(s) (col_label ou col1|col2|col3), sans row_label.\n"
         "- Exemple attendu: Crédit consommation || Transféré vers Revolut\n"
         "- Exemple multi-colonnes (checkbox): Whey protéines || Amazon|Decathlon\n"
+        "- Exemple matrix_active_row (colonne(s) seule(s)): En ligne, sur Amazon|En magasin, chez Decathlon\n"
         "- INTERDIT: répondre uniquement une colonne (ex: 'Transféré vers Revolut')."
     )
 
@@ -780,6 +782,11 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
         itype = _escape(block.get("itype", ""))
         opts = [_escape(o) for o in (block.get("options") or []) if o]
         max_sel = _selection_max_for_prompt(block)
+        try:
+            matrix_max_sel = int(block.get("max_select", 1) or 1)
+        except Exception:
+            matrix_max_sel = 1
+        matrix_max_sel = max(1, matrix_max_sel)
         target_id = _escape(block.get("target_id", ""))
         matrix_rows = _matrix_row_labels(block)
         matrix_active_row = _escape((block.get("context") or {}).get("matrix_active_row", ""))
@@ -795,7 +802,8 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
         if matrix_active_row:
             lines.append(f"matrix_active_row: {matrix_active_row}")
             lines.append("matrix_rule_active_row: row_label DOIT être EXACTEMENT matrix_active_row")
-            lines.append(f"matrix_example_active_row: {matrix_active_row} || Transféré vers Revolut")
+            lines.append("matrix_active_row_value_rule: valeur DOIT contenir UNIQUEMENT la/les colonne(s), sans row_label")
+            lines.append("matrix_example_active_row: Transféré vers Revolut")
         lines.append(f"itype: {itype}")
         display_max_sel = min(max_sel, 5) if max_sel > 3 else max_sel
         lines.append(f"max_select: {display_max_sel}")
@@ -822,7 +830,11 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
         if _is_recent_participation_screener_question(block) and opts:
             forced_recent_participation_safe = _find_recent_participation_safe_option(opts)
 
-        if itype == "matrix" and matrix_rows:
+        if itype == "matrix" and matrix_active_row:
+            lines.append(
+                f"selection_rule: Pour QID={qid}, renvoyer entre 1 et {matrix_max_sel} valeur(s) colonne(s) séparée(s) par | pour matrix_active_row. Ne renvoie jamais row_label dans valeur."
+            )
+        elif itype == "matrix" and matrix_rows:
             row_count = len(matrix_rows)
             lines.append(
                 f"selection_rule: Pour QID={qid}, renvoyer EXACTEMENT {row_count} valeur(s), "

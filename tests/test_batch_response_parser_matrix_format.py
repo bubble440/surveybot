@@ -86,3 +86,25 @@ def test_parse_matrix_value_accepts_repeated_row_pair_compat_mode():
     assert len(actions) == 2
     assert actions[0]["matrix_row_label"] == "Whey protéines"
     assert actions[1]["matrix_row_label"] == "Whey protéines"
+
+
+def test_parse_matrix_value_accepts_column_only_when_matrix_active_row_is_known():
+    raw = "Q2 //// group_d83814e34163 //// En ligne, sur Amazon|En magasin, dans un supermarché ou un hypermarché //// matrix //// Où avez-vous acheté chacun de ces produits ?"
+    constraints = {"Q2": 12}
+    qid_meta = {
+        "Q2": {
+            "itype": "matrix",
+            "target_id": "group_d83814e34163",
+            "context": {
+                "matrix_active_row": "créatine en poudre",
+            },
+        }
+    }
+
+    actions = parse_batch_response(raw, constraints=constraints, qid_meta=qid_meta)
+
+    assert len(actions) == 2
+    assert actions[0]["matrix_row_label"] == "créatine en poudre"
+    assert actions[0]["matrix_col_label"] == "En ligne, sur Amazon"
+    assert actions[1]["matrix_row_label"] == "créatine en poudre"
+    assert actions[1]["matrix_col_label"] == "En magasin, dans un supermarché ou un hypermarché"
