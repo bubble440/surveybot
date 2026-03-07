@@ -775,7 +775,14 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
         if _is_recent_participation_screener_question(block) and opts:
             forced_recent_participation_safe = _find_recent_participation_safe_option(opts)
 
-        if itype == "checkbox":
+        if itype == "matrix" and matrix_rows:
+            row_count = len(matrix_rows)
+            lines.append(
+                f"selection_rule: Pour QID={qid}, renvoyer EXACTEMENT {row_count} valeur(s), "
+                "une par ligne de sous_questions_matrix, au format STRICT row_label || col_label, "
+                "séparées par |."
+            )
+        elif itype == "checkbox":
             lines.append(
                 f"selection_rule: Pour QID={qid}, renvoyer entre 1 et {max_sel} valeur(s) séparée(s) par |. / For QID={qid}, return between 1 and {max_sel} values separated by |."
             )
