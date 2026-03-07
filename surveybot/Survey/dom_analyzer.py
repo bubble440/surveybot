@@ -2414,6 +2414,24 @@ def _dedupe_question_blocks(blocks: List[Dict[str, Any]]) -> List[Dict[str, Any]
             cur_opts = [o for o in (cur.get("options") or []) if _norm(o)]
             new_opts = [o for o in (b.get("options") or []) if _norm(o)]
 
+            cur_ctx = (cur.get("context") or {}) if isinstance(cur.get("context"), dict) else {}
+            new_ctx = (b.get("context") or {}) if isinstance(b.get("context"), dict) else {}
+            cur_is_focusvision = cur_ctx.get("focusvision_answers_list") is True
+            new_is_focusvision = new_ctx.get("focusvision_answers_list") is True
+
+            # Garde-fou DOM-first FocusVision/Decipher answers-list:
+            # quand un bloc dédié (focusvision_answers_list=True) collisionne avec
+            # un bloc générique du même group_key, on conserve le bloc dédié tel quel.
+            # Cela évite d'unionner des options polluées (ex: "{row} {col}") avec
+            # les colonnes propres extraites depuis la grille group-by-row.
+            if cur_is_focusvision != new_is_focusvision:
+                if cur_is_focusvision and len(cur_opts) >= 2:
+                    dedup_map[sig] = cur
+                    continue
+                if new_is_focusvision and len(new_opts) >= 2:
+                    dedup_map[sig] = b
+                    continue
+
             richer, other = (cur, b) if len(cur_opts) >= len(new_opts) else (b, cur)
 
             merged_options: list[str] = []
