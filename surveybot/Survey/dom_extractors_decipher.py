@@ -647,27 +647,11 @@ def _extract_focusvision_cardsort_block(driver, frame_chain: list[int] | None) -
     Returns:
         Dict avec metadata ou None si pas trouvé
     """
-    container = None
-    legacy_cardsort = False
     try:
-        # Pattern historique FocusVision
+        # Chercher conteneur cardsort
         container = driver.find_element(By.CSS_SELECTOR, "div.question.cardsort")
-        legacy_cardsort = True
     except Exception:
-        # Pattern FocusVision/Decipher cardsort moderne
-        # Ex: .sq-cardsort + fallback .answers-table masquée en display:none
-        try:
-            widget = driver.find_element(By.CSS_SELECTOR, ".sq-cardsort")
-        except Exception:
-            return None
-
-        try:
-            container = widget.find_element(
-                By.XPATH,
-                "ancestor::div[contains(concat(' ', normalize-space(@class), ' '), ' question ')][1]",
-            )
-        except Exception:
-            container = widget
+        return None
 
     # Question text
     question = ""
@@ -679,13 +663,7 @@ def _extract_focusvision_cardsort_block(driver, frame_chain: list[int] | None) -
     # Cartes
     cards = []
     try:
-        if legacy_cardsort:
-            card_elements = container.find_elements(By.CSS_SELECTOR, ".cardsort__card")
-        else:
-            card_elements = container.find_elements(
-                By.CSS_SELECTOR,
-                ".sq-cardsort-cards .sq-cardsort-card .sq-cardsort-card-legend",
-            )
+        card_elements = container.find_elements(By.CSS_SELECTOR, ".cardsort__card")
         for card in card_elements:
             card_text = (card.text or "").strip()
             if card_text:
@@ -696,32 +674,19 @@ def _extract_focusvision_cardsort_block(driver, frame_chain: list[int] | None) -
     # Buckets (catégories de destination)
     buckets = []
     try:
-        if legacy_cardsort:
-            bucket_elements = container.find_elements(By.CSS_SELECTOR, ".cardsort__bucket")
-            for bucket in bucket_elements:
-                # Chercher le label du bucket
-                try:
-                    bucket_label = bucket.find_element(By.CSS_SELECTOR, ".cardsort__bucket-label")
-                    bucket_text = (bucket_label.text or "").strip()
-                except Exception:
-                    bucket_text = (bucket.text or "").strip()
-
-                if bucket_text:
-                    buckets.append(bucket_text)
-        else:
-            bucket_elements = container.find_elements(
-                By.CSS_SELECTOR,
-                ".sq-cardsort-buckets .sq-cardsort-bucket .sq-cardsort-bucket-legend",
-            )
-            for bucket in bucket_elements:
+        bucket_elements = container.find_elements(By.CSS_SELECTOR, ".cardsort__bucket")
+        for bucket in bucket_elements:
+            # Chercher le label du bucket
+            try:
+                bucket_label = bucket.find_element(By.CSS_SELECTOR, ".cardsort__bucket-label")
+                bucket_text = (bucket_label.text or "").strip()
+            except Exception:
                 bucket_text = (bucket.text or "").strip()
-                if bucket_text:
-                    buckets.append(bucket_text)
+            
+            if bucket_text:
+                buckets.append(bucket_text)
     except Exception:
         pass
-
-    cards = list(dict.fromkeys(cards))
-    buckets = list(dict.fromkeys(buckets))
 
     if not cards or not buckets:
         return None
