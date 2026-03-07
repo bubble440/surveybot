@@ -275,6 +275,42 @@ _RECENT_PARTICIPATION_SAFE_OPTION_PATTERNS = [
 ]
 
 
+_SECTOR_SCREENER_MAX_OPTIONS = 15
+
+_SECTOR_SCREENER_FAMILY_MARKERS = [
+    "membre de votre foyer",
+    "membre du foyer",
+    "foyer",
+    "famille",
+    "famille immediate",
+    "household",
+    "family member",
+    "immediate family",
+]
+
+_SECTOR_SCREENER_WORK_MARKERS = [
+    "travaillez",
+    "travail",
+    "secteur",
+    "secteur d'activite",
+    "domaine",
+    "industrie",
+    "employed",
+    "work in",
+    "industry",
+    "field",
+    "sector",
+]
+
+_SECTOR_SCREENER_EXCLUSIVE_OPTION_PATTERNS = [
+    "aucune de ces propositions",
+    "none of the above",
+    "aucun",
+    "aucune",
+    "non",
+]
+
+
 def _looks_like_classification_question(block: Dict[str, Any]) -> bool:
     itype = _norm_folded_lc(block.get("itype"))
     if itype not in {"radio", "checkbox", "dropdown", "select", "button"}:
@@ -399,6 +435,40 @@ def _find_recent_participation_safe_option(options: list[str]) -> str | None:
 
     normalized_options = [(_norm_folded_lc(opt), opt) for opt in options]
     for pattern in _RECENT_PARTICIPATION_SAFE_OPTION_PATTERNS:
+        folded_pattern = _norm_folded_lc(pattern)
+        if not folded_pattern:
+            continue
+        for folded_opt, original_opt in normalized_options:
+            if folded_opt == folded_pattern:
+                return original_opt
+        for folded_opt, original_opt in normalized_options:
+            if folded_pattern in folded_opt:
+                return original_opt
+
+    return None
+
+
+def _is_sector_employment_household_screener_question(block: Dict[str, Any]) -> bool:
+    """Détecte les screeners métier/secteur sur le répondant ou son foyer/famille."""
+    itype = _norm_folded_lc(block.get("itype"))
+    if itype not in {"radio", "checkbox", "dropdown", "select", "button"}:
+        return False
+
+    question = _norm_folded_lc(block.get("question"))
+    if not question:
+        return False
+
+    has_family_signal = any(marker in question for marker in _SECTOR_SCREENER_FAMILY_MARKERS)
+    has_work_signal = any(marker in question for marker in _SECTOR_SCREENER_WORK_MARKERS)
+    return has_family_signal and has_work_signal
+
+
+def _find_sector_screener_exclusive_option(options: list[str]) -> str | None:
+    if not options:
+        return None
+
+    normalized_options = [(_norm_folded_lc(opt), opt) for opt in options]
+    for pattern in _SECTOR_SCREENER_EXCLUSIVE_OPTION_PATTERNS:
         folded_pattern = _norm_folded_lc(pattern)
         if not folded_pattern:
             continue
@@ -818,6 +888,7 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
         )
         forced_country = None
         forced_household_decider = None
+        forced_sector_screener_exclusive = None
         forced_recent_participation_safe = None
         if _is_residence_country_question(block) and opts:
             forced_country = _find_option_exact(opts, _PERSONA_RESIDENCE_COUNTRY)
@@ -827,6 +898,16 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
             )
         if _is_household_decision_maker_question(block) and opts:
             forced_household_decider = _find_respondent_self_option(opts)
+        if (
+            _is_sector_employment_household_screener_question(block)
+            and opts
+            and len(opts) < _SECTOR_SCREENER_MAX_OPTIONS
+        ):
+            forced_sector_screener_exclusive = _find_sector_screener_exclusive_option(opts)
+            print(
+                f"[PROMPT_BUILDER] sector_screener_question=1 target_id={target_id} "
+                f"options_count={len(opts)} option_present={bool(forced_sector_screener_exclusive)}"
+            )
         if _is_recent_participation_screener_question(block) and opts:
             forced_recent_participation_safe = _find_recent_participation_safe_option(opts)
 
@@ -878,6 +959,16 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
             lines.append(
                 "instruction_stricte: Question décideur du foyer. "
                 "Tu dois répondre EXACTEMENT avec l'option qui désigne le répondant lui-même."
+            )
+        elif forced_sector_screener_exclusive:
+            lines.append(
+                "selection_rule: SECTOR_EMPLOYMENT_HOUSEHOLD_SAFE strict -> répondre EXACTEMENT "
+                f"avec '{forced_sector_screener_exclusive}'"
+            )
+            lines.append(f"allowed_values_strict: {forced_sector_screener_exclusive}")
+            lines.append(
+                "instruction_stricte: Screener secteur (répondant/foyer/famille) détecté avec liste courte. "
+                "Tu dois choisir l'option exclusive négative (none/aucune/non) pour éviter la disqualification."
             )
         elif forced_recent_participation_safe:
             lines.append(
