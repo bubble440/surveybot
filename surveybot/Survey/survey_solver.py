@@ -560,12 +560,6 @@ def solve_full_survey(driver, api_key, *, account_id: str):
     while steps_total < MAX_TOTAL_STEPS:
         steps_total += 1
         steps_on_url += 1
-        # LOCAL DEBUG: print survey context on demand via env var
-        if (os.getenv("SURVEY_CTX_DEBUG") or "").strip() == "1":
-            try:
-                _survey_ctx.print_debug()
-            except Exception:
-                pass
         print(
             f"ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ‚Â ÃƒÆ’Ã¢â‚¬Â°tape {steps_total}/{MAX_TOTAL_STEPS} "
             f"(page {steps_on_url}/{MAX_STEPS_PER_URL}) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â exÃƒÆ’Ã‚Â©cution de la page courante"
@@ -712,6 +706,18 @@ def solve_full_survey(driver, api_key, *, account_id: str):
         # a) Laisser GPT dÃƒÆ’Ã‚Â©cider de lÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢action ÃƒÆ’Ã‚Â  partir de la capture dÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã‚Â©cran
         success = Survey.survey_executor.execute_survey_page(driver, api_key, ctx=_survey_ctx)
 
+        # LOCAL DEBUG: affiche le contexte accumulé après chaque page
+        if (os.getenv("SURVEY_CTX_DEBUG") or "").strip() == "1":
+            dump = _survey_ctx.dump()
+            print(
+                f"\n[SURVEY_CTX] step={steps_total} "
+                f"entries={len(dump.get('history', []))} "
+                f"summary={dump.get('summary', '')[:120] or '(none yet)'}"
+            )
+            for i, entry in enumerate(dump.get("history", [])[-5:], 1):
+                print(f"  Q{i}: {entry.get('question','')[:80]} → {entry.get('answer','')}")
+            print()
+            
         # [PATCH] Mode "overlay ouvert" ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ recapture rapide
         try:
             overlay = getattr(driver, "_ui_overlay_opened", None)
