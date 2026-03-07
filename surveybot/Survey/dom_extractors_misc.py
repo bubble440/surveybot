@@ -1892,7 +1892,7 @@ def _extract_cmix_grid_question_blocks(driver, frame_chain: list[int] | None) ->
 # ================================================================================
 
 def _extract_cmix_radio_question_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
-    """CMIX (survey.cmix.com) : extraction DOM-only des questions radio.
+    """CMIX (survey.cmix.com) : extraction DOM-only des questions radio + numeric.
 
     Bug visé (capture CMIX): la page affiche des radios (ex: politique de confidentialité)
     mais l'extraction générique peut retourner 0 question_blocks, déclenchant le fallback
@@ -1902,6 +1902,7 @@ def _extract_cmix_radio_question_blocks(driver, frame_chain: list[int] | None) -
     - activation stricte uniquement si le markup CMIX (.cm-question-wrapper + .cm-radio-label)
     - 1 bloc par groupe radio (name) dans un wrapper
     - mapping option->xpath en privilégiant le label texte (.cm-radio-label) plutot que le label "bouton" (.cm-radio-input)
+    - extraction des questions numériques CMIX (`.cm-element[data-type='NUMERIC']` + `input[type='number']`)
     """
 
     frame_chain = list(frame_chain or [])
@@ -1955,9 +1956,6 @@ def _extract_cmix_radio_question_blocks(driver, frame_chain: list[int] | None) -
                 inputs = w.find_elements(By.CSS_SELECTOR, "input[type='radio'][id][name], input[type='checkbox'][id][name]")
             except Exception:
                 inputs = []
-
-            if not inputs:
-                continue
 
             # group par (type, name)
             by_group: dict[tuple[str, str], list[Any]] = {}
@@ -2050,6 +2048,85 @@ def _extract_cmix_radio_question_blocks(driver, frame_chain: list[int] | None) -
                         "context": {"kind": "group", "group_key": group_key, "cmix": True},
                     }
                 )
+
+            # CMIX NUMERIC : 1 bloc single par input[type=number] visible dans un wrapper NUMERIC.
+            try:
+                numeric_root = w.find_elements(By.CSS_SELECTOR, ".cm-element[data-type='NUMERIC']")
+            except Exception:
+                numeric_root = []
+
+            if numeric_root:
+                try:
+                    numeric_inputs = w.find_elements(By.CSS_SELECTOR, ".cm-element[data-type='NUMERIC'] input[type='number']")
+                except Exception:
+                    numeric_inputs = []
+
+                for inp in numeric_inputs:
+                    try:
+                        if _looks_like_system_field(inp):
+                            continue
+                    except Exception:
+                        pass
+
+                    try:
+                        if not inp.is_displayed():
+                            continue
+                    except Exception:
+                        pass
+
+                    try:
+                        el_id = (inp.get_attribute("id") or "").strip()
+                        el_name = (inp.get_attribute("name") or "").strip()
+                        if not el_id and not el_name:
+                            continue
+
+                        xpath = _best_xpath_for_element(driver, inp)
+                        alt_xpaths: list[str] = []
+                        if el_name:
+                            alt_xpaths.append(f"//input[@name={_xpath_literal(el_name)}]")
+                        if el_id:
+                            alt_xpaths.append(f"//*[@id={_xpath_literal(el_id)}]")
+                        alt_xpaths = [x for x in dict.fromkeys(alt_xpaths) if x and x != xpath][:4]
+
+                        single_key = f"text:{el_id}:{el_name}"
+                        target_id = make_target_id("single", single_key, question)
+
+                        register_target(
+                            target_id,
+                            {
+                                "kind": "single",
+                                "itype": "text",
+                                "question": question,
+                                "xpath": xpath,
+                                "alt_xpaths": alt_xpaths,
+                                "tag": "input",
+                                "name": el_name,
+                                "id": el_id,
+                                "frame_chain": frame_chain,
+                                "cmix": True,
+                                "cmix_numeric": True,
+                            },
+                        )
+
+                        blocks.append(
+                            {
+                                "question": question,
+                                "itype": "text",
+                                "options": [],
+                                "max_select": _compute_max_select("text", []),
+                                "target_id": target_id,
+                                "context": {
+                                    "kind": "single",
+                                    "tag": "input",
+                                    "name": el_name,
+                                    "id": el_id,
+                                    "cmix": True,
+                                    "cmix_numeric": True,
+                                },
+                            }
+                        )
+                    except Exception:
+                        continue
 
         except Exception:
             continue
