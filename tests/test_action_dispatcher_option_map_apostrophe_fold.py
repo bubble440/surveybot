@@ -14,14 +14,16 @@ class _FakeSwitchTo:
 class _FakeInput:
     tag_name = "input"
 
-    def __init__(self):
-        self.selected = False
+    def __init__(self, *, selected: bool = False):
+        self.selected = selected
+        self.click_count = 0
 
     @property
     def rect(self):
         return {"width": 20, "height": 20}
 
     def click(self):
+        self.click_count += 1
         self.selected = True
 
     def is_selected(self):
@@ -132,3 +134,28 @@ def test_apply_by_target_id_option_map_matches_frequency_unit_when_unique(monkey
 
     assert ok is True
     assert el.selected is True
+
+
+def test_apply_by_target_id_checkbox_already_selected_skips_click(monkeypatch):
+    payload = {
+        "kind": "group",
+        "itype": "checkbox",
+        "question": "FocusVision hidden answers-list",
+        "option_xpath_map": {"directement sur le site web de la marque": "//*[@id='opt-3']"},
+        "frame_chain": [],
+    }
+    monkeypatch.setattr(ad, "get_target", lambda _tid: payload)
+
+    el = _FakeInput(selected=True)
+    driver = _FakeDriver(el)
+
+    ok = ad._apply_by_target_id(
+        driver,
+        "tid-focusvision-checkbox",
+        "checkbox",
+        "Directement sur le site Web de la marque",
+    )
+
+    assert ok is True
+    assert el.selected is True
+    assert el.click_count == 0
