@@ -516,6 +516,14 @@ def _if_on_topsurveys_handle(driver, api_key, account_id) -> bool:
         print(f"[TOPSURVEYS][PRESELECTION] Erreur detection: {e}")
 
     return False
+    
+# Référence module-level au SurveyContext actif — mis à jour par solve_full_survey()
+# Utilisé par le handler SIGUSR1 (launch.py) pour dump terminal à la demande.
+_current_survey_ctx = None
+
+def get_current_survey_ctx():
+    """Retourne le SurveyContext actif, ou None si aucun survey en cours."""
+    return _current_survey_ctx
 
 def solve_full_survey(driver, api_key, *, account_id: str):
     import Management.redirect_watcher as redirect_watcher
@@ -536,6 +544,9 @@ def solve_full_survey(driver, api_key, *, account_id: str):
     print("ÃƒÂ°Ã…Â¸Ã‚Â§Ã‚Âª [solve_full_survey] DÃƒÆ’Ã‚Â©but de traitement du survey...")
     # One SurveyContext per survey run — tracks Q/R history for coherent OpenAI responses
     _survey_ctx = SurveyContext(session_id=account_id, openai_api_key=api_key)
+    global _current_survey_ctx
+    _current_survey_ctx = _survey_ctx
+
     # ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ‚Â SÃƒÆ’Ã‚Â©curitÃƒÆ’Ã‚Â© : si plusieurs onglets existent, on prend le dernier
     try:
         if len(driver.window_handles) > 1:

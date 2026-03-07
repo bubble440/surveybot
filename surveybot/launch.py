@@ -65,6 +65,27 @@ def safe_get(driver, url):
         print(f"[SAFE_GET] Navigation impossible vers {url}: {e}")
         raise
 
+def install_sigusr1_handler():
+    """
+    Handler SIGUSR1 : dump terminal du SurveyContext actif sans interrompre le bot.
+    Usage : kill -SIGUSR1 <pid>
+    Non disponible sur Windows — ignoré silencieusement.
+    """
+    if not hasattr(signal, "SIGUSR1"):
+        print("[SIGUSR1] Non supporté sur cette plateforme (Windows?), ignoré.")
+        return
+
+    def _handle_sigusr1(signum, frame):
+        from Survey.survey_solver import get_current_survey_ctx
+        ctx = get_current_survey_ctx()
+        if ctx is None:
+            print("[SIGUSR1] Aucun SurveyContext actif.")
+        else:
+            ctx.print_debug()
+
+    signal.signal(signal.SIGUSR1, _handle_sigusr1)
+    print("[SIGUSR1] Handler installé. Dump via : kill -SIGUSR1", os.getpid())
+
 def install_sigterm_handler(account_id: str):
     signal.signal(signal.SIGTERM, _make_sigterm_handler(account_id))
 
@@ -270,6 +291,45 @@ def launch_driver_or_fail(config, account_id: str):
             ))
         raise SystemExit("browser_launch_failed")
 
+def start_debug_http_server(survey_ctx_getter):
+    """
+    Serveur HTTP de debug accessible sur chrome_port + 1000.
+    Exemple : bot sur port 9222 → http://localhost:10222/ctx
+    Uniquement en local — ignoré en prod.
+    """
+    if not IS_LOCAL:
+        return
+
+    attach_port = int(os.getenv("ATTACH_DEBUGGER_ADDRESS", ":0").split(":")[-1] or 0)
+    if not attach_port:
+        return
+
+    debug_port = attach_port + 1000
+    import http.server, threading, io
+    from contextlib import redirect_stdout
+
+    class _Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            ctx = survey_ctx_getter()
+            buf = io.StringIO()
+            if ctx is None:
+                buf.write("Aucun SurveyContext actif.\n")
+            else:
+                with redirect_stdout(buf):
+                    ctx.print_debug()
+            body = buf.getvalue().encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *args):
+            pass  # Silence les logs HTTP dans le terminal du bot
+
+    server = http.server.HTTPServer(("127.0.0.1", debug_port), _Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    print(f"[DEBUG_HTTP] Serveur actif → http://localhost:{debug_port}/ctx")
+    
 def init_session_and_enter_surveys(driver, config, account_id: str, notify_fn):
     email = config.get("Email")
     password = config.get("Password")
