@@ -82,6 +82,19 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
     """
     blocks: list[dict] = []
 
+    def _visible_text(el) -> str:
+        txt = (el.text or "").strip()
+        if txt:
+            return txt
+        for attr in ("innerText", "textContent"):
+            try:
+                raw = (el.get_attribute(attr) or "").strip()
+            except Exception:
+                raw = ""
+            if raw:
+                return raw
+        return ""
+
     def _extract_label_text(label_el) -> str:
         """Lit le texte d'un label même quand son conteneur est masqué (display:none)."""
         txt = (label_el.text or "").strip()
@@ -120,6 +133,126 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
             question = (q.find_element(By.CSS_SELECTOR, ".question-text").text or "").strip()
         except Exception:
             question = (q.text or "").strip().split("\n")[0].strip()
+
+        group_by_row_table = None
+        try:
+            candidate_tables = answers.find_elements(
+                By.CSS_SELECTOR,
+                "table.grid[data-settings*='group-by-row'][data-settings*='table-mode']",
+            )
+            group_by_row_table = candidate_tables[0] if candidate_tables else None
+        except Exception:
+            group_by_row_table = None
+
+        if group_by_row_table is not None:
+            try:
+                col_header_nodes = group_by_row_table.find_elements(By.CSS_SELECTOR, "th[scope='col']")
+            except Exception:
+                col_header_nodes = []
+            col_labels: list[str] = []
+            for h in col_header_nodes:
+                txt = _visible_text(h)
+                if txt and txt not in col_labels:
+                    col_labels.append(txt)
+
+            if len(col_labels) >= 2:
+                try:
+                    row_nodes = group_by_row_table.find_elements(By.CSS_SELECTOR, "tr.row-elements")
+                except Exception:
+                    row_nodes = []
+
+                for row in row_nodes:
+                    row_label = ""
+                    try:
+                        row_label = _visible_text(row.find_element(By.CSS_SELECTOR, "th[scope='row']"))
+                    except Exception:
+                        row_label = ""
+                    if not row_label:
+                        continue
+
+                    try:
+                        row_inputs = row.find_elements(By.CSS_SELECTOR, "input[type='radio'], input[type='checkbox']")
+                    except Exception:
+                        row_inputs = []
+                    if len(row_inputs) < 2:
+                        continue
+
+                    row_name = (row_inputs[0].get_attribute("name") or "").strip()
+                    if not row_name:
+                        continue
+
+                    itype = "radio"
+                    try:
+                        if (row_inputs[0].get_attribute("type") or "").strip().lower() == "checkbox":
+                            itype = "checkbox"
+                    except Exception:
+                        pass
+
+                    options: list[str] = []
+                    option_xpath_map: dict[str, str] = {}
+                    for inp in row_inputs:
+                        inp_name = (inp.get_attribute("name") or "").strip()
+                        inp_id = (inp.get_attribute("id") or "").strip()
+                        if inp_name != row_name or not inp_id:
+                            continue
+
+                        try:
+                            label_txt = _visible_text(answers.find_element(By.CSS_SELECTOR, f"label[for='{inp_id}']"))
+                        except Exception:
+                            label_txt = ""
+                        if not label_txt:
+                            continue
+
+                        label_norm = _norm_lc(label_txt)
+                        if not label_norm or label_norm in option_xpath_map:
+                            continue
+
+                        xp = (
+                            f"//input[@id={_xpath_literal(inp_id)}]"
+                            "//ancestor::*[contains(concat(' ',normalize-space(@class),' '),' clickableCell ')"
+                            " or contains(concat(' ',normalize-space(@class),' '),' element ')][1]"
+                        )
+                        options.append(label_txt)
+                        option_xpath_map[label_norm] = xp
+
+                    if len(options) < 2:
+                        continue
+
+                    row_question = row_label
+                    group_key = f"{itype}:name:{row_name}"
+                    target_id = make_target_id("group", group_key, row_question)
+                    register_target(
+                        target_id,
+                        {
+                            "kind": "group",
+                            "frame_chain": list(frame_chain or []),
+                            "itype": itype,
+                            "group_key": group_key,
+                            "question": row_question,
+                            "input_name": row_name,
+                            "max_select": 1 if itype == "radio" else len(options),
+                            "options": options,
+                            "option_xpath_map": option_xpath_map,
+                        },
+                    )
+                    blocks.append(
+                        {
+                            "target_id": target_id,
+                            "kind": "group",
+                            "itype": itype,
+                            "question": row_question,
+                            "options": options,
+                            "max_select": 1 if itype == "radio" else len(options),
+                            "context": {
+                                "kind": "group",
+                                "group_key": group_key,
+                                "focusvision_answers_list": True,
+                            },
+                        }
+                    )
+
+                if blocks:
+                    continue
 
         # Regrouper par name logique
         atm1d_buttons = []

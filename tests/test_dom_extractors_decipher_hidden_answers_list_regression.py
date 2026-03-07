@@ -200,3 +200,79 @@ def test_focusvision_atm1d_prefers_tile_xpath_over_hidden_fallback_inputs():
     assert any("@data-label=" in xp and "r1" in xp for xp in opt_map.values())
     assert any("@data-label=" in xp and "None" in xp for xp in opt_map.values())
     assert payload["meta"]["exclusive_options_norm"] == ["aucune de ces propositions"]
+
+
+def test_focusvision_group_by_row_radio_table_emits_one_block_per_row():
+    col_labels = [
+        "Une fois par semaine ou plus",
+        "Toutes les 2 semaines",
+        "Toutes les 3 semaines",
+        "Une fois par mois",
+        "Une fois tous les 2 à 3 mois",
+        "Une fois tous les 4 à 6 mois",
+        "Moins souvent",
+        "Je n’ai acheté ce produit qu’une seule fois.",
+    ]
+    row_defs = [
+        ("ans899.0.0", "Whey protéines en poudre"),
+        ("ans899.0.1", "Collagène"),
+        ("ans899.0.7", "Pre-workouts"),
+        ("ans899.0.17", "Créatine en poudre"),
+    ]
+
+    col_headers = [_FakeNode(text=lbl) for lbl in col_labels]
+    row_nodes = []
+    label_map = {}
+
+    for row_name, row_label in row_defs:
+        row_inputs = []
+        for idx, col_label in enumerate(col_labels):
+            inp_id = f"{row_name.replace('.', '_')}_{idx}"
+            row_inputs.append(_FakeInput(attrs={"id": inp_id, "name": row_name, "type": "radio"}))
+            label_map[f"label[for='{inp_id}']"] = [_FakeNode(text=col_label)]
+
+        row_nodes.append(
+            _FakeNode(
+                children={
+                    "th[scope='row']": [_FakeNode(text=row_label)],
+                    "input[type='radio'], input[type='checkbox']": row_inputs,
+                }
+            )
+        )
+
+    table = _FakeTable(
+        children={
+            "th[scope='col']": col_headers,
+            "tr.row-elements": row_nodes,
+        }
+    )
+
+    answers_children = {
+        "table.grid[data-settings*='group-by-row'][data-settings*='table-mode']": [table],
+        "input[type='radio'], input[type='checkbox']": [
+            _FakeInput(attrs={"id": "seed1", "name": "ans899.0.0", "type": "radio"}),
+            _FakeInput(attrs={"id": "seed2", "name": "ans899.0.1", "type": "radio"}),
+        ],
+    }
+    answers_children.update(label_map)
+
+    answers = _FakeNode(children=answers_children)
+
+    q = _FakeNode(children={
+        ".answers.answers-list, .answers.answers-table": [answers],
+        ".question-text": [_FakeNode(text="À quelle fréquence en moyenne achetez-vous chacun des produits suivants ?")],
+    })
+
+    class _D:
+        def find_elements(self, by=None, value=None):
+            if value == "div.question[role='radiogroup'], div.question.radio, div.question.checkbox":
+                return [q]
+            return []
+
+    blocks = _extract_focusvision_answers_list_groups(_D(), frame_chain=[])
+
+    assert len(blocks) == 4
+    assert all(b["itype"] == "radio" for b in blocks)
+    assert [b["question"] for b in blocks] == [row_label for _, row_label in row_defs]
+    assert all(len(b["options"]) == 8 for b in blocks)
+    assert all(b["max_select"] == 1 for b in blocks)
