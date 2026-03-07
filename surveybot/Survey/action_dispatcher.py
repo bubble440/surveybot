@@ -431,6 +431,25 @@ def _fold_norm_lc(s: str) -> str:
     s = re.sub(r"\s+", " ", s)
     return s.lower()
 
+
+def _frequency_unit_key(text: str) -> str:
+    """Retourne une clé de cadence (day/week/month/year/never) si détectable."""
+    t = _fold_norm_lc(text)
+    if not t:
+        return ""
+
+    checks = (
+        ("never", (r"\bjamais\b", r"\bnever\b", r"\baucun\b", r"\bnone\b")),
+        ("day", (r"\bjour\b", r"\bjours\b", r"\bday\b", r"\bdaily\b")),
+        ("week", (r"\bsemaine\b", r"\bsemaines\b", r"\bweek\b", r"\bweekly\b")),
+        ("month", (r"\bmois\b", r"\bmonth\b", r"\bmonthly\b")),
+        ("year", (r"\ban\b", r"\bannee\b", r"\bans\b", r"\bannees\b", r"\byear\b", r"\byearly\b")),
+    )
+    for key, pats in checks:
+        if any(re.search(pat, t) for pat in pats):
+            return key
+    return ""
+
 def _click_xpath(driver, xpath: str) -> bool:
     if not xpath:
         return False
@@ -1097,6 +1116,24 @@ def _apply_by_target_id(driver, target_id: str, itype: str, value: str) -> bool:
                 if not xp and resolved_itype == "checkbox" and len(opt_map) == 1:
                     if (v_norm in {"oui", "yes", "true", "1", "checked", "on", "x"} or not v_norm):
                         xp = next(iter(opt_map.values()))
+
+                # 4) fréquence: si l'IA paraphrase mal l'intensité mais garde l'unité
+                # (ex: "Plusieurs fois par semaine" vs "Au moins une fois par semaine"),
+                # on autorise un mapping uniquement quand l'unité correspond à UNE seule option.
+                if not xp:
+                    freq_key = _frequency_unit_key(value)
+                    if freq_key:
+                        unit_matches = [
+                            x for k, x in opt_map.items()
+                            if _frequency_unit_key(k) == freq_key
+                        ]
+                        if len(unit_matches) == 1:
+                            xp = unit_matches[0]
+                            if debug_target:
+                                log_debug(
+                                    "[TARGET_DEBUG]",
+                                    f"target_id='{target_id}' value='{value}' -> frequency_unit_match='{freq_key}'",
+                                )
 
                 if not xp:
                     if debug_target:
