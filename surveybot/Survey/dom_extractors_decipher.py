@@ -537,11 +537,7 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
                     m = re.fullmatch(r"ans\d+\.(\d+)\.(\d+)", raw_name)
                     if m:
                         row_key = m.group(2)
-                        cell_row_label = (
-                            matrix_row_labels.get(row_key)
-                            or matrix_row_labels.get(str(int(row_key) + 1))
-                            or ""
-                        )
+                        cell_row_label = matrix_row_labels.get(str(int(row_key) + 1)) or ""
 
                 cell_col_norm = _norm_lc(cell_col_label)
                 if cell_col_norm and cell_col_norm not in seen_options:
