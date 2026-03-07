@@ -693,9 +693,10 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
 
     lines.append(
         "RÈGLE SPÉCIALE MATRICES (itype=matrix) :\n"
-        "- valeur DOIT être au format STRICT: row_label || col_label\n"
+        "- valeur DOIT être au format STRICT: row_label || col_label (ou row_label || col1|col2|col3 pour matrices checkbox multi-colonnes)\n"
         "- Si matrix_active_row est fourni dans le contexte, row_label DOIT être EXACTEMENT cette valeur (ne choisis jamais une autre ligne).\n"
         "- Exemple attendu: Crédit consommation || Transféré vers Revolut\n"
+        "- Exemple multi-colonnes (checkbox): Whey protéines || Amazon|Decathlon\n"
         "- INTERDIT: répondre uniquement une colonne (ex: 'Transféré vers Revolut')."
     )
 
@@ -788,7 +789,9 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
         lines.append(f"contexte: {q}")
         if matrix_rows:
             lines.append(f"sous_questions_matrix: {' | '.join(matrix_rows)}")
-            lines.append("matrix_answer_format: row_label || col_label (row obligatoire, jamais col seule)")
+            lines.append(
+                "matrix_answer_format: row_label || col_label (single) ; row_label || col1|col2|col3 (matrix checkbox multi-colonnes ; row obligatoire, jamais col seule)"
+            )
         if matrix_active_row:
             lines.append(f"matrix_active_row: {matrix_active_row}")
             lines.append("matrix_rule_active_row: row_label DOIT être EXACTEMENT matrix_active_row")
