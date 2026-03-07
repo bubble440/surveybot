@@ -1489,6 +1489,27 @@ def _apply_by_target_id(driver, target_id: str, itype: str, value: str) -> bool:
                         log_debug("[TARGET_DEBUG]", f"decipher_clickable_ranking no rank signal after click: value='{value}' xpath='{xp}'")
                     return False
 
+                # Idempotence checkbox: si la cible est déjà dans l'état voulu,
+                # ne pas cliquer (évite les dérives sur widgets FocusVision/Decipher).
+                if resolved_itype == "checkbox":
+                    try:
+                        inp_pre = _first_input_under(el)
+                    except Exception:
+                        inp_pre = None
+
+                    if _is_selected(inp_pre) or _selected_like(el):
+                        return True
+
+                    try:
+                        if (el.tag_name or "").lower() == "label":
+                            fid = (el.get_attribute("for") or "").strip()
+                            if fid:
+                                inp_for = driver.find_element(By.ID, fid)
+                                if _is_selected(inp_for):
+                                    return True
+                    except Exception:
+                        pass
+
                 # 2) clic Ã¢â‚¬Å“normalÃ¢â‚¬Â sur la cible
                 _click_candidate(el, "target")
 
