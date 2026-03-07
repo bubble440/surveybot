@@ -134,7 +134,7 @@ def test_batch_prompt_exposes_matrix_row_labels_for_llm_context():
     assert "sous_questions_matrix: Épargne | Crédit consommation" in prompt
     assert "RÈGLE SPÉCIALE MATRICES (itype=matrix)" in prompt
     assert "Crédit consommation || Transféré vers Revolut" in prompt
-    assert "matrix_answer_format: row_label || col_label (row obligatoire, jamais col seule)" in prompt
+    assert "matrix_answer_format: row_label || col_label (single) ; row_label || col1|col2|col3 (matrix checkbox multi-colonnes ; row obligatoire, jamais col seule)" in prompt
 
 
 def test_expand_question_blocks_for_batch_splits_matrix_rows_into_distinct_entries():
