@@ -178,8 +178,7 @@ def solve_focusvision_cardsort(driver, preferred_label: Optional[str] = None, ma
     FocusVision/Decipher cardsort (DOM-only, prédictible, budget borné):
     - détecte .sq-cardsort
     - clique une bucket "safe" pour chaque carte visible, jusqu'ÃƒÂ  completion ou max_cards
-    - clique "Continuer" si visible
-    Retourne True si au moins 1 clic a été effectué.
+    Retourne True uniquement si au moins une carte a effectivement progressé.
     """
     def _norm(s: str) -> str:
         if not s:
@@ -273,6 +272,9 @@ def solve_focusvision_cardsort(driver, preferred_label: Optional[str] = None, ma
         label_to_el = {}
         for b in buckets:
             try:
+                style = _norm_lc(b.get_attribute("style") or "")
+                if "pointer-events: none" in style:
+                    continue
                 lbl = _read_bucket_label(b)
                 if not lbl:
                     continue
@@ -341,7 +343,7 @@ def solve_focusvision_cardsort(driver, preferred_label: Optional[str] = None, ma
     if not cs:
         return False
 
-    did = False
+    progressed = False
 
     for _ in range(max_cards):
         if _completion_visible(cs):
@@ -364,7 +366,6 @@ def solve_focusvision_cardsort(driver, preferred_label: Optional[str] = None, ma
 
         if not _click(bucket):
             break
-        did = True
 
         # petit wait pour l'auto-advance (page JS)
         time.sleep(0.12)
@@ -384,20 +385,21 @@ def solve_focusvision_cardsort(driver, preferred_label: Optional[str] = None, ma
                 time.sleep(0.12)
             except Exception:
                 pass
+        card3 = _active_card(cs)
+        after_retry_idx = ""
+        try:
+            after_retry_idx = (card3.get_attribute("index") or "").strip() if card3 else ""
+        except Exception:
+            after_retry_idx = ""
 
-    # CTA Continue (si visible)
-    try:
-        btn = driver.find_elements(By.CSS_SELECTOR, "#btn_continue, input#btn_continue, input.button.continue")
-        if btn:
-            try:
-                if btn[0].is_displayed():
-                    _click(btn[0])
-            except Exception:
-                _click(btn[0])
-    except Exception:
-        pass
+        if _completion_visible(cs):
+            progressed = True
+            break
 
-    return did
+        if before_idx and after_retry_idx and before_idx != after_retry_idx:
+            progressed = True
+
+    return progressed
 
 def _norm(s: str) -> str:
     if not s:
