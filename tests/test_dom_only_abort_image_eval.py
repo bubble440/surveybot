@@ -216,7 +216,7 @@ def test_detect_image_only_unresolvable_dom_visual_challenge_instruction():
     is_match, reason, fingerprint = survey_executor._detect_image_only_unresolvable_dom(driver, question_blocks=[])
 
     assert is_match is True
-    assert reason == "captcha_image_selection"
+    assert reason == "image_selection_challenge"
     assert len(fingerprint) == 12
 
 
@@ -247,4 +247,85 @@ def test_budgeted_soft_restart_visual_challenge_uses_explicit_reason(monkeypatch
 
     assert first == "restarted"
     assert second == "budget_exhausted"
-    assert calls == ["captcha_image_selection"]
+    assert calls == ["dom_only_abort:image_selection_challenge"]
+
+
+def test_detect_open_text_embedded_image_unresolvable_dom_positive():
+    driver = _FakeDriver(
+        {
+            "textarea_count": 1,
+            "other_text_input_count": 0,
+            "radio_count": 0,
+            "checkbox_count": 0,
+            "select_count": 0,
+            "ta_image_count": 1,
+            "large_embedded_ta_image_count": 1,
+        },
+        url="https://edgesurvey.innovatemr.net/survey/qualitative_questions",
+    )
+    qbs = [{"itype": "textarea", "target_id": "single_ta_1", "question": ""}]
+
+    is_match, reason, fingerprint = survey_executor._detect_open_text_embedded_image_unresolvable_dom(
+        driver,
+        qbs,
+    )
+
+    assert is_match is True
+    assert reason == "open_text_embedded_image"
+    assert len(fingerprint) == 12
+
+
+def test_detect_open_text_embedded_image_unresolvable_dom_no_match_when_multiple_inputs():
+    driver = _FakeDriver(
+        {
+            "textarea_count": 1,
+            "other_text_input_count": 0,
+            "radio_count": 1,
+            "checkbox_count": 0,
+            "select_count": 0,
+            "ta_image_count": 1,
+            "large_embedded_ta_image_count": 1,
+        }
+    )
+    qbs = [{"itype": "textarea", "target_id": "single_ta_1", "question": ""}]
+
+    is_match, reason, fingerprint = survey_executor._detect_open_text_embedded_image_unresolvable_dom(
+        driver,
+        qbs,
+    )
+
+    assert is_match is False
+    assert reason == ""
+    assert fingerprint == ""
+
+
+def test_budgeted_soft_restart_for_open_text_embedded_image(monkeypatch):
+    driver = _FakeDriver(
+        {
+            "textarea_count": 1,
+            "other_text_input_count": 0,
+            "radio_count": 0,
+            "checkbox_count": 0,
+            "select_count": 0,
+            "ta_image_count": 1,
+            "large_embedded_ta_image_count": 1,
+        },
+        url="https://edgesurvey.innovatemr.net/survey/qualitative_questions",
+    )
+    qbs = [{"itype": "textarea", "target_id": "single_ta_1", "question": ""}]
+
+    calls = []
+
+    class _Guard:
+        def request_survey_restart(self, reason):
+            calls.append(reason)
+
+    import Management.guards.runtime_guard as runtime_guard
+    monkeypatch.setattr(runtime_guard, "get_guard", lambda: _Guard())
+
+    first = survey_executor._budgeted_soft_restart_for_open_text_embedded_image(driver, qbs)
+    second = survey_executor._budgeted_soft_restart_for_open_text_embedded_image(driver, qbs)
+
+    assert first == "restarted"
+    assert second == "budget_exhausted"
+    assert calls == ["dom_only_abort:open_text_embedded_image"]
