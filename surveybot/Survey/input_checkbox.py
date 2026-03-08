@@ -471,69 +471,7 @@ def click_checkbox_by_label(driver, target_text: str, context_hint: str | None =
 
     scope = find_context_container(driver, context_hint)
 
-    # 0) DOM ciblé: Decipher + Dynata MX Carousel superposé à une grille checkbox.
-    #    Guard DOM strict: même question contient à la fois la grille .answers-table/.clickableCell
-    #    et un stage #mx-stage-{qid} avec des scales .mx-carouselapp-scale[data-code].
-    try:
-        clicked_scale = driver.execute_script(
-            r"""
-            const root = arguments[0] || document;
-            const norm = s => (s || '')
-              .toLowerCase()
-              .normalize('NFKC')
-              .replace(/\u00A0/g, ' ')
-              .replace(/\s+/g, ' ')
-              .trim();
-            const needle = norm(arguments[1]);
-            if (!needle) return null;
-
-            const host = root.closest('.question') || root.closest('[id^="question_"]') || root;
-            const qNode = host && host.id && host.id.startsWith('question_') ? host : null;
-            const qid = qNode ? qNode.id.slice('question_'.length) : null;
-            if (!qid) return null;
-
-            const hasCheckboxGrid = !!host.querySelector('.answers.answers-table .clickableCell input[type="checkbox"]');
-            if (!hasCheckboxGrid) return null;
-
-            const stage = host.querySelector('#mx-stage-' + qid);
-            if (!stage) return null;
-
-            const scales = Array.from(stage.querySelectorAll('.mx-carouselapp-scale[data-code]'));
-            if (!scales.length) return null;
-
-            const candidates = [];
-            for (const scale of scales) {
-              const label = scale.querySelector('.label');
-              const txt = norm((label && (label.innerText || label.textContent)) || scale.innerText || scale.textContent || '');
-              if (!txt) continue;
-              if (!(txt === needle || txt.includes(needle) || needle.includes(txt))) continue;
-              candidates.push({
-                scale,
-                score: txt === needle ? 2 : 1,
-                len: txt.length,
-              });
-            }
-            if (!candidates.length) return null;
-
-            candidates.sort((a, b) => (b.score - a.score) || (b.len - a.len));
-            const best = candidates[0].scale;
-
-            best.scrollIntoView({ block: 'center', inline: 'center' });
-            const clickable = best.querySelector('.mx-card') || best;
-            clickable.click();
-
-            const selected = best.classList.contains('mx-card-selected');
-            return selected ? clickable : null;
-            """,
-            scope,
-            target_text,
-        )
-        if clicked_scale:
-            return clicked_scale
-    except Exception:
-        pass
-
-    # 1) DOM ciblé: wrappers .answer_options avec input.checkbox.radioQT (Metrix-like single-select)
+    # 0) DOM ciblé: wrappers .answer_options avec input.checkbox.radioQT (Metrix-like single-select)
     #    Critères strictement DOM (pas de règle provider globale).
     try:
         clicked_input = driver.execute_script(
@@ -601,7 +539,7 @@ def click_checkbox_by_label(driver, target_text: str, context_hint: str | None =
     except Exception:
         pass
 
-    # 2) Cas standard : <label for="id"> → <input id="id" type="checkbox">
+    # 1) Cas standard : <label for="id"> → <input id="id" type="checkbox">
     try:
         labels = (scope or driver).find_elements(
             By.XPATH,
@@ -665,7 +603,7 @@ def click_checkbox_by_label(driver, target_text: str, context_hint: str | None =
     except Exception:
         pass
 
-    # 3) Cas checkbox ARIA / custom (role="checkbox")
+    # 2) Cas checkbox ARIA / custom (role="checkbox")
     try:
         boxes = (scope or driver).find_elements(
             By.XPATH,
@@ -690,7 +628,7 @@ def click_checkbox_by_label(driver, target_text: str, context_hint: str | None =
     except Exception:
         pass
 
-    # 4) Cas fallback Confirmit / tables
+    # 3) Cas fallback Confirmit / tables
     try:
         cb = click_confirmit_checktable(
             driver,
@@ -704,7 +642,7 @@ def click_checkbox_by_label(driver, target_text: str, context_hint: str | None =
     except Exception:
         pass
 
-    # 5) Fallbacks JS
+    # 4) Fallbacks JS
     if fallback_click_checkbox_js_alchemer(driver, target_text):
         return True  # Pas d'élément retourné mais succès
     
