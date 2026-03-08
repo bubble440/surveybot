@@ -495,7 +495,7 @@ def click_checkbox_by_label(driver, target_text: str, context_hint: str | None =
             const hasCheckboxGrid = !!host.querySelector('.answers.answers-table .clickableCell input[type="checkbox"]');
             if (!hasCheckboxGrid) return null;
 
-            const stage = host.querySelector('#mx-stage-' + qid);
+            const stage = document.getElementById('mx-stage-' + qid);
             if (!stage) return null;
 
             const scales = Array.from(stage.querySelectorAll('.mx-carouselapp-scale[data-code]'));
