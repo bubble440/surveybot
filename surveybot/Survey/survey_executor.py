@@ -1300,10 +1300,10 @@ def execute_survey_page(driver, api_key, ctx=None):
         question_blocks_for_batch = prompt_builder.expand_question_blocks_for_batch(question_blocks)
         prompt = prompt_builder.build_batch_prompt(question_blocks_for_batch, ctx=ctx)
 
-    if (os.getenv("LOG_LEVEL") or "").strip().lower() == "debug":
-        print("[PROMPT_DEBUG] ===== PROMPT ENVOYÉ À OPENAI =====")
-        print(prompt[:2000])  # tronqué pour ne pas noyer les logs
-        print("[PROMPT_DEBUG] ===================================")
+        if (os.getenv("LOG_LEVEL") or "").strip().lower() == "debug":
+            print("[PROMPT_DEBUG] ===== PROMPT ENVOYÉ À OPENAI =====")
+            print(prompt[:2000])  # tronqué pour ne pas noyer les logs
+            print("[PROMPT_DEBUG] ===================================")
 
         instruction_raw = client.responses.create(
             input=prompt,
