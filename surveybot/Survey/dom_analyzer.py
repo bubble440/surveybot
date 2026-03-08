@@ -78,6 +78,7 @@ try:
         _extract_confirmit_slider_grid_blocks,
         _extract_cloudresearch_sentry_blocks,
         _extract_purespectrum_date_dropdown_blocks,
+        _extract_ps_select_dropdown_blocks,
         _extract_purespectrum_mobile_date_blocks,
         _extract_collapsed_section_radio_rows,
         _extract_jqm_lrw_collapsible_radio_rows,
@@ -142,6 +143,7 @@ except ImportError:
         _extract_confirmit_slider_grid_blocks,
         _extract_cloudresearch_sentry_blocks,
         _extract_purespectrum_date_dropdown_blocks,
+        _extract_ps_select_dropdown_blocks,
         _extract_purespectrum_mobile_date_blocks,
         _extract_collapsed_section_radio_rows,
         _extract_jqm_lrw_collapsible_radio_rows,
@@ -960,6 +962,15 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         consent_modal_blocks = _extract_consent_modal_radio_block(driver, frame_chain)
         if consent_modal_blocks:
             return consent_modal_blocks
+    except Exception:
+        pass
+
+    # --- 0i) ps-select-dropdown (ng-bootstrap) month/year ---
+    # Objectif: couvrir les dropdowns custom avec trigger ngbdropdowntoggle.
+    try:
+        ps_select_dropdown_blocks = _extract_ps_select_dropdown_blocks(driver, frame_chain)
+        if ps_select_dropdown_blocks:
+            return ps_select_dropdown_blocks
     except Exception:
         pass
 
