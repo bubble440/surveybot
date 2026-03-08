@@ -520,7 +520,7 @@ def click_checkbox_by_label(driver, target_text: str, context_hint: str | None =
 
             // Préparer la carte-ligne (requis par Dynata MX pour accepter le clic sur les scales).
             let rowCode = null;
-            const scopedRowLegend = closestFrom(root, 'tr')?.querySelector('[id$="_left"]');
+            const scopedRowLegend = root.closest('tr')?.querySelector('[id$="_left"]');
             const rowLegendId = (scopedRowLegend && scopedRowLegend.id) || '';
             const rowLegendMatch = rowLegendId.match(/_r(\d+)_left$/);
             if (rowLegendMatch) {
