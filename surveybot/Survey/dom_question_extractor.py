@@ -658,6 +658,37 @@ def _group_key_for_choice(el, itype: str) -> str:
                     if dotted_base_name and dotted_base_name != clean_name:
                         clean_name = dotted_base_name
 
+                    # Qualtrics JFE pattern: chaque option d'une question checkbox
+                    # possède un `name` unique `QR~QID...~<choiceId>`.
+                    # Scope DOM strict: uniquement dans un fieldset parent qui expose
+                    # un <legend>, et seulement si >=2 checkboxes y partagent le même
+                    # préfixe `qr~qid...`.
+                    qualtrics_match = re.match(r"^(qr~qid[0-9a-z_-]+)~\d+$", clean_name)
+                    if qualtrics_match:
+                        try:
+                            q_fieldsets = el.find_elements(By.XPATH, "ancestor::fieldset[legend][1]")
+                        except Exception:
+                            q_fieldsets = []
+
+                        if q_fieldsets:
+                            try:
+                                sibling_boxes = q_fieldsets[0].find_elements(By.XPATH, ".//input[@type='checkbox'][@name]")
+                            except Exception:
+                                sibling_boxes = []
+
+                            prefixes: list[str] = []
+                            for sib in sibling_boxes:
+                                try:
+                                    sib_name = _norm_lc(sib.get_attribute("name") or "")
+                                except Exception:
+                                    sib_name = ""
+                                m = re.match(r"^(qr~qid[0-9a-z_-]+)~\d+$", sib_name)
+                                if m:
+                                    prefixes.append(m.group(1))
+
+                            if len(prefixes) >= 2 and len(set(prefixes)) == 1:
+                                clean_name = prefixes[0]
+
                     # Alchemer/Forsta-like pattern: les options checkbox d'une même
                     # question portent un `name` distinct de forme `sgE-...-<optionId>`.
                     # Scope DOM strict: uniquement dans un fieldset de question sg-question
