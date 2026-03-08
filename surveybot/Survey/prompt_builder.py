@@ -984,12 +984,12 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
             lines.append(f"selection_rule: SURVEY_CONSENT_ACCEPT strict -> répondre EXACTEMENT avec '{forced_consent}'")
             lines.append(f"allowed_values_strict: {forced_consent}")
             lines.append("instruction_stricte: Consentement de participation/confidentialité détecté. Tu dois choisir l'option d'acceptation et jamais l'option de refus.")
-        elif _looks_like_classification_question(block) and opts:
-            picked = _pick_best_classification_option(opts)
-            print(f"[PROMPT_BUILDER] classification_rule=1 N={len(opts)} picked='{picked}'")
-            lines.append(f"selection_rule: CLASSIFICATION_BEST strict -> répondre EXACTEMENT avec '{picked}'")
-            lines.append(f"allowed_values_strict: {picked}")
-            lines.append("instruction_stricte: Tu dois répondre EXACTEMENT avec l'un des libellés suivants : {" + picked + "}. Ne paraphrase pas. Ne renvoie rien d'autre.")
+        # elif _looks_like_classification_question(block) and opts:
+        #     picked = _pick_best_classification_option(opts)
+        #     print(f"[PROMPT_BUILDER] classification_rule=1 N={len(opts)} picked='{picked}'")
+        #     lines.append(f"selection_rule: CLASSIFICATION_BEST strict -> répondre EXACTEMENT avec '{picked}'")
+        #     lines.append(f"allowed_values_strict: {picked}")
+        #     lines.append("instruction_stricte: Tu dois répondre EXACTEMENT avec l'un des libellés suivants : {" + picked + "}. Ne paraphrase pas. Ne renvoie rien d'autre.")
         elif bool((ctx or {}).get("consent_modal_radio")) and opts:
             forced_consent = _preferred_consent_option(opts)
             if forced_consent:
