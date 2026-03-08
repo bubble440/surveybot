@@ -1562,14 +1562,14 @@ def _extract_encuesta_matrix_blocks(driver, frame_chain: list[int] | None) -> li
         {
             "question": question,
             "itype": "matrix",
-            "options": col_headers,
+            "options": matrix_rows,
             "max_select": 1,
             "target_id": target_id,
             "context": {
                 "kind": "group",
                 "group_key": group_key,
                 "matrix_question": question,
-                "matrix_rows": matrix_rows,
+                "matrix_rows": col_headers,
                 "matrix_columns": col_headers,
                 "encuesta_matrix": True,
             },
