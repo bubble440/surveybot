@@ -483,6 +483,7 @@ def run_attach_takeover(driver, *, api_key: str, account_id: str) -> None:
         ### Résultat attendu dans les logs avec clé 2Captcha configurée
             
             ok = survey_executor.execute_survey_page(driver, api_key, ctx=_ctx)
+            _ctx.maybe_update_summary()                                           # ← ajouter cette ligne
             print(f"[ATTACH] step={i}/{max_steps} ok={ok} url={_attach_display_url(driver.current_url)}")
         except Exception as e:
             print(f"[ATTACH][ERROR] step={i} {type(e).__name__}: {e}")

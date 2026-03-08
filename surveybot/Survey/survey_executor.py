@@ -1300,6 +1300,11 @@ def execute_survey_page(driver, api_key, ctx=None):
         question_blocks_for_batch = prompt_builder.expand_question_blocks_for_batch(question_blocks)
         prompt = prompt_builder.build_batch_prompt(question_blocks_for_batch, ctx=ctx)
 
+    if (os.getenv("LOG_LEVEL") or "").strip().lower() == "debug":
+        print("[PROMPT_DEBUG] ===== PROMPT ENVOYÉ À OPENAI =====")
+        print(prompt[:2000])  # tronqué pour ne pas noyer les logs
+        print("[PROMPT_DEBUG] ===================================")
+
         instruction_raw = client.responses.create(
             input=prompt,
             model="gpt-5-nano",
@@ -1338,28 +1343,25 @@ def execute_survey_page(driver, api_key, ctx=None):
         if ctx is not None:
             try:
                 for action in (actions or []):
-                    qid = getattr(action, "qid", "") or ""
+                    qid = (action.get("qid") or "") if isinstance(action, dict) else ""
+                    target_id_act = (action.get("target_id") or "") if isinstance(action, dict) else ""
                     meta = qid_meta.get(qid) if qid else None
-                    if not meta:
-                        # Fallback: chercher par target_id si qid absent
-                        tid = getattr(action, "target_id", "") or ""
-                        if tid:
-                            meta = next(
-                                (m for m in qid_meta.values() if m.get("target_id") == tid),
-                                None,
-                            )
+                    if not meta and target_id_act:
+                        meta = next(
+                            (m for m in qid_meta.values() if m.get("target_id") == target_id_act),
+                            None,
+                        )
                     if meta:
                         ctx.record(
                             question=meta.get("question", ""),
                             options=meta.get("options") or [],
-                            answer=getattr(action, "value", "") or "",
+                            answer=(action.get("value") or "") if isinstance(action, dict) else "",
                         )
                     else:
-                        # Dernier recours : on enregistre ce qu'on a
                         ctx.record(
                             question=qid or "unknown",
                             options=[],
-                            answer=getattr(action, "value", "") or "",
+                            answer=(action.get("value") or "") if isinstance(action, dict) else "",
                         )
             except Exception as e:
                 print(f"[SURVEY_CTX] record error: {e}")
