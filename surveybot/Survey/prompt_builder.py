@@ -846,7 +846,17 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
         qid = f"Q{i}"
         q = _escape(block.get("question", ""))
         itype = _escape(block.get("itype", ""))
-        opts = [_escape(o) for o in (block.get("options") or []) if o]
+        ctx = block.get("context") if isinstance(block.get("context"), dict) else {}
+        matrix_active_row_raw = (ctx or {}).get("matrix_active_row", "")
+        matrix_columns = (ctx or {}).get("matrix_columns")
+        use_matrix_columns_for_active_row = (
+            _norm_folded_lc(block.get("itype")) == "matrix"
+            and bool(_norm(matrix_active_row_raw))
+            and isinstance(matrix_columns, list)
+            and bool(matrix_columns)
+        )
+        options_source = matrix_columns if use_matrix_columns_for_active_row else (block.get("options") or [])
+        opts = [_escape(o) for o in options_source if o]
         max_sel = _selection_max_for_prompt(block)
         try:
             matrix_max_sel = int(block.get("max_select", 1) or 1)
@@ -855,7 +865,7 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
         matrix_max_sel = max(1, matrix_max_sel)
         target_id = _escape(block.get("target_id", ""))
         matrix_rows = _matrix_row_labels(block)
-        matrix_active_row = _escape((block.get("context") or {}).get("matrix_active_row", ""))
+        matrix_active_row = _escape(matrix_active_row_raw)
 
         lines.append(f"\n{qid}")
         lines.append(f"target_id: {target_id}")
@@ -873,7 +883,6 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
         lines.append(f"itype: {itype}")
         display_max_sel = min(max_sel, 5) if max_sel > 3 else max_sel
         lines.append(f"max_select: {display_max_sel}")
-        ctx = block.get("context") if isinstance(block.get("context"), dict) else {}
         is_multi_text = (
             itype in {"text", "textarea", "number"}
             and max_sel >= 2
