@@ -539,7 +539,7 @@ def click_checkbox_by_label(driver, target_text: str, context_hint: str | None =
               rowCard && !rowCard.classList.contains('mx-card-selected')
                 ? (rowCard.querySelector('.mx-card') || rowCard)
                 : null;
-            const scaleClickable = best.querySelector('.mx-card') || best;
+            const scaleClickable = best;
             if (!scaleClickable) return null;
 
             scaleClickable.scrollIntoView({ block: 'center', inline: 'center' });
