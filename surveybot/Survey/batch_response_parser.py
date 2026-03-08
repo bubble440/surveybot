@@ -647,6 +647,22 @@ def _parse_matrix_pairs(value: str, matrix_active_row: str = "") -> list[tuple[s
     if not txt or "||" not in txt:
         return []
 
+    # Priorité au format ranking multi-paires:
+    #   row1 || col1 | row2 || col2
+    # On split uniquement sur le pipe SIMPLE (pas sur "||") pour préserver les couples.
+    pair_chunks = [c.strip() for c in re.split(r"(?<!\|)\|(?!\|)", txt) if c.strip()]
+    if len(pair_chunks) > 1 and all("||" in chunk for chunk in pair_chunks):
+        parsed_pairs: list[tuple[str, str]] = []
+        for chunk in pair_chunks:
+            row_col = [p.strip() for p in chunk.split("||", 1)]
+            if len(row_col) != 2:
+                return []
+            row_label, col_label = row_col
+            if not row_label or not col_label:
+                return []
+            parsed_pairs.append((row_label, col_label))
+        return parsed_pairs
+
     parts = [p.strip() for p in txt.split("||")]
     if len(parts) < 2:
         return []
