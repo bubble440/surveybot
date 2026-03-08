@@ -1412,6 +1412,21 @@ def try_click_navigation_cta(driver) -> bool:
 
     candidates = []
 
+    # --- Encuesta: coexistence d'un CTA intra-question et du vrai CTA footer ---
+    # Cas DOM observé: bouton "encuesta__done-button" (inline, non-nav)
+    # + bouton footer "ee__button--next" (navigation réelle).
+    # Garde-fou minimal: ne filtrer "encuesta__done-button" QUE si les deux existent.
+    has_encuesta_done_button = False
+    has_encuesta_footer_next = False
+    try:
+        has_encuesta_done_button = bool(driver.find_elements(By.CSS_SELECTOR, "button.encuesta__done-button"))
+        has_encuesta_footer_next = bool(driver.find_elements(By.CSS_SELECTOR, "button.ee__button--next"))
+    except Exception:
+        has_encuesta_done_button = False
+        has_encuesta_footer_next = False
+
+    should_filter_encuesta_inline_done = has_encuesta_done_button and has_encuesta_footer_next
+
     nav_xpath = (
         "//button"
         "|//input[@type='submit' or @type='button' or @type='image']"
@@ -1442,6 +1457,10 @@ def try_click_navigation_cta(driver) -> bool:
 
             cls = (el.get_attribute("class") or "").lower()
             cls_tokens = cls.split()
+
+            if should_filter_encuesta_inline_done and "encuesta__done-button" in cls:
+                continue
+
             disabled_patterns = ("disabled", "btn-disabled", "is-disabled", "button--disabled", "btn--disabled")
             if any(tok in disabled_patterns for tok in cls_tokens):
                 continue
