@@ -69,6 +69,7 @@ try:
         _extract_askandanswer_selection_list_questions,
         _extract_rnw_ionicon_multi_choice_blocks,
         _extract_table_matrix_radio_rows,
+        _extract_encuesta_matrix_blocks,
         _extract_yougov_grid_text_question_blocks,
         _extract_cmix_simple_grid_question_blocks,
         _extract_cmix_grid_question_blocks,
@@ -132,6 +133,7 @@ except ImportError:
         _extract_askandanswer_selection_list_questions,
         _extract_rnw_ionicon_multi_choice_blocks,
         _extract_table_matrix_radio_rows,
+        _extract_encuesta_matrix_blocks,
         _extract_yougov_grid_text_question_blocks,
         _extract_cmix_simple_grid_question_blocks,
         _extract_cmix_grid_question_blocks,
@@ -812,6 +814,15 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         table_matrix_blocks = _extract_table_matrix_radio_rows(driver, frame_chain)
         if table_matrix_blocks:
             return table_matrix_blocks
+    except Exception:
+        pass
+
+    # --- 0d-1quater-bis) encuesta.com matrix (Vuetify ee__matrix--*) ---
+    # Objectif: extraire les matrices encuesta avant le fallback générique.
+    try:
+        encuesta_matrix_blocks = _extract_encuesta_matrix_blocks(driver, frame_chain)
+        if encuesta_matrix_blocks:
+            return encuesta_matrix_blocks
     except Exception:
         pass
 
