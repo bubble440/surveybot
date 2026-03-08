@@ -495,9 +495,10 @@ def _enforce_selection_ranges(actions: list[dict], constraints: dict[str, int], 
             itype_hint=itype,
         )
 
-        # Matrices: conserver le comportement actuel (une action = une cellule)
+        # Matrices: ne pas tronquer ici.
+        # _parse_matrix_pairs borne déjà les paires valides (row/col) à dispatcher.
         if itype == "matrix":
-            final_actions.extend(q_actions[:max_select])
+            final_actions.extend(q_actions)
             continue
 
         if len(q_actions) > max_select:

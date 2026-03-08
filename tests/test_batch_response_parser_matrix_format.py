@@ -108,3 +108,22 @@ def test_parse_matrix_value_accepts_column_only_when_matrix_active_row_is_known(
     assert actions[0]["matrix_col_label"] == "En ligne, sur Amazon"
     assert actions[1]["matrix_row_label"] == "créatine en poudre"
     assert actions[1]["matrix_col_label"] == "En magasin, dans un supermarché ou un hypermarché"
+
+
+def test_parse_matrix_value_does_not_truncate_actions_when_constraint_is_per_row():
+    raw = "Q1 //// group_rank //// Autres pays européens || 1|Le Maroc || 2 //// matrix //// Selon vous, d'où viennent les AVOCATS de meilleure qualité, et quel est le deuxième ?"
+    constraints = {"Q1": 1}
+    qid_meta = {
+        "Q1": {
+            "itype": "matrix",
+            "target_id": "group_rank",
+        }
+    }
+
+    actions = parse_batch_response(raw, constraints=constraints, qid_meta=qid_meta)
+
+    assert len(actions) == 2
+    assert actions[0]["matrix_row_label"] == "Autres pays européens"
+    assert actions[0]["matrix_col_label"] == "1"
+    assert actions[1]["matrix_row_label"] == "Le Maroc"
+    assert actions[1]["matrix_col_label"] == "2"
