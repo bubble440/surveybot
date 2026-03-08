@@ -1569,7 +1569,7 @@ def _extract_encuesta_matrix_blocks(driver, frame_chain: list[int] | None) -> li
                 "kind": "group",
                 "group_key": group_key,
                 "matrix_question": question,
-                "matrix_rows": col_headers,
+                "matrix_rows": matrix_rows,
                 "matrix_columns": col_headers,
                 "encuesta_matrix": True,
             },
