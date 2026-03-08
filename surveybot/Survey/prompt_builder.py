@@ -626,6 +626,7 @@ def build_prompt(question_blocks: List[Dict[str, Any]]) -> str:
         "  'Direction / Management', 'Santé' — dans cet ordre de préférence selon les options.\n"
         "- Statut professionnel : 'Cadre supérieur', 'Dirigeant', 'Travailleur indépendant / Freelance' "
         "  — jamais 'Sans emploi', 'Retraité', 'Étudiant'.\n"
+        "- Niveau d'études : tu es titulaire d'un Master 2 (Bac+5). "
         "- Patrimoine / épargne / investissements : affirme toujours en posséder, "
         "  choisis les options qui indiquent un patrimoine substantiel.\n"
         "- INTERDIT ABSOLU : 'Préfère ne pas répondre', 'Ne souhaite pas indiquer', "
