@@ -17,7 +17,7 @@ class SurveyContext:
         self,
         session_id: str,
         openai_api_key: str,
-        summary_every_n_pages: int = 4,
+        summary_every_n_pages: int = 1,
     ) -> None:
         self.session_id = session_id
         self.history: list[dict[str, Any]] = []
