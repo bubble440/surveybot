@@ -520,7 +520,7 @@ def click_checkbox_by_label(driver, target_text: str, context_hint: str | None =
 
             // Préparer la carte-ligne (requis par Dynata MX pour accepter le clic sur les scales).
             let rowCode = null;
-            const scopedRowLegend = closestFrom(root, 'tr')?.querySelector('[id$="_left"]');
+            const scopedRowLegend = root.closest('tr')?.querySelector('[id$="_left"]');
             const rowLegendId = (scopedRowLegend && scopedRowLegend.id) || '';
             const rowLegendMatch = rowLegendId.match(/_r(\d+)_left$/);
             if (rowLegendMatch) {
@@ -563,7 +563,38 @@ def click_checkbox_by_label(driver, target_text: str, context_hint: str | None =
                 scale_clickable.click()
             except Exception:
                 ActionChains(driver).move_to_element(scale_clickable).click().perform()
-            return scale_clickable
+
+            # Vérification post-clic: si l'input natif lié n'est pas checked, laisser le step 2 gérer.
+            mx_checked = driver.execute_script(
+                r"""
+                const root = arguments[0] || document;
+                const norm = s => (s || '')
+                  .toLowerCase()
+                  .normalize('NFKC')
+                  .replace(/\u00A0/g, ' ')
+                  .replace(/\s+/g, ' ')
+                  .trim();
+                const needle = norm(arguments[1]);
+                if (!needle) return false;
+
+                const host = root.closest('.question') || root.closest('[id^="question_"]') || root;
+                const labels = Array.from(host.querySelectorAll('.answers.answers-table td.clickableCell label[for]'));
+                const match = labels.find(label => {
+                  const txt = norm(label.innerText || label.textContent || '');
+                  return txt && (txt === needle || txt.includes(needle) || needle.includes(txt));
+                });
+                if (!match) return false;
+
+                const inputId = match.getAttribute('for');
+                if (!inputId) return false;
+                const input = host.querySelector('#' + CSS.escape(inputId));
+                return !!(input && input.checked === true);
+                """,
+                scope,
+                target_text,
+            )
+            if mx_checked:
+                return scale_clickable
     except Exception:
         pass
 
