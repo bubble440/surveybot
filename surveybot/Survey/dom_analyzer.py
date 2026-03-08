@@ -1294,32 +1294,71 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                     if inp_id:
                         id_lit = _xpath_literal(inp_id)
 
-                        # Pattern spécifique
-                        # Pattern spécifique
-                        in_grid = False
+                        # MetrixLab/Toluna single-select pattern DOM-only:
+                        # input[type=checkbox].radioQT dans un wrapper .answer_options
+                        # avec UI cliquable portée par .option_radio.
+                        # On cible explicitement ce wrapper visuel plutôt que l'input.
+                        is_radioqt = False
+                        has_answer_options = False
+                        has_option_radio = False
                         try:
-                            in_grid = bool(e.find_elements(By.XPATH, "ancestor::table[contains(@class,'grid')][1]"))
+                            is_radioqt = "radioqt" in _norm_lc(e.get_attribute("class") or "")
                         except Exception:
-                            in_grid = False
-
-                        if in_grid:
-                            xp = (
-                                f"(//*[@id={id_lit}]/ancestor::td[contains(@class,'clickableCell')][1] | "
-                                f"//*[@id={id_lit}]/ancestor::td[1] | "
-                                f"//label[@for={id_lit}]//*[normalize-space(.)!=''] | "
-                                f"//label[@for={id_lit}] | "
-                                f"//*[@id={id_lit}])"
-                            )
-                        else:
+                            is_radioqt = False
+                        if is_radioqt:
                             try:
-                                has_label = bool(driver.find_elements(By.XPATH, f"//label[@for={id_lit}]"))
+                                has_answer_options = bool(
+                                    e.find_elements(
+                                        By.XPATH,
+                                        "ancestor::*[contains(concat(' ', normalize-space(@class), ' '), ' answer_options ')][1]",
+                                    )
+                                )
                             except Exception:
-                                has_label = False
+                                has_answer_options = False
+                            try:
+                                has_option_radio = bool(
+                                    e.find_elements(
+                                        By.XPATH,
+                                        "ancestor::*[contains(concat(' ', normalize-space(@class), ' '), ' answer_options ')][1]//*[contains(concat(' ', normalize-space(@class), ' '), ' option_radio ')]",
+                                    )
+                                )
+                            except Exception:
+                                has_option_radio = False
 
-                            if has_label:
-                                xp = f"(//label[@for={id_lit}]//*[normalize-space(.)!=''] | //label[@for={id_lit}] | //*[@id={id_lit}])"
+                        if is_radioqt and has_answer_options and has_option_radio:
+                            xp = (
+                                f"(//*[@id={id_lit}]/ancestor::*[contains(concat(' ', normalize-space(@class), ' '), ' answer_options ')][1]"
+                                f"//*[contains(concat(' ', normalize-space(@class), ' '), ' option_radio ')][1]"
+                                f" | //*[@id={id_lit}]/ancestor::*[contains(concat(' ', normalize-space(@class), ' '), ' answer_options ')][1])"
+                            )
+                        elif inp_id:
+
+                        # Pattern spécifique
+                        # Pattern spécifique
+                            in_grid = False
+                            try:
+                                in_grid = bool(e.find_elements(By.XPATH, "ancestor::table[contains(@class,'grid')][1]"))
+                            except Exception:
+                                in_grid = False
+
+                            if in_grid:
+                                xp = (
+                                    f"(//*[@id={id_lit}]/ancestor::td[contains(@class,'clickableCell')][1] | "
+                                    f"//*[@id={id_lit}]/ancestor::td[1] | "
+                                    f"//label[@for={id_lit}]//*[normalize-space(.)!=''] | "
+                                    f"//label[@for={id_lit}] | "
+                                    f"//*[@id={id_lit}])"
+                                )
                             else:
-                                xp = f"//*[@id={id_lit}]"
+                                try:
+                                    has_label = bool(driver.find_elements(By.XPATH, f"//label[@for={id_lit}]"))
+                                except Exception:
+                                    has_label = False
+
+                                if has_label:
+                                    xp = f"(//label[@for={id_lit}]//*[normalize-space(.)!=''] | //label[@for={id_lit}] | //*[@id={id_lit}])"
+                                else:
+                                    xp = f"//*[@id={id_lit}]"
 
                     # 2) Fallback stable : input par (type,name,value) si pas d'id
                     elif inp_type in ("radio", "checkbox") and inp_name and inp_value:
