@@ -563,49 +563,7 @@ def click_checkbox_by_label(driver, target_text: str, context_hint: str | None =
                 scale_clickable.click()
             except Exception:
                 ActionChains(driver).move_to_element(scale_clickable).click().perform()
-
-            # Validation post-clic: sur ce DOM hybride (grille checkbox + Dynata MX Carousel),
-            # la soumission dépend de l'état du checkbox natif dans .answers-table.
-            native_checked_input = driver.execute_script(
-                r"""
-                const root = arguments[0] || document;
-                const norm = s => (s || '')
-                  .toLowerCase()
-                  .normalize('NFKC')
-                  .replace(/\u00A0/g, ' ')
-                  .replace(/\s+/g, ' ')
-                  .trim();
-                const needle = norm(arguments[1]);
-                if (!needle) return null;
-
-                const host = root.closest('.question') || root.closest('[id^="question_"]') || root;
-                const labels = Array.from(host.querySelectorAll('.answers.answers-table .clickableCell label[for]'));
-                if (!labels.length) return null;
-
-                const candidates = [];
-                for (const lab of labels) {
-                  const txt = norm(lab.innerText || lab.textContent || '');
-                  if (!txt) continue;
-                  if (!(txt === needle || txt.includes(needle) || needle.includes(txt))) continue;
-
-                  const fid = lab.getAttribute('for');
-                  if (!fid) continue;
-                  const inp = host.querySelector('#' + CSS.escape(fid));
-                  if (!inp || (inp.type || '').toLowerCase() !== 'checkbox') continue;
-
-                  candidates.push({ inp, score: txt === needle ? 2 : 1, len: txt.length });
-                }
-                if (!candidates.length) return null;
-
-                candidates.sort((a, b) => (b.score - a.score) || (b.len - a.len));
-                const best = candidates[0].inp;
-                return best.checked ? best : null;
-                """,
-                scope,
-                target_text,
-            )
-            if native_checked_input is not None:
-                return native_checked_input
+            return scale_clickable
     except Exception:
         pass
 
