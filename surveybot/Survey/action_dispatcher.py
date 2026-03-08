@@ -762,6 +762,83 @@ def _try_table_matrix_sge_set(driver, target_payload: dict, row_label: str, col_
     return False
 
 
+def _try_encuesta_matrix_set(driver, row_label: str, col_label: str) -> bool:
+    """
+    Encuesta.com (Vuetify) matrix rows:
+    - row container: .layout.ee__matrix--row:not(.hidden-sm-and-down)
+    - row label: .ee__matrix--first-column span
+    - target cell input: .ee__matrix--column input[type=radio][name='<col>']
+    - effective click target: .v-input--selection-controls__input
+    """
+    row_label = (row_label or "").strip()
+    col_label = (col_label or "").strip()
+    if not row_label or not col_label:
+        return False
+
+    target_row_fold = _fold_norm_lc(row_label)
+    try:
+        rows = driver.find_elements(By.CSS_SELECTOR, ".layout.ee__matrix--row:not(.hidden-sm-and-down)")
+    except Exception:
+        rows = []
+
+    matched_row = None
+    for row in rows:
+        try:
+            row_title = row.find_element(By.CSS_SELECTOR, ".ee__matrix--first-column span")
+            row_text = _norm(row_title.text or row_title.get_attribute("innerText") or "")
+        except Exception:
+            continue
+        row_fold = _fold_norm_lc(row_text)
+        if row_fold and (row_fold == target_row_fold or target_row_fold in row_fold):
+            matched_row = row
+            break
+
+    if matched_row is None:
+        log_info("[TARGET]", f"apply ok=false strategy=encuesta_matrix reason=row_not_found row={row_label!r} col={col_label!r}")
+        return False
+
+    try:
+        target_input = matched_row.find_element(
+            By.CSS_SELECTOR,
+            f".ee__matrix--column input[type='radio'][name='{col_label}']",
+        )
+    except Exception:
+        log_info("[TARGET]", f"apply ok=false strategy=encuesta_matrix reason=input_not_found row={row_label!r} col={col_label!r}")
+        return False
+
+    try:
+        click_target = target_input.find_element(By.XPATH, "./ancestor::*[contains(@class,'v-input--selection-controls__input')][1]")
+    except Exception:
+        click_target = target_input
+
+    _aa__safe_scroll_center(driver, click_target)
+    if not _aa__safe_click(driver, click_target):
+        log_info("[TARGET]", f"apply ok=false strategy=encuesta_matrix reason=click_failed row={row_label!r} col={col_label!r}")
+        return False
+
+    try:
+        checked = bool(driver.execute_script(
+            """
+            const input = arguments[0];
+            if (!input) return false;
+            if (input.checked) return true;
+            const radio = input.closest('.v-radio');
+            const classes = (radio && radio.className) ? String(radio.className) : '';
+            return classes.includes('v-item--active');
+            """,
+            target_input,
+        ))
+    except Exception:
+        checked = False
+
+    if not checked:
+        log_info("[TARGET]", f"apply ok=false strategy=encuesta_matrix reason=not_checked row={row_label!r} col={col_label!r}")
+        return False
+
+    log_info("[TARGET]", "apply ok=true strategy=encuesta_matrix reason=applied")
+    return True
+
+
 def _apply_by_target_id(driver, target_id: str, itype: str, value: str) -> bool:
     """
     Applique l'action directement via DOM_REGISTRY (target_id -> xpath).
@@ -3706,6 +3783,21 @@ def execute_action(driver, instruction: str) -> bool:
 
         # Matrix: row + col obligatoires. Pas de clic aveugle.
         if matrix_intent:
+            encuesta_matrix_target = bool((target_payload or {}).get("encuesta_matrix") is True)
+            if encuesta_matrix_target:
+                # Encodage OpenAI matrix: value=label de ligne ; context=colonne/rang (1,2,...)
+                matrix_row = value
+                matrix_col = ctx
+
+                if not (matrix_row or "").strip():
+                    log_info("[MATRIX_ABORT]", "reason='missing_row' strategy=encuesta_matrix")
+                    return False
+                if not (matrix_col or "").strip():
+                    log_info("[MATRIX_ABORT]", "reason='missing_col' strategy=encuesta_matrix")
+                    return False
+
+                return _try_encuesta_matrix_set(driver, matrix_row, matrix_col)
+
             if not (matrix_row or "").strip():
                 log_info("[MATRIX_ABORT]", "reason='missing_row'")
                 return False
