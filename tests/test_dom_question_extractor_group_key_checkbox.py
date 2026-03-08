@@ -21,10 +21,15 @@ class _FakeChoice:
                 if (c.get_attribute("id") or "") == "mrForm" or (c.get_attribute("name") or "") == "mrForm":
                     return [c]
             return []
-        if by == "xpath" and value and value == "ancestor::fieldset[1]":
+        if by == "xpath" and value and value in ("ancestor::fieldset[1]", "ancestor::fieldset[legend][1]"):
             for c in self._containers:
-                if (getattr(c, "tag_name", "") or "").lower() == "fieldset":
-                    return [c]
+                if (getattr(c, "tag_name", "") or "").lower() != "fieldset":
+                    continue
+                if value == "ancestor::fieldset[legend][1]":
+                    legends = c.find_elements("xpath", ".//legend[1]")
+                    if not legends:
+                        continue
+                return [c]
             return []
         if by == "xpath" and value and "ancestor::*[contains(@class,'mrQuestionTable')][1]" in value:
             for c in self._containers:
@@ -150,6 +155,22 @@ def test_checkbox_group_key_normalizes_alchemer_sge_option_suffixes():
     )
     el = _FakeChoice({"name": "sgE-8714385-12-16-10090"}, containers=[fieldset])
     assert _group_key_for_choice(el, "checkbox") == "sge-8714385-12-16"
+
+
+def test_checkbox_group_key_normalizes_qualtrics_qr_qid_option_suffixes():
+    siblings = [
+        _FakeChoice({"name": "QR~QID1322947303~4"}),
+        _FakeChoice({"name": "QR~QID1322947303~5"}),
+        _FakeChoice({"name": "QR~QID1322947303~8"}),
+    ]
+    fieldset = _FakeContainer(
+        {"id": "QID1322947303-fieldset", "class": "question-fieldset"},
+        checkboxes=siblings,
+        legends=[_FakeLegend("Which of the following activities...")],
+        tag_name="fieldset",
+    )
+    el = _FakeChoice({"name": "QR~QID1322947303~5"}, containers=[fieldset])
+    assert _group_key_for_choice(el, "checkbox") == "qr~qid1322947303"
 
 
 def test_compute_max_select_uses_explicit_exact_count_from_question_text():
