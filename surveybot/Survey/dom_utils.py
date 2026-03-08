@@ -326,6 +326,34 @@ def _detect_itype(el) -> str:
             if input_type in ("radio",):
                 return "radio"
             if input_type in ("checkbox",):
+                # MetrixLab/Toluna single-select pattern: le DOM expose des
+                # <input type="checkbox" class="radioQT"> mais le comportement
+                # est radio (exclusive) via wrappers .radio_question/.option_radio.
+                # Scope DOM strict pour éviter d'impacter les checkboxes classiques.
+                el_class = (el.get_attribute("class") or "").lower()
+                if "radioqt" in el_class:
+                    try:
+                        has_radio_question = bool(
+                            el.find_elements(
+                                By.XPATH,
+                                "ancestor::*[contains(concat(' ', normalize-space(@class), ' '), ' radio_question ')][1]",
+                            )
+                        )
+                    except Exception:
+                        has_radio_question = False
+
+                    try:
+                        has_option_radio = bool(
+                            el.find_elements(
+                                By.XPATH,
+                                "ancestor::*[contains(concat(' ', normalize-space(@class), ' '), ' answer_options ')][1]//*[contains(concat(' ', normalize-space(@class), ' '), ' option_radio ')]",
+                            )
+                        )
+                    except Exception:
+                        has_option_radio = False
+
+                    if has_radio_question or has_option_radio:
+                        return "radio"
                 return "checkbox"
             if input_type in ("text", "email", "tel", "number", "date"):
                 return "text"
