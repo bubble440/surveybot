@@ -116,8 +116,6 @@ def should_run_hot_reload() -> bool:
     """Retourne True si le hot reload des modules doit être activé."""
     if not is_local_env():
         return False
-    if is_attach_mode():
-        return False
     return True
 
 
