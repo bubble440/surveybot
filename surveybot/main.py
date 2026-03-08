@@ -533,6 +533,9 @@ def main():
         if not api_key:
             raise RuntimeError("OPENAI_API_KEY introuvable (nÃƒÆ’Ã‚Â©cessaire en attach)")
 
+        if should_run_hot_reload():
+            start_hot_reload_thread()
+
         run_attach_takeover(driver, api_key=api_key, account_id=account_id)
         return
 

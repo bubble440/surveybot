@@ -1302,7 +1302,7 @@ def execute_survey_page(driver, api_key, ctx=None):
 
         if (os.getenv("LOG_LEVEL") or "").strip().lower() == "debug":
             print("[PROMPT_DEBUG] ===== PROMPT ENVOYÉ À OPENAI =====")
-            print(prompt[:2000])  # tronqué pour ne pas noyer les logs
+            print(prompt[:20000])  # tronqué pour ne pas noyer les logs
             print("[PROMPT_DEBUG] ===================================")
 
         instruction_raw = client.responses.create(
