@@ -797,10 +797,34 @@ def _try_encuesta_matrix_set(driver, row_label: str, col_label: str) -> bool:
         log_info("[TARGET]", f"apply ok=false strategy=encuesta_matrix reason=row_not_found row={row_label!r} col={col_label!r}")
         return False
 
+    target_col_fold = _fold_norm_lc(col_label)
+    target_col_name = None
+    if target_col_fold:
+        try:
+            header_cells = driver.find_elements(
+                By.CSS_SELECTOR,
+                ".layout.ee__matrix--row.hidden-sm-and-down .ee__matrix--header-cells span",
+            )
+        except Exception:
+            header_cells = []
+
+        for idx, header in enumerate(header_cells, start=1):
+            try:
+                header_text = _norm(header.text or header.get_attribute("innerText") or "")
+            except Exception:
+                continue
+            if _fold_norm_lc(header_text) == target_col_fold:
+                target_col_name = str(idx)
+                break
+
+    if not target_col_name:
+        log_info("[TARGET]", f"apply ok=false strategy=encuesta_matrix reason=col_not_found row={row_label!r} col={col_label!r}")
+        return False
+
     try:
         target_input = matched_row.find_element(
             By.CSS_SELECTOR,
-            f".ee__matrix--column input[type='radio'][name='{col_label}']",
+            f".ee__matrix--column input[type='radio'][name='{target_col_name}']",
         )
     except Exception:
         log_info("[TARGET]", f"apply ok=false strategy=encuesta_matrix reason=input_not_found row={row_label!r} col={col_label!r}")
@@ -3785,10 +3809,6 @@ def execute_action(driver, instruction: str) -> bool:
         if matrix_intent:
             encuesta_matrix_target = bool((target_payload or {}).get("encuesta_matrix") is True)
             if encuesta_matrix_target:
-                # Encodage OpenAI matrix: value=label de ligne ; context=colonne/rang (1,2,...)
-                matrix_row = value
-                matrix_col = ctx
-
                 if not (matrix_row or "").strip():
                     log_info("[MATRIX_ABORT]", "reason='missing_row' strategy=encuesta_matrix")
                     return False
