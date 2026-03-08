@@ -333,6 +333,37 @@ def test_try_click_navigation_cta_detects_icon_only_div_next(monkeypatch):
     assert next_div.clicked == 1
 
 
+def test_try_click_navigation_cta_encuesta_prefers_footer_next_over_done_button(monkeypatch):
+    monkeypatch.setattr(cta_handler, "ActionChains", _FakeActionChains)
+    monkeypatch.delenv("CTA_INTERCEPT_ONLY", raising=False)
+
+    encuesta_done = _FakeElement(
+        text="SUIVANT",
+        attrs={"class": "encuesta__done-button primary v-btn"},
+    )
+    encuesta_done.tag_name = "button"
+
+    footer_next = _FakeElement(
+        text="SUIVANT",
+        attrs={"class": "ee__button--next primary v-btn"},
+    )
+    footer_next.tag_name = "button"
+
+    driver = _FakeDriver(
+        xpath_elements=[encuesta_done, footer_next],
+        css_elements={
+            "button.encuesta__done-button": [encuesta_done],
+            "button.ee__button--next": [footer_next],
+        },
+    )
+
+    ok = cta_handler.try_click_navigation_cta(driver)
+
+    assert ok is True
+    assert encuesta_done.clicked == 0
+    assert footer_next.clicked == 1
+
+
 def test_try_click_navigation_cta_detects_li_next_button_submitform(monkeypatch):
     monkeypatch.setattr(cta_handler, "ActionChains", _FakeActionChains)
     monkeypatch.delenv("CTA_INTERCEPT_ONLY", raising=False)
