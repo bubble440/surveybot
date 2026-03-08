@@ -1421,6 +1421,162 @@ def _extract_table_matrix_radio_rows(driver, frame_chain: list[int] | None) -> l
     return blocks
 
 
+def _extract_encuesta_matrix_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
+    """encuesta.com (Vuetify ee__matrix--*) : extraction d'une matrice rows x columns.
+
+    Gate DOM strict (additif, non provider-wide):
+    - .ee__matrix--row
+    - .ee__matrix--first-column
+    - .ee__matrix--header-cells
+
+    Structure ciblée:
+    - ligne d'entêtes: `.ee__matrix--row.hidden-sm-and-down`
+    - lignes de réponses: `.ee__matrix--row:not(.hidden-sm-and-down)`
+    - libellé ligne: `.ee__matrix--first-column`
+    - colonnes: `.ee__matrix--column input[type=radio]`
+    """
+    frame_chain = list(frame_chain or [])
+
+    try:
+        rows = driver.find_elements(By.CSS_SELECTOR, ".ee__matrix--row")
+        first_cols = driver.find_elements(By.CSS_SELECTOR, ".ee__matrix--first-column")
+        header_cells = driver.find_elements(By.CSS_SELECTOR, ".ee__matrix--header-cells")
+    except Exception:
+        return []
+
+    if not rows or not first_cols or not header_cells:
+        return []
+
+    matrix_row_containers: list[Any] = []
+    try:
+        matrix_row_containers = driver.find_elements(By.CSS_SELECTOR, ".layout.ee__matrix--row")
+    except Exception:
+        matrix_row_containers = []
+
+    if not matrix_row_containers:
+        return []
+
+    col_headers: list[str] = []
+    for row in matrix_row_containers:
+        try:
+            cls = _norm_lc(row.get_attribute("class") or "")
+            if "hidden-sm-and-down" not in cls:
+                continue
+            for cell in row.find_elements(By.CSS_SELECTOR, ".ee__matrix--header-cells"):
+                txt = _norm(cell.text or cell.get_attribute("innerText") or "")
+                if txt:
+                    col_headers.append(txt)
+            if col_headers:
+                break
+        except Exception:
+            continue
+
+    if len(col_headers) < 2:
+        return []
+
+    matrix_rows: list[str] = []
+    row_xpath_map: dict[str, str] = {}
+
+    for row in matrix_row_containers:
+        try:
+            cls = _norm_lc(row.get_attribute("class") or "")
+            if "hidden-sm-and-down" in cls:
+                continue
+
+            first_col_nodes = row.find_elements(By.CSS_SELECTOR, ".ee__matrix--first-column")
+            if not first_col_nodes:
+                continue
+
+            row_label = _norm(first_col_nodes[0].text or first_col_nodes[0].get_attribute("innerText") or "")
+            if not row_label:
+                continue
+
+            row_columns = row.find_elements(By.CSS_SELECTOR, ".ee__matrix--column")
+            if len(row_columns) < len(col_headers):
+                continue
+
+            radio_count = 0
+            for col in row_columns[: len(col_headers)]:
+                radios = col.find_elements(By.CSS_SELECTOR, "input[type='radio']")
+                if radios:
+                    radio_count += 1
+            if radio_count < len(col_headers):
+                continue
+
+            row_xpath = _best_xpath_for_element(driver, row)
+            if not row_xpath:
+                continue
+
+            row_key = _norm_key(row_label)
+            if not row_key or row_key in row_xpath_map:
+                continue
+
+            matrix_rows.append(row_label)
+            row_xpath_map[row_key] = row_xpath
+        except Exception:
+            continue
+
+    if len(matrix_rows) < 2:
+        return []
+
+    question = ""
+    try:
+        q_nodes = driver.find_elements(By.CSS_SELECTOR, ".ee__question_title")
+        for q in q_nodes:
+            qtxt = _norm(q.text or q.get_attribute("innerText") or "")
+            if qtxt:
+                question = qtxt
+                break
+    except Exception:
+        question = ""
+
+    if not question:
+        try:
+            question = _norm(_find_question_text_near_element(driver, matrix_row_containers[0]))
+        except Exception:
+            question = ""
+
+    if not question:
+        return []
+
+    group_key = f"encuesta_matrix:{_norm_key(question[:120])}:{len(matrix_rows)}x{len(col_headers)}"
+    target_id = make_target_id("group", group_key, question)
+
+    register_target(
+        target_id,
+        {
+            "kind": "group",
+            "itype": "matrix",
+            "group_key": group_key,
+            "question": question,
+            "frame_chain": frame_chain,
+            "matrix_question": question,
+            "matrix_rows": matrix_rows,
+            "matrix_columns": col_headers,
+            "matrix_row_xpath_map": row_xpath_map,
+            "encuesta_matrix": True,
+        },
+    )
+
+    return [
+        {
+            "question": question,
+            "itype": "matrix",
+            "options": col_headers,
+            "max_select": 1,
+            "target_id": target_id,
+            "context": {
+                "kind": "group",
+                "group_key": group_key,
+                "matrix_question": question,
+                "matrix_rows": matrix_rows,
+                "matrix_columns": col_headers,
+                "encuesta_matrix": True,
+            },
+        }
+    ]
+
+
 def _extract_yougov_grid_text_question_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
     """YouGov grid-text: 1 bloc `text` par ligne de grille (input texte libre).
 
