@@ -491,6 +491,38 @@ def _matrix_row_labels(block: Dict[str, Any]) -> list[str]:
     return [_escape(str(r)) for r in rows if _norm(str(r))]
 
 
+def _is_truthy(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    return _norm_folded_lc(str(value)) in {"1", "true", "yes", "on"}
+
+
+def _is_numeric_or_ordinal_label(value: str) -> bool:
+    label = _norm_folded_lc(value)
+    if not label:
+        return False
+    return bool(re.fullmatch(r"\d+(?:er|e|eme|eme|st|nd|rd|th|º|°|ª)?", label))
+
+
+def _is_encuesta_ranking_matrix(block: Dict[str, Any]) -> bool:
+    if _norm_folded_lc(block.get("itype")) != "matrix":
+        return False
+    context = block.get("context") if isinstance(block.get("context"), dict) else {}
+    if not _is_truthy((context or {}).get("encuesta_matrix")):
+        return False
+    rows = (context or {}).get("matrix_rows")
+    cols = (context or {}).get("matrix_columns")
+    if not isinstance(rows, list) or not isinstance(cols, list):
+        return False
+    row_labels = [_norm(str(r)) for r in rows if _norm(str(r))]
+    col_labels = [_norm(str(c)) for c in cols if _norm(str(c))]
+    if not row_labels or not col_labels:
+        return False
+    if len(col_labels) >= len(row_labels):
+        return False
+    return all(_is_numeric_or_ordinal_label(col) for col in col_labels)
+
+
 def expand_question_blocks_for_batch(question_blocks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
     Déplie les matrices multi-lignes en entrées QID unitaires (1 QID par ligne matrix).
@@ -509,11 +541,13 @@ def expand_question_blocks_for_batch(question_blocks: List[Dict[str, Any]]) -> L
         matrix_rows = context.get("matrix_rows") if isinstance(context, dict) else None
         active_row = _norm(str((context or {}).get("matrix_active_row", "")))
 
+        is_encuesta_ranking_matrix = _is_encuesta_ranking_matrix(block)
         should_expand = (
             itype == "matrix"
             and isinstance(matrix_rows, list)
             and bool(matrix_rows)
             and not active_row
+            and not is_encuesta_ranking_matrix
         )
         if not should_expand:
             expanded.append(block)
@@ -921,12 +955,21 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
                 f"selection_rule: Pour QID={qid}, renvoyer entre 1 et {matrix_max_sel} valeur(s) colonne(s) séparée(s) par | pour matrix_active_row. Ne renvoie jamais row_label dans valeur."
             )
         elif itype == "matrix" and matrix_rows:
-            row_count = len(matrix_rows)
-            lines.append(
-                f"selection_rule: Pour QID={qid}, renvoyer EXACTEMENT {row_count} valeur(s), "
-                "une par ligne de sous_questions_matrix, au format STRICT row_label || col_label, "
-                "séparées par |."
-            )
+            if _is_encuesta_ranking_matrix(block):
+                rank_count = len([c for c in (ctx or {}).get("matrix_columns", []) if _norm(str(c))])
+                lines.append(
+                    f"selection_rule: Pour QID={qid}, renvoyer EXACTEMENT {rank_count} paires row_label || col_label séparées par | (ex: Ligne A || 1|Ligne B || 2)."
+                )
+                lines.append(
+                    "selection_rule_matrix_ranking: Chaque col_label (rang) doit être utilisé UNE SEULE FOIS, et chaque row_label doit être différente (une seule attribution par ligne)."
+                )
+            else:
+                row_count = len(matrix_rows)
+                lines.append(
+                    f"selection_rule: Pour QID={qid}, renvoyer EXACTEMENT {row_count} valeur(s), "
+                    "une par ligne de sous_questions_matrix, au format STRICT row_label || col_label, "
+                    "séparées par |."
+                )
         elif itype == "checkbox":
             lines.append(
                 f"selection_rule: Pour QID={qid}, renvoyer entre 1 et {max_sel} valeur(s) séparée(s) par |. / For QID={qid}, return between 1 and {max_sel} values separated by |."
