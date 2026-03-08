@@ -477,7 +477,7 @@ def click_checkbox_by_label(driver, target_text: str, context_hint: str | None =
     try:
         clicked_scale = driver.execute_script(
             r"""
-            const rawRoot = arguments[0];
+            const root = arguments[0] || document;
             const norm = s => (s || '')
               .toLowerCase()
               .normalize('NFKC')
@@ -487,24 +487,7 @@ def click_checkbox_by_label(driver, target_text: str, context_hint: str | None =
             const needle = norm(arguments[1]);
             if (!needle) return null;
 
-            const asElement = (node) => {
-              if (!node) return null;
-              return node.nodeType === 1 ? node : null;
-            };
-            const root = asElement(rawRoot);
-
-            const closestFrom = (node, selector) => {
-              const el = asElement(node);
-              if (!el || typeof el.closest !== 'function') return null;
-              return el.closest(selector);
-            };
-
-            const host =
-              closestFrom(root, '.question') ||
-              closestFrom(root, '[id^="question_"]') ||
-              document.querySelector('.question[id^="question_"]');
-            if (!host) return null;
-
+            const host = root.closest('.question') || root.closest('[id^="question_"]') || root;
             const qNode = host && host.id && host.id.startsWith('question_') ? host : null;
             const qid = qNode ? qNode.id.slice('question_'.length) : null;
             if (!qid) return null;
@@ -535,31 +518,12 @@ def click_checkbox_by_label(driver, target_text: str, context_hint: str | None =
             candidates.sort((a, b) => (b.score - a.score) || (b.len - a.len));
             const best = candidates[0].scale;
 
-            // Pré-activer la carte-ligne (requis par Dynata MX pour accepter le clic sur les scales).
-            let rowCode = null;
-            const scopedRowLegend = closestFrom(root, 'tr')?.querySelector('[id$="_left"]');
-            const rowLegendId = (scopedRowLegend && scopedRowLegend.id) || '';
-            const rowLegendMatch = rowLegendId.match(/_r(\d+)_left$/);
-            if (rowLegendMatch) {
-              rowCode = 'r' + rowLegendMatch[1];
-            }
-
-            let rowCard = null;
-            if (rowCode) {
-              rowCard = stage.querySelector('.mx-carouselapp-item[data-code="' + rowCode + '"]');
-            }
-            if (!rowCard) {
-              rowCard = stage.querySelector('.mx-carouselapp-item[data-code]');
-            }
-            if (rowCard && !rowCard.classList.contains('mx-card-selected')) {
-              const rowClickable = rowCard.querySelector('.mx-card') || rowCard;
-              rowClickable.click();
-            }
-
             best.scrollIntoView({ block: 'center', inline: 'center' });
             const clickable = best.querySelector('.mx-card') || best;
             clickable.click();
-            return clickable;
+
+            const selected = best.classList.contains('mx-card-selected');
+            return selected ? clickable : null;
             """,
             scope,
             target_text,
