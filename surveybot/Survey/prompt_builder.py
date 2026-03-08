@@ -708,11 +708,6 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
         except Exception:
             pass
 
-    print(
-        f"[PROMPT_PERSONA] residence_country={_PERSONA_RESIDENCE_COUNTRY} "
-        f"residence_city={_PERSONA_RESIDENCE_CITY}"
-    )
-
     lines.append(
         "Tu es un répondant ADULTE (25 ans). "
         "Tu vois ci-dessous TOUTES les questions présentes sur une page de survey."
