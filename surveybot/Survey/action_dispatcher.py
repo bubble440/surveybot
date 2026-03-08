@@ -1002,7 +1002,10 @@ def _apply_by_target_id(driver, target_id: str, itype: str, value: str) -> bool:
             v_norm = _norm_lc(value)
             v_fold = _fold_norm_lc(value)
 
-            if payload.get("purespectrum_date_dropdown") and resolved_itype == "radio":
+            is_purespectrum_date_dropdown = payload.get("purespectrum_date_dropdown") and resolved_itype == "radio"
+            is_ps_select_dropdown = bool(payload.get("ps_select_dropdown"))
+
+            if is_purespectrum_date_dropdown or is_ps_select_dropdown:
                 opt_map = payload.get("option_xpath_map") or {}
                 toggle_xpath = (payload.get("dropdown_toggle_xpath") or "").strip()
 
@@ -1025,7 +1028,7 @@ def _apply_by_target_id(driver, target_id: str, itype: str, value: str) -> bool:
 
                 if not xp:
                     if debug_target:
-                        log_debug("[TARGET_DEBUG]", f"target_id='{target_id}' kind='{kind}' itype='{resolved_itype}' value='{value}' -> purespectrum dropdown option introuvable")
+                        log_debug("[TARGET_DEBUG]", f"target_id='{target_id}' kind='{kind}' itype='{resolved_itype}' value='{value}' -> purespectrum xpath dropdown option introuvable")
                     return False
 
                 def _click_xpath(xpath: str) -> bool:
@@ -1063,7 +1066,7 @@ def _apply_by_target_id(driver, target_id: str, itype: str, value: str) -> bool:
                     return True
 
                 if debug_target:
-                    log_debug("[TARGET_DEBUG]", f"target_id='{target_id}' value='{value}' -> purespectrum dropdown click failed")
+                    log_debug("[TARGET_DEBUG]", f"target_id='{target_id}' value='{value}' -> purespectrum xpath dropdown click failed")
                 return False
 
             if payload.get("confirmit_slider_grid") and resolved_itype == "radio":
