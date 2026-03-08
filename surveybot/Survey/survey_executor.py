@@ -524,6 +524,152 @@ def _budgeted_soft_restart_for_image_only_inputs(driver, question_blocks: list[d
     return "restarted"
 
 
+def _detect_open_text_embedded_image_unresolvable_dom(
+    driver,
+    question_blocks: list[dict],
+) -> tuple[bool, str, str]:
+    """
+    Détecte un écran "question ouverte qualitative" non résoluble de façon fiable
+    en DOM-only:
+      - un seul textarea visible/exploitable,
+      - pas d'autres contrôles de réponse (radio/checkbox/select/autre text input),
+      - présence d'une image embarquée large (src data:image) de type taImage.
+    """
+    open_text_blocks = [
+        b
+        for b in (question_blocks or [])
+        if _norm_lc((b.get("itype") or "")) == "textarea"
+    ]
+    if len(open_text_blocks) != 1:
+        return False, "", ""
+
+    try:
+        dom = driver.execute_script(
+            """
+            const isVisible = (el) => {
+              if (!el) return false;
+              const s = window.getComputedStyle(el);
+              if (!s || s.display === 'none' || s.visibility === 'hidden') return false;
+              const r = el.getBoundingClientRect();
+              return !!(r && r.width > 0 && r.height > 0);
+            };
+            const isEnabled = (el) => {
+              if (!el) return false;
+              if (el.disabled) return false;
+              if (String(el.getAttribute('aria-disabled') || '').toLowerCase() === 'true') return false;
+              return true;
+            };
+
+            const textareas = Array.from(document.querySelectorAll('textarea'))
+              .filter(el => isVisible(el) && isEnabled(el) && !el.readOnly);
+            const textInputs = Array.from(document.querySelectorAll("input[type='text'], input[type='search'], input[type='number'], input[type='email'], input[type='tel']"))
+              .filter(el => isVisible(el) && isEnabled(el) && !el.readOnly);
+            const radios = Array.from(document.querySelectorAll("input[type='radio']")).filter(el => isVisible(el) && isEnabled(el));
+            const checkboxes = Array.from(document.querySelectorAll("input[type='checkbox']")).filter(el => isVisible(el) && isEnabled(el));
+            const selects = Array.from(document.querySelectorAll('select')).filter(el => isVisible(el) && isEnabled(el));
+
+            const taImages = Array.from(document.querySelectorAll('img.taImage, img[class*="taImage"]')).filter(isVisible);
+            const largeEmbeddedTaImages = taImages.filter((img) => {
+              const src = String(img.getAttribute('src') || '').trim().toLowerCase();
+              if (!src.startsWith('data:image/')) return false;
+              const r = img.getBoundingClientRect();
+              const isLarge = !!(r && r.width >= 320 && r.height >= 80);
+              const style = window.getComputedStyle(img);
+              const pointerNone = !!(style && style.pointerEvents === 'none');
+              return isLarge && pointerNone;
+            });
+
+            return {
+              textarea_count: textareas.length,
+              other_text_input_count: textInputs.length,
+              radio_count: radios.length,
+              checkbox_count: checkboxes.length,
+              select_count: selects.length,
+              ta_image_count: taImages.length,
+              large_embedded_ta_image_count: largeEmbeddedTaImages.length,
+            };
+            """
+        ) or {}
+    except Exception:
+        dom = {}
+
+    textarea_count = int(dom.get("textarea_count") or 0)
+    other_inputs_count = (
+        int(dom.get("other_text_input_count") or 0)
+        + int(dom.get("radio_count") or 0)
+        + int(dom.get("checkbox_count") or 0)
+        + int(dom.get("select_count") or 0)
+    )
+    ta_image_count = int(dom.get("ta_image_count") or 0)
+    large_embedded_ta_image_count = int(dom.get("large_embedded_ta_image_count") or 0)
+
+    is_match = (
+        textarea_count == 1
+        and other_inputs_count == 0
+        and ta_image_count >= 1
+        and large_embedded_ta_image_count >= 1
+    )
+    if not is_match:
+        return False, "", ""
+
+    fp_payload = {
+        "textarea_count": textarea_count,
+        "other_inputs_count": other_inputs_count,
+        "ta_image_count": ta_image_count,
+        "large_embedded_ta_image_count": large_embedded_ta_image_count,
+    }
+    fingerprint = hashlib.sha1(repr(fp_payload).encode("utf-8", errors="ignore")).hexdigest()[:12]
+    return True, "open_text_embedded_image", fingerprint
+
+
+def _budgeted_soft_restart_for_open_text_embedded_image(driver, question_blocks: list[dict]) -> str:
+    """
+    Retourne:
+      - "restarted" si pattern détecté + soft_restart demandé,
+      - "budget_exhausted" si budget anti-boucle dépassé,
+      - "no_match" sinon.
+    """
+    is_match, pattern_reason, dom_fp = _detect_open_text_embedded_image_unresolvable_dom(driver, question_blocks)
+    if not is_match:
+        return "no_match"
+
+    try:
+        current_url = driver.current_url or ""
+    except Exception:
+        current_url = ""
+    up = urlsplit(current_url)
+    budget_key = f"{up.scheme}://{up.netloc}{up.path}#{dom_fp}"
+
+    try:
+        counters = getattr(driver, "_dom_only_abort_seen", None)
+        if not isinstance(counters, dict):
+            counters = {}
+        current = int(counters.get(budget_key, 0) or 0)
+        max_hits = 1
+        if current >= max_hits:
+            print(
+                f"[DOM_ONLY_ABORT] {pattern_reason} budget_exhausted key={budget_key} "
+                f"hits={current}/{max_hits} needs_browser_reason={pattern_reason}"
+            )
+            driver._dom_only_abort_seen = counters
+            return "budget_exhausted"
+        counters[budget_key] = current + 1
+        driver._dom_only_abort_seen = counters
+    except Exception:
+        pass
+
+    reason = f"dom_only_abort:{pattern_reason}"
+    print(
+        f"[DOM_ONLY_ABORT] {pattern_reason} -> soft_restart(reason={reason}) key={budget_key}"
+    )
+    try:
+        import Management.guards.runtime_guard as runtime_guard
+        runtime_guard.get_guard().request_survey_restart(reason)
+    except Exception as e:
+        print(f"[DOM_ONLY_ABORT][WARN] soft_restart request failed: {type(e).__name__}: {e}")
+    return "restarted"
+
+
 def _handle_forcewatch_video_gate(driver) -> str:
     """
     Détection/traitement DOM-only d'un écran vidéo avec gate forcewatch.
@@ -1060,6 +1206,12 @@ def execute_survey_page(driver, api_key, ctx=None):
     if image_only_abort == "restarted":
         return True
     if image_only_abort == "budget_exhausted":
+        return False
+
+    open_text_image_abort = _budgeted_soft_restart_for_open_text_embedded_image(driver, question_blocks)
+    if open_text_image_abort == "restarted":
+        return True
+    if open_text_image_abort == "budget_exhausted":
         return False
 
     # =========================================================================
