@@ -6,11 +6,17 @@ class _FakeInput:
 
     def __init__(self, attrs):
         self._attrs = attrs
+        self._flags = attrs.get("_flags", {})
 
     def get_attribute(self, name):
         return self._attrs.get(name, "")
 
     def find_elements(self, by=None, value=None):
+        value = value or ""
+        if " radio_question " in value and self._flags.get("radio_question"):
+            return [object()]
+        if " answer_options " in value and " option_radio " in value and self._flags.get("option_radio"):
+            return [object()]
         return []
 
 
@@ -158,3 +164,35 @@ def test_generic_grouping_recovers_question_from_group_heading_when_near_text_is
     assert blocks[0]["itype"] == "radio"
     assert blocks[0]["options"] == ["Oui", "Non"]
     assert da._norm(blocks[0]["question"]) == da._norm("J'autorise la collecte des données de profil")
+
+
+def test_metrix_radioqt_checkbox_pattern_is_grouped_as_radio(monkeypatch):
+    _patch_non_generic_extractors(monkeypatch)
+
+    monkeypatch.setattr(da, "_is_actionable_visible", lambda _el: True)
+    monkeypatch.setattr(da, "_looks_like_system_field", lambda _el: False)
+    monkeypatch.setattr(da, "_extract_surveywriter_ssi_question", lambda *_: "")
+    monkeypatch.setattr(da, "_nearest_question_container", lambda *_: None)
+    monkeypatch.setattr(da, "_extract_question_from_container", lambda *_: "")
+    monkeypatch.setattr(da, "_find_question_text_near_element", lambda *_: "Etes-vous...?")
+
+    labels = {
+        "q1001_a1": "Un homme",
+        "q1001_a2": "Une femme",
+    }
+    monkeypatch.setattr(da, "_find_associated_label", lambda _driver, el: labels.get(el.get_attribute("id"), ""))
+
+    radioqt_flags = {"radio_question": True, "option_radio": True}
+    driver = _FakeDriver(
+        [
+            _FakeInput({"type": "checkbox", "class": "radioQT", "name": "q1001", "id": "q1001_a1", "value": "1", "_flags": radioqt_flags}),
+            _FakeInput({"type": "checkbox", "class": "radioQT", "name": "q1001", "id": "q1001_a2", "value": "2", "_flags": radioqt_flags}),
+        ]
+    )
+
+    blocks = da._analyze_dom_current_context(driver)
+
+    assert len(blocks) == 1
+    assert blocks[0]["itype"] == "radio"
+    assert blocks[0]["max_select"] == 1
+    assert (blocks[0].get("context") or {}).get("group_key") == "radio:name:q1001"

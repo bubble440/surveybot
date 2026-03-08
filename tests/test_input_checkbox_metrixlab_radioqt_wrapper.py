@@ -37,12 +37,15 @@ class _FakeCheckbox:
 
 
 class _FakeDriver:
-    def __init__(self, js_result=None, checkbox=None):
+    def __init__(self, js_result=None, carousel_js_result=None, checkbox=None):
         self._js_result = js_result
+        self._carousel_js_result = carousel_js_result
         self._checkbox = checkbox
         self.find_elements_called = False
 
     def execute_script(self, script, *args):
+        if "#mx-stage-" in script and "mx-carouselapp-scale" in script:
+            return self._carousel_js_result
         if "div.answer_options" in script and "radioQT" in script:
             return self._js_result
         return None
@@ -78,3 +81,25 @@ def test_click_checkbox_by_label_falls_back_to_standard_label_for(monkeypatch):
 
     assert result is checkbox
     assert checkbox.selected is True
+
+
+def test_click_checkbox_by_label_uses_decipher_mx_carousel_when_dom_guard_matches(monkeypatch):
+    js_marker = {"carousel_clicked": True}
+    driver = _FakeDriver(carousel_js_result=js_marker)
+
+    monkeypatch.setattr(ic, "find_context_container", lambda _driver, _ctx: _FakeScope())
+
+    result = ic.click_checkbox_by_label(driver, "Baskets", context_hint="Vous-même")
+
+    assert result == js_marker
+
+
+def test_click_checkbox_by_label_skips_mx_carousel_path_when_guard_not_matched(monkeypatch):
+    js_marker = {"clicked": True}
+    driver = _FakeDriver(js_result=js_marker, carousel_js_result=None)
+
+    monkeypatch.setattr(ic, "find_context_container", lambda _driver, _ctx: _FakeScope())
+
+    result = ic.click_checkbox_by_label(driver, "Un homme", context_hint="Etes-vous")
+
+    assert result == js_marker
