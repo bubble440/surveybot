@@ -473,11 +473,11 @@ def click_checkbox_by_label(driver, target_text: str, context_hint: str | None =
 
     # 0) DOM ciblé: Decipher + Dynata MX Carousel superposé à une grille checkbox.
     #    Guard DOM strict: même question contient à la fois la grille .answers-table/.clickableCell
-    #    et un stage #mx-stage-{qid} avec des scales .mx-carouselapp-scale[data-code].
+    #    et un stage #mx-stage-{qid}. Le clic doit cibler le <td.clickableCell> natif.
     try:
         mx_targets = driver.execute_script(
             r"""
-            const root = arguments[0] || document;
+            const scope = arguments[0];
             const norm = s => (s || '')
               .toLowerCase()
               .normalize('NFKC')
@@ -487,87 +487,74 @@ def click_checkbox_by_label(driver, target_text: str, context_hint: str | None =
             const needle = norm(arguments[1]);
             if (!needle) return null;
 
-            const host = root.closest('.question') || root.closest('[id^="question_"]') || root;
-            const qNode = host && host.id && host.id.startsWith('question_') ? host : null;
-            const qid = qNode ? qNode.id.slice('question_'.length) : null;
-            if (!qid) return null;
-
-            const hasCheckboxGrid = !!host.querySelector('.answers.answers-table .clickableCell input[type="checkbox"]');
-            if (!hasCheckboxGrid) return null;
-
-            const stage = document.getElementById('mx-stage-' + qid);
-            if (!stage) return null;
-
-            const scales = Array.from(stage.querySelectorAll('.mx-carouselapp-scale[data-code]'));
-            if (!scales.length) return null;
+            const hostCandidates = [];
+            if (scope && scope.nodeType === 1) {
+              const nearHost = scope.closest('.question, [id^="question_"]');
+              if (nearHost) hostCandidates.push(nearHost);
+            }
+            for (const host of Array.from(document.querySelectorAll('[id^="question_"]'))) {
+              if (!hostCandidates.includes(host)) hostCandidates.push(host);
+            }
 
             const candidates = [];
-            for (const scale of scales) {
-              const label = scale.querySelector('.label');
-              const txt = norm((label && (label.innerText || label.textContent)) || scale.innerText || scale.textContent || '');
-              if (!txt) continue;
-              if (!(txt === needle || txt.includes(needle) || needle.includes(txt))) continue;
-              candidates.push({
-                scale,
-                score: txt === needle ? 2 : 1,
-                len: txt.length,
-              });
+            for (const host of hostCandidates) {
+              if (!host || !host.id || !host.id.startsWith('question_')) continue;
+
+              const qid = host.id.slice('question_'.length);
+              if (!qid) continue;
+
+              const hasCheckboxGrid = !!host.querySelector('.answers.answers-table td.clickableCell input[type="checkbox"]');
+              if (!hasCheckboxGrid) continue;
+
+              const stage = document.getElementById('mx-stage-' + qid);
+              if (!stage) continue;
+
+              const labels = Array.from(host.querySelectorAll('.answers.answers-table td.clickableCell label[for]'));
+              for (const label of labels) {
+                const txt = norm(label.innerText || label.textContent || '');
+                if (!txt) continue;
+                if (!(txt === needle || txt.includes(needle) || needle.includes(txt))) continue;
+
+                const td = label.closest('td.clickableCell');
+                if (!td) continue;
+
+                const inputId = label.getAttribute('for');
+                if (!inputId) continue;
+                const input = host.querySelector('#' + CSS.escape(inputId));
+                if (!input || input.type !== 'checkbox') continue;
+
+                candidates.push({
+                  td,
+                  input,
+                  score: txt === needle ? 2 : 1,
+                  len: txt.length,
+                });
+              }
             }
             if (!candidates.length) return null;
 
             candidates.sort((a, b) => (b.score - a.score) || (b.len - a.len));
-            const best = candidates[0].scale;
+            const best = candidates[0];
 
-            // Préparer la carte-ligne (requis par Dynata MX pour accepter le clic sur les scales).
-            let rowCode = null;
-            const scopedRowLegend = root.closest('tr')?.querySelector('[id$="_left"]');
-            const rowLegendId = (scopedRowLegend && scopedRowLegend.id) || '';
-            const rowLegendMatch = rowLegendId.match(/_r(\d+)_left$/);
-            if (rowLegendMatch) {
-              rowCode = 'r' + rowLegendMatch[1];
-            }
-
-            let rowCard = null;
-            if (rowCode) {
-              rowCard = stage.querySelector('.mx-carouselapp-item[data-code="' + rowCode + '"]');
-            }
-            if (!rowCard) {
-              rowCard = stage.querySelector('.mx-carouselapp-item[data-code]');
-            }
-
-            const rowClickable =
-              rowCard && !rowCard.classList.contains('mx-card-selected')
-                ? (rowCard.querySelector('.mx-card') || rowCard)
-                : null;
-            const scaleClickable = best;
-            if (!scaleClickable) return null;
-
-            scaleClickable.scrollIntoView({ block: 'center', inline: 'center' });
-            return [rowClickable, scaleClickable];
+            best.td.scrollIntoView({ block: 'center', inline: 'center' });
+            return [best.td, best.input];
             """,
             scope,
             target_text,
         )
-        if isinstance(mx_targets, list) and len(mx_targets) == 2 and mx_targets[1] is not None:
-            row_clickable, scale_clickable = mx_targets
+        if isinstance(mx_targets, list) and len(mx_targets) == 2 and mx_targets[0] is not None:
+            td_clickable, matched_input = mx_targets
 
-            if row_clickable is not None:
-                try:
-                    scroll_into_view(driver, row_clickable)
-                    row_clickable.click()
-                except Exception:
-                    ActionChains(driver).move_to_element(row_clickable).click().perform()
-
-            scroll_into_view(driver, scale_clickable)
+            scroll_into_view(driver, td_clickable)
             try:
-                scale_clickable.click()
+                td_clickable.click()
             except Exception:
-                ActionChains(driver).move_to_element(scale_clickable).click().perform()
+                ActionChains(driver).move_to_element(td_clickable).click().perform()
 
-            # Vérification post-clic: si l'input natif lié n'est pas checked, laisser le step 2 gérer.
+            # Vérification post-clic: l'input natif lié doit être checked.
             mx_checked = driver.execute_script(
                 r"""
-                const root = arguments[0] || document;
+                const scope = arguments[0];
                 const norm = s => (s || '')
                   .toLowerCase()
                   .normalize('NFKC')
@@ -577,24 +564,46 @@ def click_checkbox_by_label(driver, target_text: str, context_hint: str | None =
                 const needle = norm(arguments[1]);
                 if (!needle) return false;
 
-                const host = root.closest('.question') || root.closest('[id^="question_"]') || root;
-                const labels = Array.from(host.querySelectorAll('.answers.answers-table td.clickableCell label[for]'));
-                const match = labels.find(label => {
-                  const txt = norm(label.innerText || label.textContent || '');
-                  return txt && (txt === needle || txt.includes(needle) || needle.includes(txt));
-                });
-                if (!match) return false;
+                const hostCandidates = [];
+                if (scope && scope.nodeType === 1) {
+                  const nearHost = scope.closest('.question, [id^="question_"]');
+                  if (nearHost) hostCandidates.push(nearHost);
+                }
+                for (const host of Array.from(document.querySelectorAll('[id^="question_"]'))) {
+                  if (!hostCandidates.includes(host)) hostCandidates.push(host);
+                }
 
-                const inputId = match.getAttribute('for');
-                if (!inputId) return false;
-                const input = host.querySelector('#' + CSS.escape(inputId));
-                return !!(input && input.checked === true);
+                for (const host of hostCandidates) {
+                  if (!host || !host.id || !host.id.startsWith('question_')) continue;
+                  const qid = host.id.slice('question_'.length);
+                  if (!qid) continue;
+
+                  const hasCheckboxGrid = !!host.querySelector('.answers.answers-table td.clickableCell input[type="checkbox"]');
+                  if (!hasCheckboxGrid) continue;
+
+                  const stage = document.getElementById('mx-stage-' + qid);
+                  if (!stage) continue;
+
+                  const labels = Array.from(host.querySelectorAll('.answers.answers-table td.clickableCell label[for]'));
+                  const match = labels.find(label => {
+                    const txt = norm(label.innerText || label.textContent || '');
+                    return txt && (txt === needle || txt.includes(needle) || needle.includes(txt));
+                  });
+                  if (!match) continue;
+
+                  const inputId = match.getAttribute('for');
+                  if (!inputId) continue;
+                  const input = host.querySelector('#' + CSS.escape(inputId));
+                  if (input && input.checked === true) return true;
+                }
+
+                return false;
                 """,
                 scope,
                 target_text,
             )
             if mx_checked:
-                return scale_clickable
+                return matched_input
     except Exception:
         pass
 
