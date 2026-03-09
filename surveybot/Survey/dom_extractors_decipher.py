@@ -746,6 +746,123 @@ def _extract_focusvision_cardsort_block(driver, frame_chain: list[int] | None) -
 
 
 # ================================================================================
+# DECIPHER - TABLE TEXT ROWS (i-question-table)
+# ================================================================================
+
+def _extract_decipher_table_text_rows_blocks(driver, frame_chain: List[Any]) -> List[Dict[str, Any]]:
+    """
+    Extrait les lignes texte d'une question Decipher rendue en table i-question-table.
+
+    Pattern strict (garde-fou):
+    - div.i-table-wrapper[data-widget-id]
+    - table.i-question (texte parent)
+    - table.i-question-table avec tr[data-widget-id]
+    - 1 input texte/number/textarea éditable par ligne
+
+    Exclusion:
+    - lignes readonly (input[readonly])
+
+    Returns:
+        Liste de blocks `single` (itype="text") avec question parent + contexte de ligne.
+    """
+    blocks: List[Dict[str, Any]] = []
+
+    wrappers = driver.find_elements(By.CSS_SELECTOR, "div.i-table-wrapper[data-widget-id]")
+    for wrapper in wrappers:
+        try:
+            grid = wrapper.find_element(By.CSS_SELECTOR, "table.i-question-table")
+        except Exception:
+            continue
+
+        try:
+            rows = grid.find_elements(By.CSS_SELECTOR, "tr[data-widget-id]")
+        except Exception:
+            rows = []
+        if not rows:
+            continue
+
+        try:
+            question = (
+                wrapper.find_element(By.CSS_SELECTOR, "table.i-question td.i-questext").text or ""
+            ).strip()
+        except Exception:
+            question = ""
+
+        if not question:
+            continue
+
+        for row in rows:
+            try:
+                try:
+                    row_label = (row.find_element(By.CSS_SELECTOR, "td.i-questext").text or "").strip()
+                except Exception:
+                    row_label = ""
+
+                field = row.find_element(By.CSS_SELECTOR, "input[type='text'], input[type='number'], textarea")
+
+                # Ne pas soumettre les lignes auto-calculées (ex: Total readonly)
+                if field.get_dom_attribute("readonly") is not None:
+                    continue
+
+                field_id = (field.get_attribute("id") or "").strip()
+                field_name = (field.get_attribute("name") or "").strip()
+                if not field_id and not field_name:
+                    continue
+
+                field_tag = (field.tag_name or "input").strip().lower()
+                if field_id:
+                    xpath = f"//*[@id={_xpath_literal(field_id)}]"
+                else:
+                    xpath = f"//{field_tag}[@name={_xpath_literal(field_name)}]"
+
+                single_key = f"decipher_table_text:{field_id}:{field_name}"
+                target_id = make_target_id("single", single_key, question)
+
+                register_target(
+                    target_id,
+                    {
+                        "kind": "single",
+                        "itype": "text",
+                        "question": question,
+                        "xpath": xpath,
+                        "alt_xpaths": [],
+                        "tag": field_tag,
+                        "name": field_name,
+                        "id": field_id,
+                        "frame_chain": list(frame_chain or []),
+                    },
+                )
+
+                try:
+                    role = field.get_attribute("role")
+                except Exception:
+                    role = None
+
+                blocks.append(
+                    {
+                        "question": question,
+                        "itype": "text",
+                        "options": [],
+                        "max_select": 1,
+                        "target_id": target_id,
+                        "context": {
+                            "kind": "single",
+                            "tag": field_tag,
+                            "name": field_name,
+                            "id": field_id,
+                            "role": role,
+                            "row_label": row_label,
+                            "decipher_table_text_rows": True,
+                        },
+                    }
+                )
+            except Exception:
+                continue
+
+    return blocks
+
+
+# ================================================================================
 # DECIPHER - ANSWERS LIST FALLBACK
 # ================================================================================
 
