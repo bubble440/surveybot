@@ -725,8 +725,13 @@ def _try_table_matrix_sge_set(driver, target_payload: dict, row_label: str, col_
                 const needNorm = norm(need);
                 const pick = radios.find((r) => {
                   const aria = (r.getAttribute('aria-label') || r.getAttribute('data-label') || '').trim();
-                  const v = norm(aria);
-                  return !!v && !!needNorm && (v === needNorm || v.includes(needNorm) || needNorm.includes(v));
+                  const ariaNorm = norm(aria);
+                  if (!!ariaNorm && !!needNorm && (ariaNorm === needNorm || ariaNorm.includes(needNorm) || needNorm.includes(ariaNorm))) {
+                    return true;
+                  }
+                  const cellOptText = (r.closest('td')?.querySelector('.opt-text')?.textContent || '').trim();
+                  const optNorm = norm(cellOptText);
+                  return !!optNorm && !!needNorm && (optNorm === needNorm || optNorm.includes(needNorm) || needNorm.includes(optNorm));
                 });
                 return pick || null;
                 """,
