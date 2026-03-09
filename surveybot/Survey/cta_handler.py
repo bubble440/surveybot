@@ -121,6 +121,20 @@ def _is_intellisurvey_structural_submit_cta(el) -> bool:
     )
 
 
+def _is_inline_hidden_cta(el) -> bool:
+    """Retourne True si le style inline masque explicitement le CTA (opacity:0 + visibility:hidden)."""
+    try:
+        style = (el.get_attribute("style") or "").strip().lower()
+    except Exception:
+        return False
+
+    if not style:
+        return False
+
+    normalized_style = re.sub(r"\s+", "", style)
+    return "opacity:0" in normalized_style and "visibility:hidden" in normalized_style
+
+
 def _is_internal_task_carousel_arrow(driver, el) -> bool:
     """
     Exclut les flèches de carousel de tâche (ex: Quantilope x/12)
@@ -1478,6 +1492,9 @@ def try_click_navigation_cta(driver) -> bool:
                 continue
 
             if _is_internal_task_carousel_arrow(driver, el):
+                continue
+
+            if _is_inline_hidden_cta(el):
                 continue
 
             cls = (el.get_attribute("class") or "").lower()
