@@ -655,13 +655,21 @@ def _try_table_matrix_sge_set(driver, target_payload: dict, row_label: str, col_
     if not isinstance(target_payload, dict) or not target_payload.get("table_matrix_sge"):
         return False
 
-    row_need = _fold_norm_lc(row_label)
-    col_need = _fold_norm_lc(col_label)
+    def _matrix_label_norm(text: str) -> str:
+        """Normalisation locale robuste pour matching de labels matrix SGE."""
+        base = _fold_norm_lc(text)
+        if not base:
+            return ""
+        # Harmonise les espaces unicode (NBSP, thin space, narrow NBSP, etc.).
+        return re.sub(r"[\s\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]+", " ", base).strip()
+
+    row_need = _matrix_label_norm(row_label)
+    col_need = _matrix_label_norm(col_label)
     if not row_need or not col_need:
         return False
 
     def _matches(candidate: str, needle: str) -> bool:
-        cand = _fold_norm_lc(candidate)
+        cand = _matrix_label_norm(candidate)
         if not cand or not needle:
             return False
         return cand == needle or cand in needle or needle in cand
@@ -705,13 +713,19 @@ def _try_table_matrix_sge_set(driver, target_payload: dict, row_label: str, col_
                 const need = arguments[1];
                 if (!tr) return null;
                 const radios = Array.from(tr.querySelectorAll("input[type='radio'][name]"));
-                const pick = radios.find((r) => {
-                  const aria = (r.getAttribute('aria-label') || r.getAttribute('data-label') || '').trim();
-                  const v = aria
+                const norm = (txt) => {
+                  return (txt || '')
                     .normalize('NFD')
                     .replace(/[\u0300-\u036f]/g, '')
+                    .replace(/[\s\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]+/g, ' ')
+                    .trim()
                     .toLowerCase();
-                  return !!v && (v === need || v.includes(need) || need.includes(v));
+                };
+                const needNorm = norm(need);
+                const pick = radios.find((r) => {
+                  const aria = (r.getAttribute('aria-label') || r.getAttribute('data-label') || '').trim();
+                  const v = norm(aria);
+                  return !!v && !!needNorm && (v === needNorm || v.includes(needNorm) || needNorm.includes(v));
                 });
                 return pick || null;
                 """,
