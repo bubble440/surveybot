@@ -2493,8 +2493,19 @@ def _dedupe_question_blocks(blocks: List[Dict[str, Any]]) -> List[Dict[str, Any]
     def _dedup_signature(block: Dict[str, Any]) -> tuple[str, str, tuple[str, ...]]:
         itype = _norm((block.get("itype") or "")).lower()
         options_sig = _options_sig(block)
-        group_key = _norm((((block.get("context") or {}).get("group_key")) or "")).lower()
+        context = (block.get("context") or {}) if isinstance(block.get("context"), dict) else {}
+        group_key = _norm(((context.get("group_key")) or "")).lower()
         question = _norm((block.get("question") or "")).lower()
+
+        # Decipher `i-question-table` text rows partagent le même texte parent,
+        # mais chaque ligne est une sous-question indépendante (R1/R2/R3...).
+        # On inclut une signature ligne-champ pour éviter de fusionner ces blocs.
+        if itype == "text" and context.get("decipher_table_text_rows") is True:
+            row_label = _norm((context.get("row_label") or "")).lower()
+            field_name = _norm((context.get("name") or "")).lower()
+            field_id = _norm((context.get("id") or "")).lower()
+            row_key = f"decipher_row:{field_name}:{field_id}:{row_label}"
+            return (itype, row_key, tuple())
 
         if itype in {"radio", "checkbox"} and group_key:
             return (itype, f"group_key:{group_key}", tuple())
