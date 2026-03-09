@@ -490,3 +490,27 @@ def test_try_click_navigation_cta_detects_intellisurvey_empty_value_submit(monke
 
     assert ok is True
     assert intro_submit.clicked == 1
+
+
+def test_try_click_navigation_cta_skips_inline_hidden_candidates(monkeypatch):
+    monkeypatch.setattr(cta_handler, "ActionChains", _FakeActionChains)
+    monkeypatch.delenv("CTA_INTERCEPT_ONLY", raising=False)
+
+    hidden_submit = _FakeElement(
+        text="",
+        attrs={
+            "id": "contbtn",
+            "name": "contbtn",
+            "type": "submit",
+            "class": "i-button i-contbtn",
+            "style": "opacity: 0; visibility: hidden;",
+        },
+    )
+    hidden_submit.tag_name = "input"
+
+    driver = _FakeDriver(xpath_elements=[hidden_submit])
+
+    ok = cta_handler.try_click_navigation_cta(driver)
+
+    assert ok is False
+    assert hidden_submit.clicked == 0
