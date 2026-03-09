@@ -2420,6 +2420,32 @@ def analyze_dom(driver) -> List[Dict[str, Any]]:
             )
         return str(preview)
 
+    def _should_skip_focusvision_answers_list_groups(items: List[Dict[str, Any]]) -> bool:
+        """
+        Garde-fou DOM minimal:
+        - si un bloc cardsort est déjà détecté
+        - et si le cardsort courant expose au moins une carte avec atmost > 1
+        alors on évite l'extracteur answers-list (table cachée) pour ne pas dupliquer
+        des groupes checkbox non pilotables par l'UI cardsort.
+        """
+        if not any((b or {}).get("kind") == "cardsort" for b in (items or [])):
+            return False
+
+        try:
+            cards = driver.find_elements(By.CSS_SELECTOR, "li.sq-cardsort-card[atmost]")
+        except Exception:
+            return False
+
+        for card in cards or []:
+            try:
+                atmost_raw = _norm(card.get_attribute("atmost") or "")
+                if atmost_raw and int(atmost_raw) > 1:
+                    return True
+            except Exception:
+                continue
+
+        return False
+
     # Pattern spécifique
     blocks: List[Dict[str, Any]] = []
     chain: List[Any] = []
@@ -2432,7 +2458,8 @@ def analyze_dom(driver) -> List[Dict[str, Any]]:
             return sp_blocks
 
         blocks = _analyze_dom_current_context(driver, frame_chain=chain)
-        blocks.extend(_extract_focusvision_answers_list_groups(driver, frame_chain=chain))
+        if not _should_skip_focusvision_answers_list_groups(blocks):
+            blocks.extend(_extract_focusvision_answers_list_groups(driver, frame_chain=chain))
         blocks.extend(_extract_angular_material_radio_groups(driver, frame_chain=chain))
 
         if not blocks:
@@ -2446,7 +2473,8 @@ def analyze_dom(driver) -> List[Dict[str, Any]]:
                 if sp_blocks:
                     return sp_blocks
                 blocks = _analyze_dom_current_context(driver)
-                blocks.extend(_extract_focusvision_answers_list_groups(driver))
+                if not _should_skip_focusvision_answers_list_groups(blocks):
+                    blocks.extend(_extract_focusvision_answers_list_groups(driver))
                 blocks.extend(_extract_angular_material_radio_groups(driver))
 
                 if not blocks:
