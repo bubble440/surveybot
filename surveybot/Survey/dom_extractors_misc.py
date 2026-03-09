@@ -1421,6 +1421,132 @@ def _extract_table_matrix_radio_rows(driver, frame_chain: list[int] | None) -> l
     return blocks
 
 
+def _extract_intellisurvey_table_matrix_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
+    """IntelliSurvey: matrice table.i-question-table.i-dynamic (lignes x colonnes).
+
+    Gate DOM strict (additif, sans impact autres providers):
+    - table.i-question-table.i-dynamic
+    - thead avec td.i-header-option (colonnes)
+    - tbody avec >=2 tr[data-row-id], chaque ligne ayant des radios .i-rbcb-opt
+    """
+    frame_chain = list(frame_chain or [])
+
+    try:
+        tables = driver.find_elements(By.CSS_SELECTOR, "table.i-question-table.i-dynamic")
+    except Exception:
+        return []
+
+    blocks: list[dict] = []
+
+    for table in tables[:10]:  # budget anti-boucle
+        try:
+            try:
+                col_nodes = table.find_elements(By.CSS_SELECTOR, "thead td.i-header-option")
+            except Exception:
+                col_nodes = []
+
+            col_headers: list[str] = []
+            for node in col_nodes:
+                txt = _norm(node.text or node.get_attribute("innerText") or "")
+                if txt:
+                    col_headers.append(txt)
+
+            if len(col_headers) < 2:
+                continue
+
+            try:
+                rows = table.find_elements(By.CSS_SELECTOR, "tbody tr[data-row-id]")
+            except Exception:
+                rows = []
+
+            if len(rows) < 2:
+                continue
+
+            matrix_rows: list[str] = []
+            row_names: list[str] = []
+            for row in rows:
+                try:
+                    radios = row.find_elements(By.CSS_SELECTOR, "input.i-rbcb-opt[type='radio'][name]")
+                except Exception:
+                    radios = []
+                if len(radios) < 2:
+                    continue
+
+                row_label = ""
+                try:
+                    qcell = row.find_element(By.CSS_SELECTOR, "td.i-questext")
+                    row_label = _norm(driver.execute_script(
+                        """
+                        const td = arguments[0];
+                        if (!td) return '';
+                        const clone = td.cloneNode(true);
+                        clone.querySelectorAll('input[type="hidden"], script, style').forEach(n => n.remove());
+                        return (clone.innerText || clone.textContent || '').trim();
+                        """,
+                        qcell,
+                    ) or "")
+                except Exception:
+                    row_label = ""
+
+                row_name = _norm_lc(radios[0].get_attribute("name") or "")
+                if not row_label or not row_name:
+                    continue
+
+                matrix_rows.append(row_label)
+                row_names.append(row_name)
+
+            if len(matrix_rows) < 2:
+                continue
+
+            matrix_question = _norm(_find_question_text_near_element(driver, table))
+            if not matrix_question:
+                matrix_question = _norm(table.get_attribute("aria-label") or "")
+
+            group_key = f"intellisurvey_matrix:{_norm_key((table.get_attribute('id') or '')[:80])}:{len(matrix_rows)}x{len(col_headers)}"
+            target_id = make_target_id("group", group_key, matrix_question or group_key)
+
+            register_target(
+                target_id,
+                {
+                    "kind": "group",
+                    "itype": "matrix",
+                    "group_key": group_key,
+                    "question": matrix_question,
+                    "frame_chain": frame_chain,
+                    "matrix_question": matrix_question,
+                    "matrix_rows": matrix_rows,
+                    "matrix_columns": col_headers,
+                    # Réutilise la stratégie matrix row/col existante (DOM strict par table + radios)
+                    "table_matrix_sge": True,
+                    "intellisurvey_matrix": True,
+                },
+            )
+
+            blocks.append(
+                {
+                    "question": matrix_question,
+                    "itype": "matrix",
+                    "options": col_headers,
+                    "max_select": 1,
+                    "target_id": target_id,
+                    "context": {
+                        "kind": "group",
+                        "group_key": group_key,
+                        "matrix_question": matrix_question,
+                        "matrix_rows": matrix_rows,
+                        "matrix_columns": col_headers,
+                        "matrix_row_count": len(matrix_rows),
+                        "table_matrix_sge": True,
+                        "intellisurvey_matrix": True,
+                    },
+                }
+            )
+        except Exception:
+            continue
+
+    return blocks
+
+
 def _extract_encuesta_matrix_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
     """encuesta.com (Vuetify ee__matrix--*) : extraction d'une matrice rows x columns.
 
