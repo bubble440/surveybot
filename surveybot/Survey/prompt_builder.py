@@ -172,60 +172,6 @@ _CLASSIFICATION_SCORING = [
     (20, ["employe", "ouvrier", "etudiant", "sans activite", "foyer", "retraite", "premier emploi"]),
 ]
 
-
-_PERSONA_RESIDENCE_COUNTRY = "France"
-_PERSONA_RESIDENCE_CITY = "Paris"
-
-_RESIDENCE_COUNTRY_PATTERNS = [
-    # FR
-    "pays habitez",
-    "pays de residence",
-    "pays de résidence",
-    "dans quel pays",
-    "quel pays",
-    "pays residez",
-    "pays résidez",
-    # EN
-    "country of residence",
-    "country do you live",
-    "which country",
-    "where do you live",
-    "live in",
-]
-
-_HOUSEHOLD_DECISION_PATTERNS = [
-    # FR
-    "au sein de votre foyer",
-    "dans votre foyer",
-    "qui serait le plus susceptible",
-    "qui est le plus susceptible",
-    "decideur principal",
-    "décideur principal",
-    "qui decide",
-    "qui décide",
-    # EN
-    "in your household",
-    "decision maker",
-    "who decides",
-    "most likely to choose",
-]
-
-_RESPONDENT_SELF_OPTION_PATTERNS = [
-    # FR
-    "principalement moi",
-    "moi",
-    "moi-meme",
-    "moi même",
-    "moi meme",
-    "je decide",
-    "je décide",
-    # EN
-    "primarily me",
-    "mostly me",
-    "myself",
-    "i decide",
-]
-
 _SURVEY_CONSENT_CONTEXT_PATTERNS = [
     # FR
     "sondage", "survey", "participation", "confidentialite", "confidentialité",
@@ -244,49 +190,7 @@ _CONSENT_REJECT_PATTERNS = [
 ]
 
 
-_RECENT_PARTICIPATION_MARKERS = {
-    "participation": [
-        "participe",
-        "participated",
-        "take part",
-        "taken part",
-    ],
-    "study": [
-        "etude de marche",
-        "market research",
-        "sondage",
-        "survey",
-    ],
-    "recency": [
-        "au cours des",
-        "dernieres semaines",
-        "last two weeks",
-        "past two weeks",
-    ],
-}
-
-_RECENT_PARTICIPATION_SAFE_OPTION_PATTERNS = [
-    "aucune de ces propositions",
-    "none of the above",
-    "none",
-    "aucun",
-    "aucune",
-    "non",
-]
-
-
 _SECTOR_SCREENER_MAX_OPTIONS = 15
-
-_SECTOR_SCREENER_FAMILY_MARKERS = [
-    "membre de votre foyer",
-    "membre du foyer",
-    "foyer",
-    "famille",
-    "famille immediate",
-    "household",
-    "family member",
-    "immediate family",
-]
 
 _SECTOR_SCREENER_WORK_MARKERS = [
     "travaillez",
@@ -354,37 +258,6 @@ def _find_option_exact(options: list[str], expected_value: str) -> str | None:
     return None
 
 
-def _is_residence_country_question(block: Dict[str, Any]) -> bool:
-    itype = _norm_folded_lc(block.get("itype"))
-    if itype not in {"radio", "checkbox", "dropdown", "select", "button"}:
-        return False
-    question = _norm_folded_lc(block.get("question"))
-    if not question:
-        return False
-    has_country_token = any(tok in question for tok in ("pays", "country"))
-    if not has_country_token:
-        return False
-    return any(p in question for p in _RESIDENCE_COUNTRY_PATTERNS)
-
-
-def _is_household_decision_maker_question(block: Dict[str, Any]) -> bool:
-    itype = _norm_folded_lc(block.get("itype"))
-    if itype not in {"radio", "checkbox", "dropdown", "select", "button"}:
-        return False
-    question = _norm_folded_lc(block.get("question"))
-    if not question:
-        return False
-    return any(pattern in question for pattern in _HOUSEHOLD_DECISION_PATTERNS)
-
-
-def _find_respondent_self_option(options: list[str]) -> str | None:
-    for option in options or []:
-        folded = _norm_folded_lc(option)
-        if folded and any(pattern in folded for pattern in _RESPONDENT_SELF_OPTION_PATTERNS):
-            return option
-    return None
-
-
 def _preferred_survey_consent_option(block: Dict[str, Any], options: list[str]) -> str | None:
     """Retourne l'option d'acceptation pour consentement participation/confidentialité, si détectée."""
     if not options:
@@ -413,41 +286,6 @@ def _preferred_survey_consent_option(block: Dict[str, Any], options: list[str]) 
     return accept_option
 
 
-def _is_recent_participation_screener_question(block: Dict[str, Any]) -> bool:
-    """Détecte les screeners "participation récente à une étude/sondage"."""
-    itype = _norm_folded_lc(block.get("itype"))
-    if itype not in {"radio", "checkbox", "dropdown", "select", "button"}:
-        return False
-
-    question = _norm_folded_lc(block.get("question"))
-    if not question:
-        return False
-
-    return all(
-        any(marker in question for marker in markers)
-        for markers in _RECENT_PARTICIPATION_MARKERS.values()
-    )
-
-
-def _find_recent_participation_safe_option(options: list[str]) -> str | None:
-    if not options:
-        return None
-
-    normalized_options = [(_norm_folded_lc(opt), opt) for opt in options]
-    for pattern in _RECENT_PARTICIPATION_SAFE_OPTION_PATTERNS:
-        folded_pattern = _norm_folded_lc(pattern)
-        if not folded_pattern:
-            continue
-        for folded_opt, original_opt in normalized_options:
-            if folded_opt == folded_pattern:
-                return original_opt
-        for folded_opt, original_opt in normalized_options:
-            if folded_pattern in folded_opt:
-                return original_opt
-
-    return None
-
-
 def _is_sector_employment_household_screener_question(block: Dict[str, Any]) -> bool:
     """Détecte les screeners métier/secteur sur le répondant ou son foyer/famille."""
     itype = _norm_folded_lc(block.get("itype"))
@@ -458,9 +296,8 @@ def _is_sector_employment_household_screener_question(block: Dict[str, Any]) -> 
     if not question:
         return False
 
-    has_family_signal = any(marker in question for marker in _SECTOR_SCREENER_FAMILY_MARKERS)
     has_work_signal = any(marker in question for marker in _SECTOR_SCREENER_WORK_MARKERS)
-    return has_family_signal and has_work_signal
+    return has_work_signal
 
 
 def _find_sector_screener_exclusive_option(options: list[str]) -> str | None:
@@ -690,6 +527,19 @@ def build_prompt(question_blocks: List[Dict[str, Any]]) -> str:
         "alors tu DOIS choisir UNIQUEMENT cette option exclusive, sans aucune autre valeur. "
         "Ce type de question est un screener anti-participation : "
         "répondre avec un sujet de la liste entraîne une disqualification immédiate."
+        "EXCEPTION — Screener de secteur d'activité (liste courte) :"
+        "Si la question demande si toi-même, ou un membre de ton foyer/famille/entourage,"
+        "travailles dans l'un des domaines/secteurs/industries d'une liste proposée"
+        "(signaux : 'travaillez', 'travaille', 'travaillez-vous', 'work in', 'employed in',"
+        "'secteur', 'domaine', 'industrie', 'industry', 'field', 'profession'),"
+        "ET que la liste d'options contient au total MOINS DE 15 options (options exclusives comprises),"
+        "ET que la liste contient une option exclusive négative"
+        "('Aucune de ces propositions', 'None of the above', 'Aucun', 'Aucune', 'Non',"
+        "'Aucune de ces réponses', 'None of these'),"
+        "alors tu DOIS choisir UNIQUEMENT cette option exclusive négative, sans aucune autre valeur."
+        "Ce type de question est un screener anti-industrie : choisir n'importe quel secteur de la liste"
+        "entraîne une disqualification immédiate, même si ce secteur est cohérent avec le persona."
+        "Cette règle s'applique que la question concerne le répondant seul OU son foyer/famille/entourage."
     )
 
     lines.append("\n--- QUESTIONS DISPONIBLES SUR LA PAGE ---")
@@ -873,6 +723,19 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
         "alors tu DOIS choisir UNIQUEMENT cette option exclusive, sans aucune autre valeur. "
         "Ce type de question est un screener anti-participation : "
         "répondre avec un sujet de la liste entraîne une disqualification immédiate."
+        "EXCEPTION — Screener de secteur d'activité (liste courte) :"
+        "Si la question demande si toi-même, ou un membre de ton foyer/famille/entourage,"
+        "travailles dans l'un des domaines/secteurs/industries d'une liste proposée"
+        "(signaux : 'travaillez', 'travaille', 'travaillez-vous', 'work in', 'employed in',"
+        "'secteur', 'domaine', 'industrie', 'industry', 'field', 'profession'),"
+        "ET que la liste d'options contient au total MOINS DE 15 options (options exclusives comprises),"
+        "ET que la liste contient une option exclusive négative"
+        "('Aucune de ces propositions', 'None of the above', 'Aucun', 'Aucune', 'Non',"
+        "'Aucune de ces réponses', 'None of these'),"
+        "alors tu DOIS choisir UNIQUEMENT cette option exclusive négative, sans aucune autre valeur."
+        "Ce type de question est un screener anti-industrie : choisir n'importe quel secteur de la liste"
+        "entraîne une disqualification immédiate, même si ce secteur est cohérent avec le persona."
+        "Cette règle s'applique que la question concerne le répondant seul OU son foyer/famille/entourage."
     )
     lines.append("\n--- QUESTIONS ---")
 
@@ -925,18 +788,7 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
                 or str((ctx or {}).get("kind") or "") == "multi_text"
             )
         )
-        forced_country = None
-        forced_household_decider = None
         forced_sector_screener_exclusive = None
-        forced_recent_participation_safe = None
-        if _is_residence_country_question(block) and opts:
-            forced_country = _find_option_exact(opts, _PERSONA_RESIDENCE_COUNTRY)
-            print(
-                f"[PROMPT_PERSONA] residence_country_question=1 target_id={target_id} "
-                f"option_present={bool(forced_country)}"
-            )
-        if _is_household_decision_maker_question(block) and opts:
-            forced_household_decider = _find_respondent_self_option(opts)
         if (
             _is_sector_employment_household_screener_question(block)
             and opts
@@ -947,8 +799,6 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
                 f"[PROMPT_BUILDER] sector_screener_question=1 target_id={target_id} "
                 f"options_count={len(opts)} option_present={bool(forced_sector_screener_exclusive)}"
             )
-        if _is_recent_participation_screener_question(block) and opts:
-            forced_recent_participation_safe = _find_recent_participation_safe_option(opts)
 
         if itype == "matrix" and matrix_active_row:
             lines.append(
@@ -988,27 +838,7 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
                 lines.append(
                     f"selection_rule: Pour QID={qid}, renvoyer EXACTEMENT 1 valeur"
                 )
-        if forced_country:
-            lines.append(
-                f"selection_rule: RESIDENCE_COUNTRY strict -> répondre EXACTEMENT avec '{forced_country}'"
-            )
-            lines.append(f"allowed_values_strict: {forced_country}")
-            lines.append(
-                "instruction_stricte: Persona résidence prioritaire. "
-                "Tu dois répondre EXACTEMENT avec {"
-                + forced_country
-                + "}. Ne paraphrase pas."
-            )
-        elif forced_household_decider:
-            lines.append(
-                f"selection_rule: HOUSEHOLD_DECISION_MAKER_SELF strict -> répondre EXACTEMENT avec '{forced_household_decider}'"
-            )
-            lines.append(f"allowed_values_strict: {forced_household_decider}")
-            lines.append(
-                "instruction_stricte: Question décideur du foyer. "
-                "Tu dois répondre EXACTEMENT avec l'option qui désigne le répondant lui-même."
-            )
-        elif forced_sector_screener_exclusive:
+        if forced_sector_screener_exclusive:
             lines.append(
                 "selection_rule: SECTOR_EMPLOYMENT_HOUSEHOLD_SAFE strict -> répondre EXACTEMENT "
                 f"avec '{forced_sector_screener_exclusive}'"
@@ -1018,26 +848,10 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
                 "instruction_stricte: Screener secteur (répondant/foyer/famille) détecté avec liste courte. "
                 "Tu dois choisir l'option exclusive négative (none/aucune/non) pour éviter la disqualification."
             )
-        elif forced_recent_participation_safe:
-            lines.append(
-                "selection_rule: RECENT_PARTICIPATION_SAFE strict -> répondre EXACTEMENT "
-                f"avec '{forced_recent_participation_safe}'"
-            )
-            lines.append(f"allowed_values_strict: {forced_recent_participation_safe}")
-            lines.append(
-                "instruction_stricte: Screener de participation récente détecté. "
-                "Tu dois choisir l'option exclusive négative (none/aucune/non) pour éviter la disqualification."
-            )
         elif (forced_consent := _preferred_survey_consent_option(block, opts)):
             lines.append(f"selection_rule: SURVEY_CONSENT_ACCEPT strict -> répondre EXACTEMENT avec '{forced_consent}'")
             lines.append(f"allowed_values_strict: {forced_consent}")
             lines.append("instruction_stricte: Consentement de participation/confidentialité détecté. Tu dois choisir l'option d'acceptation et jamais l'option de refus.")
-        # elif _looks_like_classification_question(block) and opts:
-        #     picked = _pick_best_classification_option(opts)
-        #     print(f"[PROMPT_BUILDER] classification_rule=1 N={len(opts)} picked='{picked}'")
-        #     lines.append(f"selection_rule: CLASSIFICATION_BEST strict -> répondre EXACTEMENT avec '{picked}'")
-        #     lines.append(f"allowed_values_strict: {picked}")
-        #     lines.append("instruction_stricte: Tu dois répondre EXACTEMENT avec l'un des libellés suivants : {" + picked + "}. Ne paraphrase pas. Ne renvoie rien d'autre.")
         elif bool((ctx or {}).get("consent_modal_radio")) and opts:
             forced_consent = _preferred_consent_option(opts)
             if forced_consent:
@@ -1056,7 +870,7 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
         else:
             lines.append("options: (champ ouvert)")
 
-    # Ã¢Å“â€¦ RAPPEL FINAL: séparateur "|" obligatoire
+    #RAPPEL FINAL: séparateur "|" obligatoire
     lines.append(
         "\nRéponds maintenant.\n"
         "Respecte STRICTEMENT le format.\n"
