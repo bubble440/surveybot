@@ -171,6 +171,93 @@ class TwoCaptchaClient:
                 continue
             raise RuntimeError(f"getTaskResult error: {res}")
 
+    def solve_tencent(self, app_id: str, url: str) -> dict:
+        """
+        Résout Tencent CAPTCHA (slider puzzle) via TencentTaskProxyless.
+
+        Retourne un dict {"ticket": str, "randstr": str}.
+        """
+        payload = {
+            "clientKey": self.api_key,
+            "task": {
+                "type": "TencentTaskProxyless",
+                "websiteURL": url,
+                "appId": app_id,
+            }
+        }
+        r = requests.post(f"{self.base_url}/createTask", json=payload, timeout=30).json()
+        if r.get("errorId"):
+            raise RuntimeError(f"createTask (tencent proxyless) error: {r}")
+        task_id = r["taskId"]
+
+        start = time.time()
+        while True:
+            if time.time() - start > self.timeout:
+                raise TimeoutError("2Captcha délai dépassé (TencentTaskProxyless)")
+            time.sleep(self.poll_interval)
+            res = requests.post(
+                f"{self.base_url}/getTaskResult",
+                json={"clientKey": self.api_key, "taskId": task_id},
+                timeout=30,
+            ).json()
+            if res.get("status") == "ready":
+                sol = res["solution"]
+                return {"ticket": sol["ticket"], "randstr": sol["randstr"]}
+            if res.get("status") == "processing":
+                continue
+            raise RuntimeError(f"getTaskResult (tencent proxyless) error: {res}")
+
+    def solve_tencent_with_proxy(
+        self,
+        app_id: str,
+        url: str,
+        proxy_type: str,
+        proxy_address: str,
+        proxy_port: int,
+        proxy_login: str = "",
+        proxy_password: str = "",
+    ) -> dict:
+        """
+        Résout Tencent CAPTCHA (slider puzzle) via TencentTask (avec proxy).
+
+        Retourne un dict {"ticket": str, "randstr": str}.
+        """
+        task = {
+            "type": "TencentTask",
+            "websiteURL": url,
+            "appId": app_id,
+            "proxyType": proxy_type,
+            "proxyAddress": proxy_address,
+            "proxyPort": int(proxy_port),
+        }
+        if proxy_login:
+            task["proxyLogin"] = proxy_login
+        if proxy_password:
+            task["proxyPassword"] = proxy_password
+
+        payload = {"clientKey": self.api_key, "task": task}
+        r = requests.post(f"{self.base_url}/createTask", json=payload, timeout=30).json()
+        if r.get("errorId"):
+            raise RuntimeError(f"createTask (tencent proxy) error: {r}")
+        task_id = r["taskId"]
+
+        start = time.time()
+        while True:
+            if time.time() - start > self.timeout:
+                raise TimeoutError("2Captcha délai dépassé (TencentTask proxy)")
+            time.sleep(self.poll_interval)
+            res = requests.post(
+                f"{self.base_url}/getTaskResult",
+                json={"clientKey": self.api_key, "taskId": task_id},
+                timeout=30,
+            ).json()
+            if res.get("status") == "ready":
+                sol = res["solution"]
+                return {"ticket": sol["ticket"], "randstr": sol["randstr"]}
+            if res.get("status") == "processing":
+                continue
+            raise RuntimeError(f"getTaskResult (tencent proxy) error: {res}")
+
     def solve_recaptcha_v2_enterprise_with_proxy(
         self,
         sitekey: str,
