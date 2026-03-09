@@ -731,10 +731,15 @@ def _try_table_matrix_sge_set(driver, target_payload: dict, row_label: str, col_
                 const input = arguments[0];
                 if (!input) return false;
                 try { input.scrollIntoView({block:'center', inline:'center'}); } catch(e) {}
+                const table = input.closest('table.i-question-table');
+                const cell = input.closest('td.i-option-cell[tabindex]');
+                const isIntelliSurveyCell = !!(table && cell);
                 const id = input.getAttribute('id') || '';
                 const label = id ? document.querySelector(`label[for="${CSS.escape(id)}"]`) : null;
                 try {
-                  if (label) {
+                  if (isIntelliSurveyCell) {
+                    cell.click();
+                  } else if (label) {
                     label.click();
                   } else {
                     input.click();
