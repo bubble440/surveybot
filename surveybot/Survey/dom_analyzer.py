@@ -1139,6 +1139,15 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                 continue
             if _is_focusvision_table_mode_matrix_cell(el):
                 continue
+            # Decipher/FocusVision: les options marquées `no-answer`
+            # ("je ne souhaite pas répondre", "je ne sais pas", etc.)
+            # sont des opt-outs et ne doivent pas devenir des blocs choix.
+            try:
+                classes = _norm_lc(el.get_attribute("class") or "")
+                if " no-answer " in f" {classes} ":
+                    continue
+            except Exception:
+                pass
             # Masqué
             try:
                 if _looks_like_system_field(el):
