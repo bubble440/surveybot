@@ -2446,6 +2446,13 @@ def analyze_dom(driver) -> List[Dict[str, Any]]:
 
         return False
 
+    def _drop_cardsort_when_mixed_with_other_blocks(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        has_cardsort = any((b or {}).get("kind") == "cardsort" for b in (items or []))
+        has_non_cardsort = any((b or {}).get("kind") != "cardsort" for b in (items or []))
+        if not (has_cardsort and has_non_cardsort):
+            return items
+        return [b for b in (items or []) if (b or {}).get("kind") != "cardsort"]
+
     # Pattern spécifique
     blocks: List[Dict[str, Any]] = []
     chain: List[Any] = []
@@ -2460,6 +2467,7 @@ def analyze_dom(driver) -> List[Dict[str, Any]]:
         blocks = _analyze_dom_current_context(driver, frame_chain=chain)
         if not _should_skip_focusvision_answers_list_groups(blocks):
             blocks.extend(_extract_focusvision_answers_list_groups(driver, frame_chain=chain))
+            blocks = _drop_cardsort_when_mixed_with_other_blocks(blocks)
         blocks.extend(_extract_angular_material_radio_groups(driver, frame_chain=chain))
 
         if not blocks:
@@ -2475,6 +2483,7 @@ def analyze_dom(driver) -> List[Dict[str, Any]]:
                 blocks = _analyze_dom_current_context(driver)
                 if not _should_skip_focusvision_answers_list_groups(blocks):
                     blocks.extend(_extract_focusvision_answers_list_groups(driver))
+                    blocks = _drop_cardsort_when_mixed_with_other_blocks(blocks)
                 blocks.extend(_extract_angular_material_radio_groups(driver))
 
                 if not blocks:
