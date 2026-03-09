@@ -504,6 +504,10 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
         lines.append(f"\n{qid}")
         lines.append(f"target_id: {target_id}")
         lines.append(f"contexte: {q}")
+        if ctx.get("decipher_table_text_rows") is True:
+            row_label = _escape(str(ctx.get("row_label", "")))
+            if row_label:
+                lines.append(f"row_label: {row_label}")
         if matrix_rows:
             lines.append(f"sous_questions_matrix: {' | '.join(matrix_rows)}")
             lines.append(
