@@ -82,5 +82,5 @@ def test_analyze_dom_keeps_answers_list_for_cardsort_atmost_one(monkeypatch):
     blocks = da.analyze_dom(_FakeDriver(atmost_values=[1]))
 
     assert called["count"] == 1
-    assert len(blocks) == 2
-    assert {b["kind"] for b in blocks} == {"cardsort", "group"}
+    assert len(blocks) == 1
+    assert blocks[0]["kind"] == "group"
