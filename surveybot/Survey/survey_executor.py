@@ -1227,15 +1227,6 @@ def execute_survey_page(driver, api_key, ctx=None):
         import traceback
         traceback.print_exc()
 
-
-    #  NEW: FocusVision/Decipher cardsort (DOM-only) avant OpenAI
-    try:
-        from Survey.action_dispatcher import solve_focusvision_cardsort
-        if solve_focusvision_cardsort(driver):
-            return True
-    except Exception as e:
-        print(f"[CARDSORT] solver failed: {e}")
-
     if not question_blocks:
         #  NEW: Decipher cardrating multi-rows (DOM-only) avant vision
         try:
