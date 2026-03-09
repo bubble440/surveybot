@@ -1313,7 +1313,11 @@ def execute_survey_page(driver, api_key, ctx=None):
         raw_text = instruction_raw.output_text
         # contraintes max_select par QID (doit matcher le build_batch_prompt)
         qid_constraints = {
-            f"Q{i}": int((b.get("max_select", 1) or 1))
+            f"Q{i}": (
+                len([c for c in (b.get("cards") or []) if str(c or "").strip()])
+                if (str((b.get("kind") or "")).strip().lower() == "cardsort")
+                else int((b.get("max_select", 1) or 1))
+            )
             for i, b in enumerate(question_blocks_for_batch, start=1)
         }
         if (os.getenv("LOG_LEVEL") or "").strip().lower() == "debug":
@@ -1328,6 +1332,9 @@ def execute_survey_page(driver, api_key, ctx=None):
                 "max_select": int(b.get("max_select", 1) or 1),
                 "min_select": int(b.get("min_select", 1) or 1),
                 "target_id": (b.get("target_id") or ""),
+                "kind": (b.get("kind") or ""),
+                "cards": (b.get("cards") or []),
+                "buckets": (b.get("buckets") or []),
                 "context": (b.get("context") or {}),
             }
             for i, b in enumerate(question_blocks_for_batch, start=1)
