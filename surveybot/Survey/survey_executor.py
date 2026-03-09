@@ -1449,8 +1449,9 @@ def execute_survey_page(driver, api_key, ctx=None):
             '[data-testid="start-button"]',      # Quantilope coversheet
             "#bnNext", # Primis/Primisoft (bouton "Suivant")
             "#consent-button-confirm",        # Consent modal RGPD (Toluna-like UI)
-        ]
-        
+            "#consent-button-confirm",        # Consent modal RGPD (Toluna-like UI)
+            "input.i-contbtn",                   # IntelliSurvey (value vide, id=contbtn)
+        ]        
         try:
             _local_pause_before_cta("cta_only_fallback")
             
