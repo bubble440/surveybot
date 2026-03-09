@@ -121,6 +121,12 @@ def _is_intellisurvey_structural_submit_cta(el) -> bool:
     )
 
 
+def _has_inline_hidden_opacity_and_visibility(el) -> bool:
+    """Retourne True si le style inline cache explicitement l'élément (opacity:0 + visibility:hidden)."""
+    style_inline = (el.get_attribute("style") or "").lower().replace(" ", "")
+    return "opacity:0" in style_inline and "visibility:hidden" in style_inline
+
+
 def _is_internal_task_carousel_arrow(driver, el) -> bool:
     """
     Exclut les flèches de carousel de tâche (ex: Quantilope x/12)
@@ -1475,6 +1481,9 @@ def try_click_navigation_cta(driver) -> bool:
                 tag = ""
 
             if (el.get_attribute("aria-disabled") or "").lower() == "true":
+                continue
+
+            if _has_inline_hidden_opacity_and_visibility(el):
                 continue
 
             if _is_internal_task_carousel_arrow(driver, el):
