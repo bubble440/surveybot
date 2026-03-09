@@ -26,7 +26,7 @@ import math
 import unicodedata
 from typing import Dict, Optional, List, Any
 from .log_utils import log_debug, log_info
-_ALLOWED_ITYPES = {"radio", "checkbox", "dropdown", "text", "textarea", "button", "number", "matrix"}
+_ALLOWED_ITYPES = {"radio", "checkbox", "dropdown", "text", "textarea", "button", "number", "matrix", "cardsort"}
 _QID_RE = re.compile(r"\bQ\d+\b", re.IGNORECASE)
 _OTHER_SPECIFY_TEXT_RE = re.compile(r"autre.*pr[eé]cis|other.*specify", re.IGNORECASE)
 _NEGATIVE_FREQ_RE = re.compile(r"jamais|never", re.IGNORECASE)
@@ -452,6 +452,11 @@ def _selection_bounds_for_qid(qid: str, raw_max: int, qmeta: dict | None, itype_
     if itype == "matrix":
         return 1, max_select
 
+    if itype == "cardsort":
+        cards_count = len([c for c in (qmeta.get("cards") or []) if str(c or "").strip()])
+        cards_count = max(1, cards_count)
+        return cards_count, cards_count
+
     # Par défaut explicite et stable: 1
     if itype != "checkbox":
         return 1, 1
@@ -497,7 +502,7 @@ def _enforce_selection_ranges(actions: list[dict], constraints: dict[str, int], 
 
         # Matrices: ne pas tronquer ici.
         # _parse_matrix_pairs borne déjà les paires valides (row/col) à dispatcher.
-        if itype == "matrix":
+        if itype in {"matrix", "cardsort"}:
             final_actions.extend(q_actions)
             continue
 
@@ -867,6 +872,23 @@ def parse_batch_response(raw: str, constraints: Optional[Dict[str, int]] = None,
                 value = normalized
 
         is_matrix = _is_matrix_action(itype=itype, qid=qid, target_id=target_id, qid_meta=qid_meta)
+        is_cardsort = itype == "cardsort"
+
+        cardsort_assignments: list[tuple[str, str]] = []
+        if is_cardsort:
+            chunks = [c.strip() for c in re.split(r"\s*;\s*", value) if c.strip()]
+            for chunk in chunks:
+                if "=>" not in chunk:
+                    continue
+                card_label, bucket_blob = chunk.split("=>", 1)
+                card_label = card_label.strip()
+                bucket_blob = bucket_blob.strip()
+                if not card_label or not bucket_blob:
+                    continue
+                cardsort_assignments.append((card_label, bucket_blob))
+            if not cardsort_assignments:
+                continue
+
         matrix_pairs: list[tuple[str, str]] = []
         if is_matrix:
             qmeta = (qid_meta or {}).get((qid or "").upper()) if isinstance(qid_meta, dict) else None
@@ -882,7 +904,10 @@ def parse_batch_response(raw: str, constraints: Optional[Dict[str, int]] = None,
             if not ok:
                 continue
 
-        values = [col for _, col in matrix_pairs] if is_matrix else _split_values(value, itype=itype, max_select=mx)
+        if is_cardsort:
+            values = [bucket_blob for _, bucket_blob in cardsort_assignments]
+        else:
+            values = [col for _, col in matrix_pairs] if is_matrix else _split_values(value, itype=itype, max_select=mx)
 
         for idx_v, v in enumerate(values):
             v = (v or "").strip()
@@ -924,6 +949,8 @@ def parse_batch_response(raw: str, constraints: Optional[Dict[str, int]] = None,
                     "context": context,
                     "matrix_row_label": matrix_pairs[idx_v][0] if is_matrix else None,
                     "matrix_col_label": matrix_pairs[idx_v][1] if is_matrix else None,
+                    "cardsort_card_label": cardsort_assignments[idx_v][0] if is_cardsort else None,
+                    "cardsort_bucket_labels": cardsort_assignments[idx_v][1] if is_cardsort else None,
                     "raw": line,
                 }
             )
