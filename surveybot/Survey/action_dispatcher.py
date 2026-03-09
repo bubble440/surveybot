@@ -173,7 +173,12 @@ def solve_decipher_cardrating_rows(driver, preferred_label: Optional[str] = None
 
     return completed_any
 
-def solve_focusvision_cardsort(driver, preferred_label: Optional[str] = None, max_cards: int = 20) -> bool:
+def solve_focusvision_cardsort(
+    driver,
+    preferred_label: Optional[str] = None,
+    max_cards: int = 20,
+    assignments: list[dict] | None = None,
+) -> bool:
     """
     FocusVision/Decipher cardsort (DOM-only, prédictible, budget borné):
     - détecte .sq-cardsort
@@ -263,7 +268,7 @@ def solve_focusvision_cardsort(driver, preferred_label: Optional[str] = None, ma
 
         return " Ã¢â‚¬â€ ".join([p for p in parts if p])
 
-    def _pick_bucket(cs, question_text: str):
+    def _pick_bucket(cs, question_text: str, card_text: str):
         try:
             buckets = cs.find_elements(By.CSS_SELECTOR, "li.sq-cardsort-bucket")
         except Exception:
@@ -286,6 +291,17 @@ def solve_focusvision_cardsort(driver, preferred_label: Optional[str] = None, ma
             return None
 
         qt = _norm_lc(question_text)
+
+        if assignments:
+            card_lc = _norm_lc(card_text)
+            for assignment in assignments:
+                assignment_card = _norm_lc(str((assignment or {}).get("card") or ""))
+                if not assignment_card or assignment_card != card_lc:
+                    continue
+                for bucket_label in (assignment or {}).get("buckets") or []:
+                    bucket_lc = _norm_lc(str(bucket_label or ""))
+                    if bucket_lc in label_to_el:
+                        return label_to_el[bucket_lc]
 
         # 1) Attention check explicite : si la consigne contient une option textuelle
         triggers = ["veuillez", "selectionnez", "sélectionnez", "choisissez", "pour vérifier", "attention"]
@@ -360,7 +376,8 @@ def solve_focusvision_cardsort(driver, preferred_label: Optional[str] = None, ma
             before_idx = ""
 
         qtxt = _get_question_text(cs, card)
-        bucket = _pick_bucket(cs, qtxt)
+        card_text = _norm(card.text or card.get_attribute("innerText") or "")
+        bucket = _pick_bucket(cs, qtxt, card_text)
         if not bucket:
             break
 
@@ -3844,12 +3861,17 @@ def execute_action(driver, instruction: str) -> bool:
                 matrix_by_target = False
 
         matrix_intent = matrix_like_itype or matrix_by_target
+        cardsort_intent = False
         target_payload = None
         if target_id:
             try:
                 target_payload = get_target(target_id) or None
             except Exception:
                 target_payload = None
+        if raw_itype_norm == "cardsort":
+            cardsort_intent = True
+        elif isinstance(target_payload, dict):
+            cardsort_intent = (target_payload.get("kind") or "").strip().lower() == "cardsort"
 
         log_info("[TARGET]", f"parsed target_id={target_id!r} itype={itype!r} value={value!r} context_len={len(ctx)}")
 
@@ -3904,6 +3926,24 @@ def execute_action(driver, instruction: str) -> bool:
                     return True
             except Exception:
                 pass
+
+        if cardsort_intent:
+            cardsort_card = ctx
+            cardsort_buckets = [p.strip() for p in value.split("|") if p.strip()]
+            if not cardsort_card or not cardsort_buckets:
+                log_info("[CARDSORT_ABORT]", "reason='missing_card_or_bucket'")
+                return False
+
+            if solve_focusvision_cardsort(
+                driver,
+                max_cards=3,
+                assignments=[{"card": cardsort_card, "buckets": cardsort_buckets}],
+            ):
+                log_info("[TARGET]", "apply ok=true strategy=cardsort reason=applied")
+                return True
+
+            log_info("[CARDSORT_ABORT]", "reason='apply_failed'")
+            return False
 
         # 1) target_id => application directe via DOM_REGISTRY
         # IMPORTANT: sliderpoints (FocusVision/Decipher) ne doivent PAS passer par le chemin dropdown générique,
@@ -4250,10 +4290,16 @@ def execute_actions_plan(
 
             matrix_row = (act.get("matrix_row_label") or "").strip()
             matrix_col = (act.get("matrix_col_label") or "").strip()
+            cardsort_card = (act.get("cardsort_card_label") or "").strip()
+            cardsort_buckets = (act.get("cardsort_bucket_labels") or "").strip()
             if matrix_row:
                 context = matrix_row
             if matrix_col:
                 value = matrix_col
+            if cardsort_card:
+                context = cardsort_card
+            if cardsort_buckets:
+                value = cardsort_buckets
 
             if not value or not itype:
                 continue

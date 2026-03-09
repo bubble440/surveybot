@@ -261,6 +261,17 @@ def _is_encuesta_ranking_matrix(block: Dict[str, Any]) -> bool:
     return all(_is_numeric_or_ordinal_label(col) for col in col_labels)
 
 
+def _is_cardsort_block(block: Dict[str, Any]) -> bool:
+    if not isinstance(block, dict):
+        return False
+    kind = _norm_folded_lc(block.get("kind"))
+    if kind != "cardsort":
+        return False
+    cards = block.get("cards")
+    buckets = block.get("buckets")
+    return isinstance(cards, list) and bool(cards) and isinstance(buckets, list) and bool(buckets)
+
+
 def expand_question_blocks_for_batch(question_blocks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
     Déplie les matrices multi-lignes en entrées QID unitaires (1 QID par ligne matrix).
@@ -479,7 +490,8 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
     for i, block in enumerate(question_blocks or [], start=1):
         qid = f"Q{i}"
         q = _escape(block.get("question", ""))
-        itype = _escape(block.get("itype", ""))
+        is_cardsort = _is_cardsort_block(block)
+        itype = "cardsort" if is_cardsort else _escape(block.get("itype", ""))
         ctx = block.get("context") if isinstance(block.get("context"), dict) else {}
         matrix_active_row_raw = (ctx or {}).get("matrix_active_row", "")
         matrix_columns = (ctx or {}).get("matrix_columns")
@@ -490,6 +502,8 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
             and bool(matrix_columns)
         )
         options_source = matrix_columns if use_matrix_columns_for_active_row else (block.get("options") or [])
+        cards = [_escape(str(c)) for c in (block.get("cards") or []) if _norm(str(c))] if is_cardsort else []
+        buckets = [_escape(str(b)) for b in (block.get("buckets") or []) if _norm(str(b))] if is_cardsort else []
         opts = [_escape(o) for o in options_source if o]
         max_sel = _selection_max_for_prompt(block)
         try:
@@ -541,7 +555,18 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
                 f"options_count={len(opts)} option_present={bool(forced_sector_screener_exclusive)}"
             )
 
-        if itype == "matrix" and matrix_active_row:
+        if is_cardsort:
+            lines.append(
+                "selection_rule: Pour QID={qid}, renvoyer EXACTEMENT une affectation par carte au format "
+                "card_label => bucket1|bucket2 ; card_label => bucketX. "
+                "Les affectations sont séparées par \" ; \". Les bucket labels doivent exister dans buckets_cardsort."
+                .format(qid=qid)
+            )
+            lines.append(
+                "cardsort_rule: utiliser EXACTEMENT les labels de cartes et buckets fournis; "
+                "1 ligne QID unique avec toutes les affectations."
+            )
+        elif itype == "matrix" and matrix_active_row:
             lines.append(
                 f"selection_rule: Pour QID={qid}, renvoyer entre 1 et {matrix_max_sel} valeur(s) colonne(s) séparée(s) par | pour matrix_active_row. Ne renvoie jamais row_label dans valeur."
             )
@@ -602,7 +627,11 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
             else:
                 lines.append("selection_rule: choisir une option valide de la liste")
 
-        if opts:
+        if is_cardsort:
+            lines.append("cards_cardsort: " + " | ".join(cards))
+            lines.append("buckets_cardsort: " + " | ".join(buckets))
+            lines.append("options: (cardsort_mapping_attendu)")
+        elif opts:
             lines.append("options: " + " | ".join(opts))
             if itype == "checkbox":
                 lines.append(
@@ -699,6 +728,11 @@ def filter_blocks_for_openai(question_blocks: list) -> list:
 
         # Si label ressemble é  une navigation, on skip
         if _is_navigation_label(label):
+            continue
+
+        # support cardsort (itype absent sur certains extracteurs, piloté par kind + cards/buckets)
+        if _is_cardsort_block(qb):
+            kept.append(qb)
             continue
 
         # types acceptés
