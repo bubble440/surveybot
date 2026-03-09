@@ -143,7 +143,7 @@ def set_sliderpoints(driver, choice_text: str, context_hint: str | None = None) 
                 continue
 
             idx = next(
-                (i for i, t in enumerate(legend_txts) if t and (needle == t or needle in t or t in needle)),
+                (i for i, t in enumerate(legend_txts) if t and (needle == t or needle in t)),
                 -1,
             )
             if idx < 0:
