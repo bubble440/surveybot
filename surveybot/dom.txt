@@ -1,67 +1,73 @@
 <body class="survey-page non-touch" data-device="">
 
 
-<div id="survey" class="survey-container">
+<div id="survey" class="survey-container notranslate">
 <div class="survey-section"><div class="page-header"></div>
 <!-- /.page-header --></div>
 <div class="survey-section">
 <div class="survey-body">
-<div class="survey-header no-select" unselectable="on">
-<div class="logo logo-left no-select" unselectable="on">
-        <img src="/survey/selfserve/1819/logo_6f97a8cc1003fe3a2de3a9761701e069.png?cbst_=951Y8P" class="logo-image no-select" alt="logo" unselectable="on">
-    </div>
-    <!-- /.logo -->
-<div role="progressbar" aria-valuenow="23" aria-valuemin="0" aria-valuemax="100" class="progress-bar progress-top no-select" title="barre de progression - 23% terminer" unselectable="on">
-<div class="progress-box-outer no-select" aria-hidden="true" unselectable="on"><span class="progress-box-completed no-select" style="width: 23%;" unselectable="on"></span></div>
-<div class="progress-text no-select" aria-hidden="true" unselectable="on">23%</div>
+<div class="survey-header">
+
+<div role="progressbar" aria-valuenow="11" aria-valuemin="0" aria-valuemax="100" class="progress-bar progress-top" title="barre de progression - 11% terminer">
+<div class="progress-box-outer" aria-hidden="true"><span class="progress-box-completed" style="width: 11%;"></span></div>
+<div class="progress-text" aria-hidden="true">11%</div>
 </div>
 <!-- /.progress-bar -->
 </div>
 <!-- /.survey-header -->
 
-<form id="primary" name="primary" method="post" action="/survey/selfserve/1a7f/260223" enctype="application/x-www-form-urlencoded" novalidate="">
-<input type="hidden" name="_v2_counter" value="17">
+<form id="primary" name="primary" method="post" action="/survey/selfserve/53b/2602171" enctype="application/x-www-form-urlencoded" novalidate="">
+<input type="hidden" name="_v2_counter" value="12">
 <!-- @@XYZZY@@ -->
 <style type="text/css">
-    #question_S8c_1 .answers-table,.question-source {
+    #question_S10 .answers-table,.question-source {
         display: none;
     }
     /* cardsort top-level container */
-    .sq-cardsort-S8c_1.sq-cardsort-desktop {
+    .sq-cardsort-S10.sq-cardsort-desktop {
+        width: auto;
     }
     /* all cards */
-    .sq-cardsort-S8c_1 .sq-cardsort-card-item {
-        
+    .sq-cardsort-S10 .sq-cardsort-card-item {
+        width:700px !important;
         /* bug #21065 fix - limit the width of the card if max-width is specified */
-        max-width: 500px;
     }
     /* each individual card */
 
+
+
+
+
+
+
+
+
+
     /* disabled card */
-    .sq-cardsort-S8c_1 .sq-cardsort-card.sq-cardsort-state-disabled .sq-cardsort-card-item {
+    .sq-cardsort-S10 .sq-cardsort-card.sq-cardsort-state-disabled .sq-cardsort-card-item {
         
     }
     /* hovered card */
-    .sq-cardsort-S8c_1 .sq-cardsort-card.sq-cardsort-state-hovered .sq-cardsort-card-item {
+    .sq-cardsort-S10 .sq-cardsort-card.sq-cardsort-state-hovered .sq-cardsort-card-item {
         
     }
     /* selected card */
-    .sq-cardsort-S8c_1 .sq-cardsort-card.sq-cardsort-state-selected .sq-cardsort-card-item {
+    .sq-cardsort-S10 .sq-cardsort-card.sq-cardsort-state-selected .sq-cardsort-card-item {
         
     }
     /* card in bucket contents view */
     /* bug 13492 fix starts here */
-    .sq-cardsort-S8c_1 .sq-cardsort-contents-overlay .sq-cardsort-card {
+    .sq-cardsort-S10 .sq-cardsort-contents-overlay .sq-cardsort-card {
         /* bug #20850 - use theme colors */
-        /*background-color: #ffffff;*/
+        /*background-color: #dfe4ea;*/
         min-height: 48px;
         height: auto !important;
         height: 48px;
         text-align: left;
     }
-    .sq-cardsort-S8c_1 .sq-cardsort-contents-overlay .sq-cardsort-card-item { /* this line is not part of the bug 13492 fix */
+    .sq-cardsort-S10 .sq-cardsort-contents-overlay .sq-cardsort-card-item { /* this line is not part of the bug 13492 fix */
         /* bug #20850 - use theme colors */
-        /*color: #454545;*/
+        /*color: #57606f;*/
         display: block;
         min-height: 48px;
         height: auto !important;
@@ -70,7 +76,7 @@
         width: auto;
          /* this line is not part of the bug 13492 fix */
     }
-    .sq-cardsort-S8c_1 .sq-cardsort-contents-overlay .sq-cardsort-card-legend {
+    .sq-cardsort-S10 .sq-cardsort-contents-overlay .sq-cardsort-card-legend {
         display: inline-block;
         height: auto;
         line-height: normal;
@@ -81,17 +87,18 @@
     /* bug 13492 fix ends here */
 
     /* buckets container */
-    .sq-cardsort-S8c_1.sq-cardsort-desktop .sq-cardsort-buckets {
+    .sq-cardsort-S10.sq-cardsort-desktop .sq-cardsort-buckets {
+        white-space: nowrap;
     }
     /* all buckets */
-    .sq-cardsort-S8c_1 .sq-cardsort-bucket {
+    .sq-cardsort-S10 .sq-cardsort-bucket {
         /* bug #20850 - use theme colors */
-        /*background-color: #ffffff;*/
-        /*color: #454545;*/
-        width:15%; height:70px; text-align:center !important; overflow:hidden; padding:0 !important;
+        /*background-color: #dfe4ea;*/
+        /*color: #57606f;*/
+        width:13%;background:#D3D3D3;color:#333;overflow:hidden;
         /* bug #21065 fix - limit the width of the bucket if max-width is specified */
     }
-    .sq-cardsort-S8c_1 .sq-cardsort-bucket-item {
+    .sq-cardsort-S10 .sq-cardsort-bucket-item {
         margin-right: 5px;
     }
     /* each individual bucket */
@@ -99,81 +106,73 @@
 
 
 
-
-
-
     /* disabled bucket */
-    .sq-cardsort-S8c_1 .sq-cardsort-bucket.sq-cardsort-state-disabled {
+    .sq-cardsort-S10 .sq-cardsort-bucket.sq-cardsort-state-disabled {
         /* bug #20850 - use theme colors */
-        /*background-color: #bfbfbf;*/
-        /*color: #636363;*/
+        /*background-color: #a5a5a5;*/
+        /*color: #727272;*/
         
     }
     /* hovered bucket */
-    .sq-cardsort-S8c_1 .sq-cardsort-bucket.sq-cardsort-state-hovered {
+    .sq-cardsort-S10 .sq-cardsort-bucket.sq-cardsort-state-hovered {
         /* bug #20850 - use theme colors */
-        /*background-color: #d8d8d8;*/
-        /*color: #454545;*/
+        /*background-color: #007ac0;*/
+        /*color: #ffffff;*/
         
     }
     /* selected bucket */
-    .sq-cardsort-S8c_1 .sq-cardsort-bucket.sq-cardsort-state-selected {
+    .sq-cardsort-S10 .sq-cardsort-bucket.sq-cardsort-state-selected {
         /* bug #20850 - use theme colors */
-        /*background-color: #d8d8d8;*/
-        /*color: #454545;*/
+        /*background-color: #007ac0;*/
+        /*color: #ffffff;*/
         
     }
     /* card counter on bucket */
-    .sq-cardsort-S8c_1 .sq-cardsort-bucket-count {
+    .sq-cardsort-S10 .sq-cardsort-bucket-count {
         /* bug #20850 - use theme colors */
-        /*color: #ffffff;*/
+        /*color: #dfe4ea;*/
         
         display: none;
     }
     /* disabled card counter on bucket */
-    .sq-cardsort-S8c_1 .sq-cardsort-bucket-count.sq-cardsort-state-disabled {
+    .sq-cardsort-S10 .sq-cardsort-bucket-count.sq-cardsort-state-disabled {
         /* bug #20850 - use theme colors */
-        /*color: #bfbfbf;*/
+        /*color: #a5a5a5;*/
         
     }
     /* hovered card counter on bucket */
-    .sq-cardsort-S8c_1 .sq-cardsort-bucket-count.sq-cardsort-state-hovered {
+    .sq-cardsort-S10 .sq-cardsort-bucket-count.sq-cardsort-state-hovered {
         /* bug #20850 - use theme colors */
-        /*color: #d8d8d8;*/
+        /*color: #007ac0;*/
         
     }
     /* progress indicator */
-    .sq-cardsort-S8c_1 .sq-cardsort-progress {
+    .sq-cardsort-S10 .sq-cardsort-progress {
         ;
-        display: none;
     }
     /* navigation (previous, next) buttons */
-    .sq-cardsort-S8c_1 .sq-cardsort-previous,.sq-cardsort-S8c_1 .sq-cardsort-next {
+    .sq-cardsort-S10 .sq-cardsort-previous,.sq-cardsort-S10 .sq-cardsort-next {
         /* bug #20850 - use theme colors */
-        /*background-color: #ffffff;*/
-        /*color: #454545;*/
+        /*background-color: #dfe4ea;*/
+        /*color: #57606f;*/
         ;
     }
-    /* navigation previous button not shown via disableNavigation style variable */
-    .sq-cardsort-S8c_1 .sq-cardsort-previous {
-        display: none;
-    }
     /* disabled navigation (previous, next) buttons */
-    .sq-cardsort-S8c_1 .sq-cardsort-previous.sq-cardsort-state-disabled,.sq-cardsort-S8c_1 .sq-cardsort-next.sq-cardsort-state-disabled {
+    .sq-cardsort-S10 .sq-cardsort-previous.sq-cardsort-state-disabled,.sq-cardsort-S10 .sq-cardsort-next.sq-cardsort-state-disabled {
         /* bug #20850 - use theme colors */
-        /*background-color: #bfbfbf;*/
-        /*color: #636363;*/
+        /*background-color: #a5a5a5;*/
+        /*color: #727272;*/
         
     }
     /* hovered navigation (previous, next) buttons */
-    .sq-cardsort-S8c_1 .sq-cardsort-previous.sq-cardsort-state-hovered,.sq-cardsort-S8c_1 .sq-cardsort-next.sq-cardsort-state-hovered {
+    .sq-cardsort-S10 .sq-cardsort-previous.sq-cardsort-state-hovered,.sq-cardsort-S10 .sq-cardsort-next.sq-cardsort-state-hovered {
         /* bug #20850 - use theme colors */
-        /*background-color: #d8d8d8;*/
-        /*color: #454545;*/
+        /*background-color: #007ac0;*/
+        /*color: #ffffff;*/
         
     }
     /* completion message */
-    .sq-cardsort-S8c_1 .sq-cardsort-completion-item {
+    .sq-cardsort-S10 .sq-cardsort-completion-item {
         
     }
     </style>
@@ -186,16 +185,18 @@
  "bucketSelectCSS": {},
  "cardDisableCSS": {},
  "contentsCardCSS": {},
- "cardCSS": {},
- "completionHTML": "<b>Vous avez termin\u00e9\u00a0!</b> <br/><i>Veuillez cliquer sur le bouton \u00ab\u00a0Continuer\u00a0\u00bb pour poursuivre.</i>",
- "buttonPreviousHTML": "<i class=\"fa-icon-chevron-left\"></i> Prev",
+ "cardCSS": {
+  "width": "700px !important"
+ },
+ "completionHTML": "<b><i>Veuillez cliquer sur le bouton Continuer&nbsp;>> pour poursuivre.</i></b>",
+ "buttonPreviousHTML": "<i class=\"fa-icon-chevron-left\"></i> Pr\u00e9c\u00e9dent",
  "animationDuration": 500,
  "wrapBuckets": true,
  "bucketCountCSS": {},
  "iconButtonCSS": {},
  "progressCSS": {},
  "completionCSS": {},
- "displayProgress": false,
+ "displayProgress": true,
  "iconButtonHoverCSS": {},
  "iconButtonDisableCSS": {},
  "dragAndDrop": true,
@@ -203,35 +204,34 @@
  "cardHoverCSS": {},
  "bucketHoverCSS": {},
  "bucketCountDisableCSS": {},
- "cardMaxWidth": "500px",
+ "cardMaxWidth": "",
  "cardSelectCSS": {},
  "bucketCountHoverCSS": {},
  "bucketDisableCSS": {},
- "themeFile": "",
+ "themeFile": "cardsort.css",
  "autoSubmit": false,
- "bucketsPerRow": 0,
+ "bucketsPerRow": 6,
  "automaticAdvance": true,
  "bucketCSS": {
-  "padding": "0 !important",
-  "width": "15%",
+  "color": "#333",
+  "width": "13%",
   "overflow": "hidden",
-  "height": "70px",
-  "text-align": "center !important"
+  "background": "#D3D3D3"
  },
- "displayNavigation": false
+ "displayNavigation": true
 };
         $.extend(setupOptions, {
             // bug 16635: add autoadvance and drag and drop begin
-            automaticAdvance: 0,
+            automaticAdvance: 1,
             dragAndDrop: 1,
             // bug 16635: add autoadvance and drag and drop end
             debug: false,
             deviceClass: "desktop",
             grouping: "rows",
             infiniteScroll: 0,
-            label: "S8c_1",
+            label: "S10",
             style: "cardsort",
-            type: "checkbox",
+            type: "radio",
             uniformBucketSize: 1,
             uniformCardSize: 1
         });
@@ -240,76 +240,112 @@
         });
     })(jQuery);
     </script>
-<div id="question_S8c_1" class="question checkbox label_S8c_1  ">
-<h1 title="question" class="question-text no-select" id="question_text_S8c_1" unselectable="on">Dans lesquels des  <b class="no-select" unselectable="on">magasins</b> suivants avez-vous acheté chacun de ces produits au cours des <b class="no-select" unselectable="on">trois derniers mois</b>, le cas échéant&nbsp;?</h1>
+<div id="question_S10" class="question radio label_S10  ">
+<h1 title="question" class="question-text" id="question_text_S10">Dans quelle mesure êtes-vous d'accord ou non avec les affirmations suivantes&nbsp;?</h1>
 <!-- /.question-text -->
 
-<h2 title="instructions" class="instruction-text no-select" unselectable="on">Veuillez sélectionner toutes les réponses pertinentes pour chaque ligne.</h2>
+<h2 title="instructions" class="instruction-text"></h2>
 <!-- /.instruction-text -->
 <!-- assign sq-cardsort-mobile class if mobile device -->
     <!-- assign sq-cardsort-desktop class if not mobile device -->
-    <div class="sq-cardsort sq-cardsort-S8c_1 sq-cardsort-desktop">
+    <div class="sq-cardsort sq-cardsort-S10 sq-cardsort-desktop">
       <div class="sq-cardsort-body">
         <div class="sq-cardsort-cards-view">
-          <ul class="sq-cardsort-cards" style="display: block; width: 500px;">
-            <li atleast="1" atmost="7" class="sq-cardsort-card sq-cardsort-card-r1 ui-draggable sq-cardsort-state-selected" index="0" selections="1" style="display: inline-block;">
+          <ul class="sq-cardsort-cards" style="display: block; width: 700px;">
+            <li atleast="1" atmost="1" class="sq-cardsort-card sq-cardsort-card-r6 ui-draggable sq-cardsort-state-selected" index="5" style="display: inline-block;" selections="1">
+              <span class="sq-cardsort-card-remove sq-cardsort-card-remove-r6 sq-cardsort-icon-button"><i class="fa-icon-ban-circle"></i></span>
+              <div class="sq-cardsort-card-item sq-cardsort-card-item-r6" index="5" style="height: 75px; width: 631px;"><p class="sq-cardsort-card-legend sq-cardsort-card-legend-left" style="margin-bottom: 19px; margin-top: 19px;">
+        J'admire les pionniers/-ères
+    </p></div>
+            </li>
+            <li atleast="1" atmost="1" class="sq-cardsort-card sq-cardsort-card-r5 ui-draggable sq-cardsort-state-selected" index="4" style="display: none;" selections="2">
+              <span class="sq-cardsort-card-remove sq-cardsort-card-remove-r5 sq-cardsort-icon-button"><i class="fa-icon-ban-circle"></i></span>
+              <div class="sq-cardsort-card-item sq-cardsort-card-item-r5" index="4" style="height: 75px; width: 631px;"><p class="sq-cardsort-card-legend sq-cardsort-card-legend-left" style="margin-bottom: 19px; margin-top: 19px;">
+        Le changement m’enthousiasme
+    </p></div>
+            </li>
+            <li atleast="1" atmost="1" class="sq-cardsort-card sq-cardsort-card-r9 ui-draggable sq-cardsort-state-selected" index="8" style="display: none;" selections="0">
+              <span class="sq-cardsort-card-remove sq-cardsort-card-remove-r9 sq-cardsort-icon-button"><i class="fa-icon-ban-circle"></i></span>
+              <div class="sq-cardsort-card-item sq-cardsort-card-item-r9" index="8" style="height: 75px; width: 631px;"><p class="sq-cardsort-card-legend sq-cardsort-card-legend-left" style="margin-bottom: 19px; margin-top: 19px;">
+        Je crois que nous sommes tous responsables du progrès de la société
+    </p></div>
+            </li>
+            <li atleast="1" atmost="1" class="sq-cardsort-card sq-cardsort-card-r4 ui-draggable sq-cardsort-state-selected" index="3" style="display: none;" selections="3">
+              <span class="sq-cardsort-card-remove sq-cardsort-card-remove-r4 sq-cardsort-icon-button"><i class="fa-icon-ban-circle"></i></span>
+              <div class="sq-cardsort-card-item sq-cardsort-card-item-r4" index="3" style="height: 75px; width: 631px;"><p class="sq-cardsort-card-legend sq-cardsort-card-legend-left" style="margin-bottom: 19px; margin-top: 19px;">
+        Face à un problème, j'essaie de sortir des sentiers battus
+    </p></div>
+            </li>
+            <li atleast="1" atmost="1" class="sq-cardsort-card sq-cardsort-card-r1 ui-draggable sq-cardsort-state-selected" index="0" style="display: none;" selections="1">
               <span class="sq-cardsort-card-remove sq-cardsort-card-remove-r1 sq-cardsort-icon-button"><i class="fa-icon-ban-circle"></i></span>
-              <div class="sq-cardsort-card-item sq-cardsort-card-item-r1" index="0" style="height: 77px; width: 501px;"><p class="sq-cardsort-card-legend sq-cardsort-card-legend-left" style="margin-bottom: 10px; margin-top: 10px;">
-        Whey protéines en poudre (à base de produits laitiers / de lactosérum)
+              <div class="sq-cardsort-card-item sq-cardsort-card-item-r1" index="0" style="height: 75px; width: 631px;"><p class="sq-cardsort-card-legend sq-cardsort-card-legend-left" style="margin-bottom: 19px; margin-top: 19px;">
+        Je recherche activement de nouvelles informations ou connaissances
+    </p></div>
+            </li>
+            <li atleast="1" atmost="1" class="sq-cardsort-card sq-cardsort-card-r2 ui-draggable" index="1" style="display: none;">
+              <span class="sq-cardsort-card-remove sq-cardsort-card-remove-r2 sq-cardsort-icon-button"><i class="fa-icon-ban-circle"></i></span>
+              <div class="sq-cardsort-card-item sq-cardsort-card-item-r2" index="1" style="height: 75px; width: 631px;"><p class="sq-cardsort-card-legend sq-cardsort-card-legend-left" style="margin-bottom: 19px; margin-top: 19px;">
+        J'aime explorer des sujets ou des idées qui ne me sont pas familiers
+    </p></div>
+            </li>
+            <li atleast="1" atmost="1" class="sq-cardsort-card sq-cardsort-card-r3 ui-draggable" index="2" style="display: none;">
+              <span class="sq-cardsort-card-remove sq-cardsort-card-remove-r3 sq-cardsort-icon-button"><i class="fa-icon-ban-circle"></i></span>
+              <div class="sq-cardsort-card-item sq-cardsort-card-item-r3" index="2" style="height: 75px; width: 631px;"><p class="sq-cardsort-card-legend sq-cardsort-card-legend-left" style="margin-bottom: 10px; margin-top: 10px;">
+        J'ai une curiosité naturelle pour la façon dont les choses fonctionnent ou pourquoi les choses sont comme elles sont
+    </p></div>
+            </li>
+            <li atleast="1" atmost="1" class="sq-cardsort-card sq-cardsort-card-r8 ui-draggable" index="7" style="display: none;">
+              <span class="sq-cardsort-card-remove sq-cardsort-card-remove-r8 sq-cardsort-icon-button"><i class="fa-icon-ban-circle"></i></span>
+              <div class="sq-cardsort-card-item sq-cardsort-card-item-r8" index="7" style="height: 75px; width: 631px;"><p class="sq-cardsort-card-legend sq-cardsort-card-legend-left" style="margin-bottom: 10px; margin-top: 10px;">
+        Je recherche activement de nouveaux passe-temps ou des occasions d’apprendre de nouvelles compétences
+    </p></div>
+            </li>
+            <li atleast="1" atmost="1" class="sq-cardsort-card sq-cardsort-card-r7 ui-draggable" index="6" style="display: none;">
+              <span class="sq-cardsort-card-remove sq-cardsort-card-remove-r7 sq-cardsort-icon-button"><i class="fa-icon-ban-circle"></i></span>
+              <div class="sq-cardsort-card-item sq-cardsort-card-item-r7" index="6" style="height: 75px; width: 631px;"><p class="sq-cardsort-card-legend sq-cardsort-card-legend-left" style="margin-bottom: 19px; margin-top: 19px;">
+        Je suis motivé(e) par l’accomplissement personnel
+    </p></div>
+            </li>
+            <li atleast="1" atmost="1" class="sq-cardsort-card sq-cardsort-card-r10 ui-draggable" index="9" style="display: none;">
+              <span class="sq-cardsort-card-remove sq-cardsort-card-remove-r10 sq-cardsort-icon-button"><i class="fa-icon-ban-circle"></i></span>
+              <div class="sq-cardsort-card-item sq-cardsort-card-item-r10" index="9" style="height: 75px; width: 631px;"><p class="sq-cardsort-card-legend sq-cardsort-card-legend-left" style="margin-bottom: 10px; margin-top: 10px;">
+        À des fins de contrôle qualité, veuillez sélectionner l’option «&nbsp;Pas du tout d’accord&nbsp;» ici
     </p></div>
             </li>
             <!-- completion message - not actually a card -->
             <li class="sq-cardsort-completion">
-              <div class="sq-cardsort-completion-item" aria-live="assertive"><b>Vous avez terminé&nbsp;!</b> <br><i>Veuillez cliquer sur le bouton «&nbsp;Continuer&nbsp;» pour poursuivre.</i></div>
+              <div class="sq-cardsort-completion-item" aria-live="assertive"><b><i>Veuillez cliquer sur le bouton Continuer&nbsp;&gt;&gt; pour poursuivre.</i></b></div>
             </li>
           </ul>
-          <span class="sq-cardsort-progress">1/1</span>
-          <span class="sq-cardsort-icon-button sq-cardsort-previous sq-cardsort-state-disabled" disabled="disabled" style=""><i class="fa-icon-chevron-left"></i> Prev</span>
+          <span class="sq-cardsort-progress">1/10</span>
+          <span class="sq-cardsort-icon-button sq-cardsort-previous sq-cardsort-state-disabled" disabled="disabled"><i class="fa-icon-chevron-left"></i> Précédent</span>
           <span class="sq-cardsort-icon-button sq-cardsort-next">Suivant <i class="fa-icon-chevron-right"></i></span>
         </div>
         <div class="sq-cardsort-buckets-view">
           <ul class="sq-cardsort-buckets">
-            <li class="sq-cardsort-bucket sq-cardsort-bucket-c2 ui-droppable sq-cardsort-bucket-selected sq-cardsort-state-selected" index="1" style="display: inline-block; height: 73px; width: 139px; pointer-events: none;">
-              <div class="sq-cardsort-bucket-item sq-cardsort-bucket-item-c2" index="1" style="margin-bottom: 9px; margin-top: 9px;"><p class="sq-cardsort-bucket-legend sq-cardsort-bucket-legend-top">
-Directement sur le site Web de la marque
-<div class="force-width" style="width:9.5px"></div></p></div>
-              <span class="sq-cardsort-bucket-count sq-cardsort-bucket-count-c2 sq-cardsort-icon-button">1</span>
+            <li class="sq-cardsort-bucket sq-cardsort-bucket-c1 ui-droppable sq-cardsort-bucket-selected" index="0" style="display: inline-block; height: 54px; width: 151px;">
+              <div class="sq-cardsort-bucket-item sq-cardsort-bucket-item-c1" index="0" style="margin-bottom: 6px; margin-top: 6px;"><p class="sq-cardsort-bucket-legend sq-cardsort-bucket-legend-top">
+Pas du tout d’accord
+<div class="force-width" style="width:14.5px"></div></p></div>
+              <span class="sq-cardsort-bucket-count sq-cardsort-bucket-count-c1 sq-cardsort-icon-button">1</span>
             </li>
-            <li class="sq-cardsort-bucket sq-cardsort-bucket-c3 ui-droppable" index="2" style="display: inline-block; height: 73px; width: 139px;">
-              <div class="sq-cardsort-bucket-item sq-cardsort-bucket-item-c3" index="2" style="margin-bottom: 23px; margin-top: 23px;"><p class="sq-cardsort-bucket-legend sq-cardsort-bucket-legend-top">
-Leclerc
-<div class="force-width" style="width:9.5px"></div></p></div>
-              <span class="sq-cardsort-bucket-count sq-cardsort-bucket-count-c3 sq-cardsort-icon-button sq-cardsort-state-disabled" disabled="disabled">0</span>
+            <li class="sq-cardsort-bucket sq-cardsort-bucket-c2 ui-droppable sq-cardsort-bucket-selected sq-cardsort-state-selected" index="1" style="display: inline-block; height: 54px; width: 151px;">
+              <div class="sq-cardsort-bucket-item sq-cardsort-bucket-item-c2" index="1" style="margin-bottom: 6px; margin-top: 6px;"><p class="sq-cardsort-bucket-legend sq-cardsort-bucket-legend-top">
+Plutôt pas d’accord
+<div class="force-width" style="width:14.5px"></div></p></div>
+              <span class="sq-cardsort-bucket-count sq-cardsort-bucket-count-c2 sq-cardsort-icon-button">2</span>
             </li>
-            <li class="sq-cardsort-bucket sq-cardsort-bucket-c4 ui-droppable" index="3" style="display: inline-block; height: 73px; width: 139px;">
-              <div class="sq-cardsort-bucket-item sq-cardsort-bucket-item-c4" index="3" style="margin-bottom: 9px; margin-top: 9px;"><p class="sq-cardsort-bucket-legend sq-cardsort-bucket-legend-top">
-Carrefour (y compris Carrefour Market)
-<div class="force-width" style="width:9.5px"></div></p></div>
-              <span class="sq-cardsort-bucket-count sq-cardsort-bucket-count-c4 sq-cardsort-icon-button sq-cardsort-state-disabled" disabled="disabled">0</span>
+            <li class="sq-cardsort-bucket sq-cardsort-bucket-c3 ui-droppable sq-cardsort-bucket-selected" index="2" style="display: inline-block; height: 54px; width: 151px;">
+              <div class="sq-cardsort-bucket-item sq-cardsort-bucket-item-c3" index="2" style="margin-bottom: 14px; margin-top: 14px;"><p class="sq-cardsort-bucket-legend sq-cardsort-bucket-legend-top">
+Plutôt d’accord
+<div class="force-width" style="width:14.5px"></div></p></div>
+              <span class="sq-cardsort-bucket-count sq-cardsort-bucket-count-c3 sq-cardsort-icon-button">1</span>
             </li>
-            <li class="sq-cardsort-bucket sq-cardsort-bucket-c5 ui-droppable" index="4" style="display: inline-block; height: 73px; width: 139px;">
-              <div class="sq-cardsort-bucket-item sq-cardsort-bucket-item-c5" index="4" style="margin-bottom: 23px; margin-top: 23px;"><p class="sq-cardsort-bucket-legend sq-cardsort-bucket-legend-top">
-Auchan
-<div class="force-width" style="width:9.5px"></div></p></div>
-              <span class="sq-cardsort-bucket-count sq-cardsort-bucket-count-c5 sq-cardsort-icon-button sq-cardsort-state-disabled" disabled="disabled">0</span>
-            </li>
-            <li class="sq-cardsort-bucket sq-cardsort-bucket-c6 ui-droppable" index="5" style="display: inline-block; height: 73px; width: 139px;">
-              <div class="sq-cardsort-bucket-item sq-cardsort-bucket-item-c6" index="5" style="margin-bottom: 23px; margin-top: 23px;"><p class="sq-cardsort-bucket-legend sq-cardsort-bucket-legend-top">
-Intermarché
-<div class="force-width" style="width:9.5px"></div></p></div>
-              <span class="sq-cardsort-bucket-count sq-cardsort-bucket-count-c6 sq-cardsort-icon-button sq-cardsort-state-disabled" disabled="disabled">0</span>
-            </li>
-            <li class="sq-cardsort-bucket sq-cardsort-bucket-c7 ui-droppable" index="6" style="display: inline-block; height: 73px; width: 139px;">
-              <div class="sq-cardsort-bucket-item sq-cardsort-bucket-item-c7" index="6" style="margin-bottom: 16px; margin-top: 16px;"><p class="sq-cardsort-bucket-legend sq-cardsort-bucket-legend-top">
-Hyper et supermarchés U
-<div class="force-width" style="width:9.5px"></div></p></div>
-              <span class="sq-cardsort-bucket-count sq-cardsort-bucket-count-c7 sq-cardsort-icon-button sq-cardsort-state-disabled" disabled="disabled">0</span>
-            </li>
-            <li class="sq-cardsort-bucket sq-cardsort-bucket-c8 ui-droppable" index="7" style="display: inline-block; height: 73px; width: 139px;">
-              <div class="sq-cardsort-bucket-item sq-cardsort-bucket-item-c8" index="7" style="margin-bottom: 23px; margin-top: 23px;"><p class="sq-cardsort-bucket-legend sq-cardsort-bucket-legend-top">
-Monoprix
-<div class="force-width" style="width:9.5px"></div></p></div>
-              <span class="sq-cardsort-bucket-count sq-cardsort-bucket-count-c8 sq-cardsort-icon-button sq-cardsort-state-disabled" disabled="disabled">0</span>
+            <li class="sq-cardsort-bucket sq-cardsort-bucket-c4 ui-droppable sq-cardsort-bucket-selected" index="3" style="display: inline-block; height: 54px; width: 151px;">
+              <div class="sq-cardsort-bucket-item sq-cardsort-bucket-item-c4" index="3" style="margin-bottom: 6px; margin-top: 6px;"><p class="sq-cardsort-bucket-legend sq-cardsort-bucket-legend-top">
+Tout à fait d’accord
+<div class="force-width" style="width:14.5px"></div></p></div>
+              <span class="sq-cardsort-bucket-count sq-cardsort-bucket-count-c4 sq-cardsort-icon-button">1</span>
             </li>
           </ul>
         </div>
@@ -347,127 +383,637 @@ Monoprix
 </span>
 </div>
 <table class="grid setWidth grid-table-mode" data-settings="force-desktop mobile-mode group-by-row table-mode" data-height="" summary="This table contains form elements to answer the survey question">
-<tbody><tr class="row row-col-legends row-col-legends-top colCount-7">
+<tbody><tr class="row row-col-legends row-col-legends-top colCount-4">
 <td class="cell empty empty-left empty-top unused mobile border-collapse"></td>
-<th scope="col" id="S8c_1_c2" class="cell nonempty legend col-legend col-legend-top col-legend-basic legend-level-1 mobile border-collapse    no-select" unselectable="on">
-Directement sur le site Web de la marque
-<div class="force-width" style="width:9.5px"></div></th><th scope="col" id="S8c_1_c3" class="cell nonempty legend col-legend col-legend-top col-legend-basic legend-level-1 mobile border-collapse    no-select" unselectable="on">
-Leclerc
-<div class="force-width" style="width:9.5px"></div></th><th scope="col" id="S8c_1_c4" class="cell nonempty legend col-legend col-legend-top col-legend-basic legend-level-1 mobile border-collapse    no-select" unselectable="on">
-Carrefour (y compris Carrefour Market)
-<div class="force-width" style="width:9.5px"></div></th><th scope="col" id="S8c_1_c5" class="cell nonempty legend col-legend col-legend-top col-legend-basic legend-level-1 mobile border-collapse    no-select" unselectable="on">
-Auchan
-<div class="force-width" style="width:9.5px"></div></th><th scope="col" id="S8c_1_c6" class="cell nonempty legend col-legend col-legend-top col-legend-basic legend-level-1 mobile border-collapse    no-select" unselectable="on">
-Intermarché
-<div class="force-width" style="width:9.5px"></div></th><th scope="col" id="S8c_1_c7" class="cell nonempty legend col-legend col-legend-top col-legend-basic legend-level-1 mobile border-collapse    no-select" unselectable="on">
-Hyper et supermarchés U
-<div class="force-width" style="width:9.5px"></div></th><th scope="col" id="S8c_1_c8" class="cell nonempty legend col-legend col-legend-top col-legend-basic legend-level-1 mobile border-collapse    no-select" unselectable="on">
-Monoprix
-<div class="force-width" style="width:9.5px"></div></th>
+<th scope="col" id="S10_c1" class="cell nonempty legend col-legend col-legend-top col-legend-basic legend-level-1 mobile border-collapse   ">
+Pas du tout d’accord
+<div class="force-width" style="width:14.5px"></div></th><th scope="col" id="S10_c2" class="cell nonempty legend col-legend col-legend-top col-legend-basic legend-level-1 mobile border-collapse   ">
+Plutôt pas d’accord
+<div class="force-width" style="width:14.5px"></div></th><th scope="col" id="S10_c3" class="cell nonempty legend col-legend col-legend-top col-legend-basic legend-level-1 mobile border-collapse   ">
+Plutôt d’accord
+<div class="force-width" style="width:14.5px"></div></th><th scope="col" id="S10_c4" class="cell nonempty legend col-legend col-legend-top col-legend-basic legend-level-1 mobile border-collapse   ">
+Tout à fait d’accord
+<div class="force-width" style="width:14.5px"></div></th>
 
 </tr>
 </tbody>
-<tbody><tr class="row row-elements even colCount-7">
-<th scope="row" id="S8c_1_r1_left" class="cell nonempty legend row-legend row-legend-left row-legend-basic legend-level-1 mobile border-collapse   no-select" unselectable="on">
-        Whey protéines en poudre (à base de produits laitiers / de lactosérum)
+<tbody><tr class="row row-elements even colCount-4">
+<th scope="row" id="S10_r6_left" class="cell nonempty legend row-legend row-legend-left row-legend-basic legend-level-1 mobile border-collapse  ">
+        J'admire les pionniers/-ères
     </th>
-<td headers="S8c_1_c2" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+<td headers="S10_c1" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
 <span class="cell-sub-wrapper cell-legend-right">
 <span class="cell-input cell-sub-column">
-<input type="checkbox" name="ans6890.1.0" id="ans6890.1.0" value="1" checked="checked" class="input checkbox fir-hidden" aria-labelledby="S8c_1_r1_left S8c_1_c2"><span class="fir-icon selected">
+<input type="radio" name="ans6009.0.5" value="0" id="ans6009.0.5" class="input radio fir-hidden" aria-labelledby="S10_r6_left S10_c1"><span class="fir-icon">
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
-<title> checkbox </title>
-<path d="M15.8,0H3.9C1.8,0,0,2,0,4.1V16c0,2.2,1.8,4,3.9,4h11.8c2.2,0,4.2-1.8,4.2-4V4.1C20,2,18,0,15.8,0z M19,16 c0,1.6-1.6,3-3.2,3H3.9C2.3,19,1,17.7,1,16V4.1C1,2.5,2.3,1,3.9,1h11.8C17.4,1,19,2.5,19,4.1V16z" class="fir-base"></path>
-<path d="M19,16c0,1.6-1.6,3-3.2,3H3.9C2.3,19,1,17.7,1,16V4.1C1,2.5,2.3,1,3.9,1h11.8C17.4,1,19,2.5,19,4.1V16z" class="fir-bg"></path>
-<polygon points="9.1,16.3 2.5,11 4.1,9 8.7,12.6 15.6,3.7 17.7,5.2 " class="fir-selected"></polygon>
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
 </svg>
 </span>
 </span>
-<span class="cell-text cell-sub-column no-select" unselectable="on"><label for="ans6890.1.0">Directement sur le site Web de la marque</label> </span>
+<span class="cell-text cell-sub-column"><label for="ans6009.0.5">Pas du tout d’accord</label> </span>
 </span>
-</td><td headers="S8c_1_c3" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+</td><td headers="S10_c2" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
 <span class="cell-sub-wrapper cell-legend-right">
 <span class="cell-input cell-sub-column">
-<input type="checkbox" name="ans6890.2.0" id="ans6890.2.0" value="1" class="input checkbox fir-hidden" aria-labelledby="S8c_1_r1_left S8c_1_c3"><span class="fir-icon">
+<input type="radio" name="ans6009.0.5" value="1" id="ans6009.1.5" class="input radio fir-hidden" aria-labelledby="S10_r6_left S10_c2" checked="checked"><span class="fir-icon">
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
-<title> checkbox </title>
-<path d="M15.8,0H3.9C1.8,0,0,2,0,4.1V16c0,2.2,1.8,4,3.9,4h11.8c2.2,0,4.2-1.8,4.2-4V4.1C20,2,18,0,15.8,0z M19,16 c0,1.6-1.6,3-3.2,3H3.9C2.3,19,1,17.7,1,16V4.1C1,2.5,2.3,1,3.9,1h11.8C17.4,1,19,2.5,19,4.1V16z" class="fir-base"></path>
-<path d="M19,16c0,1.6-1.6,3-3.2,3H3.9C2.3,19,1,17.7,1,16V4.1C1,2.5,2.3,1,3.9,1h11.8C17.4,1,19,2.5,19,4.1V16z" class="fir-bg"></path>
-<polygon points="9.1,16.3 2.5,11 4.1,9 8.7,12.6 15.6,3.7 17.7,5.2 " class="fir-selected"></polygon>
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
 </svg>
 </span>
 </span>
-<span class="cell-text cell-sub-column no-select" unselectable="on"><label for="ans6890.2.0">Leclerc</label> </span>
+<span class="cell-text cell-sub-column"><label for="ans6009.1.5">Plutôt pas d’accord</label> </span>
 </span>
-</td><td headers="S8c_1_c4" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+</td><td headers="S10_c3" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
 <span class="cell-sub-wrapper cell-legend-right">
 <span class="cell-input cell-sub-column">
-<input type="checkbox" name="ans6890.3.0" id="ans6890.3.0" value="1" class="input checkbox fir-hidden" aria-labelledby="S8c_1_r1_left S8c_1_c4"><span class="fir-icon">
+<input type="radio" name="ans6009.0.5" value="2" id="ans6009.2.5" class="input radio fir-hidden" aria-labelledby="S10_r6_left S10_c3"><span class="fir-icon">
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
-<title> checkbox </title>
-<path d="M15.8,0H3.9C1.8,0,0,2,0,4.1V16c0,2.2,1.8,4,3.9,4h11.8c2.2,0,4.2-1.8,4.2-4V4.1C20,2,18,0,15.8,0z M19,16 c0,1.6-1.6,3-3.2,3H3.9C2.3,19,1,17.7,1,16V4.1C1,2.5,2.3,1,3.9,1h11.8C17.4,1,19,2.5,19,4.1V16z" class="fir-base"></path>
-<path d="M19,16c0,1.6-1.6,3-3.2,3H3.9C2.3,19,1,17.7,1,16V4.1C1,2.5,2.3,1,3.9,1h11.8C17.4,1,19,2.5,19,4.1V16z" class="fir-bg"></path>
-<polygon points="9.1,16.3 2.5,11 4.1,9 8.7,12.6 15.6,3.7 17.7,5.2 " class="fir-selected"></polygon>
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
 </svg>
 </span>
 </span>
-<span class="cell-text cell-sub-column no-select" unselectable="on"><label for="ans6890.3.0">Carrefour (y compris Carrefour Market)</label> </span>
+<span class="cell-text cell-sub-column"><label for="ans6009.2.5">Plutôt d’accord</label> </span>
 </span>
-</td><td headers="S8c_1_c5" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+</td><td headers="S10_c4" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
 <span class="cell-sub-wrapper cell-legend-right">
 <span class="cell-input cell-sub-column">
-<input type="checkbox" name="ans6890.4.0" id="ans6890.4.0" value="1" class="input checkbox fir-hidden" aria-labelledby="S8c_1_r1_left S8c_1_c5"><span class="fir-icon">
+<input type="radio" name="ans6009.0.5" value="3" id="ans6009.3.5" class="input radio fir-hidden" aria-labelledby="S10_r6_left S10_c4"><span class="fir-icon">
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
-<title> checkbox </title>
-<path d="M15.8,0H3.9C1.8,0,0,2,0,4.1V16c0,2.2,1.8,4,3.9,4h11.8c2.2,0,4.2-1.8,4.2-4V4.1C20,2,18,0,15.8,0z M19,16 c0,1.6-1.6,3-3.2,3H3.9C2.3,19,1,17.7,1,16V4.1C1,2.5,2.3,1,3.9,1h11.8C17.4,1,19,2.5,19,4.1V16z" class="fir-base"></path>
-<path d="M19,16c0,1.6-1.6,3-3.2,3H3.9C2.3,19,1,17.7,1,16V4.1C1,2.5,2.3,1,3.9,1h11.8C17.4,1,19,2.5,19,4.1V16z" class="fir-bg"></path>
-<polygon points="9.1,16.3 2.5,11 4.1,9 8.7,12.6 15.6,3.7 17.7,5.2 " class="fir-selected"></polygon>
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
 </svg>
 </span>
 </span>
-<span class="cell-text cell-sub-column no-select" unselectable="on"><label for="ans6890.4.0">Auchan</label> </span>
+<span class="cell-text cell-sub-column"><label for="ans6009.3.5">Tout à fait d’accord</label> </span>
 </span>
-</td><td headers="S8c_1_c6" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+</td>
+
+</tr><tr class="row row-elements odd colCount-4">
+<th scope="row" id="S10_r5_left" class="cell nonempty legend row-legend row-legend-left row-legend-basic legend-level-1 mobile border-collapse  ">
+        Le changement m’enthousiasme
+    </th>
+<td headers="S10_c1" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
 <span class="cell-sub-wrapper cell-legend-right">
 <span class="cell-input cell-sub-column">
-<input type="checkbox" name="ans6890.5.0" id="ans6890.5.0" value="1" class="input checkbox fir-hidden" aria-labelledby="S8c_1_r1_left S8c_1_c6"><span class="fir-icon">
+<input type="radio" name="ans6009.0.4" value="0" id="ans6009.0.4" class="input radio fir-hidden" aria-labelledby="S10_r5_left S10_c1"><span class="fir-icon">
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
-<title> checkbox </title>
-<path d="M15.8,0H3.9C1.8,0,0,2,0,4.1V16c0,2.2,1.8,4,3.9,4h11.8c2.2,0,4.2-1.8,4.2-4V4.1C20,2,18,0,15.8,0z M19,16 c0,1.6-1.6,3-3.2,3H3.9C2.3,19,1,17.7,1,16V4.1C1,2.5,2.3,1,3.9,1h11.8C17.4,1,19,2.5,19,4.1V16z" class="fir-base"></path>
-<path d="M19,16c0,1.6-1.6,3-3.2,3H3.9C2.3,19,1,17.7,1,16V4.1C1,2.5,2.3,1,3.9,1h11.8C17.4,1,19,2.5,19,4.1V16z" class="fir-bg"></path>
-<polygon points="9.1,16.3 2.5,11 4.1,9 8.7,12.6 15.6,3.7 17.7,5.2 " class="fir-selected"></polygon>
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
 </svg>
 </span>
 </span>
-<span class="cell-text cell-sub-column no-select" unselectable="on"><label for="ans6890.5.0">Intermarché</label> </span>
+<span class="cell-text cell-sub-column"><label for="ans6009.0.4">Pas du tout d’accord</label> </span>
 </span>
-</td><td headers="S8c_1_c7" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+</td><td headers="S10_c2" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
 <span class="cell-sub-wrapper cell-legend-right">
 <span class="cell-input cell-sub-column">
-<input type="checkbox" name="ans6890.6.0" id="ans6890.6.0" value="1" class="input checkbox fir-hidden" aria-labelledby="S8c_1_r1_left S8c_1_c7"><span class="fir-icon">
+<input type="radio" name="ans6009.0.4" value="1" id="ans6009.1.4" class="input radio fir-hidden" aria-labelledby="S10_r5_left S10_c2"><span class="fir-icon">
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
-<title> checkbox </title>
-<path d="M15.8,0H3.9C1.8,0,0,2,0,4.1V16c0,2.2,1.8,4,3.9,4h11.8c2.2,0,4.2-1.8,4.2-4V4.1C20,2,18,0,15.8,0z M19,16 c0,1.6-1.6,3-3.2,3H3.9C2.3,19,1,17.7,1,16V4.1C1,2.5,2.3,1,3.9,1h11.8C17.4,1,19,2.5,19,4.1V16z" class="fir-base"></path>
-<path d="M19,16c0,1.6-1.6,3-3.2,3H3.9C2.3,19,1,17.7,1,16V4.1C1,2.5,2.3,1,3.9,1h11.8C17.4,1,19,2.5,19,4.1V16z" class="fir-bg"></path>
-<polygon points="9.1,16.3 2.5,11 4.1,9 8.7,12.6 15.6,3.7 17.7,5.2 " class="fir-selected"></polygon>
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
 </svg>
 </span>
 </span>
-<span class="cell-text cell-sub-column no-select" unselectable="on"><label for="ans6890.6.0">Hyper et supermarchés U</label> </span>
+<span class="cell-text cell-sub-column"><label for="ans6009.1.4">Plutôt pas d’accord</label> </span>
 </span>
-</td><td headers="S8c_1_c8" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+</td><td headers="S10_c3" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
 <span class="cell-sub-wrapper cell-legend-right">
 <span class="cell-input cell-sub-column">
-<input type="checkbox" name="ans6890.7.0" id="ans6890.7.0" value="1" class="input checkbox fir-hidden" aria-labelledby="S8c_1_r1_left S8c_1_c8"><span class="fir-icon">
+<input type="radio" name="ans6009.0.4" value="2" id="ans6009.2.4" class="input radio fir-hidden" aria-labelledby="S10_r5_left S10_c3" checked="checked"><span class="fir-icon">
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
-<title> checkbox </title>
-<path d="M15.8,0H3.9C1.8,0,0,2,0,4.1V16c0,2.2,1.8,4,3.9,4h11.8c2.2,0,4.2-1.8,4.2-4V4.1C20,2,18,0,15.8,0z M19,16 c0,1.6-1.6,3-3.2,3H3.9C2.3,19,1,17.7,1,16V4.1C1,2.5,2.3,1,3.9,1h11.8C17.4,1,19,2.5,19,4.1V16z" class="fir-base"></path>
-<path d="M19,16c0,1.6-1.6,3-3.2,3H3.9C2.3,19,1,17.7,1,16V4.1C1,2.5,2.3,1,3.9,1h11.8C17.4,1,19,2.5,19,4.1V16z" class="fir-bg"></path>
-<polygon points="9.1,16.3 2.5,11 4.1,9 8.7,12.6 15.6,3.7 17.7,5.2 " class="fir-selected"></polygon>
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
 </svg>
 </span>
 </span>
-<span class="cell-text cell-sub-column no-select" unselectable="on"><label for="ans6890.7.0">Monoprix</label> </span>
+<span class="cell-text cell-sub-column"><label for="ans6009.2.4">Plutôt d’accord</label> </span>
+</span>
+</td><td headers="S10_c4" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans6009.0.4" value="3" id="ans6009.3.4" class="input radio fir-hidden" aria-labelledby="S10_r5_left S10_c4"><span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans6009.3.4">Tout à fait d’accord</label> </span>
+</span>
+</td>
+
+</tr><tr class="row row-elements even colCount-4">
+<th scope="row" id="S10_r9_left" class="cell nonempty legend row-legend row-legend-left row-legend-basic legend-level-1 mobile border-collapse  ">
+        Je crois que nous sommes tous responsables du progrès de la société
+    </th>
+<td headers="S10_c1" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans6009.0.8" value="0" id="ans6009.0.8" class="input radio fir-hidden" aria-labelledby="S10_r9_left S10_c1" checked="checked"><span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans6009.0.8">Pas du tout d’accord</label> </span>
+</span>
+</td><td headers="S10_c2" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans6009.0.8" value="1" id="ans6009.1.8" class="input radio fir-hidden" aria-labelledby="S10_r9_left S10_c2"><span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans6009.1.8">Plutôt pas d’accord</label> </span>
+</span>
+</td><td headers="S10_c3" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans6009.0.8" value="2" id="ans6009.2.8" class="input radio fir-hidden" aria-labelledby="S10_r9_left S10_c3"><span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans6009.2.8">Plutôt d’accord</label> </span>
+</span>
+</td><td headers="S10_c4" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans6009.0.8" value="3" id="ans6009.3.8" class="input radio fir-hidden" aria-labelledby="S10_r9_left S10_c4"><span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans6009.3.8">Tout à fait d’accord</label> </span>
+</span>
+</td>
+
+</tr><tr class="row row-elements odd colCount-4">
+<th scope="row" id="S10_r4_left" class="cell nonempty legend row-legend row-legend-left row-legend-basic legend-level-1 mobile border-collapse  ">
+        Face à un problème, j'essaie de sortir des sentiers battus
+    </th>
+<td headers="S10_c1" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans6009.0.3" value="0" id="ans6009.0.3" class="input radio fir-hidden" aria-labelledby="S10_r4_left S10_c1"><span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans6009.0.3">Pas du tout d’accord</label> </span>
+</span>
+</td><td headers="S10_c2" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans6009.0.3" value="1" id="ans6009.1.3" class="input radio fir-hidden" aria-labelledby="S10_r4_left S10_c2"><span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans6009.1.3">Plutôt pas d’accord</label> </span>
+</span>
+</td><td headers="S10_c3" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans6009.0.3" value="2" id="ans6009.2.3" class="input radio fir-hidden" aria-labelledby="S10_r4_left S10_c3"><span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans6009.2.3">Plutôt d’accord</label> </span>
+</span>
+</td><td headers="S10_c4" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans6009.0.3" value="3" id="ans6009.3.3" class="input radio fir-hidden" aria-labelledby="S10_r4_left S10_c4" checked="checked"><span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans6009.3.3">Tout à fait d’accord</label> </span>
+</span>
+</td>
+
+</tr><tr class="row row-elements even colCount-4">
+<th scope="row" id="S10_r1_left" class="cell nonempty legend row-legend row-legend-left row-legend-basic legend-level-1 mobile border-collapse  ">
+        Je recherche activement de nouvelles informations ou connaissances
+    </th>
+<td headers="S10_c1" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans6009.0.0" value="0" id="ans6009.0.0" class="input radio fir-hidden" aria-labelledby="S10_r1_left S10_c1"><span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans6009.0.0">Pas du tout d’accord</label> </span>
+</span>
+</td><td headers="S10_c2" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans6009.0.0" value="1" id="ans6009.1.0" class="input radio fir-hidden" aria-labelledby="S10_r1_left S10_c2" checked="checked"><span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans6009.1.0">Plutôt pas d’accord</label> </span>
+</span>
+</td><td headers="S10_c3" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans6009.0.0" value="2" id="ans6009.2.0" class="input radio fir-hidden" aria-labelledby="S10_r1_left S10_c3"><span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans6009.2.0">Plutôt d’accord</label> </span>
+</span>
+</td><td headers="S10_c4" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans6009.0.0" value="3" id="ans6009.3.0" class="input radio fir-hidden" aria-labelledby="S10_r1_left S10_c4"><span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans6009.3.0">Tout à fait d’accord</label> </span>
+</span>
+</td>
+
+</tr><tr class="row row-elements odd colCount-4">
+<th scope="row" id="S10_r2_left" class="cell nonempty legend row-legend row-legend-left row-legend-basic legend-level-1 mobile border-collapse  ">
+        J'aime explorer des sujets ou des idées qui ne me sont pas familiers
+    </th>
+<td headers="S10_c1" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans6009.0.1" value="0" id="ans6009.0.1" class="input radio fir-hidden" aria-labelledby="S10_r2_left S10_c1"><span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans6009.0.1">Pas du tout d’accord</label> </span>
+</span>
+</td><td headers="S10_c2" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans6009.0.1" value="1" id="ans6009.1.1" class="input radio fir-hidden" aria-labelledby="S10_r2_left S10_c2"><span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans6009.1.1">Plutôt pas d’accord</label> </span>
+</span>
+</td><td headers="S10_c3" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans6009.0.1" value="2" id="ans6009.2.1" class="input radio fir-hidden" aria-labelledby="S10_r2_left S10_c3"><span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans6009.2.1">Plutôt d’accord</label> </span>
+</span>
+</td><td headers="S10_c4" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans6009.0.1" value="3" id="ans6009.3.1" class="input radio fir-hidden" aria-labelledby="S10_r2_left S10_c4"><span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans6009.3.1">Tout à fait d’accord</label> </span>
+</span>
+</td>
+
+</tr><tr class="row row-elements even colCount-4">
+<th scope="row" id="S10_r3_left" class="cell nonempty legend row-legend row-legend-left row-legend-basic legend-level-1 mobile border-collapse  ">
+        J'ai une curiosité naturelle pour la façon dont les choses fonctionnent ou pourquoi les choses sont comme elles sont
+    </th>
+<td headers="S10_c1" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans6009.0.2" value="0" id="ans6009.0.2" class="input radio fir-hidden" aria-labelledby="S10_r3_left S10_c1"><span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans6009.0.2">Pas du tout d’accord</label> </span>
+</span>
+</td><td headers="S10_c2" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans6009.0.2" value="1" id="ans6009.1.2" class="input radio fir-hidden" aria-labelledby="S10_r3_left S10_c2"><span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans6009.1.2">Plutôt pas d’accord</label> </span>
+</span>
+</td><td headers="S10_c3" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans6009.0.2" value="2" id="ans6009.2.2" class="input radio fir-hidden" aria-labelledby="S10_r3_left S10_c3"><span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans6009.2.2">Plutôt d’accord</label> </span>
+</span>
+</td><td headers="S10_c4" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans6009.0.2" value="3" id="ans6009.3.2" class="input radio fir-hidden" aria-labelledby="S10_r3_left S10_c4"><span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans6009.3.2">Tout à fait d’accord</label> </span>
+</span>
+</td>
+
+</tr><tr class="row row-elements odd colCount-4">
+<th scope="row" id="S10_r8_left" class="cell nonempty legend row-legend row-legend-left row-legend-basic legend-level-1 mobile border-collapse  ">
+        Je recherche activement de nouveaux passe-temps ou des occasions d’apprendre de nouvelles compétences
+    </th>
+<td headers="S10_c1" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans6009.0.7" value="0" id="ans6009.0.7" class="input radio fir-hidden" aria-labelledby="S10_r8_left S10_c1"><span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans6009.0.7">Pas du tout d’accord</label> </span>
+</span>
+</td><td headers="S10_c2" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans6009.0.7" value="1" id="ans6009.1.7" class="input radio fir-hidden" aria-labelledby="S10_r8_left S10_c2"><span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans6009.1.7">Plutôt pas d’accord</label> </span>
+</span>
+</td><td headers="S10_c3" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans6009.0.7" value="2" id="ans6009.2.7" class="input radio fir-hidden" aria-labelledby="S10_r8_left S10_c3"><span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans6009.2.7">Plutôt d’accord</label> </span>
+</span>
+</td><td headers="S10_c4" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans6009.0.7" value="3" id="ans6009.3.7" class="input radio fir-hidden" aria-labelledby="S10_r8_left S10_c4"><span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans6009.3.7">Tout à fait d’accord</label> </span>
+</span>
+</td>
+
+</tr><tr class="row row-elements even colCount-4">
+<th scope="row" id="S10_r7_left" class="cell nonempty legend row-legend row-legend-left row-legend-basic legend-level-1 mobile border-collapse  ">
+        Je suis motivé(e) par l’accomplissement personnel
+    </th>
+<td headers="S10_c1" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans6009.0.6" value="0" id="ans6009.0.6" class="input radio fir-hidden" aria-labelledby="S10_r7_left S10_c1"><span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans6009.0.6">Pas du tout d’accord</label> </span>
+</span>
+</td><td headers="S10_c2" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans6009.0.6" value="1" id="ans6009.1.6" class="input radio fir-hidden" aria-labelledby="S10_r7_left S10_c2"><span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans6009.1.6">Plutôt pas d’accord</label> </span>
+</span>
+</td><td headers="S10_c3" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans6009.0.6" value="2" id="ans6009.2.6" class="input radio fir-hidden" aria-labelledby="S10_r7_left S10_c3"><span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans6009.2.6">Plutôt d’accord</label> </span>
+</span>
+</td><td headers="S10_c4" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans6009.0.6" value="3" id="ans6009.3.6" class="input radio fir-hidden" aria-labelledby="S10_r7_left S10_c4"><span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans6009.3.6">Tout à fait d’accord</label> </span>
+</span>
+</td>
+
+</tr><tr class="row row-elements odd colCount-4">
+<th scope="row" id="S10_r10_left" class="cell nonempty legend row-legend row-legend-left row-legend-basic legend-level-1 mobile border-collapse  ">
+        À des fins de contrôle qualité, veuillez sélectionner l’option «&nbsp;Pas du tout d’accord&nbsp;» ici
+    </th>
+<td headers="S10_c1" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans6009.0.9" value="0" id="ans6009.0.9" class="input radio fir-hidden" aria-labelledby="S10_r10_left S10_c1"><span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans6009.0.9">Pas du tout d’accord</label> </span>
+</span>
+</td><td headers="S10_c2" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans6009.0.9" value="1" id="ans6009.1.9" class="input radio fir-hidden" aria-labelledby="S10_r10_left S10_c2"><span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans6009.1.9">Plutôt pas d’accord</label> </span>
+</span>
+</td><td headers="S10_c3" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans6009.0.9" value="2" id="ans6009.2.9" class="input radio fir-hidden" aria-labelledby="S10_r10_left S10_c3"><span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans6009.2.9">Plutôt d’accord</label> </span>
+</span>
+</td><td headers="S10_c4" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans6009.0.9" value="3" id="ans6009.3.9" class="input radio fir-hidden" aria-labelledby="S10_r10_left S10_c4"><span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans6009.3.9">Tout à fait d’accord</label> </span>
 </span>
 </td>
 
@@ -477,155 +1023,24 @@ Monoprix
 </div>
 <!-- /.answers -->
 </div>
-<!-- /.question -->
-<script>
-jQuery(document).ready(
-  function() {
-    /* survey.xml line 1083 */
-    setInterval(function(){
-$ (".sq-cardsort-bucket-c2").css("pointer-events","none");
-$ (".sq-cardsort-bucket-c18").css("pointer-events","none");
-
-})
-  }
-);
-</script>
-
-<script>
-jQuery(document).ready(
-  function() {
-    /* survey.xml line 1098 */
-    
-  }
-);
-</script>
-<div class="survey-buttons">
-<input type="submit" name="continue" id="btn_continue" class="button continue" value="Continuer »" onclick="var i = document.createElement('input'); i.setAttribute('type', 'hidden');i.setAttribute('value', '1');i.setAttribute('name', '__has_javascript');document.forms.primary.appendChild(i);" style="display: none;">
+<!-- /.question --><div class="survey-buttons">
+<input type="submit" name="continue" id="btn_continue" class="button continue" value="Continuer »" onclick="var i = document.createElement('input'); i.setAttribute('type', 'hidden');i.setAttribute('value', '1');i.setAttribute('name', '__has_javascript');document.forms.primary.appendChild(i);">
 
 </div>
-<!-- #surveyButtons -->
-<script>
-var exclusion_list = [
-	/* Manual exclusion */
-	".exclude-cp",
-	/* Scripts and style tags */
-	"script,style",
-	/* Regular answers */
-	".answers",
-	/* Survey navigation buttons */
-	".survey-buttons",
-	/* Visisble input elements inside question tags */
-	".question input,.question textarea,.question select",
-	/* Hidden input elements */
-	"input[type=hidden]",
-	/* Audio player (audio):  */
-	".sq-audio-container",
-	/* Button Select (atm1d): */
-	".sq-atm1d-widget",
-	/* Card Sort (cardsort): */ 
-	".sq-cardsort",
-	/* Card Rating (cardrating): */
-	".sq-cardrating-widget",
-	/* Image Map (imgmap): */
-	".sq-imgmap-widget",
-	/* Media Evaluator (bcme): */
-	".sq-bcme-container",
-	/* Page Timer (timertest): */
-	".sq-timertestContainer",
-	/* Page Turner (pageturner): */
-	".sq-pageturnerContainer",
-	/* Quester (quester): */
-	".sq-questerContainer",
-	/* Rank Sort (ranksort): */
-	".sq-ranksort-warning,.sq-ranksort-container,.sq-ranksort-dropdowns-container",
-	/* Shopping Cart (shoppingcart): */
-	".sq-shoppingcart-block",
-	/* Text Highlighter (hottext): */
-	".sq-hottext-container",
-	/* Legacy Video Playter (bsvideo): */
-	".dq-bcvideo-player",
-	/* Video Player (videoplayer): */
-	".dq-videoplayer-player",
-	/* Video Player (YouTube/Vimeo) (videoembed): */
-	".sq-videoembedContainer",
-	/* Video Testimonial (videocapture): */
-	"ziggeorecorder",
-	/* Fallback - exclude jQ UI draggable elements */
-	".ui-draggable,.ui-draggable-disabled",
-	/* exclude QA codes for questions */	
-	".qaTab,.qaInfo",
-];
-	$.fn.extend({
-		exclude_ui: function() {
-			var result = this;
-			$.each( exclusion_list, function(index, exclusion_selector) {
-				var exclusion = $ (exclusion_selector);
-				exclusion = exclusion.find("*").addBack();
-				/* Do not exclude row, column and cell legends within .answers */
-				if (exclusion_selector == ".answers") {
-					exclusion = exclusion.not(".col-legend,.row-legend,.cell-text");
-				}
-				result = result.not(exclusion);
-			});
-			/* Remove the UI element containers themselves  */
-	        result = result.not("form,.question");
-			return result;
-		}
-	});
-	var $cp_elements = $ (".survey-body").find("*").exclude_ui();
-	$cp_elements.addClass("no-select").attr("unselectable","on");
-	$ (".survey-body").data("cp-elements", $cp_elements);
-	$ (".survey-body").on("cut copy selectstart dragstart contextmenu", ".no-select", false);
-	/*
-	$ (".survey-body").on("cut copy selectstart dragstart contextmenu", "*", function(event) {
-		if ( $ (event.target).is($ (".survey-body").data("cp-elements")) ) {
-			return false;
-		}
-	});
-	*/
-	$ ("body").on("cut copy selectstart dragstart contextmenu", ".ui-dialog,.ui-dialog *", false);
-</script>
-<style>
-body > .ui-dialog,
-body > .ui-tooltip,
-.no-select {
-	user-select: none;
-	-moz-user-select: none;
-	-webkit-user-select: none;
-	-ms-user-select: none;	
-}
-</style><input type="hidden" name="state" value="7e085515-0021-4ee4-ac96-347563eea4bc">
-<input type="hidden" name="start_time" value="1772852294">
+<!-- #surveyButtons --><input type="hidden" name="state" value="281d8197-8040-4cfa-a36c-a3255a109df6">
+<input type="hidden" name="start_time" value="1773087181">
 <input type="hidden" name="_ptime" value="0">
 <script>addHandler(Survey.capturePreciseTime)</script><script>
-$ (window).on("load", function() { setTimeout(function() { Survey.recordPageTiming("selfserve/1a7f/260223", "nvmkyvpkb4ucfebm", "6zejf89ap7zzp4b4");}, 100); });
+$ (window).on("load", function() { setTimeout(function() { Survey.recordPageTiming("selfserve/53b/2602171", "qq2e6bfmn5bubgtr", "3jumbs2qm967vfem");}, 100); });
 </script>
-<input type="hidden" value="1" name="__has_javascript"></form>
+</form>
 
 
 </div>
 <!-- /.survey-body -->
 </div>
-<div class="survey-section"><div class="footer"><a href="https://www.focusgroup.com/Page/PrivacyPolicy" target="_blank">Politique de confidentialité</a> - <a href="mailto:help@focusgroup.com?Subject=XXXX" target="_blank">Aide</a></div>
-<!-- /.footer -->
-
-<script>
-jQuery(document).ready(
-  function() {
-    /* survey.xml line 1047 */
-    var i = document.createElement('input'); i.setAttribute('type', 'hidden');i.setAttribute('value', '1');i.setAttribute('name', '__has_javascript');document.forms.primary.appendChild(i);
-jQuery('#btn_continue').hide();
-var timeOut = setInterval(checking,150);
-function checking(){
-if (jQuery('.sq-cardsort-completion-item').is(':visible')) {
-jQuery('#btn_continue').click();
-clearInterval(timeOut);
-}
-}
-  }
-);
-</script>
-</div>
+<div class="survey-section"><div class="footer"><br data-mce-bogus="1" jstcache="0"></div>
+<!-- /.footer --></div>
 </div>
 <div id="detectBreakpoint"></div>
 <!-- /.survey-container -->
