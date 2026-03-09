@@ -629,6 +629,31 @@ def select_option_with_hint(
     """
     target = norm_txt(option_text)
 
+    def _pick_matching_option(options, target_text: str):
+        """
+        Retourne la meilleure option selon une stratégie simple et robuste:
+        1) match exact sur texte normalisé ou value normalisée,
+        2) sinon match partiel uniquement (target inclus dans texte option).
+        """
+        if not target_text:
+            return None
+
+        partial_candidate = None
+        for opt in options:
+            try:
+                ot = norm_txt(opt.text)
+                ov = norm_txt(opt.get_attribute("value") or "")
+            except Exception:
+                continue
+
+            if target_text == ot or target_text == ov:
+                return opt
+
+            if partial_candidate is None and ot and target_text in ot:
+                partial_candidate = opt
+
+        return partial_candidate
+
     # Disambiguation robuste mois/année
     _MONTHS_FR = {
         "janvier", "février", "fevrier", "mars", "avril", "mai", "juin",
@@ -705,24 +730,24 @@ def select_option_with_hint(
         for sel_el in try_selects:
             try:
                 S = Select(sel_el)
-                for opt in S.options:
-                    ot = norm_txt(opt.text)
-                    ov = norm_txt(opt.get_attribute("value") or "")
-                    if target and (target == ot or target in ot or target == ov):
-                        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", sel_el)
-                        try:
-                            S.select_by_visible_text(opt.text)
-                        except Exception:
-                            if opt.get_attribute("value"):
-                                S.select_by_value(opt.get_attribute("value"))
-                            else:
-                                opt.click()
-                        print(f"✓ Option sélectionnée (natif) : {opt.text}. source: input_dropdown.py")
-                        try:
-                            driver._ui_overlay_opened = None
-                        except Exception:
-                            pass
-                        return True
+                opt = _pick_matching_option(S.options, target)
+                if not opt:
+                    continue
+
+                driver.execute_script("arguments[0].scrollIntoView({block:'center'});", sel_el)
+                try:
+                    S.select_by_visible_text(opt.text)
+                except Exception:
+                    if opt.get_attribute("value"):
+                        S.select_by_value(opt.get_attribute("value"))
+                    else:
+                        opt.click()
+                print(f"✓ Option sélectionnée (natif) : {opt.text}. source: input_dropdown.py")
+                try:
+                    driver._ui_overlay_opened = None
+                except Exception:
+                    pass
+                return True
             except Exception:
                 continue
 
