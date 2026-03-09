@@ -96,6 +96,31 @@ def _cta_intercept_enabled() -> bool:
     return raw in {"1", "true", "yes", "on"}
 
 
+def _is_intellisurvey_structural_submit_cta(el) -> bool:
+    """Détecte un CTA submit IntelliSurvey identifiable uniquement par sa structure DOM."""
+    try:
+        tag = (el.tag_name or "").strip().lower()
+    except Exception:
+        return False
+
+    if tag != "input":
+        return False
+
+    input_type = (el.get_attribute("type") or "").strip().lower()
+    if input_type != "submit":
+        return False
+
+    el_id = (el.get_attribute("id") or "").strip().lower()
+    el_name = (el.get_attribute("name") or "").strip().lower()
+    cls = (el.get_attribute("class") or "").strip().lower()
+
+    return bool(
+        el_id == "contbtn"
+        or el_name == "contbtn"
+        or "i-contbtn" in cls
+    )
+
+
 def _is_internal_task_carousel_arrow(driver, el) -> bool:
     """
     Exclut les flèches de carousel de tâche (ex: Quantilope x/12)
@@ -1508,8 +1533,15 @@ def try_click_navigation_cta(driver) -> bool:
 
             # Certains CTA sont purement iconiques (ex: a#cm-NextButton avec <img>)
             # et n'ont aucun texte/alt exploitable. On ne les écarte pas d'office.
-            # On ne rejette que les éléments sans texte ET sans indice de navigation.
-            if not t and not any(k in signature for k in ["next", "continue", "submit", "suivant", "valider", "confirm", "confirmer", "confirmez"]):
+            # Même logique pour le submit IntelliSurvey structurel (contbtn) à value vide.
+            # On ne rejette que les éléments sans texte ET sans indice de navigation,
+            # sauf signature DOM IntelliSurvey explicite.
+            has_intellisurvey_structural_submit = _is_intellisurvey_structural_submit_cta(el)
+            if (
+                not t
+                and not has_intellisurvey_structural_submit
+                and not any(k in signature for k in ["next", "continue", "submit", "suivant", "valider", "confirm", "confirmer", "confirmez"])
+            ):
                 continue
 
             bad = ("refuser", "disagree", "quitter", "quit", "exit", "annuler", "cancel", "fermer", "close", "retour", "précédent", "precedent", "previous", "back")
@@ -1526,6 +1558,9 @@ def try_click_navigation_cta(driver) -> bool:
                 score += 120
             elif any(k in el_id for k in ["submit", "next", "continue", "confirm"]):
                 score += 60
+
+            if has_intellisurvey_structural_submit:
+                score += 90
 
             if any(k in el_name for k in ["submit", "next", "continue", "confirm"]):
                 score += 60

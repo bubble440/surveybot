@@ -466,3 +466,27 @@ def test_try_click_navigation_cta_detects_qualtrics_fake_next_button_span(monkey
     assert ok is True
     assert hidden_input_next.clicked == 0
     assert fake_next_span.clicked == 1
+
+
+def test_try_click_navigation_cta_detects_intellisurvey_empty_value_submit(monkeypatch):
+    monkeypatch.setattr(cta_handler, "ActionChains", _FakeActionChains)
+    monkeypatch.delenv("CTA_INTERCEPT_ONLY", raising=False)
+
+    intro_submit = _FakeElement(
+        text="",
+        attrs={
+            "id": "contbtn",
+            "name": "contbtn",
+            "type": "submit",
+            "value": "",
+            "class": "i-button i-contbtn",
+        },
+    )
+    intro_submit.tag_name = "input"
+
+    driver = _FakeDriver(xpath_elements=[intro_submit])
+
+    ok = cta_handler.try_click_navigation_cta(driver)
+
+    assert ok is True
+    assert intro_submit.clicked == 1
