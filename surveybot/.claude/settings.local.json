@@ -15,7 +15,12 @@
       "Bash(git remote:*)",
       "Bash(git reset:*)",
       "Bash(git stash)",
-      "Bash(git stash pop)"
+      "Bash(git stash pop)",
+      "Bash(winget install --id GitHub.cli -e)",
+      "Bash(\"/c/Program Files/GitHub:*)",
+      "Bash(git cherry-pick 70907a2)",
+      "Bash(git revert HEAD --no-edit)",
+      "Bash(\"/c/Program Files/GitHub CLI/gh.exe\" auth status)"
     ]
   }
 }
