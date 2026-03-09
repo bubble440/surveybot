@@ -717,6 +717,7 @@ def _try_table_matrix_sge_set(driver, target_payload: dict, row_label: str, col_
                   return (txt || '')
                     .normalize('NFD')
                     .replace(/[\u0300-\u036f]/g, '')
+                    .replace(/[\u2018\u2019\u201A\u201B\u2032\u2035\u02BC\uFF07]/g, "'")
                     .replace(/[\s\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]+/g, ' ')
                     .trim()
                     .toLowerCase();
