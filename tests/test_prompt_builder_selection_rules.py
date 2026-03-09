@@ -137,6 +137,36 @@ def test_batch_prompt_exposes_matrix_row_labels_for_llm_context():
     assert "matrix_answer_format: row_label || col_label (single) ; row_label || col1|col2|col3 (matrix checkbox multi-colonnes ; row obligatoire, jamais col seule)" in prompt
 
 
+def test_batch_prompt_exposes_decipher_table_text_row_label_only_when_flagged():
+    blocks = [
+        {
+            "question": "Y compris vous-même, combien de personnes vivent actuellement dans votre foyer ?",
+            "itype": "text",
+            "options": [],
+            "target_id": "single_8d704689c6ca",
+            "context": {
+                "row_label": "Adultes ou enfants de 18 ans ou plus",
+                "decipher_table_text_rows": True,
+            },
+        },
+        {
+            "question": "Question texte standard",
+            "itype": "text",
+            "options": [],
+            "target_id": "single_standard",
+            "context": {
+                "row_label": "Ce libellé ne doit pas apparaître",
+                "decipher_table_text_rows": False,
+            },
+        },
+    ]
+
+    prompt = build_batch_prompt(blocks)
+
+    assert "row_label: Adultes ou enfants de 18 ans ou plus" in prompt
+    assert "row_label: Ce libellé ne doit pas apparaître" not in prompt
+
+
 def test_expand_question_blocks_for_batch_splits_matrix_rows_into_distinct_entries():
     blocks = [
         {
