@@ -218,6 +218,36 @@ def solve_tencent_auto(driver) -> bool:
     # 1. Extraire l'appId
     app_id = _extract_app_id(driver)
     if not app_id:
+        # Fallback jQuery slideVerify (ex. NielsenIQ) :
+        # même classes CSS que Tencent MAIS widget purement jQuery, sans appId.
+        # Condition stricte : #sliderpanel ET #btn_continue présents,
+        # ce qui exclut tout vrai widget Tencent.
+        try:
+            has_slide_verify = bool(driver.execute_script(
+                "return !!(document.querySelector('#sliderpanel') && "
+                "document.querySelector('#btn_continue'));"
+            ))
+        except Exception:
+            has_slide_verify = False
+
+        if has_slide_verify:
+            log_info(_TAG, "appId introuvable — détection jQuery slideVerify (btn_continue présent)")
+            try:
+                clicked = driver.execute_script(
+                    "var btn = document.querySelector('#btn_continue');"
+                    "if (!btn) return false;"
+                    "btn.click();"
+                    "return true;"
+                )
+            except Exception as _click_err:
+                log_info(_TAG, f"❌ jQuery slideVerify bypass — clic JS échoué : {_click_err}")
+                return False
+            if clicked:
+                log_info(_TAG, "✅ jQuery slideVerify bypass → btn_continue cliqué → navigation déléguée au flux survey")
+                return True
+            log_info(_TAG, "❌ jQuery slideVerify bypass — btn_continue introuvable via JS")
+            return False
+
         log_info(_TAG, "appId introuvable dans le DOM — abandon")
         return False
     log_info(_TAG, f"appId extrait : {app_id}")
