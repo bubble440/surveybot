@@ -63,16 +63,6 @@ def _norm_folded_lc(s: str | None) -> str:
     return normalized.replace("’", "'").replace("`", "'").replace("´", "'")
 
 
-def _contains_keyword_phrase(text: str, keyword: str) -> bool:
-    """Match mot/phrase avec bornes pour eviter les faux positifs en sous-chaine."""
-    normalized_text = _norm_folded_lc(text)
-    normalized_keyword = _norm_folded_lc(keyword)
-    if not normalized_text or not normalized_keyword:
-        return False
-    pattern = rf"(?<![a-z0-9]){re.escape(normalized_keyword)}(?![a-z0-9])"
-    return re.search(pattern, normalized_text) is not None
-
-
 def _has_explicit_multi_indicator(question_text: str | None) -> bool:
     return has_explicit_multi_indicator(question_text)
 
@@ -102,24 +92,6 @@ def _selection_signal_text(block: Dict[str, Any]) -> str:
     return " ".join(parts)
 
 
-def _selection_rule_for_block(block: Dict[str, Any]) -> str:
-    """
-    Règle cible pour le nombre de réponses:
-    - checkbox/radio/button + cardinalité exacte explicite dans le libellé => exactly_N
-    - checkbox/radio/button + indicateur multi explicite => 1..3
-    - sinon => exactement 1
-    """
-    itype = _norm_folded_lc(block.get("itype"))
-    if itype in {"checkbox", "radio", "button"}:
-        signal_text = _selection_signal_text(block)
-        exact_count = _explicit_exact_count_from_question(signal_text)
-        if exact_count and exact_count > 1:
-            return f"exactly_{exact_count}"
-        if _has_explicit_multi_indicator(signal_text):
-            return "multi_1_to_3"
-    return "exactly_1"
-
-
 def _selection_max_for_prompt(block: Dict[str, Any]) -> int:
     """Normalise max_select pour les consignes de prompt."""
     itype = _norm_folded_lc(block.get("itype"))
@@ -143,34 +115,6 @@ def _selection_max_for_prompt(block: Dict[str, Any]) -> int:
 
     return max_sel
 
-
-_CLASSIFICATION_QUESTION_KEYWORDS = [
-    # FR - poste/fonction/statut
-    "poste", "fonction", "profession", "metier", "occupation", "categorie socioprofessionnelle", "csp", "statut",
-    # FR - éducation
-    "niveau d'etude", "niveau d etude", "diplome", "etudes", "formation",
-    # FR/EN - hiérarchie
-    "cadre", "direction", "manager", "executive", "senior", "lead", "head", "director", "owner", "founder",
-    # EN
-    "job", "position", "role", "education level", "degree", "highest education",
-]
-
-_CLASSIFICATION_DISQUALIFIERS = [
-    "autre", "other", "aucun", "none", "ne sais pas", "don't know", "dont know",
-    "prefere ne pas", "prefer not", "sans activite", "no activity", "n/a", "na",
-]
-
-_CLASSIFICATION_SCORING = [
-    # Très haut
-    (120, ["direction generale", "executive", "c-level", "ceo", "founder", "owner", "head", "director", "partner"]),
-    (110, ["direction", "directeur", "administrative", "professionnelle"]),
-    # Haut
-    (90, ["cadre", "manager", "lead", "supervisor", "chef d'entreprise", "chef d entreprise"]),
-    # Moyen
-    (60, ["profession liberale", "profession intermediaire", "technicien", "contremaitre", "agent de maitrise"]),
-    # Bas
-    (20, ["employe", "ouvrier", "etudiant", "sans activite", "foyer", "retraite", "premier emploi"]),
-]
 
 _SURVEY_CONSENT_CONTEXT_PATTERNS = [
     # FR
@@ -213,49 +157,6 @@ _SECTOR_SCREENER_EXCLUSIVE_OPTION_PATTERNS = [
     "aucune",
     "non",
 ]
-
-
-def _looks_like_classification_question(block: Dict[str, Any]) -> bool:
-    itype = _norm_folded_lc(block.get("itype"))
-    if itype not in {"radio", "checkbox", "dropdown", "select", "button"}:
-        return False
-    options = [o for o in (block.get("options") or []) if _norm(str(o))]
-    if not options:
-        return False
-    question = _norm_folded_lc(block.get("question"))
-    return any(_contains_keyword_phrase(question, k) for k in _CLASSIFICATION_QUESTION_KEYWORDS)
-
-
-def _pick_best_classification_option(options: list[str]) -> str:
-    best_option = options[0]
-    best_score = float("-inf")
-
-    for option in options:
-        folded = _norm_folded_lc(option)
-        if not folded:
-            continue
-
-        score = 0
-        if any(bad in folded for bad in _CLASSIFICATION_DISQUALIFIERS):
-            score -= 200
-
-        for weight, keywords in _CLASSIFICATION_SCORING:
-            if any(keyword in folded for keyword in keywords):
-                score += weight
-
-        if score > best_score:
-            best_score = score
-            best_option = option
-
-    return best_option
-
-
-def _find_option_exact(options: list[str], expected_value: str) -> str | None:
-    expected_folded = _norm_folded_lc(expected_value)
-    for option in options or []:
-        if _norm_folded_lc(option) == expected_folded:
-            return option
-    return None
 
 
 def _preferred_survey_consent_option(block: Dict[str, Any], options: list[str]) -> str | None:
@@ -405,172 +306,8 @@ def expand_question_blocks_for_batch(question_blocks: List[Dict[str, Any]]) -> L
 
 
 # =========================
-# Heuristiques métier
-# =========================
-
-def _is_open_field(block: Dict[str, Any]) -> bool:
-    return block["itype"] in ("text", "textarea")
-
-
-def _is_choice_field(block: Dict[str, Any]) -> bool:
-    return block["itype"] in ("radio", "checkbox", "select")
-
-
-# =========================
 # Construction du prompt
 # =========================
-
-def build_prompt(question_blocks: List[Dict[str, Any]]) -> str:
-    """
-    Construit le prompt texte OpenAI é  partir des question_blocks.
-    """
-
-    lines: List[str] = []
-
-    # --------- Règles globales (CRUCIAL) ----------
-    lines.append(
-        "Tu es un répondant ADULTE (25 ans). "
-        "Tu dois choisir UNE SEULE action applicable IMMéDIATEMENT sur la page. "
-        "Ne réponds JAMAIS par une question. "
-        "Ne renvoie JAMAIS d'explication. "
-        "Ne renvoie JAMAIS plusieurs actions."
-    )
-
-    lines.append(
-        "Format OBLIGATOIRE de la réponse (une seule ligne) :\n"
-        "valeur //// itype //// contexte"
-    )
-
-    lines.append(
-        "Contraintes importantes :\n"
-        "- itype doit être l'un de : {radio, checkbox, dropdown, text, textarea, button}\n"
-        "- contexte = texte EXACT de la question\n"
-        "- valeur = option existante OU valeur logique non disqualifiante"
-    )
-
-    lines.append(
-        "évite toute réponse disqualifiante "
-        "(ex: non, jamais, aucun, je préfère ne pas répondre), "
-        "SAUF si la question porte explicitement sur les secteurs d'emploi "
-        "et que cette option est présente."
-    )
-
-    # Contrainte sexe/genre : toujours masculin, avec l'intitulé exact de l'option
-    lines.append(
-        "Pour toute question sur le sexe ou le genre, "
-        "choisis TOUJOURS l'option qui fait référence au genre masculin "
-        "(Homme, Masculin, Male, Man, M, H, etc.) parmi les options proposées. "
-        "Utilise EXACTEMENT l'intitulé tel qu'il apparaît dans la liste d'options. "
-        "Évite systématiquement: X, Autre, Non-binaire, Préfère ne pas répondre."
-    )
-
-    # Contrainte âge / année de naissance
-    lines.append(
-        "Pour toute question sur l'âge ou la date de naissance:\n"
-        "- Si la question demande explicitement l'ANNÉE de naissance (ex: 'année de naissance', 'year of birth', 'birth year', 'born in', 'né en'), réponds UNIQUEMENT avec une année sur 4 chiffres (YYYY), jamais un âge.\n"
-        "- Si la question demande l'âge (âge, years old, ans), réponds '25' ou '25 ans'.\n"
-        "- Si date de naissance avec dropdowns séparés (mois + année):\n"
-        "  * Année: choisis une année cohérente pour 25 ans (2001, 2000, 1999).\n"
-        "  * Mois: choisis un mois réaliste (évite le mois en cours pour éviter des âges < 25).\n"
-        "  * Exemple: 'Juillet' pour le mois, '2000' pour l'année."
-    )
-
-    # ── PERSONA FINANCIER ──────────────────────────────────────────────────
-    # Ce bloc établit un profil socio-économique cohérent et stable.
-    # Il est CRITIQUE pour éviter la disqualification sur les questions
-    # de revenu, emploi, secteur ou statut financier.
-    # Règle absolue : ne jamais choisir "Préfère ne pas répondre" ou équivalent
-    # sur ces thèmes — ces options sont DISQUALIFICATOIRES.
-    lines.append(
-        "PERSONA SOCIO-ÉCONOMIQUE (fixe, cohérent sur toute la session) :\n"
-        "Tu incarnes un cadre supérieur ou dirigeant d'entreprise de 25 ans, "
-        "résidant en zone urbaine (Paris). "
-        "Ton foyer dispose d'un revenu annuel élevé (> 100 000 EUR / an, ou équivalent local). "
-        "Tu as un patrimoine personnel significatif (immobilier, placements financiers). "
-        "Tu travailles dans un secteur premium : Finance, Conseil, Tech, Santé, ou Direction générale.\n\n"
-        "RÈGLES ABSOLUES pour les questions financières ou sensibles :\n"
-        "- Revenu du foyer / personnel : choisis TOUJOURS la tranche la plus élevée disponible "
-        "  parmi les options (ex: '100 000 EUR et plus', '250 000+', 'Plus d'1 million EUR', etc.).\n"
-        "- Si la tranche la plus haute semble excessive (ex: '10M EUR+'), "
-        "  choisis la DEUXIÈME tranche en partant du haut.\n"
-        "- Secteur d'activité : 'Finance', 'Conseil', 'Technologies de l'Information', "
-        "  'Direction / Management', 'Santé' — dans cet ordre de préférence selon les options.\n"
-        "- Statut professionnel : 'Cadre supérieur', 'Dirigeant', 'Travailleur indépendant / Freelance' "
-        "  — jamais 'Sans emploi', 'Retraité', 'Étudiant'.\n"
-        "- Niveau d'études : tu es titulaire d'un Master 2 (Bac+5). "
-        "- Patrimoine / épargne / investissements : affirme toujours en posséder, "
-        "  choisis les options qui indiquent un patrimoine substantiel.\n"
-        "- INTERDIT ABSOLU : 'Préfère ne pas répondre', 'Ne souhaite pas indiquer', "
-        "  'Je ne sais pas', 'Aucun', 'Non applicable' — sur tout sujet financier ou professionnel. "
-        "  Ces réponses DISQUALIFIENT le répondant.\n"
-        "- Si la question est perçue comme indiscrète (revenu, patrimoine, situation fiscale) : "
-        "  réponds quand même avec une valeur haute cohérente avec le persona. "
-        "  Un répondant aisé n'hésite pas sur ces sujets."
-    )
-    # ── FIN PERSONA FINANCIER ─────────────────────────────────────────────
-
-    lines.append(
-        "RÈGLE OPTIONS EXCLUSIVES :\n"
-        "Une option exclusive est une option qui, par nature, annule toutes les autres "
-        "(exemples : 'Aucun', 'Aucune', 'Aucune de ces propositions', 'Aucun de ces sujets', "
-        "'None', 'None of the above', 'Je ne sais pas', 'NSP', 'N/A', 'Pas applicable', "
-        "'Préfère ne pas répondre', 'Don't know', 'Not applicable').\n\n"
-        "RÈGLE GÉNÉRALE : Ne retourne JAMAIS une option exclusive. "
-        "Ces options sont disqualificatoires dans la grande majorité des cas.\n\n"
-        "EXCEPTION UNIQUE — Screener de participation récente :\n"
-        "Si la question demande explicitement si tu as participé à une étude de marché, "
-        "un sondage, ou une recherche portant sur un ou plusieurs sujets d'une liste "
-        "(signaux : 'participé', 'participated', 'étude de marché', 'market research', "
-        "'sondage', 'survey', 'au cours des', 'dernières semaines', 'last weeks', 'past weeks'), "
-        "ET que la liste d'options contient une option exclusive négative "
-        "('Aucune de ces propositions', 'Aucun de ces sujets', 'None of the above', 'Aucun', 'Non'), "
-        "alors tu DOIS choisir UNIQUEMENT cette option exclusive, sans aucune autre valeur. "
-        "Ce type de question est un screener anti-participation : "
-        "répondre avec un sujet de la liste entraîne une disqualification immédiate."
-        "EXCEPTION — Screener de secteur d'activité (liste courte) :"
-        "Si la question demande si toi-même, ou un membre de ton foyer/famille/entourage,"
-        "travailles dans l'un des domaines/secteurs/industries d'une liste proposée"
-        "(signaux : 'travaillez', 'travaille', 'travaillez-vous', 'work in', 'employed in',"
-        "'secteur', 'domaine', 'industrie', 'industry', 'field', 'profession'),"
-        "ET que la liste d'options contient au total MOINS DE 15 options (options exclusives comprises),"
-        "ET que la liste contient une option exclusive négative"
-        "('Aucune de ces propositions', 'None of the above', 'Aucun', 'Aucune', 'Non',"
-        "'Aucune de ces réponses', 'None of these'),"
-        "alors tu DOIS choisir UNIQUEMENT cette option exclusive négative, sans aucune autre valeur."
-        "Ce type de question est un screener anti-industrie : choisir n'importe quel secteur de la liste"
-        "entraîne une disqualification immédiate, même si ce secteur est cohérent avec le persona."
-        "Cette règle s'applique que la question concerne le répondant seul OU son foyer/famille/entourage."
-    )
-
-    lines.append("\n--- QUESTIONS DISPONIBLES SUR LA PAGE ---")
-
-    # --------- Injection des questions ----------
-    for idx, block in enumerate(question_blocks, start=1):
-        q = _escape(block.get("question", ""))
-        itype = block.get("itype", "")
-        options = block.get("options") or []
-        matrix_rows = _matrix_row_labels(block)
-
-        lines.append(f"\n{idx}) Question : {q}")
-        lines.append(f"   Type attendu : {itype}")
-        if matrix_rows:
-            lines.append(f"   Sous-questions (lignes matrix) : {' | '.join(matrix_rows)}")
-
-        if options:
-            opts = ", ".join(_escape(o) for o in options)
-            lines.append(f"   Options possibles : {opts}")
-        else:
-            lines.append("   Champ ouvert : valeur libre attendue")
-
-    # --------- Instruction finale ----------
-    lines.append(
-        "\nChoisis LA MEILLEURE action possible MAINTENANT.\n"
-        "Rappelle-toi : UNE SEULE ligne en sortie.\n"
-        "Format : target_id //// valeur //// itype //// contexte"
-    )
-
-    return "\n".join(lines)
-
 
 def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
     """
@@ -722,20 +459,20 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
         "('Aucune de ces propositions', 'Aucun de ces sujets', 'None of the above', 'Aucun', 'Non'), "
         "alors tu DOIS choisir UNIQUEMENT cette option exclusive, sans aucune autre valeur. "
         "Ce type de question est un screener anti-participation : "
-        "répondre avec un sujet de la liste entraîne une disqualification immédiate."
-        "EXCEPTION — Screener de secteur d'activité (liste courte) :"
+        "répondre avec un sujet de la liste entraîne une disqualification immédiate.\n\n"
+        "EXCEPTION — Screener de secteur d'activité (liste courte) :\n"
         "Si la question demande si toi-même, ou un membre de ton foyer/famille/entourage,"
-        "travailles dans l'un des domaines/secteurs/industries d'une liste proposée"
+        "travailles dans l'un des domaines/secteurs/industries d'une liste proposée\n"
         "(signaux : 'travaillez', 'travaille', 'travaillez-vous', 'work in', 'employed in',"
-        "'secteur', 'domaine', 'industrie', 'industry', 'field', 'profession'),"
-        "ET que la liste d'options contient au total MOINS DE 15 options (options exclusives comprises),"
-        "ET que la liste contient une option exclusive négative"
+        "'secteur', 'domaine', 'industrie', 'industry', 'field', 'profession'),\n"
+        f"ET que la liste d'options contient au total MOINS DE {_SECTOR_SCREENER_MAX_OPTIONS} options (options exclusives comprises),"
+        "ET que la liste contient une option exclusive négative\n"
         "('Aucune de ces propositions', 'None of the above', 'Aucun', 'Aucune', 'Non',"
-        "'Aucune de ces réponses', 'None of these'),"
-        "alors tu DOIS choisir UNIQUEMENT cette option exclusive négative, sans aucune autre valeur."
+        "'Aucune de ces réponses', 'None of these'),\n"
+        "alors tu DOIS choisir UNIQUEMENT cette option exclusive négative, sans aucune autre valeur.\n"
         "Ce type de question est un screener anti-industrie : choisir n'importe quel secteur de la liste"
-        "entraîne une disqualification immédiate, même si ce secteur est cohérent avec le persona."
-        "Cette règle s'applique que la question concerne le répondant seul OU son foyer/famille/entourage."
+        "entraîne une disqualification immédiate, même si ce secteur est cohérent avec le persona.\n"
+        "Cette règle ne s'applique que si la question concerne le répondant seul OU son foyer/famille/entourage."
     )
     lines.append("\n--- QUESTIONS ---")
 
