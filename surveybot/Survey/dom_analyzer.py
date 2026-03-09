@@ -53,6 +53,7 @@ try:
     from Survey.dom_extractors_decipher import (
         _extract_focusvision_answers_list_groups,
         _extract_focusvision_cardsort_block,
+        _extract_decipher_table_text_rows_blocks,
         _extract_decipher_answers_list_fallback
     )
     
@@ -120,6 +121,7 @@ except ImportError:
     from Survey.dom_extractors_decipher import (
         _extract_focusvision_answers_list_groups,
         _extract_focusvision_cardsort_block,
+        _extract_decipher_table_text_rows_blocks,
         _extract_decipher_answers_list_fallback
     )
     from Survey.dom_extractors_areyounet import (
@@ -828,7 +830,16 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
     except Exception:
         pass
 
-    # --- 0d-1quinter) YouGov grid text (fieldset.question-grid-text) ---
+    # --- 0d-1quinter) Decipher table text rows (i-question-table) ---
+    # Objectif: extraire 1 bloc text par ligne non-readonly dans les tables Decipher.
+    try:
+        decipher_table_text_blocks = _extract_decipher_table_text_rows_blocks(driver, frame_chain)
+        if decipher_table_text_blocks:
+            return decipher_table_text_blocks
+    except Exception:
+        pass
+
+    # --- 0d-1sexies) YouGov grid text (fieldset.question-grid-text) ---
     # Objectif: extraire 1 bloc text par ligne (input texte) au lieu d'un single aplati.
     try:
         yougov_grid_text_blocks = _extract_yougov_grid_text_question_blocks(driver, frame_chain)
