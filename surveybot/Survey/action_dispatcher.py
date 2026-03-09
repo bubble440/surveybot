@@ -3355,6 +3355,11 @@ def handle_captcha_guard(driver):
     Sécurité & prédictibilité:
     - Prod/Docker: on n'essaie pas de "résoudre" un CAPTCHA (arret controlé + snapshot si activé).
     - Local: on permet une résolution MANUELLE, puis on ATTEND la redirection / disparition du widget.
+
+    Résolution automatique Tencent (slider puzzle) :
+    - Détectée via signaux DOM (#sliderpanel + .verify-img-panel/.verify-gap).
+    - Déléguée à captcha.tencent_handler.solve_tencent_auto().
+    - Sans impact sur les autres branches captcha (recaptcha, hcaptcha, etc.).
     """
     import os, sys, time
 
@@ -3372,6 +3377,24 @@ def handle_captcha_guard(driver):
             save_snapshot(driver, reason="captcha_guard", out_root=os.getenv("SURVEY_SNAPSHOT_DIR"))
     except Exception:
         pass
+
+    # ── Tencent CAPTCHA (slider puzzle) ── résolution automatique via 2Captcha
+    try:
+        is_tencent = bool(driver.execute_script(
+            "var r = document.querySelector('#sliderpanel');"
+            "if (!r) return false;"
+            "return !!(r.querySelector('.verify-img-panel') || r.querySelector('.verify-gap') || r.querySelector('.verify-bar-area'));"
+        ))
+    except Exception:
+        is_tencent = False
+
+    if is_tencent:
+        try:
+            from captcha.tencent_handler import solve_tencent_auto
+            return solve_tencent_auto(driver)
+        except Exception as _te:
+            print(f"[TENCENT_HANDLER] Exception inattendue : {_te}")
+            # fall through to manual handling below
 
     # PROD/DOCKER: arret controlé (pas de bypass)
     if captcha_behavior == "restart":
