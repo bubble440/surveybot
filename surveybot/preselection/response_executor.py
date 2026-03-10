@@ -46,11 +46,14 @@ def execute_response(driver, answer_text):
 
     print(f"🌟 Tentative de sélection : {answer_text} source: reponse_executor.py")
     norm_answer = normalize(answer_text)
+    checkbox_answers = [
+        chunk.strip() for chunk in str(answer_text).split("|") if chunk.strip()
+    ]
     success = False
 
     try:
         # 1) Tentative checkbox en priorité
-        success = select_checkbox_answers(driver, answer_text)
+        success = select_checkbox_answers(driver, checkbox_answers)
         if success:
             click_next_button(driver)
             return success
@@ -98,6 +101,7 @@ def execute_response(driver, answer_text):
         print(
             "❌ Option radio non cochée. Tentative fallback vers checkbox. source: reponse_executor.py"
         )
+        return False
 
     except Exception as e:
         print(
@@ -196,7 +200,6 @@ def select_checkbox_answers(driver, answers):
                         if inner_cb.is_selected():
                             print(f"✅ Checkbox déjà cochée : {label_text}")
                             found = True
-                            return True
                             break
                     except Exception:
                         pass
@@ -205,12 +208,13 @@ def select_checkbox_answers(driver, answers):
                         f"✅ Checkbox cochée : {label_text} source: reponse_executor.py"
                     )
                     found = True
-                    return True
                     break
             except Exception:
                 continue
     if found:
-        print(
-            f"❌ Aucun checkbox correspondant à la réponse : {answers} source: reponse_executor.py"
-        )
-        return False
+        return True
+
+    print(
+        f"❌ Aucun checkbox correspondant à la réponse : {answers} source: reponse_executor.py"
+    )
+    return False

@@ -20,7 +20,7 @@ def _safe_page_text(driver) -> str:
         except Exception:
             return ""
 
-def run_survey(driver, api_key, *, account_id: str):
+def run_survey(driver, api_key, *, account_id: str, ctx=None):
     import preselection.question_analyzer
     import preselection.response_executor
     import Survey.survey_solver 
@@ -166,6 +166,8 @@ def run_survey(driver, api_key, *, account_id: str):
             # Cas normal : une réponse est attendue
             if question and answer:
                 success = preselection.response_executor.execute_response(driver, answer)
+                if success and ctx is not None:
+                    ctx.record(question, [], answer)
                 #save_question_result(question, answer, input_type, success=success, choices=options, context="preselection")
                 time.sleep(2)
                 # 🔄 Si l'action échoue, relancer un survey complet
@@ -219,7 +221,12 @@ def run_survey(driver, api_key, *, account_id: str):
 
                         print(f"[URL_GUARD] Autorisé : {final_url} (host: {host})")
                         # feu vert → on entre en résolution complète
-                        Survey.survey_solver.solve_full_survey(driver, api_key=api_key, account_id=account_id)
+                        Survey.survey_solver.solve_full_survey(
+                            driver,
+                            api_key=api_key,
+                            account_id=account_id,
+                            survey_context=ctx,
+                        )
                         return
 
                     # Cas : on est disqualifié → cliquer sur OK puis relancer
