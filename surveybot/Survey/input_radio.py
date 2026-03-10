@@ -85,23 +85,32 @@ def click_decipher_grid_radio(driver, label: str, context_hint: str = "") -> boo
 
     # index de colonne à partir des <th>
     col_idx = None
+    col_head_id = None
     heads = table.find_elements(By.XPATH, ".//tr[1]//th[normalize-space(.)!='']")
     for i, th in enumerate(heads):
         t = _n(th.text)
         if t and (t == colneedle or colneedle in t or t in colneedle):
             col_idx = i
+            col_head_id = (th.get_attribute("id") or "").strip() or None
             break
 
     # toutes les lignes de réponses
     rows = table.find_elements(By.XPATH, ".//tr[contains(@class,'row-elements')]")
+    if len(rows) > 1 and not rowneedle:
+        log_debug("[TARGET_DEBUG]", "decipher_grid_radio: row context missing on multi-row grid")
+        return False
+
     for tr in rows:
         # texte de ligne
         row_txt = ""
+        row_id = None
         for xp in (".//th", "./td[1]", "./td[2]"):
             try:
-                raw = tr.find_element(By.XPATH, xp).text
+                node = tr.find_element(By.XPATH, xp)
+                raw = node.text
                 if raw and raw.strip():
                     row_txt = _n(raw)
+                    row_id = (node.get_attribute("id") or "").strip() or None
                     break
             except Exception:
                 continue
@@ -126,18 +135,53 @@ def click_decipher_grid_radio(driver, label: str, context_hint: str = "") -> boo
         if cell is None:
             continue
 
-        # éléments cliquables dans la cellule
+        # input natif exact (ligne + colonne)
         inp, lab = None, None
+        target_by = "cell"
         try:
-            inp = cell.find_element(By.XPATH, ".//input[@type='radio']")
+            row_inputs = tr.find_elements(By.XPATH, ".//input[@type='radio']")
+        except Exception:
+            row_inputs = []
+
+        if row_inputs and row_id and col_head_id:
+            for cand in row_inputs:
+                try:
+                    labelled = (cand.get_attribute("aria-labelledby") or "").split()
+                except Exception:
+                    labelled = []
+                if row_id in labelled and col_head_id in labelled:
+                    inp = cand
+                    target_by = "aria-labelledby"
+                    break
+
+        if inp is None:
+            try:
+                in_cell = cell.find_elements(By.XPATH, ".//input[@type='radio']")
+                if len(in_cell) == 1:
+                    inp = in_cell[0]
+            except Exception:
+                pass
+
+        if inp is None:
+            log_debug("[TARGET_DEBUG]", f"decipher_grid_radio: native input not found row={context_hint!r} col={label!r}")
+            if rowneedle:
+                return False
+            continue
+
+        try:
+            inp_id = (inp.get_attribute("id") or "").strip()
+            if inp_id:
+                lab = table.find_element(By.XPATH, f".//label[@for={xpath_literal(inp_id)}]")
         except Exception:
             pass
-        try:
-            lab = cell.find_element(By.XPATH, ".//label")
-        except Exception:
-            pass
+        if lab is None:
+            try:
+                lab = cell.find_element(By.XPATH, ".//label")
+            except Exception:
+                pass
 
         # clic
+        log_debug("[TARGET_DEBUG]", f"decipher_grid_radio: target_found row={context_hint!r} col={label!r} by={target_by}")
         try:
             target = lab or inp or cell
             driver.execute_script("arguments[0].scrollIntoView({block:'center'});", target)
@@ -149,7 +193,11 @@ def click_decipher_grid_radio(driver, label: str, context_hint: str = "") -> boo
             try:
                 driver.execute_script("arguments[0].click();", target)
             except Exception:
+                log_debug("[TARGET_DEBUG]", f"decipher_grid_radio: click_failed row={context_hint!r} col={label!r}")
+                if rowneedle:
+                    return False
                 continue
+        log_debug("[TARGET_DEBUG]", f"decipher_grid_radio: click_attempted row={context_hint!r} col={label!r}")
 
         time.sleep(0.12)
 
@@ -170,19 +218,12 @@ def click_decipher_grid_radio(driver, label: str, context_hint: str = "") -> boo
                 return v in ("true", "checked", "1")
 
         if _is_checked(inp):
-            print(f"✓ Radio (Decipher) cochée: row='{context_hint}' → col='{label}' — source: input_radio.py")
+            log_debug("[TARGET_DEBUG]", f"decipher_grid_radio: native_verify=ok row={context_hint!r} col={label!r}")
             return True
 
-        # secours: clic direct sur la cellule
-        try:
-            td = cell if "clickableCell" in (cell.get_attribute("class") or "") else cell.find_element(By.XPATH, "ancestor::td[1]")
-            driver.execute_script("arguments[0].click();", td)
-            time.sleep(0.12)
-            if _is_checked(inp):
-                print(f"✓ Radio (Decipher) cochée via <td>: row='{context_hint}' → col='{label}'")
-                return True
-        except Exception:
-            pass
+        log_debug("[TARGET_DEBUG]", f"decipher_grid_radio: native_verify=ko row={context_hint!r} col={label!r}")
+        if rowneedle:
+            return False
 
     return False
 
@@ -217,6 +258,9 @@ def click_decipher_grid_radio_strict(driver, label: str, context_hint: str = "")
     rows = scope.find_elements(By.XPATH, ".//table[contains(@class,'grid')]//tr[contains(@class,'row-elements')]")
     if not rows:
         return False
+    if len(rows) > 1 and not _n(context_hint or ""):
+        log_debug("[TARGET_DEBUG]", "decipher_grid_radio_strict: row context missing on multi-row grid")
+        return False
 
     for tr in rows:
         try:
@@ -236,48 +280,43 @@ def click_decipher_grid_radio_strict(driver, label: str, context_hint: str = "")
 
             # 1) clique le <label>
             lab = None
+            inp = None
+            verified = False
             try:
                 lab = tr.find_element(By.XPATH, ".//td[contains(@class,'clickableCell')]//label")
+                try:
+                    fid = (lab.get_attribute("for") or "").strip()
+                    if fid:
+                        inp = tr.find_element(By.XPATH, f".//input[@type='radio' and @id={xpath_literal(fid)}]")
+                except Exception:
+                    inp = None
                 driver.execute_script("arguments[0].scrollIntoView({block:'center'});", lab)
                 try:
                     lab.click()
-                    return True
                 except Exception:
                     driver.execute_script("arguments[0].click();", lab)
-                    return True
+                time.sleep(0.08)
             except Exception:
                 pass
 
-            # 2) force l'état sur l'input + events
+            # 2) vérification native stricte
             try:
-                inp = tr.find_element(By.XPATH, ".//input[@type='radio']")
-                driver.execute_script("""
-                    const i = arguments[0];
-                    i.checked = true;
-                    try { i.dispatchEvent(new Event('input',  {bubbles:true})); } catch(e) {}
-                    try { i.dispatchEvent(new Event('change', {bubbles:true})); } catch(e) {}
-                    try { i.dispatchEvent(new Event('blur',   {bubbles:true})); } catch(e) {}
-                """, inp)
-            except Exception:
-                pass
-
-            # 3) secours : clique la cellule cliquable
-            try:
-                td = tr.find_element(By.XPATH, ".//td[contains(@class,'clickableCell')]")
-                driver.execute_script("arguments[0].scrollIntoView({block:'center'});", td)
-                driver.execute_script("arguments[0].click();", td)
-                return True
-            except Exception:
-                pass
-
-            # 4) vérification
-            try:
-                chk = tr.find_element(By.XPATH, ".//input[@type='radio']")
+                chk = inp or tr.find_element(By.XPATH, ".//input[@type='radio']")
                 if chk.is_selected() or (chk.get_attribute("checked") or "").lower() in ("true", "checked"):
-                    print(f"✓ Radio (Decipher strict) cochée : {label}")
-                    return True
+                    verified = True
             except Exception:
-                pass
+                verified = False
+
+            if verified:
+                log_debug("[TARGET_DEBUG]", f"decipher_grid_radio_strict: native_verify=ok row={context_hint!r} col={label!r}")
+                return True
+
+            log_debug("[TARGET_DEBUG]", f"decipher_grid_radio_strict: native_verify=ko row={context_hint!r} col={label!r}")
+            if _n(context_hint or ""):
+                return False
+
+            # 3) sans contexte de ligne, tenter une autre ligne
+            continue
         except Exception:
             continue
 
