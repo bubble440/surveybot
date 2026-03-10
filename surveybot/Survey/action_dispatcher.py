@@ -1743,6 +1743,51 @@ def _apply_by_target_id(driver, target_id: str, itype: str, value: str) -> bool:
                         log_debug("[TARGET_DEBUG]", f"decipher_clickable_ranking no rank signal after click: value='{value}' xpath='{xp}'")
                     return False
 
+                def _is_decipher_mx_collapsible_checkbox_selected(cell_node) -> bool:
+                    """Validation stricte de sélection pour Decipher MX Collapsible checkbox.
+
+                    Scope DOM (additif) :
+                    - cellule `.clickableCell` avec `input[type='checkbox'].fir-hidden`
+                    - présence d'un widget `.mx-stage .mx-collapsible-container` dans la même question
+                    Signal de succès : la carte correspondante porte `.mx-card-selected`.
+                    """
+                    try:
+                        ok = driver.execute_script(
+                            """
+                            const cell = arguments[0];
+                            if (!cell || !cell.closest) return false;
+                            const question = cell.closest('div.question');
+                            if (!question) return false;
+                            const hiddenCheckbox = cell.querySelector("input[type='checkbox'].fir-hidden");
+                            if (!hiddenCheckbox) return false;
+
+                            const mx = question.querySelector('.mx-stage .mx-collapsible-container');
+                            if (!mx) return false;
+
+                            const labelEl = cell.querySelector('label');
+                            if (!labelEl) return false;
+                            const raw = String(labelEl.textContent || '').replace(/\{@[^}]*@\}/g, ' ');
+                            const label = raw.replace(/\s+/g, ' ').trim().toLowerCase();
+                            if (!label) return false;
+
+                            const cards = mx.querySelectorAll('.mx-collapsible-row-item');
+                            for (const card of cards) {
+                              const cardLabelEl = card.querySelector('.label');
+                              if (!cardLabelEl) continue;
+                              const cardLabel = String(cardLabelEl.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase();
+                              if (!cardLabel) continue;
+                              if (cardLabel === label) {
+                                return card.classList.contains('mx-card-selected');
+                              }
+                            }
+                            return false;
+                            """,
+                            cell_node,
+                        )
+                        return bool(ok)
+                    except Exception:
+                        return False
+
                 # Idempotence checkbox: si la cible est déjà dans l'état voulu,
                 # ne pas cliquer (évite les dérives sur widgets FocusVision/Decipher).
                 if resolved_itype == "checkbox":
@@ -1751,7 +1796,39 @@ def _apply_by_target_id(driver, target_id: str, itype: str, value: str) -> bool:
                     except Exception:
                         inp_pre = None
 
-                    if _is_selected(inp_pre) or _selected_like(el):
+                    try:
+                        mx_collapsible_scope = bool(
+                            driver.execute_script(
+                                """
+                                const node = arguments[0];
+                                if (!node || !node.closest) return false;
+                                const cell = node.closest('.clickableCell');
+                                if (!cell) return false;
+                                const q = cell.closest('div.question');
+                                if (!q) return false;
+                                if (!cell.querySelector("input[type='checkbox'].fir-hidden")) return false;
+                                return !!q.querySelector('.mx-stage .mx-collapsible-container');
+                                """,
+                                el,
+                            )
+                        )
+                    except Exception:
+                        mx_collapsible_scope = False
+
+                    if mx_collapsible_scope:
+                        try:
+                            cell_pre = driver.execute_script(
+                                """
+                                const node = arguments[0];
+                                return (node && node.closest) ? node.closest('.clickableCell') : null;
+                                """,
+                                el,
+                            )
+                        except Exception:
+                            cell_pre = None
+                        if cell_pre is not None and _is_decipher_mx_collapsible_checkbox_selected(cell_pre):
+                            return True
+                    elif _is_selected(inp_pre) or _selected_like(el):
                         return True
 
                     try:
@@ -1793,18 +1870,20 @@ def _apply_by_target_id(driver, target_id: str, itype: str, value: str) -> bool:
                             return False
 
                         try:
-                            ok_decipher = driver.execute_script(
-                                """
-                                const cell = arguments[0];
-                                if (!cell) return false;
-                                const inp = cell.querySelector("input[type='checkbox'].fir-hidden");
-                                if (!inp) return false;
-                                if (inp.checked) return true;
-                                const icon = cell.querySelector('.fir-icon');
-                                return !!(icon && icon.classList && icon.classList.contains('selected'));
-                                """,
-                                decipher_cell,
-                            )
+                            ok_decipher = _is_decipher_mx_collapsible_checkbox_selected(decipher_cell)
+                            if not ok_decipher:
+                                ok_decipher = driver.execute_script(
+                                    """
+                                    const cell = arguments[0];
+                                    if (!cell) return false;
+                                    const inp = cell.querySelector("input[type='checkbox'].fir-hidden");
+                                    if (!inp) return false;
+                                    if (inp.checked) return true;
+                                    const icon = cell.querySelector('.fir-icon');
+                                    return !!(icon && icon.classList && icon.classList.contains('selected'));
+                                    """,
+                                    decipher_cell,
+                                )
                         except Exception:
                             ok_decipher = False
 
