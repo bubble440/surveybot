@@ -567,6 +567,76 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
             except Exception:
                 has_gridclick_widget = False
 
+            # Decipher MX Collapsible (liste plate non-matricielle):
+            # certains questionnaires exposent une answers-list standard + un rendu cartes
+            # interactif dans #mx-stage-{QID}. On ne bascule sur ces cartes que si le
+            # pattern DOM complet est présent pour ce bloc.
+            has_mx_collapsible = False
+            mx_option_xpath_map: dict[str, str] = {}
+            question_id = (q.get_attribute("id") or "").strip()
+            m_qid = re.fullmatch(r"question_(.+)", question_id)
+            if m_qid:
+                qid_suffix = m_qid.group(1)
+                try:
+                    mx_stage = q.find_element(By.CSS_SELECTOR, f"#mx-stage-{qid_suffix}")
+                    mx_rows = mx_stage.find_elements(
+                        By.CSS_SELECTOR,
+                        ".mx-collapsible-groupholder .mx-collapsible-row-item[precode]",
+                    )
+                    if mx_rows:
+                        for row in mx_rows:
+                            precode = (row.get_attribute("precode") or "").strip()
+                            if not precode:
+                                continue
+                            try:
+                                row_label = _extract_label_text(
+                                    row.find_element(By.CSS_SELECTOR, ".bottom .label")
+                                )
+                            except Exception:
+                                row_label = ""
+                            row_norm = _norm_lc(row_label)
+                            if not row_norm:
+                                continue
+                            mx_option_xpath_map[row_norm] = (
+                                f"//div[@id={_xpath_literal(f'mx-stage-{qid_suffix}')}][1]"
+                                f"//div[contains(concat(' ',normalize-space(@class),' '),' mx-collapsible-groupholder ')]"
+                                f"//div[contains(concat(' ',normalize-space(@class),' '),' mx-collapsible-row-item ')"
+                                f" and @precode={_xpath_literal(precode)}][1]"
+                            )
+
+                        mx_exclusive = mx_stage.find_elements(
+                            By.CSS_SELECTOR,
+                            ".mx-collapsible-exclusive-holder .mx-collapsible-exclusive[class*='mx-button-r']",
+                        )
+                        for ex in mx_exclusive:
+                            classes = (ex.get_attribute("class") or "").strip().split()
+                            precode = ""
+                            for cls in classes:
+                                if cls.startswith("mx-button-r"):
+                                    precode = cls.replace("mx-button-", "", 1)
+                                    break
+                            if not precode:
+                                continue
+                            try:
+                                ex_label = _extract_label_text(
+                                    ex.find_element(By.CSS_SELECTOR, ".mx-btn-label")
+                                )
+                            except Exception:
+                                ex_label = ""
+                            ex_norm = _norm_lc(ex_label)
+                            if not ex_norm:
+                                continue
+                            mx_option_xpath_map[ex_norm] = (
+                                f"//div[@id={_xpath_literal(f'mx-stage-{qid_suffix}')}][1]"
+                                f"//div[contains(concat(' ',normalize-space(@class),' '),' mx-collapsible-exclusive-holder ')]"
+                                f"//div[contains(concat(' ',normalize-space(@class),' '),' mx-collapsible-exclusive ')"
+                                f" and contains(concat(' ',normalize-space(@class),' '),{_xpath_literal(f' {precode} ')})][1]"
+                            )
+
+                        has_mx_collapsible = bool(mx_option_xpath_map)
+                except Exception:
+                    has_mx_collapsible = False
+
             # Dans GridClick, l'item/segment courant (tuile active) apporte le contexte
             # de ligne sélectionnée (ex: "Épargne ...") qui n'est pas dans <h1>.
             # On préfixe la question uniquement quand ce libellé est observable dans le DOM,
@@ -671,7 +741,13 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
                     except Exception:
                         pass
 
-                option_xpath_map[cell_col_norm or _norm_lc(label_txt)] = xp
+                # Cas spécifique Decipher MX Collapsible (DOM-only + scope question):
+                # on mappe le label vers la carte mx-collapsible correspondante.
+                label_norm = _norm_lc(label_txt)
+                if has_mx_collapsible and label_norm in mx_option_xpath_map:
+                    xp = mx_option_xpath_map[label_norm]
+
+                option_xpath_map[cell_col_norm or label_norm] = xp
                 if matrix_mode and cell_row_label and cell_col_norm:
                     matrix_cell_xpath_map.setdefault(_norm_lc(cell_row_label), {})[cell_col_norm] = xp
 
