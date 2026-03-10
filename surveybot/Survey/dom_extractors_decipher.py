@@ -147,11 +147,11 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
         if group_by_row_table is not None:
             mx_stage_id = ""
             mx_scale_code_by_label_norm: dict[str, str] = {}
-            try:
-                mx_stage = q.find_element(By.CSS_SELECTOR, ".mx-stage[id^='mx-stage-']")
-                mx_stage_id = (mx_stage.get_attribute("id") or "").strip()
-            except Exception:
-                mx_stage_id = ""
+            question_id = (q.get_attribute("id") or "").strip()
+            if question_id.startswith("question_"):
+                expected_mx_stage_id = f"mx-stage-{question_id[len('question_'):]}"
+                if driver.find_elements(By.ID, expected_mx_stage_id):
+                    mx_stage_id = expected_mx_stage_id
 
             try:
                 col_header_nodes = group_by_row_table.find_elements(By.CSS_SELECTOR, "th[scope='col']")
