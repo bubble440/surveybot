@@ -1044,6 +1044,114 @@ def _apply_by_target_id(driver, target_id: str, itype: str, value: str) -> bool:
             v_norm = _norm_lc(value)
             v_fold = _fold_norm_lc(value)
 
+            if payload.get("mx_carousel_active") and resolved_itype == "radio":
+                row_xpath = (payload.get("mx_carousel_row_xpath") or "").strip()
+                scale_map = payload.get("mx_carousel_scale_xpath_map") or {}
+                input_name = (payload.get("mx_carousel_input_name") or "").strip()
+                input_id_map = payload.get("mx_carousel_input_id_map") or {}
+
+                scale_xpath = scale_map.get(v_norm) or (scale_map.get(v_fold) if v_fold else None)
+                if not scale_xpath:
+                    for k, x in scale_map.items():
+                        if not k:
+                            continue
+                        k_norm = _norm_lc(k)
+                        k_fold = _fold_norm_lc(k)
+                        if v_norm and (v_norm == k_norm or v_norm in k_norm or k_norm in v_norm):
+                            scale_xpath = x
+                            break
+                        if v_fold and (
+                            v_fold == k_norm or v_fold in k_norm or k_norm in v_fold
+                            or v_fold == k_fold or v_fold in k_fold or k_fold in v_fold
+                        ):
+                            scale_xpath = x
+                            break
+
+                if not row_xpath or not scale_xpath:
+                    if debug_target:
+                        log_debug(
+                            "[TARGET_DEBUG]",
+                            f"target_id='{target_id}' value='{value}' -> mx carousel mapping introuvable",
+                        )
+                    return False
+
+                def _click_xpath_node(xpath: str) -> bool:
+                    node = _find_best_visible(xpath)
+                    if node is None:
+                        return False
+                    try:
+                        driver.execute_script("arguments[0].scrollIntoView({block:'center', inline:'center'});", node)
+                    except Exception:
+                        pass
+                    try:
+                        node.click()
+                        return True
+                    except Exception:
+                        try:
+                            driver.execute_script("arguments[0].click();", node)
+                            return True
+                        except Exception:
+                            return False
+
+                expected_input_id = None
+                try:
+                    expected_input_id = input_id_map.get(v_norm) or (input_id_map.get(v_fold) if v_fold else None)
+                except Exception:
+                    expected_input_id = None
+
+                initial_checked_id = None
+                if input_name:
+                    try:
+                        initial_checked_id = driver.execute_script(
+                            """
+                            const n = arguments[0];
+                            if (!n) return null;
+                            const sel = document.querySelector("input[type='radio'][name='" + n + "']:checked");
+                            return sel ? (sel.id || null) : null;
+                            """,
+                            input_name,
+                        )
+                    except Exception:
+                        initial_checked_id = None
+
+                if not _click_xpath_node(row_xpath):
+                    if debug_target:
+                        log_debug("[TARGET_DEBUG]", f"mx carousel row click failed: target_id='{target_id}'")
+                    return False
+
+                if not _click_xpath_node(scale_xpath):
+                    if debug_target:
+                        log_debug("[TARGET_DEBUG]", f"mx carousel scale click failed: target_id='{target_id}' value='{value}'")
+                    return False
+
+                import time
+                end = time.time() + 1.2
+                while time.time() < end:
+                    try:
+                        checked_id = driver.execute_script(
+                            """
+                            const n = arguments[0];
+                            if (!n) return null;
+                            const sel = document.querySelector("input[type='radio'][name='" + n + "']:checked");
+                            return sel ? (sel.id || null) : null;
+                            """,
+                            input_name,
+                        )
+                    except Exception:
+                        checked_id = None
+
+                    if checked_id and checked_id != initial_checked_id:
+                        if not expected_input_id or checked_id == expected_input_id:
+                            return True
+                    time.sleep(0.05)
+
+                if debug_target:
+                    log_debug(
+                        "[TARGET_DEBUG]",
+                        f"mx carousel state unchanged: target_id='{target_id}' initial={initial_checked_id!r} expected={expected_input_id!r}",
+                    )
+                return False
+
             is_purespectrum_date_dropdown = payload.get("purespectrum_date_dropdown") and resolved_itype == "radio"
             is_ps_select_dropdown = bool(payload.get("ps_select_dropdown"))
 
