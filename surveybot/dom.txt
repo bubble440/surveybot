@@ -1,7 +1,7 @@
 <body class="survey-page non-touch" data-device="">
 
 
-<div id="survey" class="survey-container notranslate">
+<div id="survey" class="survey-container">
 <div class="survey-section"><div class="page-header"></div>
 <!-- /.page-header --></div>
 <div class="survey-section">
@@ -16,352 +16,22 @@
 </div>
 <!-- /.survey-header -->
 
-<form id="primary" name="primary" method="post" action="/survey/selfserve/53b/2602171" enctype="application/x-www-form-urlencoded" novalidate="">
-<input type="hidden" name="_v2_counter" value="12">
+<form id="primary" name="primary" method="post" action="/survey/selfserve/53b/g001/260262" enctype="application/x-www-form-urlencoded" novalidate="">
+<input type="hidden" name="_v2_counter" value="13">
 <!-- @@XYZZY@@ -->
-<style type="text/css">
-    #question_S10 .answers-table,.question-source {
-        display: none;
-    }
-    /* cardsort top-level container */
-    .sq-cardsort-S10.sq-cardsort-desktop {
-        width: auto;
-    }
-    /* all cards */
-    .sq-cardsort-S10 .sq-cardsort-card-item {
-        width:700px !important;
-        /* bug #21065 fix - limit the width of the card if max-width is specified */
-    }
-    /* each individual card */
-
-
-
-
-
-
-
-
-
-
-    /* disabled card */
-    .sq-cardsort-S10 .sq-cardsort-card.sq-cardsort-state-disabled .sq-cardsort-card-item {
-        
-    }
-    /* hovered card */
-    .sq-cardsort-S10 .sq-cardsort-card.sq-cardsort-state-hovered .sq-cardsort-card-item {
-        
-    }
-    /* selected card */
-    .sq-cardsort-S10 .sq-cardsort-card.sq-cardsort-state-selected .sq-cardsort-card-item {
-        
-    }
-    /* card in bucket contents view */
-    /* bug 13492 fix starts here */
-    .sq-cardsort-S10 .sq-cardsort-contents-overlay .sq-cardsort-card {
-        /* bug #20850 - use theme colors */
-        /*background-color: #dfe4ea;*/
-        min-height: 48px;
-        height: auto !important;
-        height: 48px;
-        text-align: left;
-    }
-    .sq-cardsort-S10 .sq-cardsort-contents-overlay .sq-cardsort-card-item { /* this line is not part of the bug 13492 fix */
-        /* bug #20850 - use theme colors */
-        /*color: #57606f;*/
-        display: block;
-        min-height: 48px;
-        height: auto !important;
-        height: 48px;
-        text-align: left;
-        width: auto;
-         /* this line is not part of the bug 13492 fix */
-    }
-    .sq-cardsort-S10 .sq-cardsort-contents-overlay .sq-cardsort-card-legend {
-        display: inline-block;
-        height: auto;
-        line-height: normal;
-        margin-left: 50px;
-        min-height: auto;
-        text-align: left;
-    }
-    /* bug 13492 fix ends here */
-
-    /* buckets container */
-    .sq-cardsort-S10.sq-cardsort-desktop .sq-cardsort-buckets {
-        white-space: nowrap;
-    }
-    /* all buckets */
-    .sq-cardsort-S10 .sq-cardsort-bucket {
-        /* bug #20850 - use theme colors */
-        /*background-color: #dfe4ea;*/
-        /*color: #57606f;*/
-        width:13%;background:#D3D3D3;color:#333;overflow:hidden;
-        /* bug #21065 fix - limit the width of the bucket if max-width is specified */
-    }
-    .sq-cardsort-S10 .sq-cardsort-bucket-item {
-        margin-right: 5px;
-    }
-    /* each individual bucket */
-
-
-
-
-    /* disabled bucket */
-    .sq-cardsort-S10 .sq-cardsort-bucket.sq-cardsort-state-disabled {
-        /* bug #20850 - use theme colors */
-        /*background-color: #a5a5a5;*/
-        /*color: #727272;*/
-        
-    }
-    /* hovered bucket */
-    .sq-cardsort-S10 .sq-cardsort-bucket.sq-cardsort-state-hovered {
-        /* bug #20850 - use theme colors */
-        /*background-color: #007ac0;*/
-        /*color: #ffffff;*/
-        
-    }
-    /* selected bucket */
-    .sq-cardsort-S10 .sq-cardsort-bucket.sq-cardsort-state-selected {
-        /* bug #20850 - use theme colors */
-        /*background-color: #007ac0;*/
-        /*color: #ffffff;*/
-        
-    }
-    /* card counter on bucket */
-    .sq-cardsort-S10 .sq-cardsort-bucket-count {
-        /* bug #20850 - use theme colors */
-        /*color: #dfe4ea;*/
-        
-        display: none;
-    }
-    /* disabled card counter on bucket */
-    .sq-cardsort-S10 .sq-cardsort-bucket-count.sq-cardsort-state-disabled {
-        /* bug #20850 - use theme colors */
-        /*color: #a5a5a5;*/
-        
-    }
-    /* hovered card counter on bucket */
-    .sq-cardsort-S10 .sq-cardsort-bucket-count.sq-cardsort-state-hovered {
-        /* bug #20850 - use theme colors */
-        /*color: #007ac0;*/
-        
-    }
-    /* progress indicator */
-    .sq-cardsort-S10 .sq-cardsort-progress {
-        ;
-    }
-    /* navigation (previous, next) buttons */
-    .sq-cardsort-S10 .sq-cardsort-previous,.sq-cardsort-S10 .sq-cardsort-next {
-        /* bug #20850 - use theme colors */
-        /*background-color: #dfe4ea;*/
-        /*color: #57606f;*/
-        ;
-    }
-    /* disabled navigation (previous, next) buttons */
-    .sq-cardsort-S10 .sq-cardsort-previous.sq-cardsort-state-disabled,.sq-cardsort-S10 .sq-cardsort-next.sq-cardsort-state-disabled {
-        /* bug #20850 - use theme colors */
-        /*background-color: #a5a5a5;*/
-        /*color: #727272;*/
-        
-    }
-    /* hovered navigation (previous, next) buttons */
-    .sq-cardsort-S10 .sq-cardsort-previous.sq-cardsort-state-hovered,.sq-cardsort-S10 .sq-cardsort-next.sq-cardsort-state-hovered {
-        /* bug #20850 - use theme colors */
-        /*background-color: #007ac0;*/
-        /*color: #ffffff;*/
-        
-    }
-    /* completion message */
-    .sq-cardsort-S10 .sq-cardsort-completion-item {
-        
-    }
-    </style>
-
-    <script type="text/javascript">
-    (function($) {
-        var setupOptions = {
- "displayCounter": false,
- "buttonNextHTML": "Suivant <i class=\"fa-icon-chevron-right\"></i>",
- "bucketSelectCSS": {},
- "cardDisableCSS": {},
- "contentsCardCSS": {},
- "cardCSS": {
-  "width": "700px !important"
- },
- "completionHTML": "<b><i>Veuillez cliquer sur le bouton Continuer&nbsp;>> pour poursuivre.</i></b>",
- "buttonPreviousHTML": "<i class=\"fa-icon-chevron-left\"></i> Pr\u00e9c\u00e9dent",
- "animationDuration": 500,
- "wrapBuckets": true,
- "bucketCountCSS": {},
- "iconButtonCSS": {},
- "progressCSS": {},
- "completionCSS": {},
- "displayProgress": true,
- "iconButtonHoverCSS": {},
- "iconButtonDisableCSS": {},
- "dragAndDrop": true,
- "bucketMaxWidth": "",
- "cardHoverCSS": {},
- "bucketHoverCSS": {},
- "bucketCountDisableCSS": {},
- "cardMaxWidth": "",
- "cardSelectCSS": {},
- "bucketCountHoverCSS": {},
- "bucketDisableCSS": {},
- "themeFile": "cardsort.css",
- "autoSubmit": false,
- "bucketsPerRow": 6,
- "automaticAdvance": true,
- "bucketCSS": {
-  "color": "#333",
-  "width": "13%",
-  "overflow": "hidden",
-  "background": "#D3D3D3"
- },
- "displayNavigation": true
-};
-        $.extend(setupOptions, {
-            // bug 16635: add autoadvance and drag and drop begin
-            automaticAdvance: 1,
-            dragAndDrop: 1,
-            // bug 16635: add autoadvance and drag and drop end
-            debug: false,
-            deviceClass: "desktop",
-            grouping: "rows",
-            infiniteScroll: 0,
-            label: "S10",
-            style: "cardsort",
-            type: "radio",
-            uniformBucketSize: 1,
-            uniformCardSize: 1
-        });
-        $ (function() {
-            Survey.question.cardsort.setup(setupOptions);
-        });
-    })(jQuery);
-    </script>
-<div id="question_S10" class="question radio label_S10  ">
-<h1 title="question" class="question-text" id="question_text_S10">Dans quelle mesure êtes-vous d'accord ou non avec les affirmations suivantes&nbsp;?</h1>
+<div class="survey-error" role="alert">
+<h1 class="survey-error-text">Un problème est survenu avec certaines données saisies dans le cadre de l'enquête. Les questions contenant des erreurs sont indiquées ci-dessous&nbsp;; veuillez suivre les instructions associées à chacune d'elles.</h1>
+</div>
+<!-- /.survey-error --><div id="question_QR9" class="question radio label_QR9  hasError">
+<h1 title="question" class="question-text" id="question_text_QR9">Merci d’indiquer si vous-même ou une personne de votre entourage travaillez dans l’un des secteurs d’activité ci-dessous.</h1>
 <!-- /.question-text -->
-
+<div class="question-error" role="alert">
+<h2 id="QR9_error" class="question-error-text">Veuillez sélectionner une réponse.</h2>
+</div>
+<!-- /.question-error -->
 <h2 title="instructions" class="instruction-text"></h2>
 <!-- /.instruction-text -->
-<!-- assign sq-cardsort-mobile class if mobile device -->
-    <!-- assign sq-cardsort-desktop class if not mobile device -->
-    <div class="sq-cardsort sq-cardsort-S10 sq-cardsort-desktop">
-      <div class="sq-cardsort-body">
-        <div class="sq-cardsort-cards-view">
-          <ul class="sq-cardsort-cards" style="display: block; width: 700px;">
-            <li atleast="1" atmost="1" class="sq-cardsort-card sq-cardsort-card-r6 ui-draggable sq-cardsort-state-selected" index="5" style="display: inline-block;" selections="1">
-              <span class="sq-cardsort-card-remove sq-cardsort-card-remove-r6 sq-cardsort-icon-button"><i class="fa-icon-ban-circle"></i></span>
-              <div class="sq-cardsort-card-item sq-cardsort-card-item-r6" index="5" style="height: 75px; width: 631px;"><p class="sq-cardsort-card-legend sq-cardsort-card-legend-left" style="margin-bottom: 19px; margin-top: 19px;">
-        J'admire les pionniers/-ères
-    </p></div>
-            </li>
-            <li atleast="1" atmost="1" class="sq-cardsort-card sq-cardsort-card-r5 ui-draggable sq-cardsort-state-selected" index="4" style="display: none;" selections="2">
-              <span class="sq-cardsort-card-remove sq-cardsort-card-remove-r5 sq-cardsort-icon-button"><i class="fa-icon-ban-circle"></i></span>
-              <div class="sq-cardsort-card-item sq-cardsort-card-item-r5" index="4" style="height: 75px; width: 631px;"><p class="sq-cardsort-card-legend sq-cardsort-card-legend-left" style="margin-bottom: 19px; margin-top: 19px;">
-        Le changement m’enthousiasme
-    </p></div>
-            </li>
-            <li atleast="1" atmost="1" class="sq-cardsort-card sq-cardsort-card-r9 ui-draggable sq-cardsort-state-selected" index="8" style="display: none;" selections="0">
-              <span class="sq-cardsort-card-remove sq-cardsort-card-remove-r9 sq-cardsort-icon-button"><i class="fa-icon-ban-circle"></i></span>
-              <div class="sq-cardsort-card-item sq-cardsort-card-item-r9" index="8" style="height: 75px; width: 631px;"><p class="sq-cardsort-card-legend sq-cardsort-card-legend-left" style="margin-bottom: 19px; margin-top: 19px;">
-        Je crois que nous sommes tous responsables du progrès de la société
-    </p></div>
-            </li>
-            <li atleast="1" atmost="1" class="sq-cardsort-card sq-cardsort-card-r4 ui-draggable sq-cardsort-state-selected" index="3" style="display: none;" selections="3">
-              <span class="sq-cardsort-card-remove sq-cardsort-card-remove-r4 sq-cardsort-icon-button"><i class="fa-icon-ban-circle"></i></span>
-              <div class="sq-cardsort-card-item sq-cardsort-card-item-r4" index="3" style="height: 75px; width: 631px;"><p class="sq-cardsort-card-legend sq-cardsort-card-legend-left" style="margin-bottom: 19px; margin-top: 19px;">
-        Face à un problème, j'essaie de sortir des sentiers battus
-    </p></div>
-            </li>
-            <li atleast="1" atmost="1" class="sq-cardsort-card sq-cardsort-card-r1 ui-draggable sq-cardsort-state-selected" index="0" style="display: none;" selections="1">
-              <span class="sq-cardsort-card-remove sq-cardsort-card-remove-r1 sq-cardsort-icon-button"><i class="fa-icon-ban-circle"></i></span>
-              <div class="sq-cardsort-card-item sq-cardsort-card-item-r1" index="0" style="height: 75px; width: 631px;"><p class="sq-cardsort-card-legend sq-cardsort-card-legend-left" style="margin-bottom: 19px; margin-top: 19px;">
-        Je recherche activement de nouvelles informations ou connaissances
-    </p></div>
-            </li>
-            <li atleast="1" atmost="1" class="sq-cardsort-card sq-cardsort-card-r2 ui-draggable" index="1" style="display: none;">
-              <span class="sq-cardsort-card-remove sq-cardsort-card-remove-r2 sq-cardsort-icon-button"><i class="fa-icon-ban-circle"></i></span>
-              <div class="sq-cardsort-card-item sq-cardsort-card-item-r2" index="1" style="height: 75px; width: 631px;"><p class="sq-cardsort-card-legend sq-cardsort-card-legend-left" style="margin-bottom: 19px; margin-top: 19px;">
-        J'aime explorer des sujets ou des idées qui ne me sont pas familiers
-    </p></div>
-            </li>
-            <li atleast="1" atmost="1" class="sq-cardsort-card sq-cardsort-card-r3 ui-draggable" index="2" style="display: none;">
-              <span class="sq-cardsort-card-remove sq-cardsort-card-remove-r3 sq-cardsort-icon-button"><i class="fa-icon-ban-circle"></i></span>
-              <div class="sq-cardsort-card-item sq-cardsort-card-item-r3" index="2" style="height: 75px; width: 631px;"><p class="sq-cardsort-card-legend sq-cardsort-card-legend-left" style="margin-bottom: 10px; margin-top: 10px;">
-        J'ai une curiosité naturelle pour la façon dont les choses fonctionnent ou pourquoi les choses sont comme elles sont
-    </p></div>
-            </li>
-            <li atleast="1" atmost="1" class="sq-cardsort-card sq-cardsort-card-r8 ui-draggable" index="7" style="display: none;">
-              <span class="sq-cardsort-card-remove sq-cardsort-card-remove-r8 sq-cardsort-icon-button"><i class="fa-icon-ban-circle"></i></span>
-              <div class="sq-cardsort-card-item sq-cardsort-card-item-r8" index="7" style="height: 75px; width: 631px;"><p class="sq-cardsort-card-legend sq-cardsort-card-legend-left" style="margin-bottom: 10px; margin-top: 10px;">
-        Je recherche activement de nouveaux passe-temps ou des occasions d’apprendre de nouvelles compétences
-    </p></div>
-            </li>
-            <li atleast="1" atmost="1" class="sq-cardsort-card sq-cardsort-card-r7 ui-draggable" index="6" style="display: none;">
-              <span class="sq-cardsort-card-remove sq-cardsort-card-remove-r7 sq-cardsort-icon-button"><i class="fa-icon-ban-circle"></i></span>
-              <div class="sq-cardsort-card-item sq-cardsort-card-item-r7" index="6" style="height: 75px; width: 631px;"><p class="sq-cardsort-card-legend sq-cardsort-card-legend-left" style="margin-bottom: 19px; margin-top: 19px;">
-        Je suis motivé(e) par l’accomplissement personnel
-    </p></div>
-            </li>
-            <li atleast="1" atmost="1" class="sq-cardsort-card sq-cardsort-card-r10 ui-draggable" index="9" style="display: none;">
-              <span class="sq-cardsort-card-remove sq-cardsort-card-remove-r10 sq-cardsort-icon-button"><i class="fa-icon-ban-circle"></i></span>
-              <div class="sq-cardsort-card-item sq-cardsort-card-item-r10" index="9" style="height: 75px; width: 631px;"><p class="sq-cardsort-card-legend sq-cardsort-card-legend-left" style="margin-bottom: 10px; margin-top: 10px;">
-        À des fins de contrôle qualité, veuillez sélectionner l’option «&nbsp;Pas du tout d’accord&nbsp;» ici
-    </p></div>
-            </li>
-            <!-- completion message - not actually a card -->
-            <li class="sq-cardsort-completion">
-              <div class="sq-cardsort-completion-item" aria-live="assertive"><b><i>Veuillez cliquer sur le bouton Continuer&nbsp;&gt;&gt; pour poursuivre.</i></b></div>
-            </li>
-          </ul>
-          <span class="sq-cardsort-progress">1/10</span>
-          <span class="sq-cardsort-icon-button sq-cardsort-previous sq-cardsort-state-disabled" disabled="disabled"><i class="fa-icon-chevron-left"></i> Précédent</span>
-          <span class="sq-cardsort-icon-button sq-cardsort-next">Suivant <i class="fa-icon-chevron-right"></i></span>
-        </div>
-        <div class="sq-cardsort-buckets-view">
-          <ul class="sq-cardsort-buckets">
-            <li class="sq-cardsort-bucket sq-cardsort-bucket-c1 ui-droppable sq-cardsort-bucket-selected" index="0" style="display: inline-block; height: 54px; width: 151px;">
-              <div class="sq-cardsort-bucket-item sq-cardsort-bucket-item-c1" index="0" style="margin-bottom: 6px; margin-top: 6px;"><p class="sq-cardsort-bucket-legend sq-cardsort-bucket-legend-top">
-Pas du tout d’accord
-<div class="force-width" style="width:14.5px"></div></p></div>
-              <span class="sq-cardsort-bucket-count sq-cardsort-bucket-count-c1 sq-cardsort-icon-button">1</span>
-            </li>
-            <li class="sq-cardsort-bucket sq-cardsort-bucket-c2 ui-droppable sq-cardsort-bucket-selected sq-cardsort-state-selected" index="1" style="display: inline-block; height: 54px; width: 151px;">
-              <div class="sq-cardsort-bucket-item sq-cardsort-bucket-item-c2" index="1" style="margin-bottom: 6px; margin-top: 6px;"><p class="sq-cardsort-bucket-legend sq-cardsort-bucket-legend-top">
-Plutôt pas d’accord
-<div class="force-width" style="width:14.5px"></div></p></div>
-              <span class="sq-cardsort-bucket-count sq-cardsort-bucket-count-c2 sq-cardsort-icon-button">2</span>
-            </li>
-            <li class="sq-cardsort-bucket sq-cardsort-bucket-c3 ui-droppable sq-cardsort-bucket-selected" index="2" style="display: inline-block; height: 54px; width: 151px;">
-              <div class="sq-cardsort-bucket-item sq-cardsort-bucket-item-c3" index="2" style="margin-bottom: 14px; margin-top: 14px;"><p class="sq-cardsort-bucket-legend sq-cardsort-bucket-legend-top">
-Plutôt d’accord
-<div class="force-width" style="width:14.5px"></div></p></div>
-              <span class="sq-cardsort-bucket-count sq-cardsort-bucket-count-c3 sq-cardsort-icon-button">1</span>
-            </li>
-            <li class="sq-cardsort-bucket sq-cardsort-bucket-c4 ui-droppable sq-cardsort-bucket-selected" index="3" style="display: inline-block; height: 54px; width: 151px;">
-              <div class="sq-cardsort-bucket-item sq-cardsort-bucket-item-c4" index="3" style="margin-bottom: 6px; margin-top: 6px;"><p class="sq-cardsort-bucket-legend sq-cardsort-bucket-legend-top">
-Tout à fait d’accord
-<div class="force-width" style="width:14.5px"></div></p></div>
-              <span class="sq-cardsort-bucket-count sq-cardsort-bucket-count-c4 sq-cardsort-icon-button">1</span>
-            </li>
-          </ul>
-        </div>
-      </div>
-      <!-- used to diplay the contents of a bucket -->
-      <div class="sq-cardsort-contents-overlay">
-        <div class="sq-cardsort-contents-bg"></div>
-        <span class="sq-cardsort-icon-button sq-cardsort-contents-close"><i class="fa-icon-remove"></i></span>
-        <div class="sq-cardsort-contents-view">
-          <div class="sq-cardsort-contents-title"></div>
-          <ul class="sq-cardsort-contents-cards"></ul>
-        </div>
-      </div>
-      <!-- used to diplay the contents of a bucket -->
-    </div>
-<div class="answers answers-table">
+<div class="answers answers-list">
 <div class="fir fir-checkbox" style="display: none;">
 <span class="fir-icon">
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
@@ -382,29 +52,28 @@ Tout à fait d’accord
 </svg>
 </span>
 </div>
-<table class="grid setWidth grid-table-mode" data-settings="force-desktop mobile-mode group-by-row table-mode" data-height="" summary="This table contains form elements to answer the survey question">
-<tbody><tr class="row row-col-legends row-col-legends-top colCount-4">
+<table class="grid setWidth grid-list-mode" data-settings="auto-optimize mobile-mode group-by-row table-mode" data-height="" summary="This table contains form elements to answer the survey question">
+<tbody>
+<tr class="row mobile-top-border-row">
+<td colspan="3" class="cell nonempty mobile-top-border-cell"></td>
+</tr><tr class="row row-col-legends row-col-legends-top colCount-2">
 <td class="cell empty empty-left empty-top unused mobile border-collapse"></td>
-<th scope="col" id="S10_c1" class="cell nonempty legend col-legend col-legend-top col-legend-basic legend-level-1 mobile border-collapse   ">
-Pas du tout d’accord
-<div class="force-width" style="width:14.5px"></div></th><th scope="col" id="S10_c2" class="cell nonempty legend col-legend col-legend-top col-legend-basic legend-level-1 mobile border-collapse   ">
-Plutôt pas d’accord
-<div class="force-width" style="width:14.5px"></div></th><th scope="col" id="S10_c3" class="cell nonempty legend col-legend col-legend-top col-legend-basic legend-level-1 mobile border-collapse   ">
-Plutôt d’accord
-<div class="force-width" style="width:14.5px"></div></th><th scope="col" id="S10_c4" class="cell nonempty legend col-legend col-legend-top col-legend-basic legend-level-1 mobile border-collapse   ">
-Tout à fait d’accord
-<div class="force-width" style="width:14.5px"></div></th>
+<th scope="col" id="QR9_c1" class="cell nonempty legend col-legend col-legend-top col-legend-basic legend-level-1 mobile border-collapse   " style="">
+Oui
+</th><th scope="col" id="QR9_c2" class="cell nonempty legend col-legend col-legend-top col-legend-basic legend-level-1 mobile border-collapse   " style="">
+Non
+</th>
 
 </tr>
 </tbody>
-<tbody><tr class="row row-elements even colCount-4">
-<th scope="row" id="S10_r6_left" class="cell nonempty legend row-legend row-legend-left row-legend-basic legend-level-1 mobile border-collapse  ">
-        J'admire les pionniers/-ères
-    </th>
-<td headers="S10_c1" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+<tbody><tr class="row row-elements even colCount-2">
+<th scope="row" id="QR9_r1_left" class="cell nonempty legend row-legend row-legend-left row-legend-basic legend-level-1 mobile border-collapse  ">
+La médecine
+</th>
+<td headers="QR9_c1" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
 <span class="cell-sub-wrapper cell-legend-right">
 <span class="cell-input cell-sub-column">
-<input type="radio" name="ans6009.0.5" value="0" id="ans6009.0.5" class="input radio fir-hidden" aria-labelledby="S10_r6_left S10_c1"><span class="fir-icon">
+<input type="radio" name="ans10225.0.0" value="0" id="ans10225.0.0" checked="" class="input radio fir-hidden" aria-labelledby="QR9_r1_left QR9_c1"><span class="fir-icon">
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
 <title> radio </title>
 <circle cx="10" cy="10" r="10" class="fir-base"></circle>
@@ -413,12 +82,12 @@ Tout à fait d’accord
 </svg>
 </span>
 </span>
-<span class="cell-text cell-sub-column"><label for="ans6009.0.5">Pas du tout d’accord</label> </span>
+<span class="cell-text cell-sub-column"><label for="ans10225.0.0">Oui</label> </span>
 </span>
-</td><td headers="S10_c2" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+</td><td headers="QR9_c2" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
 <span class="cell-sub-wrapper cell-legend-right">
 <span class="cell-input cell-sub-column">
-<input type="radio" name="ans6009.0.5" value="1" id="ans6009.1.5" class="input radio fir-hidden" aria-labelledby="S10_r6_left S10_c2" checked="checked"><span class="fir-icon">
+<input type="radio" name="ans10225.0.0" value="1" id="ans10225.1.0" class="input radio fir-hidden" aria-labelledby="QR9_r1_left QR9_c2"><span class="fir-icon">
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
 <title> radio </title>
 <circle cx="10" cy="10" r="10" class="fir-base"></circle>
@@ -427,46 +96,18 @@ Tout à fait d’accord
 </svg>
 </span>
 </span>
-<span class="cell-text cell-sub-column"><label for="ans6009.1.5">Plutôt pas d’accord</label> </span>
-</span>
-</td><td headers="S10_c3" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
-<span class="cell-sub-wrapper cell-legend-right">
-<span class="cell-input cell-sub-column">
-<input type="radio" name="ans6009.0.5" value="2" id="ans6009.2.5" class="input radio fir-hidden" aria-labelledby="S10_r6_left S10_c3"><span class="fir-icon">
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
-<title> radio </title>
-<circle cx="10" cy="10" r="10" class="fir-base"></circle>
-<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
-<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
-</svg>
-</span>
-</span>
-<span class="cell-text cell-sub-column"><label for="ans6009.2.5">Plutôt d’accord</label> </span>
-</span>
-</td><td headers="S10_c4" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
-<span class="cell-sub-wrapper cell-legend-right">
-<span class="cell-input cell-sub-column">
-<input type="radio" name="ans6009.0.5" value="3" id="ans6009.3.5" class="input radio fir-hidden" aria-labelledby="S10_r6_left S10_c4"><span class="fir-icon">
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
-<title> radio </title>
-<circle cx="10" cy="10" r="10" class="fir-base"></circle>
-<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
-<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
-</svg>
-</span>
-</span>
-<span class="cell-text cell-sub-column"><label for="ans6009.3.5">Tout à fait d’accord</label> </span>
+<span class="cell-text cell-sub-column"><label for="ans10225.1.0">Non</label> </span>
 </span>
 </td>
 
-</tr><tr class="row row-elements odd colCount-4">
-<th scope="row" id="S10_r5_left" class="cell nonempty legend row-legend row-legend-left row-legend-basic legend-level-1 mobile border-collapse  ">
-        Le changement m’enthousiasme
-    </th>
-<td headers="S10_c1" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+</tr><tr class="row row-elements odd hasError colCount-2">
+<th scope="row" id="QR9_r2_left" class="cell nonempty legend row-legend row-legend-left row-legend-basic legend-level-1 mobile border-collapse  ">
+ Un hypermarché ou un supermarché
+</th>
+<td headers="QR9_c1" class="cell nonempty element indent-1 mobile border-collapse groupingRows hasError    clickableCell">
 <span class="cell-sub-wrapper cell-legend-right">
 <span class="cell-input cell-sub-column">
-<input type="radio" name="ans6009.0.4" value="0" id="ans6009.0.4" class="input radio fir-hidden" aria-labelledby="S10_r5_left S10_c1"><span class="fir-icon">
+<input type="radio" name="ans10225.0.1" value="0" id="ans10225.0.1" class="input radio fir-hidden" aria-labelledby="QR9_r2_left QR9_c1" aria-invalid="true" aria-describedby="QR9_error"><span class="fir-icon">
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
 <title> radio </title>
 <circle cx="10" cy="10" r="10" class="fir-base"></circle>
@@ -475,12 +116,12 @@ Tout à fait d’accord
 </svg>
 </span>
 </span>
-<span class="cell-text cell-sub-column"><label for="ans6009.0.4">Pas du tout d’accord</label> </span>
+<span class="cell-text cell-sub-column"><label for="ans10225.0.1">Oui</label> </span>
 </span>
-</td><td headers="S10_c2" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+</td><td headers="QR9_c2" class="cell nonempty element indent-1 mobile border-collapse groupingRows hasError    clickableCell">
 <span class="cell-sub-wrapper cell-legend-right">
 <span class="cell-input cell-sub-column">
-<input type="radio" name="ans6009.0.4" value="1" id="ans6009.1.4" class="input radio fir-hidden" aria-labelledby="S10_r5_left S10_c2"><span class="fir-icon">
+<input type="radio" name="ans10225.0.1" value="1" id="ans10225.1.1" class="input radio fir-hidden" aria-labelledby="QR9_r2_left QR9_c2" aria-invalid="true" aria-describedby="QR9_error"><span class="fir-icon selected">
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
 <title> radio </title>
 <circle cx="10" cy="10" r="10" class="fir-base"></circle>
@@ -489,46 +130,18 @@ Tout à fait d’accord
 </svg>
 </span>
 </span>
-<span class="cell-text cell-sub-column"><label for="ans6009.1.4">Plutôt pas d’accord</label> </span>
-</span>
-</td><td headers="S10_c3" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
-<span class="cell-sub-wrapper cell-legend-right">
-<span class="cell-input cell-sub-column">
-<input type="radio" name="ans6009.0.4" value="2" id="ans6009.2.4" class="input radio fir-hidden" aria-labelledby="S10_r5_left S10_c3" checked="checked"><span class="fir-icon">
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
-<title> radio </title>
-<circle cx="10" cy="10" r="10" class="fir-base"></circle>
-<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
-<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
-</svg>
-</span>
-</span>
-<span class="cell-text cell-sub-column"><label for="ans6009.2.4">Plutôt d’accord</label> </span>
-</span>
-</td><td headers="S10_c4" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
-<span class="cell-sub-wrapper cell-legend-right">
-<span class="cell-input cell-sub-column">
-<input type="radio" name="ans6009.0.4" value="3" id="ans6009.3.4" class="input radio fir-hidden" aria-labelledby="S10_r5_left S10_c4"><span class="fir-icon">
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
-<title> radio </title>
-<circle cx="10" cy="10" r="10" class="fir-base"></circle>
-<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
-<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
-</svg>
-</span>
-</span>
-<span class="cell-text cell-sub-column"><label for="ans6009.3.4">Tout à fait d’accord</label> </span>
+<span class="cell-text cell-sub-column"><label for="ans10225.1.1">Non</label> </span>
 </span>
 </td>
 
-</tr><tr class="row row-elements even colCount-4">
-<th scope="row" id="S10_r9_left" class="cell nonempty legend row-legend row-legend-left row-legend-basic legend-level-1 mobile border-collapse  ">
-        Je crois que nous sommes tous responsables du progrès de la société
-    </th>
-<td headers="S10_c1" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+</tr><tr class="row row-elements even hasError colCount-2">
+<th scope="row" id="QR9_r3_left" class="cell nonempty legend row-legend row-legend-left row-legend-basic legend-level-1 mobile border-collapse  ">
+ Une société qui fabrique des automobiles
+</th>
+<td headers="QR9_c1" class="cell nonempty element indent-1 mobile border-collapse groupingRows hasError    clickableCell">
 <span class="cell-sub-wrapper cell-legend-right">
 <span class="cell-input cell-sub-column">
-<input type="radio" name="ans6009.0.8" value="0" id="ans6009.0.8" class="input radio fir-hidden" aria-labelledby="S10_r9_left S10_c1" checked="checked"><span class="fir-icon">
+<input type="radio" name="ans10225.0.2" value="0" id="ans10225.0.2" class="input radio fir-hidden" aria-labelledby="QR9_r3_left QR9_c1" aria-invalid="true" aria-describedby="QR9_error"><span class="fir-icon">
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
 <title> radio </title>
 <circle cx="10" cy="10" r="10" class="fir-base"></circle>
@@ -537,12 +150,12 @@ Tout à fait d’accord
 </svg>
 </span>
 </span>
-<span class="cell-text cell-sub-column"><label for="ans6009.0.8">Pas du tout d’accord</label> </span>
+<span class="cell-text cell-sub-column"><label for="ans10225.0.2">Oui</label> </span>
 </span>
-</td><td headers="S10_c2" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+</td><td headers="QR9_c2" class="cell nonempty element indent-1 mobile border-collapse groupingRows hasError    clickableCell">
 <span class="cell-sub-wrapper cell-legend-right">
 <span class="cell-input cell-sub-column">
-<input type="radio" name="ans6009.0.8" value="1" id="ans6009.1.8" class="input radio fir-hidden" aria-labelledby="S10_r9_left S10_c2"><span class="fir-icon">
+<input type="radio" name="ans10225.0.2" value="1" id="ans10225.1.2" class="input radio fir-hidden" aria-labelledby="QR9_r3_left QR9_c2" aria-invalid="true" aria-describedby="QR9_error"><span class="fir-icon">
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
 <title> radio </title>
 <circle cx="10" cy="10" r="10" class="fir-base"></circle>
@@ -551,46 +164,18 @@ Tout à fait d’accord
 </svg>
 </span>
 </span>
-<span class="cell-text cell-sub-column"><label for="ans6009.1.8">Plutôt pas d’accord</label> </span>
-</span>
-</td><td headers="S10_c3" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
-<span class="cell-sub-wrapper cell-legend-right">
-<span class="cell-input cell-sub-column">
-<input type="radio" name="ans6009.0.8" value="2" id="ans6009.2.8" class="input radio fir-hidden" aria-labelledby="S10_r9_left S10_c3"><span class="fir-icon">
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
-<title> radio </title>
-<circle cx="10" cy="10" r="10" class="fir-base"></circle>
-<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
-<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
-</svg>
-</span>
-</span>
-<span class="cell-text cell-sub-column"><label for="ans6009.2.8">Plutôt d’accord</label> </span>
-</span>
-</td><td headers="S10_c4" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
-<span class="cell-sub-wrapper cell-legend-right">
-<span class="cell-input cell-sub-column">
-<input type="radio" name="ans6009.0.8" value="3" id="ans6009.3.8" class="input radio fir-hidden" aria-labelledby="S10_r9_left S10_c4"><span class="fir-icon">
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
-<title> radio </title>
-<circle cx="10" cy="10" r="10" class="fir-base"></circle>
-<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
-<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
-</svg>
-</span>
-</span>
-<span class="cell-text cell-sub-column"><label for="ans6009.3.8">Tout à fait d’accord</label> </span>
+<span class="cell-text cell-sub-column"><label for="ans10225.1.2">Non</label> </span>
 </span>
 </td>
 
-</tr><tr class="row row-elements odd colCount-4">
-<th scope="row" id="S10_r4_left" class="cell nonempty legend row-legend row-legend-left row-legend-basic legend-level-1 mobile border-collapse  ">
-        Face à un problème, j'essaie de sortir des sentiers battus
-    </th>
-<td headers="S10_c1" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+</tr><tr class="row row-elements odd hasError colCount-2">
+<th scope="row" id="QR9_r4_left" class="cell nonempty legend row-legend row-legend-left row-legend-basic legend-level-1 mobile border-collapse  ">
+ Le journalisme
+</th>
+<td headers="QR9_c1" class="cell nonempty element indent-1 mobile border-collapse groupingRows hasError    clickableCell">
 <span class="cell-sub-wrapper cell-legend-right">
 <span class="cell-input cell-sub-column">
-<input type="radio" name="ans6009.0.3" value="0" id="ans6009.0.3" class="input radio fir-hidden" aria-labelledby="S10_r4_left S10_c1"><span class="fir-icon">
+<input type="radio" name="ans10225.0.3" value="0" id="ans10225.0.3" class="input radio fir-hidden" aria-labelledby="QR9_r4_left QR9_c1" aria-invalid="true" aria-describedby="QR9_error"><span class="fir-icon">
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
 <title> radio </title>
 <circle cx="10" cy="10" r="10" class="fir-base"></circle>
@@ -599,12 +184,12 @@ Tout à fait d’accord
 </svg>
 </span>
 </span>
-<span class="cell-text cell-sub-column"><label for="ans6009.0.3">Pas du tout d’accord</label> </span>
+<span class="cell-text cell-sub-column"><label for="ans10225.0.3">Oui</label> </span>
 </span>
-</td><td headers="S10_c2" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+</td><td headers="QR9_c2" class="cell nonempty element indent-1 mobile border-collapse groupingRows hasError    clickableCell">
 <span class="cell-sub-wrapper cell-legend-right">
 <span class="cell-input cell-sub-column">
-<input type="radio" name="ans6009.0.3" value="1" id="ans6009.1.3" class="input radio fir-hidden" aria-labelledby="S10_r4_left S10_c2"><span class="fir-icon">
+<input type="radio" name="ans10225.0.3" value="1" id="ans10225.1.3" class="input radio fir-hidden" aria-labelledby="QR9_r4_left QR9_c2" aria-invalid="true" aria-describedby="QR9_error"><span class="fir-icon selected">
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
 <title> radio </title>
 <circle cx="10" cy="10" r="10" class="fir-base"></circle>
@@ -613,46 +198,18 @@ Tout à fait d’accord
 </svg>
 </span>
 </span>
-<span class="cell-text cell-sub-column"><label for="ans6009.1.3">Plutôt pas d’accord</label> </span>
-</span>
-</td><td headers="S10_c3" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
-<span class="cell-sub-wrapper cell-legend-right">
-<span class="cell-input cell-sub-column">
-<input type="radio" name="ans6009.0.3" value="2" id="ans6009.2.3" class="input radio fir-hidden" aria-labelledby="S10_r4_left S10_c3"><span class="fir-icon">
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
-<title> radio </title>
-<circle cx="10" cy="10" r="10" class="fir-base"></circle>
-<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
-<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
-</svg>
-</span>
-</span>
-<span class="cell-text cell-sub-column"><label for="ans6009.2.3">Plutôt d’accord</label> </span>
-</span>
-</td><td headers="S10_c4" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
-<span class="cell-sub-wrapper cell-legend-right">
-<span class="cell-input cell-sub-column">
-<input type="radio" name="ans6009.0.3" value="3" id="ans6009.3.3" class="input radio fir-hidden" aria-labelledby="S10_r4_left S10_c4" checked="checked"><span class="fir-icon">
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
-<title> radio </title>
-<circle cx="10" cy="10" r="10" class="fir-base"></circle>
-<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
-<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
-</svg>
-</span>
-</span>
-<span class="cell-text cell-sub-column"><label for="ans6009.3.3">Tout à fait d’accord</label> </span>
+<span class="cell-text cell-sub-column"><label for="ans10225.1.3">Non</label> </span>
 </span>
 </td>
 
-</tr><tr class="row row-elements even colCount-4">
-<th scope="row" id="S10_r1_left" class="cell nonempty legend row-legend row-legend-left row-legend-basic legend-level-1 mobile border-collapse  ">
-        Je recherche activement de nouvelles informations ou connaissances
-    </th>
-<td headers="S10_c1" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+</tr><tr class="row row-elements even hasError colCount-2">
+<th scope="row" id="QR9_r5_left" class="cell nonempty legend row-legend row-legend-left row-legend-basic legend-level-1 mobile border-collapse  ">
+ Une société qui fabrique des produits alimentaires
+</th>
+<td headers="QR9_c1" class="cell nonempty element indent-1 mobile border-collapse groupingRows hasError    clickableCell">
 <span class="cell-sub-wrapper cell-legend-right">
 <span class="cell-input cell-sub-column">
-<input type="radio" name="ans6009.0.0" value="0" id="ans6009.0.0" class="input radio fir-hidden" aria-labelledby="S10_r1_left S10_c1"><span class="fir-icon">
+<input type="radio" name="ans10225.0.4" value="0" id="ans10225.0.4" class="input radio fir-hidden" aria-labelledby="QR9_r5_left QR9_c1" aria-invalid="true" aria-describedby="QR9_error"><span class="fir-icon">
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
 <title> radio </title>
 <circle cx="10" cy="10" r="10" class="fir-base"></circle>
@@ -661,12 +218,12 @@ Tout à fait d’accord
 </svg>
 </span>
 </span>
-<span class="cell-text cell-sub-column"><label for="ans6009.0.0">Pas du tout d’accord</label> </span>
+<span class="cell-text cell-sub-column"><label for="ans10225.0.4">Oui</label> </span>
 </span>
-</td><td headers="S10_c2" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+</td><td headers="QR9_c2" class="cell nonempty element indent-1 mobile border-collapse groupingRows hasError    clickableCell">
 <span class="cell-sub-wrapper cell-legend-right">
 <span class="cell-input cell-sub-column">
-<input type="radio" name="ans6009.0.0" value="1" id="ans6009.1.0" class="input radio fir-hidden" aria-labelledby="S10_r1_left S10_c2" checked="checked"><span class="fir-icon">
+<input type="radio" name="ans10225.0.4" value="1" id="ans10225.1.4" class="input radio fir-hidden" aria-labelledby="QR9_r5_left QR9_c2" aria-invalid="true" aria-describedby="QR9_error"><span class="fir-icon">
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
 <title> radio </title>
 <circle cx="10" cy="10" r="10" class="fir-base"></circle>
@@ -675,46 +232,18 @@ Tout à fait d’accord
 </svg>
 </span>
 </span>
-<span class="cell-text cell-sub-column"><label for="ans6009.1.0">Plutôt pas d’accord</label> </span>
-</span>
-</td><td headers="S10_c3" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
-<span class="cell-sub-wrapper cell-legend-right">
-<span class="cell-input cell-sub-column">
-<input type="radio" name="ans6009.0.0" value="2" id="ans6009.2.0" class="input radio fir-hidden" aria-labelledby="S10_r1_left S10_c3"><span class="fir-icon">
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
-<title> radio </title>
-<circle cx="10" cy="10" r="10" class="fir-base"></circle>
-<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
-<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
-</svg>
-</span>
-</span>
-<span class="cell-text cell-sub-column"><label for="ans6009.2.0">Plutôt d’accord</label> </span>
-</span>
-</td><td headers="S10_c4" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
-<span class="cell-sub-wrapper cell-legend-right">
-<span class="cell-input cell-sub-column">
-<input type="radio" name="ans6009.0.0" value="3" id="ans6009.3.0" class="input radio fir-hidden" aria-labelledby="S10_r1_left S10_c4"><span class="fir-icon">
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
-<title> radio </title>
-<circle cx="10" cy="10" r="10" class="fir-base"></circle>
-<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
-<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
-</svg>
-</span>
-</span>
-<span class="cell-text cell-sub-column"><label for="ans6009.3.0">Tout à fait d’accord</label> </span>
+<span class="cell-text cell-sub-column"><label for="ans10225.1.4">Non</label> </span>
 </span>
 </td>
 
-</tr><tr class="row row-elements odd colCount-4">
-<th scope="row" id="S10_r2_left" class="cell nonempty legend row-legend row-legend-left row-legend-basic legend-level-1 mobile border-collapse  ">
-        J'aime explorer des sujets ou des idées qui ne me sont pas familiers
-    </th>
-<td headers="S10_c1" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+</tr><tr class="row row-elements odd hasError colCount-2">
+<th scope="row" id="QR9_r6_left" class="cell nonempty legend row-legend row-legend-left row-legend-basic legend-level-1 mobile border-collapse  ">
+ Le bâtiment
+</th>
+<td headers="QR9_c1" class="cell nonempty element indent-1 mobile border-collapse groupingRows hasError    clickableCell">
 <span class="cell-sub-wrapper cell-legend-right">
 <span class="cell-input cell-sub-column">
-<input type="radio" name="ans6009.0.1" value="0" id="ans6009.0.1" class="input radio fir-hidden" aria-labelledby="S10_r2_left S10_c1"><span class="fir-icon">
+<input type="radio" name="ans10225.0.5" value="0" id="ans10225.0.5" class="input radio fir-hidden" aria-labelledby="QR9_r6_left QR9_c1" aria-invalid="true" aria-describedby="QR9_error"><span class="fir-icon">
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
 <title> radio </title>
 <circle cx="10" cy="10" r="10" class="fir-base"></circle>
@@ -723,12 +252,12 @@ Tout à fait d’accord
 </svg>
 </span>
 </span>
-<span class="cell-text cell-sub-column"><label for="ans6009.0.1">Pas du tout d’accord</label> </span>
+<span class="cell-text cell-sub-column"><label for="ans10225.0.5">Oui</label> </span>
 </span>
-</td><td headers="S10_c2" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+</td><td headers="QR9_c2" class="cell nonempty element indent-1 mobile border-collapse groupingRows hasError    clickableCell">
 <span class="cell-sub-wrapper cell-legend-right">
 <span class="cell-input cell-sub-column">
-<input type="radio" name="ans6009.0.1" value="1" id="ans6009.1.1" class="input radio fir-hidden" aria-labelledby="S10_r2_left S10_c2"><span class="fir-icon">
+<input type="radio" name="ans10225.0.5" value="1" id="ans10225.1.5" class="input radio fir-hidden" aria-labelledby="QR9_r6_left QR9_c2" aria-invalid="true" aria-describedby="QR9_error"><span class="fir-icon">
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
 <title> radio </title>
 <circle cx="10" cy="10" r="10" class="fir-base"></circle>
@@ -737,46 +266,18 @@ Tout à fait d’accord
 </svg>
 </span>
 </span>
-<span class="cell-text cell-sub-column"><label for="ans6009.1.1">Plutôt pas d’accord</label> </span>
-</span>
-</td><td headers="S10_c3" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
-<span class="cell-sub-wrapper cell-legend-right">
-<span class="cell-input cell-sub-column">
-<input type="radio" name="ans6009.0.1" value="2" id="ans6009.2.1" class="input radio fir-hidden" aria-labelledby="S10_r2_left S10_c3"><span class="fir-icon">
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
-<title> radio </title>
-<circle cx="10" cy="10" r="10" class="fir-base"></circle>
-<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
-<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
-</svg>
-</span>
-</span>
-<span class="cell-text cell-sub-column"><label for="ans6009.2.1">Plutôt d’accord</label> </span>
-</span>
-</td><td headers="S10_c4" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
-<span class="cell-sub-wrapper cell-legend-right">
-<span class="cell-input cell-sub-column">
-<input type="radio" name="ans6009.0.1" value="3" id="ans6009.3.1" class="input radio fir-hidden" aria-labelledby="S10_r2_left S10_c4"><span class="fir-icon">
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
-<title> radio </title>
-<circle cx="10" cy="10" r="10" class="fir-base"></circle>
-<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
-<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
-</svg>
-</span>
-</span>
-<span class="cell-text cell-sub-column"><label for="ans6009.3.1">Tout à fait d’accord</label> </span>
+<span class="cell-text cell-sub-column"><label for="ans10225.1.5">Non</label> </span>
 </span>
 </td>
 
-</tr><tr class="row row-elements even colCount-4">
-<th scope="row" id="S10_r3_left" class="cell nonempty legend row-legend row-legend-left row-legend-basic legend-level-1 mobile border-collapse  ">
-        J'ai une curiosité naturelle pour la façon dont les choses fonctionnent ou pourquoi les choses sont comme elles sont
-    </th>
-<td headers="S10_c1" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+</tr><tr class="row row-elements even hasError colCount-2">
+<th scope="row" id="QR9_r7_left" class="cell nonempty legend row-legend row-legend-left row-legend-basic legend-level-1 mobile border-collapse  ">
+ Les études de marché
+</th>
+<td headers="QR9_c1" class="cell nonempty element indent-1 mobile border-collapse groupingRows hasError    clickableCell">
 <span class="cell-sub-wrapper cell-legend-right">
 <span class="cell-input cell-sub-column">
-<input type="radio" name="ans6009.0.2" value="0" id="ans6009.0.2" class="input radio fir-hidden" aria-labelledby="S10_r3_left S10_c1"><span class="fir-icon">
+<input type="radio" name="ans10225.0.6" value="0" id="ans10225.0.6" class="input radio fir-hidden" aria-labelledby="QR9_r7_left QR9_c1" aria-invalid="true" aria-describedby="QR9_error"><span class="fir-icon">
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
 <title> radio </title>
 <circle cx="10" cy="10" r="10" class="fir-base"></circle>
@@ -785,12 +286,12 @@ Tout à fait d’accord
 </svg>
 </span>
 </span>
-<span class="cell-text cell-sub-column"><label for="ans6009.0.2">Pas du tout d’accord</label> </span>
+<span class="cell-text cell-sub-column"><label for="ans10225.0.6">Oui</label> </span>
 </span>
-</td><td headers="S10_c2" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+</td><td headers="QR9_c2" class="cell nonempty element indent-1 mobile border-collapse groupingRows hasError    clickableCell">
 <span class="cell-sub-wrapper cell-legend-right">
 <span class="cell-input cell-sub-column">
-<input type="radio" name="ans6009.0.2" value="1" id="ans6009.1.2" class="input radio fir-hidden" aria-labelledby="S10_r3_left S10_c2"><span class="fir-icon">
+<input type="radio" name="ans10225.0.6" value="1" id="ans10225.1.6" class="input radio fir-hidden" aria-labelledby="QR9_r7_left QR9_c2" aria-invalid="true" aria-describedby="QR9_error"><span class="fir-icon">
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
 <title> radio </title>
 <circle cx="10" cy="10" r="10" class="fir-base"></circle>
@@ -799,46 +300,18 @@ Tout à fait d’accord
 </svg>
 </span>
 </span>
-<span class="cell-text cell-sub-column"><label for="ans6009.1.2">Plutôt pas d’accord</label> </span>
-</span>
-</td><td headers="S10_c3" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
-<span class="cell-sub-wrapper cell-legend-right">
-<span class="cell-input cell-sub-column">
-<input type="radio" name="ans6009.0.2" value="2" id="ans6009.2.2" class="input radio fir-hidden" aria-labelledby="S10_r3_left S10_c3"><span class="fir-icon">
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
-<title> radio </title>
-<circle cx="10" cy="10" r="10" class="fir-base"></circle>
-<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
-<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
-</svg>
-</span>
-</span>
-<span class="cell-text cell-sub-column"><label for="ans6009.2.2">Plutôt d’accord</label> </span>
-</span>
-</td><td headers="S10_c4" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
-<span class="cell-sub-wrapper cell-legend-right">
-<span class="cell-input cell-sub-column">
-<input type="radio" name="ans6009.0.2" value="3" id="ans6009.3.2" class="input radio fir-hidden" aria-labelledby="S10_r3_left S10_c4"><span class="fir-icon">
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
-<title> radio </title>
-<circle cx="10" cy="10" r="10" class="fir-base"></circle>
-<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
-<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
-</svg>
-</span>
-</span>
-<span class="cell-text cell-sub-column"><label for="ans6009.3.2">Tout à fait d’accord</label> </span>
+<span class="cell-text cell-sub-column"><label for="ans10225.1.6">Non</label> </span>
 </span>
 </td>
 
-</tr><tr class="row row-elements odd colCount-4">
-<th scope="row" id="S10_r8_left" class="cell nonempty legend row-legend row-legend-left row-legend-basic legend-level-1 mobile border-collapse  ">
-        Je recherche activement de nouveaux passe-temps ou des occasions d’apprendre de nouvelles compétences
-    </th>
-<td headers="S10_c1" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+</tr><tr class="row row-elements odd hasError colCount-2">
+<th scope="row" id="QR9_r8_left" class="cell nonempty legend row-legend row-legend-left row-legend-basic legend-level-1 mobile border-collapse  ">
+ L’informatique
+</th>
+<td headers="QR9_c1" class="cell nonempty element indent-1 mobile border-collapse groupingRows hasError    clickableCell">
 <span class="cell-sub-wrapper cell-legend-right">
 <span class="cell-input cell-sub-column">
-<input type="radio" name="ans6009.0.7" value="0" id="ans6009.0.7" class="input radio fir-hidden" aria-labelledby="S10_r8_left S10_c1"><span class="fir-icon">
+<input type="radio" name="ans10225.0.7" value="0" id="ans10225.0.7" class="input radio fir-hidden" aria-labelledby="QR9_r8_left QR9_c1" aria-invalid="true" aria-describedby="QR9_error"><span class="fir-icon">
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
 <title> radio </title>
 <circle cx="10" cy="10" r="10" class="fir-base"></circle>
@@ -847,12 +320,12 @@ Tout à fait d’accord
 </svg>
 </span>
 </span>
-<span class="cell-text cell-sub-column"><label for="ans6009.0.7">Pas du tout d’accord</label> </span>
+<span class="cell-text cell-sub-column"><label for="ans10225.0.7">Oui</label> </span>
 </span>
-</td><td headers="S10_c2" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+</td><td headers="QR9_c2" class="cell nonempty element indent-1 mobile border-collapse groupingRows hasError    clickableCell">
 <span class="cell-sub-wrapper cell-legend-right">
 <span class="cell-input cell-sub-column">
-<input type="radio" name="ans6009.0.7" value="1" id="ans6009.1.7" class="input radio fir-hidden" aria-labelledby="S10_r8_left S10_c2"><span class="fir-icon">
+<input type="radio" name="ans10225.0.7" value="1" id="ans10225.1.7" class="input radio fir-hidden" aria-labelledby="QR9_r8_left QR9_c2" aria-invalid="true" aria-describedby="QR9_error"><span class="fir-icon">
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
 <title> radio </title>
 <circle cx="10" cy="10" r="10" class="fir-base"></circle>
@@ -861,46 +334,18 @@ Tout à fait d’accord
 </svg>
 </span>
 </span>
-<span class="cell-text cell-sub-column"><label for="ans6009.1.7">Plutôt pas d’accord</label> </span>
-</span>
-</td><td headers="S10_c3" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
-<span class="cell-sub-wrapper cell-legend-right">
-<span class="cell-input cell-sub-column">
-<input type="radio" name="ans6009.0.7" value="2" id="ans6009.2.7" class="input radio fir-hidden" aria-labelledby="S10_r8_left S10_c3"><span class="fir-icon">
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
-<title> radio </title>
-<circle cx="10" cy="10" r="10" class="fir-base"></circle>
-<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
-<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
-</svg>
-</span>
-</span>
-<span class="cell-text cell-sub-column"><label for="ans6009.2.7">Plutôt d’accord</label> </span>
-</span>
-</td><td headers="S10_c4" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
-<span class="cell-sub-wrapper cell-legend-right">
-<span class="cell-input cell-sub-column">
-<input type="radio" name="ans6009.0.7" value="3" id="ans6009.3.7" class="input radio fir-hidden" aria-labelledby="S10_r8_left S10_c4"><span class="fir-icon">
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
-<title> radio </title>
-<circle cx="10" cy="10" r="10" class="fir-base"></circle>
-<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
-<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
-</svg>
-</span>
-</span>
-<span class="cell-text cell-sub-column"><label for="ans6009.3.7">Tout à fait d’accord</label> </span>
+<span class="cell-text cell-sub-column"><label for="ans10225.1.7">Non</label> </span>
 </span>
 </td>
 
-</tr><tr class="row row-elements even colCount-4">
-<th scope="row" id="S10_r7_left" class="cell nonempty legend row-legend row-legend-left row-legend-basic legend-level-1 mobile border-collapse  ">
-        Je suis motivé(e) par l’accomplissement personnel
-    </th>
-<td headers="S10_c1" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+</tr><tr class="row row-elements even hasError colCount-2">
+<th scope="row" id="QR9_r9_left" class="cell nonempty legend row-legend row-legend-left row-legend-basic legend-level-1 mobile border-collapse  ">
+ Le marketing
+</th>
+<td headers="QR9_c1" class="cell nonempty element indent-1 mobile border-collapse groupingRows hasError    clickableCell">
 <span class="cell-sub-wrapper cell-legend-right">
 <span class="cell-input cell-sub-column">
-<input type="radio" name="ans6009.0.6" value="0" id="ans6009.0.6" class="input radio fir-hidden" aria-labelledby="S10_r7_left S10_c1"><span class="fir-icon">
+<input type="radio" name="ans10225.0.8" value="0" id="ans10225.0.8" class="input radio fir-hidden" aria-labelledby="QR9_r9_left QR9_c1" aria-invalid="true" aria-describedby="QR9_error"><span class="fir-icon">
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
 <title> radio </title>
 <circle cx="10" cy="10" r="10" class="fir-base"></circle>
@@ -909,12 +354,12 @@ Tout à fait d’accord
 </svg>
 </span>
 </span>
-<span class="cell-text cell-sub-column"><label for="ans6009.0.6">Pas du tout d’accord</label> </span>
+<span class="cell-text cell-sub-column"><label for="ans10225.0.8">Oui</label> </span>
 </span>
-</td><td headers="S10_c2" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+</td><td headers="QR9_c2" class="cell nonempty element indent-1 mobile border-collapse groupingRows hasError    clickableCell">
 <span class="cell-sub-wrapper cell-legend-right">
 <span class="cell-input cell-sub-column">
-<input type="radio" name="ans6009.0.6" value="1" id="ans6009.1.6" class="input radio fir-hidden" aria-labelledby="S10_r7_left S10_c2"><span class="fir-icon">
+<input type="radio" name="ans10225.0.8" value="1" id="ans10225.1.8" class="input radio fir-hidden" aria-labelledby="QR9_r9_left QR9_c2" aria-invalid="true" aria-describedby="QR9_error"><span class="fir-icon">
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
 <title> radio </title>
 <circle cx="10" cy="10" r="10" class="fir-base"></circle>
@@ -923,46 +368,18 @@ Tout à fait d’accord
 </svg>
 </span>
 </span>
-<span class="cell-text cell-sub-column"><label for="ans6009.1.6">Plutôt pas d’accord</label> </span>
-</span>
-</td><td headers="S10_c3" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
-<span class="cell-sub-wrapper cell-legend-right">
-<span class="cell-input cell-sub-column">
-<input type="radio" name="ans6009.0.6" value="2" id="ans6009.2.6" class="input radio fir-hidden" aria-labelledby="S10_r7_left S10_c3"><span class="fir-icon">
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
-<title> radio </title>
-<circle cx="10" cy="10" r="10" class="fir-base"></circle>
-<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
-<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
-</svg>
-</span>
-</span>
-<span class="cell-text cell-sub-column"><label for="ans6009.2.6">Plutôt d’accord</label> </span>
-</span>
-</td><td headers="S10_c4" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
-<span class="cell-sub-wrapper cell-legend-right">
-<span class="cell-input cell-sub-column">
-<input type="radio" name="ans6009.0.6" value="3" id="ans6009.3.6" class="input radio fir-hidden" aria-labelledby="S10_r7_left S10_c4"><span class="fir-icon">
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
-<title> radio </title>
-<circle cx="10" cy="10" r="10" class="fir-base"></circle>
-<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
-<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
-</svg>
-</span>
-</span>
-<span class="cell-text cell-sub-column"><label for="ans6009.3.6">Tout à fait d’accord</label> </span>
+<span class="cell-text cell-sub-column"><label for="ans10225.1.8">Non</label> </span>
 </span>
 </td>
 
-</tr><tr class="row row-elements odd colCount-4">
-<th scope="row" id="S10_r10_left" class="cell nonempty legend row-legend row-legend-left row-legend-basic legend-level-1 mobile border-collapse  ">
-        À des fins de contrôle qualité, veuillez sélectionner l’option «&nbsp;Pas du tout d’accord&nbsp;» ici
-    </th>
-<td headers="S10_c1" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+</tr><tr class="row row-elements odd hasError colCount-2">
+<th scope="row" id="QR9_r10_left" class="cell nonempty legend row-legend row-legend-left row-legend-basic legend-level-1 mobile border-collapse  ">
+ Le monde de la petite enfance
+</th>
+<td headers="QR9_c1" class="cell nonempty element indent-1 mobile border-collapse groupingRows hasError    clickableCell">
 <span class="cell-sub-wrapper cell-legend-right">
 <span class="cell-input cell-sub-column">
-<input type="radio" name="ans6009.0.9" value="0" id="ans6009.0.9" class="input radio fir-hidden" aria-labelledby="S10_r10_left S10_c1"><span class="fir-icon">
+<input type="radio" name="ans10225.0.9" value="0" id="ans10225.0.9" class="input radio fir-hidden" aria-labelledby="QR9_r10_left QR9_c1" aria-invalid="true" aria-describedby="QR9_error"><span class="fir-icon">
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
 <title> radio </title>
 <circle cx="10" cy="10" r="10" class="fir-base"></circle>
@@ -971,12 +388,12 @@ Tout à fait d’accord
 </svg>
 </span>
 </span>
-<span class="cell-text cell-sub-column"><label for="ans6009.0.9">Pas du tout d’accord</label> </span>
+<span class="cell-text cell-sub-column"><label for="ans10225.0.9">Oui</label> </span>
 </span>
-</td><td headers="S10_c2" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+</td><td headers="QR9_c2" class="cell nonempty element indent-1 mobile border-collapse groupingRows hasError    clickableCell">
 <span class="cell-sub-wrapper cell-legend-right">
 <span class="cell-input cell-sub-column">
-<input type="radio" name="ans6009.0.9" value="1" id="ans6009.1.9" class="input radio fir-hidden" aria-labelledby="S10_r10_left S10_c2"><span class="fir-icon">
+<input type="radio" name="ans10225.0.9" value="1" id="ans10225.1.9" class="input radio fir-hidden" aria-labelledby="QR9_r10_left QR9_c2" aria-invalid="true" aria-describedby="QR9_error"><span class="fir-icon">
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
 <title> radio </title>
 <circle cx="10" cy="10" r="10" class="fir-base"></circle>
@@ -985,12 +402,18 @@ Tout à fait d’accord
 </svg>
 </span>
 </span>
-<span class="cell-text cell-sub-column"><label for="ans6009.1.9">Plutôt pas d’accord</label> </span>
+<span class="cell-text cell-sub-column"><label for="ans10225.1.9">Non</label> </span>
 </span>
-</td><td headers="S10_c3" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+</td>
+
+</tr><tr class="row row-elements even hasError colCount-2">
+<th scope="row" id="QR9_r11_left" class="cell nonempty legend row-legend row-legend-left row-legend-basic legend-level-1 mobile border-collapse  ">
+ La publicité / les relations publiques
+</th>
+<td headers="QR9_c1" class="cell nonempty element indent-1 mobile border-collapse groupingRows hasError    clickableCell">
 <span class="cell-sub-wrapper cell-legend-right">
 <span class="cell-input cell-sub-column">
-<input type="radio" name="ans6009.0.9" value="2" id="ans6009.2.9" class="input radio fir-hidden" aria-labelledby="S10_r10_left S10_c3"><span class="fir-icon">
+<input type="radio" name="ans10225.0.10" value="0" id="ans10225.0.10" class="input radio fir-hidden" aria-labelledby="QR9_r11_left QR9_c1" aria-invalid="true" aria-describedby="QR9_error"><span class="fir-icon">
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
 <title> radio </title>
 <circle cx="10" cy="10" r="10" class="fir-base"></circle>
@@ -999,12 +422,12 @@ Tout à fait d’accord
 </svg>
 </span>
 </span>
-<span class="cell-text cell-sub-column"><label for="ans6009.2.9">Plutôt d’accord</label> </span>
+<span class="cell-text cell-sub-column"><label for="ans10225.0.10">Oui</label> </span>
 </span>
-</td><td headers="S10_c4" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+</td><td headers="QR9_c2" class="cell nonempty element indent-1 mobile border-collapse groupingRows hasError    clickableCell">
 <span class="cell-sub-wrapper cell-legend-right">
 <span class="cell-input cell-sub-column">
-<input type="radio" name="ans6009.0.9" value="3" id="ans6009.3.9" class="input radio fir-hidden" aria-labelledby="S10_r10_left S10_c4"><span class="fir-icon">
+<input type="radio" name="ans10225.0.10" value="1" id="ans10225.1.10" class="input radio fir-hidden" aria-labelledby="QR9_r11_left QR9_c2" aria-invalid="true" aria-describedby="QR9_error"><span class="fir-icon">
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
 <title> radio </title>
 <circle cx="10" cy="10" r="10" class="fir-base"></circle>
@@ -1013,7 +436,7 @@ Tout à fait d’accord
 </svg>
 </span>
 </span>
-<span class="cell-text cell-sub-column"><label for="ans6009.3.9">Tout à fait d’accord</label> </span>
+<span class="cell-text cell-sub-column"><label for="ans10225.1.10">Non</label> </span>
 </span>
 </td>
 
@@ -1023,15 +446,193 @@ Tout à fait d’accord
 </div>
 <!-- /.answers -->
 </div>
-<!-- /.question --><div class="survey-buttons">
-<input type="submit" name="continue" id="btn_continue" class="button continue" value="Continuer »" onclick="var i = document.createElement('input'); i.setAttribute('type', 'hidden');i.setAttribute('value', '1');i.setAttribute('name', '__has_javascript');document.forms.primary.appendChild(i);">
+<!-- /.question --><div class="mx-stage" id="mx-stage-QR9" style="margin: 0 auto;"><div class="mx-container mx-carouselapp-container mx-carouselapp-horizontal carouselapp-1" style="visibility: visible;"><div id="mx-img-preload-container" style="display: none;"></div><div class="mx-carouselapp-outercontainer"><div class="mx-carousel mx-carousel-horizontal" id="mx-carousel-QR9"><div class="swiper-container swiper-container-QR9 swiper-container-initialized swiper-container-horizontal">
+            <div class="swiper-pagination swiper-pagination-QR9 swiper-pagination-bullets"><span class="swiper-pagination-bullet swiper-pagination-bullet-selected"></span><span class="swiper-pagination-bullet swiper-pagination-bullet-selected"></span><span class="swiper-pagination-bullet swiper-pagination-bullet-selected"></span><span class="swiper-pagination-bullet swiper-pagination-bullet-selected"></span><span class="swiper-pagination-bullet swiper-pagination-bullet-selected"></span><span class="swiper-pagination-bullet swiper-pagination-bullet-active"></span><span class="swiper-pagination-bullet"></span><span class="swiper-pagination-bullet"></span><span class="swiper-pagination-bullet"></span><span class="swiper-pagination-bullet"></span><span class="swiper-pagination-bullet"></span></div>
+
+        <div class="mx-carouselapp-itemholder-inner swiper-wrapper swiper-wrapper-QR9" style="width: 2585px; transition-duration: 0ms; transform: translate3d(-875px, 0px, 0px);"><div class="mx-carouselapp-item mx-card-text mx-card-r1 mx-card-container vertical mx-card-selected" data-code="r1" style="width: 200px; height: 100px; margin-right: 35px;"><div class="mx-card mx-color-selected-border"><div class="middle"><div class="box"><div class="content-container"> <div class="label">La médecine</div></div></div></div><div class="bottom" style=""></div><div class="tick top-right triangle"><div class="tick-content-container"><div class="tick-container">
+																		<div class="mx-tick-flag"></div>
+																				
+																						<i class="icon ion-checkmark"></i>
+																				
+																	 </div></div></div></div></div><div class="mx-carouselapp-item mx-card-text mx-card-r2 mx-card-container vertical mx-card-selected" data-code="r2" style="width: 200px; height: 100px; margin-right: 35px;"><div class="mx-card mx-color-selected-border"><div class="middle"><div class="box"><div class="content-container"> <div class="label">Un hypermarché ou un supermarché</div></div></div></div><div class="bottom" style=""></div><div class="tick top-right triangle"><div class="tick-content-container"><div class="tick-container">
+																		<div class="mx-tick-flag"></div>
+																				
+																						<i class="icon ion-checkmark"></i>
+																				
+																	 </div></div></div></div></div><div class="mx-carouselapp-item mx-card-text mx-card-r3 mx-card-container vertical mx-card-selected" data-code="r3" style="width: 200px; height: 100px; margin-right: 35px;"><div class="mx-card mx-color-selected-border"><div class="middle"><div class="box"><div class="content-container"> <div class="label">Une société qui fabrique des automobiles</div></div></div></div><div class="bottom" style=""></div><div class="tick top-right triangle"><div class="tick-content-container"><div class="tick-container">
+																		<div class="mx-tick-flag"></div>
+																				
+																						<i class="icon ion-checkmark"></i>
+																				
+																	 </div></div></div></div></div><div class="mx-carouselapp-item mx-card-text mx-card-r4 mx-card-container vertical mx-card-selected" data-code="r4" style="width: 200px; height: 100px; margin-right: 35px;"><div class="mx-card mx-color-selected-border"><div class="middle"><div class="box"><div class="content-container"> <div class="label">Le journalisme</div></div></div></div><div class="bottom" style=""></div><div class="tick top-right triangle"><div class="tick-content-container"><div class="tick-container">
+																		<div class="mx-tick-flag"></div>
+																				
+																						<i class="icon ion-checkmark"></i>
+																				
+																	 </div></div></div></div></div><div class="mx-carouselapp-item mx-card-text mx-card-r5 mx-card-container vertical mx-card-selected swiper-slide-prev" data-code="r5" style="width: 200px; height: 100px; margin-right: 35px;"><div class="mx-card mx-color-selected-border"><div class="middle"><div class="box"><div class="content-container"> <div class="label">Une société qui fabrique des produits alimentaires</div></div></div></div><div class="bottom" style=""></div><div class="tick top-right triangle"><div class="tick-content-container"><div class="tick-container">
+																		<div class="mx-tick-flag"></div>
+																				
+																						<i class="icon ion-checkmark"></i>
+																				
+																	 </div></div></div></div></div><div class="mx-carouselapp-item mx-card-text mx-card-r6 mx-card-container vertical swiper-slide-active" data-code="r6" style="width: 200px; height: 100px; margin-right: 35px;"><div class="mx-card mx-color-unselected-border"><div class="middle"><div class="box"><div class="content-container"> <div class="label">Le bâtiment</div></div></div></div><div class="bottom" style=""></div><div class="tick top-right triangle"><div class="tick-content-container"><div class="tick-container">
+																		<div class="mx-tick-flag"></div>
+																				
+																						<i class="icon ion-checkmark"></i>
+																				
+																	 </div></div></div></div></div><div class="mx-carouselapp-item mx-card-text mx-card-r7 mx-card-container vertical swiper-slide-next" data-code="r7" style="width: 200px; height: 100px; margin-right: 35px;"><div class="mx-card mx-color-unselected-border"><div class="middle"><div class="box"><div class="content-container"> <div class="label">Les études de marché</div></div></div></div><div class="bottom" style=""></div><div class="tick top-right triangle"><div class="tick-content-container"><div class="tick-container">
+																		<div class="mx-tick-flag"></div>
+																				
+																						<i class="icon ion-checkmark"></i>
+																				
+																	 </div></div></div></div></div><div class="mx-carouselapp-item mx-card-text mx-card-r8 mx-card-container vertical" data-code="r8" style="width: 200px; height: 100px; margin-right: 35px;"><div class="mx-card mx-color-unselected-border"><div class="middle"><div class="box"><div class="content-container"> <div class="label">L’informatique</div></div></div></div><div class="bottom" style=""></div><div class="tick top-right triangle"><div class="tick-content-container"><div class="tick-container">
+																		<div class="mx-tick-flag"></div>
+																				
+																						<i class="icon ion-checkmark"></i>
+																				
+																	 </div></div></div></div></div><div class="mx-carouselapp-item mx-card-text mx-card-r9 mx-card-container vertical" data-code="r9" style="width: 200px; height: 100px; margin-right: 35px;"><div class="mx-card mx-color-unselected-border"><div class="middle"><div class="box"><div class="content-container"> <div class="label">Le marketing</div></div></div></div><div class="bottom" style=""></div><div class="tick top-right triangle"><div class="tick-content-container"><div class="tick-container">
+																		<div class="mx-tick-flag"></div>
+																				
+																						<i class="icon ion-checkmark"></i>
+																				
+																	 </div></div></div></div></div><div class="mx-carouselapp-item mx-card-text mx-card-r10 mx-card-container vertical" data-code="r10" style="width: 200px; height: 100px; margin-right: 35px;"><div class="mx-card mx-color-unselected-border"><div class="middle"><div class="box"><div class="content-container"> <div class="label">Le monde de la petite enfance</div></div></div></div><div class="bottom" style=""></div><div class="tick top-right triangle"><div class="tick-content-container"><div class="tick-container">
+																		<div class="mx-tick-flag"></div>
+																				
+																						<i class="icon ion-checkmark"></i>
+																				
+																	 </div></div></div></div></div><div class="mx-carouselapp-item mx-card-text mx-card-r11 mx-card-container vertical" data-code="r11" style="width: 200px; height: 100px; margin-right: 35px;"><div class="mx-card mx-color-unselected-border"><div class="middle"><div class="box"><div class="content-container"> <div class="label">La publicité / les relations publiques</div></div></div></div><div class="bottom" style=""></div><div class="tick top-right triangle"><div class="tick-content-container"><div class="tick-container">
+																		<div class="mx-tick-flag"></div>
+																				
+																						<i class="icon ion-checkmark"></i>
+																				
+																	 </div></div></div></div></div></div><div class="swiper-navigation-outer-container">
+        <hr class="swiper-navigation-separator">
+            <div class="swiper-navigation-container swiper-text-progress-active">
+          <div class="swiper-button-prev-container">
+              <div class="swiper-button-prev" tabindex="0" role="button" aria-label="Previous slide" aria-disabled="false"></div>
+          </div>
+
+               <div class="swiper-progress-text-container swiper-progress-active">
+                <div class="swiper-progress-text-element swiper-progress-pre"></div>
+                <div class="swiper-progress-text-element swiper-progress-current">6</div>
+                <div class="swiper-progress-text-element swiper-progress-sep">/</div>
+                <div class="swiper-progress-text-element swiper-progress-total">11</div>
+                <div class="swiper-progress-text-element swiper-progress-post"></div>
+              </div>
+            <div class="swiper-button-next-container">
+              <div class="swiper-button-next swiper-button-disabled" tabindex="0" role="button" aria-label="Next slide" aria-disabled="false"></div>
+          </div>
+        </div>
+            </div>
+
+            <div class="swiper-scrollbar"></div>
+          <span class="swiper-notification" aria-live="assertive" aria-atomic="true"></span></div></div><div class="mx-carouselapp-scaleholder-inner"><div class="mx-carouselapp-scale mx-card-text mx-card-c1 mx-card-container vertical" data-code="c1" style="width: 120px; height: 60px;"><div class="mx-card mx-color-unselected-border"><div class="middle"><div class="box"><div class="content-container"> <div class="label">Oui</div></div></div></div><div class="bottom" style=""></div></div></div><div class="mx-carouselapp-scale mx-card-text mx-card-c2 mx-card-container vertical" data-code="c2" style="width: 120px; height: 60px;"><div class="mx-card mx-color-unselected-border"><div class="middle"><div class="box"><div class="content-container"> <div class="label">Non</div></div></div></div><div class="bottom" style=""></div></div></div></div></div></div></div>
+<script type="text/javascript" crossorigin="anonymous" id="mx-loader" src="//surveyfiles.yoursurveynow.com/rnd/rnd-mx/rnd-mx-toolkit/prod/framework/4.0.0/loader/dist/application.min.js?cache=1773114555"></script>
+<style> 
+.mx-stage {
+    padding-bottom: 60px;
+}
+.mx-carouselapp-scaleholder-inner {
+    text-align: center;
+}
+</style>
+<script type="text/javascript">
+// =============== DOCUMENTATION ===============> https://dynatallc.sharepoint.com/sites/RDSupport/SitePages/Mx-Carousel.aspx
+  var platforms= {
+    decipher: "decipher", confirmit: "confirmit"
+  }
+var currentPlatform=platforms.decipher;
+if (!mx.qDefs) mx.qDefs= {}
+if (!mx.toolLoader) {
+    mx.toolLoader=new mx.Loader( {
+        baseFileURL: "//surveyfiles.yoursurveynow.com/rnd/rnd-mx/rnd-mx-toolkit/prod/",
+        scriptDeps: [
+          "libs/mxbox/dist/application.min.js",
+          "advanced_ui/Carousel/4.0.0/dist/application.min.js"
+        ], 
+        cssDeps: [
+          "https://surveyfiles.yoursurveynow.com/rnd/plugins/ionicons/ionicons-2.0.1/css/ionicons.min.css", 
+          "framework/4.0.0/core/dist/application.min.css", "libs/mxbox/dist/application.min.css", 
+          "advanced_ui/Carousel/4.0.0/dist/application.min.css", 
+          "framework/4.0.0/themes/dist/blue.css"
+        ], 
+        coreFile: "framework/4.0.0/core/dist/application.min.js",
+        messages: null, // "//speeders.dynata.com/mx/messages/getMsg.php?callback=window.saveMessages&lang=9",
+        platformInterface: {
+          js:
+            "framework/4.0.0/platform_interface_" +
+            currentPlatform +
+            "/dist/application.min.js",
+          css:
+            "framework/4.0.0/platform_interface_" +
+            currentPlatform +
+            "/dist/application.min.css",
+        },
+    });
+    mx.qDefs["QR9"]={"comment": "", "haveRightLegend": false, "rows": [{"index": 0, "rightLegend": "", "uid": 10226, "open": 0, "exclusive": 0, "text": "La m\u00e9decine", "label": "r1", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 1, "rightLegend": "", "uid": 10227, "open": 0, "exclusive": 0, "text": "Un hypermarch\u00e9 ou un supermarch\u00e9", "label": "r2", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 2, "rightLegend": "", "uid": 10228, "open": 0, "exclusive": 0, "text": "Une soci\u00e9t\u00e9 qui fabrique des automobiles", "label": "r3", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 3, "rightLegend": "", "uid": 10229, "open": 0, "exclusive": 0, "text": "Le journalisme", "label": "r4", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 4, "rightLegend": "", "uid": 10230, "open": 0, "exclusive": 0, "text": "Une soci\u00e9t\u00e9 qui fabrique des produits alimentaires", "label": "r5", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 5, "rightLegend": "", "uid": 10231, "open": 0, "exclusive": 0, "text": "Le b\u00e2timent", "label": "r6", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 6, "rightLegend": "", "uid": 10232, "open": 0, "exclusive": 0, "text": "Les \u00e9tudes de march\u00e9", "label": "r7", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 7, "rightLegend": "", "uid": 10233, "open": 0, "exclusive": 0, "text": "L\u2019informatique", "label": "r8", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 8, "rightLegend": "", "uid": 10234, "open": 0, "exclusive": 0, "text": "Le marketing", "label": "r9", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 9, "rightLegend": "", "uid": 10235, "open": 0, "exclusive": 0, "text": "Le monde de la petite enfance", "label": "r10", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 10, "rightLegend": "", "uid": 10236, "open": 0, "exclusive": 0, "text": "La publicit\u00e9 / les relations publiques", "label": "r11", "openOptional": 0, "amount": 0, "optional": 0}], "noanswers": [], "title": "Merci d\u2019indiquer si vous-m\u00eame ou une personne de votre entourage travaillez dans l\u2019un des secteurs d\u2019activit\u00e9 ci-dessous.", "totalColCount": 3, "cols": [{"index": 0, "uid": 10237, "open": 0, "exclusive": 0, "text": "Oui", "label": "c1", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 1, "uid": 10238, "open": 0, "exclusive": 0, "text": "Non", "label": "c2", "openOptional": 0, "amount": 0, "optional": 0}], "choices": [{"index": 0, "uid": 10241, "open": 0, "exclusive": 0, "text": "", "label": "", "openOptional": 0, "amount": 0, "optional": 0}], "haveLeftLegend": true, "errors": [["Veuillez s\u00e9lectionner une r\u00e9ponse.", "row", 1], ["Veuillez s\u00e9lectionner une r\u00e9ponse.", "row", 2], ["Veuillez s\u00e9lectionner une r\u00e9ponse.", "row", 3], ["Veuillez s\u00e9lectionner une r\u00e9ponse.", "row", 4], ["Veuillez s\u00e9lectionner une r\u00e9ponse.", "row", 5], ["Veuillez s\u00e9lectionner une r\u00e9ponse.", "row", 6], ["Veuillez s\u00e9lectionner une r\u00e9ponse.", "row", 7], ["Veuillez s\u00e9lectionner une r\u00e9ponse.", "row", 8], ["Veuillez s\u00e9lectionner une r\u00e9ponse.", "row", 9], ["Veuillez s\u00e9lectionner une r\u00e9ponse.", "row", 10]], "verifiers": {}, "device": {"category": "", "smartphone": false, "tablet": false, "otherMobile": false, "mobileDevice": false, "desktop": true, "width": "0", "iphone": false, "featurephone": false, "android": false, "height": "0", "blackberry": false}, "uid": 10225, "label": "QR9", "type": "radio", "grouping": "rows"}
+    var isTest = "None" === "True";
+    var toolSettings= {
+        toolJs: "carousel/4.0.0/dist/application.min.js",
+        toolVersion: "4.0.0",
+        toolName: "CarouselApp",
+        orientation: "horizontal",
+        rowItemWidth: "200px",
+        rowItemHeight: "100px",
+        rowItemMargin: 35,
+        scaleWidth: "120px",
+        scaleHeight: "60px",
+        jsToLoad: [],
+        cssToLoad: ["carousel/4.0.0/dist/application.min.css"],
+        baseToolPath: "//surveyfiles.yoursurveynow.com/rnd/rnd-mx/rnd-mx-toolkit/prod/tools/",
+        container: "#mx-stage-QR9",
+        toolCssNames: ["carouselapp-1"],
+        qid: getFormName(1),
+        // timeQid: getFormName(2),
+        // orderQid: getFormName(3),
+        // scaleOtherQid: "QR9__c98",
+        timePrecision: 100,
+        minRequired: 1,
+        maxAllowed: 1,
+        compOrder: "items,scales",
+        zoomButtonImage: "//surveyfiles.yoursurveynow.com/rnd/rnd-mx/rnd-mx-tools/images/mag9.png",
+        imageBaseURL: "",
+        scaleNewLine: true,
+        autoNextItem: true,
+        autoNext: false,
+        carouselNavigation: "answered",
+  }
+    //END USER EDITABLE CODE
+    mx.toolLoader.registerSettings(toolSettings, function(info) {
+        info.bridge.setPageValidation(function () {
+                // console.log("setPageValidation");
+                return true;
+              });
+        info.instance.on("tool_loaded", function(e){
+           //console.log("tool_loaded", e);
+           if(isTest){
+               
+var dataToggler = jQuery('<div>Please click here to see the data nodes for this tool.</div>');
+dataToggler.addClass('dataToggle');
+dataToggler.css({'text-decoration': 'underline','font-size': 'small','color': 'blue','cursor': 'pointer','margin-top': '20px'});
+jQuery('.mx-stage').last().after(dataToggler);
+dataToggler.click(info.bridge.toggleDataNodes());
+
+           }
+        });
+    });
+}
+$ (document).ready(function () {
+    mx.toolLoader.initLoad();
+    $.getScript("https://surveytools.dynata.com/rsntools/rnd/apis/latest/monitoring/latest/tool/add-usage?project-id=selfserve/53b/g001/260262&tool-id=mx_"+toolSettings.toolName+"_"+toolSettings.toolVersion+"&server-id=100");
+});
+</script><div class="survey-buttons">
+<input type="submit" name="continue" id="btn_continue" class="button continue" value="Continuer " onclick="var i = document.createElement('input'); i.setAttribute('type', 'hidden');i.setAttribute('value', '1');i.setAttribute('name', '__has_javascript');document.forms.primary.appendChild(i);">
 
 </div>
-<!-- #surveyButtons --><input type="hidden" name="state" value="281d8197-8040-4cfa-a36c-a3255a109df6">
-<input type="hidden" name="start_time" value="1773087181">
+<!-- #surveyButtons --><input type="hidden" name="state" value="4b37a037-ffa6-4faa-97b8-485867c0aacd">
+<input type="hidden" name="start_time" value="1773114555">
 <input type="hidden" name="_ptime" value="0">
 <script>addHandler(Survey.capturePreciseTime)</script><script>
-$ (window).on("load", function() { setTimeout(function() { Survey.recordPageTiming("selfserve/53b/2602171", "qq2e6bfmn5bubgtr", "3jumbs2qm967vfem");}, 100); });
+$ (window).on("load", function() { setTimeout(function() { Survey.recordPageTiming("selfserve/53b/g001/260262", "1du5a5jtk159d0qn", "ypzsrh7hz8rvdf7d");}, 100); });
 </script>
 </form>
 
@@ -1039,11 +640,19 @@ $ (window).on("load", function() { setTimeout(function() { Survey.recordPageTimi
 </div>
 <!-- /.survey-body -->
 </div>
-<div class="survey-section"><div class="footer"><br data-mce-bogus="1" jstcache="0"></div>
-<!-- /.footer --></div>
+<div class="survey-section">
+<input type="hidden" id="AcceptNotSupportedLanguages" name="AcceptNotSupportedLanguages" value="0">
+        <input type="hidden" id="ClientID" name="ClientID" value="32F0DF3C-D504-46E9-999F-AE32A3D57A44">
+        <input type="hidden" id="CollectCompleted" name="CollectCompleted" value="0">
+        <input type="hidden" id="LangCode" name="LangCode" value="FR">
+        <input type="hidden" id="PanelID" name="PanelID" value="101">
+        <input type="hidden" id="PanelistID" name="PanelistID" value="YotSTOyIabFZKLboDvGKDVBz">
+        <input type="hidden" id="SurveyID" name="SurveyID" value="survey-d2.yoursurveynow.com/selfserve/53b/g001/260262">
+
+        <script src="/survey/lib/sys/qualityscore/v3/qualityscore.js?61df6dd275" data-debug-level="0" data-persistent-variable="client_relevantid_results" data-qslib-path="/survey/lib/sys/qualityscore/v3/qslib1.0.js?791cc48fa2" data-timeout="6"></script></div>
 </div>
 <div id="detectBreakpoint"></div>
 <!-- /.survey-container -->
 
 
-</body>
+<script src="/survey/lib/sys/qualityscore/v3/qslib1.0.js?791cc48fa2"></script><input type="hidden" name="imperium_qs_time_start" id="imperium_qs_time_start" value="1773114556866"></body>
