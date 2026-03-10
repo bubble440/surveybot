@@ -17,7 +17,7 @@
 <!-- /.survey-header -->
 
 <form id="primary" name="primary" method="post" action="/survey/selfserve/53b/g001/260262" enctype="application/x-www-form-urlencoded" novalidate="">
-<input type="hidden" name="_v2_counter" value="13">
+<input type="hidden" name="_v2_counter" value="3">
 <!-- @@XYZZY@@ -->
 <div class="survey-error" role="alert">
 <h1 class="survey-error-text">Un problème est survenu avec certaines données saisies dans le cadre de l'enquête. Les questions contenant des erreurs sont indiquées ci-dessous&nbsp;; veuillez suivre les instructions associées à chacune d'elles.</h1>
@@ -73,7 +73,7 @@ La médecine
 <td headers="QR9_c1" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
 <span class="cell-sub-wrapper cell-legend-right">
 <span class="cell-input cell-sub-column">
-<input type="radio" name="ans10225.0.0" value="0" id="ans10225.0.0" checked="" class="input radio fir-hidden" aria-labelledby="QR9_r1_left QR9_c1"><span class="fir-icon">
+<input type="radio" name="ans10225.0.0" value="0" id="ans10225.0.0" checked="" class="input radio fir-hidden" aria-labelledby="QR9_r1_left QR9_c1"><span class="fir-icon selected">
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
 <title> radio </title>
 <circle cx="10" cy="10" r="10" class="fir-base"></circle>
@@ -427,7 +427,7 @@ La médecine
 </td><td headers="QR9_c2" class="cell nonempty element indent-1 mobile border-collapse groupingRows hasError    clickableCell">
 <span class="cell-sub-wrapper cell-legend-right">
 <span class="cell-input cell-sub-column">
-<input type="radio" name="ans10225.0.10" value="1" id="ans10225.1.10" class="input radio fir-hidden" aria-labelledby="QR9_r11_left QR9_c2" aria-invalid="true" aria-describedby="QR9_error"><span class="fir-icon selected">
+<input type="radio" name="ans10225.0.10" value="1" id="ans10225.1.10" class="input radio fir-hidden" aria-labelledby="QR9_r11_left QR9_c2" aria-invalid="true" aria-describedby="QR9_error"><span class="fir-icon">
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
 <title> radio </title>
 <circle cx="10" cy="10" r="10" class="fir-base"></circle>
@@ -526,7 +526,7 @@ La médecine
 
             <div class="swiper-scrollbar"></div>
           <span class="swiper-notification" aria-live="assertive" aria-atomic="true"></span></div></div><div class="mx-carouselapp-scaleholder-inner"><div class="mx-carouselapp-scale mx-card-text mx-card-c1 mx-card-container vertical" data-code="c1" style="width: 120px; height: 60px;"><div class="mx-card mx-color-unselected-border"><div class="middle"><div class="box"><div class="content-container"> <div class="label">Oui</div></div></div></div><div class="bottom" style=""></div></div></div><div class="mx-carouselapp-scale mx-card-text mx-card-c2 mx-card-container vertical mx-card-selected" data-code="c2" style="width: 120px; height: 60px;"><div class="mx-card mx-color-selected-border"><div class="middle"><div class="box"><div class="content-container"> <div class="label">Non</div></div></div></div><div class="bottom" style=""></div></div></div></div></div></div></div>
-<script type="text/javascript" crossorigin="anonymous" id="mx-loader" src="//surveyfiles.yoursurveynow.com/rnd/rnd-mx/rnd-mx-toolkit/prod/framework/4.0.0/loader/dist/application.min.js?cache=1773114555"></script>
+<script type="text/javascript" crossorigin="anonymous" id="mx-loader" src="//surveyfiles.yoursurveynow.com/rnd/rnd-mx/rnd-mx-toolkit/prod/framework/4.0.0/loader/dist/application.min.js?cache=1773118935"></script>
 <style> 
 .mx-stage {
     padding-bottom: 60px;
@@ -628,11 +628,11 @@ $ (document).ready(function () {
 <input type="submit" name="continue" id="btn_continue" class="button continue showNext" value="Continuer " onclick="var i = document.createElement('input'); i.setAttribute('type', 'hidden');i.setAttribute('value', '1');i.setAttribute('name', '__has_javascript');document.forms.primary.appendChild(i);">
 
 </div>
-<!-- #surveyButtons --><input type="hidden" name="state" value="4b37a037-ffa6-4faa-97b8-485867c0aacd">
-<input type="hidden" name="start_time" value="1773114555">
+<!-- #surveyButtons --><input type="hidden" name="state" value="0df69cd7-df91-4bc1-88a1-236592093153">
+<input type="hidden" name="start_time" value="1773118935">
 <input type="hidden" name="_ptime" value="0">
 <script>addHandler(Survey.capturePreciseTime)</script><script>
-$ (window).on("load", function() { setTimeout(function() { Survey.recordPageTiming("selfserve/53b/g001/260262", "1du5a5jtk159d0qn", "ypzsrh7hz8rvdf7d");}, 100); });
+$ (window).on("load", function() { setTimeout(function() { Survey.recordPageTiming("selfserve/53b/g001/260262", "1du5a5jtk159d0qn", "47nvuqutap64rc1m");}, 100); });
 </script>
 </form>
 
@@ -655,4 +655,4 @@ $ (window).on("load", function() { setTimeout(function() { Survey.recordPageTimi
 <!-- /.survey-container -->
 
 
-<script src="/survey/lib/sys/qualityscore/v3/qslib1.0.js?791cc48fa2"></script><input type="hidden" name="imperium_qs_time_start" id="imperium_qs_time_start" value="1773114556866"></body>
+<script src="/survey/lib/sys/qualityscore/v3/qslib1.0.js?791cc48fa2"></script><input type="hidden" name="imperium_qs_time_start" id="imperium_qs_time_start" value="1773118936558"></body>
