@@ -1765,6 +1765,56 @@ def _apply_by_target_id(driver, target_id: str, itype: str, value: str) -> bool:
                         pass
 
                 # 2) clic Ã¢â‚¬Å“normalÃ¢â‚¬Â sur la cible
+                # Decipher/FocusVision answers-list avec input natif masqué (fir-hidden):
+                # la vraie surface cliquable est le wrapper `.clickableCell`.
+                # On applique une stratégie unique et DOM-gardée pour éviter les faux positifs.
+                if resolved_itype == "checkbox":
+                    try:
+                        decipher_cell = driver.execute_script(
+                            """
+                            const node = arguments[0];
+                            if (!node || !node.closest) return null;
+                            const cell = node.closest('.clickableCell');
+                            if (!cell) return null;
+                            const hiddenInput = cell.querySelector("input[type='checkbox'].fir-hidden");
+                            if (!hiddenInput) return null;
+                            return cell;
+                            """,
+                            el,
+                        )
+                    except Exception:
+                        decipher_cell = None
+
+                    if decipher_cell is not None:
+                        clicked = _click_candidate(decipher_cell, "decipher_clickable_cell")
+                        if not clicked:
+                            if debug_target:
+                                log_debug("[TARGET_DEBUG]", f"decipher clickableCell click failed: value='{value}' xpath='{xp}'")
+                            return False
+
+                        try:
+                            ok_decipher = driver.execute_script(
+                                """
+                                const cell = arguments[0];
+                                if (!cell) return false;
+                                const inp = cell.querySelector("input[type='checkbox'].fir-hidden");
+                                if (!inp) return false;
+                                if (inp.checked) return true;
+                                const icon = cell.querySelector('.fir-icon');
+                                return !!(icon && icon.classList && icon.classList.contains('selected'));
+                                """,
+                                decipher_cell,
+                            )
+                        except Exception:
+                            ok_decipher = False
+
+                        if bool(ok_decipher):
+                            return True
+
+                        if debug_target:
+                            log_debug("[TARGET_DEBUG]", f"decipher clickableCell no checked/selected signal: value='{value}' xpath='{xp}'")
+                        return False
+
                 _click_candidate(el, "target")
 
                 def _ipsos_slider_value_matches(node, expected: str) -> bool:
