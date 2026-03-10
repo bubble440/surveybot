@@ -13,12 +13,9 @@ def _norm(s: str) -> str:
 # Patterns à haut risque → SKIP direct
 # NOTE: on évite "screen" tout seul (sinon "screening questions" devient un faux positif)
 SENSITIVE_PATTERNS = [
-    # Hardware
-    r"\bwebcam\b",
-    r"\bcamera\b",
-    r"\bcamera\b",
-    r"\bmicro\b",
-    r"\bmicrophone\b",
+    # Hardware (activation / permission contexts only)
+    r"\b(activer|activez|enable|enabled?|turn on|allumer|autoriser|allow|permission|access|acces)\b[^\n]{0,80}\b(webcam|camera|cam(?:era)?|micro|microphone|mic)\b",
+    r"\b(webcam|camera|cam(?:era)?|micro|microphone|mic)\b[^\n]{0,80}\b(activer|activez|enable|enabled?|turn on|allumer|autoriser|allow|permission|access|acces)\b",
 
     # Captcha / vérifs anti-bot
     r"\bcaptcha\b",
@@ -47,6 +44,22 @@ SENSITIVE_PATTERNS = [
 
 _COMPILED = [re.compile(p) for p in SENSITIVE_PATTERNS]
 
+_HARDWARE_TERMS_RX = re.compile(r"\b(webcam|camera|cam(?:era)?|micro|microphone|mic)\b")
+_POSSESSION_CUES_RX = re.compile(
+    r"\b(avez[-\s]?vous|as[-\s]?tu|do you have|have you got|possedez[-\s]?vous|possedez|own|disposez[-\s]?vous)\b"
+)
+_ACTION_CUES_RX = re.compile(
+    r"\b(activer|activez|enable|enabled?|turn on|allumer|autoriser|allow|permission|access|acces|partage|share|record|enregistrer)\b"
+)
+
+
+def _is_hardware_possession_question(q: str) -> bool:
+    return bool(
+        _HARDWARE_TERMS_RX.search(q)
+        and _POSSESSION_CUES_RX.search(q)
+        and not _ACTION_CUES_RX.search(q)
+    )
+
 def is_sensitive_question(question_text: str) -> bool:
     """
     Détermine si une question doit être skippée
@@ -54,6 +67,9 @@ def is_sensitive_question(question_text: str) -> bool:
     """
     q = _norm(question_text or "")
     if not q:
+        return False
+
+    if _is_hardware_possession_question(q):
         return False
 
     for rx in _COMPILED:
