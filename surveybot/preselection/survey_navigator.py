@@ -2,6 +2,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 import time
+import re
 from preselection.auth_handler import snap
 
 def go_to_best_paid_survey(driver):
@@ -39,21 +40,61 @@ def go_to_best_paid_survey(driver):
             return
 
     time.sleep(15)  # laisser le temps au contenu de charger
-    # Appliquer le filtre « Paiement le plus élevé »
-    try:
-        flt = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, "div[data-test-id='ps-filter-item-by_survey_reward']")))
-        driver.execute_script("arguments[0].click();", flt)
-        print("💰 Filtre « Paiement le plus élevé » appliqué.")
-    except Exception:
-        print("⚠️ Impossible d'appliquer le filtre du paiement — on continue.")
 
     time.sleep(10)  # laisser le temps au filtre de s'appliquer
     snap(driver, "after_filter_best_paid")
-    # Cliquer le premier tile
+
+    def _parse_minutes(raw_text):
+        if not raw_text:
+            return None
+        match = re.search(r"(\d+(?:[\.,]\d+)?)", raw_text)
+        if not match:
+            return None
+        minutes = float(match.group(1).replace(",", "."))
+        return minutes if minutes > 0 else None
+
+    def _parse_euros(raw_text):
+        if not raw_text:
+            return None
+        match = re.search(r"(\d+(?:[\.,]\d+)?)", raw_text.replace(" ", ""))
+        if not match:
+            return None
+        return float(match.group(1).replace(",", "."))
+
+    # Parcourir les tiles visibles et choisir le meilleur ratio €/min
     try:
-        first = wait.until(EC.element_to_be_clickable((By.XPATH, "(//div[contains(@class, 'survey-tile')])[1]")))
-        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", first)
-        driver.execute_script("arguments[0].click();", first)
-        print("📝 Premier survey cliqué.")
+        wait.until(EC.presence_of_all_elements_located((By.CSS_SELECTOR, "div[data-test-id^='ps-survey-'] div.survey-tile")))
+        tiles = driver.find_elements(By.CSS_SELECTOR, "div[data-test-id^='ps-survey-'] div.survey-tile")
+
+        best_tile = None
+        best_ratio = -1.0
+
+        for idx, tile in enumerate(tiles, start=1):
+            try:
+                time_text = tile.find_element(By.CSS_SELECTOR, "span[data-test-id='ps-survey-item-time']").text.strip()
+                reward_text = tile.find_element(By.CSS_SELECTOR, "span[data-test-id='ps-reward-amount']").text.strip()
+                minutes = _parse_minutes(time_text)
+                reward = _parse_euros(reward_text)
+
+                if minutes is None or reward is None:
+                    print(f"⚠️ Survey #{idx} ignoré (données illisibles): durée='{time_text}' récompense='{reward_text}'")
+                    continue
+
+                ratio = reward / minutes
+                print(f"📊 Survey #{idx}: {reward:.2f}€ / {minutes:.2f} min = {ratio:.4f} €/min")
+
+                if ratio > best_ratio:
+                    best_ratio = ratio
+                    best_tile = tile
+            except Exception as tile_error:
+                print(f"⚠️ Survey #{idx} ignoré (extraction impossible): {type(tile_error).__name__} - {tile_error}")
+
+        if best_tile is None:
+            print("🛑 Aucun survey valide trouvé pour calculer le meilleur ratio €/min — abandon.")
+            return
+
+        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", best_tile)
+        driver.execute_script("arguments[0].click();", best_tile)
+        print(f"📝 Survey au meilleur ratio cliqué ({best_ratio:.4f} €/min).")
     except Exception as e:
         print("🛑 Exception sélection du survey :", type(e).__name__, "-", e)
