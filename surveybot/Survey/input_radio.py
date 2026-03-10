@@ -32,6 +32,7 @@ from Survey.input_utils import (
     split_typed_instruction,
     pause_here,
 )
+from Survey.log_utils import log_debug
 
 
 # =============================================================================
@@ -82,6 +83,28 @@ def click_decipher_grid_radio(driver, label: str, context_hint: str = "") -> boo
     except Exception:
         return False
 
+    def _find_mx_overlay(question_scope):
+        """Retourne l'overlay MX Carousel (si présent dans la question) sinon None."""
+        if question_scope is None:
+            return None
+        # Cas standard observé: question id='question_QR9' + overlay id='mx-stage-QR9'
+        try:
+            qid = (question_scope.get_attribute("id") or "").strip()
+            if qid.startswith("question_"):
+                stage = question_scope.find_elements(By.XPATH, f".//*[@id='mx-stage-{qid[len('question_'):]}']")
+                if stage:
+                    return stage[0]
+        except Exception:
+            pass
+        # Garde-fou DOM: uniquement si le container carousel est réellement présent dans la question.
+        try:
+            cands = question_scope.find_elements(By.XPATH, ".//*[contains(@class,'mx-carouselapp-container')]")
+            if cands:
+                return cands[0]
+        except Exception:
+            pass
+        return None
+
     # index de colonne à partir des <th>
     col_idx = None
     heads = table.find_elements(By.XPATH, ".//tr[1]//th[normalize-space(.)!='']")
@@ -91,9 +114,16 @@ def click_decipher_grid_radio(driver, label: str, context_hint: str = "") -> boo
             col_idx = i
             break
 
+    question_scope = None
+    try:
+        question_scope = table.find_element(By.XPATH, "ancestor::*[contains(@class,'question')][1]")
+    except Exception:
+        question_scope = None
+    mx_overlay = _find_mx_overlay(question_scope)
+
     # toutes les lignes de réponses
     rows = table.find_elements(By.XPATH, ".//tr[contains(@class,'row-elements')]")
-    for tr in rows:
+    for ridx, tr in enumerate(rows, start=1):
         # texte de ligne
         row_txt = ""
         for xp in (".//th", "./td[1]", "./td[2]"):
@@ -124,6 +154,94 @@ def click_decipher_grid_radio(driver, label: str, context_hint: str = "") -> boo
                     continue
         if cell is None:
             continue
+
+        # Cas Decipher + overlay MX Carousel: clic impératif via l'UI du carousel
+        if mx_overlay is not None:
+            col_code = None
+            try:
+                hdr = cell.get_attribute("headers") or ""
+                m = re.search(r"_c(\d+)\b", hdr)
+                if m:
+                    col_code = f"c{m.group(1)}"
+            except Exception:
+                col_code = None
+            if not col_code and col_idx is not None:
+                col_code = f"c{col_idx + 1}"
+
+            row_code = f"r{ridx}"
+            try:
+                thid = tr.find_element(By.XPATH, ".//th[1]").get_attribute("id") or ""
+                m = re.search(r"_r(\d+)\b", thid)
+                if m:
+                    row_code = f"r{m.group(1)}"
+            except Exception:
+                pass
+
+            if not col_code:
+                log_debug("input_radio", f"mx carousel: col_code introuvable row={row_code} label='{label}'")
+                return False
+
+            # Budget strict: 2 tentatives de clic max
+            for attempt in range(2):
+                try:
+                    # Aligne la ligne active swiper sur la ligne ciblée avant clic scale.
+                    WebDriverWait(driver, 2.2).until(
+                        lambda d: bool(
+                            mx_overlay.find_elements(
+                                By.XPATH,
+                                ".//*[contains(@class,'mx-carouselapp-item') and contains(@class,'swiper-slide-active') and @data-code='{}']".format(row_code),
+                            )
+                            or mx_overlay.find_elements(
+                                By.XPATH,
+                                ".//*[contains(@class,'mx-carouselapp-item') and @data-code='{}' and not(contains(@style,'display: none'))]".format(row_code),
+                            )
+                        )
+                    )
+                except Exception:
+                    log_debug("input_radio", f"mx carousel: row active non alignée row={row_code} attempt={attempt+1}")
+
+                try:
+                    scale = mx_overlay.find_element(
+                        By.XPATH,
+                        ".//*[contains(@class,'mx-carouselapp-scaleholder-inner')]//*[contains(@class,'mx-carouselapp-scale') and @data-code='{}']".format(col_code),
+                    )
+                except Exception:
+                    log_debug("input_radio", f"mx carousel: scale introuvable row={row_code} col={col_code}")
+                    return False
+
+                try:
+                    driver.execute_script("arguments[0].scrollIntoView({block:'center'});", scale)
+                    driver.execute_script("arguments[0].click();", scale)
+                except Exception:
+                    try:
+                        ActionChains(driver).move_to_element(scale).click().perform()
+                    except Exception:
+                        log_debug("input_radio", f"mx carousel: click failed row={row_code} col={col_code} attempt={attempt+1}")
+                        continue
+
+                # Auto-next attendu (sauf dernière ligne): attendre changement de slide active.
+                try:
+                    WebDriverWait(driver, 1.6).until(
+                        lambda d: not mx_overlay.find_elements(
+                            By.XPATH,
+                            ".//*[contains(@class,'mx-carouselapp-item') and contains(@class,'swiper-slide-active') and @data-code='{}']".format(row_code),
+                        )
+                    )
+                except Exception:
+                    # Dernière ligne possible: on accepte aussi l'état checked natif si présent.
+                    try:
+                        inp = cell.find_element(By.XPATH, ".//input[@type='radio']")
+                        if not inp.is_selected():
+                            log_debug("input_radio", f"mx carousel: no auto-next + input non coché row={row_code} col={col_code}")
+                            continue
+                    except Exception:
+                        log_debug("input_radio", f"mx carousel: no auto-next + input absent row={row_code} col={col_code}")
+                        continue
+
+                print(f"✓ Radio (Decipher MX carousel) cochée: row='{context_hint}' → col='{label}'")
+                return True
+
+            return False
 
         # éléments cliquables dans la cellule
         inp, lab = None, None
