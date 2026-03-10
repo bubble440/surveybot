@@ -30,6 +30,17 @@ except ImportError:
 # FOCUSVISION / DECIPHER - ANSWERS LIST GROUPS
 # ================================================================================
 
+_DECIPHER_TEMPLATE_MARKER_RE = re.compile(r"\{@[^}]*@\}")
+
+
+def _clean_decipher_template_markers(text: str) -> str:
+    """Supprime les marqueurs template Decipher du type {@...@} quand présents."""
+    raw = (text or "").strip()
+    if not raw or "{@" not in raw:
+        return raw
+    cleaned = _DECIPHER_TEMPLATE_MARKER_RE.sub("", raw)
+    return re.sub(r"\s+", " ", cleaned).strip()
+
 def _logical_answers_list_group_name(raw_name: str, all_raw_names: Set[str]) -> str:
     """Retourne le nom de groupe logique pour les names Decipher answers-list.
 
@@ -99,14 +110,14 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
         """Lit le texte d'un label même quand son conteneur est masqué (display:none)."""
         txt = (label_el.text or "").strip()
         if txt:
-            return txt
+            return _clean_decipher_template_markers(txt)
         for attr in ("innerText", "textContent"):
             try:
                 raw = (label_el.get_attribute(attr) or "").strip()
             except Exception:
                 raw = ""
             if raw:
-                return raw
+                return _clean_decipher_template_markers(raw)
         return ""
 
     # Question containers FocusVision
@@ -1024,17 +1035,17 @@ def _extract_decipher_answers_list_fallback(driver, frame_chain: List[Any]) -> L
                         try:
                             # Méthode 1: label[for=id]
                             label = driver.find_element(By.CSS_SELECTOR, f"label[for='{inp_id}']")
-                            label_txt = (label.text or "").strip()
+                            label_txt = _clean_decipher_template_markers((label.text or "").strip())
                         except Exception:
                             try:
                                 # Méthode 2: label parent
                                 label = inp.find_element(By.XPATH, "ancestor::label[1]")
-                                label_txt = (label.text or "").strip()
+                                label_txt = _clean_decipher_template_markers((label.text or "").strip())
                             except Exception:
                                 # Méthode 3: sibling label
                                 try:
                                     label = inp.find_element(By.XPATH, "following-sibling::label[1]")
-                                    label_txt = (label.text or "").strip()
+                                    label_txt = _clean_decipher_template_markers((label.text or "").strip())
                                 except Exception:
                                     pass
 
