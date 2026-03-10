@@ -159,6 +159,7 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
                 col_header_nodes = []
             col_labels: list[str] = []
             col_labels_by_header_id: dict[str, str] = {}
+            col_codes_by_header_id: dict[str, str] = {}
             for h in col_header_nodes:
                 txt = _visible_text(h)
                 hid = (h.get_attribute("id") or "").strip()
@@ -166,6 +167,9 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
                     col_labels.append(txt)
                 if txt and hid:
                     col_labels_by_header_id[hid] = txt
+                    m_col = re.search(r"_c(\d+)$", hid)
+                    if m_col:
+                        col_codes_by_header_id[hid] = f"c{m_col.group(1)}"
 
                 if mx_stage_id:
                     m = re.search(r"_c(\d+)$", hid)
@@ -207,6 +211,12 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
 
                     options: list[str] = []
                     option_xpath_map: dict[str, str] = {}
+                    mx_scale_xpath_map: dict[str, str] = {}
+                    mx_input_id_map: dict[str, str] = {}
+                    mx_row_code = ""
+                    m_row = re.search(r"_r(\d+)_left$", row_header_id)
+                    if m_row:
+                        mx_row_code = f"r{m_row.group(1)}"
                     for row_col_idx, inp in enumerate(row_inputs):
                         inp_id = (inp.get_attribute("id") or "").strip()
                         if not inp_id:
@@ -242,6 +252,17 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
                         if not label_norm or label_norm in option_xpath_map:
                             continue
 
+                        col_code = ""
+                        if headers_attr:
+                            for header_id in headers_attr.split():
+                                col_code = col_codes_by_header_id.get(header_id, "")
+                                if col_code:
+                                    break
+                        if not col_code:
+                            m_id = re.search(r"\.([0-9]+)\.[0-9]+$", inp_id)
+                            if m_id:
+                                col_code = f"c{int(m_id.group(1)) + 1}"
+
                         xp = (
                             f"//input[@id={_xpath_literal(inp_id)}]"
                             "//ancestor::*[contains(concat(' ',normalize-space(@class),' '),' clickableCell ')"
@@ -249,6 +270,19 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
                         )
                         options.append(col_label)
                         option_xpath_map[label_norm] = xp
+                        mx_input_id_map[label_norm] = inp_id
+
+                        if mx_row_code and col_code:
+                            question_id = (q.get_attribute("id") or "").strip()
+                            if question_id:
+                                mx_scale_xpath_map[label_norm] = (
+                                    f"//div[@id={_xpath_literal(question_id)}]"
+                                    f"//div[contains(concat(' ',normalize-space(@class),' '),' mx-carouselapp-scale ') and @data-code={_xpath_literal(col_code)}][1]"
+                                )
+                            else:
+                                mx_scale_xpath_map[label_norm] = (
+                                    f"(//div[contains(concat(' ',normalize-space(@class),' '),' mx-carouselapp-scale ') and @data-code={_xpath_literal(col_code)}])[1]"
+                                )
 
                     if len(options) < 2:
                         continue
