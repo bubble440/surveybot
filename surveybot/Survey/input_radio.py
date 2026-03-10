@@ -290,7 +290,7 @@ def click_decipher_mx_carousel_radio(driver, label: str, context_hint: str = "")
     - détecte un carousel dans le scope de la question,
     - sélectionne la carte de ligne via context_hint (si fourni),
     - clique la scale `.mx-carouselapp-scale[data-code=...]` correspondant au label,
-    - attend l'auto-avancement (autoNextItem) quand applicable.
+    - valide la mise à jour de l'input radio natif ciblé.
     """
 
     def _n(s: str) -> str:
@@ -380,6 +380,11 @@ def click_decipher_mx_carousel_radio(driver, label: str, context_hint: str = "")
         }
 
         const before = activeCode();
+        const rowCode = targetRow ? (targetRow.getAttribute('data-code') || null) : before;
+        const colCode = targetScale.getAttribute('data-code') || null;
+        const stageId = stage.getAttribute('id') || '';
+        const qLabel = stageId.startsWith('mx-stage-') ? stageId.slice('mx-stage-'.length) : '';
+
         try { targetScale.scrollIntoView({block: 'center', inline: 'center'}); } catch(e) {}
         try { targetScale.click(); } catch(e) {
             try { targetScale.dispatchEvent(new MouseEvent('click', {bubbles: true, cancelable: true})); } catch(e2) {
@@ -391,6 +396,9 @@ def click_decipher_mx_carousel_radio(driver, label: str, context_hint: str = "")
             ok: true,
             activeBefore: before,
             itemCount: items.length,
+            rowCode,
+            colCode,
+            qLabel,
         };
     '''
 
@@ -403,22 +411,45 @@ def click_decipher_mx_carousel_radio(driver, label: str, context_hint: str = "")
         log_debug("[TARGET_DEBUG]", f"mx carousel click skipped: reason={click_result.get('reason')!r}")
         return False
 
-    if rowneedle and click_result.get("itemCount", 0) > 1 and click_result.get("activeBefore"):
-        before = click_result.get("activeBefore")
-        try:
-            WebDriverWait(driver, 1.5).until(
-                lambda d: d.execute_script(
-                    """
-                    const stage = arguments[0];
-                    const active = stage.querySelector('.mx-carouselapp-item.swiper-slide-active[data-code]');
-                    return active ? (active.getAttribute('data-code') || null) : null;
-                    """,
-                    stage,
-                ) != before
+    row_code = click_result.get("rowCode")
+    col_code = click_result.get("colCode")
+    q_label = click_result.get("qLabel")
+    if not (row_code and col_code and q_label):
+        log_debug(
+            "[TARGET_DEBUG]",
+            f"mx carousel native verify skipped: row={row_code!r} col={col_code!r} q={q_label!r}",
+        )
+        return False
+
+    row_token = f"{q_label}_{row_code}_left"
+    col_token = f"{q_label}_{col_code}"
+
+    try:
+        WebDriverWait(driver, 1.5).until(
+            lambda d: d.execute_script(
+                """
+                const rowToken = arguments[0];
+                const colToken = arguments[1];
+                const inputs = Array.from(document.querySelectorAll('input[type="radio"][aria-labelledby]'));
+                for (const inp of inputs) {
+                    const labelled = (inp.getAttribute('aria-labelledby') || '').split(/\s+/).filter(Boolean);
+                    if (!labelled.includes(rowToken) || !labelled.includes(colToken)) continue;
+                    if (inp.checked) return true;
+                    const checkedAttr = (inp.getAttribute('checked') || '').toLowerCase();
+                    if (checkedAttr === 'checked' || checkedAttr === 'true' || checkedAttr === '1') return true;
+                }
+                return false;
+                """,
+                row_token,
+                col_token,
             )
-        except Exception:
-            log_debug("[TARGET_DEBUG]", "mx carousel autoNext wait timeout")
-            return False
+        )
+    except Exception:
+        log_debug(
+            "[TARGET_DEBUG]",
+            f"mx carousel native verify timeout: row={row_token!r} col={col_token!r}",
+        )
+        return False
 
     return True
 
