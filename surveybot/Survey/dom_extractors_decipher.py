@@ -578,7 +578,7 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
             if m_qid:
                 qid_suffix = m_qid.group(1)
                 try:
-                    mx_stage = q.find_element(By.CSS_SELECTOR, f"#mx-stage-{qid_suffix}")
+                    mx_stage = driver.find_element(By.CSS_SELECTOR, f"#mx-stage-{qid_suffix}")
                     mx_rows = mx_stage.find_elements(
                         By.CSS_SELECTOR,
                         ".mx-collapsible-groupholder .mx-collapsible-row-item[precode]",
