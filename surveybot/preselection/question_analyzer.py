@@ -2,13 +2,53 @@
 from openai import OpenAI
 from bs4 import BeautifulSoup
 import time
+import re
+import unicodedata
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.action_chains import ActionChains
 from preselection.question_validation import detect_disqualification_reason
+from Survey.log_utils import log_debug
 
 ASSISTANT_ID = "asst_dzB8sAFrNdPPD17auG4WI0EK"
+
+_HARDWARE_TOKENS = {"webcam", "camera", "microphone", "micro"}
+_HARDWARE_ACTIVATION_TOKENS = {
+    "autoris",
+    "activ",
+    "permett",
+    "enable",
+    "allow",
+    "record",
+    "enregistr",
+}
+
+
+def _normalize_text(value):
+    normalized = unicodedata.normalize("NFKD", value or "")
+    no_accents = "".join(ch for ch in normalized if not unicodedata.combining(ch))
+    return no_accents.lower()
+
+
+def _contains_non_option(options):
+    for option in options or []:
+        normalized_option = _normalize_text(str(option))
+        normalized_option = re.sub(r"[^a-z0-9]+", " ", normalized_option).strip()
+        if normalized_option == "non":
+            return True
+    return False
+
+
+def _should_force_non_for_hardware_question(question_text, options):
+    normalized_question = _normalize_text(question_text)
+    has_hardware_token = any(token in normalized_question for token in _HARDWARE_TOKENS)
+    has_activation_token = any(
+        token in normalized_question for token in _HARDWARE_ACTIVATION_TOKENS
+    )
+    if not has_hardware_token or has_activation_token:
+        return False
+    return _contains_non_option(options)
 
 
 def extract_popup_html(driver):
@@ -260,6 +300,13 @@ def get_response_for_question(driver, api_key):
         options = (extract_options_js(driver) or []) + (
             extract_select_options_js(driver) or []
         )
+
+        if _should_force_non_for_hardware_question(question, options):
+            log_debug(
+                "preselection",
+                "Interception hardware détectée avant OpenAI: réponse forcée sur 'Non'.",
+            )
+            return question, "Non"
 
         prompt = reformulate_prompt_for_gpt(question, options)
         print(
