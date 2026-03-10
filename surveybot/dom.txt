@@ -19,16 +19,10 @@
 <form id="primary" name="primary" method="post" action="/survey/selfserve/53b/g001/260262" enctype="application/x-www-form-urlencoded" novalidate="">
 <input type="hidden" name="_v2_counter" value="3">
 <!-- @@XYZZY@@ -->
-<div class="survey-error" role="alert">
-<h1 class="survey-error-text">Un problème est survenu avec certaines données saisies dans le cadre de l'enquête. Les questions contenant des erreurs sont indiquées ci-dessous&nbsp;; veuillez suivre les instructions associées à chacune d'elles.</h1>
-</div>
-<!-- /.survey-error --><div id="question_QR9" class="question radio label_QR9  hasError">
-<h1 title="question" class="question-text" id="question_text_QR9">Merci d’indiquer si vous-même ou une personne de votre entourage travaillez dans l’un des secteurs d’activité ci-dessous.</h1>
+<div id="question_QR10" class="question checkbox label_QR10   noCols" role="radiogroup">
+<h1 title="question" class="question-text" id="question_text_QR10">Parmi les catégories de produits suivantes, lesquelles avez-vous achetées en grande surface au cours des 12 derniers mois ?</h1>
 <!-- /.question-text -->
-<div class="question-error" role="alert">
-<h2 id="QR9_error" class="question-error-text">Veuillez sélectionner une réponse.</h2>
-</div>
-<!-- /.question-error -->
+
 <h2 title="instructions" class="instruction-text"></h2>
 <!-- /.instruction-text -->
 <div class="answers answers-list">
@@ -51,563 +45,593 @@
 <circle cx="10" cy="10" r="7" class="fir-selected"></circle>
 </svg>
 </span>
-</div>
-<table class="grid setWidth grid-list-mode" data-settings="auto-optimize mobile-mode group-by-row table-mode" data-height="" summary="This table contains form elements to answer the survey question">
-<tbody>
-<tr class="row mobile-top-border-row">
-<td colspan="3" class="cell nonempty mobile-top-border-cell"></td>
-</tr><tr class="row row-col-legends row-col-legends-top colCount-2">
-<td class="cell empty empty-left empty-top unused mobile border-collapse"></td>
-<th scope="col" id="QR9_c1" class="cell nonempty legend col-legend col-legend-top col-legend-basic legend-level-1 mobile border-collapse   " style="">
-Oui
-</th><th scope="col" id="QR9_c2" class="cell nonempty legend col-legend col-legend-top col-legend-basic legend-level-1 mobile border-collapse   " style="">
-Non
-</th>
-
-</tr>
-</tbody>
-<tbody><tr class="row row-elements even colCount-2">
-<th scope="row" id="QR9_r1_left" class="cell nonempty legend row-legend row-legend-left row-legend-basic legend-level-1 mobile border-collapse  ">
-La médecine
-</th>
-<td headers="QR9_c1" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+</div><div class="element even  groupingCols OneColumnEl    clickableCell">
 <span class="cell-sub-wrapper cell-legend-right">
 <span class="cell-input cell-sub-column">
-<input type="radio" name="ans10225.0.0" value="0" id="ans10225.0.0" checked="" class="input radio fir-hidden" aria-labelledby="QR9_r1_left QR9_c1"><span class="fir-icon selected">
+<input type="checkbox" name="ans10247.0.11" id="ans10247.0.11" value="1" class="input checkbox fir-hidden"><span class="fir-icon">
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
-<title> radio </title>
-<circle cx="10" cy="10" r="10" class="fir-base"></circle>
-<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
-<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+<title> checkbox </title>
+<path d="M15.8,0H3.9C1.8,0,0,2,0,4.1V16c0,2.2,1.8,4,3.9,4h11.8c2.2,0,4.2-1.8,4.2-4V4.1C20,2,18,0,15.8,0z M19,16 c0,1.6-1.6,3-3.2,3H3.9C2.3,19,1,17.7,1,16V4.1C1,2.5,2.3,1,3.9,1h11.8C17.4,1,19,2.5,19,4.1V16z" class="fir-base"></path>
+<path d="M19,16c0,1.6-1.6,3-3.2,3H3.9C2.3,19,1,17.7,1,16V4.1C1,2.5,2.3,1,3.9,1h11.8C17.4,1,19,2.5,19,4.1V16z" class="fir-bg"></path>
+<polygon points="9.1,16.3 2.5,11 4.1,9 8.7,12.6 15.6,3.7 17.7,5.2 " class="fir-selected"></polygon>
 </svg>
 </span>
 </span>
-<span class="cell-text cell-sub-column"><label for="ans10225.0.0">Oui</label> </span>
+<span class="cell-text cell-sub-column"><label for="ans10247.0.11">Des desserts lactés pour bébé/enfant jusqu’à 3 ans{@imageURL::12.jpg@}</label> </span>
 </span>
-</td><td headers="QR9_c2" class="cell nonempty element indent-1 mobile border-collapse groupingRows    clickableCell">
+</div><div class="element odd  groupingCols OneColumnEl    clickableCell">
 <span class="cell-sub-wrapper cell-legend-right">
 <span class="cell-input cell-sub-column">
-<input type="radio" name="ans10225.0.0" value="1" id="ans10225.1.0" class="input radio fir-hidden" aria-labelledby="QR9_r1_left QR9_c2"><span class="fir-icon">
+<input type="checkbox" name="ans10247.0.10" id="ans10247.0.10" value="1" class="input checkbox fir-hidden"><span class="fir-icon">
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
-<title> radio </title>
-<circle cx="10" cy="10" r="10" class="fir-base"></circle>
-<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
-<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+<title> checkbox </title>
+<path d="M15.8,0H3.9C1.8,0,0,2,0,4.1V16c0,2.2,1.8,4,3.9,4h11.8c2.2,0,4.2-1.8,4.2-4V4.1C20,2,18,0,15.8,0z M19,16 c0,1.6-1.6,3-3.2,3H3.9C2.3,19,1,17.7,1,16V4.1C1,2.5,2.3,1,3.9,1h11.8C17.4,1,19,2.5,19,4.1V16z" class="fir-base"></path>
+<path d="M19,16c0,1.6-1.6,3-3.2,3H3.9C2.3,19,1,17.7,1,16V4.1C1,2.5,2.3,1,3.9,1h11.8C17.4,1,19,2.5,19,4.1V16z" class="fir-bg"></path>
+<polygon points="9.1,16.3 2.5,11 4.1,9 8.7,12.6 15.6,3.7 17.7,5.2 " class="fir-selected"></polygon>
 </svg>
 </span>
 </span>
-<span class="cell-text cell-sub-column"><label for="ans10225.1.0">Non</label> </span>
+<span class="cell-text cell-sub-column"><label for="ans10247.0.10">Du lait de croissance 3<sup>ème</sup> ou 4<sup>ème</sup> âge en poudre ou liquide pour bébé/enfant jusqu’à 3 ans{@imageURL::11.jpg@}</label> </span>
 </span>
-</td>
-
-</tr><tr class="row row-elements odd hasError colCount-2">
-<th scope="row" id="QR9_r2_left" class="cell nonempty legend row-legend row-legend-left row-legend-basic legend-level-1 mobile border-collapse  ">
- Un hypermarché ou un supermarché
-</th>
-<td headers="QR9_c1" class="cell nonempty element indent-1 mobile border-collapse groupingRows hasError    clickableCell">
+</div><div class="element even  groupingCols OneColumnEl    clickableCell">
 <span class="cell-sub-wrapper cell-legend-right">
 <span class="cell-input cell-sub-column">
-<input type="radio" name="ans10225.0.1" value="0" id="ans10225.0.1" class="input radio fir-hidden" aria-labelledby="QR9_r2_left QR9_c1" aria-invalid="true" aria-describedby="QR9_error"><span class="fir-icon">
+<input type="checkbox" name="ans10247.0.1" id="ans10247.0.1" value="1" class="input checkbox fir-hidden"><span class="fir-icon selected">
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
-<title> radio </title>
-<circle cx="10" cy="10" r="10" class="fir-base"></circle>
-<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
-<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+<title> checkbox </title>
+<path d="M15.8,0H3.9C1.8,0,0,2,0,4.1V16c0,2.2,1.8,4,3.9,4h11.8c2.2,0,4.2-1.8,4.2-4V4.1C20,2,18,0,15.8,0z M19,16 c0,1.6-1.6,3-3.2,3H3.9C2.3,19,1,17.7,1,16V4.1C1,2.5,2.3,1,3.9,1h11.8C17.4,1,19,2.5,19,4.1V16z" class="fir-base"></path>
+<path d="M19,16c0,1.6-1.6,3-3.2,3H3.9C2.3,19,1,17.7,1,16V4.1C1,2.5,2.3,1,3.9,1h11.8C17.4,1,19,2.5,19,4.1V16z" class="fir-bg"></path>
+<polygon points="9.1,16.3 2.5,11 4.1,9 8.7,12.6 15.6,3.7 17.7,5.2 " class="fir-selected"></polygon>
 </svg>
 </span>
 </span>
-<span class="cell-text cell-sub-column"><label for="ans10225.0.1">Oui</label> </span>
+<span class="cell-text cell-sub-column"><label for="ans10247.0.1">Des raviolis au rayon frais{@imageURL::2.jpg@}</label> </span>
 </span>
-</td><td headers="QR9_c2" class="cell nonempty element indent-1 mobile border-collapse groupingRows hasError    clickableCell">
+</div><div class="element odd  groupingCols OneColumnEl    clickableCell">
 <span class="cell-sub-wrapper cell-legend-right">
 <span class="cell-input cell-sub-column">
-<input type="radio" name="ans10225.0.1" value="1" id="ans10225.1.1" class="input radio fir-hidden" aria-labelledby="QR9_r2_left QR9_c2" aria-invalid="true" aria-describedby="QR9_error"><span class="fir-icon">
+<input type="checkbox" name="ans10247.0.0" id="ans10247.0.0" value="1" class="input checkbox fir-hidden"><span class="fir-icon">
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
-<title> radio </title>
-<circle cx="10" cy="10" r="10" class="fir-base"></circle>
-<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
-<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+<title> checkbox </title>
+<path d="M15.8,0H3.9C1.8,0,0,2,0,4.1V16c0,2.2,1.8,4,3.9,4h11.8c2.2,0,4.2-1.8,4.2-4V4.1C20,2,18,0,15.8,0z M19,16 c0,1.6-1.6,3-3.2,3H3.9C2.3,19,1,17.7,1,16V4.1C1,2.5,2.3,1,3.9,1h11.8C17.4,1,19,2.5,19,4.1V16z" class="fir-base"></path>
+<path d="M19,16c0,1.6-1.6,3-3.2,3H3.9C2.3,19,1,17.7,1,16V4.1C1,2.5,2.3,1,3.9,1h11.8C17.4,1,19,2.5,19,4.1V16z" class="fir-bg"></path>
+<polygon points="9.1,16.3 2.5,11 4.1,9 8.7,12.6 15.6,3.7 17.7,5.2 " class="fir-selected"></polygon>
 </svg>
 </span>
 </span>
-<span class="cell-text cell-sub-column"><label for="ans10225.1.1">Non</label> </span>
+<span class="cell-text cell-sub-column"><label for="ans10247.0.0">Des barres de céréales{@imageURL::1.jpg@}</label> </span>
 </span>
-</td>
-
-</tr><tr class="row row-elements even hasError colCount-2">
-<th scope="row" id="QR9_r3_left" class="cell nonempty legend row-legend row-legend-left row-legend-basic legend-level-1 mobile border-collapse  ">
- Une société qui fabrique des automobiles
-</th>
-<td headers="QR9_c1" class="cell nonempty element indent-1 mobile border-collapse groupingRows hasError    clickableCell">
+</div><div class="element even  groupingCols OneColumnEl    clickableCell">
 <span class="cell-sub-wrapper cell-legend-right">
 <span class="cell-input cell-sub-column">
-<input type="radio" name="ans10225.0.2" value="0" id="ans10225.0.2" class="input radio fir-hidden" aria-labelledby="QR9_r3_left QR9_c1" aria-invalid="true" aria-describedby="QR9_error"><span class="fir-icon">
+<input type="checkbox" name="ans10247.0.2" id="ans10247.0.2" value="1" class="input checkbox fir-hidden"><span class="fir-icon">
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
-<title> radio </title>
-<circle cx="10" cy="10" r="10" class="fir-base"></circle>
-<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
-<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+<title> checkbox </title>
+<path d="M15.8,0H3.9C1.8,0,0,2,0,4.1V16c0,2.2,1.8,4,3.9,4h11.8c2.2,0,4.2-1.8,4.2-4V4.1C20,2,18,0,15.8,0z M19,16 c0,1.6-1.6,3-3.2,3H3.9C2.3,19,1,17.7,1,16V4.1C1,2.5,2.3,1,3.9,1h11.8C17.4,1,19,2.5,19,4.1V16z" class="fir-base"></path>
+<path d="M19,16c0,1.6-1.6,3-3.2,3H3.9C2.3,19,1,17.7,1,16V4.1C1,2.5,2.3,1,3.9,1h11.8C17.4,1,19,2.5,19,4.1V16z" class="fir-bg"></path>
+<polygon points="9.1,16.3 2.5,11 4.1,9 8.7,12.6 15.6,3.7 17.7,5.2 " class="fir-selected"></polygon>
 </svg>
 </span>
 </span>
-<span class="cell-text cell-sub-column"><label for="ans10225.0.2">Oui</label> </span>
+<span class="cell-text cell-sub-column"><label for="ans10247.0.2">Des tagliatelles au rayons frais{@imageURL::3.jpg@}</label> </span>
 </span>
-</td><td headers="QR9_c2" class="cell nonempty element indent-1 mobile border-collapse groupingRows hasError    clickableCell">
+</div><div class="element odd  groupingCols OneColumnEl    clickableCell">
 <span class="cell-sub-wrapper cell-legend-right">
 <span class="cell-input cell-sub-column">
-<input type="radio" name="ans10225.0.2" value="1" id="ans10225.1.2" class="input radio fir-hidden" aria-labelledby="QR9_r3_left QR9_c2" aria-invalid="true" aria-describedby="QR9_error"><span class="fir-icon">
+<input type="checkbox" name="ans10247.0.5" id="ans10247.0.5" value="1" class="input checkbox fir-hidden"><span class="fir-icon">
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
-<title> radio </title>
-<circle cx="10" cy="10" r="10" class="fir-base"></circle>
-<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
-<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+<title> checkbox </title>
+<path d="M15.8,0H3.9C1.8,0,0,2,0,4.1V16c0,2.2,1.8,4,3.9,4h11.8c2.2,0,4.2-1.8,4.2-4V4.1C20,2,18,0,15.8,0z M19,16 c0,1.6-1.6,3-3.2,3H3.9C2.3,19,1,17.7,1,16V4.1C1,2.5,2.3,1,3.9,1h11.8C17.4,1,19,2.5,19,4.1V16z" class="fir-base"></path>
+<path d="M19,16c0,1.6-1.6,3-3.2,3H3.9C2.3,19,1,17.7,1,16V4.1C1,2.5,2.3,1,3.9,1h11.8C17.4,1,19,2.5,19,4.1V16z" class="fir-bg"></path>
+<polygon points="9.1,16.3 2.5,11 4.1,9 8.7,12.6 15.6,3.7 17.7,5.2 " class="fir-selected"></polygon>
 </svg>
 </span>
 </span>
-<span class="cell-text cell-sub-column"><label for="ans10225.1.2">Non</label> </span>
+<span class="cell-text cell-sub-column"><label for="ans10247.0.5">Du lait au rayon frais{@imageURL::6.jpg@}</label> </span>
 </span>
-</td>
-
-</tr><tr class="row row-elements odd hasError colCount-2">
-<th scope="row" id="QR9_r4_left" class="cell nonempty legend row-legend row-legend-left row-legend-basic legend-level-1 mobile border-collapse  ">
- Le journalisme
-</th>
-<td headers="QR9_c1" class="cell nonempty element indent-1 mobile border-collapse groupingRows hasError    clickableCell">
+</div><div class="element even  groupingCols OneColumnEl    clickableCell">
 <span class="cell-sub-wrapper cell-legend-right">
 <span class="cell-input cell-sub-column">
-<input type="radio" name="ans10225.0.3" value="0" id="ans10225.0.3" class="input radio fir-hidden" aria-labelledby="QR9_r4_left QR9_c1" aria-invalid="true" aria-describedby="QR9_error"><span class="fir-icon">
+<input type="checkbox" name="ans10247.0.4" id="ans10247.0.4" value="1" class="input checkbox fir-hidden"><span class="fir-icon">
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
-<title> radio </title>
-<circle cx="10" cy="10" r="10" class="fir-base"></circle>
-<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
-<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+<title> checkbox </title>
+<path d="M15.8,0H3.9C1.8,0,0,2,0,4.1V16c0,2.2,1.8,4,3.9,4h11.8c2.2,0,4.2-1.8,4.2-4V4.1C20,2,18,0,15.8,0z M19,16 c0,1.6-1.6,3-3.2,3H3.9C2.3,19,1,17.7,1,16V4.1C1,2.5,2.3,1,3.9,1h11.8C17.4,1,19,2.5,19,4.1V16z" class="fir-base"></path>
+<path d="M19,16c0,1.6-1.6,3-3.2,3H3.9C2.3,19,1,17.7,1,16V4.1C1,2.5,2.3,1,3.9,1h11.8C17.4,1,19,2.5,19,4.1V16z" class="fir-bg"></path>
+<polygon points="9.1,16.3 2.5,11 4.1,9 8.7,12.6 15.6,3.7 17.7,5.2 " class="fir-selected"></polygon>
 </svg>
 </span>
 </span>
-<span class="cell-text cell-sub-column"><label for="ans10225.0.3">Oui</label> </span>
+<span class="cell-text cell-sub-column"><label for="ans10247.0.4">Du lait UHT classique{@imageURL::5.jpg@}</label> </span>
 </span>
-</td><td headers="QR9_c2" class="cell nonempty element indent-1 mobile border-collapse groupingRows hasError    clickableCell">
+</div><div class="element odd  groupingCols OneColumnEl    clickableCell">
 <span class="cell-sub-wrapper cell-legend-right">
 <span class="cell-input cell-sub-column">
-<input type="radio" name="ans10225.0.3" value="1" id="ans10225.1.3" class="input radio fir-hidden" aria-labelledby="QR9_r4_left QR9_c2" aria-invalid="true" aria-describedby="QR9_error"><span class="fir-icon">
+<input type="checkbox" name="ans10247.0.3" id="ans10247.0.3" value="1" class="input checkbox fir-hidden"><span class="fir-icon">
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
-<title> radio </title>
-<circle cx="10" cy="10" r="10" class="fir-base"></circle>
-<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
-<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+<title> checkbox </title>
+<path d="M15.8,0H3.9C1.8,0,0,2,0,4.1V16c0,2.2,1.8,4,3.9,4h11.8c2.2,0,4.2-1.8,4.2-4V4.1C20,2,18,0,15.8,0z M19,16 c0,1.6-1.6,3-3.2,3H3.9C2.3,19,1,17.7,1,16V4.1C1,2.5,2.3,1,3.9,1h11.8C17.4,1,19,2.5,19,4.1V16z" class="fir-base"></path>
+<path d="M19,16c0,1.6-1.6,3-3.2,3H3.9C2.3,19,1,17.7,1,16V4.1C1,2.5,2.3,1,3.9,1h11.8C17.4,1,19,2.5,19,4.1V16z" class="fir-bg"></path>
+<polygon points="9.1,16.3 2.5,11 4.1,9 8.7,12.6 15.6,3.7 17.7,5.2 " class="fir-selected"></polygon>
 </svg>
 </span>
 </span>
-<span class="cell-text cell-sub-column"><label for="ans10225.1.3">Non</label> </span>
+<span class="cell-text cell-sub-column"><label for="ans10247.0.3">Du lait UHT aromatisé{@imageURL::4.jpg@}</label> </span>
 </span>
-</td>
-
-</tr><tr class="row row-elements even hasError colCount-2">
-<th scope="row" id="QR9_r5_left" class="cell nonempty legend row-legend row-legend-left row-legend-basic legend-level-1 mobile border-collapse  ">
- Une société qui fabrique des produits alimentaires
-</th>
-<td headers="QR9_c1" class="cell nonempty element indent-1 mobile border-collapse groupingRows hasError    clickableCell">
+</div><div class="element even  groupingCols OneColumnEl    clickableCell">
 <span class="cell-sub-wrapper cell-legend-right">
 <span class="cell-input cell-sub-column">
-<input type="radio" name="ans10225.0.4" value="0" id="ans10225.0.4" class="input radio fir-hidden" aria-labelledby="QR9_r5_left QR9_c1" aria-invalid="true" aria-describedby="QR9_error"><span class="fir-icon">
+<input type="checkbox" name="ans10247.0.6" id="ans10247.0.6" value="1" class="input checkbox fir-hidden"><span class="fir-icon">
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
-<title> radio </title>
-<circle cx="10" cy="10" r="10" class="fir-base"></circle>
-<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
-<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+<title> checkbox </title>
+<path d="M15.8,0H3.9C1.8,0,0,2,0,4.1V16c0,2.2,1.8,4,3.9,4h11.8c2.2,0,4.2-1.8,4.2-4V4.1C20,2,18,0,15.8,0z M19,16 c0,1.6-1.6,3-3.2,3H3.9C2.3,19,1,17.7,1,16V4.1C1,2.5,2.3,1,3.9,1h11.8C17.4,1,19,2.5,19,4.1V16z" class="fir-base"></path>
+<path d="M19,16c0,1.6-1.6,3-3.2,3H3.9C2.3,19,1,17.7,1,16V4.1C1,2.5,2.3,1,3.9,1h11.8C17.4,1,19,2.5,19,4.1V16z" class="fir-bg"></path>
+<polygon points="9.1,16.3 2.5,11 4.1,9 8.7,12.6 15.6,3.7 17.7,5.2 " class="fir-selected"></polygon>
 </svg>
 </span>
 </span>
-<span class="cell-text cell-sub-column"><label for="ans10225.0.4">Oui</label> </span>
+<span class="cell-text cell-sub-column"><label for="ans10247.0.6">Du lait fermenté{@imageURL::7.jpg@}</label> </span>
 </span>
-</td><td headers="QR9_c2" class="cell nonempty element indent-1 mobile border-collapse groupingRows hasError    clickableCell">
+</div><div class="element odd  groupingCols OneColumnEl    clickableCell">
 <span class="cell-sub-wrapper cell-legend-right">
 <span class="cell-input cell-sub-column">
-<input type="radio" name="ans10225.0.4" value="1" id="ans10225.1.4" class="input radio fir-hidden" aria-labelledby="QR9_r5_left QR9_c2" aria-invalid="true" aria-describedby="QR9_error"><span class="fir-icon">
+<input type="checkbox" name="ans10247.0.7" id="ans10247.0.7" value="1" class="input checkbox fir-hidden"><span class="fir-icon">
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
-<title> radio </title>
-<circle cx="10" cy="10" r="10" class="fir-base"></circle>
-<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
-<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+<title> checkbox </title>
+<path d="M15.8,0H3.9C1.8,0,0,2,0,4.1V16c0,2.2,1.8,4,3.9,4h11.8c2.2,0,4.2-1.8,4.2-4V4.1C20,2,18,0,15.8,0z M19,16 c0,1.6-1.6,3-3.2,3H3.9C2.3,19,1,17.7,1,16V4.1C1,2.5,2.3,1,3.9,1h11.8C17.4,1,19,2.5,19,4.1V16z" class="fir-base"></path>
+<path d="M19,16c0,1.6-1.6,3-3.2,3H3.9C2.3,19,1,17.7,1,16V4.1C1,2.5,2.3,1,3.9,1h11.8C17.4,1,19,2.5,19,4.1V16z" class="fir-bg"></path>
+<polygon points="9.1,16.3 2.5,11 4.1,9 8.7,12.6 15.6,3.7 17.7,5.2 " class="fir-selected"></polygon>
 </svg>
 </span>
 </span>
-<span class="cell-text cell-sub-column"><label for="ans10225.1.4">Non</label> </span>
+<span class="cell-text cell-sub-column"><label for="ans10247.0.7">Des lattés ou milkshakes vendus au rayon frais en petites bouteilles{@imageURL::8.jpg@}</label> </span>
 </span>
-</td>
-
-</tr><tr class="row row-elements odd hasError colCount-2">
-<th scope="row" id="QR9_r6_left" class="cell nonempty legend row-legend row-legend-left row-legend-basic legend-level-1 mobile border-collapse  ">
- Le bâtiment
-</th>
-<td headers="QR9_c1" class="cell nonempty element indent-1 mobile border-collapse groupingRows hasError    clickableCell">
+</div><div class="element even  groupingCols OneColumnEl    clickableCell">
 <span class="cell-sub-wrapper cell-legend-right">
 <span class="cell-input cell-sub-column">
-<input type="radio" name="ans10225.0.5" value="0" id="ans10225.0.5" class="input radio fir-hidden" aria-labelledby="QR9_r6_left QR9_c1" aria-invalid="true" aria-describedby="QR9_error"><span class="fir-icon">
+<input type="checkbox" name="ans10247.0.12" id="ans10247.0.12" value="1" class="input checkbox fir-hidden"><span class="fir-icon">
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
-<title> radio </title>
-<circle cx="10" cy="10" r="10" class="fir-base"></circle>
-<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
-<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+<title> checkbox </title>
+<path d="M15.8,0H3.9C1.8,0,0,2,0,4.1V16c0,2.2,1.8,4,3.9,4h11.8c2.2,0,4.2-1.8,4.2-4V4.1C20,2,18,0,15.8,0z M19,16 c0,1.6-1.6,3-3.2,3H3.9C2.3,19,1,17.7,1,16V4.1C1,2.5,2.3,1,3.9,1h11.8C17.4,1,19,2.5,19,4.1V16z" class="fir-base"></path>
+<path d="M19,16c0,1.6-1.6,3-3.2,3H3.9C2.3,19,1,17.7,1,16V4.1C1,2.5,2.3,1,3.9,1h11.8C17.4,1,19,2.5,19,4.1V16z" class="fir-bg"></path>
+<polygon points="9.1,16.3 2.5,11 4.1,9 8.7,12.6 15.6,3.7 17.7,5.2 " class="fir-selected"></polygon>
 </svg>
 </span>
 </span>
-<span class="cell-text cell-sub-column"><label for="ans10225.0.5">Oui</label> </span>
+<span class="cell-text cell-sub-column"><label for="ans10247.0.12">Des yaourts aux fruits{@imageURL::13.jpg@}</label> </span>
 </span>
-</td><td headers="QR9_c2" class="cell nonempty element indent-1 mobile border-collapse groupingRows hasError    clickableCell">
+</div><div class="element odd  groupingCols OneColumnEl    clickableCell">
 <span class="cell-sub-wrapper cell-legend-right">
 <span class="cell-input cell-sub-column">
-<input type="radio" name="ans10225.0.5" value="1" id="ans10225.1.5" class="input radio fir-hidden" aria-labelledby="QR9_r6_left QR9_c2" aria-invalid="true" aria-describedby="QR9_error"><span class="fir-icon">
+<input type="checkbox" name="ans10247.0.13" id="ans10247.0.13" value="1" class="input checkbox fir-hidden"><span class="fir-icon">
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
-<title> radio </title>
-<circle cx="10" cy="10" r="10" class="fir-base"></circle>
-<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
-<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+<title> checkbox </title>
+<path d="M15.8,0H3.9C1.8,0,0,2,0,4.1V16c0,2.2,1.8,4,3.9,4h11.8c2.2,0,4.2-1.8,4.2-4V4.1C20,2,18,0,15.8,0z M19,16 c0,1.6-1.6,3-3.2,3H3.9C2.3,19,1,17.7,1,16V4.1C1,2.5,2.3,1,3.9,1h11.8C17.4,1,19,2.5,19,4.1V16z" class="fir-base"></path>
+<path d="M19,16c0,1.6-1.6,3-3.2,3H3.9C2.3,19,1,17.7,1,16V4.1C1,2.5,2.3,1,3.9,1h11.8C17.4,1,19,2.5,19,4.1V16z" class="fir-bg"></path>
+<polygon points="9.1,16.3 2.5,11 4.1,9 8.7,12.6 15.6,3.7 17.7,5.2 " class="fir-selected"></polygon>
 </svg>
 </span>
 </span>
-<span class="cell-text cell-sub-column"><label for="ans10225.1.5">Non</label> </span>
+<span class="cell-text cell-sub-column"><label for="ans10247.0.13">Du skyr ou des yaourts protéinés{@imageURL::14.jpg@}</label> </span>
 </span>
-</td>
-
-</tr><tr class="row row-elements even hasError colCount-2">
-<th scope="row" id="QR9_r7_left" class="cell nonempty legend row-legend row-legend-left row-legend-basic legend-level-1 mobile border-collapse  ">
- Les études de marché
-</th>
-<td headers="QR9_c1" class="cell nonempty element indent-1 mobile border-collapse groupingRows hasError    clickableCell">
+</div><div class="element even  groupingCols OneColumnEl    clickableCell">
 <span class="cell-sub-wrapper cell-legend-right">
 <span class="cell-input cell-sub-column">
-<input type="radio" name="ans10225.0.6" value="0" id="ans10225.0.6" class="input radio fir-hidden" aria-labelledby="QR9_r7_left QR9_c1" aria-invalid="true" aria-describedby="QR9_error"><span class="fir-icon">
+<input type="checkbox" name="ans10247.0.8" id="ans10247.0.8" value="1" class="input checkbox fir-hidden"><span class="fir-icon">
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
-<title> radio </title>
-<circle cx="10" cy="10" r="10" class="fir-base"></circle>
-<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
-<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+<title> checkbox </title>
+<path d="M15.8,0H3.9C1.8,0,0,2,0,4.1V16c0,2.2,1.8,4,3.9,4h11.8c2.2,0,4.2-1.8,4.2-4V4.1C20,2,18,0,15.8,0z M19,16 c0,1.6-1.6,3-3.2,3H3.9C2.3,19,1,17.7,1,16V4.1C1,2.5,2.3,1,3.9,1h11.8C17.4,1,19,2.5,19,4.1V16z" class="fir-base"></path>
+<path d="M19,16c0,1.6-1.6,3-3.2,3H3.9C2.3,19,1,17.7,1,16V4.1C1,2.5,2.3,1,3.9,1h11.8C17.4,1,19,2.5,19,4.1V16z" class="fir-bg"></path>
+<polygon points="9.1,16.3 2.5,11 4.1,9 8.7,12.6 15.6,3.7 17.7,5.2 " class="fir-selected"></polygon>
 </svg>
 </span>
 </span>
-<span class="cell-text cell-sub-column"><label for="ans10225.0.6">Oui</label> </span>
+<span class="cell-text cell-sub-column"><label for="ans10247.0.8">De la farine de blé{@imageURL::9.jpg@}</label> </span>
 </span>
-</td><td headers="QR9_c2" class="cell nonempty element indent-1 mobile border-collapse groupingRows hasError    clickableCell">
+</div><div class="element odd  groupingCols OneColumnEl    clickableCell">
 <span class="cell-sub-wrapper cell-legend-right">
 <span class="cell-input cell-sub-column">
-<input type="radio" name="ans10225.0.6" value="1" id="ans10225.1.6" class="input radio fir-hidden" aria-labelledby="QR9_r7_left QR9_c2" aria-invalid="true" aria-describedby="QR9_error"><span class="fir-icon">
+<input type="checkbox" name="ans10247.0.9" id="ans10247.0.9" value="1" class="input checkbox fir-hidden"><span class="fir-icon">
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
-<title> radio </title>
-<circle cx="10" cy="10" r="10" class="fir-base"></circle>
-<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
-<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+<title> checkbox </title>
+<path d="M15.8,0H3.9C1.8,0,0,2,0,4.1V16c0,2.2,1.8,4,3.9,4h11.8c2.2,0,4.2-1.8,4.2-4V4.1C20,2,18,0,15.8,0z M19,16 c0,1.6-1.6,3-3.2,3H3.9C2.3,19,1,17.7,1,16V4.1C1,2.5,2.3,1,3.9,1h11.8C17.4,1,19,2.5,19,4.1V16z" class="fir-base"></path>
+<path d="M19,16c0,1.6-1.6,3-3.2,3H3.9C2.3,19,1,17.7,1,16V4.1C1,2.5,2.3,1,3.9,1h11.8C17.4,1,19,2.5,19,4.1V16z" class="fir-bg"></path>
+<polygon points="9.1,16.3 2.5,11 4.1,9 8.7,12.6 15.6,3.7 17.7,5.2 " class="fir-selected"></polygon>
 </svg>
 </span>
 </span>
-<span class="cell-text cell-sub-column"><label for="ans10225.1.6">Non</label> </span>
+<span class="cell-text cell-sub-column"><label for="ans10247.0.9">De la farine de sarrasin{@imageURL::10.jpg@}</label> </span>
 </span>
-</td>
-
-</tr><tr class="row row-elements odd hasError colCount-2">
-<th scope="row" id="QR9_r8_left" class="cell nonempty legend row-legend row-legend-left row-legend-basic legend-level-1 mobile border-collapse  ">
- L’informatique
-</th>
-<td headers="QR9_c1" class="cell nonempty element indent-1 mobile border-collapse groupingRows hasError    clickableCell">
+</div><div class="element even  groupingCols OneColumnEl    clickableCell">
 <span class="cell-sub-wrapper cell-legend-right">
 <span class="cell-input cell-sub-column">
-<input type="radio" name="ans10225.0.7" value="0" id="ans10225.0.7" class="input radio fir-hidden" aria-labelledby="QR9_r8_left QR9_c1" aria-invalid="true" aria-describedby="QR9_error"><span class="fir-icon">
+<input type="checkbox" name="ans10247.0.14" id="ans10247.0.14" value="1" class="exclusive input checkbox fir-hidden"><span class="fir-icon">
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
-<title> radio </title>
-<circle cx="10" cy="10" r="10" class="fir-base"></circle>
-<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
-<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+<title> checkbox </title>
+<path d="M15.8,0H3.9C1.8,0,0,2,0,4.1V16c0,2.2,1.8,4,3.9,4h11.8c2.2,0,4.2-1.8,4.2-4V4.1C20,2,18,0,15.8,0z M19,16 c0,1.6-1.6,3-3.2,3H3.9C2.3,19,1,17.7,1,16V4.1C1,2.5,2.3,1,3.9,1h11.8C17.4,1,19,2.5,19,4.1V16z" class="fir-base"></path>
+<path d="M19,16c0,1.6-1.6,3-3.2,3H3.9C2.3,19,1,17.7,1,16V4.1C1,2.5,2.3,1,3.9,1h11.8C17.4,1,19,2.5,19,4.1V16z" class="fir-bg"></path>
+<polygon points="9.1,16.3 2.5,11 4.1,9 8.7,12.6 15.6,3.7 17.7,5.2 " class="fir-selected"></polygon>
 </svg>
 </span>
 </span>
-<span class="cell-text cell-sub-column"><label for="ans10225.0.7">Oui</label> </span>
+<span class="cell-text cell-sub-column"><label for="ans10247.0.14">Aucune de ces catégories de produits{@globalExclusive::true@}</label> </span>
 </span>
-</td><td headers="QR9_c2" class="cell nonempty element indent-1 mobile border-collapse groupingRows hasError    clickableCell">
-<span class="cell-sub-wrapper cell-legend-right">
-<span class="cell-input cell-sub-column">
-<input type="radio" name="ans10225.0.7" value="1" id="ans10225.1.7" class="input radio fir-hidden" aria-labelledby="QR9_r8_left QR9_c2" aria-invalid="true" aria-describedby="QR9_error"><span class="fir-icon">
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
-<title> radio </title>
-<circle cx="10" cy="10" r="10" class="fir-base"></circle>
-<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
-<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
-</svg>
-</span>
-</span>
-<span class="cell-text cell-sub-column"><label for="ans10225.1.7">Non</label> </span>
-</span>
-</td>
-
-</tr><tr class="row row-elements even hasError colCount-2">
-<th scope="row" id="QR9_r9_left" class="cell nonempty legend row-legend row-legend-left row-legend-basic legend-level-1 mobile border-collapse  ">
- Le marketing
-</th>
-<td headers="QR9_c1" class="cell nonempty element indent-1 mobile border-collapse groupingRows hasError    clickableCell">
-<span class="cell-sub-wrapper cell-legend-right">
-<span class="cell-input cell-sub-column">
-<input type="radio" name="ans10225.0.8" value="0" id="ans10225.0.8" class="input radio fir-hidden" aria-labelledby="QR9_r9_left QR9_c1" aria-invalid="true" aria-describedby="QR9_error"><span class="fir-icon">
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
-<title> radio </title>
-<circle cx="10" cy="10" r="10" class="fir-base"></circle>
-<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
-<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
-</svg>
-</span>
-</span>
-<span class="cell-text cell-sub-column"><label for="ans10225.0.8">Oui</label> </span>
-</span>
-</td><td headers="QR9_c2" class="cell nonempty element indent-1 mobile border-collapse groupingRows hasError    clickableCell">
-<span class="cell-sub-wrapper cell-legend-right">
-<span class="cell-input cell-sub-column">
-<input type="radio" name="ans10225.0.8" value="1" id="ans10225.1.8" class="input radio fir-hidden" aria-labelledby="QR9_r9_left QR9_c2" aria-invalid="true" aria-describedby="QR9_error"><span class="fir-icon">
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
-<title> radio </title>
-<circle cx="10" cy="10" r="10" class="fir-base"></circle>
-<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
-<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
-</svg>
-</span>
-</span>
-<span class="cell-text cell-sub-column"><label for="ans10225.1.8">Non</label> </span>
-</span>
-</td>
-
-</tr><tr class="row row-elements odd hasError colCount-2">
-<th scope="row" id="QR9_r10_left" class="cell nonempty legend row-legend row-legend-left row-legend-basic legend-level-1 mobile border-collapse  ">
- Le monde de la petite enfance
-</th>
-<td headers="QR9_c1" class="cell nonempty element indent-1 mobile border-collapse groupingRows hasError    clickableCell">
-<span class="cell-sub-wrapper cell-legend-right">
-<span class="cell-input cell-sub-column">
-<input type="radio" name="ans10225.0.9" value="0" id="ans10225.0.9" class="input radio fir-hidden" aria-labelledby="QR9_r10_left QR9_c1" aria-invalid="true" aria-describedby="QR9_error"><span class="fir-icon">
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
-<title> radio </title>
-<circle cx="10" cy="10" r="10" class="fir-base"></circle>
-<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
-<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
-</svg>
-</span>
-</span>
-<span class="cell-text cell-sub-column"><label for="ans10225.0.9">Oui</label> </span>
-</span>
-</td><td headers="QR9_c2" class="cell nonempty element indent-1 mobile border-collapse groupingRows hasError    clickableCell">
-<span class="cell-sub-wrapper cell-legend-right">
-<span class="cell-input cell-sub-column">
-<input type="radio" name="ans10225.0.9" value="1" id="ans10225.1.9" class="input radio fir-hidden" aria-labelledby="QR9_r10_left QR9_c2" aria-invalid="true" aria-describedby="QR9_error"><span class="fir-icon">
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
-<title> radio </title>
-<circle cx="10" cy="10" r="10" class="fir-base"></circle>
-<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
-<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
-</svg>
-</span>
-</span>
-<span class="cell-text cell-sub-column"><label for="ans10225.1.9">Non</label> </span>
-</span>
-</td>
-
-</tr><tr class="row row-elements even hasError colCount-2">
-<th scope="row" id="QR9_r11_left" class="cell nonempty legend row-legend row-legend-left row-legend-basic legend-level-1 mobile border-collapse  ">
- La publicité / les relations publiques
-</th>
-<td headers="QR9_c1" class="cell nonempty element indent-1 mobile border-collapse groupingRows hasError    clickableCell">
-<span class="cell-sub-wrapper cell-legend-right">
-<span class="cell-input cell-sub-column">
-<input type="radio" name="ans10225.0.10" value="0" id="ans10225.0.10" class="input radio fir-hidden" aria-labelledby="QR9_r11_left QR9_c1" aria-invalid="true" aria-describedby="QR9_error"><span class="fir-icon">
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
-<title> radio </title>
-<circle cx="10" cy="10" r="10" class="fir-base"></circle>
-<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
-<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
-</svg>
-</span>
-</span>
-<span class="cell-text cell-sub-column"><label for="ans10225.0.10">Oui</label> </span>
-</span>
-</td><td headers="QR9_c2" class="cell nonempty element indent-1 mobile border-collapse groupingRows hasError    clickableCell">
-<span class="cell-sub-wrapper cell-legend-right">
-<span class="cell-input cell-sub-column">
-<input type="radio" name="ans10225.0.10" value="1" id="ans10225.1.10" class="input radio fir-hidden" aria-labelledby="QR9_r11_left QR9_c2" aria-invalid="true" aria-describedby="QR9_error"><span class="fir-icon">
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
-<title> radio </title>
-<circle cx="10" cy="10" r="10" class="fir-base"></circle>
-<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
-<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
-</svg>
-</span>
-</span>
-<span class="cell-text cell-sub-column"><label for="ans10225.1.10">Non</label> </span>
-</span>
-</td>
-
-</tr></tbody>
-</table>
-<!-- /.grid -->
+</div><!-- /.grid -->
 </div>
 <!-- /.answers -->
 </div>
-<!-- /.question --><div class="mx-stage" id="mx-stage-QR9" style="margin: 0 auto;"><div class="mx-container mx-carouselapp-container mx-carouselapp-horizontal carouselapp-1" style="visibility: visible;"><div id="mx-img-preload-container" style="display: none;"></div><div class="mx-carouselapp-outercontainer"><div class="mx-carousel mx-carousel-horizontal" id="mx-carousel-QR9"><div class="swiper-container swiper-container-QR9 swiper-container-initialized swiper-container-horizontal">
-            <div class="swiper-pagination swiper-pagination-QR9 swiper-pagination-bullets"><span class="swiper-pagination-bullet swiper-pagination-bullet-selected"></span><span class="swiper-pagination-bullet swiper-pagination-bullet-selected"></span><span class="swiper-pagination-bullet swiper-pagination-bullet-selected"></span><span class="swiper-pagination-bullet swiper-pagination-bullet-selected"></span><span class="swiper-pagination-bullet swiper-pagination-bullet-selected"></span><span class="swiper-pagination-bullet swiper-pagination-bullet-selected"></span><span class="swiper-pagination-bullet swiper-pagination-bullet-selected"></span><span class="swiper-pagination-bullet swiper-pagination-bullet-selected"></span><span class="swiper-pagination-bullet swiper-pagination-bullet-selected"></span><span class="swiper-pagination-bullet swiper-pagination-bullet-selected"></span><span class="swiper-pagination-bullet swiper-pagination-bullet-active swiper-pagination-bullet-selected"></span></div>
-
-        <div class="mx-carouselapp-itemholder-inner swiper-wrapper swiper-wrapper-QR9" style="width: 2585px; transition-duration: 0ms; transform: translate3d(-2050px, 0px, 0px);"><div class="mx-carouselapp-item mx-card-text mx-card-r1 mx-card-container vertical mx-card-selected" data-code="r1" style="width: 200px; height: 100px; margin-right: 35px;"><div class="mx-card mx-color-selected-border"><div class="middle"><div class="box"><div class="content-container"> <div class="label">La médecine</div></div></div></div><div class="bottom" style=""></div><div class="tick top-right triangle"><div class="tick-content-container"><div class="tick-container">
-																		<div class="mx-tick-flag"></div>
-																				
-																						<i class="icon ion-checkmark"></i>
-																				
-																	 </div></div></div></div></div><div class="mx-carouselapp-item mx-card-text mx-card-r2 mx-card-container vertical mx-card-selected" data-code="r2" style="width: 200px; height: 100px; margin-right: 35px;"><div class="mx-card mx-color-selected-border"><div class="middle"><div class="box"><div class="content-container"> <div class="label">Un hypermarché ou un supermarché</div></div></div></div><div class="bottom" style=""></div><div class="tick top-right triangle"><div class="tick-content-container"><div class="tick-container">
-																		<div class="mx-tick-flag"></div>
-																				
-																						<i class="icon ion-checkmark"></i>
-																				
-																	 </div></div></div></div></div><div class="mx-carouselapp-item mx-card-text mx-card-r3 mx-card-container vertical mx-card-selected" data-code="r3" style="width: 200px; height: 100px; margin-right: 35px;"><div class="mx-card mx-color-selected-border"><div class="middle"><div class="box"><div class="content-container"> <div class="label">Une société qui fabrique des automobiles</div></div></div></div><div class="bottom" style=""></div><div class="tick top-right triangle"><div class="tick-content-container"><div class="tick-container">
-																		<div class="mx-tick-flag"></div>
-																				
-																						<i class="icon ion-checkmark"></i>
-																				
-																	 </div></div></div></div></div><div class="mx-carouselapp-item mx-card-text mx-card-r4 mx-card-container vertical mx-card-selected" data-code="r4" style="width: 200px; height: 100px; margin-right: 35px;"><div class="mx-card mx-color-selected-border"><div class="middle"><div class="box"><div class="content-container"> <div class="label">Le journalisme</div></div></div></div><div class="bottom" style=""></div><div class="tick top-right triangle"><div class="tick-content-container"><div class="tick-container">
-																		<div class="mx-tick-flag"></div>
-																				
-																						<i class="icon ion-checkmark"></i>
-																				
-																	 </div></div></div></div></div><div class="mx-carouselapp-item mx-card-text mx-card-r5 mx-card-container vertical mx-card-selected" data-code="r5" style="width: 200px; height: 100px; margin-right: 35px;"><div class="mx-card mx-color-selected-border"><div class="middle"><div class="box"><div class="content-container"> <div class="label">Une société qui fabrique des produits alimentaires</div></div></div></div><div class="bottom" style=""></div><div class="tick top-right triangle"><div class="tick-content-container"><div class="tick-container">
-																		<div class="mx-tick-flag"></div>
-																				
-																						<i class="icon ion-checkmark"></i>
-																				
-																	 </div></div></div></div></div><div class="mx-carouselapp-item mx-card-text mx-card-r6 mx-card-container vertical mx-card-selected" data-code="r6" style="width: 200px; height: 100px; margin-right: 35px;"><div class="mx-card mx-color-selected-border"><div class="middle"><div class="box"><div class="content-container"> <div class="label">Le bâtiment</div></div></div></div><div class="bottom" style=""></div><div class="tick top-right triangle"><div class="tick-content-container"><div class="tick-container">
-																		<div class="mx-tick-flag"></div>
-																				
-																						<i class="icon ion-checkmark"></i>
-																				
-																	 </div></div></div></div></div><div class="mx-carouselapp-item mx-card-text mx-card-r7 mx-card-container vertical mx-card-selected" data-code="r7" style="width: 200px; height: 100px; margin-right: 35px;"><div class="mx-card mx-color-selected-border"><div class="middle"><div class="box"><div class="content-container"> <div class="label">Les études de marché</div></div></div></div><div class="bottom" style=""></div><div class="tick top-right triangle"><div class="tick-content-container"><div class="tick-container">
-																		<div class="mx-tick-flag"></div>
-																				
-																						<i class="icon ion-checkmark"></i>
-																				
-																	 </div></div></div></div></div><div class="mx-carouselapp-item mx-card-text mx-card-r8 mx-card-container vertical mx-card-selected" data-code="r8" style="width: 200px; height: 100px; margin-right: 35px;"><div class="mx-card mx-color-selected-border"><div class="middle"><div class="box"><div class="content-container"> <div class="label">L’informatique</div></div></div></div><div class="bottom" style=""></div><div class="tick top-right triangle"><div class="tick-content-container"><div class="tick-container">
-																		<div class="mx-tick-flag"></div>
-																				
-																						<i class="icon ion-checkmark"></i>
-																				
-																	 </div></div></div></div></div><div class="mx-carouselapp-item mx-card-text mx-card-r9 mx-card-container vertical mx-card-selected" data-code="r9" style="width: 200px; height: 100px; margin-right: 35px;"><div class="mx-card mx-color-selected-border"><div class="middle"><div class="box"><div class="content-container"> <div class="label">Le marketing</div></div></div></div><div class="bottom" style=""></div><div class="tick top-right triangle"><div class="tick-content-container"><div class="tick-container">
-																		<div class="mx-tick-flag"></div>
-																				
-																						<i class="icon ion-checkmark"></i>
-																				
-																	 </div></div></div></div></div><div class="mx-carouselapp-item mx-card-text mx-card-r10 mx-card-container vertical mx-card-selected swiper-slide-prev" data-code="r10" style="width: 200px; height: 100px; margin-right: 35px;"><div class="mx-card mx-color-selected-border"><div class="middle"><div class="box"><div class="content-container"> <div class="label">Le monde de la petite enfance</div></div></div></div><div class="bottom" style=""></div><div class="tick top-right triangle"><div class="tick-content-container"><div class="tick-container">
-																		<div class="mx-tick-flag"></div>
-																				
-																						<i class="icon ion-checkmark"></i>
-																				
-																	 </div></div></div></div></div><div class="mx-carouselapp-item mx-card-text mx-card-r11 mx-card-container vertical swiper-slide-active mx-card-selected" data-code="r11" style="width: 200px; height: 100px; margin-right: 35px;"><div class="mx-card mx-color-selected-border"><div class="middle"><div class="box"><div class="content-container"> <div class="label">La publicité / les relations publiques</div></div></div></div><div class="bottom" style=""></div><div class="tick top-right triangle"><div class="tick-content-container"><div class="tick-container">
-																		<div class="mx-tick-flag"></div>
-																				
-																						<i class="icon ion-checkmark"></i>
-																				
-																	 </div></div></div></div></div></div><div class="swiper-navigation-outer-container">
-        <hr class="swiper-navigation-separator">
-            <div class="swiper-navigation-container swiper-text-progress-active">
-          <div class="swiper-button-prev-container">
-              <div class="swiper-button-prev" tabindex="0" role="button" aria-label="Previous slide" aria-disabled="false"></div>
-          </div>
-
-               <div class="swiper-progress-text-container swiper-progress-active">
-                <div class="swiper-progress-text-element swiper-progress-pre"></div>
-                <div class="swiper-progress-text-element swiper-progress-current">11</div>
-                <div class="swiper-progress-text-element swiper-progress-sep">/</div>
-                <div class="swiper-progress-text-element swiper-progress-total">11</div>
-                <div class="swiper-progress-text-element swiper-progress-post"></div>
-              </div>
-            <div class="swiper-button-next-container">
-              <div class="swiper-button-next swiper-button-disabled" tabindex="0" role="button" aria-label="Next slide" aria-disabled="true"></div>
-          </div>
-        </div>
-            </div>
-
-            <div class="swiper-scrollbar"></div>
-          <span class="swiper-notification" aria-live="assertive" aria-atomic="true"></span></div></div><div class="mx-carouselapp-scaleholder-inner"><div class="mx-carouselapp-scale mx-card-text mx-card-c1 mx-card-container vertical" data-code="c1" style="width: 120px; height: 60px;"><div class="mx-card mx-color-unselected-border"><div class="middle"><div class="box"><div class="content-container"> <div class="label">Oui</div></div></div></div><div class="bottom" style=""></div></div></div><div class="mx-carouselapp-scale mx-card-text mx-card-c2 mx-card-container vertical mx-card-selected" data-code="c2" style="width: 120px; height: 60px;"><div class="mx-card mx-color-selected-border"><div class="middle"><div class="box"><div class="content-container"> <div class="label">Non</div></div></div></div><div class="bottom" style=""></div></div></div></div></div></div></div>
-<script type="text/javascript" crossorigin="anonymous" id="mx-loader" src="//surveyfiles.yoursurveynow.com/rnd/rnd-mx/rnd-mx-toolkit/prod/framework/4.0.0/loader/dist/application.min.js?cache=1773118935"></script>
-<style> 
-.mx-stage {
-    padding-bottom: 60px;
-}
-.mx-carouselapp-scaleholder-inner {
-    text-align: center;
-}
-</style>
+<!-- /.question --><div class="mx-stage" id="mx-stage-QR10"><div class="mx-container mx-collapsible-container flat-holder" style="visibility: visible;"><div id="mx-img-preload-container" style="display: none;"></div><div class="mx-collapsible-button-holder"></div><div class="mx-scroll-button visible mx-button-scroll-button mx-btn mx-btn-selected" style="width: 50px; height: 50px; left: 1227px;"><div class="mx-btn-content mx-color-selected-border mx-color-selected-bg" style="background-image: url(&quot;//surveyfiles.yoursurveynow.com/rnd/rnd-mx/rnd-mx-tools/images/go_up.png&quot;);"><div class="mx-btn-label"></div></div></div><div class="mx-collapsible-groupholder"><div class="mx-collapsible-itemholder row no-group"><div class="col-xs-12 col-sm-12 col-md-6 col-lg-6 col itemcol-0" row-group-index="0"><div class="mx-collapsible-row-item itemGroupIndex-0 mx-card-r12 mx-card-container vertical" precode="r12" data-row-index="0" style="width: 100%; height: auto;"><div class="mx-card mx-color-unselected-border"><div class="top" style="min-height: 1px; height: 1px;"></div><div class="middle"><div class="box rows-2"><div class="content-container" style="min-height: 246px; height: 246px;"><div class="image-holder">
+              
+                  <img crossorigin="anonymous" class="content-image" src="https://surveyfiles.dynata.com/emea/2026/ORD-120883-Q8S1C8/QR10/12.jpg?cache=1773120333819">
+              
+              
+                  <a crossorigin="anonymous" class="zoom-btn" href="[object HTMLImageElement]">
+                    
+                         <img crossorigin="anonymous" class="zoom-icon" src="https://surveyfiles.yoursurveynow.com/rnd/rnd-mx/rnd-mx-tools/images/mag9.png?cache=1773120333819">
+                     
+                  </a>
+              
+          </div></div></div></div><div class="bottom"><div class="box rows-1 border-top">
+                                  <div class="bottom-content content-container" style="min-height: 36px; height: 36px;">
+                                      <div class="label">Des desserts lactés pour bébé/enfant jusqu’à 3 ans</div>
+                                   </div>
+                                 </div></div><div class="tick top-right square"><div class="tick-content-container"><div class="tick-container">
+                                  <div class="mx-tick-flag"></div>
+                                      
+                                          <i class="icon ion-checkmark"></i>
+                                      
+                                 </div></div></div></div></div></div><div class="col-xs-12 col-sm-12 col-md-6 col-lg-6 col itemcol-1" row-group-index="1"><div class="mx-collapsible-row-item itemGroupIndex-1 mx-card-r11 mx-card-container vertical mx-card-selected" precode="r11" data-row-index="0" style="width: 100%; height: auto;"><div class="mx-card mx-color-selected-border"><div class="top" style="min-height: 1px; height: 1px;"></div><div class="middle"><div class="box rows-2"><div class="content-container" style="min-height: 246px; height: 246px;"><div class="image-holder">
+              
+                  <img crossorigin="anonymous" class="content-image" src="https://surveyfiles.dynata.com/emea/2026/ORD-120883-Q8S1C8/QR10/11.jpg?cache=1773120333823">
+              
+              
+                  <a crossorigin="anonymous" class="zoom-btn" href="[object HTMLImageElement]">
+                    
+                         <img crossorigin="anonymous" class="zoom-icon" src="https://surveyfiles.yoursurveynow.com/rnd/rnd-mx/rnd-mx-tools/images/mag9.png?cache=1773120333823">
+                     
+                  </a>
+              
+          </div></div></div></div><div class="bottom"><div class="box rows-1 border-top">
+                                  <div class="bottom-content content-container" style="min-height: 36px; height: 36px;">
+                                      <div class="label">Du lait de croissance 3<sup>ème</sup> ou 4<sup>ème</sup> âge en poudre ou liquide pour bébé/enfant jusqu’à 3 ans</div>
+                                   </div>
+                                 </div></div><div class="tick top-right square"><div class="tick-content-container"><div class="tick-container mx-color-selected-bg">
+                                  <div class="mx-tick-flag"></div>
+                                      
+                                          <i class="icon ion-checkmark"></i>
+                                      
+                                 </div></div></div></div></div></div><div class="col-xs-12 col-sm-12 col-md-6 col-lg-6 col itemcol-2" row-group-index="2"><div class="mx-collapsible-row-item itemGroupIndex-2 mx-card-r2 mx-card-container vertical mx-card-selected" precode="r2" data-row-index="1" style="width: 100%; height: auto;"><div class="mx-card mx-color-selected-border"><div class="top" style="min-height: 1px; height: 1px;"></div><div class="middle"><div class="box rows-2"><div class="content-container" style="min-height: 246px; height: 246px;"><div class="image-holder">
+              
+                  <img crossorigin="anonymous" class="content-image" src="https://surveyfiles.dynata.com/emea/2026/ORD-120883-Q8S1C8/QR10/2.jpg?cache=1773120333823">
+              
+              
+                  <a crossorigin="anonymous" class="zoom-btn" href="[object HTMLImageElement]">
+                    
+                         <img crossorigin="anonymous" class="zoom-icon" src="https://surveyfiles.yoursurveynow.com/rnd/rnd-mx/rnd-mx-tools/images/mag9.png?cache=1773120333824">
+                     
+                  </a>
+              
+          </div></div></div></div><div class="bottom"><div class="box rows-1 border-top">
+                                  <div class="bottom-content content-container" style="min-height: 16px; height: 16px;">
+                                      <div class="label">Des raviolis au rayon frais</div>
+                                   </div>
+                                 </div></div><div class="tick top-right square"><div class="tick-content-container"><div class="tick-container mx-color-selected-bg">
+                                  <div class="mx-tick-flag"></div>
+                                      
+                                          <i class="icon ion-checkmark"></i>
+                                      
+                                 </div></div></div></div></div></div><div class="col-xs-12 col-sm-12 col-md-6 col-lg-6 col itemcol-3" row-group-index="3"><div class="mx-collapsible-row-item itemGroupIndex-3 mx-card-r1 mx-card-container vertical" precode="r1" data-row-index="1" style="width: 100%; height: auto;"><div class="mx-card mx-color-unselected-border"><div class="top" style="min-height: 1px; height: 1px;"></div><div class="middle"><div class="box rows-2"><div class="content-container" style="min-height: 246px; height: 246px;"><div class="image-holder">
+              
+                  <img crossorigin="anonymous" class="content-image" src="https://surveyfiles.dynata.com/emea/2026/ORD-120883-Q8S1C8/QR10/1.jpg?cache=1773120333824">
+              
+              
+                  <a crossorigin="anonymous" class="zoom-btn" href="[object HTMLImageElement]">
+                    
+                         <img crossorigin="anonymous" class="zoom-icon" src="https://surveyfiles.yoursurveynow.com/rnd/rnd-mx/rnd-mx-tools/images/mag9.png?cache=1773120333824">
+                     
+                  </a>
+              
+          </div></div></div></div><div class="bottom"><div class="box rows-1 border-top">
+                                  <div class="bottom-content content-container" style="min-height: 16px; height: 16px;">
+                                      <div class="label">Des barres de céréales</div>
+                                   </div>
+                                 </div></div><div class="tick top-right square"><div class="tick-content-container"><div class="tick-container">
+                                  <div class="mx-tick-flag"></div>
+                                      
+                                          <i class="icon ion-checkmark"></i>
+                                      
+                                 </div></div></div></div></div></div><div class="col-xs-12 col-sm-12 col-md-6 col-lg-6 col itemcol-4" row-group-index="4"><div class="mx-collapsible-row-item itemGroupIndex-4 mx-card-r3 mx-card-container vertical" precode="r3" data-row-index="2" style="width: 100%; height: auto;"><div class="mx-card mx-color-unselected-border"><div class="top" style="min-height: 1px; height: 1px;"></div><div class="middle"><div class="box rows-2"><div class="content-container" style="min-height: 246px; height: 246px;"><div class="image-holder">
+              
+                  <img crossorigin="anonymous" class="content-image" src="https://surveyfiles.dynata.com/emea/2026/ORD-120883-Q8S1C8/QR10/3.jpg?cache=1773120333825">
+              
+              
+                  <a crossorigin="anonymous" class="zoom-btn" href="[object HTMLImageElement]">
+                    
+                         <img crossorigin="anonymous" class="zoom-icon" src="https://surveyfiles.yoursurveynow.com/rnd/rnd-mx/rnd-mx-tools/images/mag9.png?cache=1773120333825">
+                     
+                  </a>
+              
+          </div></div></div></div><div class="bottom"><div class="box rows-1 border-top">
+                                  <div class="bottom-content content-container" style="min-height: 16px; height: 16px;">
+                                      <div class="label">Des tagliatelles au rayons frais</div>
+                                   </div>
+                                 </div></div><div class="tick top-right square"><div class="tick-content-container"><div class="tick-container">
+                                  <div class="mx-tick-flag"></div>
+                                      
+                                          <i class="icon ion-checkmark"></i>
+                                      
+                                 </div></div></div></div></div></div><div class="col-xs-12 col-sm-12 col-md-6 col-lg-6 col itemcol-5" row-group-index="5"><div class="mx-collapsible-row-item itemGroupIndex-5 mx-card-r6 mx-card-container vertical" precode="r6" data-row-index="2" style="width: 100%; height: auto;"><div class="mx-card mx-color-unselected-border"><div class="top" style="min-height: 1px; height: 1px;"></div><div class="middle"><div class="box rows-2"><div class="content-container" style="min-height: 246px; height: 246px;"><div class="image-holder">
+              
+                  <img crossorigin="anonymous" class="content-image" src="https://surveyfiles.dynata.com/emea/2026/ORD-120883-Q8S1C8/QR10/6.jpg?cache=1773120333825">
+              
+              
+                  <a crossorigin="anonymous" class="zoom-btn" href="[object HTMLImageElement]">
+                    
+                         <img crossorigin="anonymous" class="zoom-icon" src="https://surveyfiles.yoursurveynow.com/rnd/rnd-mx/rnd-mx-tools/images/mag9.png?cache=1773120333825">
+                     
+                  </a>
+              
+          </div></div></div></div><div class="bottom"><div class="box rows-1 border-top">
+                                  <div class="bottom-content content-container" style="min-height: 16px; height: 16px;">
+                                      <div class="label">Du lait au rayon frais</div>
+                                   </div>
+                                 </div></div><div class="tick top-right square"><div class="tick-content-container"><div class="tick-container">
+                                  <div class="mx-tick-flag"></div>
+                                      
+                                          <i class="icon ion-checkmark"></i>
+                                      
+                                 </div></div></div></div></div></div><div class="col-xs-12 col-sm-12 col-md-6 col-lg-6 col itemcol-6" row-group-index="6"><div class="mx-collapsible-row-item itemGroupIndex-6 mx-card-r5 mx-card-container vertical" precode="r5" data-row-index="3" style="width: 100%; height: auto;"><div class="mx-card mx-color-unselected-border"><div class="top" style="min-height: 1px; height: 1px;"></div><div class="middle"><div class="box rows-2"><div class="content-container" style="min-height: 246px; height: 246px;"><div class="image-holder">
+              
+                  <img crossorigin="anonymous" class="content-image" src="https://surveyfiles.dynata.com/emea/2026/ORD-120883-Q8S1C8/QR10/5.jpg?cache=1773120333826">
+              
+              
+                  <a crossorigin="anonymous" class="zoom-btn" href="[object HTMLImageElement]">
+                    
+                         <img crossorigin="anonymous" class="zoom-icon" src="https://surveyfiles.yoursurveynow.com/rnd/rnd-mx/rnd-mx-tools/images/mag9.png?cache=1773120333826">
+                     
+                  </a>
+              
+          </div></div></div></div><div class="bottom"><div class="box rows-1 border-top">
+                                  <div class="bottom-content content-container" style="min-height: 16px; height: 16px;">
+                                      <div class="label">Du lait UHT classique</div>
+                                   </div>
+                                 </div></div><div class="tick top-right square"><div class="tick-content-container"><div class="tick-container">
+                                  <div class="mx-tick-flag"></div>
+                                      
+                                          <i class="icon ion-checkmark"></i>
+                                      
+                                 </div></div></div></div></div></div><div class="col-xs-12 col-sm-12 col-md-6 col-lg-6 col itemcol-7" row-group-index="7"><div class="mx-collapsible-row-item itemGroupIndex-7 mx-card-r4 mx-card-container vertical" precode="r4" data-row-index="3" style="width: 100%; height: auto;"><div class="mx-card mx-color-unselected-border"><div class="top" style="min-height: 1px; height: 1px;"></div><div class="middle"><div class="box rows-2"><div class="content-container" style="min-height: 246px; height: 246px;"><div class="image-holder">
+              
+                  <img crossorigin="anonymous" class="content-image" src="https://surveyfiles.dynata.com/emea/2026/ORD-120883-Q8S1C8/QR10/4.jpg?cache=1773120333826">
+              
+              
+                  <a crossorigin="anonymous" class="zoom-btn" href="[object HTMLImageElement]">
+                    
+                         <img crossorigin="anonymous" class="zoom-icon" src="https://surveyfiles.yoursurveynow.com/rnd/rnd-mx/rnd-mx-tools/images/mag9.png?cache=1773120333826">
+                     
+                  </a>
+              
+          </div></div></div></div><div class="bottom"><div class="box rows-1 border-top">
+                                  <div class="bottom-content content-container" style="min-height: 16px; height: 16px;">
+                                      <div class="label">Du lait UHT aromatisé</div>
+                                   </div>
+                                 </div></div><div class="tick top-right square"><div class="tick-content-container"><div class="tick-container">
+                                  <div class="mx-tick-flag"></div>
+                                      
+                                          <i class="icon ion-checkmark"></i>
+                                      
+                                 </div></div></div></div></div></div><div class="col-xs-12 col-sm-12 col-md-6 col-lg-6 col itemcol-8" row-group-index="8"><div class="mx-collapsible-row-item itemGroupIndex-8 mx-card-r7 mx-card-container vertical" precode="r7" data-row-index="4" style="width: 100%; height: auto;"><div class="mx-card mx-color-unselected-border"><div class="top" style="min-height: 1px; height: 1px;"></div><div class="middle"><div class="box rows-2"><div class="content-container" style="min-height: 246px; height: 246px;"><div class="image-holder">
+              
+                  <img crossorigin="anonymous" class="content-image" src="https://surveyfiles.dynata.com/emea/2026/ORD-120883-Q8S1C8/QR10/7.jpg?cache=1773120333827">
+              
+              
+                  <a crossorigin="anonymous" class="zoom-btn" href="[object HTMLImageElement]">
+                    
+                         <img crossorigin="anonymous" class="zoom-icon" src="https://surveyfiles.yoursurveynow.com/rnd/rnd-mx/rnd-mx-tools/images/mag9.png?cache=1773120333827">
+                     
+                  </a>
+              
+          </div></div></div></div><div class="bottom"><div class="box rows-1 border-top">
+                                  <div class="bottom-content content-container" style="min-height: 16px; height: 16px;">
+                                      <div class="label">Du lait fermenté</div>
+                                   </div>
+                                 </div></div><div class="tick top-right square"><div class="tick-content-container"><div class="tick-container">
+                                  <div class="mx-tick-flag"></div>
+                                      
+                                          <i class="icon ion-checkmark"></i>
+                                      
+                                 </div></div></div></div></div></div><div class="col-xs-12 col-sm-12 col-md-6 col-lg-6 col itemcol-9" row-group-index="9"><div class="mx-collapsible-row-item itemGroupIndex-9 mx-card-r8 mx-card-container vertical" precode="r8" data-row-index="4" style="width: 100%; height: auto;"><div class="mx-card mx-color-unselected-border"><div class="top" style="min-height: 1px; height: 1px;"></div><div class="middle"><div class="box rows-2"><div class="content-container" style="min-height: 246px; height: 246px;"><div class="image-holder">
+              
+                  <img crossorigin="anonymous" class="content-image" src="https://surveyfiles.dynata.com/emea/2026/ORD-120883-Q8S1C8/QR10/8.jpg?cache=1773120333828">
+              
+              
+                  <a crossorigin="anonymous" class="zoom-btn" href="[object HTMLImageElement]">
+                    
+                         <img crossorigin="anonymous" class="zoom-icon" src="https://surveyfiles.yoursurveynow.com/rnd/rnd-mx/rnd-mx-tools/images/mag9.png?cache=1773120333828">
+                     
+                  </a>
+              
+          </div></div></div></div><div class="bottom"><div class="box rows-1 border-top">
+                                  <div class="bottom-content content-container" style="min-height: 16px; height: 16px;">
+                                      <div class="label">Des lattés ou milkshakes vendus au rayon frais en petites bouteilles</div>
+                                   </div>
+                                 </div></div><div class="tick top-right square"><div class="tick-content-container"><div class="tick-container">
+                                  <div class="mx-tick-flag"></div>
+                                      
+                                          <i class="icon ion-checkmark"></i>
+                                      
+                                 </div></div></div></div></div></div><div class="col-xs-12 col-sm-12 col-md-6 col-lg-6 col itemcol-10" row-group-index="10"><div class="mx-collapsible-row-item itemGroupIndex-10 mx-card-r13 mx-card-container vertical" precode="r13" data-row-index="5" style="width: 100%; height: auto;"><div class="mx-card mx-color-unselected-border"><div class="top" style="min-height: 1px; height: 1px;"></div><div class="middle"><div class="box rows-2"><div class="content-container" style="min-height: 246px; height: 246px;"><div class="image-holder">
+              
+                  <img crossorigin="anonymous" class="content-image" src="https://surveyfiles.dynata.com/emea/2026/ORD-120883-Q8S1C8/QR10/13.jpg?cache=1773120333829">
+              
+              
+                  <a crossorigin="anonymous" class="zoom-btn" href="[object HTMLImageElement]">
+                    
+                         <img crossorigin="anonymous" class="zoom-icon" src="https://surveyfiles.yoursurveynow.com/rnd/rnd-mx/rnd-mx-tools/images/mag9.png?cache=1773120333829">
+                     
+                  </a>
+              
+          </div></div></div></div><div class="bottom"><div class="box rows-1 border-top">
+                                  <div class="bottom-content content-container" style="min-height: 16px; height: 16px;">
+                                      <div class="label">Des yaourts aux fruits</div>
+                                   </div>
+                                 </div></div><div class="tick top-right square"><div class="tick-content-container"><div class="tick-container">
+                                  <div class="mx-tick-flag"></div>
+                                      
+                                          <i class="icon ion-checkmark"></i>
+                                      
+                                 </div></div></div></div></div></div><div class="col-xs-12 col-sm-12 col-md-6 col-lg-6 col itemcol-11" row-group-index="11"><div class="mx-collapsible-row-item itemGroupIndex-11 mx-card-r14 mx-card-container vertical" precode="r14" data-row-index="5" style="width: 100%; height: auto;"><div class="mx-card mx-color-unselected-border"><div class="top" style="min-height: 1px; height: 1px;"></div><div class="middle"><div class="box rows-2"><div class="content-container" style="min-height: 246px; height: 246px;"><div class="image-holder">
+              
+                  <img crossorigin="anonymous" class="content-image" src="https://surveyfiles.dynata.com/emea/2026/ORD-120883-Q8S1C8/QR10/14.jpg?cache=1773120333830">
+              
+              
+                  <a crossorigin="anonymous" class="zoom-btn" href="[object HTMLImageElement]">
+                    
+                         <img crossorigin="anonymous" class="zoom-icon" src="https://surveyfiles.yoursurveynow.com/rnd/rnd-mx/rnd-mx-tools/images/mag9.png?cache=1773120333830">
+                     
+                  </a>
+              
+          </div></div></div></div><div class="bottom"><div class="box rows-1 border-top">
+                                  <div class="bottom-content content-container" style="min-height: 16px; height: 16px;">
+                                      <div class="label">Du skyr ou des yaourts protéinés</div>
+                                   </div>
+                                 </div></div><div class="tick top-right square"><div class="tick-content-container"><div class="tick-container">
+                                  <div class="mx-tick-flag"></div>
+                                      
+                                          <i class="icon ion-checkmark"></i>
+                                      
+                                 </div></div></div></div></div></div><div class="col-xs-12 col-sm-12 col-md-6 col-lg-6 col itemcol-12" row-group-index="12"><div class="mx-collapsible-row-item itemGroupIndex-12 mx-card-r9 mx-card-container vertical" precode="r9" data-row-index="6" style="width: 100%; height: auto;"><div class="mx-card mx-color-unselected-border"><div class="top" style="min-height: 1px; height: 1px;"></div><div class="middle"><div class="box rows-2"><div class="content-container" style="min-height: 246px; height: 246px;"><div class="image-holder">
+              
+                  <img crossorigin="anonymous" class="content-image" src="https://surveyfiles.dynata.com/emea/2026/ORD-120883-Q8S1C8/QR10/9.jpg?cache=1773120333830">
+              
+              
+                  <a crossorigin="anonymous" class="zoom-btn" href="[object HTMLImageElement]">
+                    
+                         <img crossorigin="anonymous" class="zoom-icon" src="https://surveyfiles.yoursurveynow.com/rnd/rnd-mx/rnd-mx-tools/images/mag9.png?cache=1773120333830">
+                     
+                  </a>
+              
+          </div></div></div></div><div class="bottom"><div class="box rows-1 border-top">
+                                  <div class="bottom-content content-container" style="min-height: 16px; height: 16px;">
+                                      <div class="label">De la farine de blé</div>
+                                   </div>
+                                 </div></div><div class="tick top-right square"><div class="tick-content-container"><div class="tick-container">
+                                  <div class="mx-tick-flag"></div>
+                                      
+                                          <i class="icon ion-checkmark"></i>
+                                      
+                                 </div></div></div></div></div></div><div class="col-xs-12 col-sm-12 col-md-6 col-lg-6 col itemcol-13" row-group-index="13"><div class="mx-collapsible-row-item itemGroupIndex-13 mx-card-r10 mx-card-container vertical" precode="r10" data-row-index="6" style="width: 100%; height: auto;"><div class="mx-card mx-color-unselected-border"><div class="top" style="min-height: 1px; height: 1px;"></div><div class="middle"><div class="box rows-2"><div class="content-container" style="min-height: 246px; height: 246px;"><div class="image-holder">
+              
+                  <img crossorigin="anonymous" class="content-image" src="https://surveyfiles.dynata.com/emea/2026/ORD-120883-Q8S1C8/QR10/10.jpg?cache=1773120333830">
+              
+              
+                  <a crossorigin="anonymous" class="zoom-btn" href="[object HTMLImageElement]">
+                    
+                         <img crossorigin="anonymous" class="zoom-icon" src="https://surveyfiles.yoursurveynow.com/rnd/rnd-mx/rnd-mx-tools/images/mag9.png?cache=1773120333830">
+                     
+                  </a>
+              
+          </div></div></div></div><div class="bottom"><div class="box rows-1 border-top">
+                                  <div class="bottom-content content-container" style="min-height: 16px; height: 16px;">
+                                      <div class="label">De la farine de sarrasin</div>
+                                   </div>
+                                 </div></div><div class="tick top-right square"><div class="tick-content-container"><div class="tick-container">
+                                  <div class="mx-tick-flag"></div>
+                                      
+                                          <i class="icon ion-checkmark"></i>
+                                      
+                                 </div></div></div></div></div></div></div></div><div class="mx-collapsible-exclusive-holder"><div class="mx-collapsible-exclusive mx-button-r15 mx-btn" style="width: 100%; height: auto;"><div class="mx-btn-content"><div class="mx-btn-label">Aucune de ces catégories de produits</div></div></div></div></div></div>
+<script type="text/javascript" id="mx-loader" src="//surveyfiles.yoursurveynow.com/rnd/rnd-mx/rnd-mx-toolkit/prod/framework/4.0.0/loader/dist/application.min.js?cache=1773120332"></script>
 <script type="text/javascript">
-// =============== DOCUMENTATION ===============> https://dynatallc.sharepoint.com/sites/RDSupport/SitePages/Mx-Carousel.aspx
-  var platforms= {
-    decipher: "decipher", confirmit: "confirmit"
-  }
-var currentPlatform=platforms.decipher;
-if (!mx.qDefs) mx.qDefs= {}
-if (!mx.toolLoader) {
-    mx.toolLoader=new mx.Loader( {
-        baseFileURL: "//surveyfiles.yoursurveynow.com/rnd/rnd-mx/rnd-mx-toolkit/prod/",
-        scriptDeps: [
-          "libs/mxbox/dist/application.min.js",
-          "advanced_ui/Carousel/4.0.0/dist/application.min.js"
-        ], 
-        cssDeps: [
-          "https://surveyfiles.yoursurveynow.com/rnd/plugins/ionicons/ionicons-2.0.1/css/ionicons.min.css", 
-          "framework/4.0.0/core/dist/application.min.css", "libs/mxbox/dist/application.min.css", 
-          "advanced_ui/Carousel/4.0.0/dist/application.min.css", 
-          "framework/4.0.0/themes/dist/blue.css"
-        ], 
-        coreFile: "framework/4.0.0/core/dist/application.min.js",
-        messages: null, // "//speeders.dynata.com/mx/messages/getMsg.php?callback=window.saveMessages&lang=9",
-        platformInterface: {
-          js:
-            "framework/4.0.0/platform_interface_" +
-            currentPlatform +
-            "/dist/application.min.js",
-          css:
-            "framework/4.0.0/platform_interface_" +
-            currentPlatform +
-            "/dist/application.min.css",
-        },
-    });
-    mx.qDefs["QR9"]={"comment": "", "haveRightLegend": false, "rows": [{"index": 0, "rightLegend": "", "uid": 10226, "open": 0, "exclusive": 0, "text": "La m\u00e9decine", "label": "r1", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 1, "rightLegend": "", "uid": 10227, "open": 0, "exclusive": 0, "text": "Un hypermarch\u00e9 ou un supermarch\u00e9", "label": "r2", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 2, "rightLegend": "", "uid": 10228, "open": 0, "exclusive": 0, "text": "Une soci\u00e9t\u00e9 qui fabrique des automobiles", "label": "r3", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 3, "rightLegend": "", "uid": 10229, "open": 0, "exclusive": 0, "text": "Le journalisme", "label": "r4", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 4, "rightLegend": "", "uid": 10230, "open": 0, "exclusive": 0, "text": "Une soci\u00e9t\u00e9 qui fabrique des produits alimentaires", "label": "r5", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 5, "rightLegend": "", "uid": 10231, "open": 0, "exclusive": 0, "text": "Le b\u00e2timent", "label": "r6", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 6, "rightLegend": "", "uid": 10232, "open": 0, "exclusive": 0, "text": "Les \u00e9tudes de march\u00e9", "label": "r7", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 7, "rightLegend": "", "uid": 10233, "open": 0, "exclusive": 0, "text": "L\u2019informatique", "label": "r8", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 8, "rightLegend": "", "uid": 10234, "open": 0, "exclusive": 0, "text": "Le marketing", "label": "r9", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 9, "rightLegend": "", "uid": 10235, "open": 0, "exclusive": 0, "text": "Le monde de la petite enfance", "label": "r10", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 10, "rightLegend": "", "uid": 10236, "open": 0, "exclusive": 0, "text": "La publicit\u00e9 / les relations publiques", "label": "r11", "openOptional": 0, "amount": 0, "optional": 0}], "noanswers": [], "title": "Merci d\u2019indiquer si vous-m\u00eame ou une personne de votre entourage travaillez dans l\u2019un des secteurs d\u2019activit\u00e9 ci-dessous.", "totalColCount": 3, "cols": [{"index": 0, "uid": 10237, "open": 0, "exclusive": 0, "text": "Oui", "label": "c1", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 1, "uid": 10238, "open": 0, "exclusive": 0, "text": "Non", "label": "c2", "openOptional": 0, "amount": 0, "optional": 0}], "choices": [{"index": 0, "uid": 10241, "open": 0, "exclusive": 0, "text": "", "label": "", "openOptional": 0, "amount": 0, "optional": 0}], "haveLeftLegend": true, "errors": [["Veuillez s\u00e9lectionner une r\u00e9ponse.", "row", 1], ["Veuillez s\u00e9lectionner une r\u00e9ponse.", "row", 2], ["Veuillez s\u00e9lectionner une r\u00e9ponse.", "row", 3], ["Veuillez s\u00e9lectionner une r\u00e9ponse.", "row", 4], ["Veuillez s\u00e9lectionner une r\u00e9ponse.", "row", 5], ["Veuillez s\u00e9lectionner une r\u00e9ponse.", "row", 6], ["Veuillez s\u00e9lectionner une r\u00e9ponse.", "row", 7], ["Veuillez s\u00e9lectionner une r\u00e9ponse.", "row", 8], ["Veuillez s\u00e9lectionner une r\u00e9ponse.", "row", 9], ["Veuillez s\u00e9lectionner une r\u00e9ponse.", "row", 10]], "verifiers": {}, "device": {"category": "", "smartphone": false, "tablet": false, "otherMobile": false, "mobileDevice": false, "desktop": true, "width": "0", "iphone": false, "featurephone": false, "android": false, "height": "0", "blackberry": false}, "uid": 10225, "label": "QR9", "type": "radio", "grouping": "rows"}
-    var isTest = "None" === "True";
-    var toolSettings= {
-        toolJs: "carousel/4.0.0/dist/application.min.js",
-        toolVersion: "4.0.0",
-        toolName: "CarouselApp",
-        orientation: "horizontal",
-        rowItemWidth: "200px",
-        rowItemHeight: "100px",
-        rowItemMargin: 35,
-        scaleWidth: "120px",
-        scaleHeight: "60px",
-        jsToLoad: [],
-        cssToLoad: ["carousel/4.0.0/dist/application.min.css"],
-        baseToolPath: "//surveyfiles.yoursurveynow.com/rnd/rnd-mx/rnd-mx-toolkit/prod/tools/",
-        container: "#mx-stage-QR9",
-        toolCssNames: ["carouselapp-1"],
-        qid: getFormName(1),
-        // timeQid: getFormName(2),
-        // orderQid: getFormName(3),
-        // scaleOtherQid: "QR9__c98",
-        timePrecision: 100,
-        minRequired: 1,
-        maxAllowed: 1,
-        compOrder: "items,scales",
-        zoomButtonImage: "//surveyfiles.yoursurveynow.com/rnd/rnd-mx/rnd-mx-tools/images/mag9.png",
-        imageBaseURL: "",
-        scaleNewLine: true,
-        autoNextItem: true,
-        autoNext: false,
-        carouselNavigation: "answered",
-  }
-    //END USER EDITABLE CODE
-    mx.toolLoader.registerSettings(toolSettings, function(info) {
-        info.bridge.setPageValidation(function () {
-                // console.log("setPageValidation");
-                return true;
-              });
+// =============== DOCUMENTATION ===============> https://dynatallc.sharepoint.com/sites/RDSupport/SitePages/Mx-Collapsible.aspx
+  //SETTINGS AND STUFF GOES HERE
+  var toolSettings = {
+    "toolJs": "collapsible/4.0.0/dist/application.min.js",
+    "toolVersion": "4.0.0",
+    "toolName": "CollapsibleApp",
+    "jsToLoad": [],
+    "cssToLoad": ["collapsible/4.0.0/dist/application.min.css"],
+    "baseToolPath": "//surveyfiles.yoursurveynow.com/rnd/rnd-mx/rnd-mx-toolkit/prod/tools/",
+    "container": "#mx-stage-QR10",
+    "toolCssNames": ["flat-holder"],
+    "qid": "QR10",
+    "timeQid": "",// enable this parameter to capture time
+    "orderQid": "",// enable this parameter to capture order
+    "imageBaseURL": "https://surveyfiles.dynata.com/emea/2026/ORD-120883-Q8S1C8/QR10/",
+    "minRequired": "1",
+    "maxAllowed": "99",
+    "showControls": false,
+    "numDecimalsTimeData": "2",
+    "expandButtonImage": "//surveyfiles.yoursurveynow.com/rnd/rnd-mx/rnd-mx-tools/images/expand_2_4.png",
+    "collapseButtonImage": "//surveyfiles.yoursurveynow.com/rnd/rnd-mx/rnd-mx-tools/images/collapse_2_3.png",
+    "scrollButtonImage": "//surveyfiles.yoursurveynow.com/rnd/rnd-mx/rnd-mx-tools/images/go_up.png",
+    "resetButtonImage": "", //"//surveyfiles.yoursurveynow.com/rnd/rnd-mx/rnd-mx-tools/images/reset.png",
+    "resetButtonText": "", //"Reset",
+    "zoomButtonImage": "//surveyfiles.yoursurveynow.com/rnd/rnd-mx/rnd-mx-tools/images/mag9.png",
+    "zoomPosition":"bottom-right",
+    "headerExpandImage": "//surveyfiles.yoursurveynow.com/rnd/rnd-mx/rnd-mx-tools/images/chevron-down-grey.png",
+    "expandOnLoad": false,
+    "rowItemTickShape": "square",
+    "isRanking": false,
+    "rowItemCardType":"vertical",
+    "matchRowItemHeightBy":"row",// all, no, row
+    "showProgressBar": false,
+    "otherMinChar":1,
+    "topBoxMinChar":1, 
+    "rowItemWidth": "100%",
+    "rowItemPerRow":{ "extrasmall":1,"small": 1, "medium": 2, "large": 2 },    
+    "customValidation": function(q){
+        //console.log("customValidation()",q);
+        return true; 
+    }
+  };
+  //END USER EDITABLE CODE
+    var currentPlatform = "decipher";
+    var scriptDeps = [
+      "libs/mxbox/dist/application.min.js",
+      "//surveyfiles.yoursurveynow.com/rnd/plugins/jquery-ui/1.12.1/jquery-ui.min.js",
+      "//surveyfiles.yoursurveynow.com/rnd/plugins/jquery-ui-touch-punch/0.2.3/clickfix/jquery.ui.touch-punch.min.js",
+    ];
+    var cssDeps = [
+      "framework/4.0.0/core/dist/application.min.css",
+      "libs/mxbox/dist/application.min.css",
+      "framework/4.0.0/ionicons/css/ionicons.min.css",
+      "//surveyfiles.yoursurveynow.com/rnd/plugins/jquery-ui/jquery-ui.css",
+      "framework/4.0.0/themes/dist/blue.css"
+    ];
+    if (!mx.qDefs) {
+    mx.qDefs = {};
+        if(!mx.toolLoader) {
+            mx.toolLoader = new mx.Loader({
+                "baseFileURL": "//surveyfiles.yoursurveynow.com/rnd/rnd-mx/rnd-mx-toolkit/prod/",
+                "scriptDeps": scriptDeps,
+                "cssDeps": cssDeps,
+                "coreFile": "framework/4.0.0/core/dist/application.min.js",
+                "messages": null,
+                platformInterface: {
+                  js:
+                    "framework/4.0.0/platform_interface_" +
+                    currentPlatform +
+                    "/dist/application.min.js",
+                  css:
+                    "framework/4.0.0/platform_interface_" +
+                    currentPlatform +
+                    "/dist/application.min.css",
+                },
+            });
+        }
+      }
+      mx.qDefs["QR10"] = {"comment": "", "haveRightLegend": false, "rows": [{"index": 11, "rightLegend": "", "uid": 10259, "open": 0, "exclusive": 0, "text": "Des desserts lact\u00e9s pour b\u00e9b\u00e9/enfant jusqu\u2019\u00e0 3 ans{@imageURL::12.jpg@}", "label": "r12", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 10, "rightLegend": "", "uid": 10258, "open": 0, "exclusive": 0, "text": "Du lait de croissance 3\u003csup\u003e\u00e8me\u003c/sup\u003e ou 4\u003csup\u003e\u00e8me\u003c/sup\u003e \u00e2ge en poudre ou liquide pour b\u00e9b\u00e9/enfant jusqu\u2019\u00e0 3 ans{@imageURL::11.jpg@}", "label": "r11", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 1, "rightLegend": "", "uid": 10249, "open": 0, "exclusive": 0, "text": "Des raviolis au rayon frais{@imageURL::2.jpg@}", "label": "r2", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 0, "rightLegend": "", "uid": 10248, "open": 0, "exclusive": 0, "text": "Des barres de c\u00e9r\u00e9ales{@imageURL::1.jpg@}", "label": "r1", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 2, "rightLegend": "", "uid": 10250, "open": 0, "exclusive": 0, "text": "Des tagliatelles au rayons frais{@imageURL::3.jpg@}", "label": "r3", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 5, "rightLegend": "", "uid": 10253, "open": 0, "exclusive": 0, "text": "Du lait au rayon frais{@imageURL::6.jpg@}", "label": "r6", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 4, "rightLegend": "", "uid": 10252, "open": 0, "exclusive": 0, "text": "Du lait UHT classique{@imageURL::5.jpg@}", "label": "r5", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 3, "rightLegend": "", "uid": 10251, "open": 0, "exclusive": 0, "text": "Du lait UHT aromatis\u00e9{@imageURL::4.jpg@}", "label": "r4", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 6, "rightLegend": "", "uid": 10254, "open": 0, "exclusive": 0, "text": "Du lait ferment\u00e9{@imageURL::7.jpg@}", "label": "r7", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 7, "rightLegend": "", "uid": 10255, "open": 0, "exclusive": 0, "text": "Des latt\u00e9s ou milkshakes vendus au rayon frais en petites bouteilles{@imageURL::8.jpg@}", "label": "r8", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 12, "rightLegend": "", "uid": 10260, "open": 0, "exclusive": 0, "text": "Des yaourts aux fruits{@imageURL::13.jpg@}", "label": "r13", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 13, "rightLegend": "", "uid": 10261, "open": 0, "exclusive": 0, "text": "Du skyr ou des yaourts prot\u00e9in\u00e9s{@imageURL::14.jpg@}", "label": "r14", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 8, "rightLegend": "", "uid": 10256, "open": 0, "exclusive": 0, "text": "De la farine de bl\u00e9{@imageURL::9.jpg@}", "label": "r9", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 9, "rightLegend": "", "uid": 10257, "open": 0, "exclusive": 0, "text": "De la farine de sarrasin{@imageURL::10.jpg@}", "label": "r10", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 14, "rightLegend": "", "uid": 10262, "open": 0, "exclusive": 1, "text": "Aucune de ces cat\u00e9gories de produits{@globalExclusive::true@}", "label": "r15", "openOptional": 0, "amount": 0, "optional": 0}], "noanswers": [], "title": "Parmi les cat\u00e9gories de produits suivantes, lesquelles avez-vous achet\u00e9es en grande surface au cours des 12 derniers mois ?", "totalColCount": 1, "cols": [{"index": 0, "uid": 10263, "open": 0, "exclusive": 0, "text": "", "label": "", "openOptional": 0, "amount": 0, "optional": 0}], "choices": [{"index": 0, "uid": 10264, "open": 0, "exclusive": 0, "text": "", "label": "", "openOptional": 0, "amount": 0, "optional": 0}], "haveLeftLegend": false, "errors": [], "verifiers": {}, "device": {"category": "", "smartphone": false, "tablet": false, "otherMobile": false, "mobileDevice": false, "desktop": true, "width": "0", "iphone": false, "featurephone": false, "android": false, "height": "0", "blackberry": false}, "uid": 10247, "label": "QR10", "type": "checkbox", "grouping": "cols"};
+      var isTest = "None" === "True";
+    mx.toolLoader.registerSettings(toolSettings, function(info){
+        //console.log("Questions loaded",info);
+      console.log(info.bridge.exportQuestions());
+        info.instance.setToolValidation(toolSettings.customValidation);
+        info.bridge.setPageValidation(function(){
+            console.log("setPageValidation");
+            return true;
+        });
         info.instance.on("tool_loaded", function(e){
-           //console.log("tool_loaded", e);
+           console.log("tool_loaded", e);
            if(isTest){
                
 var dataToggler = jQuery('<div>Please click here to see the data nodes for this tool.</div>');
@@ -617,22 +641,52 @@ jQuery('.mx-stage').last().after(dataToggler);
 dataToggler.click(info.bridge.toggleDataNodes());
 
            }
+           console.log(info.bridge.getQuestions());
+        });
+        info.instance.on("tool_resize", function(e){
+            //console.log("tool_resize", e);
+        });
+        info.instance.on("tool_error", function(e){
+            //console.log("tool_error", e);
+        });
+        info.instance.on("group_expanded", function(e){
+            //console.log("group_expanded", e);
+        });
+        info.instance.on("group_collapsed", function(e){
+            //console.log("group_collapsed", e);
+        });
+        info.instance.on("item_statechange", function(e){
+            //console.log("item_statechange", e);
+        });
+        info.instance.on("exclusive_change", function(e){
+            //console.log("exclusive_change", e);
         });
     });
-}
-$ (document).ready(function () {
-    mx.toolLoader.initLoad();
+    $ (function(){
+        mx.toolLoader.initLoad();
+        /*********fix for IE 9*************/
+        $ ('.instruction-text:gt(0)').hide();
+        $ ('.question-text:gt(0)').hide();
     $.getScript("https://surveytools.dynata.com/rsntools/rnd/apis/latest/monitoring/latest/tool/add-usage?project-id=selfserve/53b/g001/260262&tool-id=mx_"+toolSettings.toolName+"_"+toolSettings.toolVersion+"&server-id=100");
-});
-</script><div class="survey-buttons">
+    });
+</script>
+<style type="text/css">
+.mx-container.mx-collapsible-container .mx-card-container.vertical .has-other textarea {
+  min-width: 35px;
+  min-height:60px;
+}
+</style><script type="text/javascript">
+setupExclusive('cols','ans10247.0.14');
+</script>
+<div class="survey-buttons">
 <input type="submit" name="continue" id="btn_continue" class="button continue showNext" value="Continuer " onclick="var i = document.createElement('input'); i.setAttribute('type', 'hidden');i.setAttribute('value', '1');i.setAttribute('name', '__has_javascript');document.forms.primary.appendChild(i);">
 
 </div>
-<!-- #surveyButtons --><input type="hidden" name="state" value="0df69cd7-df91-4bc1-88a1-236592093153">
-<input type="hidden" name="start_time" value="1773118935">
+<!-- #surveyButtons --><input type="hidden" name="state" value="b8ad2265-8574-4648-97a5-f5957f859f9f">
+<input type="hidden" name="start_time" value="1773120332">
 <input type="hidden" name="_ptime" value="0">
 <script>addHandler(Survey.capturePreciseTime)</script><script>
-$ (window).on("load", function() { setTimeout(function() { Survey.recordPageTiming("selfserve/53b/g001/260262", "1du5a5jtk159d0qn", "47nvuqutap64rc1m");}, 100); });
+$ (window).on("load", function() { setTimeout(function() { Survey.recordPageTiming("selfserve/53b/g001/260262", "1du5a5jtk159d0qn", "x55bsbpe7wqajszv");}, 100); });
 </script>
 </form>
 
@@ -655,4 +709,4 @@ $ (window).on("load", function() { setTimeout(function() { Survey.recordPageTimi
 <!-- /.survey-container -->
 
 
-<script src="/survey/lib/sys/qualityscore/v3/qslib1.0.js?791cc48fa2"></script><input type="hidden" name="imperium_qs_time_start" id="imperium_qs_time_start" value="1773118936558"></body>
+<script src="/survey/lib/sys/qualityscore/v3/qslib1.0.js?791cc48fa2"></script><input type="hidden" name="imperium_qs_time_start" id="imperium_qs_time_start" value="1773120333705"></body>
