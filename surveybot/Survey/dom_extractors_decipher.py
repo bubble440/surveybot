@@ -288,6 +288,8 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
                         continue
 
                     row_question = row_label
+                    if question:
+                        row_question = f"{question} [{row_label}]"
                     row_input_name = row_header_id or f"row:{_norm_lc(row_label)}"
                     group_key = f"{itype}:name:{row_input_name}"
                     target_id = make_target_id("group", group_key, row_question)
