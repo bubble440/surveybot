@@ -145,32 +145,13 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
             group_by_row_table = None
 
         if group_by_row_table is not None:
-            mx_stage_active = False
-            grid_cells_without_size = False
+            mx_stage_id = ""
+            mx_scale_code_by_label_norm: dict[str, str] = {}
             try:
-                mx_stage_active = bool(
-                    q.find_elements(By.CSS_SELECTOR, ".mx-stage[id^='mx-stage-'] .mx-carouselapp-container")
-                )
+                mx_stage = q.find_element(By.CSS_SELECTOR, ".mx-stage[id^='mx-stage-']")
+                mx_stage_id = (mx_stage.get_attribute("id") or "").strip()
             except Exception:
-                mx_stage_active = False
-
-            try:
-                clickable_cells = group_by_row_table.find_elements(By.CSS_SELECTOR, "td.clickableCell")
-            except Exception:
-                clickable_cells = []
-
-            if clickable_cells:
-                no_size_count = 0
-                for cell in clickable_cells:
-                    try:
-                        rect = cell.rect or {}
-                        width = float(rect.get("width", 0) or 0)
-                        height = float(rect.get("height", 0) or 0)
-                        if width <= 1.0 or height <= 1.0:
-                            no_size_count += 1
-                    except Exception:
-                        no_size_count += 1
-                grid_cells_without_size = no_size_count == len(clickable_cells)
+                mx_stage_id = ""
 
             try:
                 col_header_nodes = group_by_row_table.find_elements(By.CSS_SELECTOR, "th[scope='col']")
@@ -189,6 +170,11 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
                     m_col = re.search(r"_c(\d+)$", hid)
                     if m_col:
                         col_codes_by_header_id[hid] = f"c{m_col.group(1)}"
+
+                if mx_stage_id:
+                    m = re.search(r"_c(\d+)$", hid)
+                    if m and txt:
+                        mx_scale_code_by_label_norm[_norm_lc(txt)] = f"c{m.group(1)}"
 
             if len(col_labels) >= 2:
                 try:
@@ -305,33 +291,56 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
                     row_input_name = row_header_id or f"row:{_norm_lc(row_label)}"
                     group_key = f"{itype}:name:{row_input_name}"
                     target_id = make_target_id("group", group_key, row_question)
+
+                    payload: dict[str, Any] = {
+                        "kind": "group",
+                        "frame_chain": list(frame_chain or []),
+                        "itype": itype,
+                        "group_key": group_key,
+                        "question": row_question,
+                        "input_name": row_input_name,
+                        "max_select": 1 if itype == "radio" else len(options),
+                        "options": options,
+                        "option_xpath_map": option_xpath_map,
+                    }
+
+                    # Decipher MX Carousel: quand la table answers-list est masquée/non-interactable,
+                    # on cible les cartes visibles du carousel et l'échelle (c1/c2/...) via data-code.
+                    # Scope DOM strict: uniquement si .mx-stage est présent dans la même question.
+                    if mx_stage_id:
+                        row_code = ""
+                        m_row = re.search(r"_r(\d+)_left$", row_header_id)
+                        if m_row:
+                            row_code = f"r{m_row.group(1)}"
+
+                        mx_option_xpath_map: dict[str, str] = {}
+                        for opt_label in options:
+                            nk = _norm_lc(opt_label)
+                            if not nk:
+                                continue
+                            scale_code = mx_scale_code_by_label_norm.get(nk)
+                            if not scale_code:
+                                continue
+                            mx_option_xpath_map[nk] = (
+                                f"//div[@id={_xpath_literal(mx_stage_id)}]"
+                                f"//div[contains(concat(' ',normalize-space(@class),' '),' mx-carouselapp-scale ') and @data-code={_xpath_literal(scale_code)}]"
+                                "//div[contains(concat(' ',normalize-space(@class),' '),' mx-card ')][1]"
+                            )
+
+                        if len(mx_option_xpath_map) >= 2:
+                            payload["option_xpath_map"] = mx_option_xpath_map
+                            if row_code:
+                                payload["pre_click_xpaths"] = [
+                                    (
+                                        f"//div[@id={_xpath_literal(mx_stage_id)}]"
+                                        f"//div[contains(concat(' ',normalize-space(@class),' '),' mx-carouselapp-item ') and @data-code={_xpath_literal(row_code)}]"
+                                        "//div[contains(concat(' ',normalize-space(@class),' '),' mx-card ')][1]"
+                                    )
+                                ]
+
                     register_target(
                         target_id,
-                        {
-                            "kind": "group",
-                            "frame_chain": list(frame_chain or []),
-                            "itype": itype,
-                            "group_key": group_key,
-                            "question": row_question,
-                            "input_name": row_input_name,
-                            "max_select": 1 if itype == "radio" else len(options),
-                            "options": options,
-                            "option_xpath_map": option_xpath_map,
-                            "mx_carousel_active": bool(mx_stage_active and grid_cells_without_size and mx_row_code and mx_scale_xpath_map),
-                            "mx_carousel_row_xpath": (
-                                (
-                                    f"//div[@id={_xpath_literal((q.get_attribute('id') or '').strip())}]"
-                                    f"//div[contains(concat(' ',normalize-space(@class),' '),' mx-carouselapp-item ') and @data-code={_xpath_literal(mx_row_code)}][1]"
-                                )
-                                if (q.get_attribute("id") or "").strip()
-                                else (
-                                    f"(//div[contains(concat(' ',normalize-space(@class),' '),' mx-carouselapp-item ') and @data-code={_xpath_literal(mx_row_code)}])[1]"
-                                )
-                            ) if mx_row_code else "",
-                            "mx_carousel_scale_xpath_map": mx_scale_xpath_map,
-                            "mx_carousel_input_name": (row_inputs[0].get_attribute("name") or "").strip() if row_inputs else "",
-                            "mx_carousel_input_id_map": mx_input_id_map,
-                        },
+                        payload,
                     )
                     blocks.append(
                         {
