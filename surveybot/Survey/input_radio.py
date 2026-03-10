@@ -315,7 +315,7 @@ def click_decipher_mx_carousel_radio(driver, label: str, context_hint: str = "")
 
     stage = None
     try:
-        stage = scope.find_element(
+        stage = driver.find_element(
             By.XPATH,
             ".//div[(contains(concat(' ',normalize-space(@class),' '),' mx-stage ') or starts-with(@id,'mx-stage-')) and .//*[contains(concat(' ',normalize-space(@class),' '),' mx-carouselapp-container ')]]",
         )
