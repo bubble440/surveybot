@@ -374,7 +374,7 @@ def _if_on_topsurveys_handle(driver, api_key, account_id) -> bool:
             import preselection.survey_navigator
             import preselection.survey_handler 
             time.sleep(1.0)
-            preselection.survey_navigator.go_to_best_paid_survey(driver)
+            preselection.survey_navigator.go_to_best_value_survey(driver)
             preselection.survey_handler.run_survey(driver, api_key, account_id=account_id)
             return True
         except Exception as e:
@@ -400,7 +400,7 @@ def _if_on_topsurveys_handle(driver, api_key, account_id) -> bool:
             import preselection.survey_navigator
             import preselection.survey_handler
             time.sleep(0.7)
-            preselection.survey_navigator.go_to_best_paid_survey(driver)
+            preselection.survey_navigator.go_to_best_value_survey(driver)
             preselection.survey_handler.run_survey(driver, api_key, account_id=account_id)
             return True
     except Exception as e:
@@ -473,7 +473,7 @@ def _if_on_topsurveys_handle(driver, api_key, account_id) -> bool:
                     _close_other_tabs_in_current_session(driver)
                     import preselection.survey_navigator
                     time.sleep(0.7)
-                    preselection.survey_navigator.go_to_best_paid_survey(driver)
+                    preselection.survey_navigator.go_to_best_value_survey(driver)
                     continue  # Recommencer la boucle de preselection
                 
                 # Extraire et repondre a la question

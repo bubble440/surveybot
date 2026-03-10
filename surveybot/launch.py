@@ -6,7 +6,7 @@ from Management.guards.runtime_guard import RuntimeGuard, StopReason, set_guard,
 import time, sys, logging, threading, traceback, signal, socket, Cash.payout as payout
 from preselection.playwright_launcher import launch_browser
 from preselection.auth_handler import login, snap
-from preselection.survey_navigator import go_to_best_paid_survey
+from preselection.survey_navigator import go_to_best_value_survey
 from preselection.survey_handler import run_survey
 from Management.watchdogs.idle_monitor import start_idle_gain_watch
 from Management.notifier import send_telegram
@@ -183,7 +183,7 @@ def soft_restart_payout(ctx, driver):
     )
 
 def soft_restart_resume(ctx, driver):
-    go_to_best_paid_survey(driver)
+    go_to_best_value_survey(driver)
     run_survey(driver, ctx["api_key"], account_id=ctx["account_id"])
 
 def soft_restart(ctx, driver, reason):
@@ -367,8 +367,8 @@ def init_session_and_enter_surveys(driver, config, account_id: str, notify_fn):
 
     time.sleep(15)
     snap(driver, "after_login")
-    go_to_best_paid_survey(driver)
-    snap(driver, "after_navigate_best_paid")
+    go_to_best_value_survey(driver)
+    snap(driver, "after_navigate_best_value")
 
     return api_key, payout_name, payout_revolut_tag
 

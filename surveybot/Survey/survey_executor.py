@@ -1090,7 +1090,7 @@ def _handle_topsurveys_exclusion_popup(driver) -> bool:
     print("[TOPSURVEYS_POPUP] Relance preselection...")
     try:
         import preselection.survey_navigator as survey_navigator
-        survey_navigator.go_to_best_paid_survey(driver)
+        survey_navigator.go_to_best_value_survey(driver)
         print("[TOPSURVEYS_POPUP] Navigation vers nouveau survey OK")
         time.sleep(1.0)
     except Exception as e:
