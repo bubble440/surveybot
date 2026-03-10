@@ -437,3 +437,63 @@ def test_focusvision_group_by_row_mx_carousel_prefers_visible_scale_cards():
     assert payload.get("pre_click_xpaths")
     assert "mx-carouselapp-item" in payload["pre_click_xpaths"][0]
     assert '@data-code="r1"' in payload["pre_click_xpaths"][0]
+
+def test_focusvision_answers_list_mx_collapsible_stage_found_from_driver_scope():
+    from Survey.dom_registry import clear_registry, get_target
+
+    clear_registry()
+
+    first = _FakeInput(attrs={"id": "ans10247.0.3", "name": "ans10247.0.3", "type": "checkbox"})
+    second = _FakeInput(attrs={"id": "ans10247.0.4", "name": "ans10247.0.4", "type": "checkbox"})
+    answers = _FakeNode(
+        children={
+            "input[type='radio'], input[type='checkbox']": [first, second],
+            "label[for='ans10247.0.3']": [_FakeNode(text="Du lait UHT aromatisé")],
+            "label[for='ans10247.0.4']": [_FakeNode(text="Du lait UHT classique")],
+        }
+    )
+
+    q = _FakeNode(
+        attrs={"id": "question_QR10"},
+        children={
+            ".answers.answers-list, .answers.answers-table": [answers],
+            ".question-text": [_FakeNode(text="Parmi les catégories...")],
+        },
+    )
+
+    mx_row_1 = _FakeNode(
+        attrs={"precode": "r4"},
+        children={".bottom .label": [_FakeNode(text="Du lait UHT aromatisé")]},
+    )
+    mx_row_2 = _FakeNode(
+        attrs={"precode": "r5"},
+        children={".bottom .label": [_FakeNode(text="Du lait UHT classique")]},
+    )
+    mx_stage = _FakeNode(
+        children={
+            ".mx-collapsible-groupholder .mx-collapsible-row-item[precode]": [mx_row_1, mx_row_2],
+            ".mx-collapsible-exclusive-holder .mx-collapsible-exclusive[class*='mx-button-r']": [],
+        }
+    )
+
+    class _D:
+        def find_elements(self, by=None, value=None):
+            if value == "div.question[role='radiogroup'], div.question.radio, div.question.checkbox":
+                return [q]
+            return []
+
+        def find_element(self, by=None, value=None):
+            if value == "#mx-stage-QR10":
+                return mx_stage
+            raise Exception("not found")
+
+    blocks = _extract_focusvision_answers_list_groups(_D(), frame_chain=[])
+
+    assert len(blocks) == 1
+    payload = get_target(blocks[0]["target_id"])
+    assert payload is not None
+    xpaths = list(payload["option_xpath_map"].values())
+    assert any("mx-stage-QR10" in xp for xp in xpaths)
+    assert any("mx-collapsible-row-item" in xp for xp in xpaths)
+    assert any("@precode" in xp for xp in xpaths)
+    assert all("clickableCell" not in xp for xp in xpaths)
