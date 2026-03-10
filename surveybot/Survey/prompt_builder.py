@@ -136,29 +136,6 @@ _CONSENT_REJECT_PATTERNS = [
 
 _SECTOR_SCREENER_MAX_OPTIONS = 15
 
-_SECTOR_SCREENER_WORK_MARKERS = [
-    "travaillez",
-    "travail",
-    "secteur",
-    "secteur d'activite",
-    "domaine",
-    "industrie",
-    "employed",
-    "work in",
-    "industry",
-    "field",
-    "sector",
-]
-
-_SECTOR_SCREENER_EXCLUSIVE_OPTION_PATTERNS = [
-    "aucune de ces propositions",
-    "none of the above",
-    "aucun",
-    "aucune",
-    "non",
-]
-
-
 def _preferred_survey_consent_option(block: Dict[str, Any], options: list[str]) -> str | None:
     """Retourne l'option d'acceptation pour consentement participation/confidentialité, si détectée."""
     if not options:
@@ -185,39 +162,6 @@ def _preferred_survey_consent_option(block: Dict[str, Any], options: list[str]) 
         return None
 
     return accept_option
-
-
-def _is_sector_employment_household_screener_question(block: Dict[str, Any]) -> bool:
-    """Détecte les screeners métier/secteur sur le répondant ou son foyer/famille."""
-    itype = _norm_folded_lc(block.get("itype"))
-    if itype not in {"radio", "checkbox", "dropdown", "select", "button"}:
-        return False
-
-    question = _norm_folded_lc(block.get("question"))
-    if not question:
-        return False
-
-    has_work_signal = any(marker in question for marker in _SECTOR_SCREENER_WORK_MARKERS)
-    return has_work_signal
-
-
-def _find_sector_screener_exclusive_option(options: list[str]) -> str | None:
-    if not options:
-        return None
-
-    normalized_options = [(_norm_folded_lc(opt), opt) for opt in options]
-    for pattern in _SECTOR_SCREENER_EXCLUSIVE_OPTION_PATTERNS:
-        folded_pattern = _norm_folded_lc(pattern)
-        if not folded_pattern:
-            continue
-        for folded_opt, original_opt in normalized_options:
-            if folded_opt == folded_pattern:
-                return original_opt
-        for folded_opt, original_opt in normalized_options:
-            if folded_pattern in folded_opt:
-                return original_opt
-
-    return None
 
 
 def _matrix_row_labels(block: Dict[str, Any]) -> list[str]:
@@ -543,18 +487,6 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
                 or str((ctx or {}).get("kind") or "") == "multi_text"
             )
         )
-        forced_sector_screener_exclusive = None
-        if (
-            _is_sector_employment_household_screener_question(block)
-            and opts
-            and len(opts) < _SECTOR_SCREENER_MAX_OPTIONS
-        ):
-            forced_sector_screener_exclusive = _find_sector_screener_exclusive_option(opts)
-            print(
-                f"[PROMPT_BUILDER] sector_screener_question=1 target_id={target_id} "
-                f"options_count={len(opts)} option_present={bool(forced_sector_screener_exclusive)}"
-            )
-
         if is_cardsort:
             lines.append(
                 "selection_rule: Pour QID={qid}, renvoyer EXACTEMENT une affectation par carte au format "
@@ -604,17 +536,7 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
                 lines.append(
                     f"selection_rule: Pour QID={qid}, renvoyer EXACTEMENT 1 valeur"
                 )
-        if forced_sector_screener_exclusive:
-            lines.append(
-                "selection_rule: SECTOR_EMPLOYMENT_HOUSEHOLD_SAFE strict -> répondre EXACTEMENT "
-                f"avec '{forced_sector_screener_exclusive}'"
-            )
-            lines.append(f"allowed_values_strict: {forced_sector_screener_exclusive}")
-            lines.append(
-                "instruction_stricte: Screener secteur (répondant/foyer/famille) détecté avec liste courte. "
-                "Tu dois choisir l'option exclusive négative (none/aucune/non) pour éviter la disqualification."
-            )
-        elif (forced_consent := _preferred_survey_consent_option(block, opts)):
+        if (forced_consent := _preferred_survey_consent_option(block, opts)):
             lines.append(f"selection_rule: SURVEY_CONSENT_ACCEPT strict -> répondre EXACTEMENT avec '{forced_consent}'")
             lines.append(f"allowed_values_strict: {forced_consent}")
             lines.append("instruction_stricte: Consentement de participation/confidentialité détecté. Tu dois choisir l'option d'acceptation et jamais l'option de refus.")
