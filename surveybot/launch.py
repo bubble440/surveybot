@@ -183,8 +183,11 @@ def soft_restart_payout(ctx, driver):
     )
 
 def soft_restart_resume(ctx, driver):
+    from Survey.survey_context import SurveyContext
+
+    survey_ctx = SurveyContext(session_id=ctx["account_id"], openai_api_key=ctx["api_key"])
     go_to_best_value_survey(driver)
-    run_survey(driver, ctx["api_key"], account_id=ctx["account_id"])
+    run_survey(driver, ctx["api_key"], account_id=ctx["account_id"], ctx=survey_ctx)
 
 def soft_restart(ctx, driver, reason):
     print(f"[SOFT_RESTART] {reason}")
@@ -452,7 +455,10 @@ def start_hot_reload_thread():
 _HOT_RELOAD_STARTED = False
 
 def run_main_loop(driver, api_key: str, account_id: str):
-    run_survey(driver, api_key, account_id=account_id)
+    from Survey.survey_context import SurveyContext
+
+    survey_ctx = SurveyContext(session_id=account_id, openai_api_key=api_key)
+    run_survey(driver, api_key, account_id=account_id, ctx=survey_ctx)
     print("ðŸ§© Script terminÃ©. Navigateur maintenu ouvert pour inspection.")
     while True:
         time.sleep(999)
