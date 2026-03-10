@@ -1,4 +1,8 @@
-from surveybot.Survey.dom_extractors_decipher import _extract_focusvision_answers_list_groups
+from surveybot.Survey.dom_extractors_decipher import (
+    _clean_decipher_template_markers,
+    _extract_decipher_answers_list_fallback,
+    _extract_focusvision_answers_list_groups,
+)
 
 
 class _FakeNode:
@@ -69,6 +73,46 @@ def test_focusvision_answers_list_extracts_hidden_labels_via_dom_text_content():
     assert len(block["options"]) == 2
     assert "Transféré vers  Revolut" in block["options"]
     assert "Laissé chez Société Générale" in block["options"]
+
+
+def test_clean_decipher_template_markers_strips_template_suffixes():
+    assert _clean_decipher_template_markers(
+        "Des desserts lactés pour bébé/enfant jusqu'à 3 ans{@imageURL::12.jpg@}"
+    ) == "Des desserts lactés pour bébé/enfant jusqu'à 3 ans"
+    assert _clean_decipher_template_markers(
+        "Aucune de ces catégories de produits{@globalExclusive::true@}"
+    ) == "Aucune de ces catégories de produits"
+
+
+def test_decipher_fallback_cleans_template_markers_from_option_labels():
+    class _FallbackDriver:
+        def __init__(self):
+            self._container = _FakeNode(
+                text="Question exemple",
+                children={
+                    "input[type='radio'], input[type='checkbox']": [
+                        _FakeInput(attrs={"id": "ans1", "name": "ans100.0", "type": "checkbox"}),
+                        _FakeInput(attrs={"id": "ans2", "name": "ans100.0", "type": "checkbox"}),
+                    ]
+                },
+            )
+
+        def find_elements(self, by=None, value=None):
+            if value == ".answer-list":
+                return [self._container]
+            return []
+
+        def find_element(self, by=None, value=None):
+            if value == "label[for='ans1']":
+                return _FakeNode(text="Option A{@imageURL::12.jpg@}")
+            if value == "label[for='ans2']":
+                return _FakeNode(text="Option B{@globalExclusive::true@}")
+            raise Exception("not found")
+
+    blocks = _extract_decipher_answers_list_fallback(_FallbackDriver(), frame_chain=[])
+
+    assert len(blocks) == 1
+    assert blocks[0]["options"] == ["Option A", "Option B"]
 
 
 class _FakeTable(_FakeNode):
