@@ -32,6 +32,7 @@ from Survey.input_utils import (
     split_typed_instruction,
     pause_here,
 )
+from Survey.log_utils import log_debug
 
 
 # =============================================================================
@@ -283,6 +284,145 @@ def click_decipher_grid_radio_strict(driver, label: str, context_hint: str = "")
     return False
 
 
+def click_decipher_mx_carousel_radio(driver, label: str, context_hint: str = "") -> bool:
+    """
+    Decipher + MX Carousel overlay:
+    - détecte un carousel dans le scope de la question,
+    - sélectionne la carte de ligne via context_hint (si fourni),
+    - clique la scale `.mx-carouselapp-scale[data-code=...]` correspondant au label,
+    - attend l'auto-avancement (autoNextItem) quand applicable.
+    """
+
+    def _n(s: str) -> str:
+        if not s:
+            return ""
+        s = s.replace("\u00A0", " ")
+        s = unicodedata.normalize("NFKD", s)
+        s = "".join(c for c in s if not unicodedata.combining(c))
+        return re.sub(r"\s+", " ", s).strip().lower()
+
+    colneedle = _n(label)
+    if not colneedle:
+        return False
+
+    rowneedle = _n(context_hint or "")
+
+    try:
+        scope = find_questions_container(driver, context_hint)
+    except Exception:
+        scope = None
+    scope = scope or driver
+
+    stage = None
+    try:
+        stage = scope.find_element(
+            By.XPATH,
+            ".//div[(contains(concat(' ',normalize-space(@class),' '),' mx-stage ') or starts-with(@id,'mx-stage-')) and .//*[contains(concat(' ',normalize-space(@class),' '),' mx-carouselapp-container ')]]",
+        )
+    except Exception:
+        stage = None
+
+    if stage is None:
+        return False
+
+    js_click = r'''
+        const stage = arguments[0];
+        const rowNeedle = arguments[1] || "";
+        const colNeedle = arguments[2] || "";
+
+        const norm = (s) => (s || "")
+            .toLowerCase()
+            .normalize('NFKD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .replace(/\u00a0/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+
+        const activeCode = () => {
+            const active = stage.querySelector('.mx-carouselapp-item.swiper-slide-active[data-code]');
+            return active ? (active.getAttribute('data-code') || null) : null;
+        };
+
+        const items = Array.from(stage.querySelectorAll('.mx-carouselapp-item[data-code]'));
+        const scales = Array.from(stage.querySelectorAll('.mx-carouselapp-scale[data-code]'));
+        if (!scales.length) {
+            return { ok: false, reason: 'scale_not_found' };
+        }
+
+        let targetScale = null;
+        for (const el of scales) {
+            const txt = norm(el.innerText || el.textContent || '');
+            if (txt && (txt === colNeedle || txt.includes(colNeedle) || colNeedle.includes(txt))) {
+                targetScale = el;
+                break;
+            }
+        }
+        if (!targetScale) {
+            return { ok: false, reason: 'scale_label_not_matched' };
+        }
+
+        if (rowNeedle) {
+            let targetRow = null;
+            for (const item of items) {
+                const txt = norm(item.innerText || item.textContent || '');
+                if (txt && (txt === rowNeedle || txt.includes(rowNeedle) || rowNeedle.includes(txt))) {
+                    targetRow = item;
+                    break;
+                }
+            }
+            if (!targetRow) {
+                return { ok: false, reason: 'row_not_found' };
+            }
+            try { targetRow.scrollIntoView({block: 'center', inline: 'center'}); } catch(e) {}
+            try { targetRow.click(); } catch(e) {
+                try { targetRow.dispatchEvent(new MouseEvent('click', {bubbles: true, cancelable: true})); } catch(e2) {}
+            }
+        }
+
+        const before = activeCode();
+        try { targetScale.scrollIntoView({block: 'center', inline: 'center'}); } catch(e) {}
+        try { targetScale.click(); } catch(e) {
+            try { targetScale.dispatchEvent(new MouseEvent('click', {bubbles: true, cancelable: true})); } catch(e2) {
+                return { ok: false, reason: 'scale_click_failed' };
+            }
+        }
+
+        return {
+            ok: true,
+            activeBefore: before,
+            itemCount: items.length,
+        };
+    '''
+
+    try:
+        click_result = driver.execute_script(js_click, stage, rowneedle, colneedle) or {}
+    except Exception:
+        return False
+
+    if not click_result.get("ok"):
+        log_debug("[TARGET_DEBUG]", f"mx carousel click skipped: reason={click_result.get('reason')!r}")
+        return False
+
+    if rowneedle and click_result.get("itemCount", 0) > 1 and click_result.get("activeBefore"):
+        before = click_result.get("activeBefore")
+        try:
+            WebDriverWait(driver, 1.5).until(
+                lambda d: d.execute_script(
+                    """
+                    const stage = arguments[0];
+                    const active = stage.querySelector('.mx-carouselapp-item.swiper-slide-active[data-code]');
+                    return active ? (active.getAttribute('data-code') || null) : null;
+                    """,
+                    stage,
+                ) != before
+            )
+        except Exception:
+            log_debug("[TARGET_DEBUG]", "mx carousel autoNext wait timeout")
+            return False
+
+    return True
+
+
 def click_radio_label_in_scope(driver, scope, label_text: str) -> bool:
     """Decipher/Confirmit : coche une radio via <label for=...> **dans le scope**."""
     def _n(s):
@@ -459,6 +599,12 @@ def click_radio_by_label(driver, label: str, context_hint: str | None = None) ->
         from input_handler import click_confirmit_gridclick
         if click_confirmit_gridclick(driver, label=label, context_hint=context_hint):
             print(f"✓ Radio(GridClick) « {label} ». source: input_radio.py")
+            return True
+    except Exception:
+        pass
+
+    try:
+        if click_decipher_mx_carousel_radio(driver, label, context_hint or ""):
             return True
     except Exception:
         pass
