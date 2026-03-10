@@ -357,7 +357,7 @@ def _handle_topsurveys_partial_popup(driver) -> bool:
     return False
 
 
-def _if_on_topsurveys_handle(driver, api_key, account_id) -> bool:
+def _if_on_topsurveys_handle(driver, api_key, account_id, survey_context=None) -> bool:
     """
     Si on est sur app.topsurveys.app :
       - traite le popup 'partiellement rÃƒÆ’Ã‚Â©pondu' (ferme autres onglets + 'ComplÃƒÆ’Ã‚Â¨te' + relance)
@@ -375,7 +375,7 @@ def _if_on_topsurveys_handle(driver, api_key, account_id) -> bool:
             import preselection.survey_handler 
             time.sleep(1.0)
             preselection.survey_navigator.go_to_best_value_survey(driver)
-            preselection.survey_handler.run_survey(driver, api_key, account_id=account_id)
+            preselection.survey_handler.run_survey(driver, api_key, account_id=account_id, ctx=survey_context)
             return True
         except Exception as e:
             print("ÃƒÂ°Ã…Â¸Ã¢â‚¬â„¢Ã‚Â¥ Erreur relance aprÃƒÆ’Ã‚Â¨s 'ComplÃƒÆ’Ã‚Â¨te' :", e)
@@ -401,7 +401,7 @@ def _if_on_topsurveys_handle(driver, api_key, account_id) -> bool:
             import preselection.survey_handler
             time.sleep(0.7)
             preselection.survey_navigator.go_to_best_value_survey(driver)
-            preselection.survey_handler.run_survey(driver, api_key, account_id=account_id)
+            preselection.survey_handler.run_survey(driver, api_key, account_id=account_id, ctx=survey_context)
             return True
     except Exception as e:
         print("ÃƒÂ°Ã…Â¸Ã¢â‚¬â„¢Ã‚Â¥ Erreur check disqualification TopSurveys :", e)
@@ -525,7 +525,7 @@ def get_current_survey_ctx():
     """Retourne le SurveyContext actif, ou None si aucun survey en cours."""
     return _current_survey_ctx
 
-def solve_full_survey(driver, api_key, *, account_id: str):
+def solve_full_survey(driver, api_key, *, account_id: str, survey_context=None):
     import Management.redirect_watcher as redirect_watcher
     from Survey.survey_context import SurveyContext
     import Survey.survey_executor  
@@ -543,7 +543,7 @@ def solve_full_survey(driver, api_key, *, account_id: str):
     """
     print("ÃƒÂ°Ã…Â¸Ã‚Â§Ã‚Âª [solve_full_survey] DÃƒÆ’Ã‚Â©but de traitement du survey...")
     # One SurveyContext per survey run — tracks Q/R history for coherent OpenAI responses
-    _survey_ctx = SurveyContext(session_id=account_id, openai_api_key=api_key)
+    _survey_ctx = survey_context or SurveyContext(session_id=account_id, openai_api_key=api_key)
     global _current_survey_ctx
     _current_survey_ctx = _survey_ctx
 
@@ -707,7 +707,7 @@ def solve_full_survey(driver, api_key, *, account_id: str):
         try:
             current_url_check = (driver.current_url or "").lower()
             if "topsurveys.app" in current_url_check:
-                if _if_on_topsurveys_handle(driver, api_key, account_id):
+                if _if_on_topsurveys_handle(driver, api_key, account_id, survey_context=_survey_ctx):
                     print("[PRE-EXEC] Retour TopSurveys traite -> arret solve_full_survey()")
                     return
         except Exception as e:
@@ -791,7 +791,7 @@ def solve_full_survey(driver, api_key, *, account_id: str):
 
             # [NEW] Retour TopSurveys ? Traite popup 'ComplÃƒÆ’Ã‚Â¨te' ou disqualification, puis relance.
             try:
-                if _if_on_topsurveys_handle(driver, api_key, account_id):
+                if _if_on_topsurveys_handle(driver, api_key, account_id, survey_context=_survey_ctx):
                     print("ÃƒÂ¢Ã¢â‚¬Â Ã‚Â©ÃƒÂ¯Ã‚Â¸Ã‚Â Retour orchestrÃƒÆ’Ã‚Â© vers la prÃƒÆ’Ã‚Â©-sÃƒÆ’Ã‚Â©lection depuis TopSurveys. ArrÃƒÆ’Ã‚Âªt de solve_full_survey().")
                     return  # on laisse run_survey() reprendre la main
             except Exception as e:

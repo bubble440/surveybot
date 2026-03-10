@@ -11,7 +11,17 @@ from selenium.webdriver.common.action_chains import ActionChains
 from preselection.question_validation import detect_disqualification_reason
 from Survey.log_utils import log_debug
 
-ASSISTANT_ID = "asst_dzB8sAFrNdPPD17auG4WI0EK"
+ASSISTANT_SYSTEM_PROMPT = (
+    "Tu es un utilisateur fictif chargé de répondre à des sondages comme si tu étais une vraie personne. "
+    "Tu dois TOUJOURS répondre à la question qui t'est posée, même si elle concerne ton identité, "
+    "ta situation financière ou personnelle. Tes réponses sont inventées mais crédibles. "
+    "Ne réponds jamais « je ne sais pas », « je ne peux pas » ou « je ne donne pas d'informations personnelles ». "
+    "Quand la question dit « mon revenu », « mon ménage », « mon âge », etc., tu dois comprendre que cela parle de toi — "
+    "le personnage fictif que tu incarnes. Réponds comme si TU étais cette personne. "
+    "Donne toujours une réponse concrète : un mot, une valeur ou une phrase courte. "
+    "Ne donne jamais d'explication. Ne dis jamais que tu es une IA. Ne refuse jamais de répondre. "
+    "S'il y a des options, choisis celle qui semble la plus courante, crédible ou avantageuse."
+)
 
 _HARDWARE_TOKENS = {"webcam", "camera", "microphone", "micro"}
 _HARDWARE_ACTIVATION_TOKENS = {
@@ -184,7 +194,7 @@ def extract_select_options_js(driver):
         return []
 
 
-def reformulate_prompt_for_gpt(question_text, options):
+def reformulate_prompt_for_gpt(question_text, options, itype="radio"):
     base_rules = (
         "Tu es un répondant ADULTE (18–64). "
         "Réponds par UNE SEULE VALEUR. "
@@ -193,6 +203,15 @@ def reformulate_prompt_for_gpt(question_text, options):
         "'je préfère ne pas le dire', 'moins de 18', 'aucune de ces réponses' — sauf si la question porte sur les secteurs d’emploi et que cette option est prévue). "
     )
     
+    if options and itype == "checkbox":
+        return (
+            f"Question: {question_text}\n"
+            f"{base_rules}"
+            f"Options: {', '.join(options)}\n"
+            "Si plusieurs options sont pertinentes, tu peux en choisir plusieurs. "
+            "Réponds UNIQUEMENT avec le ou les libellés exacts, séparés par ' | '."
+        )
+
     if options:
         return (
             f"Question: {question_text}\n"
@@ -232,30 +251,16 @@ def ask_assistant(prompt_text, api_key, *, question=None, options=None):
     client = OpenAI(api_key=api_key)
     Management.guards.runtime_guard.get_guard().record_openai_call()
 
-    thread = client.beta.threads.create()
-    client.beta.threads.messages.create(
-        thread_id=thread.id,
-        role="user",
-        content=prompt_text
+    completion = client.chat.completions.create(
+        model="gpt-5-nano",
+        max_tokens=50,
+        messages=[
+            {"role": "system", "content": ASSISTANT_SYSTEM_PROMPT},
+            {"role": "user", "content": prompt_text},
+        ],
     )
 
-    run = client.beta.threads.runs.create(
-        thread_id=thread.id,
-        assistant_id=ASSISTANT_ID
-    )
-
-    while run.status not in ["completed", "failed"]:
-        time.sleep(1)
-        run = client.beta.threads.runs.retrieve(
-            thread_id=thread.id,
-            run_id=run.id
-        )
-
-    if run.status != "completed":
-        return None
-
-    messages = client.beta.threads.messages.list(thread_id=thread.id)
-    raw = messages.data[0].content[0].text.value.strip()
+    raw = (completion.choices[0].message.content or "").strip()
     cleaned = raw.split("\n")[0].strip(" .,-–—•*➡️✅🤖⭐")
 
     # 3️⃣ Store cache
@@ -308,7 +313,8 @@ def get_response_for_question(driver, api_key):
             )
             return question, "Non"
 
-        prompt = reformulate_prompt_for_gpt(question, options)
+        input_type = detect_input_type(html)
+        prompt = reformulate_prompt_for_gpt(question, options, input_type)
         print(
             f"🧠 Reformulation pour GPT :\n Question : {question}\n\nChoix : {options}"
         )
