@@ -26,6 +26,7 @@ import math
 import unicodedata
 from typing import Dict, Optional, List, Any
 from .log_utils import log_debug, log_info
+from .dom_selection_rules import is_sector_activity_question
 _ALLOWED_ITYPES = {"radio", "checkbox", "dropdown", "text", "textarea", "button", "number", "matrix", "cardsort"}
 _QID_RE = re.compile(r"\bQ\d+\b", re.IGNORECASE)
 _OTHER_SPECIFY_TEXT_RE = re.compile(r"autre.*pr[eé]cis|other.*specify", re.IGNORECASE)
@@ -984,6 +985,16 @@ _BULK_EXCLUSIVE_PATTERNS = (
     r"je\s+prefere\s+ne\s+pas\s+repondre",
 )
 
+_NEGATIVE_EXCLUSIVE_PATTERNS = (
+    r"^aucun(e)?(\s|$)",
+    r"^aucun(e)?\s+de\s+ces",
+    r"^none(\s|$)",
+    r"^none\s+of\s+(the|these|those)",
+    r"^non(\s|$)",
+)
+
+_SECTOR_SCREENER_SHORT_OPTIONS_MAX = 15
+
 
 def _fold_lc(s: str | None) -> str:
     base = (s or "")
@@ -1013,6 +1024,27 @@ def _is_bulk_exclusive_option(label: str) -> bool:
     return any(re.search(pat, folded, re.IGNORECASE) for pat in _BULK_EXCLUSIVE_PATTERNS)
 
 
+def _pick_sector_screener_negative_exclusive(meta: dict | None) -> str | None:
+    if not isinstance(meta, dict):
+        return None
+    if _norm_lc(meta.get("itype") or "") != "checkbox":
+        return None
+
+    question = str(meta.get("question") or "")
+    if not is_sector_activity_question(question):
+        return None
+
+    options = [str(o or "").strip() for o in (meta.get("options") or []) if str(o or "").strip()]
+    if not options or len(options) >= _SECTOR_SCREENER_SHORT_OPTIONS_MAX:
+        return None
+
+    for option in options:
+        folded = _fold_lc(option)
+        if any(re.search(pat, folded, re.IGNORECASE) for pat in _NEGATIVE_EXCLUSIVE_PATTERNS):
+            return option
+    return None
+
+
 def _expand_checkbox_bulk_actions(actions: list, qid_meta: dict | None = None) -> list:
     """
     Policy ciblée (DOM-first):
@@ -1039,6 +1071,15 @@ def _expand_checkbox_bulk_actions(actions: list, qid_meta: dict | None = None) -
             continue
         meta = qid_meta.get(qid)
         if not _is_checkbox_bulk_multi_target(meta):
+            continue
+
+        sector_negative_exclusive = _pick_sector_screener_negative_exclusive(meta)
+        if sector_negative_exclusive:
+            planned_by_qid[qid] = ([sector_negative_exclusive], a)
+            log_debug(
+                "CHECKBOX_BULK",
+                f"qid={qid} sector_screener_negative_exclusive='{sector_negative_exclusive}'",
+            )
             continue
 
         options = [str(o or "").strip() for o in (meta.get("options") or []) if str(o or "").strip()]
