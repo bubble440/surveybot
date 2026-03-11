@@ -102,6 +102,19 @@ def should_block_for_input() -> bool:
     return getattr(sys.stdin, "isatty", lambda: False)()
 
 
+def should_pause_before_cta() -> bool:
+    """
+    Retourne True si le bot doit attendre une confirmation utilisateur
+    avant un clic CTA (Suivant/Continuer/etc.).
+    Désactivé en prod-like (aws/docker/local_unattended).
+    """
+    if is_prod_like():
+        return False
+    if not _env_truthy("LOCAL_CTA_REQUIRE_ENTER", "0"):
+        return False
+    return should_block_for_input()
+
+
 def should_run_guard_monitor() -> bool:
     """Retourne True si le RuntimeGuard doit être activé avec son monitoring."""
     return is_prod_like()
