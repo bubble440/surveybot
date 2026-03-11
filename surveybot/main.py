@@ -493,6 +493,56 @@ def run_attach_takeover(driver, *, api_key: str, account_id: str) -> None:
 
     print("[ATTACH] takeover loop end (process exit, sans fermer Chrome).")
 
+
+
+def _get_attach_route() -> str:
+    route = (os.getenv("ATTACH_ROUTE", "resolution") or "resolution").strip().lower()
+    if route not in {"resolution", "preselection"}:
+        print(f"[ATTACH] route inconnue={route!r} -> fallback resolution")
+        return "resolution"
+    return route
+
+
+def run_attach_preselection_takeover(driver, *, api_key: str, account_id: str) -> None:
+    """Attach takeover dédié au popup de présélection TopSurveys déjà affiché."""
+    import Survey.survey_executor as survey_executor
+    import Survey.survey_solver as survey_solver
+    from Survey.survey_context import SurveyContext
+    from preselection.survey_handler import run_attach_preselection_takeover as run_preselection_takeover
+
+    _ctx = SurveyContext(session_id=account_id, openai_api_key=api_key)
+    survey_solver._current_survey_ctx = _ctx
+
+    _attach_select_tab(driver)
+
+    max_rounds = int(os.getenv("ATTACH_PRESELECTION_MAX_ROUNDS", "15"))
+    transition_timeout_s = int(os.getenv("ATTACH_PRESELECTION_TRANSITION_TIMEOUT_S", "45"))
+    ok, reason = run_preselection_takeover(
+        driver,
+        api_key,
+        max_rounds=max_rounds,
+        transition_timeout_s=transition_timeout_s,
+    )
+
+    if not ok:
+        print(f"[ATTACH][PRESEL] abandon contrôlé: reason={reason}")
+        return
+
+    print("[ATTACH][PRESEL] présélection terminée -> bascule en résolution survey")
+
+    max_steps = int(os.getenv("ATTACH_MAX_STEPS", "100"))
+    for i in range(1, max_steps + 1):
+        try:
+            done = survey_executor.execute_survey_page(driver, api_key, ctx=_ctx)
+            _ctx.maybe_update_summary()
+            print(f"[ATTACH][PRESEL->RES] step={i}/{max_steps} ok={done} url={_attach_display_url(driver.current_url)}")
+        except Exception as e:
+            print(f"[ATTACH][PRESEL->RES][ERROR] step={i} {type(e).__name__}: {e}")
+            break
+        time.sleep(0.6)
+
+    print("[ATTACH][PRESEL] route terminée.")
+
 def main():
     config = load_config()
 
@@ -536,7 +586,12 @@ def main():
         if should_run_hot_reload():
             start_hot_reload_thread()
 
-        run_attach_takeover(driver, api_key=api_key, account_id=account_id)
+        attach_route = _get_attach_route()
+        print(f"[ATTACH] route={attach_route}")
+        if attach_route == "preselection":
+            run_attach_preselection_takeover(driver, api_key=api_key, account_id=account_id)
+        else:
+            run_attach_takeover(driver, api_key=api_key, account_id=account_id)
         return
 
     acquire_account_lock_or_exit(account_id)
