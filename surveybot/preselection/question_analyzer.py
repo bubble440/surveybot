@@ -246,7 +246,14 @@ def reformulate_prompt_for_gpt(question_text, options, itype="radio"):
             f"Options: {', '.join(options)}\n"
             "Choisis une ou plusieurs options cohérentes avec ton profil. "
             "Réponds UNIQUEMENT avec le ou les libellés exacts, séparés par ' | '. "
-            "Ne sélectionne pas plus que nécessaire."
+            "Pour une checkbox non exclusive, préfère plusieurs choix plausibles plutôt qu’un seul."
+            "Pour les questions à choix multiples (checkbox) :"
+            "- Par défaut, sélectionne plusieurs options cohérentes avec le profil, pas une seule."
+            "- Sauf si la question implique clairement une réponse exclusive ou un nombre limité évident (ex: année de naissance, âge exact, nombre exact, situation familiale exclusive, réponse négative exclusive, 'aucune de ces propositions', 'je n'ai pas d'enfants', 'je préfère ne pas le dire', 'aucun', 'autre')."
+            "- Si la question est une checkbox générique de qualification (habitudes, médias, achats, usages, centres d’intérêt, équipements, services utilisés, stations écoutées, marques connues/utilisées), renvoie en général 2 à 4 options plausibles au lieu d’une seule."
+            "- Ne combine jamais une option exclusive avec d’autres."
+            "- Si la question concerne les enfants, le foyer parental, ou l’année de naissance d’enfants, tu es sans enfants."
+            "- Si plusieurs réponses sont renvoyées, utilise exactement le séparateur ' | ' entre les libellés."
         )
 
     if options:
