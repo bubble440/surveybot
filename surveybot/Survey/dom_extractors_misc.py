@@ -3443,6 +3443,19 @@ def _extract_kantar_rowpicker_radio_blocks(driver, frame_chain: list[int] | None
         except Exception:
             q_nodes = []
 
+        # Variante DOM observée: le conteneur options est `container_<suffixe_court>`
+        # (ex: `container_S1`) alors que le texte question est stocké dans
+        # `#qc_<questionname_complet>` (ex: `qc_S1BL.S1`).
+        # On complète donc la recherche via l'attribut `questionname` du wrapper.
+        if not q_nodes:
+            try:
+                q_nodes = driver.find_elements(
+                    By.CSS_SELECTOR,
+                    f".questionContainer[questionname$='.{q_suffix}'] span.mrQuestionText",
+                )
+            except Exception:
+                q_nodes = []
+
         for qn in q_nodes:
             q_txt = _norm(qn.text or qn.get_attribute("innerText") or "")
             if q_txt and len(q_txt) >= 8:
