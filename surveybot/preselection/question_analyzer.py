@@ -137,10 +137,30 @@ def extract_question_text(html):
 
 def detect_input_type(html):
     soup = BeautifulSoup(html, "html.parser")
-    # radios/checkbox (y compris rôle ARIA)
+    # Priorité au DOM explicite multiple-choice/checkbox (inputs, rôles, data-test-id, classes)
     if soup.find("input", {"type": "checkbox"}) or soup.select("[role='checkbox']"):
         return "checkbox"
+
+    checkbox_markers = soup.select(
+        "[data-test-id*='multiple_choice'], "
+        "[data-test-id*='checkbox'], "
+        "[class*='checkbox'], "
+        "[class*='p-checkbox']"
+    )
+    if checkbox_markers:
+        return "checkbox"
+
+    # Radio / single-choice
     if soup.find("input", {"type": "radio"}) or soup.select("[role='radio']"):
+        return "radio"
+
+    radio_markers = soup.select(
+        "[data-test-id*='single_choice'], "
+        "[data-test-id*='radio'], "
+        "[class*='radio'], "
+        "[class*='p-radio']"
+    )
+    if radio_markers:
         return "radio"
 
     return "radio"
