@@ -100,7 +100,7 @@ def extract_popup_html(driver):
     try:
         popup = WebDriverWait(driver, 5).until(
             EC.presence_of_element_located(
-                (By.CSS_SELECTOR, "div[class*='common-container']")
+                (By.CSS_SELECTOR, "[data-test-id='ps-popup-content-wrapper']")
             )
         )
         html = driver.execute_script("return arguments[0].outerHTML", popup)
