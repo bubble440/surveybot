@@ -5,6 +5,8 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.action_chains import ActionChains
 
+from config import should_pause_before_cta
+
 
 def normalize(text):
     """Nettoie une chaîne pour comparaison souple"""
@@ -114,6 +116,12 @@ def execute_response(driver, answer_text):
         return False
 
 
+
+def _confirm_before_cta_click() -> None:
+    if should_pause_before_cta():
+        print("⏸️ LOCAL_CTA_REQUIRE_ENTER=1 — appuyez sur Entrée pour cliquer sur le CTA. source: reponse_executor.py")
+        input()
+
 def click_next_button(driver):
     wait = WebDriverWait(driver, 10)
     try:
@@ -124,6 +132,7 @@ def click_next_button(driver):
             "arguments[0].scrollIntoView({block: 'center'});", next_btn
         )
         time.sleep(0.2)
+        _confirm_before_cta_click()
         driver.execute_script("arguments[0].click();", next_btn)
         print(
             "➡️ Bouton (flèche ou navigation) cliqué via data-test-id. source: reponse_executor.py"
@@ -144,6 +153,7 @@ def click_next_button(driver):
             next_btn = wait.until(EC.presence_of_element_located((By.XPATH, xpath)))
             driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", next_btn)
             time.sleep(0.2)
+            _confirm_before_cta_click()
 
             # attendre que le bouton devienne réellement cliquable (disabled retiré)
             try:
