@@ -90,6 +90,7 @@ try:
         _extract_single_consent_checkbox_block,
         _extract_consent_modal_radio_block,
         _extract_runtime_answerrow_radio_blocks,
+        _extract_kantar_rowpicker_radio_blocks,
         _extract_label_radio_list_blocks,
         _extract_qualtrics_choice_structure_radio_blocks,
         _extract_decipher_clickable_ranking_blocks,
@@ -157,6 +158,7 @@ except ImportError:
         _extract_single_consent_checkbox_block,
         _extract_consent_modal_radio_block,
         _extract_runtime_answerrow_radio_blocks,
+        _extract_kantar_rowpicker_radio_blocks,
         _extract_label_radio_list_blocks,
         _extract_qualtrics_choice_structure_radio_blocks,
         _extract_decipher_clickable_ranking_blocks,
@@ -941,6 +943,15 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
     except Exception as e:
         if is_debug():
             log_debug("[DOM_CONTEXT_DEBUG]", f"runtime_extractor_exception={type(e).__name__}: {e}")
+
+    # --- 0h-bis-2a) Kantar rowpicker (cartes cliquables sans input radio natif visible) ---
+    # Objectif: extraire les options dans `div._rowpicker[data-test='main-contain']`.
+    try:
+        kantar_rowpicker_blocks = _extract_kantar_rowpicker_radio_blocks(driver, frame_chain)
+        if kantar_rowpicker_blocks:
+            return kantar_rowpicker_blocks
+    except Exception:
+        pass
 
     # --- 0h-bis-2b) Listes label.radio sans input natif (Angular custom) ---
     # Objectif: extraire les groupes single-select rendus via labels cliquables.
