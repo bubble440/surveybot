@@ -320,7 +320,7 @@ def get_response_for_question(driver, api_key):
         js_texts = extract_popup_text_with_js(driver)
         # Détection qualification : si le texte contient "qualifié", on sort immédiatement
         for line in js_texts:
-            if "tu t'es qualifié pour cette enquête" in line.lower():
+            if re.search(r"tu\s+t.es\s+qualifi", line.lower()):
                 print(
                     "🎯 Message de qualification détecté : sortie de boucle autorisée."
                 )
@@ -403,7 +403,7 @@ def click_participer_if_qualified(driver):
                 .join(" ")
         """
         )
-        if "tu t'es qualifié pour cette enquête" in page_text.lower():
+        if re.search(r"tu\s+t.es\s+qualifi", page_text.lower()):            
             wait = WebDriverWait(driver, 5)
             btn = wait.until(
                 EC.element_to_be_clickable(

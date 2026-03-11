@@ -2802,6 +2802,121 @@ def handle_consent_screen(driver):
     if _handle_toluna_consent_modal():
         return True
 
+    # 0) Ipsos / entercdn : écran "Politique de confidentialité" (checkbox + CTA "Accepter et commencer")
+    #    Ex: input#privacyPolicyCheckbox1 + a#acceptAndTakeSurveyLink2
+    def _scroll_center(el) -> None:
+        try:
+            driver.execute_script("arguments[0].scrollIntoView({block:'center', inline:'center'});", el)
+        except Exception:
+            pass
+
+    def _click_best_effort(el) -> bool:
+        if el is None:
+            return False
+        _scroll_center(el)
+        time.sleep(0.12)
+        try:
+            el.click()
+            return True
+        except Exception:
+            try:
+                ActionChains(driver).move_to_element(el).click().perform()
+                return True
+            except Exception:
+                try:
+                    driver.execute_script("arguments[0].click();", el)
+                    return True
+                except Exception:
+                    return False
+
+    def _cmp_overlay_present() -> bool:
+        """True si un container CMP *bloquant* (grand et visible) est présent."""
+        try:
+            return bool(driver.execute_script(
+                r"""
+                const vw = Math.max(320, window.innerWidth || 0);
+                const vh = Math.max(240, window.innerHeight || 0);
+                const minArea = vw * vh * 0.12;
+
+                const selectors = arguments[0] || [];
+                const kw = ['cookie','cookies','consent','gdpr','rgpd','privacy','confidential'];
+
+                function isVisible(e){
+                  try{
+                    const s = window.getComputedStyle(e);
+                    if (!s) return false;
+                    if (s.display === 'none' || s.visibility === 'hidden') return false;
+                    const r = e.getBoundingClientRect();
+                    if (!r) return false;
+                    if (r.width < 60 || r.height < 40) return false;
+                    if (r.bottom < 0 || r.right < 0 || r.top > vh || r.left > vw) return false;
+                    return true;
+                  }catch(_){ return false; }
+                }
+
+                const cand = [];
+                for (const sel of selectors){
+                  try{ cand.push(...Array.from(document.querySelectorAll(sel))); }catch(_){ }
+                }
+
+                for (const el of cand){
+                  if (!isVisible(el)) continue;
+                  const r = el.getBoundingClientRect();
+                  if ((r.width * r.height) < minArea) continue;
+                  const t = (el.innerText || '').toLowerCase();
+                  if (kw.some(k => t.includes(k))) return true;
+
+                  const blob = ((el.id||'') + ' ' + (el.className||'')).toLowerCase();
+                  if (blob.includes('onetrust') || blob.includes('qc-cmp') || blob.includes('didomi') || blob.includes('truste') || blob.includes('cookiebot'))
+                    return true;
+                }
+                return false;
+                """,
+                CMP_CONTAINER_SELECTORS,
+            ))
+        except Exception:
+            return False
+
+    def _sig() -> str:
+        try:
+            url = driver.current_url or ""
+        except Exception:
+            url = ""
+        try:
+            txt_len = int(driver.execute_script("return (document.body && (document.body.innerText||'').length) || 0;") or 0)
+        except Exception:
+            txt_len = 0
+        try:
+            n_btn = len(driver.find_elements(By.CSS_SELECTOR, "button, a, [role='button'], input[type='submit'], input[type='button']"))
+        except Exception:
+            n_btn = 0
+        return f"{url}||{txt_len}||{n_btn}||{int(_cmp_overlay_present())}"
+
+    try:
+        before_url = driver.current_url or ""
+    except Exception:
+        before_url = ""
+    before_sig = _sig()
+
+    def _wait_change(before_sig: str, before_url: str, timeout_s: float = 6.0) -> bool:
+        end = time.time() + timeout_s
+        while time.time() < end:
+            time.sleep(0.25)
+
+            # 1) URL changée
+            try:
+                if driver.current_url != before_url:
+                    return True
+            except Exception:
+                pass
+
+            # 2) Signature DOM/overlay changée
+            if _sig() != before_sig:
+                return True
+
+        return False
+
+
     # 0bis) Cint/QPS consent collect page: mandatory checkboxes name="consents" + CTA submit.
     # Trigger strictement DOM-first pour éviter tout impact sur les autres providers/pages.
     def _handle_cint_collect_consent_page() -> bool:
@@ -2967,120 +3082,6 @@ def handle_consent_screen(driver):
         "préférences",
         "preferences",
     ]
-
-    def _cmp_overlay_present() -> bool:
-        """True si un container CMP *bloquant* (grand et visible) est présent."""
-        try:
-            return bool(driver.execute_script(
-                r"""
-                const vw = Math.max(320, window.innerWidth || 0);
-                const vh = Math.max(240, window.innerHeight || 0);
-                const minArea = vw * vh * 0.12;
-
-                const selectors = arguments[0] || [];
-                const kw = ['cookie','cookies','consent','gdpr','rgpd','privacy','confidential'];
-
-                function isVisible(e){
-                  try{
-                    const s = window.getComputedStyle(e);
-                    if (!s) return false;
-                    if (s.display === 'none' || s.visibility === 'hidden') return false;
-                    const r = e.getBoundingClientRect();
-                    if (!r) return false;
-                    if (r.width < 60 || r.height < 40) return false;
-                    if (r.bottom < 0 || r.right < 0 || r.top > vh || r.left > vw) return false;
-                    return true;
-                  }catch(_){ return false; }
-                }
-
-                const cand = [];
-                for (const sel of selectors){
-                  try{ cand.push(...Array.from(document.querySelectorAll(sel))); }catch(_){ }
-                }
-
-                for (const el of cand){
-                  if (!isVisible(el)) continue;
-                  const r = el.getBoundingClientRect();
-                  if ((r.width * r.height) < minArea) continue;
-                  const t = (el.innerText || '').toLowerCase();
-                  if (kw.some(k => t.includes(k))) return true;
-
-                  const blob = ((el.id||'') + ' ' + (el.className||'')).toLowerCase();
-                  if (blob.includes('onetrust') || blob.includes('qc-cmp') || blob.includes('didomi') || blob.includes('truste') || blob.includes('cookiebot'))
-                    return true;
-                }
-                return false;
-                """,
-                CMP_CONTAINER_SELECTORS,
-            ))
-        except Exception:
-            return False
-
-    def _sig() -> str:
-        try:
-            url = driver.current_url or ""
-        except Exception:
-            url = ""
-        try:
-            txt_len = int(driver.execute_script("return (document.body && (document.body.innerText||'').length) || 0;") or 0)
-        except Exception:
-            txt_len = 0
-        try:
-            n_btn = len(driver.find_elements(By.CSS_SELECTOR, "button, a, [role='button'], input[type='submit'], input[type='button']"))
-        except Exception:
-            n_btn = 0
-        return f"{url}||{txt_len}||{n_btn}||{int(_cmp_overlay_present())}"
-
-    try:
-        before_url = driver.current_url or ""
-    except Exception:
-        before_url = ""
-    before_sig = _sig()
-
-    def _wait_change(before_sig: str, before_url: str, timeout_s: float = 6.0) -> bool:
-        end = time.time() + timeout_s
-        while time.time() < end:
-            time.sleep(0.25)
-
-            # 1) URL changée
-            try:
-                if driver.current_url != before_url:
-                    return True
-            except Exception:
-                pass
-
-            # 2) Signature DOM/overlay changée
-            if _sig() != before_sig:
-                return True
-
-        return False
-
-    # 0) Ipsos / entercdn : écran "Politique de confidentialité" (checkbox + CTA "Accepter et commencer")
-    #    Ex: input#privacyPolicyCheckbox1 + a#acceptAndTakeSurveyLink2
-    def _scroll_center(el) -> None:
-        try:
-            driver.execute_script("arguments[0].scrollIntoView({block:'center', inline:'center'});", el)
-        except Exception:
-            pass
-
-    def _click_best_effort(el) -> bool:
-        if el is None:
-            return False
-        _scroll_center(el)
-        time.sleep(0.12)
-        try:
-            el.click()
-            return True
-        except Exception:
-            try:
-                ActionChains(driver).move_to_element(el).click().perform()
-                return True
-            except Exception:
-                try:
-                    driver.execute_script("arguments[0].click();", el)
-                    return True
-                except Exception:
-                    return False
 
     def _handle_ipsos_privacy_policy_page() -> bool:
         # DÃ©tection volontairement stricte (Ã©vite les faux positifs sur d'autres consent screens)
