@@ -213,8 +213,4 @@ def select_checkbox_answers(driver, answers):
                 continue
     if found:
         return True
-
-    print(
-        f"❌ Aucun checkbox correspondant à la réponse : {answers} source: reponse_executor.py"
-    )
     return False
