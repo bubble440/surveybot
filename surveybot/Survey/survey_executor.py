@@ -1168,6 +1168,15 @@ def execute_survey_page(driver, api_key, ctx=None):
     except Exception as _cap_exc:
         print(f"[CAPTCHA][WARN] {_cap_exc}")
 
+    # DataDome CAPTCHA (DataDomeSliderTask via 2Captcha + injection cookie + refresh)
+    try:
+        from captcha.datadome_handler import solve_datadome_auto
+        if solve_datadome_auto(driver):
+            print("[DATADOME] DataDome résolu → reprise du flux")
+            return True
+    except Exception as _dd_exc:
+        print(f"[DATADOME][WARN] {_dd_exc}")
+
     #  micro-: compteur rescans DOM sur CETTE page (reset  chaque page)
     try:
         driver._dom_rescans_this_page = 0
