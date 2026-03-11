@@ -1,0 +1,875 @@
+<body class="survey-page non-touch" data-device="">
+
+
+<div id="survey" class="survey-container">
+<div class="survey-section"><div class="page-header"></div>
+<!-- /.page-header --></div>
+<div class="survey-section">
+<div class="survey-body">
+<div class="survey-header">
+ <div class="logo logo-left">
+     <img src="//surveyfiles.dynata.com/emea/custom/templates/strategir/v1/theme/strategir_logo_s.jpg" class="logo-image" alt="Logo">
+ </div>
+ <!-- /.logo -->
+<div role="progressbar" aria-valuenow="21" aria-valuemin="0" aria-valuemax="100" class="progress-bar progress-top" title="barre de progression - 21% terminer">
+<div class="progress-box-outer" aria-hidden="true"><span class="progress-box-completed" style="width: 21%;"></span></div>
+<div class="progress-text" aria-hidden="true">21%</div>
+</div>
+<!-- /.progress-bar -->
+</div>
+<!-- /.survey-header -->
+
+<form id="primary" name="primary" method="post" action="/survey/selfserve/53b/g001/2602187" enctype="application/x-www-form-urlencoded" novalidate="">
+<input type="hidden" name="_v2_counter" value="26">
+<!-- @@XYZZY@@ -->
+<div id="question_Q2" class="question radio label_Q2   noCols" role="radiogroup">
+<h1 title="question" class="question-text" id="question_text_Q2">Si vous deviez en <b>acheter un <u>second</u></b>, lequel achèteriez-vous ?</h1>
+<!-- /.question-text -->
+
+<h2 title="instructions" class="instruction-text"><i>Veuillez cliquer sur le produit de votre choix.</i></h2>
+<!-- /.instruction-text -->
+<div class="answers answers-list">
+<div class="fir fir-checkbox" style="display: none;">
+<span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> checkbox </title>
+<path d="M15.8,0H3.9C1.8,0,0,2,0,4.1V16c0,2.2,1.8,4,3.9,4h11.8c2.2,0,4.2-1.8,4.2-4V4.1C20,2,18,0,15.8,0z M19,16 c0,1.6-1.6,3-3.2,3H3.9C2.3,19,1,17.7,1,16V4.1C1,2.5,2.3,1,3.9,1h11.8C17.4,1,19,2.5,19,4.1V16z" class="fir-base"></path>
+<path d="M19,16c0,1.6-1.6,3-3.2,3H3.9C2.3,19,1,17.7,1,16V4.1C1,2.5,2.3,1,3.9,1h11.8C17.4,1,19,2.5,19,4.1V16z" class="fir-bg"></path>
+<polygon points="9.1,16.3 2.5,11 4.1,9 8.7,12.6 15.6,3.7 17.7,5.2 " class="fir-selected"></polygon>
+</svg>
+</span>
+</div>
+<div class="fir fir-radio" style="display: none;">
+<span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</div><div class="element even  groupingCols OneColumnEl    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans10687.0.0" value="0" id="ans10687.0.0" class="input radio fir-hidden"><span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans10687.0.0">1</label> </span>
+</span>
+</div><div class="element odd  groupingCols OneColumnEl    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans10687.0.0" value="1" id="ans10687.0.1" class="input radio fir-hidden"><span class="fir-icon selected">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans10687.0.1">2</label> </span>
+</span>
+</div><div class="element even  groupingCols OneColumnEl    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans10687.0.0" value="2" id="ans10687.0.2" class="input radio fir-hidden"><span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans10687.0.2">3</label> </span>
+</span>
+</div><div class="element odd  groupingCols OneColumnEl    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans10687.0.0" value="3" id="ans10687.0.3" class="input radio fir-hidden"><span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans10687.0.3">4</label> </span>
+</span>
+</div><div class="element even  groupingCols OneColumnEl    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans10687.0.0" value="4" id="ans10687.0.4" class="input radio fir-hidden"><span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans10687.0.4">5</label> </span>
+</span>
+</div><div class="element odd  groupingCols OneColumnEl    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans10687.0.0" value="5" id="ans10687.0.5" class="input radio fir-hidden"><span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans10687.0.5">6</label> </span>
+</span>
+</div><div class="element even  groupingCols OneColumnEl    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans10687.0.0" value="6" id="ans10687.0.6" class="input radio fir-hidden"><span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans10687.0.6">7</label> </span>
+</span>
+</div><div class="element odd  groupingCols OneColumnEl    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans10687.0.0" value="7" id="ans10687.0.7" class="input radio fir-hidden"><span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans10687.0.7">8</label> </span>
+</span>
+</div><div class="element even  groupingCols OneColumnEl    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans10687.0.0" value="8" id="ans10687.0.8" class="input radio fir-hidden"><span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans10687.0.8">9</label> </span>
+</span>
+</div><div class="element odd  groupingCols OneColumnEl    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans10687.0.0" value="9" id="ans10687.0.9" class="input radio fir-hidden"><span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans10687.0.9">10</label> </span>
+</span>
+</div><div class="element even  groupingCols OneColumnEl    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans10687.0.0" value="10" id="ans10687.0.10" class="input radio fir-hidden"><span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans10687.0.10">11</label> </span>
+</span>
+</div><div class="element odd  groupingCols OneColumnEl    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans10687.0.0" value="11" id="ans10687.0.11" class="input radio fir-hidden"><span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans10687.0.11">12</label> </span>
+</span>
+</div><div class="element even  groupingCols OneColumnEl    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans10687.0.0" value="12" id="ans10687.0.12" class="input radio fir-hidden"><span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans10687.0.12">13</label> </span>
+</span>
+</div><div class="element odd  groupingCols OneColumnEl    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans10687.0.0" value="13" id="ans10687.0.13" class="input radio fir-hidden"><span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans10687.0.13">14</label> </span>
+</span>
+</div><div class="element even  groupingCols OneColumnEl    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans10687.0.0" value="14" id="ans10687.0.14" class="input radio fir-hidden"><span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans10687.0.14">15</label> </span>
+</span>
+</div><div class="element odd  groupingCols OneColumnEl    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans10687.0.0" value="15" id="ans10687.0.15" class="input radio fir-hidden"><span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans10687.0.15">16</label> </span>
+</span>
+</div><div class="element even  groupingCols OneColumnEl    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans10687.0.0" value="16" id="ans10687.0.16" class="input radio fir-hidden"><span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans10687.0.16">17</label> </span>
+</span>
+</div><div class="element odd  groupingCols OneColumnEl    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans10687.0.0" value="17" id="ans10687.0.17" class="input radio fir-hidden"><span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans10687.0.17">18</label> </span>
+</span>
+</div><div class="element even  groupingCols OneColumnEl    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans10687.0.0" value="18" id="ans10687.0.18" class="input radio fir-hidden"><span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans10687.0.18">19</label> </span>
+</span>
+</div><div class="element odd  groupingCols OneColumnEl    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans10687.0.0" value="19" id="ans10687.0.19" class="input radio fir-hidden"><span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans10687.0.19">20</label> </span>
+</span>
+</div><div class="element even  groupingCols OneColumnEl    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans10687.0.0" value="20" id="ans10687.0.20" class="input radio fir-hidden"><span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans10687.0.20">21</label> </span>
+</span>
+</div><div class="element odd  groupingCols OneColumnEl    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans10687.0.0" value="21" id="ans10687.0.21" class="input radio fir-hidden"><span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans10687.0.21">22</label> </span>
+</span>
+</div><div class="element even  groupingCols OneColumnEl    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans10687.0.0" value="22" id="ans10687.0.22" class="input radio fir-hidden"><span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans10687.0.22">23</label> </span>
+</span>
+</div><div class="element odd  groupingCols OneColumnEl    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans10687.0.0" value="23" id="ans10687.0.23" class="input radio fir-hidden"><span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans10687.0.23">24</label> </span>
+</span>
+</div><div class="element even  groupingCols OneColumnEl    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans10687.0.0" value="24" id="ans10687.0.24" class="input radio fir-hidden"><span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans10687.0.24">25</label> </span>
+</span>
+</div><div class="element odd  groupingCols OneColumnEl    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans10687.0.0" value="25" id="ans10687.0.25" class="input radio fir-hidden"><span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans10687.0.25">26</label> </span>
+</span>
+</div><div class="element even  groupingCols OneColumnEl    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans10687.0.0" value="26" id="ans10687.0.26" class="input radio fir-hidden"><span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans10687.0.26">27</label> </span>
+</span>
+</div><div class="element odd  groupingCols OneColumnEl    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans10687.0.0" value="27" id="ans10687.0.27" class="input radio fir-hidden"><span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans10687.0.27">28</label> </span>
+</span>
+</div><div class="element even  groupingCols OneColumnEl    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans10687.0.0" value="28" id="ans10687.0.28" class="input radio fir-hidden"><span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans10687.0.28">29</label> </span>
+</span>
+</div><div class="element odd  groupingCols OneColumnEl    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans10687.0.0" value="29" id="ans10687.0.29" class="input radio fir-hidden"><span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans10687.0.29">30</label> </span>
+</span>
+</div><div class="element even  groupingCols OneColumnEl    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans10687.0.0" value="30" id="ans10687.0.30" class="input radio fir-hidden"><span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans10687.0.30">31</label> </span>
+</span>
+</div><div class="element odd  groupingCols OneColumnEl    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans10687.0.0" value="31" id="ans10687.0.31" class="input radio fir-hidden"><span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans10687.0.31">32</label> </span>
+</span>
+</div><div class="element even  groupingCols OneColumnEl    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans10687.0.0" value="32" id="ans10687.0.32" class="input radio fir-hidden"><span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans10687.0.32">33</label> </span>
+</span>
+</div><div class="element odd  groupingCols OneColumnEl    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans10687.0.0" value="33" id="ans10687.0.33" class="input radio fir-hidden"><span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans10687.0.33">34</label> </span>
+</span>
+</div><div class="element even  groupingCols OneColumnEl    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans10687.0.0" value="34" id="ans10687.0.34" class="input radio fir-hidden"><span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans10687.0.34">35</label> </span>
+</span>
+</div><div class="element odd  groupingCols OneColumnEl    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans10687.0.0" value="35" id="ans10687.0.35" class="input radio fir-hidden"><span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans10687.0.35">36</label> </span>
+</span>
+</div><div class="element even  groupingCols OneColumnEl    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans10687.0.0" value="36" id="ans10687.0.36" class="input radio fir-hidden"><span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans10687.0.36">37</label> </span>
+</span>
+</div><div class="element odd  groupingCols OneColumnEl    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans10687.0.0" value="37" id="ans10687.0.37" class="input radio fir-hidden"><span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans10687.0.37">38</label> </span>
+</span>
+</div><div class="element even  groupingCols OneColumnEl    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans10687.0.0" value="38" id="ans10687.0.38" class="input radio fir-hidden"><span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans10687.0.38">39</label> </span>
+</span>
+</div><div class="element odd  groupingCols OneColumnEl    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans10687.0.0" value="39" id="ans10687.0.39" class="input radio fir-hidden"><span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans10687.0.39">40</label> </span>
+</span>
+</div><div class="element even  groupingCols OneColumnEl    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans10687.0.0" value="40" id="ans10687.0.40" class="input radio fir-hidden"><span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans10687.0.40">41</label> </span>
+</span>
+</div><div class="element odd  groupingCols OneColumnEl    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans10687.0.0" value="41" id="ans10687.0.41" class="input radio fir-hidden"><span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans10687.0.41">42</label> </span>
+</span>
+</div><div class="element even  groupingCols OneColumnEl    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans10687.0.0" value="42" id="ans10687.0.42" class="input radio fir-hidden"><span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans10687.0.42">43</label> </span>
+</span>
+</div><div class="element odd  groupingCols OneColumnEl    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans10687.0.0" value="43" id="ans10687.0.43" class="input radio fir-hidden"><span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans10687.0.43">44</label> </span>
+</span>
+</div><div class="element even  groupingCols OneColumnEl    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans10687.0.0" value="44" id="ans10687.0.44" class="input radio fir-hidden"><span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans10687.0.44">45</label> </span>
+</span>
+</div><div class="element odd  groupingCols OneColumnEl    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans10687.0.0" value="45" id="ans10687.0.45" class="input radio fir-hidden"><span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans10687.0.45">46</label> </span>
+</span>
+</div><div class="element even  groupingCols OneColumnEl    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans10687.0.0" value="46" id="ans10687.0.46" class="input radio fir-hidden"><span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans10687.0.46">47</label> </span>
+</span>
+</div><div class="element odd  groupingCols OneColumnEl    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans10687.0.0" value="47" id="ans10687.0.47" class="input radio fir-hidden"><span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans10687.0.47">48</label> </span>
+</span>
+</div><div class="element even  groupingCols OneColumnEl    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans10687.0.0" value="48" id="ans10687.0.48" class="input radio fir-hidden"><span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans10687.0.48">49</label> </span>
+</span>
+</div><div class="element odd  groupingCols OneColumnEl    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans10687.0.0" value="49" id="ans10687.0.49" class="input radio fir-hidden"><span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans10687.0.49">50</label> </span>
+</span>
+</div><div class="element even  groupingCols OneColumnEl    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans10687.0.0" value="50" id="ans10687.0.50" class="input radio fir-hidden"><span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded" aria-hidden="true">
+<title> radio </title>
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</span>
+<span class="cell-text cell-sub-column"><label for="ans10687.0.50">Pas de second achat</label> </span>
+</span>
+</div><!-- /.grid -->
+</div>
+<!-- /.answers -->
+</div>
+<!-- /.question --><script type="text/javascript" src="//d2n88fe5uqdqty.cloudfront.net/ssi_js/decipher/ssi_ALLInOne_Confirmit_2.1_groups_decipher.js"></script>
+<style>
+  .survey-header{display:none;}
+.survey-buttons {bottom: -80px;}
+.answers.answers-table {display: none;}
+.answers.answers-list {
+display: none; }
+img.preload {left: 0 !important;visibility: hidden;}
+.question {padding-bottom: 0; margin-bottom: 0; margin-top:0;}
+.survey-body{max-width: 1200px; margin-top:0;}
+</style>
+<!-- Parse data -->
+<script type="text/javascript">
+var lukanka;
+(function (lukanka) {
+if (!lukanka.qDefs)
+lukanka.qDefs = {};
+lukanka.qDefs["Q2"] = {"comment": "\u003ci\u003eVeuillez cliquer sur le produit de votre choix.\u003c/i\u003e", "haveRightLegend": false, "rows": [{"index": 0, "rightLegend": "", "uid": 10688, "open": 0, "exclusive": 0, "text": "1", "label": "r1", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 1, "rightLegend": "", "uid": 10689, "open": 0, "exclusive": 0, "text": "2", "label": "r2", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 2, "rightLegend": "", "uid": 10690, "open": 0, "exclusive": 0, "text": "3", "label": "r3", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 3, "rightLegend": "", "uid": 10691, "open": 0, "exclusive": 0, "text": "4", "label": "r4", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 4, "rightLegend": "", "uid": 10692, "open": 0, "exclusive": 0, "text": "5", "label": "r5", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 5, "rightLegend": "", "uid": 10693, "open": 0, "exclusive": 0, "text": "6", "label": "r6", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 6, "rightLegend": "", "uid": 10694, "open": 0, "exclusive": 0, "text": "7", "label": "r7", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 7, "rightLegend": "", "uid": 10695, "open": 0, "exclusive": 0, "text": "8", "label": "r8", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 8, "rightLegend": "", "uid": 10696, "open": 0, "exclusive": 0, "text": "9", "label": "r9", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 9, "rightLegend": "", "uid": 10697, "open": 0, "exclusive": 0, "text": "10", "label": "r10", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 10, "rightLegend": "", "uid": 10698, "open": 0, "exclusive": 0, "text": "11", "label": "r11", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 11, "rightLegend": "", "uid": 10699, "open": 0, "exclusive": 0, "text": "12", "label": "r12", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 12, "rightLegend": "", "uid": 10700, "open": 0, "exclusive": 0, "text": "13", "label": "r13", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 13, "rightLegend": "", "uid": 10701, "open": 0, "exclusive": 0, "text": "14", "label": "r14", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 14, "rightLegend": "", "uid": 10702, "open": 0, "exclusive": 0, "text": "15", "label": "r15", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 15, "rightLegend": "", "uid": 10703, "open": 0, "exclusive": 0, "text": "16", "label": "r16", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 16, "rightLegend": "", "uid": 10704, "open": 0, "exclusive": 0, "text": "17", "label": "r17", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 17, "rightLegend": "", "uid": 10705, "open": 0, "exclusive": 0, "text": "18", "label": "r18", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 18, "rightLegend": "", "uid": 10706, "open": 0, "exclusive": 0, "text": "19", "label": "r19", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 19, "rightLegend": "", "uid": 10707, "open": 0, "exclusive": 0, "text": "20", "label": "r20", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 20, "rightLegend": "", "uid": 10708, "open": 0, "exclusive": 0, "text": "21", "label": "r21", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 21, "rightLegend": "", "uid": 10709, "open": 0, "exclusive": 0, "text": "22", "label": "r22", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 22, "rightLegend": "", "uid": 10710, "open": 0, "exclusive": 0, "text": "23", "label": "r23", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 23, "rightLegend": "", "uid": 10711, "open": 0, "exclusive": 0, "text": "24", "label": "r24", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 24, "rightLegend": "", "uid": 10712, "open": 0, "exclusive": 0, "text": "25", "label": "r25", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 25, "rightLegend": "", "uid": 10713, "open": 0, "exclusive": 0, "text": "26", "label": "r26", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 26, "rightLegend": "", "uid": 10714, "open": 0, "exclusive": 0, "text": "27", "label": "r27", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 27, "rightLegend": "", "uid": 10715, "open": 0, "exclusive": 0, "text": "28", "label": "r28", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 28, "rightLegend": "", "uid": 10716, "open": 0, "exclusive": 0, "text": "29", "label": "r29", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 29, "rightLegend": "", "uid": 10717, "open": 0, "exclusive": 0, "text": "30", "label": "r30", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 30, "rightLegend": "", "uid": 10718, "open": 0, "exclusive": 0, "text": "31", "label": "r31", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 31, "rightLegend": "", "uid": 10719, "open": 0, "exclusive": 0, "text": "32", "label": "r32", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 32, "rightLegend": "", "uid": 10720, "open": 0, "exclusive": 0, "text": "33", "label": "r33", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 33, "rightLegend": "", "uid": 10721, "open": 0, "exclusive": 0, "text": "34", "label": "r34", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 34, "rightLegend": "", "uid": 10722, "open": 0, "exclusive": 0, "text": "35", "label": "r35", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 35, "rightLegend": "", "uid": 10723, "open": 0, "exclusive": 0, "text": "36", "label": "r36", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 36, "rightLegend": "", "uid": 10724, "open": 0, "exclusive": 0, "text": "37", "label": "r37", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 37, "rightLegend": "", "uid": 10725, "open": 0, "exclusive": 0, "text": "38", "label": "r38", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 38, "rightLegend": "", "uid": 10726, "open": 0, "exclusive": 0, "text": "39", "label": "r39", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 39, "rightLegend": "", "uid": 10727, "open": 0, "exclusive": 0, "text": "40", "label": "r40", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 40, "rightLegend": "", "uid": 10728, "open": 0, "exclusive": 0, "text": "41", "label": "r41", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 41, "rightLegend": "", "uid": 10729, "open": 0, "exclusive": 0, "text": "42", "label": "r42", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 42, "rightLegend": "", "uid": 10730, "open": 0, "exclusive": 0, "text": "43", "label": "r43", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 43, "rightLegend": "", "uid": 10731, "open": 0, "exclusive": 0, "text": "44", "label": "r44", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 44, "rightLegend": "", "uid": 10732, "open": 0, "exclusive": 0, "text": "45", "label": "r45", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 45, "rightLegend": "", "uid": 10733, "open": 0, "exclusive": 0, "text": "46", "label": "r46", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 46, "rightLegend": "", "uid": 10734, "open": 0, "exclusive": 0, "text": "47", "label": "r47", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 47, "rightLegend": "", "uid": 10735, "open": 0, "exclusive": 0, "text": "48", "label": "r48", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 48, "rightLegend": "", "uid": 11551, "open": 0, "exclusive": 0, "text": "49", "label": "r49", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 49, "rightLegend": "", "uid": 11552, "open": 0, "exclusive": 0, "text": "50", "label": "r50", "openOptional": 0, "amount": 0, "optional": 0}, {"index": 50, "rightLegend": "", "uid": 10736, "open": 0, "exclusive": 0, "text": "Pas de second achat", "label": "r99", "openOptional": 0, "amount": 0, "optional": 0}], "noanswers": [], "title": "Si vous deviez en \u003cb\u003eacheter un \u003cu\u003esecond\u003c/u\u003e\u003c/b\u003e, lequel ach\u00e8teriez-vous ?", "totalColCount": 1, "cols": [{"index": 0, "uid": 10738, "open": 0, "exclusive": 0, "text": "", "label": "", "openOptional": 0, "amount": 0, "optional": 0}], "choices": [{"index": 0, "uid": 10739, "open": 0, "exclusive": 0, "text": "", "label": "", "openOptional": 0, "amount": 0, "optional": 0}], "haveLeftLegend": false, "errors": [], "verifiers": {}, "device": {"category": "", "smartphone": false, "tablet": false, "otherMobile": false, "mobileDevice": false, "desktop": true, "width": "0", "iphone": false, "featurephone": false, "android": false, "height": "0", "blackberry": false}, "uid": 10687, "label": "Q2", "type": "radio", "grouping": "cols"};
+$ (document).ready(function(){
+parseJsexportData();
+}); })(lukanka || (lukanka = {}));
+</script>
+
+<!-- Custom setup - start -->
+<div id="custom-tool-area"><div class="custom-tool" style="background-image: url(&quot;https://surveyfiles.dynata.com/emea/2026/ORD-124369-P6B4L7/v1/CS/SC_Cereales_N2_Zoom.jpg&quot;); width: 1200px; height: 794px;"><div class="custom-product " id="custom-product-1" style="top: 25.0107px; left: 281.854px; width: 149.194px; height: 118.627px;"><div id="custom-ticker-1" class="custom-ticker ion-checkmark-round" style="margin-top: 44.3137px; margin-left: 59.5969px;"></div><div id="custom-options-1" class="custom-options" style="top: 11.3137px; left: 48.0969px;"><a class="fancybox" href="https://surveyfiles.dynata.com/emea/2026/ORD-124369-P6B4L7/v1/CS/zooms/rot3/1.jpg"><div class="custom-zoom"></div></a><div class="custom-select"></div></div></div><div class="custom-product " id="custom-product-10" style="top: 321.83px; left: 427.47px; width: 155.595px; height: 119.129px;"><div id="custom-ticker-10" class="custom-ticker ion-checkmark-round" style="margin-top: 44.5647px; margin-left: 62.7972px;"></div><div id="custom-options-10" class="custom-options" style="top: 11.5647px; left: 51.2972px;"><a class="fancybox" href="https://surveyfiles.dynata.com/emea/2026/ORD-124369-P6B4L7/v1/CS/zooms/rot3/10.jpg"><div class="custom-zoom"></div></a><div class="custom-select"></div></div></div><div class="custom-product " id="custom-product-11" style="top: 326.451px; left: 591.888px; width: 163.195px; height: 114.911px;"><div id="custom-ticker-11" class="custom-ticker ion-checkmark-round" style="margin-top: 42.4553px; margin-left: 66.5977px;"></div><div id="custom-options-11" class="custom-options" style="top: 9.4553px; left: 55.0977px;"><a class="fancybox" href="https://surveyfiles.dynata.com/emea/2026/ORD-124369-P6B4L7/v1/CS/zooms/rot3/11.jpg"><div class="custom-zoom"></div></a><div class="custom-select"></div></div></div><div class="custom-product " id="custom-product-12" style="top: 319.42px; left: 760.307px; width: 152.794px; height: 122.544px;"><div id="custom-ticker-12" class="custom-ticker ion-checkmark-round" style="margin-top: 46.2722px; margin-left: 61.3971px;"></div><div id="custom-options-12" class="custom-options" style="top: 13.2722px; left: 49.8971px;"><a class="fancybox" href="https://surveyfiles.dynata.com/emea/2026/ORD-124369-P6B4L7/v1/CS/zooms/rot3/12.jpg"><div class="custom-zoom"></div></a><div class="custom-select"></div></div></div><div class="custom-product " id="custom-product-13" style="top: 473.504px; left: 281.654px; width: 160.395px; height: 118.125px;"><div id="custom-ticker-13" class="custom-ticker ion-checkmark-round" style="margin-top: 44.0626px; margin-left: 65.1976px;"></div><div id="custom-options-13" class="custom-options" style="top: 11.0626px; left: 53.6975px;"><a class="fancybox" href="https://surveyfiles.dynata.com/emea/2026/ORD-124369-P6B4L7/v1/CS/zooms/rot3/13.jpg"><div class="custom-zoom"></div></a><div class="custom-select"></div></div></div><div class="custom-product " id="custom-product-14" style="top: 471.897px; left: 440.072px; width: 155.995px; height: 119.733px;"><div id="custom-ticker-14" class="custom-ticker ion-checkmark-round" style="margin-top: 44.8663px; margin-left: 62.9973px;"></div><div id="custom-options-14" class="custom-options" style="top: 11.8663px; left: 51.4973px;"><a class="fancybox" href="https://surveyfiles.dynata.com/emea/2026/ORD-124369-P6B4L7/v1/CS/zooms/rot3/14.jpg"><div class="custom-zoom"></div></a><div class="custom-select"></div></div></div><div class="custom-product " id="custom-product-15" style="top: 475.312px; left: 598.489px; width: 163.595px; height: 117.322px;"><div id="custom-ticker-15" class="custom-ticker ion-checkmark-round" style="margin-top: 43.6609px; margin-left: 66.7977px;"></div><div id="custom-options-15" class="custom-options" style="top: 10.6608px; left: 55.2977px;"><a class="fancybox" href="https://surveyfiles.dynata.com/emea/2026/ORD-124369-P6B4L7/v1/CS/zooms/rot3/15.jpg"><div class="custom-zoom"></div></a><div class="custom-select"></div></div></div><div class="custom-product " id="custom-product-16" style="top: 472.701px; left: 759.907px; width: 151.194px; height: 120.938px;"><div id="custom-ticker-16" class="custom-ticker ion-checkmark-round" style="margin-top: 45.4689px; margin-left: 60.5971px;"></div><div id="custom-options-16" class="custom-options" style="top: 12.4689px; left: 49.0971px;"><a class="fancybox" href="https://surveyfiles.dynata.com/emea/2026/ORD-124369-P6B4L7/v1/CS/zooms/rot3/16.jpg"><div class="custom-zoom"></div></a><div class="custom-select"></div></div></div><div class="custom-product " id="custom-product-17" style="top: 636.83px; left: 280.031px; width: 174.019px; height: 107.879px;"><div id="custom-ticker-17" class="custom-ticker ion-checkmark-round" style="margin-top: 38.9397px; margin-left: 72.0096px;"></div><div id="custom-options-17" class="custom-options" style="top: 5.93975px; left: 60.5096px;"><a class="fancybox" href="https://surveyfiles.dynata.com/emea/2026/ORD-124369-P6B4L7/v1/CS/zooms/rot3/17.jpg"><div class="custom-zoom"></div></a><div class="custom-select"></div></div></div><div class="custom-product " id="custom-product-18" style="top: 622.768px; left: 457.451px; width: 154.617px; height: 121.54px;"><div id="custom-ticker-18" class="custom-ticker ion-checkmark-round" style="margin-top: 45.7701px; margin-left: 62.3086px;"></div><div id="custom-options-18" class="custom-options" style="top: 12.7701px; left: 50.8086px;"><a class="fancybox" href="https://surveyfiles.dynata.com/emea/2026/ORD-124369-P6B4L7/v1/CS/zooms/rot3/18.jpg"><div class="custom-zoom"></div></a><div class="custom-select"></div></div></div><div class="custom-product " id="custom-product-19" style="top: 621.763px; left: 613.068px; width: 148.017px; height: 120.536px;"><div id="custom-ticker-19" class="custom-ticker ion-checkmark-round" style="margin-top: 45.2678px; margin-left: 59.0082px;"></div><div id="custom-options-19" class="custom-options" style="top: 12.2678px; left: 47.5082px;"><a class="fancybox" href="https://surveyfiles.dynata.com/emea/2026/ORD-124369-P6B4L7/v1/CS/zooms/rot3/19.jpg"><div class="custom-zoom"></div></a><div class="custom-select"></div></div></div><div class="custom-product " id="custom-product-2" style="top: 24.4081px; left: 434.271px; width: 157.795px; height: 118.627px;"><div id="custom-ticker-2" class="custom-ticker ion-checkmark-round" style="margin-top: 44.3137px; margin-left: 63.8974px;"></div><div id="custom-options-2" class="custom-options" style="top: 11.3137px; left: 52.3974px;"><a class="fancybox" href="https://surveyfiles.dynata.com/emea/2026/ORD-124369-P6B4L7/v1/CS/zooms/rot3/2.jpg"><div class="custom-zoom"></div></a><div class="custom-select"></div></div></div><div class="custom-product " id="custom-product-20" style="top: 625.179px; left: 762.485px; width: 148.017px; height: 120.536px;"><div id="custom-ticker-20" class="custom-ticker ion-checkmark-round" style="margin-top: 45.2678px; margin-left: 59.0082px;"></div><div id="custom-options-20" class="custom-options" style="top: 12.2678px; left: 47.5082px;"><a class="fancybox" href="https://surveyfiles.dynata.com/emea/2026/ORD-124369-P6B4L7/v1/CS/zooms/rot3/20.jpg"><div class="custom-zoom"></div></a><div class="custom-select"></div></div></div><div class="custom-product " id="custom-product-3" style="top: 22.8009px; left: 593.689px; width: 157.795px; height: 118.627px;"><div id="custom-ticker-3" class="custom-ticker ion-checkmark-round" style="margin-top: 44.3137px; margin-left: 63.8974px;"></div><div id="custom-options-3" class="custom-options" style="top: 11.3137px; left: 52.3974px;"><a class="fancybox" href="https://surveyfiles.dynata.com/emea/2026/ORD-124369-P6B4L7/v1/CS/zooms/rot3/3.jpg"><div class="custom-zoom"></div></a><div class="custom-select"></div></div></div><div class="custom-product " id="custom-product-4" style="top: 23.2026px; left: 751.106px; width: 157.795px; height: 118.627px;"><div id="custom-ticker-4" class="custom-ticker ion-checkmark-round" style="margin-top: 44.3137px; margin-left: 63.8974px;"></div><div id="custom-options-4" class="custom-options" style="top: 11.3137px; left: 52.3974px;"><a class="fancybox" href="https://surveyfiles.dynata.com/emea/2026/ORD-124369-P6B4L7/v1/CS/zooms/rot3/4.jpg"><div class="custom-zoom"></div></a><div class="custom-select"></div></div></div><div class="custom-product " id="custom-product-5" style="top: 186.83px; left: 283.454px; width: 132.592px; height: 107.076px;"><div id="custom-ticker-5" class="custom-ticker ion-checkmark-round" style="margin-top: 38.5378px; margin-left: 51.296px;"></div><div id="custom-options-5" class="custom-options" style="top: 5.5378px; left: 39.796px;"><a class="fancybox" href="https://surveyfiles.dynata.com/emea/2026/ORD-124369-P6B4L7/v1/CS/zooms/rot3/5.jpg"><div class="custom-zoom"></div></a><div class="custom-select"></div></div></div><div class="custom-product " id="custom-product-6" style="top: 175.178px; left: 428.87px; width: 157.195px; height: 118.125px;"><div id="custom-ticker-6" class="custom-ticker ion-checkmark-round" style="margin-top: 44.0626px; margin-left: 63.5974px;"></div><div id="custom-options-6" class="custom-options" style="top: 11.0625px; left: 52.0974px;"><a class="fancybox" href="https://surveyfiles.dynata.com/emea/2026/ORD-124369-P6B4L7/v1/CS/zooms/rot3/6.jpg"><div class="custom-zoom"></div></a><div class="custom-select"></div></div></div><div class="custom-product " id="custom-product-7" style="top: 175.58px; left: 594.289px; width: 157.195px; height: 118.125px;"><div id="custom-ticker-7" class="custom-ticker ion-checkmark-round" style="margin-top: 44.0626px; margin-left: 63.5974px;"></div><div id="custom-options-7" class="custom-options" style="top: 11.0625px; left: 52.0974px;"><a class="fancybox" href="https://surveyfiles.dynata.com/emea/2026/ORD-124369-P6B4L7/v1/CS/zooms/rot3/7.jpg"><div class="custom-zoom"></div></a><div class="custom-select"></div></div></div><div class="custom-product " id="custom-product-8" style="top: 174.977px; left: 754.706px; width: 157.195px; height: 118.125px;"><div id="custom-ticker-8" class="custom-ticker ion-checkmark-round" style="margin-top: 44.0626px; margin-left: 63.5974px;"></div><div id="custom-options-8" class="custom-options" style="top: 11.0625px; left: 52.0974px;"><a class="fancybox" href="https://surveyfiles.dynata.com/emea/2026/ORD-124369-P6B4L7/v1/CS/zooms/rot3/8.jpg"><div class="custom-zoom"></div></a><div class="custom-select"></div></div></div><div class="custom-product " id="custom-product-9" style="top: 345.536px; left: 291.055px; width: 126.991px; height: 96.6294px;"><div id="custom-ticker-9" class="custom-ticker ion-checkmark-round" style="margin-top: 33.3147px; margin-left: 48.4957px;"></div><div id="custom-options-9" class="custom-options" style="top: 0.314685px; left: 36.9957px;"><a class="fancybox" href="https://surveyfiles.dynata.com/emea/2026/ORD-124369-P6B4L7/v1/CS/zooms/rot3/9.jpg"><div class="custom-zoom"></div></a><div class="custom-select"></div></div></div></div><div class="custom-tool-dk-area"><div class="custom-dk" id="custom-dk-99">Pas de second achat</div></div><img class="load-image" style="display:none;" src="https://surveyfiles.dynata.com/emea/2026/ORD-124369-P6B4L7/v1/CS/SC_Cereales_N2_Zoom.jpg"></div>
+<script src="//d2n88fe5uqdqty.cloudfront.net/ssi_js/decipher/ssi_ALLInOne_Confirmit_2.1_groups_decipher.js"></script>
+<script type="text/javascript" src="https://s3.amazonaws.com/ssiprojects/rnd/demos/zoominshelf/js/shelf_v3.01.js"></script>
+<link rel="stylesheet" type="text/css" href="https://s3.amazonaws.com/ssiprojects/rnd/demos/zoominshelf/css/shelf_v3.css">
+<script type="text/javascript" src="https://d2n88fe5uqdqty.cloudfront.net/rnd/plugins/fancybox/source/jquery.fancybox.js?v=2.1.5"></script>
+<link rel="stylesheet" type="text/css" href="https://d2n88fe5uqdqty.cloudfront.net/rnd/plugins/fancybox/source/jquery.fancybox.css?v=2.1.5" media="screen">
+<link rel="stylesheet" type="text/css" href="//d2n88fe5uqdqty.cloudfront.net/rnd/plugins/ionicons/ionicons-2.0.1/css/ionicons.min.css">
+
+ 
+
+<script>
+$ (document).ready(function(){
+
+
+var sQuestionType = 'SR'; //'MR' or 'SR'
+
+var oCoordinate = [
+
+{'code':'part1', 'left':281.8542, 'top':25.01073, 'width': 149.1937, 'height': 118.6274, 'degree': 0, 'title': ''},{'code':'part10', 'left':427.4702, 'top':321.8304, 'width': 155.5945, 'height': 119.1294, 'degree': 0, 'title': ''},{'code':'part11', 'left':591.8884, 'top':326.4509, 'width': 163.1954, 'height': 114.9106, 'degree': 0, 'title': ''},{'code':'part12', 'left':760.3072, 'top':319.4195, 'width': 152.7942, 'height': 122.5445, 'degree': 0, 'title': ''},{'code':'part13', 'left':281.6541, 'top':473.5044, 'width': 160.3951, 'height': 118.1253, 'degree': 0, 'title': ''},{'code':'part14', 'left':440.0716, 'top':471.897, 'width': 155.9947, 'height': 119.7325, 'degree': 0, 'title': ''},{'code':'part15', 'left':598.4891, 'top':475.3122, 'width': 163.5955, 'height': 117.3217, 'degree': 0, 'title': ''},{'code':'part16', 'left':759.9069, 'top':472.7006, 'width': 151.1943, 'height': 120.9378, 'degree': 0, 'title': ''},{'code':'part17', 'left':280.0311, 'top':636.8303, 'width': 174.0193, 'height': 107.8795, 'degree': 0, 'title': ''},{'code':'part18', 'left':457.451, 'top':622.7678, 'width': 154.6172, 'height': 121.5402, 'degree': 0, 'title': ''},{'code':'part19', 'left':613.068, 'top':621.7634, 'width': 148.0165, 'height': 120.5356, 'degree': 0, 'title': ''},{'code':'part2', 'left':434.2711, 'top':24.40807, 'width': 157.7947, 'height': 118.6274, 'degree': 0, 'title': ''},{'code':'part20', 'left':762.4847, 'top':625.1786, 'width': 148.0165, 'height': 120.5356, 'degree': 0, 'title': ''},{'code':'part3', 'left':593.6887, 'top':22.80088, 'width': 157.7947, 'height': 118.6274, 'degree': 0, 'title': ''},{'code':'part4', 'left':751.1061, 'top':23.20261, 'width': 157.7947, 'height': 118.6274, 'degree': 0, 'title': ''},{'code':'part5', 'left':283.4542, 'top':186.8303, 'width': 132.592, 'height': 107.0756, 'degree': 0, 'title': ''},{'code':'part6', 'left':428.8703, 'top':175.1784, 'width': 157.1948, 'height': 118.1251, 'degree': 0, 'title': ''},{'code':'part7', 'left':594.2886, 'top':175.5802, 'width': 157.1948, 'height': 118.1251, 'degree': 0, 'title': ''},{'code':'part8', 'left':754.7064, 'top':174.9775, 'width': 157.1948, 'height': 118.1251, 'degree': 0, 'title': ''},{'code':'part9', 'left':291.0551, 'top':345.5358, 'width': 126.9914, 'height': 96.62937, 'degree': 0, 'title': ''},
+
+];
+
+ 
+
+var sForm = getFormName(1);
+var sFormZoom = ''
+var oData = getToolDataInGroups(sForm,sQuestionType);
+var config = {
+sForm : sForm,
+sFormZoom : sFormZoom,
+sQuestionType : sQuestionType,
+sToolContainer : '#custom-tool-area',
+oData : oData,
+oCoordinate : oCoordinate,
+sBgURL : "https://surveyfiles.dynata.com/emea/2026/ORD-124369-P6B4L7/v1/CS/SC_Cereales_N2_Zoom.jpg",
+iBgWidth : 1200,
+iBgHeight : 794,
+sImageFolderPath :'https://surveyfiles.dynata.com/emea/2026/ORD-124369-P6B4L7/v1/CS/zooms/rot3/',
+sExtensionL : '.jpg',
+nrOfDk : 1,
+disabledItems : [], //[1,2],
+isSelectable : false, //If false, only zoomin option will be available
+isZoominAvailable : true, //If this is false, we ignore "zoomonlyItems"
+zoomonlyItems : [], //[3,4],
+isResponsible : false
+}
+ 
+
+buildTool(config);
+});
+</script>
+<!-- Custom setup - end --><div class="survey-buttons">
+<input type="submit" name="continue" id="btn_continue" class="button continue" value="Continuer " onclick="var i = document.createElement('input'); i.setAttribute('type', 'hidden');i.setAttribute('value', '1');i.setAttribute('name', '__has_javascript');document.forms.primary.appendChild(i);">
+
+</div>
+<!-- #surveyButtons --><input type="hidden" name="state" value="1c23bbb8-f5e1-4f79-aaf9-b599e7783b61">
+<input type="hidden" name="start_time" value="1773239150">
+<input type="hidden" name="_ptime" value="0">
+<script>addHandler(Survey.capturePreciseTime)</script><script>
+$ (window).on("load", function() { setTimeout(function() { Survey.recordPageTiming("selfserve/53b/g001/2602187", "35kvdzwr47sdeduj", "6db58q98cvss2y9s");}, 100); });
+</script>
+</form>
+
+
+</div>
+<!-- /.survey-body -->
+</div>
+<div class="survey-section">
+<input type="hidden" id="AcceptNotSupportedLanguages" name="AcceptNotSupportedLanguages" value="0">
+        <input type="hidden" id="ClientID" name="ClientID" value="32F0DF3C-D504-46E9-999F-AE32A3D57A44">
+        <input type="hidden" id="CollectCompleted" name="CollectCompleted" value="0">
+        <input type="hidden" id="LangCode" name="LangCode" value="FR">
+        <input type="hidden" id="PanelID" name="PanelID" value="101">
+        <input type="hidden" id="PanelistID" name="PanelistID" value="EyHtbJNqNZaJdWIrvT5NILRg">
+        <input type="hidden" id="SurveyID" name="SurveyID" value="survey-d2.yoursurveynow.com/selfserve/53b/g001/2602187">
+
+        <script src="/survey/lib/sys/qualityscore/v3/qualityscore.js?61df6dd275" data-debug-level="0" data-persistent-variable="client_relevantid_results" data-qslib-path="/survey/lib/sys/qualityscore/v3/qslib1.0.js?791cc48fa2" data-timeout="6"></script></div>
+</div>
+<div id="detectBreakpoint"></div>
+<!-- /.survey-container -->
+
+
+<script src="/survey/lib/sys/qualityscore/v3/qslib1.0.js?791cc48fa2"></script><input type="hidden" name="imperium_qs_time_start" id="imperium_qs_time_start" value="1773239485746"></body>
