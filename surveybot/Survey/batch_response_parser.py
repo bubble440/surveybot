@@ -1070,9 +1070,9 @@ def _expand_checkbox_bulk_actions(actions: list, qid_meta: dict | None = None) -
         if not qid or qid in planned_by_qid:
             continue
         meta = qid_meta.get(qid)
-        if not _is_checkbox_bulk_multi_target(meta):
-            continue
 
+        # Règle prioritaire : screener secteur courte liste -> exclusive négative unique.
+        # Ne dépend pas des hints "multi" ni de max_select: c'est une contrainte métier.
         sector_negative_exclusive = _pick_sector_screener_negative_exclusive(meta)
         if sector_negative_exclusive:
             planned_by_qid[qid] = ([sector_negative_exclusive], a)
@@ -1080,6 +1080,9 @@ def _expand_checkbox_bulk_actions(actions: list, qid_meta: dict | None = None) -
                 "CHECKBOX_BULK",
                 f"qid={qid} sector_screener_negative_exclusive='{sector_negative_exclusive}'",
             )
+            continue
+
+        if not _is_checkbox_bulk_multi_target(meta):
             continue
 
         options = [str(o or "").strip() for o in (meta.get("options") or []) if str(o or "").strip()]
