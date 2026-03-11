@@ -229,7 +229,7 @@ def _find_associated_label(driver, el) -> str:
                 };
 
                 const optionHost = input.closest(
-                  'label, .category-option, .answer-option, .answer_options, .option, li, [role="option"], [class*="option-item"], [class*="choice-item"]'
+                  'label, .radio-checkbox-wrapper, .checkbox-wrapper, .radio-wrapper, .category-option, .answer-option, .answer_options, .option, li, [role="option"], [class*="option-item"], [class*="choice-item"]'
                 );
                 if (!optionHost || !isVisible(optionHost)) return '';
 
