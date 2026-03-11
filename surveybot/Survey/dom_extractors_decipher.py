@@ -41,6 +41,14 @@ def _clean_decipher_template_markers(text: str) -> str:
     cleaned = _DECIPHER_TEMPLATE_MARKER_RE.sub("", raw)
     return re.sub(r"\s+", " ", cleaned).strip()
 
+
+def _has_inline_display_none(el) -> bool:
+    """Retourne True quand l'élément porte un style inline `display:none`."""
+    style_attr = (el.get_attribute("style") or "").strip().lower()
+    if not style_attr:
+        return False
+    return bool(re.search(r"(?:^|;)\s*display\s*:\s*none\s*(?:;|$)", style_attr))
+
 def _logical_answers_list_group_name(raw_name: str, all_raw_names: Set[str]) -> str:
     """Retourne le nom de groupe logique pour les names Decipher answers-list.
 
@@ -123,6 +131,9 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
     # Question containers FocusVision
     q_containers = driver.find_elements(By.CSS_SELECTOR, "div.question[role='radiogroup'], div.question.radio, div.question.checkbox")
     for q in q_containers:
+        if _has_inline_display_none(q):
+            continue
+
         try:
             answers = q.find_element(By.CSS_SELECTOR, ".answers.answers-list, .answers.answers-table")
         except Exception:
