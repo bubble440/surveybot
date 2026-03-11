@@ -2,7 +2,8 @@ param(
   [Parameter(Mandatory=$true)][int]$Port,
   [string]$ProjectDir = "C:\projects\Surveys",
   [string]$TargetUrl = "https://www.topsurveys.app",
-  [string]$AttachTabSelector = "pick"
+  [string]$AttachTabSelector = "pick",
+  [ValidateSet("preselection","resolution")][string]$AttachRoute = "resolution"
 )
 
 # Chrome path
@@ -48,7 +49,7 @@ Write-Host "MANUEL:"
 Write-Host "1) Va dans le Chrome du port $Port."
 Write-Host "2) Connecte-toi, lance un survey, arrête-toi sur la page cible."
 Write-Host "3) Reviens ici."
-Read-Host "Appuie sur Entrée pour déclencher ATTACH-TAKEOVER" | Out-Null
+Read-Host "Appuie sur Entrée pour déclencher ATTACH-TAKEOVER ($AttachRoute)" | Out-Null
 
 # Vars env (attach)
 $env:RUN_ENV="local"
@@ -57,6 +58,7 @@ $env:RUN_MODE="local"
 $env:BROWSER_MODE="attach"
 $env:ATTACH_DEBUGGER_ADDRESS="127.0.0.1:$Port"
 $env:ATTACH_TAB_SELECTOR=$AttachTabSelector
+$env:ATTACH_ROUTE=$AttachRoute
 
 # Tes vars debug
 $env:LOG_LEVEL="INFO"
