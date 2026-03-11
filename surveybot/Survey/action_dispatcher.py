@@ -2802,6 +2802,127 @@ def handle_consent_screen(driver):
     if _handle_toluna_consent_modal():
         return True
 
+    # 0bis) Cint/QPS consent collect page: mandatory checkboxes name="consents" + CTA submit.
+    # Trigger strictement DOM-first pour éviter tout impact sur les autres providers/pages.
+    def _handle_cint_collect_consent_page() -> bool:
+        try:
+            detected = bool(driver.execute_script(r"""
+                const mandatory = Array.from(document.querySelectorAll("input.mandatory[type='checkbox'][name='consents']"));
+                if (!mandatory.length) return false;
+
+                const form = mandatory[0].closest('form');
+                if (!form) return false;
+                const action = (form.getAttribute('action') || '').toLowerCase();
+                if (!action.includes('/consent/collect/')) return false;
+
+                const submit = form.querySelector("input[type='submit'], button[type='submit']");
+                return !!submit;
+            """))
+        except Exception:
+            detected = False
+
+        if not detected:
+            return False
+
+        print("[CONSENT][CINT] detected")
+        intercept_only = (os.getenv("CTA_INTERCEPT_ONLY", "") or "").strip().lower() in {"1", "true", "yes", "on"}
+
+        # Budget anti-boucle: max 2 passes pour forcer l'état checked + événements DOM.
+        for _ in range(2):
+            try:
+                state = driver.execute_script(r"""
+                    const mandatory = Array.from(document.querySelectorAll("input.mandatory[type='checkbox'][name='consents']"));
+                    let checkedCount = 0;
+
+                    for (const cb of mandatory) {
+                        if (!cb.checked) {
+                            let clicked = false;
+
+                            if (cb.id) {
+                                const lab = document.querySelector(`label[for="${cb.id}"]`);
+                                if (lab) {
+                                    try { lab.click(); clicked = true; } catch(_) {}
+                                }
+                            }
+
+                            if (!clicked) {
+                                try { cb.click(); clicked = true; } catch(_) {}
+                            }
+
+                            if (!cb.checked) {
+                                try { cb.checked = true; } catch(_) {}
+                                try { cb.dispatchEvent(new Event('input', { bubbles: true })); } catch(_) {}
+                                try { cb.dispatchEvent(new Event('change', { bubbles: true })); } catch(_) {}
+                            }
+                        }
+
+                        if (cb.checked) checkedCount += 1;
+                    }
+
+                    return {
+                        total: mandatory.length,
+                        checked: checkedCount,
+                        allChecked: mandatory.length > 0 && checkedCount === mandatory.length,
+                    };
+                """) or {}
+            except Exception:
+                state = {}
+
+            if bool(state.get("allChecked")):
+                break
+            time.sleep(0.2)
+
+        if not bool(state.get("allChecked")):
+            print("[CONSENT][CINT] mandatory_checkboxes_not_all_checked")
+            return False
+
+        if intercept_only:
+            try:
+                import Survey.input_handler as input_handler
+                if input_handler.click_cta_strong_any_context(driver, "continuer"):
+                    print("[CTA_INTERCEPT] cint_collect cta_found intercept_ok")
+                    return True
+                print("[CTA_INTERCEPT] cint_collect cta_found intercept_impossible")
+                return False
+            except Exception:
+                print("[CTA_INTERCEPT] cint_collect cta_found intercept_impossible")
+                return False
+
+        try:
+            cta = driver.find_element(
+                By.CSS_SELECTOR,
+                "form[action*='/Consent/Collect/'] input[type='submit'], form[action*='/Consent/Collect/'] button[type='submit']",
+            )
+        except Exception:
+            print("[CONSENT][CINT] cta_not_found")
+            return False
+
+        if not _click_best_effort(cta):
+            return False
+
+        if _wait_change(before_sig, before_url, timeout_s=6.0):
+            return True
+
+        # Si pas de navigation, vérifier qu'il n'y a plus d'erreurs de validation obligatoires visibles.
+        try:
+            validation_visible = bool(driver.execute_script(r"""
+                const box = document.querySelector('.validation-messages.alert-danger, .alert-danger.validation-messages');
+                if (!box) return false;
+                const style = window.getComputedStyle(box);
+                if (!style || style.display === 'none' || style.visibility === 'hidden') return false;
+                const requiredErrors = Array.from(box.querySelectorAll('li'))
+                    .map(li => (li.textContent || '').toLowerCase().trim())
+                    .filter(Boolean);
+                return requiredErrors.some(t => t.includes('validationmessage_termsandconditions') || t.includes('validationmessage_takesurveyconsent'));
+            """))
+        except Exception:
+            validation_visible = False
+
+        return not validation_visible
+
+    if _handle_cint_collect_consent_page():
+        return True
+
     CMP_CONTAINER_SELECTORS = [
         "#onetrust-banner-sdk",
         "#onetrust-consent-sdk",
