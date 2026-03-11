@@ -1625,6 +1625,94 @@ def _apply_by_target_id(driver, target_id: str, itype: str, value: str) -> bool:
                         log_debug("[TARGET_DEBUG]", f"element not found for xpath={xp} ({type(ex).__name__}: {_short_exc(ex)})")
                     return False
 
+                # Dynata/Decipher "shelf" custom tool:
+                # - #custom-tool-area + .custom-product visibles
+                # - answers-list natif masqué via display:none
+                # Dans ce cas, le xpath target peut pointer une .clickableCell cachée.
+                # Stratégie unique: cocher l'input radio natif par JS (checked + events),
+                # puis vérifier strictement via input.checked.
+                if resolved_itype == "radio":
+                    try:
+                        shelf_result = driver.execute_script(
+                            """
+                            const node = arguments[0];
+                            if (!node) return { matched: false, ok: false, reason: 'no_node' };
+
+                            const question = node.closest ? node.closest('div.question, fieldset, form, .question') : null;
+                            const root = question || document;
+
+                            const tool = root.querySelector('#custom-tool-area');
+                            const hasCustomProducts = !!(tool && tool.querySelector('div.custom-product'));
+                            const answers = root.querySelector('.answers.answers-list');
+                            const answersHidden = !!(answers && getComputedStyle(answers).display === 'none');
+
+                            if (!(tool && hasCustomProducts && answersHidden)) {
+                              return { matched: false, ok: false, reason: 'pattern_not_matched' };
+                            }
+
+                            let input = null;
+                            if ((node.tagName || '').toLowerCase() === 'input' && (node.type || '').toLowerCase() === 'radio') {
+                              input = node;
+                            }
+
+                            if (!input && node.querySelector) {
+                              input = node.querySelector("input[type='radio']");
+                            }
+
+                            if (!input && node.getAttribute) {
+                              const fid = node.getAttribute('for');
+                              if (fid) {
+                                const byId = document.getElementById(fid);
+                                if (byId && (byId.type || '').toLowerCase() === 'radio') input = byId;
+                              }
+                            }
+
+                            if (!input && node.closest) {
+                              const cell = node.closest('.clickableCell, .element');
+                              if (cell) {
+                                input = cell.querySelector("input[type='radio']");
+                              }
+                            }
+
+                            if (!input) {
+                              return { matched: true, ok: false, reason: 'input_not_found' };
+                            }
+
+                            try { input.checked = true; } catch (e) {}
+                            try { input.dispatchEvent(new Event('input', { bubbles: true })); } catch (e) {}
+                            try { input.dispatchEvent(new Event('change', { bubbles: true })); } catch (e) {}
+                            try { input.dispatchEvent(new MouseEvent('click', { bubbles: true })); } catch (e) {}
+
+                            return {
+                              matched: true,
+                              ok: !!input.checked,
+                              reason: input.checked ? 'checked' : 'not_checked',
+                              inputId: input.id || null,
+                              inputName: input.name || null,
+                            };
+                            """,
+                            el,
+                        ) or {}
+                    except Exception as e:
+                        shelf_result = {"matched": False, "ok": False, "reason": f"script_error:{_short_exc(e)}"}
+
+                    if shelf_result.get("matched"):
+                        if bool(shelf_result.get("ok")):
+                            if debug_target:
+                                log_debug(
+                                    "[TARGET_DEBUG]",
+                                    "shelf radio js-select ok "
+                                    f"target_id='{target_id}' reason='{shelf_result.get('reason')}'",
+                                )
+                            return True
+                        if debug_target:
+                            log_debug(
+                                "[TARGET_DEBUG]",
+                                "shelf radio js-select failed "
+                                f"target_id='{target_id}' reason='{shelf_result.get('reason')}'",
+                            )
+                        return False
+
                 if (
                     (payload.get("meta") or {}).get("source") == "sq-atm1d"
                     and v_norm
