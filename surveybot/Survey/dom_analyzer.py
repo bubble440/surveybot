@@ -593,6 +593,22 @@ def _is_other_specify_choice_companion(driver, el, container, question: str) -> 
     return option_hits >= max(2, min(4, len(option_texts) // 2))
 
 
+def _looks_like_aggregated_container_option(option_text: str, question_text: str) -> bool:
+    """
+    Détecte un faux bloc mono-option où l'option recopie exactement le texte
+    agrégé de la question (question + liste de choix concaténée).
+    """
+    opt_lc = _norm_lc(option_text)
+    q_lc = _norm_lc(question_text)
+    if not opt_lc or not q_lc:
+        return False
+    if opt_lc != q_lc:
+        return False
+
+    words = re.findall(r"[a-z0-9à-ÿ]{2,}", q_lc)
+    return len(words) >= 20
+
+
 def _selection_signal_text(driver, el, question_text: str | None = None) -> str:
     """
     Construit un signal texte pour les règles de cardinalité:
@@ -1387,6 +1403,16 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             if not options and len(els) == 1 and question:
                 options = [question]
 
+            if (
+                itype == "radio"
+                and len(els) == 1
+                and len(options) == 1
+                and _looks_like_aggregated_container_option(options[0], question)
+            ):
+                group_reject_reasons["radio_aggregated_container_option"] = (
+                    group_reject_reasons.get("radio_aggregated_container_option", 0) + 1
+                )
+                continue
             if itype == "checkbox" and _is_checkbox_optout_companion_for_text(driver, els, options):
                 group_reject_reasons["checkbox_optout_companion_text"] = (
                     group_reject_reasons.get("checkbox_optout_companion_text", 0) + 1
