@@ -69,6 +69,18 @@ STRICT_KEYWORDS = {
 }
 
 
+def _has_datadome_iframe(driver) -> bool:
+    """True si un iframe DataDome (captcha-delivery.com) est présent dans la page."""
+    try:
+        iframes = driver.find_elements(
+            By.CSS_SELECTOR,
+            'iframe[src*="captcha-delivery.com"], iframe[title*="DataDome"]',
+        )
+        return bool(iframes)
+    except Exception:
+        return False
+
+
 def _page_text_lc(driver) -> str:
     """Récupère le texte de la page en minuscules, de façon safe."""
     try:
@@ -261,6 +273,10 @@ def detect_strict_survey(driver) -> Tuple[bool, Optional[str]]:
         # 🧠 Drag & drop : nécessite AU MOINS 2 signaux VISIBLES
         # Beaucoup de frameworks ont des éléments drag cachés (modales, etc.)
         if reason == "drag_drop":
+            # DataDome expose un slider (draggable) dans son iframe — ne pas le confondre
+            # avec une interaction drag_drop stricte non gérée : DataDome est gérable.
+            if _has_datadome_iframe(driver):
+                continue
             visible_count = 0
             for sel in matches:
                 try:
@@ -279,6 +295,10 @@ def detect_strict_survey(driver) -> Tuple[bool, Optional[str]]:
 
         # Captcha : au moins un élément VISIBLE
         if reason == "captcha":
+            # DataDome est gérable par datadome_handler — ne pas le traiter comme strict.
+            # Son iframe (captcha-delivery.com) matche "iframe[src*='captcha']" → exclusion.
+            if _has_datadome_iframe(driver):
+                continue
             for sel in matches:
                 try:
                     for el in driver.find_elements(By.CSS_SELECTOR, sel):
