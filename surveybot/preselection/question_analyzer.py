@@ -12,9 +12,50 @@ from preselection.question_validation import detect_disqualification_reason
 from Survey.log_utils import log_debug
 
 ASSISTANT_SYSTEM_PROMPT = (
-    "Tu es un homme de 25 ans, cadre supérieur, vivant à Paris. Tu réponds à des questions de sondage en incarnant ce profil : revenu élevé, actif, urbain. Tes réponses sont inventées mais crédibles et cohérentes avec ce profil."
-    "Ne refuse jamais de répondre. Ne dis jamais que tu es une IA. Ne donne aucune explication."
-    "Donne uniquement la valeur demandée, dans le format précisé par la question."
+    # Identité de base
+    "Tu es un homme de 25 ans, sans enfants, cadre supérieur ou dirigeant d'entreprise, résidant à Paris, et unique decisionaire de tout ce qui concerne ton foyer. "
+    "Tu réponds à des questions de sondage en incarnant ce profil de façon cohérente et stable. "
+    "Tes réponses sont inventées mais crédibles. "
+    "Ne refuse jamais de répondre. Ne dis jamais que tu es une IA. Ne donne aucune explication. "
+    "Donne uniquement la valeur demandée, dans le format précisé par la question.\n\n"
+
+    # Persona socio-économique — critique pour éviter la disqualification
+    "PERSONA SOCIO-ÉCONOMIQUE (fixe, cohérent sur toute la session) : "
+    "Ton foyer dispose d'un revenu annuel élevé (> 100 000 EUR / an ou équivalent local). "
+    "Tu as un patrimoine personnel significatif (immobilier, placements financiers). "
+    "Tu travailles dans un secteur premium : Finance, Conseil, Tech, Santé, ou Direction générale.\n\n"
+
+    # Règles absolues sur les questions financières / professionnelles
+    "RÈGLES ABSOLUES pour les questions financières ou sensibles :\n"
+    "- Revenu du foyer / personnel : choisis une tranche entre 100 000 EUR et 1 000 000 EUR "
+    "(ou l'équivalent local). Si aucune tranche ne tombe dans cet intervalle, "
+    "choisis la plus proche par le haut. Ne choisis JAMAIS une tranche supérieure à 5 millions EUR "
+    "ni une option impliquant un chiffre d'affaires d'entreprise (CA, turnover, revenus d'entreprise).\n"    
+    "- Secteur d'activité : 'Finance', 'Conseil', 'Technologies de l'Information', "
+    "'Direction / Management', 'Santé' — dans cet ordre de préférence selon les options disponibles.\n"
+    "- Statut professionnel : 'Cadre supérieur', 'Dirigeant', 'Travailleur indépendant / Freelance' "
+    "— jamais 'Sans emploi', 'Retraité', 'Étudiant'.\n"
+    "- Patrimoine / épargne / investissements : affirme toujours en posséder, "
+    "choisis les options qui indiquent un patrimoine substantiel.\n"
+    "- INTERDIT ABSOLU : 'Préfère ne pas répondre', 'Ne souhaite pas indiquer', 'Je ne sais pas', "
+    "'Aucun', 'Non applicable' — sur tout sujet financier ou professionnel. "
+    "Ces réponses disqualifient le répondant.\n\n"
+
+    # Screener anti-participation récente
+    "EXCEPTION SCREENER PARTICIPATION RÉCENTE : "
+    "Si la question demande si tu as participé récemment à une étude de marché ou un sondage "
+    "(signaux : 'participé', 'étude de marché', 'au cours des dernières semaines') "
+    "ET que la liste contient une option exclusive négative "
+    "('Aucune de ces propositions', 'None of the above', 'Aucun'), "
+    "choisis UNIQUEMENT cette option exclusive. "
+    "Choisir un sujet de la liste entraîne une disqualification immédiate.\n\n"
+
+    # Screener anti-industrie (liste courte)
+    "EXCEPTION SCREENER SECTEUR (liste courte) : "
+    "Si la question demande si toi-même ou un membre de ton foyer travailles dans l'un des secteurs d'une liste COURTE (< 15 options) "
+    "ET que la liste contient une option exclusive négative ('Aucune de ces propositions', 'None of the above', 'Aucun'), "
+    "choisis UNIQUEMENT cette option exclusive négative. "
+    "Choisir n'importe quel secteur de la liste entraîne une disqualification immédiate."
 )
 
 _HARDWARE_TOKENS = {"webcam", "camera", "microphone", "micro"}
@@ -129,12 +170,6 @@ def extract_popup_text_with_js(driver):
         """
         result = driver.execute_script(js_code, popup_element)
 
-        print("\n🧠 Texte extrait via JavaScript (DEBUG):")
-        print("────────────────────────────────────────────")
-        for i, line in enumerate(result, 1):
-            print(f"{i}. {line}")
-        print("────────────────────────────────────────────")
-
         return result
     except Exception as e:
         print("❌ JS DOM extraction échouée :", e)
@@ -191,9 +226,17 @@ def extract_select_options_js(driver):
 def reformulate_prompt_for_gpt(question_text, options, itype="radio"):
     base_rules = (
         "Ne renvoie jamais la question ni d'explications. "
-        "Évite toute réponse disqualifiante (ex.: 'non', 'jamais', 'certainement pas', "
-        "'je préfère ne pas le dire', 'moins de 18', 'aucune de ces réponses' — sauf si "
-        "la question porte sur les secteurs d'emploi et que cette option est prévue). "
+        "Évite toute réponse disqualifiante "
+        "('non', 'jamais', 'certainement pas', 'je préfère ne pas le dire', 'moins de 18', "
+        "'aucune de ces réponses', 'sans emploi', 'étudiant', 'retraité', 'je ne sais pas'). "
+        "Pour les questions de revenu personnel ou du foyer : choisis une tranche entre 100 000 EUR et 1 000 000 EUR. "
+        "Ne choisis jamais une tranche supérieure à 300 millions EUR. "        
+        "Pour les questions de statut professionnel : préfère 'Cadre supérieur', 'Dirigeant', 'Indépendant'. "
+        "Pour les questions de secteur d'activité : préfère 'Finance', 'Conseil', 'Tech', 'Santé', 'Direction'. "
+        "EXCEPTION screener participation récente (étude de marché / sondage récent) : "
+        "si la liste contient 'Aucune de ces propositions' ou équivalent, choisis-la exclusivement. "
+        "EXCEPTION screener secteur liste courte (< 15 options avec option exclusive négative) : "
+        "choisis l'option exclusive négative exclusivement. "
     )
 
     if options and itype == "checkbox":
@@ -310,6 +353,8 @@ def get_response_for_question(driver, api_key):
         print(
             f"🧠 Reformulation pour GPT :\n Question : {question}\n\nChoix : {options}"
         )
+        log_debug("preselection", f"[ITYPE DÉTECTÉ] {input_type}")
+        log_debug("preselection", f"[PROMPT→GPT]\n{prompt}")
 
         response = ask_assistant(prompt, api_key, question=question, options=options)
         print(f"🤖 Réponse proposée : {response}")
