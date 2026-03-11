@@ -97,3 +97,41 @@ def test_sanitize_birth_year_text_converts_age_to_four_digit_year():
 
     assert cleaned[0]["value"] == str(datetime.datetime.utcnow().year - 25)
     assert "sanitized_birth_year" in cleaned[0]["raw"]
+
+
+def test_checkbox_bulk_policy_prefers_negative_exclusive_for_short_sector_screener():
+    actions = [
+        {
+            "qid": "Q1",
+            "target_id": "group_1",
+            "value": "Agence de publicité",
+            "itype": "checkbox",
+            "context": "Travaillez-vous...",
+            "raw": "Q1 //// group_1 //// Agence de publicité //// checkbox //// Travaillez-vous...",
+        }
+    ]
+
+    qid_meta = {
+        "Q1": {
+            "question": "Travaillez-vous ou une personne de votre foyer travaille-t-elle pour une entreprise des secteurs d’activité suivants ? Veuillez sélectionner toutes les réponses pertinentes.",
+            "itype": "checkbox",
+            "max_select": 8,
+            "target_id": "group_1",
+            "options": [
+                "Entreprise ou service de marketing",
+                "Société ou service d’études de marché",
+                "Fabrication de boissons gazeuses",
+                "Agence de relations publiques",
+                "Journalisme",
+                "Fabrication de produits d’hygiène",
+                "Agence de publicité",
+                "Aucune de ces propositions",
+            ],
+        }
+    }
+
+    cleaned = sanitize_actions(actions, qid_meta=qid_meta)
+
+    assert len(cleaned) == 1
+    assert cleaned[0]["itype"] == "checkbox"
+    assert cleaned[0]["value"] == "Aucune de ces propositions"
