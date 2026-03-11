@@ -84,12 +84,11 @@ def solve_datadome_auto(driver) -> bool:
     try:
         qs = parse_qs(urlparse(iframe_src).query)
         t_val = (qs.get("t") or [""])[0]
-        initial_cid = (qs.get("initialCid") or qs.get("cid") or [""])[0]
         if t_val == "lb":
             log_info(_TAG, "DataDome t=lb → IP bannie → résolution impossible → return False")
             return False
     except Exception:
-        initial_cid = ""
+        pass
 
     # 3. Proxy obligatoire pour DataDome
     proxy_cfg = _get_proxy_config()
@@ -138,25 +137,6 @@ def solve_datadome_auto(driver) -> bool:
 
     _dur = time.time() - _t_start
     log_info(_TAG, f"Cookie reçu en {_dur:.1f}s → injection + refresh")
-
-    # Vérifier que le challenge actif est toujours celui soumis à 2Captcha
-    current_info = _detect_datadome(driver)
-    if current_info is None:
-        log_info(_TAG, "Challenge DataDome expiré pendant résolution (iframe absente) → return False")
-        return False
-
-    try:
-        current_qs = parse_qs(urlparse(current_info["iframe_src"]).query)
-        current_cid = (current_qs.get("initialCid") or current_qs.get("cid") or [""])[0]
-    except Exception:
-        current_cid = ""
-
-    if initial_cid != current_cid:
-        log_info(
-            _TAG,
-            f"Challenge DataDome expiré pendant résolution (cid changé: {initial_cid} -> {current_cid}) → return False",
-        )
-        return False
 
     # 6. Extraire la valeur du cookie depuis la chaîne "datadome=VALUE; Path=/; ..."
     if "datadome=" in cookie_raw:
