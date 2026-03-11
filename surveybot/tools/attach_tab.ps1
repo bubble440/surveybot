@@ -2,8 +2,7 @@ param(
   [Parameter(Mandatory=$true)][int]$Port,
   [string]$ProjectDir = "C:\projects\Surveys",
   [string]$TargetUrl = "https://www.topsurveys.app",
-  [string]$AttachTabSelector = "pick",
-  [ValidateSet("preselection","resolution")][string]$AttachRoute = "resolution"
+  [string]$AttachTabSelector = "pick"
 )
 
 # Chrome path
@@ -49,6 +48,18 @@ Write-Host "MANUEL:"
 Write-Host "1) Va dans le Chrome du port $Port."
 Write-Host "2) Connecte-toi, lance un survey, arrête-toi sur la page cible."
 Write-Host "3) Reviens ici."
+Write-Host ""
+Write-Host "Type d'attach à lancer :"
+Write-Host "  1) attach preselection"
+Write-Host "  2) attach resolution (comportement actuel)"
+
+$attachChoice = (Read-Host "Choix [1/2, défaut=2]").Trim()
+$AttachRoute = "resolution"
+if($attachChoice -eq "1"){
+  $AttachRoute = "preselection"
+}
+Write-Host "[ATTACH] Route sélectionnée : $AttachRoute"
+
 Read-Host "Appuie sur Entrée pour déclencher ATTACH-TAKEOVER ($AttachRoute)" | Out-Null
 
 # Vars env (attach)
