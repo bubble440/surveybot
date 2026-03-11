@@ -44,3 +44,19 @@ def test_find_associated_label_reads_answer_options_custom_label():
     got = _find_associated_label(driver, inp)
 
     assert unicodedata.normalize("NFC", got) == "Autre, merci de préciser:"
+
+
+class _FakeDriverWithScript(_FakeDriver):
+    def execute_script(self, script, _el):
+        if "radio-checkbox-wrapper" in script:
+            return "Vin rouge"
+        return ""
+
+
+def test_find_associated_label_js_fallback_supports_radio_checkbox_wrapper_scope():
+    driver = _FakeDriverWithScript()
+    inp = _FakeInput(attrs={"id": "opt_1"}, custom_labels=[])
+
+    got = _find_associated_label(driver, inp)
+
+    assert unicodedata.normalize("NFC", got) == "Vin rouge"
