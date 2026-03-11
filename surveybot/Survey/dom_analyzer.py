@@ -309,6 +309,75 @@ def _is_auxiliary_text_for_choice_group(driver, el, container, question: str) ->
     return score >= 3
 
 
+def _is_checkbox_optout_companion_for_text(driver, els: List[Any], options: List[str]) -> bool:
+    """
+    Détecte un "opt-out" checkbox auxiliaire lié à un champ texte (pattern mrIWeb/Kantar).
+
+    Garde-fous DOM-first (tous requis):
+    - groupe checkbox singleton (1 input, 1 option)
+    - signal opt-out observable sur l'input (name *_XREF / value REF / isexclusive=true / openendid)
+    - libellé option = "je ne souhaite pas répondre" (ou équivalent proche)
+    - `openendid` référence un input texte/textarea présent dans le même conteneur de question
+    """
+    if len(els or []) != 1 or len(options or []) != 1:
+        return False
+
+    el = els[0]
+    opt_lc = _norm_lc(options[0])
+    if not any(
+        token in opt_lc
+        for token in (
+            "souhaite pas r",
+            "prefer not to answer",
+            "no answer",
+        )
+    ):
+        return False
+
+    try:
+        raw_name = _norm_lc(el.get_attribute("name") or "")
+        raw_value = _norm_lc(el.get_attribute("value") or "")
+        raw_isexclusive = _norm_lc(el.get_attribute("isexclusive") or "")
+        openendid = _norm(el.get_attribute("openendid") or "")
+    except Exception:
+        return False
+
+    has_optout_flag = (
+        bool(openendid)
+        or raw_name.endswith("_xref")
+        or raw_value == "ref"
+        or raw_isexclusive in {"true", "1", "yes", "on"}
+    )
+    if not has_optout_flag:
+        return False
+
+    if not openendid:
+        return False
+
+    try:
+        ref_txt = driver.find_elements(By.CSS_SELECTOR, f"input#{openendid}, textarea#{openendid}")
+    except Exception:
+        ref_txt = []
+
+    if ref_txt:
+        return True
+
+    try:
+        container = _nearest_question_container(el)
+    except Exception:
+        container = None
+
+    if not container:
+        return False
+
+    try:
+        return bool(
+            container.find_elements(By.CSS_SELECTOR, f"input#{openendid}, textarea#{openendid}")
+        )
+    except Exception:
+        return False
+
+
 def _is_open_ended_choice_companion(el, container) -> bool:
     """
     Détecte les champs open-end de type oeXXXX.Y liés à une option de choix ansXXXX.*
@@ -1317,6 +1386,20 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             # Pattern spécifique
             if not options and len(els) == 1 and question:
                 options = [question]
+
+            if itype == "checkbox" and _is_checkbox_optout_companion_for_text(driver, els, options):
+                group_reject_reasons["checkbox_optout_companion_text"] = (
+                    group_reject_reasons.get("checkbox_optout_companion_text", 0) + 1
+                )
+                if is_debug():
+                    try:
+                        log_debug(
+                            "[DOM_GROUPING]",
+                            f"skip_checkbox_optout_companion group_key={group_key} option={options[0] if options else ''}",
+                        )
+                    except Exception:
+                        pass
+                continue
 
             # Pattern spécifique
             # Pattern spécifique
