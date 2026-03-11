@@ -3400,6 +3400,131 @@ def _extract_runtime_answerrow_radio_blocks(driver, frame_chain: list[int] | Non
     return blocks
 
 
+def _extract_kantar_rowpicker_radio_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
+    """Extraction radio pour Kantar rowpicker (`[data-test='main-contain']._rowpicker`).
+
+    Gate DOM strict:
+    - conteneur options: `div[id^='container_'] [data-test='main-contain']._rowpicker`
+    - question associée: `#qc_<suffixe_container> span.mrQuestionText`
+    - options: cartes flex avec `label` texte + overlay cliquable `tabindex='0'`
+    """
+    frame_chain = list(frame_chain or [])
+
+    try:
+        pickers = driver.find_elements(
+            By.CSS_SELECTOR,
+            "div[id^='container_'] [data-test='main-contain']._rowpicker",
+        )
+    except Exception:
+        return []
+
+    if not pickers:
+        return []
+
+    blocks: list[dict] = []
+
+    for picker in pickers:
+        try:
+            container = picker.find_element(By.XPATH, "ancestor::div[starts-with(@id,'container_')][1]")
+            container_id = (container.get_attribute("id") or "").strip()
+        except Exception:
+            continue
+
+        if not container_id.startswith("container_"):
+            continue
+
+        q_suffix = container_id[len("container_"):].strip()
+        if not q_suffix:
+            continue
+
+        question = ""
+        try:
+            q_nodes = driver.find_elements(By.CSS_SELECTOR, f"#qc_{q_suffix} span.mrQuestionText")
+        except Exception:
+            q_nodes = []
+
+        for qn in q_nodes:
+            q_txt = _norm(qn.text or qn.get_attribute("innerText") or "")
+            if q_txt and len(q_txt) >= 8:
+                question = q_txt
+                break
+
+        if not question:
+            continue
+
+        try:
+            cards = picker.find_elements(By.CSS_SELECTOR, "div.__flexgrid_row > div")
+        except Exception:
+            cards = []
+
+        options: list[str] = []
+        option_xpath_map: dict[str, str] = {}
+
+        for card in cards:
+            try:
+                clickable = card.find_element(By.CSS_SELECTOR, "div[tabindex='0']")
+                label_nodes = card.find_elements(By.CSS_SELECTOR, "label span")
+            except Exception:
+                continue
+
+            label_text = ""
+            for ln in label_nodes:
+                txt = _norm(ln.text or ln.get_attribute("innerText") or "")
+                if txt:
+                    label_text = txt
+                    break
+
+            if not label_text:
+                continue
+
+            nk = _norm_key(label_text)
+            if not nk or nk in option_xpath_map:
+                continue
+
+            xp = _best_xpath_for_element(driver, clickable)
+            if not xp:
+                continue
+
+            option_xpath_map[nk] = xp
+            options.append(label_text)
+
+        if len(options) < 2 or len(option_xpath_map) < 2:
+            continue
+
+        group_key = f"kantar_rowpicker:radio:{q_suffix}"
+        target_id = make_target_id("group", group_key, question)
+
+        register_target(
+            target_id,
+            {
+                "kind": "group",
+                "itype": "radio",
+                "group_key": group_key,
+                "question": question,
+                "option_xpath_map": option_xpath_map,
+                "frame_chain": frame_chain,
+                "kantar_rowpicker_radio": True,
+            },
+        )
+
+        blocks.append(
+            {
+                "question": question,
+                "itype": "radio",
+                "options": options,
+                "max_select": 1,
+                "target_id": target_id,
+                "context": {
+                    "kind": "group",
+                    "group_key": group_key,
+                    "kantar_rowpicker_radio": True,
+                },
+            }
+        )
+
+    return blocks
+
+
 def _extract_label_radio_list_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
     """Extraction radio pour listes `label.radio` sans input natif.
 
