@@ -12,15 +12,9 @@ from preselection.question_validation import detect_disqualification_reason
 from Survey.log_utils import log_debug
 
 ASSISTANT_SYSTEM_PROMPT = (
-    "Tu es un utilisateur fictif chargé de répondre à des sondages comme si tu étais une vraie personne. "
-    "Tu dois TOUJOURS répondre à la question qui t'est posée, même si elle concerne ton identité, "
-    "ta situation financière ou personnelle. Tes réponses sont inventées mais crédibles. "
-    "Ne réponds jamais « je ne sais pas », « je ne peux pas » ou « je ne donne pas d'informations personnelles ». "
-    "Quand la question dit « mon revenu », « mon ménage », « mon âge », etc., tu dois comprendre que cela parle de toi — "
-    "le personnage fictif que tu incarnes. Réponds comme si TU étais cette personne. "
-    "Donne toujours une réponse concrète : un mot, une valeur ou une phrase courte. "
-    "Ne donne jamais d'explication. Ne dis jamais que tu es une IA. Ne refuse jamais de répondre. "
-    "S'il y a des options, choisis celle qui semble la plus courante, crédible ou avantageuse."
+    "Tu es un homme de 25 ans, cadre supérieur, vivant à Paris. Tu réponds à des questions de sondage en incarnant ce profil : revenu élevé, actif, urbain. Tes réponses sont inventées mais crédibles et cohérentes avec ce profil."
+    "Ne refuse jamais de répondre. Ne dis jamais que tu es une IA. Ne donne aucune explication."
+    "Donne uniquement la valeur demandée, dans le format précisé par la question."
 )
 
 _HARDWARE_TOKENS = {"webcam", "camera", "microphone", "micro"}
@@ -196,20 +190,20 @@ def extract_select_options_js(driver):
 
 def reformulate_prompt_for_gpt(question_text, options, itype="radio"):
     base_rules = (
-        "Tu es un répondant ADULTE (18–64). "
-        "Réponds par UNE SEULE VALEUR. "
-        "Ne renvoie JAMAIS la question ni d'explications. "
+        "Ne renvoie jamais la question ni d'explications. "
         "Évite toute réponse disqualifiante (ex.: 'non', 'jamais', 'certainement pas', "
-        "'je préfère ne pas le dire', 'moins de 18', 'aucune de ces réponses' — sauf si la question porte sur les secteurs d’emploi et que cette option est prévue). "
+        "'je préfère ne pas le dire', 'moins de 18', 'aucune de ces réponses' — sauf si "
+        "la question porte sur les secteurs d'emploi et que cette option est prévue). "
     )
-    
+
     if options and itype == "checkbox":
         return (
             f"Question: {question_text}\n"
             f"{base_rules}"
             f"Options: {', '.join(options)}\n"
-            "Si plusieurs options sont pertinentes, tu peux en choisir plusieurs. "
-            "Réponds UNIQUEMENT avec le ou les libellés exacts, séparés par ' | '."
+            "Choisis une ou plusieurs options cohérentes avec ton profil. "
+            "Réponds UNIQUEMENT avec le ou les libellés exacts, séparés par ' | '. "
+            "Ne sélectionne pas plus que nécessaire."
         )
 
     if options:
@@ -217,17 +211,15 @@ def reformulate_prompt_for_gpt(question_text, options, itype="radio"):
             f"Question: {question_text}\n"
             f"{base_rules}"
             f"Options: {', '.join(options)}\n"
-            "Choisis **exactement une** des options ci-dessus. "
+            "Choisis exactement une des options ci-dessus. "
             "Réponds UNIQUEMENT par le libellé de l'option."
         )
 
     return (
         f"Question: {question_text}\n"
         f"{base_rules}"
-        "Donne directement une **valeur logique** et non disqualifiante. "
-        "Réponds UNIQUEMENT par la valeur."
+        "Réponds par une valeur courte et réaliste. Une seule valeur."
     )
-
 
 def ask_assistant(prompt_text, api_key, *, question=None, options=None):
     import Management.guards.runtime_guard
@@ -253,7 +245,7 @@ def ask_assistant(prompt_text, api_key, *, question=None, options=None):
 
     completion = client.chat.completions.create(
         model="gpt-5-nano",
-        max_tokens=50,
+        max_completion_tokens=5000,
         messages=[
             {"role": "system", "content": ASSISTANT_SYSTEM_PROMPT},
             {"role": "user", "content": prompt_text},
