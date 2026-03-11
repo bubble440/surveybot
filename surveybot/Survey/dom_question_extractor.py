@@ -207,6 +207,58 @@ def _find_associated_label(driver, el) -> str:
                     return txt
         except Exception:
             pass
+
+        # 5) Fallback DOM ciblé: options custom sans <label for="..."> explicite.
+        # Scope strict DOM: on cherche le plus proche wrapper d'option
+        # (et non le conteneur global de question) pour éviter de capturer
+        # le texte agrégé de toute la question.
+        try:
+            dom_option_txt = driver.execute_script(
+                """
+                const input = arguments[0];
+                if (!input) return '';
+
+                const norm = (s) => (s || '').replace(/\s+/g, ' ').trim();
+                const isVisible = (node) => {
+                  if (!node || !(node instanceof Element)) return false;
+                  const st = window.getComputedStyle(node);
+                  if (!st) return false;
+                  if (st.display === 'none' || st.visibility === 'hidden') return false;
+                  const r = node.getBoundingClientRect();
+                  return r.width > 0 && r.height > 0;
+                };
+
+                const optionHost = input.closest(
+                  'label, .category-option, .answer-option, .answer_options, .option, li, [role="option"], [class*="option-item"], [class*="choice-item"]'
+                );
+                if (!optionHost || !isVisible(optionHost)) return '';
+
+                const candidates = [];
+                const nodes = optionHost.querySelectorAll('span, div, p, strong, em, label');
+                for (const node of Array.from(nodes)) {
+                  if (!isVisible(node)) continue;
+                  if (node === input || node.contains(input)) continue;
+                  if (node.querySelector('input,select,textarea')) continue;
+                  const t = norm(node.innerText || node.textContent || '');
+                  if (!t) continue;
+                  candidates.push({ t, len: t.length });
+                }
+
+                if (!candidates.length) {
+                  const fallback = norm(optionHost.innerText || optionHost.textContent || '');
+                  return fallback;
+                }
+
+                candidates.sort((a, b) => a.len - b.len);
+                return candidates[0].t;
+                """,
+                el,
+            )
+            dom_option_txt = _norm(dom_option_txt)
+            if dom_option_txt and len(dom_option_txt) <= 300 and _is_valid_option_label(dom_option_txt):
+                return dom_option_txt
+        except Exception:
+            pass
         
         return ""
     
