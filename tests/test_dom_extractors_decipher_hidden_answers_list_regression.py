@@ -497,3 +497,61 @@ def test_focusvision_answers_list_mx_collapsible_stage_found_from_driver_scope()
     assert any("mx-collapsible-row-item" in xp for xp in xpaths)
     assert any("@precode" in xp for xp in xpaths)
     assert all("clickableCell" not in xp for xp in xpaths)
+
+def test_focusvision_group_by_row_mx_carousel_exposes_next_button_xpath():
+    from Survey.dom_registry import clear_registry, get_target
+
+    clear_registry()
+
+    col_headers = [
+        _FakeNode(text="Oui", attrs={"id": "Q6_c1"}),
+        _FakeNode(text="Non", attrs={"id": "Q6_c2"}),
+    ]
+    row = _FakeNode(
+        children={
+            "th[scope='row']": [_FakeNode(text="Sont modernes", attrs={"id": "Q6_r7_left"})],
+            "input[type='radio'], input[type='checkbox']": [
+                _FakeInput(attrs={"id": "ans200.0.0", "name": "ans200.0.0", "type": "checkbox", "value": "0"}),
+                _FakeInput(attrs={"id": "ans200.1.0", "name": "ans200.0.0", "type": "checkbox", "value": "1"}),
+            ],
+        }
+    )
+    table = _FakeTable(
+        children={
+            "th[scope='col']": col_headers,
+            "tr.row-elements": [row],
+        }
+    )
+
+    answers = _FakeNode(
+        children={
+            "table.grid[data-settings*='group-by-row'][data-settings*='table-mode']": [table],
+            "input[type='radio'], input[type='checkbox']": [
+                _FakeInput(attrs={"id": "seed1", "name": "ans200.0.0", "type": "checkbox"}),
+                _FakeInput(attrs={"id": "seed2", "name": "ans200.0.1", "type": "checkbox"}),
+            ],
+        }
+    )
+
+    q = _FakeNode(
+        attrs={"id": "question_Q6"},
+        children={
+            ".answers.answers-list, .answers.answers-table": [answers],
+            ".question-text": [_FakeNode(text="Question produit")],
+        },
+    )
+
+    class _D:
+        def find_elements(self, by=None, value=None):
+            if value == "mx-stage-Q6":
+                return [_FakeNode(attrs={"id": "mx-stage-Q6"})]
+            if value == "div.question[role='radiogroup'], div.question.radio, div.question.checkbox":
+                return [q]
+            return []
+
+    blocks = _extract_focusvision_answers_list_groups(_D(), frame_chain=[])
+
+    assert len(blocks) == 1
+    payload = get_target(blocks[0]["target_id"])
+    assert payload is not None
+    assert "swiper-button-next" in (payload.get("mx_vertical_carousel_next_xpath") or "")
