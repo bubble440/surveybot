@@ -3,7 +3,7 @@ import re, unicodedata, os, time, zlib
 from selenium.webdriver.common.by import By
 import Survey.input_handler
 from Survey.dom_registry import get_target
-from typing import Optional, Callable
+from typing import Optional
 from selenium.webdriver.common.action_chains import ActionChains
 from Survey.log_utils import is_debug, log_debug, log_info
 
@@ -4073,57 +4073,6 @@ def _try(driver, name: str, fn):
         log_info("[TARGET]", f"apply ok=true strategy={name} reason=applied")
     return ok
 
-
-def _get_strategy_memory_key(driver, *, target_id: str | None = None, itype: str = "", context: str = "") -> str:
-    """Construit une clé de mémoire locale (scope bloc/question courant).
-
-    - Priorité à la clé injectée par execute_actions_plan (target_id/qid/itype/context)
-    - Fallback local si execute_action est appelé hors plan batch.
-    """
-    try:
-        plan_key = getattr(driver, "_strategy_memory_key", "") or ""
-        if plan_key:
-            return str(plan_key)
-    except Exception:
-        pass
-
-    tid = (target_id or "").strip()
-    it = (itype or "").strip().lower()
-    ctx = _aa__norm_ws(context or "")[:240]
-    return f"tid={tid}|itype={it}|ctx={ctx}"
-
-
-def _run_scoped_strategies(driver, *, memory_key: str, strategies: list[tuple[str, Callable[[], bool]]]) -> bool:
-    """Exécute des stratégies avec réutilisation locale de la dernière gagnante.
-
-    Si une stratégie a déjà réussi pour ce bloc, on la tente d'abord.
-    En cas d'échec, on invalide la préférence et on retombe sur le flux normal.
-    """
-    try:
-        mem = getattr(driver, "_strategy_memory_by_block", None)
-        if not isinstance(mem, dict):
-            mem = {}
-            driver._strategy_memory_by_block = mem
-    except Exception:
-        mem = {}
-
-    preferred = (mem.get(memory_key) or "") if memory_key else ""
-    ordered = list(strategies)
-    if preferred:
-        ordered.sort(key=lambda item: 0 if item[0] == preferred else 1)
-
-    for name, fn in ordered:
-        ok = _try(driver, name, fn)
-        if ok:
-            if memory_key:
-                mem[memory_key] = name
-            return True
-
-        if preferred and name == preferred and memory_key:
-            mem.pop(memory_key, None)
-
-    return False
-
 # --------------------------- Dispatcher principal ---------------------------
 def _aa__norm_ws(s: str) -> str:
     return re.sub(r"\s+", " ", (s or "").strip())
@@ -4671,20 +4620,18 @@ def execute_action(
             if _norm_lc(label) in {"oui", "yes", "true", "1", "checked", "on", "x"} and ctx and len(ctx) >= 6:
                 label = ctx
 
-            mem_key = _get_strategy_memory_key(
-                driver,
-                target_id=target_id,
-                itype=itype,
-                context=ctx,
-            )
-            if _run_scoped_strategies(
-                driver,
-                memory_key=mem_key,
-                strategies=[
-                    ("checkbox_main", lambda: Survey.input_handler.click_checkbox_by_label(driver, label, context_hint=ctx)),
-                    ("checkbox_buttonish", lambda: Survey.input_handler.click_checkbox_buttonish_by_label(driver, label, context_hint=ctx)),
-                    ("checkbox_fallback_radio", lambda: Survey.input_handler.click_radio_by_label(driver, label, context_hint=ctx)),
-                ],
+            if _try(driver, "checkbox_main", lambda:
+                Survey.input_handler.click_checkbox_by_label(driver, label, context_hint=ctx)
+            ):
+                return True
+
+            if _try(driver, "checkbox_buttonish", lambda:
+                Survey.input_handler.click_checkbox_buttonish_by_label(driver, label, context_hint=ctx)
+            ):
+                return True
+
+            if _try(driver, "checkbox_fallback_radio", lambda:
+                Survey.input_handler.click_radio_by_label(driver, label, context_hint=ctx)
             ):
                 return True
 
@@ -4823,12 +4770,6 @@ def execute_actions_plan(
 
     actions = actions[:max_actions]
 
-    # Mémoire locale des stratégies gagnantes (scope: exécution courante de page).
-    try:
-        driver._strategy_memory_by_block = {}
-    except Exception:
-        pass
-
     # Heuristique simple & prédictible:
     # - Un dropdown de langue peut reloader la page et annuler les réponses précédentes (ex: checkbox consent).
     # => si on détecte un "language selector", on l'applique AVANT le reste.
@@ -4912,28 +4853,11 @@ def execute_actions_plan(
             # partageant le même target_id (ex: multi-select checkbox d'un même slide).
             allow_mx_advance = (not tid) or (tid != next_tid)
 
-            try:
-                mem_parts = [
-                    f"qid={(qid or '').strip()}",
-                    f"tid={(tid or '').strip()}",
-                    f"itype={(itype or '').strip().lower()}",
-                    f"ctx={_aa__norm_ws(context or '')[:240]}",
-                ]
-                driver._strategy_memory_key = "|".join(mem_parts)
-            except Exception:
-                pass
-
             ok = execute_action(
                 driver,
                 instruction,
                 allow_mx_vertical_carousel_advance=allow_mx_advance,
             )
-
-            try:
-                if hasattr(driver, "_strategy_memory_key"):
-                    delattr(driver, "_strategy_memory_key")
-            except Exception:
-                pass
             if ok:
                 success_any = True
             # Wait DOM stable after dropdown (budget borné)
