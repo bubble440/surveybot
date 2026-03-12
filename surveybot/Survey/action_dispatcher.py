@@ -2,7 +2,12 @@ from __future__ import annotations
 import re, unicodedata, os, time, zlib
 from selenium.webdriver.common.by import By
 import Survey.input_handler
-from Survey.dom_registry import get_target
+from Survey.dom_registry import (
+    get_target,
+    get_cached_handler,
+    set_cached_handler,
+    invalidate_cached_handler,
+)
 from typing import Optional
 from selenium.webdriver.common.action_chains import ActionChains
 from Survey.log_utils import is_debug, log_debug, log_info
@@ -4074,6 +4079,49 @@ def _try(driver, name: str, fn):
     return ok
 
 # --------------------------- Dispatcher principal ---------------------------
+
+def _try_handlers_with_cache(driver, target_id: Optional[str], handlers):
+    """
+    Tente une liste de handlers avec mémoire par target_id.
+
+    Règles:
+    - si un handler est mémorisé pour ce target_id, on le tente en priorité;
+    - s'il échoue, on invalide le cache puis on reprend l'ordre normal;
+    - au premier succès, on mémorise target_id -> handler_name.
+    """
+    cached_name = None
+    if target_id:
+        try:
+            cached_name = get_cached_handler(target_id)
+        except Exception:
+            cached_name = None
+
+    if cached_name:
+        for name, fn in handlers:
+            if name != cached_name:
+                continue
+            if _try(driver, name, fn):
+                return True
+            try:
+                invalidate_cached_handler(target_id)
+            except Exception:
+                pass
+            log_debug("[TARGET_DEBUG]", f"handler_cache invalidated target_id={target_id!r} handler={name!r}")
+            break
+
+    for name, fn in handlers:
+        if cached_name and name == cached_name:
+            continue
+        if _try(driver, name, fn):
+            if target_id:
+                try:
+                    set_cached_handler(target_id, name)
+                except Exception:
+                    pass
+            return True
+
+    return False
+
 def _aa__norm_ws(s: str) -> str:
     return re.sub(r"\s+", " ", (s or "").strip())
 
@@ -4620,19 +4668,11 @@ def execute_action(
             if _norm_lc(label) in {"oui", "yes", "true", "1", "checked", "on", "x"} and ctx and len(ctx) >= 6:
                 label = ctx
 
-            if _try(driver, "checkbox_main", lambda:
-                Survey.input_handler.click_checkbox_by_label(driver, label, context_hint=ctx)
-            ):
-                return True
-
-            if _try(driver, "checkbox_buttonish", lambda:
-                Survey.input_handler.click_checkbox_buttonish_by_label(driver, label, context_hint=ctx)
-            ):
-                return True
-
-            if _try(driver, "checkbox_fallback_radio", lambda:
-                Survey.input_handler.click_radio_by_label(driver, label, context_hint=ctx)
-            ):
+            if _try_handlers_with_cache(driver, target_id, [
+                ("checkbox_main", lambda: Survey.input_handler.click_checkbox_by_label(driver, label, context_hint=ctx)),
+                ("checkbox_buttonish", lambda: Survey.input_handler.click_checkbox_buttonish_by_label(driver, label, context_hint=ctx)),
+                ("checkbox_fallback_radio", lambda: Survey.input_handler.click_radio_by_label(driver, label, context_hint=ctx)),
+            ]):
                 return True
 
         # ==========================================================
@@ -4649,19 +4689,11 @@ def execute_action(
                 log_info("[TARGET]", "apply ok=true strategy=aa_answer_matrix reason=applied")
                 return True
 
-            if _try(driver, "radio_slider", lambda:
-                Survey.input_handler.set_sliderpoints(driver, label, context_hint=ctx)
-            ):
-                return True
-
-            if _try(driver, "radio_main", lambda:
-                Survey.input_handler.click_radio_by_label(driver, label, context_hint=ctx)
-            ):
-                return True
-
-            if _try(driver, "radio_buttonish", lambda:
-                Survey.input_handler.click_checkbox_buttonish_by_label(driver, label, context_hint=ctx)
-            ):
+            if _try_handlers_with_cache(driver, target_id, [
+                ("radio_slider", lambda: Survey.input_handler.set_sliderpoints(driver, label, context_hint=ctx)),
+                ("radio_main", lambda: Survey.input_handler.click_radio_by_label(driver, label, context_hint=ctx)),
+                ("radio_buttonish", lambda: Survey.input_handler.click_checkbox_buttonish_by_label(driver, label, context_hint=ctx)),
+            ]):
                 return True
 
         # ==========================================================

@@ -18,11 +18,29 @@ import hashlib
 
 
 DOM_REGISTRY: Dict[str, Dict[str, Any]] = {}
+HANDLER_CACHE: Dict[str, str] = {}
 
 
 def clear_registry() -> None:
-    """À appeler avant un nouveau scan DOM."""
+    """À appeler avant un nouveau scan DOM (targets + cache handlers)."""
     DOM_REGISTRY.clear()
+    HANDLER_CACHE.clear()
+
+
+def set_cached_handler(target_id: str, handler_name: str) -> None:
+    if target_id and handler_name:
+        HANDLER_CACHE[target_id] = handler_name
+
+
+def get_cached_handler(target_id: str) -> Optional[str]:
+    if not target_id:
+        return None
+    return HANDLER_CACHE.get(target_id)
+
+
+def invalidate_cached_handler(target_id: str) -> None:
+    if target_id:
+        HANDLER_CACHE.pop(target_id, None)
 
 
 def _stable_hash(s: str) -> str:
