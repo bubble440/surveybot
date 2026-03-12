@@ -4620,20 +4620,38 @@ def execute_action(
             if _norm_lc(label) in {"oui", "yes", "true", "1", "checked", "on", "x"} and ctx and len(ctx) >= 6:
                 label = ctx
 
-            if _try(driver, "checkbox_main", lambda:
-                Survey.input_handler.click_checkbox_by_label(driver, label, context_hint=ctx)
-            ):
-                return True
+            checkbox_cache = _get_block_strategy_memory(driver).get("checkbox", {})
+            cache_key = (target_id or "").strip()
 
-            if _try(driver, "checkbox_buttonish", lambda:
-                Survey.input_handler.click_checkbox_buttonish_by_label(driver, label, context_hint=ctx)
-            ):
-                return True
+            def _run_checkbox_strategy(strategy_name: str) -> bool:
+                strategy_map = {
+                    "checkbox_main": lambda: Survey.input_handler.click_checkbox_by_label(driver, label, context_hint=ctx),
+                    "checkbox_buttonish": lambda: Survey.input_handler.click_checkbox_buttonish_by_label(driver, label, context_hint=ctx),
+                    "checkbox_fallback_radio": lambda: Survey.input_handler.click_radio_by_label(driver, label, context_hint=ctx),
+                }
+                fn = strategy_map.get(strategy_name)
+                if fn is None:
+                    return False
+                if _try(driver, strategy_name, fn):
+                    if cache_key:
+                        checkbox_cache[cache_key] = strategy_name
+                    return True
+                return False
 
-            if _try(driver, "checkbox_fallback_radio", lambda:
-                Survey.input_handler.click_radio_by_label(driver, label, context_hint=ctx)
-            ):
-                return True
+            preferred_strategy = checkbox_cache.get(cache_key) if cache_key else None
+            ordered_strategies = ["checkbox_main", "checkbox_buttonish", "checkbox_fallback_radio"]
+
+            if preferred_strategy:
+                if debug_target:
+                    log_debug("[TARGET_DEBUG]", f"checkbox reuse cached_strategy={preferred_strategy} target_id={cache_key}")
+                if _run_checkbox_strategy(preferred_strategy):
+                    return True
+
+            for strategy_name in ordered_strategies:
+                if strategy_name == preferred_strategy:
+                    continue
+                if _run_checkbox_strategy(strategy_name):
+                    return True
 
         # ==========================================================
         # Ã°Å¸Å¸Â¦ RADIO
@@ -4732,6 +4750,22 @@ def reset_attempt_context(driver):
         except Exception:
             pass
 
+
+def _init_block_strategy_memory(driver) -> dict:
+    """Initialise la mémoire locale des stratégies réussies (durée: plan courant)."""
+    cache = {"checkbox": {}}
+    driver._block_strategy_memory = cache
+    return cache
+
+
+def _get_block_strategy_memory(driver) -> dict:
+    cache = getattr(driver, "_block_strategy_memory", None)
+    if not isinstance(cache, dict):
+        return _init_block_strategy_memory(driver)
+    if not isinstance(cache.get("checkbox"), dict):
+        cache["checkbox"] = {}
+    return cache
+
 def execute_actions_plan(
     driver,
     actions: list[dict],
@@ -4745,6 +4779,9 @@ def execute_actions_plan(
     - (NEW) rescan DOM entre actions si risque de re-render (évite xpaths obsolÃƒÂ¨tes)
     """
     success_any = False
+
+    # Mémoire locale par bloc, bornée au plan d'actions courant.
+    _init_block_strategy_memory(driver)
 
     try:
         url_before = driver.current_url
