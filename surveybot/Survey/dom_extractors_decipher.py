@@ -362,14 +362,10 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
                                     )
                                 ]
 
-                            question_id = (q.get_attribute("id") or "").strip()
-                            if question_id:
-                                payload["mx_vertical_carousel_next_xpath"] = (
-                                    f"//div[@id={_xpath_literal(question_id)}]"
-                                    "//div[contains(concat(' ',normalize-space(@class),' '),' mx-carouselapp-container ')"
-                                    " and contains(concat(' ',normalize-space(@class),' '),' mx-carouselapp-vertical ')]"
-                                    "//div[contains(concat(' ',normalize-space(@class),' '),' swiper-button-next ')]"
-                                )
+                            payload["mx_vertical_carousel_next_xpath"] = (
+                                f"//div[@id={_xpath_literal(mx_stage_id)}]"
+                                "//div[contains(concat(' ',normalize-space(@class),' '),' swiper-button-next ')]"
+                            )
 
                     register_target(
                         target_id,
