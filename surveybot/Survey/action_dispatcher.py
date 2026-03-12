@@ -905,7 +905,14 @@ def _try_encuesta_matrix_set(driver, row_label: str, col_label: str) -> bool:
     return True
 
 
-def _apply_by_target_id(driver, target_id: str, itype: str, value: str) -> bool:
+def _apply_by_target_id(
+    driver,
+    target_id: str,
+    itype: str,
+    value: str,
+    *,
+    allow_mx_vertical_carousel_advance: bool = True,
+) -> bool:
     """
     Applique l'action directement via DOM_REGISTRY (target_id -> xpath).
     Returns True si une action est exécutée.
@@ -1877,6 +1884,8 @@ def _apply_by_target_id(driver, target_id: str, itype: str, value: str) -> bool:
                         return False
 
                 def _maybe_advance_mx_vertical_carousel_after_answer() -> None:
+                    if not allow_mx_vertical_carousel_advance:
+                        return
                     if not (payload.get("mx_vertical_carousel_next_xpath") and resolved_itype in ("radio", "checkbox")):
                         return
                     next_xpath = (payload.get("mx_vertical_carousel_next_xpath") or "").strip()
@@ -4292,7 +4301,12 @@ def _aa__try_answer_matrix(driver, full_question: str, choice_text: str) -> bool
 
     return False
 
-def execute_action(driver, instruction: str) -> bool:
+def execute_action(
+    driver,
+    instruction: str,
+    *,
+    allow_mx_vertical_carousel_advance: bool = True,
+) -> bool:
     """
     Applique une instruction OpenAI (batch + legacy).
 
@@ -4474,7 +4488,13 @@ def execute_action(driver, instruction: str) -> bool:
 
         if target_id and not skip_apply_by_target_id:
             try:
-                if _apply_by_target_id(driver, target_id, itype, value):
+                if _apply_by_target_id(
+                    driver,
+                    target_id,
+                    itype,
+                    value,
+                    allow_mx_vertical_carousel_advance=allow_mx_vertical_carousel_advance,
+                ):
                     log_info("[TARGET]", "apply ok=true strategy=target_id reason=applied")
                     return True
             except Exception as e:
@@ -4822,7 +4842,22 @@ def execute_actions_plan(
             except Exception:
                 before_sig = None
 
-            ok = execute_action(driver, instruction)
+            next_tid = ""
+            if idx < (len(actions) - 1):
+                try:
+                    next_tid = (actions[idx + 1].get("target_id") or "").strip()
+                except Exception:
+                    next_tid = ""
+
+            # Carousel MX vertical: ne jamais avancer entre deux actions consécutives
+            # partageant le même target_id (ex: multi-select checkbox d'un même slide).
+            allow_mx_advance = (not tid) or (tid != next_tid)
+
+            ok = execute_action(
+                driver,
+                instruction,
+                allow_mx_vertical_carousel_advance=allow_mx_advance,
+            )
             if ok:
                 success_any = True
             # Wait DOM stable after dropdown (budget borné)
