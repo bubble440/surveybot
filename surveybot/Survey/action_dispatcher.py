@@ -1984,6 +1984,41 @@ def _apply_by_target_id(driver, target_id: str, itype: str, value: str) -> bool:
 
                 _click_candidate(el, "target")
 
+                if payload.get("mx_vertical_carousel_next_xpath") and resolved_itype in ("radio", "checkbox"):
+                    next_xpath = (payload.get("mx_vertical_carousel_next_xpath") or "").strip()
+                    if next_xpath:
+                        intercept_only = (os.getenv("CTA_INTERCEPT_ONLY", "") or "").strip().lower() in {"1", "true", "yes", "on"}
+                        moved = False
+                        found_clickable_next = False
+                        for _ in range(2):
+                            next_btn = _find_best_visible(next_xpath)
+                            if not next_btn:
+                                break
+                            try:
+                                if (next_btn.get_attribute("aria-disabled") or "").strip().lower() == "true":
+                                    break
+                            except Exception:
+                                pass
+                            found_clickable_next = True
+                            if intercept_only:
+                                moved = True
+                                break
+                            if _click_candidate(next_btn, "mx_vertical_carousel_next"):
+                                moved = True
+                                break
+                            time.sleep(0.05)
+
+                        if intercept_only:
+                            if found_clickable_next:
+                                log_info("[CTA_INTERCEPT]", "mx_vertical_carousel cta_found intercept_ok")
+                            else:
+                                log_info("[CTA_INTERCEPT]", "mx_vertical_carousel cta_found intercept_impossible")
+                        elif not moved and debug_target:
+                            log_debug(
+                                "[TARGET_DEBUG]",
+                                f"mx vertical carousel next unavailable or click failed: target_id='{target_id}'",
+                            )
+
                 def _ipsos_slider_value_matches(node, expected: str) -> bool:
                     """Validation DOM pour les sliders Likert IPSOS (bootstrap-slider)."""
                     if not payload.get("ipsos_slider"):
