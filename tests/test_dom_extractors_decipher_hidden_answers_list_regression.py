@@ -554,4 +554,6 @@ def test_focusvision_group_by_row_mx_carousel_exposes_next_button_xpath():
     assert len(blocks) == 1
     payload = get_target(blocks[0]["target_id"])
     assert payload is not None
-    assert "swiper-button-next" in (payload.get("mx_vertical_carousel_next_xpath") or "")
+    next_xpath = payload.get("mx_vertical_carousel_next_xpath") or ""
+    assert "swiper-button-next" in next_xpath
+    assert "mx-carousel-vertical" not in next_xpath
