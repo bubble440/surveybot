@@ -28,7 +28,7 @@ class _FakeNode:
 
     def click(self):
         self.click_count += 1
-        if self.kind == "option":
+        if self.kind in {"option", "cell"}:
             self.selected = True
 
     def is_selected(self):
@@ -115,3 +115,37 @@ def test_apply_by_target_id_does_not_advance_when_next_disabled(monkeypatch):
 
     assert ok is True
     assert next_btn.click_count == 0
+
+
+class _FakeDecipherDriver(_FakeDriver):
+    def __init__(self, option_node, cell_node, next_node, next_xpath):
+        super().__init__(option_node, next_node, next_xpath)
+        self._cell_node = cell_node
+
+    def execute_script(self, script, *args):
+        if "querySelector('.mx-stage .mx-collapsible-container')" in script:
+            return False
+        if "const cell = node.closest('.clickableCell');" in script and "hiddenInput" in script:
+            return self._cell_node
+        if "const inp = cell.querySelector" in script and "fir-hidden" in script:
+            return bool(self._cell_node.selected)
+        return super().execute_script(script, *args)
+
+
+def test_apply_by_target_id_advances_mx_vertical_carousel_after_decipher_checkbox_click(monkeypatch):
+    next_xpath = "//div[@id='question_Q6']//div[contains(@class,'swiper-button-next')]"
+
+    payload = _payload(next_xpath)
+    payload["itype"] = "checkbox"
+    monkeypatch.setattr(ad, "get_target", lambda _tid: payload)
+
+    option = _FakeNode(kind="option")
+    cell = _FakeNode(kind="cell")
+    next_btn = _FakeNode(kind="next", aria_disabled="false")
+    driver = _FakeDecipherDriver(option, cell, next_btn, next_xpath)
+
+    ok = ad._apply_by_target_id(driver, "tid-q6-r7", "checkbox", "Tipiak")
+
+    assert ok is True
+    assert cell.click_count == 1
+    assert next_btn.click_count == 1
