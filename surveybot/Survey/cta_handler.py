@@ -121,6 +121,26 @@ def _is_intellisurvey_structural_submit_cta(el) -> bool:
     )
 
 
+def _is_mriweb_structural_submit_cta(el) -> bool:
+    """Détecte le vrai CTA submit mrIWeb (`input[type=submit][name=_NNext].mrNext`)."""
+    try:
+        tag = (el.tag_name or "").strip().lower()
+    except Exception:
+        return False
+
+    if tag != "input":
+        return False
+
+    input_type = (el.get_attribute("type") or "").strip().lower()
+    if input_type != "submit":
+        return False
+
+    el_name = (el.get_attribute("name") or "").strip().lower()
+    cls = (el.get_attribute("class") or "").strip().lower()
+
+    return el_name == "_nnext" and "mrnext" in cls
+
+
 def _is_inline_hidden_cta(el) -> bool:
     """Retourne True si le style inline masque explicitement le CTA (opacity:0 + visibility:hidden)."""
     try:
@@ -1554,9 +1574,11 @@ def try_click_navigation_cta(driver) -> bool:
             # On ne rejette que les éléments sans texte ET sans indice de navigation,
             # sauf signature DOM IntelliSurvey explicite.
             has_intellisurvey_structural_submit = _is_intellisurvey_structural_submit_cta(el)
+            has_mriweb_structural_submit = _is_mriweb_structural_submit_cta(el)
             if (
                 not t
                 and not has_intellisurvey_structural_submit
+                and not has_mriweb_structural_submit
                 and not any(k in signature for k in ["next", "continue", "submit", "suivant", "valider", "confirm", "confirmer", "confirmez"])
             ):
                 continue
@@ -1578,6 +1600,9 @@ def try_click_navigation_cta(driver) -> bool:
 
             if has_intellisurvey_structural_submit:
                 score += 90
+
+            if has_mriweb_structural_submit:
+                score += 220
 
             if any(k in el_name for k in ["submit", "next", "continue", "confirm"]):
                 score += 60

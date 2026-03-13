@@ -528,3 +528,28 @@ def test_try_click_navigation_cta_skips_inline_hidden_candidates(monkeypatch):
 
     assert ok is False
     assert hidden_submit.clicked == 0
+
+
+def test_try_click_navigation_cta_prioritizes_mriweb_real_submit(monkeypatch):
+    monkeypatch.setattr(cta_handler, "ActionChains", _FakeActionChains)
+    monkeypatch.delenv("CTA_INTERCEPT_ONLY", raising=False)
+
+    vue_next = _FakeElement(
+        text="Suivant",
+        attrs={"id": "NextBtn", "class": "clickable NavBtn vClick"},
+    )
+    vue_next.tag_name = "span"
+
+    mriweb_submit = _FakeElement(
+        text="Suivant",
+        attrs={"type": "submit", "name": "_NNext", "class": "mrNext", "value": "Suivant"},
+    )
+    mriweb_submit.tag_name = "input"
+
+    driver = _FakeDriver(xpath_elements=[vue_next, mriweb_submit])
+
+    ok = cta_handler.try_click_navigation_cta(driver)
+
+    assert ok is True
+    assert mriweb_submit.clicked == 1
+    assert vue_next.clicked == 0
