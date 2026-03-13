@@ -811,9 +811,9 @@ def _click_with_intercept(driver, el) -> bool:
 # =============================================================================
 
 def _iter_iframes_safe(driver):
-    """Retourne la liste des iframes visibles et probablement interactives."""
+    """Retourne la liste des <iframe>/<frame> visibles et probablement interactifs."""
     frames = []
-    for fr in driver.find_elements(By.TAG_NAME, "iframe"):
+    for fr in driver.find_elements(By.CSS_SELECTOR, "iframe, frame"):
         try:
             r = fr.rect
             if fr.is_displayed() and r.get("width", 0) > 20 and r.get("height", 0) > 20:
