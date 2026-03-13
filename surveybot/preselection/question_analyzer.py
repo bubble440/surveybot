@@ -270,6 +270,7 @@ def reformulate_prompt_for_gpt(question_text, options, itype="radio"):
             "- Par défaut, sélectionne plusieurs options cohérentes avec le profil, pas une seule."
             "- Sauf si la question implique clairement une réponse exclusive ou un nombre limité évident (ex: année de naissance, âge exact, nombre exact, situation familiale exclusive, réponse négative exclusive, 'aucune de ces propositions', 'je n'ai pas d'enfants', 'je préfère ne pas le dire', 'aucun', 'autre')."
             "- Par défaut, renvoie entre 5 et 7 options plausibles et variées parmi celles proposées, sauf si une exception exclusive s'applique."
+            "- Si la liste contient moins de 5 options, choisis uniquement l'option la plus plausible parmi celles non-disqualifiantes. Ne tente pas d'atteindre 5 à 7 dans ce cas."
             "- Ne combine jamais une option exclusive avec d’autres."
             "- Si la question concerne les enfants, le foyer parental, ou l’année de naissance d’enfants, tu es sans enfants."
             "- Si plusieurs réponses sont renvoyées, utilise exactement le séparateur ' | ' entre les libellés."
