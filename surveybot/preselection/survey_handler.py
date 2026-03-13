@@ -49,7 +49,14 @@ def is_topsurveys_preselection_popup(driver) -> bool:
         return False
 
 
-def run_attach_preselection_takeover(driver, api_key: str, *, max_rounds: int = 15, transition_timeout_s: int = 45) -> tuple[bool, str]:
+def run_attach_preselection_takeover(
+    driver,
+    api_key: str,
+    *,
+    max_rounds: int = 15,
+    transition_timeout_s: int = 45,
+    ctx=None,
+) -> tuple[bool, str]:
     """
     Route attach préselection: prend la main sur le popup TopSurveys déjà ouvert,
     répond jusqu'à la redirection vers un survey externe, sans navigation 'best survey'.
@@ -111,6 +118,8 @@ def run_attach_preselection_takeover(driver, api_key: str, *, max_rounds: int = 
             success = preselection.response_executor.execute_response(driver, answer)
             if not success:
                 return False, "answer_execution_failed"
+            if ctx is not None:
+                ctx.record(question, [], answer)
             time.sleep(1.2)
         else:
             # pas de question/réponse: on tente la phase de participation
