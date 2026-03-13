@@ -553,3 +553,21 @@ def test_try_click_navigation_cta_prioritizes_mriweb_real_submit(monkeypatch):
     assert ok is True
     assert mriweb_submit.clicked == 1
     assert vue_next.clicked == 0
+
+
+def test_try_click_navigation_cta_ignores_zero_score_candidate(monkeypatch):
+    monkeypatch.setattr(cta_handler, "ActionChains", _FakeActionChains)
+    monkeypatch.delenv("CTA_INTERCEPT_ONLY", raising=False)
+
+    unknown_candidate = _FakeElement(
+        text="",
+        attrs={"id": "mystery", "class": ""},
+    )
+    unknown_candidate.tag_name = "div"
+
+    driver = _FakeDriver(xpath_elements=[unknown_candidate])
+
+    ok = cta_handler.try_click_navigation_cta(driver)
+
+    assert ok is False
+    assert unknown_candidate.clicked == 0

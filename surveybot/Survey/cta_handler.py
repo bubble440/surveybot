@@ -39,6 +39,7 @@ CTA_SYNONYMS = {
 }
 
 CTA_INTERCEPT_ENV_VAR = "CTA_INTERCEPT_ONLY"
+MIN_NAV_CTA_SCORE = 1
 
 
 # =============================================================================
@@ -1639,6 +1640,8 @@ def try_click_navigation_cta(driver) -> bool:
 
     tried = 0
     for score, el in candidates[:6]:
+        if score < MIN_NAV_CTA_SCORE:
+            continue
         try:
             _nav_log(
                 "[CTA_NAV]",
