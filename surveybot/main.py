@@ -522,6 +522,7 @@ def run_attach_preselection_takeover(driver, *, api_key: str, account_id: str) -
         api_key,
         max_rounds=max_rounds,
         transition_timeout_s=transition_timeout_s,
+        ctx=_ctx,
     )
 
     if not ok:
