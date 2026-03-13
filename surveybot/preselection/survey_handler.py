@@ -307,7 +307,7 @@ def run_survey(driver, api_key, *, account_id: str, ctx=None):
                             driver,
                             account_id=account_id,
                             min_amount_eur=5.0,
-                            cashout_order=("paypal", "revolut"),
+                            cashout_order=("revolut", "paypal"),
                             revolut_fullname="Wilfred Jamein Saah",
                             revolut_tag="@jameinsaah",
                         )
