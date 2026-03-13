@@ -340,7 +340,7 @@ def check_and_cashout_if_needed(
     *,
     account_id: str,
     min_amount_eur: float = 5.0,
-    cashout_order: Tuple[str, str] = ("paypal", "revolut"),
+    cashout_order: Tuple[str, str] = ("revolut", "paypal"),
     revolut_fullname: str = "",
     revolut_tag: str = ""
 ) -> bool:
@@ -397,6 +397,7 @@ def check_and_cashout_if_needed(
             if _select_revolut_5_eur(driver):
                 success_select = True
                 print("[PAYOUT] Option Revolut 5 € sélectionnée (fallback).")
+                get_guard().record_earning(5.0)
                 break
 
     if not success_select:
