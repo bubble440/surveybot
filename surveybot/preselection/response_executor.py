@@ -194,31 +194,39 @@ def select_checkbox_answers(driver, answers):
     )
     found = False
 
-    for answer in answers if isinstance(answers, list) else [answers]:
+    normalized_targets = [
+        normalize(str(answer)) for answer in (answers if isinstance(answers, list) else [answers])
+    ]
+
+    for target in normalized_targets:
         for label in labels:
             try:
                 text_elem = label.find_element(
                     By.CSS_SELECTOR, '[data-test-id*="multiple_choice-text"]'
                 )
-                label_text = text_elem.text.strip().lower()
-                if answer.lower() in label_text:
-                    # NEW: ne reclique pas si déjà coché
-                    try:
-                        inner_cb = label.find_element(
-                            By.CSS_SELECTOR, "input[type='checkbox']"
-                        )
-                        if inner_cb.is_selected():
-                            print(f"✅ Checkbox déjà cochée : {label_text}")
-                            found = True
-                            break
-                    except Exception:
-                        pass
-                    ActionChains(driver).move_to_element(label).click().perform()
-                    print(
-                        f"✅ Checkbox cochée : {label_text} source: reponse_executor.py"
-                    )
+                label_text = text_elem.text.strip()
+                if normalize(label_text) != target:
+                    continue
+
+                inner_cb = label.find_element(By.CSS_SELECTOR, "input[type='checkbox']")
+                if inner_cb.is_selected():
+                    print(f"✅ Checkbox déjà cochée : {label_text}")
                     found = True
                     break
+
+                driver.execute_script(
+                    "arguments[0].scrollIntoView({block:'center'}); arguments[0].click();",
+                    inner_cb,
+                )
+                if not inner_cb.is_selected():
+                    ActionChains(driver).move_to_element(label).click().perform()
+
+                if inner_cb.is_selected():
+                    print(f"✅ Checkbox cochée : {label_text} source: reponse_executor.py")
+                    found = True
+                else:
+                    print(f"⚠️ Checkbox trouvée mais non cochée : {label_text} source: reponse_executor.py")
+                break
             except Exception:
                 continue
     if found:
