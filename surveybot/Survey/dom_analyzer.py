@@ -1283,10 +1283,40 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                     container_cls = _norm_lc(container.get_attribute("class") or "") if container else ""
                 except Exception:
                     container_cls = ""
+                has_visible_radiolayout = False
+                if container:
+                    try:
+                        has_visible_radiolayout = bool(driver.execute_script(
+                            """
+                            const container = arguments[0];
+                            if (!container) return false;
+                            const rows = container.querySelectorAll('.radioLayout');
+                            if (!rows || !rows.length) return false;
+                            for (const row of Array.from(rows)) {
+                              const st = window.getComputedStyle(row);
+                              if (!st) continue;
+                              if (st.display === 'none' || st.visibility === 'hidden' || st.opacity === '0') continue;
+                              const r = row.getBoundingClientRect();
+                              if (r.width > 0 && r.height > 0) return true;
+                            }
+                            return false;
+                            """,
+                            container,
+                        ))
+                    except Exception:
+                        has_visible_radiolayout = False
                 if not (
                     container
-                    and "question-container" in container_cls
-                    and _is_actionable_visible(container)
+                    and (
+                        (
+                            "question-container" in container_cls
+                            and _is_actionable_visible(container)
+                        )
+                        or (
+                            "questioncontainer" in container_cls
+                            and has_visible_radiolayout
+                        )
+                    )
                 ):
                     continue
             raw_name_key = _group_key_for_choice(el, itype)
