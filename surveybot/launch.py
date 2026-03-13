@@ -177,7 +177,7 @@ def soft_restart_payout(ctx, driver):
         driver,
         account_id=ctx["account_id"],
         min_amount_eur=5.0,
-        cashout_order=("paypal", "revolut"),
+        cashout_order=("revolut", "paypal"),
         revolut_fullname=payout_name,
         revolut_tag=payout_tag,
     )
@@ -349,7 +349,7 @@ def init_session_and_enter_surveys(driver, config, account_id: str, notify_fn):
             driver,
             account_id=account_id,
             min_amount_eur=5.0,
-            cashout_order=("paypal", "revolut"),
+            cashout_order=("revolut", "paypal"),
             revolut_fullname=payout_name,
             revolut_tag=payout_revolut_tag,
         )
