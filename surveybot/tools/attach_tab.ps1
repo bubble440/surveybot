@@ -49,18 +49,10 @@ Write-Host "1) Va dans le Chrome du port $Port."
 Write-Host "2) Connecte-toi, lance un survey, arrête-toi sur la page cible."
 Write-Host "3) Reviens ici."
 Write-Host ""
-Write-Host "Type d'attach à lancer :"
-Write-Host "  1) attach preselection"
-Write-Host "  2) attach resolution (comportement actuel)"
-
-$attachChoice = (Read-Host "Choix [1/2, défaut=2]").Trim()
-$AttachRoute = "resolution"
-if($attachChoice -eq "1"){
-  $AttachRoute = "preselection"
-}
-Write-Host "[ATTACH] Route sélectionnée : $AttachRoute"
-
-Read-Host "Appuie sur Entrée pour déclencher ATTACH-TAKEOVER ($AttachRoute)" | Out-Null
+Write-Host "Mode route attach : resolution par défaut (sans prompt)."
+Write-Host "Pour activer le choix interactif à chaque lancement de main.py :"
+Write-Host "  `$env:ATTACH_ROUTE_PROMPT=1"
+Write-Host ""
 
 # Vars env (attach)
 $env:RUN_ENV="local"
@@ -69,7 +61,6 @@ $env:RUN_MODE="local"
 $env:BROWSER_MODE="attach"
 $env:ATTACH_DEBUGGER_ADDRESS="127.0.0.1:$Port"
 $env:ATTACH_TAB_SELECTOR=$AttachTabSelector
-$env:ATTACH_ROUTE=$AttachRoute
 
 # Tes vars debug
 $env:LOG_LEVEL="INFO"
