@@ -496,11 +496,20 @@ def run_attach_takeover(driver, *, api_key: str, account_id: str) -> None:
 
 
 def _get_attach_route() -> str:
-    route = (os.getenv("ATTACH_ROUTE", "resolution") or "resolution").strip().lower()
-    if route not in {"resolution", "preselection"}:
-        print(f"[ATTACH] route inconnue={route!r} -> fallback resolution")
+    if os.getenv("ATTACH_ROUTE_PROMPT") != "1":
         return "resolution"
-    return route
+
+    print("[ATTACH] Choisis la route de takeover :")
+    print("  1) preselection")
+    print("  2) resolution")
+    choice = (input("Choix [1/2, défaut=2]: ") or "").strip().lower()
+
+    if choice in {"1", "preselection"}:
+        return "preselection"
+
+    if choice not in {"", "2", "resolution"}:
+        print(f"[ATTACH] choix invalide={choice!r} -> fallback resolution")
+    return "resolution"
 
 
 def run_attach_preselection_takeover(driver, *, api_key: str, account_id: str) -> None:
