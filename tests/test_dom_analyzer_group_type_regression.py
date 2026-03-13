@@ -31,6 +31,13 @@ class _FakeDriver:
         return []
 
 
+class _FakeDriverWithRadioLayoutVisibility(_FakeDriver):
+    def execute_script(self, script, *args):
+        if ".radioLayout" in (script or ""):
+            return True
+        return None
+
+
 def _patch_non_generic_extractors(monkeypatch):
     for name in [
         "_extract_focusvision_cardsort_block",
@@ -131,6 +138,34 @@ def test_generic_grouping_accepts_visible_question_container_when_input_not_disp
     assert blocks[0]["itype"] == "radio"
     assert blocks[0]["options"] == ["Oui", "Non"]
     assert (blocks[0].get("context") or {}).get("group_key") == "radio:name:q_lime_1"
+
+
+def test_generic_grouping_accepts_questioncontainer_with_visible_radiolayout_when_input_hidden(monkeypatch):
+    _patch_non_generic_extractors(monkeypatch)
+
+    container = _FakeContainer("questionContainer")
+
+    monkeypatch.setattr(da, "_is_actionable_visible", lambda _el: False)
+    monkeypatch.setattr(da, "_looks_like_system_field", lambda _el: False)
+    monkeypatch.setattr(da, "_extract_surveywriter_ssi_question", lambda *_: "")
+    monkeypatch.setattr(da, "_nearest_question_container", lambda *_: container)
+    monkeypatch.setattr(da, "_extract_question_from_container", lambda *_: "À laquelle des options suivantes vous identifiez-vous ?")
+    monkeypatch.setattr(da, "_find_question_text_near_element", lambda *_: "")
+    monkeypatch.setattr(da, "_find_associated_label", lambda _driver, el: "Un homme" if el.get_attribute("id") == "r1" else "Une femme")
+
+    driver = _FakeDriverWithRadioLayoutVisibility(
+        [
+            _FakeInput({"type": "radio", "name": "questions[2].selectedAnswer", "id": "r1", "value": "1"}),
+            _FakeInput({"type": "radio", "name": "questions[2].selectedAnswer", "id": "r2", "value": "2"}),
+        ]
+    )
+
+    blocks = da._analyze_dom_current_context(driver)
+
+    assert len(blocks) == 1
+    assert blocks[0]["itype"] == "radio"
+    assert blocks[0]["options"] == ["Un homme", "Une femme"]
+    assert (blocks[0].get("context") or {}).get("group_key") == "radio:name:questions[2].selectedanswer"
 
 
 def test_generic_grouping_recovers_question_from_group_heading_when_near_text_is_option(monkeypatch):
