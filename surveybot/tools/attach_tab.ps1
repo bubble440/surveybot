@@ -65,13 +65,14 @@ $env:ATTACH_TAB_SELECTOR=$AttachTabSelector
 # Tes vars debug
 $env:LOG_LEVEL="INFO"
 $env:DOM_DEBUG_FRAMES="1"
-$env:CTA_INTERCEPT_ONLY="0"
-$env:ACTION_DEBUG_TARGET="1"
 $env:SURVEY_CTX_DEBUG="1"
-$env:LOCAL_CTA_REQUIRE_ENTER="1"
+$env:CTA_INTERCEPT_ONLY="0"
 $env:BOT_RUN_ID="port_$Port"
-$env:PROXY_URL="geo.iproyal.com:12321"
+$env:ACTION_DEBUG_TARGET="1"
+$env:ATTACH_ROUTE_PROMPT="1"
+$env:LOCAL_CTA_REQUIRE_ENTER="1"
 $env:PROXY_USER="AFe0mvVocKuoFWzq"
+$env:PROXY_URL="geo.iproyal.com:12321"
 $env:PROXY_PASS="ajKCpYNJXZz4DTI4_country-fr_city-paris_session-myo6lDFM_lifetime-24h"
 
 # Utiliser python du venv si présent (plus fiable)
