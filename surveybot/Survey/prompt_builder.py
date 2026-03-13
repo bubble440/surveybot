@@ -365,11 +365,6 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
     )
 
     # ── PERSONA FINANCIER ──────────────────────────────────────────────────
-    # Ce bloc établit un profil socio-économique cohérent et stable.
-    # Il est CRITIQUE pour éviter la disqualification sur les questions
-    # de revenu, emploi, secteur ou statut financier.
-    # Règle absolue : ne jamais choisir "Préfère ne pas répondre" ou équivalent
-    # sur ces thèmes — ces options sont DISQUALIFICATOIRES.
     lines.append(
         "PERSONA SOCIO-ÉCONOMIQUE (fixe, cohérent sur toute la session) :\n"
         "Tu incarnes un cadre supérieur ou dirigeant d'entreprise de 25 ans, "
@@ -395,7 +390,19 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
         "  réponds quand même avec une valeur haute cohérente avec le persona. "
         "  Un répondant aisé n'hésite pas sur ces sujets."
     )
-    # ── FIN PERSONA FINANCIER ─────────────────────────────────────────────
+
+    lines.append(
+        "RÈGLE CHIFFRE D'AFFAIRES / TAILLE D'ENTREPRISE :\n"
+        "Si la question porte sur le chiffre d'affaires, les revenus annuels, "
+        "le budget ou la taille de l'entreprise où travaille le répondant "
+        "(signaux : 'chiffre d'affaires', 'CA', 'revenus', 'turnover', 'revenue', "
+        "'annual revenue', 'company revenue', 'fatturato', 'Umsatz', 'taille', 'size') :\n"
+        "- Choisis TOUJOURS une tranche élevée, cohérente avec un grand groupe ou "
+        "une entreprise de taille significative (évite la tranche la plus basse et "
+        "les tranches inférieures à 100 millions).\n"
+        "- Si la tranche la plus haute semble extrême, choisis la DEUXIÈME en partant du haut.\n"
+        "- INTERDIT ABSOLU : ne jamais choisir la tranche la plus basse ni 'Je ne sais pas'."
+    )
 
     lines.append(
         "RÈGLE OPTIONS EXCLUSIVES :\n"
