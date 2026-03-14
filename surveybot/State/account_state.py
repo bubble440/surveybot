@@ -107,14 +107,14 @@ def _get_ddb_table():
 def _json_safe(obj: Any) -> Any:
     """
     DynamoDB renvoie parfois Decimal -> on convertit pour JSON.
+    Appliqué récursivement sur les dicts et listes imbriqués (ex: daily_earned).
     """
-    try:
-        from decimal import Decimal  # type: ignore
-        if isinstance(obj, Decimal):
-            # Si entier exact -> int, sinon float
-            return int(obj) if obj % 1 == 0 else float(obj)
-    except Exception:
-        pass
+    if isinstance(obj, Decimal):
+        return int(obj) if obj % 1 == 0 else float(obj)
+    if isinstance(obj, dict):
+        return {k: _json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_json_safe(v) for v in obj]
     return obj
 
 
@@ -126,7 +126,8 @@ def _normalize_state(st: Dict[str, Any], account_id: str) -> Dict[str, Any]:
     base = _default_state(account_id)
     base.update(st or {})
     base["account_id"] = account_id
-    base["updated_ts"] = _now()
+    # NE PAS écraser updated_ts ici : _normalize_state est aussi appelé par load_state
+    # (lecture seule). updated_ts est positionné à l'écriture dans save_state/update_state.
 
     # TTL optionnel pour purge (si TTL activé dans la table)
     if STATE_TTL_DAYS > 0:
@@ -218,13 +219,14 @@ def save_state(state: Dict[str, Any]) -> None:
     En prod on préfère update_state().
     """
     if IS_LOCAL:
-        return {}
+        return
 
     account_id = state.get("account_id", "").strip()
     if not account_id:
         raise ValueError("state sans account_id")
 
     st = _normalize_state(state, account_id)
+    st["updated_ts"] = _now()
 
     if STRICT_NO_FILE_FALLBACK and not _ddb_enabled():
         raise RuntimeError("[STATE] STATE_BACKEND=dynamodb et STATE_TABLE requis en environnement non-local")
@@ -274,6 +276,7 @@ def update_state(account_id: str, fn: Callable[[Dict[str, Any]], None], max_retr
 
                 fn(st)  # modifie en place
                 st = _normalize_state(st, account_id)
+                st["updated_ts"] = _now()
                 st["version"] = current_version + 1
 
                 try:
@@ -302,15 +305,10 @@ def update_state(account_id: str, fn: Callable[[Dict[str, Any]], None], max_retr
         st = _normalize_state(_file_load(account_id), account_id)
         fn(st)
         st = _normalize_state(st, account_id)
+        st["updated_ts"] = _now()
         st["version"] = int(st.get("version", 0) or 0) + 1
         _file_save(st)
         return st
-
-    """
-    DEPRECATED: on est en "1 bot par proxy", donc ce lock n'est plus nécessaire.
-    On le garde pour compat, mais c'est un no-op.
-    """
-    return True
 
 def touch_heartbeat(account_id: str, owner: str, ttl_sec: int = 240) -> bool:
     """
