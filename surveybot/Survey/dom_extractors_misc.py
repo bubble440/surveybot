@@ -3838,6 +3838,147 @@ def _extract_qualtrics_choice_structure_radio_blocks(driver, frame_chain: list[i
         if not question:
             continue
 
+        # Layout Qualtrics Bipolar: 1 bloc radio par ligne ChoiceRow, avec pôles gauche/droite.
+        # Gate DOM strict pour rester additif et ne pas impacter les autres layouts ChoiceStructure.
+        try:
+            bipolar_nodes = container.find_elements(By.CSS_SELECTOR, "div.Inner.Bipolar")
+        except Exception:
+            bipolar_nodes = []
+        try:
+            bipolar_left_headers = container.find_elements(
+                By.CSS_SELECTOR,
+                "table.ChoiceStructure th[id^='header~left~']",
+            )
+        except Exception:
+            bipolar_left_headers = []
+
+        if bipolar_nodes and bipolar_left_headers:
+            try:
+                bipolar_rows = container.find_elements(
+                    By.CSS_SELECTOR,
+                    "table.ChoiceStructure > tbody > tr.ChoiceRow",
+                )
+            except Exception:
+                bipolar_rows = []
+
+            for row_idx, row in enumerate(bipolar_rows):
+                try:
+                    row_radios = row.find_elements(By.CSS_SELECTOR, "input[type='radio'][name^='QR~']")
+                except Exception:
+                    row_radios = []
+                if len(row_radios) < 2:
+                    continue
+
+                row_group_name = ""
+                try:
+                    row_group_name = (row_radios[0].get_attribute("name") or "").strip()
+                except Exception:
+                    row_group_name = ""
+                if not row_group_name:
+                    continue
+
+                left_txt = ""
+                right_txt = ""
+                try:
+                    left_nodes = row.find_elements(By.CSS_SELECTOR, "th[id^='header~left~']")
+                except Exception:
+                    left_nodes = []
+                for left_node in left_nodes:
+                    cand = _norm(left_node.text or left_node.get_attribute("innerText") or "")
+                    if cand:
+                        left_txt = cand
+                        break
+
+                try:
+                    right_nodes = row.find_elements(By.CSS_SELECTOR, "th[id^='header~right~']")
+                except Exception:
+                    right_nodes = []
+                for right_node in right_nodes:
+                    cand = _norm(right_node.text or right_node.get_attribute("innerText") or "")
+                    if cand:
+                        right_txt = cand
+                        break
+
+                if not left_txt or not right_txt:
+                    continue
+
+                left_radio = None
+                right_radio = None
+                for r in row_radios:
+                    try:
+                        r_val = (r.get_attribute("value") or "").strip()
+                    except Exception:
+                        r_val = ""
+                    if r_val == "1" and left_radio is None:
+                        left_radio = r
+                    elif r_val == "2" and right_radio is None:
+                        right_radio = r
+
+                if left_radio is None:
+                    left_radio = row_radios[0]
+                if right_radio is None:
+                    right_radio = row_radios[1] if len(row_radios) > 1 else None
+                if right_radio is None:
+                    continue
+
+                option_xpath_map: dict[str, str] = {}
+                options: list[str] = []
+                for opt_txt, opt_radio in ((left_txt, left_radio), (right_txt, right_radio)):
+                    nk = _norm_key(opt_txt)
+                    if not nk or nk in option_xpath_map:
+                        continue
+                    try:
+                        opt_id = (opt_radio.get_attribute("id") or "").strip()
+                    except Exception:
+                        opt_id = ""
+                    if opt_id:
+                        xp = f"//*[@id={_xpath_literal(opt_id)}]"
+                    else:
+                        xp = _best_xpath_for_element(driver, opt_radio)
+                    if not xp:
+                        continue
+                    option_xpath_map[nk] = xp
+                    options.append(opt_txt)
+
+                if len(options) < 2 or len(option_xpath_map) < 2:
+                    continue
+
+                group_key = f"qualtrics_choice_structure:radio:{row_group_name}"
+                target_id = make_target_id("group", group_key, question)
+                register_target(
+                    target_id,
+                    {
+                        "kind": "group",
+                        "itype": "radio",
+                        "group_key": group_key,
+                        "question": question,
+                        "option_xpath_map": option_xpath_map,
+                        "frame_chain": frame_chain,
+                        "qualtrics_choice_structure_radio": True,
+                        "qualtrics_choice_structure_bipolar": True,
+                    },
+                )
+
+                blocks.append(
+                    {
+                        "question": question,
+                        "itype": "radio",
+                        "options": options,
+                        "max_select": _compute_max_select("radio", options),
+                        "target_id": target_id,
+                        "context": {
+                            "kind": "group",
+                            "group_key": group_key,
+                            "qualtrics_choice_structure_radio": True,
+                            "qualtrics_choice_structure_bipolar": True,
+                            "container_index": idx,
+                            "row_index": row_idx,
+                        },
+                    }
+                )
+
+            continue
+
         group_name = ""
         options: list[str] = []
         option_xpath_map: dict[str, str] = {}
