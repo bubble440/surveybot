@@ -3945,7 +3945,7 @@ def _extract_qualtrics_choice_structure_checkbox_blocks(driver, frame_chain: lis
 
     Gate DOM strict (additif, sans hypothèse provider globale):
     - `div.QuestionOuter`
-    - `table.ChoiceStructure`
+    - `ul.ChoiceStructure` ou `table.ChoiceStructure`
     - `input[type=checkbox][name^="QR~"]`
     - labels d'options `label.MultipleAnswer[for='<input_id>']`
     """
@@ -3961,6 +3961,7 @@ def _extract_qualtrics_choice_structure_checkbox_blocks(driver, frame_chain: lis
         try:
             checkboxes = container.find_elements(
                 By.CSS_SELECTOR,
+                "ul.ChoiceStructure li.Selection input[type='checkbox'][name^='QR~'], "
                 "table.ChoiceStructure input[type='checkbox'][name^='QR~']",
             )
         except Exception:
