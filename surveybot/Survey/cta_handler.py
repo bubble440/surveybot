@@ -1608,6 +1608,13 @@ def try_click_navigation_cta(driver) -> bool:
                 continue
 
             score = 0
+            # Socle minimal: si l'élément est déjà sémantiquement actionnable,
+            # on lui donne un score plancher non nul pour qu'il soit tenté.
+            # Cela évite le cas "candidate trouvé mais jamais essayé" (score=0)
+            # sur certains DOM de CTA où le libellé visible est porté par du CSS.
+            if tag in {"button", "input", "a", "li"} or role == "button":
+                score += 1
+
             if any(x in t for x in ["continue", "continuer", "next", "suivant", "proceed"]):
                 score += 50
             if any(x in t for x in ["valider", "submit", "envoyer", "terminer", "send", "start", "commencer", "démarrer", "confirm", "confirmer", "confirmez"]):
