@@ -2031,6 +2031,52 @@ def _apply_by_target_id(
                             log_debug("[TARGET_DEBUG]", f"decipher clickableCell no checked/selected signal: value='{value}' xpath='{xp}'")
                         return False
 
+                    label_anchor_guard_active = False
+                    try:
+                        label_anchor_guard_active = (el.tag_name or "").lower() == "label" and bool(
+                            el.find_elements(By.TAG_NAME, "a")
+                        )
+                    except Exception:
+                        label_anchor_guard_active = False
+
+                    if label_anchor_guard_active:
+                        if is_debug():
+                            log_debug(
+                                "[TARGET_DEBUG]",
+                                f"checkbox label anchor guard active: value='{value}' xpath='{xp}'",
+                            )
+
+                        inp_guard = None
+                        try:
+                            fid = (el.get_attribute("for") or "").strip()
+                            if fid:
+                                inp_guard = driver.find_element(By.ID, fid)
+                        except Exception:
+                            inp_guard = None
+
+                        if inp_guard is None:
+                            try:
+                                inp_guard = _first_input_under(el)
+                            except Exception:
+                                inp_guard = None
+
+                        if inp_guard is not None and not _is_selected(inp_guard):
+                            _dispatch_check_events(inp_guard)
+
+                        if inp_guard is not None and _is_selected(inp_guard):
+                            if is_debug():
+                                log_debug(
+                                    "[TARGET_DEBUG]",
+                                    f"checkbox label anchor guard success: value='{value}' xpath='{xp}'",
+                                )
+                            return True
+
+                        if is_debug():
+                            log_debug(
+                                "[TARGET_DEBUG]",
+                                f"checkbox label anchor guard did not select input: value='{value}' xpath='{xp}'",
+                            )
+
                 _click_candidate(el, "target")
 
                 _maybe_advance_mx_vertical_carousel_after_answer()
