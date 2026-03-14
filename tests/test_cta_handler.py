@@ -345,6 +345,26 @@ def test_click_with_intercept_returns_false_when_no_progress(monkeypatch):
     assert el.clicked == 2
 
 
+def test_click_with_intercept_ignores_target_only_mutation_without_dom_progress(monkeypatch):
+    monkeypatch.delenv("CTA_INTERCEPT_ONLY", raising=False)
+
+    el = _FakeElement(text="Suivant", attrs={"class": "next"})
+    el.tag_name = "button"
+
+    marker = {"url": "https://example.test/q1", "txt": "Question 1", "qNodes": 3}
+    monkeypatch.setattr(cta_handler, "_dom_progress_marker", lambda _d: dict(marker))
+    monkeypatch.setattr(cta_handler, "_press_click_release", lambda _d, _e: (True, True))
+    monkeypatch.setattr(
+        cta_handler,
+        "_wait_post_click_stabilization",
+        lambda _d, _e, _before, timeout_s=5.0: (dict(marker), True, "target_hidden"),
+    )
+
+    ok = cta_handler._click_with_intercept(_FakeDriver(), el)
+
+    assert ok is False
+
+
 def test_try_click_navigation_cta_prioritizes_forsta_real_next_button(monkeypatch):
     monkeypatch.setattr(cta_handler, "ActionChains", _FakeActionChains)
     monkeypatch.delenv("CTA_INTERCEPT_ONLY", raising=False)
