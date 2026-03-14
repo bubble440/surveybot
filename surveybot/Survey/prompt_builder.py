@@ -133,6 +133,12 @@ _CONSENT_REJECT_PATTERNS = [
     "do not continue", "not continue", "quitter", "exit",
 ]
 
+_PARTICIPATION_CONSENT_ALL_TOKENS = [
+    "confidentialite", "politique de", "privacy", "collecte", "donnees",
+    "participer", "participation", "etude de marche", "lu", "compris",
+    "accepte", "autorise", "j'autorise",
+]
+
 
 _SECTOR_SCREENER_MAX_OPTIONS = 15
 
@@ -171,6 +177,30 @@ def _matrix_row_labels(block: Dict[str, Any]) -> list[str]:
     if not isinstance(rows, list):
         return []
     return [_escape(str(r)) for r in rows if _norm(str(r))]
+
+
+def _is_participation_consent_all_checkbox(block: Dict[str, Any], options: list[str], max_sel: int) -> bool:
+    """Détecte les consentements participation/données où TOUTES les cases doivent être cochées."""
+    if _norm_folded_lc(block.get("itype")) != "checkbox":
+        return False
+    if not options or len(options) < 2:
+        return False
+    if max_sel < len(options):
+        return False
+
+    folded_options = [_norm_folded_lc(opt) for opt in options if _norm(opt)]
+    if len(folded_options) < 2:
+        return False
+    if any(any(pat in folded for pat in _CONSENT_REJECT_PATTERNS) for folded in folded_options):
+        return False
+
+    question_signal = _norm_folded_lc(block.get("question"))
+    has_question_signal = any(tok in question_signal for tok in _PARTICIPATION_CONSENT_ALL_TOKENS)
+    has_option_signal = any(
+        any(tok in folded for tok in _PARTICIPATION_CONSENT_ALL_TOKENS)
+        for folded in folded_options
+    )
+    return has_question_signal or has_option_signal
 
 
 def _is_truthy(value: Any) -> bool:
@@ -457,6 +487,7 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
         buckets = [_escape(str(b)) for b in (block.get("buckets") or []) if _norm(str(b))] if is_cardsort else []
         opts = [_escape(o) for o in options_source if o]
         max_sel = _selection_max_for_prompt(block)
+        is_participation_consent_all = _is_participation_consent_all_checkbox(block, opts, max_sel)
         try:
             matrix_max_sel = int(block.get("max_select", 1) or 1)
         except Exception:
@@ -526,9 +557,16 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
                     "séparées par |."
                 )
         elif itype == "checkbox":
-            lines.append(
-                f"selection_rule: Pour QID={qid}, renvoyer entre 1 et {max_sel} valeur(s) séparée(s) par |. / For QID={qid}, return between 1 and {max_sel} values separated by |."
-            )
+            if is_participation_consent_all:
+                strict_values = "|".join(opts)
+                lines.append(
+                    f"selection_rule: PARTICIPATION_CONSENT_ALL strict -> répondre EXACTEMENT avec '{strict_values}'"
+                )
+                lines.append(f"allowed_values_strict: {strict_values}")
+            else:
+                lines.append(
+                    f"selection_rule: Pour QID={qid}, renvoyer entre 1 et {max_sel} valeur(s) séparée(s) par |. / For QID={qid}, return between 1 and {max_sel} values separated by |."
+                )
         else:
             if is_multi_text:
                 lines.append(
@@ -562,7 +600,7 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
             lines.append("options: (cardsort_mapping_attendu)")
         elif opts:
             lines.append("options: " + " | ".join(opts))
-            if itype == "checkbox":
+            if itype == "checkbox" and not is_participation_consent_all:
                 lines.append(
                     f"Plusieurs réponses possibles (max {max_sel}). Sélectionne uniquement les options cohérentes avec le profil du répondant. Ne sélectionne pas plus que nécessaire."
                 )
