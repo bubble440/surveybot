@@ -3821,6 +3821,8 @@ def _extract_qualtrics_choice_structure_radio_blocks(driver, frame_chain: list[i
         for q_sel in (
             "div.Inner fieldset legend div.QuestionText",
             "fieldset legend div.QuestionText",
+            "fieldset legend label.QuestionText",
+            "legend .QuestionText",
             "div.QuestionText",
         ):
             try:
