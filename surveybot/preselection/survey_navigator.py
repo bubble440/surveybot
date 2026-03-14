@@ -6,6 +6,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from preselection.auth_handler import snap
+from Survey.log_utils import log_debug, log_info
 
 def _is_debug_enabled() -> bool:
     return os.getenv("LOG_LEVEL", "INFO").strip().upper() == "DEBUG"
@@ -13,7 +14,76 @@ def _is_debug_enabled() -> bool:
 
 def _debug(msg: str):
     if _is_debug_enabled():
-        print(f"[TOPSURVEYS][DEBUG] {msg}")
+        log_debug("[TOPSURVEYS][DEBUG]", msg)
+
+
+def _is_truthy_env(value: str | None) -> bool:
+    return (value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _click_button_with_optional_intercept(driver, element) -> bool:
+    """
+    Clique un bouton normalement, ou en mode CTA_INTERCEPT_ONLY déclenche
+    un click non destructif (dispatch évènement + preventDefault) pour exécuter
+    les handlers UI sans soumission réelle.
+    """
+    if not _is_truthy_env(os.getenv("CTA_INTERCEPT_ONLY")):
+        driver.execute_script("arguments[0].click();", element)
+        return True
+
+    return bool(
+        driver.execute_script(
+            """
+            const el = arguments[0];
+            if (!el) return false;
+            const blocker = (evt) => { evt.preventDefault(); };
+            el.addEventListener('click', blocker, { capture: true, once: true });
+            const evt = new MouseEvent('click', { bubbles: true, cancelable: true, view: window });
+            return el.dispatchEvent(evt);
+            """,
+            element,
+        )
+    )
+
+
+def _handle_mystery_box_popup(driver) -> None:
+    """
+    Gère le popup de récompense TopSurveys si présent:
+    - détecte via présence d'un bouton de mystery box ET d'un bouton "Complète"
+    - ouvre uniquement la 3e boîte
+    - clique "Complète" pour fermer
+    Budget strict: 1 tentative d'ouverture, 1 tentative de fermeture.
+    """
+    tag = "[TOPSURVEYS_MYSTERY_BOX]"
+    box_selector = "[data-test-id='ps-mystery-box-item-button-2']"
+    mystery_presence_selector = "[data-test-id^='ps-mystery-box-item-button']"
+    complete_xpath = "//button[normalize-space()='Complète' or .//span[normalize-space()='Complète']]"
+
+    has_mystery_boxes = bool(driver.find_elements(By.CSS_SELECTOR, mystery_presence_selector))
+    has_complete_btn = bool(driver.find_elements(By.XPATH, complete_xpath))
+    if not (has_mystery_boxes and has_complete_btn):
+        _debug("Popup mystery box non détecté avant sélection de survey.")
+        return
+
+    log_info(tag, "popup_detected=true")
+
+    wait_short = WebDriverWait(driver, 5)
+    try:
+        open_btn = wait_short.until(EC.element_to_be_clickable((By.CSS_SELECTOR, box_selector)))
+        open_ok = _click_button_with_optional_intercept(driver, open_btn)
+        log_info(tag, f"box3_click={'OK' if open_ok else 'INTERCEPTION_IMPOSSIBLE'}")
+    except Exception as e:
+        log_info(tag, f"box3_click=FAILED reason={type(e).__name__}")
+        return
+
+    time.sleep(1)
+
+    try:
+        complete_btn = wait_short.until(EC.element_to_be_clickable((By.XPATH, complete_xpath)))
+        complete_ok = _click_button_with_optional_intercept(driver, complete_btn)
+        log_info(tag, f"complete_click={'OK' if complete_ok else 'INTERCEPTION_IMPOSSIBLE'}")
+    except Exception as e:
+        log_info(tag, f"complete_click=FAILED reason={type(e).__name__}")
 
 
 def _parse_reward_eur(text: str):
@@ -149,6 +219,7 @@ def go_to_best_value_survey(driver):
             return
 
     time.sleep(15)  # laisser le temps au contenu de charger
+    _handle_mystery_box_popup(driver)
     snap(driver, "before_best_value_selection")
 
     best_card = _select_best_value_card(driver)
