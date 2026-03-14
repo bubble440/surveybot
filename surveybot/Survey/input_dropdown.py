@@ -742,6 +742,18 @@ def select_option_with_hint(
                         S.select_by_value(opt.get_attribute("value"))
                     else:
                         opt.click()
+
+                try:
+                    driver.execute_script("""
+                      const s = arguments[0];
+                      try { s.dispatchEvent(new Event('input', {bubbles:true})); } catch(e){}
+                      try { s.dispatchEvent(new Event('change',{bubbles:true})); } catch(e){}
+                      try { s.dispatchEvent(new Event('blur',  {bubbles:true})); } catch(e){}
+                      try { s.dispatchEvent(new Event('focusout',{bubbles:true})); } catch(e){}
+                    """, sel_el)
+                except Exception:
+                    pass
+
                 print(f"✓ Option sélectionnée (natif) : {opt.text}. source: input_dropdown.py")
                 try:
                     driver._ui_overlay_opened = None
