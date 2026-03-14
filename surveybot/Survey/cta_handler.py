@@ -836,18 +836,6 @@ def _iter_iframes_safe(driver):
     frames = []
     for fr in driver.find_elements(By.CSS_SELECTOR, "iframe, frame"):
         try:
-            tag = (getattr(fr, "tag_name", "") or "").strip().lower()
-            if tag == "frame":
-                # Legacy <frameset>: certains drivers renvoient is_displayed=False
-                # ou une taille nulle pour des frames pourtant navigables.
-                # On les garde si la frame a une identité DOM exploitable.
-                frame_id = (fr.get_attribute("id") or "").strip()
-                frame_name = (fr.get_attribute("name") or "").strip()
-                frame_src = (fr.get_attribute("src") or "").strip()
-                if frame_id or frame_name or frame_src:
-                    frames.append(fr)
-                continue
-
             r = fr.rect
             if fr.is_displayed() and r.get("width", 0) > 20 and r.get("height", 0) > 20:
                 frames.append(fr)
