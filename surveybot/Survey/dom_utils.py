@@ -81,6 +81,10 @@ def _looks_like_system_field(el) -> bool:
         
         name_val = (el.get_attribute("name") or "").lower()
         id_val = (el.get_attribute("id") or "").lower()
+
+        # Qualtrics language selector UI (non-question field)
+        if tag_name == "select" and name_val == "q_lang":
+            return True
         
         for token in _SYS_FIELD_TOKENS:
             if token in name_val or token in id_val:
