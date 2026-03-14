@@ -3315,6 +3315,7 @@ def _extract_button_choice_radio_blocks(driver, frame_chain: list[int] | None) -
                 "option_xpath_map": option_xpath_map,
                 "frame_chain": frame_chain,
                 "button_choice_radio": True,
+                "studystream_auto_advance": True,
             },
         )
 
@@ -3329,6 +3330,7 @@ def _extract_button_choice_radio_blocks(driver, frame_chain: list[int] | None) -
                     "kind": "group",
                     "group_key": group_key,
                     "button_choice_radio": True,
+                    "studystream_auto_advance": True,
                 },
             }
         )
