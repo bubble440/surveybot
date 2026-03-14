@@ -3958,6 +3958,52 @@ def _extract_qualtrics_choice_structure_checkbox_blocks(driver, frame_chain: lis
         return blocks
 
     for idx, container in enumerate(containers):
+        # Cas matrice checkbox Qualtrics: 1 bloc par ligne `tr.ChoiceRow`.
+        # Gate DOM strict pour éviter d'impacter les autres layouts ChoiceStructure.
+        try:
+            header_cells = container.find_elements(
+                By.CSS_SELECTOR,
+                "table.ChoiceStructure > thead > tr.Answers > th",
+            )
+        except Exception:
+            header_cells = []
+
+        try:
+            matrix_rows = container.find_elements(
+                By.CSS_SELECTOR,
+                "table.ChoiceStructure > tbody > tr.ChoiceRow",
+            )
+        except Exception:
+            matrix_rows = []
+
+        column_labels: list[str] = []
+        if len(header_cells) >= 3:
+            for h in header_cells:
+                try:
+                    h_cls = (h.get_attribute("class") or "").strip().lower()
+                except Exception:
+                    h_cls = ""
+                if "c1" in h_cls:
+                    continue
+                h_txt = _norm(h.text or h.get_attribute("innerText") or "")
+                if h_txt:
+                    column_labels.append(h_txt)
+
+        row_checkbox_counts: list[int] = []
+        if column_labels and matrix_rows:
+            for row in matrix_rows:
+                try:
+                    row_checks = row.find_elements(By.CSS_SELECTOR, "input[type='checkbox'][name^='QR~']")
+                except Exception:
+                    row_checks = []
+                row_checkbox_counts.append(len(row_checks))
+
+        is_table_matrix = (
+            len(column_labels) >= 2
+            and len(matrix_rows) >= 1
+            and any(c > 1 for c in row_checkbox_counts)
+        )
+
         try:
             checkboxes = container.find_elements(
                 By.CSS_SELECTOR,
@@ -3990,6 +4036,97 @@ def _extract_qualtrics_choice_structure_checkbox_blocks(driver, frame_chain: lis
 
         if not question:
             continue
+
+        if is_table_matrix:
+            for row_idx, row in enumerate(matrix_rows):
+                try:
+                    row_checkboxes = row.find_elements(By.CSS_SELECTOR, "input[type='checkbox'][name^='QR~']")
+                except Exception:
+                    row_checkboxes = []
+
+                if len(row_checkboxes) < 2:
+                    continue
+
+                row_label = ""
+                for rsel in (
+                    "th.c1 span",
+                    "th[scope='row'] span",
+                    "th.c1 label span",
+                    "th[scope='row'] label span",
+                ):
+                    try:
+                        row_nodes = row.find_elements(By.CSS_SELECTOR, rsel)
+                    except Exception:
+                        row_nodes = []
+                    for rn in row_nodes:
+                        cand = _norm(rn.text or rn.get_attribute("innerText") or "")
+                        if cand:
+                            row_label = cand
+                            break
+                    if row_label:
+                        break
+
+                if not row_label:
+                    continue
+
+                row_question = _norm(f"{question} {row_label}")
+                if not row_question:
+                    continue
+
+                options: list[str] = []
+                option_xpath_map: dict[str, str] = {}
+                for col_idx, checkbox in enumerate(row_checkboxes):
+                    if col_idx >= len(column_labels):
+                        break
+                    label_text = column_labels[col_idx]
+                    checkbox_id = (checkbox.get_attribute("id") or "").strip()
+                    if not checkbox_id:
+                        continue
+                    nk = _norm_key(label_text)
+                    if not nk or nk in option_xpath_map:
+                        continue
+                    option_xpath_map[nk] = f"//*[@id={_xpath_literal(checkbox_id)}]"
+                    options.append(label_text)
+
+                if len(options) < 2 or len(option_xpath_map) < 2:
+                    continue
+
+                first_name = (row_checkboxes[0].get_attribute("name") or "").strip()
+                group_name = first_name or f"row-{row_idx + 1}"
+                group_key = f"qualtrics_choice_structure:checkbox:{group_name}"
+                target_id = make_target_id("group", group_key, row_question)
+                register_target(
+                    target_id,
+                    {
+                        "kind": "group",
+                        "itype": "checkbox",
+                        "group_key": group_key,
+                        "question": row_question,
+                        "option_xpath_map": option_xpath_map,
+                        "frame_chain": frame_chain,
+                        "qualtrics_choice_structure_checkbox": True,
+                    },
+                )
+
+                blocks.append(
+                    {
+                        "question": row_question,
+                        "itype": "checkbox",
+                        "options": options,
+                        "max_select": _compute_max_select("checkbox", options),
+                        "target_id": target_id,
+                        "context": {
+                            "kind": "group",
+                            "group_key": group_key,
+                            "qualtrics_choice_structure_checkbox": True,
+                            "container_index": idx,
+                            "matrix_row_index": row_idx,
+                        },
+                    }
+                )
+
+            if blocks:
+                continue
 
         group_name = ""
         options: list[str] = []
