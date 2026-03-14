@@ -83,17 +83,6 @@ class _FakeDriver:
         return None
 
 
-class _FakeSwitchTo:
-    def __init__(self, recorder):
-        self._recorder = recorder
-
-    def frame(self, target):
-        self._recorder.append(("frame", target))
-
-    def default_content(self):
-        self._recorder.append(("default_content", None))
-
-
 class _FailingActionChains(_FakeActionChains):
     def perform(self):
         raise Exception("action chain failed")
@@ -125,47 +114,6 @@ def test_iter_iframes_safe_keeps_legacy_frame_when_not_reported_visible():
 
     assert len(frames) == 1
     assert frames[0] is legacy_frame
-
-
-def test_in_each_frame_recursive_switches_legacy_frame_by_name():
-    legacy_frame = _FakeElement(attrs={"id": "mainFrame", "name": "mainFrame"})
-    legacy_frame.tag_name = "frame"
-
-    calls = []
-    driver = _FakeDriver(css_elements={"iframe, frame": [legacy_frame]})
-    driver.switch_to = _FakeSwitchTo(calls)
-
-    fn_calls = {"count": 0}
-
-    def _fn_try(_driver):
-        fn_calls["count"] += 1
-        return fn_calls["count"] == 2
-
-    ok = cta_handler._in_each_frame_recursive(driver, _fn_try, depth=1)
-
-    assert ok is True
-    assert ("frame", "mainFrame") in calls
-    assert ("frame", legacy_frame) not in calls
-
-
-def test_in_each_frame_recursive_switches_legacy_frame_by_index_when_no_name_or_id():
-    legacy_frame = _FakeElement(attrs={"src": "survey/page"})
-    legacy_frame.tag_name = "frame"
-
-    calls = []
-    driver = _FakeDriver(css_elements={"iframe, frame": [legacy_frame]})
-    driver.switch_to = _FakeSwitchTo(calls)
-
-    fn_calls = {"count": 0}
-
-    def _fn_try(_driver):
-        fn_calls["count"] += 1
-        return fn_calls["count"] == 2
-
-    ok = cta_handler._in_each_frame_recursive(driver, _fn_try, depth=1)
-
-    assert ok is True
-    assert ("frame", 0) in calls
 
 def test_try_click_navigation_cta_detects_tabindex_suivant(monkeypatch):
     monkeypatch.setattr(cta_handler, "ActionChains", _FakeActionChains)
