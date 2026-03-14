@@ -871,9 +871,19 @@ def _in_each_frame_recursive(driver, fn_try, depth=2):
 
     # 2) Descente dans les iframes si non trouvé
     frames = _iter_iframes_safe(driver)
-    for fr in frames:
+    for idx, fr in enumerate(frames):
         try:
-            driver.switch_to.frame(fr)
+            tag = (fr.tag_name or "").strip().lower()
+            if tag == "frame":
+                frame_name = (fr.get_attribute("name") or "").strip()
+                frame_id = (fr.get_attribute("id") or "").strip()
+                target = frame_name or frame_id
+                if target:
+                    driver.switch_to.frame(target)
+                else:
+                    driver.switch_to.frame(idx)
+            else:
+                driver.switch_to.frame(fr)
             if _in_each_frame_recursive(driver, fn_try, depth - 1):
                 driver.switch_to.default_content()
                 return True
