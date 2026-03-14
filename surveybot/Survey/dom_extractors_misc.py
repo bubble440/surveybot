@@ -4163,7 +4163,10 @@ def _extract_qualtrics_choice_structure_checkbox_blocks(driver, frame_chain: lis
         for q_sel in (
             "div.Inner fieldset legend div.QuestionText",
             "fieldset legend div.QuestionText",
+            "fieldset legend label.QuestionText",
+            "legend .QuestionText",
             "div.QuestionText",
+            "label.QuestionText",
         ):
             try:
                 q_nodes = container.find_elements(By.CSS_SELECTOR, q_sel)
