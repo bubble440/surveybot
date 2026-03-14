@@ -2,6 +2,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.action_chains import ActionChains
 import re, openai, time, unicodedata, os, sys, hashlib, tempfile
 from urllib.parse import urlsplit
+from Survey.log_utils import log_debug
 
 def _short_url(url: str) -> str:
     try:
@@ -1504,11 +1505,11 @@ def execute_survey_page(driver, api_key, ctx=None):
             _local_pause_before_cta("cta_only_fallback")
             
             # Phase 1: CSS selectors directs (frameworks connus)
-            print(f"[DEBUG] Phase 1: testing {len(NAV_BUTTON_SELECTORS)} selectors")
+            log_debug("[CTA_FALLBACK]", f"Phase 1: testing {len(NAV_BUTTON_SELECTORS)} selectors")
             for selector in NAV_BUTTON_SELECTORS:
                 try:
                     btn = driver.find_element(By.CSS_SELECTOR, selector)
-                    print(f"[DEBUG] Selector {selector} found: {btn.tag_name}")
+                    log_debug("[CTA_FALLBACK]", f"Selector {selector} found: {btn.tag_name}")
                     # Si c'est une image dans un lien <a>, cibler le lien parent (AreYouNet, etc.)
                     if btn.tag_name.lower() == "img":
                         try:
@@ -1519,7 +1520,7 @@ def execute_survey_page(driver, api_key, ctx=None):
                             pass
                     is_disp = btn.is_displayed() if btn else False
                     is_vis_js = _is_visible_js(driver, btn) if btn else False
-                    print(f"[DEBUG] {selector}: is_displayed={is_disp}, _is_visible_js={is_vis_js}")
+                    log_debug("[CTA_FALLBACK]", f"{selector}: is_displayed={is_disp}, _is_visible_js={is_vis_js}")
                     if btn and (is_disp or is_vis_js):                        #  que ce n'est pas un bouton "refuser/exit"
                         btn_text = (btn.text or btn.get_attribute("value") or "").lower()
                         if any(bad in btn_text for bad in ["exit", "quit", "refuse", "disagree"]):
@@ -1545,7 +1546,7 @@ def execute_survey_page(driver, api_key, ctx=None):
                             pass
                         return True
                 except Exception as e:
-                    print(f"[DEBUG] Selector {selector} FAILED: {type(e).__name__}")
+                    log_debug("[CTA_FALLBACK]", f"Selector {selector} FAILED: {type(e).__name__}")
                     continue  #  non , essayer le suivant
             
             # Phase 2: Recherche par texte (fallback existant)
