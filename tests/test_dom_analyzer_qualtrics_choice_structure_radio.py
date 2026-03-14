@@ -165,3 +165,43 @@ def test_qualtrics_matrix_dropdown_rows_skip_generic_duplicates(monkeypatch):
 
     assert len(blocks) == 3
     assert [b["question"] for b in blocks] == ["Ligne 1", "Ligne 2", "Ligne 3"]
+
+
+def test_extracts_qualtrics_choice_structure_table_checkboxes(monkeypatch):
+    _patch_non_generic_extractors(monkeypatch)
+
+    q_text = "Vous rendez-vous régulièrement dans l'une de ces villes?"
+
+    chk_1 = _FakeElement(attrs={"name": "QR~QID13~21", "id": "QR~QID13~21"})
+    chk_2 = _FakeElement(attrs={"name": "QR~QID13~27", "id": "QR~QID13~27"})
+    chk_3 = _FakeElement(attrs={"name": "QR~QID13~23", "id": "QR~QID13~23"})
+
+    container = _FakeElement(
+        by_selector={
+            "table.ChoiceStructure input[type='checkbox'][name^='QR~']": [chk_1, chk_2, chk_3],
+            "div.Inner fieldset legend div.QuestionText": [_FakeElement(text=q_text)],
+            "label.MultipleAnswer[for='QR~QID13~21'] span": [_FakeElement(text="Bourges")],
+            "label.MultipleAnswer[for='QR~QID13~27'] span": [_FakeElement(text="Marseille")],
+            "label.MultipleAnswer[for='QR~QID13~23'] span": [_FakeElement(text="Dijon")],
+        }
+    )
+
+    driver = _FakeDriver(
+        by_selector={
+            "div.QuestionOuter": [container],
+            "input[type='radio'], input[type='checkbox'], [role='radio']:not(svg), [role='checkbox']:not(svg)": [],
+            "button, a[role='button'], [role='button'], .sq-cardrating-button": [],
+        }
+    )
+
+    blocks = da._analyze_dom_current_context(driver)
+
+    assert len(blocks) == 1
+    block = blocks[0]
+    assert block["itype"] == "checkbox"
+    assert "villes" in block["question"].lower()
+    assert len(block["options"]) == 3
+    assert block["options"] == ["Bourges", "Marseille", "Dijon"]
+    assert block["max_select"] == 3
+    assert (block.get("context") or {}).get("qualtrics_choice_structure_checkbox") is True
+    assert (block.get("context") or {}).get("group_key") == "qualtrics_choice_structure:checkbox:QR~QID13"
