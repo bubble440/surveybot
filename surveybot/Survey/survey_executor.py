@@ -1054,42 +1054,18 @@ def _handle_topsurveys_exclusion_popup(driver) -> bool:
     
     print("[TOPSURVEYS_POPUP] Popup 'Bon travail !' detecte - fermeture...")
     
-    # === ETAPE 1: Fermer le popup ===
-    btn = None
+    # === ETAPE 1: Traiter le popup via la routine mystery box existante ===
     try:
-        from selenium.webdriver.support.ui import WebDriverWait
-        from selenium.webdriver.support import expected_conditions as EC
-        btn = WebDriverWait(driver, 2).until(
-            EC.element_to_be_clickable((By.CSS_SELECTOR, "button[data-test-id='ps-common-actions-button']"))
-        )
-    except:
-        pass
-    
-    if not btn:
-        try:
-            for b in driver.find_elements(By.CSS_SELECTOR, "button"):
-                if b.is_displayed() and "compl" in _norm(b.text or ""):
-                    btn = b
-                    break
-        except:
-            pass
-    
-    if btn:
-        try:
-            driver.execute_script("arguments[0].click();", btn)
-            print("[TOPSURVEYS_POPUP] Bouton 'Complete' clique.")
-            time.sleep(1.0)
-        except Exception as e:
-            print(f"[TOPSURVEYS_POPUP] Erreur clic: {e}")
-            return False
-    else:
-        print("[TOPSURVEYS_POPUP] Bouton non trouve.")
+        import preselection.survey_navigator as survey_navigator
+        survey_navigator._handle_mystery_box_popup(driver)
+        time.sleep(1.0)
+    except Exception as e:
+        print(f"[TOPSURVEYS_POPUP] Erreur mystery box: {e}")
         return False
     
     # === ETAPE 2: Relancer la preselection vers un nouveau survey ===
     print("[TOPSURVEYS_POPUP] Relance preselection...")
     try:
-        import preselection.survey_navigator as survey_navigator
         survey_navigator.go_to_best_value_survey(driver)
         print("[TOPSURVEYS_POPUP] Navigation vers nouveau survey OK")
         time.sleep(1.0)
