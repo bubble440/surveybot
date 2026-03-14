@@ -4,6 +4,7 @@ import re
 import time
 from typing import Tuple
 from State.account_state import update_state
+from State.daily_target import DAILY_TARGET_EUR, record_daily_earning_and_target
 from Management.guards.runtime_guard import get_guard
 from selenium.webdriver.common.by import By
 IS_LOCAL = os.getenv("RUN_ENV", "local") == "local"
@@ -339,7 +340,7 @@ def check_and_cashout_if_needed(
     driver,
     *,
     account_id: str,
-    min_amount_eur: float = 5.0,
+    min_amount_eur: float = DAILY_TARGET_EUR,
     cashout_order: Tuple[str, str] = ("revolut", "paypal"),
     revolut_fullname: str = "",
     revolut_tag: str = ""
@@ -409,8 +410,12 @@ def check_and_cashout_if_needed(
 
         # 🔐 Source de vérité : mise à jour par compte
         def _apply_gain(st):
-            st["earnings_today_eur"] = st.get("earnings_today_eur", 0.0) + 5.0
-            st["last_gain_ts"] = time.time()
+            record_daily_earning_and_target(
+                st,
+                amount_eur=5.0,
+                daily_target_eur=DAILY_TARGET_EUR,
+                now_ts=int(time.time()),
+            )
 
         update_state(account_id, _apply_gain)
 
