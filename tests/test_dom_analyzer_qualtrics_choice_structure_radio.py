@@ -58,7 +58,7 @@ def test_extracts_qualtrics_choice_structure_radios(monkeypatch):
 
     container = _FakeElement(
         by_selector={
-            "ul.ChoiceStructure li.Selection input[type='radio'][name^='QR~']": [radio_1, radio_2, radio_3],
+            "ul.ChoiceStructure li.Selection input[type='radio'][name^='QR~'], table.ChoiceStructure input[type='radio'][name^='QR~']": [radio_1, radio_2, radio_3],
             "div.Inner fieldset legend div.QuestionText": [_FakeElement(text=q_text)],
             "label.SingleAnswer[for='QR~QID261~1'] span": [_FakeElement(text="Enseignement primaire")],
             "label.SingleAnswer[for='QR~QID261~2'] span": [_FakeElement(text="Premier cycle")],
@@ -87,3 +87,39 @@ def test_extracts_qualtrics_choice_structure_radios(monkeypatch):
     assert block["max_select"] == 1
     assert (block.get("context") or {}).get("qualtrics_choice_structure_radio") is True
     assert (block.get("context") or {}).get("group_key") == "qualtrics_choice_structure:radio:QR~QID261"
+
+
+def test_extracts_qualtrics_choice_structure_table_radios(monkeypatch):
+    _patch_non_generic_extractors(monkeypatch)
+
+    q_text = "Où vivez-vous?"
+
+    radio_1 = _FakeElement(attrs={"name": "QR~QID8", "id": "QR~QID8~56"})
+    radio_2 = _FakeElement(attrs={"name": "QR~QID8", "id": "QR~QID8~64"})
+
+    container = _FakeElement(
+        by_selector={
+            "ul.ChoiceStructure li.Selection input[type='radio'][name^='QR~'], table.ChoiceStructure input[type='radio'][name^='QR~']": [radio_1, radio_2],
+            "div.Inner fieldset legend div.QuestionText": [_FakeElement(text=q_text)],
+            "label.SingleAnswer[for='QR~QID8~56'] span": [_FakeElement(text="Bourgogne-Franche-Comté")],
+            "label.SingleAnswer[for='QR~QID8~64'] span": [_FakeElement(text="Nouvelle Aquitaine")],
+        }
+    )
+
+    driver = _FakeDriver(
+        by_selector={
+            "div.QuestionOuter": [container],
+            "input[type='radio'], input[type='checkbox'], [role='radio']:not(svg), [role='checkbox']:not(svg)": [],
+            "button, a[role='button'], [role='button'], .sq-cardrating-button": [],
+        }
+    )
+
+    blocks = da._analyze_dom_current_context(driver)
+
+    assert len(blocks) == 1
+    block = blocks[0]
+    assert block["itype"] == "radio"
+    assert "vivez" in block["question"].lower()
+    assert len(block["options"]) == 2
+    assert "bourgogne" in block["options"][0].lower()
+    assert "nouvelle" in block["options"][1].lower()
