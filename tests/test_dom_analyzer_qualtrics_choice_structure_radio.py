@@ -255,3 +255,73 @@ def test_extracts_qualtrics_choice_structure_ul_checkboxes(monkeypatch):
     assert "QR~QID1200~3" in xpaths
     assert "QR~QID1200~5" in xpaths
     assert "QR~QID1200~7" in xpaths
+
+
+def test_extracts_qualtrics_choice_structure_matrix_checkbox_rows(monkeypatch):
+    _patch_non_generic_extractors(monkeypatch)
+
+    q_text = "Quand vous consommez ces boissons, à quels moments ?"
+
+    h0 = _FakeElement(text="")
+    h1 = _FakeElement(text="Matin (07h00-11h00)")
+    h2 = _FakeElement(text="Soirée (20h00-22h00)")
+
+    r1c1 = _FakeElement(attrs={"name": "QR~QID2311~694", "id": "QR~QID2311~69~4"})
+    r1c2 = _FakeElement(attrs={"name": "QR~QID2311~6912", "id": "QR~QID2311~69~12"})
+    row_1 = _FakeElement(
+        by_selector={
+            "input[type='checkbox'][name^='QR~']": [r1c1, r1c2],
+            "th.c1 span": [_FakeElement(text="Bière")],
+        }
+    )
+
+    r2c1 = _FakeElement(attrs={"name": "QR~QID2311~974", "id": "QR~QID2311~97~4"})
+    r2c2 = _FakeElement(attrs={"name": "QR~QID2311~9712", "id": "QR~QID2311~97~12"})
+    row_2 = _FakeElement(
+        by_selector={
+            "input[type='checkbox'][name^='QR~']": [r2c1, r2c2],
+            "th.c1 span": [_FakeElement(text="Champagne")],
+        }
+    )
+
+    container = _FakeElement(
+        by_selector={
+            "table.ChoiceStructure > thead > tr.Answers > th": [h0, h1, h2],
+            "table.ChoiceStructure > tbody > tr.ChoiceRow": [row_1, row_2],
+            "ul.ChoiceStructure li.Selection input[type='checkbox'][name^='QR~'], table.ChoiceStructure input[type='checkbox'][name^='QR~']": [r1c1, r1c2, r2c1, r2c2],
+            "div.Inner fieldset legend div.QuestionText": [_FakeElement(text=q_text)],
+        }
+    )
+
+    driver = _FakeDriver(
+        by_selector={
+            "div.QuestionOuter": [container],
+            "input[type='radio'], input[type='checkbox'], [role='radio']:not(svg), [role='checkbox']:not(svg)": [],
+            "button, a[role='button'], [role='button'], .sq-cardrating-button": [],
+        }
+    )
+
+    blocks = da._analyze_dom_current_context(driver)
+
+    assert len(blocks) == 2
+    assert blocks[0]["itype"] == "checkbox"
+    assert blocks[1]["itype"] == "checkbox"
+    assert "bie" in blocks[0]["question"].lower()
+    assert "champagne" in blocks[1]["question"].lower()
+    assert len(blocks[0]["options"]) == 2
+    assert len(blocks[1]["options"]) == 2
+    assert "matin" in blocks[0]["options"][0].lower()
+    assert "soir" in blocks[0]["options"][1].lower()
+    assert "matin" in blocks[1]["options"][0].lower()
+    assert "soir" in blocks[1]["options"][1].lower()
+
+    target_0 = get_target(blocks[0]["target_id"])
+    target_1 = get_target(blocks[1]["target_id"])
+    assert target_0 is not None
+    assert target_1 is not None
+    map_0 = target_0.get("option_xpath_map") or {}
+    map_1 = target_1.get("option_xpath_map") or {}
+    assert "qr~qid2311~69~4" in "\n".join(map_0.values()).lower()
+    assert "qr~qid2311~69~12" in "\n".join(map_0.values()).lower()
+    assert "qr~qid2311~97~4" in "\n".join(map_1.values()).lower()
+    assert "qr~qid2311~97~12" in "\n".join(map_1.values()).lower()
