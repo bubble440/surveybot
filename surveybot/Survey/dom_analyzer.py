@@ -86,6 +86,7 @@ try:
         _extract_jqm_lrw_collapsible_radio_rows,
         _extract_jqm_lrw_collapsible_checkbox_rows,
         _extract_custom_testid_single_select_radio_blocks,
+        _extract_button_choice_radio_blocks,
         _extract_custom_testid_multi_select_checkbox_blocks,
         _extract_single_consent_checkbox_block,
         _extract_consent_modal_radio_block,
@@ -154,6 +155,7 @@ except ImportError:
         _extract_jqm_lrw_collapsible_radio_rows,
         _extract_jqm_lrw_collapsible_checkbox_rows,
         _extract_custom_testid_single_select_radio_blocks,
+        _extract_button_choice_radio_blocks,
         _extract_custom_testid_multi_select_checkbox_blocks,
         _extract_single_consent_checkbox_block,
         _extract_consent_modal_radio_block,
@@ -1134,6 +1136,15 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         jqm_collapsible_blocks = _extract_jqm_lrw_collapsible_radio_rows(driver, frame_chain)
         if jqm_collapsible_blocks:
             return jqm_collapsible_blocks
+    except Exception:
+        pass
+
+    # --- 0i-quater) Boutons de choix custom (button.choice avec id, sans input natif) ---
+    # Objectif: extraire un bloc radio depuis des options rendues en boutons purs.
+    try:
+        button_choice_blocks = _extract_button_choice_radio_blocks(driver, frame_chain)
+        if button_choice_blocks:
+            return button_choice_blocks
     except Exception:
         pass
 

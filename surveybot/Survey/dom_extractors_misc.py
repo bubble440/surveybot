@@ -3208,6 +3208,134 @@ def _extract_custom_testid_single_select_radio_blocks(driver, frame_chain: list[
     return blocks
 
 
+def _extract_button_choice_radio_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
+    """Extraction radio pour options rendues en `button.choice` (sans input natif).
+
+    Gate DOM strict (additif, non provider-wide):
+    - `div.question-body-options__inner` contenant >= 2 `div.question-body-options__choice`
+    - chaque option contient `button.choice[id]`
+    - texte option accessible via `.choice__label`
+    - question accessible via `.question-title__title`
+    """
+    frame_chain = list(frame_chain or [])
+
+    try:
+        option_roots = driver.find_elements(By.CSS_SELECTOR, "div.question-body-options__inner")
+    except Exception:
+        return []
+
+    if not option_roots:
+        return []
+
+    question = ""
+    try:
+        question_nodes = driver.find_elements(By.CSS_SELECTOR, ".question-title__title")
+    except Exception:
+        question_nodes = []
+
+    for qn in question_nodes:
+        try:
+            qtxt = _norm(qn.text or qn.get_attribute("innerText") or "")
+            if qtxt:
+                question = qtxt
+                break
+        except Exception:
+            continue
+
+    if not question:
+        return []
+
+    blocks: list[dict] = []
+
+    for root_idx, root in enumerate(option_roots, start=1):
+        try:
+            choice_wrappers = root.find_elements(By.CSS_SELECTOR, "div.question-body-options__choice")
+        except Exception:
+            continue
+
+        if len(choice_wrappers) < 2:
+            continue
+
+        options: list[str] = []
+        option_xpath_map: dict[str, str] = {}
+        button_ids: list[str] = []
+
+        for choice in choice_wrappers:
+            try:
+                btn = choice.find_element(By.CSS_SELECTOR, "button.choice")
+                btn_id = (btn.get_attribute("id") or "").strip()
+                if not btn_id:
+                    options = []
+                    option_xpath_map = {}
+                    break
+
+                label_txt = ""
+                try:
+                    labels = btn.find_elements(By.CSS_SELECTOR, ".choice__label")
+                except Exception:
+                    labels = []
+
+                for lb in labels:
+                    cand = _norm(lb.text or lb.get_attribute("innerText") or "")
+                    if cand:
+                        label_txt = cand
+                        break
+
+                if not label_txt:
+                    options = []
+                    option_xpath_map = {}
+                    break
+
+                nk = _norm_key(label_txt)
+                if not nk or nk in option_xpath_map:
+                    continue
+
+                option_xpath_map[nk] = f"//button[@id={_xpath_literal(btn_id)} and contains(concat(' ', normalize-space(@class), ' '), ' choice ')]"
+                options.append(label_txt)
+                button_ids.append(btn_id)
+            except Exception:
+                options = []
+                option_xpath_map = {}
+                break
+
+        if len(options) < 2 or len(option_xpath_map) < 2:
+            continue
+
+        group_sig = "|".join(button_ids[:10])
+        group_key = f"button_choice_radio:{root_idx}:{zlib.crc32(group_sig.encode('utf-8')):x}"
+        target_id = make_target_id("group", group_key, question)
+
+        register_target(
+            target_id,
+            {
+                "kind": "group",
+                "itype": "radio",
+                "group_key": group_key,
+                "question": question,
+                "option_xpath_map": option_xpath_map,
+                "frame_chain": frame_chain,
+                "button_choice_radio": True,
+            },
+        )
+
+        blocks.append(
+            {
+                "question": question,
+                "itype": "radio",
+                "options": options,
+                "max_select": _compute_max_select("radio", options),
+                "target_id": target_id,
+                "context": {
+                    "kind": "group",
+                    "group_key": group_key,
+                    "button_choice_radio": True,
+                },
+            }
+        )
+
+    return blocks
+
+
 def _extract_runtime_answerrow_radio_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
     """Extraction des radios custom basées sur des wrappers `.answer[data-aut='Runtime_AnswerRow']`.
 
