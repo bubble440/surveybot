@@ -102,6 +102,19 @@ def test_iter_iframes_safe_includes_legacy_frame_elements():
     assert len(frames) == 1
     assert frames[0] is legacy_frame
 
+
+def test_iter_iframes_safe_keeps_identified_legacy_frame_when_hidden():
+    legacy_frame = _FakeElement(text="", attrs={"id": "mainFrame", "name": "mainFrame"}, displayed=False)
+    legacy_frame.tag_name = "frame"
+    legacy_frame.rect = {"x": 0, "y": 0, "width": 0, "height": 0}
+
+    driver = _FakeDriver(css_elements={"iframe, frame": [legacy_frame]})
+
+    frames = cta_handler._iter_iframes_safe(driver)
+
+    assert len(frames) == 1
+    assert frames[0] is legacy_frame
+
 def test_try_click_navigation_cta_detects_tabindex_suivant(monkeypatch):
     monkeypatch.setattr(cta_handler, "ActionChains", _FakeActionChains)
     monkeypatch.delenv("CTA_INTERCEPT_ONLY", raising=False)
