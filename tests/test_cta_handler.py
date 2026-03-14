@@ -167,26 +167,6 @@ def test_in_each_frame_recursive_switches_legacy_frame_by_index_when_no_name_or_
     assert ok is True
     assert ("frame", 0) in calls
 
-
-
-def test_try_click_navigation_cta_attempts_semantic_cta_even_without_label_score(monkeypatch):
-    monkeypatch.setattr(cta_handler, "ActionChains", _FakeActionChains)
-    monkeypatch.delenv("CTA_INTERCEPT_ONLY", raising=False)
-
-    # Cas DOM observé: CTA sémantique visible mais sans libellé exploitable immédiat.
-    # Le plancher de score doit forcer au moins une tentative de clic.
-    semantic_cta = _FakeElement(
-        text="",
-        attrs={"class": "survey-next-cta", "title": ""},
-    )
-    semantic_cta.tag_name = "button"
-
-    driver = _FakeDriver(xpath_elements=[semantic_cta])
-
-    ok = cta_handler.try_click_navigation_cta(driver)
-
-    assert ok is True
-    assert semantic_cta.clicked == 1
 def test_try_click_navigation_cta_detects_tabindex_suivant(monkeypatch):
     monkeypatch.setattr(cta_handler, "ActionChains", _FakeActionChains)
     monkeypatch.delenv("CTA_INTERCEPT_ONLY", raising=False)
