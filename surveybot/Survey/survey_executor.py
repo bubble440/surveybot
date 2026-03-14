@@ -1102,21 +1102,28 @@ def _handle_topsurveys_exclusion_popup(driver) -> bool:
 
 def _should_skip_post_actions_navigation(driver, question_blocks: list[dict]) -> bool:
     """
-    Garde-fou minimal: sur Walr cardsort, l'avancement se fait via les
-    boutons de réponse (answer-button). La routine CTA post-actions ne doit
-    pas tourner, sinon elle peut re-cliquer une réponse.
+    Garde-fou minimal: certains blocs avancent automatiquement après le clic
+    réponse (ex: Walr cardsort, StudyStream button.choice). La routine CTA
+    post-actions ne doit pas tourner, sinon elle peut cliquer sur l'écran
+    suivant et soumettre prématurément.
     """
     for block in question_blocks or []:
         try:
             ctx = block.get("context") if isinstance(block, dict) else None
-            if isinstance(ctx, dict) and ctx.get("walr_cardsort") is True:
+            if isinstance(ctx, dict) and (
+                ctx.get("walr_cardsort") is True or ctx.get("studystream_auto_advance") is True
+            ):
                 return True
         except Exception:
             continue
 
-    # Critère DOM explicite (défense en profondeur si le contexte est absent)
+    # Critères DOM explicites (défense en profondeur si le contexte est absent)
     try:
-        return bool(driver.find_elements(By.CSS_SELECTOR, "#cardSortContainer button.answer-button"))
+        if driver.find_elements(By.CSS_SELECTOR, "#cardSortContainer button.answer-button"):
+            return True
+        return len(
+            driver.find_elements(By.CSS_SELECTOR, "div.question-body-options__choice button.choice")
+        ) >= 2
     except Exception:
         return False
 
