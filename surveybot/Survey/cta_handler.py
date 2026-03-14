@@ -832,13 +832,22 @@ def _click_with_intercept(driver, el) -> bool:
 # =============================================================================
 
 def _iter_iframes_safe(driver):
-    """Retourne la liste des <iframe>/<frame> visibles et probablement interactifs."""
+    """Retourne la liste des <iframe>/<frame> probablement interactifs."""
     frames = []
     for fr in driver.find_elements(By.CSS_SELECTOR, "iframe, frame"):
         try:
+            tag = (fr.tag_name or "").strip().lower()
             r = fr.rect
             if fr.is_displayed() and r.get("width", 0) > 20 and r.get("height", 0) > 20:
                 frames.append(fr)
+                continue
+
+            # Legacy <frameset>/<frame>: certains drivers reportent frame non visible
+            # (ou dimensions nulles) malgré un contenu interactif réel.
+            if tag == "frame":
+                src = (fr.get_attribute("src") or "").strip().lower()
+                if src and not src.startswith("about:blank"):
+                    frames.append(fr)
         except Exception:
             continue
     return frames
