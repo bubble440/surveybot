@@ -383,13 +383,25 @@ def set_input_value_with_events(driver, el, value: str):
         el.send_keys(value)
     except Exception:
         driver.execute_script("arguments[0].value = arguments[1];", el, value)
-    # Events attendus par les frameworks JS
+    # Events attendus par les frameworks JS (Vue/React/Angular)
     driver.execute_script("""
-        const e = arguments[0];
-        for (const t of ["input","change","blur"]) {
+        const e = arguments[0], v = arguments[1];
+        if (!e) return;
+        try {
+          const proto = (e.tagName || '').toLowerCase() === 'textarea'
+            ? HTMLTextAreaElement.prototype
+            : HTMLInputElement.prototype;
+          const d = Object.getOwnPropertyDescriptor(proto, 'value');
+          if (d && d.set) d.set.call(e, v);
+          else e.value = v;
+        } catch(_) {
+          try { e.value = v; } catch(__) {}
+        }
+
+        for (const t of ["input","change","blur","focusout"]) {
           try { e.dispatchEvent(new Event(t, {bubbles:true})); } catch(_){}
         }
-    """, el)
+    """, el, value)
 
 
 def find_inputs_by_hint(driver, kind: str):
