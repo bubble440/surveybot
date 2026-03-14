@@ -583,7 +583,12 @@ def _wait_post_click_stabilization(driver, el, before_marker, timeout_s=5.0):
     Attend une réaction post-clic avant l'évaluation PROGRESSED.
     Critères d'attente (DOM-first) :
     - changement d'URL
-    - mutation DOM observable sur la cible cliquée (stale/déconnectée/remplacée/cachée)
+    - changement du marqueur de progression (texte utile / qNodes)
+
+    Note: les mutations locales du CTA cliqué (stale/déconnectée/remplacée/cachée)
+    ne valident pas à elles seules une progression; elles servent seulement au
+    diagnostic et à prolonger l'attente jusqu'au timeout si aucun signal fort
+    de progression n'apparaît.
     """
     before_url = (before_marker or {}).get("url") or ""
     before_outer = ""
@@ -611,26 +616,30 @@ def _wait_post_click_stabilization(driver, el, before_marker, timeout_s=5.0):
             is_connected = driver.execute_script("return (arguments[0] && arguments[0].isConnected);", el)
             if is_connected is False:
                 state["target_changed"] = True
-                state["reason"] = "target_disconnected"
-                return True
+                if state["reason"] == "timeout":
+                    state["reason"] = "target_disconnected"
 
             if not _is_visible(driver, el):
                 state["target_changed"] = True
-                state["reason"] = "target_hidden"
-                return True
+                if state["reason"] == "timeout":
+                    state["reason"] = "target_hidden"
 
             if before_outer:
                 after_outer = driver.execute_script("return arguments[0] ? (arguments[0].outerHTML || '') : '';", el) or ""
                 if after_outer and after_outer != before_outer:
                     state["target_changed"] = True
-                    state["reason"] = "target_replaced"
-                    return True
+                    if state["reason"] == "timeout":
+                        state["reason"] = "target_replaced"
         except StaleElementReferenceException:
             state["target_changed"] = True
-            state["reason"] = "target_stale"
-            return True
+            if state["reason"] == "timeout":
+                state["reason"] = "target_stale"
         except Exception:
             pass
+
+        if _did_progress(before_marker, after_marker):
+            state["reason"] = "dom_marker_changed"
+            return True
 
         return False
 
@@ -712,10 +721,10 @@ def _click_with_intercept(driver, el) -> bool:
 
         first_ok, first_release = _press_click_release(driver, el)
         after_first, first_target_changed, first_wait_reason = _wait_post_click_stabilization(driver, el, before, timeout_s=5.0)
-        progressed = _did_progress(before, after_first) or first_target_changed
+        progressed = _did_progress(before, after_first)
         log_debug(
             "[CTA_CLICK]",
-            f"strategy={used} attempt=1 release_sent={str(first_release).lower()} wait_reason={first_wait_reason} progressed={str(progressed).lower()}",
+            f"strategy={used} attempt=1 release_sent={str(first_release).lower()} wait_reason={first_wait_reason} target_changed={str(bool(first_target_changed)).lower()} progressed={str(progressed).lower()}",
         )
 
         if progressed:
@@ -724,10 +733,10 @@ def _click_with_intercept(driver, el) -> bool:
         # Budget anti-boucle: 1 tentative additionnelle max si pas de progression.
         second_ok, second_release = _press_click_release(driver, el)
         after_second, second_target_changed, second_wait_reason = _wait_post_click_stabilization(driver, el, before, timeout_s=5.0)
-        progressed = _did_progress(before, after_second) or second_target_changed
+        progressed = _did_progress(before, after_second)
         log_debug(
             "[CTA_CLICK]",
-            f"strategy={used} attempt=2 release_sent={str(second_release).lower()} wait_reason={second_wait_reason} progressed={str(progressed).lower()}",
+            f"strategy={used} attempt=2 release_sent={str(second_release).lower()} wait_reason={second_wait_reason} target_changed={str(bool(second_target_changed)).lower()} progressed={str(progressed).lower()}",
         )
         return bool(progressed)
 
