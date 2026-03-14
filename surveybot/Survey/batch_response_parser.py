@@ -516,18 +516,6 @@ def _enforce_selection_ranges(actions: list[dict], constraints: dict[str, int], 
         raw_values = [str((a.get("value") or "")).strip() for a in q_actions if str((a.get("value") or "")).strip()]
         options = [str(o or "").strip() for o in (qmeta.get("options") or []) if str(o or "").strip()]
         completed_values = list(raw_values)
-        # if len(completed_values) < min_select:
-        #     completed_values = _build_filler_values(
-        #         qid=qid,
-        #         selected_values=completed_values,
-        #         options=options,
-        #         expected_count=min_select,
-        #     )
-        #     _warn_log(
-        #         f"qid={qid} too_few_values min_select={min_select} received={len(raw_values)} "
-        #         f"action=pad final={completed_values}"
-        #     )
-
         if len(completed_values) > max_select:
             completed_values = completed_values[:max_select]
 

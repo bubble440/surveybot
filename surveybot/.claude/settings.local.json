@@ -22,7 +22,13 @@
       "Bash(git revert HEAD --no-edit)",
       "Bash(\"/c/Program Files/GitHub CLI/gh.exe\" auth status)",
       "Bash(python -c \":*)",
-      "Bash(grep -r \"load_state\\\\|save_state\\\\|update_state\\\\|touch_heartbeat\" /c/projects/Surveys/surveybot --include=\"*.py\" ! -path \"*/.venv/*\" ! -path \"*/__pycache__/*\")"
+      "Bash(grep -r \"load_state\\\\|save_state\\\\|update_state\\\\|touch_heartbeat\" /c/projects/Surveys/surveybot --include=\"*.py\" ! -path \"*/.venv/*\" ! -path \"*/__pycache__/*\")",
+      "Bash(find C:projectsSurveyssurveybot -path */State/* -name *.py -type f)",
+      "Bash(xargs grep:*)",
+      "Bash(find C:projectsSurveyssurveybot -name *.py -type f ! -path */.venv/* -print0)",
+      "Bash(xargs -0 grep -l \"pause\\\\|cooldown\\\\|stop\\\\|restart\")",
+      "Bash(find /c/projects/Surveys/surveybot -name *.py -type f ! -path */.venv/*)",
+      "Bash(grep -r \"dynamodb\\\\|database\\\\|dynamo\\\\|ddb\\\\|retry\\\\|connection\" /c/projects/Surveys/surveybot --include=*.py ! -path */.venv/*)"
     ]
   }
 }
