@@ -3787,11 +3787,11 @@ def _extract_label_radio_list_blocks(driver, frame_chain: list[int] | None) -> l
 
 
 def _extract_qualtrics_choice_structure_radio_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
-    """Extraction ciblée des radios Qualtrics `ul.ChoiceStructure`.
+    """Extraction ciblée des radios Qualtrics `ChoiceStructure` (UL ou TABLE).
 
     Gate DOM strict (additif, sans hypothèse provider globale):
     - `div.QuestionOuter`
-    - `ul.ChoiceStructure`
+    - `ul.ChoiceStructure` ou `table.ChoiceStructure`
     - `input[type=radio][name^="QR~"]`
     """
     frame_chain = list(frame_chain or [])
@@ -3806,7 +3806,10 @@ def _extract_qualtrics_choice_structure_radio_blocks(driver, frame_chain: list[i
         try:
             radios = container.find_elements(
                 By.CSS_SELECTOR,
-                "ul.ChoiceStructure li.Selection input[type='radio'][name^='QR~']",
+                (
+                    "ul.ChoiceStructure li.Selection input[type='radio'][name^='QR~'], "
+                    "table.ChoiceStructure input[type='radio'][name^='QR~']"
+                ),
             )
         except Exception:
             radios = []
