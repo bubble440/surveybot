@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from typing import Optional, Callable
 from enum import Enum
 from State.account_state import load_state, update_state, touch_heartbeat
+from State.daily_target import DAILY_TARGET_EUR
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
@@ -58,7 +59,7 @@ class RuntimeGuard:
         restart_cooldown_sec: int = 60,      # 1 minute
         max_errors_in_row: int = 5,
         max_runtime_sec: int = 2 * 3600,      # 2h
-        daily_target_eur: float = 5.0,
+        daily_target_eur: float = DAILY_TARGET_EUR,
         notify_fn: Optional[Callable[[str], None]] = None,
         on_soft_restart: Optional[Callable[[str], None]] = None,
     ):
