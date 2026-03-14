@@ -21,7 +21,8 @@
       "Bash(git cherry-pick 70907a2)",
       "Bash(git revert HEAD --no-edit)",
       "Bash(\"/c/Program Files/GitHub CLI/gh.exe\" auth status)",
-      "Bash(python -c \":*)"
+      "Bash(python -c \":*)",
+      "Bash(grep -r \"load_state\\\\|save_state\\\\|update_state\\\\|touch_heartbeat\" /c/projects/Surveys/surveybot --include=\"*.py\" ! -path \"*/.venv/*\" ! -path \"*/__pycache__/*\")"
     ]
   }
 }
