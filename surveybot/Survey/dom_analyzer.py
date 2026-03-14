@@ -94,6 +94,7 @@ try:
         _extract_kantar_rowpicker_radio_blocks,
         _extract_label_radio_list_blocks,
         _extract_qualtrics_choice_structure_radio_blocks,
+        _extract_qualtrics_choice_structure_checkbox_blocks,
         _extract_qualtrics_matrix_dropdown_row_blocks,
         _extract_decipher_clickable_ranking_blocks,
     )
@@ -164,6 +165,7 @@ except ImportError:
         _extract_kantar_rowpicker_radio_blocks,
         _extract_label_radio_list_blocks,
         _extract_qualtrics_choice_structure_radio_blocks,
+        _extract_qualtrics_choice_structure_checkbox_blocks,
         _extract_qualtrics_matrix_dropdown_row_blocks,
         _extract_decipher_clickable_ranking_blocks,
     )
@@ -1057,6 +1059,15 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         qualtrics_choice_blocks = _extract_qualtrics_choice_structure_radio_blocks(driver, frame_chain)
         if qualtrics_choice_blocks:
             return qualtrics_choice_blocks
+    except Exception:
+        pass
+
+    # --- 0h-bis-3b) Qualtrics ChoiceStructure checkboxes (MAVR/MAHR) ---
+    # Objectif: extraire les multi-sélections Qualtrics non couvertes par le générique.
+    try:
+        qualtrics_choice_checkbox_blocks = _extract_qualtrics_choice_structure_checkbox_blocks(driver, frame_chain)
+        if qualtrics_choice_checkbox_blocks:
+            return qualtrics_choice_checkbox_blocks
     except Exception:
         pass
 

@@ -3940,6 +3940,145 @@ def _extract_qualtrics_choice_structure_radio_blocks(driver, frame_chain: list[i
     return blocks
 
 
+def _extract_qualtrics_choice_structure_checkbox_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
+    """Extraction ciblée des checkboxes Qualtrics `ChoiceStructure` (layout MAVR/MAHR).
+
+    Gate DOM strict (additif, sans hypothèse provider globale):
+    - `div.QuestionOuter`
+    - `table.ChoiceStructure`
+    - `input[type=checkbox][name^="QR~"]`
+    - labels d'options `label.MultipleAnswer[for='<input_id>']`
+    """
+    frame_chain = list(frame_chain or [])
+    blocks: list[dict] = []
+
+    try:
+        containers = driver.find_elements(By.CSS_SELECTOR, "div.QuestionOuter")
+    except Exception:
+        return blocks
+
+    for idx, container in enumerate(containers):
+        try:
+            checkboxes = container.find_elements(
+                By.CSS_SELECTOR,
+                "table.ChoiceStructure input[type='checkbox'][name^='QR~']",
+            )
+        except Exception:
+            checkboxes = []
+
+        if len(checkboxes) < 2:
+            continue
+
+        question = ""
+        for q_sel in (
+            "div.Inner fieldset legend div.QuestionText",
+            "fieldset legend div.QuestionText",
+            "div.QuestionText",
+        ):
+            try:
+                q_nodes = container.find_elements(By.CSS_SELECTOR, q_sel)
+            except Exception:
+                q_nodes = []
+            for qn in q_nodes:
+                txt = _norm(qn.text or qn.get_attribute("innerText") or "")
+                if txt:
+                    question = txt
+                    break
+            if question:
+                break
+
+        if not question:
+            continue
+
+        group_name = ""
+        options: list[str] = []
+        option_xpath_map: dict[str, str] = {}
+
+        for checkbox in checkboxes:
+            try:
+                checkbox_name = (checkbox.get_attribute("name") or "").strip()
+                if not checkbox_name:
+                    continue
+
+                # En Qualtrics MAVR/MAHR, chaque option a son propre name
+                # (`QR~QID13~21`, `QR~QID13~27`, ...). On regroupe par préfixe QID.
+                base_name = checkbox_name.rsplit("~", 1)[0] if "~" in checkbox_name else checkbox_name
+                if not group_name:
+                    group_name = base_name
+                if base_name != group_name:
+                    continue
+
+                checkbox_id = (checkbox.get_attribute("id") or "").strip()
+                if not checkbox_id:
+                    continue
+
+                label_text = ""
+                for lsel in (
+                    f"label.MultipleAnswer[for='{checkbox_id}'] span",
+                    f"label[for='{checkbox_id}'].MultipleAnswer span",
+                    f"label[for='{checkbox_id}'] span",
+                ):
+                    try:
+                        lbl_nodes = container.find_elements(By.CSS_SELECTOR, lsel)
+                    except Exception:
+                        lbl_nodes = []
+                    for lbl in lbl_nodes:
+                        cand = _norm(lbl.text or lbl.get_attribute("innerText") or "")
+                        if cand:
+                            label_text = cand
+                            break
+                    if label_text:
+                        break
+
+                if not label_text:
+                    continue
+
+                nk = _norm_key(label_text)
+                if not nk or nk in option_xpath_map:
+                    continue
+
+                option_xpath_map[nk] = f"//*[@id={_xpath_literal(checkbox_id)}]"
+                options.append(label_text)
+            except Exception:
+                continue
+
+        if len(options) < 2 or len(option_xpath_map) < 2 or not group_name:
+            continue
+
+        group_key = f"qualtrics_choice_structure:checkbox:{group_name}"
+        target_id = make_target_id("group", group_key, question)
+        register_target(
+            target_id,
+            {
+                "kind": "group",
+                "itype": "checkbox",
+                "group_key": group_key,
+                "question": question,
+                "option_xpath_map": option_xpath_map,
+                "frame_chain": frame_chain,
+                "qualtrics_choice_structure_checkbox": True,
+            },
+        )
+
+        blocks.append(
+            {
+                "question": question,
+                "itype": "checkbox",
+                "options": options,
+                "max_select": _compute_max_select("checkbox", options),
+                "target_id": target_id,
+                "context": {
+                    "kind": "group",
+                    "group_key": group_key,
+                    "qualtrics_choice_structure_checkbox": True,
+                    "container_index": idx,
+                },
+            }
+        )
+
+    return blocks
+
+
 def _extract_qualtrics_matrix_dropdown_row_blocks(
     driver,
     frame_chain: list[int] | None,
