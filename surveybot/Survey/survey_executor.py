@@ -1054,7 +1054,7 @@ def _handle_topsurveys_exclusion_popup(driver) -> bool:
     
     print("[TOPSURVEYS_POPUP] Popup 'Bon travail !' detecte - fermeture...")
     
-    # === ETAPE 1: Fermer le popup ===
+# === ETAPE 1: Fermer le popup ===
     btn = None
     try:
         from selenium.webdriver.support.ui import WebDriverWait
@@ -1064,28 +1064,42 @@ def _handle_topsurveys_exclusion_popup(driver) -> bool:
         )
     except:
         pass
-    
-    if not btn:
-        try:
-            for b in driver.find_elements(By.CSS_SELECTOR, "button"):
-                if b.is_displayed() and "compl" in _norm(b.text or ""):
-                    btn = b
-                    break
-        except:
-            pass
-    
-    if btn:
-        try:
-            driver.execute_script("arguments[0].click();", btn)
-            print("[TOPSURVEYS_POPUP] Bouton 'Complete' clique.")
-            time.sleep(1.0)
-        except Exception as e:
-            print(f"[TOPSURVEYS_POPUP] Erreur clic: {e}")
+
+    try:
+        import preselection.survey_navigator as survey_navigator
+        survey_navigator._handle_mystery_box_popup(driver)
+        time.sleep(1.0)
+    except Exception as e:
+        print(f"[TOPSURVEYS_POPUP] Erreur mystery box: {e}")
+
+    # Vérifier si le popup est encore présent avant de tenter le clic btn
+    try:
+        popup_still_open = bool(driver.find_elements(By.CSS_SELECTOR, "[data-test-id^='ps-mystery-box-item-button']"))
+    except Exception:
+        popup_still_open = True  # prudent: on tente quand même
+
+    if popup_still_open:
+        if not btn:
+            try:
+                for b in driver.find_elements(By.CSS_SELECTOR, "button"):
+                    if b.is_displayed() and "compl" in _norm(b.text or ""):
+                        btn = b
+                        break
+            except:
+                pass
+
+        if btn:
+            try:
+                driver.execute_script("arguments[0].click();", btn)
+                print("[TOPSURVEYS_POPUP] Bouton 'Complete' clique.")
+                time.sleep(1.0)
+            except Exception as e:
+                print(f"[TOPSURVEYS_POPUP] Erreur clic: {e}")
+                return False
+        else:
+            print("[TOPSURVEYS_POPUP] Bouton non trouve.")
             return False
-    else:
-        print("[TOPSURVEYS_POPUP] Bouton non trouve.")
-        return False
-    
+            
     # === ETAPE 2: Relancer la preselection vers un nouveau survey ===
     print("[TOPSURVEYS_POPUP] Relance preselection...")
     try:
