@@ -391,13 +391,11 @@ def check_and_cashout_if_needed(
             if _select_paypal_5_eur(driver):
                 success_select = True
                 print("[PAYOUT] Option PayPal 5 € sélectionnée.")
-                get_guard().record_earning(5.0)
                 break
         elif method == "revolut":
             if _select_revolut_5_eur(driver):
                 success_select = True
                 print("[PAYOUT] Option Revolut 5 € sélectionnée (fallback).")
-                get_guard().record_earning(5.0)
                 break
 
     if not success_select:
@@ -411,7 +409,7 @@ def check_and_cashout_if_needed(
 
         # 🔐 Source de vérité : mise à jour par compte
         def _apply_gain(st):
-            st["earnings_today_eur"] += 5.0
+            st["earnings_today_eur"] = st.get("earnings_today_eur", 0.0) + 5.0
             st["last_gain_ts"] = time.time()
 
         update_state(account_id, _apply_gain)
