@@ -2,10 +2,12 @@ from surveybot.Survey import dom_analyzer as da
 
 
 class _FakeElement:
-    def __init__(self, text="", attrs=None, by_selector=None):
+    def __init__(self, text="", attrs=None, by_selector=None, tag_name="div", xpath=""):
         self.text = text
         self._attrs = attrs or {}
         self._by_selector = by_selector or {}
+        self.tag_name = tag_name
+        self.xpath = xpath
 
     def get_attribute(self, name):
         return self._attrs.get(name, "")
@@ -123,3 +125,43 @@ def test_extracts_qualtrics_choice_structure_table_radios(monkeypatch):
     assert len(block["options"]) == 2
     assert "bourgogne" in block["options"][0].lower()
     assert "nouvelle" in block["options"][1].lower()
+
+
+def test_qualtrics_matrix_dropdown_rows_skip_generic_duplicates(monkeypatch):
+    _patch_non_generic_extractors(monkeypatch)
+
+    monkeypatch.setattr(da, "_best_xpath_for_element", lambda _driver, el: el.xpath or "//fake")
+    monkeypatch.setattr(da, "_detect_itype", lambda el: "dropdown" if (getattr(el, "tag_name", "") or "").lower() == "select" else "unknown")
+    monkeypatch.setattr(da, "_is_actionable_visible", lambda _el: True)
+    monkeypatch.setattr(da, "_looks_like_system_field", lambda _el: False)
+    monkeypatch.setattr(da, "_nearest_question_container", lambda _el: None)
+    monkeypatch.setattr(da, "_extract_question_from_container", lambda *_a, **_k: "")
+    monkeypatch.setattr(da, "_find_question_text_near_element", lambda *_a, **_k: "")
+
+    s1 = _FakeElement(attrs={"id": "QR~QID22~4", "name": "QR~QID22~4", "role": ""}, tag_name="select", xpath="//select[@id='QR~QID22~4']")
+    s2 = _FakeElement(attrs={"id": "QR~QID22~5", "name": "QR~QID22~5", "role": ""}, tag_name="select", xpath="//select[@id='QR~QID22~5']")
+    s3 = _FakeElement(attrs={"id": "QR~QID22~6", "name": "QR~QID22~6", "role": ""}, tag_name="select", xpath="//select[@id='QR~QID22~6']")
+
+    seeded_blocks = [
+        {"question": "Ligne 1", "itype": "dropdown", "options": ["A", "B"], "max_select": 1, "target_id": "single_a", "context": {"kind": "single", "id": "QR~QID22~4", "name": "QR~QID22~4"}},
+        {"question": "Ligne 2", "itype": "dropdown", "options": ["A", "B"], "max_select": 1, "target_id": "single_b", "context": {"kind": "single", "id": "QR~QID22~5", "name": "QR~QID22~5"}},
+        {"question": "Ligne 3", "itype": "dropdown", "options": ["A", "B"], "max_select": 1, "target_id": "single_c", "context": {"kind": "single", "id": "QR~QID22~6", "name": "QR~QID22~6"}},
+    ]
+    monkeypatch.setattr(
+        da,
+        "_extract_qualtrics_matrix_dropdown_row_blocks",
+        lambda *_a, **_k: (seeded_blocks, {"QR~QID22~4", "QR~QID22~5", "QR~QID22~6"}, {"QR~QID22~4", "QR~QID22~5", "QR~QID22~6"}),
+    )
+
+    driver = _FakeDriver(
+        by_selector={
+            "input[type='radio'], input[type='checkbox'], [role='radio']:not(svg), [role='checkbox']:not(svg)": [],
+            "input:not([type='radio']):not([type='checkbox']):not([type='hidden']), textarea, select, button, a[role='button']": [s1, s2, s3],
+            "button, a[role='button'], [role='button'], .sq-cardrating-button": [],
+        }
+    )
+
+    blocks = da._analyze_dom_current_context(driver)
+
+    assert len(blocks) == 3
+    assert [b["question"] for b in blocks] == ["Ligne 1", "Ligne 2", "Ligne 3"]
