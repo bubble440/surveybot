@@ -1713,14 +1713,6 @@ def try_click_navigation_cta_any_context(driver, depth=2) -> bool:
     """
     Même CTA nav, mais tente aussi à travers les iframes.
     """
-    # Certains flux d'inputs laissent le driver positionné dans une iframe
-    # spécifique. Pour scanner "any_context" de façon robuste, on repart
-    # systématiquement du document racine puis on explore récursivement.
-    try:
-        driver.switch_to.default_content()
-    except Exception:
-        pass
-
     def _try_here(drv):
         return try_click_navigation_cta(drv)
     return _in_each_frame_recursive(driver, _try_here, depth=depth)
