@@ -219,8 +219,8 @@ def start_runtime_guard(account_id: str, notify_fn, on_soft_restart):
     set_guard(guard)
     guard.start()
 
-    state["last_start_ts"] = int(time.time())
-    save_state(state)
+    _start_ts = int(time.time())
+    update_state(account_id, lambda st: st.__setitem__("last_start_ts", _start_ts))
 
     return guard
 
