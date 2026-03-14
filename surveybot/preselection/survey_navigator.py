@@ -8,6 +8,27 @@ from selenium.webdriver.support import expected_conditions as EC
 from preselection.auth_handler import snap
 from Survey.log_utils import log_debug, log_info
 
+
+def _local_pause(reason: str = "") -> None:
+    try:
+        from config import should_block_for_input
+
+        if not should_block_for_input():
+            return
+        if not _is_truthy_env(os.getenv("LOCAL_CTA_REQUIRE_ENTER", "0")):
+            return
+
+        msg = "[LOCAL][PAUSE] Appuie sur <Enter> pour continuer"
+        if reason:
+            msg += f" ({reason})"
+        print(msg, flush=True)
+        try:
+            input()
+        except KeyboardInterrupt:
+            raise
+    except Exception:
+        return
+
 def _is_debug_enabled() -> bool:
     return os.getenv("LOG_LEVEL", "INFO").strip().upper() == "DEBUG"
 
@@ -65,15 +86,21 @@ def _handle_mystery_box_popup(driver) -> None:
         _debug("Popup mystery box non détecté avant sélection de survey.")
         return
 
-    log_info(tag, "popup_detected=true")
+    reason = "popup_detected=true"
+    log_info(tag, reason)
+    _local_pause(f"{tag} {reason}")
 
     wait_short = WebDriverWait(driver, 5)
     try:
         open_btn = wait_short.until(EC.element_to_be_clickable((By.CSS_SELECTOR, box_selector)))
         open_ok = _click_button_with_optional_intercept(driver, open_btn)
-        log_info(tag, f"box3_click={'OK' if open_ok else 'INTERCEPTION_IMPOSSIBLE'}")
+        reason = f"box3_click={'OK' if open_ok else 'INTERCEPTION_IMPOSSIBLE'}"
+        log_info(tag, reason)
+        _local_pause(f"{tag} {reason}")
     except Exception as e:
-        log_info(tag, f"box3_click=FAILED reason={type(e).__name__}")
+        reason = f"box3_click=FAILED reason={type(e).__name__}"
+        log_info(tag, reason)
+        _local_pause(f"{tag} {reason}")
         return
 
     time.sleep(1)
@@ -81,9 +108,13 @@ def _handle_mystery_box_popup(driver) -> None:
     try:
         complete_btn = wait_short.until(EC.element_to_be_clickable((By.XPATH, complete_xpath)))
         complete_ok = _click_button_with_optional_intercept(driver, complete_btn)
-        log_info(tag, f"complete_click={'OK' if complete_ok else 'INTERCEPTION_IMPOSSIBLE'}")
+        reason = f"complete_click={'OK' if complete_ok else 'INTERCEPTION_IMPOSSIBLE'}"
+        log_info(tag, reason)
+        _local_pause(f"{tag} {reason}")
     except Exception as e:
-        log_info(tag, f"complete_click=FAILED reason={type(e).__name__}")
+        reason = f"complete_click=FAILED reason={type(e).__name__}"
+        log_info(tag, reason)
+        _local_pause(f"{tag} {reason}")
 
 
 def _parse_reward_eur(text: str):
