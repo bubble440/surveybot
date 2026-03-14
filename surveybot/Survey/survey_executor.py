@@ -1052,7 +1052,9 @@ def _handle_topsurveys_exclusion_popup(driver) -> bool:
     if not any(p in txt_norm for p in patterns):
         return False
     
-    print("[TOPSURVEYS_POPUP] Popup 'Bon travail !' detecte - fermeture...")
+    reason = "[TOPSURVEYS_POPUP] Popup 'Bon travail !' detecte - fermeture..."
+    print(reason)
+    _local_pause_before_cta(reason)
     
 # === ETAPE 1: Fermer le popup ===
     btn = None
@@ -1070,7 +1072,9 @@ def _handle_topsurveys_exclusion_popup(driver) -> bool:
         survey_navigator._handle_mystery_box_popup(driver)
         time.sleep(1.0)
     except Exception as e:
-        print(f"[TOPSURVEYS_POPUP] Erreur mystery box: {e}")
+        reason = f"[TOPSURVEYS_POPUP] Erreur mystery box: {e}"
+        print(reason)
+        _local_pause_before_cta(reason)
 
     # Vérifier si le popup est encore présent avant de tenter le clic btn
     try:
@@ -1091,24 +1095,36 @@ def _handle_topsurveys_exclusion_popup(driver) -> bool:
         if btn:
             try:
                 driver.execute_script("arguments[0].click();", btn)
-                print("[TOPSURVEYS_POPUP] Bouton 'Complete' clique.")
+                reason = "[TOPSURVEYS_POPUP] Bouton 'Complete' clique."
+                print(reason)
+                _local_pause_before_cta(reason)
                 time.sleep(1.0)
             except Exception as e:
-                print(f"[TOPSURVEYS_POPUP] Erreur clic: {e}")
+                reason = f"[TOPSURVEYS_POPUP] Erreur clic: {e}"
+                print(reason)
+                _local_pause_before_cta(reason)
                 return False
         else:
-            print("[TOPSURVEYS_POPUP] Bouton non trouve.")
+            reason = "[TOPSURVEYS_POPUP] Bouton non trouve."
+            print(reason)
+            _local_pause_before_cta(reason)
             return False
             
     # === ETAPE 2: Relancer la preselection vers un nouveau survey ===
-    print("[TOPSURVEYS_POPUP] Relance preselection...")
+    reason = "[TOPSURVEYS_POPUP] Relance preselection..."
+    print(reason)
+    _local_pause_before_cta(reason)
     try:
         import preselection.survey_navigator as survey_navigator
         survey_navigator.go_to_best_value_survey(driver)
-        print("[TOPSURVEYS_POPUP] Navigation vers nouveau survey OK")
+        reason = "[TOPSURVEYS_POPUP] Navigation vers nouveau survey OK"
+        print(reason)
+        _local_pause_before_cta(reason)
         time.sleep(1.0)
     except Exception as e:
-        print(f"[TOPSURVEYS_POPUP] Erreur navigation: {e}")
+        reason = f"[TOPSURVEYS_POPUP] Erreur navigation: {e}"
+        print(reason)
+        _local_pause_before_cta(reason)
         return False
     
     return True  # La boucle takeover continuera sur le nouveau survey
@@ -1166,10 +1182,14 @@ def execute_survey_page(driver, api_key, ctx=None):
         _cur = driver.current_url
         if "topsurveys.app" in (_cur or "").lower():
             if _handle_topsurveys_exclusion_popup(driver):
-                print("[TOPSURVEYS_POPUP] Popup traite -> continue boucle takeover")
+                reason = "[TOPSURVEYS_POPUP] Popup traite -> continue boucle takeover"
+                print(reason)
+                _local_pause_before_cta(reason)
                 return True
     except Exception as e:
-        print(f"[TOPSURVEYS_POPUP] Exception: {e}")
+        reason = f"[TOPSURVEYS_POPUP] Exception: {e}"
+        print(reason)
+        _local_pause_before_cta(reason)
 
     try:
         cur = driver.current_url
