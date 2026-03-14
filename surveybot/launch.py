@@ -3,6 +3,7 @@ IS_LOCAL = os.getenv("RUN_ENV", "local") == "local"
 from config import is_prod_like, should_run_guard_monitor, should_run_hot_reload
 
 from Management.guards.runtime_guard import RuntimeGuard, StopReason, set_guard, get_guard
+from State.daily_target import DAILY_TARGET_EUR, ensure_daily_timer_started
 import time, sys, logging, threading, traceback, signal, socket, Cash.payout as payout
 from preselection.playwright_launcher import launch_browser
 from preselection.auth_handler import login, snap
@@ -176,7 +177,7 @@ def soft_restart_payout(ctx, driver):
     payout.check_and_cashout_if_needed(
         driver,
         account_id=ctx["account_id"],
-        min_amount_eur=5.0,
+        min_amount_eur=DAILY_TARGET_EUR,
         cashout_order=("revolut", "paypal"),
         revolut_fullname=payout_name,
         revolut_tag=payout_tag,
@@ -211,7 +212,7 @@ def start_runtime_guard(account_id: str, notify_fn, on_soft_restart):
         restart_cooldown_sec=60,
         max_errors_in_row=5,
         max_runtime_sec=2 * 3600,
-        daily_target_eur=5.0,
+        daily_target_eur=DAILY_TARGET_EUR,
         notify_fn=notify_fn,
         on_soft_restart=on_soft_restart,
     )
@@ -220,7 +221,12 @@ def start_runtime_guard(account_id: str, notify_fn, on_soft_restart):
     guard.start()
 
     _start_ts = int(time.time())
-    update_state(account_id, lambda st: st.__setitem__("last_start_ts", _start_ts))
+
+    def _mark_start(st):
+        st["last_start_ts"] = _start_ts
+        ensure_daily_timer_started(st, now_ts=_start_ts)
+
+    update_state(account_id, _mark_start)
 
     return guard
 
@@ -348,7 +354,7 @@ def init_session_and_enter_surveys(driver, config, account_id: str, notify_fn):
         payout.check_and_cashout_if_needed(
             driver,
             account_id=account_id,
-            min_amount_eur=5.0,
+            min_amount_eur=DAILY_TARGET_EUR,
             cashout_order=("revolut", "paypal"),
             revolut_fullname=payout_name,
             revolut_tag=payout_revolut_tag,

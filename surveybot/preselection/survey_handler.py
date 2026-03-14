@@ -9,6 +9,7 @@ if not IS_LOCAL:
 from preselection.auth_handler import snap
 from selenium.webdriver.common.by import By
 from preselection.question_validation import detect_disqualification_reason
+from State.daily_target import DAILY_TARGET_EUR
 
 
 def _safe_page_text(driver) -> str:
@@ -315,7 +316,7 @@ def run_survey(driver, api_key, *, account_id: str, ctx=None):
                         payout.check_and_cashout_if_needed(
                             driver,
                             account_id=account_id,
-                            min_amount_eur=5.0,
+                            min_amount_eur=DAILY_TARGET_EUR,
                             cashout_order=("revolut", "paypal"),
                             revolut_fullname="Wilfred Jamein Saah",
                             revolut_tag="@jameinsaah",
