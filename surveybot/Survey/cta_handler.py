@@ -142,6 +142,28 @@ def _is_mriweb_structural_submit_cta(el) -> bool:
     return el_name == "_nnext" and "mrnext" in cls
 
 
+def _is_mriweb_vue_next_cta(el) -> bool:
+    """Détecte le CTA Vue mrIWeb visible (`span#NextBtn.NavBtn.btn_visible`)."""
+    try:
+        tag = (el.tag_name or "").strip().lower()
+    except Exception:
+        return False
+
+    if tag != "span":
+        return False
+
+    el_id = (el.get_attribute("id") or "").strip().lower()
+    if el_id != "nextbtn":
+        return False
+
+    cls = (el.get_attribute("class") or "").strip().lower()
+    return (
+        "navbtn" in cls
+        and "clickable" in cls
+        and "btn_visible" in cls
+    )
+
+
 def _is_inline_hidden_cta(el) -> bool:
     """Retourne True si le style inline masque explicitement le CTA (opacity:0 + visibility:hidden)."""
     try:
@@ -1510,6 +1532,7 @@ def try_click_navigation_cta(driver) -> bool:
         "//button"
         "|//input[@type='submit' or @type='button' or @type='image']"
         "|//span[contains(concat(' ', normalize-space(@class), ' '), ' fakeNextButton ')]"
+        "|//span[@id='NextBtn' and contains(concat(' ', normalize-space(@class), ' '), ' NavBtn ')]"
         "|//a[@role='button']"
         "|//a[contains(concat(' ', normalize-space(@class), ' '), ' btn ')]"
         "|//li[@id='next' or contains(concat(' ', normalize-space(@class), ' '), ' next-button ') or contains(@onclick, 'submitForm')]"
@@ -1595,10 +1618,12 @@ def try_click_navigation_cta(driver) -> bool:
             # sauf signature DOM IntelliSurvey explicite.
             has_intellisurvey_structural_submit = _is_intellisurvey_structural_submit_cta(el)
             has_mriweb_structural_submit = _is_mriweb_structural_submit_cta(el)
+            has_mriweb_vue_next = _is_mriweb_vue_next_cta(el)
             if (
                 not t
                 and not has_intellisurvey_structural_submit
                 and not has_mriweb_structural_submit
+                and not has_mriweb_vue_next
                 and not any(k in signature for k in ["next", "continue", "submit", "suivant", "valider", "confirm", "confirmer", "confirmez"])
             ):
                 continue
@@ -1623,6 +1648,9 @@ def try_click_navigation_cta(driver) -> bool:
 
             if has_mriweb_structural_submit:
                 score += 220
+
+            if has_mriweb_vue_next:
+                score += 180
 
             if any(k in el_name for k in ["submit", "next", "continue", "confirm"]):
                 score += 60

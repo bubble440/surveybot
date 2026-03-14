@@ -249,6 +249,33 @@ def test_try_click_navigation_cta_skips_internal_task_carousel_arrows(monkeypatc
     assert page_cta.clicked == 1
 
 
+
+
+def test_try_click_navigation_cta_detects_mriweb_vue_next_btn(monkeypatch):
+    monkeypatch.setattr(cta_handler, "ActionChains", _FakeActionChains)
+    monkeypatch.delenv("CTA_INTERCEPT_ONLY", raising=False)
+
+    hidden_submit = _FakeElement(
+        text="",
+        attrs={"name": "_NNext", "class": "mrNext", "type": "submit"},
+        displayed=False,
+    )
+    hidden_submit.tag_name = "input"
+
+    vue_next = _FakeElement(
+        text="",
+        attrs={"id": "NextBtn", "class": "clickable NavBtn vClick btn_visible"},
+    )
+    vue_next.tag_name = "span"
+
+    driver = _FakeDriver(xpath_elements=[hidden_submit, vue_next])
+
+    ok = cta_handler.try_click_navigation_cta(driver)
+
+    assert ok is True
+    assert hidden_submit.clicked == 0
+    assert vue_next.clicked == 1
+
 def test_try_click_navigation_cta_detects_oc_overlay_continue(monkeypatch):
     monkeypatch.setattr(cta_handler, "ActionChains", _FakeActionChains)
     monkeypatch.delenv("CTA_INTERCEPT_ONLY", raising=False)
