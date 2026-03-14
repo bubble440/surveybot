@@ -1,4 +1,5 @@
 from surveybot.Survey import dom_analyzer as da
+from Survey.dom_registry import get_target
 
 
 class _FakeElement:
@@ -178,7 +179,7 @@ def test_extracts_qualtrics_choice_structure_table_checkboxes(monkeypatch):
 
     container = _FakeElement(
         by_selector={
-            "table.ChoiceStructure input[type='checkbox'][name^='QR~']": [chk_1, chk_2, chk_3],
+            "ul.ChoiceStructure li.Selection input[type='checkbox'][name^='QR~'], table.ChoiceStructure input[type='checkbox'][name^='QR~']": [chk_1, chk_2, chk_3],
             "div.Inner fieldset legend div.QuestionText": [_FakeElement(text=q_text)],
             "label.MultipleAnswer[for='QR~QID13~21'] span": [_FakeElement(text="Bourges")],
             "label.MultipleAnswer[for='QR~QID13~27'] span": [_FakeElement(text="Marseille")],
@@ -205,3 +206,52 @@ def test_extracts_qualtrics_choice_structure_table_checkboxes(monkeypatch):
     assert block["max_select"] == 3
     assert (block.get("context") or {}).get("qualtrics_choice_structure_checkbox") is True
     assert (block.get("context") or {}).get("group_key") == "qualtrics_choice_structure:checkbox:QR~QID13"
+
+
+def test_extracts_qualtrics_choice_structure_ul_checkboxes(monkeypatch):
+    _patch_non_generic_extractors(monkeypatch)
+
+    q_text = "Parmi ces types d'alcools prêts à boire, lesquels consommez-vous ?"
+
+    chk_1 = _FakeElement(attrs={"name": "QR~QID1200~3", "id": "QR~QID1200~3"})
+    chk_2 = _FakeElement(attrs={"name": "QR~QID1200~5", "id": "QR~QID1200~5"})
+    chk_3 = _FakeElement(attrs={"name": "QR~QID1200~7", "id": "QR~QID1200~7"})
+
+    container = _FakeElement(
+        by_selector={
+            "ul.ChoiceStructure li.Selection input[type='checkbox'][name^='QR~'], table.ChoiceStructure input[type='checkbox'][name^='QR~']": [chk_1, chk_2, chk_3],
+            "div.Inner fieldset legend div.QuestionText": [_FakeElement(text=q_text)],
+            "label.MultipleAnswer[for='QR~QID1200~3'] span": [_FakeElement(text="Vin en canette/bouteille individuelle")],
+            "label.MultipleAnswer[for='QR~QID1200~5'] span": [_FakeElement(text="Hard Seltzers")],
+            "label.MultipleAnswer[for='QR~QID1200~7'] span": [_FakeElement(text="Aucune des réponses ci-dessus")],
+        }
+    )
+
+    driver = _FakeDriver(
+        by_selector={
+            "div.QuestionOuter": [container],
+            "input[type='radio'], input[type='checkbox'], [role='radio']:not(svg), [role='checkbox']:not(svg)": [],
+            "button, a[role='button'], [role='button'], .sq-cardrating-button": [],
+        }
+    )
+
+    blocks = da._analyze_dom_current_context(driver)
+
+    assert len(blocks) == 1
+    block = blocks[0]
+    assert block["itype"] == "checkbox"
+    assert "alcools" in block["question"].lower()
+    assert len(block["options"]) == 3
+    assert "vin en canette" in block["options"][0].lower()
+    assert "hard seltzers" in block["options"][1].lower()
+    assert "aucune des" in block["options"][2].lower()
+    assert (block.get("context") or {}).get("group_key") == "qualtrics_choice_structure:checkbox:QR~QID1200"
+
+    target = get_target(block["target_id"])
+    assert target is not None
+    option_xpath_map = target.get("option_xpath_map") or {}
+    assert len(option_xpath_map) == 3
+    xpaths = "\n".join(option_xpath_map.values())
+    assert "QR~QID1200~3" in xpaths
+    assert "QR~QID1200~5" in xpaths
+    assert "QR~QID1200~7" in xpaths
