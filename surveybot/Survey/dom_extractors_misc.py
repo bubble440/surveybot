@@ -13,7 +13,7 @@ Ces extracteurs utilisent des patterns DOM spécifiques à chaque plateforme.
 """
 
 from __future__ import annotations
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Set, Tuple
 import os, re, time, zlib
 from selenium.webdriver.common.by import By
 from Survey.log_utils import log_debug, log_info, is_debug
@@ -3938,6 +3938,167 @@ def _extract_qualtrics_choice_structure_radio_blocks(driver, frame_chain: list[i
         )
 
     return blocks
+
+
+def _extract_qualtrics_matrix_dropdown_row_blocks(
+    driver,
+    frame_chain: list[int] | None,
+) -> Tuple[list[dict], Set[str], Set[str]]:
+    """Extraction ciblée Qualtrics matrix dropdown: 1 bloc par `tr.ChoiceRow`.
+
+    Gate DOM strict (additif):
+    - `div.QuestionOuter` contenant `table.ChoiceStructure`
+    - lignes `tr.ChoiceRow` avec un `<select>` par ligne
+    - libellé ligne dans `th` via `label[for=<select_id>]` ou fallback `th`.
+
+    Retourne:
+    - blocks: blocs dropdown indépendants (un par ligne)
+    - handled_select_ids: ids de `<select>` déjà transformés
+    - handled_select_names: names de `<select>` déjà transformés
+    """
+    frame_chain = list(frame_chain or [])
+    blocks: list[dict] = []
+    handled_select_ids: Set[str] = set()
+    handled_select_names: Set[str] = set()
+
+    try:
+        containers = driver.find_elements(By.CSS_SELECTOR, "div.QuestionOuter")
+    except Exception:
+        return blocks, handled_select_ids, handled_select_names
+
+    for cidx, container in enumerate(containers):
+        try:
+            rows = container.find_elements(By.CSS_SELECTOR, "table.ChoiceStructure > tbody > tr.ChoiceRow")
+        except Exception:
+            rows = []
+
+        if not rows:
+            continue
+
+        try:
+            container_selects = container.find_elements(By.CSS_SELECTOR, "table.ChoiceStructure tr.ChoiceRow select")
+        except Exception:
+            container_selects = []
+
+        if len(container_selects) < 2:
+            continue
+
+        for ridx, row in enumerate(rows, start=1):
+            try:
+                row_selects = row.find_elements(By.CSS_SELECTOR, "select")
+            except Exception:
+                row_selects = []
+
+            if len(row_selects) != 1:
+                continue
+
+            sel = row_selects[0]
+            sel_id = (sel.get_attribute("id") or "").strip()
+            sel_name = (sel.get_attribute("name") or "").strip()
+            if not sel_id and not sel_name:
+                continue
+
+            row_question = ""
+            if sel_id:
+                try:
+                    q_nodes = row.find_elements(By.CSS_SELECTOR, f"th label[for='{sel_id}']")
+                except Exception:
+                    q_nodes = []
+                for qn in q_nodes:
+                    cand = _norm(qn.text or qn.get_attribute("innerText") or "")
+                    if cand:
+                        row_question = cand
+                        break
+
+            if not row_question:
+                try:
+                    th_nodes = row.find_elements(By.CSS_SELECTOR, "th")
+                except Exception:
+                    th_nodes = []
+                for th in th_nodes:
+                    cand = _norm(th.text or th.get_attribute("innerText") or "")
+                    if cand:
+                        row_question = cand
+                        break
+
+            if not row_question:
+                continue
+
+            options: list[str] = []
+            try:
+                option_nodes = sel.find_elements(By.TAG_NAME, "option")
+            except Exception:
+                option_nodes = []
+
+            for opt in option_nodes:
+                try:
+                    if opt.get_attribute("disabled"):
+                        continue
+                    txt = _norm(opt.text or opt.get_attribute("innerText") or "")
+                    if txt:
+                        options.append(txt)
+                except Exception:
+                    continue
+
+            options = list(dict.fromkeys(options))
+            if len(options) < 2:
+                continue
+
+            single_key = f"qualtrics_matrix_dropdown:{sel_id}:{sel_name}"
+            target_id = make_target_id("single", single_key, row_question)
+            xpath = _best_xpath_for_element(driver, sel)
+
+            alt_xpaths: list[str] = []
+            try:
+                if sel_name:
+                    alt_xpaths.append(f"//select[@name={_xpath_literal(sel_name)}]")
+                if sel_id:
+                    alt_xpaths.append(f"//*[@id='{sel_id}']")
+            except Exception:
+                pass
+            alt_xpaths = [x for x in dict.fromkeys(alt_xpaths) if x and x != xpath][:4]
+
+            register_target(
+                target_id,
+                {
+                    "kind": "single",
+                    "itype": "dropdown",
+                    "question": row_question,
+                    "xpath": xpath,
+                    "alt_xpaths": alt_xpaths,
+                    "tag": "select",
+                    "name": sel_name,
+                    "id": sel_id,
+                    "frame_chain": frame_chain,
+                },
+            )
+
+            blocks.append(
+                {
+                    "question": row_question,
+                    "itype": "dropdown",
+                    "options": options,
+                    "max_select": _compute_max_select("dropdown", options),
+                    "target_id": target_id,
+                    "context": {
+                        "kind": "single",
+                        "tag": "select",
+                        "name": sel_name,
+                        "id": sel_id,
+                        "role": sel.get_attribute("role"),
+                        "qualtrics_matrix_dropdown_row": True,
+                        "container_index": cidx,
+                        "row_index": ridx,
+                    },
+                }
+            )
+
+            if sel_id:
+                handled_select_ids.add(sel_id)
+            if sel_name:
+                handled_select_names.add(sel_name)
+
+    return blocks, handled_select_ids, handled_select_names
 
 
 def _extract_custom_testid_multi_select_checkbox_blocks(driver, frame_chain: list[int] | None) -> list[dict]:

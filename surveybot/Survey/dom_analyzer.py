@@ -94,6 +94,7 @@ try:
         _extract_kantar_rowpicker_radio_blocks,
         _extract_label_radio_list_blocks,
         _extract_qualtrics_choice_structure_radio_blocks,
+        _extract_qualtrics_matrix_dropdown_row_blocks,
         _extract_decipher_clickable_ranking_blocks,
     )
     
@@ -163,6 +164,7 @@ except ImportError:
         _extract_kantar_rowpicker_radio_blocks,
         _extract_label_radio_list_blocks,
         _extract_qualtrics_choice_structure_radio_blocks,
+        _extract_qualtrics_matrix_dropdown_row_blocks,
         _extract_decipher_clickable_ranking_blocks,
     )
 
@@ -1924,6 +1926,19 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         except Exception:
             continue
 
+    handled_select_ids: Set[str] = set()
+    handled_select_names: Set[str] = set()
+
+    # --- 1b) Qualtrics matrix dropdown rows (1 row = 1 dropdown block) ---
+    try:
+        qmx_blocks, qmx_select_ids, qmx_select_names = _extract_qualtrics_matrix_dropdown_row_blocks(driver, frame_chain)
+        if qmx_blocks:
+            question_blocks.extend(qmx_blocks)
+            handled_select_ids.update(qmx_select_ids)
+            handled_select_names.update(qmx_select_names)
+    except Exception:
+        pass
+
     # --- 2) Autres inputs (dropdown / text / textarea / button) ---
     try:
         other_inputs = driver.find_elements(
@@ -1951,6 +1966,12 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
 
             if itype in ("radio", "checkbox", "unknown"):
                 continue
+
+            if itype == "dropdown":
+                el_id = (el.get_attribute("id") or "").strip()
+                el_name = (el.get_attribute("name") or "").strip()
+                if (el_id and el_id in handled_select_ids) or (el_name and el_name in handled_select_names):
+                    continue
 
             # on ne veut pas transformer un "bouton next" en question
             if itype == "button":
