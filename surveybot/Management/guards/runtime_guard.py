@@ -27,7 +27,6 @@ def _is_prod_env() -> bool:
 class StopReason(Enum):
     IDLE = "idle"
     TOO_MANY_ERRORS = "too_many_errors"
-    NO_GAIN = "no_gain"
     RUNTIME_LIMIT = "runtime_limit"
     DAILY_TARGET_REACHED = "daily_target_reached"
     SESSION_EXPIRED = "session_expired"
@@ -141,13 +140,6 @@ class RuntimeGuard:
             print(f"â„¹ï¸ CTA 'Ouvrir l'application' non cliquable.")
             return False
         
-    def signal_no_gain(self):
-        """AppelÃ© par le watchdog si aucun gain prolongÃ©."""
-        self.pause(
-            PausePolicy.MEDIUM_COOLDOWN,
-            StopReason.NO_GAIN,
-        )
-
     def signal_strict_survey(self, reason: str):
         """Survey trop strict (captcha, drag&drop, etc.)."""
         self.request_survey_restart(reason)
@@ -322,20 +314,12 @@ class RuntimeGuard:
             )
             return
 
-        # 4ï¸âƒ£ Runtime max atteint
+        # 4️⃣ Runtime max atteint → pause 15 min inconditionnelle
         if runtime >= self.max_runtime_sec:
-            if earnings < self.daily_target_eur:
-                # 2h atteintes mais objectif NON atteint â†’ pause 15 min
-                self.pause(
-                    PausePolicy.MEDIUM_COOLDOWN,
-                    StopReason.RUNTIME_LIMIT
-                )
-            else:
-                # objectif atteint â†’ arrÃªt complet
-                self.pause(
-                    PausePolicy.DAILY_RESET,
-                    StopReason.DAILY_TARGET_REACHED,
-                )
+            self.pause(
+                PausePolicy.MEDIUM_LONG_COOLDOWN,
+                StopReason.RUNTIME_LIMIT,
+            )
             return
 
     def _notify(self, msg: str):

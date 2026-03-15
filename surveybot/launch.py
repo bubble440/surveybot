@@ -9,7 +9,6 @@ from preselection.playwright_launcher import launch_browser
 from preselection.auth_handler import login, snap
 from preselection.survey_navigator import go_to_best_value_survey
 from preselection.survey_handler import run_survey
-from Management.watchdogs.idle_monitor import start_idle_gain_watch
 from Management.notifier import send_telegram
 from State.account_state import update_state, load_state, save_state, try_acquire_account_lock
 from selenium.common.exceptions import TimeoutException
@@ -46,12 +45,16 @@ def safe_get(driver, url):
             print(f"[SAFE_GET] start get: {url}")
             driver.get(url)
             if is_session_expired(driver):
-                print("ðŸ›‘ Session expirÃ©e dÃ©tectÃ©e (24h). Pause longue.")
+                msg = "🔐 Session expirée — ré-authentification manuelle requise."
+                print(msg)
+                try:
+                    get_guard().notify_fn(msg)
+                except Exception:
+                    pass
                 get_guard().pause(
-                    PausePolicy.LONG_COOLDOWN,
+                    PausePolicy.UNTIL_MANUAL,
                     StopReason.SESSION_EXPIRED,
                 )
-
                 raise SystemExit("session_expired")
 
             print(f"[SAFE_GET] done get: {url}")
@@ -362,17 +365,6 @@ def init_session_and_enter_surveys(driver, config, account_id: str, notify_fn):
 
     except Exception as e:
         print(f"[PAYOUT][WARN] Encaissement automatique: {e}")
-
-    try:
-        start_idle_gain_watch(
-            driver,
-            threshold_sec=1200,   # 15 minutes
-            check_every=300,       # lecture toutes les 900 s
-            notify_fn= notify_fn,
-        )
-        print("ðŸ‘€ Watchdog gains: actif (15 min sans hausse â†’ alerte).")
-    except Exception as e:
-        print(f"[WATCHDOG][WARN] Impossible de dÃ©marrer le watchdog: {e}")
 
     time.sleep(15)
     snap(driver, "after_login")
