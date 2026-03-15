@@ -107,37 +107,6 @@ def _dom_signature(driver) -> int:
         except Exception:
             return 0
 
-def wait_for_navigation_or_dom_change(driver, before_url: str = "", before_sig: int = 0, timeout: float = 10.0, poll: float = 0.25) -> bool:
-    """
-    Attend soit:
-    - un changement d'URL
-    - OU un changement significatif du DOM (signature)
-    Retourne True si changement détecté, sinon False.
-    """
-    try:
-        start = time.time()
-        if not before_url:
-            before_url = driver.current_url
-        if not before_sig:
-            before_sig = _dom_signature(driver)
-
-        while time.time() - start < timeout:
-            time.sleep(poll)
-            try:
-                if driver.current_url != before_url:
-                    return True
-            except Exception:
-                pass
-
-            try:
-                if _dom_signature(driver) != before_sig:
-                    return True
-            except Exception:
-                pass
-
-        return False
-    except Exception:
-        return False
 
 def wait_for_navigation_or_dom_change(driver, *, before_url: str, before_sig: str | None = None, timeout: int = 10) -> bool:
     """
