@@ -298,22 +298,6 @@ def reformulate_prompt_for_gpt(question_text, options, itype="radio"):
 def ask_assistant(prompt_text, api_key, *, question=None, options=None):
     import Management.guards.runtime_guard
 
-    from Utils.openai_cache import (
-        make_cache_key,
-        get_cached_answer,
-        store_answer,
-    )
-
-    # 1️⃣ Cache lookup (si possible)
-    cache_key = None
-    if question and options:
-        cache_key = make_cache_key(question, options)
-        cached = get_cached_answer(cache_key)
-        if cached:
-            print("⚡ OpenAI cache HIT")
-            return cached
-
-    # 2️⃣ Appel OpenAI normal
     client = OpenAI(api_key=api_key)
     Management.guards.runtime_guard.get_guard().record_openai_call()
 
@@ -328,14 +312,6 @@ def ask_assistant(prompt_text, api_key, *, question=None, options=None):
 
     raw = (completion.choices[0].message.content or "").strip()
     cleaned = raw.split("\n")[0].strip(" .,-–—•*➡️✅🤖⭐")
-
-    # 3️⃣ Store cache
-    if cache_key and cleaned:
-        store_answer(
-            cache_key,
-            cleaned,
-            model="gpt-4o-mini-ft"
-        )
 
     return cleaned
 
