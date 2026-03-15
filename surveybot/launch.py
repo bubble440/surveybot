@@ -230,16 +230,11 @@ def soft_restart(ctx, driver, reason):
     from Management.guards.runtime_guard import get_guard, StopReason
     from Management.pause_policy import PausePolicy
     guard = get_guard()
-    earnings = 0.0
-    try:
-        earnings = guard.state.earnings_today_eur
-    except AttributeError:
-        try:
-            from State.account_state import load_state
-            st = load_state(ctx["account_id"])
-            earnings = float(st.get("earnings_today_eur") or 0.0)
-        except Exception:
-            pass
+    # FIX-C: le try/except AttributeError était du dead code en prod (RuntimeGuard a
+    # toujours state.earnings_today_eur). On utilise getattr pour gérer proprement le
+    # cas _NullGuard (pas de .state) sans branche DynamoDB redondante — Fix-B garantit
+    # que guard.state.earnings_today_eur est déjà hydraté depuis DynamoDB au démarrage.
+    earnings = float(getattr(getattr(guard, "state", None), "earnings_today_eur", 0.0))
     if earnings >= DAILY_TARGET_EUR:
         print(f"[DAILY_STOP] {earnings:.2f}€ >= {DAILY_TARGET_EUR}€ → arrêt journalier")
         guard.pause(PausePolicy.DAILY_RESET, StopReason.DAILY_TARGET_REACHED)
@@ -260,6 +255,21 @@ def start_runtime_guard(account_id: str, notify_fn, on_soft_restart):
         notify_fn=notify_fn,
         on_soft_restart=on_soft_restart,
     )
+
+    # FIX-B: réhydrater les gains du jour depuis DynamoDB avant de démarrer le guard.
+    # Sans ce patch, guard.state.earnings_today_eur démarrait systématiquement à 0.0,
+    # même si une session précédente (même jour) avait déjà atteint le daily target.
+    # Conséquence : la protection DAILY_TARGET_REACHED du _monitor_loop était aveugle
+    # aux gains des sessions antérieures → le bot pouvait tourner au-delà du plafond.
+    # Le fallback AttributeError dans soft_restart / survey_solver était également
+    # du dead code car guard.state.earnings_today_eur est toujours accessible (= 0.0).
+    try:
+        persisted_earnings = float(state.get("earnings_today_eur") or 0.0)
+        if persisted_earnings > 0.0:
+            guard.state.earnings_today_eur = persisted_earnings
+            print(f"[RUNTIME_GUARD] earnings_today_eur restauré depuis DynamoDB: {persisted_earnings:.2f}€")
+    except Exception as _e:
+        print(f"[RUNTIME_GUARD][WARN] Impossible de restaurer earnings_today_eur: {_e}")
 
     set_guard(guard)
     guard.start()
