@@ -682,10 +682,33 @@ def main():
                     driver.quit()
             except Exception:
                 pass
+            # Libérer le lock pour que le scheduler puisse reprendre après un crash
+            if not IS_LOCAL:
+                try:
+                    from State.account_state import update_state
+                    update_state(account_id, lambda st: (
+                        st.__setitem__("lock_owner", ""),
+                        st.__setitem__("lock_until_ts", 0),
+                        st.__setitem__("status", "idle"),
+                        st.__setitem__("last_stop_reason", f"crash_{type(e).__name__}"),
+                    ))
+                except Exception as _le:
+                    print(f"[MAIN][WARN] Impossible de libérer le lock après crash: {_le}")
             time.sleep(2)
             continue
 
     # Si on sort de la boucle, on stoppe proprement (ECS relancera via scheduler)
+    if not IS_LOCAL:
+        try:
+            from State.account_state import update_state
+            update_state(account_id, lambda st: (
+                st.__setitem__("lock_owner", ""),
+                st.__setitem__("lock_until_ts", 0),
+                st.__setitem__("status", "idle"),
+                st.__setitem__("last_stop_reason", "max_main_cycles_reached"),
+            ))
+        except Exception as _le:
+            print(f"[MAIN][WARN] Impossible de libérer le lock en fin de cycles: {_le}")
     raise SystemExit("max_main_cycles_reached")
         
 if __name__ == "__main__":
