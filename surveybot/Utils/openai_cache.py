@@ -1,10 +1,13 @@
 import time
 import hashlib
+import logging
 import os
 import boto3
 
 TABLE_NAME = os.getenv("OPENAI_CACHE_TABLE", "openai_cache")
 CACHE_TTL_SEC = 7 * 24 * 3600  # 7 jours
+
+log = logging.getLogger("openai_cache")
 
 _dynamo = None
 
@@ -37,7 +40,8 @@ def get_cached_answer(cache_key: str) -> str | None:
         )
 
         return item.get("answer")
-    except Exception:
+    except Exception as e:
+        log.warning(f"[CACHE] get_cached_answer échoué. key={cache_key} err={e}")
         return None
 
 
@@ -54,5 +58,5 @@ def store_answer(cache_key: str, answer: str, model: str):
                 "ttl": now + CACHE_TTL_SEC,
             }
         )
-    except Exception:
-        pass
+    except Exception as e:
+        log.warning(f"[CACHE] store_answer échoué. key={cache_key} err={e}")
