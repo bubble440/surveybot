@@ -26,6 +26,9 @@ class SurveyContext:
         self._api_key = openai_api_key
         self.summary_every_n_pages = max(1, int(summary_every_n_pages))
         self._lock = threading.RLock()
+        # FIX-B5: compteur de génération pour éviter qu'un thread plus ancien
+        # (réponse OpenAI tardive) n'écrase le résumé produit par un thread plus récent.
+        self._summary_gen: int = 0
 
     def record(self, question: str, options: list[str], answer: str) -> None:
         """Append one answered question block to history."""
@@ -119,7 +122,12 @@ class SurveyContext:
     def _generate_summary(self) -> None:
         """Generate and store a rolling survey summary from full Q&A history."""
         try:
+            # FIX-B5: on capture le numéro de génération AVANT l'appel réseau.
+            # Si un thread plus récent termine avant nous, son résumé (basé sur
+            # plus de Q&A) ne sera pas écrasé par notre résultat plus ancien.
             with self._lock:
+                self._summary_gen += 1
+                my_gen = self._summary_gen
                 history_snapshot = [dict(item) for item in self.history]
 
             if not history_snapshot:
@@ -165,11 +173,16 @@ class SurveyContext:
                 return
 
             with self._lock:
-                self.summary = new_summary
+                # FIX-B5: ne stocker le résumé que si aucun thread plus récent n'a
+                # déjà écrit un résultat (my_gen == _summary_gen signifie qu'on est
+                # le dernier thread lancé, donc on a le snapshot le plus complet).
+                if my_gen >= self._summary_gen:
+                    self.summary = new_summary
 
             logger.info(
-                "SurveyContext summary generated session_id=%s summary=%r",
+                "SurveyContext summary generated session_id=%s gen=%d summary=%r",
                 self.session_id,
+                my_gen,
                 new_summary[:80],
             )
         except Exception:
