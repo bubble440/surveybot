@@ -67,8 +67,6 @@ def _default_state(account_id: str) -> Dict[str, Any]:
         "lock_owner": "",
         "lock_until_ts": 0,
         "proxy_id": "",          # identifiant du proxy
-        "proxy_lock_owner": "",  # account_id du bot actif
-        "proxy_lock_until_ts": 0,
 
         "last_stop_reason": "",
         "last_heartbeat_ts": 0,
