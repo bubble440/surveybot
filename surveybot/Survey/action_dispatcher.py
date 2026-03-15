@@ -4759,28 +4759,6 @@ def execute_action(
         log_debug("[TARGET_DEBUG]", f"Aucune stratégie n'a abouti pour: {raw}")
         continue
 
-    # --- Fallback vidéo (Video.js / Brightcove) ----------------------
-    # V1: optionnel / best-effort. Si le module n'existe pas, on skip sans bruit.
-    debug_video = (os.getenv("ACTION_DEBUG_VIDEO", "0") or "").strip().lower() in ("1", "true", "yes", "on")
-    _video_utils = None
-    try:
-        from Survey import video_utils as _video_utils  # type: ignore
-    except Exception:
-        _video_utils = None
-
-    if _video_utils and getattr(_video_utils, "try_watch_and_capture", None):
-        try:
-            if _video_utils.try_watch_and_capture(driver, api_key=None, max_seconds=35):
-                try:
-                    if Survey.input_handler.click_cta_strong_any_context(driver, text="Suivant"):
-                        return True
-                except Exception:
-                    pass
-                return True
-        except Exception as _e:
-            if debug_video:
-                print(f"[VIDEO_DEBUG] video fallback error: {_short_exc(_e)}")
-
     return False
 
 def reset_attempt_context(driver):

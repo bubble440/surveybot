@@ -28,7 +28,12 @@
       "Bash(find C:projectsSurveyssurveybot -name *.py -type f ! -path */.venv/* -print0)",
       "Bash(xargs -0 grep -l \"pause\\\\|cooldown\\\\|stop\\\\|restart\")",
       "Bash(find /c/projects/Surveys/surveybot -name *.py -type f ! -path */.venv/*)",
-      "Bash(grep -r \"dynamodb\\\\|database\\\\|dynamo\\\\|ddb\\\\|retry\\\\|connection\" /c/projects/Surveys/surveybot --include=*.py ! -path */.venv/*)"
+      "Bash(grep -r \"dynamodb\\\\|database\\\\|dynamo\\\\|ddb\\\\|retry\\\\|connection\" /c/projects/Surveys/surveybot --include=*.py ! -path */.venv/*)",
+      "Bash(python3 -c \":*)",
+      "Bash(gh auth:*)",
+      "Bash(python3:*)",
+      "Bash(python fix_fstring.py)",
+      "Bash(rm fix_fstring.py)"
     ]
   }
 }
