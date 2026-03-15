@@ -33,7 +33,9 @@
       "Bash(gh auth:*)",
       "Bash(python3:*)",
       "Bash(python fix_fstring.py)",
-      "Bash(rm fix_fstring.py)"
+      "Bash(rm fix_fstring.py)",
+      "Bash(/tmp/dynamodb_writes_analysis.txt:*)",
+      "Read(//tmp/**)"
     ]
   }
 }
