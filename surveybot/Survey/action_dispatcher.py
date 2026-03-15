@@ -1420,7 +1420,7 @@ def _apply_by_target_id(
                     except Exception:
                         return False
 
-                def _dispatch_check_events(inp):
+                def _dispatch_check_events(inp, force_when_selected=False):
                     """Set checkbox/radio de faÃƒÂ§on idempotente.
 
                     But: éviter le Ã¢â‚¬Å“coché puis décochéÃ¢â‚¬Â quand plusieurs stratégies s'enchaÃƒÂ®nent
@@ -1433,9 +1433,11 @@ def _apply_by_target_id(
                         if not inp:
                             return
 
-                        # Idempotence: si déjÃƒÂ  sélectionné, ne rien faire
+                        # Idempotence: si déjà sélectionné, ne rien faire sauf forçage explicite
+                        # (ex: AngularJS ng-checked + label contenant un <a> où le modèle ng-model
+                        # n'est pas forcément synchronisé tant que input/change n'ont pas été dispatchés).
                         try:
-                            if inp.is_selected():
+                            if inp.is_selected() and not force_when_selected:
                                 return
                         except Exception:
                             pass
@@ -2060,8 +2062,8 @@ def _apply_by_target_id(
                             except Exception:
                                 inp_guard = None
 
-                        if inp_guard is not None and not _is_selected(inp_guard):
-                            _dispatch_check_events(inp_guard)
+                        if inp_guard is not None:
+                            _dispatch_check_events(inp_guard, force_when_selected=True)
 
                         if inp_guard is not None and _is_selected(inp_guard):
                             if is_debug():

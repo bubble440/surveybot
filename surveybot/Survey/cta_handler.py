@@ -540,17 +540,28 @@ def _dom_progress_marker(driver):
         const qNodes = document.querySelectorAll(
           'input, textarea, select, [role="radio"], [role="checkbox"], [data-testid*="question"], [class*="question"]'
         ).length;
-        return { url, txt, qNodes };
+        const activeNotif = document.querySelector('.siteNotification.error, .siteNotification.success, .siteNotification.warning');
+        let notifSig = '';
+        if (activeNotif) {
+          const klass = String(activeNotif.className || '').replace(/\s+/g, ' ').trim();
+          const msgEl = activeNotif.querySelector('.message') || activeNotif;
+          const msg = String((msgEl && (msgEl.innerText || msgEl.textContent)) || '')
+            .replace(/\s+/g, ' ')
+            .trim()
+            .slice(0, 140);
+          notifSig = `${klass}::${msg}`;
+        }
+        return { url, txt, qNodes, notifSig };
       } catch (e) {
-        return { url: '', txt: '', qNodes: -1 };
+        return { url: '', txt: '', qNodes: -1, notifSig: '' };
       }
     })();
     """
     try:
         marker = driver.execute_script(js)
-        return marker if isinstance(marker, dict) else {"url": "", "txt": "", "qNodes": -1}
+        return marker if isinstance(marker, dict) else {"url": "", "txt": "", "qNodes": -1, "notifSig": ""}
     except Exception:
-        return {"url": "", "txt": "", "qNodes": -1}
+        return {"url": "", "txt": "", "qNodes": -1, "notifSig": ""}
 
 
 def _did_progress(before_marker, after_marker) -> bool:
@@ -574,6 +585,7 @@ def _did_progress(before_marker, after_marker) -> bool:
         return True
     return (
         (before_marker.get("txt") or "") != (after_marker.get("txt") or "")
+        or (before_marker.get("notifSig") or "") != (after_marker.get("notifSig") or "")
         or int(before_marker.get("qNodes") or -1) != int(after_marker.get("qNodes") or -1)
     )
 
