@@ -5,7 +5,7 @@ Objectif : protÃ©ger OpenAI, AWS et Proxy (pay-as-you-use)
 """
 
 from __future__ import annotations
-import time, socket, os, threading, traceback
+import time, socket, os, signal, threading, traceback
 from dataclasses import dataclass, field
 from typing import Optional, Callable
 from enum import Enum
@@ -378,8 +378,14 @@ class RuntimeGuard:
                 _launch.stop_heartbeat_thread()
             except Exception:
                 pass
-            # En prod on laisse ECS / scheduler gérer
-            raise SystemExit(reason.value)
+            # FIX-B1: SystemExit levé depuis un thread secondaire ne tue que ce thread,
+            # laissant le bot tourner en zombie. On force la sortie du processus entier.
+            if threading.current_thread() is threading.main_thread():
+                raise SystemExit(reason.value)
+            else:
+                # os._exit() court-circuite proprement le processus.
+                # L'état DynamoDB a déjà été écrit dans le bloc try ci-dessus.
+                os._exit(0)
 
 # ----------------------------
 # Singleton global (robuste)

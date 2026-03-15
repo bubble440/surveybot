@@ -677,6 +677,24 @@ def main():
         except Exception as e:
             print(f"[MAIN][ERROR] cycle={cycle}/{max_cycles} {type(e).__name__}: {e}")
             traceback.print_exc()
+            # FIX-B2 (partie catch): libération lock en cas de crash Exception
+            if not IS_LOCAL:
+                try:
+                    from State.account_state import update_state
+                    update_state(account_id, lambda st: (
+                        st.__setitem__("lock_owner", ""),
+                        st.__setitem__("lock_until_ts", 0),
+                        st.__setitem__("status", "idle"),
+                        st.__setitem__("last_stop_reason", f"crash_{type(e).__name__}"),
+                    ))
+                except Exception as _le:
+                    print(f"[MAIN][WARN] Impossible de libérer le lock après crash: {_le}")
+            time.sleep(2)
+            continue
+
+        finally:
+            # FIX-B2: driver.quit() garanti sur toute sortie (Exception, KeyboardInterrupt, etc.)
+            # SystemExit propagera naturellement après ce bloc.
             try:
                 if driver and (not is_attach_mode()):
                     driver.quit()
