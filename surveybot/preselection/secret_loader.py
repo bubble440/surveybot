@@ -2,7 +2,9 @@
 # Chargement robuste des secrets (AWS Secrets Manager + ENV + fallback local)
 
 from __future__ import annotations
-import json, os
+import json, logging, os
+
+log = logging.getLogger("secret_loader")
 
 def _from_env_json() -> dict:
     """
@@ -28,6 +30,10 @@ def _from_secrets_manager() -> dict:
     region = os.getenv("TOPSURVEYS_AWS_REGION") or os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION") or "eu-west-3"
     try:
         import boto3  # requis dans l’image
+    except ImportError:
+        log.warning("[SECRETS] boto3 non disponible, impossible de charger les secrets depuis Secrets Manager")
+        return {}
+    try:
         client = boto3.client("secretsmanager", region_name=region)
         resp = client.get_secret_value(SecretId=name)
         if "SecretString" in resp and resp["SecretString"]:
@@ -37,9 +43,11 @@ def _from_secrets_manager() -> dict:
             try:
                 import base64
                 return json.loads(base64.b64decode(resp["SecretBinary"]).decode("utf-8"))
-            except Exception:
+            except Exception as e:
+                log.warning(f"[SECRETS] décodage SecretBinary échoué. secret={name} err={e}")
                 return {}
-    except Exception:
+    except Exception as e:
+        log.warning(f"[SECRETS] Secrets Manager inaccessible. secret={name} region={region} err={e}")
         return {}
     return {}
 

@@ -1,6 +1,11 @@
 from __future__ import annotations
 import os
 
+try:
+    from botocore.exceptions import ClientError as _BotoClientError
+except ImportError:
+    _BotoClientError = Exception  # type: ignore
+
 # State/account_state.py
 """
 Stockage d'état "prod-first" pour 100+ bots.
@@ -287,12 +292,19 @@ def update_state(account_id: str, fn: Callable[[Dict[str, Any]], None], max_retr
                         }),
                     )
                     return st
+                except _BotoClientError as e:
+                    code = e.response.get("Error", {}).get("Code", "")
+                    if code == "ConditionalCheckFailedException":
+                        if attempt < max_retries:
+                            time.sleep(0.1 * attempt)  # backoff retryable
+                            continue
+                        log.error(f"[STATE] update_state: conflit de version après {max_retries} tentatives. account={account_id}")
+                        raise
+                    # Erreur DynamoDB non-retryable (throttle, réseau, etc.)
+                    log.error(f"[STATE] update_state: erreur DynamoDB non-retryable. code={code} account={account_id} err={e}")
+                    raise
                 except Exception as e:
-                    # typiquement ConditionalCheckFailedException
-                    if attempt < max_retries:
-                        time.sleep(0.05 * attempt)  # petit backoff
-                        continue
-                    log.error(f"[STATE] update_state failed after retries. err={e}")
+                    log.error(f"[STATE] update_state: erreur inattendue. account={account_id} err={e}")
                     raise
 
     # FALLBACK FILE (local/debug seulement)
@@ -350,8 +362,14 @@ def touch_heartbeat(account_id: str, owner: str, ttl_sec: int = 240) -> bool:
             }),
         )
         return True
-    except Exception:
-        # Condition failed (lock plus détenu) ou autre erreur → heartbeat best-effort
+    except _BotoClientError as e:
+        code = e.response.get("Error", {}).get("Code", "")
+        if code != "ConditionalCheckFailedException":
+            log.warning(f"[STATE] touch_heartbeat: erreur DynamoDB. account={account_id} code={code} err={e}")
+        # ConditionalCheckFailedException = lock plus détenu, comportement normal
+        return False
+    except Exception as e:
+        log.warning(f"[STATE] touch_heartbeat: erreur inattendue. account={account_id} err={e}")
         return False
 
 # -----------------------------
@@ -407,6 +425,12 @@ def try_acquire_account_lock(
         )
         return True
 
+    except _BotoClientError as e:
+        code = e.response.get("Error", {}).get("Code", "")
+        if code != "ConditionalCheckFailedException":
+            log.warning(f"[STATE] try_acquire_account_lock: erreur DynamoDB. account={account_id} code={code} err={e}")
+        # ConditionalCheckFailedException = lock déjà pris, comportement normal
+        return False
     except Exception as e:
-        # ConditionalCheckFailedException = lock déjà pris
+        log.warning(f"[STATE] try_acquire_account_lock: erreur inattendue. account={account_id} err={e}")
         return False

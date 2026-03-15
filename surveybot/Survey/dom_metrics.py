@@ -8,8 +8,11 @@
 # ------------------------------------------------------------
 
 from collections import defaultdict
+import logging
 import os, time
 from datetime import date
+
+log = logging.getLogger("dom_metrics")
 
 RUN_ENV = os.getenv("RUN_ENV", "local")
 IS_LOCAL = RUN_ENV == "local"
@@ -111,7 +114,7 @@ def _export_to_dynamodb(itype: str, openai: bool):
 
     except Exception as e:
         # ⚠️ jamais bloquant
-        print(f"[DOM_METRICS][WARN] export DynamoDB échoué: {e}")
+        log.warning(f"[DOM_METRICS] export DynamoDB échoué. account={account_id} err={e}")
 
 def export_dom_rescans(rescans: int):
     """
@@ -155,4 +158,4 @@ def export_dom_rescans(rescans: int):
 
     except Exception as e:
         # ⚠️ jamais bloquant
-        print(f"[DOM_METRICS][WARN] export rescans DynamoDB échoué: {e}")
+        log.warning(f"[DOM_METRICS] export rescans DynamoDB échoué. account={account_id} err={e}")
