@@ -296,7 +296,8 @@ def update_state(account_id: str, fn: Callable[[Dict[str, Any]], None], max_retr
                     code = e.response.get("Error", {}).get("Code", "")
                     if code == "ConditionalCheckFailedException":
                         if attempt < max_retries:
-                            time.sleep(0.1 * attempt)  # backoff retryable
+                            # M2: backoff exponentiel pour réduire la contention sous charge
+                            time.sleep(0.1 * (2 ** (attempt - 1)))
                             continue
                         log.error(f"[STATE] update_state: conflit de version après {max_retries} tentatives. account={account_id}")
                         raise
