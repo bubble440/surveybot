@@ -200,6 +200,9 @@ def run_survey(driver, api_key, *, account_id: str, ctx=None):
             print(f"[RESTART][FATAL] soft_restart fallback échoué: {e}")
 
     snap(driver, "before_survey_loop")
+    _STUCK_THRESHOLD = 5
+    _last_scan_key = None
+    _same_scan_count = 0
     try:
         while True:
             # =================================================================
@@ -209,11 +212,31 @@ def run_survey(driver, api_key, *, account_id: str, ctx=None):
                 from captcha.normal_captcha import handle_captcha
                 if handle_captcha(driver):
                     print("[CAPTCHA] Captcha préselection traité → relance boucle")
+                    _last_scan_key = None
+                    _same_scan_count = 0
                     continue
             except Exception as _cap_exc:
                 print(f"[CAPTCHA][WARN] {_cap_exc}")
 
             question, answer = preselection.question_analyzer.get_response_for_question(driver, api_key)
+
+            # =================================================================
+            # STUCK DETECTION: même page scannée N fois → soft-restart
+            # =================================================================
+            try:
+                _cur_url = driver.current_url
+            except Exception:
+                _cur_url = ""
+            _scan_key = (_cur_url, str(question)[:150] if question else "")
+            if _scan_key == _last_scan_key:
+                _same_scan_count += 1
+            else:
+                _last_scan_key = _scan_key
+                _same_scan_count = 1
+            if _same_scan_count >= _STUCK_THRESHOLD:
+                print(f"[STUCK] Même page scannée {_STUCK_THRESHOLD} fois → soft-restart")
+                _restart("same_page_stuck")
+                return
 
             # ✅ 1) Actions de contrôle renvoyées par l'analyzer.
             # Important: ces actions ne doivent JAMAIS arriver dans execute_response().
