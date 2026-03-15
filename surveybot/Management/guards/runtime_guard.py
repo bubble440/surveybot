@@ -210,13 +210,27 @@ class RuntimeGuard:
     def heartbeat(self):
         with self._lock:
             self.state.last_activity_ts = time.time()
-            # Avec heartbeat ~30s, un TTL plus large Ã©vite les expirations en cas de freeze CPU/selenium
-            ttl = int(os.getenv("ACCOUNT_LOCK_TTL_SEC", "240") or "240")
-            # Best-effort: ne doit jamais casser le bot
-            try:
-                touch_heartbeat(self.account_id, owner=self.task_id, ttl_sec=ttl)
-            except Exception:
-                pass
+        # Avec heartbeat ~30s, un TTL plus large évite les expirations en cas de freeze CPU/selenium
+        ttl = int(os.getenv("ACCOUNT_LOCK_TTL_SEC", "240") or "240")
+        try:
+            ok = touch_heartbeat(self.account_id, owner=self.task_id, ttl_sec=ttl)
+        except Exception as e:
+            ok = False
+            import logging as _log
+            _log.getLogger("runtime_guard").warning(
+                f"[HEARTBEAT] Exception inattendue: {e} — lock potentiellement non rafraîchi"
+            )
+        # C2: suivi des échecs consécutifs pour alerter avant expiration du lock
+        if not ok:
+            self._hb_fail_count = getattr(self, "_hb_fail_count", 0) + 1
+            if self._hb_fail_count >= 3:
+                import logging as _log
+                _log.getLogger("runtime_guard").error(
+                    f"[HEARTBEAT] {self._hb_fail_count} échecs consécutifs pour {self.account_id}"
+                    f" → lock potentiellement expiré, risque de double exécution"
+                )
+        else:
+            self._hb_fail_count = 0
 
     def record_success(self):
         with self._lock:
@@ -343,10 +357,21 @@ class RuntimeGuard:
             st["last_stop_reason"] = reason.value
             st["pause_policy"] = policy.name
             st["cooldown_until_ts"] = int(time.time()) + pause_sec
+            # C1: libère le lock DynamoDB pour que le scheduler puisse reprendre immédiatement
+            st["lock_owner"] = ""
+            st["lock_until_ts"] = 0
+            st["status"] = "idle"
 
         update_state(self.account_id, _apply_pause)
 
-        # En prod on laisse ECS / scheduler gÃ©rer
+        # H5: signaler l'arrêt au thread heartbeat avant de quitter
+        try:
+            import launch as _launch
+            _launch.stop_heartbeat_thread()
+        except Exception:
+            pass
+
+        # En prod on laisse ECS / scheduler gérer
         raise SystemExit(reason.value)
 
 # ----------------------------
