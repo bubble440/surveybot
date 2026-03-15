@@ -221,6 +221,25 @@ def soft_restart(ctx, driver, reason):
     except Exception as e:
         print("[SOFT_RESTART][PAYOUT][WARN]", e)
 
+    # DAILY STOP : si l'objectif journalier (1€) est atteint, on s'arrête
+    from Management.guards.runtime_guard import get_guard, StopReason
+    from Management.pause_policy import PausePolicy
+    guard = get_guard()
+    earnings = 0.0
+    try:
+        earnings = guard.state.earnings_today_eur
+    except AttributeError:
+        try:
+            from State.account_state import load_state
+            st = load_state(ctx["account_id"])
+            earnings = float(st.get("earnings_today_eur") or 0.0)
+        except Exception:
+            pass
+    if earnings >= DAILY_TARGET_EUR:
+        print(f"[DAILY_STOP] {earnings:.2f}€ >= {DAILY_TARGET_EUR}€ → arrêt journalier")
+        guard.pause(PausePolicy.DAILY_RESET, StopReason.DAILY_TARGET_REACHED)
+        return  # jamais atteint (pause lève SystemExit)
+
     soft_restart_resume(ctx, driver)
 
 def start_runtime_guard(account_id: str, notify_fn, on_soft_restart):

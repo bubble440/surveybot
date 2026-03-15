@@ -352,6 +352,54 @@ def _handle_topsurveys_partial_popup(driver) -> bool:
     return False
 
 
+def _payout_and_check_daily_stop(driver, account_id: str) -> bool:
+    """
+    À appeler à chaque retour sur TopSurveys. Vérifie dans l'ordre :
+      1) Solde >= 5€  → retrait automatique (best-effort)
+      2) Objectif journalier (1€) atteint → DAILY STOP (lève SystemExit via guard.pause)
+    Retourne False si tout va bien (le bot peut continuer).
+    Retourne True / lève SystemExit si DAILY STOP déclenché.
+    """
+    import Cash.payout as payout
+    from State.daily_target import DAILY_TARGET_EUR
+    from Management.guards.runtime_guard import get_guard, StopReason
+    from Management.pause_policy import PausePolicy
+
+    # 1) Retrait si solde >= 5€  (min_amount_eur=DAILY_TARGET_EUR : le modal ne propose
+    #    que des options >= 5€, donc l'encaissement ne réussira que si le solde le permet)
+    try:
+        payout.check_and_cashout_if_needed(
+            driver,
+            account_id=account_id,
+            min_amount_eur=DAILY_TARGET_EUR,
+            cashout_order=("revolut", "paypal"),
+            revolut_fullname="",
+            revolut_tag="",
+        )
+    except Exception as e:
+        print(f"[PAYOUT][WARN] retour TopSurveys: {e}")
+
+    # 2) DAILY STOP si objectif journalier déjà atteint
+    guard = get_guard()
+    earnings = 0.0
+    try:
+        earnings = guard.state.earnings_today_eur
+    except AttributeError:
+        try:
+            from State.account_state import load_state
+            st = load_state(account_id)
+            earnings = float(st.get("earnings_today_eur") or 0.0)
+        except Exception:
+            pass
+
+    if earnings >= DAILY_TARGET_EUR:
+        print(f"[DAILY_STOP] {earnings:.2f}€ >= {DAILY_TARGET_EUR}€ → arrêt journalier")
+        guard.pause(PausePolicy.DAILY_RESET, StopReason.DAILY_TARGET_REACHED)
+        return True  # jamais atteint (pause lève SystemExit)
+
+    return False
+
+
 def _if_on_topsurveys_handle(driver, api_key, account_id, survey_context=None) -> bool:
     """
     Si on est sur app.topsurveys.app :
@@ -363,17 +411,18 @@ def _if_on_topsurveys_handle(driver, api_key, account_id, survey_context=None) -
     if "topsurveys.app" not in url:
         return False
 
-    # Cas A : popup partiel -> CompleÃƒÅ’Ã¢â€šÂ¬te + relance
+    # Cas A : popup partiel -> Complète + retrait/daily-stop + relance
     if _handle_topsurveys_partial_popup(driver):
         try:
+            _payout_and_check_daily_stop(driver, account_id)  # retrait + DAILY STOP
             import preselection.survey_navigator
-            import preselection.survey_handler 
+            import preselection.survey_handler
             time.sleep(1.0)
             preselection.survey_navigator.go_to_best_value_survey(driver)
             preselection.survey_handler.run_survey(driver, api_key, account_id=account_id, ctx=survey_context)
             return True
         except Exception as e:
-            print("ÃƒÂ°Ã…Â¸Ã¢â‚¬â„¢Ã‚Â¥ Erreur relance aprÃƒÆ’Ã‚Â¨s 'ComplÃƒÆ’Ã‚Â¨te' :", e)
+            print("ÃƒÂ°Ã…Â¸Ã¢â‚¬â„¢Ã‚Â¥ Erreur relance aprÃƒÆ’Ã‚Â¨s ‘ComplÃƒÆ’Ã‚Â¨te’ :", e)
             return False
 
     # Cas B : check disqualification puis relance si besoin
@@ -392,6 +441,7 @@ def _if_on_topsurveys_handle(driver, api_key, account_id, survey_context=None) -
                 print("ÃƒÂ¢Ã…Â¡Ã‚Â ÃƒÂ¯Ã‚Â¸Ã‚Â Popup disqualification dÃƒÆ’Ã‚Â©tectÃƒÆ’Ã‚Â© mais fermeture 'Ok' a ÃƒÆ’Ã‚Â©chouÃƒÆ’Ã‚Â©:", e)
 
             _close_other_tabs_in_current_session(driver)
+            _payout_and_check_daily_stop(driver, account_id)  # retrait + DAILY STOP
             import preselection.survey_navigator
             import preselection.survey_handler
             time.sleep(0.7)
@@ -466,6 +516,7 @@ def _if_on_topsurveys_handle(driver, api_key, account_id, survey_context=None) -
                     except:
                         pass
                     _close_other_tabs_in_current_session(driver)
+                    _payout_and_check_daily_stop(driver, account_id)  # retrait + DAILY STOP
                     import preselection.survey_navigator
                     time.sleep(0.7)
                     preselection.survey_navigator.go_to_best_value_survey(driver)
