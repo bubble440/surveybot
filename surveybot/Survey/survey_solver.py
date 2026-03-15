@@ -9,11 +9,6 @@ from selenium.webdriver.common.by import By
 import time, os, sys
 from preselection.question_validation import detect_disqualification_reason
 
-# ÃƒÂ¢Ã…Â¡Ã¢â€žÂ¢ÃƒÂ¯Ã‚Â¸Ã‚Â ParamÃƒÆ’Ã‚Â¨tres de boucle pour ÃƒÆ’Ã‚Â©viter les boucles infinies
-# NOTE: ÃƒÆ’Ã‚Â  l'ÃƒÆ’Ã‚Â©chelle 100+ bots, il faut des caps qui ne se reset jamais.
-MAX_TOTAL_STEPS = 200  # sÃƒÆ’Ã‚Â©curitÃƒÆ’Ã‚Â© dure : itÃƒÆ’Ã‚Â©rations TOTALES (ne se reset jamais)
-MAX_STEPS_PER_URL = 80  # sÃƒÆ’Ã‚Â©curitÃƒÆ’Ã‚Â© : ÃƒÆ’Ã‚Â©vite de tourner en rond sur la mÃƒÆ’Ã‚Âªme URL
-MAX_URL_CHANGES = 60  # sÃƒÆ’Ã‚Â©curitÃƒÆ’Ã‚Â© : ÃƒÆ’Ã‚Â©vite les ping-pongs de redirection
 STABILIZE_SLEEP = 2.0  # dÃƒÆ’Ã‚Â©lai court entre deux actions pour laisser le DOM respirer
 
 
@@ -533,13 +528,12 @@ def solve_full_survey(driver, api_key, *, account_id: str, survey_context=None):
     import Management.guards.runtime_guard
 
     """
-    Boucle principale de rÃƒÆ’Ã‚Â©solution du survey.
-    1) Bascule vers lÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢onglet externe + stabilisation dÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢URL
-    2) RÃƒÆ’Ã‚Â©pÃƒÆ’Ã‚Â¨te : execute_survey_page() ÃƒÂ¢Ã…Â¾Ã…â€œ petite pause ÃƒÂ¢Ã…Â¾Ã…â€œ test si on continue
+    Boucle principale de résolution du survey.
+    1) Bascule vers l'onglet externe + stabilisation d'URL
+    2) Répète : execute_survey_page() — petite pause — test si on continue
     On sort si :
-      - plus rien dÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢actionnable dÃƒÆ’Ã‚Â©tectÃƒÆ’Ã‚Â©
-      - ÃƒÆ’Ã‚Â©cran de fin dÃƒÆ’Ã‚Â©tectÃƒÆ’Ã‚Â©
-      - seuil MAX_TOTAL_STEPS atteint (sÃƒÆ’Ã‚Â©curitÃƒÆ’Ã‚Â©)
+      - plus rien d'actionnable détecté (survey terminé) → soft-restart
+      - stuck : réponse acceptée mais page ne bouge pas (Option B) → soft-restart
     """
     print("ÃƒÂ°Ã…Â¸Ã‚Â§Ã‚Âª [solve_full_survey] DÃƒÆ’Ã‚Â©but de traitement du survey...")
     # One SurveyContext per survey run — tracks Q/R history for coherent OpenAI responses
@@ -562,27 +556,14 @@ def solve_full_survey(driver, api_key, *, account_id: str, survey_context=None):
     final_url = redirect_watcher.wait_for_final_redirection(driver)
     print(f"ÃƒÂ°Ã…Â¸Ã…â€™Ã‚Â URL finale stabilisÃƒÆ’Ã‚Â©e : {final_url}")
 
-    # 2) Boucle dÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢exÃƒÆ’Ã‚Â©cution des actions
-    steps_total = 0
-    steps_on_url = 0
-    url_changes = 0
+    # 2) Boucle d'exécution des actions
+    _no_progress_count = 0        # Option B : succès sans avance de page
+    _NO_PROGRESS_THRESHOLD = 3
     last_url = driver.current_url
+    guard = Management.guards.runtime_guard.get_guard()
 
-    while steps_total < MAX_TOTAL_STEPS:
-        steps_total += 1
-        steps_on_url += 1
-        print(
-            f"ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ‚Â ÃƒÆ’Ã¢â‚¬Â°tape {steps_total}/{MAX_TOTAL_STEPS} "
-            f"(page {steps_on_url}/{MAX_STEPS_PER_URL}) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â exÃƒÆ’Ã‚Â©cution de la page courante"
-        )
-
-        # sÃƒÆ’Ã‚Â©curitÃƒÆ’Ã‚Â© : si on stagne sur la mÃƒÆ’Ã‚Âªme URL, on sort plutÃƒÆ’Ã‚Â´t que de brÃƒÆ’Ã‚Â»ler du budget
-        if steps_on_url > MAX_STEPS_PER_URL:
-            print(
-                f"ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂºÃ¢â‚¬Ëœ Trop d'itÃƒÆ’Ã‚Â©rations sur la mÃƒÆ’Ã‚Âªme URL ({MAX_STEPS_PER_URL}). "
-                f"Stop pour ÃƒÆ’Ã‚Â©viter une boucle infinie. URL={last_url}"
-            )
-            break
+    while True:
+        print("[solve_full_survey] Exécution de la page courante")
 
         # RÃƒÆ’Ã‚Â©initialise le drapeau de succÃƒÆ’Ã‚Â¨s cÃƒÆ’Ã‚Â´tÃƒÆ’Ã‚Â© handlers
         try:
@@ -717,11 +698,17 @@ def solve_full_survey(driver, api_key, *, account_id: str, survey_context=None):
         # a) Laisser GPT dÃƒÆ’Ã‚Â©cider de lÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢action ÃƒÆ’Ã‚Â  partir de la capture dÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã‚Â©cran
         success = Survey.survey_executor.execute_survey_page(driver, api_key, ctx=_survey_ctx)
 
+        # Connexion RuntimeGuard
+        if success:
+            guard.record_success()
+        else:
+            guard.record_error()
+
         # LOCAL DEBUG: affiche le contexte accumulé après chaque page
         if (os.getenv("SURVEY_CTX_DEBUG") or "").strip() == "1":
             dump = _survey_ctx.dump()
             print(
-                f"\n[SURVEY_CTX] step={steps_total} "
+                f"\n[SURVEY_CTX] "
                 f"entries={len(dump.get('history', []))} "
                 f"summary={dump.get('summary', '')[:120] or '(none yet)'}"
             )
@@ -773,33 +760,36 @@ def solve_full_survey(driver, api_key, *, account_id: str, survey_context=None):
 
         # Si lÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢URL a changÃƒÆ’Ã‚Â© ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ on inspecte le nouvel emplacement
         if current_url != last_url:
-            url_changes += 1
-            steps_on_url = 0  # ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ reset PER-URL seulement (le cap total ne se reset jamais)
-            print(
-                f"ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ¢â€šÂ¬ Changement dÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢URL dÃƒÆ’Ã‚Â©tectÃƒÆ’Ã‚Â© ({url_changes}/{MAX_URL_CHANGES})\n"
-                f"   {last_url} ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ {current_url}"
-            )
-
-            if url_changes > MAX_URL_CHANGES:
-                print(
-                    f"ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂºÃ¢â‚¬Ëœ Trop de changements d'URL ({MAX_URL_CHANGES}). "
-                    f"Stop pour ÃƒÆ’Ã‚Â©viter un ping-pong de redirection."
-                )
-                break
-
+            _no_progress_count = 0  # URL a changé, réinitialisation du détecteur stuck
+            print(f"[solve_full_survey] Changement d'URL {last_url} \u2192 {current_url}")
             last_url = current_url
 
-            # [NEW] Retour TopSurveys ? Traite popup 'ComplÃƒÆ’Ã‚Â¨te' ou disqualification, puis relance.
+            # Retour TopSurveys ? Traite popup 'Complète' ou disqualification, puis relance.
             try:
                 if _if_on_topsurveys_handle(driver, api_key, account_id, survey_context=_survey_ctx):
-                    print("ÃƒÂ¢Ã¢â‚¬Â Ã‚Â©ÃƒÂ¯Ã‚Â¸Ã‚Â Retour orchestrÃƒÆ’Ã‚Â© vers la prÃƒÆ’Ã‚Â©-sÃƒÆ’Ã‚Â©lection depuis TopSurveys. ArrÃƒÆ’Ã‚Âªt de solve_full_survey().")
-                    return  # on laisse run_survey() reprendre la main
+                    print("[solve_full_survey] Retour TopSurveys → arrêt.")
+                    return
             except Exception as e:
-                print("ÃƒÂ°Ã…Â¸Ã¢â‚¬â„¢Ã‚Â¥ Hook TopSurveys a ÃƒÆ’Ã‚Â©chouÃƒÆ’Ã‚Â© :", e)
+                print(f"[solve_full_survey] Hook TopSurveys échoué : {e}")
 
-            # sinon on repart sur la prochaine itÃƒÆ’Ã‚Â©ration (nouvelle page)
             continue
 
+
+
+        # -------------------------------------------------------------------
+        # Option B — Stuck detection : succès accepté mais page ne bouge pas
+        # (Ne s'active PAS sur les pages multi-inputs : ceux-ci passent par
+        # "just_succeeded and has_more_to_do: continue" plus haut)
+        # -------------------------------------------------------------------
+        if success and current_url == last_url:
+            _no_progress_count += 1
+            if _no_progress_count >= _NO_PROGRESS_THRESHOLD:
+                print(f"[STUCK] Réponse acceptée {_NO_PROGRESS_THRESHOLD} fois sans avance → soft-restart")
+                guard.record_success()
+                guard.request_survey_restart("solve_no_progress")
+                return
+        else:
+            _no_progress_count = 0
 
         # d) Conditions dÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢arrÃƒÆ’Ã‚Âªt
         # if _looks_like_end_screen(driver):
@@ -826,8 +816,10 @@ def solve_full_survey(driver, api_key, *, account_id: str, survey_context=None):
                 time.sleep(1.0)
                 continue
 
-            print("ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¹ÃƒÂ¯Ã‚Â¸Ã‚Â Aucun ÃƒÆ’Ã‚Â©lÃƒÆ’Ã‚Â©ment actionnable dÃƒÆ’Ã‚Â©tectÃƒÆ’Ã‚Â©. ArrÃƒÆ’Ã‚Âªt de la boucle.")
-            break
+            print("[solve_full_survey] Aucun élément actionnable → survey terminé, soft-restart.")
+            guard.record_success()
+            guard.request_survey_restart("survey_end")
+            return
 
         # e) Si lÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢URL nÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã‚Â©volue pas ET lÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢action a ÃƒÆ’Ã‚Â©chouÃƒÆ’Ã‚Â© 2 fois dÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢affilÃƒÆ’Ã‚Â©e, on sort (sÃƒÆ’Ã‚Â©curitÃƒÆ’Ã‚Â© douce)
         if current_url == last_url and success is False:
@@ -839,5 +831,3 @@ def solve_full_survey(driver, api_key, *, account_id: str, survey_context=None):
             _survey_ctx.maybe_update_summary()
         except Exception:
             pass
-
-    print("ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ [solve_full_survey] Survey traitÃƒÆ’Ã‚Â©.")
