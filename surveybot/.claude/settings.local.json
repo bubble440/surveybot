@@ -35,7 +35,21 @@
       "Bash(python fix_fstring.py)",
       "Bash(rm fix_fstring.py)",
       "Bash(/tmp/dynamodb_writes_analysis.txt:*)",
-      "Read(//tmp/**)"
+      "Read(//tmp/**)",
+      "Bash(find /c/projects/Surveys/surveybot -type f -name *.json -o -name *.yaml -o -name *.yml -o -name *.toml -o -name *.env*)",
+      "Bash(find /c/projects/Surveys/surveybot -path */.venv -prune -o -type f -name *.py -print)",
+      "Bash(find /c/projects/Surveys/surveybot -path */.venv -prune -o -type d -name *db* -o -type d -name *data* -o -type d -name *cache* -print)",
+      "Bash(grep -r \"TODO\\\\|FIXME\\\\|BUG\\\\|XXX\" /c/projects/Surveys/surveybot --include=*.py)",
+      "Bash(grep -r \"boto3\\\\|dynamodb\\\\|cache\\\\|json.load\\\\|json.dump\" /c/projects/Surveys/surveybot --include=*.py)",
+      "Bash(grep -r \"\\\\.json\\\\|\\\\.db\\\\|\\\\.sqlite\" /c/projects/Surveys/surveybot --include=*.py)",
+      "Bash(grep -r \"except.*pass\\\\|except Exception\" /c/projects/Surveys/surveybot/State --include=*.py)",
+      "Bash(grep -r \"TODO\\\\|FIXME\\\\|BUG\\\\|XXX\\\\|HACK\\\\|CHECKME\" /c/projects/Surveys/surveybot --include=*.py)",
+      "Bash(grep -r \"from State\\\\|from Utils\" /c/projects/Surveys/surveybot --include=*.py)",
+      "Bash(grep -r \"ConditionalCheckFailedException\\\\|ConditionExpression\\\\|update_item\\\\|put_item\\\\|get_item\" /c/projects/Surveys/surveybot --include=*.py)",
+      "Bash(grep -rn \"import boto3\\\\|from boto3\" /c/projects/Surveys/surveybot --include=*.py)",
+      "Bash(grep -r \"json.load\\\\|json.dump\\\\|pickle\\\\|shelve\" /c/projects/Surveys/surveybot --include=*.py)",
+      "Bash(grep -r \"\\\\.sqlite\\\\|\\\\.db\\\\|database\\\\.py\\\\|models\\\\.py\\\\|schema\\\\.py\" /c/projects/Surveys/surveybot --include=*.py)",
+      "Bash(find /c/projects/Surveys/surveybot -path */.venv -prune -o -type f -name *.md -print)"
     ]
   }
 }
