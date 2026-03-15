@@ -14,7 +14,24 @@ from State.account_state import update_state, load_state, save_state, try_acquir
 from selenium.common.exceptions import TimeoutException
 from preselection.auth_handler import is_session_expired
 from Management.pause_policy import PausePolicy
-from browser.browser_factory import get_driver
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+
+def _create_driver():
+    attach_addr = os.getenv("ATTACH_DEBUGGER_ADDRESS", "").strip()
+    options = Options()
+    if attach_addr:
+        # Mode local : attach à un Chrome existant (géré par run_tabs.ps1)
+        options.add_experimental_option("debuggerAddress", attach_addr)
+        print(f"⚠️ ATTACH MODE → {attach_addr}")
+    else:
+        # Mode prod/Docker : nouveau Chrome
+        options.add_argument("--disable-blink-features=AutomationControlled")
+        options.add_argument("--no-sandbox")
+        options.add_argument("--disable-dev-shm-usage")
+        options.add_argument("--start-maximized")
+        print("🟢 LAUNCHED NEW CHROME SESSION")
+    return webdriver.Chrome(options=options)
 
 def acquire_account_lock_or_exit(account_id: str, ttl_sec: int = 180):
     task_id = os.getenv("ECS_TASK_ID") or socket.gethostname()
@@ -283,7 +300,7 @@ def mark_bot_running(account_id: str):
 def launch_driver_or_fail(config, account_id: str):
     try:
         # driver = launch_browser(config) Ancien launcher Playwright
-        driver = get_driver()  # Nouveau launcher Selenium
+        driver = _create_driver()  # Nouveau launcher Selenium
         if driver is None:
             raise RuntimeError("launch_browser() a retournÃ© None")
         if should_run_guard_monitor():
