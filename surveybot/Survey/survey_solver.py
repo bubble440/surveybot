@@ -381,16 +381,9 @@ def _payout_and_check_daily_stop(driver, account_id: str) -> bool:
 
     # 2) DAILY STOP si objectif journalier déjà atteint
     guard = get_guard()
-    earnings = 0.0
-    try:
-        earnings = guard.state.earnings_today_eur
-    except AttributeError:
-        try:
-            from State.account_state import load_state
-            st = load_state(account_id)
-            earnings = float(st.get("earnings_today_eur") or 0.0)
-        except Exception:
-            pass
+    # FIX-C: même correction que dans soft_restart (launch.py) — le try/except
+    # AttributeError était du dead code en prod. getattr couvre _NullGuard proprement.
+    earnings = float(getattr(getattr(guard, "state", None), "earnings_today_eur", 0.0))
 
     if earnings >= DAILY_TARGET_EUR:
         print(f"[DAILY_STOP] {earnings:.2f}€ >= {DAILY_TARGET_EUR}€ → arrêt journalier")
