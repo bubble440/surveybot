@@ -37,7 +37,7 @@ def acquire_account_lock_or_exit(account_id: str, ttl_sec: int = 180):
     task_id = os.getenv("ECS_TASK_ID") or socket.gethostname()
     ok = try_acquire_account_lock(account_id=account_id, owner=task_id, ttl_sec=ttl_sec)
     if not ok:
-        print("[LOCK] Account {account_id} dÃ©ja utilisÃ© â†’ exit")
+        print(f"[LOCK] Account {account_id} dÃ©jÃ  utilisÃ© â†’ exit")
         sys.exit(0)
 
 def safe_get(driver, url):
@@ -140,23 +140,20 @@ def _make_sigterm_handler(aid: str):
 def build_notifier(config):
     tg_token = config.get("telegram_bot_token")
     tg_chat  = config.get("telegram_chat_id")
-    ok = False
 
     def _notify(msg: str):
         # Console (toujours)
         print(f"[WATCHDOG] {msg}")
         # Telegram si configurÃ©
         if tg_token and tg_chat:
-            ok = False
             try:
                 ok = send_telegram(msg, tg_token, tg_chat)
+                if not ok:
+                    print("[WATCHDOG][WARN] Telegram a rÃ©pondu 'not ok'.")
             except Exception as e:
                 print(f"[WATCHDOG][WARN] Telegram a Ã©chouÃ©: {e}")
         else:
-            if ok:
-                print("[WATCHDOG] telegram non configurÃ©.")
-            else:
-                print("[WATCHDOG][WARN] Telegram a rÃ©pondu 'not ok'.")
+            print("[WATCHDOG] Telegram non configurÃ©, notification console uniquement.")
 
         # Petit bip Windows si possible (facultatif)
         try:
@@ -208,7 +205,14 @@ def soft_restart_resume(ctx, driver):
 
     survey_ctx = SurveyContext(session_id=ctx["account_id"], openai_api_key=ctx["api_key"])
     go_to_best_value_survey(driver)
-    run_survey(driver, ctx["api_key"], account_id=ctx["account_id"], ctx=survey_ctx)
+    run_survey(
+        driver,
+        ctx["api_key"],
+        account_id=ctx["account_id"],
+        ctx=survey_ctx,
+        payout_name=ctx.get("payout_name", ""),
+        payout_revolut_tag=ctx.get("payout_revolut_tag", ""),
+    )
 
 def soft_restart(ctx, driver, reason):
     print(f"[SOFT_RESTART] {reason}")
@@ -272,6 +276,7 @@ def start_runtime_guard(account_id: str, notify_fn, on_soft_restart):
 _HEARTBEAT_STARTED = False
 
 def _heartbeat():
+
         # FrÃ©quence heartbeat (coÃ»t) vs TTL (robustesse)
         # - interval: toutes les 30s par dÃ©faut (divise les writes par 2 vs 15s)
         # - jitter: Ã©vite que 100 bots heartbeat exactement en mÃªme temps (pics WCU)
@@ -290,6 +295,10 @@ def _heartbeat():
             time.sleep(sleep_s)
 
 def start_heartbeat_thread():
+    global _HEARTBEAT_STARTED
+    if _HEARTBEAT_STARTED:
+        return
+    _HEARTBEAT_STARTED = True
     threading.Thread(target=_heartbeat, name="heartbeat", daemon=True).start()
 
 def setup_logging():
@@ -487,11 +496,18 @@ def start_hot_reload_thread():
         
 _HOT_RELOAD_STARTED = False
 
-def run_main_loop(driver, api_key: str, account_id: str):
+def run_main_loop(driver, api_key: str, account_id: str, payout_name: str = "", payout_revolut_tag: str = ""):
     from Survey.survey_context import SurveyContext
 
     survey_ctx = SurveyContext(session_id=account_id, openai_api_key=api_key)
-    run_survey(driver, api_key, account_id=account_id, ctx=survey_ctx)
+    run_survey(
+        driver,
+        api_key,
+        account_id=account_id,
+        ctx=survey_ctx,
+        payout_name=payout_name,
+        payout_revolut_tag=payout_revolut_tag,
+    )
     print("ðŸ§© Script terminÃ©. Navigateur maintenu ouvert pour inspection.")
     while True:
         time.sleep(999)
