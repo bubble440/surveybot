@@ -54,7 +54,16 @@ def switch_to_latest_window_and_close_others(driver, base_handles, timeout=10, p
                 except Exception:
                     pass
 
-            driver.switch_to.window(new_handle)
+            # FIX-B4: new_handle peut avoir été fermé par Chrome pendant qu'on fermait
+            # les anciens onglets (ex : le survey s'est lui-même redirigé et a détruit
+            # son propre onglet).  Un switch aveugle lèverait NoSuchWindowException.
+            live_handles = driver.window_handles
+            if new_handle in live_handles:
+                driver.switch_to.window(new_handle)
+            elif live_handles:
+                driver.switch_to.window(live_handles[-1])
+            else:
+                raise RuntimeError("Aucun onglet restant après fermeture des anciens onglets")
             print(f"🪟 Focus sur survey + anciens onglets fermés → {driver.current_url}")
             return True
 

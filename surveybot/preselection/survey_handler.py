@@ -2,10 +2,23 @@ import time, os, threading
 
 IS_LOCAL = os.getenv("RUN_ENV", "local") == "local"
 
-# H2: protection contre la récursion infinie de soft_restart → run_survey
-_restart_depth_lock = threading.Lock()
-_restart_depth = 0
+# FIX-B3: _restart_depth était un global partagé entre threads.
+# Un soft_restart peut relancer run_survey() depuis n'importe quel thread
+# (ex : on_soft_restart déclenché par le RuntimeGuard en background).
+# Avec un compteur global, les profondeurs de threads différents se cumulent
+# et peuvent déclencher un arrêt prématuré alors que le thread concerné n'est
+# pas en récursion excessive.
+# Solution : threading.local() → compteur strictement par thread.
+_restart_tl = threading.local()
 _MAX_RESTART_DEPTH = 10
+
+
+def _get_restart_depth() -> int:
+    return getattr(_restart_tl, "depth", 0)
+
+
+def _set_restart_depth(v: int) -> None:
+    _restart_tl.depth = v
 
 import preselection.response_executor
 if not IS_LOCAL:
@@ -167,18 +180,16 @@ def run_attach_preselection_takeover(
 
 
 def run_survey(driver, api_key, *, account_id: str, ctx=None, payout_name: str = "", payout_revolut_tag: str = ""):
-    global _restart_depth
-    with _restart_depth_lock:
-        _restart_depth += 1
-        current_depth = _restart_depth
+    # FIX-B3: compteur thread-local (voir _restart_tl ci-dessus)
+    current_depth = _get_restart_depth() + 1
+    _set_restart_depth(current_depth)
     try:
         if current_depth > _MAX_RESTART_DEPTH:
             print(f"[SURVEY][FATAL] Profondeur de redémarrage max atteinte ({_MAX_RESTART_DEPTH}) → arrêt forcé")
             raise SystemExit("max_restart_depth_reached")
         _run_survey_impl(driver, api_key, account_id=account_id, ctx=ctx, payout_name=payout_name, payout_revolut_tag=payout_revolut_tag)
     finally:
-        with _restart_depth_lock:
-            _restart_depth -= 1
+        _set_restart_depth(current_depth - 1)
 
 
 def _run_survey_impl(driver, api_key, *, account_id: str, ctx=None, payout_name: str = "", payout_revolut_tag: str = ""):
