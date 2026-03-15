@@ -362,17 +362,24 @@ class RuntimeGuard:
             st["lock_until_ts"] = 0
             st["status"] = "idle"
 
-        update_state(self.account_id, _apply_pause)
-
-        # H5: signaler l'arrêt au thread heartbeat avant de quitter
+        # try/finally : SystemExit est garanti même si update_state échoue (DynamoDB down, etc.)
         try:
-            import launch as _launch
-            _launch.stop_heartbeat_thread()
-        except Exception:
-            pass
-
-        # En prod on laisse ECS / scheduler gérer
-        raise SystemExit(reason.value)
+            update_state(self.account_id, _apply_pause)
+        except Exception as _e:
+            import logging as _log
+            _log.getLogger("runtime_guard").error(
+                f"[PAUSE] update_state échoué ({_e}) — lock non libéré en DynamoDB, "
+                f"le scheduler attendra l'expiration du TTL"
+            )
+        finally:
+            # H5: signaler l'arrêt au thread heartbeat avant de quitter
+            try:
+                import launch as _launch
+                _launch.stop_heartbeat_thread()
+            except Exception:
+                pass
+            # En prod on laisse ECS / scheduler gérer
+            raise SystemExit(reason.value)
 
 # ----------------------------
 # Singleton global (robuste)
