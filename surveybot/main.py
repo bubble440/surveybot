@@ -604,10 +604,15 @@ def main():
             run_attach_takeover(driver, api_key=api_key, account_id=account_id)
         return
 
-    acquire_account_lock_or_exit(account_id)
-    mark_bot_running(account_id)
+    # FIX-A: install_sigterm_handler AVANT acquire_account_lock_or_exit.
+    # Auparavant, un SIGTERM arrivant entre acquire_lock et install_sigterm_handler
+    # terminait le processus sans nettoyer lock_owner / status en DynamoDB,
+    # forçant le scheduler à attendre l'expiration du TTL (4 min) avant de relancer.
     install_sigterm_handler(account_id)
     install_sigusr1_handler()
+
+    acquire_account_lock_or_exit(account_id)
+    mark_bot_running(account_id)
 
     from Survey.survey_solver import get_current_survey_ctx
     start_debug_http_server(get_current_survey_ctx)
