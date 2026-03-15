@@ -1,6 +1,11 @@
-import time, os
+import time, os, threading
 
 IS_LOCAL = os.getenv("RUN_ENV", "local") == "local"
+
+# H2: protection contre la récursion infinie de soft_restart → run_survey
+_restart_depth_lock = threading.Lock()
+_restart_depth = 0
+_MAX_RESTART_DEPTH = 10
 
 import preselection.response_executor
 if not IS_LOCAL:
@@ -148,8 +153,10 @@ def run_attach_preselection_takeover(
                     prefer_external=True,
                 )
                 Management.redirect_watcher.wait_for_final_redirection(driver, max_wait=transition_timeout_s)
-            except Exception:
-                pass
+            except Exception as _e:
+                # H4: on logue l'erreur pour permettre le diagnostic — le bot risque
+                # d'être sur le mauvais onglet si ce bloc échoue
+                print(f"[ATTACH][PRESEL][WARN] Erreur lors du switch/redirect après Participer: {_e}")
 
             if not is_topsurveys_preselection_popup(driver):
                 return True, "qualified_transition"
@@ -160,6 +167,21 @@ def run_attach_preselection_takeover(
 
 
 def run_survey(driver, api_key, *, account_id: str, ctx=None, payout_name: str = "", payout_revolut_tag: str = ""):
+    global _restart_depth
+    with _restart_depth_lock:
+        _restart_depth += 1
+        current_depth = _restart_depth
+    try:
+        if current_depth > _MAX_RESTART_DEPTH:
+            print(f"[SURVEY][FATAL] Profondeur de redémarrage max atteinte ({_MAX_RESTART_DEPTH}) → arrêt forcé")
+            raise SystemExit("max_restart_depth_reached")
+        _run_survey_impl(driver, api_key, account_id=account_id, ctx=ctx, payout_name=payout_name, payout_revolut_tag=payout_revolut_tag)
+    finally:
+        with _restart_depth_lock:
+            _restart_depth -= 1
+
+
+def _run_survey_impl(driver, api_key, *, account_id: str, ctx=None, payout_name: str = "", payout_revolut_tag: str = ""):
     import preselection.question_analyzer
     import preselection.response_executor
     import Survey.survey_solver 
@@ -353,17 +375,11 @@ def run_survey(driver, api_key, *, account_id: str, ctx=None, payout_name: str =
             else:
                 try:
                     # Cas : on est qualifié → lancer solve_full_survey()
-                    base_handles = set(driver.window_handles)
                     if preselection.question_analyzer.click_participer_if_qualified(driver):
-                        # 🔑 CRUCIAL : bascule vers le nouvel onglet du survey
-                        Management.redirect_watcher.switch_to_latest_window_and_close_others(
-                            driver,
-                            base_handles=base_handles,
-                            timeout=10,
-                            prefer_external=True
-                        )
-
-                        final_url = Management.redirect_watcher.wait_for_final_redirection(driver, max_wait=60)  # déjà présent dans ton repo
+                        # H3: click_participer_if_qualified fait déjà le switch de fenêtre
+                        # en interne — ne pas rappeler switch_to_latest_window_and_close_others
+                        # ici pour éviter la race condition du double switch.
+                        final_url = Management.redirect_watcher.wait_for_final_redirection(driver, max_wait=60)
 
                         is_strict, reason = Management.guards.survey_difficulty_guard.detect_strict_survey(driver)
                         if is_strict:

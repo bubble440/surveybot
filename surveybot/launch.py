@@ -33,7 +33,7 @@ def _create_driver():
         print("🟢 LAUNCHED NEW CHROME SESSION")
     return webdriver.Chrome(options=options)
 
-def acquire_account_lock_or_exit(account_id: str, ttl_sec: int = 180):
+def acquire_account_lock_or_exit(account_id: str, ttl_sec: int = 240):
     task_id = os.getenv("ECS_TASK_ID") or socket.gethostname()
     ok = try_acquire_account_lock(account_id=account_id, owner=task_id, ttl_sec=ttl_sec)
     if not ok:
@@ -132,7 +132,8 @@ def _make_sigterm_handler(aid: str):
             print("[SIGTERM][WARN] update_state Ã©chouÃ©:", e)
         
         finally:
-            print("ðŸ§¨ SIGTERM traitÃ© â†’ exit immÃ©diat")
+            stop_heartbeat_thread()
+            print("SIGTERM traité → exit immédiat")
             raise SystemExit("ecs_sigterm")
 
     return _handle_sigterm
@@ -274,31 +275,38 @@ def start_runtime_guard(account_id: str, notify_fn, on_soft_restart):
     return guard
 
 _HEARTBEAT_STARTED = False
+# H5: event pour arrêt propre du thread heartbeat
+_HEARTBEAT_STOP = threading.Event()
 
 def _heartbeat():
-
-        # FrÃ©quence heartbeat (coÃ»t) vs TTL (robustesse)
-        # - interval: toutes les 30s par dÃ©faut (divise les writes par 2 vs 15s)
-        # - jitter: Ã©vite que 100 bots heartbeat exactement en mÃªme temps (pics WCU)
+        # Fréquence heartbeat (coût) vs TTL (robustesse)
+        # - interval: toutes les 60s par défaut
+        # - jitter: évite que 100 bots heartbeat exactement en même temps (pics WCU)
         interval = int(os.getenv("HEARTBEAT_INTERVAL_SEC", "60") or "60")
         jitter = float(os.getenv("HEARTBEAT_JITTER_SEC", "3") or "3")
 
-        while True:
+        while not _HEARTBEAT_STOP.is_set():
             try:
                 get_guard().heartbeat()
             except Exception:
                 # Heartbeat best-effort : ne doit jamais tuer le bot
                 pass
 
-            # Jitter alÃ©atoire [0..jitter] pour lisser la charge en prod
+            # Jitter aléatoire [0..jitter] pour lisser la charge en prod
             sleep_s = interval + (random.random() * jitter if jitter > 0 else 0.0)
-            time.sleep(sleep_s)
+            # H5: utiliser wait() au lieu de sleep() pour répondre au stop event
+            _HEARTBEAT_STOP.wait(timeout=sleep_s)
+
+def stop_heartbeat_thread():
+    """Arrête proprement le thread heartbeat (appelé avant SystemExit propre)."""
+    _HEARTBEAT_STOP.set()
 
 def start_heartbeat_thread():
     global _HEARTBEAT_STARTED
     if _HEARTBEAT_STARTED:
         return
     _HEARTBEAT_STARTED = True
+    _HEARTBEAT_STOP.clear()
     threading.Thread(target=_heartbeat, name="heartbeat", daemon=True).start()
 
 def setup_logging():
@@ -508,6 +516,8 @@ def run_main_loop(driver, api_key: str, account_id: str, payout_name: str = "", 
         payout_name=payout_name,
         payout_revolut_tag=payout_revolut_tag,
     )
-    print("ðŸ§© Script terminÃ©. Navigateur maintenu ouvert pour inspection.")
-    while True:
-        time.sleep(999)
+    # H1: en prod le bot doit quitter proprement (pas bloquer Chrome indéfiniment)
+    if IS_LOCAL:
+        print("Script terminé. Navigateur maintenu ouvert pour inspection.")
+        while True:
+            time.sleep(999)
