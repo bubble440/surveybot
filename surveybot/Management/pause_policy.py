@@ -11,6 +11,7 @@ class PausePolicy(Enum):
     NONE = auto()                  # pas de pause
     SHORT_COOLDOWN = auto()        # incidents légers
     MEDIUM_COOLDOWN = auto()       # erreurs / no-gain
+    MEDIUM_LONG_COOLDOWN = auto()  # runtime limit (15 min)
     LONG_COOLDOWN = auto()         # environnement défavorable
     DAILY_RESET = auto()           # objectif journalier atteint
     UNTIL_MANUAL = auto()          # intervention humaine requise
@@ -38,6 +39,9 @@ def resolve_pause_seconds(
 
     if policy == PausePolicy.MEDIUM_COOLDOWN:
         return 60 * 5           # 5 minutes
+
+    if policy == PausePolicy.MEDIUM_LONG_COOLDOWN:
+        return 60 * 15          # 15 minutes
 
     if policy == PausePolicy.LONG_COOLDOWN:
         return 60 * 30       # ✅ 30 min max, le scheduler relance et ré-auth
