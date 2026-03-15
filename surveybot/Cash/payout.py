@@ -388,15 +388,15 @@ def check_and_cashout_if_needed(
     # Essaye dans l'ordre demandé
     success_select = False
     for method in cashout_order:
-        if method == "paypal":
-            if _select_paypal_5_eur(driver):
-                success_select = True
-                print("[PAYOUT] Option PayPal 5 € sélectionnée.")
-                break
-        elif method == "revolut":
+        if method == "revolut":
             if _select_revolut_5_eur(driver):
                 success_select = True
                 print("[PAYOUT] Option Revolut 5 € sélectionnée (fallback).")
+                break
+        elif method == "paypal":
+            if _select_paypal_5_eur(driver):
+                success_select = True
+                print("[PAYOUT] Option PayPal 5 € sélectionnée.")
                 break
 
     if not success_select:
