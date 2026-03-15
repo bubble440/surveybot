@@ -159,7 +159,7 @@ def run_attach_preselection_takeover(
     return False, "max_rounds_reached"
 
 
-def run_survey(driver, api_key, *, account_id: str, ctx=None):
+def run_survey(driver, api_key, *, account_id: str, ctx=None, payout_name: str = "", payout_revolut_tag: str = ""):
     import preselection.question_analyzer
     import preselection.response_executor
     import Survey.survey_solver 
@@ -340,8 +340,8 @@ def run_survey(driver, api_key, *, account_id: str, ctx=None):
                             account_id=account_id,
                             min_amount_eur=DAILY_TARGET_EUR,
                             cashout_order=("revolut", "paypal"),
-                            revolut_fullname="Wilfred Jamein Saah",
-                            revolut_tag="@jameinsaah",
+                            revolut_fullname=payout_name,
+                            revolut_tag=payout_revolut_tag,
                         )
                         Management.guards.runtime_guard.get_guard().record_success()
                     except Exception as e:
@@ -399,9 +399,9 @@ def run_survey(driver, api_key, *, account_id: str, ctx=None):
 
     except KeyboardInterrupt:
         Management.guards.runtime_guard.get_guard().record_error()
-        driver.quit ()
         print("⏹️  Fermeture manuelle détectée.")
+        raise
     except Exception as e:
         Management.guards.runtime_guard.get_guard().record_error(e)
-        driver.quit ()
         print("💥 Erreur en boucle principale :", e)
+        raise

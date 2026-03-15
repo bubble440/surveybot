@@ -669,7 +669,7 @@ def main():
                 start_heartbeat_thread()
                 heartbeat_started = True
 
-            run_main_loop(driver, api_key, account_id)
+            run_main_loop(driver, api_key, account_id, payout_name=payout_name, payout_revolut_tag=payout_revolut_tag)
 
         except SystemExit:
             raise
