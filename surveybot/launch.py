@@ -431,7 +431,6 @@ def start_hot_reload_thread():
                 "Management.guards.runtime_guard",
                 "Management.guards.sensitive_question_guard",
                 "Management.guards.survey_difficulty_guard",
-                "Management.guards.url_guard",
             ],
             poll_interval=0.5,
         )
