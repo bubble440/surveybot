@@ -167,7 +167,6 @@ def run_survey(driver, api_key, *, account_id: str, ctx=None):
     import Management.guards.runtime_guard
     import Management.guards.survey_difficulty_guard
     import Management.redirect_watcher
-    import Management.guards.url_guard
     import launch
     
     def _restart(reason: str) -> None:
@@ -365,7 +364,6 @@ def run_survey(driver, api_key, *, account_id: str, ctx=None):
                         )
 
                         final_url = Management.redirect_watcher.wait_for_final_redirection(driver, max_wait=60)  # déjà présent dans ton repo
-                        host = Management.guards.url_guard.normalize_host(final_url)
 
                         is_strict, reason = Management.guards.survey_difficulty_guard.detect_strict_survey(driver)
                         if is_strict:
@@ -374,14 +372,6 @@ def run_survey(driver, api_key, *, account_id: str, ctx=None):
                             _restart("disqualification_or_retry")
                             return
 
-                        if not Management.guards.url_guard.is_allowed(final_url):
-                            print(f"[URL_GUARD] Bloqué : {final_url} — tentative de retour propre via l'app")
-                            Management.guards.runtime_guard.get_guard().record_error(RuntimeError(f"url_guard_blocked: {final_url}"))
-                            # 🧠 Délégation complète au RuntimeGuard
-                            _restart("url_guard_blocked")
-                            return
-
-                        print(f"[URL_GUARD] Autorisé : {final_url} (host: {host})")
                         # feu vert → on entre en résolution complète
                         Survey.survey_solver.solve_full_survey(
                             driver,

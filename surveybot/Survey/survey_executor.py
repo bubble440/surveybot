@@ -822,7 +822,7 @@ def _coerce_safe_value_if_questionish(raw_line: str) -> str:
 # Fonction principale
 
 # ============================================================================
-# PATCH: Detection popup TopSurveys "Bon travail !" AVANT url_guard
+# PATCH: Detection popup TopSurveys "Bon travail !"
 # Ferme le popup, relance la preselection, ET execute le nouveau survey
 # ============================================================================
 def _handle_walr_image_eval_blocks(driver, question_blocks: list, api_key: str) -> bool:
@@ -1162,7 +1162,6 @@ def execute_survey_page(driver, api_key, ctx=None):
     """
     Nouvelle version : capture , demande GPT-4o quoi faire, puis applique l'action.
     """
-    import Management.guards.url_guard
     import Survey.action_dispatcher as action_dispatcher
     import selenium.webdriver.support.ui
     import Survey.dom_analyzer as dom_analyzer
@@ -1177,7 +1176,7 @@ def execute_survey_page(driver, api_key, ctx=None):
     import Survey.page_snapshot as page_snapshot
 
     # =========================================================================
-    # PATCH: Detecter popup TopSurveys AVANT url_guard
+    # PATCH: Detecter popup TopSurveys
     # =========================================================================
     try:
         _cur = driver.current_url
@@ -1196,9 +1195,6 @@ def execute_survey_page(driver, api_key, ctx=None):
         cur = driver.current_url
     except Exception:
         cur = ""
-    if not Management.guards.url_guard.is_allowed(cur):
-        print(f"[URL_GUARD] Page hors , aucune action: {cur}")
-        return False
 
     # =========================================================================
     # CAPTCHA: Détection et résolution automatique (no-op si aucun captcha)
