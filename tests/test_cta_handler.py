@@ -683,3 +683,20 @@ def test_try_click_navigation_cta_ignores_zero_score_candidate(monkeypatch):
 
     assert ok is False
     assert unknown_candidate.clicked == 0
+
+
+def test_did_progress_detects_notification_signature_change_without_url_change():
+    before = {
+        "url": "https://surveyopinion.researchnow.com/survey",
+        "txt": "header content",
+        "qNodes": 1,
+        "notifSig": "siteNotification error::Une erreur s'est produite",
+    }
+    after = {
+        "url": "https://surveyopinion.researchnow.com/survey",
+        "txt": "header content",
+        "qNodes": 1,
+        "notifSig": "siteNotification success::Merci",
+    }
+
+    assert cta_handler._did_progress(before, after) is True
