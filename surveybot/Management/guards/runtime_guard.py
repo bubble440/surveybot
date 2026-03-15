@@ -141,8 +141,12 @@ class RuntimeGuard:
             return False
         
     def signal_strict_survey(self, reason: str):
-        """Survey trop strict (captcha, drag&drop, etc.)."""
-        self.request_survey_restart(reason)
+        """Survey trop strict (captcha, drag&drop, etc.) → soft restart direct, sans cooldown."""
+        print(f"🔁 Strict survey détecté ({reason}) → soft restart direct")
+        if self.on_soft_restart:
+            self.on_soft_restart(reason)
+        else:
+            print("[RUNTIME_GUARD] signal_strict_survey: on_soft_restart non défini, ignoré")
 
     def signal_fatal_error(self, reason: str):
         """Erreur non rÃ©cupÃ©rable."""
