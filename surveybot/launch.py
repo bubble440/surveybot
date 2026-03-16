@@ -4,6 +4,7 @@ from config import is_prod_like, should_run_guard_monitor, should_run_hot_reload
 
 from Management.guards.runtime_guard import RuntimeGuard, StopReason, set_guard, get_guard
 from State.daily_target import DAILY_TARGET_EUR, ensure_daily_timer_started
+from Cash.payout import MIN_CASHOUT_EUR
 import time, sys, logging, threading, traceback, signal, socket, Cash.payout as payout
 from preselection.playwright_launcher import launch_browser
 from preselection.auth_handler import login, snap
@@ -196,7 +197,7 @@ def soft_restart_payout(ctx, driver):
     payout.check_and_cashout_if_needed(
         driver,
         account_id=ctx["account_id"],
-        min_amount_eur=DAILY_TARGET_EUR,
+        min_amount_eur=MIN_CASHOUT_EUR,
         cashout_order=("revolut", "paypal"),
         revolut_fullname=payout_name,
         revolut_tag=payout_tag,
@@ -421,7 +422,7 @@ def init_session_and_enter_surveys(driver, config, account_id: str, notify_fn):
         payout.check_and_cashout_if_needed(
             driver,
             account_id=account_id,
-            min_amount_eur=DAILY_TARGET_EUR,
+            min_amount_eur=MIN_CASHOUT_EUR,
             cashout_order=("revolut", "paypal"),
             revolut_fullname=payout_name,
             revolut_tag=payout_revolut_tag,

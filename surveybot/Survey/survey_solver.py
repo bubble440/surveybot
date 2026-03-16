@@ -361,17 +361,19 @@ def _payout_and_check_daily_stop(driver, account_id: str) -> bool:
     Retourne True / lève SystemExit si DAILY STOP déclenché.
     """
     import Cash.payout as payout
+    from Cash.payout import MIN_CASHOUT_EUR
     from State.daily_target import DAILY_TARGET_EUR
     from Management.guards.runtime_guard import get_guard, StopReason
     from Management.pause_policy import PausePolicy
 
-    # 1) Retrait si solde >= 5€  (min_amount_eur=DAILY_TARGET_EUR : le modal ne propose
-    #    que des options >= 5€, donc l'encaissement ne réussira que si le solde le permet)
+    # 1) Retrait uniquement si solde >= 5 € (MIN_CASHOUT_EUR) :
+    #    le modal TopSurveys ne propose que des options >= 5 €,
+    #    donc l'ouverture en dessous de ce seuil est inutile.
     try:
         payout.check_and_cashout_if_needed(
             driver,
             account_id=account_id,
-            min_amount_eur=DAILY_TARGET_EUR,
+            min_amount_eur=MIN_CASHOUT_EUR,
             cashout_order=("revolut", "paypal"),
             revolut_fullname="",
             revolut_tag="",
