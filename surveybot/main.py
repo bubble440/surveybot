@@ -700,25 +700,19 @@ def main():
         finally:
             # FIX-B2: driver.quit() garanti sur toute sortie (Exception, KeyboardInterrupt, etc.)
             # SystemExit propagera naturellement après ce bloc.
+            # FIX-B3: ne pas référencer 'e' ici (Python 3 le supprime en fin de bloc except)
+            # FIX-B4: pas de 'continue' ici — supprime les SystemExit et empêche l'arrêt propre
             try:
                 if driver and (not is_attach_mode()):
+                    # Arrêter Playwright avant Selenium pour libérer la boucle asyncio
+                    if hasattr(driver, '_pw') and driver._pw:
+                        try:
+                            driver._pw.stop()
+                        except Exception:
+                            pass
                     driver.quit()
             except Exception:
                 pass
-            # Libérer le lock pour que le scheduler puisse reprendre après un crash
-            if not IS_LOCAL:
-                try:
-                    from State.account_state import update_state
-                    update_state(account_id, lambda st: (
-                        st.__setitem__("lock_owner", ""),
-                        st.__setitem__("lock_until_ts", 0),
-                        st.__setitem__("status", "idle"),
-                        st.__setitem__("last_stop_reason", f"crash_{type(e).__name__}"),
-                    ))
-                except Exception as _le:
-                    print(f"[MAIN][WARN] Impossible de libérer le lock après crash: {_le}")
-            time.sleep(2)
-            continue
 
     # Si on sort de la boucle, on stoppe proprement (ECS relancera via scheduler)
     if not IS_LOCAL:
