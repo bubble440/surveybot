@@ -268,6 +268,8 @@ def login(driver, email, password):
         ))
         driver.execute_script("arguments[0].click();", login_btn)
         print("✅ Bouton « Se connecter » cliqué.")
+        from Management.redirect_watcher import wait_for_page_load
+        wait_for_page_load(driver, timeout=30)
 
     except Exception as e:
         snap(driver, "error_pwd_step")

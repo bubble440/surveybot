@@ -775,8 +775,9 @@ def solve_full_survey(driver, api_key, *, account_id: str, survey_context=None):
             time.sleep(0.3)  # laisser la liste se peindre
             continue  # on relance une itération : GPT verra la liste OUVERTE
 
-        # b) Micro-pause pour laisser le DOM respirer
-        time.sleep(STABILIZE_SLEEP)
+        # b) Attente chargement page avant d'inspecter le DOM (proxy lent en prod)
+        redirect_watcher.wait_for_page_load(driver, timeout=30)
+        time.sleep(0.3)  # laisser le framework JS réagir post-load
 
         # c) Attente ADAPTATIVE après action
         #    - Si une action vient de réussir et qu'il reste des choses à faire sur la page,
@@ -795,6 +796,7 @@ def solve_full_survey(driver, api_key, *, account_id: str, survey_context=None):
             print(
                 " Action en-page réussie et autres éléments visibles → pas d'attente de navigation."
             )
+            redirect_watcher.wait_for_page_load(driver, timeout=10)
             time.sleep(0.4)  # laisser le framework réagir
             # on repart tout de suite sur une nouvelle itération (nouvelle capture)
             continue
@@ -807,10 +809,13 @@ def solve_full_survey(driver, api_key, *, account_id: str, survey_context=None):
         # Si l’URL a changé → on inspecte le nouvel emplacement
         if current_url != last_url:
             _no_progress_count = 0  # URL a changé, réinitialisation du détecteur stuck
-            print(f"[solve_full_survey] Changement d'URL {last_url} \u2192 {current_url}")
+            print(f"[solve_full_survey] Changement d’URL {last_url} \u2192 {current_url}")
             last_url = current_url
 
-            # Retour TopSurveys ? Traite popup 'Complète' ou disqualification, puis relance.
+            # Attendre que la nouvelle page soit pleinement chargée (proxy lent en prod)
+            redirect_watcher.wait_for_page_load(driver, timeout=30)
+
+            # Retour TopSurveys ? Traite popup ‘Complète’ ou disqualification, puis relance.
             try:
                 if _if_on_topsurveys_handle(driver, api_key, account_id, survey_context=_survey_ctx):
                     print("[solve_full_survey] Retour TopSurveys → arrêt.")

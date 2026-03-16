@@ -259,6 +259,8 @@ def go_to_best_value_survey(driver):
             driver.execute_script("arguments[0].scrollIntoView({block:'center'});", best_card)
             driver.execute_script("arguments[0].click();", best_card)
             print("📝 Survey le plus rentable cliqué.")
+            from Management.redirect_watcher import wait_for_page_load
+            wait_for_page_load(driver, timeout=30)
             return
         except Exception as e:
             print("⚠️ Échec clic survey le plus rentable:", type(e).__name__, "-", e)
@@ -270,6 +272,8 @@ def go_to_best_value_survey(driver):
         driver.execute_script("arguments[0].scrollIntoView({block:'center'});", first)
         driver.execute_script("arguments[0].click();", first)
         print("📝 Fallback: premier survey cliqué.")
+        from Management.redirect_watcher import wait_for_page_load
+        wait_for_page_load(driver, timeout=30)
     except Exception as e:
         print("🛑 Exception sélection du survey :", type(e).__name__, "-", e)
 

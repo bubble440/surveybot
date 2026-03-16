@@ -137,6 +137,8 @@ def click_next_button(driver):
         print(
             "➡️ Bouton (flèche ou navigation) cliqué via data-test-id. source: reponse_executor.py"
         )
+        from Management.redirect_watcher import wait_for_page_load
+        wait_for_page_load(driver, timeout=15)
         return True
 
     except:
@@ -172,6 +174,8 @@ def click_next_button(driver):
 
             driver.execute_script("arguments[0].click();", next_btn)
             print("➡️ Bouton cliqué via fallback textuel (case-insensitive + enabled). source: reponse_executor.py")
+            from Management.redirect_watcher import wait_for_page_load
+            wait_for_page_load(driver, timeout=15)
             return True
 
         except Exception as e:

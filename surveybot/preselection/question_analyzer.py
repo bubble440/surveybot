@@ -391,6 +391,8 @@ def click_participer_if_present(driver):
             )
             driver.execute_script("arguments[0].click();", participer_btn)
             print("✅ Bouton 'Participer' cliqué avec succès.")
+            from Management.redirect_watcher import wait_for_page_load
+            wait_for_page_load(driver, timeout=30)
             return True
     except Exception as e:
         print("❌ Aucun bouton 'Participer' détecté ou erreur :", e)
