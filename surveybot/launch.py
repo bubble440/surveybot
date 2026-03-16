@@ -347,8 +347,7 @@ def mark_bot_running(account_id: str):
 
 def launch_driver_or_fail(config, account_id: str):
     try:
-        # driver = launch_browser(config) Ancien launcher Playwright
-        driver = _create_driver()  # Nouveau launcher Selenium
+        driver = launch_browser(config)
         if driver is None:
             raise RuntimeError("launch_browser() a retourné None")
         if should_run_guard_monitor():
