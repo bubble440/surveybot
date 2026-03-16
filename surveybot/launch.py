@@ -26,10 +26,11 @@ def _create_driver():
         print(f"⚠️ ATTACH MODE → {attach_addr}")
     else:
         # Mode prod/Docker : nouveau Chrome
+        options.add_argument("--headless=new")
         options.add_argument("--disable-blink-features=AutomationControlled")
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
-        options.add_argument("--start-maximized")
+        options.add_argument("--window-size=1920,1080")
         print("🟢 LAUNCHED NEW CHROME SESSION")
     return webdriver.Chrome(options=options)
 
