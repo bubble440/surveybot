@@ -26,7 +26,7 @@ if hasattr(sys.stdout, "reconfigure"):
         pass
 
 def _attach_tab_score(driver) -> tuple[int, int]:
-    """Score simple: nb d'ÃƒÆ’Ã‚Â©lÃƒÆ’Ã‚Â©ments actionnables + taille texte."""
+    """Score simple: nb d'éléments actionnables + taille texte."""
     try:
         actionable = driver.execute_script("""
             try {
@@ -49,9 +49,9 @@ def _attach_tab_score(driver) -> tuple[int, int]:
 
 def _attach_select_best_tab(driver) -> None:
     """
-    Selenium ne sait pas 'prendre l'onglet actif' de Chrome de faÃƒÆ’Ã‚Â§on fiable.
+    Selenium ne sait pas 'prendre l'onglet actif' de Chrome de façon fiable.
     Donc: on parcourt tous les onglets et on choisit celui qui ressemble le plus
-    ÃƒÆ’Ã‚Â  une page testable (beaucoup d'inputs/texte).
+    à une page testable (beaucoup d'inputs/texte).
     """
     best = None  # (score_tuple, handle, url)
     for h in list(getattr(driver, "window_handles", []) or []):
@@ -70,7 +70,7 @@ def _attach_select_best_tab(driver) -> None:
             driver.switch_to.window(h)
         except Exception:
             pass
-        print(f"[ATTACH] Tab sÃƒÆ’Ã‚Â©lectionnÃƒÆ’Ã‚Â© score={score} url={_attach_display_url(url)}")
+        print(f"[ATTACH] Tab sélectionné score={score} url={_attach_display_url(url)}")
 
 def _attach_is_user_web_url(url: str) -> bool:
     u = (url or "").strip().lower()
@@ -123,10 +123,10 @@ def _attach_urls_equiv(a: str, b: str) -> bool:
 
 def _attach_pick_ui_active_tab(driver, handles):
     """
-    Tente de retrouver l'onglet UI rÃƒÆ’Ã‚Â©ellement actif (celui que tu vois).
+    Tente de retrouver l'onglet UI réellement actif (celui que tu vois).
     Heuristique stable:
-      - on ne considÃƒÆ’Ã‚Â¨re que les URLs http(s)
-      - on prÃƒÆ’Ã‚Â©fÃƒÆ’Ã‚Â¨re visibilityState='visible' et document.hasFocus()==True
+      - on ne considère que les URLs http(s)
+      - on préfère visibilityState='visible' et document.hasFocus()==True
       - si focus indisponible, on prend au moins visibilityState='visible'
     Retour: tuple (idx, handle, url, vis, has_focus) ou None
     """
@@ -177,20 +177,20 @@ def _attach_pick_ui_active_tab(driver, handles):
 
 def _attach_select_tab(driver) -> None:
     """
-    SÃƒÆ’Ã‚Â©lection d'onglet en mode attach (LOCAL).
+    Sélection d'onglet en mode attach (LOCAL).
 
-    Objectif: comportement prÃƒÆ’Ã‚Â©dictible (pas de pseudo "focus" Selenium).
+    Objectif: comportement prédictible (pas de pseudo "focus" Selenium).
 
-    PrioritÃƒÆ’Ã‚Â©s (dans l'ordre):
+    Priorités (dans l'ordre):
     1) ATTACH_TAB_URL_CONTAINS           => 1er onglet dont l'URL contient le substring
     2) ATTACH_TAB_TITLE_CONTAINS         => 1er onglet dont document.title contient le substring (case-insensitive)
-    3) ATTACH_TAB_DOM_CONTAINS           => 1er onglet dont body.innerText contient le substring (case-insensitive, tronquÃƒÆ’Ã‚Â©)
+    3) ATTACH_TAB_DOM_CONTAINS           => 1er onglet dont body.innerText contient le substring (case-insensitive, tronqué)
     4) ATTACH_TAB_SELECTOR:
         - "pick" / "prompt": affiche la liste + demande un index (LOCAL only)
         - "current": no-op (on garde l'onglet courant du driver, si http(s))
         - "last"/"newest": dernier onglet http(s)
         - "best": ancien scoring (inputs + texte)
-        - "<index>": index numÃƒÆ’Ã‚Â©rique dans window_handles
+        - "<index>": index numérique dans window_handles
     Fallback final: last_web (dernier http(s)).
     """
     url_contains = (os.getenv("ATTACH_TAB_URL_CONTAINS") or "").strip()
@@ -270,7 +270,7 @@ def _attach_select_tab(driver) -> None:
                 return
         print(f"[ATTACH] Tab=url_contains NOT FOUND ({url_contains})")
 
-    # 2) Title contains (utile quand plusieurs onglets ont la mÃƒÆ’Ã‚Âªme URL mais titres diffÃƒÆ’Ã‚Â©rents)
+    # 2) Title contains (utile quand plusieurs onglets ont la même URL mais titres différents)
     if title_contains:
         needle = title_contains.lower()
         for i in range(len(handles)):
@@ -285,7 +285,7 @@ def _attach_select_tab(driver) -> None:
                 return
         print(f"[ATTACH] Tab=title_contains NOT FOUND ({title_contains})")
 
-    # 3) DOM contains (solution robuste pour 3 onglets avec EXACTEMENT la mÃƒÆ’Ã‚Âªme URL)
+    # 3) DOM contains (solution robuste pour 3 onglets avec EXACTEMENT la même URL)
     if dom_contains:
         needle = dom_contains.lower()
         for i in range(len(handles)):
@@ -335,12 +335,12 @@ def _attach_select_tab(driver) -> None:
                 return
 
     if mode in ("current", "active", "focused"):
-        # No-op prÃƒÆ’Ã‚Â©dictible: on ne tente PAS de deviner le focus UI.
+        # No-op prédictible: on ne tente PAS de deviner le focus UI.
         u = _safe_url()
         if _attach_is_user_web_url(u):
             print(f"[ATTACH] Tab=current(no-op) url={_attach_display_url(u)}")
             return
-        # si on est tombÃƒÆ’Ã‚Â© sur chrome://tab-search etc., on fallback
+        # si on est tombé sur chrome://tab-search etc., on fallback
         if _pick_last_web():
             return
         return
@@ -561,7 +561,7 @@ def main():
         flush=True,
     )
 
-    # ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ¢â‚¬â„¢ Fail-fast : mÃƒÆ’Ã‚Âªme si quelqu'un force des env vars en prod, attach ne doit jamais tourner
+    #  Fail-fast : même si quelqu'un force des env vars en prod, attach ne doit jamais tourner
     if is_attach_mode() and (not IS_LOCAL):
         raise SystemExit("attach_forbidden_in_prod")
 
@@ -575,7 +575,7 @@ def main():
         raise RuntimeError("ACCOUNT_ID introuvable")
 
     if is_attach_mode():
-        # ÃƒÂ¢Ã…Â¡Ã‚Â ÃƒÂ¯Ã‚Â¸Ã‚Â ATTACH = LOCAL DEBUG TAKEOVER
+        # ⚠ ATTACH = LOCAL DEBUG TAKEOVER
         # - pas de lock DynamoDB
         # - pas de navigation TopSurveys
         # - pas de quit() (sinon tu fermes ton Chrome)
@@ -591,7 +591,7 @@ def main():
             or config.get("OPENAI_API_KEY")
         )
         if not api_key:
-            raise RuntimeError("OPENAI_API_KEY introuvable (nÃƒÆ’Ã‚Â©cessaire en attach)")
+            raise RuntimeError("OPENAI_API_KEY introuvable (nécessaire en attach)")
 
         if should_run_hot_reload():
             start_hot_reload_thread()
@@ -619,7 +619,7 @@ def main():
 
     notify_fn = build_notifier(config)
 
-    # Proxy-lock retirÃƒÆ’Ã‚Â© : en prod on a 1 bot par proxy, donc lock proxy redondant
+    # Proxy-lock retiré : en prod on a 1 bot par proxy, donc lock proxy redondant
     runtime_ctx = {
         "driver": None,
         "session": {},
