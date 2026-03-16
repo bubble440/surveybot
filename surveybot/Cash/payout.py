@@ -7,6 +7,11 @@ from State.account_state import update_state
 from State.daily_target import DAILY_TARGET_EUR, record_daily_earning_and_target
 from Management.guards.runtime_guard import get_guard
 from selenium.webdriver.common.by import By
+
+# Seuil minimal réel pour déclencher un encaissement sur TopSurveys.
+# Le modal ne propose que des options >= 5 €, donc ouvrir en dessous est inutile.
+MIN_CASHOUT_EUR = 5.0
+
 IS_LOCAL = os.getenv("RUN_ENV", "local") == "local"
 
 if not IS_LOCAL:
@@ -340,24 +345,19 @@ def check_and_cashout_if_needed(
     driver,
     *,
     account_id: str,
-    min_amount_eur: float = DAILY_TARGET_EUR,
+    min_amount_eur: float = MIN_CASHOUT_EUR,
     cashout_order: Tuple[str, str] = ("revolut", "paypal"),
     revolut_fullname: str = "",
     revolut_tag: str = ""
 ) -> bool:
     """
     - Lit le solde,
-    - Si >= min_amount_eur, ouvre le modal,
-    - Tente encaissement dans l'ordre `cashout_order` ('paypal' puis 'revolut' par défaut),
+    - Si >= min_amount_eur (défaut 5 €, seuil minimum du modal TopSurveys),
+      ouvre le modal,
+    - Tente encaissement dans l'ordre `cashout_order` ('revolut' puis 'paypal' par défaut),
     - Confirme la réclamation sur la page suivante.
     Renvoie True si un encaissement a été tenté (et soumis), False sinon.
     """
-
-    try:
-        amount = _read_balance(driver)
-    except Exception as e:
-        print("[PAYOUT][ERROR] Lecture solde échouée:", e)
-        return False
 
     # Retry: l'UI peut ne pas être prête juste après le login/redirection
     amount = None
