@@ -1,6 +1,6 @@
 # survey_solver.py
-# Orchestration minimaliste et robuste pour enchaÃƒÆ’Ã‚Â®ner les actions de page
-# ÃƒÂ¢Ã…Â¾Ã…â€œ Laisse lÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢intelligence dÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢action ÃƒÆ’Ã‚Â  survey_executor.execute_survey_page()
+# Orchestration minimaliste et robuste pour enchaîner les actions de page
+# ➜ Laisse l’intelligence d’action à survey_executor.execute_survey_page()
 
 from selenium.webdriver.support.ui import WebDriverWait  # [AJOUT]
 from selenium.webdriver.support import expected_conditions as EC  # [AJOUT]
@@ -9,29 +9,29 @@ from selenium.webdriver.common.by import By
 import time, os, sys
 from preselection.question_validation import detect_disqualification_reason
 
-STABILIZE_SLEEP = 2.0  # dÃƒÆ’Ã‚Â©lai court entre deux actions pour laisser le DOM respirer
+STABILIZE_SLEEP = 2.0  # délai court entre deux actions pour laisser le DOM respirer
 
 
 def _switch_to_external_tab(driver):
     """
-    Basculer sur lÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢onglet du survey (ÃƒÂ¢Ã¢â‚¬Â°Ã‚Â  TopSurveys).
-    Utile juste aprÃƒÆ’Ã‚Â¨s avoir cliquÃƒÆ’Ã‚Â© sur Ãƒâ€šÃ‚Â« Participer Ãƒâ€šÃ‚Â».
+    Basculer sur l’onglet du survey (≠ TopSurveys).
+    Utile juste après avoir cliqué sur « Participer ».
     """
-    time.sleep(3)  # laisse le temps aux nouveaux onglets dÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢apparaÃƒÆ’Ã‚Â®tre
+    time.sleep(3)  # laisse le temps aux nouveaux onglets d’apparaître
     for handle in driver.window_handles:
         driver.switch_to.window(handle)
         current_url = driver.current_url
         if "topsurveys.app" not in current_url:
-            print(f"ÃƒÂ°Ã…Â¸Ã‚Â§Ã‚Â­ Onglet externe dÃƒÆ’Ã‚Â©tectÃƒÆ’Ã‚Â© : {current_url}")
+            print(f"🧭 Onglet externe détecté : {current_url}")
             return True
-    print("ÃƒÂ¢Ã…Â¡Ã‚Â ÃƒÂ¯Ã‚Â¸Ã‚Â Aucun onglet externe dÃƒÆ’Ã‚Â©tectÃƒÆ’Ã‚Â©. Reste sur TopSurveys.")
+    print("⚠ Aucun onglet externe détecté. Reste sur TopSurveys.")
     return False
 
 
 def count_actionable_elements(driver) -> int:
     """
-    Compte rapidement les ÃƒÆ’Ã‚Â©lÃƒÆ’Ã‚Â©ments actionnables visibles sur la page.
-    Sert ÃƒÆ’Ã‚Â  savoir s'il reste 'beaucoup' d'inputs (ÃƒÆ’Ã‚Â©vite d'envoyer prev inutilement).
+    Compte rapidement les éléments actionnables visibles sur la page.
+    Sert à savoir s'il reste 'beaucoup' d'inputs (évite d'envoyer prev inutilement).
     """
     total = 0
     try:
@@ -64,13 +64,13 @@ def count_actionable_elements(driver) -> int:
 
 def _has_actionable_elements(driver):
     """
-    Heuristique : y aÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬ËœtÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Ëœil des ÃƒÆ’Ã‚Â©lÃƒÆ’Ã‚Â©ments actionnables ?
-    ÃƒÂ¢Ã…Â¾Ã…â€œ VÃƒÆ’Ã‚Â©rifie le DOM courant **et** les iframes (profondeur 2).
+    Heuristique : y a‑t‑il des éléments actionnables ?
+    ➜ Vérifie le DOM courant **et** les iframes (profondeur 2).
     """
 
     def _here(drv):
         def _is_actionable(el) -> bool:
-            """ÃƒÆ’Ã¢â‚¬Â°vite les faux positifs : cachÃƒÆ’Ã‚Â© / disabled / taille nulle."""
+            """Évite les faux positifs : caché / disabled / taille nulle."""
             try:
                 if not el.is_displayed():
                     return False
@@ -91,12 +91,12 @@ def _has_actionable_elements(driver):
                 return True
             # Boutons navigation (FR/EN), inclut Start! et Start
 
-            # ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ NEW: beaucoup de surveys cachent l'input (0x0) et rendent le label cliquable
+            # ✅ NEW: beaucoup de surveys cachent l'input (0x0) et rendent le label cliquable
             labels = drv.find_elements(By.CSS_SELECTOR, "label[for]")
             if any(_is_actionable(el) for el in labels):
                 return True
 
-            # ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ NEW: widgets custom (role=checkbox/radio)
+            # ✅ NEW: widgets custom (role=checkbox/radio)
             custom = drv.find_elements(By.CSS_SELECTOR, "[role='checkbox'], [role='radio']")
             if any(_is_actionable(el) for el in custom):
                 return True
@@ -140,7 +140,7 @@ def _has_actionable_elements(driver):
                 if _here(driver):
                     driver.switch_to.default_content()
                     return True
-                # profondeur supplÃƒÆ’Ã‚Â©mentaire
+                # profondeur supplémentaire
                 subframes = driver.find_elements(By.TAG_NAME, "iframe")
                 for sub in subframes:
                     try:
@@ -167,8 +167,8 @@ def _has_actionable_elements(driver):
 
 def _looks_like_end_screen(driver):
     """
-    DÃƒÆ’Ã‚Â©tection trÃƒÆ’Ã‚Â¨s simple dÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢un ÃƒÆ’Ã‚Â©cran de fin (messages de remerciement/soumission).
-    ÃƒÆ’Ã¢â‚¬Â°vite de tourner en rond une fois le questionnaire terminÃƒÆ’Ã‚Â©.
+    Détection très simple d’un écran de fin (messages de remerciement/soumission).
+    Évite de tourner en rond une fois le questionnaire terminé.
     """
     try:
         page_text = " ".join(
@@ -182,13 +182,13 @@ def _looks_like_end_screen(driver):
         ).lower()
 
         end_markers = [
-            "merci d'avoir rÃƒÆ’Ã‚Â©pondu",
+            "merci d'avoir répondu",
             "merci pour votre participation",
-            "vos rÃƒÆ’Ã‚Â©ponses ont ÃƒÆ’Ã‚Â©tÃƒÆ’Ã‚Â© enregistrÃƒÆ’Ã‚Â©es",
+            "vos réponses ont été enregistrées",
             "thank you for completing",
             "your responses have been recorded",
             "survey complete",
-            "enquÃƒÆ’Ã‚Âªte terminÃƒÆ’Ã‚Â©e",
+            "enquête terminée",
             "fin du questionnaire",
         ]
         return any(tok in page_text for tok in end_markers)
@@ -264,7 +264,7 @@ def _handle_topsurveys_partial_popup(driver) -> bool:
     # Nettoyer les autres onglets maintenant
     _close_other_tabs_in_current_session(driver)
 
-    # Bouton 'Complete' - sÃ©lecteur exact identifie dans le DOM
+    # Bouton 'Complete' - sélecteur exact identifie dans le DOM
     btn = None
     
     # Strategie 1: data-test-id (EXACT - identifie dans le DOM reel)
@@ -398,9 +398,9 @@ def _payout_and_check_daily_stop(driver, account_id: str) -> bool:
 def _if_on_topsurveys_handle(driver, api_key, account_id, survey_context=None) -> bool:
     """
     Si on est sur app.topsurveys.app :
-      - traite le popup 'partiellement rÃƒÆ’Ã‚Â©pondu' (ferme autres onglets + 'ComplÃƒÆ’Ã‚Â¨te' + relance)
-      - sinon, vÃƒÆ’Ã‚Â©rifie la disqualification (ferme autres onglets + relance)
-    Retourne True si on a *orchestrÃƒÆ’Ã‚Â© un retour* vers run_survey().
+      - traite le popup 'partiellement répondu' (ferme autres onglets + 'Complète' + relance)
+      - sinon, vérifie la disqualification (ferme autres onglets + relance)
+    Retourne True si on a *orchestré un retour* vers run_survey().
     """
     url = (driver.current_url or "").lower()
     if "topsurveys.app" not in url:
@@ -417,23 +417,23 @@ def _if_on_topsurveys_handle(driver, api_key, account_id, survey_context=None) -
             preselection.survey_handler.run_survey(driver, api_key, account_id=account_id, ctx=survey_context)
             return True
         except Exception as e:
-            print("ÃƒÂ°Ã…Â¸Ã¢â‚¬â„¢Ã‚Â¥ Erreur relance aprÃƒÆ’Ã‚Â¨s ‘ComplÃƒÆ’Ã‚Â¨te’ :", e)
+            print("💥 Erreur relance après Complète :", e)
             return False
 
     # Cas B : check disqualification puis relance si besoin
     try:
-        # ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ DÃƒÆ’Ã‚Â©tection disqualification centralisÃƒÆ’Ã‚Â©e (robuste)
+        # ✅ Détection disqualification centralisée (robuste)
         page_txt = _page_text_lc(driver)
         dq_reason = detect_disqualification_reason("", page_txt)
         if dq_reason:
-            print(f"ÃƒÂ¢Ã…Â¡Ã‚Â ÃƒÂ¯Ã‚Â¸Ã‚Â Disqualification TopSurveys dÃƒÆ’Ã‚Â©tectÃƒÆ’Ã‚Â©e (reason={dq_reason}).")
+            print(f"⚠ Disqualification TopSurveys détectée (reason={dq_reason}).")
 
-            # best-effort : ferme le popup si prÃƒÆ’Ã‚Â©sent (mais la dÃƒÆ’Ã‚Â©tection ne dÃƒÆ’Ã‚Â©pend plus de ÃƒÆ’Ã‚Â§a)
+            # best-effort : ferme le popup si présent (mais la détection ne dépend plus de ça)
             try:
                 import preselection.question_analyzer
                 preselection.question_analyzer.handle_disqualification_and_retry(driver)
             except Exception as e:
-                print("ÃƒÂ¢Ã…Â¡Ã‚Â ÃƒÂ¯Ã‚Â¸Ã‚Â Popup disqualification dÃƒÆ’Ã‚Â©tectÃƒÆ’Ã‚Â© mais fermeture 'Ok' a ÃƒÆ’Ã‚Â©chouÃƒÆ’Ã‚Â©:", e)
+                print("⚠ Popup disqualification détecté mais fermeture 'Ok' a échoué:", e)
 
             _close_other_tabs_in_current_session(driver)
             _payout_and_check_daily_stop(driver, account_id)  # retrait + DAILY STOP
@@ -444,7 +444,7 @@ def _if_on_topsurveys_handle(driver, api_key, account_id, survey_context=None) -
             preselection.survey_handler.run_survey(driver, api_key, account_id=account_id, ctx=survey_context)
             return True
     except Exception as e:
-        print("ÃƒÂ°Ã…Â¸Ã¢â‚¬â„¢Ã‚Â¥ Erreur check disqualification TopSurveys :", e)
+        print("💥 Erreur check disqualification TopSurveys :", e)
 
     # -------------------------------------------------------------------
     # Cas C : Page de preselection TopSurveys (popup "Qualification" avec questions)
@@ -581,26 +581,26 @@ def solve_full_survey(driver, api_key, *, account_id: str, survey_context=None):
       - plus rien d'actionnable détecté (survey terminé) → soft-restart
       - stuck : réponse acceptée mais page ne bouge pas (Option B) → soft-restart
     """
-    print("ÃƒÂ°Ã…Â¸Ã‚Â§Ã‚Âª [solve_full_survey] DÃƒÆ’Ã‚Â©but de traitement du survey...")
+    print("🧪 [solve_full_survey] Début de traitement du survey...")
     # One SurveyContext per survey run — tracks Q/R history for coherent OpenAI responses
     _survey_ctx = survey_context or SurveyContext(session_id=account_id, openai_api_key=api_key)
     global _current_survey_ctx
     _current_survey_ctx = _survey_ctx
 
-    # ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ‚Â SÃƒÆ’Ã‚Â©curitÃƒÆ’Ã‚Â© : si plusieurs onglets existent, on prend le dernier
+    #  Sécurité : si plusieurs onglets existent, on prend le dernier
     try:
         if len(driver.window_handles) > 1:
             driver.switch_to.window(driver.window_handles[-1])
-            print(f"ÃƒÂ°Ã…Â¸Ã‚Â§Ã‚Â­ Focus forcÃƒÆ’Ã‚Â© sur lÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢onglet actif : {driver.current_url}")
+            print(f"🧭 Focus forcé sur l’onglet actif : {driver.current_url}")
     except Exception as e:
-        print("ÃƒÂ¢Ã…Â¡Ã‚Â ÃƒÂ¯Ã‚Â¸Ã‚Â Impossible de forcer le focus onglet :", e)
+        print("⚠ Impossible de forcer le focus onglet :", e)
 
 
     _switch_to_external_tab(driver)
 
-    # 1) Attendre que la redirection sÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢arrÃƒÆ’Ã‚Âªte sur une URL stable
+    # 1) Attendre que la redirection s’arrête sur une URL stable
     final_url = redirect_watcher.wait_for_final_redirection(driver)
-    print(f"ÃƒÂ°Ã…Â¸Ã…â€™Ã‚Â URL finale stabilisÃƒÆ’Ã‚Â©e : {final_url}")
+    print(f" URL finale stabilisée : {final_url}")
 
     # 2) Boucle d'exécution des actions
     _no_progress_count = 0        # Option B : succès sans avance de page
@@ -611,13 +611,13 @@ def solve_full_survey(driver, api_key, *, account_id: str, survey_context=None):
     while True:
         print("[solve_full_survey] Exécution de la page courante")
 
-        # RÃƒÆ’Ã‚Â©initialise le drapeau de succÃƒÆ’Ã‚Â¨s cÃƒÆ’Ã‚Â´tÃƒÆ’Ã‚Â© handlers
+        # Réinitialise le drapeau de succès côté handlers
         try:
             setattr(driver, "last_action_success", False)
         except Exception:
             pass
 
-        # [PATCH] Purge d'un overlay trop ancien (>3s) pour ÃƒÆ’Ã‚Â©viter des ÃƒÆ’Ã‚Â©tats collants
+        # [PATCH] Purge d'un overlay trop ancien (>3s) pour éviter des états collants
         try:
             ov = getattr(driver, "_ui_overlay_opened", None)
             if ov and (time.time() - ov.get("ts", 0) > 3.0):
@@ -625,13 +625,13 @@ def solve_full_survey(driver, api_key, *, account_id: str, survey_context=None):
         except Exception:
             pass
 
-        # --- STRICT GUARD (per-step, throttlÃƒÆ’Ã‚Â©) -----------------------------
+        # --- STRICT GUARD (per-step, throttlé) -----------------------------
 
-        # on ne fait pas le check ÃƒÆ’Ã‚Â  chaque micro-iteration si overlay dropdown etc.
-        # mais par dÃƒÆ’Ã‚Â©faut: 1 check par ÃƒÆ’Ã‚Â©tape suffit
+        # on ne fait pas le check à chaque micro-iteration si overlay dropdown etc.
+        # mais par défaut: 1 check par étape suffit
         is_strict, reason = Management.guards.survey_difficulty_guard.detect_strict_survey(driver)
         if is_strict:
-            # ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ CAPTCHA : comportement diffÃƒÆ’Ã‚Â©rent selon environnement
+            # ✅ CAPTCHA : comportement différent selon environnement
             if reason == "captcha":
                 from config import should_pause_for_captcha, get_captcha_behavior
                 captcha_behavior = get_captcha_behavior()
@@ -662,67 +662,67 @@ def solve_full_survey(driver, api_key, *, account_id: str, survey_context=None):
                     return
 
                 # === LOCAL interactif : pause manuelle (inchangé, fall-through) ===
-                # LOCAL : pause manuelle pour rÃƒÆ’Ã‚Â©solution utilisateur
-                print("[LOCAL][CAPTCHA] ÃƒÂ¢Ã…Â¡Ã‚Â ÃƒÂ¯Ã‚Â¸Ã‚Â  CAPTCHA dÃƒÆ’Ã‚Â©tectÃƒÆ’Ã‚Â© ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ rÃƒÆ’Ã‚Â©solution MANUELLE requise")
+                # LOCAL : pause manuelle pour résolution utilisateur
+                print("[LOCAL][CAPTCHA] ⚠  CAPTCHA détecté → résolution MANUELLE requise")
                 
-                # Anti-boucle : ne pas mettre en pause plusieurs fois sur la mÃƒÆ’Ã‚Âªme URL
+                # Anti-boucle : ne pas mettre en pause plusieurs fois sur la même URL
                 try:
                     captcha_url = driver.current_url or ""
                     last_captcha_url = getattr(driver, "_last_captcha_pause_url", None)
                     if last_captcha_url == captcha_url:
-                        print("[LOCAL][CAPTCHA] ÃƒÂ¢Ã‚ÂÃ‚Â­ÃƒÂ¯Ã‚Â¸Ã‚Â  Captcha dÃƒÆ’Ã‚Â©jÃƒÆ’Ã‚Â  traitÃƒÆ’Ã‚Â© sur cette URL, on continue")
-                        # On continue l'exÃƒÆ’Ã‚Â©cution normale sans repause
+                        print("[LOCAL][CAPTCHA]   Captcha déjà traité sur cette URL, on continue")
+                        # On continue l'exécution normale sans repause
                     else:
-                        # Marquer cette URL comme traitÃƒÆ’Ã‚Â©e
+                        # Marquer cette URL comme traitée
                         setattr(driver, "_last_captcha_pause_url", captcha_url)
                         
                         # Pause interactive si terminal disponible
                         from config import should_block_for_input
                         if should_block_for_input():
                             try:
-                                input("[LOCAL][PAUSE] ÃƒÂ°Ã…Â¸Ã‚Â§Ã‚Â© RÃƒÆ’Ã‚Â©sous le CAPTCHA dans le navigateur, puis appuie sur EntrÃƒÆ’Ã‚Â©e...\n")
+                                input("[LOCAL][PAUSE] 🧩 Résous le CAPTCHA dans le navigateur, puis appuie sur Entrée...\n")
                             except KeyboardInterrupt:
-                                print("[LOCAL] ÃƒÂ¢Ã‚ÂÃ‚Â¹ÃƒÂ¯Ã‚Â¸Ã‚Â  Abandon demandÃƒÆ’Ã‚Â© par l'utilisateur")
+                                print("[LOCAL]   Abandon demandé par l'utilisateur")
                                 Management.guards.runtime_guard.get_guard().record_success()
                                 Management.guards.runtime_guard.get_guard().signal_strict_survey("captcha_user_abort")
                                 return
                         else:
-                            print("[LOCAL][CAPTCHA] ÃƒÂ¢Ã…Â¡Ã‚Â ÃƒÂ¯Ã‚Â¸Ã‚Â  Terminal non-interactif, pas de pause possible")
+                            print("[LOCAL][CAPTCHA] ⚠  Terminal non-interactif, pas de pause possible")
                             Management.guards.runtime_guard.get_guard().record_success()
                             Management.guards.runtime_guard.get_guard().signal_strict_survey("captcha_no_tty")
                             return
                         
-                        # VÃƒÆ’Ã‚Â©rification : attendre que le captcha disparaisse (max 30s)
-                        print("[LOCAL][CAPTCHA] ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ‚Â VÃƒÆ’Ã‚Â©rification de la disparition du captcha...")
+                        # Vérification : attendre que le captcha disparaisse (max 30s)
+                        print("[LOCAL][CAPTCHA]  Vérification de la disparition du captcha...")
                         deadline = time.time() + 30.0
                         captcha_resolved = False
                         
                         while time.time() < deadline:
-                            # Re-check si le captcha est toujours lÃƒÆ’Ã‚Â 
+                            # Re-check si le captcha est toujours là
                             still_strict, still_reason = Management.guards.survey_difficulty_guard.detect_strict_survey(driver)
                             if not still_strict or still_reason != "captcha":
-                                print("[LOCAL][CAPTCHA] ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Captcha rÃƒÆ’Ã‚Â©solu ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ continuation de l'exÃƒÆ’Ã‚Â©cution")
+                                print("[LOCAL][CAPTCHA] ✅ Captcha résolu → continuation de l'exécution")
                                 captcha_resolved = True
                                 break
                             time.sleep(1.0)
                         
                         if not captcha_resolved:
-                            print("[LOCAL][CAPTCHA] ÃƒÂ¢Ã‚ÂÃ‚Â±ÃƒÂ¯Ã‚Â¸Ã‚Â  Timeout : captcha toujours prÃƒÆ’Ã‚Â©sent aprÃƒÆ’Ã‚Â¨s 30s")
+                            print("[LOCAL][CAPTCHA]   Timeout : captcha toujours présent après 30s")
                             Management.guards.runtime_guard.get_guard().record_success()
                             Management.guards.runtime_guard.get_guard().signal_strict_survey("captcha_timeout")
                             return
                         
-                        # Captcha rÃƒÆ’Ã‚Â©solu avec succÃƒÆ’Ã‚Â¨s : on continue la boucle normale
-                        print("[LOCAL][CAPTCHA] ÃƒÂ°Ã…Â¸Ã…Â¡Ã¢â€šÂ¬ Reprise de l'exÃƒÆ’Ã‚Â©cution du survey")
+                        # Captcha résolu avec succès : on continue la boucle normale
+                        print("[LOCAL][CAPTCHA] 🚀 Reprise de l'exécution du survey")
                 except Exception as e:
-                    print(f"[LOCAL][CAPTCHA] ÃƒÂ¢Ã‚ÂÃ…â€™ Erreur lors de la gestion du captcha : {e}")
+                    print(f"[LOCAL][CAPTCHA]  Erreur lors de la gestion du captcha : {e}")
                     Management.guards.runtime_guard.get_guard().record_success()
                     Management.guards.runtime_guard.get_guard().signal_strict_survey("captcha_error")
                     return
             
-            # ÃƒÂ¢Ã…Â¡Ã‚Â ÃƒÂ¯Ã‚Â¸Ã‚Â AUTRES RAISONS (drag_drop, hold_button, etc.) : arrÃƒÆ’Ã‚Âªt immÃƒÆ’Ã‚Â©diat (inchangÃƒÆ’Ã‚Â©)
+            # ⚠ AUTRES RAISONS (drag_drop, hold_button, etc.) : arrêt immédiat (inchangé)
             else:
-                print(f"[STRICT_SURVEY][MID] DÃƒÆ’Ã‚Â©tectÃƒÆ’Ã‚Â© en cours de survey ({reason}) -> restart propre")
+                print(f"[STRICT_SURVEY][MID] Détecté en cours de survey ({reason}) -> restart propre")
                 Management.guards.runtime_guard.get_guard().record_success()
                 Management.guards.runtime_guard.get_guard().signal_strict_survey(f"strict_mid_{reason}")
                 return        
@@ -741,7 +741,7 @@ def solve_full_survey(driver, api_key, *, account_id: str, survey_context=None):
             print(f"[PRE-EXEC] Check TopSurveys echoue: {e}")
 
         # -------------------------------------------------------------------
-        # a) Laisser GPT dÃƒÆ’Ã‚Â©cider de lÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢action ÃƒÆ’Ã‚Â  partir de la capture dÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã‚Â©cran
+        # a) Laisser GPT décider de l’action à partir de la capture d’écran
         success = Survey.survey_executor.execute_survey_page(driver, api_key, ctx=_survey_ctx)
 
         # Connexion RuntimeGuard
@@ -762,7 +762,7 @@ def solve_full_survey(driver, api_key, *, account_id: str, survey_context=None):
                 print(f"  Q{i}: {entry.get('question','')[:80]} → {entry.get('answer','')}")
             print()
             
-        # [PATCH] Mode "overlay ouvert" ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ recapture rapide
+        # [PATCH] Mode "overlay ouvert" → recapture rapide
         try:
             overlay = getattr(driver, "_ui_overlay_opened", None)
         except Exception:
@@ -770,17 +770,17 @@ def solve_full_survey(driver, api_key, *, account_id: str, survey_context=None):
 
         if overlay and overlay.get("type") == "dropdown":
             print(
-                "ÃƒÂ°Ã…Â¸Ã…Â½Ã‚Â¯ Dropdown ouvert ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ recapture immÃƒÆ’Ã‚Â©diate (on saute l'attente/redirection)."
+                "🎯 Dropdown ouvert → recapture immédiate (on saute l'attente/redirection)."
             )
             time.sleep(0.3)  # laisser la liste se peindre
-            continue  # on relance une itÃƒÆ’Ã‚Â©ration : GPT verra la liste OUVERTE
+            continue  # on relance une itération : GPT verra la liste OUVERTE
 
         # b) Micro-pause pour laisser le DOM respirer
         time.sleep(STABILIZE_SLEEP)
 
-        # c) Attente ADAPTATIVE aprÃƒÆ’Ã‚Â¨s action
-        #    - Si une action vient de rÃƒÆ’Ã‚Â©ussir et qu'il reste des choses ÃƒÆ’Ã‚Â  faire sur la page,
-        #      on NE bloque PAS sur une redirection (les surveys exigent souvent plusieurs entrÃƒÆ’Ã‚Â©es).
+        # c) Attente ADAPTATIVE après action
+        #    - Si une action vient de réussir et qu'il reste des choses à faire sur la page,
+        #      on NE bloque PAS sur une redirection (les surveys exigent souvent plusieurs entrées).
         try:
             just_succeeded = bool(
                 getattr(driver, "last_action_success", False) or success
@@ -788,23 +788,23 @@ def solve_full_survey(driver, api_key, *, account_id: str, survey_context=None):
         except Exception:
             just_succeeded = bool(success)
 
-        # y a-t-il encore des ÃƒÆ’Ã‚Â©lÃƒÆ’Ã‚Â©ments actionnables visibles ?
+        # y a-t-il encore des éléments actionnables visibles ?
         has_more_to_do = _has_actionable_elements(driver)
 
         if just_succeeded and has_more_to_do:
             print(
-                "ÃƒÂ¢Ã‚ÂÃ‚Â­ÃƒÂ¯Ã‚Â¸Ã‚Â Action en-page rÃƒÆ’Ã‚Â©ussie et autres ÃƒÆ’Ã‚Â©lÃƒÆ’Ã‚Â©ments visibles ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ pas d'attente de navigation."
+                " Action en-page réussie et autres éléments visibles → pas d'attente de navigation."
             )
-            time.sleep(0.4)  # laisser le framework rÃƒÆ’Ã‚Â©agir
-            # on repart tout de suite sur une nouvelle itÃƒÆ’Ã‚Â©ration (nouvelle capture)
+            time.sleep(0.4)  # laisser le framework réagir
+            # on repart tout de suite sur une nouvelle itération (nouvelle capture)
             continue
 
-        # Sinon, il y a peut-ÃƒÆ’Ã‚Âªtre une navigation : stabilisation courte si succÃƒÆ’Ã‚Â¨s, sinon normale
+        # Sinon, il y a peut-être une navigation : stabilisation courte si succès, sinon normale
         maxw = 3 if just_succeeded else 8
         stabilized_url = redirect_watcher.wait_for_final_redirection(driver, max_wait=maxw)
         current_url = stabilized_url or driver.current_url
 
-        # Si lÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢URL a changÃƒÆ’Ã‚Â© ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ on inspecte le nouvel emplacement
+        # Si l’URL a changé → on inspecte le nouvel emplacement
         if current_url != last_url:
             _no_progress_count = 0  # URL a changé, réinitialisation du détecteur stuck
             print(f"[solve_full_survey] Changement d'URL {last_url} \u2192 {current_url}")
@@ -837,13 +837,13 @@ def solve_full_survey(driver, api_key, *, account_id: str, survey_context=None):
         else:
             _no_progress_count = 0
 
-        # d) Conditions dÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢arrÃƒÆ’Ã‚Âªt
+        # d) Conditions d’arrêt
         # if _looks_like_end_screen(driver):
-            # print("ÃƒÂ°Ã…Â¸Ã‚ÂÃ‚Â ÃƒÆ’Ã¢â‚¬Â°cran de fin dÃƒÆ’Ã‚Â©tectÃƒÆ’Ã‚Â©. Fin du survey.")
+            # print(" Écran de fin détecté. Fin du survey.")
             # break
 
-        # Heuristique : si aucune actionnable visible MAIS on vient de rÃƒÆ’Ã‚Â©ussir une action,
-        # on laisse 1 tour de plus au DOM pour apparaÃƒÆ’Ã‚Â®tre (ÃƒÆ’Ã‚Â©vite lÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢arrÃƒÆ’Ã‚Âªt prÃƒÆ’Ã‚Â©maturÃƒÆ’Ã‚Â©).
+        # Heuristique : si aucune actionnable visible MAIS on vient de réussir une action,
+        # on laisse 1 tour de plus au DOM pour apparaître (évite l’arrêt prématuré).
         has_actionables = _has_actionable_elements(driver)
         if not has_actionables:
             just_succeeded = False
@@ -856,9 +856,9 @@ def solve_full_survey(driver, api_key, *, account_id: str, survey_context=None):
 
             if just_succeeded:
                 print(
-                    "ÃƒÂ¢Ã‚ÂÃ‚Â³ Pas encore dÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã‚Â©lÃƒÆ’Ã‚Â©ment actionnable, mais action rÃƒÆ’Ã‚Â©ussie ÃƒÆ’Ã‚Â  lÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã‚Â©tape prÃƒÆ’Ã‚Â©cÃƒÆ’Ã‚Â©dente. On continue."
+                    " Pas encore d’élément actionnable, mais action réussie à l’étape précédente. On continue."
                 )
-                # petit dÃƒÆ’Ã‚Â©lai de grÃƒÆ’Ã‚Â¢ce
+                # petit dlai de grce
                 time.sleep(1.0)
                 continue
 
@@ -867,10 +867,10 @@ def solve_full_survey(driver, api_key, *, account_id: str, survey_context=None):
             guard.request_survey_restart("survey_end")
             return
 
-        # e) Si lÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢URL nÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã‚Â©volue pas ET lÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢action a ÃƒÆ’Ã‚Â©chouÃƒÆ’Ã‚Â© 2 fois dÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢affilÃƒÆ’Ã‚Â©e, on sort (sÃƒÆ’Ã‚Â©curitÃƒÆ’Ã‚Â© douce)
+        # e) Si l’URL n’évolue pas ET l’action a échoué 2 fois d’affilée, on sort (sécurité douce)
         if current_url == last_url and success is False:
-            print("ÃƒÂ¢Ã…Â¡Ã‚Â ÃƒÂ¯Ã‚Â¸Ã‚Â Ni changement dÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢URL ni action rÃƒÆ’Ã‚Â©ussie. Nouvelle tentativeÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦")
-            # on laisse encore 1 tour; si ÃƒÆ’Ã‚Â§a persiste, la condition ciÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Ëœdessus arrÃƒÆ’Ã‚Âªtera.
+            print("⚠ Ni changement d’URL ni action réussie. Nouvelle tentative…")
+            # on laisse encore 1 tour; si ça persiste, la condition ci‑dessus arrêtera.
         last_url = current_url
         # Non-blocking: triggers async summary generation every N pages
         try:

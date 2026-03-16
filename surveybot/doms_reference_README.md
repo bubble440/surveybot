@@ -21,7 +21,7 @@ Tout patch proposé **DOIT** être validé contre ces DOMs pour garantir :
 | `DOM_confirmit_children_household_multi_exclusive_fr.txt` | **Forsta/Confirmit** | Checkbox multi-select + exclusives | `cf-answer-button--exclusive`, structure `cf-question`, options exclusives CSS-driven |
 | `DOM_cmix_language_selector_radio_60552194.txt` | **cmix** | Radio (single select) | `data-type="RADIO"`, `cm-radio-label`, sélecteur de langue bilingue EN/FR |
 | `DOM_cmix_intro_consent_checkbox_60552196.txt` | **cmix** | Checkbox (consentement) | `data-type="CHECKBOX"`, intro/welcome page, case à cocher unique de consentement |
-| `DOM_rsch_demographics_fr.txt` | **Rsch (Research System)** | Multi-type (radio + text + dropdown) | Page démographique multi-questions (genre SC1, âge SC2, région SC3), mix radio/text/select |
+| `DOM_rsch_demographics_fr.txt` | **Rsch (Research System)** | Multi-type (radio + text + dropdown) | Page dmographique multi-questions (genre SC1, ge SC2, rgion SC3), mix radio/text/select |
 | `DOM_ipsos_gender_radio_fr.txt` | **IPSOS** | Radio (single select) | `h3.question-title-frontend`, `input[type=radio]` dans `.radio > label`, Wicket framework |
 | `DOM_decipher_red_herring_math_text_fr.txt` | **Decipher** | Text input (red herring math) | `input[type=text]`, question `h1.question-text`, validation erreur `div.question-error`, anti-bot |
 | `DOM_angular_material_radio_fruits.txt` | **Angular Material (custom)** | Radio (single select) | `mat-radio-button`, `mat-mdc-radio-checked` sur option sélectionnée, `value` numérique, red herring fruits |
@@ -131,7 +131,7 @@ N° question:  div.qno (ex: SC1, SC2, SC3)
 Options:      label.rdck_label_sp (associé via for=)
 Inputs:       input[type=radio] (name=sc1, values=1/2/3)
 
-— Text input (SC2 âge) —
+ Text input (SC2 ge) 
 Inputs:       input[type=text] (name=sc2_1, maxlength=2)
 Unité:        texte adjacent " ans"
 
@@ -145,7 +145,7 @@ Progress:     div#progressbar (barre 0-100%)
 
 **Particularités Rsch :**
 - Plusieurs questions sur une même page (SC1, SC2, SC3) — extraire chaque `div.question_default` séparément
-- Encodage UTF-8 parfois altéré dans les caractères accentués (`Ã©` pour `é`, etc.)
+- Encodage UTF-8 parfois altr dans les caractres accentus (`é` pour ``, etc.)
 - Les `<input type="hidden">` (nextdata, back_button) ne sont pas des questions
 - `data-survey-uid` présent sur tous les éléments (utile pour le ciblage précis)
 - La region est via un `<select>` natif avec `<option value="">--- </option>` comme placeholder
@@ -249,7 +249,7 @@ blocks = extract_question_blocks(dom_content)
 
 ## Notes Importantes
 
-1. **Encodage** : `DOM_rsch_demographics_fr.txt` contient des caractères UTF-8 mal encodés (`Ã©` pour `é`, etc.). Le code doit être robuste à ces variations.
+1. **Encodage** : `DOM_rsch_demographics_fr.txt` contient des caractres UTF-8 mal encods (`é` pour ``, etc.). Le code doit tre robuste  ces variations.
 
 2. **Éléments masqués** : Sur Forsta/Confirmit, les `<input type="checkbox">` sont masqués — interaction obligatoirement via le `div.cf-answer-button` parent.
 

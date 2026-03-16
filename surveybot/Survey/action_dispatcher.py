@@ -155,7 +155,7 @@ def solve_decipher_cardrating_rows(driver, preferred_label: Optional[str] = None
             qroot = widget.find_element(By.XPATH, "ancestor::*[contains(@class,'question')][1]")
             inputs = qroot.find_elements(By.CSS_SELECTOR, f"input[type='radio'][id^='ans{uid}.{col}.']")
             if not inputs:
-                # fallback global (au cas oÃƒÂ¹ la structure varie)
+                # fallback global (au cas où la structure varie)
                 inputs = driver.find_elements(By.CSS_SELECTOR, f"input[type='radio'][id^='ans{uid}.{col}.']")
 
             if not inputs:
@@ -182,7 +182,7 @@ def solve_focusvision_cardsort(
     """
     FocusVision/Decipher cardsort (DOM-only, prédictible, budget borné):
     - détecte .sq-cardsort
-    - clique une bucket "safe" pour chaque carte visible, jusqu'ÃƒÂ  completion ou max_cards
+    - clique une bucket "safe" pour chaque carte visible, jusqu'à completion ou max_cards
     Retourne True uniquement si au moins une carte a effectivement progressé.
     """
     def _norm(s: str) -> str:
@@ -266,7 +266,7 @@ def solve_focusvision_cardsort(
         except Exception:
             pass
 
-        return " Ã¢â‚¬â€ ".join([p for p in parts if p])
+        return "  ".join([p for p in parts if p])
 
     def _pick_bucket(cs, question_text: str, card_text: str):
         try:
@@ -313,10 +313,10 @@ def solve_focusvision_cardsort(
         # 2) Choix safe mais variable (déterministe)
         safe_order = [
             "il y a 2 ou 3 jours",
-            "il y a 4 ÃƒÂ  7 jours",
-            "il y a 1 ÃƒÂ  2 semaines",
-            "il y a 2 ÃƒÂ  3 semaines",
-            "il y a 3 ÃƒÂ  4 semaines",
+            "il y a 4 à 7 jours",
+            "il y a 1 à 2 semaines",
+            "il y a 2 à 3 semaines",
+            "il y a 3 à 4 semaines",
             "il y a plus de 4 semaines",
             "hier",
             "aujourd'hui",
@@ -430,7 +430,7 @@ def _norm_lc(s: str) -> str:
 def _fold_norm_lc(s: str) -> str:
     """
     Normalisation robuste pour comparer des libellés (options):
-    - NFKD + suppression des diacritiques (ÃƒÅ½le -> Ile)
+    - NFKD + suppression des diacritiques (Île -> Ile)
     - lower + collapse spaces
     """
     if not s:
@@ -498,7 +498,7 @@ def _set_text_xpath(driver, xpath: str, text: str) -> bool:
 
 def _xpath_literal(s: str) -> str:
     """
-    Construit un literal XPath safe, meme si la chaÃƒÂ®ne contient des quotes.
+    Construit un literal XPath safe, meme si la chaîne contient des quotes.
     """
     s = s or ""
     if "'" not in s:
@@ -1349,7 +1349,7 @@ def _apply_by_target_id(
                 return False
 
             # --- cas "options map" (radio/checkbox)
-            # IMPORTANT: on n'exige pas kind=="group" pour éviter le couplage ÃƒÂ  la classification (ex: matrix_rows_single_choice)
+            # IMPORTANT: on n'exige pas kind=="group" pour éviter le couplage à la classification (ex: matrix_rows_single_choice)
             opt_map = payload.get("option_xpath_map") or {}
             if opt_map and resolved_itype in ("radio", "checkbox"):
 
@@ -1421,9 +1421,9 @@ def _apply_by_target_id(
                         return False
 
                 def _dispatch_check_events(inp, force_when_selected=False):
-                    """Set checkbox/radio de faÃƒÂ§on idempotente.
+                    """Set checkbox/radio de façon idempotente.
 
-                    But: éviter le Ã¢â‚¬Å“coché puis décochéÃ¢â‚¬Â quand plusieurs stratégies s'enchaÃƒÂ®nent
+                    But: éviter le “coché puis décoché quand plusieurs stratégies s'enchaînent
                     (click label + events) et que la page a des handlers custom.
 
                     - checkbox: checked=true + input/change (PAS de click synthétique)
@@ -1505,7 +1505,7 @@ def _apply_by_target_id(
                     if not pre_click_xps:
                         return
 
-                    # DéjÃƒÂ  visible -> no-op
+                    # Djà visible -> no-op
                     try:
                         cur = _find_best_visible(target_xpath)
                         if cur:
@@ -1524,7 +1524,7 @@ def _apply_by_target_id(
                             if not pre_el:
                                 continue
 
-                            # éviter de retoggler un panneau déjÃƒÂ  ouvert
+                            # éviter de retoggler un panneau déjà ouvert
                             try:
                                 if (pre_el.get_attribute("aria-expanded") or "").strip().lower() == "true":
                                     break
@@ -1571,7 +1571,7 @@ def _apply_by_target_id(
                         if debug_target:
                             log_debug("[TARGET_DEBUG]", f"native click failed on {label}: {_short_exc(e)}")
 
-                    # 2) ActionChains (souvent plus robuste quand le DOM est Ã¢â‚¬Å“capricieuxÃ¢â‚¬Â)
+                    # 2) ActionChains (souvent plus robuste quand le DOM est “capricieux)
                     try:
                         from selenium.webdriver.common.action_chains import ActionChains
                         ActionChains(driver).move_to_element(node).pause(0.05).click().perform()
@@ -1603,7 +1603,7 @@ def _apply_by_target_id(
                             pre_el = _find_best_visible(pre_xp)
                             if not pre_el:
                                 continue
-                            # éviter de retoggler un panneau déjÃƒÂ  ouvert
+                            # éviter de retoggler un panneau déjà ouvert
                             try:
                                 if (pre_el.get_attribute("aria-expanded") or "").strip().lower() == "true":
                                     continue
@@ -1979,7 +1979,7 @@ def _apply_by_target_id(
                     except Exception:
                         pass
 
-                # 2) clic Ã¢â‚¬Å“normalÃ¢â‚¬Â sur la cible
+                # 2) clic “normal sur la cible
                 # Decipher/FocusVision answers-list avec input natif masqué (fir-hidden):
                 # la vraie surface cliquable est le wrapper `.clickableCell`.
                 # On applique une stratégie unique et DOM-gardée pour éviter les faux positifs.
@@ -2132,7 +2132,7 @@ def _apply_by_target_id(
                         return True
 
                 # AreYouNet: la sélection est stockée dans un <input type=hidden name=...>
-                # (pas de radio/checkbox natif). On valide en lisant la valeur aprÃƒÂ¨s clic.
+                # (pas de radio/checkbox natif). On valide en lisant la valeur après clic.
                 try:
                     ayn_name = (payload.get('ayn_field_name') or '').strip()
                     ayn_map = payload.get('ayn_value_map') or {}
@@ -2175,7 +2175,7 @@ def _apply_by_target_id(
 
                 # NEW: Angular Material (Ask&Answer desktop matrix)
                 # Le <label> peut etre 0x0 / non-interactif. On clique le conteneur mat-radio-button,
-                # puis on valide via mat-radio-checked (plus fiable que input.checked aprÃƒÂ¨s re-render).
+                # puis on valide via mat-radio-checked (plus fiable que input.checked après re-render).
                 try:
                     mr = el.find_element(
                         By.XPATH,
@@ -2299,7 +2299,7 @@ def _apply_by_target_id(
 
                     return None
 
-                # Remplit la 1ÃƒÂ¨re case vide (déterministe, pas de boucle/retry infini)
+                # Remplit la 1ère case vide (dterministe, pas de boucle/retry infini)
                 for fld in fields:
                     try:
                         elx = _locate_field(fld)
@@ -2325,7 +2325,7 @@ def _apply_by_target_id(
                     except Exception:
                         continue
 
-                # Si tout est déjÃƒÂ  rempli, on ignore l'excÃƒÂ¨s de valeurs (évite fallback)
+                # Si tout est déjà rempli, on ignore l'excès de valeurs (évite fallback)
                 return True
 
             # --- cas single (text/textarea/dropdown/button)
@@ -2348,7 +2348,7 @@ def _apply_by_target_id(
                         return False
 
                 # --- Dropdown: set value via JS + dispatch events (works even if <select> is hidden) ---
-                # + cas spécial "sq-sliderpoints" : cliquer / dragger la piste pour que l'UI se mette ÃƒÂ  jour
+                # + cas spcial "sq-sliderpoints" : cliquer / dragger la piste pour que l'UI se mette à jour
                 if resolved_itype == "dropdown":
 
                     # Trouver le <select> meme si l'id a changé (re-render).
@@ -2377,7 +2377,7 @@ def _apply_by_target_id(
                             except Exception:
                                 pass
 
-                        # 3) By.NAME / By.ID (au cas oÃƒÂ¹)
+                        # 3) By.NAME / By.ID (au cas où)
                         nm = (payload.get("name") or "").strip()
                         if nm:
                             try:
@@ -2583,7 +2583,7 @@ def _apply_by_target_id(
                                         pass
 
                         except Exception:
-                            # si le forcing UI échoue, on considÃƒÂ¨re quand meme le select comme set
+                            # si le forcing UI choue, on considère quand meme le select comme set
                             pass
 
                         return True
@@ -2618,7 +2618,7 @@ def _apply_by_target_id(
 _TYPE_ALIASES = {
     "dropdown": {"dropdown", "menu", "select", "liste", "combobox"},
     "button":   {"button", "bouton", "cta"},
-    "checkbox": {"checkbox", "case", "case ÃƒÂ  cocher", "check", "cocher"},
+    "checkbox": {"checkbox", "case", "case à cocher", "check", "cocher"},
     "radio":    {"radio", "option"},
     "text":     {"text", "texte", "champ", "input"},
     "textarea": {"textarea", "texte long", "open-end", "ouvert"},
@@ -2631,25 +2631,25 @@ def _parse_typed_instruction3(instr: str) -> tuple[str, str | None, str]:
     """
     Parse 'libellé //// type //// contexte-question' (slashes >=4 tolérés).
     - Retourne (label, type_normalisé|None, context)
-    - TolÃƒÂ¨re des '>' accidentels aprÃƒÂ¨s <type>.
+    - Tolère des '>' accidentels après <type>.
     """
     parts = re.split(r"/{4,}", instr or "")
     label = _norm(parts[0]) if parts else ""
     raw_type = _norm_lc(parts[1]) if len(parts) > 1 else ""
     context = _norm(parts[2]) if len(parts) > 2 else ""
 
-    # nettoyer un éventuel '>' parasite aprÃƒÂ¨s type
+    # nettoyer un ventuel '>' parasite après type
     raw_type = raw_type.replace(">", "").strip()
 
     itype = None
     if raw_type:
-        # réutilise la table dÃ¢â‚¬â„¢alias existante
+        # rutilise la table d’alias existante
         for t, aliases in _TYPE_ALIASES.items():
             if raw_type in aliases:
                 itype = t
                 break
         if itype is None:
-            # heuristiques déjÃƒÂ  présentes dans _parse_typed_instruction
+            # heuristiques déjà prsentes dans _parse_typed_instruction
             if re.search(r"drop|select|menu|combo", raw_type): itype = "dropdown"
             elif re.search(r"button|bouton|cta", raw_type): itype = "button"
             elif re.search(r"check|coch", raw_type): itype = "checkbox"
@@ -2657,9 +2657,9 @@ def _parse_typed_instruction3(instr: str) -> tuple[str, str | None, str]:
             elif re.search(r"text|champ|input", raw_type): itype = "text"
     return label, itype, context
 
-# ---------- Sanitize instruction : corrige une option ÃƒÂ  risque ----------
+# ---------- Sanitize instruction : corrige une option à risque ----------
 def _get_visible_options(driver):
-    # RécupÃƒÂ¨re un set de libellés dÃ¢â‚¬â„¢options visibles (radios/checkbox)
+    # Rcupère un set de libells d’options visibles (radios/checkbox)
     opts = set()
     sels = [
         "label span.p-radio-text",
@@ -2709,20 +2709,20 @@ def _sanitize_instruction_with_page_context(driver, label, itype):
         k in page for k in ["secteur", "industrie", "travaillez", "employ", "domaines"]
     )
 
-    # Listes de mots ÃƒÂ  risque / sÃƒÂ»rs
+    # Listes de mots à risque / sûrs
     risky = {
         "non",
         "jamais",
         "certainement pas",
         "aucun",
         "aucune",
-        "je préfÃƒÂ¨re ne pas le dire",
+        "je prfère ne pas le dire",
         "preferer ne pas",
         "none",
         "no",
         "never",
     }
-    safe_pos = ["oui", "souvent", "parfois", "réguliÃƒÂ¨rement", "hebdomadaire", "mensuel"]
+    safe_pos = ["oui", "souvent", "parfois", "rgulièrement", "hebdomadaire", "mensuel"]
     safe_neutral = ["je ne sais pas", "je ne m'en souviens pas", "neutre"]
 
     # Exception emploi/secteurs ; privilégier "Aucune de ces réponses" si présente
@@ -2756,7 +2756,7 @@ def _sanitize_instruction_with_page_context(driver, label, itype):
             if o == "oui":
                 return "Oui"
 
-    # rien ÃƒÂ  corriger
+    # rien à corriger
     return label
 
 _OPEN_FIELD_TOKENS = {
@@ -2780,7 +2780,7 @@ def _split_multiline_instruction(instr: str) -> list[str]:
         line = _norm(line)
         if line:
             line = re.sub(r"^\d+\)\s*", "", line)  # 1) ...
-            line = re.sub(r"^[\-\Ã¢â‚¬Â¢\Ã¢â‚¬â€œ\Ã¢â‚¬â€\Ã‚Â·]+\s*", "", line)  # - ...
+            line = re.sub(r"^[\-\•\–\\·]+\s*", "", line)  # - ...
             items.append(line)
     return items
 
@@ -2829,7 +2829,7 @@ def _parse_action_line(raw: str) -> dict:
     return out
 
 # action_dispatcher.py
-# Ãƒâ‚¬ placer AVANT la logique générique itype == "button"
+# À placer AVANT la logique générique itype == "button"
 
 def _wait_for_button_effect(driver, *, timeout=6):
     """
@@ -2848,11 +2848,11 @@ def _wait_for_button_effect(driver, *, timeout=6):
     while time.time() - start_ts < timeout:
         time.sleep(0.3)
 
-        # 1Ã¯Â¸ÂÃ¢Æ’Â£ URL changée
+        # 1⃣ URL change
         if driver.current_url != start_url:
             return True
 
-        # 2Ã¯Â¸ÂÃ¢Æ’Â£ Bouton disparu ou disabled
+        # 2⃣ Bouton disparu ou disabled
         try:
             btn = driver.find_element(By.ID, "acceptAndTakeSurveyLink2")
             if not btn.is_displayed():
@@ -2865,7 +2865,7 @@ def _wait_for_button_effect(driver, *, timeout=6):
             # bouton plus présent ; effet OK
             return True
 
-        # 3Ã¯Â¸ÂÃ¢Æ’Â£ Overlay / spinner
+        # 3⃣ Overlay / spinner
         overlays = driver.find_elements(By.CSS_SELECTOR, ".loading, .spinner, .overlay")
         if overlays:
             return True
@@ -3271,7 +3271,7 @@ def handle_consent_screen(driver):
     ]
 
     def _handle_ipsos_privacy_policy_page() -> bool:
-        # DÃ©tection volontairement stricte (Ã©vite les faux positifs sur d'autres consent screens)
+        # Détection volontairement stricte (évite les faux positifs sur d'autres consent screens)
         intercept_only = (os.getenv("CTA_INTERCEPT_ONLY", "") or "").strip().lower() in {"1", "true", "yes", "on"}
         try:
             cta = driver.find_element(
@@ -3284,8 +3284,8 @@ def handle_consent_screen(driver):
             return False
 
         try:
-            # Patterns IPSOS observÃ©s:
-            # - privacyPolicyCheckbox* (ancien pattern, conservÃ© pour rÃ©trocompatibilitÃ©)
+            # Patterns IPSOS observés:
+            # - privacyPolicyCheckbox* (ancien pattern, conservé pour rétrocompatibilité)
             # - consentCheckbox* / consentContainer:* (pattern actuel 2025+)
             cbs = driver.find_elements(
                 By.CSS_SELECTOR,
@@ -3327,7 +3327,7 @@ def handle_consent_screen(driver):
             if not clicked:
                 clicked = _click_best_effort(cb)
 
-            # Validation : on attend que is_selected() passe ÃƒÂ  True
+            # Validation : on attend que is_selected() passe à True
             deadline = time.time() + 2.5
             while time.time() < deadline:
                 try:
@@ -3339,7 +3339,7 @@ def handle_consent_screen(driver):
 
         try:
             if not cb.is_selected():
-                return False  # pas d'effet observable -> on n'annonce pas le succÃƒÂ¨s
+                return False  # pas d'effet observable -> on n'annonce pas le succès
         except Exception:
             return False
 
@@ -3541,7 +3541,7 @@ def handle_consent_screen(driver):
         except Exception:
             continue
 
-    # 2) Si overlay trouvé, cliquer un bouton Accept/Agree ÃƒÂ  l'intérieur
+    # 2) Si overlay trouv, cliquer un bouton Accept/Agree à l'intrieur
     if best is not None:
         _, container = best
         try:
@@ -4000,7 +4000,7 @@ def handle_captcha_guard(driver):
     except Exception:
         pass
 
-    # AprÃƒÂ¨s résolution: attendre que (1) l'URL change OU (2) le widget disparaisse
+    # Après rsolution: attendre que (1) l'URL change OU (2) le widget disparaisse
     try:
         before_url = driver.current_url
     except Exception:
@@ -4200,9 +4200,9 @@ def _aa__try_answer_matrix(driver, full_question: str, choice_text: str) -> bool
     except Exception:
         return False
 
-    # Extraire le libellé de ligne (celebrity) depuis " ... Ã¢â‚¬â€ <statement>"
+    # Extraire le libell de ligne (celebrity) depuis " ...  <statement>"
     statement = ""
-    for sep in ("Ã¢â‚¬â€", " - ", " Ã¢â‚¬â€œ "):
+    for sep in ("", " - ", " – "):
         if sep in q:
             statement = q.split(sep, 1)[1]
             break
@@ -4554,7 +4554,7 @@ def execute_action(
 
         _new_attempt_context(driver)
 
-        # 2Ã¯Â¸ÂÃ¢Æ’Â£ SANITIZER
+        # 2⃣ SANITIZER
         try:
             safe_label = _sanitize_instruction_with_page_context(driver, label, itype or "")
             if safe_label != label:
@@ -4563,7 +4563,7 @@ def execute_action(
             pass
 
         # ==========================================================
-        # Ã°Å¸Å¸Â¦ BUTTON
+        # 🟦 BUTTON
         # ==========================================================
         if itype == "button":
 
@@ -4592,7 +4592,7 @@ def execute_action(
                 return True
 
         # ==========================================================
-        # Ã°Å¸Å¸Â¦ DROPDOWN
+        # 🟦 DROPDOWN
         # ==========================================================
         if itype == "dropdown":
 
@@ -4660,11 +4660,11 @@ def execute_action(
                 return True
 
         # ==========================================================
-        # Ã°Å¸Å¸Â¦ CHECKBOX
+        # 🟦 CHECKBOX
         # ==========================================================
         if itype == "checkbox":
 
-            # Ã¢Å“â€¦ NEW: si OpenAI renvoie "Oui" pour une checkbox "statement", on clique le statement (ctx)
+            # ✅ NEW: si OpenAI renvoie "Oui" pour une checkbox "statement", on clique le statement (ctx)
             if _norm_lc(label) in {"oui", "yes", "true", "1", "checked", "on", "x"} and ctx and len(ctx) >= 6:
                 label = ctx
 
@@ -4702,13 +4702,13 @@ def execute_action(
                     return True
 
         # ==========================================================
-        # Ã°Å¸Å¸Â¦ RADIO
+        # 🟦 RADIO
         # ==========================================================
         if itype == "radio":
 
             # Ask&Answer (Angular Material MATRIX): éviter les éléments cachés (desktop/mobile) et cliquer la bonne cellule.
-            # Ici, "ctx" contient le texte complet de la question (souvent avec "Ã¢â‚¬â€ <statement>"),
-            # et "label" contient le choix (colonne) ÃƒÂ  sélectionner.
+            # Ici, "ctx" contient le texte complet de la question (souvent avec " <statement>"),
+            # et "label" contient le choix (colonne) à sélectionner.
             question_text = ctx or ""
             answer_text = label or ""
             if question_text and answer_text and _aa__try_answer_matrix(driver, question_text, answer_text):
@@ -4731,7 +4731,7 @@ def execute_action(
                 return True
 
         # ==========================================================
-        # Ã°Å¸Å¸Â¦ TEXT / NUMBER
+        # 🟦 TEXT / NUMBER
         # ==========================================================
         if itype in ("text", "number"):
             try:
@@ -4764,7 +4764,7 @@ def execute_action(
 def reset_attempt_context(driver):
     """
     Reset du garde-fou anti double-fallback.
-    Ãƒâ‚¬ appeler avant CHAQUE instruction, sinon une stratégie peut etre bloquée par un essai précédent.
+    À appeler avant CHAQUE instruction, sinon une stratgie peut etre bloque par un essai prcdent.
     """
     try:
         _new_attempt_context(driver)
@@ -4802,7 +4802,7 @@ def execute_actions_plan(
     """
     Applique une série d'actions (issues du batch OpenAI).
     - reset attempt context avant chaque action
-    - (NEW) rescan DOM entre actions si risque de re-render (évite xpaths obsolÃƒÂ¨tes)
+    - (NEW) rescan DOM entre actions si risque de re-render (vite xpaths obsolètes)
     """
     success_any = False
 
@@ -4844,8 +4844,8 @@ def execute_actions_plan(
             blob = " ".join([(act.get("context") or ""), (act.get("value") or "")]).lower()
             if any(k in blob for k in ("langue", "language", "idioma", "sprache", "lingua")):
                 return True
-            # valeurs fréquentes (au cas oÃƒÂ¹ le contexte est vide)
-            if any(k in blob for k in ("franÃƒÂ§ais", "anglais", "english", "espaÃƒÂ±ol", "spanish", "deutsch", "german", "italiano", "portugu", "nederlands", "dutch")):
+            # valeurs frquentes (au cas où le contexte est vide)
+            if any(k in blob for k in ("français", "anglais", "english", "español", "spanish", "deutsch", "german", "italiano", "portugu", "nederlands", "dutch")):
                 return True
             return False
         except Exception:
@@ -4970,7 +4970,7 @@ def execute_actions_plan(
                         import Survey.dom_analyzer as dom_analyzer
                         time.sleep(0.2)  # laisse le framework appliquer l'état
                         dom_analyzer.analyze_dom(driver)  # clear+rebuild registry (target_id stable-ish)
-                        # Ã°Å¸â€œË† micro-métrique: nombre de rescans DOM déclenchés sur la page courante
+                        # 📈 micro-mtrique: nombre de rescans DOM dclenchs sur la page courante
                         try:
                             driver._dom_rescans_this_page = int(getattr(driver, "_dom_rescans_this_page", 0)) + 1
                         except Exception:

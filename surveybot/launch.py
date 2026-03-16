@@ -39,25 +39,25 @@ def acquire_account_lock_or_exit(account_id: str, ttl_sec: int = 240):
     task_id = os.getenv("ECS_TASK_ID") or socket.gethostname()
     ok = try_acquire_account_lock(account_id=account_id, owner=task_id, ttl_sec=ttl_sec)
     if not ok:
-        print(f"[LOCK] Account {account_id} dÃ©jÃ  utilisÃ© â†’ exit")
+        print(f"[LOCK] Account {account_id} déjà utilisé → exit")
         sys.exit(0)
 
 def safe_get(driver, url):
     """
-    Navigation sÃ©curisÃ©e : s'assure qu'un driver valide existe.
-    - Ajoute un timeout pour Ã©viter les hangs infinis en ECS.
+    Navigation sécurisée : s'assure qu'un driver valide existe.
+    - Ajoute un timeout pour éviter les hangs infinis en ECS.
     - Fallback: stoppe le chargement et continue.
     """
     if driver is None:
-        raise RuntimeError("SAFE_GET appelÃ© avec driver=None")
+        raise RuntimeError("SAFE_GET appelé avec driver=None")
 
     try:
         if not hasattr(driver, "window_handles") or not driver.window_handles:
-            raise RuntimeError("Aucune fenÃªtre active")
+            raise RuntimeError("Aucune fenêtre active")
 
         driver.switch_to.window(driver.window_handles[-1])
 
-        # ðŸ”’ Ã©vite blocage infini
+        # 🔒 évite blocage infini
         driver.set_page_load_timeout(70)
 
         try:
@@ -114,24 +114,24 @@ def install_sigterm_handler(account_id: str):
 
 def _make_sigterm_handler(aid: str):
     """
-    Handler SIGTERM (ECS) : marque l'arrÃªt demandÃ© dans l'Ã©tat du compte.
-    - On capture 'aid' via closure pour Ã©viter les variables globales non dÃ©finies.
+    Handler SIGTERM (ECS) : marque l'arrêt demandé dans l'état du compte.
+    - On capture 'aid' via closure pour éviter les variables globales non définies.
     """
     def _handle_sigterm(signum, frame):
         ts = int(time.time())
-        print(f"ðŸ›‘ SIGTERM reÃ§u depuis ECS | account_id={aid}")
+        print(f"🛑 SIGTERM reçu depuis ECS | account_id={aid}")
 
         try:
             update_state(aid, lambda st: (
                 st.__setitem__("ecs_stop_requested", True),
                 st.__setitem__("ecs_stop_ts", ts),
-                st.__setitem__("ecs_stop_notified", False),  # reset anti-spam Ã  chaque SIGTERM
+                st.__setitem__("ecs_stop_notified", False),  # reset anti-spam à chaque SIGTERM
                 st.__setitem__("status", "idle"),
                 st.__setitem__("lock_owner", ""),
                 st.__setitem__("lock_until_ts", 0)
             ))
         except Exception as e:
-            print("[SIGTERM][WARN] update_state Ã©chouÃ©:", e)
+            print("[SIGTERM][WARN] update_state échoué:", e)
         
         finally:
             stop_heartbeat_thread()
@@ -147,16 +147,16 @@ def build_notifier(config):
     def _notify(msg: str):
         # Console (toujours)
         print(f"[WATCHDOG] {msg}")
-        # Telegram si configurÃ©
+        # Telegram si configuré
         if tg_token and tg_chat:
             try:
                 ok = send_telegram(msg, tg_token, tg_chat)
                 if not ok:
-                    print("[WATCHDOG][WARN] Telegram a rÃ©pondu 'not ok'.")
+                    print("[WATCHDOG][WARN] Telegram a répondu 'not ok'.")
             except Exception as e:
-                print(f"[WATCHDOG][WARN] Telegram a Ã©chouÃ©: {e}")
+                print(f"[WATCHDOG][WARN] Telegram a échoué: {e}")
         else:
-            print("[WATCHDOG] Telegram non configurÃ©, notification console uniquement.")
+            print("[WATCHDOG] Telegram non configuré, notification console uniquement.")
 
         # Petit bip Windows si possible (facultatif)
         try:
@@ -171,9 +171,9 @@ def build_notifier(config):
 
 def soft_restart_cleanup(driver):
     """
-    PrÃ©pare un soft restart.
+    Prépare un soft restart.
     IMPORTANT : se replacer sur la page APP (app.topsurveys.app) avant la logique payout,
-    sinon la lecture du solde Ã©choue sur la landing marketing.
+    sinon la lecture du solde échoue sur la landing marketing.
     """
     from Survey.survey_solver import _close_other_tabs_in_current_session
     _close_other_tabs_in_current_session(driver)
@@ -182,14 +182,14 @@ def soft_restart_cleanup(driver):
     try:
         safe_get(driver, "https://app.topsurveys.app/surveys")
     except Exception as e:
-        print(f"[SOFT_RESTART][WARN] Ã©chec accÃ¨s app /surveys: {e}")
-        # Fallback best-effort : on retente la landing (au pire, le flow suivant rÃ©cupÃ¨re)
+        print(f"[SOFT_RESTART][WARN] échec accès app /surveys: {e}")
+        # Fallback best-effort : on retente la landing (au pire, le flow suivant récupère)
         safe_get(driver, "https://www.topsurveys.app")
 
 def soft_restart_payout(ctx, driver):
     """
     Encaissement best-effort.
-    En local / ctx minimal, on peut ne pas avoir payout_name/tag â†’ on skip proprement.
+    En local / ctx minimal, on peut ne pas avoir payout_name/tag → on skip proprement.
     """
     payout_name = (ctx.get("payout_name") or "").strip()
     payout_tag  = (ctx.get("payout_revolut_tag") or "").strip()
@@ -331,15 +331,15 @@ def setup_logging():
     )
     log = logging.getLogger("surveybot")
 
-    log.info("BOOT: surveybot starting")  # âœ… maintenant log est dÃ©fini
+    log.info("BOOT: surveybot starting")  # ✅ maintenant log est défini
 
-    # 3) loguer les exceptions non-captÃ©es (sinon elles tuent la task en silence)
+    # 3) loguer les exceptions non-captées (sinon elles tuent la task en silence)
     def _excepthook(exc_type, exc, tb):
         logging.getLogger("uncaught").exception("UNCAUGHT EXCEPTION", exc_info=(exc_type, exc, tb))
     sys.excepthook = _excepthook
 
 def mark_bot_running(account_id: str):
-    print(f"ðŸš€ DÃ©marrage surveybot pour account_id={account_id}")
+    print(f"🚀 Démarrage surveybot pour account_id={account_id}")
     update_state(account_id, lambda st: (
         st.__setitem__("status", "running"),
         st.__setitem__("last_boot_ts", int(time.time()))
@@ -350,7 +350,7 @@ def launch_driver_or_fail(config, account_id: str):
         # driver = launch_browser(config) Ancien launcher Playwright
         driver = _create_driver()  # Nouveau launcher Selenium
         if driver is None:
-            raise RuntimeError("launch_browser() a retournÃ© None")
+            raise RuntimeError("launch_browser() a retourné None")
         if should_run_guard_monitor():
             get_guard().attach_driver(driver)
         return driver
@@ -359,7 +359,7 @@ def launch_driver_or_fail(config, account_id: str):
         traceback.print_exc()
 
         if is_prod_like():
-        # ðŸ”´ Ã©tat propre pour le scheduler
+        # 🔴 état propre pour le scheduler
             update_state(account_id, lambda st: (
                 st.__setitem__("status", "idle"),
                 st.__setitem__("lock_owner", ""),
@@ -415,7 +415,7 @@ def init_session_and_enter_surveys(driver, config, account_id: str, notify_fn):
     payout_revolut_tag = config.get("payout_revolut_tag")
 
     safe_get(driver, "https://www.topsurveys.app")
-    print("ðŸš€ Brave lancÃ©.")
+    print("🚀 Brave lancé.")
     login(driver, email, password)
 
     try:
@@ -441,7 +441,7 @@ def init_session_and_enter_surveys(driver, config, account_id: str, notify_fn):
 def start_hot_reload_thread():
     global _HOT_RELOAD_STARTED
     if not should_run_hot_reload():
-        print("[HOT_RELOAD] IgnorÃ© en environnement mode unattended ou non-local.")
+        print("[HOT_RELOAD] Ignoré en environnement mode unattended ou non-local.")
         return
     if _HOT_RELOAD_STARTED:
         return
@@ -504,7 +504,7 @@ def start_hot_reload_thread():
             nonlocal _se
             if "Survey.survey_executor" in reloaded:
                 _se = reloaded["Survey.survey_executor"]
-            print("ðŸ” Modules rechargÃ©s:", ", ".join(reloaded.keys()))
+            print(" Modules rechargés:", ", ".join(reloaded.keys()))
 
         threading.Thread(
             target=reloader.watch_loop,
@@ -512,7 +512,7 @@ def start_hot_reload_thread():
             daemon=True,
         ).start()
     else:
-        print("[HOT_RELOAD] IgnorÃ© en environnement non-local.")
+        print("[HOT_RELOAD] Ignoré en environnement non-local.")
         
 _HOT_RELOAD_STARTED = False
 

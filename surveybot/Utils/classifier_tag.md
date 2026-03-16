@@ -440,7 +440,7 @@ Ou click sur `div.bootstrap-select button.dropdown-toggle` → `li[data-original
 ---
 
 ### FAMILLE Q — `text_decipher_standard` *(Decipher)*
-**Description** : Input texte simple Decipher (`type="text"`, `type="number"`). Famille minimale : pas de composant framework, HTML natif. Utilisé pour les questions ouvertes numériques (red herring math, âge, codes postaux...).
+**Description** : Input texte simple Decipher (`type="text"`, `type="number"`). Famille minimale : pas de composant framework, HTML natif. Utilis pour les questions ouvertes numriques (red herring math, ge, codes postaux...).
 
 **Signature HTML** :
 ```html
@@ -1193,7 +1193,7 @@ Pour chaque ligne K (en ordre DOM) :
 | Attribut | Valeur |
 |---|---|
 | **Plateforme** | Kantar LiveRecruit |
-| **Type** | Saisie numérique — âge |
+| **Type** | Saisie numrique  ge |
 | **Famille** | U — `kantar_liverecruit_single` |
 | **Application** | `text.kantar_numeric` + `submit.kantar_next` |
 
