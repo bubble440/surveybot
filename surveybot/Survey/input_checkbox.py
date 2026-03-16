@@ -681,8 +681,8 @@ def click_checkbox_by_label(driver, target_text: str, context_hint: str | None =
             By.XPATH,
             ".//label[normalize-space()!='' and contains("
             "translate(normalize-space(.),"
-            "'ABCDEFGHIJKLMNOPQRSTUVWXYZÀÂÄÉÈÊËÎÏÔÖÙÛÜÇ',"
-            "'abcdefghijklmnopqrstuvwxyzàâäéèêëîïôöùûüç'),"
+            "'ABCDEFGHIJKLMNOPQRSTUVWXYZ',"
+            "'abcdefghijklmnopqrstuvwxyz'),"
             f"{xpath_literal(needle)}"
             ")]"
         )

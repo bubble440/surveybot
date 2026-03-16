@@ -180,7 +180,7 @@ def _is_inline_hidden_cta(el) -> bool:
 
 def _is_internal_task_carousel_arrow(driver, el) -> bool:
     """
-    Exclut les flèches de carousel de tâche (ex: Quantilope x/12)
+    Exclut les flches de carousel de tche (ex: Quantilope x/12)
     du ciblage CTA de navigation page.
     Critères DOM minimaux et observables:
     - bouton avec data-cy=left-arrow|right-arrow

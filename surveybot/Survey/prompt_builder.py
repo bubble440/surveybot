@@ -1,6 +1,6 @@
 # Survey/prompt_builder.py
 """
-Prompt Builder Ã¢â‚¬â€ DOM Ã¢â€ â€™ Prompt OpenAI (TEXT ONLY)
+Prompt Builder  DOM → Prompt OpenAI (TEXT ONLY)
 
 Entrée :
 - question_blocks (issus de dom_analyzer.analyze_dom)
@@ -325,7 +325,7 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
         "Tu dois proposer uniquement la/les réponse(s) nécessaires selon la règle de sélection."
     )
 
-    # Ã¢Å“â€¦ FORMAT RENFORCé: exigence explicite de "|" comme séparateur
+    # ✅ FORMAT RENFORC: exigence explicite de "|" comme sparateur
     lines.append(
         "FORMAT STRICT (une ligne par question) :\n"
         "QID //// target_id //// valeur //// itype //// contexte\n\n"
@@ -383,14 +383,14 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
         "Évite systématiquement: X, Autre, Non-binaire, Préfère ne pas répondre."
     )
 
-    # Contrainte âge / année de naissance
+    # Contrainte ge / anne de naissance
     lines.append(
-        "Pour toute question sur l'âge ou la date de naissance:\n"
-        "- Si la question demande explicitement l'ANNÉE de naissance (ex: 'année de naissance', 'year of birth', 'birth year', 'born in', 'né en'), réponds UNIQUEMENT avec une année sur 4 chiffres (YYYY), jamais un âge.\n"
-        "- Si la question demande l'âge (âge, years old, ans), réponds '25' ou '25 ans'.\n"
+        "Pour toute question sur l'ge ou la date de naissance:\n"
+        "- Si la question demande explicitement l'ANNE de naissance (ex: 'anne de naissance', 'year of birth', 'birth year', 'born in', 'n en'), rponds UNIQUEMENT avec une anne sur 4 chiffres (YYYY), jamais un ge.\n"
+        "- Si la question demande l'ge (ge, years old, ans), rponds '25' ou '25 ans'.\n"
         "- Si date de naissance avec dropdowns séparés (mois + année):\n"
         "  * Année: choisis une année cohérente pour 25 ans (2001, 2000, 1999).\n"
-        "  * Mois: choisis un mois réaliste (évite le mois en cours pour éviter des âges < 25).\n"
+        "  * Mois: choisis un mois raliste (vite le mois en cours pour viter des ges < 25).\n"
         "  * Exemple: 'Juillet' pour le mois, '2000' pour l'année."
     )
 
@@ -660,7 +660,7 @@ def _is_navigation_label(label: str | None) -> bool:
 
         if v.startswith(tok) and len(v) <= (len(tok) + 5):
             tail = v[len(tok):].strip()
-            if tail in ("", ">", ">>", "Ã‚Â»", "Ã‚Â»>", ":", "-", "Ã¢â‚¬â€œ", "Ã¢â€ â€™", "Ã¢Å¾Â¡"):
+            if tail in ("", ">", ">>", "»", "»>", ":", "-", "–", "→", "➡"):
                 return True
 
     return False

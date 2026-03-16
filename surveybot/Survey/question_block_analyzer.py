@@ -7,13 +7,13 @@
 # (dropdown, radio, checkbox, text, button)
 #
 # - AUCUN mapping global
-# - AUCUNE hypothÃ¨se d'ordre DOM
+# - AUCUNE hypothèse d'ordre DOM
 # - Analyse purement DOM + texte
 #
 # Compatible avec OpenAI :
-#   rÃ©ponse //// itype //// contexte
+#   réponse //// itype //// contexte
 #
-# ConÃ§u pour :
+# Conçu pour :
 # - 100+ bots
 # - DOM dynamiques (React, Bootstrap, Decipher, etc.)
 # ------------------------------------------------------------
@@ -77,7 +77,7 @@ def _is_hidden_like(attrs: dict) -> bool:
     if "display:none" in style or "visibility:hidden" in style:
         return True
 
-    # champs systÃ¨me ASP.NET
+    # champs système ASP.NET
     if _looks_like_system_field(attrs.get("id")) or _looks_like_system_field(attrs.get("name")):
         return True
 
@@ -140,8 +140,8 @@ def _visible(el: WebElement) -> bool:
 @dataclass
 class QuestionBlock:
     itype: str                  # dropdown, radio, checkbox, text, button
-    label: str                  # texte humain ("AnnÃ©e", "Oui", etc.)
-    dom_el: WebElement          # Ã©lÃ©ment principal
+    label: str                  # texte humain ("Année", "Oui", etc.)
+    dom_el: WebElement          # élément principal
     container: Optional[WebElement]
     options: Optional[List[str]] = None
 
@@ -153,7 +153,7 @@ class QuestionBlock:
 def _find_question_container(driver) -> WebElement:
     """
     Trouve le conteneur DOM principal de la question courante.
-    Heuristiques empilÃ©es, robustes.
+    Heuristiques empilées, robustes.
     """
     selectors = [
         "div[id*='question']",
@@ -176,12 +176,12 @@ def _find_question_container(driver) -> WebElement:
 
 
 # ------------------------------------------------------------
-# Label detection (clÃ© du mapping)
+# Label detection (clé du mapping)
 # ------------------------------------------------------------
 
 def _extract_label(el: WebElement) -> str:
     """
-    Essaie d'associer un texte humain Ã  un input.
+    Essaie d'associer un texte humain à un input.
     """
     try:
         # 1) label[for=id]
@@ -218,7 +218,7 @@ def _extract_label(el: WebElement) -> str:
 
 
 # ------------------------------------------------------------
-# DÃ©tecteurs par type
+# Détecteurs par type
 # ------------------------------------------------------------
 
 def _detect_dropdowns(scope: WebElement) -> List[QuestionBlock]:
@@ -451,7 +451,7 @@ def _detect_buttons(scope: WebElement) -> List[QuestionBlock]:
         if not txt:
             continue
 
-        # on ignore les boutons globaux Ã©vidents
+        # on ignore les boutons globaux évidents
         if _norm(txt) in {"suivant", "next", "continue", "continuer"}:
             continue
 
@@ -473,7 +473,7 @@ def _detect_buttons(scope: WebElement) -> List[QuestionBlock]:
 
 def analyze_question_blocks(driver) -> List[QuestionBlock]:
     """
-    Point d'entrÃ©e UNIQUE.
+    Point d'entrée UNIQUE.
     Retourne la carte logique des inputs de la question courante.
     """
     scope = _find_question_container(driver)
