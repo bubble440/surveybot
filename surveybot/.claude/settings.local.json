@@ -50,7 +50,11 @@
       "Bash(grep -r \"json.load\\\\|json.dump\\\\|pickle\\\\|shelve\" /c/projects/Surveys/surveybot --include=*.py)",
       "Bash(grep -r \"\\\\.sqlite\\\\|\\\\.db\\\\|database\\\\.py\\\\|models\\\\.py\\\\|schema\\\\.py\" /c/projects/Surveys/surveybot --include=*.py)",
       "Bash(find /c/projects/Surveys/surveybot -path */.venv -prune -o -type f -name *.md -print)",
-      "Bash(grep -r \"driver.quit\\\\|close\\(\\)\\\\|ConnectionPool\\\\|Session\\\\|connect\\\\|cursor\" /c/projects/Surveys/surveybot --include=*.py --exclude-dir=.venv)"
+      "Bash(grep -r \"driver.quit\\\\|close\\(\\)\\\\|ConnectionPool\\\\|Session\\\\|connect\\\\|cursor\" /c/projects/Surveys/surveybot --include=*.py --exclude-dir=.venv)",
+      "Bash(grep -rn \"WebDriverWait.*[0-9]\\\\|sleep\\([0-9]\\\\|timeout=[0-9]\\\\|timeout_s=[0-9]\" /c/projects/Surveys/surveybot/*.py)",
+      "Bash(grep -r \"set_page_load_timeout\\\\|implicitly_wait\\\\|STABILIZE\\\\|time.sleep\" /c/projects/Surveys/surveybot --include=*.py)",
+      "Bash(find /c/projects/Surveys/surveybot -name \"*.py\" -not -path \"*/.venv/*\" -exec grep -l \"WebDriverWait\\\\|timeout\\\\|sleep\" {})",
+      "Bash(grep -rn \"WebDriverWait.*driver.*[0-9]\\)\\\\|timeout=[0-9]\\\\|timeout_s=[0-9]\\\\|set_page_load_timeout\\\\|poll_interval\" /c/projects/Surveys/surveybot --include=*.py)"
     ]
   }
 }

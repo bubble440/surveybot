@@ -152,3 +152,21 @@ def wait_for_navigation_or_dom_change(driver, *, before_url: str, before_sig: st
         time.sleep(0.2)
 
     return False
+
+
+def wait_for_page_load(driver, timeout=30):
+    """
+    Attend que document.readyState soit 'complete'.
+    Retourne instantanément si la page est déjà chargée (cas radio/checkbox/SPA).
+    Best-effort : ne lève jamais d'exception.
+    """
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            if driver.execute_script("return document.readyState") == "complete":
+                return True
+        except Exception:
+            pass
+        time.sleep(0.25)
+    print(f"[wait_for_page_load] Timeout {timeout}s dépassé — readyState non 'complete'")
+    return False
