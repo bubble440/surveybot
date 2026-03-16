@@ -1,7 +1,7 @@
 # runtime_guard.py
 """
-Superviseur central d'exÃ©cution.
-Objectif : protÃ©ger OpenAI, AWS et Proxy (pay-as-you-use)
+Superviseur central d'exécution.
+Objectif : protéger OpenAI, AWS et Proxy (pay-as-you-use)
 """
 
 from __future__ import annotations
@@ -63,7 +63,7 @@ class RuntimeGuard:
         on_soft_restart: Optional[Callable[[str], None]] = None,
     ):
         self.account_id = account_id
-        self.driver = None  # sera injectÃ© aprÃ¨s le lancement du navigateur
+        self.driver = None  # sera injecté après le lancement du navigateur
         self.state = RuntimeState()
         self.task_id = os.getenv("ECS_TASK_ID") or socket.gethostname()
         self.idle_timeout_sec = idle_timeout_sec
@@ -95,7 +95,7 @@ class RuntimeGuard:
                 return
             self.state.stopped = True
 
-        self._notify(f"ðŸ”„ Reset bot : {reason}")
+        self._notify(f"🔄 Reset bot : {reason}")
 
         if self.on_soft_restart:
             self.on_soft_restart(reason)
@@ -105,20 +105,20 @@ class RuntimeGuard:
     def attach_driver(self, driver):
         """
         Injecte le driver Selenium/Playwright dans le RuntimeGuard.
-        Permet au guard d'agir (CTA, restart lÃ©ger, etc.).
+        Permet au guard d'agir (CTA, restart léger, etc.).
         """
         self.driver = driver
 
     def try_open_application_cta(self, driver) -> bool:
         """
-        Tente de cliquer sur le CTA 'Ouvrir l'application' si prÃ©sent.
-        Retourne True si le clic a rÃ©ussi, False sinon.
+        Tente de cliquer sur le CTA 'Ouvrir l'application' si présent.
+        Retourne True si le clic a réussi, False sinon.
         """
 
         try:
             wait = WebDriverWait(driver, 6)
 
-            # SÃ©lecteurs volontairement larges pour anticiper les variations UI
+            # Sélecteurs volontairement larges pour anticiper les variations UI
             cta = wait.until(
                 EC.element_to_be_clickable((
                     By.XPATH,
@@ -132,12 +132,12 @@ class RuntimeGuard:
             )
             driver.execute_script("arguments[0].click();", cta)
 
-            print("âœ… CTA 'Ouvrir l'application' cliquÃ© avec succÃ¨s")
+            print("✅ CTA 'Ouvrir l'application' cliqué avec succès")
             self.record_success()
             return True
 
         except Exception as e:
-            print(f"â„¹ï¸ CTA 'Ouvrir l'application' non cliquable.")
+            print(f"ℹ CTA 'Ouvrir l'application' non cliquable.")
             return False
         
     def signal_strict_survey(self, reason: str):
@@ -149,7 +149,7 @@ class RuntimeGuard:
             print("[RUNTIME_GUARD] signal_strict_survey: on_soft_restart non défini, ignoré")
 
     def signal_fatal_error(self, reason: str):
-        """Erreur non rÃ©cupÃ©rable."""
+        """Erreur non récupérable."""
         self.pause(
             PausePolicy.MEDIUM_COOLDOWN,
             StopReason.TOO_MANY_ERRORS,
@@ -157,15 +157,15 @@ class RuntimeGuard:
 
     def request_survey_restart(self, reason):
         """
-        RedÃ©marrage intelligent :
+        Redémarrage intelligent :
         1) tentative CTA (best effort)
-        2) sinon dÃ©lÃ©gation au flow principal (soft restart)
-        3) si Ã§a Ã©choue â†’ pause courte
+        2) sinon délégation au flow principal (soft restart)
+        3) si ça échoue → pause courte
         """
-        print(f"ðŸ” Restart survey demandÃ© | raison = {reason}")
+        print(f" Restart survey demandé | raison = {reason}")
 
         if not _is_prod_env():
-            print("[RUNTIME_GUARD][LOCAL] restart survey simulÃ©")
+            print("[RUNTIME_GUARD][LOCAL] restart survey simulé")
             return
 
         # 1) CTA best-effort
@@ -175,36 +175,36 @@ class RuntimeGuard:
                 cta_clicked = self.try_open_application_cta(self.driver)
         except Exception as e:
             # CTA qui explose = non bloquant
-            print(f"[RUNTIME_GUARD][WARN] try_open_application_cta a levÃ©: {e}")
+            print(f"[RUNTIME_GUARD][WARN] try_open_application_cta a levé: {e}")
             cta_clicked = False
 
         if cta_clicked:
             time.sleep(2)  # laisser le temps au survey de se relancer
             return # ✅ Arrêter ici si CTA a fonctionné
 
-        # 2) CTA absent / inutile â†’ dÃ©lÃ©gation soft restart
+        # 2) CTA absent / inutile → délégation soft restart
         try:
-            print("ðŸ”„ CTA indisponible â†’ dÃ©lÃ©gation soft restart")
+            print("🔄 CTA indisponible → délégation soft restart")
             if self.on_soft_restart:
                 # IMPORTANT: on passe la vraie raison, pas un alias
                 self.on_soft_restart(reason)
                 return
 
-            # Si on_soft_restart n'est pas dÃ©fini, c'est une config invalide en prod
-            raise RuntimeError("on_soft_restart non dÃ©fini en prod")
+            # Si on_soft_restart n'est pas défini, c'est une config invalide en prod
+            raise RuntimeError("on_soft_restart non défini en prod")
 
         except Exception as e:
-            print(f"âŒ Ã‰chec soft restart (on_soft_restart) : {e}")
+            print(f" Échec soft restart (on_soft_restart) : {e}")
 
-        # 3) Ã‰chec â†’ pause courte
-        print("â›” Soft restart Ã©chouÃ© â†’ pause courte")
+        # 3) Échec → pause courte
+        print("⛔ Soft restart échoué → pause courte")
         self.pause(
             PausePolicy.SHORT_COOLDOWN,
-            StopReason.TOO_MANY_ERRORS,  # plus cohÃ©rent que DAILY_TARGET_REACHED
+            StopReason.TOO_MANY_ERRORS,  # plus cohérent que DAILY_TARGET_REACHED
         )
         
     # ----------------------------
-    # EVENTS (appelÃ©s par le bot)
+    # EVENTS (appelés par le bot)
     # ----------------------------
 
     def heartbeat(self):
@@ -266,16 +266,16 @@ class RuntimeGuard:
             if not stop_ts:
                 return
 
-            # Si le bot tourne encore 60s aprÃ¨s SIGTERM â†’ anomalie
+            # Si le bot tourne encore 60s après SIGTERM → anomalie
             if time.time() - stop_ts > 60:
                 msg = (
-                    "ðŸš¨ BOT TOUJOURS ACTIF APRÃˆS ARRÃŠT ECS\n\n"
+                    "🚨 BOT TOUJOURS ACTIF APRÈS ARRÊT ECS\n\n"
                     f"account_id: {self.account_id}\n"
                     f"uptime: {int(time.time() - self.state.start_ts)}s\n"
                     f"errors: {self.state.total_errors}\n"
                     f"openai_calls: {self.state.openai_calls}\n"
-                    f"earnings_today: {self.state.earnings_today_eur} â‚¬\n"
-                    "Action recommandÃ©e: kill forcÃ© de la task ECS"
+                    f"earnings_today: {self.state.earnings_today_eur} €\n"
+                    "Action recommandée: kill forcé de la task ECS"
                 )
 
                 self.notify_fn(msg)
@@ -305,7 +305,7 @@ class RuntimeGuard:
             errors = self.state.consecutive_errors
             earnings = self.state.earnings_today_eur
 
-        # 1ï¸âƒ£ InactivitÃ© prolongÃ©e â†’ restart silencieux
+        # 1⃣ Inactivité prolongée → restart silencieux
         if idle_time > self.idle_timeout_sec:
             self.pause(
                 PausePolicy.SHORT_COOLDOWN,
@@ -313,7 +313,7 @@ class RuntimeGuard:
             )
             return
 
-        # 2ï¸âƒ£ Trop dâ€™erreurs consÃ©cutives â†’ restart silencieux
+        # 2⃣ Trop d’erreurs consécutives → restart silencieux
         if errors >= self.max_errors_in_row:
             self.pause(
                 PausePolicy.SHORT_COOLDOWN,
@@ -321,7 +321,7 @@ class RuntimeGuard:
             )
             return
 
-        # 3ï¸âƒ£ Objectif journalier atteint â†’ arrÃªt jusquâ€™Ã  demain
+        # 3⃣ Objectif journalier atteint → arrêt jusqu’à demain
         if earnings >= self.daily_target_eur:
             self.pause(
                 PausePolicy.DAILY_RESET,
@@ -345,12 +345,12 @@ class RuntimeGuard:
 
     def pause(self, policy: PausePolicy, reason: StopReason):
         """
-        Applique une PausePolicy au bot et stoppe l'exÃ©cution.
+        Applique une PausePolicy au bot et stoppe l'exécution.
         """
         pause_sec = resolve_pause_seconds(policy)
 
         self._notify(
-            f"â¸ï¸ Pause bot ({policy.name}) | raison={reason.value} | pause={pause_sec}s"
+            f"⏸️ Pause bot ({policy.name}) | raison={reason.value} | pause={pause_sec}s"
         )
 
         def _apply_pause(st):
@@ -394,7 +394,7 @@ class RuntimeGuard:
 class _NullGuard:
     """
     Guard de secours (no-op) : permet d'appeler get_guard().record_*()
-    mÃªme si le vrai guard n'est pas encore initialisÃ©.
+    même si le vrai guard n'est pas encore initialisé.
     """
     def heartbeat(self): pass
     def record_success(self): pass
@@ -403,25 +403,25 @@ class _NullGuard:
     def record_earning(self, amount_eur: float): pass
     def attach_driver(self, driver): pass
     def request_survey_restart(self, reason):
-        # ðŸ” En local : on log seulement, sans casser l'exÃ©cution
-        print(f"[NULL_GUARD][LOCAL] request_survey_restart ignorÃ© | reason={reason}")
+        #  En local : on log seulement, sans casser l'exécution
+        print(f"[NULL_GUARD][LOCAL] request_survey_restart ignoré | reason={reason}")
         return
 
     def pause(self, policy=None, reason=None):
-        """Compat local: Ã©vite AttributeError quand du code appelle get_guard().pause(...)."""
+        """Compat local: évite AttributeError quand du code appelle get_guard().pause(...)."""
         pol = getattr(policy, "name", policy)
         rea = getattr(reason, "value", reason)
-        print(f"[NULL_GUARD][LOCAL] pause appelÃ©e | policy={pol} reason={rea}")
+        print(f"[NULL_GUARD][LOCAL] pause appelée | policy={pol} reason={rea}")
         # En local, on stoppe le process pour reproduire le comportement prod.
         raise SystemExit(str(rea) if rea else "paused")
 
 _guard_instance = None
 
 def set_guard(g: RuntimeGuard) -> None:
-    """Enregistre le guard global Ã  utiliser partout dans le projet."""
+    """Enregistre le guard global à utiliser partout dans le projet."""
     global _guard_instance
     _guard_instance = g
 
 def get_guard():
-    """Retourne le guard global ; fallback no-op si non initialisÃ©."""
+    """Retourne le guard global ; fallback no-op si non initialisé."""
     return _guard_instance or _NullGuard()

@@ -264,7 +264,7 @@ def send_image_to_gpt(image_path, api_key):
         "Pour radio/checkbox/dropdown, tu DOIS choisir UNIQUEMENT parmi les options disponibles."
         "RÈGLES “TEXT” (champs à remplir)"
         "Si la question concerne un code postal / ZIP (FR/EN): renvoyer 95000"
-        "Si la question demande l’âge: renvoyer 23."
+        "Si la question demande lge: renvoyer 23."
         "Si la question demande une année de naissance: renvoyer 2002."
         "Si la page demande un champ explicitement numérique, renvoyer des CHIFFRES seulement."
         "Règles de décision (IMPORTANT):"
