@@ -253,6 +253,22 @@ def go_to_best_value_survey(driver):
     _handle_mystery_box_popup(driver)
     snap(driver, "before_best_value_selection")
 
+    _COOLDOWN_SEC = 15 * 60  # 15 minutes
+    while not _find_survey_cards(driver):
+        log_info("[TOPSURVEYS][COOLDOWN]", "Aucun survey disponible → cooldown 15 min")
+        for minute in range(1, _COOLDOWN_SEC // 60 + 1):
+            time.sleep(60)
+            log_info("[TOPSURVEYS][COOLDOWN]", f"Attente {minute}/{_COOLDOWN_SEC // 60} min…")
+        log_info("[TOPSURVEYS][COOLDOWN]", "Reprise — re-navigation vers l'onglet Enquêtes")
+        if not _click_enquetes():
+            try:
+                driver.get("https://app.topsurveys.app/surveys")
+            except Exception as e:
+                log_info("[TOPSURVEYS][COOLDOWN]", f"Erreur navigation: {type(e).__name__}")
+        time.sleep(15)
+        _handle_mystery_box_popup(driver)
+        snap(driver, "cooldown_retry")
+
     best_card = _select_best_value_card(driver)
     if best_card is not None:
         try:
