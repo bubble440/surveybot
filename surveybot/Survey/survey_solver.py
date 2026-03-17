@@ -606,6 +606,7 @@ def solve_full_survey(driver, api_key, *, account_id: str, survey_context=None):
     _no_progress_count = 0        # Option B : succès sans avance de page
     _NO_PROGRESS_THRESHOLD = 3
     last_url = driver.current_url
+    last_question_key = ""        # Clé de la dernière question vue (détection intra-page)
     guard = Management.guards.runtime_guard.get_guard()
 
     while True:
@@ -809,6 +810,7 @@ def solve_full_survey(driver, api_key, *, account_id: str, survey_context=None):
         # Si l’URL a changé → on inspecte le nouvel emplacement
         if current_url != last_url:
             _no_progress_count = 0  # URL a changé, réinitialisation du détecteur stuck
+            last_question_key = ""  # Reset aussi la clé question
             print(f"[solve_full_survey] Changement d’URL {last_url} \u2192 {current_url}")
             last_url = current_url
 
@@ -833,14 +835,34 @@ def solve_full_survey(driver, api_key, *, account_id: str, survey_context=None):
         # "just_succeeded and has_more_to_do: continue" plus haut)
         # -------------------------------------------------------------------
         if success and current_url == last_url:
-            _no_progress_count += 1
-            if _no_progress_count >= _NO_PROGRESS_THRESHOLD:
-                print(f"[STUCK] Réponse acceptée {_NO_PROGRESS_THRESHOLD} fois sans avance → soft-restart")
-                guard.record_success()
-                guard.request_survey_restart("solve_no_progress")
-                return
+            # Extraire la question courante pour détecter les changements intra-page
+            try:
+                import preselection.question_analyzer as _qa
+                _html = _qa.extract_popup_html(driver)
+                _current_q = (_qa.extract_question_text(_html) or "")[:150]
+            except Exception:
+                _current_q = ""
+
+            if _current_q and _current_q != last_question_key:
+                # La question a changé → progression réelle malgré URL identique
+                print(f"[solve_full_survey] Question changée sans changement d'URL → progression détectée")
+                last_question_key = _current_q
+                _no_progress_count = 0
+            else:
+                _no_progress_count += 1
+                if _no_progress_count >= _NO_PROGRESS_THRESHOLD:
+                    print(f"[STUCK] Réponse acceptée {_NO_PROGRESS_THRESHOLD} fois sans avance → soft-restart")
+                    guard.record_success()
+                    guard.request_survey_restart("solve_no_progress")
+                    return
         else:
             _no_progress_count = 0
+            try:
+                import preselection.question_analyzer as _qa
+                _html = _qa.extract_popup_html(driver)
+                last_question_key = (_qa.extract_question_text(_html) or "")[:150]
+            except Exception:
+                last_question_key = ""
 
         # d) Conditions d’arrêt
         # if _looks_like_end_screen(driver):
