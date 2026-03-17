@@ -87,11 +87,12 @@ def _export_to_dynamodb(itype: str, openai: bool):
         day = date.today().isoformat()
         now = int(time.time())
 
-        update_expr = [
-            "SET updated_ts = :now",
-            "ADD total_pages :one",
-            "ADD by_itype.#t :one",
-        ]
+        add_fields = ["total_pages :one", "by_itype.#t :one"]
+        if openai:
+            add_fields.append("openai_pages :one")
+        else:
+            add_fields.append("local_pages :one")
+
         expr_vals = {
             ":one": 1,
             ":now": now,
@@ -100,14 +101,9 @@ def _export_to_dynamodb(itype: str, openai: bool):
             "#t": itype,
         }
 
-        if openai:
-            update_expr.append("ADD openai_pages :one")
-        else:
-            update_expr.append("ADD local_pages :one")
-
         table.update_item(
             Key={"account_id": account_id, "day": day},
-            UpdateExpression=" ".join(update_expr),
+            UpdateExpression="SET updated_ts = :now ADD " + ", ".join(add_fields),
             ExpressionAttributeValues=expr_vals,
             ExpressionAttributeNames=expr_names,
         )
