@@ -55,8 +55,24 @@ def _today_str() -> str:
     return date.today().isoformat()
 
 
-def _now() -> int:
-    return int(time.time())
+def _now() -> str:
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+
+
+def _ts_add(seconds: int) -> str:
+    from datetime import datetime, timezone, timedelta
+    return (datetime.now(timezone.utc) + timedelta(seconds=seconds)).strftime("%Y-%m-%dT%H:%M:%S")
+
+
+def _ts_to_unix(ts) -> int:
+    """Convertit ISO string ou int Unix → int Unix (pour calculs Python)."""
+    if isinstance(ts, int):
+        return ts
+    if isinstance(ts, str) and ts and ts != "1970-01-01T00:00:00":
+        from datetime import datetime, timezone
+        return int(datetime.strptime(ts, "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc).timestamp())
+    return 0
 
 
 def _default_state(account_id: str) -> Dict[str, Any]:
@@ -67,15 +83,18 @@ def _default_state(account_id: str) -> Dict[str, Any]:
         "account_id": account_id,
         "version": 0,                 # pour optimistic locking
         "banned": False,
-        "cooldown_until_ts": 0,
+        "cooldown_until_ts": "1970-01-01T00:00:00",
         "status": "idle",
         "lock_owner": "",
-        "lock_until_ts": 0,
+        "lock_until_ts": "1970-01-01T00:00:00",
         "proxy_id": "",          # identifiant du proxy
 
         "last_stop_reason": "",
-        "last_heartbeat_ts": 0,
+        "last_heartbeat_ts": "1970-01-01T00:00:00",
+        "last_boot_ts": "1970-01-01T00:00:00",
+        "last_start_ts": "1970-01-01T00:00:00",
         "daily_earned": {},           # ex: {"2025-12-31": 1.23}
+        "daily_target_start_ts": {},  # ex: {"2026-03-17": "2026-03-17T08:00:00"}
         "total_earned": 0.0,
         "updated_ts": _now(),
     }
@@ -134,7 +153,7 @@ def _normalize_state(st: Dict[str, Any], account_id: str) -> Dict[str, Any]:
 
     # TTL optionnel pour purge (si TTL activé dans la table)
     if STATE_TTL_DAYS > 0:
-        base["ttl_ts"] = _now() + (STATE_TTL_DAYS * 86400)
+        base["ttl_ts"] = _ts_add(STATE_TTL_DAYS * 86400)
 
     return base
 
@@ -339,7 +358,7 @@ def touch_heartbeat(account_id: str, owner: str, ttl_sec: int = 240) -> bool:
         return False
 
     now = _now()
-    expires = now + int(ttl_sec)
+    expires = _ts_add(int(ttl_sec))
 
     table = _get_ddb_table()
     if table is None:
@@ -393,8 +412,8 @@ def try_acquire_account_lock(
         # 🧪 En local : on autorise toujours
         return True
 
-    now = int(time.time())
-    expires = now + ttl_sec
+    now = _now()
+    expires = _ts_add(ttl_sec)
 
     if not _ddb_enabled():
         if STRICT_NO_FILE_FALLBACK:
