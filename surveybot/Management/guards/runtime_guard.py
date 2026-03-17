@@ -9,7 +9,7 @@ import time, socket, os, signal, threading, traceback
 from dataclasses import dataclass, field
 from typing import Optional, Callable
 from enum import Enum
-from State.account_state import load_state, update_state, touch_heartbeat
+from State.account_state import load_state, update_state, touch_heartbeat, _ts_add, _ts_to_unix
 from State.daily_target import DAILY_TARGET_EUR
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -267,7 +267,7 @@ class RuntimeGuard:
                 return
 
             # Si le bot tourne encore 60s après SIGTERM → anomalie
-            if time.time() - stop_ts > 60:
+            if time.time() - _ts_to_unix(stop_ts) > 60:
                 msg = (
                     "🚨 BOT TOUJOURS ACTIF APRÈS ARRÊT ECS\n\n"
                     f"account_id: {self.account_id}\n"
@@ -356,10 +356,10 @@ class RuntimeGuard:
         def _apply_pause(st):
             st["last_stop_reason"] = reason.value
             st["pause_policy"] = policy.name
-            st["cooldown_until_ts"] = int(time.time()) + pause_sec
+            st["cooldown_until_ts"] = _ts_add(pause_sec)
             # C1: libère le lock DynamoDB pour que le scheduler puisse reprendre immédiatement
             st["lock_owner"] = ""
-            st["lock_until_ts"] = 0
+            st["lock_until_ts"] = "1970-01-01T00:00:00"
             st["status"] = "idle"
 
         # try/finally : SystemExit est garanti même si update_state échoue (DynamoDB down, etc.)

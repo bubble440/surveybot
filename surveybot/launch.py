@@ -11,7 +11,7 @@ from preselection.auth_handler import login, snap
 from preselection.survey_navigator import go_to_best_value_survey
 from preselection.survey_handler import run_survey
 from Management.notifier import send_telegram
-from State.account_state import update_state, load_state, save_state, try_acquire_account_lock
+from State.account_state import update_state, load_state, save_state, try_acquire_account_lock, _now
 from selenium.common.exceptions import TimeoutException
 from preselection.auth_handler import is_session_expired
 from Management.pause_policy import PausePolicy
@@ -101,17 +101,16 @@ def _make_sigterm_handler(aid: str):
     - On capture 'aid' via closure pour éviter les variables globales non définies.
     """
     def _handle_sigterm(signum, frame):
-        ts = int(time.time())
         print(f"🛑 SIGTERM reçu depuis ECS | account_id={aid}")
 
         try:
             update_state(aid, lambda st: (
                 st.__setitem__("ecs_stop_requested", True),
-                st.__setitem__("ecs_stop_ts", ts),
+                st.__setitem__("ecs_stop_ts", _now()),
                 st.__setitem__("ecs_stop_notified", False),  # reset anti-spam à chaque SIGTERM
                 st.__setitem__("status", "idle"),
                 st.__setitem__("lock_owner", ""),
-                st.__setitem__("lock_until_ts", 0)
+                st.__setitem__("lock_until_ts", "1970-01-01T00:00:00")
             ))
         except Exception as e:
             print("[SIGTERM][WARN] update_state échoué:", e)
@@ -259,7 +258,7 @@ def start_runtime_guard(account_id: str, notify_fn, on_soft_restart):
     set_guard(guard)
     guard.start()
 
-    _start_ts = int(time.time())
+    _start_ts = _now()
 
     def _mark_start(st):
         st["last_start_ts"] = _start_ts
@@ -325,7 +324,7 @@ def mark_bot_running(account_id: str):
     print(f"🚀 Démarrage surveybot pour account_id={account_id}")
     update_state(account_id, lambda st: (
         st.__setitem__("status", "running"),
-        st.__setitem__("last_boot_ts", int(time.time()))
+        st.__setitem__("last_boot_ts", _now())
     ))
 
 def _create_driver():

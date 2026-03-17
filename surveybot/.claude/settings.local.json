@@ -56,7 +56,8 @@
       "Bash(find /c/projects/Surveys/surveybot -name \"*.py\" -not -path \"*/.venv/*\" -exec grep -l \"WebDriverWait\\\\|timeout\\\\|sleep\" {})",
       "Bash(grep -rn \"WebDriverWait.*driver.*[0-9]\\)\\\\|timeout=[0-9]\\\\|timeout_s=[0-9]\\\\|set_page_load_timeout\\\\|poll_interval\" /c/projects/Surveys/surveybot --include=*.py)",
       "Bash(find /c/projects/Surveys/surveybot -type f -name *.py -path */Survey/* ! -path */.venv/*)",
-      "Bash(wc -l /c/projects/Surveys/surveybot/Survey/*.py)"
+      "Bash(wc -l /c/projects/Surveys/surveybot/Survey/*.py)",
+      "Bash(find /c/projects/Surveys/surveybot -name scheduler* -type f)"
     ]
   }
 }
