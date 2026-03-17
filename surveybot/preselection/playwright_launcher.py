@@ -155,6 +155,43 @@ def _apply_devtools_overrides(context):
         });
     """)
 
+def _detect_chrome_major_version(chrome_bin: str) -> int | None:
+    """Retourne le numéro de version majeure de Chrome (ex: 145), ou None si échec."""
+    import subprocess, re, sys
+
+    def _extract(text):
+        m = re.search(r"(\d+)\.\d+\.\d+", text)
+        return int(m.group(1)) if m else None
+
+    # Méthode 1 : PowerShell (Windows — fiable)
+    if sys.platform == "win32":
+        try:
+            result = subprocess.run(
+                ["powershell", "-NoProfile", "-Command",
+                 f"(Get-Item '{chrome_bin}').VersionInfo.FileVersion"],
+                capture_output=True, text=True, timeout=8
+            )
+            v = _extract(result.stdout.strip())
+            if v:
+                return v
+        except Exception:
+            pass
+
+    # Méthode 2 : --version (Linux/Mac)
+    try:
+        result = subprocess.run(
+            [chrome_bin, "--version"],
+            capture_output=True, text=True, timeout=5
+        )
+        v = _extract(result.stdout + result.stderr)
+        if v:
+            return v
+    except Exception:
+        pass
+
+    return None
+
+
 def launch_browser(config: dict | None = None):
     """
     1) Playwright lance Chrome avec proxy authentifié.
@@ -165,15 +202,24 @@ def launch_browser(config: dict | None = None):
     if IS_LOCAL:
         print("[LOCAL] Mode local actif : lancement simple Chrome visible (sans proxy).")
 
+        chrome_major = _detect_chrome_major_version(chrome_bin)
+        if chrome_major:
+            print(f"[LOCAL] Version Chrome détectée : {chrome_major}")
+
+        user_data_dir = tempfile.mkdtemp(prefix="uc_local_profile_")
+
         chrome_options = uc.ChromeOptions()
         chrome_options.binary_location = chrome_bin
+        chrome_options.add_argument(f"--user-data-dir={user_data_dir}")
+        chrome_options.add_argument("--no-first-run")
+        chrome_options.add_argument("--no-default-browser-check")
         chrome_options.add_argument("--start-maximized")
-        chrome_options.add_argument("--new-window")
         chrome_options.add_argument("--disable-blink-features=AutomationControlled")
 
         driver = uc.Chrome(
             browser_executable_path=chrome_bin,
             options=chrome_options,
+            version_main=chrome_major,
         )
 
         # driver.get("https://www.topsurveys.app/")
