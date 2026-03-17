@@ -30,6 +30,7 @@ class StopReason(Enum):
     RUNTIME_LIMIT = "runtime_limit"
     DAILY_TARGET_REACHED = "daily_target_reached"
     SESSION_EXPIRED = "session_expired"
+    NO_SURVEY_AVAILABLE = "no_survey_available"
 
 
 @dataclass
