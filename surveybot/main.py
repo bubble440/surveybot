@@ -613,6 +613,13 @@ def main():
 
     acquire_account_lock_or_exit(account_id)
     mark_bot_running(account_id)
+    from State.account_state import update_state as _update_state, _now as _now_ts
+    from State.daily_target import ensure_daily_timer_started as _ensure_timer
+    _boot_ts = _now_ts()
+    _update_state(account_id, lambda st: (
+        st.__setitem__("last_start_ts", _boot_ts),
+        _ensure_timer(st, now_ts=_boot_ts),
+    ))
 
     from Survey.survey_solver import get_current_survey_ctx
     start_debug_http_server(get_current_survey_ctx)
@@ -626,8 +633,11 @@ def main():
     }
 
     guard = None
-    heartbeat_started = False
     hot_reload_started = False
+
+    if should_run_heartbeat():
+        start_heartbeat_thread()
+    heartbeat_started = True
 
     max_cycles = int(os.getenv("MAX_MAIN_CYCLES", "3") or "3")
     cycle = 0
@@ -670,10 +680,6 @@ def main():
                 start_hot_reload_thread()
                 hot_reload_started = True
 
-            if should_run_heartbeat() and (not heartbeat_started):
-                start_heartbeat_thread()
-                heartbeat_started = True
-
             run_main_loop(driver, api_key, account_id, payout_name=payout_name, payout_revolut_tag=payout_revolut_tag)
 
         except SystemExit:
@@ -688,7 +694,7 @@ def main():
                     from State.account_state import update_state
                     update_state(account_id, lambda st: (
                         st.__setitem__("lock_owner", ""),
-                        st.__setitem__("lock_until_ts", 0),
+                        st.__setitem__("lock_until_ts", "1970-01-01T00:00:00"),
                         st.__setitem__("status", "idle"),
                         st.__setitem__("last_stop_reason", f"crash_{type(e).__name__}"),
                     ))
@@ -720,7 +726,7 @@ def main():
             from State.account_state import update_state
             update_state(account_id, lambda st: (
                 st.__setitem__("lock_owner", ""),
-                st.__setitem__("lock_until_ts", 0),
+                st.__setitem__("lock_until_ts", "1970-01-01T00:00:00"),
                 st.__setitem__("status", "idle"),
                 st.__setitem__("last_stop_reason", "max_main_cycles_reached"),
             ))
