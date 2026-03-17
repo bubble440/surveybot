@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date
 import time
 from typing import Any, Dict, Optional
+from State.account_state import _now, _ts_to_unix
 
 DAILY_TARGET_EUR = 1.0
 
@@ -22,17 +23,17 @@ def format_elapsed_hms(elapsed_seconds: int) -> str:
 def ensure_daily_timer_started(
     state: Dict[str, Any],
     *,
-    now_ts: Optional[int] = None,
+    now_ts=None,
     day: Optional[str] = None,
 ) -> bool:
-    now = int(now_ts if now_ts is not None else time.time())
+    now_str = now_ts if now_ts is not None else _now()
     current_day = day or today_str()
 
     starts = state.setdefault("daily_target_start_ts", {})
     if current_day in starts:
         return False
 
-    starts[current_day] = now
+    starts[current_day] = now_str
     return True
 
 
@@ -41,28 +42,28 @@ def record_daily_earning_and_target(
     *,
     amount_eur: float,
     daily_target_eur: float = DAILY_TARGET_EUR,
-    now_ts: Optional[int] = None,
+    now_ts=None,
     day: Optional[str] = None,
 ) -> None:
-    now = int(now_ts if now_ts is not None else time.time())
+    now_str = now_ts if now_ts is not None else _now()
     current_day = day or today_str()
 
-    ensure_daily_timer_started(state, now_ts=now, day=current_day)
+    ensure_daily_timer_started(state, now_ts=now_str, day=current_day)
 
     daily_earned = state.setdefault("daily_earned", {})
     earned_today = float(daily_earned.get(current_day, 0.0) or 0.0) + float(amount_eur)
     daily_earned[current_day] = earned_today
 
     state["earnings_today_eur"] = earned_today
-    state["last_gain_ts"] = now
+    state["last_gain_ts"] = now_str
 
     times = state.setdefault("daily_time_to_target_hms", {})
     if current_day in times:
         return
 
     if earned_today >= float(daily_target_eur):
-        start_ts = int(state["daily_target_start_ts"].get(current_day, now))
-        elapsed = max(0, now - start_ts)
+        start_str = state["daily_target_start_ts"].get(current_day, now_str)
+        elapsed = max(0, _ts_to_unix(now_str) - _ts_to_unix(start_str))
         hms = format_elapsed_hms(elapsed)
         times[current_day] = hms
         state["time_to_target_hms"] = hms
