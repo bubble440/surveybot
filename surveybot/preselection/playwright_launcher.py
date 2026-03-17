@@ -1,5 +1,7 @@
 from __future__ import annotations
 import os
+from selenium.webdriver.chrome.options import Options
+from selenium import webdriver
 
 # IS_LOCAL = os.getenv("RUN_ENV", "local") == "local"
 IS_LOCAL = os.getenv("RUN_ENV", "local") == "local"
@@ -202,28 +204,44 @@ def launch_browser(config: dict | None = None):
     if IS_LOCAL:
         print("[LOCAL] Mode local actif : lancement simple Chrome visible (sans proxy).")
 
-        chrome_major = _detect_chrome_major_version(chrome_bin)
-        if chrome_major:
-            print(f"[LOCAL] Version Chrome détectée : {chrome_major}")
+        attach_addr = os.getenv("ATTACH_DEBUGGER_ADDRESS", "").strip()
+        options = Options()
+        if attach_addr:
+            # Mode local : attach à un Chrome existant (géré par run_tabs.ps1)
+            options.add_experimental_option("debuggerAddress", attach_addr)
+            print(f"⚠️ ATTACH MODE → {attach_addr}")
+        else:
+            # Mode prod/Docker : nouveau Chrome
+            options.add_argument("--headless=new")
+            options.add_argument("--disable-blink-features=AutomationControlled")
+            options.add_argument("--no-sandbox")
+            options.add_argument("--disable-dev-shm-usage")
+            options.add_argument("--window-size=1920,1080")
+            print("🟢 LAUNCHED NEW CHROME SESSION")
+        return webdriver.Chrome(options=options)
 
-        user_data_dir = tempfile.mkdtemp(prefix="uc_local_profile_")
+        # chrome_major = _detect_chrome_major_version(chrome_bin)
+        # if chrome_major:
+        #     print(f"[LOCAL] Version Chrome détectée : {chrome_major}")
 
-        chrome_options = uc.ChromeOptions()
-        chrome_options.binary_location = chrome_bin
-        chrome_options.add_argument(f"--user-data-dir={user_data_dir}")
-        chrome_options.add_argument("--no-first-run")
-        chrome_options.add_argument("--no-default-browser-check")
-        chrome_options.add_argument("--start-maximized")
-        chrome_options.add_argument("--disable-blink-features=AutomationControlled")
+        # user_data_dir = tempfile.mkdtemp(prefix="uc_local_profile_")
 
-        driver = uc.Chrome(
-            browser_executable_path=chrome_bin,
-            options=chrome_options,
-            version_main=chrome_major,
-        )
+        # chrome_options = uc.ChromeOptions()
+        # chrome_options.binary_location = chrome_bin
+        # chrome_options.add_argument(f"--user-data-dir={user_data_dir}")
+        # chrome_options.add_argument("--no-first-run")
+        # chrome_options.add_argument("--no-default-browser-check")
+        # chrome_options.add_argument("--start-maximized")
+        # chrome_options.add_argument("--disable-blink-features=AutomationControlled")
 
-        # driver.get("https://www.topsurveys.app/")
-        return driver
+        # driver = uc.Chrome(
+        #     browser_executable_path=chrome_bin,
+        #     options=chrome_options,
+        #     version_main=chrome_major,
+        # )
+
+        # # driver.get("https://www.topsurveys.app/")
+        # return driver
 
     proxy_server, proxy_user, proxy_pass = _parse_proxy_env(config)
     print(
