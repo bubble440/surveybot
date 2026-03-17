@@ -194,7 +194,7 @@ def login(driver, email, password):
         # 🔄 Attente que la modale soit bien visible
         wait.until(
             EC.presence_of_element_located(
-                (By.CSS_SELECTOR, 'button[class*="auth-action-button"]')
+                (By.CSS_SELECTOR, '[data-test-id="modal-close-button"]')
             )
         )
         print("🟢 Modale de connexion détectée.")
@@ -234,7 +234,18 @@ def login(driver, email, password):
         with open("debug_email_page.html", "w", encoding="utf-8") as f:
             f.write(driver.page_source)
 
-    time.sleep(7)  # attendre le chargement de la page suivante
+    # Attente que l'écran password soit effectivement rendu
+    try:
+        wait.until(
+            EC.presence_of_element_located(
+                (By.CSS_SELECTOR, '[data-test-id="sign-in-password-field-input"]')
+            )
+        )
+        print("🟢 Écran mot de passe détecté.")
+    except TimeoutException:
+        snap(driver, "error_after_continue")
+        print("❌ Écran mot de passe non apparu après Continue.")
+        return
     dom_probe(driver)
     snap(driver, "after_email")
 
