@@ -15,7 +15,6 @@ from __future__ import annotations
 import re
 from urllib.parse import urlparse, parse_qs
 from typing import Callable, Optional, Dict, Any
-import Survey.dom_metrics as dom_metrics
 from selenium.webdriver.common.by import By
 from Survey.frame_utils import iter_frame_chains, switch_to_frame_chain
 # ============================================================
@@ -1338,17 +1337,11 @@ DOM_REGISTRY: list[dict[str, Any]] = [
 
 def classify_dom(driver) -> Optional[dict]:
     """
-    Retourne le premier mapping DOM_REGISTRY qui match
-    et enregistre les métriques d'usage OpenAI.
+    Retourne le premier mapping DOM_REGISTRY qui match.
     """
     for rule in DOM_REGISTRY:
         try:
             if rule["signature"](driver):
-                dom_metrics.record_dom_classification(
-                    itype=rule["itype"],
-                    openai=rule["openai"],
-                )
-
                 # ✅ IMPORTANT: on ne renvoie PAS la fonction signature (non sérialisable)
                 public = dict(rule)
                 sig = public.pop("signature", None)
@@ -1358,8 +1351,4 @@ def classify_dom(driver) -> Optional[dict]:
         except Exception:
             continue
 
-    dom_metrics.record_dom_classification(
-        itype="unclassified",
-        openai=True,
-    )
     return None

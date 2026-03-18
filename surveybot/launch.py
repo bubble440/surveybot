@@ -462,7 +462,6 @@ def start_hot_reload_thread():
                 "Survey.dom_extractors_decipher",
                 "Survey.dom_extractors_misc",
                 "Survey.dom_frame_selector",
-                "Survey.dom_metrics",
                 "Survey.dom_question_extractor",
                 "Survey.dom_registry",
                 "Survey.dom_selection_rules",
