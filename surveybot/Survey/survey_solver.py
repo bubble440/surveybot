@@ -8,6 +8,7 @@ from selenium.webdriver.common.action_chains import ActionChains  # [AJOUT]
 from selenium.webdriver.common.by import By
 import time, os, sys
 from preselection.question_validation import detect_disqualification_reason
+from Survey.log_utils import log_debug, log_info
 
 STABILIZE_SLEEP = 2.0  # délai court entre deux actions pour laisser le DOM respirer
 
@@ -163,6 +164,48 @@ def _has_actionable_elements(driver):
         pass
 
     return False
+
+
+def _get_multi_page_state(driver) -> tuple:
+    """
+    Empreinte de l'état courant d'une page multi-inputs pour la stuck detection.
+    Retourne un tuple (nb_questions, textes_questions, états_inputs) :
+      - nb_questions  : nombre de labels de questions visibles         (niveau 2)
+      - textes        : tuple des textes de questions (100 chars max)  (niveau 3)
+      - inputs        : tuple trié des valeurs sélectionnées/cochées   (niveau 4)
+    En cas d'erreur, retourne (0, (), ()) pour ne pas bloquer.
+    """
+    try:
+        # Niveau 2 & 3 — textes des questions visibles
+        q_texts = []
+        for sel in [
+            "fieldset legend",
+            "[class*='question'] label",
+            "[class*='Question'] label",
+            "[role='group'] label",
+        ]:
+            elems = [e for e in driver.find_elements(By.CSS_SELECTOR, sel) if e.is_displayed()]
+            if elems:
+                q_texts = [e.text.strip()[:100] for e in elems if e.text.strip()]
+                break
+
+        # Niveau 4 — états des inputs sélectionnés/cochés
+        states = []
+        for r in driver.find_elements(By.CSS_SELECTOR, "input[type='radio']:checked"):
+            states.append("r:" + (r.get_attribute("value") or r.get_attribute("id") or "?"))
+        for c in driver.find_elements(By.CSS_SELECTOR, "input[type='checkbox']:checked"):
+            states.append("c:" + (c.get_attribute("value") or c.get_attribute("id") or "?"))
+        for s in driver.find_elements(By.CSS_SELECTOR, "select"):
+            try:
+                v = s.get_attribute("value") or ""
+                if v:
+                    states.append("s:" + v)
+            except Exception:
+                pass
+
+        return (len(q_texts), tuple(q_texts), tuple(sorted(states)))
+    except Exception:
+        return (0, (), ())
 
 
 def _looks_like_end_screen(driver):
@@ -603,10 +646,12 @@ def solve_full_survey(driver, api_key, *, account_id: str, survey_context=None):
     print(f" URL finale stabilisée : {final_url}")
 
     # 2) Boucle d'exécution des actions
-    _no_progress_count = 0        # Option B : succès sans avance de page
+    _no_progress_count = 0        # Option B : succès sans avance de page (single-question)
     _NO_PROGRESS_THRESHOLD = 3
     last_url = driver.current_url
     last_question_key = ""        # Clé de la dernière question vue (détection intra-page)
+    _multi_no_progress_count = 0  # Stuck detection pour pages multi-inputs
+    _last_multi_page_state = None # Empreinte (count, texts, inputs) de la dernière itération multi
     guard = Management.guards.runtime_guard.get_guard()
 
     while True:
@@ -794,9 +839,41 @@ def solve_full_survey(driver, api_key, *, account_id: str, survey_context=None):
         has_more_to_do = _has_actionable_elements(driver)
 
         if just_succeeded and has_more_to_do:
-            print(
-                " Action en-page réussie et autres éléments visibles → pas d'attente de navigation."
-            )
+            # -------------------------------------------------------------------
+            # Stuck detection — pages multi-inputs (3 niveaux)
+            # Niveau 2 : nombre de questions identique
+            # Niveau 3 : textes des questions identiques
+            # Niveau 4 : états des inputs (radio/checkbox/select) identiques
+            # → si les 3 niveaux sont inchangés, la page n'a pas progressé
+            # -------------------------------------------------------------------
+            _cur_multi_state = _get_multi_page_state(driver)
+            if _last_multi_page_state is not None:
+                _prev_n_q, _prev_q_texts, _prev_inputs = _last_multi_page_state
+                _cur_n_q,  _cur_q_texts,  _cur_inputs  = _cur_multi_state
+                if _cur_n_q == _prev_n_q:                          # niveau 2
+                    if _cur_q_texts == _prev_q_texts:              # niveau 3
+                        if _cur_inputs == _prev_inputs:            # niveau 4
+                            _multi_no_progress_count += 1
+                            log_debug("STUCK-MULTI",
+                                f"Aucune progression ({_multi_no_progress_count}/{_NO_PROGRESS_THRESHOLD})"
+                                f" — q={_cur_n_q} textes={_cur_q_texts} inputs={_cur_inputs}")
+                            if _multi_no_progress_count >= _NO_PROGRESS_THRESHOLD:
+                                log_info("STUCK-MULTI",
+                                    f"Page multi-inputs inchangée {_NO_PROGRESS_THRESHOLD} fois → soft-restart")
+                                guard.record_success()
+                                guard.request_survey_restart("solve_no_progress_multi")
+                                return
+                        else:
+                            log_debug("STUCK-MULTI", f"Progression : états inputs modifiés {_prev_inputs} → {_cur_inputs}")
+                            _multi_no_progress_count = 0
+                    else:
+                        log_debug("STUCK-MULTI", f"Progression : textes modifiés ({_prev_n_q}q → {_cur_n_q}q)")
+                        _multi_no_progress_count = 0
+                else:
+                    log_debug("STUCK-MULTI", f"Progression : nb questions modifié {_prev_n_q} → {_cur_n_q}")
+                    _multi_no_progress_count = 0
+            _last_multi_page_state = _cur_multi_state
+            print(" Action en-page réussie et autres éléments visibles → pas d'attente de navigation.")
             redirect_watcher.wait_for_page_load(driver, timeout=10)
             time.sleep(0.4)  # laisser le framework réagir
             # on repart tout de suite sur une nouvelle itération (nouvelle capture)
@@ -809,8 +886,10 @@ def solve_full_survey(driver, api_key, *, account_id: str, survey_context=None):
 
         # Si l’URL a changé → on inspecte le nouvel emplacement
         if current_url != last_url:
-            _no_progress_count = 0  # URL a changé, réinitialisation du détecteur stuck
-            last_question_key = ""  # Reset aussi la clé question
+            _no_progress_count = 0         # URL a changé, réinitialisation du détecteur stuck
+            _multi_no_progress_count = 0   # Reset stuck multi-inputs
+            _last_multi_page_state = None  # Reset empreinte multi-inputs
+            last_question_key = ""         # Reset aussi la clé question
             print(f"[solve_full_survey] Changement d’URL {last_url} \u2192 {current_url}")
             last_url = current_url
 
