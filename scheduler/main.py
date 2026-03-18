@@ -52,10 +52,18 @@ def load_accounts_from_dynamodb(prefix: str | None = None) -> list[str]:
 
 def _load_accounts_from_firestore(prefix: str | None = None) -> list[str]:
     """
-    Récupère les account_id depuis Firestore.
-    Collection = STATE_TABLE (même variable d'env que DynamoDB).
-    Chaque document doit avoir un champ 'account_id'.
+    Source de vérité = GCP Secret Manager (liste des secrets avec le préfixe donné).
+    Pour chaque compte découvert, auto-crée le document Firestore s'il est absent.
+    Collection Firestore = STATE_TABLE.
     """
+
+    try:
+        from google.cloud import secretmanager
+    except ImportError:
+        raise RuntimeError(
+            "google-cloud-secret-manager manquant — "
+            "pip install google-cloud-secret-manager"
+        )
 
     try:
         from google.cloud import firestore
@@ -64,25 +72,49 @@ def _load_accounts_from_firestore(prefix: str | None = None) -> list[str]:
             "google-cloud-firestore manquant — pip install google-cloud-firestore"
         )
 
+    gcp_project = os.getenv("GCP_PROJECT")
+    if not gcp_project:
+        raise RuntimeError("GCP_PROJECT manquant pour le scheduler GCP")
+
     collection_name = os.getenv("STATE_TABLE")
     if not collection_name:
         raise RuntimeError("STATE_TABLE manquant pour le scheduler")
 
-    gcp_project = os.getenv("GCP_PROJECT")
-    db = firestore.Client(project=gcp_project) if gcp_project else firestore.Client()
+    # 1. Lister les secrets depuis Secret Manager
+    sm_client = secretmanager.SecretManagerServiceClient()
+    parent = f"projects/{gcp_project}"
 
     accounts: list[str] = []
-
-    for doc in db.collection(collection_name).stream():
-        data = doc.to_dict() or {}
-        aid = data.get("account_id")
-        if not aid:
+    for secret in sm_client.list_secrets(request={"parent": parent}):
+        # secret.name = "projects/{project}/secrets/{secret_id}"
+        secret_id = secret.name.split("/")[-1]
+        if prefix and not secret_id.startswith(prefix):
             continue
-        if prefix and not aid.startswith(prefix):
-            continue
-        accounts.append(aid)
+        accounts.append(secret_id)
 
-    return sorted(accounts)
+    accounts = sorted(accounts)
+
+    # 2. Auto-créer les documents Firestore manquants
+    if accounts:
+        db = firestore.Client(project=gcp_project)
+        col = db.collection(collection_name)
+
+        _DEFAULT_TS = "1970-01-01T00:00:00"
+        for account_id in accounts:
+            doc_ref = col.document(account_id)
+            if not doc_ref.get().exists:
+                doc_ref.set({
+                    "account_id":        account_id,
+                    "status":            "idle",
+                    "banned":            False,
+                    "version":           0,
+                    "lock_owner":        "",
+                    "lock_until_ts":     _DEFAULT_TS,
+                    "cooldown_until_ts": _DEFAULT_TS,
+                })
+                print(f"[SCHEDULER] Firestore doc auto-créé : {account_id}")
+
+    return accounts
 
 
 # ============================================================================
