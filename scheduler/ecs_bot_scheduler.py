@@ -1,7 +1,7 @@
 import time, os, socket
-from scheduler.account_state import load_state, update_state
+from account_state import load_state, update_state
 from ecs import is_task_running, start_task
-from scheduler.account_state import try_acquire_account_lock
+from account_state import try_acquire_account_lock
 
 def scheduler_tick(account_id):
     state = load_state(account_id)
