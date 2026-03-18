@@ -1169,7 +1169,6 @@ def execute_survey_page(driver, api_key, ctx=None):
     import Survey.batch_response_parser as batch_response_parser
     import Survey.dom_classifier as dom_classifier
     import Survey.action_dispatcher as action_dispatcher
-    import Survey.dom_metrics as dom_metrics
     import Survey.batch_response_parser as batch_response_parser
     import Survey.input_handler as input_handler
     import Management.redirect_watcher as redirect_watcher
@@ -1238,8 +1237,6 @@ def execute_survey_page(driver, api_key, ctx=None):
     video_gate_state = _handle_forcewatch_video_gate(driver)
     if video_gate_state == "soft_restart":
         return True
-
-    dom_metrics.log_snapshot()
 
     extracted_question_blocks = dom_analyzer.analyze_dom(driver) or []
     question_blocks = prompt_builder.filter_blocks_for_openai(extracted_question_blocks)
@@ -1434,16 +1431,6 @@ def execute_survey_page(driver, api_key, ctx=None):
                         print(" Navigation/DOM change   CTA.")
             except Exception:
                 pass
-
-        #  Export DynamoDB : compteur unique des rescans DOM (si > 0)
-        try:
-            rescans = int(getattr(driver, "_dom_rescans_this_page", 0))
-            if rescans:
-                # (optionnel) log local 1 ligne (utile pour debug)
-                print(f"[DOM_RESCAN] rescans_this_page={rescans} url={_short_url(driver.current_url)}")
-                dom_metrics.export_dom_rescans(rescans)
-        except Exception:
-            pass
 
         return result    
     else:
