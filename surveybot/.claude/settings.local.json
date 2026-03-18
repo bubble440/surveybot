@@ -59,7 +59,8 @@
       "Bash(wc -l /c/projects/Surveys/surveybot/Survey/*.py)",
       "Bash(find /c/projects/Surveys/surveybot -name scheduler* -type f)",
       "Bash(find \"C:\\\\projects\\\\Surveys\\\\surveybot\" -type f -name \"*.py\" -exec grep -l \"redis\\\\|cache\\\\|session\\\\|store\\\\|database\\\\|db\\\\|SQL\\\\|JSON\" {})",
-      "Bash(del \"C:\\\\projects\\\\Surveys\\\\surveybot\\\\Survey\\\\dom_metrics.py\")"
+      "Bash(del \"C:\\\\projects\\\\Surveys\\\\surveybot\\\\Survey\\\\dom_metrics.py\")",
+      "Bash(cat /c/projects/Surveys/scheduler/*)"
     ]
   }
 }
