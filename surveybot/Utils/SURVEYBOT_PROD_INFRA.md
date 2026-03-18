@@ -1,26 +1,29 @@
-# SurveyBot — Documentation Infrastructure Production AWS
+# SurveyBot — Documentation Infrastructure Production
 
-> **Document de référence opérationnel** — décrit l'état exact de l'infrastructure AWS prod,
+> **Document de référence opérationnel** — décrit l'état exact de l'infrastructure prod,
 > le fonctionnement interne du bot, et les procédures de lancement/arrêt.
-> Rédigé en mars 2026. À mettre à jour après tout changement d'infrastructure.
+> Rédigé en mars 2026. Deux déploiements actifs : AWS (eu-west-3) et GCP (europe-west1).
+> À mettre à jour après tout changement d'infrastructure.
 
 ---
 
 ## Table des matières
 
 1. [Vue d'ensemble](#1-vue-densemble)
-2. [Composants AWS déployés](#2-composants-aws-déployés)
-3. [Stack technique du bot](#3-stack-technique-du-bot)
-4. [Flux d'exécution complet](#4-flux-dexécution-complet)
-5. [Variables d'environnement](#5-variables-denvironnement)
-6. [État DynamoDB — schéma complet](#6-état-dynamodb--schéma-complet)
-7. [RuntimeGuard — comportement prod](#7-runtimeguard--comportement-prod)
-8. [Lancer le bot en production](#8-lancer-le-bot-en-production)
-9. [Arrêter le bot en production](#9-arrêter-le-bot-en-production)
-10. [Ajouter un compte bot](#10-ajouter-un-compte-bot)
-11. [Coûts et ressources à surveiller](#11-coûts-et-ressources-à-surveiller)
-12. [Checklist de santé infrastructure](#12-checklist-de-santé-infrastructure)
-13. [Points d'architecture importants](#13-points-darchitecture-importants)
+2. [Infrastructure GCP — déploiement actif](#2-infrastructure-gcp--déploiement-actif)
+3. [Infrastructure AWS — déploiement legacy](#3-infrastructure-aws--déploiement-legacy)
+4. [Stack technique du bot](#4-stack-technique-du-bot)
+5. [Flux d'exécution complet](#5-flux-dexécution-complet)
+6. [Variables d'environnement](#6-variables-denvironnement)
+7. [État Firestore — schéma complet](#7-état-firestore--schéma-complet)
+8. [RuntimeGuard — comportement prod](#8-runtimeguard--comportement-prod)
+9. [Lancer le bot en production (GCP)](#9-lancer-le-bot-en-production-gcp)
+10. [Arrêter le bot en production (GCP)](#10-arrêter-le-bot-en-production-gcp)
+11. [Ajouter un compte bot (GCP)](#11-ajouter-un-compte-bot-gcp)
+12. [Build et déploiement d'une nouvelle image](#12-build-et-déploiement-dune-nouvelle-image)
+13. [Coûts et ressources à surveiller](#13-coûts-et-ressources-à-surveiller)
+14. [Checklist de santé infrastructure](#14-checklist-de-santé-infrastructure)
+15. [Points d'architecture importants](#15-points-darchitecture-importants)
 
 ---
 
@@ -28,610 +31,556 @@
 
 ### Objectif
 SurveyBot automatise la complétion de sondages sur TopSurveys et les plateformes partenaires.
-Chaque bot = 1 compte TopSurveys = 1 conteneur ECS Fargate = 1 proxy externe.
+Chaque bot = 1 compte TopSurveys = 1 conteneur Cloud Run Job = 1 proxy externe.
 **Cible : ~100 bots en parallèle.**
 
-### Architecture simplifiée
+### Architecture simplifiée — GCP
 
 ```
-EventBridge Scheduler (toutes les 5 min)
-    └─► ECS Task: scheduler
-            └─► ECS Task: surveybot × N  (1 par compte actif)
-                    ├─ Secrets Manager  (credentials)
-                    ├─ DynamoDB         (état partagé)
-                    └─ Chrome headless  (Playwright + Selenium)
+Cloud Scheduler (toutes les 5 min)
+    └─► Cloud Run Job: scheduler
+            ├─ Secret Manager    (liste des comptes + credentials)
+            ├─ Firestore         (état partagé — auto-création si absent)
+            └─► Cloud Run Job: surveybot × N  (1 par compte éligible)
+                    ├─ Secret Manager  (credentials injectés par le scheduler)
+                    ├─ Firestore       (état partagé)
+                    └─ Chrome headless (Playwright + Selenium)
                             └─ Proxy externe → Site de sondage
 ```
 
-### Région AWS
-Tout est déployé dans **eu-west-3 (Europe / Paris)**.
+### Projets et régions
+
+| Cloud | Projet / Compte | Région |
+|-------|----------------|--------|
+| GCP | `surveybot-490607` | `europe-west1` (Belgique) |
+| AWS | `865626945801` | `eu-west-3` (Paris) |
 
 ---
 
-## 2. Composants AWS déployés
+## 2. Infrastructure GCP — déploiement actif
 
-### 2.1 ECS — Elastic Container Service
+### 2.1 Cloud Run Jobs
 
-**Cluster** : `passionate-panda-alu75o`
-**Type** : Fargate (serverless — aucune instance EC2 à gérer, facturation à la seconde)
+**Projet** : `surveybot-490607`
+**Région** : `europe-west1`
 
-**Task Definitions actives (3)** :
+| Job | Image | Rôle | CPU | RAM | Timeout |
+|-----|-------|------|-----|-----|---------|
+| `scheduler` | `surveybot/scheduler:latest` | Orchestrateur : liste les comptes, lance les jobs `surveybot` | 1 | 512Mi | 300s |
+| `surveybot` | `surveybot/bot:latest` | Bot principal (Chrome + Playwright + Selenium + OpenAI) | 1 | 2Gi | 3600s |
 
-| Nom | Rôle |
-|-----|------|
-| `scheduler` | Orchestrateur : lit les comptes, lance les tasks `surveybot` |
-| `surveybot` | Bot principal (Chrome + Playwright + Selenium + OpenAI) |
-| `VISUAL` | Debug uniquement — jamais utilisé en prod normale |
+Les deux jobs tournent dans le subnet privé `surveybot-private` avec egress `all-traffic` via Cloud NAT.
 
 ---
 
-### 2.2 ECR — Container Registry
+### 2.2 Artifact Registry
 
-2 repositories privés :
+**Repository** : `europe-west1-docker.pkg.dev/surveybot-490607/surveybot`
 
-| Repository | URI complète |
-|-----------|-------------|
+| Image | Tag | Rôle |
+|-------|-----|------|
+| `bot` | `latest` | Image du bot surveybot |
+| `scheduler` | `latest` | Image du scheduler |
+
+> Les images sont en tag `latest` (mutable). Un `docker push :latest` écrase l'image précédente.
+> Après chaque push, le prochain cycle du scheduler utilisera automatiquement la nouvelle image.
+
+**Script de build + push (PowerShell) — à utiliser à chaque déploiement :**
+
+```powershell
+# Bot
+$PROJECT = "surveybot-490607"; $REGION = "europe-west1"; $REPO = "surveybot"; $TAG = "latest"
+gcloud auth configure-docker "$REGION-docker.pkg.dev" --project=$PROJECT
+docker build -t "${REGION}-docker.pkg.dev/${PROJECT}/${REPO}/bot:${TAG}" ./surveybot
+docker push "${REGION}-docker.pkg.dev/${PROJECT}/${REPO}/bot:${TAG}"
+
+# Scheduler
+docker build -t "${REGION}-docker.pkg.dev/${PROJECT}/${REPO}/scheduler:${TAG}" ./scheduler
+docker push "${REGION}-docker.pkg.dev/${PROJECT}/${REPO}/scheduler:${TAG}"
+```
+
+---
+
+### 2.3 Cloud Scheduler
+
+**Schedule** : `scheduler-runner`
+**Location** : `europe-west1`
+
+| Paramètre | Valeur |
+|-----------|--------|
+| Fréquence | `*/5 * * * *` (toutes les 5 min) |
+| Timezone | Europe/Paris |
+| Cible | Cloud Run Job `scheduler` via HTTP POST |
+| URI | `https://europe-west1-run.googleapis.com/v2/projects/surveybot-490607/locations/europe-west1/jobs/scheduler:run` |
+| Auth | OAuth — Service Account `surveybot-sa@surveybot-490607.iam.gserviceaccount.com` |
+| Retry | 0 |
+| Statut | ENABLED (à désactiver pour pause) |
+
+---
+
+### 2.4 Secret Manager
+
+**Convention de nommage** : `topsurveys_bot_XXX`
+
+Comptes actuellement déclarés : `bot_001` (1 compte actif).
+Cible finale : ~100 comptes.
+
+Contenu attendu dans chaque secret (JSON, une seule ligne) :
+```json
+{"EMAIL":"compte@email.com","PASSWORD":"...","PROXY_URL":"host:port","PROXY_USER":"...","PROXY_PASS":"...","GEO_LAT":"48.8566","GEO_LON":"2.3522","SURVEY_LANG":"fr-FR","SURVEY_TZ":"Europe/Paris"}
+```
+
+> **Important** : le JSON doit être sur une seule ligne sans apostrophes. Utiliser `gcloud secrets versions add` avec `--data-file=-` et un heredoc `<<'EOF'` pour éviter les erreurs de parsing.
+
+**Créer ou mettre à jour un secret :**
+```bash
+gcloud secrets versions add topsurveys_bot_001 --data-file=- --project=surveybot-490607 <<'EOF'
+{"EMAIL":"...","PASSWORD":"...","PROXY_URL":"...","PROXY_USER":"...","PROXY_PASS":"...","GEO_LAT":"48.8566","GEO_LON":"2.3522","SURVEY_LANG":"fr-FR","SURVEY_TZ":"Europe/Paris"}
+EOF
+```
+
+**Le scheduler découvre automatiquement les comptes** en listant les secrets avec le préfixe `topsurveys_bot_`. Il crée également le document Firestore correspondant si absent — aucune action manuelle requise pour enregistrer un nouveau bot.
+
+---
+
+### 2.5 Firestore
+
+**Base** : `(default)`
+**Mode** : Native
+**Région** : `europe-west1`
+**Collection** : `surveybot_account_state`
+
+Chaque document correspond à un compte bot. Les documents sont **auto-créés** par le scheduler au premier cycle si le secret existe dans Secret Manager.
+
+Schéma d'un document (voir section 7 pour détail complet).
+
+---
+
+### 2.6 Réseau — VPC GCP
+
+**VPC** : `surveybot-vpc`
+
+| Ressource | Nom | CIDR / Détail |
+|-----------|-----|---------------|
+| Subnet | `surveybot-private` | `10.0.1.0/24` — europe-west1 |
+| Router | `surveybot-router` | europe-west1 |
+| Cloud NAT | `surveybot-nat` | Auto-allocate IPs, all subnets |
+
+> Cloud NAT remplace le NAT Gateway AWS. Pas de coût fixe — facturation uniquement sur le data processing (~$0.01/GB).
+
+---
+
+### 2.7 IAM — Service Account
+
+**Service Account** : `surveybot-sa@surveybot-490607.iam.gserviceaccount.com`
+
+| Rôle | Usage |
+|------|-------|
+| `roles/run.developer` | Lancer les Cloud Run Jobs |
+| `roles/secretmanager.secretAccessor` | Lire les secrets |
+| `roles/datastore.user` | Lire/écrire Firestore |
+| `roles/logging.logWriter` | Écrire les logs Cloud Logging |
+
+---
+
+## 3. Infrastructure AWS — déploiement legacy
+
+> L'infrastructure AWS reste opérationnelle et peut être utilisée en parallèle ou en fallback.
+> Le code supporte les deux clouds via la variable `RUN_ENV` (`aws` ou `gcp`).
+
+### 3.1 ECS — Elastic Container Service
+
+**Cluster** : `passionate-panda-alu75o` — région `eu-west-3`
+
+| Task Definition | Rôle |
+|----------------|------|
+| `scheduler` | Orchestrateur AWS |
+| `surveybot` | Bot principal |
+
+### 3.2 ECR
+
+| Repository | URI |
+|-----------|-----|
 | `surveybot` | `865626945801.dkr.ecr.eu-west-3.amazonaws.com/surveybot` |
 | `surveybot-scheduler` | `865626945801.dkr.ecr.eu-west-3.amazonaws.com/surveybot-scheduler` |
 
-> **Important** : après chaque modification du code, il faut rebuild et pusher l'image
-> avant de relancer. Les repos sont en mode **Mutable** (le tag `latest` peut être écrasé).
+### 3.3 EventBridge Scheduler
 
----
+Schedule `scheduler-runner` — `rate(5 minutes)` — **Disabled** (ne pas activer si GCP est actif pour éviter les doublons).
 
-### 2.3 EventBridge Scheduler
+### 3.4 Secrets Manager AWS
 
-Un seul schedule actif en prod normale :
+Convention identique : `topsurveys_bot_XXX`. Comptes `bot_001` à `bot_006`.
 
-#### `scheduler-runner` — le seul à activer en prod
+### 3.5 DynamoDB
 
-| Paramètre | Valeur |
-|-----------|--------|
-| Occurrence | Recurring schedule |
-| Fréquence | `rate(5 minutes)` |
-| Timezone | Europe/Paris |
-| Cible ECS | Task definition `scheduler` (Latest) |
-| Cluster | `passionate-panda-alu75o` |
-| Subnets | `subnet-094096e26e2a427c8`, `subnet-041a1e9c66a9934fc` |
-| Security group | `sg-0e05b37375448ca11` (surveybot-sg) |
-| Auto-assign public IP | DISABLED |
-| Rôle IAM | `eventbridge-run-surveybot-role` |
-| Retry policy | Off |
-| DLQ | None |
-| Statut actuel | Disabled (à activer au lancement) |
+**Table** : `surveybot_account_state` — `arn:aws:dynamodb:eu-west-3:865626945801:table/surveybot_account_state`
 
-> Le schedule `surveybot-scheduler` est un schedule de test personnel.
-> Il ne fait pas partie du flow prod et ne doit jamais être activé en fonctionnement normal.
-
----
-
-### 2.4 Secrets Manager
-
-Convention de nommage : `topsurveys_bot_XXX`
-
-Comptes actuellement déclarés : `bot_001` à `bot_006` (6 comptes).
-Cible finale : ~100 comptes.
-
-Contenu attendu dans chaque secret (JSON) :
-```json
-{
-  "Email":               "compte@email.com",
-  "Password":            "...",
-  "openai_api_key":      "sk-...",
-  "payout_name":         "...",
-  "payout_revolut_tag":  "...",
-  "telegram_bot_token":  "...",
-  "telegram_chat_id":    "..."
-}
-```
-
-La résolution des secrets suit cette priorité (`secret_loader.py`) :
-1. Variable ENV `TOPSURVEYS_SECRET_JSON` (JSON inline)
-2. AWS Secrets Manager via `TOPSURVEYS_SECRET_NAME`
-3. Variables ENV unitaires (fallback dev uniquement)
-
----
-
-### 2.5 DynamoDB
-
-**Table** : `surveybot_account_state`
-**ARN** : `arn:aws:dynamodb:eu-west-3:865626945801:table/surveybot_account_state`
-
-| Paramètre | Valeur |
-|-----------|--------|
-| Partition key | `account_id` (String) |
-| Sort key | aucune |
-| Capacity mode | On-demand |
-| TTL | Activé sur attribut `ttl_ts` |
-| Items actuels | 6 (bot_001 à bot_006) |
-| Taille moyenne item | ~292 bytes |
-| Deletion protection | Off |
-
-Source de vérité partagée entre le scheduler et tous les bots.
-Accès concurrent géré par **optimistic locking** (champ `version`).
-
----
-
-### 2.6 Réseau — VPC
+### 3.6 Réseau AWS
 
 **VPC** : `vpc-038ced7972306fa38` (`surveybot-vpc-01`)
+NAT Gateway actif sur `51.44.135.248` (~$35/mois fixe).
 
-**Subnets (3)** :
-
-| Nom | Subnet ID | CIDR | Type |
-|-----|-----------|------|------|
-| `surveybot-public-1a` | `subnet-0bc8652bcf66d18fc` | 10.0.0.0/24 | Public (NAT Gateway) |
-| `surveybot-private-1a` | `subnet-041a1e9c66a9934fc` | 10.0.1.0/24 | Privé (tasks Fargate) |
-| `surveybot-private-1b` | `subnet-094096e26e2a427c8` | 10.0.2.0/24 | Privé (tasks Fargate) |
-
-Les tasks ECS tournent dans les subnets privés (`-1a` et `-1b`).
-Elles passent par le NAT Gateway pour sortir vers internet.
-
-**Security Groups** :
-
-| Nom | Inbound | Outbound | Utilisé par |
-|-----|---------|----------|-------------|
-| `surveybot-sg` | Aucun | All → 0.0.0.0/0 | Tasks ECS |
-| `default` | All depuis lui-même | All → 0.0.0.0/0 | VPC interne |
-
-**Elastic IPs (3)** :
-
-| IP | Nom | Association | Action |
-|----|-----|-------------|--------|
-| `51.44.135.248` | — | NAT Gateway (`rnat`) — active | Conserver |
-| `13.36.51.89` | `surveybot-nat-eip` | Aucune — orpheline | Libérer |
-| `13.36.153.246` | — | Aucune — orpheline | Libérer |
-
-> Les 2 EIPs orphelines coûtent ~$7.20/mois inutilement.
-> Pour libérer : EC2 → Elastic IPs → sélectionner → Actions → Release.
-> Ne jamais libérer `51.44.135.248` (NAT Gateway actif).
-
-**NAT Gateway** : 1 actif sur `surveybot-public-1a`. Coûte ~$35/mois fixe
-+ data processing — coût incompressible pour Fargate en subnet privé.
+> 2 EIPs orphelines à libérer : `13.36.51.89` et `13.36.153.246` (~$7.20/mois gaspillés).
 
 ---
 
-### 2.7 IAM
+## 4. Stack technique du bot
 
-| Ressource | Détail |
-|-----------|--------|
-| Rôle principal | `eventbridge-run-surveybot-role` |
-| Usage | EventBridge appelle `ecs:RunTask` avec ce rôle |
-| Users IAM | 1 (admin) |
-| Roles total | 8 |
-
----
-
-## 3. Stack technique du bot
-
-### 3.1 Browser — architecture Playwright + Selenium hybride
-
-Le bot utilise une approche hybride en deux étapes (fichier `playwright_launcher.py`) :
+### 4.1 Browser — architecture Playwright + Selenium hybride
 
 **Étape 1 — Playwright lance Chrome**
-- Gère l'authentification proxy nativement (point que Selenium/UC ne résout pas proprement)
+- Gère l'authentification proxy nativement
 - Configure : proxy, langue (`fr-FR`), timezone (`Europe/Paris`), géolocalisation (Paris par défaut)
 - Injecte des overrides DevTools anti-détection : `navigator.webdriver = undefined`, platform `Win32`
-- Lance Chrome en mode `--headless=new` en prod (Docker/ECS)
+- Lance Chrome en mode `--headless=new` en prod (Docker/Cloud Run)
 - Expose un port de debugging aléatoire (42000–52000)
 
 **Étape 2 — Selenium s'attache au Chrome existant**
 - Se connecte via `debuggerAddress: 127.0.0.1:{port}`
 - Toute la logique d'interaction (DOM, clics, OpenAI) reste dans Selenium
-- Les objets Playwright (`_pw`, `_pw_context`, `_pw_page`) sont attachés au driver Selenium
-  pour maintenir la session vivante (sinon garbage collection ferme Chrome)
+- Les objets Playwright sont attachés au driver pour maintenir la session vivante
 
-```
-Playwright → Chrome headless (proxy auth, fingerprint, overrides)
-                 ↑ remote debugging port (aléatoire 42000-52000)
-Selenium   → attach → driver (logique bot complète)
-```
+### 4.2 OpenAI
 
-**En local** : mode simplifié — `undetected-chromedriver` direct, sans proxy, Chrome visible.
+- Modèle : `gpt-4o-mini`
+- API : `chat.completions.create()` (direct, pas Assistants API)
+- Clé injectée via le secret du compte
 
-### 3.2 Pipeline de résolution d'un sondage
+### 4.3 Notifications Telegram
 
-```
-1. analyze_dom()              → extraction question_blocks depuis le DOM
-2. filter_blocks()            → filtre blocs déjà répondus / hors scope
-3. build_batch_prompt()       → construction prompt OpenAI (prompt_builder.py)
-4. OpenAI API call            → génération des réponses (gpt-4o-mini)
-5. parse_batch_response()     → parsing + résolution conflits exclusifs
-6. action_dispatcher          → dispatch vers input_radio / checkbox / text / matrix / slider
-7. try_click_navigation_cta() → navigation vers page suivante
-8. stabilize (2s)             → attente stabilisation DOM
-```
-
-**Anti-boucles** (`survey_solver.py`) :
-- `MAX_TOTAL_STEPS = 200` — sécurité dure, jamais reset
-- `MAX_STEPS_PER_URL = 80` — évite de tourner sur la même page
-- `MAX_URL_CHANGES = 60` — évite les ping-pongs de redirection
-- `STABILIZE_SLEEP = 2.0s` — délai entre actions
+- Chaque bot a ses propres credentials Telegram dans son secret
+- Notifications envoyées via HTTP direct vers l'API Telegram (`notifier.py`)
 
 ---
 
-## 4. Flux d'exécution complet
+## 5. Flux d'exécution complet
 
 ```
-1. EventBridge (rate: 5 min)
-   └─► RunTask: scheduler
-       └─► lit les comptes éligibles (DynamoDB ou Secrets Manager)
-           └─► pour chaque compte (non banni, cooldown expiré, pas de lock valide) :
-               RunTask: surveybot
-               env: TOPSURVEYS_SECRET_NAME, ACCOUNT_ID, RUN_ENV=aws, STATE_BACKEND=dynamodb
-
-2. Task surveybot démarre (Fargate, subnet privé)
-   ├─ acquire_account_lock_or_exit()
-   │    └─ DynamoDB ConditionExpression atomique (lock_owner vide ou expiré)
-   │    └─ si lock déjà pris → exit propre (doublon évité)
-   ├─ install_sigterm_handler()
-   │    └─ capte SIGTERM ECS → écrit ecs_stop_requested=true dans DynamoDB
-   ├─ start_heartbeat_thread()
-   │    └─ touch_heartbeat() toutes les ~30s (prolonge lock_until_ts)
-   ├─ launch_browser()         [playwright_launcher.py]
-   │    └─ Playwright → Chrome headless avec proxy
-   │    └─ Selenium s'attache via debuggerAddress
-   ├─ login()                  [auth_handler.py]
-   │    └─ navigue vers TopSurveys, saisit email + password via Selenium
-   ├─ init_session_and_enter_surveys()
-   │    └─ attend chargement de la liste de sondages
-   └─ run_main_loop()
-        └─ pour chaque sondage disponible :
-             survey_solver → survey_executor (boucle page par page)
-        └─ arrêt propre → update DynamoDB (status=idle, last_stop_reason)
-
-3. Arrêt propre
-   → RuntimeGuard lève SystemExit(reason)
-   → DynamoDB mis à jour (cooldown_until_ts, pause_policy)
-   → task ECS se termine → Fargate désalloue automatiquement
-   → dans les 5 min, scheduler relance si cooldown expiré
+1. Cloud Scheduler déclenche le job "scheduler" toutes les 5 min
+2. scheduler/main.py :
+   a. Liste les secrets Secret Manager avec préfixe "topsurveys_bot_"
+   b. Pour chaque compte :
+      - Auto-crée le document Firestore si absent
+      - Appelle scheduler_tick(account_id)
+3. scheduler_tick() (ecs_bot_scheduler.py) :
+   a. Charge l'état depuis Firestore
+   b. Vérifie : pas banni, pas en cooldown, status=idle, pas de lock actif
+   c. Acquiert le lock Firestore (transaction atomique)
+   d. Appelle start_task(account_id) → _start_task_gcp()
+4. _start_task_gcp() (ecs.py) :
+   a. Charge le secret depuis GCP Secret Manager
+   b. Lance le Cloud Run Job "surveybot" avec les variables d'env du compte en overrides
+5. surveybot démarre :
+   a. Lit ses credentials depuis les variables d'env injectées
+   b. Lance Chrome via Playwright
+   c. Se connecte à TopSurveys
+   d. Boucle de complétion de sondages
+   e. RuntimeGuard surveille les conditions d'arrêt
+6. En fin de session :
+   a. Bot met à jour Firestore (status=idle, cooldown, earnings)
+   b. Cloud Run Job se termine → ressources libérées
+7. Au prochain cycle (5 min), le scheduler peut relancer si cooldown expiré
 ```
-
-**Chemin réseau sortant** :
-`Task Fargate (subnet privé) → NAT Gateway (51.44.135.248) → Internet → Proxy externe → Site sondage`
-
-L'IP vue par les sites de sondage est celle du **proxy externe**, pas du NAT Gateway.
 
 ---
 
-## 5. Variables d'environnement
+## 6. Variables d'environnement
 
-### Obligatoires en prod
+### Variables communes (bot + scheduler)
 
-| Variable | Description |
-|----------|-------------|
-| `ACCOUNT_ID` | Identifiant du compte bot (ex: `topsurveys_bot_006`) |
-| `TOPSURVEYS_SECRET_NAME` | Nom du secret dans Secrets Manager |
-| `RUN_ENV` | `aws` (active le mode prod complet) |
-| `STATE_BACKEND` | `dynamodb` |
+| Variable | Valeur GCP | Valeur AWS | Description |
+|----------|-----------|-----------|-------------|
+| `RUN_ENV` | `gcp` | `aws` | Cloud actif |
+| `STATE_BACKEND` | `firestore` | `dynamodb` | Backend état |
+| `STATE_TABLE` | `surveybot_account_state` | `surveybot_account_state` | Nom collection/table |
+| `GCP_PROJECT` | `surveybot-490607` | — | Projet GCP |
 
-### Optionnelles importantes
+### Variables spécifiques au scheduler (GCP)
 
-| Variable | Défaut | Description |
+| Variable | Valeur | Description |
 |----------|--------|-------------|
-| `STATE_TABLE` | — | Nom de la table DynamoDB (`surveybot_account_state`) |
-| `AWS_REGION` | auto (boto3) | Région AWS |
-| `PROXY_URL` | — | URL du proxy externe (`http://host:port`) |
-| `PROXY_USER` | — | Login proxy |
-| `PROXY_PASS` | — | Mot de passe proxy |
-| `ACCOUNT_LOCK_TTL_SEC` | `240` | TTL du lock DynamoDB en secondes |
-| `LOG_LEVEL` | — | Active les logs debug conditionnels |
-| `GEO_LAT` / `GEO_LON` | 48.8566 / 2.3522 | Coordonnées géo navigateur (Paris) |
-| `SURVEY_LANG` | `fr-FR` | Locale navigateur |
-| `SURVEY_TZ` | `Europe/Paris` | Timezone navigateur |
-| `SURVEY_HEADLESS` | `1` | Headless si pas de DISPLAY |
-| `SURVEY_BROWSER_BIN` | auto-detect | Chemin vers Chrome/Chromium |
+| `GCP_REGION` | `europe-west1` | Région Cloud Run |
+| `GCP_JOB_NAME` | `surveybot` | Nom du job bot à lancer |
+| `ACCOUNT_PREFIX` | `topsurveys_bot_` | Filtre sur les secrets |
 
-### Modes d'exécution (`RUN_ENV`)
+### Variables injectées par le scheduler dans le job bot
 
-| `RUN_ENV` | Comportement |
-|-----------|-------------|
-| `local` | Debug interactif, pas de DynamoDB, Chrome visible, pauses autorisées |
-| `aws` ou `docker` | Mode prod : DynamoDB obligatoire, Chrome headless, pas de pauses |
-| `local` + `LOCAL_UNATTENDED=1` | Simule le comportement prod en local |
+Ces variables sont passées en overrides à chaque exécution du job `surveybot` :
+
+| Variable | Source |
+|----------|--------|
+| `ACCOUNT_ID` | account_id du compte |
+| `EMAIL` | Secret Manager |
+| `PASSWORD` | Secret Manager |
+| `PROXY_URL` | Secret Manager |
+| `PROXY_USER` | Secret Manager |
+| `PROXY_PASS` | Secret Manager |
+| `GEO_LAT` | Secret Manager |
+| `GEO_LON` | Secret Manager |
+| `SURVEY_LANG` | Secret Manager |
+| `SURVEY_TZ` | Secret Manager |
 
 ---
 
-## 6. État DynamoDB — schéma complet
+## 7. État Firestore — schéma complet
 
-Table : `surveybot_account_state`, clé primaire : `account_id` (String)
+**Collection** : `surveybot_account_state`
+**Document ID** : `account_id` (ex: `topsurveys_bot_001`)
 
 | Champ | Type | Description |
 |-------|------|-------------|
-| `account_id` | String | Clé primaire (ex: `topsurveys_bot_006`) |
-| `version` | Int | Optimistic locking — incrémenté à chaque écriture |
-| `status` | String | `idle` / `running` / `paused` |
-| `banned` | Bool | Compte banni → ne plus jamais lancer |
-| `cooldown_until_ts` | Int | Timestamp Unix — ne pas relancer avant cette date |
-| `lock_owner` | String | Task ID ECS qui détient le lock |
-| `lock_until_ts` | Int | Expiration du lock (prolongé par heartbeat) |
-| `proxy_id` | String | Identifiant du proxy assigné |
-| `proxy_lock_owner` | String | Bot qui utilise ce proxy |
-| `proxy_lock_until_ts` | Int | Expiration du lock proxy |
-| `last_stop_reason` | String | Raison du dernier arrêt (valeur de StopReason) |
-| `last_heartbeat_ts` | Int | Dernier heartbeat reçu |
-| `last_boot_ts` | Int | Dernier démarrage du container |
-| `last_start_ts` | Int | Dernier début de session de sondage |
-| `daily_earned` | Map | `{"2026-03-09": 1.23}` — gains par jour |
-| `total_earned` | Float | Gains totaux historiques |
-| `pause_policy` | String | Politique de pause appliquée (ex: `MEDIUM_COOLDOWN`) |
-| `ecs_stop_requested` | Bool | SIGTERM reçu depuis ECS |
-| `ecs_stop_ts` | Int | Timestamp du SIGTERM |
-| `ecs_stop_notified` | Bool | Alerte Telegram déjà envoyée (anti-spam) |
-| `updated_ts` | Int | Timestamp de la dernière mise à jour |
-| `ttl_ts` | Int | Expiration TTL pour auto-purge DynamoDB |
+| `account_id` | String | Identifiant unique du compte |
+| `version` | Integer | Optimistic locking — incrémenté à chaque écriture |
+| `banned` | Boolean | Si True, le scheduler ne relance jamais ce compte |
+| `status` | String | `idle` / `running` / `starting` |
+| `lock_owner` | String | ID de la task qui détient le lock |
+| `lock_until_ts` | String (ISO) | Expiration du lock |
+| `cooldown_until_ts` | String (ISO) | Ne pas relancer avant cette date |
+| `last_heartbeat_ts` | String (ISO) | Dernier heartbeat du bot actif |
+| `last_stop_reason` | String | Raison du dernier arrêt |
+| `last_boot_ts` | String (ISO) | Dernier démarrage |
+| `daily_earned` | Map | `{"2026-03-18": 1.23}` — revenus par jour |
+| `total_earned` | Float | Revenus totaux cumulés |
+| `updated_ts` | String (ISO) | Dernière mise à jour |
 
-### Consulter l'état de tous les bots
-DynamoDB → Tables → `surveybot_account_state` → Explore table items → Run (Scan)
-
-### Réinitialiser un compte bloqué en `running`
-Si un bot est coincé (crash sans mise à jour de l'état) :
-1. DynamoDB → sélectionner l'item → Edit
-2. Mettre : `status = "idle"`, `lock_owner = ""`, `lock_until_ts = 0`
-3. Le scheduler relancera le compte au prochain cycle
+> Contrairement à DynamoDB, Firestore stocke les timestamps en ISO string (pas Unix int).
+> Le code `account_state.py` gère la conversion via `_ts_to_unix()`.
 
 ---
 
-## 7. RuntimeGuard — comportement prod
+## 8. RuntimeGuard — comportement prod
 
-Le RuntimeGuard (`runtime_guard.py`) supervise chaque bot via un thread daemon.
+Le RuntimeGuard surveille en continu les conditions d'arrêt du bot. En prod GCP :
 
-### Raisons d'arrêt (StopReason)
-
-| Raison | Condition | Politique de pause |
-|--------|-----------|-------------------|
-| `idle` | Inactivité > 120s | SHORT_COOLDOWN (2 min) |
-| `too_many_errors` | 5 erreurs consécutives | SHORT_COOLDOWN (2 min) |
-| `no_gain` | Aucun gain détecté depuis 15 min | MEDIUM_COOLDOWN (5 min) |
-| `runtime_limit` | Runtime > 2h, objectif non atteint | MEDIUM_COOLDOWN (5 min) |
-| `daily_target_reached` | Gains >= objectif journalier (5€) | DAILY_RESET (jusqu'à minuit) |
-| `session_expired` | Session TopSurveys expirée | SHORT_COOLDOWN |
-
-### Politiques de pause (PausePolicy)
-
-| Politique | Durée |
-|-----------|-------|
-| `SHORT_COOLDOWN` | 2 minutes |
-| `MEDIUM_COOLDOWN` | 5 minutes |
-| `LONG_COOLDOWN` | 30 minutes |
-| `DAILY_RESET` | Jusqu'à minuit (Europe/Paris) |
-| `UNTIL_MANUAL` | ~1 an (intervention humaine requise) |
-
-### Comportement prod vs local
-
-**En prod** (`RUN_ENV=aws`) : `_check_conditions()` est bypassé — ECS/scheduler gère les
-redémarrages. La pause est appliquée via DynamoDB (`cooldown_until_ts`), puis `SystemExit`
-est levé pour terminer proprement la task. Le scheduler relancera dans les 5 minutes
-si le cooldown est expiré.
-
-**En local** : les conditions sont vérifiées en temps réel par le thread monitor.
-`SystemExit` est aussi levé pour reproduire fidèlement le comportement prod.
-
-### Heartbeat
-- Fréquence : toutes les ~30s via `touch_heartbeat()`
-- Mécanisme : DynamoDB `UpdateExpression` (atomic — pas de load+put)
-- Sécurité : ne prolonge le lock QUE si `lock_owner == task_id` (condition DynamoDB)
-- TTL du lock : configurable via `ACCOUNT_LOCK_TTL_SEC` (défaut : 240s)
-
-### Notifications Telegram
-- Chaque bot a ses propres credentials Telegram dans son secret (bot_token + chat_id)
-- Notifications envoyées via HTTP direct vers l'API Telegram (`notifier.py`)
-- Pas de dépendance AWS supplémentaire pour les alertes
+- Condition détectée → soft restart tenté (CTA "Ouvrir l'application")
+- Si soft restart échoue → `SystemExit` → le Cloud Run Job se termine proprement
+- Le scheduler relancera au prochain cycle si le cooldown est expiré
+- L'état est mis à jour dans Firestore avant l'arrêt
 
 ---
 
-## 8. Lancer le bot en production
+## 9. Lancer le bot en production (GCP)
 
 ### Prérequis avant tout lancement
 
-- [ ] Image ECR à jour (`docker build` + `docker push` si du code a changé depuis le dernier déploiement)
-- [ ] Secrets des comptes présents et complets dans Secrets Manager
-- [ ] Table DynamoDB `surveybot_account_state` : status = Active
-- [ ] NAT Gateway : State = Available (VPC → NAT Gateways)
-- [ ] Task definitions `scheduler` et `surveybot` : status = Active
+- [ ] Images `bot:latest` et `scheduler:latest` à jour dans Artifact Registry
+- [ ] Secrets `topsurveys_bot_XXX` présents et valides dans Secret Manager (JSON sur une ligne)
+- [ ] Cloud Run Jobs `surveybot` et `scheduler` créés
+- [ ] Cloud NAT `surveybot-nat` : actif
+- [ ] Service Account `surveybot-sa` : rôles corrects
 
-### Lancement normal (mode prod multi-bots)
+### Lancement automatique (mode prod multi-bots)
 
-1. **EventBridge → Scheduler → Schedules**
-2. Sélectionner **`scheduler-runner`**
-3. Cliquer **Enable**
-4. Dans les 5 minutes maximum, une task `scheduler` se lance
-5. Le scheduler lance une task `surveybot` par compte éligible
-   (non banni, cooldown expiré, pas de lock actif)
-6. Vérifier : **ECS → Clusters → passionate-panda-alu75o → Tasks** → tasks en status RUNNING
+Le Cloud Scheduler `scheduler-runner` est déjà **ENABLED** — il se déclenche automatiquement toutes les 5 minutes. Aucune action manuelle requise si les prérequis sont satisfaits.
 
-### Lancement manuel d'un bot unique (test / debug)
-
-1. **ECS → Clusters → passionate-panda-alu75o → Run new task**
-2. Compute : Fargate / Task definition : `surveybot` (Latest)
-3. Réseau : VPC `surveybot-vpc-01`, subnets privés, SG `surveybot-sg`, Auto-assign IP = DISABLED
-4. Container overrides (adapter l'account_id) :
-```json
-{
-  "containerOverrides": [{
-    "name": "surveybot",
-    "environment": [
-      { "name": "TOPSURVEYS_SECRET_NAME", "value": "topsurveys_bot_006" },
-      { "name": "ACCOUNT_ID",            "value": "topsurveys_bot_006" },
-      { "name": "RUN_ENV",               "value": "aws" },
-      { "name": "STATE_BACKEND",         "value": "dynamodb" }
-    ]
-  }]
-}
+Pour vérifier que le cycle fonctionne :
+```bash
+gcloud run jobs executions list --job=scheduler --region=europe-west1 --project=surveybot-490607
+gcloud run jobs executions list --job=surveybot --region=europe-west1 --project=surveybot-490607
 ```
-5. Run task
+
+### Déclenchement manuel immédiat (test / debug)
+
+```bash
+# Déclencher le scheduler manuellement
+gcloud scheduler jobs run scheduler-runner --location=europe-west1 --project=surveybot-490607
+
+# Ou lancer directement un bot pour un compte spécifique
+gcloud run jobs execute surveybot --region=europe-west1 --project=surveybot-490607 \
+  --update-env-vars="ACCOUNT_ID=topsurveys_bot_001"
+```
 
 ### Vérifier qu'un bot tourne correctement
 
-- **ECS → Tasks** : status RUNNING
-- **DynamoDB** → item du compte : `status = running`, `last_heartbeat_ts` < 60s (récent)
-- **CloudWatch Logs** → groupe `/ecs/surveybot` : logs de démarrage et de navigation
+- **Cloud Run → Jobs → surveybot → History** : exécution en status RUNNING
+- **Firestore** → document `topsurveys_bot_001` : `status = running`, `last_heartbeat_ts` récent
+- **Cloud Logging** → filtre `resource.type="cloud_run_job" resource.labels.job_name="surveybot"` : logs de navigation
 
 ---
 
-## 9. Arrêter le bot en production
+## 10. Arrêter le bot en production (GCP)
 
 ### Arrêt propre automatique (cas normaux)
 
 Le bot s'arrête seul quand RuntimeGuard détecte une condition d'arrêt.
-La task ECS se termine → Fargate désalloue → aucune action manuelle requise.
-Le scheduler relancera le bot au prochain cycle si le cooldown est expiré.
+Le Cloud Run Job se termine → ressources libérées → aucune action manuelle requise.
+Le scheduler relancera au prochain cycle si le cooldown est expiré.
 
 ### Pause temporaire (arrêt du relancement automatique)
 
-Pour empêcher le scheduler de lancer de nouveaux bots :
-1. **EventBridge → Schedules → `scheduler-runner` → Disable**
-2. Les bots en cours terminent leur session naturellement
-3. Aucun nouveau bot ne sera lancé jusqu'à réactivation
+```bash
+gcloud scheduler jobs pause scheduler-runner --location=europe-west1 --project=surveybot-490607
+```
+
+Les bots en cours terminent leur session naturellement. Aucun nouveau bot ne sera lancé.
+
+Pour reprendre :
+```bash
+gcloud scheduler jobs resume scheduler-runner --location=europe-west1 --project=surveybot-490607
+```
 
 ### Arrêt d'urgence (immédiat)
 
-1. Désactiver le schedule : **`scheduler-runner` → Disable**
-2. **ECS → Clusters → passionate-panda-alu75o → Tasks**
-3. Sélectionner toutes les tasks `surveybot` en RUNNING → **Stop** → confirmer
+```bash
+# 1. Pauser le scheduler
+gcloud scheduler jobs pause scheduler-runner --location=europe-west1 --project=surveybot-490607
 
-> Un Stop forcé ne met pas à jour l'état DynamoDB proprement.
-> Les locks expireront naturellement après `lock_until_ts` (max 4 min).
-> Si besoin de relancer immédiatement après, réinitialiser les locks manuellement dans DynamoDB.
+# 2. Lister les exécutions en cours
+gcloud run jobs executions list --job=surveybot --region=europe-west1 --project=surveybot-490607
 
-### Mettre un seul compte en pause sans toucher les autres
+# 3. Annuler une exécution spécifique
+gcloud run jobs executions cancel EXECUTION_ID --region=europe-west1 --project=surveybot-490607
+```
 
-Depuis DynamoDB → item `topsurveys_bot_XXX` → Edit :
-- Mettre `cooldown_until_ts` = timestamp Unix lointain (ex: `9999999999`)
-- Le scheduler ignorera ce compte tant que le cooldown n'est pas expiré
-- La task en cours continuera jusqu'à sa fin naturelle
+> Un cancel forcé peut laisser des locks actifs dans Firestore.
+> Les locks expirent naturellement après `lock_until_ts` (max ~3 min).
+> Pour relancer immédiatement, réinitialiser manuellement `lock_owner=""` et `lock_until_ts="1970-01-01T00:00:00"` dans le document Firestore.
 
----
+### Mettre un seul compte en pause
 
-## 10. Ajouter un compte bot
-
-1. **Créer le secret dans Secrets Manager**
-   - Nom : `topsurveys_bot_007` (incrémenter)
-   - JSON avec les 7 clés requises
-
-2. **Créer l'item dans DynamoDB**
-   - DynamoDB → `surveybot_account_state` → Create item
-   - `account_id` = `"topsurveys_bot_007"`, `banned` = `false`, `status` = `"idle"`
-
-3. **S'assurer que le scheduler inclut le nouveau compte**
-   dans la liste des comptes à orchestrer (selon implémentation du scheduler)
-
-4. **Tester** avec un lancement manuel avant activation automatique
-
-5. **Vérifier** dans CloudWatch Logs que le bot démarre et se connecte correctement
+Depuis **Firestore → surveybot_account_state → topsurveys_bot_XXX → Edit** :
+- Mettre `cooldown_until_ts` = `"2099-01-01T00:00:00"`
+- Le scheduler ignorera ce compte jusqu'à cette date
 
 ---
 
-## 11. Coûts et ressources à surveiller
+## 11. Ajouter un compte bot (GCP)
 
-### Répartition des coûts (mars 2026, ~$54/mois prévisionnel)
+**Une seule action requise** : créer le secret dans GCP Secret Manager.
+
+```bash
+gcloud secrets create topsurveys_bot_002 --project=surveybot-490607
+gcloud secrets versions add topsurveys_bot_002 --data-file=- --project=surveybot-490607 <<'EOF'
+{"EMAIL":"...","PASSWORD":"...","PROXY_URL":"...","PROXY_USER":"...","PROXY_PASS":"...","GEO_LAT":"48.8566","GEO_LON":"2.3522","SURVEY_LANG":"fr-FR","SURVEY_TZ":"Europe/Paris"}
+EOF
+```
+
+Le scheduler découvrira automatiquement ce compte au prochain cycle et créera le document Firestore correspondant. Aucune autre action requise.
+
+> Tester avec un lancement manuel avant le premier cycle automatique :
+> ```bash
+> gcloud scheduler jobs run scheduler-runner --location=europe-west1 --project=surveybot-490607
+> ```
+
+---
+
+## 12. Build et déploiement d'une nouvelle image
+
+### Bot (`./surveybot/`)
+
+```powershell
+$PROJECT = "surveybot-490607"; $REGION = "europe-west1"; $REPO = "surveybot"; $TAG = "latest"
+gcloud auth configure-docker "$REGION-docker.pkg.dev" --project=$PROJECT
+docker build -t "${REGION}-docker.pkg.dev/${PROJECT}/${REPO}/bot:${TAG}" ./surveybot
+docker push "${REGION}-docker.pkg.dev/${PROJECT}/${REPO}/bot:${TAG}"
+```
+
+### Scheduler (`./scheduler/`)
+
+```powershell
+$PROJECT = "surveybot-490607"; $REGION = "europe-west1"; $REPO = "surveybot"; $TAG = "latest"
+gcloud auth configure-docker "$REGION-docker.pkg.dev" --project=$PROJECT
+docker build -t "${REGION}-docker.pkg.dev/${PROJECT}/${REPO}/scheduler:${TAG}" ./scheduler
+docker push "${REGION}-docker.pkg.dev/${PROJECT}/${REPO}/scheduler:${TAG}"
+```
+
+> Le tag `latest` est écrasé à chaque push. Le prochain job Cloud Run utilisera automatiquement la nouvelle image — aucune mise à jour de configuration requise.
+
+---
+
+## 13. Coûts et ressources à surveiller
+
+### GCP — estimation mensuelle
 
 | Service | Coût/mois | Note |
 |---------|-----------|------|
-| EC2 - Other (NAT GW) | ~$9.10 | NAT GW heures + 2 EIPs orphelines |
-| Amazon VPC | ~$2.73 | NAT Gateway data processing |
-| Tax | ~$2.49 | |
-| Secrets Manager | ~$0.59 | ~6 secrets actifs |
-| ECR | ~$0.05 | Stockage images Docker |
-| ECS Fargate | Variable | ~$0.75/bot pour 2h/jour |
-| DynamoDB | ~$0 | On-demand, usage modéré = Free tier |
-| OpenAI | Hors AWS | gpt-4o-mini, facturation séparée |
-| Proxies | Hors AWS | Facturation séparée |
+| Cloud Run Jobs (scheduler) | ~$0.50 | 288 exécutions/jour × 5 min |
+| Cloud Run Jobs (bots) | ~$65 | 1 bot × 2h/jour (à l'échelle : 100 bots = ~$65) |
+| Cloud NAT | ~$1–3 | Data processing uniquement, pas de coût fixe |
+| Artifact Registry | ~$0.05 | Stockage images |
+| Secret Manager | ~$0.06/secret/mois | ~$6 à 100 comptes |
+| Firestore | ~$0 | Free tier largement suffisant à 100 bots |
+| Cloud Scheduler | ~$0 | Free tier (3 jobs gratuits) |
+| **Total GCP (1 bot)** | **~$5/mois** | |
+| **Total GCP (100 bots, 2h/j)** | **~$70/mois** | |
 
-### Économies immédiates possibles
+### AWS — coûts actifs (à surveiller même si inactif)
 
-| Action | Économie/mois |
-|--------|--------------|
-| Libérer EIP orpheline `13.36.51.89` | ~$3.60 |
-| Libérer EIP orpheline `13.36.153.246` | ~$3.60 |
-| **Total** | **~$7.20** |
+| Service | Coût/mois | Action |
+|---------|-----------|--------|
+| NAT Gateway (fixe) | ~$35 | Conserver tant qu'AWS est en backup |
+| EIPs orphelines | ~$7.20 | **Libérer** : `13.36.51.89` et `13.36.153.246` |
+| Secrets Manager | ~$0.59 | 6 secrets actifs |
 
-Procédure : EC2 → Elastic IPs → sélectionner → Actions → Release Elastic IP address.
+### Économie immédiate possible
 
-### Estimation à 100 bots (2h actifs/bot/jour)
-
-| Poste | Coût/mois estimé |
-|-------|-----------------|
-| NAT Gateway (fixe) | ~$35 |
-| ECS Fargate (100 bots × 2h/j) | ~$75 |
-| Secrets Manager (100 secrets) | ~$10 |
-| DynamoDB | ~$0–5 |
-| **Total AWS** | **~$125/mois** |
+Libérer les 2 EIPs orphelines AWS → **~$7.20/mois** :
+EC2 → Elastic IPs → sélectionner → Actions → Release Elastic IP address.
 
 ---
 
-## 12. Checklist de santé infrastructure
+## 14. Checklist de santé infrastructure
 
 À vérifier avant chaque activation en prod :
 
 ```
-Réseau
-[ ] NAT Gateway : State = Available (VPC → NAT Gateways)
-[ ] Internet Gateway : attaché au VPC surveybot-vpc-01
-[ ] Route table subnets privés → 0.0.0.0/0 via NAT Gateway
+GCP — Réseau
+[ ] Cloud NAT "surveybot-nat" : actif (gcloud compute routers nats list)
+[ ] VPC "surveybot-vpc" et subnet "surveybot-private" : présents
 
-ECS
-[ ] Task definition "surveybot" : Active, image ECR à jour
-[ ] Task definition "scheduler" : Active, image ECR à jour
-[ ] Cluster passionate-panda-alu75o : ACTIVE
+GCP — Cloud Run
+[ ] Job "surveybot" : existe, image à jour
+[ ] Job "scheduler" : existe, image à jour
+[ ] Variables d'env des jobs : RUN_ENV=gcp, STATE_BACKEND=firestore, GCP_PROJECT=surveybot-490607
 
-Secrets Manager
-[ ] Secrets topsurveys_bot_XXX existent avec les 7 clés requises
+GCP — Secret Manager
+[ ] Secrets topsurveys_bot_XXX existent avec JSON valide (une ligne, double quotes)
 
-DynamoDB
-[ ] Table surveybot_account_state : Active
-[ ] Aucun item avec lock actif invalide bloquant un compte
+GCP — Firestore
+[ ] Base "(default)" : active, mode Native, europe-west1
+[ ] Aucun document avec lock actif invalide bloquant un compte
 
-EventBridge
-[ ] scheduler-runner : Disabled si arrêt voulu
-[ ] scheduler-runner : Enabled pour démarrer le mode automatique
-[ ] surveybot-scheduler : toujours Disabled (schedule de test uniquement)
+GCP — Cloud Scheduler
+[ ] scheduler-runner : ENABLED pour mode automatique
+[ ] scheduler-runner : PAUSED pour arrêt du relancement
 
-Coûts
-[ ] 2 EIPs orphelines libérées (13.36.51.89 et 13.36.153.246)
-[ ] Aucun NAT Gateway inutilisé actif
+GCP — IAM
+[ ] surveybot-sa : rôles run.developer, secretmanager.secretAccessor, datastore.user, logging.logWriter
+
+AWS — (si backup actif)
+[ ] EventBridge scheduler-runner : DISABLED (éviter doublons avec GCP)
+[ ] NAT Gateway 51.44.135.248 : Available
 ```
 
 ---
 
-## 13. Points d'architecture importants
+## 15. Points d'architecture importants
 
-### Pas de filesystem partagé entre conteneurs
-Les conteneurs Fargate sont éphémères et isolés. DynamoDB est la seule source de vérité
-partagée. En prod (`RUN_ENV != local`), le fallback fichier est désactivé — DynamoDB
-doit être configuré et accessible sinon le bot exit au démarrage.
+### Source de découverte des comptes = Secret Manager
+Le scheduler liste les secrets GCP Secret Manager avec le préfixe `topsurveys_bot_`. C'est la **seule** action requise pour enregistrer un nouveau bot. Firestore est la source de vérité de l'état, pas de la liste des comptes.
 
-### Lock DynamoDB atomique — anti-doublon
-Avant de démarrer, chaque bot tente d'acquérir un lock via `ConditionExpression` DynamoDB.
-Si le lock est déjà pris (autre bot actif pour ce compte), la task exit proprement.
-Cela évite les doublons même si EventBridge déclenche plusieurs invocations simultanées.
+### Auto-création des documents Firestore
+Si un compte existe dans Secret Manager mais pas dans Firestore, le scheduler crée automatiquement le document avec l'état par défaut (`status=idle`). Aucune intervention manuelle requise à l'ajout d'un compte.
 
-### Proxy = externe, pas AWS
-Les proxies sont des services tiers (non hébergés sur AWS).
-L'authentification proxy se fait au niveau Playwright (Chrome launch args).
-Selenium s'attache ensuite au Chrome déjà configuré avec le proxy.
-L'IP vue par les sites de sondage est l'IP du proxy, pas celle du NAT Gateway.
+### Timestamps ISO string dans Firestore
+Contrairement à DynamoDB (Unix int), Firestore utilise des ISO strings (`"2026-03-18T08:00:00"`). Le code `account_state.py` gère la conversion via `_ts_to_unix()` pour les comparaisons temporelles.
+
+### Lock Firestore atomique — anti-doublon
+`try_acquire_account_lock()` utilise une transaction Firestore (`@firestore.transactional`). Une seule task peut acquérir le lock — les autres exit proprement. Évite les doublons même si Cloud Scheduler déclenche plusieurs exécutions simultanées.
+
+### Proxy = externe, pas GCP
+Les proxies sont des services tiers. L'authentification se fait au niveau Playwright (Chrome launch args). L'IP vue par les sites de sondage est l'IP du proxy, pas celle du Cloud NAT.
+
+### Compatibilité AWS conservée
+Le code supporte `RUN_ENV=aws` et `RUN_ENV=gcp`. Basculer entre les deux clouds ne nécessite que de changer les variables d'env. L'infrastructure AWS reste opérationnelle comme backup.
 
 ### Soft restart avant hard exit
-Le RuntimeGuard tente d'abord un soft restart (CTA "Ouvrir l'application") avant de
-lever SystemExit. En prod, SystemExit termine la task ECS proprement, et le scheduler
-relancera dans les 5 minutes si le cooldown est expiré.
-
-### Notifications Telegram décentralisées
-Chaque bot a ses propres credentials Telegram dans son secret.
-À 100 bots, cela signifie 100 canaux de notification potentiels.
-Envisager un canal centralisé (SQS → Lambda → Telegram) pour un monitoring unifié.
-
-### Images ECR Mutable — risque en prod
-Les deux repos ECR sont en Mutable : un `docker push :latest` écrase silencieusement
-l'image précédente. Un push pendant qu'une task démarre peut entraîner une image
-incohérente. Envisager des tags versionnés en montée en charge à 100 bots.
+Le RuntimeGuard tente d'abord un soft restart avant de lever `SystemExit`. En prod, `SystemExit` termine le Cloud Run Job proprement, et le scheduler relancera dans les 5 minutes si le cooldown est expiré.
 
 ---
 
-> **Version** : 2.0
+> **Version** : 3.0
 > **Rédigé** : mars 2026
-> **Sources** : captures console AWS (eu-west-3) + code source (main.py, launch.py,
-> playwright_launcher.py, account_state.py, runtime_guard.py, pause_policy.py,
-> survey_solver.py, auth_handler.py, config_loader.py)
-> **À mettre à jour** : après ajout de comptes, changement réseau, ou évolution du scheduler
+> **Sources** : infrastructure GCP (surveybot-490607, europe-west1) + infrastructure AWS (eu-west-3) + code source (main.py, ecs.py, account_loader.py, account_state.py, ecs_bot_scheduler.py, playwright_launcher.py, runtime_guard.py)
+> **À mettre à jour** : après ajout de comptes, changement réseau, évolution du scheduler, ou bascule entre clouds
