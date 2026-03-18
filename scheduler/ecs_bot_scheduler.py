@@ -24,7 +24,9 @@ def scheduler_tick(account_id):
             }))
             return
     
-    if state.get("lock_until_ts", 0) > now:
+    from account_state import _ts_to_unix
+    lock_ts = _ts_to_unix(state.get("lock_until_ts", 0))
+    if lock_ts > now:
         print(f"[SCHEDULER] Lock actif pour {account_id}")
         return  # lock actif
 
