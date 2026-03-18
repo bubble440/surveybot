@@ -3987,12 +3987,16 @@ def handle_captcha_guard(driver):
     # PROD/DOCKER: arret controlé (pas de bypass)
     if captcha_behavior == "restart":
         print("[GUARD] CAPTCHA détecté ; arret controlé (prod/docker)")
+        from Management.guards.runtime_guard import get_guard
+        get_guard().signal_strict_survey("captcha_guard_restart")
         return False
 
     # AWS/non-local : soft-restart même si auto_2captcha échoue (pas de terminal interactif)
     from config import is_local_env
     if not is_local_env():
         print("[GUARD] CAPTCHA détecté ; soft-restart (aws/non-local)")
+        from Management.guards.runtime_guard import get_guard
+        get_guard().signal_strict_survey("captcha_guard_aws")
         return False
 
     # LOCAL: pause manuelle si terminal interactif
