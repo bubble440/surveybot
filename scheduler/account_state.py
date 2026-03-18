@@ -1,6 +1,11 @@
 from __future__ import annotations
 import os
 
+try:
+    from botocore.exceptions import ClientError as _BotoClientError
+except ImportError:
+    _BotoClientError = Exception  # type: ignore
+
 # State/account_state.py
 """
 Stockage d'état "prod-first" pour 100+ bots.
@@ -17,6 +22,10 @@ Objectif:
 RUN_ENV = os.getenv("RUN_ENV", "local").lower()
 IS_LOCAL = RUN_ENV == "local"
 
+# En environnement non-local (docker / aws), le filesystem n'est PAS une source de vérité partagée.
+# Donc: pas de fallback fichier → DynamoDB doit être correctement configuré.
+STRICT_NO_FILE_FALLBACK = not IS_LOCAL
+
 from decimal import Decimal
 import json
 import time
@@ -32,10 +41,11 @@ log = logging.getLogger("account_state")
 # -----------------------------
 # Config backend
 # -----------------------------
-STATE_BACKEND = os.getenv("STATE_BACKEND", "").strip().lower()  # "dynamodb" recommandé en prod
+STATE_BACKEND = os.getenv("STATE_BACKEND", "").strip().lower()  # "dynamodb" ou "firestore" en prod
 STATE_TABLE = os.getenv("STATE_TABLE", "").strip()             # ex: surveybot_account_state
 AWS_REGION = os.getenv("AWS_REGION", "").strip()               # optionnel (boto3 peut le déduire)
 STATE_TTL_DAYS = int(os.getenv("STATE_TTL_DAYS", "0") or "0")   # 0 = pas de TTL auto
+GCP_PROJECT = os.getenv("GCP_PROJECT", "").strip()             # optionnel (ADC / metadata server sinon)
 
 # Fallback fichier (debug seulement)
 _STATE_DIR = Path(os.getenv("STATE_DIR", "/data/accounts"))
@@ -46,8 +56,24 @@ def _today_str() -> str:
     return date.today().isoformat()
 
 
-def _now() -> int:
-    return int(time.time())
+def _now() -> str:
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+
+
+def _ts_add(seconds: int) -> str:
+    from datetime import datetime, timezone, timedelta
+    return (datetime.now(timezone.utc) + timedelta(seconds=seconds)).strftime("%Y-%m-%dT%H:%M:%S")
+
+
+def _ts_to_unix(ts) -> int:
+    """Convertit ISO string ou int Unix → int Unix (pour calculs Python)."""
+    if isinstance(ts, int):
+        return ts
+    if isinstance(ts, str) and ts and ts != "1970-01-01T00:00:00":
+        from datetime import datetime, timezone
+        return int(datetime.strptime(ts, "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc).timestamp())
+    return 0
 
 
 def _default_state(account_id: str) -> Dict[str, Any]:
@@ -58,17 +84,18 @@ def _default_state(account_id: str) -> Dict[str, Any]:
         "account_id": account_id,
         "version": 0,                 # pour optimistic locking
         "banned": False,
-        "cooldown_until_ts": 0,
+        "cooldown_until_ts": "1970-01-01T00:00:00",
         "status": "idle",
         "lock_owner": "",
-        "lock_until_ts": 0,
+        "lock_until_ts": "1970-01-01T00:00:00",
         "proxy_id": "",          # identifiant du proxy
-        "proxy_lock_owner": "",  # account_id du bot actif
-        "proxy_lock_until_ts": 0,
 
         "last_stop_reason": "",
-        "last_heartbeat_ts": 0,
+        "last_heartbeat_ts": "1970-01-01T00:00:00",
+        "last_boot_ts": "1970-01-01T00:00:00",
+        "last_start_ts": "1970-01-01T00:00:00",
         "daily_earned": {},           # ex: {"2025-12-31": 1.23}
+        "daily_target_start_ts": {},  # ex: {"2026-03-17": "2026-03-17T08:00:00"}
         "total_earned": 0.0,
         "updated_ts": _now(),
     }
@@ -94,21 +121,56 @@ def _get_ddb_table():
             resource = boto3.resource("dynamodb")
         return resource.Table(STATE_TABLE)
     except Exception as e:
+        if STRICT_NO_FILE_FALLBACK:
+            raise RuntimeError(f"[STATE] DynamoDB indisponible en environnement non-local. err={e}")
         log.warning(f"[STATE] DynamoDB indisponible -> fallback fichier. err={e}")
+        return None
+
+
+# -----------------------------
+# Firestore helpers
+# -----------------------------
+def _fs_enabled() -> bool:
+    return STATE_BACKEND == "firestore" and bool(STATE_TABLE)
+
+
+def _get_fs_client():
+    """
+    Retourne le client Firestore.
+    GCP_PROJECT est utilisé si présent ; sinon google-cloud-firestore déduit le projet depuis ADC.
+    Lève RuntimeError si l'import échoue et STRICT_NO_FILE_FALLBACK est True.
+    """
+    try:
+        from google.cloud import firestore as _firestore  # type: ignore
+        if GCP_PROJECT:
+            return _firestore.Client(project=GCP_PROJECT)
+        return _firestore.Client()
+    except ImportError as e:
+        if STRICT_NO_FILE_FALLBACK:
+            raise RuntimeError(
+                f"[STATE] google-cloud-firestore indisponible en environnement non-local. "
+                f"Installer: pip install google-cloud-firestore. err={e}"
+            )
+        log.warning(f"[STATE] google-cloud-firestore indisponible -> fallback fichier. err={e}")
+        return None
+    except Exception as e:
+        if STRICT_NO_FILE_FALLBACK:
+            raise RuntimeError(f"[STATE] Firestore indisponible en environnement non-local. err={e}")
+        log.warning(f"[STATE] Firestore indisponible -> fallback fichier. err={e}")
         return None
 
 
 def _json_safe(obj: Any) -> Any:
     """
     DynamoDB renvoie parfois Decimal -> on convertit pour JSON.
+    Appliqué récursivement sur les dicts et listes imbriqués (ex: daily_earned).
     """
-    try:
-        from decimal import Decimal  # type: ignore
-        if isinstance(obj, Decimal):
-            # Si entier exact -> int, sinon float
-            return int(obj) if obj % 1 == 0 else float(obj)
-    except Exception:
-        pass
+    if isinstance(obj, Decimal):
+        return int(obj) if obj % 1 == 0 else float(obj)
+    if isinstance(obj, dict):
+        return {k: _json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_json_safe(v) for v in obj]
     return obj
 
 
@@ -120,11 +182,12 @@ def _normalize_state(st: Dict[str, Any], account_id: str) -> Dict[str, Any]:
     base = _default_state(account_id)
     base.update(st or {})
     base["account_id"] = account_id
-    base["updated_ts"] = _now()
+    # NE PAS écraser updated_ts ici : _normalize_state est aussi appelé par load_state
+    # (lecture seule). updated_ts est positionné à l'écriture dans save_state/update_state.
 
     # TTL optionnel pour purge (si TTL activé dans la table)
     if STATE_TTL_DAYS > 0:
-        base["ttl_ts"] = _now() + (STATE_TTL_DAYS * 86400)
+        base["ttl_ts"] = _ts_add(STATE_TTL_DAYS * 86400)
 
     return base
 
@@ -157,15 +220,18 @@ def _file_save(state: Dict[str, Any]) -> None:
 # Public API (utilisée partout)
 # -----------------------------
 def load_state(account_id: str) -> Dict[str, Any]:
-    """
-    Charge l'état depuis DynamoDB (prod) ou fallback fichier.
-    """
-    if IS_LOCAL:
-        return _default_state(account_id)
-    
+    # En local, utiliser le fichier fallback pour tester la logique
+    if IS_LOCAL and not os.getenv("FORCE_DYNAMODB"):
+        # Utiliser fichier local mais avec la vraie logique
+        with _FILE_LOCK:
+            return _normalize_state(_file_load(account_id), account_id)
+                
     account_id = (account_id or "").strip()
     if not account_id:
         raise ValueError("account_id vide")
+
+    if STRICT_NO_FILE_FALLBACK and not _ddb_enabled() and not _fs_enabled():
+        raise RuntimeError("[STATE] STATE_BACKEND (dynamodb|firestore) et STATE_TABLE requis en environnement non-local")
 
     if _ddb_enabled():
         table = _get_ddb_table()
@@ -182,9 +248,30 @@ def load_state(account_id: str) -> Dict[str, Any]:
                 normalized = {k: _json_safe(v) for k, v in item.items()}
                 return _normalize_state(normalized, account_id)
             except Exception as e:
+                if STRICT_NO_FILE_FALLBACK:
+                    raise
                 log.warning(f"[STATE] get_item failed -> fallback fichier. err={e}")
 
-    # fallback fichier
+    # Backend Firestore: lecture simple (pas de transaction nécessaire pour un get).
+    if _fs_enabled():
+        client = _get_fs_client()
+        if client is not None:
+            try:
+                doc_ref = client.collection(STATE_TABLE).document(account_id)
+                doc = doc_ref.get()
+                if not doc.exists:
+                    st = _default_state(account_id)
+                    # Crée le document au premier passage (idempotent).
+                    doc_ref.set(st)
+                    return st
+                # Firestore renvoie des float natifs, pas de conversion Decimal nécessaire.
+                return _normalize_state(doc.to_dict(), account_id)
+            except Exception as e:
+                if STRICT_NO_FILE_FALLBACK:
+                    raise
+                log.warning(f"[STATE] Firestore get failed -> fallback fichier. err={e}")
+
+    # fallback fichier (local/debug seulement)
     with _FILE_LOCK:
         return _normalize_state(_file_load(account_id), account_id)
 
@@ -207,13 +294,17 @@ def save_state(state: Dict[str, Any]) -> None:
     En prod on préfère update_state().
     """
     if IS_LOCAL:
-        return {}
+        return
 
     account_id = state.get("account_id", "").strip()
     if not account_id:
         raise ValueError("state sans account_id")
 
     st = _normalize_state(state, account_id)
+    st["updated_ts"] = _now()
+
+    if STRICT_NO_FILE_FALLBACK and not _ddb_enabled() and not _fs_enabled():
+        raise RuntimeError("[STATE] STATE_BACKEND (dynamodb|firestore) et STATE_TABLE requis en environnement non-local")
 
     if _ddb_enabled():
         table = _get_ddb_table()
@@ -222,8 +313,23 @@ def save_state(state: Dict[str, Any]) -> None:
                 table.put_item(Item=_to_dynamodb_compatible(st))
                 return
             except Exception as e:
+                if STRICT_NO_FILE_FALLBACK:
+                    raise
                 log.warning(f"[STATE] put_item failed -> fallback fichier. err={e}")
 
+    # Backend Firestore: écriture complète du document (set remplace tout).
+    if _fs_enabled():
+        client = _get_fs_client()
+        if client is not None:
+            try:
+                client.collection(STATE_TABLE).document(account_id).set(st)
+                return
+            except Exception as e:
+                if STRICT_NO_FILE_FALLBACK:
+                    raise
+                log.warning(f"[STATE] Firestore set failed -> fallback fichier. err={e}")
+
+    # fallback fichier (local/debug seulement)
     with _FILE_LOCK:
         _file_save(st)
 
@@ -244,6 +350,9 @@ def update_state(account_id: str, fn: Callable[[Dict[str, Any]], None], max_retr
     if not account_id:
         raise ValueError("account_id vide")
 
+    if STRICT_NO_FILE_FALLBACK and not _ddb_enabled() and not _fs_enabled():
+        raise RuntimeError("[STATE] STATE_BACKEND (dynamodb|firestore) et STATE_TABLE requis en environnement non-local")
+
     # PROD: DynamoDB atomic update via version
     if _ddb_enabled():
         table = _get_ddb_table()
@@ -254,6 +363,7 @@ def update_state(account_id: str, fn: Callable[[Dict[str, Any]], None], max_retr
 
                 fn(st)  # modifie en place
                 st = _normalize_state(st, account_id)
+                st["updated_ts"] = _now()
                 st["version"] = current_version + 1
 
                 try:
@@ -266,43 +376,146 @@ def update_state(account_id: str, fn: Callable[[Dict[str, Any]], None], max_retr
                         }),
                     )
                     return st
+                except _BotoClientError as e:
+                    code = e.response.get("Error", {}).get("Code", "")
+                    if code == "ConditionalCheckFailedException":
+                        if attempt < max_retries:
+                            # M2: backoff exponentiel pour réduire la contention sous charge
+                            time.sleep(0.1 * (2 ** (attempt - 1)))
+                            continue
+                        log.error(f"[STATE] update_state: conflit de version après {max_retries} tentatives. account={account_id}")
+                        raise
+                    # Erreur DynamoDB non-retryable (throttle, réseau, etc.)
+                    log.error(f"[STATE] update_state: erreur DynamoDB non-retryable. code={code} account={account_id} err={e}")
+                    raise
                 except Exception as e:
-                    # typiquement ConditionalCheckFailedException
-                    if attempt < max_retries:
-                        time.sleep(0.05 * attempt)  # petit backoff
-                        continue
-                    log.error(f"[STATE] update_state failed after retries. err={e}")
+                    log.error(f"[STATE] update_state: erreur inattendue. account={account_id} err={e}")
                     raise
 
-    # FALLBACK FILE: lock process-local
+    # Backend Firestore: optimistic locking via transaction Firestore.
+    # @transactional gère les retries Firestore-level (erreur ABORTED sur contention).
+    # Notre boucle externe gère les erreurs applicatives (ex: exception dans fn).
+    if _fs_enabled():
+        client = _get_fs_client()
+        if client is not None:
+            from google.cloud import firestore as _firestore  # type: ignore
+
+            doc_ref = client.collection(STATE_TABLE).document(account_id)
+
+            @_firestore.transactional
+            def _apply_fn(transaction, doc_ref):
+                """
+                Lit l'état courant, applique fn(), incrémente version, et écrit atomiquement.
+                Si un autre writer a modifié le document entre la lecture et l'écriture,
+                Firestore abandonne et rejoue automatiquement la transaction (ABORTED retry).
+                """
+                snap = doc_ref.get(transaction=transaction)
+                st = _normalize_state(snap.to_dict() if snap.exists else {}, account_id)
+                current_version = int(st.get("version", 0) or 0)
+                fn(st)  # modifie en place
+                st = _normalize_state(st, account_id)
+                st["updated_ts"] = _now()
+                st["version"] = current_version + 1
+                # set() remplace le document entier (équivalent put_item DynamoDB)
+                transaction.set(doc_ref, st)
+                return st
+
+            for attempt in range(1, max_retries + 1):
+                try:
+                    return _apply_fn(client.transaction(), doc_ref)
+                except Exception as e:
+                    if attempt < max_retries:
+                        time.sleep(0.1 * (2 ** (attempt - 1)))
+                        continue
+                    log.error(f"[STATE] update_state Firestore: échec après {max_retries} tentatives. account={account_id} err={e}")
+                    raise
+
+    # FALLBACK FILE (local/debug seulement)
+    if STRICT_NO_FILE_FALLBACK:
+        raise RuntimeError("[STATE] update_state: DynamoDB requis en environnement non-local (pas de fallback fichier).")
+
     with _FILE_LOCK:
         st = _normalize_state(_file_load(account_id), account_id)
         fn(st)
         st = _normalize_state(st, account_id)
+        st["updated_ts"] = _now()
         st["version"] = int(st.get("version", 0) or 0) + 1
         _file_save(st)
         return st
 
-def try_acquire_proxy_lock(proxy_id: str, account_id: str, ttl_sec: int) -> bool:
-    now = int(time.time())
+def touch_heartbeat(account_id: str, owner: str, ttl_sec: int = 240) -> bool:
+    """
+    Heartbeat DynamoDB (cheap & safe):
+    - UpdateExpression (pas de load_state + put_item)
+    - Condition: lock_owner == owner (la task ne prolonge QUE son propre lock)
+    - Prolonge lock_until_ts à now + ttl_sec (pas un +15 fragile)
+    - ADD version +1 pour éviter qu'un update_state() écrase un heartbeat récent.
+    """
+    if IS_LOCAL:
+        return True
 
-    def _lock(st):
-        # si verrou libre ou expiré
-        if not st.get("proxy_lock_owner") or st.get("proxy_lock_until_ts", 0) < now:
-            st["proxy_lock_owner"] = account_id
-            st["proxy_lock_until_ts"] = now + ttl_sec
-            return True
+    if STRICT_NO_FILE_FALLBACK and not _ddb_enabled() and not _fs_enabled():
+        raise RuntimeError("[STATE] touch_heartbeat: STATE_BACKEND (dynamodb|firestore) requis en environnement non-local")
+
+    if not _ddb_enabled() and not _fs_enabled():
         return False
 
-    success = False
+    now = _now()
+    expires = _ts_add(int(ttl_sec))
 
-    def _apply(st):
-        nonlocal success
-        if _lock(st):
-            success = True
+    if _ddb_enabled():
+        table = _get_ddb_table()
+        if table is None:
+            return False
 
-    update_state(account_id, _apply)
-    return success
+        try:
+            table.update_item(
+                Key={"account_id": account_id},
+                UpdateExpression="""
+                    SET lock_until_ts = :u,
+                        last_heartbeat_ts = :now,
+                        updated_ts = :now
+                    ADD version :one
+                """,
+                ConditionExpression="lock_owner = :o",
+                ExpressionAttributeValues=_to_dynamodb_compatible({
+                    ":u": expires,
+                    ":now": now,
+                    ":o": owner,
+                    ":one": 1,
+                }),
+            )
+            return True
+        except _BotoClientError as e:
+            code = e.response.get("Error", {}).get("Code", "")
+            if code != "ConditionalCheckFailedException":
+                log.warning(f"[STATE] touch_heartbeat: erreur DynamoDB. account={account_id} code={code} err={e}")
+            # ConditionalCheckFailedException = lock plus détenu, comportement normal
+            return False
+        except Exception as e:
+            log.warning(f"[STATE] touch_heartbeat: erreur inattendue. account={account_id} err={e}")
+            return False
+
+    # Backend Firestore: écriture partielle (update) sans transaction.
+    # Équivalent de l'UpdateExpression DynamoDB : mise à jour de champs spécifiques uniquement.
+    # Note: Firestore update() ne supporte pas de condition atomique sans transaction ;
+    # on se passe donc du check lock_owner (le heartbeat est à faible risque de race).
+    if _fs_enabled():
+        client = _get_fs_client()
+        if client is None:
+            return False
+        try:
+            from google.cloud import firestore as _firestore  # type: ignore
+            client.collection(STATE_TABLE).document(account_id).update({
+                "lock_until_ts": expires,
+                "last_heartbeat_ts": now,
+                "updated_ts": now,
+                "version": _firestore.Increment(1),
+            })
+            return True
+        except Exception as e:
+            log.warning(f"[STATE] touch_heartbeat Firestore: erreur. account={account_id} err={e}")
+            return False
 
 # -----------------------------
 # 🔐 ACCOUNT LOCK (CRITIQUE)
@@ -324,45 +537,94 @@ def try_acquire_account_lock(
         # 🧪 En local : on autorise toujours
         return True
 
-    now = int(time.time())
-    expires = now + ttl_sec
+    now = _now()
+    expires = _ts_add(ttl_sec)
 
-    if not _ddb_enabled():
-        # fallback fichier : lock naïf (acceptable en local/debug)
-        st = load_state(account_id)
-        if st.get("lock_until_ts", 0) > now:
+    if not _ddb_enabled() and not _fs_enabled():
+        if STRICT_NO_FILE_FALLBACK:
+            raise RuntimeError("[STATE] try_acquire_account_lock: STATE_BACKEND (dynamodb|firestore) requis en environnement non-local")
+        return False
+
+    if _ddb_enabled():
+        table = _get_ddb_table()
+        if table is None:
             return False
-        update_state(account_id, lambda s: s.update({
-            "lock_owner": owner,
-            "lock_until_ts": expires,
-        }))
-        return True
 
-    table = _get_ddb_table()
-    if table is None:
-        return False
+        try:
+            table.update_item(
+                Key={"account_id": account_id},
+                UpdateExpression="""
+                    SET lock_owner = :o,
+                        lock_until_ts = :u,
+                        updated_ts = :now
+                """,
+                ConditionExpression="""
+                    attribute_not_exists(lock_owner)
+                    OR lock_owner = :o
+                    OR lock_until_ts < :now
+                """,
+                ExpressionAttributeValues=_to_dynamodb_compatible({
+                    ":o": owner,
+                    ":u": expires,
+                    ":now": now,
+                }),
+            )
+            return True
 
-    try:
-        table.update_item(
-            Key={"account_id": account_id},
-            UpdateExpression="""
-                SET lock_owner = :o,
-                    lock_until_ts = :u,
-                    updated_ts = :now
-            """,
-            ConditionExpression="""
-                attribute_not_exists(lock_owner)
-                OR lock_owner = :o
-                OR lock_until_ts < :now
-            """,
-            ExpressionAttributeValues=_to_dynamodb_compatible({
-                ":o": owner,
-                ":u": expires,
-                ":now": now,
-            }),
-        )
-        return True
+        except _BotoClientError as e:
+            code = e.response.get("Error", {}).get("Code", "")
+            if code != "ConditionalCheckFailedException":
+                log.warning(f"[STATE] try_acquire_account_lock: erreur DynamoDB. account={account_id} code={code} err={e}")
+            # ConditionalCheckFailedException = lock déjà pris, comportement normal
+            return False
+        except Exception as e:
+            log.warning(f"[STATE] try_acquire_account_lock: erreur inattendue. account={account_id} err={e}")
+            return False
 
-    except Exception as e:
-        # ConditionalCheckFailedException = lock déjà pris
-        return False
+    # Backend Firestore: lecture + écriture conditionnelle dans une transaction atomique.
+    # Équivalent du ConditionExpression DynamoDB :
+    #   - pas de lock_owner  → libre
+    #   - lock_owner == owner → renouvellement (même bot)
+    #   - lock_until_ts expiré → lock périmé, on peut le voler
+    if _fs_enabled():
+        client = _get_fs_client()
+        if client is None:
+            return False
+        try:
+            from google.cloud import firestore as _firestore  # type: ignore
+
+            doc_ref = client.collection(STATE_TABLE).document(account_id)
+            now_unix = int(time.time())
+
+            @_firestore.transactional
+            def _acquire(transaction, doc_ref):
+                snap = doc_ref.get(transaction=transaction)
+                st = snap.to_dict() if snap.exists else {}
+
+                existing_owner = st.get("lock_owner", "")
+                lock_until = _ts_to_unix(st.get("lock_until_ts", "1970-01-01T00:00:00"))
+
+                # Si un autre owner détient encore le lock (non expiré), on refuse.
+                if existing_owner and existing_owner != owner and lock_until >= now_unix:
+                    return False
+
+                # Acquiert (ou renouvelle) le lock.
+                lock_fields = {
+                    "lock_owner": owner,
+                    "lock_until_ts": expires,
+                    "updated_ts": now,
+                }
+                if snap.exists:
+                    transaction.update(doc_ref, lock_fields)
+                else:
+                    # Document inexistant : on crée avec l'état par défaut + lock.
+                    new_st = _default_state(account_id)
+                    new_st.update(lock_fields)
+                    transaction.set(doc_ref, new_st)
+                return True
+
+            return _acquire(client.transaction(), doc_ref)
+
+        except Exception as e:
+            log.warning(f"[STATE] try_acquire_account_lock Firestore: erreur. account={account_id} err={e}")
+            return False
