@@ -314,12 +314,15 @@ class RuntimeGuard:
             )
             return
 
-        # 2⃣ Trop d’erreurs consécutives → restart silencieux
+        # 2⃣ Trop d’erreurs consécutives → soft restart
         if errors >= self.max_errors_in_row:
-            self.pause(
-                PausePolicy.SHORT_COOLDOWN,
-                StopReason.TOO_MANY_ERRORS,
-            )
+            print(f"[WATCHDOG] Trop d’erreurs ({errors}) → soft restart")
+            with self._lock:
+                self.state.consecutive_errors = 0
+            if self.on_soft_restart:
+                self.on_soft_restart(StopReason.TOO_MANY_ERRORS.value)
+            else:
+                self.pause(PausePolicy.SHORT_COOLDOWN, StopReason.TOO_MANY_ERRORS)
             return
 
         # 3⃣ Objectif journalier atteint → arrêt jusqu’à demain
