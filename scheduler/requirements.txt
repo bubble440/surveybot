@@ -1,4 +1,2 @@
-boto3
-google-cloud-firestore
-google-cloud-secret-manager
-google-cloud-run
+requests>=2.31
+psycopg2-binary>=2.9
