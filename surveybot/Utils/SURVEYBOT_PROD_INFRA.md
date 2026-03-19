@@ -2,7 +2,7 @@
 
 > **Document de référence opérationnel** — décrit l'état exact de l'infrastructure prod,
 > le fonctionnement interne du bot, et les procédures de lancement/arrêt.
-> Rédigé en mars 2026. Deux déploiements actifs : AWS (eu-west-3) et GCP (europe-west1).
+> Rédigé en mars 2026. Déploiement unique : GCP (europe-west1).
 > À mettre à jour après tout changement d'infrastructure.
 
 ---
@@ -10,20 +10,19 @@
 ## Table des matières
 
 1. [Vue d'ensemble](#1-vue-densemble)
-2. [Infrastructure GCP — déploiement actif](#2-infrastructure-gcp--déploiement-actif)
-3. [Infrastructure AWS — déploiement legacy](#3-infrastructure-aws--déploiement-legacy)
-4. [Stack technique du bot](#4-stack-technique-du-bot)
-5. [Flux d'exécution complet](#5-flux-dexécution-complet)
-6. [Variables d'environnement](#6-variables-denvironnement)
-7. [État Firestore — schéma complet](#7-état-firestore--schéma-complet)
-8. [RuntimeGuard — comportement prod](#8-runtimeguard--comportement-prod)
-9. [Lancer le bot en production (GCP)](#9-lancer-le-bot-en-production-gcp)
-10. [Arrêter le bot en production (GCP)](#10-arrêter-le-bot-en-production-gcp)
-11. [Ajouter un compte bot (GCP)](#11-ajouter-un-compte-bot-gcp)
-12. [Build et déploiement d'une nouvelle image](#12-build-et-déploiement-dune-nouvelle-image)
-13. [Coûts et ressources à surveiller](#13-coûts-et-ressources-à-surveiller)
-14. [Checklist de santé infrastructure](#14-checklist-de-santé-infrastructure)
-15. [Points d'architecture importants](#15-points-darchitecture-importants)
+2. [Infrastructure GCP](#2-infrastructure-gcp)
+3. [Stack technique du bot](#3-stack-technique-du-bot)
+4. [Flux d'exécution complet](#4-flux-dexécution-complet)
+5. [Variables d'environnement](#5-variables-denvironnement)
+6. [État Firestore — schéma complet](#6-état-firestore--schéma-complet)
+7. [RuntimeGuard — comportement prod](#7-runtimeguard--comportement-prod)
+8. [Lancer le bot en production](#8-lancer-le-bot-en-production)
+9. [Arrêter le bot en production](#9-arrêter-le-bot-en-production)
+10. [Ajouter un compte bot](#10-ajouter-un-compte-bot)
+11. [Build et déploiement d'une nouvelle image](#11-build-et-déploiement-dune-nouvelle-image)
+12. [Coûts et ressources à surveiller](#12-coûts-et-ressources-à-surveiller)
+13. [Checklist de santé infrastructure](#13-checklist-de-santé-infrastructure)
+14. [Points d'architecture importants](#14-points-darchitecture-importants)
 
 ---
 
@@ -34,7 +33,7 @@ SurveyBot automatise la complétion de sondages sur TopSurveys et les plateforme
 Chaque bot = 1 compte TopSurveys = 1 conteneur Cloud Run Job = 1 proxy externe.
 **Cible : ~100 bots en parallèle.**
 
-### Architecture simplifiée — GCP
+### Architecture simplifiée
 
 ```
 Cloud Scheduler (toutes les 5 min)
@@ -48,16 +47,15 @@ Cloud Scheduler (toutes les 5 min)
                             └─ Proxy externe → Site de sondage
 ```
 
-### Projets et régions
+### Projet et région
 
-| Cloud | Projet / Compte | Région |
-|-------|----------------|--------|
+| Cloud | Projet | Région |
+|-------|--------|--------|
 | GCP | `surveybot-490607` | `europe-west1` (Belgique) |
-| AWS | `865626945801` | `eu-west-3` (Paris) |
 
 ---
 
-## 2. Infrastructure GCP — déploiement actif
+## 2. Infrastructure GCP
 
 ### 2.1 Cloud Run Jobs
 
@@ -152,7 +150,7 @@ EOF
 
 Chaque document correspond à un compte bot. Les documents sont **auto-créés** par le scheduler au premier cycle si le secret existe dans Secret Manager.
 
-Schéma d'un document (voir section 7 pour détail complet).
+Schéma d'un document (voir section 6 pour détail complet).
 
 ---
 
@@ -166,7 +164,7 @@ Schéma d'un document (voir section 7 pour détail complet).
 | Router | `surveybot-router` | europe-west1 |
 | Cloud NAT | `surveybot-nat` | Auto-allocate IPs, all subnets |
 
-> Cloud NAT remplace le NAT Gateway AWS. Pas de coût fixe — facturation uniquement sur le data processing (~$0.01/GB).
+> Cloud NAT assure l'egress vers internet. Pas de coût fixe — facturation uniquement sur le data processing (~$0.01/GB).
 
 ---
 
@@ -183,51 +181,9 @@ Schéma d'un document (voir section 7 pour détail complet).
 
 ---
 
-## 3. Infrastructure AWS — déploiement legacy
+## 3. Stack technique du bot
 
-> L'infrastructure AWS reste opérationnelle et peut être utilisée en parallèle ou en fallback.
-> Le code supporte les deux clouds via la variable `RUN_ENV` (`aws` ou `gcp`).
-
-### 3.1 ECS — Elastic Container Service
-
-**Cluster** : `passionate-panda-alu75o` — région `eu-west-3`
-
-| Task Definition | Rôle |
-|----------------|------|
-| `scheduler` | Orchestrateur AWS |
-| `surveybot` | Bot principal |
-
-### 3.2 ECR
-
-| Repository | URI |
-|-----------|-----|
-| `surveybot` | `865626945801.dkr.ecr.eu-west-3.amazonaws.com/surveybot` |
-| `surveybot-scheduler` | `865626945801.dkr.ecr.eu-west-3.amazonaws.com/surveybot-scheduler` |
-
-### 3.3 EventBridge Scheduler
-
-Schedule `scheduler-runner` — `rate(5 minutes)` — **Disabled** (ne pas activer si GCP est actif pour éviter les doublons).
-
-### 3.4 Secrets Manager AWS
-
-Convention identique : `topsurveys_bot_XXX`. Comptes `bot_001` à `bot_006`.
-
-### 3.5 DynamoDB
-
-**Table** : `surveybot_account_state` — `arn:aws:dynamodb:eu-west-3:865626945801:table/surveybot_account_state`
-
-### 3.6 Réseau AWS
-
-**VPC** : `vpc-038ced7972306fa38` (`surveybot-vpc-01`)
-NAT Gateway actif sur `51.44.135.248` (~$35/mois fixe).
-
-> 2 EIPs orphelines à libérer : `13.36.51.89` et `13.36.153.246` (~$7.20/mois gaspillés).
-
----
-
-## 4. Stack technique du bot
-
-### 4.1 Browser — architecture Playwright + Selenium hybride
+### 3.1 Browser — architecture Playwright + Selenium hybride
 
 **Étape 1 — Playwright lance Chrome**
 - Gère l'authentification proxy nativement
@@ -241,20 +197,20 @@ NAT Gateway actif sur `51.44.135.248` (~$35/mois fixe).
 - Toute la logique d'interaction (DOM, clics, OpenAI) reste dans Selenium
 - Les objets Playwright sont attachés au driver pour maintenir la session vivante
 
-### 4.2 OpenAI
+### 3.2 OpenAI
 
 - Modèle : `gpt-4o-mini`
 - API : `chat.completions.create()` (direct, pas Assistants API)
 - Clé injectée via le secret du compte
 
-### 4.3 Notifications Telegram
+### 3.3 Notifications Telegram
 
 - Chaque bot a ses propres credentials Telegram dans son secret
 - Notifications envoyées via HTTP direct vers l'API Telegram (`notifier.py`)
 
 ---
 
-## 5. Flux d'exécution complet
+## 4. Flux d'exécution complet
 
 ```
 1. Cloud Scheduler déclenche le job "scheduler" toutes les 5 min
@@ -285,18 +241,18 @@ NAT Gateway actif sur `51.44.135.248` (~$35/mois fixe).
 
 ---
 
-## 6. Variables d'environnement
+## 5. Variables d'environnement
 
 ### Variables communes (bot + scheduler)
 
-| Variable | Valeur GCP | Valeur AWS | Description |
-|----------|-----------|-----------|-------------|
-| `RUN_ENV` | `gcp` | `aws` | Cloud actif |
-| `STATE_BACKEND` | `firestore` | `dynamodb` | Backend état |
-| `STATE_TABLE` | `surveybot_account_state` | `surveybot_account_state` | Nom collection/table |
-| `GCP_PROJECT` | `surveybot-490607` | — | Projet GCP |
+| Variable | Valeur | Description |
+|----------|--------|-------------|
+| `RUN_ENV` | `gcp` | Cloud actif |
+| `STATE_BACKEND` | `firestore` | Backend état |
+| `STATE_TABLE` | `surveybot_account_state` | Nom collection Firestore |
+| `GCP_PROJECT` | `surveybot-490607` | Projet GCP |
 
-### Variables spécifiques au scheduler (GCP)
+### Variables spécifiques au scheduler
 
 | Variable | Valeur | Description |
 |----------|--------|-------------|
@@ -323,7 +279,7 @@ Ces variables sont passées en overrides à chaque exécution du job `surveybot`
 
 ---
 
-## 7. État Firestore — schéma complet
+## 6. État Firestore — schéma complet
 
 **Collection** : `surveybot_account_state`
 **Document ID** : `account_id` (ex: `topsurveys_bot_001`)
@@ -344,12 +300,11 @@ Ces variables sont passées en overrides à chaque exécution du job `surveybot`
 | `total_earned` | Float | Revenus totaux cumulés |
 | `updated_ts` | String (ISO) | Dernière mise à jour |
 
-> Contrairement à DynamoDB, Firestore stocke les timestamps en ISO string (pas Unix int).
-> Le code `account_state.py` gère la conversion via `_ts_to_unix()`.
+> Firestore stocke les timestamps en ISO string. Le code `account_state.py` gère la conversion via `_ts_to_unix()` pour les comparaisons temporelles.
 
 ---
 
-## 8. RuntimeGuard — comportement prod
+## 7. RuntimeGuard — comportement prod
 
 Le RuntimeGuard surveille en continu les conditions d'arrêt du bot. En prod GCP :
 
@@ -360,7 +315,7 @@ Le RuntimeGuard surveille en continu les conditions d'arrêt du bot. En prod GCP
 
 ---
 
-## 9. Lancer le bot en production (GCP)
+## 8. Lancer le bot en production
 
 ### Prérequis avant tout lancement
 
@@ -399,7 +354,7 @@ gcloud run jobs execute surveybot --region=europe-west1 --project=surveybot-4906
 
 ---
 
-## 10. Arrêter le bot en production (GCP)
+## 9. Arrêter le bot en production
 
 ### Arrêt propre automatique (cas normaux)
 
@@ -445,7 +400,7 @@ Depuis **Firestore → surveybot_account_state → topsurveys_bot_XXX → Edit**
 
 ---
 
-## 11. Ajouter un compte bot (GCP)
+## 10. Ajouter un compte bot
 
 **Une seule action requise** : créer le secret dans GCP Secret Manager.
 
@@ -465,7 +420,7 @@ Le scheduler découvrira automatiquement ce compte au prochain cycle et créera 
 
 ---
 
-## 12. Build et déploiement d'une nouvelle image
+## 11. Build et déploiement d'une nouvelle image
 
 ### Bot (`./surveybot/`)
 
@@ -489,7 +444,7 @@ docker push "${REGION}-docker.pkg.dev/${PROJECT}/${REPO}/scheduler:${TAG}"
 
 ---
 
-## 13. Coûts et ressources à surveiller
+## 12. Coûts et ressources à surveiller
 
 ### GCP — estimation mensuelle
 
@@ -505,22 +460,9 @@ docker push "${REGION}-docker.pkg.dev/${PROJECT}/${REPO}/scheduler:${TAG}"
 | **Total GCP (1 bot)** | **~$5/mois** | |
 | **Total GCP (100 bots, 2h/j)** | **~$70/mois** | |
 
-### AWS — coûts actifs (à surveiller même si inactif)
-
-| Service | Coût/mois | Action |
-|---------|-----------|--------|
-| NAT Gateway (fixe) | ~$35 | Conserver tant qu'AWS est en backup |
-| EIPs orphelines | ~$7.20 | **Libérer** : `13.36.51.89` et `13.36.153.246` |
-| Secrets Manager | ~$0.59 | 6 secrets actifs |
-
-### Économie immédiate possible
-
-Libérer les 2 EIPs orphelines AWS → **~$7.20/mois** :
-EC2 → Elastic IPs → sélectionner → Actions → Release Elastic IP address.
-
 ---
 
-## 14. Checklist de santé infrastructure
+## 13. Checklist de santé infrastructure
 
 À vérifier avant chaque activation en prod :
 
@@ -547,15 +489,11 @@ GCP — Cloud Scheduler
 
 GCP — IAM
 [ ] surveybot-sa : rôles run.developer, secretmanager.secretAccessor, datastore.user, logging.logWriter
-
-AWS — (si backup actif)
-[ ] EventBridge scheduler-runner : DISABLED (éviter doublons avec GCP)
-[ ] NAT Gateway 51.44.135.248 : Available
 ```
 
 ---
 
-## 15. Points d'architecture importants
+## 14. Points d'architecture importants
 
 ### Source de découverte des comptes = Secret Manager
 Le scheduler liste les secrets GCP Secret Manager avec le préfixe `topsurveys_bot_`. C'est la **seule** action requise pour enregistrer un nouveau bot. Firestore est la source de vérité de l'état, pas de la liste des comptes.
@@ -564,7 +502,7 @@ Le scheduler liste les secrets GCP Secret Manager avec le préfixe `topsurveys_b
 Si un compte existe dans Secret Manager mais pas dans Firestore, le scheduler crée automatiquement le document avec l'état par défaut (`status=idle`). Aucune intervention manuelle requise à l'ajout d'un compte.
 
 ### Timestamps ISO string dans Firestore
-Contrairement à DynamoDB (Unix int), Firestore utilise des ISO strings (`"2026-03-18T08:00:00"`). Le code `account_state.py` gère la conversion via `_ts_to_unix()` pour les comparaisons temporelles.
+Firestore utilise des ISO strings (`"2026-03-18T08:00:00"`). Le code `account_state.py` gère la conversion via `_ts_to_unix()` pour les comparaisons temporelles.
 
 ### Lock Firestore atomique — anti-doublon
 `try_acquire_account_lock()` utilise une transaction Firestore (`@firestore.transactional`). Une seule task peut acquérir le lock — les autres exit proprement. Évite les doublons même si Cloud Scheduler déclenche plusieurs exécutions simultanées.
@@ -572,15 +510,12 @@ Contrairement à DynamoDB (Unix int), Firestore utilise des ISO strings (`"2026-
 ### Proxy = externe, pas GCP
 Les proxies sont des services tiers. L'authentification se fait au niveau Playwright (Chrome launch args). L'IP vue par les sites de sondage est l'IP du proxy, pas celle du Cloud NAT.
 
-### Compatibilité AWS conservée
-Le code supporte `RUN_ENV=aws` et `RUN_ENV=gcp`. Basculer entre les deux clouds ne nécessite que de changer les variables d'env. L'infrastructure AWS reste opérationnelle comme backup.
-
 ### Soft restart avant hard exit
 Le RuntimeGuard tente d'abord un soft restart avant de lever `SystemExit`. En prod, `SystemExit` termine le Cloud Run Job proprement, et le scheduler relancera dans les 5 minutes si le cooldown est expiré.
 
 ---
 
-> **Version** : 3.0
+> **Version** : 4.0
 > **Rédigé** : mars 2026
-> **Sources** : infrastructure GCP (surveybot-490607, europe-west1) + infrastructure AWS (eu-west-3) + code source (main.py, ecs.py, account_loader.py, account_state.py, ecs_bot_scheduler.py, playwright_launcher.py, runtime_guard.py)
-> **À mettre à jour** : après ajout de comptes, changement réseau, évolution du scheduler, ou bascule entre clouds
+> **Sources** : infrastructure GCP (surveybot-490607, europe-west1) + code source (main.py, ecs.py, account_loader.py, account_state.py, ecs_bot_scheduler.py, playwright_launcher.py, runtime_guard.py)
+> **À mettre à jour** : après ajout de comptes, changement réseau, évolution du scheduler
