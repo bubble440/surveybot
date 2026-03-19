@@ -21,6 +21,7 @@ Objectif:
 
 RUN_ENV = os.getenv("RUN_ENV", "local").lower()
 IS_LOCAL = RUN_ENV == "local"
+DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 
 # En environnement non-local (docker / aws), le filesystem n'est PAS une source de vérité partagée.
 # Donc: pas de fallback fichier → DynamoDB doit être correctement configuré.
@@ -133,6 +134,37 @@ def _get_ddb_table():
 def _fs_enabled() -> bool:
     return STATE_BACKEND == "firestore" and bool(STATE_TABLE)
 
+def _pg_enabled() -> bool:
+    return STATE_BACKEND == "postgres" and bool(DATABASE_URL)
+
+def _get_pg_conn():
+    """
+    Connexion Postgres via psycopg2.
+    DATABASE_URL injecté par Fly.io (fly postgres attach).
+    """
+    try:
+        import psycopg2
+        import psycopg2.extras
+        conn = psycopg2.connect(DATABASE_URL)
+        conn.autocommit = False
+        return conn
+    except ImportError as e:
+        raise RuntimeError(f"[STATE] psycopg2 non disponible. pip install psycopg2-binary. err={e}")
+    except Exception as e:
+        raise RuntimeError(f"[STATE] Postgres indisponible. err={e}")
+
+def _pg_ensure_table(conn) -> None:
+    """Crée la table si elle n'existe pas encore (idempotent)."""
+    with conn.cursor() as cur:
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS account_state (
+                account_id TEXT PRIMARY KEY,
+                state      JSONB NOT NULL,
+                version    INTEGER NOT NULL DEFAULT 0,
+                updated_ts TIMESTAMPTZ DEFAULT now()
+            )
+        """)
+    conn.commit()
 
 def _get_fs_client():
     """
@@ -233,6 +265,27 @@ def load_state(account_id: str) -> Dict[str, Any]:
     if STRICT_NO_FILE_FALLBACK and not _ddb_enabled() and not _fs_enabled():
         raise RuntimeError("[STATE] STATE_BACKEND (dynamodb|firestore) et STATE_TABLE requis en environnement non-local")
 
+    if _pg_enabled():
+        conn = _get_pg_conn()
+        _pg_ensure_table(conn)
+        try:
+            import psycopg2.extras
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute("SELECT state FROM account_state WHERE account_id = %s", (account_id,))
+                row = cur.fetchone()
+            if not row:
+                st = _default_state(account_id)
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "INSERT INTO account_state (account_id, state, version) VALUES (%s, %s::jsonb, 0) ON CONFLICT DO NOTHING",
+                        (account_id, json.dumps(st))
+                    )
+                conn.commit()
+                return st
+            return _normalize_state(dict(row["state"]), account_id)
+        finally:
+            conn.close()
+
     if _ddb_enabled():
         table = _get_ddb_table()
         if table is not None:
@@ -306,6 +359,23 @@ def save_state(state: Dict[str, Any]) -> None:
     if STRICT_NO_FILE_FALLBACK and not _ddb_enabled() and not _fs_enabled():
         raise RuntimeError("[STATE] STATE_BACKEND (dynamodb|firestore) et STATE_TABLE requis en environnement non-local")
 
+    if _pg_enabled():
+        conn = _get_pg_conn()
+        _pg_ensure_table(conn)
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """INSERT INTO account_state (account_id, state, version, updated_ts)
+                    VALUES (%s, %s::jsonb, %s, now())
+                    ON CONFLICT (account_id) DO UPDATE
+                    SET state = EXCLUDED.state, version = EXCLUDED.version, updated_ts = now()""",
+                    (account_id, json.dumps(st), st.get("version", 0))
+                )
+            conn.commit()
+            return
+        finally:
+            conn.close()
+
     if _ddb_enabled():
         table = _get_ddb_table()
         if table is not None:
@@ -352,6 +422,50 @@ def update_state(account_id: str, fn: Callable[[Dict[str, Any]], None], max_retr
 
     if STRICT_NO_FILE_FALLBACK and not _ddb_enabled() and not _fs_enabled():
         raise RuntimeError("[STATE] STATE_BACKEND (dynamodb|firestore) et STATE_TABLE requis en environnement non-local")
+
+    if _pg_enabled():
+        conn = _get_pg_conn()
+        _pg_ensure_table(conn)
+        try:
+            import psycopg2.extras
+            for attempt in range(1, max_retries + 1):
+                with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                    # SELECT FOR UPDATE = lock row-level atomique
+                    cur.execute(
+                        "SELECT state, version FROM account_state WHERE account_id = %s FOR UPDATE",
+                        (account_id,)
+                    )
+                    row = cur.fetchone()
+                if not row:
+                    st = _default_state(account_id)
+                    current_version = 0
+                else:
+                    st = _normalize_state(dict(row["state"]), account_id)
+                    current_version = row["version"]
+                fn(st)
+                st = _normalize_state(st, account_id)
+                st["updated_ts"] = _now()
+                st["version"] = current_version + 1
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """INSERT INTO account_state (account_id, state, version, updated_ts)
+                        VALUES (%s, %s::jsonb, %s, now())
+                        ON CONFLICT (account_id) DO UPDATE
+                        SET state = EXCLUDED.state, version = EXCLUDED.version, updated_ts = now()
+                        WHERE account_state.version = %s""",
+                        (account_id, json.dumps(st), st["version"], current_version)
+                    )
+                    updated = cur.rowcount
+                conn.commit()
+                if updated == 1:
+                    return st
+                # rowcount == 0 = conflit de version, on retry
+                if attempt < max_retries:
+                    time.sleep(0.1 * (2 ** (attempt - 1)))
+            log.error(f"[STATE] update_state postgres: conflit après {max_retries} tentatives. account={account_id}")
+            raise RuntimeError("optimistic lock failed")
+        finally:
+            conn.close()
 
     # PROD: DynamoDB atomic update via version
     if _ddb_enabled():
@@ -463,6 +577,27 @@ def touch_heartbeat(account_id: str, owner: str, ttl_sec: int = 240) -> bool:
     now = _now()
     expires = _ts_add(int(ttl_sec))
 
+    if _pg_enabled():
+        conn = _get_pg_conn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """UPDATE account_state
+                    SET state = jsonb_set(jsonb_set(state,
+                        '{lock_until_ts}', to_jsonb(%s::text)),
+                        '{last_heartbeat_ts}', to_jsonb(%s::text)),
+                        updated_ts = now(),
+                        version = version + 1
+                    WHERE account_id = %s
+                        AND state->>'lock_owner' = %s""",
+                    (expires, now, account_id, owner)
+                )
+                updated = cur.rowcount
+            conn.commit()
+            return updated == 1
+        finally:
+            conn.close()
+
     if _ddb_enabled():
         table = _get_ddb_table()
         if table is None:
@@ -539,6 +674,49 @@ def try_acquire_account_lock(
 
     now = _now()
     expires = _ts_add(ttl_sec)
+
+    if _pg_enabled():
+        conn = _get_pg_conn()
+        try:
+            import psycopg2.extras
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute(
+                    "SELECT state FROM account_state WHERE account_id = %s FOR UPDATE",
+                    (account_id,)
+                )
+                row = cur.fetchone()
+            st = dict(row["state"]) if row else {}
+            existing_owner = st.get("lock_owner", "")
+            lock_until = _ts_to_unix(st.get("lock_until_ts", "1970-01-01T00:00:00"))
+            now_unix = int(time.time())
+            if existing_owner and existing_owner != owner and lock_until >= now_unix:
+                conn.rollback()
+                return False
+            # Acquiert le lock
+            lock_fields = {"lock_owner": owner, "lock_until_ts": expires, "updated_ts": now}
+            if row:
+                st.update(lock_fields)
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "UPDATE account_state SET state = %s::jsonb, updated_ts = now() WHERE account_id = %s",
+                        (json.dumps(st), account_id)
+                    )
+            else:
+                new_st = _default_state(account_id)
+                new_st.update(lock_fields)
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "INSERT INTO account_state (account_id, state, version) VALUES (%s, %s::jsonb, 0)",
+                        (account_id, json.dumps(new_st))
+                    )
+            conn.commit()
+            return True
+        except Exception as e:
+            conn.rollback()
+            log.warning(f"[STATE] try_acquire_account_lock postgres: err={e}")
+            return False
+        finally:
+            conn.close()
 
     if not _ddb_enabled() and not _fs_enabled():
         if STRICT_NO_FILE_FALLBACK:

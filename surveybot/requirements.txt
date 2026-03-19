@@ -25,3 +25,4 @@ pproxy
 playwright
 
 google-cloud-firestore
+psycopg2-binary>=2.9
