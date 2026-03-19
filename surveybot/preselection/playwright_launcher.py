@@ -211,12 +211,9 @@ def launch_browser(config: dict | None = None):
             options.add_experimental_option("debuggerAddress", attach_addr)
             print(f"⚠️ ATTACH MODE → {attach_addr}")
         else:
-            # Mode prod/Docker : nouveau Chrome
-            options.add_argument("--headless=new")
+            # Mode local : Chrome visible
             options.add_argument("--disable-blink-features=AutomationControlled")
-            options.add_argument("--no-sandbox")
-            options.add_argument("--disable-dev-shm-usage")
-            options.add_argument("--window-size=1920,1080")
+            options.add_argument("--start-maximized")
             print("🟢 LAUNCHED NEW CHROME SESSION")
         return webdriver.Chrome(options=options)
 
