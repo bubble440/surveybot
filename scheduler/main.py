@@ -1,4 +1,4 @@
-from ecs_bot_scheduler import scheduler_tick
+from ecs import start_task
 import os, boto3, sys
 
 RUN_ENV = os.getenv("RUN_ENV", "")
@@ -132,7 +132,7 @@ def main():
 
     for account_id in ACCOUNTS:
         try:
-            scheduler_tick(account_id)
+            start_task(account_id)
         except Exception as e:
             print(f"⚠️ Scheduler error pour {account_id} : {e}")
 
