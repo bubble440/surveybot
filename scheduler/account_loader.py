@@ -1,118 +1,88 @@
-import boto3
+# scheduler/account_loader.py
+#
+# Version Fly.io : les credentials de chaque compte sont stockés dans
+# ACCOUNTS_JSON (secret Fly.io injecté comme env var).
+# Plus de dépendance à AWS Secrets Manager ou GCP Secret Manager.
+
 import json
 import os
 
-RUN_ENV     = os.getenv("RUN_ENV", "")
-AWS_REGION  = os.getenv("AWS_REGION", "eu-west-3")
-GCP_PROJECT = os.getenv("GCP_PROJECT")
+_cache: dict | None = None
 
 
-# ============================================================================
-# API publique
-# ============================================================================
+def _load_all_accounts() -> dict:
+    """
+    Parse ACCOUNTS_JSON une seule fois.
+    Format attendu : liste de dicts, chacun avec au minimum ACCOUNT_ID.
+
+    Exemple :
+    [
+      {
+        "ACCOUNT_ID": "bot_001",
+        "EMAIL": "bot001@example.com",
+        "PASSWORD": "xxx",
+        "PROXY_URL": "http://...",
+        "PROXY_USER": "user",
+        "PROXY_PASS": "pass",
+        "GEO_LAT": "48.8566",
+        "GEO_LON": "2.3522",
+        "SURVEY_LANG": "fr-FR",
+        "SURVEY_TZ": "Europe/Paris"
+      },
+      ...
+    ]
+    """
+    global _cache
+    if _cache is not None:
+        return _cache
+
+    raw = os.getenv("ACCOUNTS_JSON", "").strip()
+    if not raw:
+        raise RuntimeError(
+            "[ACCOUNT_LOADER] ACCOUNTS_JSON manquant. "
+            "Setter via: fly secrets set ACCOUNTS_JSON='[{...}]' --app surveybot-scheduler"
+        )
+
+    try:
+        accounts_list = json.loads(raw)
+    except json.JSONDecodeError as e:
+        raise RuntimeError(f"[ACCOUNT_LOADER] ACCOUNTS_JSON invalide (JSON malformé): {e}")
+
+    if not isinstance(accounts_list, list):
+        raise RuntimeError("[ACCOUNT_LOADER] ACCOUNTS_JSON doit être une liste JSON")
+
+    _cache = {}
+    for acc in accounts_list:
+        account_id = acc.get("ACCOUNT_ID", "").strip()
+        if not account_id:
+            raise RuntimeError(f"[ACCOUNT_LOADER] Compte sans ACCOUNT_ID: {acc}")
+        _cache[account_id] = acc
+
+    return _cache
+
+
+def list_account_ids() -> list[str]:
+    """Retourne la liste triée des account_id disponibles."""
+    return sorted(_load_all_accounts().keys())
+
 
 def load_account(account_id: str) -> dict:
     """
-    Charge le secret correspondant à l'account_id depuis le gestionnaire
-    de secrets du cloud actif (AWS Secrets Manager ou GCP Secret Manager)
-    et retourne un dict normalisé utilisable par le scheduler.
+    Retourne le dict de credentials pour un account_id donné.
+    Lève RuntimeError si introuvable ou si les champs critiques manquent.
     """
-    if RUN_ENV == "gcp":
-        return _load_account_gcp(account_id)
-    return _load_account_aws(account_id)
+    accounts = _load_all_accounts()
 
+    if account_id not in accounts:
+        raise RuntimeError(f"[ACCOUNT_LOADER] account_id inconnu: {account_id}")
 
-# ============================================================================
-# AWS – chemin inchangé
-# ============================================================================
+    account = accounts[account_id]
 
-def _load_account_aws(account_id: str) -> dict:
-    client = boto3.client("secretsmanager", region_name=AWS_REGION)
-
-    try:
-        resp = client.get_secret_value(SecretId=account_id)
-    except client.exceptions.ResourceNotFoundException:
-        raise RuntimeError(f"Secret introuvable pour {account_id}")
-
-    secret_str = resp.get("SecretString")
-    if not secret_str:
-        raise RuntimeError(f"Secret vide pour {account_id}")
-
-    return _parse_secret(account_id, json.loads(secret_str))
-
-
-# ============================================================================
-# GCP – Secret Manager
-# ============================================================================
-
-def _load_account_gcp(account_id: str) -> dict:
-    try:
-        from google.cloud import secretmanager
-    except ImportError:
+    # Validation des champs critiques
+    missing = [f for f in ("EMAIL", "PASSWORD", "PROXY_URL") if not account.get(f)]
+    if missing:
         raise RuntimeError(
-            "google-cloud-secret-manager manquant — "
-            "pip install google-cloud-secret-manager"
+            f"[ACCOUNT_LOADER] Champs manquants pour {account_id}: {missing}"
         )
 
-    client = secretmanager.SecretManagerServiceClient()
-
-    # Construire le resource name ; GCP_PROJECT requis (ou ADC via metadata)
-    if GCP_PROJECT:
-        project = GCP_PROJECT
-    else:
-        # Tentative de détection depuis ADC (Cloud Run metadata server)
-        try:
-            import google.auth
-            _, project = google.auth.default()
-        except Exception:
-            project = None
-        if not project:
-            raise RuntimeError(
-                "GCP_PROJECT manquant et non détectable depuis ADC"
-            )
-
-    name = f"projects/{project}/secrets/{account_id}/versions/latest"
-
-    try:
-        response = client.access_secret_version(name=name)
-    except Exception as e:
-        raise RuntimeError(f"Secret introuvable pour {account_id}: {e}")
-
-    secret_str = response.payload.data.decode("utf-8")
-    if not secret_str:
-        raise RuntimeError(f"Secret vide pour {account_id}")
-
-    return _parse_secret(account_id, json.loads(secret_str))
-
-
-# ============================================================================
-# Parsing commun
-# ============================================================================
-
-def _parse_secret(account_id: str, secret: dict) -> dict:
-    # 🔴 POINT CRITIQUE : lecture exacte des clés
-    proxy_url  = secret.get("PROXY_URL", "").strip()
-    proxy_user = secret.get("PROXY_USER", "").strip()
-    proxy_pass = secret.get("PROXY_PASS", "").strip()
-
-    if not proxy_url:
-        raise RuntimeError(f"Proxy manquant pour {account_id}")
-
-    print("[DEBUG][SECRET]", secret)
-
-    return {
-        "ACCOUNT_ID": account_id,
-
-        # 🔑 Proxy brut (PAS de parsing ici)
-        "PROXY_URL":  proxy_url,
-        "PROXY_USER": proxy_user,
-        "PROXY_PASS": proxy_pass,
-
-        # Autres infos
-        "EMAIL":       secret.get("EMAIL"),
-        "PASSWORD":    secret.get("PASSWORD"),
-        "GEO_LAT":     secret.get("GEO_LAT"),
-        "GEO_LON":     secret.get("GEO_LON"),
-        "SURVEY_LANG": secret.get("SURVEY_LANG", "fr-FR"),
-        "SURVEY_TZ":   secret.get("SURVEY_TZ", "Europe/Paris"),
-    }
+    return account
