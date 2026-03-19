@@ -3,7 +3,6 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
-from selenium.webdriver.common.action_chains import ActionChains
 
 def _is_aws_env() -> bool:
     """
@@ -17,13 +16,24 @@ def _is_aws_env() -> bool:
         or os.getenv("RUN_ENV") == "aws"                   # override manuel
     )
 
+def _is_prod_env() -> bool:
+    """
+    Retourne True si on tourne dans un environnement de production (AWS ou GCP).
+    Couvre AWS (ECS/Lambda) et GCP Cloud Run (K_SERVICE, GOOGLE_CLOUD_PROJECT).
+    """
+    return bool(
+        _is_aws_env()
+        or os.getenv("K_SERVICE")                          # GCP Cloud Run
+        or os.getenv("GOOGLE_CLOUD_PROJECT")               # GCP général
+    )
+
 def dom_probe(driver):
     """
     Petit dump DOM pour debug.
     ⚠️ Ne s'exécute que lorsque l'on tourne sur AWS (ECS, etc.).
     En local, on retourne immédiatement pour éviter les erreurs XPath et le bruit.
     """
-    if not _is_aws_env():
+    if not _is_prod_env():
         return
 
     print("[DOM] url=", driver.current_url, "title=", driver.title)
@@ -89,7 +99,7 @@ def snap(driver, label: str = "state"):
     Capture un screenshot + dump base64.
     ⚠️ Ne s'exécute que sur AWS pour éviter de spammer la console en local.
     """
-    if not _is_aws_env():
+    if not _is_prod_env():
         return
 
     try:
@@ -147,69 +157,10 @@ def login(driver, email, password):
     net_probe()
     dom_probe(driver)
 
-    # --- Étape 1 : ouvrir la modale "Se connecter" de façon robuste
-    try:
-        selectors = [
-            # Bouton texte "Se connecter"
-            (By.XPATH, "//button[contains(normalize-space(), 'Se connecter')]"),
-            # FR actuel TopSurveys
-            (By.XPATH, '//a[normalize-space()="Se connecter / S\'inscrire"]'),
-            (By.XPATH, '//a[normalize-space()="Login / Sign up"]'),
-            # Variante anglaise éventuelle
-            (By.XPATH, "//a[normalize-space()='Sign up']"),
-            (By.XPATH, "//a[normalize-space()='Login']"),
-            # Lien direct vers la page login
-            (By.CSS_SELECTOR, "a[href*='/auth/login']"),
-            (By.XPATH, "//button[contains(normalize-space(), 'Login')]"),
-            (By.XPATH, "//button[contains(normalize-space(), 'Sign up')]"),
-            # Bouton texte "Sign in"
-            (
-                By.XPATH,
-                "//button[contains(translate(normalize-space(), 'SIGNUP', 'signup'), 'signup')]",
-            ),
-        ]
-
-        login_btn = None
-        for by, sel in selectors:
-            try:
-                login_btn = wait.until(EC.element_to_be_clickable((by, sel)))
-                print(f"[LOGIN] Bouton trouvé via sélecteur : {sel}")
-                break
-            except TimeoutException:
-                continue
-
-        if not login_btn:
-            print("❌ Aucun CTA de connexion trouvé (FR/EN).")
-            dom_probe(driver)
-            return
-
-        if not js_click(driver, login_btn):
-            # fallback "humain"
-            try:
-                ActionChains(driver).move_to_element(login_btn).click().perform()
-            except Exception as e:
-                print("[CLICK][FATAL]", e)
-                raise
-            
-        # 🔄 Attente que la modale soit bien visible
-        wait.until(
-            EC.presence_of_element_located(
-                (By.CSS_SELECTOR, '[data-test-id="modal-close-button"]')
-            )
-        )
-        print("🟢 Modale de connexion détectée.")
-
-    except Exception as err:
-        print("❌ Étape 1 (ouverture modale) échouée :", type(err).__name__, "-", err)
-        return
-
-    dom_probe(driver)
-
-    # Étape 2 : Remplir l’e-mail
+    # --- Étape 1 : Saisir l'email dans le champ inline (landing page, pas de modale)
     try:
         email_input = wait.until(
             EC.element_to_be_clickable((
-                # By.XPATH, "//input[contains(@placeholder, 'email') or contains(@autocomplete, 'username')]"
                 By.CSS_SELECTOR, "input[data-test-id='check-email-field-input']"
             ))
         )
@@ -218,38 +169,41 @@ def login(driver, email, password):
 
         email_input.clear()
         email_input.send_keys(email)
-        print(f"✅ Email saisi : {email}")
+        print(f"[LOGIN] Email saisi : {email}")
 
-        time.sleep(2)  # petit délai pour stabilité
-
-        # Cliquer sur le bouton "Continue"
         continue_btn = wait.until(
-            EC.element_to_be_clickable((By.XPATH, "//button[contains(., 'Continue')]"))
+            EC.element_to_be_clickable((
+                By.CSS_SELECTOR, "button[data-test-id='check-email-continue-button']"
+            ))
         )
         driver.execute_script("arguments[0].click();", continue_btn)
-        print("✅ Bouton « Continue » cliqué.")
+        print("[LOGIN] Bouton Continue cliqué.")
 
     except Exception as e:
-        print("❌ Échec injection e-mail :", type(e).__name__, "-", e)
+        print("[LOGIN] Echec injection e-mail :", type(e).__name__, "-", e)
         with open("debug_email_page.html", "w", encoding="utf-8") as f:
             f.write(driver.page_source)
+        return
 
-    # Attente que l'écran password soit effectivement rendu
+    # Attente ouverture de la modale (aria-modal="true" ou modal-close-button)
     try:
         wait.until(
-            EC.presence_of_element_located(
-                (By.CSS_SELECTOR, '[data-test-id="sign-in-password-field-input"]')
+            EC.any_of(
+                EC.presence_of_element_located((By.CSS_SELECTOR, '[aria-modal="true"]')),
+                EC.presence_of_element_located((By.CSS_SELECTOR, '[data-test-id="modal-close-button"]')),
             )
         )
-        print("🟢 Écran mot de passe détecté.")
+        print("[LOGIN] Modale detectee.")
     except TimeoutException:
         snap(driver, "error_after_continue")
-        print("❌ Écran mot de passe non apparu après Continue.")
+        print("[LOGIN] Modale non apparue apres Continue.")
         return
+
     dom_probe(driver)
     snap(driver, "after_email")
 
-    # Étape 3 : Remplir le mot de passe et valider
+
+    # --- Étape 2 : Remplir le mot de passe (dans la modale) et valider
     try:
         pwd_input = wait.until(EC.element_to_be_clickable(
             (By.CSS_SELECTOR, 'input[data-test-id="sign-in-password-field-input"]')

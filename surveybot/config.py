@@ -39,7 +39,7 @@ import os
 # ══════════════════════════════════════════════════════════════════════════════
 
 RUN_ENV = os.getenv("RUN_ENV", "local")  # local | aws | docker
-RUN_MODE = os.getenv("RUN_MODE", "prod")        # prod | local
+RUN_MODE = os.getenv("RUN_MODE", "local")        # prod | local
 BROWSER_MODE = os.getenv("BROWSER_MODE", "normal")  # normal | attach
 
 # ══════════════════════════════════════════════════════════════════════════════
