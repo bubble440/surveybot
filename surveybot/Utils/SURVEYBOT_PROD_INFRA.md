@@ -2,7 +2,7 @@
 
 > **Document de référence opérationnel** — décrit l'état exact de l'infrastructure prod,
 > le fonctionnement interne du bot, et les procédures de lancement/arrêt.
-> Rédigé en mars 2026. Déploiement unique : GCP (europe-west1).
+> Rédigé en mars 2026. Déploiement : Fly.io (région cdg — Paris).
 > À mettre à jour après tout changement d'infrastructure.
 
 ---
@@ -10,11 +10,11 @@
 ## Table des matières
 
 1. [Vue d'ensemble](#1-vue-densemble)
-2. [Infrastructure GCP](#2-infrastructure-gcp)
+2. [Infrastructure Fly.io](#2-infrastructure-flyio)
 3. [Stack technique du bot](#3-stack-technique-du-bot)
 4. [Flux d'exécution complet](#4-flux-dexécution-complet)
 5. [Variables d'environnement](#5-variables-denvironnement)
-6. [État Firestore — schéma complet](#6-état-firestore--schéma-complet)
+6. [État Postgres — schéma complet](#6-état-postgres--schéma-complet)
 7. [RuntimeGuard — comportement prod](#7-runtimeguard--comportement-prod)
 8. [Lancer le bot en production](#8-lancer-le-bot-en-production)
 9. [Arrêter le bot en production](#9-arrêter-le-bot-en-production)
@@ -30,154 +30,189 @@
 
 ### Objectif
 SurveyBot automatise la complétion de sondages sur TopSurveys et les plateformes partenaires.
-Chaque bot = 1 compte TopSurveys = 1 conteneur Cloud Run Job = 1 proxy externe.
+Chaque bot = 1 compte TopSurveys = 1 machine Fly.io éphémère = 1 proxy externe.
 **Cible : ~100 bots en parallèle.**
 
 ### Architecture simplifiée
 
 ```
-Cloud Scheduler (toutes les 5 min)
-    └─► Cloud Run Job: scheduler
-            ├─ Secret Manager    (liste des comptes + credentials)
-            ├─ Firestore         (état partagé — auto-création si absent)
-            └─► Cloud Run Job: surveybot × N  (1 par compte éligible)
-                    ├─ Secret Manager  (credentials injectés par le scheduler)
-                    ├─ Firestore       (état partagé)
-                    └─ Chrome headless (Playwright + Selenium)
-                            └─ Proxy externe → Site de sondage
+Machine Fly.io : surveybot-scheduler (always-on, boucle toutes les 5 min)
+    ├─ ACCOUNTS_JSON   (secret Fly — liste des comptes + credentials)
+    └─► Machine Fly.io : surveybot-bot × N  (1 par compte, éphémère, auto-destroy)
+            ├─ Variables d'env    (credentials injectés par le scheduler au lancement)
+            ├─ Postgres           (état partagé — source de vérité)
+            └─ Chrome headless (Playwright + Selenium)
+                    └─ Proxy externe → Site de sondage
 ```
 
-### Projet et région
+### Logique scheduler / bot — règle fondamentale
 
-| Cloud | Projet | Région |
-|-------|--------|--------|
-| GCP | `surveybot-490607` | `europe-west1` (Belgique) |
+```
+Scheduler :
+  1. Récupère la liste des comptes depuis ACCOUNTS_JSON
+  2. Pour chaque compte : lance une machine bot avec ses credentials en env vars
+  3. C'est tout — le scheduler n'écrit jamais dans la DB
 
----
+Bot :
+  1. Démarre, lit son état dans Postgres
+  2. Si status != "idle" → exit(0) immédiatement (un bot tourne déjà pour ce compte)
+  3. Si cooldown actif → exit(0)
+  4. Si banni → exit(0)
+  5. Travaille, écrit dans Postgres
+  6. Met status="idle" + cooldown à la fin, exit(0)
 
-## 2. Infrastructure GCP
-
-### 2.1 Cloud Run Jobs
-
-**Projet** : `surveybot-490607`
-**Région** : `europe-west1`
-
-| Job | Image | Rôle | CPU | RAM | Timeout |
-|-----|-------|------|-----|-----|---------|
-| `scheduler` | `surveybot/scheduler:latest` | Orchestrateur : liste les comptes, lance les jobs `surveybot` | 1 | 512Mi | 300s |
-| `surveybot` | `surveybot/bot:latest` | Bot principal (Chrome + Playwright + Selenium + OpenAI) | 1 | 2Gi | 3600s |
-
-Les deux jobs tournent dans le subnet privé `surveybot-private` avec egress `all-traffic` via Cloud NAT.
+=> La DB n'est écrite que par le bot lui-même. Une seule source d'écriture par compte.
+```
 
 ---
 
-### 2.2 Artifact Registry
+## 2. Infrastructure Fly.io
 
-**Repository** : `europe-west1-docker.pkg.dev/surveybot-490607/surveybot`
+### 2.1 Applications Fly.io
+
+**Organisation** : `surveybot`
+**Région** : `cdg` (Paris)
+
+| App | Image | Rôle | CPU | RAM | Type |
+|-----|-------|------|-----|-----|------|
+| `surveybot-scheduler` | `registry.fly.io/surveybot-scheduler:latest` | Boucle toutes les 5 min, lance les machines bot | 0.25 shared | 256 MB | always-on |
+| `surveybot-bot` | `registry.fly.io/surveybot-bot:latest` | Bot principal (Chrome + Playwright + Selenium + OpenAI) | 1 shared | 2048 MB | éphémère (auto-destroy) |
+
+---
+
+### 2.2 Registry d'images
+
+Fly.io fournit un registry intégré. Pas de coût de stockage séparé.
 
 | Image | Tag | Rôle |
 |-------|-----|------|
-| `bot` | `latest` | Image du bot surveybot |
-| `scheduler` | `latest` | Image du scheduler |
+| `registry.fly.io/surveybot-bot` | `latest` | Image du bot |
+| `registry.fly.io/surveybot-scheduler` | `latest` | Image du scheduler |
 
-> Les images sont en tag `latest` (mutable). Un `docker push :latest` écrase l'image précédente.
-> Après chaque push, le prochain cycle du scheduler utilisera automatiquement la nouvelle image.
+> Le tag `latest` est mutable. Un `docker push :latest` écrase l'image précédente.
+> Les prochaines machines lancées par le scheduler utiliseront automatiquement la nouvelle image.
 
-**Script de build + push (PowerShell) — à utiliser à chaque déploiement :**
+**Script de build + push (PowerShell) :**
 
 ```powershell
+# Authentification Fly registry
+fly auth docker
+
 # Bot
-$PROJECT = "surveybot-490607"; $REGION = "europe-west1"; $REPO = "surveybot"; $TAG = "latest"
-gcloud auth configure-docker "$REGION-docker.pkg.dev" --project=$PROJECT
-docker build -t "${REGION}-docker.pkg.dev/${PROJECT}/${REPO}/bot:${TAG}" ./surveybot
-docker push "${REGION}-docker.pkg.dev/${PROJECT}/${REPO}/bot:${TAG}"
+docker build -t registry.fly.io/surveybot-bot:latest ./surveybot
+docker push registry.fly.io/surveybot-bot:latest
 
 # Scheduler
-docker build -t "${REGION}-docker.pkg.dev/${PROJECT}/${REPO}/scheduler:${TAG}" ./scheduler
-docker push "${REGION}-docker.pkg.dev/${PROJECT}/${REPO}/scheduler:${TAG}"
+docker build -t registry.fly.io/surveybot-scheduler:latest ./scheduler
+docker push registry.fly.io/surveybot-scheduler:latest
 ```
 
 ---
 
-### 2.3 Cloud Scheduler
+### 2.3 Scheduler — machine always-on
 
-**Schedule** : `scheduler-runner`
-**Location** : `europe-west1`
+Le scheduler est une machine Fly.io qui tourne en continu avec une boucle interne `time.sleep(300)`.
+Pas de Cloud Scheduler externe, pas d'EventBridge. La machine redémarre automatiquement si elle crashe (`restart.policy = always`).
 
-| Paramètre | Valeur |
-|-----------|--------|
-| Fréquence | `*/5 * * * *` (toutes les 5 min) |
-| Timezone | Europe/Paris |
-| Cible | Cloud Run Job `scheduler` via HTTP POST |
-| URI | `https://europe-west1-run.googleapis.com/v2/projects/surveybot-490607/locations/europe-west1/jobs/scheduler:run` |
-| Auth | OAuth — Service Account `surveybot-sa@surveybot-490607.iam.gserviceaccount.com` |
-| Retry | 0 |
-| Statut | ENABLED (à désactiver pour pause) |
+**fly.toml du scheduler :**
+```toml
+app = "surveybot-scheduler"
+primary_region = "cdg"
+
+[build]
+  image = "registry.fly.io/surveybot-scheduler:latest"
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory_mb = 256
+
+[env]
+  RUN_ENV = "prod"
+  FLY_REGION = "cdg"
+  LOOP_INTERVAL_SEC = "300"
+```
 
 ---
 
-### 2.4 Secret Manager
+### 2.4 Secrets Fly.io
 
-**Convention de nommage** : `topsurveys_bot_XXX`
+Fly.io injecte les secrets comme variables d'environnement dans les machines au démarrage.
+**Pas de Secret Manager externe, pas de coût par lecture.**
 
-Comptes actuellement déclarés : `bot_001` (1 compte actif).
-Cible finale : ~100 comptes.
+#### Secrets du scheduler (`--app surveybot-scheduler`)
 
-Contenu attendu dans chaque secret (JSON, une seule ligne) :
+| Secret | Description |
+|--------|-------------|
+| `FLY_API_TOKEN` | Token Fly.io pour appeler la Machines API |
+| `FLY_BOT_APP` | Nom de l'app bot (`surveybot-bot`) |
+| `FLY_BOT_IMAGE` | Image bot (`registry.fly.io/surveybot-bot:latest`) |
+| `DATABASE_URL` | Connection string Postgres |
+| `STATE_BACKEND` | `postgres` |
+| `ACCOUNTS_JSON` | Liste JSON de tous les comptes (voir format ci-dessous) |
+
+**Format `ACCOUNTS_JSON` :**
 ```json
-{"EMAIL":"compte@email.com","PASSWORD":"...","PROXY_URL":"host:port","PROXY_USER":"...","PROXY_PASS":"...","GEO_LAT":"48.8566","GEO_LON":"2.3522","SURVEY_LANG":"fr-FR","SURVEY_TZ":"Europe/Paris"}
+[
+  {
+    "ACCOUNT_ID": "bot_001",
+    "EMAIL": "bot001@example.com",
+    "PASSWORD": "...",
+    "PROXY_URL": "http://host:port",
+    "PROXY_USER": "...",
+    "PROXY_PASS": "...",
+    "GEO_LAT": "48.8566",
+    "GEO_LON": "2.3522",
+    "SURVEY_LANG": "fr-FR",
+    "SURVEY_TZ": "Europe/Paris"
+  }
+]
 ```
 
-> **Important** : le JSON doit être sur une seule ligne sans apostrophes. Utiliser `gcloud secrets versions add` avec `--data-file=-` et un heredoc `<<'EOF'` pour éviter les erreurs de parsing.
-
-**Créer ou mettre à jour un secret :**
+**Créer ou mettre à jour les secrets :**
 ```bash
-gcloud secrets versions add topsurveys_bot_001 --data-file=- --project=surveybot-490607 <<'EOF'
-{"EMAIL":"...","PASSWORD":"...","PROXY_URL":"...","PROXY_USER":"...","PROXY_PASS":"...","GEO_LAT":"48.8566","GEO_LON":"2.3522","SURVEY_LANG":"fr-FR","SURVEY_TZ":"Europe/Paris"}
-EOF
+fly secrets set FLY_API_TOKEN=xxx DATABASE_URL=xxx \
+  ACCOUNTS_JSON='[{"ACCOUNT_ID":"bot_001",...}]' \
+  --app surveybot-scheduler
 ```
 
-**Le scheduler découvre automatiquement les comptes** en listant les secrets avec le préfixe `topsurveys_bot_`. Il crée également le document Firestore correspondant si absent — aucune action manuelle requise pour enregistrer un nouveau bot.
+---
+
+### 2.5 Postgres (state store)
+
+Fly.io propose un Postgres managé (Fly Postgres).
+
+**Créer l'instance :**
+```bash
+fly postgres create \
+  --name surveybot-db \
+  --region cdg \
+  --initial-cluster-size 1 \
+  --vm-size shared-cpu-1x \
+  --volume-size 1
+```
+
+**Attacher au scheduler (injecte DATABASE_URL automatiquement) :**
+```bash
+fly postgres attach surveybot-db --app surveybot-scheduler
+```
+
+La table `account_state` est créée automatiquement par `account_state.py` au premier accès (`_pg_ensure_table()`).
 
 ---
 
-### 2.5 Firestore
+### 2.6 Réseau
 
-**Base** : `(default)`
-**Mode** : Native
-**Région** : `europe-west1`
-**Collection** : `surveybot_account_state`
+Fly.io n'a pas de NAT Gateway séparé. Le trafic sortant des machines est routé nativement.
 
-Chaque document correspond à un compte bot. Les documents sont **auto-créés** par le scheduler au premier cycle si le secret existe dans Secret Manager.
+| Poste | Détail | Coût |
+|-------|--------|------|
+| Egress internet | $0.02/GB (région Europe) | À l'usage |
+| Static Egress IP (optionnel) | $3.60/mois si IP fixe requise | Optionnel |
+| Intra-app (scheduler → Machines API) | Gratuit | $0 |
 
-Schéma d'un document (voir section 6 pour détail complet).
-
----
-
-### 2.6 Réseau — VPC GCP
-
-**VPC** : `surveybot-vpc`
-
-| Ressource | Nom | CIDR / Détail |
-|-----------|-----|---------------|
-| Subnet | `surveybot-private` | `10.0.1.0/24` — europe-west1 |
-| Router | `surveybot-router` | europe-west1 |
-| Cloud NAT | `surveybot-nat` | Auto-allocate IPs, all subnets |
-
-> Cloud NAT assure l'egress vers internet. Pas de coût fixe — facturation uniquement sur le data processing (~$0.01/GB).
-
----
-
-### 2.7 IAM — Service Account
-
-**Service Account** : `surveybot-sa@surveybot-490607.iam.gserviceaccount.com`
-
-| Rôle | Usage |
-|------|-------|
-| `roles/run.developer` | Lancer les Cloud Run Jobs |
-| `roles/secretmanager.secretAccessor` | Lire les secrets |
-| `roles/datastore.user` | Lire/écrire Firestore |
-| `roles/logging.logWriter` | Écrire les logs Cloud Logging |
+> Les proxies Brightdata sont externes. Le trafic survey transite via le proxy — l'egress Fly.io
+> correspond uniquement aux appels HTTP courts machine → proxy.
 
 ---
 
@@ -189,7 +224,7 @@ Schéma d'un document (voir section 6 pour détail complet).
 - Gère l'authentification proxy nativement
 - Configure : proxy, langue (`fr-FR`), timezone (`Europe/Paris`), géolocalisation (Paris par défaut)
 - Injecte des overrides DevTools anti-détection : `navigator.webdriver = undefined`, platform `Win32`
-- Lance Chrome en mode `--headless=new` en prod (Docker/Cloud Run)
+- Lance Chrome en mode `--headless=new` en prod (Docker/Fly.io)
 - Expose un port de debugging aléatoire (42000–52000)
 
 **Étape 2 — Selenium s'attache au Chrome existant**
@@ -201,11 +236,11 @@ Schéma d'un document (voir section 6 pour détail complet).
 
 - Modèle : `gpt-4o-mini`
 - API : `chat.completions.create()` (direct, pas Assistants API)
-- Clé injectée via le secret du compte
+- Clé injectée via les variables d'env du compte
 
 ### 3.3 Notifications Telegram
 
-- Chaque bot a ses propres credentials Telegram dans son secret
+- Chaque bot a ses propres credentials Telegram dans son entrée `ACCOUNTS_JSON`
 - Notifications envoyées via HTTP direct vers l'API Telegram (`notifier.py`)
 
 ---
@@ -213,30 +248,35 @@ Schéma d'un document (voir section 6 pour détail complet).
 ## 4. Flux d'exécution complet
 
 ```
-1. Cloud Scheduler déclenche le job "scheduler" toutes les 5 min
+1. Machine "surveybot-scheduler" (always-on) se réveille toutes les 5 min
+
 2. scheduler/main.py :
-   a. Liste les secrets Secret Manager avec préfixe "topsurveys_bot_"
+   a. Lit ACCOUNTS_JSON → liste des account_id
    b. Pour chaque compte :
-      - Auto-crée le document Firestore si absent
-      - Appelle scheduler_tick(account_id)
-3. scheduler_tick() (ecs_bot_scheduler.py) :
-   a. Charge l'état depuis Firestore
-   b. Vérifie : pas banni, pas en cooldown, status=idle, pas de lock actif
-   c. Acquiert le lock Firestore (transaction atomique)
-   d. Appelle start_task(account_id) → _start_task_gcp()
-4. _start_task_gcp() (ecs.py) :
-   a. Charge le secret depuis GCP Secret Manager
-   b. Lance le Cloud Run Job "surveybot" avec les variables d'env du compte en overrides
-5. surveybot démarre :
-   a. Lit ses credentials depuis les variables d'env injectées
-   b. Lance Chrome via Playwright
-   c. Se connecte à TopSurveys
-   d. Boucle de complétion de sondages
-   e. RuntimeGuard surveille les conditions d'arrêt
-6. En fin de session :
-   a. Bot met à jour Firestore (status=idle, cooldown, earnings)
-   b. Cloud Run Job se termine → ressources libérées
-7. Au prochain cycle (5 min), le scheduler peut relancer si cooldown expiré
+      - Charge les credentials depuis ACCOUNTS_JSON
+      - Appelle fly.start_task(account_id, account)
+
+3. fly.start_task() :
+   a. POST https://api.machines.dev/v1/apps/surveybot-bot/machines
+   b. Injecte les credentials du compte en env vars
+   c. La machine démarre, se détruit automatiquement après exit (auto_destroy=True)
+
+4. Machine bot démarre :
+   a. Lit son état dans Postgres (account_state.py)
+   b. Si status != "idle" → exit(0) immédiatement
+   c. Si cooldown actif → exit(0)
+   d. Si banni → exit(0)
+   e. Lance Chrome via Playwright
+   f. Se connecte à TopSurveys
+   g. Boucle de complétion de sondages
+   h. RuntimeGuard surveille les conditions d'arrêt
+
+5. En fin de session :
+   a. Bot met à jour Postgres (status=idle, cooldown, earnings)
+   b. Machine exit(0) → auto-destroy → ressources libérées
+
+6. Au prochain tick (5 min), le scheduler relance une machine pour ce compte.
+   Si un bot tourne encore (status != idle), la nouvelle machine exit(0) immédiatement.
 ```
 
 ---
@@ -247,71 +287,78 @@ Schéma d'un document (voir section 6 pour détail complet).
 
 | Variable | Valeur | Description |
 |----------|--------|-------------|
-| `RUN_ENV` | `gcp` | Cloud actif |
-| `STATE_BACKEND` | `firestore` | Backend état |
-| `STATE_TABLE` | `surveybot_account_state` | Nom collection Firestore |
-| `GCP_PROJECT` | `surveybot-490607` | Projet GCP |
+| `RUN_ENV` | `prod` | Environnement actif |
+| `STATE_BACKEND` | `postgres` | Backend état |
+| `DATABASE_URL` | `postgres://...` | Connection string Postgres (injecté par Fly) |
 
 ### Variables spécifiques au scheduler
 
 | Variable | Valeur | Description |
 |----------|--------|-------------|
-| `GCP_REGION` | `europe-west1` | Région Cloud Run |
-| `GCP_JOB_NAME` | `surveybot` | Nom du job bot à lancer |
-| `ACCOUNT_PREFIX` | `topsurveys_bot_` | Filtre sur les secrets |
+| `FLY_API_TOKEN` | `...` | Token Machines API |
+| `FLY_BOT_APP` | `surveybot-bot` | Nom de l'app bot |
+| `FLY_BOT_IMAGE` | `registry.fly.io/surveybot-bot:latest` | Image à lancer |
+| `FLY_REGION` | `cdg` | Région des machines bot |
+| `FLY_VM_MEMORY` | `2048` | RAM des machines bot (MB) |
+| `LOOP_INTERVAL_SEC` | `300` | Intervalle entre les ticks (secondes) |
+| `ACCOUNTS_JSON` | `[{...}]` | Liste JSON des comptes |
 
-### Variables injectées par le scheduler dans le job bot
+### Variables injectées par le scheduler dans chaque machine bot
 
-Ces variables sont passées en overrides à chaque exécution du job `surveybot` :
+Ces variables sont passées en `env` au moment du `POST /machines` :
 
 | Variable | Source |
 |----------|--------|
-| `ACCOUNT_ID` | account_id du compte |
-| `EMAIL` | Secret Manager |
-| `PASSWORD` | Secret Manager |
-| `PROXY_URL` | Secret Manager |
-| `PROXY_USER` | Secret Manager |
-| `PROXY_PASS` | Secret Manager |
-| `GEO_LAT` | Secret Manager |
-| `GEO_LON` | Secret Manager |
-| `SURVEY_LANG` | Secret Manager |
-| `SURVEY_TZ` | Secret Manager |
+| `ACCOUNT_ID` | ACCOUNTS_JSON |
+| `EMAIL` | ACCOUNTS_JSON |
+| `PASSWORD` | ACCOUNTS_JSON |
+| `PROXY_URL` | ACCOUNTS_JSON |
+| `PROXY_USER` | ACCOUNTS_JSON |
+| `PROXY_PASS` | ACCOUNTS_JSON |
+| `GEO_LAT` | ACCOUNTS_JSON |
+| `GEO_LON` | ACCOUNTS_JSON |
+| `SURVEY_LANG` | ACCOUNTS_JSON |
+| `SURVEY_TZ` | ACCOUNTS_JSON |
+| `STATE_BACKEND` | Hérité du scheduler |
+| `DATABASE_URL` | Hérité du scheduler |
 
 ---
 
-## 6. État Firestore — schéma complet
+## 6. État Postgres — schéma complet
 
-**Collection** : `surveybot_account_state`
-**Document ID** : `account_id` (ex: `topsurveys_bot_001`)
+**Table** : `account_state`
+**Clé primaire** : `account_id`
 
 | Champ | Type | Description |
 |-------|------|-------------|
-| `account_id` | String | Identifiant unique du compte |
-| `version` | Integer | Optimistic locking — incrémenté à chaque écriture |
-| `banned` | Boolean | Si True, le scheduler ne relance jamais ce compte |
-| `status` | String | `idle` / `running` / `starting` |
-| `lock_owner` | String | ID de la task qui détient le lock |
-| `lock_until_ts` | String (ISO) | Expiration du lock |
-| `cooldown_until_ts` | String (ISO) | Ne pas relancer avant cette date |
-| `last_heartbeat_ts` | String (ISO) | Dernier heartbeat du bot actif |
-| `last_stop_reason` | String | Raison du dernier arrêt |
-| `last_boot_ts` | String (ISO) | Dernier démarrage |
-| `daily_earned` | Map | `{"2026-03-18": 1.23}` — revenus par jour |
-| `total_earned` | Float | Revenus totaux cumulés |
-| `updated_ts` | String (ISO) | Dernière mise à jour |
+| `account_id` | TEXT PK | Identifiant unique du compte |
+| `version` | INTEGER | Optimistic locking — incrémenté à chaque écriture |
+| `banned` | BOOLEAN | Si True, le bot exit(0) sans travailler |
+| `status` | TEXT | `idle` / `running` / `starting` |
+| `lock_owner` | TEXT | ID de la machine qui détient le lock |
+| `lock_until_ts` | TEXT (ISO) | Expiration du lock |
+| `cooldown_until_ts` | TEXT (ISO) | Ne pas relancer avant cette date |
+| `last_heartbeat_ts` | TEXT (ISO) | Dernier heartbeat du bot actif |
+| `last_stop_reason` | TEXT | Raison du dernier arrêt |
+| `last_boot_ts` | TEXT (ISO) | Dernier démarrage |
+| `daily_earned` | JSONB | `{"2026-03-18": 1.23}` — revenus par jour |
+| `total_earned` | FLOAT | Revenus totaux cumulés |
+| `updated_ts` | TIMESTAMPTZ | Dernière mise à jour |
 
-> Firestore stocke les timestamps en ISO string. Le code `account_state.py` gère la conversion via `_ts_to_unix()` pour les comparaisons temporelles.
+> La table est créée automatiquement au premier accès par `_pg_ensure_table()` dans `account_state.py`.
+> Pas d'action manuelle requise.
 
 ---
 
 ## 7. RuntimeGuard — comportement prod
 
-Le RuntimeGuard surveille en continu les conditions d'arrêt du bot. En prod GCP :
+Le RuntimeGuard surveille en continu les conditions d'arrêt du bot. En prod Fly.io :
 
-- Condition détectée → soft restart tenté (CTA "Ouvrir l'application")
-- Si soft restart échoue → `SystemExit` → le Cloud Run Job se termine proprement
-- Le scheduler relancera au prochain cycle si le cooldown est expiré
-- L'état est mis à jour dans Firestore avant l'arrêt
+- Condition détectée → soft restart tenté
+- Si soft restart échoue → `SystemExit` → la machine Fly se termine proprement
+- `auto_destroy=True` → la machine est détruite automatiquement après exit
+- Le scheduler relancera au prochain tick si le cooldown est expiré
+- L'état est mis à jour dans Postgres avant l'arrêt
 
 ---
 
@@ -319,38 +366,58 @@ Le RuntimeGuard surveille en continu les conditions d'arrêt du bot. En prod GCP
 
 ### Prérequis avant tout lancement
 
-- [ ] Images `bot:latest` et `scheduler:latest` à jour dans Artifact Registry
-- [ ] Secrets `topsurveys_bot_XXX` présents et valides dans Secret Manager (JSON sur une ligne)
-- [ ] Cloud Run Jobs `surveybot` et `scheduler` créés
-- [ ] Cloud NAT `surveybot-nat` : actif
-- [ ] Service Account `surveybot-sa` : rôles corrects
+- [ ] Images `surveybot-bot:latest` et `surveybot-scheduler:latest` buildées et pushées
+- [ ] Secrets du scheduler settés (`FLY_API_TOKEN`, `DATABASE_URL`, `ACCOUNTS_JSON`, etc.)
+- [ ] Postgres `surveybot-db` créé et attaché au scheduler
+- [ ] Machine scheduler déployée et running
 
-### Lancement automatique (mode prod multi-bots)
+### Lancement automatique (mode prod)
 
-Le Cloud Scheduler `scheduler-runner` est déjà **ENABLED** — il se déclenche automatiquement toutes les 5 minutes. Aucune action manuelle requise si les prérequis sont satisfaits.
+La machine scheduler tourne en continu. Elle se déclenche automatiquement toutes les 5 minutes.
+Aucune action manuelle requise si les prérequis sont satisfaits.
 
-Pour vérifier que le cycle fonctionne :
 ```bash
-gcloud run jobs executions list --job=scheduler --region=europe-west1 --project=surveybot-490607
-gcloud run jobs executions list --job=surveybot --region=europe-west1 --project=surveybot-490607
+# Vérifier que le scheduler tourne
+fly status --app surveybot-scheduler
+
+# Voir les logs du scheduler en temps réel
+fly logs --app surveybot-scheduler
+
+# Voir les machines bot actives
+fly machines list --app surveybot-bot
 ```
 
 ### Déclenchement manuel immédiat (test / debug)
 
 ```bash
-# Déclencher le scheduler manuellement
-gcloud scheduler jobs run scheduler-runner --location=europe-west1 --project=surveybot-490607
-
-# Ou lancer directement un bot pour un compte spécifique
-gcloud run jobs execute surveybot --region=europe-west1 --project=surveybot-490607 \
-  --update-env-vars="ACCOUNT_ID=topsurveys_bot_001"
+# Lancer manuellement une machine bot pour un compte spécifique
+fly machine run \
+  --app surveybot-bot \
+  --region cdg \
+  --vm-memory 2048 \
+  --env ACCOUNT_ID=bot_001 \
+  --env EMAIL=xxx \
+  --env PASSWORD=xxx \
+  --env PROXY_URL=xxx \
+  --env STATE_BACKEND=postgres \
+  --env DATABASE_URL=xxx \
+  --rm \
+  registry.fly.io/surveybot-bot:latest
 ```
 
 ### Vérifier qu'un bot tourne correctement
 
-- **Cloud Run → Jobs → surveybot → History** : exécution en status RUNNING
-- **Firestore** → document `topsurveys_bot_001` : `status = running`, `last_heartbeat_ts` récent
-- **Cloud Logging** → filtre `resource.type="cloud_run_job" resource.labels.job_name="surveybot"` : logs de navigation
+```bash
+# Machines bot actives
+fly machines list --app surveybot-bot
+
+# Logs d'une machine spécifique
+fly logs --app surveybot-bot --machine MACHINE_ID
+
+# État dans Postgres
+fly postgres connect -a surveybot-db
+SELECT account_id, status, lock_owner, cooldown_until_ts, updated_ts FROM account_state;
+```
 
 ---
 
@@ -359,64 +426,68 @@ gcloud run jobs execute surveybot --region=europe-west1 --project=surveybot-4906
 ### Arrêt propre automatique (cas normaux)
 
 Le bot s'arrête seul quand RuntimeGuard détecte une condition d'arrêt.
-Le Cloud Run Job se termine → ressources libérées → aucune action manuelle requise.
-Le scheduler relancera au prochain cycle si le cooldown est expiré.
+La machine Fly se détruit automatiquement (`auto_destroy=True`). Aucune action requise.
+Le scheduler relancera au prochain tick si le cooldown est expiré.
 
 ### Pause temporaire (arrêt du relancement automatique)
 
 ```bash
-gcloud scheduler jobs pause scheduler-runner --location=europe-west1 --project=surveybot-490607
+# Suspendre la machine scheduler (arrête la boucle)
+fly machine suspend MACHINE_ID --app surveybot-scheduler
 ```
 
 Les bots en cours terminent leur session naturellement. Aucun nouveau bot ne sera lancé.
 
 Pour reprendre :
 ```bash
-gcloud scheduler jobs resume scheduler-runner --location=europe-west1 --project=surveybot-490607
+fly machine start MACHINE_ID --app surveybot-scheduler
 ```
 
 ### Arrêt d'urgence (immédiat)
 
 ```bash
-# 1. Pauser le scheduler
-gcloud scheduler jobs pause scheduler-runner --location=europe-west1 --project=surveybot-490607
+# 1. Suspendre le scheduler
+fly machine suspend MACHINE_ID --app surveybot-scheduler
 
-# 2. Lister les exécutions en cours
-gcloud run jobs executions list --job=surveybot --region=europe-west1 --project=surveybot-490607
+# 2. Lister les machines bot actives
+fly machines list --app surveybot-bot
 
-# 3. Annuler une exécution spécifique
-gcloud run jobs executions cancel EXECUTION_ID --region=europe-west1 --project=surveybot-490607
+# 3. Stopper une machine spécifique
+fly machine stop MACHINE_ID --app surveybot-bot
 ```
 
-> Un cancel forcé peut laisser des locks actifs dans Firestore.
-> Les locks expirent naturellement après `lock_until_ts` (max ~3 min).
-> Pour relancer immédiatement, réinitialiser manuellement `lock_owner=""` et `lock_until_ts="1970-01-01T00:00:00"` dans le document Firestore.
+> Un arrêt forcé peut laisser `status="running"` dans Postgres.
+> Le bot suivant lancé pour ce compte détectera `status != "idle"` et exitera.
+> Pour forcer une reprise immédiate, réinitialiser manuellement dans Postgres :
+> ```sql
+> UPDATE account_state SET status='idle', lock_owner='', lock_until_ts='1970-01-01T00:00:00' WHERE account_id='bot_001';
+> ```
 
 ### Mettre un seul compte en pause
 
-Depuis **Firestore → surveybot_account_state → topsurveys_bot_XXX → Edit** :
-- Mettre `cooldown_until_ts` = `"2099-01-01T00:00:00"`
-- Le scheduler ignorera ce compte jusqu'à cette date
+```bash
+fly postgres connect -a surveybot-db
+UPDATE account_state SET cooldown_until_ts='2099-01-01T00:00:00' WHERE account_id='bot_001';
+```
+
+Le bot lancé pour ce compte détectera le cooldown et exitera immédiatement.
 
 ---
 
 ## 10. Ajouter un compte bot
 
-**Une seule action requise** : créer le secret dans GCP Secret Manager.
+**Une seule action requise** : ajouter l'entrée dans `ACCOUNTS_JSON`.
 
 ```bash
-gcloud secrets create topsurveys_bot_002 --project=surveybot-490607
-gcloud secrets versions add topsurveys_bot_002 --data-file=- --project=surveybot-490607 <<'EOF'
-{"EMAIL":"...","PASSWORD":"...","PROXY_URL":"...","PROXY_USER":"...","PROXY_PASS":"...","GEO_LAT":"48.8566","GEO_LON":"2.3522","SURVEY_LANG":"fr-FR","SURVEY_TZ":"Europe/Paris"}
-EOF
+# Lire le secret actuel, ajouter le compte, re-setter
+fly secrets set ACCOUNTS_JSON='[
+  {"ACCOUNT_ID":"bot_001",...},
+  {"ACCOUNT_ID":"bot_002","EMAIL":"...","PASSWORD":"...","PROXY_URL":"...","PROXY_USER":"...","PROXY_PASS":"...","GEO_LAT":"48.8566","GEO_LON":"2.3522","SURVEY_LANG":"fr-FR","SURVEY_TZ":"Europe/Paris"}
+]' --app surveybot-scheduler
 ```
 
-Le scheduler découvrira automatiquement ce compte au prochain cycle et créera le document Firestore correspondant. Aucune autre action requise.
-
-> Tester avec un lancement manuel avant le premier cycle automatique :
-> ```bash
-> gcloud scheduler jobs run scheduler-runner --location=europe-west1 --project=surveybot-490607
-> ```
+La table Postgres `account_state` est auto-créée pour ce compte au premier démarrage du bot.
+Aucune autre action requise.
 
 ---
 
@@ -425,40 +496,41 @@ Le scheduler découvrira automatiquement ce compte au prochain cycle et créera 
 ### Bot (`./surveybot/`)
 
 ```powershell
-$PROJECT = "surveybot-490607"; $REGION = "europe-west1"; $REPO = "surveybot"; $TAG = "latest"
-gcloud auth configure-docker "$REGION-docker.pkg.dev" --project=$PROJECT
-docker build -t "${REGION}-docker.pkg.dev/${PROJECT}/${REPO}/bot:${TAG}" ./surveybot
-docker push "${REGION}-docker.pkg.dev/${PROJECT}/${REPO}/bot:${TAG}"
+fly auth docker
+docker build -t registry.fly.io/surveybot-bot:latest ./surveybot
+docker push registry.fly.io/surveybot-bot:latest
 ```
 
 ### Scheduler (`./scheduler/`)
 
 ```powershell
-$PROJECT = "surveybot-490607"; $REGION = "europe-west1"; $REPO = "surveybot"; $TAG = "latest"
-gcloud auth configure-docker "$REGION-docker.pkg.dev" --project=$PROJECT
-docker build -t "${REGION}-docker.pkg.dev/${PROJECT}/${REPO}/scheduler:${TAG}" ./scheduler
-docker push "${REGION}-docker.pkg.dev/${PROJECT}/${REPO}/scheduler:${TAG}"
+fly auth docker
+docker build -t registry.fly.io/surveybot-scheduler:latest ./scheduler
+docker push registry.fly.io/surveybot-scheduler:latest
+
+# Redémarrer la machine scheduler pour prendre la nouvelle image
+fly machine restart MACHINE_ID --app surveybot-scheduler
 ```
 
-> Le tag `latest` est écrasé à chaque push. Le prochain job Cloud Run utilisera automatiquement la nouvelle image — aucune mise à jour de configuration requise.
+> Le tag `latest` est écrasé à chaque push. Les prochaines machines bot lancées par le scheduler
+> utiliseront automatiquement la nouvelle image — aucune mise à jour de configuration requise.
 
 ---
 
 ## 12. Coûts et ressources à surveiller
 
-### GCP — estimation mensuelle
+### Fly.io — estimation mensuelle (100 bots, 6h actives/jour)
 
 | Service | Coût/mois | Note |
 |---------|-----------|------|
-| Cloud Run Jobs (scheduler) | ~$0.50 | 288 exécutions/jour × 5 min |
-| Cloud Run Jobs (bots) | ~$65 | 1 bot × 2h/jour (à l'échelle : 100 bots = ~$65) |
-| Cloud NAT | ~$1–3 | Data processing uniquement, pas de coût fixe |
-| Artifact Registry | ~$0.05 | Stockage images |
-| Secret Manager | ~$0.06/secret/mois | ~$6 à 100 comptes |
-| Firestore | ~$0 | Free tier largement suffisant à 100 bots |
-| Cloud Scheduler | ~$0 | Free tier (3 jobs gratuits) |
-| **Total GCP (1 bot)** | **~$5/mois** | |
-| **Total GCP (100 bots, 2h/j)** | **~$70/mois** | |
+| Machines bot (compute) | ~$19 | 18 000h × $0.00108/h (1 shared vCPU) |
+| Machines bot (RAM 2GB) | ~$273 | 18 000h × $0.01518/h |
+| Machine scheduler (always-on) | ~$3 | 0.25 vCPU + 256MB |
+| Postgres managé | ~$0–15 | Plan minimal, 1GB |
+| Egress réseau | ~$14 | ~700GB/mois estimé à $0.02/GB |
+| Secrets | $0 | Inclus natif |
+| Registry | $0 | Inclus natif |
+| **Total** | **~$309/mois** | vs ~$738/mois sur AWS |
 
 ---
 
@@ -467,55 +539,60 @@ docker push "${REGION}-docker.pkg.dev/${PROJECT}/${REPO}/scheduler:${TAG}"
 À vérifier avant chaque activation en prod :
 
 ```
-GCP — Réseau
-[ ] Cloud NAT "surveybot-nat" : actif (gcloud compute routers nats list)
-[ ] VPC "surveybot-vpc" et subnet "surveybot-private" : présents
+Fly.io — Machines
+[ ] Machine "surveybot-scheduler" : status=running (fly status --app surveybot-scheduler)
+[ ] App "surveybot-bot" : existe (fly apps list)
 
-GCP — Cloud Run
-[ ] Job "surveybot" : existe, image à jour
-[ ] Job "scheduler" : existe, image à jour
-[ ] Variables d'env des jobs : RUN_ENV=gcp, STATE_BACKEND=firestore, GCP_PROJECT=surveybot-490607
+Fly.io — Images
+[ ] registry.fly.io/surveybot-bot:latest : buildée et pushée
+[ ] registry.fly.io/surveybot-scheduler:latest : buildée et pushée
 
-GCP — Secret Manager
-[ ] Secrets topsurveys_bot_XXX existent avec JSON valide (une ligne, double quotes)
+Fly.io — Secrets scheduler
+[ ] FLY_API_TOKEN : présent et valide
+[ ] FLY_BOT_APP : surveybot-bot
+[ ] FLY_BOT_IMAGE : registry.fly.io/surveybot-bot:latest
+[ ] DATABASE_URL : présent (injecté par fly postgres attach)
+[ ] STATE_BACKEND : postgres
+[ ] ACCOUNTS_JSON : liste valide, au moins 1 compte
 
-GCP — Firestore
-[ ] Base "(default)" : active, mode Native, europe-west1
-[ ] Aucun document avec lock actif invalide bloquant un compte
-
-GCP — Cloud Scheduler
-[ ] scheduler-runner : ENABLED pour mode automatique
-[ ] scheduler-runner : PAUSED pour arrêt du relancement
-
-GCP — IAM
-[ ] surveybot-sa : rôles run.developer, secretmanager.secretAccessor, datastore.user, logging.logWriter
+Fly.io — Postgres
+[ ] Cluster "surveybot-db" : running (fly status --app surveybot-db)
+[ ] Attaché au scheduler (DATABASE_URL injecté)
+[ ] Aucun compte bloqué avec status != idle sans raison valide
 ```
 
 ---
 
 ## 14. Points d'architecture importants
 
-### Source de découverte des comptes = Secret Manager
-Le scheduler liste les secrets GCP Secret Manager avec le préfixe `topsurveys_bot_`. C'est la **seule** action requise pour enregistrer un nouveau bot. Firestore est la source de vérité de l'état, pas de la liste des comptes.
+### Le scheduler ne touche jamais la DB
+Le scheduler lit `ACCOUNTS_JSON`, lance une machine par compte, et c'est tout.
+Il n'écrit pas dans Postgres. La DB est la responsabilité exclusive du bot.
 
-### Auto-création des documents Firestore
-Si un compte existe dans Secret Manager mais pas dans Firestore, le scheduler crée automatiquement le document avec l'état par défaut (`status=idle`). Aucune intervention manuelle requise à l'ajout d'un compte.
+### Le bot est sa propre source de vérité
+Au démarrage, le bot lit son état. Si `status != "idle"`, il exit(0) sans rien faire.
+C'est ce mécanisme — et non un lock scheduler — qui garantit qu'un seul bot tourne par compte.
 
-### Timestamps ISO string dans Firestore
-Firestore utilise des ISO strings (`"2026-03-18T08:00:00"`). Le code `account_state.py` gère la conversion via `_ts_to_unix()` pour les comparaisons temporelles.
+### Machines éphémères avec auto_destroy
+`auto_destroy=True` + `restart.policy=no` : la machine disparaît dès que le process Python se termine.
+Pas de zombie, pas de coût idle. Un crash Python non intercepté termine aussi la machine.
 
-### Lock Firestore atomique — anti-doublon
-`try_acquire_account_lock()` utilise une transaction Firestore (`@firestore.transactional`). Une seule task peut acquérir le lock — les autres exit proprement. Évite les doublons même si Cloud Scheduler déclenche plusieurs exécutions simultanées.
+### Pas de NAT Gateway
+Fly.io facture l'egress à l'usage ($0.02/GB). Aucun coût fixe réseau — contrairement au NAT Gateway AWS ($32/mois fixe).
 
-### Proxy = externe, pas GCP
-Les proxies sont des services tiers. L'authentification se fait au niveau Playwright (Chrome launch args). L'IP vue par les sites de sondage est l'IP du proxy, pas celle du Cloud NAT.
+### Timestamps ISO string dans Postgres
+Le schéma Postgres stocke les timestamps en TEXT ISO string (`"2026-03-18T08:00:00"`).
+Le code `account_state.py` gère la conversion via `_ts_to_unix()` pour les comparaisons temporelles.
 
 ### Soft restart avant hard exit
-Le RuntimeGuard tente d'abord un soft restart avant de lever `SystemExit`. En prod, `SystemExit` termine le Cloud Run Job proprement, et le scheduler relancera dans les 5 minutes si le cooldown est expiré.
+Le RuntimeGuard tente d'abord un soft restart. Si échec → `SystemExit` → la machine Fly se termine et est détruite. Le scheduler relancera au prochain tick.
+
+### Nom de machine unique par tick
+Les machines bot sont nommées `bot-{account_id}-{timestamp}` pour éviter les conflits de noms en cas de crash avant auto-destroy.
 
 ---
 
-> **Version** : 4.0
+> **Version** : 5.0
 > **Rédigé** : mars 2026
-> **Sources** : infrastructure GCP (surveybot-490607, europe-west1) + code source (main.py, ecs.py, account_loader.py, account_state.py, ecs_bot_scheduler.py, playwright_launcher.py, runtime_guard.py)
+> **Sources** : infrastructure Fly.io (cdg) + code source (main.py, fly.py, account_loader.py, account_state.py, playwright_launcher.py, runtime_guard.py)
 > **À mettre à jour** : après ajout de comptes, changement réseau, évolution du scheduler

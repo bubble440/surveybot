@@ -1,0 +1,14 @@
+app = "surveybot-bot"
+primary_region = "cdg"
+
+[build]
+  image = "registry.fly.io/surveybot-bot:latest"
+
+[env]
+  LOG_LEVEL = "DEBUG"
+  RUN_ENV = "prod"
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory_mb = 2048
