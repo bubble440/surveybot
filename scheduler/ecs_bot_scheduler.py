@@ -40,8 +40,8 @@ def scheduler_tick(account_id):
         return
 
     # 2) Cooldown pas terminé → on attend
-    cooldown = state.get("cooldown_until_ts")
-    if cooldown and now < cooldown:
+    cooldown_ts = _ts_to_unix(state.get("cooldown_until_ts", 0))
+    if cooldown_ts > now:        
         print(f"[SCHEDULER] Cooldown actif pour {account_id}")
         return
 
