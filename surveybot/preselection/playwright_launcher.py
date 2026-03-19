@@ -96,7 +96,7 @@ def _want_headless() -> bool:
     Headless si SURVEY_HEADLESS=1 et pas de DISPLAY.
     """
     use_display = bool(os.environ.get("DISPLAY"))
-    headless_env = os.getenv("SURVEY_HEADLESS", "1") == "1"
+    headless_env = os.getenv("SURVEY_HEADLESS", "0") == "1"
     return (not use_display) and headless_env
 
 def _parse_geo_env():
