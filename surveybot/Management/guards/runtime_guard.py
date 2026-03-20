@@ -361,18 +361,18 @@ class RuntimeGuard:
             st["last_stop_reason"] = reason.value
             st["pause_policy"] = policy.name
             st["cooldown_until_ts"] = _ts_add(pause_sec)
-            # C1: libère le lock DynamoDB pour que le scheduler puisse reprendre immédiatement
+            # C1: libère le lock Postgres pour que le scheduler puisse reprendre immédiatement
             st["lock_owner"] = ""
             st["lock_until_ts"] = "1970-01-01T00:00:00"
             st["status"] = "idle"
 
-        # try/finally : SystemExit est garanti même si update_state échoue (DynamoDB down, etc.)
+        # try/finally : SystemExit est garanti même si update_state échoue (Postgres down, etc.)
         try:
             update_state(self.account_id, _apply_pause)
         except Exception as _e:
             import logging as _log
             _log.getLogger("runtime_guard").error(
-                f"[PAUSE] update_state échoué ({_e}) — lock non libéré en DynamoDB, "
+                f"[PAUSE] update_state échoué ({_e}) — lock non libéré en Postgres, "
                 f"le scheduler attendra l'expiration du TTL"
             )
         finally:
@@ -388,7 +388,7 @@ class RuntimeGuard:
                 raise SystemExit(reason.value)
             else:
                 # os._exit() court-circuite proprement le processus.
-                # L'état DynamoDB a déjà été écrit dans le bloc try ci-dessus.
+                # L'état Postgres a déjà été écrit dans le bloc try ci-dessus.
                 os._exit(0)
 
 # ----------------------------

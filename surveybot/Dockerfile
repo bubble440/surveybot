@@ -147,7 +147,7 @@ COPY . /app
 # =========================
 # RUNTIME DEFAULTS
 # =========================
-ENV RUN_ENV=aws
+ENV RUN_ENV=prod
 ENV SURVEY_HEADLESS=1
 ENV DISPLAY=
 
