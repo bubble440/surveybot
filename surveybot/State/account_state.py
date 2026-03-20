@@ -79,8 +79,6 @@ def _default_state(account_id: str) -> Dict[str, Any]:
         "banned": False,
         "cooldown_until_ts": "1970-01-01T00:00:00",
         "status": "idle",
-        "lock_owner": "",
-        "lock_until_ts": "1970-01-01T00:00:00",
         "proxy_id": "",          # identifiant du proxy
 
         "last_stop_reason": "",
@@ -329,12 +327,12 @@ def update_state(account_id: str, fn: Callable[[Dict[str, Any]], None], max_retr
         _file_save(st)
         return st
 
-def touch_heartbeat(account_id: str, owner: str, ttl_sec: int = 240) -> bool:
+def touch_heartbeat(account_id: str, ttl_sec: int = 240) -> bool:
     """
     Heartbeat Postgres (cheap & safe):
     - UPDATE ciblé (pas de load_state + put complet)
-    - Condition: lock_owner == owner (la task ne prolonge QUE son propre lock)
-    - Prolonge lock_until_ts à now + ttl_sec (pas un +15 fragile)
+    - Condition: status == 'running' (seul le bot actif prolonge son slot)
+    - Prolonge cooldown_until_ts à now + ttl_sec
     - Incrémente version pour éviter qu'un update_state() écrase un heartbeat récent.
     """
     if IS_LOCAL:
@@ -355,13 +353,13 @@ def touch_heartbeat(account_id: str, owner: str, ttl_sec: int = 240) -> bool:
             cur.execute(
                 """UPDATE account_state
                 SET state = jsonb_set(jsonb_set(state,
-                    '{lock_until_ts}', to_jsonb(%s::text)),
+                    '{cooldown_until_ts}', to_jsonb(%s::text)),
                     '{last_heartbeat_ts}', to_jsonb(%s::text)),
                     updated_ts = now(),
                     version = version + 1
                 WHERE account_id = %s
-                    AND state->>'lock_owner' = %s""",
-                (expires, now, account_id, owner)
+                    AND state->>'status' = 'running'""",
+                (expires, now, account_id)
             )
             updated = cur.rowcount
         conn.commit()
@@ -373,23 +371,25 @@ def touch_heartbeat(account_id: str, owner: str, ttl_sec: int = 240) -> bool:
 # 🔐 ACCOUNT LOCK (CRITIQUE)
 # -----------------------------
 
-def try_acquire_account_lock(
+def try_acquire_cooldown_slot(
     account_id: str,
-    owner: str,
-    ttl_sec: int = 180,
+    ttl_sec: int = 240,
 ) -> bool:
     """
-    Lock atomique du compte.
-    Une seule task (bot ou scheduler) peut réussir.
+    Vérification atomique du cooldown (SELECT FOR UPDATE).
+    Si cooldown_until_ts est expiré : le bot peut démarrer.
+      → cooldown_until_ts = now + ttl_sec (slot actif, prolongé par heartbeat)
+      → status = 'running'
+    Si cooldown_until_ts est dans le futur : un bot tourne déjà ou la pause n'est pas écoulée.
+      → exit immédiat, la machine est détruite.
 
-    Retourne True si le lock est acquis, False sinon.
+    Retourne True si le bot peut s'exécuter, False sinon.
     """
 
     if IS_LOCAL:
-        # 🧪 En local : on autorise toujours
         return True
 
-    now = _now()
+    now_unix = int(time.time())
     expires = _ts_add(ttl_sec)
 
     if _pg_enabled():
@@ -403,16 +403,18 @@ def try_acquire_account_lock(
                 )
                 row = cur.fetchone()
             st = dict(row["state"]) if row else {}
-            existing_owner = st.get("lock_owner", "")
-            lock_until = _ts_to_unix(st.get("lock_until_ts", "1970-01-01T00:00:00"))
-            now_unix = int(time.time())
-            if existing_owner and existing_owner != owner and lock_until >= now_unix:
+            cooldown_until = _ts_to_unix(st.get("cooldown_until_ts", "1970-01-01T00:00:00"))
+            if cooldown_until >= now_unix:
                 conn.rollback()
                 return False
-            # Acquiert le lock
-            lock_fields = {"lock_owner": owner, "lock_until_ts": expires, "updated_ts": now}
+            # Slot acquis : marquer le bot comme actif
+            slot_fields = {
+                "cooldown_until_ts": expires,
+                "status": "running",
+                "updated_ts": _now(),
+            }
             if row:
-                st.update(lock_fields)
+                st.update(slot_fields)
                 with conn.cursor() as cur:
                     cur.execute(
                         "UPDATE account_state SET state = %s::jsonb, updated_ts = now() WHERE account_id = %s",
@@ -420,7 +422,7 @@ def try_acquire_account_lock(
                     )
             else:
                 new_st = _default_state(account_id)
-                new_st.update(lock_fields)
+                new_st.update(slot_fields)
                 with conn.cursor() as cur:
                     cur.execute(
                         "INSERT INTO account_state (account_id, state, version) VALUES (%s, %s::jsonb, 0)",
@@ -430,11 +432,11 @@ def try_acquire_account_lock(
             return True
         except Exception as e:
             conn.rollback()
-            log.warning(f"[STATE] try_acquire_account_lock postgres: err={e}")
+            log.warning(f"[STATE] try_acquire_cooldown_slot postgres: err={e}")
             return False
         finally:
             conn.close()
 
     if STRICT_NO_FILE_FALLBACK:
-        raise RuntimeError("[STATE] try_acquire_account_lock: STATE_BACKEND (postgresql) requis en environnement non-local")
+        raise RuntimeError("[STATE] try_acquire_cooldown_slot: STATE_BACKEND (postgresql) requis en environnement non-local")
     return False
