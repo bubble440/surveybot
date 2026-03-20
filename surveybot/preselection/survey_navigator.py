@@ -217,7 +217,7 @@ def _select_best_value_card(driver):
 
 def go_to_best_value_survey(driver):
     wait_short = WebDriverWait(driver, 8)
-    wait = WebDriverWait(driver, 15)
+    wait = WebDriverWait(driver, 30)
 
     def _click_enquetes():
         # 1) XPATH texte

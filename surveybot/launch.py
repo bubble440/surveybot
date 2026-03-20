@@ -186,6 +186,9 @@ def soft_restart_payout(ctx, driver):
 def soft_restart_resume(ctx, driver):
     from Survey.survey_context import SurveyContext
 
+    # Re-naviguer explicitement après le payout (qui peut avoir changé de page)
+    safe_get(driver, "https://app.topsurveys.app/surveys")
+
     survey_ctx = SurveyContext(session_id=ctx["account_id"], openai_api_key=ctx["api_key"])
     go_to_best_value_survey(driver)
     run_survey(
