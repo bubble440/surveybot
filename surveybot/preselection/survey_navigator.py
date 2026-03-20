@@ -241,10 +241,11 @@ def go_to_best_value_survey(driver):
     if not _click_enquetes():
         # 3) fallback: navigation directe
         try:
+            wait_pwd = WebDriverWait(driver, 60)
             driver.get("https://app.topsurveys.app/surveys")
             print("↪️  Navigation directe /surveys")
             # vérifier qu'on est bien sur la page
-            wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "[data-test-id='ps-surveys-root']")))
+            wait_pwd.until(EC.presence_of_element_located((By.CSS_SELECTOR, "[data-test-id='ps-surveys-root']")))
         except Exception as e:
             print("🛑 Exception navigation :", type(e).__name__, "-", e)
             return
