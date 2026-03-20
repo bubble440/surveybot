@@ -605,9 +605,9 @@ def main():
         return
 
     # FIX-A: install_sigterm_handler AVANT acquire_account_lock_or_exit.
-    # Auparavant, un SIGTERM arrivant entre acquire_lock et install_sigterm_handler
-    # terminait le processus sans nettoyer lock_owner / status en Postgres,
-    # forçant le scheduler à attendre l'expiration du TTL (4 min) avant de relancer.
+    # Auparavant, un SIGTERM arrivant entre acquire et install_sigterm_handler
+    # terminait le processus sans remettre cooldown_until_ts à zéro en Postgres,
+    # forçant le scheduler à attendre l'expiration du TTL avant de relancer.
     install_sigterm_handler(account_id)
     install_sigusr1_handler()
 
@@ -697,9 +697,8 @@ def main():
                 try:
                     from State.account_state import update_state
                     update_state(account_id, lambda st: (
-                        st.__setitem__("lock_owner", ""),
-                        st.__setitem__("lock_until_ts", "1970-01-01T00:00:00"),
                         st.__setitem__("status", "idle"),
+                        st.__setitem__("cooldown_until_ts", "1970-01-01T00:00:00"),
                         st.__setitem__("last_stop_reason", f"crash_{type(e).__name__}"),
                     ))
                 except Exception as _le:
@@ -729,9 +728,8 @@ def main():
         try:
             from State.account_state import update_state
             update_state(account_id, lambda st: (
-                st.__setitem__("lock_owner", ""),
-                st.__setitem__("lock_until_ts", "1970-01-01T00:00:00"),
                 st.__setitem__("status", "idle"),
+                st.__setitem__("cooldown_until_ts", "1970-01-01T00:00:00"),
                 st.__setitem__("last_stop_reason", "max_main_cycles_reached"),
             ))
         except Exception as _le:

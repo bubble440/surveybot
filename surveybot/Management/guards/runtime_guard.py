@@ -5,7 +5,7 @@ Objectif : protéger OpenAI, AWS et Proxy (pay-as-you-use)
 """
 
 from __future__ import annotations
-import time, socket, os, signal, threading, traceback
+import time, os, signal, threading, traceback
 from dataclasses import dataclass, field
 from typing import Optional, Callable
 from enum import Enum
@@ -66,7 +66,6 @@ class RuntimeGuard:
         self.account_id = account_id
         self.driver = None  # sera injecté après le lancement du navigateur
         self.state = RuntimeState()
-        self.task_id = os.getenv("ECS_TASK_ID") or socket.gethostname()
         self.idle_timeout_sec = idle_timeout_sec
         self.restart_cooldown_sec = restart_cooldown_sec
         self.max_errors_in_row = max_errors_in_row
@@ -214,7 +213,7 @@ class RuntimeGuard:
         # Avec heartbeat ~30s, un TTL plus large évite les expirations en cas de freeze CPU/selenium
         ttl = int(os.getenv("ACCOUNT_LOCK_TTL_SEC", "240") or "240")
         try:
-            ok = touch_heartbeat(self.account_id, owner=self.task_id, ttl_sec=ttl)
+            ok = touch_heartbeat(self.account_id, ttl_sec=ttl)
         except Exception as e:
             ok = False
             import logging as _log
@@ -359,11 +358,7 @@ class RuntimeGuard:
 
         def _apply_pause(st):
             st["last_stop_reason"] = reason.value
-            st["pause_policy"] = policy.name
             st["cooldown_until_ts"] = _ts_add(pause_sec)
-            # C1: libère le lock Postgres pour que le scheduler puisse reprendre immédiatement
-            st["lock_owner"] = ""
-            st["lock_until_ts"] = "1970-01-01T00:00:00"
             st["status"] = "idle"
 
         # try/finally : SystemExit est garanti même si update_state échoue (Postgres down, etc.)
