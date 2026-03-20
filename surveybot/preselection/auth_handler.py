@@ -188,10 +188,11 @@ def login(driver, email, password):
     # signal que la modale est prête ; le scrollIntoView + sleep suivants absorbent
     # le délai de rendu résiduel avant toute interaction.
     try:
-        pwd_input = wait.until(EC.presence_of_element_located(
+        wait_pwd = WebDriverWait(driver, 60)
+        pwd_input = wait_pwd.until(EC.presence_of_element_located(
             (By.CSS_SELECTOR, 'input[data-test-id="sign-in-password-field-input"]')
         ))
-        dom_probe(driver)
+        # dom_probe(driver)
         snap(driver, "after_email")
         driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", pwd_input)
         time.sleep(0.3)
