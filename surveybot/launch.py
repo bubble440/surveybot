@@ -5,13 +5,13 @@ from config import is_prod_like, should_run_guard_monitor, should_run_hot_reload
 from Management.guards.runtime_guard import RuntimeGuard, StopReason, set_guard, get_guard
 from State.daily_target import DAILY_TARGET_EUR, ensure_daily_timer_started
 from Cash.payout import MIN_CASHOUT_EUR
-import time, sys, logging, threading, traceback, signal, socket, Cash.payout as payout
+import time, sys, logging, threading, traceback, signal, Cash.payout as payout
 from preselection.playwright_launcher import launch_browser
 from preselection.auth_handler import login, snap
 from preselection.survey_navigator import go_to_best_value_survey
 from preselection.survey_handler import run_survey
 from Management.notifier import send_telegram
-from State.account_state import update_state, load_state, save_state, try_acquire_account_lock, _now
+from State.account_state import update_state, load_state, save_state, try_acquire_cooldown_slot, _now
 from selenium.common.exceptions import TimeoutException
 from preselection.auth_handler import is_session_expired
 from Management.pause_policy import PausePolicy
@@ -19,10 +19,9 @@ from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 
 def acquire_account_lock_or_exit(account_id: str, ttl_sec: int = 240):
-    task_id = os.getenv("ECS_TASK_ID") or socket.gethostname()
-    ok = try_acquire_account_lock(account_id=account_id, owner=task_id, ttl_sec=ttl_sec)
+    ok = try_acquire_cooldown_slot(account_id=account_id, ttl_sec=ttl_sec)
     if not ok:
-        print(f"[LOCK] Account {account_id} déjà utilisé → exit")
+        print(f"[COOLDOWN] Account {account_id} en cooldown ou déjà actif → exit")
         sys.exit(0)
 
 def safe_get(driver, url):
@@ -109,8 +108,7 @@ def _make_sigterm_handler(aid: str):
                 st.__setitem__("ecs_stop_ts", _now()),
                 st.__setitem__("ecs_stop_notified", False),  # reset anti-spam à chaque SIGTERM
                 st.__setitem__("status", "idle"),
-                st.__setitem__("lock_owner", ""),
-                st.__setitem__("lock_until_ts", "1970-01-01T00:00:00")
+                st.__setitem__("cooldown_until_ts", "1970-01-01T00:00:00"),  # relance immédiate autorisée
             ))
         except Exception as e:
             print("[SIGTERM][WARN] update_state échoué:", e)
@@ -360,8 +358,7 @@ def launch_driver_or_fail(config, account_id: str):
         # 🔴 état propre pour le scheduler
             update_state(account_id, lambda st: (
                 st.__setitem__("status", "idle"),
-                st.__setitem__("lock_owner", ""),
-                st.__setitem__("lock_until_ts", 0),
+                st.__setitem__("cooldown_until_ts", "1970-01-01T00:00:00"),
                 st.__setitem__("last_stop_reason", "browser_launch_failed"),
             ))
         raise SystemExit("browser_launch_failed")
