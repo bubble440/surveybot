@@ -168,29 +168,16 @@ def login(driver, email, password):
             f.write(driver.page_source)
         return
 
-    # Attente ouverture de la modale (aria-modal="true" ou modal-close-button)
-    try:
-        wait.until(
-            EC.any_of(
-                EC.presence_of_element_located((By.CSS_SELECTOR, '[aria-modal="true"]')),
-                EC.presence_of_element_located((By.CSS_SELECTOR, '[data-test-id="modal-close-button"]')),
-            )
-        )
-        print("[LOGIN] Modale detectee.")
-    except TimeoutException:
-        snap(driver, "error_after_continue")
-        print("[LOGIN] Modale non apparue apres Continue.")
-        return
-
-    dom_probe(driver)
-    snap(driver, "after_email")
-
-
-    # --- Étape 2 : Remplir le mot de passe (dans la modale) et valider
+    # Attente que le champ password soit interactif (authStep == sign_in)
+    # On attend directement le champ password, sans condition intermédiaire sur
+    # la modale : modal-close-button apparaît avant la transition authStep,
+    # ce qui consommait le timeout entier avant que le champ soit rendu.
     try:
         pwd_input = wait.until(EC.element_to_be_clickable(
             (By.CSS_SELECTOR, 'input[data-test-id="sign-in-password-field-input"]')
         ))
+        dom_probe(driver)
+        snap(driver, "after_email")
         driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", pwd_input)
         time.sleep(0.3)
 
