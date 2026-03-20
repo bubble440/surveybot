@@ -152,6 +152,14 @@ def login(driver, email, password):
 
         email_input.clear()
         email_input.send_keys(email)
+        # Le champ email est pré-rempli côté SSR (attribut value dans le HTML Nuxt).
+        # clear() + send_keys() met à jour la propriété DOM .value mais ne dispatche
+        # aucun événement — Vue ne notifie jamais son v-model et la validation échoue
+        # silencieusement. On force les événements réactifs attendus par Vue.
+        driver.execute_script("""
+            arguments[0].dispatchEvent(new Event('input',  { bubbles: true }));
+            arguments[0].dispatchEvent(new Event('change', { bubbles: true }));
+        """, email_input)
         print(f"[LOGIN] Email saisi : {email}")
 
         continue_btn = wait.until(
@@ -163,6 +171,8 @@ def login(driver, email, password):
         # (isTrusted: false) ne déclenchait pas le handler @submit Vue en prod headless.
         continue_btn.click()
         print("[LOGIN] Bouton Continue cliqué.")
+        # Snap immédiat post-clic pour capturer l'état transitoire en cas d'échec futur.
+        snap(driver, "after_continue_click")
 
     except Exception as e:
         print("[LOGIN] Echec injection e-mail :", type(e).__name__, "-", e)
