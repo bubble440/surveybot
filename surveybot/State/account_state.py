@@ -262,8 +262,8 @@ def load_state(account_id: str) -> Dict[str, Any]:
     if not account_id:
         raise ValueError("account_id vide")
 
-    if STRICT_NO_FILE_FALLBACK and not _ddb_enabled() and not _fs_enabled():
-        raise RuntimeError("[STATE] STATE_BACKEND (dynamodb|firestore) et STATE_TABLE requis en environnement non-local")
+    if STRICT_NO_FILE_FALLBACK and not _pg_enabled():
+        raise RuntimeError("[STATE] STATE_BACKEND (postgresql) et STATE_TABLE requis en environnement non-local")
 
     if _pg_enabled():
         conn = _get_pg_conn()
@@ -356,8 +356,8 @@ def save_state(state: Dict[str, Any]) -> None:
     st = _normalize_state(state, account_id)
     st["updated_ts"] = _now()
 
-    if STRICT_NO_FILE_FALLBACK and not _ddb_enabled() and not _fs_enabled():
-        raise RuntimeError("[STATE] STATE_BACKEND (dynamodb|firestore) et STATE_TABLE requis en environnement non-local")
+    if STRICT_NO_FILE_FALLBACK and not _pg_enabled():
+        raise RuntimeError("[STATE] STATE_BACKEND (postgresql) et STATE_TABLE requis en environnement non-local")
 
     if _pg_enabled():
         conn = _get_pg_conn()
@@ -420,8 +420,8 @@ def update_state(account_id: str, fn: Callable[[Dict[str, Any]], None], max_retr
     if not account_id:
         raise ValueError("account_id vide")
 
-    if STRICT_NO_FILE_FALLBACK and not _ddb_enabled() and not _fs_enabled():
-        raise RuntimeError("[STATE] STATE_BACKEND (dynamodb|firestore) et STATE_TABLE requis en environnement non-local")
+    if STRICT_NO_FILE_FALLBACK and not _pg_enabled():
+        raise RuntimeError("[STATE] STATE_BACKEND (postgresql) et STATE_TABLE requis en environnement non-local")
 
     if _pg_enabled():
         conn = _get_pg_conn()
@@ -467,83 +467,6 @@ def update_state(account_id: str, fn: Callable[[Dict[str, Any]], None], max_retr
         finally:
             conn.close()
 
-    # PROD: DynamoDB atomic update via version
-    if _ddb_enabled():
-        table = _get_ddb_table()
-        if table is not None:
-            for attempt in range(1, max_retries + 1):
-                st = load_state(account_id)
-                current_version = int(st.get("version", 0) or 0)
-
-                fn(st)  # modifie en place
-                st = _normalize_state(st, account_id)
-                st["updated_ts"] = _now()
-                st["version"] = current_version + 1
-
-                try:
-                    # Condition: on n'écrase pas si une autre écriture a eu lieu entre temps
-                    table.put_item(
-                        Item=_to_dynamodb_compatible(st),
-                        ConditionExpression="attribute_not_exists(version) OR version = :v",
-                        ExpressionAttributeValues=_to_dynamodb_compatible({
-                            ":v": current_version
-                        }),
-                    )
-                    return st
-                except _BotoClientError as e:
-                    code = e.response.get("Error", {}).get("Code", "")
-                    if code == "ConditionalCheckFailedException":
-                        if attempt < max_retries:
-                            # M2: backoff exponentiel pour réduire la contention sous charge
-                            time.sleep(0.1 * (2 ** (attempt - 1)))
-                            continue
-                        log.error(f"[STATE] update_state: conflit de version après {max_retries} tentatives. account={account_id}")
-                        raise
-                    # Erreur DynamoDB non-retryable (throttle, réseau, etc.)
-                    log.error(f"[STATE] update_state: erreur DynamoDB non-retryable. code={code} account={account_id} err={e}")
-                    raise
-                except Exception as e:
-                    log.error(f"[STATE] update_state: erreur inattendue. account={account_id} err={e}")
-                    raise
-
-    # Backend Firestore: optimistic locking via transaction Firestore.
-    # @transactional gère les retries Firestore-level (erreur ABORTED sur contention).
-    # Notre boucle externe gère les erreurs applicatives (ex: exception dans fn).
-    if _fs_enabled():
-        client = _get_fs_client()
-        if client is not None:
-            from google.cloud import firestore as _firestore  # type: ignore
-
-            doc_ref = client.collection(STATE_TABLE).document(account_id)
-
-            @_firestore.transactional
-            def _apply_fn(transaction, doc_ref):
-                """
-                Lit l'état courant, applique fn(), incrémente version, et écrit atomiquement.
-                Si un autre writer a modifié le document entre la lecture et l'écriture,
-                Firestore abandonne et rejoue automatiquement la transaction (ABORTED retry).
-                """
-                snap = doc_ref.get(transaction=transaction)
-                st = _normalize_state(snap.to_dict() if snap.exists else {}, account_id)
-                current_version = int(st.get("version", 0) or 0)
-                fn(st)  # modifie en place
-                st = _normalize_state(st, account_id)
-                st["updated_ts"] = _now()
-                st["version"] = current_version + 1
-                # set() remplace le document entier (équivalent put_item DynamoDB)
-                transaction.set(doc_ref, st)
-                return st
-
-            for attempt in range(1, max_retries + 1):
-                try:
-                    return _apply_fn(client.transaction(), doc_ref)
-                except Exception as e:
-                    if attempt < max_retries:
-                        time.sleep(0.1 * (2 ** (attempt - 1)))
-                        continue
-                    log.error(f"[STATE] update_state Firestore: échec après {max_retries} tentatives. account={account_id} err={e}")
-                    raise
-
     # FALLBACK FILE (local/debug seulement)
     if STRICT_NO_FILE_FALLBACK:
         raise RuntimeError("[STATE] update_state: DynamoDB requis en environnement non-local (pas de fallback fichier).")
@@ -568,10 +491,10 @@ def touch_heartbeat(account_id: str, owner: str, ttl_sec: int = 240) -> bool:
     if IS_LOCAL:
         return True
 
-    if STRICT_NO_FILE_FALLBACK and not _ddb_enabled() and not _fs_enabled():
-        raise RuntimeError("[STATE] touch_heartbeat: STATE_BACKEND (dynamodb|firestore) requis en environnement non-local")
+    if STRICT_NO_FILE_FALLBACK and not _pg_enabled():
+        raise RuntimeError("[STATE] touch_heartbeat: STATE_BACKEND (postgresql) requis en environnement non-local")
 
-    if not _ddb_enabled() and not _fs_enabled():
+    if not _pg_enabled():
         return False
 
     now = _now()
@@ -718,9 +641,9 @@ def try_acquire_account_lock(
         finally:
             conn.close()
 
-    if not _ddb_enabled() and not _fs_enabled():
+    if not _pg_enabled():
         if STRICT_NO_FILE_FALLBACK:
-            raise RuntimeError("[STATE] try_acquire_account_lock: STATE_BACKEND (dynamodb|firestore) requis en environnement non-local")
+            raise RuntimeError("[STATE] try_acquire_account_lock: STATE_BACKEND (postgresql) requis en environnement non-local")
         return False
 
     if _ddb_enabled():
