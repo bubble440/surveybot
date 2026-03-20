@@ -79,7 +79,6 @@ def _default_state(account_id: str) -> Dict[str, Any]:
         "banned": False,
         "cooldown_until_ts": "1970-01-01T00:00:00",
         "status": "idle",
-        "proxy_id": "",          # identifiant du proxy
 
         "last_stop_reason": "",
         "last_heartbeat_ts": "1970-01-01T00:00:00",
