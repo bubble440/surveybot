@@ -97,7 +97,7 @@ def _want_headless() -> bool:
     """
     use_display = bool(os.environ.get("DISPLAY"))
     headless_env = os.getenv("SURVEY_HEADLESS", "0") == "1"
-    return (not use_display) and headless_env
+    return headless_env or not use_display
 
 def _parse_geo_env():
     """
