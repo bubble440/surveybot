@@ -40,7 +40,7 @@ def launch_bot(account: dict) -> bool:
     Retourne True si le lancement a réussi.
     """
     account_id = account.get("ACCOUNT_ID", "unknown")
-
+    machine_name = account_id.lower().replace("_", "-")
     required = ["ACCOUNT_ID", "EMAIL", "PASSWORD", "PROXY_URL", "PROXY_USER", "PROXY_PASS"]
     missing = [k for k in required if not account.get(k)]
     if missing:
@@ -52,6 +52,7 @@ def launch_bot(account: dict) -> bool:
         "--app",       FLY_APP,
         "--region",    FLY_REGION,
         "--vm-memory", FLY_MEMORY,
+        "--name",      machine_name,
         "--env", f"ACCOUNT_ID={account['ACCOUNT_ID']}",
         "--env", f"EMAIL={account['EMAIL']}",
         "--env", f"PASSWORD={account['PASSWORD']}",
