@@ -1,7 +1,6 @@
 # --- Dépendances principales ---
 #selenium
 #undetected-chromedriver
-boto3
 openai
 requests
 setuptools==68.2.2
@@ -18,11 +17,10 @@ numpy               # utile si tu fais du traitement image/texte
 tqdm                # pour les barres de progression (optionnel)
 beautifulsoup4      # parsing HTML si ajouté plus tard
 
-# --- (optionnel mais recommandé pour ECS / cloud) ---
+# --- (optionnel mais recommandé en prod) ---
 urllib3>=1.26.0
 certifi
 pproxy
 playwright
 
-google-cloud-firestore
 psycopg2-binary>=2.9

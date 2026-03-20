@@ -19,8 +19,8 @@ MODES DISPONIBLES :
    - Heartbeat activé
    - Comportement identique à la prod (sauf proxies)
 
-3. PROD (ECS/Docker)
-   - RUN_ENV=aws ou RUN_ENV=docker
+3. PROD (Fly.io)
+   - RUN_ENV=prod
    - Tout activé, aucune pause interactive
 
 UTILISATION :
@@ -38,7 +38,7 @@ import os
 # CONFIGURATION DE BASE
 # ══════════════════════════════════════════════════════════════════════════════
 
-RUN_ENV = os.getenv("RUN_ENV", "local")  # local | aws | docker
+RUN_ENV = os.getenv("RUN_ENV", "local")  # local | prod
 RUN_MODE = os.getenv("RUN_MODE", "local")        # prod | local
 BROWSER_MODE = os.getenv("BROWSER_MODE", "normal")  # normal | attach
 
@@ -58,7 +58,7 @@ LOCAL_UNATTENDED = _env_truthy("LOCAL_UNATTENDED", "0")
 # ══════════════════════════════════════════════════════════════════════════════
 
 def is_local_env() -> bool:
-    """Retourne True si on est en environnement local (pas AWS/Docker)."""
+    """Retourne True si on est en environnement local (pas prod)."""
     return RUN_ENV == "local"
 
 
@@ -70,7 +70,7 @@ def is_attach_mode() -> bool:
 def is_prod_like() -> bool:
     """
     Retourne True si le bot doit se comporter comme en production.
-    Inclut : environnement réel (aws/docker) OU local avec LOCAL_UNATTENDED=1
+    Inclut : environnement réel (prod/Fly.io) OU local avec LOCAL_UNATTENDED=1
     """
     if not is_local_env():
         return True
@@ -106,7 +106,7 @@ def should_pause_before_cta() -> bool:
     """
     Retourne True si le bot doit attendre une confirmation utilisateur
     avant un clic CTA (Suivant/Continuer/etc.).
-    Désactivé en prod-like (aws/docker/local_unattended).
+    Désactivé en prod-like (prod/local_unattended).
     """
     if is_prod_like():
         return False
@@ -121,7 +121,7 @@ def should_run_guard_monitor() -> bool:
 
 
 def should_run_heartbeat() -> bool:
-    """Retourne True si le heartbeat DynamoDB doit être activé."""
+    """Retourne True si le heartbeat doit être activé."""
     return is_prod_like()
 
 

@@ -576,7 +576,7 @@ def main():
 
     if is_attach_mode():
         # ⚠ ATTACH = LOCAL DEBUG TAKEOVER
-        # - pas de lock DynamoDB
+        # - pas de lock Postgres
         # - pas de navigation TopSurveys
         # - pas de quit() (sinon tu fermes ton Chrome)
         driver = launch_driver_or_fail(config, account_id)
@@ -606,7 +606,7 @@ def main():
 
     # FIX-A: install_sigterm_handler AVANT acquire_account_lock_or_exit.
     # Auparavant, un SIGTERM arrivant entre acquire_lock et install_sigterm_handler
-    # terminait le processus sans nettoyer lock_owner / status en DynamoDB,
+    # terminait le processus sans nettoyer lock_owner / status en Postgres,
     # forçant le scheduler à attendre l'expiration du TTL (4 min) avant de relancer.
     install_sigterm_handler(account_id)
     install_sigusr1_handler()
