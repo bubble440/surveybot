@@ -159,7 +159,9 @@ def login(driver, email, password):
                 By.CSS_SELECTOR, "button[data-test-id='check-email-continue-button']"
             ))
         )
-        driver.execute_script("arguments[0].click();", continue_btn)
+        # Clic natif Selenium (isTrusted: true) — le clic JS synthétique
+        # (isTrusted: false) ne déclenchait pas le handler @submit Vue en prod headless.
+        continue_btn.click()
         print("[LOGIN] Bouton Continue cliqué.")
 
     except Exception as e:
@@ -168,12 +170,15 @@ def login(driver, email, password):
             f.write(driver.page_source)
         return
 
-    # Attente que le champ password soit interactif (authStep == sign_in)
-    # On attend directement le champ password, sans condition intermédiaire sur
-    # la modale : modal-close-button apparaît avant la transition authStep,
-    # ce qui consommait le timeout entier avant que le champ soit rendu.
+    # Attente que le champ password soit présent dans le DOM (authStep == sign_in).
+    # On utilise presence_of_element_located : après un clic natif, Vue déclenche la
+    # transition asynchrone vers sign_in ; le champ peut apparaître dans le DOM avant
+    # que Selenium le considère "clickable" (enabled + visible), ce qui ferait expirer
+    # element_to_be_clickable sur des machines lentes. La présence DOM suffit comme
+    # signal que la modale est prête ; le scrollIntoView + sleep suivants absorbent
+    # le délai de rendu résiduel avant toute interaction.
     try:
-        pwd_input = wait.until(EC.element_to_be_clickable(
+        pwd_input = wait.until(EC.presence_of_element_located(
             (By.CSS_SELECTOR, 'input[data-test-id="sign-in-password-field-input"]')
         ))
         dom_probe(driver)
