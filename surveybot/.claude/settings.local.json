@@ -62,7 +62,8 @@
       "Bash(del \"C:\\\\projects\\\\Surveys\\\\surveybot\\\\Survey\\\\dom_metrics.py\")",
       "Bash(cat /c/projects/Surveys/scheduler/*)",
       "Bash(find C:projectsSurveyssurveybot -maxdepth 3 -type f \\\\\\(-name fly.toml -o -name .env* -o -name *.env \\\\\\))",
-      "Bash(find C:projectsSurveyssurveybot -maxdepth 2 -type f \\\\\\(-name README* -o -name *.md \\\\\\))"
+      "Bash(find C:projectsSurveyssurveybot -maxdepth 2 -type f \\\\\\(-name README* -o -name *.md \\\\\\))",
+      "Bash(grep -r \"boto3\\\\|botocore\\\\|google.cloud\\\\|google-cloud\" /c/projects/Surveys/surveybot --include=*.py ! -path */.venv/*)"
     ]
   }
 }

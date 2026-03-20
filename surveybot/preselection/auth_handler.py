@@ -4,28 +4,11 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
 
-def _is_aws_env() -> bool:
-    """
-    Retourne True si on tourne dans un environnement AWS (ECS/Lambda, etc.).
-    On se base sur les variables d'environnement standard + override RUN_ENV='aws'.
-    """
-    return bool(
-        os.getenv("AWS_EXECUTION_ENV")                     # Lambda / ECS
-        or os.getenv("ECS_CONTAINER_METADATA_URI")         # ECS v3
-        or os.getenv("ECS_CONTAINER_METADATA_URI_V4")      # ECS v4
-        or os.getenv("RUN_ENV") == "aws"                   # override manuel
-    )
-
 def _is_prod_env() -> bool:
     """
-    Retourne True si on tourne dans un environnement de production (AWS ou GCP).
-    Couvre AWS (ECS/Lambda) et GCP Cloud Run (K_SERVICE, GOOGLE_CLOUD_PROJECT).
+    Retourne True si on tourne dans un environnement de production (Fly.io/Docker).
     """
-    return bool(
-        _is_aws_env()
-        or os.getenv("K_SERVICE")                          # GCP Cloud Run
-        or os.getenv("GOOGLE_CLOUD_PROJECT")               # GCP général
-    )
+    return os.getenv("RUN_ENV", "local").lower() != "local"
 
 def dom_probe(driver):
     """
