@@ -648,17 +648,10 @@ def main():
 
         try:
             driver = launch_driver_or_fail(config, account_id)
-            api_key, payout_name, payout_revolut_tag = init_session_and_enter_surveys(driver, config, account_id, notify_fn)
 
             runtime_ctx["driver"] = driver
             # PATCH: Stocker account_id sur driver pour acces dans survey_executor
             driver._survey_account_id = account_id
-            runtime_ctx["session"] = {
-                "account_id": account_id,
-                "api_key": api_key,
-                "payout_name": payout_name,
-                "payout_revolut_tag": payout_revolut_tag,
-            }
 
             def _soft_restart(reason):
                 return soft_restart(
@@ -667,6 +660,8 @@ def main():
                     reason,
                 )
 
+            # FIX: guard initialisé AVANT init_session_and_enter_surveys pour que
+            # get_guard().pause() (ex: no_survey_available) écrive bien cooldown_until_ts en DB.
             if should_run_guard_monitor():
                 if guard is None:
                     guard = start_runtime_guard(
@@ -675,6 +670,15 @@ def main():
                         on_soft_restart=_soft_restart,
                     )
                 get_guard().attach_driver(driver)
+
+            api_key, payout_name, payout_revolut_tag = init_session_and_enter_surveys(driver, config, account_id, notify_fn)
+
+            runtime_ctx["session"] = {
+                "account_id": account_id,
+                "api_key": api_key,
+                "payout_name": payout_name,
+                "payout_revolut_tag": payout_revolut_tag,
+            }
 
             if should_run_hot_reload() and not hot_reload_started:
                 start_hot_reload_thread()
