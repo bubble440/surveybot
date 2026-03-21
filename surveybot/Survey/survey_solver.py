@@ -248,6 +248,7 @@ def _close_other_tabs_in_current_session(driver):
             try:
                 driver.switch_to.window(h)
                 driver.close()
+                time.sleep(3)
             except Exception:
                 pass
     try:

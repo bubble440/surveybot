@@ -148,9 +148,10 @@ def login(driver, email, password):
             ))
         )
         driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", email_input)
-        time.sleep(0.3)
+        time.sleep(5)
 
         email_input.clear()
+        time.sleep(3)
         email_input.send_keys(email)
         # Le champ email est pré-rempli côté SSR (attribut value dans le HTML Nuxt).
         # clear() + send_keys() met à jour la propriété DOM .value mais ne dispatche
@@ -171,8 +172,8 @@ def login(driver, email, password):
         # (isTrusted: false) ne déclenchait pas le handler @submit Vue en prod headless.
         continue_btn.click()
         print("[LOGIN] Bouton Continue cliqué.")
-        # Snap immédiat post-clic pour capturer l'état transitoire en cas d'échec futur.
         snap(driver, "after_continue_click")
+        time.sleep(2)
 
     except Exception as e:
         print("[LOGIN] Echec injection e-mail :", type(e).__name__, "-", e)
