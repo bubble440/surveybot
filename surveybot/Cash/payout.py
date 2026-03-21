@@ -30,6 +30,7 @@ def _wait(driver, timeout=10):
 def _js_click(driver, el):
     driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
     driver.execute_script("arguments[0].click();", el)
+    time.sleep(3)  # laisser le temps à l'UI de réagir (ex: activer le bouton 'Choisis' après sélection)
 
 def _find(driver, by, sel, timeout=10):
     return _wait(driver, timeout).until(EC.presence_of_element_located((by, sel)))
@@ -49,6 +50,7 @@ def _open_cashout_modal(driver) -> bool:
     try:
         btn = _find(driver, By.CSS_SELECTOR, "button[data-test-id='balance-card-cashout']")
         _js_click(driver, btn)
+        time.sleep(3)  # laisser le temps au modal de s'ouvrir
         # attend l'apparition du conteneur modal
         _find(driver, By.CSS_SELECTOR, ".rewards-modal-container")
         return True
@@ -99,26 +101,27 @@ def _select_money_option_in_open_tab(driver, tab_el, amount="5") -> bool:
 
             # 1) click() direct
             driver.execute_script("arguments[0].scrollIntoView({block:'center'});", wrapper)
-            time.sleep(0.1)
+            time.sleep(5)
             try:
                 wrapper.click()
+                time.sleep(3)
             except Exception:
                 # 2) ActionChains
                 try:
-                    ActionChains(driver).move_to_element(wrapper).pause(0.05).click().perform()
+                    ActionChains(driver).move_to_element(wrapper).pause(3).click().perform()
                 except Exception:
                     # 3) séquence d'événements souris JS (certains frameworks attendent ça)
                     _dispatch_mouse_sequence(driver, wrapper)
 
             # si ça a marché, le bouton 'Choisis' devient activable
             try:
-                _wait_select_btn_enabled(driver, timeout=2)
+                _wait_select_btn_enabled(driver, timeout=5)
                 return True
             except Exception:
                 # dernier essai : clic JS sur le <span>
                 try:
                     _js_click(driver, span)
-                    _wait_select_btn_enabled(driver, timeout=2)
+                    _wait_select_btn_enabled(driver, timeout=5)
                     return True
                 except Exception:
                     continue
@@ -141,7 +144,7 @@ def _accordion_open(driver, label_substr: str) -> bool:
         tab = btn.find_element(By.XPATH, "./ancestor::div[contains(@class,'p-accordion-tab')]")
         if "p-active" not in (tab.get_attribute("class") or ""):
             _js_click(driver, btn)
-            time.sleep(0.3)
+            time.sleep(3)
         # s’assure que le contenu est présent
         _wait(driver, 5).until(lambda d: len(tab.find_elements(By.CSS_SELECTOR, ".p-accordion-content")) > 0)
         return True
@@ -206,7 +209,7 @@ def _select_paypal_5_eur(driver) -> bool:
     )
     if not _select_money_option_in_open_tab(driver, tab, amount="5"):
         return False
-    time.sleep(0.2)
+    time.sleep(3)
     return _click_modal_choose(driver)
 
 # ---------- Fallback Revolut ----------
@@ -237,7 +240,7 @@ def _select_revolut_5_eur(driver) -> bool:
     )
     if not _select_money_option_5_eur_in_open_tab(tab):
         return False
-    time.sleep(0.2)
+    time.sleep(2)
     return _click_modal_choose(driver)
 
 # ---------- Confirmation ----------

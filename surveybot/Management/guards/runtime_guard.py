@@ -57,7 +57,7 @@ class RuntimeGuard:
         account_id: str,
         idle_timeout_sec: int = 120,          # 2 minutes
         restart_cooldown_sec: int = 60,      # 1 minute
-        max_errors_in_row: int = 5,
+        max_errors_in_row: int = 3,
         max_runtime_sec: int = 2 * 3600,      # 2h
         daily_target_eur: float = DAILY_TARGET_EUR,
         notify_fn: Optional[Callable[[str], None]] = None,
@@ -130,6 +130,7 @@ class RuntimeGuard:
                 "arguments[0].scrollIntoView({block:'center'});",
                 cta
             )
+            time.sleep(5)  # laisser le temps à l'UI de réagir après scroll
             driver.execute_script("arguments[0].click();", cta)
 
             print("✅ CTA 'Ouvrir l'application' cliqué avec succès")
@@ -179,7 +180,7 @@ class RuntimeGuard:
             cta_clicked = False
 
         if cta_clicked:
-            time.sleep(2)  # laisser le temps au survey de se relancer
+            time.sleep(3)  # laisser le temps au survey de se relancer
             return # ✅ Arrêter ici si CTA a fonctionné
 
         # 2) CTA absent / inutile → délégation soft restart
