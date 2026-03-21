@@ -217,29 +217,6 @@ def launch_browser(config: dict | None = None):
             print("🟢 LAUNCHED NEW CHROME SESSION")
         return webdriver.Chrome(options=options)
 
-        # chrome_major = _detect_chrome_major_version(chrome_bin)
-        # if chrome_major:
-        #     print(f"[LOCAL] Version Chrome détectée : {chrome_major}")
-
-        # user_data_dir = tempfile.mkdtemp(prefix="uc_local_profile_")
-
-        # chrome_options = uc.ChromeOptions()
-        # chrome_options.binary_location = chrome_bin
-        # chrome_options.add_argument(f"--user-data-dir={user_data_dir}")
-        # chrome_options.add_argument("--no-first-run")
-        # chrome_options.add_argument("--no-default-browser-check")
-        # chrome_options.add_argument("--start-maximized")
-        # chrome_options.add_argument("--disable-blink-features=AutomationControlled")
-
-        # driver = uc.Chrome(
-        #     browser_executable_path=chrome_bin,
-        #     options=chrome_options,
-        #     version_main=chrome_major,
-        # )
-
-        # # driver.get("https://www.topsurveys.app/")
-        # return driver
-
     proxy_server, proxy_user, proxy_pass = _parse_proxy_env(config)
     print(
     f"[PW][PROXY] server={proxy_server} "
@@ -249,7 +226,8 @@ def launch_browser(config: dict | None = None):
     headless = _want_headless()
 
     # Port remote debugging (Selenium va s'attacher dessus)
-    debug_port = random.randint(42000, 52000)
+    debug_port = int(os.getenv("REMOTE_DEBUG_PORT", 0)) or random.randint(42000, 52000)
+    debug_address = os.getenv("REMOTE_DEBUG_ADDRESS", "").strip()
 
     # Profil isolé (évite collisions + garde la session propre)
     user_data_dir = tempfile.mkdtemp(prefix="pw_chrome_profile_")
@@ -308,6 +286,8 @@ def launch_browser(config: dict | None = None):
             "--disable-blink-features=AutomationControlled",
             "--window-size=1920,1080",
         ]
+        if debug_address:
+            args.append(f"--remote-debugging-address={debug_address}")
         if headless:
             args.append("--headless=new"),  # 🔑 CRITIQUE EN DOCKER / ECS
 
