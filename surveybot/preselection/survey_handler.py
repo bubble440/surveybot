@@ -233,7 +233,7 @@ def _run_survey_impl(driver, api_key, *, account_id: str, ctx=None, payout_name:
             print(f"[RESTART][FATAL] soft_restart fallback échoué: {e}")
 
     snap(driver, "before_survey_loop")
-    time.wait(5)
+    time.sleep(5)
     _STUCK_THRESHOLD = 5
     _last_scan_key = None
     _same_scan_count = 0
