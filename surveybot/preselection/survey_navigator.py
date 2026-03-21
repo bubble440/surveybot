@@ -241,7 +241,7 @@ def go_to_best_value_survey(driver):
     if not _click_enquetes():
         # 3) fallback: navigation directe
         try:
-            wait_pwd = WebDriverWait(driver, 120)
+            wait_pwd = WebDriverWait(driver, 60)
             driver.get("https://app.topsurveys.app/surveys")
             print("↪️  Navigation directe /surveys")
             # vérifier qu'on est bien sur la page
@@ -250,10 +250,11 @@ def go_to_best_value_survey(driver):
             print("🛑 Exception navigation :", type(e).__name__, "-", e)
             return
 
-    time.sleep(15)  # laisser le temps au contenu de charger
+    time.sleep(10)  # laisser le temps au contenu de charger
     _handle_mystery_box_popup(driver)
     snap(driver, "before_best_value_selection")
-
+    time.sleep(5)  # laisser le temps à la page de se stabiliser après popup éventuel
+    
     if not _find_survey_cards(driver):
         log_info("[TOPSURVEYS][COOLDOWN]", "Aucun survey disponible → cooldown 15 min (DB + stop task)")
         from Management.guards.runtime_guard import get_guard, StopReason

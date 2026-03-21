@@ -57,6 +57,7 @@ def execute_response(driver, answer_text):
         # 1) Tentative checkbox en priorité
         success = select_checkbox_answers(driver, checkbox_answers)
         if success:
+            time.sleep(2)
             click_next_button(driver)
             return success
 
@@ -75,18 +76,18 @@ def execute_response(driver, answer_text):
                     driver.execute_script(
                         "arguments[0].scrollIntoView({block:'center'});", label
                     )
-                    time.sleep(0.3)
                     # 1) tenter clic direct sur l'input radio
                     try:
                         radio = label.find_element(By.CSS_SELECTOR, "input[type='radio']")
                         driver.execute_script(
                             "arguments[0].scrollIntoView({block:'center'});", radio
                         )
-                        time.sleep(0.2)
+                        time.sleep(2)
                         driver.execute_script("arguments[0].click();", radio)
                     except Exception:
                         # 2) fallback clic humain
                         ActionChains(driver).move_to_element(label).click().perform()
+                        time.sleep(2)
                     print(
                         f"✅ Option radio sélectionnée : {span.text} source: reponse_executor.py"
                     )
@@ -97,7 +98,7 @@ def execute_response(driver, answer_text):
                             ActionChains(driver).move_to_element(radio).click().perform()
                     except Exception:
                         pass
-
+                    time.sleep(2)
                     click_next_button(driver)
                     return True  # ✅ succès
         print(
@@ -131,7 +132,7 @@ def click_next_button(driver):
         driver.execute_script(
             "arguments[0].scrollIntoView({block: 'center'});", next_btn
         )
-        time.sleep(0.2)
+        time.sleep(2)
         _confirm_before_cta_click()
         driver.execute_script("arguments[0].click();", next_btn)
         print(
@@ -154,7 +155,7 @@ def click_next_button(driver):
 
             next_btn = wait.until(EC.presence_of_element_located((By.XPATH, xpath)))
             driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", next_btn)
-            time.sleep(0.2)
+            time.sleep(2)
             _confirm_before_cta_click()
 
             # attendre que le bouton devienne réellement cliquable (disabled retiré)
@@ -222,6 +223,7 @@ def select_checkbox_answers(driver, answers):
                     "arguments[0].scrollIntoView({block:'center'}); arguments[0].click();",
                     inner_cb,
                 )
+                time.sleep(2)
                 if not inner_cb.is_selected():
                     ActionChains(driver).move_to_element(label).click().perform()
 

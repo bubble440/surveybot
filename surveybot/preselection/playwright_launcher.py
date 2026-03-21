@@ -235,6 +235,7 @@ def launch_browser(config: dict | None = None):
     print(f"[PW] chrome_bin={chrome_bin}")
     print(f"[PW] headless={headless}")
     print(f"[PW] debug_port={debug_port}")
+    print(f"[PW] debug_address={debug_address}")
     print(f"[PW] user_data_dir={user_data_dir}")
 
     if proxy_server:
@@ -275,6 +276,7 @@ def launch_browser(config: dict | None = None):
         # Ouvre une page (ça “stabilise” le browser)
         args=[
             f"--remote-debugging-port={debug_port}",
+            "--remote-debugging-allow-origins=*",
             "--no-first-run",
             "--no-default-browser-check",
             "--disable-dev-shm-usage",
@@ -305,6 +307,20 @@ def launch_browser(config: dict | None = None):
         # 🔧 DevTools overrides (langue / timezone / webdriver)
         _apply_devtools_overrides(context)
         print("[PW][OVERRIDE] DevTools overrides appliqués (FR / Paris).")
+
+        # --- Relay socat : expose le debug port sur 0.0.0.0 ---
+        # Playwright force Chrome sur 127.0.0.1 et ignore --remote-debugging-address.
+        # socat relaie le port relay (debug_port+1) vers 127.0.0.1:debug_port.
+        if debug_address == "0.0.0.0":
+            import subprocess as _sp
+            relay_port = debug_port + 1
+            _sp.Popen(
+                ["socat",
+                 f"TCP-LISTEN:{relay_port},fork,reuseaddr,bind=0.0.0.0",
+                 f"TCP:127.0.0.1:{debug_port}"],
+                stdout=_sp.DEVNULL, stderr=_sp.DEVNULL
+            )
+            print(f"[PW] socat relay 0.0.0.0:{relay_port} → 127.0.0.1:{debug_port}")
 
         page = context.new_page()
         # ✅ Permission geolocation : sans ça, beaucoup de sites voient "denied"
