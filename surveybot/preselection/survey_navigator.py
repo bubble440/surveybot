@@ -241,7 +241,7 @@ def go_to_best_value_survey(driver):
     if not _click_enquetes():
         # 3) fallback: navigation directe
         try:
-            wait_pwd = WebDriverWait(driver, 60)
+            wait_pwd = WebDriverWait(driver, 120)
             driver.get("https://app.topsurveys.app/surveys")
             print("↪️  Navigation directe /surveys")
             # vérifier qu'on est bien sur la page

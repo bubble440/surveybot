@@ -92,7 +92,7 @@ def snap(driver, label: str = "state"):
             f.write(png)
         b64 = base64.b64encode(png).decode()
         print(f"[SNAP] saved {path}")
-        print(f"data:image/png;base64,{b64}")
+        print(f"data:image/png;base64,{b64}", flush=True)
     except Exception as e:
         print("[SNAP][ERROR]", e)
 
@@ -188,7 +188,7 @@ def login(driver, email, password):
     # signal que la modale est prête ; le scrollIntoView + sleep suivants absorbent
     # le délai de rendu résiduel avant toute interaction.
     try:
-        wait_pwd = WebDriverWait(driver, 60)
+        wait_pwd = WebDriverWait(driver, 120)
         pwd_input = wait_pwd.until(EC.presence_of_element_located(
             (By.CSS_SELECTOR, 'input[data-test-id="sign-in-password-field-input"]')
         ))
@@ -224,5 +224,6 @@ def login(driver, email, password):
 
     except Exception as e:
         snap(driver, "error_pwd_step")
-        print("🛑 Exception mot de passe :", type(e).__name__, "-", e)
+        print("🛑 Exception mot de passe :", type(e).__name__, "-", e, flush=True)
+        time.sleep(10)
 
