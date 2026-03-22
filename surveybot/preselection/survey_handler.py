@@ -94,7 +94,7 @@ def run_attach_preselection_takeover(
             print("[ATTACH][PRESEL] popup non détecté -> transition considérée réussie")
             return True, "transition_detected"
 
-        question, answer = preselection.question_analyzer.get_response_for_question(driver, api_key)
+        question, answer, input_type = preselection.question_analyzer.get_response_for_question(driver, api_key)
 
         if isinstance(answer, dict) and answer.get("action"):
             action = (answer.get("action") or "").upper()
@@ -135,7 +135,7 @@ def run_attach_preselection_takeover(
                 return False, f"unsupported_action_{action.lower()}"
 
         elif question and answer:
-            success = preselection.response_executor.execute_response(driver, answer)
+            success = preselection.response_executor.execute_response(driver, answer, input_type)
             if not success:
                 return False, "answer_execution_failed"
             if ctx is not None:
@@ -252,7 +252,7 @@ def _run_survey_impl(driver, api_key, *, account_id: str, ctx=None, payout_name:
             except Exception as _cap_exc:
                 print(f"[CAPTCHA][WARN] {_cap_exc}")
 
-            question, answer = preselection.question_analyzer.get_response_for_question(driver, api_key)
+            question, answer, input_type = preselection.question_analyzer.get_response_for_question(driver, api_key)
 
             # =================================================================
             # STUCK DETECTION: même page scannée N fois → soft-restart
@@ -361,7 +361,7 @@ def _run_survey_impl(driver, api_key, *, account_id: str, ctx=None, payout_name:
 
             # Cas normal : une réponse est attendue
             if question and answer:
-                success = preselection.response_executor.execute_response(driver, answer)
+                success = preselection.response_executor.execute_response(driver, answer, input_type)
                 if success and ctx is not None:
                     ctx.record(question, [], answer)
                 #save_question_result(question, answer, input_type, success=success, choices=options, context="preselection")
