@@ -148,11 +148,10 @@ def login(driver, email, password):
             ))
         )
         driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", email_input)
-        time.sleep(5)
 
         email_input.clear()
-        time.sleep(3)
         email_input.send_keys(email)
+        time.sleep(2)
         # Le champ email est pré-rempli côté SSR (attribut value dans le HTML Nuxt).
         # clear() + send_keys() met à jour la propriété DOM .value mais ne dispatche
         # aucun événement — Vue ne notifie jamais son v-model et la validation échoue
