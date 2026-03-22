@@ -186,9 +186,15 @@ def soft_restart_payout(ctx, driver):
 def soft_restart_resume(ctx, driver):
     from Survey.survey_context import SurveyContext
 
-    # Re-naviguer explicitement après le payout (qui peut avoir changé de page)
-    safe_get(driver, "https://app.topsurveys.app/surveys")
-    time.sleep(5)  # laisser le temps à la page de se charger et éviter les clics fantômes
+    # Détection de redirection silencieuse vers la landing/login page.
+    # safe_get() ne la détecte pas (pas d'erreur HTTP), on la sonde via son sélecteur DOM discriminant.
+    _LOGIN_SELECTOR = "[data-test-id='check-email-field-input']"
+    if driver.find_elements("css selector", _LOGIN_SELECTOR):
+        print("[SOFT_RESTART] session expirée détectée → re-login")
+        login(driver, ctx["email"], ctx["password"])
+        if driver.find_elements("css selector", _LOGIN_SELECTOR):
+            raise RuntimeError("soft_restart_resume: re-login échoué, page de login toujours présente")
+
     survey_ctx = SurveyContext(session_id=ctx["account_id"], openai_api_key=ctx["api_key"])
     go_to_best_value_survey(driver)
     run_survey(

@@ -678,6 +678,8 @@ def main():
                 "api_key": api_key,
                 "payout_name": payout_name,
                 "payout_revolut_tag": payout_revolut_tag,
+                "email": config.get("Email", ""),
+                "password": config.get("Password", ""),
             }
 
             if should_run_hot_reload() and not hot_reload_started:
