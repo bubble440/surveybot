@@ -217,7 +217,6 @@ def extract_options_js(driver):
         if not options:
             print("⏭️ Aucun choix détecté — pas d'action sur cette page. source: reponse_executor.py")
             return False
-        print(f"📋 Choix extraits via JS : {options}")
         return options
     except Exception as e:
         print("💥 JS extraction échouée :", e)
@@ -324,6 +323,7 @@ def get_response_for_question(driver, api_key):
         )
 
         html = extract_popup_html(driver)
+        input_type = detect_input_type(html)
         js_texts = extract_popup_text_with_js(driver)
         # Détection qualification : si le texte contient "qualifié", on sort immédiatement
         for line in js_texts:
@@ -331,17 +331,17 @@ def get_response_for_question(driver, api_key):
                 print(
                     "🎯 Message de qualification détecté : sortie de boucle autorisée."
                 )
-                return None, None
+                return None, None, None
             if "soumettre" in line.lower():
                 # Pas une vraie question (souvent un écran de soumission/consentement)
-                return None, {"action": "NOT_RETURNED", "reason": "submit_seen"}
+                return None, {"action": "NOT_RETURNED", "reason": "submit_seen"}, None
 
         question = extract_question_text(html)
 
         decision = preselection.question_validation.validate_question(question, " ".join(js_texts))
 
         if decision.action != "CONTINUE":
-            return question, {"action": decision.action, "reason": decision.reason}
+            return question, {"action": decision.action, "reason": decision.reason}, None
 
         # options des radios/checkbox + options des <select>
         options = (extract_options_js(driver) or []) + (
@@ -353,24 +353,20 @@ def get_response_for_question(driver, api_key):
                 "preselection",
                 "Interception hardware détectée avant OpenAI: réponse forcée sur 'Non'.",
             )
-            return question, "Non"
+            return question, "Non", input_type
 
-        input_type = detect_input_type(html)
         prompt = reformulate_prompt_for_gpt(question, options, input_type)
-        print(
-            f"🧠 Reformulation pour GPT :\n Question : {question}\n\nChoix : {options}"
-        )
         log_debug("preselection", f"[ITYPE DÉTECTÉ] {input_type}")
         log_debug("preselection", f"[PROMPT→GPT]\n{prompt}")
 
         response = ask_assistant(prompt, api_key, question=question, options=options)
         print(f"🤖 Réponse proposée : {response}")
 
-        return question, response
+        return question, response, input_type
 
     except Exception as e:
         print("❌ Erreur dans get_response_for_question :", e)
-        return None, None
+        return None, None, None
 
 
 def click_participer_if_present(driver):

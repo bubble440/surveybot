@@ -40,7 +40,7 @@ def _is_checked_soft(el) -> bool:
     return False
 
 
-def execute_response(driver, answer_text):
+def execute_response(driver, answer_text, input_type=None):
     # Pas de choix → souvent page de blocage ou de consentement non mappée
     if not answer_text:
         print("⏭️ Aucun choix détecté — pas d'action sur cette page. source: reponse_executor.py")
@@ -57,12 +57,15 @@ def execute_response(driver, answer_text):
         # 1) Tentative checkbox en priorité
         success = select_checkbox_answers(driver, checkbox_answers)
         if success:
-            time.sleep(2)
             click_next_button(driver)
             return success
 
-    
-        # 2) Si aucune checkbox trouvée → tentative radio
+        # 2) Si le type d'input est explicitement checkbox, pas de fallback radio
+        if input_type == "checkbox":
+            print("❌ Option checkbox non cochée. Pas de fallback radio (type=checkbox confirmé).")
+            return False
+
+        # 3) Si aucune checkbox trouvée → tentative radio
         labels = driver.find_elements(
             By.CSS_SELECTOR,
             'label[data-test-id^="ps-question-input-single_choice-label"]',
@@ -101,9 +104,7 @@ def execute_response(driver, answer_text):
                     time.sleep(2)
                     click_next_button(driver)
                     return True  # ✅ succès
-        print(
-            "❌ Option radio non cochée. Tentative fallback vers checkbox. source: reponse_executor.py"
-        )
+        print("❌ Option radio non cochée.")
         return False
 
     except Exception as e:
@@ -223,7 +224,7 @@ def select_checkbox_answers(driver, answers):
                     "arguments[0].scrollIntoView({block:'center'}); arguments[0].click();",
                     inner_cb,
                 )
-                time.sleep(2)
+                time.sleep(1)
                 if not inner_cb.is_selected():
                     ActionChains(driver).move_to_element(label).click().perform()
 
