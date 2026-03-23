@@ -41,6 +41,8 @@ CTA_SYNONYMS = {
 CTA_INTERCEPT_ENV_VAR = "CTA_INTERCEPT_ONLY"
 MIN_NAV_CTA_SCORE = 1
 
+PAUSE_AFTER_CTA_CLICK = 1.0  # pause post-clic CTA, laisse le DOM réagir avant de rendre la main (absorbe latence proxy)
+
 
 # =============================================================================
 # HELPERS CTA
@@ -1038,7 +1040,7 @@ def click_button_by_text(driver, text) -> bool:
                 )
                 time.sleep(0.1)
                 if _click_with_intercept(driver, el):
-                    time.sleep(0.8)
+                    time.sleep(PAUSE_AFTER_CTA_CLICK)
                     return True
         except Exception:
             continue
@@ -1061,7 +1063,7 @@ def click_button_by_text(driver, text) -> bool:
                 )
                 time.sleep(0.1)
                 if _click_with_intercept(driver, el):
-                    time.sleep(0.6)
+                    time.sleep(PAUSE_AFTER_CTA_CLICK)
                     return True
             except Exception:
                 continue
@@ -1090,7 +1092,7 @@ def click_button_by_text(driver, text) -> bool:
                         driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
                         time.sleep(0.1)
                         if _click_with_intercept(driver, el):
-                            time.sleep(0.5)
+                            time.sleep(PAUSE_AFTER_CTA_CLICK)
                             return True
                 except Exception:
                     continue
@@ -1121,7 +1123,7 @@ def click_button_by_text(driver, text) -> bool:
         """
         ok = driver.execute_script(js, target)
         if ok:
-            time.sleep(0.5)
+            time.sleep(PAUSE_AFTER_CTA_CLICK)
             return True
     except Exception:
         pass
@@ -1205,7 +1207,7 @@ def click_icon_like_button(driver, hints=None) -> bool:
             driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
             time.sleep(0.1)
             if _click_with_intercept(driver, el):
-                time.sleep(0.5)
+                time.sleep(PAUSE_AFTER_CTA_CLICK)
                 return True
         except Exception:
             continue
@@ -1275,7 +1277,7 @@ def click_primary_cta(driver) -> bool:
             driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
             time.sleep(0.1)
             if _click_with_intercept(driver, el):
-                time.sleep(0.6)
+                time.sleep(PAUSE_AFTER_CTA_CLICK)
                 print("✓ CTA principal cliqué. source: cta_handler.py")
                 return True
         except Exception:

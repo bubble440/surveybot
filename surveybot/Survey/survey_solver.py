@@ -10,7 +10,9 @@ import time, os, sys
 from preselection.question_validation import detect_disqualification_reason
 from Survey.log_utils import log_debug, log_info
 
-STABILIZE_SLEEP = 2.0  # délai court entre deux actions pour laisser le DOM respirer
+STABILIZE_SLEEP = 2.0       # délai court entre deux actions pour laisser le DOM respirer
+PAUSE_BEFORE_FIRST_SCAN = 1.5  # post-chargement, avant le premier scan DOM (absorbe latence proxy)
+PAUSE_POST_CTA_NAV = 2.0       # après navigation CTA, avant toute interaction avec la nouvelle page
 
 
 def _switch_to_external_tab(driver):
@@ -645,6 +647,7 @@ def solve_full_survey(driver, api_key, *, account_id: str, survey_context=None):
     # 1) Attendre que la redirection s’arrête sur une URL stable
     final_url = redirect_watcher.wait_for_final_redirection(driver)
     print(f" URL finale stabilisée : {final_url}")
+    time.sleep(PAUSE_BEFORE_FIRST_SCAN)  # laisser le DOM se stabiliser avant le premier scan
 
     # 2) Boucle d'exécution des actions
     _no_progress_count = 0        # Option B : succès sans avance de page (single-question)
@@ -896,6 +899,7 @@ def solve_full_survey(driver, api_key, *, account_id: str, survey_context=None):
 
             # Attendre que la nouvelle page soit pleinement chargée (proxy lent en prod)
             redirect_watcher.wait_for_page_load(driver, timeout=30)
+            time.sleep(PAUSE_POST_CTA_NAV)  # absorbe la latence proxy avant d’interagir avec la page suivante
 
             # Retour TopSurveys ? Traite popup ‘Complète’ ou disqualification, puis relance.
             try:
