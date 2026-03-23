@@ -61,6 +61,45 @@ def is_session_expired(driver) -> bool:
     except Exception:
         return False
 
+def is_proxy_error_page(driver) -> bool:
+    """
+    Détecte la page d'erreur Chrome ERR_TIMED_OUT indiquant un proxy expiré ou inaccessible.
+    """
+    try:
+        url = driver.current_url or ""
+        if "chrome-error://" in url:
+            return True
+        src = (driver.page_source or "").lower()
+        return "err_timed_out" in src
+    except Exception:
+        return False
+
+
+def handle_proxy_error_page_if_needed(driver) -> None:
+    """
+    Si la page courante est une erreur proxy (ERR_TIMED_OUT) :
+    - envoie une notification Telegram avec l'account_id du bot
+    - déclenche un DAILY_RESET (arrêt container jusqu'au lendemain)
+    Ne fait rien si la page est normale.
+    """
+    if not is_proxy_error_page(driver):
+        return
+
+    from Management.guards.runtime_guard import get_guard, StopReason
+    from Management.pause_policy import PausePolicy
+
+    guard = get_guard()
+    account_id = getattr(guard, "account_id", "unknown")
+    msg = f"🔴 Proxy expiré — TopSurveys inaccessible (ERR_TIMED_OUT) | account={account_id}"
+    print(msg)
+    try:
+        guard.notify_fn(msg)
+    except Exception:
+        pass
+    guard.pause(PausePolicy.DAILY_RESET, StopReason.PROXY_EXPIRED)
+    raise SystemExit("proxy_expired")  # garde-fou : pause() lève déjà SystemExit
+
+
 def net_probe():
     try:
         ip_nat = requests.get("https://api.ipify.org", timeout=8).text
