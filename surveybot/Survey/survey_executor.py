@@ -19,6 +19,8 @@ def _env_truthy(name: str, default: str = "0") -> bool:
     v = (os.getenv(name, default) or "").strip().lower()
     return v in ("1", "true", "yes", "on")
 
+PAUSE_BEFORE_CTA = 1.0  # pause après le dispatch des réponses, avant le clic CTA (laisser le DOM se stabiliser)
+
 def _local_pause_before_cta(reason: str = "") -> None:
     """
     LOCAL ONLY: attend que l'utilisateur appuie sur  avant de cliquer un CTA.
@@ -1417,6 +1419,7 @@ def execute_survey_page(driver, api_key, ctx=None):
                 before_sig = redirect_watcher._dom_signature(driver)  # ou recalc local si tu veux optimiser
 
                 # iframe-safe
+                time.sleep(PAUSE_BEFORE_CTA)  # laisser les réponses se stabiliser dans le DOM avant de naviguer
                 _local_pause_before_cta("navigation_cta")
                 clicked = input_handler.try_click_navigation_cta_any_context(driver)
 

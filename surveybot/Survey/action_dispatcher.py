@@ -7,6 +7,8 @@ from typing import Optional
 from selenium.webdriver.common.action_chains import ActionChains
 from Survey.log_utils import is_debug, log_debug, log_info
 
+PAUSE_INTER_DISPATCH = 0.5  # pause entre deux applications de réponse consécutives (laisser le DOM re-rendre)
+
 def _short_exc(e: Exception) -> str:
     """Rend les exceptions Selenium lisibles (sans Stacktrace bruyant)."""
     try:
@@ -4978,7 +4980,7 @@ def execute_actions_plan(
                     if (itype or "").lower() in ("radio", "checkbox", "dropdown", "text", "number"):
                         import time
                         import Survey.dom_analyzer as dom_analyzer
-                        time.sleep(0.2)  # laisse le framework appliquer l'état
+                        time.sleep(PAUSE_INTER_DISPATCH)  # laisse le framework appliquer l'état
                         dom_analyzer.analyze_dom(driver)  # clear+rebuild registry (target_id stable-ish)
                         # 📈 micro-mtrique: nombre de rescans DOM dclenchs sur la page courante
                         try:
