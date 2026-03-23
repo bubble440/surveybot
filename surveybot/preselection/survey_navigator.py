@@ -5,7 +5,7 @@ import time
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from preselection.auth_handler import snap
+from preselection.auth_handler import snap, handle_proxy_error_page_if_needed
 from Survey.log_utils import log_debug, log_info
 
 
@@ -224,6 +224,7 @@ def go_to_best_value_survey(driver):
         try:
             tab = wait_short.until(EC.element_to_be_clickable((By.XPATH, "//span[normalize-space()='Enquêtes']")))
             driver.execute_script("arguments[0].click();", tab)
+            time.sleep(2)  # laisser le temps à la transition Vue de démarrer et éviter les intercepteurs d'événements désynchronisés
             print("🗂️  Onglet « Enquêtes » cliqué. [xpath texte]")
             return True
         except Exception:
@@ -243,6 +244,7 @@ def go_to_best_value_survey(driver):
         try:
             wait_pwd = WebDriverWait(driver, 60)
             driver.get("https://app.topsurveys.app/surveys")
+            handle_proxy_error_page_if_needed(driver)
             print("↪️  Navigation directe /surveys")
             # vérifier qu'on est bien sur la page
             wait_pwd.until(EC.presence_of_element_located((By.CSS_SELECTOR, "[data-test-id='ps-surveys-root']")))
