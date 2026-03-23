@@ -24,6 +24,7 @@
    - 4.12 [Utilitaires - Debug & Snapshots](#412-utilitaires---debug--snapshots)
    - 4.13 [Utilitaires - Media](#413-utilitaires---media)
    - 4.14 [Cash & Payout](#414-cash--payout)
+   - 4.15 [Scheduler Fly.io](#415-scheduler-flyio)
 5. [Systeme de DOM Registry](#5-systeme-de-dom-registry)
 6. [Plateformes supportees](#6-plateformes-supportees)
 7. [Gestion des erreurs](#7-gestion-des-erreurs)
@@ -38,8 +39,9 @@
 ### Objectif
 SurveyBot est un systeme automatise de completion de sondages web. Il utilise:
 - **Selenium** pour l'automatisation du navigateur
+- **Playwright** pour le lancement de Chrome avec proxy authentifie (puis Selenium s'y attache)
 - **OpenAI API** pour generer des reponses coherentes
-- **AWS (ECS/Fargate)** pour l'execution en production
+- **Fly.io** pour l'execution en production (machines ephemerales `--rm`)
 
 ### Principes fondamentaux
 
@@ -58,9 +60,10 @@ SurveyBot est un systeme automatise de completion de sondages web. Il utilise:
 ### Stack technique
 - **Langage**: Python 3.11+
 - **Browser**: Chrome/Chromium (headless en prod)
-- **Automatisation**: Selenium WebDriver
+- **Automatisation**: Selenium WebDriver (+ undetected-chromedriver + Playwright pour le lancement)
 - **IA**: OpenAI API (gpt-4o-mini / gpt-4o)
-- **Infra**: AWS ECS Fargate, EventBridge Scheduler, Secrets Manager
+- **Infra**: Fly.io (machines ephemerales), PostgreSQL (Fly Postgres)
+- **Scheduler**: script Python externe (`scheduler/scheduler_fly.py`)
 
 ---
 
@@ -103,36 +106,53 @@ SurveyBot est un systeme automatise de completion de sondages web. Il utilise:
                              |
                              v
               +------------------------------+
-              |   Platformes de sondage      |
+              |   Plateformes de sondage     |
               |  CloudResearch, Walr, Cint,  |
               |  QuestionPro, Decipher, etc. |
               +------------------------------+
 ```
 
-### Architecture de deploiement (AWS)
+### Architecture de deploiement (Fly.io)
 
 ```
 +------------------------------------------------------------------+
-|                         AWS                                      |
-|  +-----------------+     +-----------------+                     |
-|  | EventBridge     |---->| ECS Task:       |                     |
-|  | Scheduler       |     | Scheduler       |                     |
-|  | (toutes X min)  |     |                 |                     |
-|  +-----------------+     +--------+--------+                     |
-|                                   |                              |
-|                    +--------------+--------------+               |
-|                    v              v              v               |
-|           +--------------+ +--------------+ +--------------+     |
-|           | ECS Task:    | | ECS Task:    | | ECS Task:    |     |
-|           | Bot Account1 | | Bot Account2 | | Bot AccountN |     |
-|           | + Proxy1     | | + Proxy2     | | + ProxyN     |     |
-|           +--------------+ +--------------+ +--------------+     |
+|                         SCHEDULER (local/GCP)                    |
+|  +---------------------------+                                   |
+|  | scheduler_fly.py          |   Lit accounts.json,             |
+|  | (cron / appel externe)    |   lance 1 machine par compte     |
+|  +-------------+-------------+                                   |
++-----------------|------------------------------------------------+
+                  |  flyctl machine run --rm --detach
+                  v
++------------------------------------------------------------------+
+|                         FLY.IO                                   |
 |                                                                  |
-|  +-----------------+                                             |
-|  | Secrets Manager | <- credentials, API keys, proxy configs     |
-|  +-----------------+                                             |
+|  +--------------+  +--------------+  +--------------+           |
+|  | Machine      |  | Machine      |  | Machine      |           |
+|  | Bot Account1 |  | Bot Account2 |  | Bot AccountN |           |
+|  | + Proxy1     |  | + Proxy2     |  | + ProxyN     |           |
+|  | (ephemere)   |  | (ephemere)   |  | (ephemere)   |           |
+|  +--------------+  +--------------+  +--------------+           |
+|                                                                  |
+|  +------------------------------+                                |
+|  | Fly Postgres                 |  <- etat partagé (account_    |
+|  | (DATABASE_URL auto-injecte)  |     state, cooldowns, gains)  |
+|  +------------------------------+                                |
+|                                                                  |
+|  +------------------------------+                                |
+|  | fly secrets                  |  <- OPENAI_API_KEY,           |
+|  |   set KEY=VALUE              |     DATABASE_URL, etc.        |
+|  +------------------------------+                                |
 +------------------------------------------------------------------+
 ```
+
+**Cycle de vie d'une machine**:
+1. Le scheduler appelle `flyctl machine run --rm --detach` avec les env vars du compte
+2. La machine demarre, acquiert un slot Postgres (cooldown lock)
+3. Lance Chrome via Playwright, s'attache avec Selenium
+4. Boucle principale : preselection + resolution surveys
+5. A la fin (ou crash), la machine se detruit automatiquement (`--rm`)
+6. Le scheduler recrée une nouvelle machine au prochain tick (5 min)
 
 ---
 
@@ -143,35 +163,35 @@ SurveyBot est un systeme automatise de completion de sondages web. Il utilise:
 ```python
 # Pseudo-code du workflow principal
 while survey_active and attempts < MAX_ATTEMPTS:
-    
+
     # 1. ANALYSE DOM
     question_blocks = dom_analyzer.analyze_dom(driver)
-    
+
     # 2. FILTRAGE
     filtered_blocks = prompt_builder.filter_blocks_for_openai(question_blocks)
-    
+
     if not filtered_blocks:
         # Tenter navigation CTA ou detecter fin de survey
         if detect_survey_end(driver):
             break
         click_cta_navigation(driver)
         continue
-    
+
     # 3. PROMPT OPENAI
     prompt = prompt_builder.build_batch_prompt(filtered_blocks)
     response = openai_handler.complete(prompt)
-    
+
     # 4. PARSING + RESOLUTION CONFLITS
     actions = batch_response_parser.parse_batch_response(response)
     actions = batch_response_parser.filter_exclusive_conflicts(actions)
-    
+
     # 5. EXECUTION
     for action in actions:
         input_handler.execute_action(driver, action)
-    
+
     # 6. NAVIGATION
     input_handler.try_click_navigation_cta(driver)
-    
+
     # 7. ATTENTE STABILISATION
     time.sleep(STABILIZE_DELAY)
 ```
@@ -182,9 +202,31 @@ while survey_active and attempts < MAX_ATTEMPTS:
 
 ### 4.1 Infrastructure & Entry Points
 
+#### `fly.toml`
+**Chemin**: `fly.toml`
+**Role**: Configuration de l'application Fly.io.
+
+```toml
+app = "surveybot-bot"
+primary_region = "cdg"
+
+[build]
+  image = "registry.fly.io/surveybot-bot:latest"
+
+[env]
+  LOG_LEVEL = "DEBUG"
+  RUN_ENV = "prod"
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory_mb = 2048
+```
+
+---
+
 #### `config.py`
 **Chemin**: `config.py`
-**Taille**: ~154 lignes
 **Role**: Configuration centrale du bot - point unique pour gerer les modes d'execution.
 
 **Modes disponibles**:
@@ -199,8 +241,8 @@ while survey_active and attempts < MAX_ATTEMPTS:
    - Pas de pauses bloquantes
    - RuntimeGuard active
 
-3. PROD (ECS/Docker)
-   - RUN_ENV=aws ou RUN_ENV=docker
+3. PROD (Fly.io)
+   - RUN_ENV=prod
    - Tout active, aucune pause interactive
 ```
 
@@ -208,53 +250,84 @@ while survey_active and attempts < MAX_ATTEMPTS:
 
 | Fonction | Description |
 |----------|-------------|
-| `is_local_env()` | True si environnement local |
+| `is_local_env()` | True si RUN_ENV == "local" |
 | `is_attach_mode()` | True si mode debug sur navigateur existant |
-| `is_prod_like()` | True si comportement production (AWS ou LOCAL_UNATTENDED) |
+| `is_prod_like()` | True si comportement production (Fly.io ou LOCAL_UNATTENDED) |
 | `should_pause_for_captcha()` | True si pause interactive autorisee |
 | `should_block_for_input()` | True si input() bloquants autorises |
 | `should_run_guard_monitor()` | True si RuntimeGuard doit etre active |
-| `should_run_heartbeat()` | True si heartbeat DynamoDB actif |
-| `should_run_hot_reload()` | True si hot reload actif |
-| `get_captcha_behavior()` | Retourne "pause" ou "restart" |
+| `should_run_heartbeat()` | True si heartbeat Postgres actif |
+| `should_run_hot_reload()` | True si hot reload actif (local seulement) |
+| `get_captcha_behavior()` | Retourne "auto_2captcha", "pause" ou "restart" |
 | `log_config_summary()` | Affiche un resume au demarrage |
 
 ---
 
 #### `main.py`
 **Chemin**: `main.py`
-**Taille**: ~508 lignes
 **Role**: Point d'entree principal du bot.
 
 **Responsabilites**:
-- Initialisation du driver Selenium
-- Gestion du mode attach (debug sur navigateur existant)
-- Lancement des threads auxiliaires (heartbeat, guard, hot reload)
-- Boucle principale de traitement des surveys
+- Dispatch mode attach vs mode normal
+- Logique de selection d'onglet en mode attach (heuristiques URL/title/DOM)
+- `run_attach_takeover()` — resolution survey sur onglet existant
+- `run_attach_preselection_takeover()` — preselection puis resolution
+- Boucle principale `main()` avec `MAX_MAIN_CYCLES` iterations
 
-**Fonctions cles**:
+**Fonctions attach (mode debug local)**:
 
 | Fonction | Description |
 |----------|-------------|
-| `_attach_tab_score(driver)` | Score un onglet pour selection automatique |
-| `_attach_select_best_tab(driver)` | Selectionne l'onglet le plus pertinent |
-| `_attach_is_user_web_url(url)` | Filtre les URLs utilisateur (http/https) |
+| `_attach_tab_score(driver)` | Score un onglet (nb inputs + taille texte) |
+| `_attach_select_tab(driver)` | Selectionne l'onglet selon ATTACH_TAB_* env vars |
+| `_attach_pick_ui_active_tab(driver, handles)` | Retrouve l'onglet UI actif (visibilityState) |
+| `run_attach_takeover(driver, ...)` | Boucle survey sur onglet ouvert manuellement |
+| `run_attach_preselection_takeover(driver, ...)` | Preselection + resolution en attach |
+
+**Variables d'env attach**:
+- `ATTACH_TAB_URL_CONTAINS` — filtre par URL
+- `ATTACH_TAB_TITLE_CONTAINS` — filtre par titre
+- `ATTACH_TAB_DOM_CONTAINS` — filtre par contenu DOM
+- `ATTACH_TAB_SELECTOR` — "current" | "last" | "best" | "pick" | index
+- `ATTACH_ROUTE_PROMPT=1` — propose le choix preselection/resolution
+- `ATTACH_MAX_STEPS` — nombre max d'iterations (defaut 100)
 
 ---
 
 #### `launch.py`
 **Chemin**: `launch.py`
-**Taille**: ~12 lignes
-**Role**: Lancement d'une nouvelle session Chrome.
+**Role**: Fonctions d'infrastructure du cycle de vie du bot (separees de main.py).
 
-```python
-def launch_new_chrome():
-    options = Options()
-    options.add_argument("--disable-blink-features=AutomationControlled")
-    options.add_argument("--start-maximized")
-    driver = webdriver.Chrome(options=options)
-    return driver
-```
+**Responsabilites**:
+- Lancement du driver (`launch_driver_or_fail`)
+- Connexion TopSurveys + payout initial (`init_session_and_enter_surveys`)
+- Boucle principale survey (`run_main_loop`)
+- Gestion des signaux SIGTERM / SIGUSR1
+- Thread heartbeat Postgres
+- Thread hot reload (local)
+- RuntimeGuard (superviseur)
+- Soft restart (retour listing + payout + reprise)
+- Navigation securisee `safe_get()`
+- Serveur HTTP debug local
+
+**Fonctions principales**:
+
+| Fonction | Description |
+|----------|-------------|
+| `acquire_account_lock_or_exit(account_id)` | Verifie cooldown Postgres ou exit |
+| `mark_bot_running(account_id)` | Marque status="running" en Postgres |
+| `install_sigterm_handler(account_id)` | SIGTERM → libere slot + exit propre |
+| `install_sigusr1_handler()` | SIGUSR1 → dump SurveyContext (debug) |
+| `launch_driver_or_fail(config, account_id)` | Lance Chrome ou SystemExit |
+| `init_session_and_enter_surveys(driver, ...)` | Login + payout + navigation listing |
+| `run_main_loop(driver, api_key, ...)` | Lance run_survey() en boucle |
+| `soft_restart(ctx, driver, reason)` | Cleanup + payout + reprise survey |
+| `start_runtime_guard(account_id, ...)` | Demarre RuntimeGuard + reinjecte gains |
+| `start_heartbeat_thread()` | Thread heartbeat 60s + jitter |
+| `start_hot_reload_thread()` | Thread hot reload modules (local) |
+| `build_notifier(config)` | Fabrique la fonction de notification Telegram |
+| `start_debug_http_server(ctx_getter)` | Serveur HTTP :port+1000 (local seulement) |
+| `safe_get(driver, url)` | Navigation avec timeout + detection session expirée |
 
 ---
 
@@ -262,16 +335,15 @@ def launch_new_chrome():
 
 #### `auth_handler.py`
 **Chemin**: `preselection/auth_handler.py`
-**Taille**: ~276 lignes
 **Role**: Authentification TopSurveys et verification de session.
 
 **Fonctions principales**:
 
 | Fonction | Signature | Description |
 |----------|-----------|-------------|
-| `_is_aws_env()` | `() -> bool` | Detecte environnement AWS |
-| `dom_probe(driver)` | `(driver)` | Dump DOM pour debug (AWS only) |
+| `login(driver, email, password)` | `(driver, str, str)` | Authentification TopSurveys |
 | `is_session_expired(driver)` | `(driver) -> bool` | Detecte expiration de session |
+| `dom_probe(driver)` | `(driver)` | Dump DOM pour debug |
 | `net_probe()` | `()` | Diagnostic reseau (IP NAT vs proxy) |
 | `snap(driver, label)` | `(driver, str)` | Screenshot avec label (debug) |
 
@@ -288,29 +360,36 @@ signals = [
 
 #### `account_state.py`
 **Chemin**: `State/account_state.py`
-**Taille**: ~417 lignes
-**Role**: Stockage d'etat "prod-first" pour 100+ bots via DynamoDB.
+**Role**: Stockage d'etat "prod-first" pour N bots via PostgreSQL.
 
 **Backends**:
-- **DynamoDB** (recommande en prod) : source de verite partagee
+- **PostgreSQL** (prod) : source de verite partagee via `DATABASE_URL` (injecte par Fly.io)
 - **Fichier local** (fallback dev) : uniquement si `RUN_ENV=local`
+
+**Variables d'env**:
+```bash
+DATABASE_URL=postgres://...   # injecte automatiquement par fly postgres attach
+STATE_BACKEND=postgres        # active le backend Postgres
+STATE_TABLE=...               # optionnel (nom de table custom)
+STATE_TTL_DAYS=0              # 0 = pas de TTL auto
+```
 
 **Structure d'etat par defaut**:
 ```python
 {
     "account_id": str,
-    "version": int,              # optimistic locking
+    "version": int,                 # optimistic locking (SELECT FOR UPDATE)
     "banned": bool,
-    "cooldown_until_ts": int,
-    "status": str,               # idle | running | paused
-    "lock_owner": str,
-    "lock_until_ts": int,
-    "proxy_id": str,
+    "cooldown_until_ts": str,       # ISO UTC ex: "2026-03-23T10:00:00"
+    "status": str,                  # idle | running
     "last_stop_reason": str,
-    "last_heartbeat_ts": int,
-    "daily_earned": dict,        # {"2025-12-31": 1.23}
+    "last_heartbeat_ts": str,
+    "last_boot_ts": str,
+    "last_start_ts": str,
+    "daily_earned": dict,           # {"2025-12-31": 1.23}
+    "daily_target_start_ts": dict,  # {"2026-03-17": "2026-03-17T08:00:00"}
     "total_earned": float,
-    "updated_ts": int,
+    "updated_ts": str,
 }
 ```
 
@@ -318,27 +397,30 @@ signals = [
 
 | Fonction | Description |
 |----------|-------------|
-| `load_state(account_id)` | Charge l'etat depuis DynamoDB/fichier |
-| `update_state(account_id, **kwargs)` | Met a jour l'etat (optimistic lock) |
-| `touch_heartbeat(account_id)` | Met a jour le timestamp heartbeat |
+| `load_state(account_id)` | Charge depuis Postgres (ou fichier local) |
+| `save_state(state)` | Sauvegarde directe (rare, preferer update_state) |
+| `update_state(account_id, fn)` | Update atomique avec optimistic lock + retry |
+| `touch_heartbeat(account_id)` | UPDATE cible (pas de load complet) — prolonge cooldown_until_ts |
+| `try_acquire_cooldown_slot(account_id)` | Lock atomique (SELECT FOR UPDATE) — retourne True si slot libre |
 
 ---
 
 #### `secret_loader.py`
 **Chemin**: `preselection/secret_loader.py`
-**Taille**: ~100 lignes
-**Role**: Chargement robuste des secrets (AWS Secrets Manager + ENV).
+**Role**: Chargement robuste des secrets (Fly.io secrets + ENV).
 
 **Strategie d'empilement** (priorite decroissante):
 1. `TOPSURVEYS_SECRET_JSON` (variable ENV contenant JSON)
-2. AWS Secrets Manager via `TOPSURVEYS_SECRET_NAME`
-3. Variables ENV unitaires (TOPSURVEYS_EMAIL, OPENAI_API_KEY, etc.)
+2. Variables ENV unitaires (EMAIL, PASSWORD, OPENAI_API_KEY, etc.)
+
+> En prod Fly.io, les secrets sont injectes via `fly secrets set KEY=VALUE`.
+> Plus de dependance a AWS Secrets Manager.
 
 **Cles supportees**:
 ```python
 mapping = {
-    "Email": "TOPSURVEYS_EMAIL",
-    "Password": "TOPSURVEYS_PASSWORD",
+    "Email": "EMAIL",
+    "Password": "PASSWORD",
     "openai_api_key": "OPENAI_API_KEY",
     "payout_name": "PAYOUT_NAME",
     "payout_revolut_tag": "PAYOUT_REVOLUT_TAG",
@@ -351,16 +433,46 @@ mapping = {
 
 #### `config_loader.py`
 **Chemin**: `preselection/config_loader.py`
-**Taille**: ~58 lignes
 **Role**: Fusion config locale + secrets distants.
 
 ```python
 def load_config() -> dict:
     """
     Ordre de priorite (du plus fort au plus faible):
-      1) Overrides ENV + Secrets Manager (via secret_loader)
+      1) Overrides ENV + secrets Fly.io (via secret_loader)
       2) Fichier local config.json (dev)
     """
+```
+
+---
+
+#### `playwright_launcher.py`
+**Chemin**: `preselection/playwright_launcher.py`
+**Role**: Lance Chrome avec proxy authentifie via Playwright, puis attache Selenium au port de debug.
+
+**Probleme resolu**: Chrome/undetected-chromedriver echoue sur les proxies authentifies (`ERR_INVALID_ARGUMENT`). Solution : Playwright ouvre Chrome avec le proxy, puis Selenium se connecte via `--remote-debugging-port`.
+
+**Fonction principale**:
+```python
+def launch_browser(config: dict) -> webdriver.Chrome:
+    """
+    1) Detecte le binaire Chrome disponible.
+    2) Lance Chrome headless via Playwright avec proxy (host:port + user:pass).
+    3) Attache Selenium via debuggerAddress.
+    4) Retourne le driver Selenium pret a l'emploi.
+    """
+```
+
+**Variables d'env**:
+```bash
+SURVEY_BROWSER_BIN=...    # chemin explicite du binaire Chrome
+PROXY_URL=http://host:port
+PROXY_USER=user
+PROXY_PASS=pass
+GEO_LAT=48.8566           # geolocalisation simulee
+GEO_LON=2.3522
+SURVEY_LANG=fr-FR
+SURVEY_TZ=Europe/Paris
 ```
 
 ---
@@ -369,8 +481,7 @@ def load_config() -> dict:
 
 #### `runtime_guard.py`
 **Chemin**: `Management/guards/runtime_guard.py`
-**Taille**: ~403 lignes
-**Role**: Superviseur central d'execution - protege OpenAI, AWS et Proxy.
+**Role**: Superviseur central d'execution - protege OpenAI, Postgres et Proxy.
 
 **Classe `RuntimeGuard`**:
 ```python
@@ -400,7 +511,7 @@ class StopReason(Enum):
 **Metriques trackees (RuntimeState)**:
 - `consecutive_errors` / `total_errors`
 - `surveys_completed_today`
-- `earnings_today_eur`
+- `earnings_today_eur` (reinjecte depuis Postgres au demarrage)
 - `openai_calls`
 - `last_activity_ts` / `last_success_ts`
 
@@ -408,7 +519,6 @@ class StopReason(Enum):
 
 #### `survey_difficulty_guard.py`
 **Chemin**: `Management/guards/survey_difficulty_guard.py`
-**Taille**: ~226 lignes
 **Role**: Detection DOM des surveys "stricts" (anti-bot / interactions complexes).
 
 **Selecteurs "forts"**:
@@ -433,17 +543,10 @@ def detect_strict_survey(driver) -> Tuple[bool, Optional[str]]:
     """Retourne (is_strict, reason)"""
 ```
 
-**Detection speciale image evaluation (Walr)**:
-```python
-def _detect_image_evaluation(driver) -> bool:
-    # Pattern: .rsScrollGridWrappper (image) + div.rsBtn (boutons)
-```
-
 ---
 
 #### `sensitive_question_guard.py`
 **Chemin**: `Management/guards/sensitive_question_guard.py`
-**Taille**: ~71 lignes
 **Role**: Detection des questions a haut risque -> SKIP direct.
 
 **Patterns detectes**:
@@ -460,33 +563,8 @@ SENSITIVE_PATTERNS = [
 
 ---
 
-#### `url_guard.py`
-**Chemin**: `Management/guards/url_guard.py`
-**Taille**: ~108 lignes
-**Role**: Whitelist/blacklist des URLs de survey.
-
-**Allowlist (sous-domaines autorises)**:
-```python
-ALLOWLIST = {
-    "survey.walr.com", "samplicio.us", "cloudresearch.com",
-    "ssisurveys.com", "decipherinc.com", "survey.cmix.com",
-    "qps.cint.com", "s.cint.com", "emea.focusvision.com",
-    "screener.purespectrum.com", "survey.rex.dinata.com",
-    # ... etc
-}
-```
-
-**Fonctions**:
-```python
-def normalize_host(url_or_host: str) -> str
-def is_allowed(url_or_host: str) -> bool  # Guard SOFT (autorise par defaut)
-```
-
----
-
 #### `redirect_watcher.py`
 **Chemin**: `Management/redirect_watcher.py`
-**Taille**: ~177 lignes
 **Role**: Surveillance des redirections URL.
 
 **Fonctions principales**:
@@ -498,31 +576,8 @@ def is_allowed(url_or_host: str) -> bool  # Guard SOFT (autorise par defaut)
 
 ---
 
-#### `idle_monitor.py`
-**Chemin**: `Management/idle_monitor.py`
-**Taille**: ~110 lignes
-**Role**: Surveille le solde et alerte si aucun gain pendant N minutes.
-
-**Classe `GainWatchdog`**:
-```python
-GainWatchdog(
-    driver,
-    threshold_sec: int = 900,   # 15 min sans gain -> alerte
-    poll_seconds: int = 900,    # intervalle de sondage
-    notify_fn: Callable,
-)
-```
-
-**Comportement**:
-- Thread daemon autonome
-- Anti-spam: une seule notification tant qu'aucun nouveau gain
-- Declenche `get_guard().signal_no_gain()` apres timeout
-
----
-
 #### `pause_policy.py`
 **Chemin**: `Management/pause_policy.py`
-**Taille**: ~62 lignes
 **Role**: Politique centrale de pause du bot.
 
 **Enum PausePolicy**:
@@ -539,8 +594,7 @@ class PausePolicy(Enum):
 ---
 
 #### `notifier.py`
-**Chemin**: `notifier.py`
-**Taille**: ~30 lignes
+**Chemin**: `Management/notifier.py`
 **Role**: Envoi de notifications Telegram.
 
 ```python
@@ -552,14 +606,27 @@ def send_telegram(message: str, bot_token: str, chat_id: str) -> bool:
 
 ### 4.4 Preselection (TopSurveys)
 
+#### `survey_navigator.py`
+**Chemin**: `preselection/survey_navigator.py`
+**Role**: Navigation vers les surveys TopSurveys (choix du meilleur survey disponible).
+
+**Fonction principale**:
+```python
+def go_to_best_value_survey(driver) -> None:
+    """
+    Navigue vers le survey au meilleur rapport valeur/temps sur le listing TopSurveys.
+    """
+```
+
+---
+
 #### `survey_handler.py`
 **Chemin**: `preselection/survey_handler.py`
-**Taille**: ~238 lignes
 **Role**: Handler principal pour les surveys TopSurveys (preselection).
 
 **Fonction principale**:
 ```python
-def run_survey(driver, api_key, *, account_id: str):
+def run_survey(driver, api_key, *, account_id: str, ctx, payout_name, payout_revolut_tag):
     """
     Boucle de traitement des questions de preselection.
     Gere: SKIP, DISQUALIFIED, RESTART, et delegation au survey_solver.
@@ -575,7 +642,6 @@ def run_survey(driver, api_key, *, account_id: str):
 
 #### `question_analyzer.py`
 **Chemin**: `preselection/question_analyzer.py`
-**Taille**: ~394 lignes
 **Role**: Analyse des questions de preselection (popup TopSurveys).
 
 **Fonctions principales**:
@@ -591,7 +657,6 @@ def run_survey(driver, api_key, *, account_id: str):
 
 #### `response_executor.py`
 **Chemin**: `preselection/response_executor.py`
-**Taille**: ~216 lignes
 **Role**: Execution des reponses dans l'interface TopSurveys.
 
 **Fonctions principales**:
@@ -609,7 +674,6 @@ def execute_response(driver, answer_text) -> bool:
 
 #### `question_validation.py`
 **Chemin**: `preselection/question_validation.py`
-**Taille**: ~149 lignes
 **Role**: Validation "metier" - detection des disqualifications.
 
 **Dataclass**:
@@ -635,7 +699,6 @@ strong_phrases = (
 
 #### `dom_analyzer.py`
 **Chemin**: `Survey/dom_analyzer.py`
-**Taille**: ~4450 lignes (1.9M)
 **Role**: Extraction TEXT-ONLY des questions depuis le DOM des pages de survey.
 
 **Fonctions principales**:
@@ -665,9 +728,56 @@ strong_phrases = (
 
 ---
 
+#### `dom_extractors_areyounet.py`
+**Chemin**: `Survey/dom_extractors_areyounet.py`
+**Role**: Extracteur specialise pour la plateforme AreYouNet.
+
+---
+
+#### `dom_extractors_decipher.py`
+**Chemin**: `Survey/dom_extractors_decipher.py`
+**Role**: Extracteur specialise pour la plateforme Decipher/FocusVision.
+
+---
+
+#### `dom_extractors_misc.py`
+**Chemin**: `Survey/dom_extractors_misc.py`
+**Role**: Extracteurs divers pour plateformes non couvertes par les modules dedies.
+
+---
+
+#### `dom_frame_selector.py`
+**Chemin**: `Survey/dom_frame_selector.py`
+**Role**: Selection et navigation dans les iframes pour l'analyse DOM.
+
+---
+
+#### `dom_question_extractor.py`
+**Chemin**: `Survey/dom_question_extractor.py`
+**Role**: Extraction generique des blocs de questions depuis le DOM.
+
+---
+
+#### `dom_selection_rules.py`
+**Chemin**: `Survey/dom_selection_rules.py`
+**Role**: Regles declaratives de selection des elements DOM (allowlists/denylists par plateforme).
+
+---
+
+#### `dom_utils.py`
+**Chemin**: `Survey/dom_utils.py`
+**Role**: Utilitaires DOM bas niveau (helpers JavaScript, inspection elements).
+
+---
+
+#### `log_utils.py`
+**Chemin**: `Survey/log_utils.py`
+**Role**: Helpers de logging standardises (`log_debug`, `log_info`, etc.).
+
+---
+
 #### `sliderpoints_extractor.py`
 **Chemin**: `Survey/sliderpoints_extractor.py`
-**Taille**: ~215 lignes
 **Role**: Extraction specialisee FocusVision/Decipher sliderpoints.
 
 ---
@@ -676,7 +786,6 @@ strong_phrases = (
 
 #### `dom_classifier.py`
 **Chemin**: `Survey/dom_classifier.py`
-**Taille**: ~928 lignes
 **Role**: Classification deterministe des pages SANS IA.
 
 **Detection CAPTCHA stricte**:
@@ -695,21 +804,12 @@ strong_phrases = (
 
 #### `dom_context_mapper.py`
 **Chemin**: `Survey/dom_context_mapper.py`
-**Taille**: ~492 lignes
 **Role**: Mapping spatial des inputs via bounding boxes.
-
----
-
-#### `dom_metrics.py`
-**Chemin**: `Survey/dom_metrics.py`
-**Taille**: ~159 lignes
-**Role**: Metriques d'usage OpenAI vs traitement local.
 
 ---
 
 #### `dom_registry.py`
 **Chemin**: `Survey/dom_registry.py`
-**Taille**: ~50 lignes
 **Role**: Registre en memoire des cibles DOM.
 
 **Format target_id**: `{kind}_{sha1_hash[:12]}`
@@ -718,7 +818,6 @@ strong_phrases = (
 
 #### `frame_utils.py`
 **Chemin**: `Survey/frame_utils.py`
-**Taille**: ~89 lignes
 **Role**: Utilitaires de traversee des iframes.
 
 ```python
@@ -735,14 +834,12 @@ with switch_to_frame_chain(driver, chain) as ok:
 
 #### `question_block_analyzer.py`
 **Chemin**: `Survey/question_block_analyzer.py`
-**Taille**: ~489 lignes
 **Role**: Construction carte logique locale des inputs.
 
 ---
 
 #### `question_block_resolver.py`
 **Chemin**: `Survey/question_block_resolver.py`
-**Taille**: ~671 lignes
 **Role**: Resolution robuste question -> champ input.
 
 **Securite**:
@@ -753,7 +850,6 @@ with switch_to_frame_chain(driver, chain) as ok:
 
 #### `dropdown_block_resolver.py`
 **Chemin**: `Survey/dropdown_block_resolver.py`
-**Taille**: ~283 lignes
 **Role**: Resolution specialisee des dropdowns.
 
 ---
@@ -990,6 +1086,7 @@ L'architecture d'interaction est organisee en **9 modules specialises** + 1 faca
 | `click_icon_like_button(driver, hints)` | Clic bouton icone (sans texte) |
 | `click_primary_cta(driver)` | Clic CTA principal de la page |
 | `try_click_navigation_cta(driver)` | Recherche et clic CTA navigation |
+| `try_click_navigation_cta_any_context(driver)` | Version cross-frame (captcha post-resolution) |
 | `click_cta_strong_any_context(driver, text, depth)` | Version robuste multi-frame |
 
 **CTA_SYNONYMS reconnus**:
@@ -1028,7 +1125,6 @@ from input_text import fill_text_input
 
 #### `action_types.py`
 **Chemin**: `Survey/action_types.py`
-**Taille**: ~65 lignes
 **Role**: Dataclass canonique Action.
 
 ```python
@@ -1046,7 +1142,6 @@ class Action:
 
 #### `action_dispatcher.py`
 **Chemin**: `Survey/action_dispatcher.py`
-**Taille**: ~2899 lignes
 **Role**: Dispatch specialise pour cas complexes (card-sort, card-rating).
 
 ---
@@ -1055,7 +1150,6 @@ class Action:
 
 #### `prompt_builder.py`
 **Chemin**: `Survey/prompt_builder.py`
-**Taille**: ~290 lignes
 **Role**: Transformation question_blocks -> prompts OpenAI.
 
 **Format de sortie**:
@@ -1069,7 +1163,6 @@ QID //// target_id //// valeur //// itype //// contexte
 
 #### `batch_response_parser.py`
 **Chemin**: `Survey/batch_response_parser.py`
-**Taille**: ~661 lignes
 **Role**: Parser reponses OpenAI + resolution conflits.
 
 **Patterns exclusifs (FR)**:
@@ -1088,9 +1181,37 @@ _EXCLUSIVE_PATTERNS_FR = (
 
 ### 4.11 Orchestration
 
+#### `survey_context.py`
+**Chemin**: `Survey/survey_context.py`
+**Role**: Contexte rolling en memoire d'une session survey (historique questions/reponses + resume OpenAI).
+
+**Classe `SurveyContext`**:
+```python
+SurveyContext(
+    session_id: str,
+    openai_api_key: str,
+    summary_every_n_pages: int = 1,  # frequence de mise a jour du resume
+)
+```
+
+**Methodes**:
+- `record(question, options, answer)` — enregistre une reponse dans l'historique
+- `maybe_update_summary()` — declenche une mise a jour asynchrone du resume OpenAI
+- `print_debug()` — dump terminal du contexte (accessible via SIGUSR1 ou HTTP debug)
+
+**Usage**:
+```python
+_ctx = SurveyContext(session_id=account_id, openai_api_key=api_key)
+# expose globalement pour le signal handler SIGUSR1
+survey_solver._current_survey_ctx = _ctx
+# apres chaque page
+_ctx.maybe_update_summary()
+```
+
+---
+
 #### `survey_solver.py`
 **Chemin**: `Survey/survey_solver.py`
-**Taille**: ~793 lignes
 **Role**: Orchestration inter-pages.
 
 **Constantes anti-boucle**:
@@ -1105,7 +1226,6 @@ STABILIZE_SLEEP = 2.0      # Delai entre actions
 
 #### `survey_executor.py`
 **Chemin**: `Survey/survey_executor.py`
-**Taille**: ~815 lignes
 **Role**: Execution single-page.
 
 ---
@@ -1114,7 +1234,6 @@ STABILIZE_SLEEP = 2.0      # Delai entre actions
 
 #### `page_snapshot.py`
 **Chemin**: `Survey/page_snapshot.py`
-**Taille**: ~378 lignes
 **Role**: Capture complete d'une page pour debug.
 
 **Structure sortie**:
@@ -1130,7 +1249,6 @@ snapshot_20250211_143052/
 
 #### `replay_snapshot.py`
 **Chemin**: `tools/replay_snapshot.py`
-**Taille**: ~395 lignes
 **Role**: Rejoue un snapshot DOM et compare avec baseline.
 
 ```bash
@@ -1142,14 +1260,12 @@ python tools/replay_snapshot.py <snapshot_dir>  # compare avec baseline
 
 #### `screenshot_analyzer.py`
 **Chemin**: `Survey/screenshot_analyzer.py`
-**Taille**: ~296 lignes
 **Role**: Vision API fallback (DEPRECIE).
 
 ---
 
 #### `hot_reload.py`
-**Chemin**: `tools/hot_reload.py`
-**Taille**: ~81 lignes
+**Chemin**: `hot_reload/hot_reload.py`
 **Role**: Hot reload des modules Python en dev.
 
 ```python
@@ -1165,7 +1281,6 @@ class ModuleReloader:
 
 #### `video_utils.py`
 **Chemin**: `Survey/video_utils.py`
-**Taille**: ~251 lignes
 **Role**: Detection, lecture et capture audio des videos.
 
 ---
@@ -1174,7 +1289,6 @@ class ModuleReloader:
 
 #### `payout.py`
 **Chemin**: `Cash/payout.py`
-**Taille**: ~426 lignes
 **Role**: Gestion des paiements et cashout TopSurveys.
 
 **Fonctions principales**:
@@ -1185,6 +1299,75 @@ class ModuleReloader:
 | `_open_cashout_modal(driver)` | Ouvre le modal d'encaissement |
 | `_select_money_option_in_open_tab(driver, tab, amount)` | Selectionne option paiement |
 | `do_cashout(driver, amount)` | Execute le cashout complet |
+| `check_and_cashout_if_needed(driver, account_id, ...)` | Encaissement automatique si seuil atteint |
+
+---
+
+### 4.15 Scheduler Fly.io
+
+Le scheduler est un module **independant** dans `../scheduler/` (hors de `surveybot/`).
+
+```
+scheduler/
+├── accounts.json          # Liste des comptes (non versionne en prod)
+├── account_loader.py      # Charge les comptes depuis ACCOUNTS_JSON env var
+├── scheduler_fly.py       # Lance une machine Fly.io par compte
+├── fly.py                 # Helpers flyctl
+└── main.py                # Point d'entree du scheduler
+```
+
+#### `scheduler_fly.py`
+**Role**: Lit `accounts.json` et lance une machine Fly.io ephemerales par compte.
+
+**Fonctionnement**:
+```python
+# Pour chaque compte dans accounts.json :
+flyctl machine run \
+    --app surveybot-bot \
+    --region cdg \
+    --vm-memory 2048 \
+    --name {account_id} \
+    --env ACCOUNT_ID=... \
+    --env EMAIL=... \
+    --env PASSWORD=... \
+    --env PROXY_URL=... \
+    --env PROXY_USER=... \
+    --env PROXY_PASS=... \
+    --rm \        # detruit la machine apres exit
+    --detach \    # non-bloquant
+    registry.fly.io/surveybot-bot:latest
+```
+
+**Variables d'env du scheduler**:
+```bash
+ACCOUNTS_FILE=accounts.json   # chemin du fichier comptes
+FLY_APP=surveybot-bot
+FLY_REGION=cdg
+FLY_MEMORY=2048
+BOT_IMAGE=registry.fly.io/surveybot-bot:latest
+LAUNCH_DELAY_SEC=2            # delai anti-burst entre lancements
+```
+
+#### `account_loader.py`
+**Role**: Charge les comptes depuis la variable `ACCOUNTS_JSON` (secret Fly.io).
+
+**Format ACCOUNTS_JSON**:
+```json
+[
+  {
+    "ACCOUNT_ID": "bot_001",
+    "EMAIL": "bot001@example.com",
+    "PASSWORD": "xxx",
+    "PROXY_URL": "http://host:port",
+    "PROXY_USER": "user",
+    "PROXY_PASS": "pass",
+    "GEO_LAT": "48.8566",
+    "GEO_LON": "2.3522",
+    "SURVEY_LANG": "fr-FR",
+    "SURVEY_TZ": "Europe/Paris"
+  }
+]
+```
 
 ---
 
@@ -1222,6 +1405,7 @@ target = get_target(target_id)
 | QuestionPro | OK | OK | OK | OK | Non | Partiel | Non |
 | Decipher/FocusVision | OK | OK | OK | OK | OK | OK | OK |
 | Cint/QPS | OK | OK | OK | OK | Non | Partiel | Non |
+| AreYouNet | OK | OK | Partiel | OK | Non | Partiel | Non |
 
 ---
 
@@ -1238,6 +1422,16 @@ target = get_target(target_id)
 | 4 | Timeout |
 | 5 | Budget exhausted |
 
+### Codes SystemExit connus
+
+| Code | Source | Description |
+|------|--------|-------------|
+| `max_main_cycles_reached` | main.py | MAX_MAIN_CYCLES epuise (Fly.io recrée la machine) |
+| `ecs_sigterm` | launch.py | SIGTERM recu (Fly.io stop demande) |
+| `session_expired` | launch.py | Session TopSurveys expiree |
+| `browser_launch_failed` | launch.py | Chrome n'a pas pu demarrer |
+| `attach_forbidden_in_prod` | main.py | Mode attach tente hors local |
+
 ---
 
 ## 8. Points Critiques
@@ -1253,6 +1447,18 @@ def _is_element_visible(el, driver):
     # ...
 ```
 
+### Optimistic locking Postgres
+```python
+# UPDATE echoue si version a change entre le SELECT et le UPDATE
+WHERE account_state.version = {current_version}
+# Si rowcount == 0 -> conflit, retry avec backoff exponentiel
+```
+
+### Heartbeat Fly.io
+- Thread daemon, toutes les 60s (+jitter 0-3s)
+- Met a jour `cooldown_until_ts = now + 240s` tant que `status == 'running'`
+- Si le bot crash sans liberer le slot, le scheduler attend ~4 min avant de relancer
+
 ---
 
 ## 9. Conventions de code
@@ -1260,6 +1466,7 @@ def _is_element_visible(el, driver):
 - Fonctions privees: `_helper_function()`
 - Constantes: `MAX_RETRIES = 3`
 - Guard clauses pour early return
+- Logs prefixes: `[MODULE][LEVEL]` ex: `[SOFT_RESTART][WARN]`
 
 ---
 
@@ -1268,17 +1475,47 @@ def _is_element_visible(el, driver):
 ### Variables d'environnement
 
 ```bash
-# Obligatoires
-OPENAI_API_KEY=sk-...
-TOPSURVEYS_EMAIL=...
-TOPSURVEYS_PASSWORD=...
+# ── Identite du bot ────────────────────────────────────────────────
+ACCOUNT_ID=bot_001           # obligatoire en prod (injecte par scheduler)
+RUN_ENV=local|prod           # local = interactif, prod = Fly.io
 
-# Optionnelles
-RUN_ENV=local|aws|docker
-LOCAL_UNATTENDED=1
-PROXY_HOST=...
-DEBUG=true
-HEADLESS=true
+# ── Credentials TopSurveys ─────────────────────────────────────────
+EMAIL=...
+PASSWORD=...
+
+# ── Proxy ──────────────────────────────────────────────────────────
+PROXY_URL=http://host:port
+PROXY_USER=...
+PROXY_PASS=...
+
+# ── IA ─────────────────────────────────────────────────────────────
+OPENAI_API_KEY=sk-...
+TWO_CAPTCHA_KEY=...          # optionnel, active resolution automatique CAPTCHA
+
+# ── Base de donnees (injecte automatiquement par fly postgres attach)
+DATABASE_URL=postgres://...
+STATE_BACKEND=postgres        # active le backend Postgres
+
+# ── Paiement ───────────────────────────────────────────────────────
+PAYOUT_NAME=...              # nom complet Revolut
+PAYOUT_REVOLUT_TAG=@...
+
+# ── Notifications ──────────────────────────────────────────────────
+TELEGRAM_BOT_TOKEN=...
+TELEGRAM_CHAT_ID=...
+
+# ── Mode debug local ───────────────────────────────────────────────
+LOCAL_UNATTENDED=1           # simule le comportement prod
+BROWSER_MODE=attach          # se connecte a un Chrome ouvert
+ATTACH_DEBUGGER_ADDRESS=localhost:9222
+ATTACH_TAB_URL_CONTAINS=...
+LOG_LEVEL=DEBUG
+
+# ── Geolocalisation (Playwright launcher) ──────────────────────────
+GEO_LAT=48.8566
+GEO_LON=2.3522
+SURVEY_LANG=fr-FR
+SURVEY_TZ=Europe/Paris
 ```
 
 ### Format actions OpenAI
@@ -1288,7 +1525,26 @@ Q1 //// grp_gender_q1 //// Homme //// radio //// Genre ?
 Q2 //// grp_interests_q2 //// Sport | Musique //// checkbox //// Interets ?
 ```
 
+### Commandes Fly.io utiles
+
+```bash
+# Deployer une nouvelle image
+fly deploy --app surveybot-bot
+
+# Voir les logs d'une machine
+fly logs --app surveybot-bot
+
+# Injecter un secret
+fly secrets set OPENAI_API_KEY=sk-... --app surveybot-bot
+
+# Lister les machines actives
+fly machine list --app surveybot-bot
+
+# Attacher une base Postgres
+fly postgres attach <pg-app-name> --app surveybot-bot
+```
+
 ---
 
-> **Version**: 4.0
-> **Derniere mise a jour**: Fevrier 2025
+> **Version**: 5.0
+> **Derniere mise a jour**: Mars 2026
