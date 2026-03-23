@@ -12,7 +12,7 @@
 # ------------------------------------------------------------
 
 from __future__ import annotations
-import re
+import re, time
 from urllib.parse import urlparse, parse_qs
 from typing import Callable, Optional, Dict, Any
 from selenium.webdriver.common.by import By
@@ -1340,6 +1340,7 @@ def classify_dom(driver) -> Optional[dict]:
     Retourne le premier mapping DOM_REGISTRY qui match.
     """
     for rule in DOM_REGISTRY:
+        time.sleep(10)  # anti-flood / laisser le temps au DOM de se stabiliser
         try:
             if rule["signature"](driver):
                 # ✅ IMPORTANT: on ne renvoie PAS la fonction signature (non sérialisable)

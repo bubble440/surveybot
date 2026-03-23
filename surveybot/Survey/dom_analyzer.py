@@ -1259,11 +1259,21 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                   const cssEscape = (window.CSS && CSS.escape) ? CSS.escape(id) : id.replace(/([ #;?%&,.+*~\\':\"!^$\[\]()=>|\\/@])/g, '\\\\$1');
                   const linked = document.querySelector(`label[for="${cssEscape}"]`);
                   if (isVisible(linked)) return true;
+                  // Cas float-collapsed (Bootstrap 2 / Cint QPS): le label existe mais
+                  // a une hauteur nulle car son seul enfant est float:left (.span12).
+                  // On l'accepte s'il n'est pas explicitement masqué et porte du texte.
+                  if (linked) {
+                    const ls = window.getComputedStyle(linked);
+                    if (ls && ls.display !== 'none' && ls.visibility !== 'hidden' && ls.opacity !== '0') {
+                      const txt = (linked.innerText || linked.textContent || '').trim();
+                      if (txt) return true;
+                    }
+                  }
                 }
 
                 // 3) Wrapper option visible (cas UI custom)
                 const optionWrapper = el.closest(
-                  '[role="radio"], [role="checkbox"], .form-check, .option, li, .choice, .answer_options, [class*="answer_options"]'
+                  '[role="radio"], [role="checkbox"], .form-check, .option, li, .choice, .answer_options, [class*="answer_options"], div.answer'
                 );
                 if (isVisible(optionWrapper)) return true;
 

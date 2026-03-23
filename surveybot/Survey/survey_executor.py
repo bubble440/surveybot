@@ -1192,11 +1192,6 @@ def execute_survey_page(driver, api_key, ctx=None):
         print(reason)
         _local_pause_before_cta(reason)
 
-    try:
-        cur = driver.current_url
-    except Exception:
-        cur = ""
-
     # =========================================================================
     # CAPTCHA: Détection et résolution automatique (no-op si aucun captcha)
     # =========================================================================
