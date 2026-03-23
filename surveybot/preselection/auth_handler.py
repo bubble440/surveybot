@@ -3,6 +3,8 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
+import time
+from selenium.common.exceptions import JavascriptException
 
 def _is_prod_env() -> bool:
     """
@@ -97,6 +99,21 @@ def snap(driver, label: str = "state"):
         print("[SNAP][ERROR]", e)
 
 
+def wait_for_vue_hydration(driver, timeout=15):
+    start = time.time()
+    while time.time() - start < timeout:
+        try:
+            ready = driver.execute_script(
+                "return !!(window.__nuxt && window.__nuxt.isHydrating === false)"
+            )
+            if ready:
+                return True
+        except JavascriptException:
+            pass
+        time.sleep(0.5)
+    print("[LOGIN][WARN] Vue hydration timeout — on continue quand même")
+    return False
+
 
 def login(driver, email, password):
     wait = WebDriverWait(driver, 20)
@@ -139,6 +156,7 @@ def login(driver, email, password):
     # suite normale
     net_probe()
     dom_probe(driver)
+    wait_for_vue_hydration(driver, timeout=15)
 
     # --- Étape 1 : Saisir l'email dans le champ inline (landing page, pas de modale)
     try:
@@ -149,9 +167,10 @@ def login(driver, email, password):
         )
         driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", email_input)
 
+        email_input.click()
+        time.sleep(0.5)
         email_input.clear()
         email_input.send_keys(email)
-        time.sleep(2)
         # Le champ email est pré-rempli côté SSR (attribut value dans le HTML Nuxt).
         # clear() + send_keys() met à jour la propriété DOM .value mais ne dispatche
         # aucun événement — Vue ne notifie jamais son v-model et la validation échoue
@@ -160,6 +179,7 @@ def login(driver, email, password):
             arguments[0].dispatchEvent(new Event('input',  { bubbles: true }));
             arguments[0].dispatchEvent(new Event('change', { bubbles: true }));
         """, email_input)
+        time.sleep(3)
         print(f"[LOGIN] Email saisi : {email}")
 
         continue_btn = wait.until(
@@ -172,7 +192,7 @@ def login(driver, email, password):
         continue_btn.click()
         print("[LOGIN] Bouton Continue cliqué.")
         snap(driver, "after_continue_click")
-        time.sleep(2)
+        time.sleep(10)
 
     except Exception as e:
         print("[LOGIN] Echec injection e-mail :", type(e).__name__, "-", e)
@@ -188,20 +208,20 @@ def login(driver, email, password):
     # signal que la modale est prête ; le scrollIntoView + sleep suivants absorbent
     # le délai de rendu résiduel avant toute interaction.
     try:
-        wait_pwd = WebDriverWait(driver, 120)
+        wait_pwd = WebDriverWait(driver, 60)
         pwd_input = wait_pwd.until(EC.presence_of_element_located(
             (By.CSS_SELECTOR, 'input[data-test-id="sign-in-password-field-input"]')
         ))
         # dom_probe(driver)
         snap(driver, "after_email")
         driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", pwd_input)
-        time.sleep(0.3)
 
         driver.execute_script("""
             arguments[0].value = arguments[1];
             arguments[0].dispatchEvent(new Event('input', { bubbles: true }));
             arguments[0].dispatchEvent(new Event('change', { bubbles: true }));
         """, pwd_input, password)
+        time.sleep(3)
 
         if pwd_input.get_attribute("value").strip() == "":
             pwd_input.clear()
@@ -211,19 +231,19 @@ def login(driver, email, password):
         else:
             print("🔑 Mot de passe injecté via JS.")
             snap(driver, "after_pwd_js")
+            time.sleep(5)  # petit délai pour que Vue traite les événements et active le bouton
             
-        time.sleep(2)  # petit délai pour stabilité
         # ✅ Corrigé ici : bouton Se connecter avec data-test-id
         login_btn = wait.until(EC.element_to_be_clickable(
             (By.CSS_SELECTOR, 'button[data-test-id="sign-in-submit-button"]')
         ))
         driver.execute_script("arguments[0].click();", login_btn)
+        time.sleep(3)
         print("✅ Bouton « Se connecter » cliqué.")
         from Management.redirect_watcher import wait_for_page_load
         wait_for_page_load(driver, timeout=30)
 
     except Exception as e:
         snap(driver, "error_pwd_step")
-        print("🛑 Exception mot de passe :", type(e).__name__, "-", e, flush=True)
         time.sleep(10)
-
+        print("🛑 Exception mot de passe :", type(e).__name__, "-", e, flush=True)
