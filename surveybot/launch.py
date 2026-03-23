@@ -13,7 +13,7 @@ from preselection.survey_handler import run_survey
 from Management.notifier import send_telegram
 from State.account_state import update_state, load_state, save_state, try_acquire_cooldown_slot, _now
 from selenium.common.exceptions import TimeoutException
-from preselection.auth_handler import is_session_expired
+from preselection.auth_handler import is_session_expired, handle_proxy_error_page_if_needed
 from Management.pause_policy import PausePolicy
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
@@ -45,6 +45,7 @@ def safe_get(driver, url):
         try:
             print(f"[SAFE_GET] start get: {url}")
             driver.get(url)
+            handle_proxy_error_page_if_needed(driver)
             if is_session_expired(driver):
                 msg = "🔐 Session expirée — ré-authentification manuelle requise."
                 print(msg)
@@ -65,6 +66,7 @@ def safe_get(driver, url):
                 driver.execute_script("window.stop();")
             except Exception:
                 pass
+            handle_proxy_error_page_if_needed(driver)
 
     except Exception as e:
         print(f"[SAFE_GET] Navigation impossible vers {url}: {e}")

@@ -31,6 +31,7 @@ class StopReason(Enum):
     DAILY_TARGET_REACHED = "daily_target_reached"
     SESSION_EXPIRED = "session_expired"
     NO_SURVEY_AVAILABLE = "no_survey_available"
+    PROXY_EXPIRED = "proxy_expired"
 
 
 @dataclass
