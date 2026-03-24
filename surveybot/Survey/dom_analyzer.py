@@ -1455,6 +1455,35 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                         if heading_lc not in opt_lc:
                             question = heading
 
+            # Cint/QPS et similaires : p.muted sibling de h2#label
+            # → instruction de cardinalité à appender à la question principale.
+            # Conditions : question déjà établie (non vide), #label présent dans
+            # le DOM, élément .muted visible avec texte non déjà inclus.
+            if question:
+                try:
+                    muted_instruction = _norm(driver.execute_script(
+                        """
+                        const labelEl = document.querySelector('#label');
+                        if (!labelEl || !labelEl.parentElement) return '';
+                        const candidates = labelEl.parentElement.querySelectorAll(
+                            '.muted, p.help-block, small.help-block, .instruction-text'
+                        );
+                        for (const c of candidates) {
+                            const st = window.getComputedStyle(c);
+                            if (!st || st.display === 'none' || st.visibility === 'hidden') continue;
+                            const r = c.getBoundingClientRect();
+                            if (r.width === 0 && r.height === 0) continue;
+                            const txt = (c.innerText || c.textContent || '').replace(/\\s+/g, ' ').trim();
+                            if (txt.length >= 4) return txt;
+                        }
+                        return '';
+                        """
+                    ) or "")
+                    if muted_instruction and _norm_lc(muted_instruction) not in _norm_lc(question):
+                        question = question + " " + muted_instruction
+                except Exception:
+                    pass
+
             if not question:
                 # dernier recours: bloc "1 option" (rare, mais utile)
                 if len(options) == 1 and len(els) == 1:
