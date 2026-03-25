@@ -215,7 +215,9 @@ def launch_browser(config: dict | None = None):
             options.add_argument("--disable-blink-features=AutomationControlled")
             options.add_argument("--start-maximized")
             print("🟢 LAUNCHED NEW CHROME SESSION")
-        return webdriver.Chrome(options=options)
+        driver = webdriver.Chrome(options=options)
+        apply_resource_blocking(driver)
+        return driver
 
     proxy_server, proxy_user, proxy_pass = _parse_proxy_env(config)
     print(
@@ -337,7 +339,8 @@ def launch_browser(config: dict | None = None):
         opts.add_experimental_option("debuggerAddress", f"127.0.0.1:{debug_port}")
         opts.page_load_strategy = "eager"  # ne pas attendre toutes les ressources
 
-        driver = webdriver.Chrome(options=opts)        
+        driver = webdriver.Chrome(options=opts)
+        apply_resource_blocking(driver)
 
         try:
             fingerprint = driver.execute_script("""
@@ -372,3 +375,36 @@ def launch_browser(config: dict | None = None):
         except Exception:
             pass
         raise
+
+
+def apply_resource_blocking(driver) -> None:
+    """
+    Active le blocage CDP des ressources non essentielles pour réduire la latence proxy.
+    Bloque : polices, analytics/tracking, fichiers médias.
+    Ne bloque PAS : images, CSS, JS (préserve le fonctionnement des surveys).
+    Activé uniquement si SURVEY_RESOURCE_BLOCKING=1.
+    Sans effet si CDP indisponible (mode local sans port de debug).
+    """
+    import os
+    if os.getenv("SURVEY_RESOURCE_BLOCKING", "").strip().lower() not in {"1", "true", "yes"}:
+        return  # désactivé par défaut
+
+    BLOCKED_URLS = [
+        # Polices web
+        "*.woff", "*.woff2", "*.ttf", "*.eot",
+        # Analytics / tracking
+        "*google-analytics*",
+        "*googletagmanager.com/gtag*",
+        "*hotjar*",
+        "*doubleclick*",
+        "*facebook.com/tr*",
+        "*segment.io*",
+        # Médias
+        "*.mp4", "*.webm", "*.ogg", "*.mp3",
+    ]
+    try:
+        driver.execute_cdp_cmd("Network.enable", {})
+        driver.execute_cdp_cmd("Network.setBlockedURLs", {"urls": BLOCKED_URLS})
+        print(f"[CDP] Resource blocking activé ({len(BLOCKED_URLS)} patterns).")
+    except Exception as e:
+        print(f"[CDP][WARN] apply_resource_blocking ignoré: {e}")
