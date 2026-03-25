@@ -1150,6 +1150,31 @@ def _should_skip_post_actions_navigation(driver, question_blocks: list[dict]) ->
         except Exception:
             continue
 
+    # Savanta JQM carousel : skip CTA tant que tous les items ne sont pas répondus.
+    # Condition : carousel-index < carousel-total (both present dans le DOM).
+    for block in question_blocks or []:
+        try:
+            ctx = block.get("context") if isinstance(block, dict) else None
+            if not (isinstance(ctx, dict) and ctx.get("savanta_jqm_carousel") is True):
+                continue
+            try:
+                index_str = driver.execute_script(
+                    "var s=document.querySelector('span.carousel-index'); return s ? s.textContent.trim() : null;"
+                )
+                total_str = driver.execute_script(
+                    "var s=document.querySelector('span.carousel-total'); return s ? s.textContent.trim() : null;"
+                )
+                if index_str and total_str and index_str.strip() != total_str.strip():
+                    print(
+                        f"[SAVANTA_JQM_CAROUSEL] carousel not done ({index_str}/{total_str}) — skip CTA"
+                    )
+                    return True
+            except Exception:
+                pass
+            break
+        except Exception:
+            continue
+
     # Critères DOM explicites (défense en profondeur si le contexte est absent)
     try:
         if driver.find_elements(By.CSS_SELECTOR, "#cardSortContainer button.answer-button"):
@@ -1187,6 +1212,20 @@ def execute_survey_page(driver, api_key, ctx=None):
                 print(reason)
                 _local_pause_before_cta(reason)
                 return True
+            # Fallback: on est sur TopSurveys sans popup "Bon travail!"
+            # (ex: retour apres fin/abandon de survey depuis la boucle resolution)
+            # -> mystery box + navigation vers meilleur survey
+            print("[TOPSURVEYS_LISTING] URL=topsurveys sans popup -> mystery_box + best_survey")
+            try:
+                import preselection.survey_navigator as survey_navigator
+                survey_navigator._handle_mystery_box_popup(driver)
+                import time as _time
+                _time.sleep(1.0)
+                survey_navigator.go_to_best_value_survey(driver)
+                print("[TOPSURVEYS_LISTING] Navigation vers meilleur survey OK")
+            except Exception as _nav_exc:
+                print(f"[TOPSURVEYS_LISTING] Erreur navigation: {_nav_exc}")
+            return True
     except Exception as e:
         reason = f"[TOPSURVEYS_POPUP] Exception: {e}"
         print(reason)
@@ -1572,6 +1611,39 @@ def execute_survey_page(driver, api_key, ctx=None):
             #  Logger l'erreur au lieu de l'avaler silencieusement
             print(f" Fallback CTA-only : {type(e).__name__}: {e}")
 
+        # ----------------------------------------------------------------
+        # WAIT_PAGE : détection des pages transitoires "veuillez patienter"
+        # (ex: sample.savanta.com "Validating details. Please do not refresh")
+        # → attendre une redirection automatique, sinon forcer un refresh.
+        # ----------------------------------------------------------------
+        try:
+            _WAIT_SIGNALS = [
+                "please wait", "veuillez patienter",
+                "please do not refresh", "do not refresh",
+                "validating", "validation en cours",
+                "just a moment", "un instant",
+            ]
+            _wp_src = (driver.page_source or "").lower()
+            if any(sig in _wp_src for sig in _WAIT_SIGNALS):
+                _wp_before_url = driver.current_url
+                print(f"[WAIT_PAGE] Page transitoire détectée ({_wp_before_url}) → attente redirection (10s max)")
+                for _ in range(10):
+                    time.sleep(1)
+                    try:
+                        if driver.current_url != _wp_before_url:
+                            print(f"[WAIT_PAGE] Redirection automatique détectée → {driver.current_url}")
+                            return True
+                    except Exception:
+                        break
+                print("[WAIT_PAGE] Pas de redirection automatique → refresh forcé")
+                try:
+                    driver.refresh()
+                    time.sleep(5)
+                except Exception as _wp_re:
+                    print(f"[WAIT_PAGE][WARN] Refresh échoué: {_wp_re}")
+                return True
+        except Exception as _wp_e:
+            print(f"[WAIT_PAGE][WARN] Détection échouée: {_wp_e}")
 
         # DOM-only: abandon explicite si aucun CTA DOM exploitable.
         if _env_truthy("SURVEY_DOM_ONLY_ABORT", "1"):
