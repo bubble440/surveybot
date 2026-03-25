@@ -1,6 +1,24 @@
 # redirect_watcher.py
 import time
+from dataclasses import dataclass
 from preselection.playwright_launcher import apply_resource_blocking
+
+
+@dataclass
+class NavResult:
+    """Résultat structuré de wait_for_navigation_or_dom_change.
+
+    Utilisable comme bool (True si un changement a été détecté) :
+        if nav:        ...  # changement quelconque
+        if nav.url_changed:  ...  # URL a changé (latence proxy présente)
+        if nav.dom_changed:  ...  # SPA : seul le DOM a changé
+    """
+    changed: bool
+    url_changed: bool
+    dom_changed: bool
+
+    def __bool__(self) -> bool:
+        return self.changed
 
 def wait_for_final_redirection(driver, max_wait=30):
     """
@@ -119,16 +137,16 @@ def _dom_signature(driver) -> int:
             return 0
 
 
-def wait_for_navigation_or_dom_change(driver, *, before_url: str, before_sig: str | None = None, timeout: int = 10) -> bool:
+def wait_for_navigation_or_dom_change(driver, *, before_url: str, before_sig: str | None = None, timeout: int = 10) -> NavResult:
     """
-    Attend un changement notable après un clic CTA:
-    - URL change
-    - OU signature DOM change
+    Attend un changement notable après un clic CTA :
+    - URL change  → NavResult(changed=True, url_changed=True,  dom_changed=False)
+    - DOM change  → NavResult(changed=True, url_changed=False, dom_changed=True)
+    - Timeout     → NavResult(changed=False, ...)
 
+    Retourne un NavResult utilisable comme bool (True si changement détecté).
     Best-effort, jamais bloquant.
     """
-    import time
-
     end = time.time() + max(1, int(timeout or 10))
 
     try:
@@ -140,20 +158,20 @@ def wait_for_navigation_or_dom_change(driver, *, before_url: str, before_sig: st
     while time.time() < end:
         try:
             if driver.current_url != (before_url or ""):
-                return True
+                return NavResult(changed=True, url_changed=True, dom_changed=False)
         except Exception:
             pass
 
         try:
             sig = _dom_signature(driver)
             if sig and before_sig and sig != before_sig:
-                return True
+                return NavResult(changed=True, url_changed=False, dom_changed=True)
         except Exception:
             pass
 
         time.sleep(0.2)
 
-    return False
+    return NavResult(changed=False, url_changed=False, dom_changed=False)
 
 
 def wait_for_page_load(driver, timeout=30):

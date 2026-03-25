@@ -883,10 +883,23 @@ def solve_full_survey(driver, api_key, *, account_id: str, survey_context=None):
             # on repart tout de suite sur une nouvelle itération (nouvelle capture)
             continue
 
-        # Sinon, il y a peut-être une navigation : stabilisation courte si succès, sinon normale
-        maxw = 3 if just_succeeded else 8
-        stabilized_url = redirect_watcher.wait_for_final_redirection(driver, max_wait=maxw)
-        current_url = stabilized_url or driver.current_url
+        # Sinon, il y a peut-être une navigation.
+        # L’executor a déjà attendu jusqu’à 10s via wait_for_navigation_or_dom_change ;
+        # une vérification immédiate de l’URL évite un wait_for_final_redirection inutile
+        # sur les surveys SPA (DOM-only, URL stable entre les pages).
+        _check_url = driver.current_url
+
+        if _check_url != last_url:
+            # URL déjà changée → attendre la stabilisation finale (redirections chaînées possibles)
+            maxw = 3 if just_succeeded else 8
+            stabilized_url = redirect_watcher.wait_for_final_redirection(driver, max_wait=maxw)
+            current_url = stabilized_url or _check_url
+        else:
+            # URL inchangée : navigation SPA probable (DOM-only).
+            # Pas de latence proxy à absorber → on saute wait_for_final_redirection (5s+ de polling).
+            # Fenêtre de sécurité minimale pour les redirects asynchrones tardifs.
+            time.sleep(0.5)
+            current_url = driver.current_url
 
         # Si l’URL a changé → on inspecte le nouvel emplacement
         if current_url != last_url:
