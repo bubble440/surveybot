@@ -64,6 +64,7 @@ $env:ATTACH_TAB_SELECTOR=$AttachTabSelector
 
 # Tes vars debug
 $env:LOG_LEVEL="INFO"
+$env:SURVEY_RESOURCE_BLOCKING="1"
 $env:DOM_DEBUG_FRAMES="1"
 $env:SURVEY_CTX_DEBUG="1"
 $env:CTA_INTERCEPT_ONLY="0"

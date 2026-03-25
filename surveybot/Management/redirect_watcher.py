@@ -1,5 +1,6 @@
 # redirect_watcher.py
 import time
+from preselection.playwright_launcher import apply_resource_blocking
 
 def wait_for_final_redirection(driver, max_wait=30):
     """
@@ -65,6 +66,7 @@ def switch_to_latest_window_and_close_others(driver, base_handles, timeout=10, p
             else:
                 raise RuntimeError("Aucun onglet restant après fermeture des anciens onglets")
             print(f"🪟 Focus sur survey + anciens onglets fermés → {driver.current_url}")
+            apply_resource_blocking(driver)
             return True
 
         # 🧭 Cas 2 : fallback (onglet externe déjà existant)

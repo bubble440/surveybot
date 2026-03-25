@@ -6,7 +6,7 @@ from Management.guards.runtime_guard import RuntimeGuard, StopReason, set_guard,
 from State.daily_target import DAILY_TARGET_EUR, ensure_daily_timer_started
 from Cash.payout import MIN_CASHOUT_EUR
 import time, sys, logging, threading, traceback, signal, Cash.payout as payout
-from preselection.playwright_launcher import launch_browser
+from preselection.playwright_launcher import launch_browser, apply_resource_blocking
 from preselection.auth_handler import login, snap
 from preselection.survey_navigator import go_to_best_value_survey
 from preselection.survey_handler import run_survey
@@ -24,11 +24,12 @@ def acquire_account_lock_or_exit(account_id: str, ttl_sec: int = 240):
         print(f"[COOLDOWN] Account {account_id} en cooldown ou déjà actif → exit")
         sys.exit(0)
 
-def safe_get(driver, url):
+def safe_get(driver, url, max_retries=3, base_delay=4):
     """
     Navigation sécurisée : s'assure qu'un driver valide existe.
-    - Ajoute un timeout pour éviter les hangs infinis en ECS.
-    - Fallback: stoppe le chargement et continue.
+    - Timeout 70s pour éviter les hangs infinis en ECS.
+    - Retry avec backoff exponentiel sur tout TimeoutException (latence proxy, tunnel lent…).
+    - Après épuisement des retries : chargement partiel accepté + vérification proxy.
     """
     if driver is None:
         raise RuntimeError("SAFE_GET appelé avec driver=None")
@@ -38,35 +39,50 @@ def safe_get(driver, url):
             raise RuntimeError("Aucune fenêtre active")
 
         driver.switch_to.window(driver.window_handles[-1])
-
-        # 🔒 évite blocage infini
         driver.set_page_load_timeout(70)
 
-        try:
-            print(f"[SAFE_GET] start get: {url}")
-            driver.get(url)
-            handle_proxy_error_page_if_needed(driver)
-            if is_session_expired(driver):
-                msg = "🔐 Session expirée — ré-authentification manuelle requise."
-                print(msg)
+        for attempt in range(max_retries):
+            try:
+                apply_resource_blocking(driver)
+                print(f"[SAFE_GET] start get (attempt {attempt + 1}/{max_retries}): {url}")
+                driver.get(url)
+                handle_proxy_error_page_if_needed(driver)
+                if is_session_expired(driver):
+                    msg = "🔐 Session expirée — ré-authentification manuelle requise."
+                    print(msg)
+                    try:
+                        get_guard().notify_fn(msg)
+                    except Exception:
+                        pass
+                    get_guard().pause(
+                        PausePolicy.UNTIL_MANUAL,
+                        StopReason.SESSION_EXPIRED,
+                    )
+                    raise SystemExit("session_expired")
+
+                print(f"[SAFE_GET] done get: {url}")
+                return  # ✅ succès
+
+            except TimeoutException:
+                print(f"[SAFE_GET][WARN] Timeout page load vers {url} -> window.stop()")
                 try:
-                    get_guard().notify_fn(msg)
+                    driver.execute_script("window.stop();")
                 except Exception:
                     pass
-                get_guard().pause(
-                    PausePolicy.UNTIL_MANUAL,
-                    StopReason.SESSION_EXPIRED,
-                )
-                raise SystemExit("session_expired")
 
-            print(f"[SAFE_GET] done get: {url}")
-        except TimeoutException:
-            print(f"[SAFE_GET][WARN] Timeout page load vers {url} -> window.stop()")
-            try:
-                driver.execute_script("window.stop();")
-            except Exception:
-                pass
-            handle_proxy_error_page_if_needed(driver)
+                if attempt < max_retries - 1:
+                    delay = base_delay * (2 ** attempt)  # 4s, 8s
+                    print(
+                        f"[SAFE_GET][RETRY] Timeout, retry dans {delay}s "
+                        f"(attempt {attempt + 1}/{max_retries})"
+                    )
+                    time.sleep(delay)
+                    # continue implicite vers prochain attempt
+                else:
+                    # Dernier retry épuisé : chargement partiel, vérification proxy
+                    print(f"[SAFE_GET] Retries épuisés — chargement partiel accepté.")
+                    handle_proxy_error_page_if_needed(driver)
+                    return
 
     except Exception as e:
         print(f"[SAFE_GET] Navigation impossible vers {url}: {e}")
