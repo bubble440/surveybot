@@ -1623,6 +1623,75 @@ def _apply_by_target_id(
                         except Exception:
                             continue
 
+                # --- Savanta JQM carousel : clic sur div.ui-btn + validation via carousel-values ---
+                if payload.get("savanta_jqm_carousel"):
+                    try:
+                        el = _find_best_visible(xp)
+                        if el is None:
+                            try:
+                                cands = driver.find_elements(By.XPATH, xp)
+                                el = cands[0] if cands else None
+                            except Exception:
+                                el = None
+                        if el is None:
+                            if debug_target:
+                                log_debug("[TARGET_DEBUG]", f"savanta_jqm_carousel: element not found xpath={xp}")
+                            return False
+                        try:
+                            driver.execute_script(
+                                "arguments[0].scrollIntoView({block:'center', inline:'center'});", el
+                            )
+                        except Exception:
+                            pass
+                        clicked = _click_candidate(el, "savanta_jqm_carousel_btn")
+                        if not clicked:
+                            if debug_target:
+                                log_debug("[TARGET_DEBUG]", f"savanta_jqm_carousel: click failed xpath={xp}")
+                            return False
+                        # Validation : l'input hidden carousel-values[data-index=N] doit avoir reçu une valeur
+                        current_idx = payload.get("jqm_carousel_current_data_index")
+                        if current_idx is not None:
+                            ok = driver.execute_script(
+                                """
+                                const idx = arguments[0];
+                                const inp = document.querySelector(
+                                    '.carousel-values input[data-index="' + idx + '"]'
+                                );
+                                if (!inp) return true;  // absent = pas de validation possible, optimiste
+                                return !!(inp.value && inp.value.trim() !== '');
+                                """,
+                                current_idx,
+                            )
+                            if ok:
+                                log_info("[TARGET]", "apply ok=true strategy=savanta_jqm_carousel reason=carousel_value_set")
+                                return True
+                            # Attente courte (JQM peut être async)
+                            time.sleep(0.3)
+                            ok = driver.execute_script(
+                                """
+                                const idx = arguments[0];
+                                const inp = document.querySelector(
+                                    '.carousel-values input[data-index="' + idx + '"]'
+                                );
+                                if (!inp) return true;
+                                return !!(inp.value && inp.value.trim() !== '');
+                                """,
+                                current_idx,
+                            )
+                            if ok:
+                                log_info("[TARGET]", "apply ok=true strategy=savanta_jqm_carousel reason=carousel_value_set_delayed")
+                                return True
+                            if debug_target:
+                                log_debug("[TARGET_DEBUG]", f"savanta_jqm_carousel: carousel-values[data-index={current_idx}] still empty after click")
+                            return False
+                        # Pas d'index connu → retour optimiste si le clic a réussi
+                        log_info("[TARGET]", "apply ok=true strategy=savanta_jqm_carousel reason=click_ok_no_index")
+                        return True
+                    except Exception as exc:
+                        if debug_target:
+                            log_debug("[TARGET_DEBUG]", f"savanta_jqm_carousel exception: {_short_exc(exc)}")
+                        return False
+
                 # 1) trouver l'élément cible (label/span/input)
                 _ensure_pre_clicks_ready(xp)
                 try:

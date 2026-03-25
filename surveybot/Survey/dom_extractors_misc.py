@@ -5777,3 +5777,206 @@ def _extract_decipher_clickable_ranking_blocks(driver, frame_chain: list[int] | 
             },
         }
     ]
+
+
+def _extract_savanta_jqm_carousel_block(driver, frame_chain: list[int] | None) -> list[dict]:
+    """Extrait le bloc courant d'un carousel jQuery Mobile / Slick (Savanta).
+
+    Gate DOM strict (additif) :
+    - ``fieldset.carousel`` contenant un ``.slick-initialized.slick-slider``
+    - ``fieldset.carousel-buttons`` avec au moins 2 ``button.ui-btn-hidden``
+
+    Extraction :
+    - Question : légende du fieldset.carousel (hors ``span.inst``) + label de l'item ``.slick-current``
+    - Options   : texte des ``button.ui-btn-hidden`` dans ``fieldset.carousel-buttons``
+    - XPath cibles : ``div.ui-btn`` parent visible de chaque bouton hidden
+
+    Payload extras (pour action_dispatcher) :
+    - ``savanta_jqm_carousel: True``
+    - ``jqm_carousel_current_data_index: int`` (data-index du slide courant dans carousel-values)
+    """
+    blocks: list[dict] = []
+
+    # --- Gate 1 : fieldset.carousel avec slick-slider interne ---
+    try:
+        carousel_fieldsets = driver.find_elements(
+            By.CSS_SELECTOR, "fieldset.carousel"
+        )
+    except Exception:
+        return blocks
+
+    if not carousel_fieldsets:
+        return blocks
+
+    carousel_fs = None
+    for fs in carousel_fieldsets:
+        try:
+            if fs.find_elements(By.CSS_SELECTOR, ".slick-initialized.slick-slider"):
+                carousel_fs = fs
+                break
+        except Exception:
+            continue
+
+    if carousel_fs is None:
+        return blocks
+
+    # --- Gate 2 : fieldset.carousel-buttons avec boutons ---
+    try:
+        btn_fieldset = driver.find_element(By.CSS_SELECTOR, "fieldset.carousel-buttons")
+    except Exception:
+        return blocks
+
+    try:
+        hidden_btns = btn_fieldset.find_elements(
+            By.CSS_SELECTOR, "button.ui-btn-hidden"
+        )
+    except Exception:
+        hidden_btns = []
+
+    if len(hidden_btns) < 2:
+        return blocks
+
+    # --- Extraction de la question ---
+    # 1) Légende du fieldset.carousel (texte direct, sans le span.inst)
+    legend_text = ""
+    try:
+        legend = carousel_fs.find_element(By.CSS_SELECTOR, "legend")
+        legend_text = driver.execute_script(
+            """
+            const legend = arguments[0];
+            if (!legend) return '';
+            const clone = legend.cloneNode(true);
+            for (const s of clone.querySelectorAll('span.inst, span.instruction, .instruction')) {
+                s.remove();
+            }
+            return clone.textContent.replace(/\\s+/g, ' ').trim();
+            """,
+            legend,
+        )
+    except Exception:
+        legend_text = ""
+
+    legend_text = _norm(legend_text or "")
+
+    # 2) Label de l'item courant (.slick-current)
+    current_label = ""
+    try:
+        current_slide = carousel_fs.find_element(By.CSS_SELECTOR, ".slick-current")
+        try:
+            ce = current_slide.find_element(By.CSS_SELECTOR, ".carousel-element")
+            tit = (ce.get_attribute("title") or "").strip()
+            if tit:
+                current_label = tit
+        except Exception:
+            pass
+        if not current_label:
+            try:
+                iw = current_slide.find_element(By.CSS_SELECTOR, ".image-wrapper")
+                current_label = _norm(iw.text or iw.get_attribute("innerText") or "")
+            except Exception:
+                pass
+        if not current_label:
+            current_label = _norm(current_slide.text or "")
+    except Exception:
+        current_label = ""
+
+    if not legend_text and not current_label:
+        return blocks
+
+    question = _norm(
+        f"{legend_text} \u2013 {current_label}"
+        if (legend_text and current_label)
+        else (legend_text or current_label)
+    )
+    if not question:
+        return blocks
+
+    # --- data-index du slide courant (pour validation post-clic) ---
+    jqm_current_data_index: int | None = None
+    try:
+        current_slide = carousel_fs.find_element(By.CSS_SELECTOR, ".slick-current")
+        di = (current_slide.get_attribute("data-index") or "").strip()
+        if di.lstrip("-").isdigit():
+            jqm_current_data_index = int(di)
+    except Exception:
+        pass
+
+    # --- Options et XPath sur div.ui-btn (le wrapper visible cliquable) ---
+    options: list[str] = []
+    option_xpath_map: dict[str, str] = {}
+
+    for btn in hidden_btns:
+        try:
+            lbl = _norm(btn.text or btn.get_attribute("innerText") or btn.get_attribute("value") or "")
+            if not lbl or len(lbl) < 2:
+                continue
+
+            # Remonter au div.ui-btn parent (wrapper cliquable JQM)
+            try:
+                ui_btn_div = driver.execute_script(
+                    """
+                    let el = arguments[0];
+                    for (let i = 0; i < 5 && el; i++, el = el.parentElement) {
+                        if (el.tagName && el.tagName.toLowerCase() !== 'button') {
+                            if ((el.className || '').includes('ui-btn')) return el;
+                        }
+                    }
+                    return null;
+                    """,
+                    btn,
+                )
+            except Exception:
+                ui_btn_div = None
+
+            target_el = ui_btn_div if ui_btn_div is not None else btn
+            xp = _best_xpath_for_element(driver, target_el)
+            if not xp:
+                continue
+
+            nk = _norm_key(lbl)
+            if nk not in option_xpath_map:
+                options.append(lbl)
+                option_xpath_map[nk] = xp
+        except Exception:
+            continue
+
+    if len(options) < 2:
+        return blocks
+
+    group_key = f"savanta_jqm_carousel:{_norm_key(question)}"
+    target_id = make_target_id("group", group_key, question)
+
+    register_target(
+        target_id,
+        {
+            "kind": "group",
+            "itype": "radio",
+            "group_key": group_key,
+            "question": question,
+            "option_xpath_map": option_xpath_map,
+            "frame_chain": frame_chain or [],
+            "savanta_jqm_carousel": True,
+            "jqm_carousel_current_data_index": jqm_current_data_index,
+        },
+    )
+
+    log_debug(
+        "[DOM_SAVANTA_JQM_CAROUSEL]",
+        f"question={question!r} options={options} current_data_index={jqm_current_data_index}",
+    )
+
+    return [
+        {
+            "question": question,
+            "itype": "radio",
+            "options": options,
+            "max_select": 1,
+            "min_select": 1,
+            "target_id": target_id,
+            "context": {
+                "kind": "group",
+                "group_key": group_key,
+                "savanta_jqm_carousel": True,
+            },
+        }
+    ]

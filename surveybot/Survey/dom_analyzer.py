@@ -97,8 +97,9 @@ try:
         _extract_qualtrics_choice_structure_checkbox_blocks,
         _extract_qualtrics_matrix_dropdown_row_blocks,
         _extract_decipher_clickable_ranking_blocks,
+        _extract_savanta_jqm_carousel_block,
     )
-    
+
     # Registre et utilitaires
     from Survey.dom_registry import clear_registry, register_target, make_target_id
     from Survey.frame_utils import switch_to_frame_chain
@@ -168,6 +169,7 @@ except ImportError:
         _extract_qualtrics_choice_structure_checkbox_blocks,
         _extract_qualtrics_matrix_dropdown_row_blocks,
         _extract_decipher_clickable_ranking_blocks,
+        _extract_savanta_jqm_carousel_block,
     )
 
 
@@ -1149,6 +1151,16 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         jqm_collapsible_blocks = _extract_jqm_lrw_collapsible_radio_rows(driver, frame_chain)
         if jqm_collapsible_blocks:
             return jqm_collapsible_blocks
+    except Exception:
+        pass
+
+    # --- 0j) Savanta JQM carousel (fieldset.carousel + slick-slider) ---
+    # Objectif: extraire l'item courant du carousel + les options d'un fieldset.carousel-buttons.
+    # Doit s'exécuter avant le button_group générique pour éviter la mauvaise question.
+    try:
+        savanta_carousel_blocks = _extract_savanta_jqm_carousel_block(driver, frame_chain)
+        if savanta_carousel_blocks:
+            return savanta_carousel_blocks
     except Exception:
         pass
 
