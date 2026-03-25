@@ -1465,7 +1465,8 @@ def execute_survey_page(driver, api_key, ctx=None):
                         timeout=10,
                     )
                     if changed:
-                        print(" Navigation/DOM change   CTA.")
+                        _kind = "URL" if changed.url_changed else "DOM-only (SPA)"
+                        print(f" Navigation détectée après CTA ({_kind}).")
             except Exception:
                 pass
 
