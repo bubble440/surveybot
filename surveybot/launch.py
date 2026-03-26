@@ -1,6 +1,7 @@
 import os, random
 IS_LOCAL = os.getenv("RUN_ENV", "local") == "local"
-from config import is_prod_like, should_run_guard_monitor, should_run_hot_reload
+from config import is_prod_like, should_run_guard_monitor, should_run_hot_reload, is_proxy_latency_mode
+_PLM = is_proxy_latency_mode()  # True = proxy résidentiel haute latence
 
 from Management.guards.runtime_guard import RuntimeGuard, StopReason, set_guard, get_guard
 from State.daily_target import DAILY_TARGET_EUR, ensure_daily_timer_started
@@ -41,7 +42,8 @@ def safe_get(driver, url, max_retries=3, base_delay=4):
         driver.switch_to.window(driver.window_handles[-1])
         driver.set_page_load_timeout(70)
 
-        for attempt in range(max_retries):
+        effective_retries = max_retries if _PLM else 1
+        for attempt in range(effective_retries):
             try:
                 apply_resource_blocking(driver)
                 print(f"[SAFE_GET] start get (attempt {attempt + 1}/{max_retries}): {url}")
@@ -228,7 +230,7 @@ def soft_restart(ctx, driver, reason):
     print(f"[SOFT_RESTART] {reason}")
 
     soft_restart_cleanup(driver)
-    time.sleep(3)
+    time.sleep(3 if _PLM else 1)
 
     try:
         soft_restart_payout(ctx, driver)
@@ -454,7 +456,7 @@ def init_session_and_enter_surveys(driver, config, account_id: str, notify_fn):
         print(f"[PAYOUT][WARN] Encaissement automatique: {e}")
 
     snap(driver, "after_login")
-    time.sleep(15)
+    time.sleep(15 if _PLM else 3)
     go_to_best_value_survey(driver)
     snap(driver, "after_navigate_best_value")
 
