@@ -1,0 +1,22 @@
+app = "surveybot-scheduler"
+primary_region = "cdg"
+
+[build]
+  image = "registry.fly.io/surveybot-scheduler:latest"
+
+[env]
+  RUN_ENV = "prod"
+  LOOP_INTERVAL_SEC = "120"
+
+[deploy]
+  strategy = "immediate"
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory_mb = 256
+
+[[groups]]
+  name = "app"
+  min_machines_running = 1
+  max_machines = 1
