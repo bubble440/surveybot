@@ -63,7 +63,7 @@ $env:ATTACH_DEBUGGER_ADDRESS="127.0.0.1:$Port"
 $env:ATTACH_TAB_SELECTOR=$AttachTabSelector
 
 # Tes vars debug
-$env:LOG_LEVEL="INFO"
+$env:LOG_LEVEL="DEBUG"
 $env:SURVEY_RESOURCE_BLOCKING="1"
 $env:DOM_DEBUG_FRAMES="1"
 $env:SURVEY_CTX_DEBUG="1"
@@ -72,9 +72,10 @@ $env:BOT_RUN_ID="port_$Port"
 $env:ACTION_DEBUG_TARGET="1"
 $env:ATTACH_ROUTE_PROMPT="0"
 $env:LOCAL_CTA_REQUIRE_ENTER="1"
-$env:PROXY_USER="AFe0mvVocKuoFWzq"
-$env:PROXY_URL="geo.iproyal.com:12321"
-$env:PROXY_PASS="ajKCpYNJXZz4DTI4_country-fr_city-paris_session-myo6lDFM_lifetime-24h"
+$env:PROXY_LATENCY_MODE="0"
+# $env:PROXY_USER="AFe0mvVocKuoFWzq"
+# $env:PROXY_URL="geo.iproyal.com:12321"
+# $env:PROXY_PASS="ajKCpYNJXZz4DTI4_country-fr_city-paris_session-myo6lDFM_lifetime-24h"
 
 # Utiliser python du venv si présent (plus fiable)
 $venvPy = Join-Path $ProjectDir ".venv\Scripts\python.exe"
