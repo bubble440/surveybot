@@ -37,6 +37,8 @@ def _load_all_accounts() -> dict:
         return _cache
 
     raw = os.getenv("ACCOUNTS_JSON", "").strip()
+    raw = os.getenv("ACCOUNTS_JSON", "").strip()
+    print(f"[ACCOUNT_LOADER] ACCOUNTS_JSON length={len(raw)} preview={raw[:800]!r}", flush=True)
     if not raw:
         raise RuntimeError(
             "[ACCOUNT_LOADER] ACCOUNTS_JSON manquant. "

@@ -3,7 +3,7 @@ from account_loader import list_account_ids, load_account
 from fly import start_task
 
 RUN_ENV       = os.getenv("RUN_ENV", "prod").lower()
-LOOP_INTERVAL = int(os.getenv("LOOP_INTERVAL_SEC", "300"))
+LOOP_INTERVAL = int(os.getenv("LOOP_INTERVAL_SEC", "120"))
 
 def main() -> None:
     print(f"[SCHEDULER] Démarrage — RUN_ENV={RUN_ENV} interval={LOOP_INTERVAL}s")
