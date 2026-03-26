@@ -1,6 +1,7 @@
 import time, os, threading
 
 IS_LOCAL = os.getenv("RUN_ENV", "local") == "local"
+_PLM = os.getenv("PROXY_LATENCY_MODE", "").strip().lower() in {"1", "true", "yes"}
 
 # FIX-B3: _restart_depth était un global partagé entre threads.
 # Un soft_restart peut relancer run_survey() depuis n'importe quel thread
@@ -233,7 +234,7 @@ def _run_survey_impl(driver, api_key, *, account_id: str, ctx=None, payout_name:
             print(f"[RESTART][FATAL] soft_restart fallback échoué: {e}")
 
     snap(driver, "before_survey_loop")
-    time.sleep(5)
+    time.sleep(5 if _PLM else 1)
     _STUCK_THRESHOLD = 5
     _last_scan_key = None
     _same_scan_count = 0

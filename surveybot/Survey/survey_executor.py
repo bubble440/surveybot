@@ -1616,35 +1616,37 @@ def execute_survey_page(driver, api_key, ctx=None):
         # WAIT_PAGE : détection des pages transitoires "veuillez patienter"
         # (ex: sample.savanta.com "Validating details. Please do not refresh")
         # → attendre une redirection automatique, sinon forcer un refresh.
+        # Actif uniquement en mode proxy haute latence (PROXY_LATENCY_MODE=1).
         # ----------------------------------------------------------------
-        try:
-            _WAIT_SIGNALS = [
-                "please wait", "veuillez patienter",
-                "please do not refresh", "do not refresh",
-                "validating", "validation en cours",
-                "just a moment", "un instant",
-            ]
-            _wp_src = (driver.page_source or "").lower()
-            if any(sig in _wp_src for sig in _WAIT_SIGNALS):
-                _wp_before_url = driver.current_url
-                print(f"[WAIT_PAGE] Page transitoire détectée ({_wp_before_url}) → attente redirection (10s max)")
-                for _ in range(10):
-                    time.sleep(1)
+        if _env_truthy("PROXY_LATENCY_MODE", "0"):
+            try:
+                _WAIT_SIGNALS = [
+                    "please wait", "veuillez patienter",
+                    "please do not refresh", "do not refresh",
+                    "validating", "validation en cours",
+                    "just a moment", "un instant",
+                ]
+                _wp_src = (driver.page_source or "").lower()
+                if any(sig in _wp_src for sig in _WAIT_SIGNALS):
+                    _wp_before_url = driver.current_url
+                    print(f"[WAIT_PAGE] Page transitoire détectée ({_wp_before_url}) → attente redirection (10s max)")
+                    for _ in range(10):
+                        time.sleep(1)
+                        try:
+                            if driver.current_url != _wp_before_url:
+                                print(f"[WAIT_PAGE] Redirection automatique détectée → {driver.current_url}")
+                                return True
+                        except Exception:
+                            break
+                    print("[WAIT_PAGE] Pas de redirection automatique → refresh forcé")
                     try:
-                        if driver.current_url != _wp_before_url:
-                            print(f"[WAIT_PAGE] Redirection automatique détectée → {driver.current_url}")
-                            return True
-                    except Exception:
-                        break
-                print("[WAIT_PAGE] Pas de redirection automatique → refresh forcé")
-                try:
-                    driver.refresh()
-                    time.sleep(5)
-                except Exception as _wp_re:
-                    print(f"[WAIT_PAGE][WARN] Refresh échoué: {_wp_re}")
-                return True
-        except Exception as _wp_e:
-            print(f"[WAIT_PAGE][WARN] Détection échouée: {_wp_e}")
+                        driver.refresh()
+                        time.sleep(5)
+                    except Exception as _wp_re:
+                        print(f"[WAIT_PAGE][WARN] Refresh échoué: {_wp_re}")
+                    return True
+            except Exception as _wp_e:
+                print(f"[WAIT_PAGE][WARN] Détection échouée: {_wp_e}")
 
         # DOM-only: abandon explicite si aucun CTA DOM exploitable.
         if _env_truthy("SURVEY_DOM_ONLY_ABORT", "1"):

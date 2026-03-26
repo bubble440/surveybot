@@ -52,10 +52,20 @@ def _env_truthy(name: str, default: str = "0") -> bool:
     return v in ("1", "true", "yes", "on")
 
 LOCAL_UNATTENDED = _env_truthy("LOCAL_UNATTENDED", "0")
+PROXY_LATENCY_MODE = _env_truthy("PROXY_LATENCY_MODE", "0")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # FONCTIONS DE DÉCISION CENTRALISÉES
 # ══════════════════════════════════════════════════════════════════════════════
+
+def is_proxy_latency_mode() -> bool:
+    """
+    Retourne True si le mode proxy résidentiel haute latence est actif (PROXY_LATENCY_MODE=1).
+    Active : retries safe_get, pauses chargement allongées, CDP resource blocking, WAIT_PAGE.
+    Désactiver pour proxy ISP (faible latence) afin de supprimer les délais inutiles.
+    """
+    return PROXY_LATENCY_MODE
+
 
 def is_local_env() -> bool:
     """Retourne True si on est en environnement local (pas prod)."""
@@ -165,6 +175,7 @@ def log_config_summary():
 ║   • RuntimeGuard      : {str(should_run_guard_monitor()):<10}                                      ║
 ║   • Heartbeat         : {str(should_run_heartbeat()):<10}                                      ║
 ║   • Hot Reload        : {str(should_run_hot_reload()):<10}                                      ║
+║   • Proxy Latency     : {str(is_proxy_latency_mode()):<10}                                      ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
 """)
 
