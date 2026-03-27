@@ -224,48 +224,70 @@ def click_next_button(driver):
 def select_checkbox_answers(driver, answers):
     """
     Coche une ou plusieurs cases à cocher correspondant aux réponses proposées par l'IA.
+    Scan DOM une seule fois → dict {texte_normalisé: (label, checkbox)} → lookup O(1) par cible.
     """
     labels = driver.find_elements(
         By.CSS_SELECTOR, '[data-test-id^="ps-question-input-multiple_choice-label"]'
     )
-    found = False
+    if not labels:
+        return False
+
+    # Extraction JS en un seul aller-retour : texte + état coché pour tous les labels
+    js_result = driver.execute_script("""
+        var results = [];
+        var labels = arguments[0];
+        for (var i = 0; i < labels.length; i++) {
+            var label = labels[i];
+            var textElem = label.querySelector('[data-test-id*="multiple_choice-text"]');
+            var cb = label.querySelector("input[type='checkbox']");
+            results.push({
+                text: textElem ? textElem.textContent.trim() : "",
+                checked: cb ? cb.checked : false
+            });
+        }
+        return results;
+    """, labels)
+
+    # Construire le dict normalisé → index
+    label_map = {}
+    for i, info in enumerate(js_result):
+        key = normalize(info["text"])
+        if key:
+            label_map[key] = (i, info["text"], info["checked"])
 
     normalized_targets = [
-        normalize(str(answer)) for answer in (answers if isinstance(answers, list) else [answers])
+        normalize(str(a)) for a in (answers if isinstance(answers, list) else [answers])
     ]
 
+    found = False
     for target in normalized_targets:
-        for label in labels:
-            try:
-                text_elem = label.find_element(
-                    By.CSS_SELECTOR, '[data-test-id*="multiple_choice-text"]'
-                )
-                label_text = text_elem.text.strip()
-                if normalize(label_text) != target:
-                    continue
+        if target not in label_map:
+            print(f"⚠️ Cible non trouvée dans les labels : {target} source: reponse_executor.py")
+            continue
 
-                inner_cb = label.find_element(By.CSS_SELECTOR, "input[type='checkbox']")
-                if inner_cb.is_selected():
-                    print(f"✅ Checkbox déjà cochée : {label_text}")
-                    found = True
-                    break
+        idx, label_text, already_checked = label_map[target]
+        label = labels[idx]
 
-                driver.execute_script(
-                    "arguments[0].scrollIntoView({block:'center'}); arguments[0].click();",
-                    inner_cb,
-                )
-                time.sleep(1)
-                if not inner_cb.is_selected():
-                    ActionChains(driver).move_to_element(label).click().perform()
+        if already_checked:
+            print(f"✅ Checkbox déjà cochée : {label_text}")
+            found = True
+            continue
 
-                if inner_cb.is_selected():
-                    print(f"✅ Checkbox cochée : {label_text} source: reponse_executor.py")
-                    found = True
-                else:
-                    print(f"⚠️ Checkbox trouvée mais non cochée : {label_text} source: reponse_executor.py")
-                break
-            except Exception:
-                continue
-    if found:
-        return True
-    return False
+        # Scroll + clic JS en un seul appel
+        inner_cb = label.find_element(By.CSS_SELECTOR, "input[type='checkbox']")
+        driver.execute_script(
+            "arguments[0].scrollIntoView({block:'center'}); arguments[0].click();",
+            inner_cb,
+        )
+        time.sleep(0.2)
+        if not inner_cb.is_selected():
+            ActionChains(driver).move_to_element(label).click().perform()
+            time.sleep(0.2)
+
+        if inner_cb.is_selected():
+            print(f"✅ Checkbox cochée : {label_text} source: reponse_executor.py")
+            found = True
+        else:
+            print(f"⚠️ Checkbox trouvée mais non cochée : {label_text} source: reponse_executor.py")
+
+    return found
