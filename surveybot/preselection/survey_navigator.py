@@ -218,7 +218,7 @@ def _select_best_value_card(driver):
 
 def go_to_best_value_survey(driver):
     wait_short = WebDriverWait(driver, 8)
-    wait = WebDriverWait(driver, 30)
+    wait = WebDriverWait(driver, 10)
 
     def _click_enquetes():
         # 1) XPATH texte
@@ -243,7 +243,7 @@ def go_to_best_value_survey(driver):
     if not _click_enquetes():
         # 3) fallback: navigation directe
         try:
-            wait_pwd = WebDriverWait(driver, 60)
+            wait_pwd = WebDriverWait(driver, 10)
             driver.get("https://app.topsurveys.app/surveys")
             handle_proxy_error_page_if_needed(driver)
             print("↪️  Navigation directe /surveys")
@@ -259,6 +259,8 @@ def go_to_best_value_survey(driver):
     time.sleep(5 if _PLM else 1)  # laisser le temps à la page de se stabiliser après popup éventuel
     
     if not _find_survey_cards(driver):
+        snap(driver, "no_survey_cards_found")
+        time.sleep(5 if _PLM else 3)  # délai pour que les éventuels logs/snapshots soient traités avant pause
         log_info("[TOPSURVEYS][COOLDOWN]", "Aucun survey disponible → cooldown 15 min (DB + stop task)")
         from Management.guards.runtime_guard import get_guard, StopReason
         from Management.pause_policy import PausePolicy
