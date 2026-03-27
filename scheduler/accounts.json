@@ -1,9 +1,25 @@
 [ {
   "ACCOUNT_ID": "topsurveys_bot_001",
-  "EMAIL": "wil1.freezable830@simplelogin.fr",
+  "EMAIL": "katarina.helper961@8shield.net",
   "PASSWORD": "P@ssw0rD!123",
   "PROXY_URL": "185.134.194.152:12323",
   "PROXY_USER": "14abf236340a1",
   "PROXY_PASS": "bb82a9e63b"
+  },
+  {
+    "ACCOUNT_ID": "topsurveys_bot_002",
+    "EMAIL": "antoinne.overstate714@8alias.com",
+    "PASSWORD": "P@ssw0rD!123",
+    "PROXY_URL": "81.181.236.36:12323",
+    "PROXY_USER": "14a4b3f88b892",
+    "PROXY_PASS": "9a42e8da8a"
+  },
+  {  
+  "ACCOUNT_ID": "topsurveys_bot_003",
+  "EMAIL": "katarina.helper961@8shield.net",
+  "PASSWORD": "P@ssw0rD!123",
+  "PROXY_URL": "217.67.73.99:12323",
+  "PROXY_USER": "14a4b3f88b892",
+  "PROXY_PASS": "9a42e8da8a"
   }
 ]
