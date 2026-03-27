@@ -18,13 +18,13 @@ tmp/
 
 # Screenshots runtime (IMPORTANT)
 surveybot/screenshots/
-# surveybot/Survey/screenshots/
+surveybot/Survey/screenshots/
 
 # Docker leftovers
 *.pid
 
 # snapshots
-snapshots
+# snapshots
 surveybot/Utils/config
 
 surveybot/README
