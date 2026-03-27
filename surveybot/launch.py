@@ -45,7 +45,8 @@ def safe_get(driver, url, max_retries=3, base_delay=4):
         effective_retries = max_retries if _PLM else 1
         for attempt in range(effective_retries):
             try:
-                apply_resource_blocking(driver)
+                if _PLM:
+                    apply_resource_blocking(driver)
                 print(f"[SAFE_GET] start get (attempt {attempt + 1}/{max_retries}): {url}")
                 driver.get(url)
                 handle_proxy_error_page_if_needed(driver)
