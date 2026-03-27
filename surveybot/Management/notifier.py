@@ -20,6 +20,8 @@ def send_telegram(message: str, bot_token: str, chat_id: str) -> bool:
     try:
         if requests:
             r = requests.post(url, json=payload, timeout=10)
+            if not r.ok:
+                print(f"[Telegram ERROR] {r.status_code}: {r.text}")
             return r.ok
         else:
             req = Request(url, data=data, headers={"Content-Type":"application/json"})
