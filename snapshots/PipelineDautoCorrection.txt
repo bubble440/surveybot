@@ -1,0 +1,158 @@
+Projet : SurveyBot — pipeline d'auto-correction (tools/failure_pipeline.py)
+Problème : quand le bot échoue (extraction, application instructions, clic CTA), le cycle de correction est lent — debug manuel → copie DOM → envoi à Claude → patch → retest.
+Ce qui est automatiquement disponible dans chaque snapshot (produit par Survey/page_snapshot.py → dump_page_snapshot) :
+
+dom_outer.html — le DOM complet de la page
+question_blocks.json — les blocks extraits par le bot au moment de l'échec (potentiellement mauvais)
+meta.json — url, title, timestamp, reason
+
+Ce qu'il faut créer : tools/failure_pipeline.py
+Doit fonctionner en deux modes :
+
+CLI : python tools/failure_pipeline.py ./snapshots/<nom_du_snapshot> --step extraction
+Import : exposer une fonction trigger_pipeline(snapshot_dir: str, step: str) appelable depuis le bot
+
+Étape 1 — Lecture du snapshot
+
+Lire dom_outer.html
+Lire question_blocks.json (blocks actuels, potentiellement mauvais)
+
+Étape 2 — Génération du expected via Claude API
+
+Appel anthropic.Anthropic().messages.create(...) avec :
+
+Contenu de dom_outer.html (tronqué à ~80k chars si trop grand)
+question_blocks.json actuel pour contexte
+Prompt : "Voici le DOM d'une page survey et les question_blocks extraits par le bot. Génère le question_blocks.json corrigé au format exact : [{question, itype, options:[{value,label}], max_select, target_id, context}]. Retourne uniquement du JSON valide, sans markdown."
+
+
+Afficher le résultat formaté dans le terminal
+input("Valider ce expected ? [o/n]") — obligatoire
+Si validé → écrire dans snapshot_dir/question_blocks_expected.json
+
+Étape 3 — Envoi à Claude Code
+Écrire snapshot_dir/patch_request.md avec le contenu suivant, en remplaçant les placeholders :
+CONTEXTE
+
+PROJECT_ARCHITECTURE.md est le document de référence qui décrit l'architecture, liste les fichiers du projet, leurs rôles, et les fonctions principales.
+
+IMPORTANT (variabilité intra-source)
+
+Même si une page vient d'une même "source/provider" (ex: ipsosinteractive.com), toutes les pages de cette source n'ont pas forcément la même structure DOM.
+Donc :
+* n'ajoute pas de logique qui suppose une structure unique par source (pas de "if provider == ipsos: alors …" trop large).
+* si tu ajoutes un support "spécifique", il doit être déclenché par des critères DOM précis et observables (sélecteurs / patterns) et scopé au minimum nécessaire.
+* ne casse pas les modules existants déjà utilisés pour d'autres pages de la même source : le patch doit être additif, avec garde-fous DOM, et rester compatible.
+
+IMPORTANT (LOGS / LOG_LEVEL)
+
+Si tu ajoutes des logs dans un patch :
+* Tous les logs "diagnostic détaillé" (debug) DOIVENT être conditionnés par LOG_LEVEL.
+  - En Python : utilise Survey.log_utils.log_debug(tag, msg) (ou is_debug() puis log_debug()).
+  - Ne fais PAS de print() direct pour du debug.
+* Les logs "normaux" (info) peuvent rester non-conditionnés, mais doivent être rares (1–2 lignes max par étape).
+  - En Python : utilise Survey.log_utils.log_info(tag, msg).
+* Convention : LOG_LEVEL=DEBUG active le debug. Tout autre valeur (ou vide) => pas de debug.
+
+IMPORTANT (CTA / clics)
+
+Si le bug ou le patch implique un clic sur un CTA (Suivant/Continuer/Next/Submit/Start/etc.), conditionner le comportement à CTA_INTERCEPT_ONLY :
+* Si activée (1/true/yes/on) : ne jamais soumettre réellement. Intercepter/simuler le clic sans navigation ni side-effects irréversibles.
+* Si désactivée : comportement normal (clic réel).
+Appliquer cette règle uniquement quand le patch touche la logique CTA / navigation.
+
+BUG IDENTIFIÉ
+
+- Snapshot : <snapshot_dir>
+- Étape en échec : <step> (extraction | application | clic_cta)
+- Fichier source : Survey/dom_analyzer.py
+- question_blocks actuel (produit) :
+<contenu de question_blocks.json>
+- question_blocks attendu (validé) :
+<contenu de question_blocks_expected.json>
+- DOM de référence : <snapshot_dir>/dom_outer.html
+
+RÈGLES STRICTES
+
+Ne propose jamais plusieurs stratégies : une seule stratégie claire.
+1 bug → 1 correction principale (pas d'empilement de fallbacks).
+DOM-first : pas de fallback Vision.
+Pas de retry infini : si tu ajoutes une boucle, ajoute un budget (max N) et un abandon contrôlé avec logs.
+Compat Local + Prod/Docker : pas de input() en prod, pas de chemins locaux.
+Patch minimal : pas de refactor gratuit.
+Respecte la séparation des responsabilités des modules telle que décrite dans PROJECT_ARCHITECTURE.md.
+
+ACTION REQUISE
+
+1. Identifie la cause racine.
+2. Applique un patch minimal et robuste.
+3. Vérifie la non-régression sur les DOMs de référence pertinents.
+4. Si le patch touche un CTA, applique la règle CTA_INTERCEPT_ONLY.
+Puis lancer : claude --print --file snapshot_dir/patch_request.md
+
+Étape 4 — Validation
+
+Relancer tools/replay_snapshot.py <snapshot_dir> --use-dom-outer
+Lire le question_blocks produit dans dom_analyzer.out.json
+Comparer avec question_blocks_expected.json
+Afficher PASS / FAIL + diff lisible si échec
+Si Selenium indisponible : afficher un warning et skipper
+
+
+Intégration dans le bot — déclenchement automatique
+En plus de créer tools/failure_pipeline.py, patcher les 3 zones critiques du bot pour appeler le pipeline en cas d'échec. Pattern à appliquer :
+pythontry:
+    # logique existante inchangée
+    ...
+except Exception as e:
+    snapshot_dir = snapshot_if_enabled(driver, reason="failure_pipeline")
+    if snapshot_dir:
+        from tools.failure_pipeline import trigger_pipeline
+        trigger_pipeline(snapshot_dir, step="extraction")  # ou "application" / "clic_cta"
+    raise  # ne pas avaler l'exception
+
+Les 3 zones à patcher sont :
+Extraction des questions/options → se référer à PROJECT_ARCHITECTURE.md pour le module exact
+Application des instructions → idem
+Clic CTA → idem
+
+Ne pas deviner les noms de modules : lire PROJECT_ARCHITECTURE.md pour identifier les fonctions exactes à wrapper.
+
+Format question_blocks :
+json[{
+  "question": "...",
+  "itype": "radio|checkbox|text|dropdown|button",
+  "options": [{"value": "...", "label": "..."}],
+  "max_select": 1,
+  "target_id": "group_radio_1234567",
+  "context": {"kind": "group|field|button", "group_key": "..."}
+}]
+
+Contraintes :
+Modèle Claude API : claude-sonnet-4-20250514
+Dépendance unique : anthropic (déjà présent)
+Validation humaine obligatoire avant étape 3
+trigger_pipeline() doit être non-bloquante en cas d'erreur interne (try/except global) — le bot ne doit jamais planter à cause du pipeline
+
+POINTS D'INJECTION DU FAILURE_PIPELINE
+
+1. Extraction (survey_executor.py)
+   Après l'appel à dom_analyzer.analyze_dom(), si question_blocks est vide
+   ou contient 0 blocs de type radio/checkbox/text/dropdown :
+   → appeler trigger_pipeline(snapshot_dir, step="extraction")
+
+2. Application (survey_executor.py)
+   Après action_dispatcher.execute_action(), si retourne False :
+   → appeler trigger_pipeline(snapshot_dir, step="application")
+
+3. Clic CTA (survey_solver.py)
+   Dans la stuck detection existante, quand success is False ET
+   current_url == last_url (2 tours consécutifs) :
+   → appeler trigger_pipeline(snapshot_dir, step="clic_cta")
+
+Dans les 3 cas :
+- snapshot_dir = résultat de snapshot_if_enabled() si disponible,
+  sinon dump_page_snapshot() forcé (le pipeline a besoin du DOM)
+- trigger_pipeline() doit être non-bloquant : try/except global,
+  le bot ne doit jamais crasher à cause du pipeline
+- Ne pas modifier la logique existante autour des points d'injection
