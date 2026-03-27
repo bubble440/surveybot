@@ -5,7 +5,8 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.action_chains import ActionChains
 
-from config import should_pause_before_cta
+from config import should_pause_before_cta, is_cta_intercept_only
+from Survey.log_utils import log_info, log_debug
 
 
 def normalize(text):
@@ -64,6 +65,31 @@ def execute_response(driver, answer_text, input_type=None):
         if input_type == "checkbox":
             print("❌ Option checkbox non cochée. Pas de fallback radio (type=checkbox confirmé).")
             return False
+
+        # 2.5) Champ texte libre (input_text)
+        text_input = None
+        try:
+            text_input = driver.find_element(
+                By.CSS_SELECTOR, 'input[data-test-id*="input_text-input"]'
+            )
+        except Exception:
+            pass
+
+        if text_input is not None:
+            driver.execute_script(
+                "arguments[0].scrollIntoView({block:'center'});", text_input
+            )
+            text_input.clear()
+            text_input.send_keys(str(answer_text))
+            driver.execute_script(
+                "arguments[0].dispatchEvent(new Event('input', {bubbles:true}));"
+                "arguments[0].dispatchEvent(new Event('change', {bubbles:true}));",
+                text_input,
+            )
+            time.sleep(1)
+            log_info("response_executor", f"✅ Champ texte rempli : {answer_text}")
+            click_next_button(driver)
+            return True
 
         # 3) Si aucune checkbox trouvée → tentative radio
         labels = driver.find_elements(
@@ -125,6 +151,10 @@ def _confirm_before_cta_click() -> None:
         input()
 
 def click_next_button(driver):
+    if is_cta_intercept_only():
+        log_info("response_executor", "🛑 CTA_INTERCEPT_ONLY=1 — clic CTA intercepté, pas de navigation.")
+        return True
+
     wait = WebDriverWait(driver, 10)
     try:
         next_btn = driver.find_element(

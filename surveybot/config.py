@@ -112,6 +112,15 @@ def should_block_for_input() -> bool:
     return getattr(sys.stdin, "isatty", lambda: False)()
 
 
+def is_cta_intercept_only() -> bool:
+    """
+    Retourne True si CTA_INTERCEPT_ONLY est actif.
+    Dans ce mode, les clics CTA sont interceptés (events déclenchés) mais la navigation
+    ne se produit pas réellement.
+    """
+    return _env_truthy("CTA_INTERCEPT_ONLY", "0")
+
+
 def should_pause_before_cta() -> bool:
     """
     Retourne True si le bot doit attendre une confirmation utilisateur
