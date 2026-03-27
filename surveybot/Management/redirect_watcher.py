@@ -2,6 +2,8 @@
 import time
 from dataclasses import dataclass
 from preselection.playwright_launcher import apply_resource_blocking
+from config import is_proxy_latency_mode
+_PLM = is_proxy_latency_mode()  # True = proxy résidentiel haute latence
 
 
 @dataclass
@@ -84,7 +86,8 @@ def switch_to_latest_window_and_close_others(driver, base_handles, timeout=10, p
             else:
                 raise RuntimeError("Aucun onglet restant après fermeture des anciens onglets")
             print(f"🪟 Focus sur survey + anciens onglets fermés → {driver.current_url}")
-            apply_resource_blocking(driver)
+            if _PLM:
+                apply_resource_blocking(driver)
             return True
 
         # 🧭 Cas 2 : fallback (onglet externe déjà existant)

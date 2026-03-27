@@ -5,6 +5,7 @@ from selenium import webdriver
 
 # IS_LOCAL = os.getenv("RUN_ENV", "local") == "local"
 IS_LOCAL = os.getenv("RUN_ENV", "local") == "local"
+_PLM = os.getenv("PROXY_LATENCY_MODE", "").strip().lower() in {"1", "true", "yes"}
 
 # preselection/playwright_launcher.py
 """
@@ -334,7 +335,8 @@ def launch_browser(config: dict | None = None):
         opts.page_load_strategy = "eager"  # ne pas attendre toutes les ressources
 
         driver = webdriver.Chrome(options=opts)
-        apply_resource_blocking(driver)
+        if _PLM:
+            apply_resource_blocking(driver)
 
         try:
             fingerprint = driver.execute_script("""
