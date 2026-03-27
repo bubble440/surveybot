@@ -220,11 +220,6 @@ def launch_browser(config: dict | None = None):
         return driver
 
     proxy_server, proxy_user, proxy_pass = _parse_proxy_env(config)
-    print(
-    f"[PW][PROXY] server={proxy_server} "
-    f"user={'yes' if proxy_user else 'no'} "
-    f"pass={'yes' if proxy_pass else 'no'}"
-    )
     headless = _want_headless()
 
     # Port remote debugging (Selenium va s'attacher dessus)
@@ -237,7 +232,6 @@ def launch_browser(config: dict | None = None):
     print(f"[PW] chrome_bin={chrome_bin}")
     print(f"[PW] headless={headless}")
     print(f"[PW] debug_port={debug_port}")
-    print(f"[PW] debug_address={debug_address}")
     print(f"[PW] user_data_dir={user_data_dir}")
 
     if proxy_server:

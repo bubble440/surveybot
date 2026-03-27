@@ -266,11 +266,9 @@ def login(driver, email, password):
         if pwd_input.get_attribute("value").strip() == "":
             pwd_input.clear()
             pwd_input.send_keys(password)
-            snap(driver, "after_pwd_fallback")
             print("🔁 Fallback : mot de passe injecté via send_keys()")
         else:
             print("🔑 Mot de passe injecté via JS.")
-            snap(driver, "after_pwd_js")
             time.sleep(5 if _PLM else 1)  # petit délai pour que Vue traite les événements et active le bouton
             
         # ✅ Corrigé ici : bouton Se connecter avec data-test-id
@@ -280,8 +278,8 @@ def login(driver, email, password):
         driver.execute_script("arguments[0].click();", login_btn)
         time.sleep(3 if _PLM else 0.5)
         print("✅ Bouton « Se connecter » cliqué.")
-        from Management.redirect_watcher import wait_for_page_load
-        wait_for_page_load(driver, timeout=30)
+        # from Management.redirect_watcher import wait_for_page_load
+        # wait_for_page_load(driver, timeout=30)
 
     except Exception as e:
         snap(driver, "error_pwd_step")
