@@ -2,24 +2,8 @@
   "ACCOUNT_ID": "topsurveys_bot_001",
   "EMAIL": "wil1.freezable830@simplelogin.fr",
   "PASSWORD": "P@ssw0rD!123",
-  "PROXY_URL": "geo.iproyal.com:12321",
-  "PROXY_USER": "TS_PROXY_04",
-  "PROXY_PASS": "password4_country-fr_city-paris_session-omqEBpFB_lifetime-168h"
-  },
-  {
-  "ACCOUNT_ID": "topsurveys_bot_002",
-  "EMAIL": "qatar.chimp729@8shield.net",
-  "PASSWORD": "P@ssw0rD!123",
-  "PROXY_URL": "geo.iproyal.com:12321",
-  "PROXY_USER": "TS_PROXY_02",
-  "PROXY_PASS": "password2_country-fr_city-paris_session-QbBpNZAP_lifetime-168h"
-},
-  {
-  "ACCOUNT_ID": "topsurveys_bot_003",
-  "EMAIL": "wil2.pretender848@silomails.com",
-  "PASSWORD": "P@ssw0rD!123",
-  "PROXY_URL": "geo.iproyal.com:12321",
-  "PROXY_USER": "TS_PROXY_03",
-  "PROXY_PASS": "password3_country-fr_city-paris_session-2sk53V1l_lifetime-168h"
-}
+  "PROXY_URL": "185.134.194.152:12323",
+  "PROXY_USER": "14abf236340a1",
+  "PROXY_PASS": "bb82a9e63b"
+  }
 ]
