@@ -656,6 +656,7 @@ def solve_full_survey(driver, api_key, *, account_id: str, survey_context=None):
     last_question_key = ""        # Clé de la dernière question vue (détection intra-page)
     _multi_no_progress_count = 0  # Stuck detection pour pages multi-inputs
     _last_multi_page_state = None # Empreinte (count, texts, inputs) de la dernière itération multi
+    _cta_fail_count = 0           # Failure pipeline : URL inchangée + success=False consécutifs
     guard = Management.guards.runtime_guard.get_guard()
 
     while True:
@@ -907,6 +908,7 @@ def solve_full_survey(driver, api_key, *, account_id: str, survey_context=None):
             _multi_no_progress_count = 0   # Reset stuck multi-inputs
             _last_multi_page_state = None  # Reset empreinte multi-inputs
             last_question_key = ""         # Reset aussi la clé question
+            _cta_fail_count = 0            # Reset failure pipeline CTA counter
             print(f"[solve_full_survey] Changement d’URL {last_url} \u2192 {current_url}")
             last_url = current_url
 
@@ -995,6 +997,24 @@ def solve_full_survey(driver, api_key, *, account_id: str, survey_context=None):
         if current_url == last_url and success is False:
             print("⚠ Ni changement d’URL ni action réussie. Nouvelle tentative…")
             # on laisse encore 1 tour; si ça persiste, la condition ci‑dessus arrêtera.
+            # --- FAILURE PIPELINE : injection point 3 (clic_cta) — attach uniquement ---
+            _cta_fail_count += 1
+            if _cta_fail_count >= 2:
+                try:
+                    from config import is_attach_mode as _fp_is_attach
+                    if _fp_is_attach():
+                        import Survey.page_snapshot as _fp_ps
+                        _fp_snap = _fp_ps.snapshot_if_enabled(driver, reason="failure_pipeline")
+                        if not _fp_snap:
+                            _fp_snap = _fp_ps.dump_page_snapshot(driver, reason="failure_pipeline")
+                        if _fp_snap:
+                            from tools.failure_pipeline import trigger_pipeline as _fp_trigger
+                            _fp_trigger(_fp_snap, step="clic_cta")
+                except Exception as _fp_e:
+                    print(f"[FAILURE_PIPELINE] Erreur non-bloquante (clic_cta) : {_fp_e}")
+            # --- FIN injection point 3 ---
+        else:
+            _cta_fail_count = 0
         last_url = current_url
         # Non-blocking: triggers async summary generation every N pages
         try:

@@ -1282,6 +1282,40 @@ def execute_survey_page(driver, api_key, ctx=None):
             f"{len(question_blocks or [])} extracted={len(extracted_question_blocks or [])}"
         )
 
+    # --- FAILURE PIPELINE : injection point 1 (extraction + déclenchement manuel) ---
+    # Actif UNIQUEMENT en mode attach. Déclenché si :
+    #   - flag manuel présent (FAILURE_PIPELINE_TRIGGER_FILE), OU
+    #   - aucun bloc actionnable extrait (radio/checkbox/text/dropdown)
+    try:
+        from config import is_attach_mode as _fp_is_attach
+        if _fp_is_attach():
+            from tools.failure_pipeline import (
+                check_and_consume_manual_trigger as _fp_manual_check,
+                trigger_pipeline as _fp_trigger,
+            )
+            _fp_manual = _fp_manual_check()
+            _fp_actionable_itypes = {"radio", "checkbox", "text", "dropdown"}
+            _fp_has_actionable = any(
+                (b.get("itype") or "").strip().lower() in _fp_actionable_itypes
+                for b in extracted_question_blocks
+            )
+            if _fp_manual or not extracted_question_blocks or not _fp_has_actionable:
+                _fp_snap = page_snapshot.snapshot_if_enabled(
+                    driver, reason="failure_pipeline",
+                    question_blocks=extracted_question_blocks,
+                )
+                if not _fp_snap:
+                    _fp_snap = page_snapshot.dump_page_snapshot(
+                        driver, reason="failure_pipeline",
+                        question_blocks=extracted_question_blocks,
+                    )
+                if _fp_snap:
+                    _fp_step = "manual" if _fp_manual else "extraction"
+                    _fp_trigger(_fp_snap, step=_fp_step)
+    except Exception as _fp_e:
+        print(f"[FAILURE_PIPELINE] Erreur non-bloquante (extraction) : {_fp_e}")
+    # --- FIN injection point 1 ---
+
     image_only_abort = _budgeted_soft_restart_for_image_only_inputs(driver, question_blocks)
     if image_only_abort == "restarted":
         return True
@@ -1416,6 +1450,27 @@ def execute_survey_page(driver, api_key, ctx=None):
 
         #  "plan" (multi actions) + anti-double-fallback par action
         result = action_dispatcher.execute_actions_plan(driver, actions, stop_on_navigation=True)
+
+        # --- FAILURE PIPELINE : injection point 2 (application) — attach uniquement ---
+        if result is False:
+            try:
+                from config import is_attach_mode as _fp_is_attach
+                if _fp_is_attach():
+                    from tools.failure_pipeline import trigger_pipeline as _fp_trigger
+                    _fp_snap = page_snapshot.snapshot_if_enabled(
+                        driver, reason="failure_pipeline",
+                        question_blocks=extracted_question_blocks,
+                    )
+                    if not _fp_snap:
+                        _fp_snap = page_snapshot.dump_page_snapshot(
+                            driver, reason="failure_pipeline",
+                            question_blocks=extracted_question_blocks,
+                        )
+                    if _fp_snap:
+                        _fp_trigger(_fp_snap, step="application")
+            except Exception as _fp_e:
+                print(f"[FAILURE_PIPELINE] Erreur non-bloquante (application) : {_fp_e}")
+        # --- FIN injection point 2 ---
 
         # Record answered Q/R in session context for coherence (non-blocking)
         if ctx is not None:
