@@ -711,7 +711,31 @@ def is_start_screen(driver) -> bool:
         # Fallback: comportement original
         real_inputs_count = len(driver.find_elements(By.CSS_SELECTOR, "input, select, textarea"))
     
-    return real_inputs_count == 0
+    if real_inputs_count > 0:
+        return False
+
+    # Vérifier les options de réponse rendues en divs React/Vue (ex: data-testid="option-N")
+    # Sur ces plateformes, les choix ne sont pas des <input> natifs — le test ci-dessus ne suffit pas.
+    try:
+        has_react_options = driver.execute_script("""
+            const opts = Array.from(document.querySelectorAll('[data-testid^="option-"]'));
+            return opts.some(function(el) {
+                try {
+                    const s = getComputedStyle(el);
+                    if (s.display === 'none' || s.visibility === 'hidden') return false;
+                    const r = el.getBoundingClientRect();
+                    return r.width > 2 && r.height > 2;
+                } catch(_) { return false; }
+            });
+        """)
+        if has_react_options:
+            from Survey.log_utils import log_debug
+            log_debug("[DOM_CLASSIFIER]", "is_start_screen: options data-testid='option-N' visibles => pas un start_screen")
+            return False
+    except Exception:
+        pass
+
+    return True
 
 def _has_visible_answerables(driver) -> bool:
     """

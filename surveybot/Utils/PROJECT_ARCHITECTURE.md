@@ -25,6 +25,7 @@
    - 4.13 [Utilitaires - Media](#413-utilitaires---media)
    - 4.14 [Cash & Payout](#414-cash--payout)
    - 4.15 [Scheduler Fly.io](#415-scheduler-flyio)
+   - 4.16 [Tools - Pipeline d'auto-correction (attach)](#416-tools---pipeline-dauto-correction-attach)
 5. [Systeme de DOM Registry](#5-systeme-de-dom-registry)
 6. [Plateformes supportees](#6-plateformes-supportees)
 7. [Gestion des erreurs](#7-gestion-des-erreurs)
@@ -1234,26 +1235,34 @@ STABILIZE_SLEEP = 2.0      # Delai entre actions
 
 #### `page_snapshot.py`
 **Chemin**: `Survey/page_snapshot.py`
-**Role**: Capture complete d'une page pour debug.
+**Role**: Capture complete d'une page pour debug et pour le pipeline d'auto-correction.
 
-**Structure sortie**:
+**Fonctions principales**:
+- `snapshot_if_enabled(driver, reason, question_blocks)` — capture si `SURVEY_SNAPSHOT_FLAG_FILE` actif, retourne le chemin du dossier
+- `dump_page_snapshot(driver, reason, question_blocks)` — capture inconditionnelle, retourne le chemin du dossier
+
+**Structure du dossier produit**:
 ```
-snapshot_20250211_143052/
-  main.html
-  metadata.json
+snapshots/snapshot_<YYYYMMDD_HHMMSS>_<reason>/
+  dom_outer.html          ← DOM complet (outerHTML du <html>)
+  question_blocks.json    ← blocs extraits par dom_analyzer au moment du snapshot
+  metadata.json           ← url, timestamp, reason, ...
   screenshot.png
-  frames/
+  frames/                 ← iframes capturees
 ```
+
+> `dom_outer.html` et `question_blocks.json` sont les fichiers consommes par `failure_pipeline.py`.
 
 ---
 
 #### `replay_snapshot.py`
 **Chemin**: `tools/replay_snapshot.py`
-**Role**: Rejoue un snapshot DOM et compare avec baseline.
+**Role**: Rejoue un snapshot DOM via dom_analyzer et compare la sortie avec une baseline.
 
 ```bash
 python tools/replay_snapshot.py <snapshot_dir> --save-baseline
-python tools/replay_snapshot.py <snapshot_dir>  # compare avec baseline
+python tools/replay_snapshot.py <snapshot_dir>          # compare avec baseline
+python tools/replay_snapshot.py <snapshot_dir> --use-dom-outer  # utilise dom_outer.html
 ```
 
 ---
@@ -1368,6 +1377,75 @@ LAUNCH_DELAY_SEC=2            # delai anti-burst entre lancements
   }
 ]
 ```
+
+---
+
+### 4.16 Tools - Pipeline d'auto-correction (attach)
+
+> **Actif UNIQUEMENT en mode attach** (`BROWSER_MODE=attach`). Jamais exécuté en prod ou `LOCAL_UNATTENDED`.
+
+#### `failure_pipeline.py`
+**Chemin**: `tools/failure_pipeline.py`
+**Role**: Pipeline de diagnostic et d'auto-correction déclenché automatiquement (ou manuellement) lorsque le bot échoue à extraire ou appliquer des réponses sur une page.
+
+**Configuration (variables en tête de fichier)**:
+
+| Variable | Valeurs | Description |
+|----------|---------|-------------|
+| `PATCH_LLM` | `"claude"` (défaut) / `"codex"` | LLM utilisé pour rédiger le patch (étape 3) |
+
+**Variable d'environnement**:
+
+| Variable | Description |
+|----------|-------------|
+| `FAILURE_PIPELINE_TRIGGER_FILE` | Chemin d'un fichier-drapeau. Sa présence déclenche le pipeline sur la prochaine page traitée (déclenchement manuel). Défini automatiquement dans `attach_tab.ps1` → `C:/tmp/fp_trigger`. |
+
+**Points d'injection dans le bot (tous gardés par `is_attach_mode()`)**:
+
+| Point | Fichier | Condition de déclenchement |
+|-------|---------|---------------------------|
+| 1 — extraction | `survey_executor.py` | aucun bloc actionnable extrait **ou** flag manuel présent |
+| 2 — application | `survey_executor.py` | `apply_answers()` retourne `False` |
+| 3 — clic CTA | `survey_solver.py` | CTA échoue ≥ 2 fois de suite |
+
+**Étapes du pipeline**:
+
+```
+Étape 1 — Lecture snapshot
+  └── dom_outer.html + question_blocks.json
+
+Étape 2 — Génération du expected (OpenAI gpt-4o)
+  └── Appel API avec DOM + blocks actuels
+  └── Affichage de la proposition + validation humaine obligatoire (o/n)
+  └── Écriture de question_blocks_expected.json
+
+Étape 3 — Rédaction du patch (PATCH_LLM)
+  ├── "claude" → claude --print --file patch_request.md
+  └── "codex"  → codex --approval-mode full-auto "<contenu>"
+
+Étape 4 — Validation
+  └── replay_snapshot.py → dom_analyzer.out.json
+  └── diff produit vs expected → PASS ✅ / FAIL ❌
+```
+
+**Déclenchement manuel** (attach mode, depuis PowerShell) :
+```powershell
+# Créer le flag → le pipeline se déclenche sur la prochaine page
+New-Item -Force "C:/tmp/fp_trigger"
+```
+
+**Usage CLI direct** (bypass de la vérification `is_attach_mode`) :
+```bash
+python tools/failure_pipeline.py ./snapshots/<nom_snapshot> --step extraction
+python tools/failure_pipeline.py ./snapshots/<nom_snapshot> --step manual
+```
+
+**Flux LLM par étape** :
+
+| Étape | LLM utilisé | Configurable |
+|-------|-------------|--------------|
+| 2 — génération expected | OpenAI `gpt-4o` | Non (toujours OpenAI) |
+| 3 — rédaction patch | `PATCH_LLM` (`claude` ou `codex`) | Oui (`PATCH_LLM` dans le fichier) |
 
 ---
 
@@ -1511,6 +1589,12 @@ ATTACH_DEBUGGER_ADDRESS=localhost:9222
 ATTACH_TAB_URL_CONTAINS=...
 LOG_LEVEL=DEBUG
 
+# ── Pipeline d'auto-correction (attach mode uniquement) ────────────
+FAILURE_PIPELINE_TRIGGER_FILE=C:/tmp/fp_trigger
+# Créer ce fichier (touch / New-Item) pour déclencher manuellement
+# le pipeline sur la prochaine page traitée par le bot.
+# Défini automatiquement dans attach_tab.ps1.
+
 # ── Geolocalisation (Playwright launcher) ──────────────────────────
 GEO_LAT=48.8566
 GEO_LON=2.3522
@@ -1546,5 +1630,5 @@ fly postgres attach <pg-app-name> --app surveybot-bot
 
 ---
 
-> **Version**: 5.0
+> **Version**: 5.1
 > **Derniere mise a jour**: Mars 2026
