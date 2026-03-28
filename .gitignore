@@ -24,7 +24,7 @@ surveybot/Survey/screenshots/
 *.pid
 
 # snapshots
-# snapshots
+snapshots
 surveybot/Utils/config
 
 surveybot/README
