@@ -13,7 +13,12 @@ from preselection.survey_handler import run_survey
 from Management.notifier import send_telegram
 from State.account_state import update_state, load_state, save_state, try_acquire_cooldown_slot, _now
 from selenium.common.exceptions import TimeoutException
-from preselection.auth_handler import is_session_expired, handle_proxy_error_page_if_needed
+from preselection.auth_handler import (
+    is_session_expired,
+    handle_proxy_error_page_if_needed,
+    is_proxy_error_page,
+    get_proxy_error_code,
+)
 from Management.pause_policy import PausePolicy
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
@@ -33,6 +38,9 @@ def safe_get(driver, url):
     if driver is None:
         raise RuntimeError("SAFE_GET appelé avec driver=None")
 
+    max_attempts = 2
+    base_backoff_s = 2.0
+
     try:
         if not hasattr(driver, "window_handles") or not driver.window_handles:
             raise RuntimeError("Aucune fenêtre active")
@@ -42,10 +50,34 @@ def safe_get(driver, url):
         # 🔒 évite blocage infini
         driver.set_page_load_timeout(70)
 
-        try:
-            print(f"[SAFE_GET] start get: {url}")
-            driver.get(url)
-            handle_proxy_error_page_if_needed(driver)
+        for attempt in range(1, max_attempts + 1):
+            timed_out = False
+            try:
+                print(f"[SAFE_GET] start get: {url} (attempt {attempt}/{max_attempts})")
+                driver.get(url)
+            except TimeoutException:
+                timed_out = True
+                print(f"[SAFE_GET][WARN] Timeout page load vers {url} (attempt {attempt}/{max_attempts}) -> window.stop()")
+                try:
+                    driver.execute_script("window.stop();")
+                except Exception:
+                    pass
+
+            if is_proxy_error_page(driver):
+                err_code = get_proxy_error_code(driver) or "ERR_UNKNOWN"
+                if attempt < max_attempts:
+                    sleep_s = base_backoff_s * attempt
+                    print(f"[SAFE_GET][WARN] Erreur réseau/proxy détectée ({err_code}) -> retry dans {sleep_s:.1f}s")
+                    time.sleep(sleep_s)
+                    continue
+                handle_proxy_error_page_if_needed(driver)
+
+            if timed_out and attempt < max_attempts:
+                sleep_s = base_backoff_s * attempt
+                print(f"[SAFE_GET][WARN] Timeout sans erreur proxy explicite -> retry dans {sleep_s:.1f}s")
+                time.sleep(sleep_s)
+                continue
+
             if is_session_expired(driver):
                 msg = "🔐 Session expirée — ré-authentification manuelle requise."
                 print(msg)
@@ -59,14 +91,8 @@ def safe_get(driver, url):
                 )
                 raise SystemExit("session_expired")
 
-            print(f"[SAFE_GET] done get: {url}")
-        except TimeoutException:
-            print(f"[SAFE_GET][WARN] Timeout page load vers {url} -> window.stop()")
-            try:
-                driver.execute_script("window.stop();")
-            except Exception:
-                pass
-            handle_proxy_error_page_if_needed(driver)
+            print(f"[SAFE_GET] done get: {url} (attempt {attempt}/{max_attempts})")
+            break
 
     except Exception as e:
         print(f"[SAFE_GET] Navigation impossible vers {url}: {e}")

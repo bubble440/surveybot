@@ -6,6 +6,20 @@ from selenium.common.exceptions import TimeoutException
 import time
 from selenium.common.exceptions import JavascriptException
 
+PROXY_ERROR_CODES = {
+    "ERR_TIMED_OUT",
+    "ERR_TUNNEL_CONNECTION_FAILED",
+    "ERR_PROXY_CONNECTION_FAILED",
+    "ERR_PROXY_CERTIFICATE_INVALID",
+    "ERR_CONNECTION_RESET",
+    "ERR_CONNECTION_CLOSED",
+    "ERR_CONNECTION_REFUSED",
+    "ERR_ADDRESS_UNREACHABLE",
+    "ERR_NETWORK_CHANGED",
+    "ERR_NAME_NOT_RESOLVED",
+    "ERR_INTERNET_DISCONNECTED",
+}
+
 def _is_prod_env() -> bool:
     """
     Retourne True si on tourne dans un environnement de production (Fly.io/Docker).
@@ -61,23 +75,37 @@ def is_session_expired(driver) -> bool:
     except Exception:
         return False
 
+def get_proxy_error_code(driver) -> str | None:
+    """
+    Extrait un code d'erreur réseau Chrome (ERR_*) depuis la page courante.
+    """
+    try:
+        src = driver.page_source or ""
+        m = re.search(r"\b(ERR_[A-Z0-9_]+)\b", src, flags=re.IGNORECASE)
+        if not m:
+            return None
+        return (m.group(1) or "").upper()
+    except Exception:
+        return None
+
+
 def is_proxy_error_page(driver) -> bool:
     """
-    Détecte la page d'erreur Chrome ERR_TIMED_OUT indiquant un proxy expiré ou inaccessible.
+    Détecte les pages d'erreur Chrome liées au réseau/proxy.
     """
     try:
         url = driver.current_url or ""
         if "chrome-error://" in url:
             return True
-        src = (driver.page_source or "").lower()
-        return "err_timed_out" in src
+        code = get_proxy_error_code(driver)
+        return bool(code and code in PROXY_ERROR_CODES)
     except Exception:
         return False
 
 
 def handle_proxy_error_page_if_needed(driver) -> None:
     """
-    Si la page courante est une erreur proxy (ERR_TIMED_OUT) :
+    Si la page courante est une erreur proxy/réseau Chrome :
     - envoie une notification Telegram avec l'account_id du bot
     - déclenche un DAILY_RESET (arrêt container jusqu'au lendemain)
     Ne fait rien si la page est normale.
@@ -90,7 +118,8 @@ def handle_proxy_error_page_if_needed(driver) -> None:
 
     guard = get_guard()
     account_id = getattr(guard, "account_id", "unknown")
-    msg = f"🔴 Proxy expiré — TopSurveys inaccessible (ERR_TIMED_OUT) | account={account_id}"
+    err_code = get_proxy_error_code(driver) or "ERR_UNKNOWN"
+    msg = f"🔴 Proxy/réseau indisponible — TopSurveys inaccessible ({err_code}) | account={account_id}"
     print(msg)
     try:
         guard.notify_fn(msg)
