@@ -21,6 +21,7 @@ La fonction filter_exclusive_conflicts() élimine ces conflits AVANT exécution.
 
 from __future__ import annotations
 import re, datetime
+import difflib
 import os
 import math
 import unicodedata
@@ -527,6 +528,20 @@ def _enforce_selection_ranges(actions: list[dict], constraints: dict[str, int], 
             f"received={len(raw_values)} final_count={len(completed_values)} values={completed_values}"
         )
 
+        # ✅ Repli sur option connue quand toutes les valeurs ont été rejetées (hallucination LLM)
+        if (
+            len(completed_values) < min_select
+            and min_select >= 1
+            and options
+            and itype in _FIXED_LIST_ITYPES
+        ):
+            non_exclusive = [o for o in options if not _is_exclusive_value(o)]
+            fallback = (non_exclusive or options)[0]
+            log_info("[batch_response_parser]",
+                     f"qid={qid} repli forcé sur option connue: {fallback!r} "
+                     f"(completed_values vide, min_select={min_select})")
+            completed_values = [fallback]
+
         template = q_actions[-1] if q_actions else {
             "qid": qid,
             "target_id": qmeta.get("target_id"),
@@ -762,6 +777,36 @@ def _coerce_to_negative_frequency_option(actions: list[dict], qid_meta: dict | N
 
     return coerced
 
+_FIXED_LIST_ITYPES = {"radio", "checkbox", "dropdown"}
+
+def _find_best_option_match(value: str, options: list[str], threshold: float = 0.80):
+    """
+    Vérifie si `value` correspond à une option connue (exact ou fuzzy).
+
+    Returns:
+        (matched_value, is_exact, score)  si une correspondance >= threshold est trouvée
+        None                              si aucune option ne dépasse le seuil
+    """
+    if not options:
+        return None
+    v_fold = _fold_lc(value)
+    # 1. match exact normalisé
+    for opt in options:
+        if _fold_lc(opt) == v_fold:
+            return (opt, True, 1.0)
+    # 2. meilleur match fuzzy
+    best_opt = None
+    best_score = 0.0
+    for opt in options:
+        score = difflib.SequenceMatcher(None, v_fold, _fold_lc(opt)).ratio()
+        if score > best_score:
+            best_score = score
+            best_opt = opt
+    if best_score >= threshold:
+        return (best_opt, False, best_score)
+    return None
+
+
 def parse_batch_response(raw: str, constraints: Optional[Dict[str, int]] = None, qid_meta: Optional[Dict[str, Any]] = None) -> list[dict]:
     """
     Transforme la réponse OpenAI en liste d'instructions exécutables.
@@ -917,6 +962,22 @@ def parse_batch_response(raw: str, constraints: Optional[Dict[str, int]] = None,
                         if target_id in seen_single_targets:
                             continue
                         seen_single_targets.add(target_id)
+
+            # ✅ Validation de la valeur contre les options connues (anti-hallucination LLM)
+            if v and itype in _FIXED_LIST_ITYPES and not is_matrix and not is_cardsort:
+                known_options = [str(o or "").strip() for o in ((qmeta or {}).get("options") or []) if str(o or "").strip()]
+                if known_options:
+                    match = _find_best_option_match(v, known_options)
+                    if match is None:
+                        log_info("[batch_response_parser]",
+                                 f"qid={qid} valeur rejetée (aucune option correspondante): {v!r} "
+                                 f"options={known_options}")
+                        continue
+                    matched_val, is_exact, score = match
+                    if not is_exact:
+                        log_debug("[batch_response_parser]",
+                                  f"qid={qid} valeur substituée fuzzy (score={score:.2f}): {v!r} -> {matched_val!r}")
+                        v = matched_val
 
             if qid and constraints:
                 # mx déjà calculé au-dessus
