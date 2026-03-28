@@ -65,7 +65,9 @@
       "Bash(find C:projectsSurveyssurveybot -maxdepth 2 -type f \\\\\\(-name README* -o -name *.md \\\\\\))",
       "Bash(grep -r \"boto3\\\\|botocore\\\\|google.cloud\\\\|google-cloud\" /c/projects/Surveys/surveybot --include=*.py ! -path */.venv/*)",
       "Bash(grep -r \"HTTPServer\\\\|Flask\\\\|FastAPI\\\\|uvicorn\\\\|gunicorn\\\\|StreamingHandler\\\\|serve_forever\" C:projectsSurveyssurveybot --include=*.py)",
-      "Bash(grep -r \"listen\\\\|bind\\\\|8000\\\\|5000\\\\|3000\\\\|9000\" C:projectsSurveyssurveybot --include=*.py)"
+      "Bash(grep -r \"listen\\\\|bind\\\\|8000\\\\|5000\\\\|3000\\\\|9000\" C:projectsSurveyssurveybot --include=*.py)",
+      "Bash(python -c \"import ast; ast.parse\\(open\\(''Survey/dom_extractors_misc.py''\\).read\\(\\)\\); print\\(''OK''\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\(''Survey/dom_analyzer.py''\\).read\\(\\)\\); print\\(''OK''\\)\")"
     ]
   }
 }

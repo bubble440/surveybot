@@ -695,6 +695,23 @@ def _press_click_release(driver, el):
         except Exception:
             pass
 
+    # Quest Mindshare (DOM observé):
+    # - button[data-testid="confirm-selection"] avec options div[data-testid^="option-"]
+    # La séquence ActionChains ne déclenche pas le handler onClick React ;
+    # un click() natif WebElement fonctionne.
+    try:
+        testid = (el.get_attribute("data-testid") or "").strip()
+    except Exception:
+        testid = ""
+    is_quest_confirm_button = (tag == "button" and testid == "confirm-selection")
+
+    if is_quest_confirm_button:
+        try:
+            el.click()
+            return True, False
+        except Exception:
+            pass
+
     try:
         ActionChains(driver).move_to_element(el).click_and_hold(el).pause(0.06).release(el).perform()
         click_ok = True
