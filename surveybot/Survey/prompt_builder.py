@@ -359,6 +359,7 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
         "Contraintes :\n"
         "- itype doit être l'un de : {radio, checkbox, dropdown, text, textarea, button}\n"
         "- valeur DOIT être une option existante (si options listées)\n"
+        "- RÈGLE ABSOLUE : utilise UNIQUEMENT les options listées ci-dessus, mot pour mot. N'invente PAS d'option absente de la liste, même si elle te semble logiquement attendue.\n"
         "- évite : non, jamais, aucun, je préfère ne pas répondre\n"
         "- contexte doit correspondre exactement é  la question affichée"
     )
