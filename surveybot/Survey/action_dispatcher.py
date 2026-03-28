@@ -1294,56 +1294,35 @@ def _apply_by_target_id(
                         log_debug("[TARGET_DEBUG]", f"slider-grid row skipped row_id={row_id} value='{value}' reason='invalid_slider_bounds'")
                         return False
 
-                    # selected_index est 0-based (enumerate start=0) = aria-valuenow cible directe
+                    # selected_index est 0-based = aria-valuenow cible directe
                     desired = max(min_v, min(max_v, selected_index))
 
-                    # Activation depuis l'état no-value via dispatch JS.
-                    # Le .click() Selenium ne déclenche pas les handlers du composant Confirmit dans
-                    # cet état ; il faut dispatcher mousedown+mouseup+click explicitement.
-                    try:
-                        no_value_el = row_el.find_element(By.CSS_SELECTOR, ".cf-slider__no-value")
-                        driver.execute_script(
-                            "var e=arguments[0];"
-                            "['mousedown','mouseup','click'].forEach(function(t){"
-                            "e.dispatchEvent(new MouseEvent(t,{bubbles:true,cancelable:true}));"
-                            "});",
-                            no_value_el,
-                        )
-                        time.sleep(0.1)
-                        post_act = driver.execute_script(
-                            "return arguments[0].getAttribute('aria-valuenow');", handle_el
-                        )
-                        try:
-                            if int(post_act) < 0:
-                                log_debug("[TARGET_DEBUG]", f"slider-grid activation failed row_id={row_id} post_act={post_act}")
-                                return False
-                        except (TypeError, ValueError):
-                            pass
-                    except Exception:
-                        pass  # nœud absent = composant déjà activé, on continue
-
-                    # Focus explicite : après activation, le focus reste sur .cf-slider__no-value.
-                    driver.execute_script("arguments[0].focus();", handle_el)
-                    time.sleep(0.05)
-
-                    cur_str = driver.execute_script(
-                        "return arguments[0].getAttribute('aria-valuenow');", handle_el
-                    )
+                    # Lecture de la position courante (aria-valuenow=-1 en état no-value)
+                    cur_str = handle_el.get_attribute("aria-valuenow")
                     try:
                         current = int(cur_str)
-                        if current < min_v:
-                            current = min_v  # aria-valuenow=-1 (état no-value résiduel) → 0
                     except (TypeError, ValueError):
-                        current = min_v
+                        current = -1
+
+                    # .cf-slider__no-value n'a PAS de tabindex en état initial → pas de listeners actifs.
+                    # Il ne gagne tabindex="0" qu'APRÈS activation, pour permettre de revenir à no-value.
+                    # Seul le handle est interactif : focus JS + send_keys arrow keys directement.
+                    # La 1ère pression depuis -1 active le composant (→0), les suivantes naviguent.
+                    # delta = desired - (-1) = desired+1 pressions pour atteindre desired depuis -1.
+                    driver.execute_script("arguments[0].focus();", handle_el)
+                    time.sleep(0.05)
 
                     delta = desired - current
                     if delta != 0:
                         key = Keys.ARROW_RIGHT if delta > 0 else Keys.ARROW_LEFT
-                        max_steps = max_v - min_v + 1
+                        # budget : crans normaux + 1 cran d'activation depuis -1
+                        max_steps = (max_v - min_v) + 2
                         for _ in range(min(abs(delta), max_steps)):
                             handle_el.send_keys(key)
-                        time.sleep(0.05)
+                        time.sleep(0.1)
 
+                    # Relire depuis le DOM : sécurité stale reference si re-render à l'activation
+                    handle_el = row_el.find_element(By.CSS_SELECTOR, ".cf-slider__handle[role='slider']")
                     now_val = driver.execute_script(
                         "return arguments[0].getAttribute('aria-valuenow');", handle_el
                     )
