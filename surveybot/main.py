@@ -306,28 +306,30 @@ def _attach_select_tab(driver) -> None:
             # attach est déja interdit en prod, mais on garde une safety net
             print("[ATTACH] Tab=pick ignored (non-local)")
         else:
-            print("[ATTACH] Tabs disponibles (idx | score=(actionables,text) | title | url):")
+            web_handles = []  # mapping: display_index -> real handles[] index
             for i in range(len(handles)):
                 if not _switch(i):
                     continue
                 u = _safe_url()
-                t = _safe_title().strip().replace("\n", " ")
                 if _attach_is_user_web_url(u):
-                    sc = _attach_tab_score(driver)
-                    print(f"[ATTACH]  {i:02d} | score={sc} | title={t[:80]!r} | url={_attach_display_url(u)}")
-                else:
-                    print(f"[ATTACH]  {i:02d} | (non-web) | title={t[:80]!r} | url={_attach_display_url(u)}")
+                    web_handles.append((i, u, _safe_title().strip().replace("\n", " "), _attach_tab_score(driver)))
+            print("[ATTACH] Tabs disponibles (idx | score=(actionables,text) | title | url):")
+            for d, (i, u, t, sc) in enumerate(web_handles):
+                print(f"[ATTACH]  {d:02d} | score={sc} | title={t[:80]!r} | url={_attach_display_url(u)}")
 
             choice = (input("[ATTACH] Choisis l'index d'onglet à utiliser: ") or "").strip()
             if choice.isdigit():
-                idx = int(choice)
-                idx = max(0, min(idx, len(handles) - 1))
-                _switch(idx)
-                u = _safe_url()
-                if _attach_is_user_web_url(u):
-                    print(f"[ATTACH] Tab=pick idx={idx} url={_attach_display_url(u)}")
-                    return
-                print(f"[ATTACH] Tab=pick idx={idx} non-web url={_attach_display_url(u)} -> fallback last_web")
+                didx = int(choice)
+                if 0 <= didx < len(web_handles):
+                    idx = web_handles[didx][0]
+                    _switch(idx)
+                    u = _safe_url()
+                    if _attach_is_user_web_url(u):
+                        print(f"[ATTACH] Tab=pick didx={didx} idx={idx} url={_attach_display_url(u)}")
+                        return
+                    print(f"[ATTACH] Tab=pick didx={didx} idx={idx} non-web url={_attach_display_url(u)} -> fallback last_web")
+                else:
+                    print(f"[ATTACH] Tab=pick out-of-range={didx!r} -> fallback last_web")
             else:
                 print(f"[ATTACH] Tab=pick invalid={choice!r} -> fallback last_web")
 
