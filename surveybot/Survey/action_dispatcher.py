@@ -1256,15 +1256,17 @@ def _apply_by_target_id(
                                 pass
 
                 if selected_index is None and scale_labels:
-                    for idx, opt in enumerate(scale_labels, start=1):
+                    # Correspondance exacte uniquement : les labels numériques ("0%", "10%"…)
+                    # produisent des faux-positifs avec le match sous-chaîne ("0%" ⊂ "60%").
+                    for idx, opt in enumerate(scale_labels, start=0):
                         o_norm = _norm_lc(opt)
                         o_fold = _fold_norm_lc(opt)
                         if not o_norm:
                             continue
-                        if v_norm and (v_norm == o_norm or v_norm in o_norm or o_norm in v_norm):
+                        if v_norm and v_norm == o_norm:
                             selected_index = idx
                             break
-                        if v_fold and (v_fold == o_fold or v_fold in o_fold or o_fold in v_fold):
+                        if v_fold and v_fold == o_fold:
                             selected_index = idx
                             break
 
@@ -1276,78 +1278,85 @@ def _apply_by_target_id(
                     return False
 
                 try:
-                    js_result = driver.execute_script(
-                        """
-                        // confirmit_slider_grid_apply_v1
-                        const rowId = arguments[0];
-                        const selectedIndex = Number(arguments[1]);
-                        const row = document.getElementById(rowId);
-                        if (!row) return {ok:false, reason:'row_not_found'};
+                    import time
+                    from selenium.webdriver.common.keys import Keys
+                    row_el = driver.find_element(By.CSS_SELECTOR, f"[id='{row_id}']")
+                    handle_el = row_el.find_element(By.CSS_SELECTOR, ".cf-slider__handle[role='slider']")
 
-                        const handle = row.querySelector('.cf-slider__handle[role="slider"]');
-                        const track = row.querySelector('.cf-slider__track');
-                        if (!handle || !track) return {ok:false, reason:'slider_parts_missing'};
+                    driver.execute_script(
+                        "arguments[0].scrollIntoView({block:'center',inline:'center'});", handle_el
+                    )
+                    time.sleep(0.05)
 
-                        const tr = track.getBoundingClientRect();
-                        const hr = handle.getBoundingClientRect();
-                        if (!tr || tr.width < 4 || tr.height < 2) return {ok:false, reason:'track_not_interactable'};
+                    min_v = int(handle_el.get_attribute("aria-valuemin") or 0)
+                    max_v = int(handle_el.get_attribute("aria-valuemax") or 0)
+                    if max_v <= min_v:
+                        log_debug("[TARGET_DEBUG]", f"slider-grid row skipped row_id={row_id} value='{value}' reason='invalid_slider_bounds'")
+                        return False
 
-                        const min = Number(handle.getAttribute('aria-valuemin') || 0);
-                        const max = Number(handle.getAttribute('aria-valuemax') || 0);
-                        if (!Number.isFinite(min) || !Number.isFinite(max) || max < min) {
-                          return {ok:false, reason:'invalid_slider_bounds'};
-                        }
+                    # selected_index est 0-based (enumerate start=0) = aria-valuenow cible directe
+                    desired = max(min_v, min(max_v, selected_index))
 
-                        const desired = Math.max(min, Math.min(max, min + Math.max(0, selectedIndex - 1)));
-                        const ratio = (max === min) ? 0 : ((desired - min) / (max - min));
-                        const targetX = tr.left + (tr.width * ratio);
-                        const targetY = tr.top + (tr.height / 2);
+                    # Activation depuis l'état no-value via dispatch JS.
+                    # Le .click() Selenium ne déclenche pas les handlers du composant Confirmit dans
+                    # cet état ; il faut dispatcher mousedown+mouseup+click explicitement.
+                    try:
+                        no_value_el = row_el.find_element(By.CSS_SELECTOR, ".cf-slider__no-value")
+                        driver.execute_script(
+                            "var e=arguments[0];"
+                            "['mousedown','mouseup','click'].forEach(function(t){"
+                            "e.dispatchEvent(new MouseEvent(t,{bubbles:true,cancelable:true}));"
+                            "});",
+                            no_value_el,
+                        )
+                        time.sleep(0.1)
+                        post_act = driver.execute_script(
+                            "return arguments[0].getAttribute('aria-valuenow');", handle_el
+                        )
+                        try:
+                            if int(post_act) < 0:
+                                log_debug("[TARGET_DEBUG]", f"slider-grid activation failed row_id={row_id} post_act={post_act}")
+                                return False
+                        except (TypeError, ValueError):
+                            pass
+                    except Exception:
+                        pass  # nœud absent = composant déjà activé, on continue
 
-                        const fire = (el, type, x, y, buttons) => {
-                          el.dispatchEvent(new MouseEvent(type, {
-                            bubbles: true,
-                            cancelable: true,
-                            clientX: x,
-                            clientY: y,
-                            buttons: buttons,
-                          }));
-                        };
+                    # Focus explicite : après activation, le focus reste sur .cf-slider__no-value.
+                    driver.execute_script("arguments[0].focus();", handle_el)
+                    time.sleep(0.05)
 
-                        const startX = hr.left + (hr.width / 2);
-                        const startY = hr.top + (hr.height / 2);
-                        fire(handle, 'mousedown', startX, startY, 1);
-                        fire(document, 'mousemove', targetX, targetY, 1);
-                        fire(document, 'mouseup', targetX, targetY, 0);
-                        fire(track, 'click', targetX, targetY, 0);
+                    cur_str = driver.execute_script(
+                        "return arguments[0].getAttribute('aria-valuenow');", handle_el
+                    )
+                    try:
+                        current = int(cur_str)
+                        if current < min_v:
+                            current = min_v  # aria-valuenow=-1 (état no-value résiduel) → 0
+                    except (TypeError, ValueError):
+                        current = min_v
 
-                        try { handle.focus(); } catch(e) {}
-                        try { handle.dispatchEvent(new Event('input', { bubbles: true })); } catch(e) {}
-                        try { handle.dispatchEvent(new Event('change', { bubbles: true })); } catch(e) {}
+                    delta = desired - current
+                    if delta != 0:
+                        key = Keys.ARROW_RIGHT if delta > 0 else Keys.ARROW_LEFT
+                        max_steps = max_v - min_v + 1
+                        for _ in range(min(abs(delta), max_steps)):
+                            handle_el.send_keys(key)
+                        time.sleep(0.05)
 
-                        const now = String(handle.getAttribute('aria-valuenow') || '');
-                        const desiredText = String(desired);
-                        if (now === desiredText) {
-                          return {ok:true, desired:desiredText, now:now};
-                        }
-
-                        return {ok:false, reason:'aria_mismatch', desired:desiredText, now:now};
-                        """,
-                        row_id,
-                        int(selected_index),
+                    now_val = driver.execute_script(
+                        "return arguments[0].getAttribute('aria-valuenow');", handle_el
                     )
                 except Exception as e:
-                    log_debug("[TARGET_DEBUG]", f"slider-grid row skipped row_id={row_id} value='{value}' reason='script_error:{_short_exc(e)}'")
+                    log_debug("[TARGET_DEBUG]", f"slider-grid row skipped row_id={row_id} value='{value}' reason='exception:{_short_exc(e)}'")
                     return False
 
-                ok = bool((js_result or {}).get("ok")) if isinstance(js_result, dict) else False
+                ok = str(now_val) == str(desired)
                 if ok:
                     log_debug("[TARGET_DEBUG]", f"slider-grid row applied row_id={row_id} value='{value}'")
                     return True
 
-                reason = "unknown"
-                if isinstance(js_result, dict):
-                    reason = (js_result.get("reason") or reason)
-                log_debug("[TARGET_DEBUG]", f"slider-grid row skipped row_id={row_id} value='{value}' reason='{reason}'")
+                log_debug("[TARGET_DEBUG]", f"slider-grid row skipped row_id={row_id} value='{value}' reason='aria_mismatch:desired={desired},now={now_val}'")
                 return False
 
             # --- cas "options map" (radio/checkbox)
