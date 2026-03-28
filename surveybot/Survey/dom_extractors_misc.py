@@ -5980,3 +5980,294 @@ def _extract_savanta_jqm_carousel_block(driver, frame_chain: list[int] | None) -
             },
         }
     ]
+
+
+# ================================================================================
+# QUESTMINDSHARE CHATBOT - OPTIONS data-testid
+# ================================================================================
+
+def _extract_questmindshare_chatbot_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
+    """QuestMindshare chatbot React/Next.js : extraction des blocs choix multiples.
+
+    Gate strict : présence de div[data-testid^="option-"] avec tabindex="0".
+    Si absent → retourne [] sans toucher au reste.
+
+    Structure ciblée :
+    - Options : div[data-testid="option-N"] (N entier) avec tabindex="0"
+    - Question : dernier div[data-testid="message-text"] visible
+    - Instructions : div[data-testid="instructions"] (si présent)
+    - CTA : button[data-testid="confirm-selection"]
+    """
+    frame_chain = list(frame_chain or [])
+
+    # --- Gate strict ---
+    try:
+        gate_els = driver.find_elements(
+            By.CSS_SELECTOR, "div[data-testid^='option-'][tabindex='0']"
+        )
+    except Exception:
+        return []
+
+    if not gate_els:
+        return []
+
+    # --- Collecte des options dans l'ordre (option-0, option-1, ...) ---
+    options: list[str] = []
+    option_xpath_map: dict[str, str] = {}
+
+    idx = 0
+    while idx < 50:  # budget max 50 options
+        sel = f"div[data-testid='option-{idx}'][tabindex='0']"
+        try:
+            els = driver.find_elements(By.CSS_SELECTOR, sel)
+        except Exception:
+            break
+        if not els:
+            break
+        el = els[0]
+        try:
+            label = _norm(el.text or el.get_attribute("innerText") or "")
+        except Exception:
+            label = ""
+        if label:
+            nk = _norm_key(label)
+            if nk and nk not in option_xpath_map:
+                xp = _best_xpath_for_element(driver, el)
+                if not xp:
+                    xp = f"//div[@data-testid='option-{idx}'][@tabindex='0']"
+                option_xpath_map[nk] = xp
+                options.append(label)
+        idx += 1
+
+    if len(options) < 2:
+        return []
+
+    # --- Question text : dernier message-text visible ---
+    question = ""
+    try:
+        msg_els = driver.find_elements(By.CSS_SELECTOR, "div[data-testid='message-text']")
+        for el in reversed(msg_els):
+            try:
+                txt = _norm(el.text or el.get_attribute("innerText") or "")
+            except Exception:
+                txt = ""
+            if txt and len(txt) >= 5:
+                question = txt
+                break
+    except Exception:
+        pass
+
+    if not question:
+        return []
+
+    # --- Instructions (si présentes, les ajouter à la question) ---
+    try:
+        instr_els = driver.find_elements(By.CSS_SELECTOR, "div[data-testid='instructions']")
+        for el in instr_els:
+            try:
+                instr = _norm(el.text or el.get_attribute("innerText") or "")
+            except Exception:
+                instr = ""
+            if instr:
+                question = f"{question} {instr}"
+                break
+    except Exception:
+        pass
+
+    # --- CTA xpath (référence pour l'input_handler) ---
+    cta_xpath = ""
+    try:
+        cta_els = driver.find_elements(By.CSS_SELECTOR, "button[data-testid='confirm-selection']")
+        if cta_els:
+            cta_xpath = _best_xpath_for_element(driver, cta_els[0])
+            if not cta_xpath:
+                cta_xpath = "//button[@data-testid='confirm-selection']"
+    except Exception:
+        pass
+
+    # --- Bloc ---
+    group_key = f"questmindshare:checkbox:idx0_{zlib.crc32(question.encode('utf-8')):x}"
+    target_id = make_target_id("group", group_key, question)
+
+    payload: dict = {
+        "kind": "group",
+        "itype": "checkbox",
+        "group_key": group_key,
+        "question": question,
+        "option_xpath_map": option_xpath_map,
+        "frame_chain": frame_chain,
+        "questmindshare": True,
+    }
+    if cta_xpath:
+        payload["cta_xpath"] = cta_xpath
+
+    register_target(target_id, payload)
+
+    log_debug(
+        "[DOM_QUESTMINDSHARE]",
+        f"question={question!r} options={options} cta_xpath={cta_xpath!r}",
+    )
+
+    return [
+        {
+            "question": question,
+            "itype": "checkbox",
+            "options": options,
+            "max_select": _compute_max_select("checkbox", options, question),
+            "min_select": 1,
+            "target_id": target_id,
+            "context": {
+                "kind": "group",
+                "group_key": group_key,
+                "questmindshare": True,
+            },
+        }
+    ]
+
+
+def _extract_confirmit_cf_desktop_grid_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
+    """Forsta/Confirmit CF desktop radio grid: 1 ligne = 1 bloc radio.
+
+    Gate DOM strict (provider-agnostic):
+    - présence de table.cf-table-layout
+    - présence de div.cf-radio[role='radio'] dans tbody de cette table
+
+    Extrait les libellés de colonnes depuis thead div.cf-desktop-grid__scale-text,
+    et le libellé de ligne depuis l'élément référencé par aria-labelledby du tr.
+    """
+    frame_chain = list(frame_chain or [])
+
+    try:
+        tables = driver.find_elements(By.CSS_SELECTOR, "table.cf-table-layout")
+    except Exception:
+        return []
+    if not tables:
+        return []
+
+    # Gate: au moins une table contient des div.cf-radio[role='radio'] dans tbody
+    gate_ok = False
+    for t in tables:
+        try:
+            if t.find_elements(By.CSS_SELECTOR, "tbody div.cf-radio[role='radio']"):
+                gate_ok = True
+                break
+        except Exception:
+            continue
+    if not gate_ok:
+        return []
+
+    blocks: list[dict] = []
+
+    for table in tables[:10]:  # budget anti-explosion
+        try:
+            # Colonnes: libellés dans thead div.cf-desktop-grid__scale-text
+            scale_labels: list[str] = []
+            try:
+                scale_divs = table.find_elements(
+                    By.CSS_SELECTOR, "thead div.cf-desktop-grid__scale-text"
+                )
+            except Exception:
+                scale_divs = []
+
+            for div in scale_divs:
+                txt = _norm(div.text or div.get_attribute("innerText") or "")
+                if txt and txt not in scale_labels:
+                    scale_labels.append(txt)
+
+            if len(scale_labels) < 2:
+                continue
+
+            # Lignes: tr[role='radiogroup'] dans tbody
+            try:
+                rows = table.find_elements(By.CSS_SELECTOR, "tbody tr[role='radiogroup']")
+            except Exception:
+                rows = []
+            if not rows:
+                continue
+
+            for row in rows[:30]:  # budget anti-explosion
+                try:
+                    row_id = (row.get_attribute("id") or "").strip()
+                    if not row_id:
+                        continue
+
+                    # Question depuis aria-labelledby du tr
+                    question = ""
+                    labelledby = (row.get_attribute("aria-labelledby") or "").strip()
+                    if labelledby:
+                        for ref_id in labelledby.split():
+                            try:
+                                node = driver.find_element(By.ID, ref_id)
+                                txt = _norm(node.text or node.get_attribute("innerText") or "")
+                                if txt:
+                                    question = txt
+                                    break
+                            except Exception:
+                                continue
+                    if not question:
+                        continue
+
+                    # Radios dans la ligne
+                    try:
+                        radio_divs = row.find_elements(By.CSS_SELECTOR, "div.cf-radio[role='radio']")
+                    except Exception:
+                        radio_divs = []
+                    if len(radio_divs) != len(scale_labels):
+                        continue
+
+                    row_id_lc = row_id.lower()
+                    row_cls = _norm_lc(row.get_attribute("class") or "")
+                    group_key = f"radio:name:dom:{labelledby}|{row_id_lc}|{row_cls}"
+
+                    # option_xpath_map: clé normalisée -> xpath du div radio
+                    option_xpath_map: dict[str, str] = {}
+                    for opt, radio_div in zip(scale_labels, radio_divs):
+                        try:
+                            ctrl_id = (radio_div.get_attribute("id") or "").strip()
+                            if ctrl_id:
+                                option_xpath_map[_norm_key(opt)] = f"//*[@id={_xpath_literal(ctrl_id)}]"
+                            else:
+                                xp = _best_xpath_for_element(radio_div)
+                                if xp:
+                                    option_xpath_map[_norm_key(opt)] = xp
+                        except Exception:
+                            continue
+
+                    target_id = make_target_id("group", group_key, question)
+                    register_target(
+                        target_id,
+                        {
+                            "kind": "group",
+                            "itype": "radio",
+                            "group_key": group_key,
+                            "question": question,
+                            "option_xpath_map": option_xpath_map,
+                            "frame_chain": frame_chain,
+                            "confirmit_cf_desktop_grid": True,
+                        },
+                    )
+
+                    blocks.append(
+                        {
+                            "question": question,
+                            "itype": "radio",
+                            "options": list(scale_labels),
+                            "max_select": 1,
+                            "min_select": 1,
+                            "target_id": target_id,
+                            "context": {
+                                "kind": "group",
+                                "group_key": group_key,
+                            },
+                        }
+                    )
+                    log_debug(
+                        "[DOM_CONFIRMIT_CF_GRID]",
+                        f"row={row_id!r} question={question!r} options={scale_labels}",
+                    )
+                except Exception:
+                    continue
+        except Exception:
+            continue
+
+    return blocks

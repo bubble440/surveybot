@@ -1363,8 +1363,8 @@ def classify_dom(driver) -> Optional[dict]:
     """
     Retourne le premier mapping DOM_REGISTRY qui match.
     """
+    time.sleep(2)
     for rule in DOM_REGISTRY:
-        time.sleep(10)  # anti-flood / laisser le temps au DOM de se stabiliser
         try:
             if rule["signature"](driver):
                 # ✅ IMPORTANT: on ne renvoie PAS la fonction signature (non sérialisable)

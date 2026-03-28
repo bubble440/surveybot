@@ -98,6 +98,8 @@ try:
         _extract_qualtrics_matrix_dropdown_row_blocks,
         _extract_decipher_clickable_ranking_blocks,
         _extract_savanta_jqm_carousel_block,
+        _extract_questmindshare_chatbot_blocks,
+        _extract_confirmit_cf_desktop_grid_blocks,
     )
 
     # Registre et utilitaires
@@ -170,6 +172,8 @@ except ImportError:
         _extract_qualtrics_matrix_dropdown_row_blocks,
         _extract_decipher_clickable_ranking_blocks,
         _extract_savanta_jqm_carousel_block,
+        _extract_questmindshare_chatbot_blocks,
+        _extract_confirmit_cf_desktop_grid_blocks,
     )
 
 
@@ -981,6 +985,16 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
     except Exception:
         pass
 
+    # --- 0d-4bis) Forsta/Confirmit CF desktop radio-grid (table.cf-table-layout + div.cf-radio) ---
+    # Objectif: extraire les lignes radio custom Confirmit CF (pas d'input[type=radio]).
+    # Gate DOM: table.cf-table-layout + div.cf-radio[role='radio'] dans tbody.
+    try:
+        confirmit_cf_grid_blocks = _extract_confirmit_cf_desktop_grid_blocks(driver, frame_chain)
+        if confirmit_cf_grid_blocks:
+            return confirmit_cf_grid_blocks
+    except Exception:
+        pass
+
     # Pattern spécifique
     # Objectif: extraire les matrices (1 ligne = 1 question radio).
     try:
@@ -1070,6 +1084,15 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         qualtrics_choice_checkbox_blocks = _extract_qualtrics_choice_structure_checkbox_blocks(driver, frame_chain)
         if qualtrics_choice_checkbox_blocks:
             return qualtrics_choice_checkbox_blocks
+    except Exception:
+        pass
+
+    # --- 0h-ter-0) QuestMindshare chatbot (div[data-testid^="option-"] sans input natif) ---
+    # Gate strict : div[data-testid^="option-"][tabindex="0"] présent.
+    try:
+        qm_blocks = _extract_questmindshare_chatbot_blocks(driver, frame_chain)
+        if qm_blocks:
+            return qm_blocks
     except Exception:
         pass
 
@@ -1426,6 +1449,34 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             # question = depuis conteneur (et on exclut options)
             # Tentative prioritaire: pattern SurveyWriter/SSI (#QText_{N})
             question = _extract_surveywriter_ssi_question(driver, els[0])
+            if not question and raw_name_key.startswith("dom:"):
+                # Groupes sans name natif (ex: Forsta/Confirmit ARIA widgets):
+                # résoudre directement l'aria-labelledby du conteneur radiogroup
+                # pour éviter que _nearest_question_container remonte trop haut
+                # et concatène les textes de plusieurs questions sur la même page.
+                try:
+                    rg_nodes = els[0].find_elements(
+                        By.XPATH,
+                        "ancestor::*[@role='radiogroup' or @role='group'][1]"
+                    )
+                    if rg_nodes:
+                        labelledby = (rg_nodes[0].get_attribute("aria-labelledby") or "").strip()
+                        if labelledby:
+                            texts = []
+                            for ref_id in labelledby.split():
+                                if not ref_id:
+                                    continue
+                                try:
+                                    node = driver.find_element(By.ID, ref_id)
+                                    txt = _norm(node.text or node.get_attribute("innerText") or "")
+                                    if txt and txt not in texts:
+                                        texts.append(txt)
+                                except Exception:
+                                    pass
+                            if texts:
+                                question = _norm(" ".join(texts))
+                except Exception:
+                    pass
             if not question:
                 # Fallback: extraction générique via conteneur
                 container = _nearest_question_container(els[0])

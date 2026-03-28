@@ -93,7 +93,8 @@ def _handle_mystery_box_popup(driver) -> None:
 
     wait_short = WebDriverWait(driver, 5)
     try:
-        open_btn = wait_short.until(EC.element_to_be_clickable((By.CSS_SELECTOR, box_selector)))
+        open_btn = wait_short.until(EC.presence_of_element_located((By.CSS_SELECTOR, box_selector)))
+        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", open_btn)
         open_ok = _click_button_with_optional_intercept(driver, open_btn)
         reason = f"box3_click={'OK' if open_ok else 'INTERCEPTION_IMPOSSIBLE'}"
         log_info(tag, reason)
