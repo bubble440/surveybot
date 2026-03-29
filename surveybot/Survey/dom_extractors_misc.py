@@ -6271,3 +6271,131 @@ def _extract_confirmit_cf_desktop_grid_blocks(driver, frame_chain: list[int] | N
             continue
 
     return blocks
+
+
+# ================================================================================
+# FORSTA/CONFIRMIT - HORIZONTAL RATING SCALE SINGLE (cf-hrs-single)
+# ================================================================================
+
+def _extract_confirmit_cf_hrs_single_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
+    """Forsta/Confirmit Horizontal Rating Scale Single: 1 div.cf-hrs-single = 1 bloc radio.
+
+    Gate DOM strict:
+    - présence de div.cf-hrs-single[role='radiogroup']
+    - présence de div.cf-horizontal-rating-item[role='radio'] dans ce conteneur
+
+    Extrait la question depuis les éléments référencés par aria-labelledby du radiogroup.
+    Extrait les options depuis l'aria-label (ou innerText) de chaque
+    div.cf-horizontal-rating-item[role='radio'].
+    """
+    frame_chain = list(frame_chain or [])
+
+    try:
+        radiogroups = driver.find_elements(
+            By.CSS_SELECTOR, "div.cf-hrs-single[role='radiogroup']"
+        )
+    except Exception:
+        return []
+    if not radiogroups:
+        return []
+
+    # Gate: au moins un radiogroup contient des items radio
+    gate_ok = False
+    for rg in radiogroups:
+        try:
+            if rg.find_elements(By.CSS_SELECTOR, "div.cf-horizontal-rating-item[role='radio']"):
+                gate_ok = True
+                break
+        except Exception:
+            continue
+    if not gate_ok:
+        return []
+
+    blocks: list[dict] = []
+
+    for rg in radiogroups[:20]:  # budget anti-explosion
+        try:
+            labelledby = (rg.get_attribute("aria-labelledby") or "").strip()
+            question = ""
+            if labelledby:
+                for ref_id in labelledby.split():
+                    try:
+                        node = driver.find_element(By.ID, ref_id)
+                        txt = _norm(node.text or node.get_attribute("innerText") or "")
+                        if txt:
+                            question = txt
+                            break
+                    except Exception:
+                        continue
+            if not question:
+                continue
+
+            try:
+                item_divs = rg.find_elements(
+                    By.CSS_SELECTOR, "div.cf-horizontal-rating-item[role='radio']"
+                )
+            except Exception:
+                item_divs = []
+            if not item_divs:
+                continue
+
+            options: list[str] = []
+            option_xpath_map: dict[str, str] = {}
+            for item in item_divs[:30]:  # budget anti-explosion
+                try:
+                    aria_label = _norm(item.get_attribute("aria-label") or "")
+                    text = aria_label or _norm(item.text or item.get_attribute("innerText") or "")
+                    if not text:
+                        continue
+                    if text not in options:
+                        options.append(text)
+                    ctrl_id = (item.get_attribute("id") or "").strip()
+                    if ctrl_id:
+                        option_xpath_map[_norm_key(text)] = f"//*[@id={_xpath_literal(ctrl_id)}]"
+                    else:
+                        xp = _best_xpath_for_element(item)
+                        if xp:
+                            option_xpath_map[_norm_key(text)] = xp
+                except Exception:
+                    continue
+
+            if not options:
+                continue
+
+            group_key = f"radio:name:dom:{labelledby}|cf-hrs-single"
+            target_id = make_target_id("group", group_key, question)
+            register_target(
+                target_id,
+                {
+                    "kind": "group",
+                    "itype": "radio",
+                    "group_key": group_key,
+                    "question": question,
+                    "option_xpath_map": option_xpath_map,
+                    "frame_chain": frame_chain,
+                    "confirmit_cf_hrs_single": True,
+                },
+            )
+
+            blocks.append(
+                {
+                    "question": question,
+                    "itype": "radio",
+                    "options": options,
+                    "max_select": 1,
+                    "min_select": 1,
+                    "target_id": target_id,
+                    "context": {
+                        "kind": "group",
+                        "group_key": group_key,
+                    },
+                }
+            )
+            log_debug(
+                "[DOM_CONFIRMIT_CF_HRS_SINGLE]",
+                f"labelledby={labelledby!r} question={question!r} options={options}",
+            )
+        except Exception:
+            continue
+
+    return blocks

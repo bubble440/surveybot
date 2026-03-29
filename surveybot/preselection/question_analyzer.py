@@ -215,6 +215,7 @@ def extract_options_js(driver):
         """
 
         options = driver.execute_script(js_code)
+        print(f"extract_options_js : {options}")
         # Pas de choix → souvent page de blocage ou de consentement non mappée
         if not options:
             print("⏭️ Aucun choix détecté — pas d'action sur cette page. source: reponse_executor.py")
