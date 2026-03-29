@@ -1236,6 +1236,15 @@ def _apply_by_target_id(
                     for k, v in (payload.get("slider_grid_code_to_index") or {}).items()
                     if str(k or "").strip()
                 }
+                # idx_to_code: 1-based list position → actual slider code (= aria-valuenow target)
+                # scale_code_to_index from payload maps code_str → 1-based list pos; we need the inverse.
+                raw_ctoi = payload.get("slider_grid_code_to_index") or {}
+                idx_to_code: dict[int, int] = {}
+                for _c, _p in raw_ctoi.items():
+                    try:
+                        idx_to_code[int(_p)] = int(_c)
+                    except (TypeError, ValueError):
+                        pass
 
                 selected_index: int | None = None
 
@@ -1246,28 +1255,31 @@ def _apply_by_target_id(
                         digits = ""
                     if digits:
                         if digits in code_to_index:
-                            selected_index = code_to_index.get(digits)
+                            # digits IS the scale code (= aria-valuenow target), not the list position
+                            selected_index = int(digits)
                         else:
                             try:
                                 maybe_idx = int(digits)
                                 if 1 <= maybe_idx <= max(1, len(scale_labels)):
-                                    selected_index = maybe_idx
+                                    # maybe_idx is a 1-based list position → convert to slider code
+                                    selected_index = idx_to_code.get(maybe_idx, maybe_idx - 1)
                             except Exception:
                                 pass
 
                 if selected_index is None and scale_labels:
                     # Correspondance exacte uniquement : les labels numériques ("0%", "10%"…)
                     # produisent des faux-positifs avec le match sous-chaîne ("0%" ⊂ "60%").
-                    for idx, opt in enumerate(scale_labels, start=0):
+                    # enumerate start=1 pour aligner avec idx_to_code (1-based list position).
+                    for list_pos, opt in enumerate(scale_labels, start=1):
                         o_norm = _norm_lc(opt)
                         o_fold = _fold_norm_lc(opt)
                         if not o_norm:
                             continue
                         if v_norm and v_norm == o_norm:
-                            selected_index = idx
+                            selected_index = idx_to_code.get(list_pos, list_pos - 1)
                             break
                         if v_fold and v_fold == o_fold:
-                            selected_index = idx
+                            selected_index = idx_to_code.get(list_pos, list_pos - 1)
                             break
 
                 if not row_id:
@@ -1319,7 +1331,7 @@ def _apply_by_target_id(
                         max_steps = (max_v - min_v) + 2
                         for _ in range(min(abs(delta), max_steps)):
                             handle_el.send_keys(key)
-                        time.sleep(0.1)
+                            time.sleep(0.05)  # laisser le composant Confirmit traiter le keydown
 
                     # Relire depuis le DOM : sécurité stale reference si re-render à l'activation
                     handle_el = row_el.find_element(By.CSS_SELECTOR, ".cf-slider__handle[role='slider']")
@@ -4738,7 +4750,7 @@ def execute_action(
                 label = ctx
 
             checkbox_cache = _get_block_strategy_memory(driver).get("checkbox", {})
-            cache_key = (target_id or "").strip()
+            cache_key = (target_id or "").strip() or _norm_lc(ctx)
 
             def _run_checkbox_strategy(strategy_name: str) -> bool:
                 strategy_map = {

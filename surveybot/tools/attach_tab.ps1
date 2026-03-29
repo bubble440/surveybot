@@ -63,7 +63,7 @@ $env:ATTACH_TAB_SELECTOR=$AttachTabSelector
 $env:ATTACH_DEBUGGER_ADDRESS="127.0.0.1:$Port"
 
 # Tes vars debug
-$env:LOG_LEVEL="DEBUG"
+$env:LOG_LEVEL="INFO"
 $env:DOM_DEBUG_FRAMES="1"
 $env:SURVEY_CTX_DEBUG="1"
 $env:PROXY_LATENCY_MODE="0"
@@ -73,6 +73,7 @@ $env:BOT_RUN_ID="port_$Port"
 $env:ACTION_DEBUG_TARGET="1"
 $env:LOCAL_CTA_REQUIRE_ENTER="1"
 $env:SURVEY_RESOURCE_BLOCKING="0"
+$env:TWO_CAPTCHA_KEY=""
 # $env:FAILURE_PIPELINE_TRIGGER_FILE = "C:/tmp/fp_trigger"
 # $env:PROXY_USER="AFe0mvVocKuoFWzq"
 # $env:PROXY_URL="geo.iproyal.com:12321"

@@ -100,6 +100,7 @@ try:
         _extract_savanta_jqm_carousel_block,
         _extract_questmindshare_chatbot_blocks,
         _extract_confirmit_cf_desktop_grid_blocks,
+        _extract_confirmit_cf_hrs_single_blocks,
     )
 
     # Registre et utilitaires
@@ -174,6 +175,7 @@ except ImportError:
         _extract_savanta_jqm_carousel_block,
         _extract_questmindshare_chatbot_blocks,
         _extract_confirmit_cf_desktop_grid_blocks,
+        _extract_confirmit_cf_hrs_single_blocks,
     )
 
 
@@ -992,6 +994,16 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         confirmit_cf_grid_blocks = _extract_confirmit_cf_desktop_grid_blocks(driver, frame_chain)
         if confirmit_cf_grid_blocks:
             return confirmit_cf_grid_blocks
+    except Exception:
+        pass
+
+    # --- 0d-4ter) Forsta/Confirmit Horizontal Rating Scale Single (div.cf-hrs-single) ---
+    # Objectif: extraire les radiogroups horizontaux non-tabulaires Confirmit CF.
+    # Gate DOM: div.cf-hrs-single[role='radiogroup'] + div.cf-horizontal-rating-item[role='radio'].
+    try:
+        confirmit_hrs_single_blocks = _extract_confirmit_cf_hrs_single_blocks(driver, frame_chain)
+        if confirmit_hrs_single_blocks:
+            return confirmit_hrs_single_blocks
     except Exception:
         pass
 
