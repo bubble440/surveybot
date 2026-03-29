@@ -1350,6 +1350,96 @@ def _apply_by_target_id(
                 log_debug("[TARGET_DEBUG]", f"slider-grid row skipped row_id={row_id} value='{value}' reason='aria_mismatch:desired={desired},now={now_val}'")
                 return False
 
+            # --- Decipher MX Collapsible (radio) : clic natif sur la carte par texte de div.label ---
+            # Guard DOM strict : déclenché seulement quand .mx-stage .mx-collapsible-container
+            # est présent dans la question courante.  Scope : group_key issu de l'extracteur
+            # focusvision_answers_list (préfixe "radio:name:").
+            # Si la carte est trouvée, la logique est exclusive (return True/False) ; sinon
+            # fall-through vers le chemin opt_map standard.
+            if resolved_itype == "radio" and (payload.get("group_key") or "").startswith("radio:name:"):
+                _input_name_mx = (payload.get("input_name") or "").strip()
+                if _input_name_mx:
+                    _mx_card_el = None
+                    try:
+                        _mx_card_el = driver.execute_script(
+                            """
+                            const rawValue = arguments[0];
+                            if (!rawValue) return null;
+                            const normVal = rawValue.replace(/\s+/g, ' ').trim().toLowerCase();
+
+                            // Chercher directement dans tous les conteneurs MX Collapsible
+                            // de la page (sans dépendre de l'existence d'inputs radio dans le DOM).
+                            const containers = document.querySelectorAll(
+                                '.mx-stage .mx-collapsible-container'
+                            );
+                            for (const mx of containers) {
+                                const cards = mx.querySelectorAll(
+                                    '.mx-collapsible-groupholder .mx-collapsible-row-item'
+                                );
+                                for (const card of cards) {
+                                    const labelEl = card.querySelector('.label');
+                                    if (!labelEl) continue;
+                                    const cardText = String(labelEl.textContent || '')
+                                        .replace(/\s+/g, ' ').trim().toLowerCase();
+                                    if (cardText === normVal) return card;
+                                }
+                            }
+                            return null;
+                            """,
+                            value,
+                        )
+                    except Exception:
+                        _mx_card_el = None
+
+                    if _mx_card_el is not None:
+                        try:
+                            driver.execute_script(
+                                "arguments[0].scrollIntoView({block:'center', inline:'center'});",
+                                _mx_card_el,
+                            )
+                        except Exception:
+                            pass
+
+                        _mx_clicked = False
+                        try:
+                            _mx_card_el.click()
+                            _mx_clicked = True
+                        except Exception:
+                            pass
+                        if not _mx_clicked:
+                            try:
+                                ActionChains(driver).move_to_element(_mx_card_el).click().perform()
+                                _mx_clicked = True
+                            except Exception:
+                                pass
+
+                        if _mx_clicked:
+                            _t0_mx = time.time()
+                            _mx_selected = False
+                            while time.time() - _t0_mx < 1.2:
+                                try:
+                                    _mx_selected = bool(driver.execute_script(
+                                        "return arguments[0].classList"
+                                        " && arguments[0].classList.contains('mx-card-selected');",
+                                        _mx_card_el,
+                                    ))
+                                    if _mx_selected:
+                                        break
+                                except Exception:
+                                    break
+                                time.sleep(0.05)
+
+                            if _mx_selected:
+                                log_info("[TARGET]", "apply ok=true strategy=mx_collapsible_radio reason=mx-card-selected")
+                                return True
+
+                        if debug_target:
+                            log_debug(
+                                "[TARGET_DEBUG]",
+                                f"mx_collapsible_radio: card clicked but mx-card-selected absent: value='{value}'",
+                            )
+                        return False
+
             # --- cas "options map" (radio/checkbox)
             # IMPORTANT: on n'exige pas kind=="group" pour éviter le couplage à la classification (ex: matrix_rows_single_choice)
             opt_map = payload.get("option_xpath_map") or {}

@@ -606,7 +606,7 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
                                 continue
                             try:
                                 row_label = _extract_label_text(
-                                    row.find_element(By.CSS_SELECTOR, ".bottom .label")
+                                    row.find_element(By.CSS_SELECTOR, ".label")
                                 )
                             except Exception:
                                 row_label = ""

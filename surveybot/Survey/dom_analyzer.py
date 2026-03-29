@@ -3056,20 +3056,28 @@ def _prune_focusvision_auxiliary_openended_singles(blocks: List[Dict[str, Any]])
     """
     Supprime les blocs single text/textarea auxiliaires liés aux options
     "Autre ... préciser" déjà détectées dans un groupe FocusVision answers-list.
+
+    Deux cas couverts :
+    1. Le textarea a un attribut `name` présent dans `aux_openended_names` du groupe.
+    2. Le textarea n'a ni `name` ni `id` (cas Decipher MX Collapsible "Autre" sans name)
+       et la page contient au moins un groupe focusvision_answers_list — dans ce cas,
+       un textarea/text sans identifiant ne peut pas être une question principale.
     """
     aux_names: set[str] = set()
+    has_focusvision_group = False
     for b in (blocks or []):
         if not isinstance(b, dict):
             continue
         context = (b.get("context") or {}) if isinstance(b.get("context"), dict) else {}
         if context.get("focusvision_answers_list") is not True:
             continue
+        has_focusvision_group = True
         for nm in (context.get("aux_openended_names") or []):
             nm_norm = _norm((nm or "")).strip()
             if nm_norm:
                 aux_names.add(nm_norm)
 
-    if not aux_names:
+    if not aux_names and not has_focusvision_group:
         return blocks
 
     pruned: list[dict] = []
@@ -3079,14 +3087,24 @@ def _prune_focusvision_auxiliary_openended_singles(blocks: List[Dict[str, Any]])
         itype = _norm((b.get("itype") or "")).lower()
         context = (b.get("context") or {}) if isinstance(b.get("context"), dict) else {}
         input_name = _norm((context.get("name") or "")).strip()
+        input_id = _norm((context.get("id") or "")).strip()
 
-        drop = (
+        # Cas 1 : textarea nommé présent dans aux_openended_names
+        drop_named = (
             itype in {"text", "textarea"}
             and bool(input_name)
             and input_name in aux_names
             and context.get("kind") == "single"
         )
-        if not drop:
+        # Cas 2 : textarea sans name ni id sur une page FocusVision (OE Autre sans attributs)
+        drop_nameless = (
+            has_focusvision_group
+            and itype in {"text", "textarea"}
+            and not input_name
+            and not input_id
+            and context.get("kind") == "single"
+        )
+        if not (drop_named or drop_nameless):
             pruned.append(b)
 
     return pruned
