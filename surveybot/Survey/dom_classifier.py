@@ -1270,12 +1270,34 @@ def is_date_multi_dropdown(driver) -> bool:
     txt = _page_text_lc(driver)
     return any(k in txt for k in ["année", "annee", "year", "mois", "month"])
 
-def is_open_textarea(driver) -> bool:
-    """Vrai uniquement si un textarea est réellement exploitable (visible).
+_OE_AUX_CLASS_RE = re.compile(r'\bOE-\w+-input\b')
 
-    Raison: certains providers injectent des <textarea> cachés (tracking/params).
-    Si on les considère, la page est classée "textarea" à tort (comme le screen CMIX),
-    ce qui pollue les logs/metrics et peut déclencher des handlers inadaptés.
+def _is_decipher_aux_openend(ta, driver) -> bool:
+    """Retourne True si le textarea est un open-end auxiliaire Decipher/FocusVision.
+
+    Critères DOM précis:
+    1. La classe CSS du textarea correspond au pattern `OE-*-input` (Decipher naming).
+    2. Le textarea est contenu dans un ancêtre portant la classe `blocked-other`.
+    """
+    try:
+        cls = ta.get_attribute("class") or ""
+        if _OE_AUX_CLASS_RE.search(cls):
+            return True
+        # Vérification via JS pour détecter l'ancêtre .blocked-other
+        return bool(driver.execute_script(
+            "return arguments[0].closest('.blocked-other') !== null;", ta
+        ))
+    except Exception:
+        return False
+
+
+def is_open_textarea(driver) -> bool:
+    """Vrai uniquement si un textarea principal est visible et exploitable.
+
+    Raison: certains providers injectent des <textarea> cachés (tracking/params),
+    et Decipher/FocusVision expose des <textarea> auxiliaires (open-end "Autre")
+    qui ne constituent pas la question principale de la page.
+    Si on les considère, la page est classée "textarea" à tort.
     """
     try:
         tas = driver.find_elements(By.TAG_NAME, "textarea")
@@ -1288,6 +1310,9 @@ def is_open_textarea(driver) -> bool:
                 continue
             r = ta.rect or {}
             if float(r.get("width") or 0) < 20 or float(r.get("height") or 0) < 20:
+                continue
+            # Ignorer les open-ends auxiliaires Decipher/FocusVision
+            if _is_decipher_aux_openend(ta, driver):
                 continue
             return True
         except Exception:
