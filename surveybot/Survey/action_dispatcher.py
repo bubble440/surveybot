@@ -4062,6 +4062,24 @@ def handle_captcha_guard(driver):
         get_guard().signal_strict_survey("captcha_guard_restart")
         return False
 
+    # AUTO: résolution via 2Captcha (local + prod, si clé configurée)
+    if captcha_behavior == "auto_2captcha":
+        print("[GUARD] Tentative de résolution automatique via 2Captcha...")
+        try:
+            from captcha.recaptcha_handler import solve_recaptcha_v2_auto
+            resolved = solve_recaptcha_v2_auto(driver)
+        except Exception as _re:
+            print(f"[GUARD] Erreur recaptcha_handler : {_re}")
+            resolved = False
+        if resolved:
+            print("[GUARD] reCAPTCHA résolu automatiquement")
+            return True
+        else:
+            print("[GUARD] Échec résolution automatique → abandon survey")
+            from Management.guards.runtime_guard import get_guard
+            get_guard().signal_strict_survey("captcha_auto_failed")
+            return False
+
     # AWS/non-local : soft-restart même si auto_2captcha échoue (pas de terminal interactif)
     from config import is_local_env
     if not is_local_env():

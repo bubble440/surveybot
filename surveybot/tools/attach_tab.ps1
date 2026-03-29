@@ -61,6 +61,9 @@ $env:RUN_MODE="local"
 $env:BROWSER_MODE="attach"
 $env:ATTACH_TAB_SELECTOR=$AttachTabSelector
 $env:ATTACH_DEBUGGER_ADDRESS="127.0.0.1:$Port"
+$env:PROXY_URL="185.134.194.152:12323"
+$env:PROXY_USER="14abf236340a1"
+$env:PROXY_PASS="bb82a9e63b"
 
 # Tes vars debug
 $env:LOG_LEVEL="INFO"
@@ -73,11 +76,8 @@ $env:BOT_RUN_ID="port_$Port"
 $env:ACTION_DEBUG_TARGET="1"
 $env:LOCAL_CTA_REQUIRE_ENTER="1"
 $env:SURVEY_RESOURCE_BLOCKING="0"
-$env:TWO_CAPTCHA_KEY=""
+$env:TWO_CAPTCHA_KEY="ff2f59cd67845abf5c1b7db1c0a17cf2"
 # $env:FAILURE_PIPELINE_TRIGGER_FILE = "C:/tmp/fp_trigger"
-# $env:PROXY_USER="AFe0mvVocKuoFWzq"
-# $env:PROXY_URL="geo.iproyal.com:12321"
-# $env:PROXY_PASS="ajKCpYNJXZz4DTI4_country-fr_city-paris_session-myo6lDFM_lifetime-24h"
 
 # Utiliser python du venv si présent (plus fiable)
 $venvPy = Join-Path $ProjectDir ".venv\Scripts\python.exe"
