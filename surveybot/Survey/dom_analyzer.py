@@ -101,6 +101,8 @@ try:
         _extract_questmindshare_chatbot_blocks,
         _extract_confirmit_cf_desktop_grid_blocks,
         _extract_confirmit_cf_hrs_single_blocks,
+        _extract_groupcaliber_rating_row_blocks,
+        _extract_confirmit_cf_carousel_blocks,
     )
 
     # Registre et utilitaires
@@ -176,6 +178,8 @@ except ImportError:
         _extract_questmindshare_chatbot_blocks,
         _extract_confirmit_cf_desktop_grid_blocks,
         _extract_confirmit_cf_hrs_single_blocks,
+        _extract_groupcaliber_rating_row_blocks,
+        _extract_confirmit_cf_carousel_blocks,
     )
 
 
@@ -1004,6 +1008,24 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         confirmit_hrs_single_blocks = _extract_confirmit_cf_hrs_single_blocks(driver, frame_chain)
         if confirmit_hrs_single_blocks:
             return confirmit_hrs_single_blocks
+    except Exception:
+        pass
+
+    # --- 0d-4quater) GroupCaliber/IPSOS Bootstrap rating rows (data-question_type="5") ---
+    # Gate DOM: h6[data-question_type="5"] + div.row.bg-light[div.col-md-3 b + radios name=\d+_\d+].
+    try:
+        caliber_blocks = _extract_groupcaliber_rating_row_blocks(driver, frame_chain)
+        if caliber_blocks:
+            return caliber_blocks
+    except Exception:
+        pass
+
+    # --- 0d-4quinquies) Forsta/Confirmit CF carousel (div.cf-carousel + cf-answer-button) ---
+    # Gate DOM: div.cf-carousel + div.cf-carousel__content-item + div.cf-answer-button.
+    try:
+        confirmit_carousel_blocks = _extract_confirmit_cf_carousel_blocks(driver, frame_chain)
+        if confirmit_carousel_blocks:
+            return confirmit_carousel_blocks
     except Exception:
         pass
 
