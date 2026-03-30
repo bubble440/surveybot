@@ -274,22 +274,22 @@ _NETWORK_ERR_SIGNALS = (
 )
 
 
-def _recover_from_network_error(driver) -> bool:
+# Valeurs de retour de _recover_from_network_error()
+_NET_ERR_CLEAN     = "clean"      # page saine, rien à faire
+_NET_ERR_RECOVERED = "recovered"  # erreur détectée et récupérée → appelant fait continue
+_NET_ERR_EXHAUSTED = "exhausted"  # 2 tentatives épuisées sans succès → appelant fait soft-restart
+
+
+def _recover_from_network_error(driver) -> str:
     """
     Détecte une erreur réseau Chrome (ERR_TUNNEL_CONNECTION_FAILED, etc.) et tente
-    un refresh unique (budget = 1 par URL) pour récupérer.
+    jusqu'à 2 driver.get() successifs pour récupérer, sans repasser par
+    execute_survey_page() entre les tentatives.
 
-    Séquence :
-      1. Détecte l'erreur via le titre + body de la page.
-      2. Vérifie le budget (1 refresh par URL) — abandon si déjà tenté.
-      3. Attend 12 secondes (délai fixe pour laisser le proxy se rétablir).
-      4. Rafraîchit la page.
-      5. Si dialog natif "Confirm Form Resubmission" présent → l'accepte.
-      6. Attend le chargement de la page.
-      7. Si l'erreur persiste → log (abandon contrôlé, budget épuisé).
-
-    Retourne True si une erreur réseau a été détectée (page en erreur avant l'appel),
-    False si la page est saine (chemin rapide, aucun effet de bord).
+    Retourne :
+      _NET_ERR_CLEAN     — page saine (chemin rapide, aucun effet de bord)
+      _NET_ERR_RECOVERED — erreur récupérée → appelant doit faire `continue`
+      _NET_ERR_EXHAUSTED — 2 tentatives épuisées → appelant doit soft-restart
     """
     # -- Détection via page_source (seul signal fiable sur chrome-error://) --
     # driver.title et document.body.innerText sont vides sur les pages d'erreur Chrome
@@ -298,56 +298,51 @@ def _recover_from_network_error(driver) -> bool:
     try:
         source_lc = (driver.page_source or "").lower()
     except Exception:
-        return False
+        return _NET_ERR_CLEAN
 
     if not any(sig in source_lc for sig in _NETWORK_ERR_SIGNALS):
-        return False
-
-    # -- Budget : 2 erreurs consécutives max (robuste aux SPA à URL stable) --
-    # Le compteur est remis à 0 par l'appelant à chaque itération saine (retour=False).
-    _count = getattr(driver, "_net_err_consecutive_count", 0) + 1
-    try:
-        setattr(driver, "_net_err_consecutive_count", _count)
-    except Exception:
-        pass
-
-    if _count > 1:
-        log_info("NET-ERR", f"Budget épuisé ({_count} erreurs consécutives) → abandon")
-        return True
+        return _NET_ERR_CLEAN
 
     try:
         current_url = driver.current_url or ""
     except Exception:
         current_url = ""
 
-    log_info("NET-ERR", "Erreur réseau détectée → attente 12s puis refresh")
-    time.sleep(12)
+    # -- Boucle de récupération : exactement 2 tentatives max --
+    _MAX_ATTEMPTS = 2
+    for attempt in range(1, _MAX_ATTEMPTS + 1):
+        log_info("NET-ERR", f"Erreur réseau (tentative {attempt}/{_MAX_ATTEMPTS}) → attente 15s")
+        time.sleep(15)
 
-    # driver.get() au lieu de driver.refresh() : évite le dialog natif Chrome
-    # "Confirm Form Resubmission" (overlay hors DOM, inaccessible à Selenium)
-    # qui apparaît systématiquement lors d'un refresh sur une page POST en erreur.
-    try:
-        driver.get(current_url)
-    except Exception as e:
-        log_info("NET-ERR", f"driver.get() a échoué : {e}")
-        return True
+        # driver.get() évite le dialog natif Chrome "Confirm Form Resubmission"
+        # (overlay hors DOM, inaccessible à Selenium) qui apparaît avec driver.refresh()
+        # sur une page POST en erreur.
+        try:
+            driver.get(current_url)
+        except Exception as e:
+            log_info("NET-ERR", f"driver.get() a échoué (tentative {attempt}) : {e}")
+            return _NET_ERR_EXHAUSTED
 
-    # -- Attente chargement --
-    try:
-        from Management import redirect_watcher as _rw
-        _rw.wait_for_page_load(driver, timeout=30)
-    except Exception:
-        time.sleep(5)
+        # Attente chargement
+        try:
+            from Management import redirect_watcher as _rw
+            _rw.wait_for_page_load(driver, timeout=30)
+        except Exception:
+            time.sleep(5)
 
-    # -- Vérification post-refresh (log seulement, budget déjà consommé) --
-    try:
-        source2 = (driver.page_source or "").lower()
-        if any(sig in source2 for sig in _NETWORK_ERR_SIGNALS):
-            log_info("NET-ERR", "Page toujours en erreur après refresh → abandon (budget épuisé)")
-    except Exception:
-        pass
+        # Vérification : page revenue à la normale ?
+        try:
+            still_error = any(sig in (driver.page_source or "").lower() for sig in _NETWORK_ERR_SIGNALS)
+        except Exception:
+            still_error = False  # page_source inaccessible → on suppose OK
 
-    return True
+        if not still_error:
+            return _NET_ERR_RECOVERED
+
+        if attempt == _MAX_ATTEMPTS:
+            log_info("NET-ERR", f"Page toujours en erreur après {_MAX_ATTEMPTS} tentatives → abandon")
+
+    return _NET_ERR_EXHAUSTED
 
 
 def _handle_topsurveys_partial_popup(driver) -> bool:
@@ -878,12 +873,12 @@ def solve_full_survey(driver, api_key, *, account_id: str, survey_context=None):
             print(f"[PRE-EXEC] Check TopSurveys echoue: {e}")
 
         # --- Récupération erreur réseau Chrome (ERR_TUNNEL_CONNECTION_FAILED) ---
-        # Retour False = page saine → reset du compteur d'erreurs consécutives.
-        if not _recover_from_network_error(driver):
-            try:
-                setattr(driver, "_net_err_consecutive_count", 0)
-            except Exception:
-                pass
+        _net_result = _recover_from_network_error(driver)
+        if _net_result == _NET_ERR_RECOVERED:
+            continue  # page revenue à la normale → relancer l'itération
+        if _net_result == _NET_ERR_EXHAUSTED:
+            guard.request_survey_restart("net_err_max_attempts")
+            return  # abandon propre du survey
 
         # -------------------------------------------------------------------
         # a) Laisser GPT décider de l’action à partir de la capture d’écran
