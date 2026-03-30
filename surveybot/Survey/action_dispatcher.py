@@ -1782,6 +1782,85 @@ def _apply_by_target_id(
                             log_debug("[TARGET_DEBUG]", f"savanta_jqm_carousel exception: {_short_exc(exc)}")
                         return False
 
+                # --- Confirmit CF carousel (cf_carousel_item=True) ---
+                # Les div.cf-answer-button sont dans des conteneurs aria-hidden="true" pour
+                # les items non-courants : is_displayed() retourne False même après navigation.
+                # On bypasse _find_best_visible et on clique directement par XPATH sans contrainte
+                # de visibilité, après s'être assuré que le paging button a bien été activé.
+                if payload.get("cf_carousel_item"):
+                    try:
+                        # Naviguer vers l'item si pas encore fait (paging button)
+                        paging_xps = payload.get("pre_click_xpaths") or []
+                        for pxp in paging_xps[:1]:
+                            try:
+                                paging_cands = driver.find_elements(By.XPATH, pxp)
+                                if paging_cands:
+                                    pel = paging_cands[0]
+                                    aria_pressed = (pel.get_attribute("aria-pressed") or "").strip().lower()
+                                    if aria_pressed != "true":
+                                        try:
+                                            driver.execute_script("arguments[0].click();", pel)
+                                        except Exception:
+                                            pass
+                                        time.sleep(0.25)
+                            except Exception:
+                                pass
+
+                        # Trouver le bouton cible sans contrainte is_displayed
+                        btn_el = None
+                        try:
+                            cands = driver.find_elements(By.XPATH, xp)
+                            btn_el = cands[0] if cands else None
+                        except Exception:
+                            pass
+                        if btn_el is None:
+                            if debug_target:
+                                log_debug("[TARGET_DEBUG]", f"cf_carousel_item: element not found xpath={xp}")
+                            return False
+
+                        # Scroll + clic JS
+                        try:
+                            driver.execute_script(
+                                "arguments[0].scrollIntoView({block:'center', inline:'center'});", btn_el
+                            )
+                        except Exception:
+                            pass
+                        try:
+                            driver.execute_script("arguments[0].click();", btn_el)
+                        except Exception:
+                            if debug_target:
+                                log_debug("[TARGET_DEBUG]", f"cf_carousel_item: JS click failed xpath={xp}")
+                            return False
+
+                        # Vérification via aria-checked="true"
+                        time.sleep(0.15)
+                        ok = False
+                        try:
+                            ok = (btn_el.get_attribute("aria-checked") or "").strip().lower() == "true"
+                        except Exception:
+                            ok = True  # stale element = clic probablement appliqué
+
+                        if not ok:
+                            # Tentative 2 : ActionChains (animation Confirmit parfois async)
+                            try:
+                                from selenium.webdriver.common.action_chains import ActionChains
+                                ActionChains(driver).move_to_element(btn_el).pause(0.05).click().perform()
+                                time.sleep(0.15)
+                                ok = (btn_el.get_attribute("aria-checked") or "").strip().lower() == "true"
+                            except Exception:
+                                pass
+
+                        if ok:
+                            log_info("[TARGET]", "apply ok=true strategy=cf_carousel_item reason=aria_checked")
+                            return True
+                        if debug_target:
+                            log_debug("[TARGET_DEBUG]", f"cf_carousel_item: aria-checked not set after click xpath={xp}")
+                        return False
+                    except Exception as exc:
+                        if debug_target:
+                            log_debug("[TARGET_DEBUG]", f"cf_carousel_item exception: {_short_exc(exc)}")
+                        return False
+
                 # 1) trouver l'élément cible (label/span/input)
                 _ensure_pre_clicks_ready(xp)
                 try:
