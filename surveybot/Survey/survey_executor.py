@@ -1020,6 +1020,187 @@ Just output the option text that best answers the question based on what you see
     return False
 
 
+def _handle_cf_carousel_image_blocks(driver, question_blocks: list, api_key: str) -> bool:
+    """
+    Confirmit/GfK CF-Carousel avec image partagée : traitement Vision API.
+
+    Détecte les blocs context.kind=cf_carousel_item qui possèdent un champ image_url.
+    Envoie UNE seule requête gpt-4o Vision avec l'image + toutes les affirmations,
+    puis navigue chaque item du carousel et clique la réponse.
+
+    Retourne True si au moins un bloc a été traité, False sinon.
+    Gate DOM strict : image_url présent sur au moins un bloc cf_carousel_item.
+    """
+    import requests
+    import base64
+    from Survey.dom_registry import get_target
+
+    # Gate : blocs cf_carousel_item avec image_url
+    carousel_blocks = [
+        b for b in question_blocks
+        if (b.get("context") or {}).get("kind") == "cf_carousel_item"
+        and b.get("image_url")
+    ]
+    if not carousel_blocks:
+        return False
+
+    image_url = carousel_blocks[0]["image_url"]
+    print(f"[CF_CAROUSEL_VISION] {len(carousel_blocks)} item(s) avec image: {image_url[:80]}")
+
+    # Télécharger l'image une seule fois
+    try:
+        resp = requests.get(image_url, timeout=15)
+        resp.raise_for_status()
+        img_data = base64.b64encode(resp.content).decode("utf-8")
+        content_type = resp.headers.get("Content-Type", "image/jpeg").split(";")[0].strip()
+        if content_type not in ("image/jpeg", "image/png", "image/gif", "image/webp"):
+            content_type = "image/jpeg"
+    except Exception as e:
+        print(f"[CF_CAROUSEL_VISION] Téléchargement image FAILED: {e}")
+        return False
+
+    # Construire le prompt Vision avec toutes les affirmations
+    lines = ["Regarde attentivement cette image et réponds à chaque affirmation par exactement une des options fournies."]
+    lines.append("Format STRICT — une ligne par question : Q<n>: <réponse exacte>")
+    lines.append("")
+    for i, block in enumerate(carousel_blocks, start=1):
+        affirmation = (block.get("question") or "").strip()
+        opts = block.get("options") or []
+        opts_str = " / ".join(opts)
+        lines.append(f"Q{i}: {affirmation}  [options: {opts_str}]")
+    vision_prompt = "\n".join(lines)
+
+    # Appel Vision API (gpt-4o)
+    try:
+        client = openai.OpenAI(api_key=api_key)
+        vision_response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:{content_type};base64,{img_data}",
+                                "detail": "low",
+                            },
+                        },
+                        {"type": "text", "text": vision_prompt},
+                    ],
+                }
+            ],
+            max_tokens=200,
+        )
+        raw_answer = (vision_response.choices[0].message.content or "").strip()
+        print(f"[CF_CAROUSEL_VISION] Réponse brute: {raw_answer!r}")
+    except Exception as e:
+        print(f"[CF_CAROUSEL_VISION] Vision API FAILED: {e}")
+        return False
+
+    # Parser les réponses : "Q1: Vrai\nQ2: Faux\n..."
+    answer_map: dict[int, str] = {}
+    for line in raw_answer.splitlines():
+        line = line.strip()
+        m = re.match(r"Q(\d+)\s*[:=]\s*(.+)", line, re.IGNORECASE)
+        if m:
+            answer_map[int(m.group(1))] = m.group(2).strip()
+
+    any_clicked = False
+    for i, block in enumerate(carousel_blocks, start=1):
+        chosen_raw = answer_map.get(i, "")
+        target_id = block.get("target_id")
+        options = block.get("options") or []
+
+        if not target_id:
+            print(f"[CF_CAROUSEL_VISION] Q{i}: pas de target_id, skip")
+            continue
+
+        registry_data = get_target(target_id)
+        if not registry_data:
+            print(f"[CF_CAROUSEL_VISION] Q{i}: target_id={target_id} absent du registry, skip")
+            continue
+
+        option_xpath_map = registry_data.get("option_xpath_map") or {}
+        pre_click_xpaths = registry_data.get("pre_click_xpaths") or []
+        frame_chain = registry_data.get("frame_chain") or []
+
+        # Matcher la réponse (exact puis partiel)
+        chosen_lc = (chosen_raw or "").lower().strip()
+        matched_xpath = None
+        matched_option = None
+        for opt, xp in option_xpath_map.items():
+            if opt.lower().strip() == chosen_lc:
+                matched_xpath = xp
+                matched_option = opt
+                break
+        if not matched_xpath:
+            for opt, xp in option_xpath_map.items():
+                opt_lc = opt.lower().strip()
+                if chosen_lc in opt_lc or opt_lc in chosen_lc:
+                    matched_xpath = xp
+                    matched_option = opt
+                    break
+        if not matched_xpath and options:
+            # Fallback : première option
+            first_key = list(option_xpath_map.keys())[0] if option_xpath_map else None
+            if first_key:
+                matched_xpath = option_xpath_map[first_key]
+                matched_option = first_key
+                print(f"[CF_CAROUSEL_VISION] Q{i}: pas de match pour {chosen_raw!r}, fallback={matched_option!r}")
+
+        if not matched_xpath:
+            print(f"[CF_CAROUSEL_VISION] Q{i}: option introuvable, skip")
+            continue
+
+        print(f"[CF_CAROUSEL_VISION] Q{i}: réponse={matched_option!r} xpath={matched_xpath}")
+
+        # Naviguer vers le frame si nécessaire
+        try:
+            driver.switch_to.default_content()
+            for frame_idx in frame_chain:
+                iframes = driver.find_elements(By.CSS_SELECTOR, "iframe")
+                if frame_idx < len(iframes):
+                    driver.switch_to.frame(iframes[frame_idx])
+        except Exception:
+            pass
+
+        # Cliquer le paging button pour naviguer vers cet item
+        for pxp in pre_click_xpaths[:1]:
+            try:
+                paging_cands = driver.find_elements(By.XPATH, pxp)
+                if paging_cands:
+                    pel = paging_cands[0]
+                    aria_pressed = (pel.get_attribute("aria-pressed") or "").strip().lower()
+                    if aria_pressed != "true":
+                        driver.execute_script("arguments[0].click();", pel)
+                        time.sleep(0.25)
+            except Exception:
+                pass
+
+        # Cliquer la réponse
+        try:
+            cands = driver.find_elements(By.XPATH, matched_xpath)
+            btn_el = cands[0] if cands else None
+            if btn_el is None:
+                print(f"[CF_CAROUSEL_VISION] Q{i}: élément introuvable xpath={matched_xpath}")
+                continue
+            driver.execute_script("arguments[0].scrollIntoView({block:'center'});", btn_el)
+            driver.execute_script("arguments[0].click();", btn_el)
+            time.sleep(0.15)
+            ok = (btn_el.get_attribute("aria-checked") or "").strip().lower() == "true"
+            if not ok:
+                ActionChains(driver).move_to_element(btn_el).pause(0.05).click().perform()
+                time.sleep(0.15)
+            print(f"[CF_CAROUSEL_VISION] Q{i}: clicked OK")
+            any_clicked = True
+        except Exception as e:
+            print(f"[CF_CAROUSEL_VISION] Q{i}: click FAILED: {e}")
+            continue
+
+    return any_clicked
+
+
 def _handle_topsurveys_exclusion_popup(driver) -> bool:
     """
     Gere les popups TopSurveys au retour sur app.topsurveys.app.
@@ -1218,6 +1399,18 @@ def execute_survey_page(driver, api_key, ctx=None):
     import Survey.page_snapshot as page_snapshot
 
     # =========================================================================
+    # PATCH: Récupération erreur réseau Chrome (ERR_TUNNEL_CONNECTION_FAILED)
+    # Couvre le chemin takeover/attach qui appelle execute_survey_page() directement,
+    # sans passer par solve_full_survey(). Le budget 1-refresh/URL est géré dans
+    # _recover_from_network_error() via driver._net_err_last_refresh_url.
+    # =========================================================================
+    try:
+        from Survey.survey_solver import _recover_from_network_error
+        _recover_from_network_error(driver)
+    except Exception as _nerr_exc:
+        pass  # jamais bloquant
+
+    # =========================================================================
     # PATCH: Detecter popup TopSurveys
     # =========================================================================
     try:
@@ -1341,6 +1534,34 @@ def execute_survey_page(driver, api_key, ctx=None):
         return True
     if open_text_image_abort == "budget_exhausted":
         return False
+
+    # =========================================================================
+    # CF-CAROUSEL AVEC IMAGE: Traitement Vision API AVANT le flux standard
+    # Blocs cf_carousel_item portant un image_url → gpt-4o Vision
+    # =========================================================================
+    try:
+        if question_blocks and _handle_cf_carousel_image_blocks(driver, question_blocks, api_key):
+            print("[CF_CAROUSEL_VISION] Blocs traités avec succès -> CTA")
+            intercept_only = _env_truthy("CTA_INTERCEPT_ONLY")
+            try:
+                before_url = driver.current_url
+                before_sig = redirect_watcher._dom_signature(driver)
+                time.sleep(PAUSE_BEFORE_CTA)
+                _local_pause_before_cta("navigation_cta")
+                clicked = input_handler.try_click_navigation_cta_any_context(driver)
+                if intercept_only:
+                    print(f"[CF_CAROUSEL_VISION] CTA_INTERCEPT_ONLY — clic={'OK' if clicked else 'NOT FOUND'}, pas de navigation")
+                elif clicked:
+                    redirect_watcher.wait_for_navigation_or_dom_change(
+                        driver, before_url=before_url, before_sig=before_sig, timeout=10
+                    )
+            except Exception as _cta_e:
+                print(f"[CF_CAROUSEL_VISION] CTA error (non-bloquant): {_cta_e}")
+            return True
+    except Exception as e:
+        print(f"[CF_CAROUSEL_VISION] Exception: {e}")
+        import traceback
+        traceback.print_exc()
 
     # =========================================================================
     # WALR IMAGE EVALUATION: Traitement Vision API AVANT le flux standard

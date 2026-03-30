@@ -1,116 +1,41 @@
-<div class="mx-stage" id="mx-stage-S7"><div class="mx-container mx-collapsible-container" style="visibility: visible;"><div id="mx-img-preload-container" style="display: none;"></div><div class="mx-collapsible-button-holder"></div><div class="mx-scroll-button visible mx-button-scroll-button mx-btn mx-btn-selected" style="width: 50px; height: 50px; left: 1215.44px; display: none;"><div class="mx-btn-content mx-color-selected-border mx-color-selected-bg"><div class="mx-btn-label"><img crossorigin="anonymous" src="//d2n88fe5uqdqty.cloudfront.net/rnd/rnd-mx-tools/collapsible/images/go_up.png?cache=1774745108195"></div></div></div><div class="mx-collapsible-groupholder"><div class="mx-collapsible-itemholder row no-group"><div class="col-sm-6 col-md-4 col-lg-3"><div class="mx-collapsible-row-item mx-card-r11 mx-card-container vertical" style="width: 100%; height: auto;" data-row-index="0"><div class="mx-card mx-color-unselected-border"><div class="top"></div><div class="middle"><div class="box rows-3"><div class="content-container" style="min-height: 100px; height: 100px;"> <div class="label">Industrie</div></div></div></div><div class="bottom"></div><div class="tick top-right square"><div class="tick-content-container"><div class="tick-container">
-                                    <div class="mx-tick-flag"></div>
-                                         
-                                            <i class="icon ion-checkmark"></i>
-                                                                              
-                                   </div></div></div></div></div></div><div class="col-sm-6 col-md-4 col-lg-3"><div class="mx-collapsible-row-item mx-card-r17 mx-card-container vertical" style="width: 100%; height: auto;" data-row-index="0"><div class="mx-card mx-color-unselected-border"><div class="top"></div><div class="middle"><div class="box rows-3"><div class="content-container" style="min-height: 100px; height: 100px;"> <div class="label">Laboratoire pharmaceutique</div></div></div></div><div class="bottom"></div><div class="tick top-right square"><div class="tick-content-container"><div class="tick-container">
-                                    <div class="mx-tick-flag"></div>
-                                         
-                                            <i class="icon ion-checkmark"></i>
-                                                                              
-                                   </div></div></div></div></div></div><div class="col-sm-6 col-md-4 col-lg-3"><div class="mx-collapsible-row-item mx-card-r9 mx-card-container vertical" style="width: 100%; height: auto;" data-row-index="0"><div class="mx-card mx-color-unselected-border"><div class="top"></div><div class="middle"><div class="box rows-3"><div class="content-container" style="min-height: 100px; height: 100px;"> <div class="label">Distribution spécialisée</div></div></div></div><div class="bottom"></div><div class="tick top-right square"><div class="tick-content-container"><div class="tick-container">
-                                    <div class="mx-tick-flag"></div>
-                                         
-                                            <i class="icon ion-checkmark"></i>
-                                                                              
-                                   </div></div></div></div></div></div><div class="col-sm-6 col-md-4 col-lg-3"><div class="mx-collapsible-row-item mx-card-r14 mx-card-container vertical" style="width: 100%; height: auto;" data-row-index="0"><div class="mx-card mx-color-unselected-border"><div class="top"></div><div class="middle"><div class="box rows-3"><div class="content-container" style="min-height: 100px; height: 100px;"> <div class="label">Téléphonie Mobile / Fournisseur d'Accès à Internet / Téléphonie Fixe</div></div></div></div><div class="bottom"></div><div class="tick top-right square"><div class="tick-content-container"><div class="tick-container">
-                                    <div class="mx-tick-flag"></div>
-                                         
-                                            <i class="icon ion-checkmark"></i>
-                                                                              
-                                   </div></div></div></div></div></div><div class="col-sm-6 col-md-4 col-lg-3"><div class="mx-collapsible-row-item mx-card-r19 mx-card-container vertical" style="width: 100%; height: auto;" data-row-index="1"><div class="mx-card mx-color-unselected-border"><div class="top"></div><div class="middle"><div class="box rows-3"><div class="content-container" style="min-height: 100px; height: 100px;"> <div class="label">Établissements de santé et médico-sociaux (hôpital, clinique, EHPAD…)</div></div></div></div><div class="bottom"></div><div class="tick top-right square"><div class="tick-content-container"><div class="tick-container">
-                                    <div class="mx-tick-flag"></div>
-                                         
-                                            <i class="icon ion-checkmark"></i>
-                                                                              
-                                   </div></div></div></div></div></div><div class="col-sm-6 col-md-4 col-lg-3"><div class="mx-collapsible-row-item mx-card-r3 mx-card-container vertical" style="width: 100%; height: auto;" data-row-index="1"><div class="mx-card mx-color-unselected-border"><div class="top"></div><div class="middle"><div class="box rows-3"><div class="content-container" style="min-height: 100px; height: 100px;"> <div class="label">Artisanat</div></div></div></div><div class="bottom"></div><div class="tick top-right square"><div class="tick-content-container"><div class="tick-container">
-                                    <div class="mx-tick-flag"></div>
-                                         
-                                            <i class="icon ion-checkmark"></i>
-                                                                              
-                                   </div></div></div></div></div></div><div class="col-sm-6 col-md-4 col-lg-3"><div class="mx-collapsible-row-item mx-card-r16 mx-card-container vertical" style="width: 100%; height: auto;" data-row-index="1"><div class="mx-card mx-color-unselected-border"><div class="top"></div><div class="middle"><div class="box rows-3"><div class="content-container" style="min-height: 100px; height: 100px;"> <div class="label">Transport de marchandises</div></div></div></div><div class="bottom"></div><div class="tick top-right square"><div class="tick-content-container"><div class="tick-container">
-                                    <div class="mx-tick-flag"></div>
-                                         
-                                            <i class="icon ion-checkmark"></i>
-                                                                              
-                                   </div></div></div></div></div></div><div class="col-sm-6 col-md-4 col-lg-3"><div class="mx-collapsible-row-item mx-card-r22 mx-card-container vertical" style="width: 100%; height: auto;" data-row-index="1"><div class="mx-card mx-color-unselected-border"><div class="top"></div><div class="middle"><div class="box rows-3"><div class="content-container" style="min-height: 100px; height: 100px;"> <div class="label">Service public et administration</div></div></div></div><div class="bottom"></div><div class="tick top-right square"><div class="tick-content-container"><div class="tick-container">
-                                    <div class="mx-tick-flag"></div>
-                                         
-                                            <i class="icon ion-checkmark"></i>
-                                                                              
-                                   </div></div></div></div></div></div><div class="col-sm-6 col-md-4 col-lg-3"><div class="mx-collapsible-row-item mx-card-r2 mx-card-container vertical" style="width: 100%; height: auto;" data-row-index="2"><div class="mx-card mx-color-unselected-border"><div class="top"></div><div class="middle"><div class="box rows-3"><div class="content-container" style="min-height: 100px; height: 100px;"> <div class="label">Art et spectacle</div></div></div></div><div class="bottom"></div><div class="tick top-right square"><div class="tick-content-container"><div class="tick-container">
-                                    <div class="mx-tick-flag"></div>
-                                         
-                                            <i class="icon ion-checkmark"></i>
-                                                                              
-                                   </div></div></div></div></div></div><div class="col-sm-6 col-md-4 col-lg-3"><div class="mx-collapsible-row-item mx-card-r4 mx-card-container vertical" style="width: 100%; height: auto;" data-row-index="2"><div class="mx-card mx-color-unselected-border"><div class="top"></div><div class="middle"><div class="box rows-3"><div class="content-container" style="min-height: 100px; height: 100px;"> <div class="label">Assurance</div></div></div></div><div class="bottom"></div><div class="tick top-right square"><div class="tick-content-container"><div class="tick-container">
-                                    <div class="mx-tick-flag"></div>
-                                         
-                                            <i class="icon ion-checkmark"></i>
-                                                                              
-                                   </div></div></div></div></div></div><div class="col-sm-6 col-md-4 col-lg-3"><div class="mx-collapsible-row-item mx-card-r15 mx-card-container vertical" style="width: 100%; height: auto;" data-row-index="2"><div class="mx-card mx-color-unselected-border"><div class="top"></div><div class="middle"><div class="box rows-3"><div class="content-container" style="min-height: 100px; height: 100px;"> <div class="label">Transport de personnes</div></div></div></div><div class="bottom"></div><div class="tick top-right square"><div class="tick-content-container"><div class="tick-container">
-                                    <div class="mx-tick-flag"></div>
-                                         
-                                            <i class="icon ion-checkmark"></i>
-                                                                              
-                                   </div></div></div></div></div></div><div class="col-sm-6 col-md-4 col-lg-3"><div class="mx-collapsible-row-item mx-card-r12 mx-card-container vertical" style="width: 100%; height: auto;" data-row-index="2"><div class="mx-card mx-color-unselected-border"><div class="top"></div><div class="middle"><div class="box rows-3"><div class="content-container" style="min-height: 100px; height: 100px;"> <div class="label">Sociétés de services</div></div></div></div><div class="bottom"></div><div class="tick top-right square"><div class="tick-content-container"><div class="tick-container">
-                                    <div class="mx-tick-flag"></div>
-                                         
-                                            <i class="icon ion-checkmark"></i>
-                                                                              
-                                   </div></div></div></div></div></div><div class="col-sm-6 col-md-4 col-lg-3"><div class="mx-collapsible-row-item mx-card-r7 mx-card-container vertical" style="width: 100%; height: auto;" data-row-index="3"><div class="mx-card mx-color-unselected-border"><div class="top"></div><div class="middle"><div class="box rows-3"><div class="content-container" style="min-height: 100px; height: 100px;"> <div class="label">Bâtiment</div></div></div></div><div class="bottom"></div><div class="tick top-right square"><div class="tick-content-container"><div class="tick-container">
-                                    <div class="mx-tick-flag"></div>
-                                         
-                                            <i class="icon ion-checkmark"></i>
-                                                                              
-                                   </div></div></div></div></div></div><div class="col-sm-6 col-md-4 col-lg-3"><div class="mx-collapsible-row-item mx-card-r8 mx-card-container vertical" style="width: 100%; height: auto;" data-row-index="3"><div class="mx-card mx-color-unselected-border"><div class="top"></div><div class="middle"><div class="box rows-3"><div class="content-container" style="min-height: 100px; height: 100px;"> <div class="label">Energie (eau, électricité, gaz)</div></div></div></div><div class="bottom"></div><div class="tick top-right square"><div class="tick-content-container"><div class="tick-container">
-                                    <div class="mx-tick-flag"></div>
-                                         
-                                            <i class="icon ion-checkmark"></i>
-                                                                              
-                                   </div></div></div></div></div></div><div class="col-sm-6 col-md-4 col-lg-3"><div class="mx-collapsible-row-item mx-card-r18 mx-card-container vertical" style="width: 100%; height: auto;" data-row-index="3"><div class="mx-card mx-color-unselected-border"><div class="top"></div><div class="middle"><div class="box rows-3"><div class="content-container" style="min-height: 100px; height: 100px;"> <div class="label">Immobilier</div></div></div></div><div class="bottom"></div><div class="tick top-right square"><div class="tick-content-container"><div class="tick-container">
-                                    <div class="mx-tick-flag"></div>
-                                         
-                                            <i class="icon ion-checkmark"></i>
-                                                                              
-                                   </div></div></div></div></div></div><div class="col-sm-6 col-md-4 col-lg-3"><div class="mx-collapsible-row-item mx-card-r5 mx-card-container vertical" style="width: 100%; height: auto;" data-row-index="3"><div class="mx-card mx-color-unselected-border"><div class="top"></div><div class="middle"><div class="box rows-3"><div class="content-container" style="min-height: 100px; height: 100px;"> <div class="label">Automobile</div></div></div></div><div class="bottom"></div><div class="tick top-right square"><div class="tick-content-container"><div class="tick-container">
-                                    <div class="mx-tick-flag"></div>
-                                         
-                                            <i class="icon ion-checkmark"></i>
-                                                                              
-                                   </div></div></div></div></div></div><div class="col-sm-6 col-md-4 col-lg-3"><div class="mx-collapsible-row-item mx-card-r21 mx-card-container vertical" style="width: 100%; height: auto;" data-row-index="4"><div class="mx-card mx-color-unselected-border"><div class="top"></div><div class="middle"><div class="box rows-3"><div class="content-container" style="min-height: 100px; height: 100px;"> <div class="label">Education (enseignement secondaire, enseignement supérieur, organisme de formation professionnelle, ...)</div></div></div></div><div class="bottom"></div><div class="tick top-right square"><div class="tick-content-container"><div class="tick-container">
-                                    <div class="mx-tick-flag"></div>
-                                         
-                                            <i class="icon ion-checkmark"></i>
-                                                                              
-                                   </div></div></div></div></div></div><div class="col-sm-6 col-md-4 col-lg-3"><div class="mx-collapsible-row-item mx-card-r13 mx-card-container vertical" style="width: 100%; height: auto;" data-row-index="4"><div class="mx-card mx-color-unselected-border"><div class="top"></div><div class="middle"><div class="box rows-3"><div class="content-container" style="min-height: 100px; height: 100px;"> <div class="label">Restauration</div></div></div></div><div class="bottom"></div><div class="tick top-right square"><div class="tick-content-container"><div class="tick-container">
-                                    <div class="mx-tick-flag"></div>
-                                         
-                                            <i class="icon ion-checkmark"></i>
-                                                                              
-                                   </div></div></div></div></div></div><div class="col-sm-6 col-md-4 col-lg-3"><div class="mx-collapsible-row-item mx-card-r6 mx-card-container vertical" style="width: 100%; height: auto;" data-row-index="4"><div class="mx-card mx-color-unselected-border"><div class="top"></div><div class="middle"><div class="box rows-3"><div class="content-container" style="min-height: 100px; height: 100px;"> <div class="label">Banque</div></div></div></div><div class="bottom"></div><div class="tick top-right square"><div class="tick-content-container"><div class="tick-container">
-                                    <div class="mx-tick-flag"></div>
-                                         
-                                            <i class="icon ion-checkmark"></i>
-                                                                              
-                                   </div></div></div></div></div></div><div class="col-sm-6 col-md-4 col-lg-3"><div class="mx-collapsible-row-item mx-card-r1 mx-card-container vertical" style="width: 100%; height: auto;" data-row-index="4"><div class="mx-card mx-color-unselected-border"><div class="top"></div><div class="middle"><div class="box rows-3"><div class="content-container" style="min-height: 100px; height: 100px;"> <div class="label">Agriculture</div></div></div></div><div class="bottom"></div><div class="tick top-right square"><div class="tick-content-container"><div class="tick-container">
-                                    <div class="mx-tick-flag"></div>
-                                         
-                                            <i class="icon ion-checkmark"></i>
-                                                                              
-                                   </div></div></div></div></div></div><div class="col-sm-6 col-md-4 col-lg-3"><div class="mx-collapsible-row-item mx-card-r20 mx-card-container vertical" style="width: 100%; height: auto;" data-row-index="5"><div class="mx-card mx-color-unselected-border"><div class="top"></div><div class="middle"><div class="box rows-3"><div class="content-container" style="min-height: 100px; height: 100px;"> <div class="label">Tourisme et hôtellerie</div></div></div></div><div class="bottom"></div><div class="tick top-right square"><div class="tick-content-container"><div class="tick-container">
-                                    <div class="mx-tick-flag"></div>
-                                         
-                                            <i class="icon ion-checkmark"></i>
-                                                                              
-                                   </div></div></div></div></div></div><div class="col-sm-6 col-md-4 col-lg-3"><div class="mx-collapsible-row-item mx-card-r10 mx-card-container vertical" style="width: 100%; height: auto;" data-row-index="5"><div class="mx-card mx-color-unselected-border"><div class="top"></div><div class="middle"><div class="box rows-3"><div class="content-container" style="min-height: 100px; height: 100px;"> <div class="label">Grande distribution</div></div></div></div><div class="bottom"></div><div class="tick top-right square"><div class="tick-content-container"><div class="tick-container">
-                                    <div class="mx-tick-flag"></div>
-                                         
-                                            <i class="icon ion-checkmark"></i>
-                                                                              
-                                   </div></div></div></div></div></div><div class="col-sm-6 col-md-4 col-lg-3"><div class="mx-collapsible-row-item mx-card-r23 mx-card-container vertical other" style="width: 100%; height: auto;" data-row-index="5"><div class="mx-card mx-color-unselected-border"><div class="top"></div><div class="middle"><div class="box rows-3"><div class="content-container has-other blocked-other" style="min-height: 100px; height: 100px;"> <div class="label">Autre</div><div class="blocked-other openbox-container OE-r23"><textarea class="OE-r23-input" style="width: 100%;"></textarea></div></div></div></div><div class="bottom"></div><div class="tick top-right square"><div class="tick-content-container"><div class="tick-container mx-color-unselected-bg">
-                                    <div class="mx-tick-flag"></div>
-                                         
-                                            <i class="icon ion-checkmark"></i>
-                                                                              
-                                   </div></div></div></div></div></div></div></div><div class="mx-collapsible-exclusive-holder"></div></div></div>
+<div id="content"><!---->
+    <div id="main-frame-error" class="interstitial-wrapper ">
+      <div id="main-content">
+        <div class="icon icon-generic"></div>
+        <div id="main-message">
+          <h1>
+            <span>This site can’t be reached</span>
+          </h1>
+          <!--?lit$268937746$-->
+            <p>The webpage at <strong>https://sw2.decipherinc.com/survey/selfserve/3416/260314</strong> might be temporarily down or it may have moved permanently to a new web address.</p>
+          
+
+          <!--?lit$268937746$-->
+
+          <div class="error-code"><!--?lit$268937746$-->ERR_TUNNEL_CONNECTION_FAILED</div>
+
+          <!--?lit$268937746$-->
+        </div>
+      </div>
+      <div id="buttons" class="nav-wrapper suggested-left">
+        <div id="control-buttons" hidden="">
+          <!--?lit$268937746$-->
+          <!--?lit$268937746$-->
+        </div>
+        <!--?lit$268937746$-->
+      </div>
+      <!--?lit$268937746$-->
+        <div id="details">
+          <!--?lit$268937746$-->
+        </div>
+      
+    </div>
+    <!--?lit$268937746$-->
+      <div id="sub-frame-error">
+        <!-- Show details when hovering over the icon, in case the details are
+             hidden because they're too large. -->
+        <div class="icon "></div>
+        <div id="sub-frame-error-details">The webpage at <strong>https://sw2.decipherinc.com/survey/selfserve/3416/260314</strong> might be temporarily down or it may have moved permanently to a new web address.</div>
+      </div>
+    
+  </div>

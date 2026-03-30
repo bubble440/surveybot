@@ -1362,10 +1362,6 @@ def sanitize_actions(actions: list, qid_meta: dict | None = None) -> list:
                     y = int(m.group(1))
                     if range_m and range_max_y:
                         ref_year = int(range_max_y)
-                    elif meta_year_span:
-                        ref_year = int(meta_year_span[1])
-                    elif page_year_span:
-                        ref_year = int(page_year_span[1])
                     else:
                         ref_year = now_year
 

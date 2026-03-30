@@ -388,7 +388,7 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
     lines.append(
         "Pour toute question sur l'ge ou la date de naissance:\n"
         "- Si la question demande explicitement l'ANNE de naissance (ex: 'anne de naissance', 'year of birth', 'birth year', 'born in', 'n en'), rponds UNIQUEMENT avec une anne sur 4 chiffres (YYYY), jamais un ge.\n"
-        "- Si la question demande l'ge (ge, years old, ans), rponds '25' ou '25 ans'.\n"
+        "- Si la question demande l'âge (âge, years old, ans, age), réponds UNIQUEMENT avec le chiffre '25', sans JAMAIS ajouter de mot ('ans', 'years', 'yo', etc.).\n"
         "- Si date de naissance avec dropdowns séparés (mois + année):\n"
         "  * Année: choisis une année cohérente pour 25 ans (2001, 2000, 1999).\n"
         "  * Mois: choisis un mois raliste (vite le mois en cours pour viter des ges < 25).\n"

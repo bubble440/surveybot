@@ -830,6 +830,54 @@ def _group_key_for_choice(el, itype: str) -> str:
                             if m:
                                 return f"question_{m.group(1)}"
 
+                    # IpsosInteractive/card-based pattern: les checkboxes d'une même
+                    # question portent des names de la forme "<qid>_<optionid>"
+                    # (ex: "50_713", "50_714", ...). Sans normalisation, chaque option
+                    # reçoit une group_key distincte et forme son propre bloc.
+                    # Scope DOM strict: déclenché uniquement si >=2 checkboxes dans le
+                    # même conteneur partagent le même préfixe entier "<qid>_".
+                    qid_opt_m = re.match(r"^(\d+)_(\d+)$", clean_name)
+                    if qid_opt_m:
+                        qid_prefix = qid_opt_m.group(1)
+                        scope = None
+                        try:
+                            for xp in [
+                                "ancestor::div[contains(@class,'card-body')][1]",
+                                "ancestor::div[contains(@class,'card')][1]",
+                                "ancestor::form[1]",
+                            ]:
+                                nodes = el.find_elements(By.XPATH, xp)
+                                if nodes:
+                                    scope = nodes[0]
+                                    break
+                        except Exception:
+                            scope = None
+
+                        if scope is not None:
+                            try:
+                                sibling_boxes = scope.find_elements(
+                                    By.XPATH, ".//input[@type='checkbox'][@name]"
+                                )
+                            except Exception:
+                                sibling_boxes = []
+
+                            prefix_pat = re.compile(rf"^{re.escape(qid_prefix)}_\d+$")
+                            matching = 0
+                            for sib in sibling_boxes:
+                                try:
+                                    nm = _norm_lc(sib.get_attribute("name") or "")
+                                except Exception:
+                                    nm = ""
+                                if prefix_pat.match(nm):
+                                    matching += 1
+
+                            if matching >= 2:
+                                log_debug(
+                                    "[DOM_GROUPING]",
+                                    f"qid_prefix_group key={qid_prefix} matching={matching}",
+                                )
+                                return qid_prefix
+
                 return _norm_lc(clean_name)
 
             # Fallback DOM-first: certains providers (ex: Quantilope) n'exposent

@@ -6399,3 +6399,352 @@ def _extract_confirmit_cf_hrs_single_blocks(driver, frame_chain: list[int] | Non
             continue
 
     return blocks
+
+
+# ================================================================================
+# GROUPCALIBER / IPSOS BOOTSTRAP – RATING ROWS (data-question_type="5")
+# ================================================================================
+
+_CALIBER_RADIO_NAME_RE = re.compile(r"^\d+_\d+$")
+
+
+def _extract_groupcaliber_rating_row_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
+    """
+    GroupCaliber/IPSOS Bootstrap – matrices rating rendues en lignes Bootstrap.
+
+    Pattern DOM ciblé (gate strict) :
+    - h6[data-question_type="5"] dans un .card-header (intitulé global de la page)
+    - Pour chaque entité : div.row.bg-light contenant :
+        - div.col-md-3 > b  : nom de la marque/entité
+        - N × label > input[type="radio"][name="\\d+_\\d+"] : options de rating
+
+    Produit 1 bloc radio par div.row.bg-light (1 par entité).
+    """
+    frame_chain = list(frame_chain or [])
+
+    # Gate 1: h6[data-question_type="5"] must be present
+    try:
+        headers = driver.find_elements(By.CSS_SELECTOR, "h6[data-question_type='5']")
+    except Exception:
+        return []
+    if not headers:
+        return []
+
+    # Gate 2: at least one div.row.bg-light must be present
+    try:
+        rows = driver.find_elements(By.CSS_SELECTOR, "div.row.bg-light")
+    except Exception:
+        return []
+    if not rows:
+        return []
+
+    blocks: list[dict] = []
+
+    for row in rows[:50]:  # budget anti-explosion
+        try:
+            # Brand name from div.col-md-3 > b
+            brand_name = ""
+            try:
+                b_els = row.find_elements(By.CSS_SELECTOR, "div.col-md-3 b")
+                if b_els:
+                    brand_name = _norm(b_els[0].text or b_els[0].get_attribute("innerText") or "")
+            except Exception:
+                pass
+
+            if not brand_name:
+                continue
+
+            # Find all radios in this row
+            try:
+                radios = row.find_elements(By.CSS_SELECTOR, "input[type='radio']")
+            except Exception:
+                radios = []
+
+            if not radios:
+                continue
+
+            # Determine radio group name (all radios in a row share the same name)
+            radio_name = ""
+            for r in radios:
+                try:
+                    n = (r.get_attribute("name") or "").strip()
+                    if _CALIBER_RADIO_NAME_RE.match(n):
+                        radio_name = n
+                        break
+                except Exception:
+                    continue
+
+            if not radio_name:
+                continue
+
+            # Extract options and build option_xpath_map
+            options: list[str] = []
+            option_xpath_map: dict[str, str] = {}
+            name_lit = _xpath_literal(radio_name)
+
+            for radio in radios[:30]:  # budget anti-explosion
+                try:
+                    rname = (radio.get_attribute("name") or "").strip()
+                    if rname != radio_name:
+                        continue
+
+                    # Label text: the radio is wrapped in <label>
+                    label_txt = ""
+                    label_raw = ""  # NFC form for XPath literal (DOM-compatible)
+                    try:
+                        label_el = radio.find_element(By.XPATH, "ancestor::label[1]")
+                        raw = (label_el.text or label_el.get_attribute("innerText") or "")
+                        # Preserve NFC form for XPath (NFKD form breaks contains() on accented chars)
+                        label_raw = re.sub(r"\s+", " ", raw).strip()
+                        label_txt = _norm(label_raw)  # NFKD for dict key (matches v_norm in apply)
+                    except Exception:
+                        pass
+
+                    if not label_txt:
+                        continue
+
+                    nk = _norm_key(label_txt)
+                    if nk in option_xpath_map:
+                        continue
+
+                    # Use NFC label_raw for XPath literal so contains() matches the DOM
+                    label_lit = _xpath_literal(label_raw or label_txt)
+                    xpath = (
+                        f"(//label[.//input[@type='radio' and @name={name_lit}]"
+                        f" and contains(normalize-space(), {label_lit})])[1]"
+                    )
+                    option_xpath_map[nk] = xpath
+                    options.append(label_txt)
+                except Exception:
+                    continue
+
+            if len(options) < 2:
+                continue
+
+            group_key = f"radio:name:{radio_name}"
+            target_id = make_target_id("group", group_key, brand_name)
+
+            register_target(
+                target_id,
+                {
+                    "kind": "group",
+                    "itype": "radio",
+                    "group_key": group_key,
+                    "question": brand_name,
+                    "option_xpath_map": option_xpath_map,
+                    "frame_chain": frame_chain,
+                    "groupcaliber_rating": True,
+                },
+            )
+
+            blocks.append(
+                {
+                    "question": brand_name,
+                    "itype": "radio",
+                    "options": options,
+                    "max_select": 1,
+                    "min_select": 1,
+                    "target_id": target_id,
+                    "context": {"kind": "group", "group_key": group_key},
+                }
+            )
+
+            log_debug(
+                "[DOM_CALIBER_RATING]",
+                f"brand={brand_name!r} group_key={group_key!r} options={len(options)}",
+            )
+
+        except Exception:
+            continue
+
+    return blocks
+
+
+# ================================================================================
+# FORSTA/CONFIRMIT - CF-CAROUSEL (div.cf-carousel + div.cf-carousel__content-item)
+# ================================================================================
+
+def _extract_confirmit_cf_carousel_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
+    """Forsta/Confirmit CF carousel: 1 bloc radio par item du carousel.
+
+    Gate DOM strict:
+    - présence de div.cf-carousel
+    - présence de div.cf-carousel__content-item contenant div.cf-answer-button
+
+    Pour chaque item:
+    - question = texte de div.cf-question__text + texte du span d'affirmation propre à l'item
+    - options = textes des div.cf-answer-button > div.cf-answer-button__text
+    - target_id = id du premier div.cf-answer-button de l'item (ex: qatt0_1_1)
+    - pre_click_xpaths = [paging button de l'item] pour naviguer avant de cliquer
+    """
+    frame_chain = list(frame_chain or [])
+
+    # Gate 1: div.cf-carousel présent
+    try:
+        carousels = driver.find_elements(By.CSS_SELECTOR, "div.cf-carousel")
+    except Exception:
+        return []
+    if not carousels:
+        return []
+
+    # Gate 2: au moins un item contient des div.cf-answer-button
+    gate_ok = False
+    for c in carousels:
+        try:
+            if c.find_elements(By.CSS_SELECTOR, "div.cf-carousel__content-item div.cf-answer-button"):
+                gate_ok = True
+                break
+        except Exception:
+            continue
+    if not gate_ok:
+        return []
+
+    # Texte de question principal (div.cf-question__text)
+    main_question = ""
+    try:
+        q_els = driver.find_elements(By.CSS_SELECTOR, "div.cf-question__text")
+        for q_el in q_els[:3]:
+            txt = _norm(q_el.text or q_el.get_attribute("innerText") or "")
+            if txt:
+                main_question = txt
+                break
+    except Exception:
+        pass
+
+    # Image partagée par tous les items (div.cf-question__text > img)
+    carousel_image_url = ""
+    try:
+        img_els = driver.find_elements(By.CSS_SELECTOR, "div.cf-question__text img")
+        for img_el in img_els[:3]:
+            src = (img_el.get_attribute("src") or "").strip()
+            if src and src.startswith("http"):
+                carousel_image_url = src
+                break
+    except Exception:
+        pass
+
+    blocks: list[dict] = []
+
+    for carousel in carousels[:5]:  # budget anti-explosion
+        try:
+            items = carousel.find_elements(
+                By.CSS_SELECTOR, "div.cf-carousel__content-item"
+            )
+        except Exception:
+            continue
+
+        for idx, item in enumerate(items[:50], start=1):  # budget anti-explosion
+            try:
+                # Dériver item_id depuis l'id de l'élément (ex: qatt0_1_carousel_content -> qatt0_1)
+                raw_id = (item.get_attribute("id") or "").strip()
+                item_id = raw_id.replace("_carousel_content", "") if raw_id.endswith("_carousel_content") else raw_id
+                if not item_id:
+                    continue
+
+                # Texte d'affirmation propre à l'item (span#{item_id}_text)
+                affirmation = ""
+                try:
+                    span = driver.find_element(By.ID, f"{item_id}_text")
+                    affirmation = _norm(span.get_attribute("textContent") or "")
+                except Exception:
+                    pass
+
+                question = f"{main_question} {affirmation}".strip() if affirmation else main_question
+                if not question:
+                    continue
+
+                # Boutons de réponse dans cet item
+                try:
+                    btn_divs = item.find_elements(By.CSS_SELECTOR, "div.cf-answer-button")
+                except Exception:
+                    btn_divs = []
+                if not btn_divs:
+                    continue
+
+                options: list[str] = []
+                option_xpath_map: dict[str, str] = {}
+                first_btn_id = ""
+
+                for btn in btn_divs[:20]:  # budget anti-explosion
+                    try:
+                        btn_id = (btn.get_attribute("id") or "").strip()
+                        # Texte depuis div.cf-answer-button__text (enfant)
+                        opt_text = ""
+                        try:
+                            txt_el = btn.find_element(By.CSS_SELECTOR, "div.cf-answer-button__text")
+                            opt_text = _norm(txt_el.get_attribute("textContent") or "")
+                        except Exception:
+                            pass
+                        if not opt_text:
+                            opt_text = _norm(btn.get_attribute("textContent") or "")
+                        if not opt_text:
+                            continue
+
+                        if not first_btn_id and btn_id:
+                            first_btn_id = btn_id
+
+                        nk = _norm_key(opt_text)
+                        if nk not in option_xpath_map:
+                            options.append(opt_text)
+                            if btn_id:
+                                option_xpath_map[nk] = f"//*[@id={_xpath_literal(btn_id)}]"
+                            else:
+                                xp = _best_xpath_for_element(btn)
+                                if xp:
+                                    option_xpath_map[nk] = xp
+                    except Exception:
+                        continue
+
+                if not options or not option_xpath_map:
+                    continue
+
+                # target_id = id du premier bouton de l'item
+                target_id = first_btn_id if first_btn_id else make_target_id(
+                    "cf_carousel_item", f"{item_id}", question
+                )
+
+                # pre_click_xpath: cliquer le paging button pour naviguer vers cet item
+                paging_id = f"{item_id}_carousel_paging"
+                pre_click_xpaths = [f"//*[@id={_xpath_literal(paging_id)}]"]
+
+                register_target(
+                    target_id,
+                    {
+                        "kind": "group",
+                        "itype": "radio",
+                        "group_key": f"cf_carousel_item:{item_id}",
+                        "question": question,
+                        "option_xpath_map": option_xpath_map,
+                        "pre_click_xpaths": pre_click_xpaths,
+                        "frame_chain": frame_chain,
+                        "cf_carousel_item": True,
+                        "carousel_item_id": item_id,
+                        "item_index": idx,
+                    },
+                )
+
+                block = {
+                    "question": question,
+                    "itype": "radio",
+                    "options": options,
+                    "max_select": 1,
+                    "min_select": 1,
+                    "target_id": target_id,
+                    "context": {
+                        "kind": "cf_carousel_item",
+                        "carousel_item_id": item_id,
+                        "item_index": idx,
+                    },
+                }
+                if carousel_image_url:
+                    block["image_url"] = carousel_image_url
+                blocks.append(block)
+
+                log_debug(
+                    "[DOM_CONFIRMIT_CF_CAROUSEL]",
+                    f"item_id={item_id!r} idx={idx} question={question!r} options={options}",
+                )
+            except Exception:
+                continue
+
+    return blocks
