@@ -1401,8 +1401,9 @@ def execute_survey_page(driver, api_key, ctx=None):
     # =========================================================================
     # PATCH: Récupération erreur réseau Chrome (ERR_TUNNEL_CONNECTION_FAILED)
     # Couvre le chemin takeover/attach qui appelle execute_survey_page() directement,
-    # sans passer par solve_full_survey(). Le budget 1-refresh/URL est géré dans
-    # _recover_from_network_error() via driver._net_err_last_refresh_url.
+    # sans passer par solve_full_survey(). Le retour (_NET_ERR_*) est ignoré ici :
+    # si la récupération échoue, execute_survey_page() verra un DOM vide et
+    # abandonnera naturellement via le pipeline normal.
     # =========================================================================
     try:
         from Survey.survey_solver import _recover_from_network_error
