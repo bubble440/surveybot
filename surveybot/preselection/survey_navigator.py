@@ -311,6 +311,15 @@ def go_to_best_value_survey(driver):
         log_info("[TOPSURVEYS][COOLDOWN]", "Aucun survey disponible → cooldown 15 min (DB + stop task)")
         from Management.guards.runtime_guard import get_guard, StopReason
         from Management.pause_policy import PausePolicy
+        if os.getenv("SNAP_ENABLED", "").strip() == "1":
+            from Management.snap_uploader import upload_png
+            try:
+                _snap_path = f"/tmp/snap_dom_{int(time.time())}.png"
+                driver.save_screenshot(_snap_path)
+                with open(_snap_path, "rb") as _f:
+                    upload_png(_f.read(), "NO_SURVEY_AVAILABLE")
+            except Exception as _snap_err:
+                print(f"[SNAP][ERROR] {type(_snap_err).__name__}: {_snap_err}", flush=True)
         get_guard().pause(PausePolicy.MEDIUM_LONG_COOLDOWN, StopReason.NO_SURVEY_AVAILABLE)
         # pause() lève SystemExit — jamais atteint
 
