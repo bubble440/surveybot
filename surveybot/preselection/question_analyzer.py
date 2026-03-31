@@ -262,9 +262,7 @@ def extract_select_options_js(driver):
 def reformulate_prompt_for_gpt(question_text, options, itype="radio"):
     base_rules = (
         "Ne renvoie jamais la question ni d'explications. "
-        "Évite toute réponse disqualifiante "
-        "('non', 'jamais', 'certainement pas', 'je préfère ne pas le dire', 'moins de 18', "
-        "'aucune de ces réponses', 'sans emploi', 'étudiant', 'retraité', 'je ne sais pas'). "
+        "Évite toute option exprimant une absence, un refus ou une non-appartenance. "
         "Pour les questions de revenu personnel ou du foyer : choisis une tranche entre 100 000 EUR et 1 000 000 EUR. "
         "Ne choisis jamais une tranche supérieure à 300 millions EUR. "
         "Pour les questions de statut professionnel : préfère 'Cadre supérieur', 'Dirigeant', 'Indépendant'. "
@@ -275,6 +273,19 @@ def reformulate_prompt_for_gpt(question_text, options, itype="radio"):
         "EXCEPTION screener participation récente (étude de marché / sondage récent) : "
         "si la liste contient 'Aucune de ces propositions' ou équivalent, choisis-la exclusivement. "
         "Cette exception prime sur la RÈGLE FRÉQUENCE. "
+
+        "RÈGLE ABSOLUE — OPTIONS EXCLUSIVES : "
+        "Ne choisis JAMAIS une option exclusive négative, quelle que soit la question. "
+        "Sont considérées comme options exclusives négatives(lite NON exhaustive) : "
+        "'Aucune de ces propositions', 'Aucun', 'Aucune', 'None of the above', 'None', "
+        "'Non', 'Jamais', 'Je ne sais pas', 'NSP', 'N/A', 'Non applicable', "
+        "'Préfère ne pas répondre', 'Je préfère ne pas répondre', 'Don't know', "
+        "'Not applicable', 'Pas concerné', ou tout équivalent sémantique indiquant "
+        "une absence, un refus ou une non-appartenance. "
+        "Cette règle s'applique sans exception, indépendamment du type de question "
+        "(participation à une étude, secteur d'activité, ou toute autre catégorie). "
+        "Choisis toujours une option substantielle parmi celles disponibles.\n\n"
+
     )
 
     if options and itype == "checkbox":
