@@ -9,6 +9,22 @@ from selenium.webdriver.support import expected_conditions as EC
 from preselection.auth_handler import handle_proxy_error_page_if_needed
 from Survey.log_utils import log_debug, log_info
 
+# UUIDs de surveys bloquants (irrésolvables) accumulés sur la durée du processus.
+# Alimenté via mark_last_selected_survey_as_blocked() lors d'un soft restart.
+_excluded_survey_uuids: set = set()
+_last_selected_uuid: str | None = None
+
+
+def mark_last_selected_survey_as_blocked() -> None:
+    """
+    Ajoute l'UUID du dernier survey sélectionné au set d'exclusion runtime.
+    Appelé lors d'un soft restart déclenché par un survey irrésolvable.
+    """
+    global _last_selected_uuid
+    if _last_selected_uuid:
+        _excluded_survey_uuids.add(_last_selected_uuid)
+        log_info("[TOPSURVEYS][EXCLUSION]", f"Survey exclu pour ce processus: uuid={_last_selected_uuid!r}")
+
 
 def _local_pause(reason: str = "") -> None:
     try:
@@ -174,11 +190,40 @@ def _is_card_clickable(card) -> bool:
         return False
 
 
+def _extract_survey_uuid(driver, card) -> "str | None":
+    """
+    Remonte les ancêtres DOM de la carte pour trouver l'attribut
+    data-test-id="ps-survey-<uuid>" et retourne l'UUID.
+    Retourne None si absent ou non parsable.
+    """
+    try:
+        result = driver.execute_script(
+            """
+            const el = arguments[0];
+            let node = el.parentElement;
+            while (node) {
+                const tid = node.getAttribute('data-test-id') || '';
+                if (tid.startsWith('ps-survey-')) return tid.slice(10);
+                node = node.parentElement;
+            }
+            return null;
+            """,
+            card,
+        )
+        if not result or not isinstance(result, str):
+            return None
+        return result
+    except Exception:
+        return None
+
+
 def _select_best_value_card(driver):
     """
     Score chaque carte via reward_eur / duration_min et renvoie la meilleure exploitable.
     Les cartes non parsables/non cliquables sont ignorées pour garder une sélection stable.
+    Les cartes dont l'UUID figure dans _excluded_survey_uuids sont filtrées après scoring.
     """
+    global _last_selected_uuid
     candidates = []
     for idx, card in enumerate(_find_survey_cards(driver), start=1):
         try:
@@ -198,9 +243,10 @@ def _select_best_value_card(driver):
                 _debug(f"Carte #{idx} ignorée: non cliquable")
                 continue
             score = reward / duration
-            candidates.append((score, reward, duration, idx, card))
+            uuid = _extract_survey_uuid(driver, card)
+            candidates.append((score, reward, duration, idx, card, uuid))
             _debug(
-                f"Carte #{idx} candidate: reward={reward:.2f}€ duration={duration}min score={score:.4f}€/min"
+                f"Carte #{idx} candidate: reward={reward:.2f}€ duration={duration}min score={score:.4f}€/min uuid={uuid!r}"
             )
         except Exception as e:
             _debug(f"Carte #{idx} ignorée: exception {type(e).__name__} - {e}")
@@ -209,7 +255,15 @@ def _select_best_value_card(driver):
         return None
 
     candidates.sort(key=lambda item: item[0], reverse=True)
-    best_score, best_reward, best_duration, best_idx, best_card = candidates[0]
+
+    # Filtrage des surveys bloquants connus (uniquement si UUID résolu)
+    filtered = [c for c in candidates if c[5] is None or c[5] not in _excluded_survey_uuids]
+    if not filtered:
+        log_info("[TOPSURVEYS][EXCLUSION]", "Toutes les cartes candidates sont des surveys bloquants connus — aucune alternative disponible, fallback sans exclusion")
+        filtered = candidates
+
+    best_score, best_reward, best_duration, best_idx, best_card, best_uuid = filtered[0]
+    _last_selected_uuid = best_uuid
     print(
         "🧠 Survey sélectionné par rentabilité: "
         f"carte #{best_idx} | {best_reward:.2f}€ / {best_duration} min = {best_score:.4f} €/min"

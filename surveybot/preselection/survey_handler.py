@@ -236,6 +236,30 @@ def _run_survey_impl(driver, api_key, *, account_id: str, ctx=None, payout_name:
     _STUCK_THRESHOLD = 5
     _last_scan_key = None
     _same_scan_count = 0
+    _card_retry_count = 0
+    _MAX_CARD_RETRIES = 5
+    _cashout_done = False          # ← ajout
+
+    def _skip_card_and_retry(reason: str) -> bool:
+        """
+        Marque la carte courante comme bloquée et navigue vers la meilleure carte suivante.
+        Retourne True si le budget est épuisé (soft restart déclenché → appelant doit `return`),
+        False si la navigation a réussi (appelant doit `continue`).
+        """
+        nonlocal _card_retry_count, _last_scan_key, _same_scan_count
+        from preselection.survey_navigator import mark_last_selected_survey_as_blocked, go_to_best_paid_survey
+        mark_last_selected_survey_as_blocked()
+        _card_retry_count += 1
+        if _card_retry_count >= _MAX_CARD_RETRIES:
+            print(f"[SURVEY][CARD_RETRY] Budget épuisé ({_MAX_CARD_RETRIES} cartes) → soft restart ({reason})")
+            _restart(reason)
+            return True
+        print(f"[SURVEY][CARD_RETRY] Carte bloquée ({reason}), essai {_card_retry_count}/{_MAX_CARD_RETRIES} → carte suivante")
+        _last_scan_key = None
+        _same_scan_count = 0
+        go_to_best_paid_survey(driver)
+        return False
+
     try:
         while True:
             # =================================================================
@@ -321,16 +345,18 @@ def _run_survey_impl(driver, api_key, *, account_id: str, ctx=None, payout_name:
                     except Exception as e:
                         Management.guards.runtime_guard.get_guard().record_error(e)
                         print("❌ Impossible de décliner/skip la question :", e)
-                        _restart("sensitive_question_skip_failed")
-                        return
+                        if _skip_card_and_retry("sensitive_question_skip_failed"):
+                            return
+                        continue
 
                 # ❌ Cas : disqualification détectée par la validation
                 if action == "DISQUALIFIED":
                     print(f"⚠️ Disqualification détectée (validator) | reason={answer.get('reason')}")
                     preselection.question_analyzer.handle_disqualification_and_retry(driver)
                     time.sleep(1.5)
-                    _restart("preselection_disqualified")
-                    return
+                    if _skip_card_and_retry("preselection_disqualified"):
+                        return
+                    continue
 
                 # ℹ️ Cas : pas une vraie question (ex: écran 'Soumettre')
                 if action == "NOT_RETURNED":
@@ -339,10 +365,11 @@ def _run_survey_impl(driver, api_key, *, account_id: str, ctx=None, payout_name:
                     question, answer = None, None
 
                 else:
-                    # Toute autre action inconnue → restart (fallback généraliste)
-                    print(f"⚠️ Action préselection inconnue: {action} → restart")
-                    _restart(f"preselection_action_{action.lower()}")
-                    return
+                    # Toute autre action inconnue → carte bloquée, prochaine carte
+                    print(f"⚠️ Action préselection inconnue: {action} → carte suivante")
+                    if _skip_card_and_retry(f"preselection_action_{action.lower()}"):
+                        return
+                    continue
                 
             # ✅ Disqualification : détection centralisée (robuste)
             dq_reason = detect_disqualification_reason(question, _safe_page_text(driver))
@@ -354,8 +381,9 @@ def _run_survey_impl(driver, api_key, *, account_id: str, ctx=None, payout_name:
                 except Exception:
                     pass
                 time.sleep(1.2)
-                _restart("preselection_disqualified")
-                return
+                if _skip_card_and_retry("preselection_disqualified"):
+                    return
+                continue
 
 
             # Cas normal : une réponse est attendue
@@ -368,22 +396,24 @@ def _run_survey_impl(driver, api_key, *, account_id: str, ctx=None, payout_name:
                 # 🔄 Si l'action échoue, relancer un survey complet
                 if not success:
                     print("⚠️ Réponse non appliquée correctement, relance du survey...")
-                    try:
-                        payout.check_and_cashout_if_needed(
-                            driver,
-                            account_id=account_id,
-                            min_amount_eur=MIN_CASHOUT_EUR,
-                            cashout_order=("revolut", "paypal"),
-                            revolut_fullname=payout_name,
-                            revolut_tag=payout_revolut_tag,
-                        )
-                        Management.guards.runtime_guard.get_guard().record_success()
-                    except Exception as e:
-                        Management.guards.runtime_guard.get_guard().record_error(e)
-                        print(f"[PAYOUT][WARN] Encaissement automatique: {e}")
-                    _restart("disqualification_or_retry")
-                    return
-
+                    if not _cashout_done:
+                        try:
+                            payout.check_and_cashout_if_needed(
+                                driver,
+                                account_id=account_id,
+                                min_amount_eur=MIN_CASHOUT_EUR,
+                                cashout_order=("revolut", "paypal"),
+                                revolut_fullname=payout_name,
+                                revolut_tag=payout_revolut_tag,
+                            )
+                            Management.guards.runtime_guard.get_guard().record_success()
+                        except Exception as e:
+                            Management.guards.runtime_guard.get_guard().record_error(e)
+                            print(f"[PAYOUT][WARN] Encaissement automatique: {e}")
+                        _cashout_done = True                       # ← ajout
+                    if _skip_card_and_retry("disqualification_or_retry"):
+                        return
+                    continue
             else:
                 try:
                     # Cas : on est qualifié → lancer solve_full_survey()
@@ -397,8 +427,9 @@ def _run_survey_impl(driver, api_key, *, account_id: str, ctx=None, payout_name:
                         if is_strict:
                             print(f"[STRICT_SURVEY] Ignoré ({reason}) → retour TopSurveys")
                             Management.guards.runtime_guard.get_guard().record_success()
-                            _restart("disqualification_or_retry")
-                            return
+                            if _skip_card_and_retry("disqualification_or_retry"):
+                                return
+                            continue
 
                         # feu vert → on entre en résolution complète
                         Survey.survey_solver.solve_full_survey(
@@ -414,8 +445,9 @@ def _run_survey_impl(driver, api_key, *, account_id: str, ctx=None, payout_name:
                         print("⚠️ Disqualification détectée après question finale.")
                         time.sleep(2)
                         Management.guards.runtime_guard.get_guard().record_success()
-                        _restart("disqualification_or_retry")
-                        return
+                        if _skip_card_and_retry("disqualification_or_retry"):
+                            return
+                        continue
 
                     print("ℹ️ Aucun bouton Participer ou Ok détecté. Fin de boucle.")
                     break
