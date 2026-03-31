@@ -436,6 +436,20 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
     )
 
     lines.append(
+        "RÈGLE POSSESSION DE BIENS :\n"
+        "Pour toute question portant sur la détention, l'accès ou l'usage d'un bien matériel\n"
+        "(signaux : 'voiture', 'véhicule', 'logement', 'appartement', 'maison', 'résidence',\n"
+        "'équipement', 'appareil', 'télévision', 'téléphone', 'ordinateur', 'abonnement',\n"
+        "ou toute question où les options présentent une hiérarchie possession > accès > location > absence),\n"
+        "choisis TOUJOURS l'option qui affirme la possession directe du bien.\n"
+        "Cette option peut être libellée 'Je possède', 'Propriétaire', 'J'en ai un', 'Oui, j'ai',\n"
+        "ou tout équivalent sémantique indiquant une possession personnelle directe.\n"
+        "Ne jamais choisir 'J'ai accès', 'Je loue', 'J'emprunte', 'Non, pas d'accès', ou toute option\n"
+        "indiquant une possession indirecte ou une absence de possession.\n"
+        "Un répondant déclarant ne pas posséder un bien est souvent exclu des études portant sur ce bien."
+    )
+
+    lines.append(
         "RÈGLE OPTIONS EXCLUSIVES :\n"
         "Une option exclusive est une option qui, par nature, annule toutes les autres "
         "(exemples : 'Aucun', 'Aucune', 'Aucune de ces propositions', 'Aucun de ces sujets', "
