@@ -709,6 +709,14 @@ def solve_full_survey(driver, api_key, *, account_id: str, survey_context=None):
       - stuck : réponse acceptée mais page ne bouge pas (Option B) → soft-restart
     """
     print("🧪 [solve_full_survey] Début de traitement du survey...")
+    if os.getenv("SNAP_ENABLED", "").strip() == "1":
+        from Management.snap_uploader import upload_png
+        try:
+            png = driver.get_screenshot_as_png()
+            upload_png(png, "start_solve_full_survey")
+        except Exception:
+            pass  # jamais bloquant
+
     # One SurveyContext per survey run — tracks Q/R history for coherent OpenAI responses
     _survey_ctx = survey_context or SurveyContext(session_id=account_id, openai_api_key=api_key)
     global _current_survey_ctx
@@ -742,6 +750,13 @@ def solve_full_survey(driver, api_key, *, account_id: str, survey_context=None):
 
     while True:
         print("[solve_full_survey] Exécution de la page courante")
+        if os.getenv("SNAP_ENABLED", "").strip() == "1":
+            from Management.snap_uploader import upload_png
+            try:
+                png = driver.get_screenshot_as_png()
+                upload_png(png, "start_solve_full_survey")
+            except Exception:
+                pass  # jamais bloquant
 
         # Réinitialise le drapeau de succès côté handlers
         try:
