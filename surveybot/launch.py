@@ -16,8 +16,10 @@ from State.account_state import update_state, load_state, save_state, try_acquir
 from selenium.common.exceptions import TimeoutException
 from preselection.auth_handler import is_session_expired, handle_proxy_error_page_if_needed
 from Management.pause_policy import PausePolicy
+import subprocess
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
 
 def acquire_account_lock_or_exit(account_id: str, ttl_sec: int = 240):
     ok = try_acquire_cooldown_slot(account_id=account_id, ttl_sec=ttl_sec)
@@ -370,7 +372,7 @@ def _create_driver():
         options.add_argument("--disable-dev-shm-usage")
         options.add_argument("--window-size=1920,1080")
         print("🟢 LAUNCHED NEW CHROME SESSION")
-    return webdriver.Chrome(options=options)
+    return webdriver.Chrome(options=options, service=Service(log_output=subprocess.DEVNULL))
 
 def launch_driver_or_fail(config, account_id: str):
     try:
