@@ -11,7 +11,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.action_chains import ActionChains
 from preselection.question_validation import detect_disqualification_reason
-from Survey.log_utils import log_debug
+from Survey.log_utils import log_debug, log_info
 
 ASSISTANT_SYSTEM_PROMPT = (
     # Identité de base
@@ -352,6 +352,7 @@ def get_response_for_question(driver, api_key):
                 return None, {"action": "NOT_RETURNED", "reason": "submit_seen"}, None
 
         question = extract_question_text(html)
+        log_info("[PRESELECTION]", f"Question extraite : {question}")
 
         decision = preselection.question_validation.validate_question(question, " ".join(js_texts))
 
