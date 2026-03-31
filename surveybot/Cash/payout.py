@@ -297,7 +297,6 @@ def _read_balance(driver) -> float:
     import re
 
     candidates = []
-    time.sleep(5)
     # 1️⃣ Méthode historique (si jamais ils réintroduisent le test-id)
     try:
         el = driver.find_element(By.CSS_SELECTOR, "[data-test-id='balance-card-amount']")
