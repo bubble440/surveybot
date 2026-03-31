@@ -68,7 +68,8 @@
       "Bash(grep -r \"listen\\\\|bind\\\\|8000\\\\|5000\\\\|3000\\\\|9000\" C:projectsSurveyssurveybot --include=*.py)",
       "Bash(python -c \"import ast; ast.parse\\(open\\(''Survey/dom_extractors_misc.py''\\).read\\(\\)\\); print\\(''OK''\\)\")",
       "Bash(python -c \"import ast; ast.parse\\(open\\(''Survey/dom_analyzer.py''\\).read\\(\\)\\); print\\(''OK''\\)\")",
-      "Bash(find /c/projects/Surveys/surveybot -type f \\\\\\(-name *.sql -o -name *.db -o -name *schema* -o -name *migration* \\\\\\))"
+      "Bash(find /c/projects/Surveys/surveybot -type f \\\\\\(-name *.sql -o -name *.db -o -name *schema* -o -name *migration* \\\\\\))",
+      "Bash(grep -r \"TIMEOUT\\\\|WAIT\\\\|PAUSE\\\\|DELAY\\\\|SLEEP\" /c/projects/Surveys/surveybot/Survey/*.py)"
     ]
   }
 }
