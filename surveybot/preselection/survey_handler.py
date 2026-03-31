@@ -25,7 +25,6 @@ import preselection.response_executor
 if not IS_LOCAL:
     from selenium.webdriver.support.ui import WebDriverWait
     from selenium.webdriver.support import expected_conditions as EC
-from preselection.auth_handler import snap
 from selenium.webdriver.common.by import By
 from preselection.question_validation import detect_disqualification_reason
 from State.daily_target import DAILY_TARGET_EUR
@@ -233,7 +232,6 @@ def _run_survey_impl(driver, api_key, *, account_id: str, ctx=None, payout_name:
         except Exception as e:
             print(f"[RESTART][FATAL] soft_restart fallback échoué: {e}")
 
-    snap(driver, "before_survey_loop")
     time.sleep(5 if _PLM else 1)
     _STUCK_THRESHOLD = 5
     _last_scan_key = None

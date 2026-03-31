@@ -240,7 +240,6 @@ def login(driver, email, password):
         # (isTrusted: false) ne déclenchait pas le handler @submit Vue en prod headless.
         continue_btn.click()
         print("[LOGIN] Bouton Continue cliqué.")
-        snap(driver, "after_continue_click")
         time.sleep(10 if _PLM else 2)
 
     except Exception as e:
@@ -262,7 +261,6 @@ def login(driver, email, password):
             (By.CSS_SELECTOR, 'input[data-test-id="sign-in-password-field-input"]')
         ))
         # dom_probe(driver)
-        snap(driver, "after_email")
         driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", pwd_input)
 
         driver.execute_script("""
@@ -291,6 +289,5 @@ def login(driver, email, password):
         # wait_for_page_load(driver, timeout=30)
 
     except Exception as e:
-        snap(driver, "error_pwd_step")
         time.sleep(10 if _PLM else 2)
         print("🛑 Exception mot de passe :", type(e).__name__, "-", e, flush=True)
