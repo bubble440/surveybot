@@ -712,10 +712,12 @@ def solve_full_survey(driver, api_key, *, account_id: str, survey_context=None):
     if os.getenv("SNAP_ENABLED", "").strip() == "1":
         from Management.snap_uploader import upload_png
         try:
-            png = driver.get_screenshot_as_png()
-            upload_png(png, "start_solve_full_survey")
-        except Exception:
-            pass  # jamais bloquant
+            _snap_path = f"/tmp/snap_dom_{int(time.time())}.png"
+            driver.save_screenshot(_snap_path)
+            with open(_snap_path, "rb") as _f:
+                upload_png(_f.read(), "start_solve_full_survey")
+        except Exception as _snap_err:
+            print(f"[SNAP][ERROR] {type(_snap_err).__name__}: {_snap_err}", flush=True)
 
     # One SurveyContext per survey run — tracks Q/R history for coherent OpenAI responses
     _survey_ctx = survey_context or SurveyContext(session_id=account_id, openai_api_key=api_key)
@@ -749,14 +751,16 @@ def solve_full_survey(driver, api_key, *, account_id: str, survey_context=None):
     guard = Management.guards.runtime_guard.get_guard()
 
     while True:
-        print("[solve_full_survey] Exécution de la page courante")
+        print("🧪 [solve_full_survey] Début de traitement du survey...")
         if os.getenv("SNAP_ENABLED", "").strip() == "1":
             from Management.snap_uploader import upload_png
             try:
-                png = driver.get_screenshot_as_png()
-                upload_png(png, "start_solve_full_survey")
-            except Exception:
-                pass  # jamais bloquant
+                _snap_path = f"/tmp/snap_dom_{int(time.time())}.png"
+                driver.save_screenshot(_snap_path)
+                with open(_snap_path, "rb") as _f:
+                    upload_png(_f.read(), "resolve_full_survey")
+            except Exception as _snap_err:
+                print(f"[SNAP][ERROR] {type(_snap_err).__name__}: {_snap_err}", flush=True)
 
         # Réinitialise le drapeau de succès côté handlers
         try:
