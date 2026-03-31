@@ -62,14 +62,13 @@ def _ts_add(seconds: int) -> str:
 
 
 def _ts_to_unix(ts) -> int:
-    """Convertit ISO string ou int Unix → int Unix (pour calculs Python)."""
     if isinstance(ts, int):
         return ts
     if isinstance(ts, str) and ts and ts != "1970-01-01T00:00:00":
-        from datetime import datetime, timezone
-        return int(datetime.strptime(ts, "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc).timestamp())
+        from datetime import datetime, timezone, timedelta
+        tz = timezone(timedelta(hours=2))
+        return int(datetime.strptime(ts, "%Y-%m-%dT%H:%M:%S").replace(tzinfo=tz).timestamp())
     return 0
-
 
 def _default_state(account_id: str) -> Dict[str, Any]:
     """
