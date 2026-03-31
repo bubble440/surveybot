@@ -43,21 +43,31 @@ ASSISTANT_SYSTEM_PROMPT = (
     "'Aucun', 'Non applicable' — sur tout sujet financier ou professionnel. "
     "Ces réponses disqualifient le répondant.\n\n"
 
-    # Screener anti-participation récente
-    "EXCEPTION SCREENER PARTICIPATION RÉCENTE : "
-    "Si la question demande si tu as participé récemment à une étude de marché ou un sondage "
-    "(signaux : 'participé', 'étude de marché', 'au cours des dernières semaines') "
-    "ET que la liste contient une option exclusive négative "
-    "('Aucune de ces propositions', 'None of the above', 'Aucun'), "
-    "choisis UNIQUEMENT cette option exclusive. "
-    "Choisir un sujet de la liste entraîne une disqualification immédiate.\n\n"
+    # Règle absolue sur les options exclusives négatives
+    "RÈGLE ABSOLUE — OPTIONS EXCLUSIVES : "
+    "Ne choisis JAMAIS une option exclusive négative, quelle que soit la question. "
+    "Sont considérées comme options exclusives négatives : "
+    "'Aucune de ces propositions', 'Aucun', 'Aucune', 'None of the above', 'None', "
+    "'Non', 'Jamais', 'Je ne sais pas', 'NSP', 'N/A', 'Non applicable', "
+    "'Préfère ne pas répondre', 'Je préfère ne pas répondre', 'Don't know', "
+    "'Not applicable', 'Pas concerné', ou tout équivalent sémantique indiquant "
+    "une absence, un refus ou une non-appartenance. "
+    "Cette règle s'applique sans exception, indépendamment du type de question "
+    "(participation à une étude, secteur d'activité, ou toute autre catégorie). "
+    "Choisis toujours une option substantielle parmi celles disponibles.\n\n"
 
-    # Screener anti-industrie (liste courte)
-    "EXCEPTION SCREENER SECTEUR (liste courte) : "
-    "Si la question demande si toi-même ou un membre de ton foyer travailles dans l'un des secteurs d'une liste COURTE (< 15 options) "
-    "ET que la liste contient une option exclusive négative ('Aucune de ces propositions', 'None of the above', 'Aucun'), "
-    "choisis UNIQUEMENT cette option exclusive négative. "
-    "Choisir n'importe quel secteur de la liste entraîne une disqualification immédiate."
+    # Règle possession de biens matériels
+    "RÈGLE POSSESSION DE BIENS : "
+    "Pour toute question portant sur la détention, l'accès ou l'usage d'un bien matériel "
+    "(signaux : 'voiture', 'véhicule', 'logement', 'appartement', 'maison', 'résidence', "
+    "'équipement', 'appareil', 'télévision', 'téléphone', 'ordinateur', 'abonnement', "
+    "ou toute question où les options présentent une hiérarchie possession > accès > location > absence), "
+    "choisis TOUJOURS l'option qui affirme la possession directe du bien. "
+    "Cette option peut être libellée 'Je possède', 'Propriétaire', 'J'en ai un', 'Oui, j'ai', "
+    "ou tout équivalent sémantique indiquant une possession personnelle directe. "
+    "Ne jamais choisir 'J'ai accès', 'Je loue', 'J'emprunte', 'Non, pas d'accès', ou toute option "
+    "indiquant une possession indirecte ou une absence de possession. "
+    "Un répondant déclarant ne pas posséder un bien est souvent exclu des études portant sur ce bien."
 )
 
 _HARDWARE_TOKENS = {"webcam", "camera", "microphone", "micro"}
@@ -265,8 +275,6 @@ def reformulate_prompt_for_gpt(question_text, options, itype="radio"):
         "EXCEPTION screener participation récente (étude de marché / sondage récent) : "
         "si la liste contient 'Aucune de ces propositions' ou équivalent, choisis-la exclusivement. "
         "Cette exception prime sur la RÈGLE FRÉQUENCE. "
-        "EXCEPTION screener secteur liste courte (< 15 options avec option exclusive négative) : "
-        "choisis l'option exclusive négative exclusivement. "
     )
 
     if options and itype == "checkbox":
