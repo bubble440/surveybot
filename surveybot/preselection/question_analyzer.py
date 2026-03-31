@@ -165,6 +165,10 @@ def detect_input_type(html):
     if radio_markers:
         return "radio"
 
+    # Champ numérique entier (input_int)
+    if soup.find("input", {"type": "number"}) or soup.select("[data-test-id*='input_int']"):
+        return "input_int"
+
     return "radio"
 
 
@@ -289,6 +293,14 @@ def reformulate_prompt_for_gpt(question_text, options, itype="radio"):
             f"Options: {', '.join(options)}\n"
             "Choisis exactement une des options ci-dessus. "
             "Réponds UNIQUEMENT par le libellé de l'option."
+        )
+
+    if itype == "input_int":
+        return (
+            f"Question: {question_text}\n"
+            f"{base_rules}"
+            "Réponds UNIQUEMENT par un entier brut (chiffres seuls, sans symbole monétaire, "
+            "sans espace, sans texte). Exemple de format attendu : 150000"
         )
 
     return (
