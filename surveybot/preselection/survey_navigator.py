@@ -6,7 +6,7 @@ _PLM = os.getenv("PROXY_LATENCY_MODE", "").strip().lower() in {"1", "true", "yes
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from preselection.auth_handler import snap, handle_proxy_error_page_if_needed
+from preselection.auth_handler import handle_proxy_error_page_if_needed
 from Survey.log_utils import log_debug, log_info
 
 
@@ -256,11 +256,9 @@ def go_to_best_value_survey(driver):
 
     time.sleep(10 if _PLM else 2)  # laisser le temps au contenu de charger
     _handle_mystery_box_popup(driver)
-    snap(driver, "before_best_value_selection")
     time.sleep(5 if _PLM else 1)  # laisser le temps à la page de se stabiliser après popup éventuel
     
     if not _find_survey_cards(driver):
-        snap(driver, "no_survey_cards_found")
         time.sleep(5 if _PLM else 3)  # délai pour que les éventuels logs/snapshots soient traités avant pause
         log_info("[TOPSURVEYS][COOLDOWN]", "Aucun survey disponible → cooldown 15 min (DB + stop task)")
         from Management.guards.runtime_guard import get_guard, StopReason
