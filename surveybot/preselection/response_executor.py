@@ -1,3 +1,4 @@
+import re
 import time
 import unicodedata
 from selenium.webdriver.common.by import By
@@ -88,6 +89,34 @@ def execute_response(driver, answer_text, input_type=None):
             )
             time.sleep(1)
             log_info("response_executor", f"✅ Champ texte rempli : {answer_text}")
+            click_next_button(driver)
+            return True
+
+        # 2.6) Champ numérique entier (input_int)
+        int_input = None
+        try:
+            int_input = driver.find_element(
+                By.CSS_SELECTOR, 'input[data-test-id*="input_int-input"]'
+            )
+        except Exception:
+            pass
+
+        if int_input is not None:
+            raw_digits = re.sub(r"[^\d]", "", str(answer_text))
+            if not raw_digits:
+                raw_digits = str(answer_text).strip()
+            driver.execute_script(
+                "arguments[0].scrollIntoView({block:'center'});", int_input
+            )
+            int_input.clear()
+            int_input.send_keys(raw_digits)
+            driver.execute_script(
+                "arguments[0].dispatchEvent(new Event('input', {bubbles:true}));"
+                "arguments[0].dispatchEvent(new Event('change', {bubbles:true}));",
+                int_input,
+            )
+            time.sleep(1)
+            log_info("response_executor", f"✅ Champ numérique rempli : {raw_digits}")
             click_next_button(driver)
             return True
 
