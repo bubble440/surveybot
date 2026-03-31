@@ -171,17 +171,11 @@ def _find_survey_cards(driver):
         "[data-test-id*='survey-tile']",
         "[data-test-id*='survey-card']",
     ]
-    cards = []
-    seen = set()
     for selector in selectors:
-        for card in driver.find_elements(By.CSS_SELECTOR, selector):
-            card_id = card.id
-            if card_id in seen:
-                continue
-            seen.add(card_id)
-            cards.append(card)
-    return cards
-
+        cards = driver.find_elements(By.CSS_SELECTOR, selector)
+        if cards:
+            return cards
+    return []
 
 def _is_card_clickable(card) -> bool:
     try:
