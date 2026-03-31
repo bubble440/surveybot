@@ -50,13 +50,15 @@ def _today_str() -> str:
 
 
 def _now() -> str:
-    from datetime import datetime, timezone
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+    from datetime import datetime, timezone, timedelta
+    tz = timezone(timedelta(hours=2))
+    return datetime.now(tz).strftime("%Y-%m-%dT%H:%M:%S")
 
 
 def _ts_add(seconds: int) -> str:
     from datetime import datetime, timezone, timedelta
-    return (datetime.now(timezone.utc) + timedelta(seconds=seconds)).strftime("%Y-%m-%dT%H:%M:%S")
+    tz = timezone(timedelta(hours=2))
+    return (datetime.now(tz) + timedelta(seconds=seconds)).strftime("%Y-%m-%dT%H:%M:%S")
 
 
 def _ts_to_unix(ts) -> int:

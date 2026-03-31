@@ -1,6 +1,8 @@
 from __future__ import annotations
 import os
+import subprocess
 from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
 from selenium import webdriver
 
 # IS_LOCAL = os.getenv("RUN_ENV", "local") == "local"
@@ -216,7 +218,7 @@ def launch_browser(config: dict | None = None):
             options.add_argument("--disable-blink-features=AutomationControlled")
             options.add_argument("--start-maximized")
             print("🟢 LAUNCHED NEW CHROME SESSION")
-        driver = webdriver.Chrome(options=options)
+        driver = webdriver.Chrome(options=options, service=Service(log_output=subprocess.DEVNULL))
         apply_resource_blocking(driver)
         return driver
 
@@ -334,7 +336,7 @@ def launch_browser(config: dict | None = None):
         opts.add_experimental_option("debuggerAddress", f"127.0.0.1:{debug_port}")
         opts.page_load_strategy = "eager"  # ne pas attendre toutes les ressources
 
-        driver = webdriver.Chrome(options=opts)
+        driver = webdriver.Chrome(options=opts, service=Service(log_output=subprocess.DEVNULL))
         if _PLM:
             apply_resource_blocking(driver)
 
