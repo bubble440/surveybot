@@ -121,20 +121,29 @@ def net_probe():
 
 def snap(driver, label: str = "state"):
     """
-    Capture un screenshot + dump base64.
-    ⚠️ Ne s'exécute que sur AWS pour éviter de spammer la console en local.
+    Capture un screenshot et :
+      1. Sauvegarde le PNG local dans /tmp/ (prod uniquement)
+      2. Upload vers Cloudflare R2 si SNAP_ENABLED=1 (optionnel, par bot)
+
+    Le base64 n'est plus loggué — utiliser R2 pour inspecter les screenshots.
+    En local ou si SNAP_ENABLED est absent : silencieux.
     """
     if not _is_prod_env():
         return
 
     try:
         png = driver.get_screenshot_as_png()
+
+        # Sauvegarde locale (inchangée — utile pour fly ssh console si besoin)
         path = f"/tmp/{label}.png"
         with open(path, "wb") as f:
             f.write(png)
-        b64 = base64.b64encode(png).decode()
         print(f"[SNAP] saved {path}")
-        print(f"data:image/png;base64,{b64}", flush=True)
+
+        # Upload R2 optionnel — no-op silencieux si SNAP_ENABLED != "1"
+        from Management.snap_uploader import upload_png
+        upload_png(png, label)
+
     except Exception as e:
         print("[SNAP][ERROR]", e)
 
@@ -277,7 +286,7 @@ def login(driver, email, password):
         ))
         driver.execute_script("arguments[0].click();", login_btn)
         time.sleep(3 if _PLM else 0.5)
-        print("✅ Bouton « Se connecter » cliqué.")
+        print("✅ Bouton « Se connecter » cliqué.")
         # from Management.redirect_watcher import wait_for_page_load
         # wait_for_page_load(driver, timeout=30)
 
