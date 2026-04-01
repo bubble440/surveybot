@@ -458,7 +458,6 @@ def init_session_and_enter_surveys(driver, config, account_id: str, notify_fn):
     except Exception as e:
         print(f"[PAYOUT][WARN] Encaissement automatique: {e}")
 
-    snap(driver, "after_login")
     time.sleep(15 if _PLM else 3)
     go_to_best_value_survey(driver)
 

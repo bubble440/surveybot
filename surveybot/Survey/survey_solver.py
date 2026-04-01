@@ -711,6 +711,7 @@ def solve_full_survey(driver, api_key, *, account_id: str, survey_context=None):
     print("🧪 [solve_full_survey] Début de traitement du survey...")
     if os.getenv("SNAP_ENABLED", "").strip() == "1":
         from Management.snap_uploader import upload_png
+        print(f"[SNAP_DEBUG] survey_solver.py SNAP_ENABLED={os.getenv('SNAP_ENABLED')!r}", flush=True)
         try:
             _snap_path = f"/tmp/snap_dom_{int(time.time())}.png"
             driver.save_screenshot(_snap_path)
@@ -754,6 +755,7 @@ def solve_full_survey(driver, api_key, *, account_id: str, survey_context=None):
         print("🧪 [solve_full_survey] Début de traitement du survey...")
         if os.getenv("SNAP_ENABLED", "").strip() == "1":
             from Management.snap_uploader import upload_png
+            print(f"[SNAP_DEBUG] survey_solver.py SNAP_ENABLED={os.getenv('SNAP_ENABLED')!r}", flush=True)
             try:
                 _snap_path = f"/tmp/snap_dom_{int(time.time())}.png"
                 driver.save_screenshot(_snap_path)
