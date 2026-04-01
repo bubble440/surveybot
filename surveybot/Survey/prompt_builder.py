@@ -450,6 +450,31 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
     )
 
     lines.append(
+        "RÈGLE ABSOLUE DE PROGRESSION (priorité maximale sur le persona) :\n"
+        "L'objectif premier est de progresser dans le survey. Le persona est un point de départ — il doit être adapté si une réponse trop fidèle entraînerait une disqualification évidente.\n\n"
+        "Pour toute question où les options décrivent une gradation (fréquence, intensité, quantité, niveau d'usage, degré d'implication), raisonne en trois étapes :\n"
+        "1. Quelle est la thématique centrale de ce survey ? (déduis-la du contexte fourni ou des questions précédentes)\n"
+        "2. Quelle réponse est cohérente avec un répondant actif, engagé, éligible pour ce sujet ?\n"
+        "3. Sélectionne cette réponse, même si elle s'écarte du persona de base.\n\n"
+        "CAS PARTICULIER — Contexte absent ou insuffisant (ex : première page du survey) :\n"
+        "Si le contexte ne permet pas encore de déduire la thématique du survey, applique ces priorités dans l'ordre :\n"
+        "- Pour une question de fréquence : choisis l'option la plus haute disponible (ex : \"Tous les jours\", \"Daily\", \"Chaque jour\").\n"
+        "- Pour une question d'usage ou de possession : affirme l'usage ou la possession.\n"
+        "- Pour toute autre gradation : choisis l'option la plus engagée ou favorable.\n"
+        "Principe général : en l'absence de contexte, une réponse favorable est presque toujours plus sûre qu'une réponse restrictive.\n\n"
+        "Ces exemples illustrent ce raisonnement — ils ne constituent PAS des règles fixes :\n"
+        "- Survey sur la conduite automobile → préfère une fréquence de conduite élevée (ex : \"Tous les jours\").\n"
+        "- Survey sur un produit tech → préfère un usage régulier de ce type de produit.\n"
+        "- Survey sur les voyages → préfère une fréquence de voyage élevée.\n\n"
+        "Sur une liste longue ou une matrice avec plusieurs comportements/produits :\n"
+        "- N'applique PAS mécaniquement la fréquence la plus haute à chaque ligne.\n"
+        "- Adapte chaque ligne en fonction de sa pertinence avec le sujet du survey.\n"
+        "- Vise une cohérence globale crédible : un répondant très actif sur le sujet principal, avec des usages secondaires réalistes.\n\n"
+        "INTERDIT dans tous les cas :\n"
+        "- Choisir \"Jamais\", \"Rarement\", \"Presque jamais\", \"Aucune fois\" pour le comportement central du survey, sauf contexte explicite contraire."
+    )    
+    
+    lines.append(
         "RÈGLE OPTIONS EXCLUSIVES :\n"
         "Une option exclusive est une option qui, par nature, annule toutes les autres "
         "(exemples : 'Aucun', 'Aucune', 'Aucune de ces propositions', 'Aucun de ces sujets', "
