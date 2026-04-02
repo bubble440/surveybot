@@ -13,9 +13,9 @@ Variables d'env requises quand SNAP_ENABLED=1 :
   SNAP_R2_BUCKET            — nom du bucket R2
 
 Nommage des objets dans le bucket :
-  {account_id}/s{survey_num}_{step:03d}_{label}.png
+  {account_id}/{session_id}/s{survey_num}_{step:03d}_{label}.png
 
-  Exemple : unknown/s3_002_dom_5blocks.png
+  Exemple : unknown/20260402_214532/s3_002_dom_5blocks.png
   - s{N}   : numéro de survey dans la session (incrémenté via new_survey())
   - {NNN}  : ordre du snap dans ce survey (remis à 0 à chaque new_survey())
   - {label}: contexte court (start, loop, dom_Nblocks, no_survey)
@@ -29,6 +29,9 @@ import os
 import time
 
 _TAG = "SNAP_R2"
+
+# Identifiant de session fixé une seule fois à l'import du module
+_session_id: str = time.strftime("%Y%m%d_%H%M%S", time.localtime(time.time() + 7200))
 
 # Compteurs de session (module-level = partagés dans le process)
 _survey_num: int = 0
@@ -72,11 +75,64 @@ def _build_client():
     )
 
 
+def _capture_png(driver) -> bytes:
+    """
+    Capture un screenshot en bytes.
+    Tente get_screenshot_as_png() (bytes directs, sans fichier intermediaire),
+    avec fallback save_screenshot() si la methode est absente ou echoue.
+    """
+    try:
+        png = driver.get_screenshot_as_png()
+        if png and len(png) > 0:
+            return png
+    except Exception:
+        pass
+    # Fallback : ecriture fichier puis lecture
+    import tempfile
+    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+        path = tmp.name
+    try:
+        driver.save_screenshot(path)
+        with open(path, "rb") as f:
+            return f.read()
+    finally:
+        try:
+            os.remove(path)
+        except Exception:
+            pass
+
+
+def capture_and_upload(driver, label: str) -> None:
+    """
+    Capture un screenshot depuis driver et l'uploade vers R2.
+    No-op silencieux si SNAP_ENABLED != "1".
+    """
+    if not _is_enabled():
+        return
+
+    try:
+        from Survey.log_utils import log_info
+    except ImportError:
+        log_info = lambda tag, msg: print(f"[{tag}] {msg}", flush=True)
+
+    log_info(_TAG, f"capture_and_upload called label={label}")
+    try:
+        png = _capture_png(driver)
+        log_info(_TAG, f"capture done size={len(png) if png else 0}B label={label}")
+    except Exception as e:
+        log_info(_TAG, f"[ERROR] capture failed label={label} : {type(e).__name__}: {e}")
+        return
+    try:
+        upload_png(png, label)
+    except Exception as e:
+        log_info(_TAG, f"[ERROR] upload failed label={label} : {type(e).__name__}: {e}")
+
+
 def upload_png(png_bytes: bytes, label: str) -> None:
     """
     Upload un screenshot PNG vers R2.
 
-    Nommage : {account_id}/s{survey_num}_{step:03d}_{label}.png
+    Nommage : {account_id}/{session_id}/s{survey_num}_{step:03d}_{label}.png
     Le step est incremente automatiquement a chaque appel.
 
     - No-op silencieux si SNAP_ENABLED != "1".
@@ -93,11 +149,15 @@ def upload_png(png_bytes: bytes, label: str) -> None:
         log_info = lambda tag, msg: print(f"[{tag}] {msg}", flush=True)
 
     try:
+        if not png_bytes:
+            log_info(_TAG, f"[WARN] png_bytes vide pour label={label}, upload ignore")
+            return
+
         _step_num += 1
         bucket = os.environ["SNAP_R2_BUCKET"]
         account_id = _get_account_id()
         # s0 = snaps hors survey (no_survey, demarrage) ; s1+ = surveys
-        key = f"{account_id}/s{_survey_num}_{_step_num:03d}_{label}.png"
+        key = f"{account_id}/{_session_id}/s{_survey_num}_{_step_num:03d}_{label}.png"
 
         client = _build_client()
         client.put_object(
@@ -106,7 +166,7 @@ def upload_png(png_bytes: bytes, label: str) -> None:
             Body=png_bytes,
             ContentType="image/png",
         )
-        log_info(_TAG, f"uploaded -> r2://{bucket}/{key}")
+        log_info(_TAG, f"uploaded -> r2://{bucket}/{key} ({len(png_bytes)}B)")
 
     except Exception as e:
         log_info(_TAG, f"[ERROR] upload failed label={label} : {type(e).__name__}: {e}")

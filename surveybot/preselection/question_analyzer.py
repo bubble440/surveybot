@@ -359,17 +359,6 @@ def get_response_for_question(driver, api_key):
         html = extract_popup_html(driver)
         input_type = detect_input_type(html)
         js_texts = extract_popup_text_with_js(driver)
-        if os.getenv("SNAP_ENABLED", "").strip() == "1":
-            from Management.snap_uploader import upload_png
-            print(f"[SNAP_DEBUG] survey_navigator.py SNAP_ENABLED={os.getenv('SNAP_ENABLED')!r}", flush=True)
-            try:
-                _snap_path = f"/tmp/snap_dom_{int(time.time())}.png"
-                driver.save_screenshot(_snap_path)
-                with open(_snap_path, "rb") as _f:
-                    upload_png(_f.read(), "NO_SURVEY_AVAILABLE")
-            except Exception as _snap_err:
-                print(f"[SNAP][ERROR] {type(_snap_err).__name__}: {_snap_err}", flush=True)
-
         # Détection qualification : si le texte contient "qualifié", on sort immédiatement
         for line in js_texts:
             if re.search(r"tu\s+t.es\s+qualifi", line.lower()):

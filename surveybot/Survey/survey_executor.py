@@ -1483,18 +1483,6 @@ def execute_survey_page(driver, api_key, ctx=None):
         return True
 
     extracted_question_blocks = dom_analyzer.analyze_dom(driver) or []
-
-    if os.getenv("SNAP_ENABLED", "").strip() == "1":
-        from Management.snap_uploader import upload_png
-        print(f"[SNAP_DEBUG] survey_executor.py SNAP_ENABLED={os.getenv('SNAP_ENABLED')!r}", flush=True)
-        try:
-            _snap_path = f"/tmp/snap_dom_{int(time.time())}.png"
-            driver.save_screenshot(_snap_path)
-            with open(_snap_path, "rb") as _f:
-                upload_png(_f.read(), f"dom_extracted_{len(extracted_question_blocks)}blocks")
-        except Exception as _snap_err:
-            print(f"[SNAP][ERROR] {type(_snap_err).__name__}: {_snap_err}", flush=True)
-
     question_blocks = prompt_builder.filter_blocks_for_openai(extracted_question_blocks)
     if _env_truthy("DOM_CONTEXT_DEBUG", "0"):
         print(

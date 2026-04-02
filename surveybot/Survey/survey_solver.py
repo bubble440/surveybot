@@ -710,15 +710,9 @@ def solve_full_survey(driver, api_key, *, account_id: str, survey_context=None):
     """
     print("🧪 [solve_full_survey] Début de traitement du survey...")
     if os.getenv("SNAP_ENABLED", "").strip() == "1":
-        from Management.snap_uploader import upload_png
-        print(f"[SNAP_DEBUG] survey_solver.py SNAP_ENABLED={os.getenv('SNAP_ENABLED')!r}", flush=True)
-        try:
-            _snap_path = f"/tmp/snap_dom_{int(time.time())}.png"
-            driver.save_screenshot(_snap_path)
-            with open(_snap_path, "rb") as _f:
-                upload_png(_f.read(), "start_solve_full_survey")
-        except Exception as _snap_err:
-            print(f"[SNAP][ERROR] {type(_snap_err).__name__}: {_snap_err}", flush=True)
+        from Management.snap_uploader import new_survey, capture_and_upload
+        new_survey()
+        capture_and_upload(driver, "survey_start")
 
     # One SurveyContext per survey run — tracks Q/R history for coherent OpenAI responses
     _survey_ctx = survey_context or SurveyContext(session_id=account_id, openai_api_key=api_key)
@@ -752,17 +746,9 @@ def solve_full_survey(driver, api_key, *, account_id: str, survey_context=None):
     guard = Management.guards.runtime_guard.get_guard()
 
     while True:
-        print("🧪 [solve_full_survey] Début de traitement du survey...")
         if os.getenv("SNAP_ENABLED", "").strip() == "1":
-            from Management.snap_uploader import upload_png
-            print(f"[SNAP_DEBUG] survey_solver.py SNAP_ENABLED={os.getenv('SNAP_ENABLED')!r}", flush=True)
-            try:
-                _snap_path = f"/tmp/snap_dom_{int(time.time())}.png"
-                driver.save_screenshot(_snap_path)
-                with open(_snap_path, "rb") as _f:
-                    upload_png(_f.read(), "resolve_full_survey")
-            except Exception as _snap_err:
-                print(f"[SNAP][ERROR] {type(_snap_err).__name__}: {_snap_err}", flush=True)
+            from Management.snap_uploader import capture_and_upload
+            capture_and_upload(driver, "survey_loop")
 
         # Réinitialise le drapeau de succès côté handlers
         try:
