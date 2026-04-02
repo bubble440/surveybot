@@ -8,7 +8,7 @@ from selenium import webdriver
 # IS_LOCAL = os.getenv("RUN_ENV", "local") == "local"
 IS_LOCAL = os.getenv("RUN_ENV", "local") == "local"
 _PLM = os.getenv("PROXY_LATENCY_MODE", "").strip().lower() in {"1", "true", "yes"}
-
+ 
 # preselection/playwright_launcher.py
 """
 Launcher alternatif : Playwright lance Chrome avec proxy authentifié,
