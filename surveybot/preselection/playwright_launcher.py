@@ -24,8 +24,6 @@ import tempfile
 from urllib.parse import urlparse
 import undetected_chromedriver as uc
 
-if not IS_LOCAL:
-    from selenium import webdriver
 from playwright.sync_api import sync_playwright
 
 log = logging.getLogger(__name__)
@@ -127,38 +125,184 @@ def _parse_locale_tz_env():
     tz = (os.getenv("SURVEY_TZ", "Europe/Paris") or "Europe/Paris").strip()
     return locale, tz
 
-def _apply_devtools_overrides(context):
+def _fingerprint_js() -> str:
     """
-    Force des signaux navigateur cohérents France
-    (langue, timezone, webdriver, geolocation fallback).
-    """
-    context.add_init_script("""
-        // --- Langue ---
-        Object.defineProperty(navigator, 'language', {
-            get: () => 'fr-FR'
-        });
-        Object.defineProperty(navigator, 'languages', {
-            get: () => ['fr-FR', 'fr']
-        });
+    Retourne le JS de spoofing fingerprint à injecter sur chaque nouvelle page.
 
-        // --- Timezone ---
-        const originalResolvedOptions = Intl.DateTimeFormat.prototype.resolvedOptions;
+    Source unique utilisée par apply_fingerprint_overrides_cdp() via CDP Selenium
+    (Page.addScriptToEvaluateOnNewDocument), ce qui garantit que le script est
+    exécuté avant tout autre JS pour TOUTES les navigations Selenium.
+
+    Patches appliqués :
+      - Langue / Timezone
+      - navigator.webdriver  (patch robuste sur Navigator.prototype)
+      - navigator.platform
+      - navigator.plugins    (vide en headless → simuler 3 plugins Chrome réels)
+      - navigator.mimeTypes  (lié aux plugins)
+      - window.chrome        (absent en headless → injecter l'objet complet)
+      - WebGL renderer       (SwiftShader détectable → spoofer Intel)
+      - screen dimensions    (cohérent avec --window-size=1920,1080)
+      - hardwareConcurrency / deviceMemory
+    """
+    return """
+        // ── Langue ──────────────────────────────────────────────────────────
+        Object.defineProperty(navigator, 'language',  { get: () => 'fr-FR' });
+        Object.defineProperty(navigator, 'languages', { get: () => ['fr-FR', 'fr'] });
+
+        // ── Timezone ─────────────────────────────────────────────────────────
+        const _origResolvedOptions = Intl.DateTimeFormat.prototype.resolvedOptions;
         Intl.DateTimeFormat.prototype.resolvedOptions = function () {
-            const opts = originalResolvedOptions.apply(this, arguments);
+            const opts = _origResolvedOptions.apply(this, arguments);
             opts.timeZone = 'Europe/Paris';
             return opts;
         };
 
-        // --- WebDriver (anti-bot basique) ---
-        Object.defineProperty(navigator, 'webdriver', {
-            get: () => undefined
-        });
+        // ── navigator.webdriver (patch robuste sur le prototype) ─────────────
+        // Simple Object.defineProperty(navigator, ...) est contournable via
+        // Object.getOwnPropertyDescriptor(Navigator.prototype, 'webdriver').
+        try {
+            Object.defineProperty(Navigator.prototype, 'webdriver', {
+                get: () => undefined,
+                configurable: true,
+                enumerable: true,
+            });
+        } catch(e) {}
 
-        // --- Platform ---
-        Object.defineProperty(navigator, 'platform', {
-            get: () => 'Win32'
-        });
-    """)
+        // ── Platform ─────────────────────────────────────────────────────────
+        Object.defineProperty(navigator, 'platform', { get: () => 'Win32' });
+
+        // ── navigator.plugins (vide = signal bot primaire) ───────────────────
+        // Chrome réel expose 3 plugins PDF/NaCl. On les simule.
+        try {
+            const _pluginData = [
+                { name: 'Chrome PDF Plugin',  filename: 'internal-pdf-viewer',             description: 'Portable Document Format' },
+                { name: 'Chrome PDF Viewer',  filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai', description: '' },
+                { name: 'Native Client',      filename: 'internal-nacl-plugin',             description: '' },
+            ];
+            const _makePlugin = (d) => {
+                const mt = { type: 'application/x-google-chrome-pdf', suffixes: 'pdf', description: d.description };
+                const p  = Object.create(Plugin.prototype);
+                Object.defineProperties(p, {
+                    name:        { value: d.name,        enumerable: true },
+                    filename:    { value: d.filename,    enumerable: true },
+                    description: { value: d.description, enumerable: true },
+                    length:      { value: 1,             enumerable: true },
+                    0:           { value: mt,             enumerable: true },
+                });
+                return p;
+            };
+            const _pa = Object.create(PluginArray.prototype);
+            _pluginData.forEach((d, i) => Object.defineProperty(_pa, i, { value: _makePlugin(d), enumerable: true }));
+            Object.defineProperties(_pa, {
+                length:    { value: _pluginData.length },
+                refresh:   { value: () => {} },
+                item:      { value: (i) => _pa[i] },
+                namedItem: { value: (n) => { const i = _pluginData.findIndex(p => p.name === n); return i >= 0 ? _pa[i] : null; } },
+            });
+            Object.defineProperty(navigator, 'plugins', { get: () => _pa });
+        } catch(e) {}
+
+        // ── navigator.mimeTypes ───────────────────────────────────────────────
+        try {
+            const _mta = Object.create(MimeTypeArray.prototype);
+            const _mt0 = { type: 'application/x-google-chrome-pdf', suffixes: 'pdf', description: 'Portable Document Format' };
+            Object.defineProperty(_mta, 0,        { value: _mt0, enumerable: true });
+            Object.defineProperty(_mta, 'length', { value: 1 });
+            Object.defineProperty(_mta, 'item',   { value: (i) => _mta[i] });
+            Object.defineProperty(navigator, 'mimeTypes', { get: () => _mta });
+        } catch(e) {}
+
+        // ── window.chrome (absent en headless) ───────────────────────────────
+        if (!window.chrome) {
+            const _chrome = {
+                app: {
+                    isInstalled: false,
+                    InstallState: { DISABLED: 'disabled', INSTALLED: 'installed', NOT_INSTALLED: 'not_installed' },
+                    RunningState: { CANNOT_RUN: 'cannot_run', READY_TO_RUN: 'ready_to_run', RUNNING: 'running' },
+                },
+                runtime: {
+                    OnInstalledReason: {}, OnRestartRequiredReason: {},
+                    PlatformArch: {}, PlatformNaclArch: {}, PlatformOs: {},
+                    RequestUpdateCheckStatus: {},
+                },
+                loadTimes: function() {
+                    return {
+                        requestTime: Date.now() / 1000, startLoadTime: Date.now() / 1000,
+                        commitLoadTime: Date.now() / 1000, finishDocumentLoadTime: Date.now() / 1000,
+                        finishLoadTime: Date.now() / 1000, firstPaintTime: Date.now() / 1000,
+                        firstPaintAfterLoadTime: 0, navigationType: 'Other',
+                        wasFetchedViaSpdy: false, wasNpnNegotiated: true,
+                        npnNegotiatedProtocol: 'h2', wasAlternateProtocolAvailable: false,
+                        connectionInfo: 'h2',
+                    };
+                },
+                csi: function() {
+                    return {
+                        startE: Date.now(), onloadT: Date.now(),
+                        pageT: Date.now() - performance.timing.navigationStart,
+                        tran: 15,
+                    };
+                },
+            };
+            try {
+                Object.defineProperty(window, 'chrome', { value: _chrome, writable: false, enumerable: true, configurable: false });
+            } catch(e) {}
+        }
+
+        // ── WebGL renderer (SwiftShader = signal bot connu) ──────────────────
+        // Même si le renderer réel est SwiftShader (pas de GPU en container),
+        // on spoofe la chaîne pour correspondre à un Intel intégré classique.
+        try {
+            const _glProxy = {
+                apply(target, ctx, args) {
+                    const p = args[0];
+                    if (p === 37445) return 'Intel Inc.';                    // UNMASKED_VENDOR_WEBGL
+                    if (p === 37446) return 'Intel(R) Iris(R) Xe Graphics';  // UNMASKED_RENDERER_WEBGL
+                    return Reflect.apply(target, ctx, args);
+                }
+            };
+            WebGLRenderingContext.prototype.getParameter  = new Proxy(WebGLRenderingContext.prototype.getParameter,  _glProxy);
+            WebGL2RenderingContext.prototype.getParameter = new Proxy(WebGL2RenderingContext.prototype.getParameter, _glProxy);
+        } catch(e) {}
+
+        // ── screen dimensions (cohérent avec --window-size=1920,1080) ────────
+        try {
+            Object.defineProperty(screen, 'width',       { get: () => 1920 });
+            Object.defineProperty(screen, 'height',      { get: () => 1080 });
+            Object.defineProperty(screen, 'availWidth',  { get: () => 1920 });
+            Object.defineProperty(screen, 'availHeight', { get: () => 1040 });
+            Object.defineProperty(screen, 'colorDepth',  { get: () => 24 });
+            Object.defineProperty(screen, 'pixelDepth',  { get: () => 24 });
+        } catch(e) {}
+
+        // ── Hardware hints (cohérents avec un laptop standard) ───────────────
+        try {
+            Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 4 });
+            Object.defineProperty(navigator, 'deviceMemory',        { get: () => 8 });
+        } catch(e) {}
+    """
+
+
+def apply_fingerprint_overrides_cdp(driver) -> None:
+    """
+    Injecte le JS de spoofing fingerprint via CDP Selenium.
+
+    Utilise Page.addScriptToEvaluateOnNewDocument : le script est exécuté
+    avant tout autre JS pour TOUTES les navigations futures du processus Chrome,
+    indépendamment de qui navigue (Playwright ou Selenium).
+
+    Doit être appelé une seule fois, juste après l'attach Selenium et avant
+    tout driver.get().
+    """
+    try:
+        driver.execute_cdp_cmd(
+            "Page.addScriptToEvaluateOnNewDocument",
+            {"source": _fingerprint_js()}
+        )
+        log.info("[FP][CDP] Fingerprint overrides enregistrés via CDP.")
+    except Exception as e:
+        log.warning("[FP][CDP][WARN] Échec enregistrement fingerprint CDP : %s", e)
+
 
 def _detect_chrome_major_version(chrome_bin: str) -> int | None:
     """Retourne le numéro de version majeure de Chrome (ex: 145), ou None si échec."""
@@ -219,7 +363,6 @@ def launch_browser(config: dict | None = None):
             options.add_argument("--start-maximized")
             print("🟢 LAUNCHED NEW CHROME SESSION")
         driver = webdriver.Chrome(options=options, service=Service(log_output=subprocess.DEVNULL))
-        apply_resource_blocking(driver)
         return driver
 
     proxy_server, proxy_user, proxy_pass = _parse_proxy_env(config)
@@ -245,21 +388,6 @@ def launch_browser(config: dict | None = None):
     # --- 1) Lancer Chrome via Playwright ---
     pw = sync_playwright().start()
     try:
-        launch_args = [
-            f"--remote-debugging-port={debug_port}",
-            f"--user-data-dir={user_data_dir}",
-            "--no-first-run",
-            "--no-default-browser-check",
-            "--disable-dev-shm-usage",
-            "--no-sandbox",
-            "--disable-gpu",
-            "--disable-background-networking",
-            "--disable-component-update",
-            "--disable-features=Translate,OptimizationHints",
-            "--disable-blink-features=AutomationControlled",
-            "--window-size=1920,1080",
-        ]
-
         proxy_cfg = None
         if proxy_server:
             # ✅ Playwright gère nativement l'auth proxy ici (c'est le but)
@@ -272,15 +400,19 @@ def launch_browser(config: dict | None = None):
         locale, tz = _parse_locale_tz_env()
         print(f"[PW][GEO] {geo}  [PW][LOCALE] {locale}  [PW][TZ] {tz}")
 
-        # Ouvre une page (ça “stabilise” le browser)
-        args=[
+        # ── Arguments Chrome ──────────────────────────────────────────────────
+        # NOTE: --disable-gpu SUPPRIMÉ volontairement.
+        #   Avec Xvfb (DISPLAY=:99), Chrome tourne en mode headed sur un écran
+        #   virtuel et n'a pas besoin de désactiver le GPU.
+        #   --disable-gpu forçait SwiftShader comme renderer WebGL, une signature
+        #   de bot détectée par ThreatMetrix/Datadome dès le premier chargement.
+        args = [
             f"--remote-debugging-port={debug_port}",
             "--remote-debugging-allow-origins=*",
             "--no-first-run",
             "--no-default-browser-check",
             "--disable-dev-shm-usage",
             "--no-sandbox",
-            "--disable-gpu",
             "--disable-background-networking",
             "--disable-component-update",
             "--disable-features=Translate,OptimizationHints",
@@ -290,7 +422,10 @@ def launch_browser(config: dict | None = None):
         if debug_address:
             args.append(f"--remote-debugging-address={debug_address}")
         if headless:
-            args.append("--headless=new"),  # 🔑 CRITIQUE EN DOCKER / ECS
+            # Fallback si Xvfb indisponible (ex: test local sans DISPLAY).
+            # En prod normale, DISPLAY=:99 est positionné par entrypoint.sh
+            # et headless=False → ce bloc ne s'exécute pas.
+            args.append("--headless=new")
 
         context = pw.chromium.launch_persistent_context(
             user_data_dir=user_data_dir,
@@ -302,10 +437,6 @@ def launch_browser(config: dict | None = None):
             args=args,
             proxy=proxy_cfg,
         )
-
-        # 🔧 DevTools overrides (langue / timezone / webdriver)
-        _apply_devtools_overrides(context)
-        print("[PW][OVERRIDE] DevTools overrides appliqués (FR / Paris).")
 
         # --- Relay socat : expose le debug port sur 0.0.0.0 ---
         # Playwright force Chrome sur 127.0.0.1 et ignore --remote-debugging-address.
@@ -337,8 +468,13 @@ def launch_browser(config: dict | None = None):
         opts.page_load_strategy = "eager"  # ne pas attendre toutes les ressources
 
         driver = webdriver.Chrome(options=opts, service=Service(log_output=subprocess.DEVNULL))
-        if _PLM:
-            apply_resource_blocking(driver)
+
+        # 🔧 Fingerprint spoofing via CDP Selenium.
+        # Page.addScriptToEvaluateOnNewDocument persiste pour toutes les navigations
+        # futures du processus Chrome, y compris celles pilotées par Selenium.
+        # Doit être appelé AVANT tout driver.get().
+        apply_fingerprint_overrides_cdp(driver)
+        print("[PW][OVERRIDE] Fingerprint overrides enregistrés via CDP Selenium.")
 
         try:
             fingerprint = driver.execute_script("""
@@ -366,43 +502,10 @@ def launch_browser(config: dict | None = None):
         return driver
 
     except Exception:
-        # ferme proprement playwright si échec
-        try:
-            assert pw is not None, "Playwright n'est plus actif"
-            pw.stop()
-        except Exception:
-            pass
+        # Ferme proprement Playwright si le lancement ou l'attach a échoué.
+        if pw:
+            try:
+                pw.stop()
+            except Exception:
+                pass
         raise
-
-
-def apply_resource_blocking(driver) -> None:
-    """
-    Active le blocage CDP des ressources non essentielles pour réduire la latence proxy.
-    Bloque : polices, analytics/tracking, fichiers médias.
-    Ne bloque PAS : images, CSS, JS (préserve le fonctionnement des surveys).
-    Activé uniquement si SURVEY_RESOURCE_BLOCKING=1.
-    Sans effet si CDP indisponible (mode local sans port de debug).
-    """
-    import os
-    if os.getenv("SURVEY_RESOURCE_BLOCKING", "").strip().lower() not in {"1", "true", "yes"}:
-        return  # désactivé par défaut
-
-    BLOCKED_URLS = [
-        # Polices web
-        "*.woff", "*.woff2", "*.ttf", "*.eot",
-        # Analytics / tracking
-        "*google-analytics*",
-        "*googletagmanager.com/gtag*",
-        "*hotjar*",
-        "*doubleclick*",
-        "*facebook.com/tr*",
-        "*segment.io*",
-        # Médias
-        "*.mp4", "*.webm", "*.ogg", "*.mp3",
-    ]
-    try:
-        driver.execute_cdp_cmd("Network.enable", {})
-        driver.execute_cdp_cmd("Network.setBlockedURLs", {"urls": BLOCKED_URLS})
-        print(f"[CDP] Resource blocking activé ({len(BLOCKED_URLS)} patterns).")
-    except Exception as e:
-        print(f"[CDP][WARN] apply_resource_blocking ignoré: {e}")

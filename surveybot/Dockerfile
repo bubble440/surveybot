@@ -36,6 +36,7 @@ RUN apt-get update && apt-get install -y \
     libatspi2.0-0 \
     libdbus-1-3 \
     socat \
+    xvfb \
     --no-install-recommends \
  && rm -rf /var/lib/apt/lists/*
 
@@ -65,11 +66,16 @@ RUN python -m playwright install chromium
 # =========================
 COPY . /app
 
+# Entrypoint : démarre Xvfb puis l'app
+RUN chmod +x /app/entrypoint.sh
+
 # =========================
 # RUNTIME DEFAULTS
 # =========================
 ENV RUN_ENV=prod
-ENV SURVEY_HEADLESS=1
-ENV DISPLAY=
+# SURVEY_HEADLESS=0 : Xvfb fournit un vrai écran virtuel — headless inutile
+ENV SURVEY_HEADLESS=0
+# DISPLAY sera positionné par entrypoint.sh au runtime
+ENV DISPLAY=:99
 
-CMD ["python", "main.py"]
+CMD ["/app/entrypoint.sh"]
