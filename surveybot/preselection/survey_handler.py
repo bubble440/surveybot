@@ -196,7 +196,9 @@ def run_survey(driver, api_key, *, account_id: str, ctx=None, payout_name: str =
 def _run_survey_impl(driver, api_key, *, account_id: str, ctx=None, payout_name: str = "", payout_revolut_tag: str = ""):
     import preselection.question_analyzer
     import preselection.response_executor
-    import Survey.survey_solver 
+    import Survey.survey_solver
+    import Survey.survey_executor
+    import Survey.log_utils
     import Cash.payout as payout
     import Management.guards.runtime_guard
     import Management.guards.survey_difficulty_guard
@@ -422,6 +424,13 @@ def _run_survey_impl(driver, api_key, *, account_id: str, ctx=None, payout_name:
                         # en interne — ne pas rappeler switch_to_latest_window_and_close_others
                         # ici pour éviter la race condition du double switch.
                         final_url = Management.redirect_watcher.wait_for_final_redirection(driver, max_wait=60)
+
+                        if final_url and "app.topsurveys.app/surveys" in final_url:
+                            Survey.log_utils.log_info("SURVEY_HANDLER", "Retour TopSurveys après clic Participer — popup/exclusion attendue")
+                            Survey.survey_executor._handle_topsurveys_exclusion_popup(driver)
+                            if _skip_card_and_retry("topsurveys_redirect"):
+                                return
+                            continue
 
                         is_strict, reason = Management.guards.survey_difficulty_guard.detect_strict_survey(driver)
                         if is_strict:
