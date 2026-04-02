@@ -4,7 +4,6 @@ from bs4 import BeautifulSoup
 import time
 import re
 import os
-_PLM = os.getenv("PROXY_LATENCY_MODE", "").strip().lower() in {"1", "true", "yes"}
 import unicodedata
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
@@ -472,7 +471,7 @@ def click_participer_if_qualified(driver):
             )
             print(f"🪟 Switch + close anciens onglets = {switched}")
             # petite pause pour laisser le survey peindre son DOM
-            time.sleep(2 if _PLM else 0.5)
+            time.sleep(0.5)
             if os.getenv("SNAP_ENABLED", "").strip() == "1":
                 from Management.snap_uploader import new_survey, capture_and_upload
                 new_survey()
