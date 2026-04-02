@@ -473,6 +473,10 @@ def click_participer_if_qualified(driver):
             print(f"🪟 Switch + close anciens onglets = {switched}")
             # petite pause pour laisser le survey peindre son DOM
             time.sleep(2 if _PLM else 0.5)
+            if os.getenv("SNAP_ENABLED", "").strip() == "1":
+                from Management.snap_uploader import new_survey, capture_and_upload
+                new_survey()
+                capture_and_upload(driver, "waiting_room_after_participer_click")
 
             return True
         else:
