@@ -1,7 +1,6 @@
 import os
 import re
 import time
-_PLM = os.getenv("PROXY_LATENCY_MODE", "").strip().lower() in {"1", "true", "yes"}
 
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -274,7 +273,7 @@ def go_to_best_value_survey(driver):
         try:
             tab = wait_short.until(EC.element_to_be_clickable((By.XPATH, "//span[normalize-space()='Enquêtes']")))
             driver.execute_script("arguments[0].click();", tab)
-            time.sleep(2 if _PLM else 0.5)  # laisser le temps à la transition Vue de démarrer et éviter les intercepteurs d'événements désynchronisés
+            time.sleep(0.5)  # laisser le temps à la transition Vue de démarrer et éviter les intercepteurs d'événements désynchronisés
             print("🗂️  Onglet « Enquêtes » cliqué. [xpath texte]")
             return True
         except Exception:
@@ -306,12 +305,12 @@ def go_to_best_value_survey(driver):
             print("🛑 Exception navigation :", type(e).__name__, "-", e)
             return
 
-    time.sleep(10 if _PLM else 2)  # laisser le temps au contenu de charger
+    time.sleep(2)  # laisser le temps au contenu de charger
     _handle_mystery_box_popup(driver)
-    time.sleep(5 if _PLM else 1)  # laisser le temps à la page de se stabiliser après popup éventuel
+    time.sleep(1)  # laisser le temps à la page de se stabiliser après popup éventuel
     
     if not _find_survey_cards(driver):
-        time.sleep(5 if _PLM else 3)  # délai pour que les éventuels logs/snapshots soient traités avant pause
+        time.sleep(3)  # délai pour que les éventuels logs/snapshots soient traités avant pause
         log_info("[TOPSURVEYS][COOLDOWN]", "Aucun survey disponible → cooldown 15 min (DB + stop task)")
         if os.getenv("SNAP_ENABLED", "").strip() == "1":
             from Management.snap_uploader import capture_and_upload

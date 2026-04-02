@@ -1,5 +1,4 @@
 import time, os, requests, base64, re
-_PLM = os.getenv("PROXY_LATENCY_MODE", "").strip().lower() in {"1", "true", "yes"}
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
@@ -228,7 +227,7 @@ def login(driver, email, password):
             arguments[0].dispatchEvent(new Event('input',  { bubbles: true }));
             arguments[0].dispatchEvent(new Event('change', { bubbles: true }));
         """, email_input)
-        time.sleep(3 if _PLM else 0.5)
+        time.sleep(0.5)
         print(f"[LOGIN] Email saisi : {email}")
 
         continue_btn = wait.until(
@@ -240,7 +239,7 @@ def login(driver, email, password):
         # (isTrusted: false) ne déclenchait pas le handler @submit Vue en prod headless.
         continue_btn.click()
         print("[LOGIN] Bouton Continue cliqué.")
-        time.sleep(10 if _PLM else 2)
+        time.sleep(2)
 
     except Exception as e:
         print("[LOGIN] Echec injection e-mail :", type(e).__name__, "-", e)
@@ -268,7 +267,7 @@ def login(driver, email, password):
             arguments[0].dispatchEvent(new Event('input', { bubbles: true }));
             arguments[0].dispatchEvent(new Event('change', { bubbles: true }));
         """, pwd_input, password)
-        time.sleep(3 if _PLM else 0.5)
+        time.sleep(0.5)
 
         if pwd_input.get_attribute("value").strip() == "":
             pwd_input.clear()
@@ -276,18 +275,18 @@ def login(driver, email, password):
             print("🔁 Fallback : mot de passe injecté via send_keys()")
         else:
             print("🔑 Mot de passe injecté via JS.")
-            time.sleep(5 if _PLM else 1)  # petit délai pour que Vue traite les événements et active le bouton
+            time.sleep(1)  # petit délai pour que Vue traite les événements et active le bouton
             
         # ✅ Corrigé ici : bouton Se connecter avec data-test-id
         login_btn = wait.until(EC.element_to_be_clickable(
             (By.CSS_SELECTOR, 'button[data-test-id="sign-in-submit-button"]')
         ))
         driver.execute_script("arguments[0].click();", login_btn)
-        time.sleep(3 if _PLM else 0.5)
+        time.sleep(0.5)
         print("✅ Bouton « Se connecter » cliqué.")
         # from Management.redirect_watcher import wait_for_page_load
         # wait_for_page_load(driver, timeout=30)
 
     except Exception as e:
-        time.sleep(10 if _PLM else 2)
+        time.sleep(2)
         print("🛑 Exception mot de passe :", type(e).__name__, "-", e, flush=True)
