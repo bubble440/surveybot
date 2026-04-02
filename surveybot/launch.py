@@ -454,7 +454,6 @@ def init_session_and_enter_surveys(driver, config, account_id: str, notify_fn):
             revolut_fullname=payout_name,
             revolut_tag=payout_revolut_tag,
         )
-
     except Exception as e:
         print(f"[PAYOUT][WARN] Encaissement automatique: {e}")
 
