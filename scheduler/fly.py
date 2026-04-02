@@ -95,6 +95,20 @@ def _start_task_fly(account_id: str, account: dict):
         "DATABASE_URL":  os.getenv("DATABASE_URL", ""),
     }
 
+    # Transmission des clés optionnelles présentes dans le compte (SNAP_*, etc.)
+    # Toute clé en majuscules non déjà définie est transmise telle quelle.
+    _OPTIONAL_KEYS = [
+        "SNAP_ENABLED",
+        "SNAP_R2_ACCOUNT_ID",
+        "SNAP_R2_ACCESS_KEY_ID",
+        "SNAP_R2_SECRET_ACCESS_KEY",
+        "SNAP_R2_BUCKET",
+    ]
+    for _k in _OPTIONAL_KEYS:
+        _v = account.get(_k, "")
+        if _v:
+            env[_k] = str(_v)
+
     payload = {
         "name": f"bot-{account_id}-{int(time.time())}",   # nom unique par account
         "region": FLY_REGION,
