@@ -1,7 +1,6 @@
 # redirect_watcher.py
 import time
 from dataclasses import dataclass
-from preselection.playwright_launcher import apply_resource_blocking
 from config import is_proxy_latency_mode
 
 
