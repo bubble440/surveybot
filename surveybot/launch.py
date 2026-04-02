@@ -1,18 +1,17 @@
 import os, random
 IS_LOCAL = os.getenv("RUN_ENV", "local") == "local"
-from config import is_prod_like, should_run_guard_monitor, should_run_hot_reload, is_proxy_latency_mode
-_PLM = is_proxy_latency_mode()  # True = proxy résidentiel haute latence
+from config import is_prod_like, should_run_guard_monitor, should_run_hot_reload
 
 from Management.guards.runtime_guard import RuntimeGuard, StopReason, set_guard, get_guard
 from State.daily_target import DAILY_TARGET_EUR, ensure_daily_timer_started
 from Cash.payout import MIN_CASHOUT_EUR
 import time, sys, logging, threading, traceback, signal, Cash.payout as payout
-from preselection.playwright_launcher import launch_browser, apply_resource_blocking
-from preselection.auth_handler import login, snap
+from preselection.playwright_launcher import launch_browser
+from preselection.auth_handler import login
 from preselection.survey_navigator import go_to_best_value_survey
 from preselection.survey_handler import run_survey
 from Management.notifier import send_telegram
-from State.account_state import update_state, load_state, save_state, try_acquire_cooldown_slot, _now
+from State.account_state import update_state, load_state, try_acquire_cooldown_slot, _now
 from selenium.common.exceptions import TimeoutException
 from preselection.auth_handler import is_session_expired, handle_proxy_error_page_if_needed
 from Management.pause_policy import PausePolicy
@@ -27,7 +26,7 @@ def acquire_account_lock_or_exit(account_id: str, ttl_sec: int = 240):
         print(f"[COOLDOWN] Account {account_id} en cooldown ou déjà actif → exit")
         sys.exit(0)
 
-def safe_get(driver, url, max_retries=3, base_delay=4):
+def safe_get(driver, url, base_delay=4):
     """
     Navigation sécurisée : s'assure qu'un driver valide existe.
     - Timeout 70s pour éviter les hangs infinis en ECS.
@@ -44,12 +43,9 @@ def safe_get(driver, url, max_retries=3, base_delay=4):
         driver.switch_to.window(driver.window_handles[-1])
         driver.set_page_load_timeout(70)
 
-        effective_retries = max_retries if _PLM else 1
+        effective_retries = 1
         for attempt in range(effective_retries):
             try:
-                if _PLM:
-                    apply_resource_blocking(driver)
-                print(f"[SAFE_GET] start get (attempt {attempt + 1}/{max_retries}): {url}")
                 driver.get(url)
                 handle_proxy_error_page_if_needed(driver)
                 if is_session_expired(driver):
@@ -74,20 +70,6 @@ def safe_get(driver, url, max_retries=3, base_delay=4):
                     driver.execute_script("window.stop();")
                 except Exception:
                     pass
-
-                if attempt < max_retries - 1:
-                    delay = base_delay * (2 ** attempt)  # 4s, 8s
-                    print(
-                        f"[SAFE_GET][RETRY] Timeout, retry dans {delay}s "
-                        f"(attempt {attempt + 1}/{max_retries})"
-                    )
-                    time.sleep(delay)
-                    # continue implicite vers prochain attempt
-                else:
-                    # Dernier retry épuisé : chargement partiel, vérification proxy
-                    print(f"[SAFE_GET] Retries épuisés — chargement partiel accepté.")
-                    handle_proxy_error_page_if_needed(driver)
-                    return
 
     except Exception as e:
         print(f"[SAFE_GET] Navigation impossible vers {url}: {e}")
@@ -233,7 +215,7 @@ def soft_restart(ctx, driver, reason):
     print(f"[SOFT_RESTART] {reason}")
 
     soft_restart_cleanup(driver)
-    time.sleep(3 if _PLM else 1)
+    time.sleep(1)
 
     try:
         soft_restart_payout(ctx, driver)
@@ -457,7 +439,7 @@ def init_session_and_enter_surveys(driver, config, account_id: str, notify_fn):
     except Exception as e:
         print(f"[PAYOUT][WARN] Encaissement automatique: {e}")
 
-    time.sleep(15 if _PLM else 3)
+    time.sleep(3)
     go_to_best_value_survey(driver)
 
     return api_key, payout_name, payout_revolut_tag
