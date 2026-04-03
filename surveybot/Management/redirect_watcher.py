@@ -1,8 +1,6 @@
 # redirect_watcher.py
 import time
 from dataclasses import dataclass
-from config import is_proxy_latency_mode
-
 
 @dataclass
 class NavResult:

@@ -312,9 +312,6 @@ def go_to_best_value_survey(driver):
     if not _find_survey_cards(driver):
         time.sleep(3)  # délai pour que les éventuels logs/snapshots soient traités avant pause
         log_info("[TOPSURVEYS][COOLDOWN]", "Aucun survey disponible → cooldown 15 min (DB + stop task)")
-        if os.getenv("SNAP_ENABLED", "").strip() == "1":
-            from Management.snap_uploader import capture_and_upload
-            capture_and_upload(driver, "no_survey_cooldown")
         from Management.guards.runtime_guard import get_guard, StopReason
         from Management.pause_policy import PausePolicy
         get_guard().pause(PausePolicy.MEDIUM_LONG_COOLDOWN, StopReason.NO_SURVEY_AVAILABLE)
