@@ -171,10 +171,32 @@ def _is_actionable_visible(el) -> bool:
                         return True
             except Exception:
                 pass
+            # Fieldset progressif (ex: surveys.insights-today.com prescreener) :
+            # l'élément est masqué côté CSS mais présent dans le DOM sous un
+            # <fieldset> portant un <legend class="qualification-text">.
+            try:
+                if el.find_elements(
+                    By.XPATH,
+                    "ancestor::fieldset[1]//*[contains(@class,'qualification-text')]",
+                ):
+                    return True
+            except Exception:
+                pass
             return False
 
         # 3) Cas standard: vérifier is_displayed()
-        return el.is_displayed()
+        if el.is_displayed():
+            return True
+        # Fieldset progressif : même logique que pour <select> ci-dessus.
+        try:
+            if el.find_elements(
+                By.XPATH,
+                "ancestor::fieldset[1]//*[contains(@class,'qualification-text')]",
+            ):
+                return True
+        except Exception:
+            pass
+        return False
     
     except Exception:
         # En cas d'erreur (stale element, etc.), considérer invisible

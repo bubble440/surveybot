@@ -165,17 +165,17 @@ def _find_associated_label(driver, el) -> str:
         if el_id:
             try:
                 label = driver.find_element(By.CSS_SELECTOR, f'label[for="{el_id}"]')
-                txt = _norm(label.text)
+                txt = _norm(label.text or label.get_attribute("textContent") or "")
                 if _is_valid_option_label(txt):
                     return txt
             except Exception:
                 pass
-        
+
         # 2) Label parent
         try:
             labels = el.find_elements(By.XPATH, "ancestor::label")
             for label in labels:
-                txt = _norm(label.text)
+                txt = _norm(label.text or label.get_attribute("textContent") or "")
                 if _is_valid_option_label(txt):
                     return txt
         except Exception:
@@ -481,12 +481,21 @@ def _find_group_heading_text_near_element(driver, el, options: List[str]) -> str
         # Priorité DOM stricte: si un fieldset parent expose un legend non-option,
         # c'est l'intitulé de question le plus fiable (ex: YouGov question-multiple).
         try:
-            legends = el.find_elements(By.XPATH, "ancestor::fieldset[1]/legend[1]")
+            # Utilise //legend[1] (descendant) et non /legend[1] (enfant direct)
+            # pour couvrir le pattern fieldset > article > legend (ex: prescreener
+            # surveys.insights-today.com). L'accès via textContent contourne
+            # les légendes CSS-invisibles (width/height=0 mais texte présent dans le DOM).
+            legends = el.find_elements(By.XPATH, "ancestor::fieldset[1]//legend[1]")
         except Exception:
             legends = []
 
         if legends:
-            legend_text = _norm(legends[0].text or legends[0].get_attribute("innerText") or "")
+            legend_text = _norm(
+                legends[0].text
+                or legends[0].get_attribute("innerText")
+                or legends[0].get_attribute("textContent")
+                or ""
+            )
             legend_lc = _norm_lc(legend_text)
             option_lc = {_norm_lc(opt) for opt in (options or []) if _norm(opt)}
             if legend_text and legend_lc not in option_lc and _is_question_text(legend_text):
