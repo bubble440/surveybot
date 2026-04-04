@@ -2,7 +2,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.action_chains import ActionChains
 import re, openai, time, unicodedata, os, sys, hashlib, tempfile
 from urllib.parse import urlsplit
-from Survey.log_utils import log_debug
+from Survey.log_utils import log_debug, log_info
 
 def _short_url(url: str) -> str:
     try:
@@ -63,6 +63,47 @@ def _is_visible_js(driver, el) -> bool:
             var rect = el.getBoundingClientRect();
             return rect.width > 0 && rect.height > 0;
         """, el)
+    except Exception:
+        return False
+
+
+def _has_unfilled_required_inputs(driver) -> bool:
+    """
+    Retourne True si la page courante contient des inputs required visibles et non remplis.
+    Utilisé pour éviter un clic CTA prématuré sur les formulaires multi-champs
+    (ex: page pre-screener avec postcode + age + education + gender dans un seul <form>).
+
+    Critères DOM purs (sélecteurs observables) :
+    - input[type=text/number/email][required] visible et vide
+    - select[required] visible et sans sélection
+    - groupes radio[required] visibles sans option cochée
+    """
+    try:
+        return bool(driver.execute_script("""
+            var isVisible = function(el) {
+                if (!el) return false;
+                var s = window.getComputedStyle(el);
+                if (s.display === 'none' || s.visibility === 'hidden') return false;
+                var r = el.getBoundingClientRect();
+                return r.width > 0 && r.height > 0;
+            };
+            // Text/number/email inputs required and empty
+            var textSel = "input[required][type='text'], input[required][type='number'], input[required][type='email'], textarea[required]";
+            var textInputs = Array.from(document.querySelectorAll(textSel));
+            if (textInputs.some(function(el) { return isVisible(el) && !(el.value || '').trim(); })) return true;
+            // Required selects with no value
+            var selects = Array.from(document.querySelectorAll("select[required]"));
+            if (selects.some(function(el) { return isVisible(el) && !el.value; })) return true;
+            // Required radio groups with no checked option
+            var radioNames = {};
+            Array.from(document.querySelectorAll("input[type='radio'][required]")).forEach(function(el) {
+                if (isVisible(el) && el.name) radioNames[el.name] = true;
+            });
+            for (var name in radioNames) {
+                if (!document.querySelector("input[type='radio'][name='" + name + "']:checked")) return true;
+            }
+            return false;
+        """))
     except Exception:
         return False
 
@@ -1684,6 +1725,10 @@ def execute_survey_page(driver, api_key, ctx=None):
         # --- Post-actions CTA nav (sauf Walr cardsort géré par answer-button) ---
         if _should_skip_post_actions_navigation(driver, question_blocks):
             print("[WALR_CS] skip post-actions CTA navigation (cardsort flow)")
+        elif _has_unfilled_required_inputs(driver):
+            # Des champs required sont encore vides → ne pas soumettre le formulaire maintenant.
+            # La boucle externe relancera execute_survey_page pour remplir les champs restants.
+            log_info("[CTA_SKIP]", "Champs required non remplis → skip CTA (formulaire multi-champs)")
         else:
             try:
                 before_url = driver.current_url

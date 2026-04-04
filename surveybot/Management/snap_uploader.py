@@ -115,7 +115,7 @@ def capture_and_upload(driver, label: str) -> None:
     except ImportError:
         log_info = lambda tag, msg: print(f"[{tag}] {msg}", flush=True)
 
-    log_info(_TAG, f"capture_and_upload called label={label}")
+    # log_info(_TAG, f"capture_and_upload called label={label}")
     try:
         png = _capture_png(driver)
         log_info(_TAG, f"capture done size={len(png) if png else 0}B label={label}")
@@ -166,7 +166,7 @@ def upload_png(png_bytes: bytes, label: str) -> None:
             Body=png_bytes,
             ContentType="image/png",
         )
-        log_info(_TAG, f"uploaded -> r2://{bucket}/{key} ({len(png_bytes)}B)")
+        # log_info(_TAG, f"uploaded -> r2://{bucket}/{key} ({len(png_bytes)}B)")
 
     except Exception as e:
         log_info(_TAG, f"[ERROR] upload failed label={label} : {type(e).__name__}: {e}")
