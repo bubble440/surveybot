@@ -2101,6 +2101,10 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
 
             # 1) On ignore les champs techniques/hidden
             if itype == "hidden" or _looks_like_system_field(el):
+                if is_debug():
+                    _el_id = (el.get_attribute("id") or "").strip()
+                    _el_name = (el.get_attribute("name") or "").strip()
+                    log_debug("[SINGLES_SKIP]", f"hidden_or_system itype={itype} id={_el_id!r} name={_el_name!r}")
                 continue
 
             # Pattern spécifique
@@ -2109,6 +2113,10 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                 and "selectpicker" in _norm_lc(el.get_attribute("class") or "")
             )
             if not is_bootstrap_selectpicker and not _is_actionable_visible(el):
+                if is_debug():
+                    _el_id = (el.get_attribute("id") or "").strip()
+                    _el_name = (el.get_attribute("name") or "").strip()
+                    log_debug("[SINGLES_SKIP]", f"not_actionable_visible itype={itype} id={_el_id!r} name={_el_name!r}")
                 continue
 
             if itype in ("radio", "checkbox", "unknown"):
@@ -2118,6 +2126,8 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                 el_id = (el.get_attribute("id") or "").strip()
                 el_name = (el.get_attribute("name") or "").strip()
                 if (el_id and el_id in handled_select_ids) or (el_name and el_name in handled_select_names):
+                    if is_debug():
+                        log_debug("[SINGLES_SKIP]", f"already_handled_select id={el_id!r} name={el_name!r}")
                     continue
 
             # on ne veut pas transformer un "bouton next" en question
@@ -2169,7 +2179,27 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                     dropdown_options_for_question = []
 
             question = ""
-            if container:
+            # Critère DOM précis : <legend class="qualification-text"> dans le <fieldset>
+            # ancêtre immédiat (pattern prescreener surveys.insights-today.com :
+            # fieldset > article > legend.qualification-text). textContent contourne
+            # les légendes CSS-invisibles (width/height=0 mais texte présent dans le DOM).
+            try:
+                ql_nodes = el.find_elements(
+                    By.XPATH,
+                    "ancestor::fieldset[1]//legend[contains(@class,'qualification-text')]",
+                )
+                if ql_nodes:
+                    q_txt = _norm(
+                        ql_nodes[0].text
+                        or ql_nodes[0].get_attribute("innerText")
+                        or ql_nodes[0].get_attribute("textContent")
+                        or ""
+                    )
+                    if q_txt and _is_question_text(q_txt):
+                        question = q_txt
+            except Exception:
+                pass
+            if not question and container:
                 question = _extract_question_from_container(
                     container,
                     options=dropdown_options_for_question if itype == "dropdown" else [],
@@ -2245,9 +2275,17 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                     question = ssi_q
                 elif _is_validation_instruction(question):
                     # Pattern spécifique
+                    if is_debug():
+                        _el_id = (el.get_attribute("id") or "").strip()
+                        _el_name = (el.get_attribute("name") or "").strip()
+                        log_debug("[SINGLES_SKIP]", f"validation_instruction itype={itype} id={_el_id!r} name={_el_name!r} question={question!r}")
                     continue
 
             if not question:
+                if is_debug():
+                    _el_id = (el.get_attribute("id") or "").strip()
+                    _el_name = (el.get_attribute("name") or "").strip()
+                    log_debug("[SINGLES_SKIP]", f"no_question itype={itype} id={_el_id!r} name={_el_name!r}")
                 continue
 
             if itype in ("text", "textarea") and _is_auxiliary_text_for_choice_group(driver, el, container, question):
@@ -2639,6 +2677,8 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                         sig = (question, itype)
 
             if sig in seen_signatures:
+                if is_debug():
+                    log_debug("[SINGLES_SKIP]", f"duplicate_sig itype={itype} sig={sig!r}")
                 continue
             seen_signatures.add(sig)
 
@@ -2707,7 +2747,17 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             
             question_blocks.append(block)
 
-        except Exception:
+        except Exception as _singles_exc:
+            if is_debug():
+                try:
+                    _el_id = (el.get_attribute("id") or "").strip()
+                    _el_name = (el.get_attribute("name") or "").strip()
+                except Exception:
+                    _el_id = _el_name = "?"
+                log_debug(
+                    "[SINGLES_SKIP]",
+                    f"unhandled_exception id={_el_id!r} name={_el_name!r} exc={type(_singles_exc).__name__}: {_singles_exc}",
+                )
             continue
 
     return question_blocks

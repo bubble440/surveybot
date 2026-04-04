@@ -69,7 +69,8 @@
       "Bash(python -c \"import ast; ast.parse\\(open\\(''Survey/dom_extractors_misc.py''\\).read\\(\\)\\); print\\(''OK''\\)\")",
       "Bash(python -c \"import ast; ast.parse\\(open\\(''Survey/dom_analyzer.py''\\).read\\(\\)\\); print\\(''OK''\\)\")",
       "Bash(find /c/projects/Surveys/surveybot -type f \\\\\\(-name *.sql -o -name *.db -o -name *schema* -o -name *migration* \\\\\\))",
-      "Bash(grep -r \"TIMEOUT\\\\|WAIT\\\\|PAUSE\\\\|DELAY\\\\|SLEEP\" /c/projects/Surveys/surveybot/Survey/*.py)"
+      "Bash(grep -r \"TIMEOUT\\\\|WAIT\\\\|PAUSE\\\\|DELAY\\\\|SLEEP\" /c/projects/Surveys/surveybot/Survey/*.py)",
+      "Bash(find C:/projects/Surveys/surveybot -name *.py -not -path */.venv/*)"
     ]
   }
 }

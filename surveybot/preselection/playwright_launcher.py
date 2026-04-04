@@ -451,15 +451,6 @@ def launch_browser(config: dict | None = None):
             )
             print(f"[PW] socat relay 0.0.0.0:{relay_port} → 127.0.0.1:{debug_port}")
 
-        page = context.new_page()
-        # ✅ Permission geolocation : sans ça, beaucoup de sites voient "denied"
-        try:
-            context.grant_permissions(["geolocation"], origin="https://app.topsurveys.app")
-            context.grant_permissions(["geolocation"], origin="https://www.topsurveys.app")
-            print("[PW][GEO] permission geolocation accordée pour TopSurveys.")
-        except Exception as e:
-            print(f"[PW][GEO][WARN] grant_permissions a échoué: {e}")
-
         # --- 2) Attacher Selenium au Chrome déjà lancé ---
         opts = webdriver.ChromeOptions()
         # ⚠️ Selenium ne doit PAS relancer chrome : on s'attache au debug port
@@ -469,11 +460,22 @@ def launch_browser(config: dict | None = None):
         driver = webdriver.Chrome(options=opts, service=Service(log_output=subprocess.DEVNULL))
 
         # 🔧 Fingerprint spoofing via CDP Selenium.
-        # Page.addScriptToEvaluateOnNewDocument persiste pour toutes les navigations
-        # futures du processus Chrome, y compris celles pilotées par Selenium.
-        # Doit être appelé AVANT tout driver.get().
+        # Injecté AVANT new_page() pour que le script soit actif dès la première
+        # vraie navigation. Page.addScriptToEvaluateOnNewDocument persiste pour
+        # toutes les navigations futures du processus Chrome.
         apply_fingerprint_overrides_cdp(driver)
         print("[PW][OVERRIDE] Fingerprint overrides enregistrés via CDP Selenium.")
+
+        # new_page() et grant_permissions APRÈS l'injection CDP :
+        # la première page ouverte par Playwright bénéficie déjà du fingerprint.
+        page = context.new_page()
+        # ✅ Permission geolocation : sans ça, beaucoup de sites voient "denied"
+        try:
+            context.grant_permissions(["geolocation"], origin="https://app.topsurveys.app")
+            context.grant_permissions(["geolocation"], origin="https://www.topsurveys.app")
+            print("[PW][GEO] permission geolocation accordée pour TopSurveys.")
+        except Exception as e:
+            print(f"[PW][GEO][WARN] grant_permissions a échoué: {e}")
 
         try:
             fingerprint = driver.execute_script("""
