@@ -426,7 +426,7 @@ def init_session_and_enter_surveys(driver, config, account_id: str, notify_fn):
     safe_get(driver, "https://www.topsurveys.app")
     print("🚀 Brave lancé.")
     login(driver, email, password)
-
+    time.sleep(5)
     try:
         payout.check_and_cashout_if_needed(
             driver,
