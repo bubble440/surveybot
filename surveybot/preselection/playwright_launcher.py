@@ -293,6 +293,24 @@ def apply_fingerprint_overrides_cdp(driver) -> None:
     Doit être appelé une seule fois, juste après l'attach Selenium et avant
     tout driver.get().
     """
+    # Surcharge User-Agent via CDP : élimine "HeadlessChrome" et "Linux x86_64"
+    # qui sont les signaux de détection les plus triviaux des anti-bots.
+    # Doit correspondre à un vrai Chrome Windows pour rester cohérent avec
+    # les patches JS (platform=Win32, screen=1920x1080).
+    try:
+        import re as _re
+        raw_ua = driver.execute_script("return navigator.userAgent") or ""
+        # Remplacer HeadlessChrome → Chrome et Linux x86_64 → Windows NT 10.0; Win64; x64
+        spoofed_ua = _re.sub(r"HeadlessChrome", "Chrome", raw_ua)
+        spoofed_ua = _re.sub(r"Linux x86_64", "Windows NT 10.0; Win64; x64", spoofed_ua)
+        driver.execute_cdp_cmd("Network.setUserAgentOverride", {
+            "userAgent": spoofed_ua,
+            "platform": "Win32",
+        })
+        log.info("[FP][CDP] User-Agent surchargé : %s", spoofed_ua)
+    except Exception as e:
+        log.warning("[FP][CDP][WARN] Échec User-Agent override : %s", e)
+
     try:
         driver.execute_cdp_cmd(
             "Page.addScriptToEvaluateOnNewDocument",

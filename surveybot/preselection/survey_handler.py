@@ -238,7 +238,7 @@ def _run_survey_impl(driver, api_key, *, account_id: str, ctx=None, payout_name:
     _last_scan_key = None
     _same_scan_count = 0
     _card_retry_count = 0
-    _MAX_CARD_RETRIES = 5
+    _MAX_CARD_RETRIES = 20
     _cashout_done = False          # ← ajout
 
     def _skip_card_and_retry(reason: str) -> bool:
@@ -355,8 +355,8 @@ def _run_survey_impl(driver, api_key, *, account_id: str, ctx=None, payout_name:
                     print(f"⚠️ Disqualification détectée (validator) | reason={answer.get('reason')}")
                     preselection.question_analyzer.handle_disqualification_and_retry(driver)
                     time.sleep(1.5)
-                    if _skip_card_and_retry("preselection_disqualified"):
-                        return
+                    from preselection.survey_navigator import go_to_best_value_survey
+                    go_to_best_value_survey(driver)
                     continue
 
                 # ℹ️ Cas : pas une vraie question (ex: écran 'Soumettre')
@@ -382,8 +382,8 @@ def _run_survey_impl(driver, api_key, *, account_id: str, ctx=None, payout_name:
                 except Exception:
                     pass
                 time.sleep(1.2)
-                if _skip_card_and_retry("preselection_disqualified"):
-                    return
+                from preselection.survey_navigator import go_to_best_value_survey
+                go_to_best_value_survey(driver)
                 continue
 
 
@@ -427,16 +427,16 @@ def _run_survey_impl(driver, api_key, *, account_id: str, ctx=None, payout_name:
                         if final_url and "app.topsurveys.app/surveys" in final_url:
                             Survey.log_utils.log_info("SURVEY_HANDLER", "Retour TopSurveys après clic Participer — popup/exclusion attendue")
                             Survey.survey_executor._handle_topsurveys_exclusion_popup(driver)
-                            if _skip_card_and_retry("topsurveys_redirect"):
-                                return
+                            # if _skip_card_and_retry("topsurveys_redirect"):
+                            #     return
                             continue
 
                         is_strict, reason = Management.guards.survey_difficulty_guard.detect_strict_survey(driver)
                         if is_strict:
                             print(f"[STRICT_SURVEY] Ignoré ({reason}) → retour TopSurveys")
                             Management.guards.runtime_guard.get_guard().record_success()
-                            if _skip_card_and_retry("disqualification_or_retry"):
-                                return
+                            # if _skip_card_and_retry("disqualification_or_retry"):
+                            #     return
                             continue
 
                         # feu vert → on entre en résolution complète
@@ -453,8 +453,8 @@ def _run_survey_impl(driver, api_key, *, account_id: str, ctx=None, payout_name:
                         print("⚠️ Disqualification détectée après question finale.")
                         time.sleep(2)
                         Management.guards.runtime_guard.get_guard().record_success()
-                        if _skip_card_and_retry("disqualification_or_retry"):
-                            return
+                        # if _skip_card_and_retry("disqualification_or_retry"):
+                        #     return
                         continue
 
                     print("ℹ️ Aucun bouton Participer ou Ok détecté. Fin de boucle.")
