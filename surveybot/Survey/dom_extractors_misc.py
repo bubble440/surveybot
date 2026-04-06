@@ -3530,6 +3530,257 @@ def _extract_runtime_answerrow_radio_blocks(driver, frame_chain: list[int] | Non
     return blocks
 
 
+def _extract_runtime_dropdown_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
+    """Extrait les questions dropdown/date/texte du runtime Toluna/QuickSurveys.
+
+    Gate strict (DOM observable):
+    - au moins une question `div.choice_question.display_drop_down` avec
+      `[data-testid='MultiValueSelectWrapper'] input[role='combobox']` dans
+      `#question_container_<id>` associé.
+
+    Extrait ensuite sur la même page :
+    - dropdown (display_drop_down + MultiValueSelectWrapper) → itype='select'
+    - date (display_date + .date_selector + MultiValueSelectWrapper) → itype='select'
+    - texte libre (open_ended_question + textarea dans container) → itype='textarea'
+    """
+    frame_chain = list(frame_chain or [])
+
+    # Gate : au moins un display_drop_down avec combobox React Select dans son container
+    try:
+        dropdown_questions = driver.find_elements(
+            By.CSS_SELECTOR, "div.choice_question.display_drop_down"
+        )
+    except Exception:
+        return []
+
+    if not dropdown_questions:
+        return []
+
+    has_combobox = False
+    for dq in dropdown_questions[:3]:
+        try:
+            qid_raw = (dq.get_attribute("id") or "").strip()
+            if not qid_raw or not qid_raw.startswith("question_"):
+                continue
+            qnum = qid_raw[len("question_"):]
+            container = driver.find_element(By.ID, f"question_container_{qnum}")
+            if container.find_elements(
+                By.CSS_SELECTOR, "[data-testid='MultiValueSelectWrapper']"
+            ):
+                has_combobox = True
+                break
+        except Exception:
+            continue
+
+    if not has_combobox:
+        return []
+
+    blocks: list[dict] = []
+    _TITLE_SEL = (
+        "[data-aut='Runtime_QuestionTitleAndDescriptionWrapper'] "
+        "[data-aut='Runtime-TextComponent']"
+    )
+
+    # --- 1. Dropdown questions (display_drop_down + MultiValueSelectWrapper) ---
+    for dq in dropdown_questions:
+        try:
+            qid_raw = (dq.get_attribute("id") or "").strip()
+            if not qid_raw or not qid_raw.startswith("question_"):
+                continue
+            qnum = qid_raw[len("question_"):]
+
+            question = ""
+            for qn in dq.find_elements(By.CSS_SELECTOR, _TITLE_SEL):
+                txt = _norm(qn.text or qn.get_attribute("innerText") or "")
+                if txt and len(txt) >= 2:
+                    question = txt
+                    break
+            if not question:
+                continue
+
+            try:
+                container = driver.find_element(By.ID, f"question_container_{qnum}")
+            except Exception:
+                continue
+
+            if not container.find_elements(
+                By.CSS_SELECTOR,
+                "[data-testid='MultiValueSelectWrapper'] input[role='combobox']",
+            ):
+                continue
+
+            group_key = f"runtime_dropdown:{qid_raw}"
+            target_id = make_target_id("group", group_key, question)
+            register_target(
+                target_id,
+                {
+                    "kind": "group",
+                    "itype": "select",
+                    "group_key": group_key,
+                    "question": question,
+                    "container_id": f"question_container_{qnum}",
+                    "frame_chain": frame_chain,
+                    "runtime_dropdown": True,
+                },
+            )
+            blocks.append(
+                {
+                    "question": question,
+                    "itype": "select",
+                    "options": [],
+                    "max_select": 1,
+                    "target_id": target_id,
+                    "context": {
+                        "kind": "group",
+                        "group_key": group_key,
+                        "runtime_dropdown": True,
+                    },
+                    "min_select": 1,
+                }
+            )
+        except Exception:
+            continue
+
+    # --- 2. Date questions (display_date + date_selector + MultiValueSelectWrapper) ---
+    try:
+        date_questions = driver.find_elements(
+            By.CSS_SELECTOR, "div.open_ended_question.display_date"
+        )
+        for dq in date_questions:
+            try:
+                qid_raw = (dq.get_attribute("id") or "").strip()
+                if not qid_raw or not qid_raw.startswith("question_"):
+                    continue
+                qnum = qid_raw[len("question_"):]
+
+                question = ""
+                for qn in dq.find_elements(By.CSS_SELECTOR, _TITLE_SEL):
+                    txt = _norm(qn.text or qn.get_attribute("innerText") or "")
+                    if txt and len(txt) >= 2:
+                        question = txt
+                        break
+                if not question:
+                    continue
+
+                try:
+                    container = driver.find_element(By.ID, f"question_container_{qnum}")
+                except Exception:
+                    continue
+
+                wrappers = container.find_elements(
+                    By.CSS_SELECTOR,
+                    ".date_selector [data-testid='MultiValueSelectWrapper']",
+                )
+                if len(wrappers) < 2:
+                    continue
+
+                n = len(wrappers)
+                parts = ["month", "day", "year"][:n]
+                group_key = f"runtime_dropdown:{qid_raw}"
+                target_id = make_target_id("group", group_key, question)
+                register_target(
+                    target_id,
+                    {
+                        "kind": "group",
+                        "itype": "select",
+                        "group_key": group_key,
+                        "question": question,
+                        "container_id": f"question_container_{qnum}",
+                        "frame_chain": frame_chain,
+                        "runtime_dropdown": True,
+                        "runtime_dropdown_parts": parts,
+                    },
+                )
+                blocks.append(
+                    {
+                        "question": question,
+                        "itype": "select",
+                        "options": [],
+                        "max_select": n,
+                        "target_id": target_id,
+                        "context": {
+                            "kind": "group",
+                            "group_key": group_key,
+                            "runtime_dropdown": True,
+                            "runtime_dropdown_parts": parts,
+                        },
+                        "min_select": n,
+                    }
+                )
+            except Exception:
+                continue
+    except Exception:
+        pass
+
+    # --- 3. Texte libre (open_ended_question + textarea dans container) ---
+    try:
+        oe_questions = driver.find_elements(
+            By.CSS_SELECTOR, "div.open_ended_question:not(.display_date)"
+        )
+        for dq in oe_questions:
+            try:
+                qid_raw = (dq.get_attribute("id") or "").strip()
+                if not qid_raw or not qid_raw.startswith("question_"):
+                    continue
+                qnum = qid_raw[len("question_"):]
+
+                question = ""
+                for qn in dq.find_elements(By.CSS_SELECTOR, _TITLE_SEL):
+                    txt = _norm(qn.text or qn.get_attribute("innerText") or "")
+                    if txt and len(txt) >= 2:
+                        question = txt
+                        break
+                if not question:
+                    continue
+
+                try:
+                    container = driver.find_element(By.ID, f"question_container_{qnum}")
+                except Exception:
+                    continue
+
+                if not container.find_elements(By.CSS_SELECTOR, "textarea"):
+                    continue
+
+                field_key = f"runtime_text:{qid_raw}"
+                target_id = make_target_id("field", field_key, question)
+                register_target(
+                    target_id,
+                    {
+                        "kind": "field",
+                        "itype": "textarea",
+                        "field_key": field_key,
+                        "question": question,
+                        "container_id": f"question_container_{qnum}",
+                        "frame_chain": frame_chain,
+                        "runtime_text": True,
+                    },
+                )
+                blocks.append(
+                    {
+                        "question": question,
+                        "itype": "textarea",
+                        "options": [],
+                        "max_select": 1,
+                        "target_id": target_id,
+                        "context": {
+                            "kind": "field",
+                            "field_key": field_key,
+                            "runtime_text": True,
+                        },
+                        "min_select": 1,
+                    }
+                )
+            except Exception:
+                continue
+    except Exception:
+        pass
+
+    if is_debug():
+        log_debug("[RUNTIME_DD]", f"extracted {len(blocks)} dropdown/date/text blocks")
+
+    return blocks
+
+
 def _extract_kantar_rowpicker_radio_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
     """Extraction radio pour Kantar rowpicker (`[data-test='main-contain']._rowpicker`).
 

@@ -1047,6 +1047,136 @@ def _extract_decipher_table_text_rows_blocks(driver, frame_chain: List[Any]) -> 
 
 
 # ================================================================================
+# DECIPHER / FOCUSVISION - GRID SINGLE-COL TEXT ROWS
+# ================================================================================
+
+def _extract_decipher_grid_single_col_text_rows(driver, frame_chain: List[Any]) -> List[Dict[str, Any]]:
+    """
+    Extrait les lignes texte d'une grille Decipher/FocusVision rendue en
+    table.grid.grid-table-mode avec data-settings contenant 'single-col'.
+
+    Pattern strict (garde-fou):
+    - div.question contenant table.grid.grid-table-mode[data-settings*='single-col']
+    - tr.row-elements (PAS tr.row-no-answer) avec th.row-legend + td.element input[type='text']
+    - Inputs portant la classe 'no-answer' exclus
+
+    Returns:
+        Liste de blocks `single` (itype="text"), un par ligne de grille.
+    """
+    blocks: List[Dict[str, Any]] = []
+
+    questions = driver.find_elements(By.CSS_SELECTOR, "div.question")
+    for q_el in questions:
+        try:
+            grid = q_el.find_element(
+                By.CSS_SELECTOR,
+                "table.grid.grid-table-mode[data-settings*='single-col']"
+            )
+        except Exception:
+            continue
+
+        try:
+            candidate_inputs = grid.find_elements(
+                By.CSS_SELECTOR,
+                "tr.row-elements:not(.row-no-answer) td.element input[type='text']"
+            )
+        except Exception:
+            candidate_inputs = []
+
+        # Exclure no-answer et vérifier qu'il y a au moins un champ éligible
+        candidate_inputs = [
+            i for i in candidate_inputs
+            if "no-answer" not in (i.get_attribute("class") or "").split()
+        ]
+        if not candidate_inputs:
+            continue
+
+        try:
+            question = (q_el.find_element(By.CSS_SELECTOR, ".question-text").text or "").strip()
+        except Exception:
+            question = ""
+        if not question:
+            continue
+
+        try:
+            rows = grid.find_elements(
+                By.CSS_SELECTOR,
+                "tr.row-elements:not(.row-no-answer)"
+            )
+        except Exception:
+            continue
+
+        for row in rows:
+            try:
+                field = row.find_element(
+                    By.CSS_SELECTOR,
+                    "td.element input[type='text']"
+                )
+            except Exception:
+                continue
+
+            if "no-answer" in (field.get_attribute("class") or "").split():
+                continue
+
+            try:
+                row_label = (row.find_element(By.CSS_SELECTOR, "th.row-legend").text or "").strip()
+            except Exception:
+                row_label = ""
+
+            field_id = (field.get_attribute("id") or "").strip()
+            field_name = (field.get_attribute("name") or "").strip()
+            if not field_id and not field_name:
+                continue
+
+            field_tag = (field.tag_name or "input").strip().lower()
+            if field_id:
+                xpath = f"//*[@id={_xpath_literal(field_id)}]"
+            else:
+                xpath = f"//{field_tag}[@name={_xpath_literal(field_name)}]"
+
+            q_label = f"{question} - {row_label}" if row_label else question
+            single_key = f"decipher_grid_sc_text:{field_id}:{field_name}"
+            target_id = make_target_id("single", single_key, q_label)
+
+            register_target(
+                target_id,
+                {
+                    "kind": "single",
+                    "itype": "text",
+                    "question": q_label,
+                    "xpath": xpath,
+                    "alt_xpaths": [],
+                    "tag": field_tag,
+                    "name": field_name,
+                    "id": field_id,
+                    "frame_chain": list(frame_chain or []),
+                },
+            )
+
+            blocks.append(
+                {
+                    "question": q_label,
+                    "itype": "text",
+                    "options": [],
+                    "max_select": 1,
+                    "min_select": 1,
+                    "target_id": target_id,
+                    "context": {
+                        "kind": "single",
+                        "tag": field_tag,
+                        "name": field_name,
+                        "id": field_id,
+                        "role": field.get_attribute("role"),
+                        "row_label": row_label,
+                        "decipher_table_text_rows": True,
+                    },
+                }
+            )
+
+    return blocks
+
+
+# ================================================================================
 # DECIPHER - ANSWERS LIST FALLBACK
 # ================================================================================
 

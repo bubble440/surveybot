@@ -3,6 +3,7 @@ from selenium.webdriver.common.action_chains import ActionChains
 import re, openai, time, unicodedata, os, sys, hashlib, tempfile
 from urllib.parse import urlsplit
 from Survey.log_utils import log_debug, log_info
+from Survey.functions import _handle_topsurveys_exclusion_popup
 
 def _short_url(url: str) -> str:
     try:
@@ -1242,134 +1243,6 @@ def _handle_cf_carousel_image_blocks(driver, question_blocks: list, api_key: str
     return any_clicked
 
 
-def _handle_topsurveys_exclusion_popup(driver) -> bool:
-    """
-    Gere les popups TopSurveys au retour sur app.topsurveys.app.
-
-    Priorite 1 — Mystery boxes presentes (popup recompense, avec ou sans 'Bon travail !') :
-      selectionne une boite via _handle_mystery_box_popup (qui clique aussi 'Complete'),
-      puis navigue vers le meilleur survey. Retourne True.
-
-    Priorite 2 — Popup 'Bon travail !' sans mystery boxes (disqualification simple) :
-      clique 'Complete' directement, puis navigue. Retourne True.
-
-    Retourne False si aucun des deux cas n'est detecte.
-    """
-    import unicodedata
-    import time
-    from selenium.webdriver.common.by import By
-
-    try:
-        url = (driver.current_url or "").lower()
-        if "topsurveys.app" not in url:
-            return False
-    except:
-        return False
-
-    import preselection.survey_navigator as survey_navigator
-
-    # === PRIORITE 1 : Mystery boxes ===
-    try:
-        has_boxes = bool(driver.find_elements(By.CSS_SELECTOR, "[data-test-id^='ps-mystery-box-item-button']"))
-    except Exception:
-        has_boxes = False
-
-    if has_boxes:
-        reason = "[TOPSURVEYS_POPUP] Mystery boxes detectees - selection en cours..."
-        print(reason)
-        _local_pause_before_cta(reason)
-        try:
-            survey_navigator._handle_mystery_box_popup(driver)
-            time.sleep(1.0)
-        except Exception as e:
-            print(f"[TOPSURVEYS_POPUP] Erreur mystery box: {e}")
-        # Navigation vers le prochain survey
-        try:
-            survey_navigator.go_to_best_value_survey(driver)
-            print("[TOPSURVEYS_POPUP] Navigation vers nouveau survey OK")
-        except Exception as e:
-            print(f"[TOPSURVEYS_POPUP] Erreur navigation: {e}")
-            return False
-        return True
-
-    # === PRIORITE 2 : Popup 'Bon travail !' sans mystery boxes ===
-    try:
-        txt = (driver.execute_script("return document.body.innerText || ''") or "").lower()
-    except:
-        return False
-
-    def _norm(s):
-        s = s.replace("\u2018", "'").replace("\u2019", "'")
-        s = unicodedata.normalize('NFD', s)
-        s = ''.join(c for c in s if unicodedata.category(c) != 'Mn')
-        return s.lower()
-
-    txt_norm = _norm(txt)
-    patterns = ["bon travail", "tu as partiellement repondu", "credite ton compte"]
-
-    if not any(p in txt_norm for p in patterns):
-        return False
-
-    reason = "[TOPSURVEYS_POPUP] Popup 'Bon travail !' detecte (sans mystery box) - fermeture..."
-    print(reason)
-    _local_pause_before_cta(reason)
-
-    # Fermer le popup via le bouton 'Complete'
-    btn = None
-    try:
-        from selenium.webdriver.support.ui import WebDriverWait
-        from selenium.webdriver.support import expected_conditions as EC
-        btn = WebDriverWait(driver, 2).until(
-            EC.element_to_be_clickable((By.CSS_SELECTOR, "button[data-test-id='ps-common-actions-button']"))
-        )
-    except:
-        pass
-
-    if not btn:
-        try:
-            for b in driver.find_elements(By.CSS_SELECTOR, "button"):
-                if b.is_displayed() and "compl" in _norm(b.text or ""):
-                    btn = b
-                    break
-        except:
-            pass
-
-    if btn:
-        try:
-            driver.execute_script("arguments[0].click();", btn)
-            reason = "[TOPSURVEYS_POPUP] Bouton 'Complete' clique."
-            print(reason)
-            _local_pause_before_cta(reason)
-            time.sleep(1.0)
-        except Exception as e:
-            reason = f"[TOPSURVEYS_POPUP] Erreur clic: {e}"
-            print(reason)
-            _local_pause_before_cta(reason)
-            return False
-    else:
-        reason = "[TOPSURVEYS_POPUP] Bouton non trouve."
-        print(reason)
-        _local_pause_before_cta(reason)
-        return False
-
-    # Navigation vers le prochain survey
-    reason = "[TOPSURVEYS_POPUP] Relance preselection..."
-    print(reason)
-    _local_pause_before_cta(reason)
-    try:
-        survey_navigator.go_to_best_value_survey(driver)
-        reason = "[TOPSURVEYS_POPUP] Navigation vers nouveau survey OK"
-        print(reason)
-        _local_pause_before_cta(reason)
-        time.sleep(1.0)
-    except Exception as e:
-        reason = f"[TOPSURVEYS_POPUP] Erreur navigation: {e}"
-        print(reason)
-        _local_pause_before_cta(reason)
-        return False
-
-    return True
-
 
 def _should_skip_post_actions_navigation(driver, question_blocks: list[dict]) -> bool:
     """
@@ -1423,7 +1296,7 @@ def _should_skip_post_actions_navigation(driver, question_blocks: list[dict]) ->
     except Exception:
         return False
 
-def execute_survey_page(driver, api_key, ctx=None):
+def execute_survey_page(driver, account_id, api_key, ctx=None):
     """
     Nouvelle version : capture , demande GPT-4o quoi faire, puis applique l'action.
     """
@@ -1458,7 +1331,7 @@ def execute_survey_page(driver, api_key, ctx=None):
     try:
         _cur = driver.current_url
         if "topsurveys.app" in (_cur or "").lower():
-            if _handle_topsurveys_exclusion_popup(driver):
+            if _handle_topsurveys_exclusion_popup(driver, account_id):
                 reason = "[TOPSURVEYS_POPUP] Popup traite -> continue boucle takeover"
                 print(reason)
                 _local_pause_before_cta(reason)

@@ -250,7 +250,8 @@ def extract_select_options_js(driver):
             .map(o => (o.innerText || o.textContent).trim());
         """
         opts = driver.execute_script(js)
-        print(f"extract_select_options_js : {opts}")
+        if opts is not None:
+            print(f"extract_select_options_js : {opts}")
         # dédoublonne en conservant l'ordre
         return list(dict.fromkeys(opts))
     except Exception as e:

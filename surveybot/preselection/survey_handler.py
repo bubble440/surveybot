@@ -1,4 +1,5 @@
 import time, os, threading
+from Cash.payout import _payout_and_check_daily_stop
 
 IS_LOCAL = os.getenv("RUN_ENV", "local") == "local"
 
@@ -196,6 +197,7 @@ def _run_survey_impl(driver, api_key, *, account_id: str, ctx=None, payout_name:
     import preselection.question_analyzer
     import preselection.response_executor
     import Survey.survey_solver
+    from Survey.survey_solver import TopSurveysReturn
     import Survey.survey_executor
     import Survey.log_utils
     import Cash.payout as payout
@@ -225,7 +227,6 @@ def _run_survey_impl(driver, api_key, *, account_id: str, ctx=None, payout_name:
             ctx = {
                 "account_id": account_id,
                 "api_key": api_key,
-                # payout_* optionnels (soft_restart_payout doit être tolérant)
                 "payout_name": "",
                 "payout_revolut_tag": "",
             }
@@ -399,14 +400,7 @@ def _run_survey_impl(driver, api_key, *, account_id: str, ctx=None, payout_name:
                     print("⚠️ Réponse non appliquée correctement, relance du survey...")
                     if not _cashout_done:
                         try:
-                            payout.check_and_cashout_if_needed(
-                                driver,
-                                account_id=account_id,
-                                min_amount_eur=MIN_CASHOUT_EUR,
-                                cashout_order=("revolut", "paypal"),
-                                revolut_fullname=payout_name,
-                                revolut_tag=payout_revolut_tag,
-                            )
+                            _payout_and_check_daily_stop(driver, account_id)  # retrait + DAILY STOP
                             Management.guards.runtime_guard.get_guard().record_success()
                         except Exception as e:
                             Management.guards.runtime_guard.get_guard().record_error(e)
@@ -440,12 +434,15 @@ def _run_survey_impl(driver, api_key, *, account_id: str, ctx=None, payout_name:
                             continue
 
                         # feu vert → on entre en résolution complète
-                        Survey.survey_solver.solve_full_survey(
-                            driver,
-                            api_key=api_key,
-                            account_id=account_id,
-                            survey_context=ctx,
-                        )
+                        try:
+                            Survey.survey_solver.solve_full_survey(
+                                driver,
+                                api_key=api_key,
+                                account_id=account_id,
+                                survey_context=ctx,
+                            )
+                        except TopSurveysReturn:
+                            continue
                         return
 
                     # Cas : on est disqualifié → cliquer sur OK puis relancer
