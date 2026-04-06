@@ -484,7 +484,7 @@ def run_attach_takeover(driver, *, api_key: str, account_id: str) -> None:
 
         ### Résultat attendu dans les logs avec clé 2Captcha configurée
             
-            ok = survey_executor.execute_survey_page(driver, api_key, ctx=_ctx)
+            ok = survey_executor.execute_survey_page(driver, account_id, api_key, ctx=_ctx)
             _ctx.maybe_update_summary()                                           # ← ajouter cette ligne
             print(f"[ATTACH] step={i}/{max_steps} ok={ok} url={_attach_display_url(driver.current_url)}")
         except Exception as e:
@@ -545,7 +545,7 @@ def run_attach_preselection_takeover(driver, *, api_key: str, account_id: str) -
     max_steps = int(os.getenv("ATTACH_MAX_STEPS", "100"))
     for i in range(1, max_steps + 1):
         try:
-            done = survey_executor.execute_survey_page(driver, api_key, ctx=_ctx)
+            done = survey_executor.execute_survey_page(driver, account_id, api_key, ctx=_ctx)
             _ctx.maybe_update_summary()
             print(f"[ATTACH][PRESEL->RES] step={i}/{max_steps} ok={done} url={_attach_display_url(driver.current_url)}")
         except Exception as e:

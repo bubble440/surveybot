@@ -54,6 +54,7 @@ try:
         _extract_focusvision_answers_list_groups,
         _extract_focusvision_cardsort_block,
         _extract_decipher_table_text_rows_blocks,
+        _extract_decipher_grid_single_col_text_rows,
         _extract_decipher_answers_list_fallback
     )
     
@@ -103,6 +104,7 @@ try:
         _extract_confirmit_cf_hrs_single_blocks,
         _extract_groupcaliber_rating_row_blocks,
         _extract_confirmit_cf_carousel_blocks,
+        _extract_runtime_dropdown_blocks,
     )
 
     # Registre et utilitaires
@@ -133,6 +135,7 @@ except ImportError:
         _extract_focusvision_answers_list_groups,
         _extract_focusvision_cardsort_block,
         _extract_decipher_table_text_rows_blocks,
+        _extract_decipher_grid_single_col_text_rows,
         _extract_decipher_answers_list_fallback
     )
     from Survey.dom_extractors_areyounet import (
@@ -180,6 +183,7 @@ except ImportError:
         _extract_confirmit_cf_hrs_single_blocks,
         _extract_groupcaliber_rating_row_blocks,
         _extract_confirmit_cf_carousel_blocks,
+        _extract_runtime_dropdown_blocks,
     )
 
 
@@ -955,6 +959,15 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
     except Exception:
         pass
 
+    # --- 0d-1sexies-a) Decipher/FocusVision grid single-col text rows (table.grid.grid-table-mode) ---
+    # Objectif: extraire 1 bloc text par ligne dans les grilles single-col FocusVision/Decipher.
+    try:
+        decipher_grid_sc_blocks = _extract_decipher_grid_single_col_text_rows(driver, frame_chain)
+        if decipher_grid_sc_blocks:
+            return decipher_grid_sc_blocks
+    except Exception:
+        pass
+
     # --- 0d-1sexies) YouGov grid text (fieldset.question-grid-text) ---
     # Objectif: extraire 1 bloc text par ligne (input texte) au lieu d'un single aplati.
     try:
@@ -1077,10 +1090,13 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
 
     # --- 0h-bis-2) Runtime answers rows + radio wrapper (sans input radio natif) ---
     # Objectif: extraire les groupes radio custom où les options sont des rows cliquables.
+    # Combiné avec les dropdowns/date/texte du même runtime (display_drop_down + MultiValueSelectWrapper).
     try:
         runtime_answerrow_blocks = _extract_runtime_answerrow_radio_blocks(driver, frame_chain)
-        if runtime_answerrow_blocks:
-            return runtime_answerrow_blocks
+        runtime_dd_blocks = _extract_runtime_dropdown_blocks(driver, frame_chain)
+        runtime_combined = runtime_answerrow_blocks + runtime_dd_blocks
+        if runtime_combined:
+            return runtime_combined
     except Exception as e:
         if is_debug():
             log_debug("[DOM_CONTEXT_DEBUG]", f"runtime_extractor_exception={type(e).__name__}: {e}")
@@ -2463,10 +2479,15 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                     nm = (el.get_attribute("name") or "").strip()
 
                     # prefix: "QA03:948176_1" -> "QA03:948176"
+                    # also handles dot-notation: "ans1656.0.0" -> "ans1656.0"
                     prefix = nm
                     m_pref = re.match(r"^(.*)_(\d{1,3})$", nm)
                     if m_pref:
                         prefix = m_pref.group(1)
+                    else:
+                        m_dot = re.match(r"^(.*\.\d+)\.(\d{1,3})$", nm)
+                        if m_dot:
+                            prefix = m_dot.group(1)
 
                     # fallback si container id vide: on stabilise avec un xpath de container (rare)
                     if not cont_id and container:
@@ -2521,6 +2542,10 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                                 mm = re.match(r"^(.*)_(\d{1,3})$", pn)
                                 if mm and mm.group(1) == prefix:
                                     same_prefix_count += 1
+                                else:
+                                    mm2 = re.match(r"^(.*\.\d+)\.(\d{1,3})$", pn)
+                                    if mm2 and mm2.group(1) == prefix:
+                                        same_prefix_count += 1
 
                         date_tokens = {
                             "month": ("month", "mois", "mm", "date_m", "dobmonth"),
@@ -2566,7 +2591,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                                     "[DOM_DATE_MULTI_TEXT]",
                                     f"detected date triplet fields={len(fields)} names={[((f.get_attribute('name') or '').strip()) for f in fields][:5]}",
                                 )
-                            max_items = min(3, len(fields))
+                            max_items = min(3, len(fields)) if has_date_triplet else len(fields)
                             multi_target_id = make_target_id("multi", effective_group_key, question)
 
                             field_payloads = []

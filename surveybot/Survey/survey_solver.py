@@ -6,9 +6,16 @@ from selenium.webdriver.support.ui import WebDriverWait  # [AJOUT]
 from selenium.webdriver.support import expected_conditions as EC  # [AJOUT]
 from selenium.webdriver.common.action_chains import ActionChains  # [AJOUT]
 from selenium.webdriver.common.by import By
-import time, os, sys
-from preselection.question_validation import detect_disqualification_reason
+import time, os
 from Survey.log_utils import log_debug, log_info
+from Survey.functions import _handle_topsurveys_exclusion_popup
+
+
+class TopSurveysReturn(BaseException):
+    """Sentinelle levée quand _handle_topsurveys_exclusion_popup réussit.
+    Hérite de BaseException pour traverser les blocs except Exception sans être avalée.
+    Interceptée dans _run_survey_impl pour reboucler sur la préselection.
+    """
 
 STABILIZE_SLEEP = 2.0       # délai court entre deux actions pour laisser le DOM respirer
 PAUSE_BEFORE_FIRST_SCAN = 1.5  # post-chargement, avant le premier scan DOM (absorbe latence proxy)
@@ -241,30 +248,6 @@ def _looks_like_end_screen(driver):
         return False
 
 
-def _close_other_tabs_in_current_session(driver):
-    """Ferme tous les autres onglets de ce driver, garde l'onglet courant."""
-    current = driver.current_window_handle
-    handles = list(driver.window_handles)
-    for h in handles:
-        if h != current:
-            try:
-                driver.switch_to.window(h)
-                driver.close()
-                time.sleep(3)
-            except Exception:
-                pass
-    try:
-        driver.switch_to.window(current)
-    except Exception:
-        pass
-
-def _page_text_lc(driver) -> str:
-    try:
-        return (driver.execute_script("return document.body.innerText || ''") or "").lower()
-    except Exception:
-        return ""
-
-
 _NETWORK_ERR_SIGNALS = (
     "err_tunnel_connection_failed",
     "this site can\u2019t be reached",
@@ -344,346 +327,6 @@ def _recover_from_network_error(driver) -> str:
 
     return _NET_ERR_EXHAUSTED
 
-
-def _handle_topsurveys_partial_popup(driver) -> bool:
-    """
-    Detecte le popup 'Bon travail !' / 'Tu as partiellement repondu...' et clique sur 'Complete'.
-    Retourne True s'il a ete traite.
-    
-    Ce popup apparait quand l'utilisateur est exclu d'un survey avant la fin.
-    Le comportement souhaite: ignorer le popup et relancer un nouveau survey.
-    
-    Structure DOM identifiee:
-    - <h1 class="notice-title">Bon travail !</h1>
-    - <button data-test-id="ps-common-actions-button">Complete</button>
-    """
-    txt = _page_text_lc(driver)
-    
-    # Normaliser les apostrophes ET les accents pour matching fiable
-    import unicodedata
-    def _normalize(s):
-        # Apostrophes courbes -> droites
-        s = s.replace("'", "'").replace("'", "'")
-        # Supprimer les accents (e avec accent -> e)
-        s = unicodedata.normalize('NFD', s)
-        s = ''.join(c for c in s if unicodedata.category(c) != 'Mn')
-        return s.lower()
-    
-    txt_norm = _normalize(txt)
-    
-    # Patterns de detection (OR - un seul suffit)
-    # Tous en minuscules et sans accents pour matcher le texte normalise
-    partial_patterns = [
-        "bon travail",                              # Titre du popup
-        "tu as partiellement repondu",              # Debut du message (sans accent)
-        "l'annonceur cherchait quelqu'un d'autre",  # Raison exclusion
-        "credite ton compte pour l'effort",         # Mention de compensation (sans accent)
-        "evalue ton experience",                    # Section rating du popup (sans accent)
-    ]
-    
-    is_partial_popup = any(p in txt_norm for p in partial_patterns)
-    
-    if not is_partial_popup:
-        return False
-        
-    print("[TOPSURVEYS] Popup exclusion partielle detecte: 'Bon travail !'")
-    
-    # Nettoyer les autres onglets maintenant
-    _close_other_tabs_in_current_session(driver)
-
-    # Bouton 'Complete' - sélecteur exact identifie dans le DOM
-    btn = None
-    
-    # Strategie 1: data-test-id (EXACT - identifie dans le DOM reel)
-    try:
-        btn = WebDriverWait(driver, 3).until(
-            EC.element_to_be_clickable((By.CSS_SELECTOR, "button[data-test-id='ps-common-actions-button']"))
-        )
-    except Exception:
-        pass
-    
-    # Strategie 2: classe p-btn--primary avec texte contenant "compl"
-    if not btn:
-        try:
-            candidates = driver.find_elements(By.CSS_SELECTOR, "button.p-btn--primary")
-            for c in candidates:
-                try:
-                    if c.is_displayed():
-                        btn_text = _normalize(c.text or "")
-                        if "compl" in btn_text:
-                            btn = c
-                            break
-                except:
-                    continue
-        except Exception:
-            pass
-    
-    # Strategie 3: span.p-btn-label avec texte "Complete"
-    if not btn:
-        try:
-            spans = driver.find_elements(By.CSS_SELECTOR, "span.p-btn-label")
-            for span in spans:
-                try:
-                    if "compl" in _normalize(span.text or ""):
-                        # Remonter au bouton parent
-                        btn = span.find_element(By.XPATH, "./ancestor::button")
-                        if btn and btn.is_displayed():
-                            break
-                        btn = None
-                except:
-                    continue
-        except Exception:
-            pass
-
-    if btn:
-        try:
-            driver.execute_script("arguments[0].scrollIntoView({block:'center'});", btn)
-        except Exception:
-            pass
-        for click_try in ("js", "ac", "native"):
-            try:
-                if click_try == "js":
-                    driver.execute_script("arguments[0].click();", btn)
-                elif click_try == "ac":
-                    ActionChains(driver).move_to_element(btn).click().perform()
-                else:
-                    btn.click()
-                print("[TOPSURVEYS] Bouton 'Complete' clique - popup ferme.")
-                time.sleep(0.5)
-                return True
-            except Exception:
-                continue
-
-    # Fallback: cliquer sur le bouton X de fermeture si present
-    try:
-        close_selectors = [
-            "button.popup-close",
-            "button[class*='close']",
-            "[aria-label='Close']", 
-            "[aria-label='Fermer']",
-        ]
-        for sel in close_selectors:
-            try:
-                close_btn = driver.find_element(By.CSS_SELECTOR, sel)
-                if close_btn.is_displayed():
-                    driver.execute_script("arguments[0].click();", close_btn)
-                    print("[TOPSURVEYS] Popup ferme via bouton X.")
-                    time.sleep(0.3)
-                    return True
-            except:
-                continue
-    except Exception:
-        pass
-
-    print("[TOPSURVEYS] Bouton 'Complete' introuvable - tentative de continuer.")
-    return False
-
-
-def _payout_and_check_daily_stop(driver, account_id: str) -> bool:
-    """
-    À appeler à chaque retour sur TopSurveys. Vérifie dans l'ordre :
-      1) Solde >= 5€  → retrait automatique (best-effort)
-      2) Objectif journalier (1€) atteint → DAILY STOP (lève SystemExit via guard.pause)
-    Retourne False si tout va bien (le bot peut continuer).
-    Retourne True / lève SystemExit si DAILY STOP déclenché.
-    """
-    import Cash.payout as payout
-    from Cash.payout import MIN_CASHOUT_EUR
-    from State.daily_target import DAILY_TARGET_EUR
-    from Management.guards.runtime_guard import get_guard, StopReason
-    from Management.pause_policy import PausePolicy
-
-    # 1) Retrait uniquement si solde >= 5 € (MIN_CASHOUT_EUR) :
-    #    le modal TopSurveys ne propose que des options >= 5 €,
-    #    donc l'ouverture en dessous de ce seuil est inutile.
-    try:
-        payout.check_and_cashout_if_needed(
-            driver,
-            account_id=account_id,
-            min_amount_eur=MIN_CASHOUT_EUR,
-            cashout_order=("revolut", "paypal"),
-            revolut_fullname="",
-            revolut_tag="",
-        )
-    except Exception as e:
-        print(f"[PAYOUT][WARN] retour TopSurveys: {e}")
-
-    # 2) DAILY STOP si objectif journalier déjà atteint
-    guard = get_guard()
-    # FIX-C: même correction que dans soft_restart (launch.py) — le try/except
-    # AttributeError était du dead code en prod. getattr couvre _NullGuard proprement.
-    earnings = float(getattr(getattr(guard, "state", None), "earnings_today_eur", 0.0))
-
-    if earnings >= DAILY_TARGET_EUR:
-        print(f"[DAILY_STOP] {earnings:.2f}€ >= {DAILY_TARGET_EUR}€ → arrêt journalier")
-        guard.pause(PausePolicy.DAILY_RESET, StopReason.DAILY_TARGET_REACHED)
-        return True  # jamais atteint (pause lève SystemExit)
-
-    return False
-
-
-def _if_on_topsurveys_handle(driver, api_key, account_id, survey_context=None) -> bool:
-    """
-    Si on est sur app.topsurveys.app :
-      - traite le popup 'partiellement répondu' (ferme autres onglets + 'Complète' + relance)
-      - sinon, vérifie la disqualification (ferme autres onglets + relance)
-    Retourne True si on a *orchestré un retour* vers run_survey().
-    """
-    url = (driver.current_url or "").lower()
-    if "topsurveys.app" not in url:
-        return False
-
-    # Cas A : popup partiel -> Complète + retrait/daily-stop + relance
-    if _handle_topsurveys_partial_popup(driver):
-        try:
-            _payout_and_check_daily_stop(driver, account_id)  # retrait + DAILY STOP
-            import preselection.survey_navigator
-            import preselection.survey_handler
-            time.sleep(1.0)
-            preselection.survey_navigator.go_to_best_value_survey(driver)
-            preselection.survey_handler.run_survey(driver, api_key, account_id=account_id, ctx=survey_context)
-            return True
-        except Exception as e:
-            print("💥 Erreur relance après Complète :", e)
-            return False
-
-    # Cas B : check disqualification puis relance si besoin
-    try:
-        # ✅ Détection disqualification centralisée (robuste)
-        page_txt = _page_text_lc(driver)
-        dq_reason = detect_disqualification_reason("", page_txt)
-        if dq_reason:
-            print(f"⚠ Disqualification TopSurveys détectée (reason={dq_reason}).")
-
-            # best-effort : ferme le popup si présent (mais la détection ne dépend plus de ça)
-            try:
-                import preselection.question_analyzer
-                preselection.question_analyzer.handle_disqualification_and_retry(driver)
-            except Exception as e:
-                print("⚠ Popup disqualification détecté mais fermeture 'Ok' a échoué:", e)
-
-            _close_other_tabs_in_current_session(driver)
-            _payout_and_check_daily_stop(driver, account_id)  # retrait + DAILY STOP
-            import preselection.survey_navigator
-            import preselection.survey_handler
-            time.sleep(0.7)
-            preselection.survey_navigator.go_to_best_value_survey(driver)
-            preselection.survey_handler.run_survey(driver, api_key, account_id=account_id, ctx=survey_context)
-            return True
-    except Exception as e:
-        print("💥 Erreur check disqualification TopSurveys :", e)
-
-    # -------------------------------------------------------------------
-    # Cas C : Page de preselection TopSurveys (popup "Qualification" avec questions)
-    # On detecte si on a des radios/checkboxes dans le popup et on les traite
-    # avec la logique de preselection au lieu de survey_executor
-    # -------------------------------------------------------------------
-    try:
-        has_preselection_inputs = driver.execute_script("""
-            const popup = document.querySelector("div[class*='common-container']");
-            if (!popup) return false;
-            
-            // Cherche des radios ou checkboxes visibles dans le popup
-            const inputs = popup.querySelectorAll("input[type='radio'], input[type='checkbox'], [role='radio'], [role='checkbox']");
-            if (inputs.length < 2) return false;
-            
-            // Verifie qu'au moins 2 sont visibles
-            let visibleCount = 0;
-            for (const inp of inputs) {
-                const rect = inp.getBoundingClientRect();
-                if (rect.width > 0 && rect.height > 0) visibleCount++;
-                if (visibleCount >= 2) return true;
-            }
-            
-            // Fallback: cherche les labels radio TopSurveys
-            const labels = popup.querySelectorAll("span[class*='p-radio-text'], span[class*='p-checkbox-text']");
-            return labels.length >= 2;
-        """)
-        
-        if has_preselection_inputs:
-            print("[TOPSURVEYS][PRESELECTION] Page de questions detectee -> traitement preselection")
-            
-            import preselection.question_analyzer
-            import preselection.response_executor
-            import Management.guards.runtime_guard
-            
-            # Boucle de preselection : traiter les questions jusqu'a qualification ou sortie
-            max_preselection_steps = 20
-            for step in range(max_preselection_steps):
-                print(f"[TOPSURVEYS][PRESELECTION] Step {step+1}/{max_preselection_steps}")
-                
-                # Verifier si on est toujours sur TopSurveys
-                current_url = (driver.current_url or "").lower()
-                if "topsurveys.app" not in current_url:
-                    print("[TOPSURVEYS][PRESELECTION] Redirection hors TopSurveys -> qualification reussie")
-                    return False  # Laisser solve_full_survey continuer sur le survey externe
-                
-                # Verifier qualification
-                page_text_check = _page_text_lc(driver)
-                if "qualifie pour cette enquete" in page_text_check or "qualifi" in page_text_check:
-                    # Double check avec le texte exact
-                    full_text = driver.execute_script("return document.body.innerText || ''").lower()
-                    if "tu t'es qualifi" in full_text or "you are qualified" in full_text:
-                        print("[TOPSURVEYS][PRESELECTION] Message qualification detecte -> clic Participer")
-                        if preselection.question_analyzer.click_participer_if_qualified(driver):
-                            time.sleep(2)
-                            return False  # Laisser solve_full_survey continuer sur le survey externe
-                
-                # Verifier disqualification
-                dq = detect_disqualification_reason("", page_text_check)
-                if dq:
-                    print(f"[TOPSURVEYS][PRESELECTION] Disqualification detectee ({dq}) -> relance")
-                    try:
-                        preselection.question_analyzer.handle_disqualification_and_retry(driver)
-                    except:
-                        pass
-                    _close_other_tabs_in_current_session(driver)
-                    _payout_and_check_daily_stop(driver, account_id)  # retrait + DAILY STOP
-                    import preselection.survey_navigator
-                    time.sleep(0.7)
-                    preselection.survey_navigator.go_to_best_value_survey(driver)
-                    continue  # Recommencer la boucle de preselection
-                
-                # Extraire et repondre a la question
-                try:
-                    question, answer = preselection.question_analyzer.get_response_for_question(driver, api_key)
-                    
-                    if question and answer and not isinstance(answer, dict):
-                        print(f"[TOPSURVEYS][PRESELECTION] Q: {question[:50]}... -> R: {answer}")
-                        success = preselection.response_executor.execute_response(driver, answer)
-                        if success:
-                            Management.guards.runtime_guard.get_guard().record_success()
-                        time.sleep(1.5)
-                        continue
-                    
-                    elif isinstance(answer, dict) and answer.get("action") == "SKIP":
-                        print("[TOPSURVEYS][PRESELECTION] Question sensible -> skip")
-                        decline_labels = ["Je ne peux pas repondre", "Prefer not to answer"]
-                        for lab in decline_labels:
-                            try:
-                                if preselection.response_executor.execute_response(driver, lab):
-                                    break
-                            except:
-                                pass
-                        time.sleep(1.2)
-                        continue
-                    
-                    else:
-                        # Pas de question extraite - peut-etre ecran intermediaire
-                        print("[TOPSURVEYS][PRESELECTION] Pas de question extraite - attente...")
-                        time.sleep(1.0)
-                        
-                except Exception as e:
-                    print(f"[TOPSURVEYS][PRESELECTION] Erreur extraction/reponse: {e}")
-                    time.sleep(1.0)
-            
-            print("[TOPSURVEYS][PRESELECTION] Max steps atteint -> sortie")
-            return True  # Forcer sortie de solve_full_survey
-            
-    except Exception as e:
-        print(f"[TOPSURVEYS][PRESELECTION] Erreur detection: {e}")
-
-    return False
     
 # Référence module-level au SurveyContext actif — mis à jour par solve_full_survey()
 # Utilisé par le handler SIGUSR1 (launch.py) pour dump terminal à la demande.
@@ -873,9 +516,9 @@ def solve_full_survey(driver, api_key, *, account_id: str, survey_context=None):
         try:
             current_url_check = (driver.current_url or "").lower()
             if "topsurveys.app" in current_url_check:
-                if _if_on_topsurveys_handle(driver, api_key, account_id, survey_context=_survey_ctx):
+                if _handle_topsurveys_exclusion_popup(driver, account_id):
                     print("[PRE-EXEC] Retour TopSurveys traite -> arret solve_full_survey()")
-                    return
+                    raise TopSurveysReturn()
         except Exception as e:
             print(f"[PRE-EXEC] Check TopSurveys echoue: {e}")
 
@@ -889,7 +532,7 @@ def solve_full_survey(driver, api_key, *, account_id: str, survey_context=None):
 
         # -------------------------------------------------------------------
         # a) Laisser GPT décider de l’action à partir de la capture d’écran
-        success = Survey.survey_executor.execute_survey_page(driver, api_key, ctx=_survey_ctx)
+        success = Survey.survey_executor.execute_survey_page(driver, account_id, api_key, ctx=_survey_ctx)
 
         # Connexion RuntimeGuard
         if success:
@@ -1014,9 +657,9 @@ def solve_full_survey(driver, api_key, *, account_id: str, survey_context=None):
 
             # Retour TopSurveys ? Traite popup ‘Complète’ ou disqualification, puis relance.
             try:
-                if _if_on_topsurveys_handle(driver, api_key, account_id, survey_context=_survey_ctx):
+                if _handle_topsurveys_exclusion_popup(driver, account_id):
                     print("[solve_full_survey] Retour TopSurveys → arrêt.")
-                    return
+                    raise TopSurveysReturn()
             except Exception as e:
                 print(f"[solve_full_survey] Hook TopSurveys échoué : {e}")
 
