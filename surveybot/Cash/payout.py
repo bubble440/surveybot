@@ -428,3 +428,45 @@ def check_and_cashout_if_needed(
 
     print("[PAYOUT] Impossible de confirmer la réclamation.")
     return False
+
+def _payout_and_check_daily_stop(driver, account_id: str) -> bool:
+    """
+    À appeler à chaque retour sur TopSurveys. Vérifie dans l'ordre :
+      1) Solde >= 5€  → retrait automatique (best-effort)
+      2) Objectif journalier (1€) atteint → DAILY STOP (lève SystemExit via guard.pause)
+    Retourne False si tout va bien (le bot peut continuer).
+    Retourne True / lève SystemExit si DAILY STOP déclenché.
+    """
+    import Cash.payout as payout
+    from Cash.payout import MIN_CASHOUT_EUR
+    from State.daily_target import DAILY_TARGET_EUR
+    from Management.guards.runtime_guard import get_guard, StopReason
+    from Management.pause_policy import PausePolicy
+
+    # 1) Retrait uniquement si solde >= 5 € (MIN_CASHOUT_EUR) :
+    #    le modal TopSurveys ne propose que des options >= 5 €,
+    #    donc l'ouverture en dessous de ce seuil est inutile.
+    try:
+        payout.check_and_cashout_if_needed(
+            driver,
+            account_id=account_id,
+            min_amount_eur=MIN_CASHOUT_EUR,
+            cashout_order=("revolut", "paypal"),
+            revolut_fullname="",
+            revolut_tag="",
+        )
+    except Exception as e:
+        print(f"[PAYOUT][WARN] retour TopSurveys: {e}")
+
+    # 2) DAILY STOP si objectif journalier déjà atteint
+    guard = get_guard()
+    # FIX-C: même correction que dans soft_restart (launch.py) — le try/except
+    # AttributeError était du dead code en prod. getattr couvre _NullGuard proprement.
+    earnings = float(getattr(getattr(guard, "state", None), "earnings_today_eur", 0.0))
+
+    if earnings >= DAILY_TARGET_EUR:
+        print(f"[DAILY_STOP] {earnings:.2f}€ >= {DAILY_TARGET_EUR}€ → arrêt journalier")
+        guard.pause(PausePolicy.DAILY_RESET, StopReason.DAILY_TARGET_REACHED)
+        return True  # jamais atteint (pause lève SystemExit)
+
+    return False

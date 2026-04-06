@@ -19,6 +19,7 @@ import subprocess
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
+from Cash.payout import _payout_and_check_daily_stop
 
 def acquire_account_lock_or_exit(account_id: str, ttl_sec: int = 240):
     ok = try_acquire_cooldown_slot(account_id=account_id, ttl_sec=ttl_sec)
@@ -171,22 +172,6 @@ def soft_restart_cleanup(driver):
         # Fallback best-effort : on retente la landing (au pire, le flow suivant récupère)
         safe_get(driver, "https://www.topsurveys.app")
 
-def soft_restart_payout(ctx, driver):
-    """
-    Encaissement best-effort.
-    En local / ctx minimal, on peut ne pas avoir payout_name/tag → on skip proprement.
-    """
-    payout_name = (ctx.get("payout_name") or "").strip()
-    payout_tag  = (ctx.get("payout_revolut_tag") or "").strip()
-
-    payout.check_and_cashout_if_needed(
-        driver,
-        account_id=ctx["account_id"],
-        min_amount_eur=MIN_CASHOUT_EUR,
-        cashout_order=("revolut", "paypal"),
-        revolut_fullname=payout_name,
-        revolut_tag=payout_tag,
-    )
 
 def soft_restart_resume(ctx, driver):
     from Survey.survey_context import SurveyContext
@@ -216,11 +201,6 @@ def soft_restart(ctx, driver, reason):
 
     soft_restart_cleanup(driver)
     time.sleep(1)
-
-    try:
-        soft_restart_payout(ctx, driver)
-    except Exception as e:
-        print("[SOFT_RESTART][PAYOUT][WARN]", e)
 
     # DAILY STOP : si l'objectif journalier (1€) est atteint, on s'arrête
     from Management.guards.runtime_guard import get_guard, StopReason
@@ -428,14 +408,7 @@ def init_session_and_enter_surveys(driver, config, account_id: str, notify_fn):
     login(driver, email, password)
     time.sleep(5)
     try:
-        payout.check_and_cashout_if_needed(
-            driver,
-            account_id=account_id,
-            min_amount_eur=MIN_CASHOUT_EUR,
-            cashout_order=("revolut", "paypal"),
-            revolut_fullname=payout_name,
-            revolut_tag=payout_revolut_tag,
-        )
+        _payout_and_check_daily_stop(driver, account_id)  # retrait + DAILY STOP
     except Exception as e:
         print(f"[PAYOUT][WARN] Encaissement automatique: {e}")
 
