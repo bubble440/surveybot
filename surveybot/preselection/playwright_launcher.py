@@ -1,5 +1,5 @@
 from __future__ import annotations
-import os
+import os, time
 import subprocess
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
@@ -95,6 +95,10 @@ def _want_headless() -> bool:
     """
     Headless si SURVEY_HEADLESS=1 et pas de DISPLAY.
     """
+    import sys
+    if sys.platform == "win32":
+        return os.getenv("SURVEY_HEADLESS", "0") == "1"
+
     use_display = bool(os.environ.get("DISPLAY"))
     headless_env = os.getenv("SURVEY_HEADLESS", "0") == "1"
     return headless_env or not use_display
@@ -470,13 +474,22 @@ def launch_browser(config: dict | None = None):
             print(f"[PW] socat relay 0.0.0.0:{relay_port} → 127.0.0.1:{debug_port}")
 
         # --- 2) Attacher Selenium au Chrome déjà lancé ---
+        # Attendre que Chrome expose son debug port (jusqu'à 10s)
+        import urllib.request
+        for attempt in range(20):
+            try:
+                urllib.request.urlopen(f"http://127.0.0.1:{debug_port}/json", timeout=1)
+                print(f"[PW] Debug port prêt après {attempt * 0.5:.1f}s")
+                break
+            except Exception:
+                time.sleep(0.5)
+        else:
+            print(f"[PW][WARN] Debug port toujours indisponible après 10s — tentative attach quand même")
+
         opts = webdriver.ChromeOptions()
-        # ⚠️ Selenium ne doit PAS relancer chrome : on s'attache au debug port
         opts.add_experimental_option("debuggerAddress", f"127.0.0.1:{debug_port}")
-        opts.page_load_strategy = "eager"  # ne pas attendre toutes les ressources
-
+        opts.page_load_strategy = "eager"
         driver = webdriver.Chrome(options=opts, service=Service(log_output=subprocess.DEVNULL))
-
         # 🔧 Fingerprint spoofing via CDP Selenium.
         # Injecté AVANT new_page() pour que le script soit actif dès la première
         # vraie navigation. Page.addScriptToEvaluateOnNewDocument persiste pour
