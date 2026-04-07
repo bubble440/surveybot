@@ -214,7 +214,7 @@ def _find_associated_label(driver, el) -> str:
         # le texte agrégé de toute la question.
         try:
             dom_option_txt = driver.execute_script(
-                """
+                r"""
                 const input = arguments[0];
                 if (!input) return '';
 
@@ -503,7 +503,7 @@ def _find_group_heading_text_near_element(driver, el, options: List[str]) -> str
 
         option_keys = [_norm_lc(opt) for opt in (options or []) if _norm(opt)]
         txt = driver.execute_script(
-            """
+            r"""
             const el = arguments[0];
             const optionKeys = Array.isArray(arguments[1]) ? arguments[1] : [];
             if (!el) return "";

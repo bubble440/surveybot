@@ -5983,7 +5983,7 @@ def _extract_decipher_clickable_ranking_blocks(driver, frame_chain: list[int] | 
     max_select = 3
     try:
         script_text = driver.execute_script(
-            """
+            r"""
             const scripts = Array.from(document.querySelectorAll('script'));
             for (const s of scripts) {
               const t = (s.textContent || '');

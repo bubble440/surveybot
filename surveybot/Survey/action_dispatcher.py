@@ -727,7 +727,7 @@ def _try_table_matrix_sge_set(driver, target_payload: dict, row_label: str, col_
 
         try:
             radio = driver.execute_script(
-                """
+                r"""
                 const tr = arguments[0];
                 const need = arguments[1];
                 if (!tr) return null;
@@ -1362,7 +1362,7 @@ def _apply_by_target_id(
                     _mx_card_el = None
                     try:
                         _mx_card_el = driver.execute_script(
-                            """
+                            r"""
                             const rawValue = arguments[0];
                             if (!rawValue) return null;
                             const normVal = rawValue.replace(/\s+/g, ' ').trim().toLowerCase();
@@ -2046,7 +2046,7 @@ def _apply_by_target_id(
                     while time.time() < end:
                         try:
                             ok = driver.execute_script(
-                                """
+                                r"""
                                 const node = arguments[0];
                                 if (!node) return false;
                                 const item = node.closest ? node.closest('.customItem') : null;
@@ -2090,7 +2090,7 @@ def _apply_by_target_id(
                     """
                     try:
                         ok = driver.execute_script(
-                            """
+                            r"""
                             const cell = arguments[0];
                             if (!cell || !cell.closest) return false;
                             const question = cell.closest('div.question');
@@ -4979,24 +4979,46 @@ def execute_action(
             # et "label" contient le choix (colonne) à sélectionner.
             question_text = ctx or ""
             answer_text = label or ""
-            if question_text and answer_text and _aa__try_answer_matrix(driver, question_text, answer_text):
-                log_info("[TARGET]", "apply ok=true strategy=aa_answer_matrix reason=applied")
-                return True
 
-            if _try(driver, "radio_slider", lambda:
-                Survey.input_handler.set_sliderpoints(driver, label, context_hint=ctx)
-            ):
-                return True
+            radio_cache = _get_block_strategy_memory(driver).get("radio", {})
+            radio_cache_key = (target_id or "").strip() or _norm_lc(ctx)
 
-            if _try(driver, "radio_main", lambda:
-                Survey.input_handler.click_radio_by_label(driver, label, context_hint=ctx)
-            ):
-                return True
+            def _run_radio_strategy(strategy_name: str) -> bool:
+                if strategy_name == "aa_answer_matrix":
+                    if not (question_text and answer_text):
+                        return False
+                    ok = _aa__try_answer_matrix(driver, question_text, answer_text)
+                    if ok:
+                        log_info("[TARGET]", "apply ok=true strategy=aa_answer_matrix reason=applied")
+                elif strategy_name == "radio_slider":
+                    ok = _try(driver, "radio_slider", lambda:
+                        Survey.input_handler.set_sliderpoints(driver, label, context_hint=ctx))
+                elif strategy_name == "radio_main":
+                    ok = _try(driver, "radio_main", lambda:
+                        Survey.input_handler.click_radio_by_label(driver, label, context_hint=ctx))
+                elif strategy_name == "radio_buttonish":
+                    ok = _try(driver, "radio_buttonish", lambda:
+                        Survey.input_handler.click_checkbox_buttonish_by_label(driver, label, context_hint=ctx))
+                else:
+                    return False
+                if ok and radio_cache_key:
+                    radio_cache[radio_cache_key] = strategy_name
+                return ok
 
-            if _try(driver, "radio_buttonish", lambda:
-                Survey.input_handler.click_checkbox_buttonish_by_label(driver, label, context_hint=ctx)
-            ):
-                return True
+            preferred_radio_strategy = radio_cache.get(radio_cache_key) if radio_cache_key else None
+            radio_ordered_strategies = ["aa_answer_matrix", "radio_slider", "radio_main", "radio_buttonish"]
+
+            if preferred_radio_strategy:
+                if debug_target:
+                    log_debug("[TARGET_DEBUG]", f"radio reuse cached_strategy={preferred_radio_strategy} cache_key={radio_cache_key!r}")
+                if _run_radio_strategy(preferred_radio_strategy):
+                    return True
+
+            for strategy_name in radio_ordered_strategies:
+                if strategy_name == preferred_radio_strategy:
+                    continue
+                if _run_radio_strategy(strategy_name):
+                    return True
 
         # ==========================================================
         # 🟦 TEXT / NUMBER
@@ -5047,7 +5069,7 @@ def reset_attempt_context(driver):
 
 def _init_block_strategy_memory(driver) -> dict:
     """Initialise la mémoire locale des stratégies réussies (durée: plan courant)."""
-    cache = {"checkbox": {}}
+    cache = {"checkbox": {}, "radio": {}}
     driver._block_strategy_memory = cache
     return cache
 
@@ -5058,6 +5080,8 @@ def _get_block_strategy_memory(driver) -> dict:
         return _init_block_strategy_memory(driver)
     if not isinstance(cache.get("checkbox"), dict):
         cache["checkbox"] = {}
+    if not isinstance(cache.get("radio"), dict):
+        cache["radio"] = {}
     return cache
 
 def execute_actions_plan(

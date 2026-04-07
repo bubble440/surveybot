@@ -55,9 +55,10 @@ try:
         _extract_focusvision_cardsort_block,
         _extract_decipher_table_text_rows_blocks,
         _extract_decipher_grid_single_col_text_rows,
+        _extract_decipher_grid_select_blocks,
         _extract_decipher_answers_list_fallback
     )
-    
+
     from Survey.dom_extractors_areyounet import (
         _extract_areyounet_matrix_blocks,
         _extract_areyounet_switch_radio_blocks,
@@ -136,6 +137,7 @@ except ImportError:
         _extract_focusvision_cardsort_block,
         _extract_decipher_table_text_rows_blocks,
         _extract_decipher_grid_single_col_text_rows,
+        _extract_decipher_grid_select_blocks,
         _extract_decipher_answers_list_fallback
     )
     from Survey.dom_extractors_areyounet import (
@@ -551,7 +553,7 @@ def _is_other_specify_choice_companion(driver, el, container, question: str) -> 
 
     try:
         is_other_context = bool(driver.execute_script(
-            """
+            r"""
             const el = arguments[0];
             const container = arguments[1];
             if (!el || !container || !container.contains(el)) return false;
@@ -643,7 +645,7 @@ def _selection_signal_text(driver, el, question_text: str | None = None) -> str:
 
     try:
         instruction = _norm(driver.execute_script(
-            """
+            r"""
             const el = arguments[0];
             if (!el) return '';
 
@@ -694,7 +696,7 @@ def _choice_option_has_inline_open_text(driver, choice_el) -> bool:
     """
     try:
         return bool(driver.execute_script(
-            """
+            r"""
             const el = arguments[0];
             if (!el) return false;
 
@@ -1319,7 +1321,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
 
         try:
             return bool(driver.execute_script(
-                """
+                r"""
                 const el = arguments[0];
                 if (!el) return false;
 
@@ -1838,7 +1840,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         """
         try:
             host = driver.execute_script(
-                """
+                r"""
                 const el = arguments[0];
                 if (!el || !el.parentElement) return null;
 
@@ -2873,6 +2875,7 @@ def analyze_dom(driver) -> List[Dict[str, Any]]:
             blocks.extend(_extract_focusvision_answers_list_groups(driver, frame_chain=chain))
             blocks = _drop_cardsort_when_mixed_with_other_blocks(blocks)
         blocks.extend(_extract_angular_material_radio_groups(driver, frame_chain=chain))
+        blocks.extend(_extract_decipher_grid_select_blocks(driver, frame_chain=chain))
 
         if not blocks:
             blocks = _extract_decipher_answers_list_fallback(driver, frame_chain=chain)
@@ -2889,6 +2892,7 @@ def analyze_dom(driver) -> List[Dict[str, Any]]:
                     blocks.extend(_extract_focusvision_answers_list_groups(driver))
                     blocks = _drop_cardsort_when_mixed_with_other_blocks(blocks)
                 blocks.extend(_extract_angular_material_radio_groups(driver))
+                blocks.extend(_extract_decipher_grid_select_blocks(driver, frame_chain=chain))
 
                 if not blocks:
                     blocks = _extract_decipher_answers_list_fallback(driver, frame_chain=chain)

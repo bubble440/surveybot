@@ -1,8 +1,571 @@
-<body>
-    <main id="main"><form action="/v1/survey/prescreener" aria-label="Qualification Information" autocomplete="off" id="form" method="post" novalidate=""><input type="hidden" value="2" name="prescreener-stage"><fieldset><article><legend class="qualification-text">Quel est ton code postal?</legend><div class="qualification-responses"><input aria-label="Quel est ton code postal?" data-dd-action-name="Enter value for postcode" id="postcode" maxlength="100" pattern="\d{2} ?\d{3}" required="" type="text" name="postcode"></div></article></fieldset><fieldset><article><legend class="qualification-text">Quel est votre âge?</legend><select aria-label="Quel est votre âge?" class="qualification-responses" data-dd-action-name="Select option for age" id="age" name="age" required=""><option disabled="" value="" selected=""></option><option value="-1">Moins de 13&nbsp;ans</option><option value="13">13</option><option value="14">14</option><option value="15">15</option><option value="16">16</option><option value="17">17</option><option value="18">18</option><option value="19">19</option><option value="20">20</option><option value="21">21</option><option value="22">22</option><option value="23">23</option><option value="24">24</option><option value="25">25</option><option value="26">26</option><option value="27">27</option><option value="28">28</option><option value="29">29</option><option value="30">30</option><option value="31">31</option><option value="32">32</option><option value="33">33</option><option value="34">34</option><option value="35">35</option><option value="36">36</option><option value="37">37</option><option value="38">38</option><option value="39">39</option><option value="40">40</option><option value="41">41</option><option value="42">42</option><option value="43">43</option><option value="44">44</option><option value="45">45</option><option value="46">46</option><option value="47">47</option><option value="48">48</option><option value="49">49</option><option value="50">50</option><option value="51">51</option><option value="52">52</option><option value="53">53</option><option value="54">54</option><option value="55">55</option><option value="56">56</option><option value="57">57</option><option value="58">58</option><option value="59">59</option><option value="60">60</option><option value="61">61</option><option value="62">62</option><option value="63">63</option><option value="64">64</option><option value="65">65</option><option value="66">66</option><option value="67">67</option><option value="68">68</option><option value="69">69</option><option value="70">70</option><option value="71">71</option><option value="72">72</option><option value="73">73</option><option value="74">74</option><option value="75">75</option><option value="76">76</option><option value="77">77</option><option value="78">78</option><option value="79">79</option><option value="80">80</option><option value="81">81</option><option value="82">82</option><option value="83">83</option><option value="84">84</option><option value="85">85</option><option value="86">86</option><option value="87">87</option><option value="88">88</option><option value="89">89</option><option value="90">90</option><option value="91">91</option><option value="92">92</option><option value="93">93</option><option value="94">94</option><option value="95">95</option><option value="96">96</option><option value="97">97</option><option value="98">98</option><option value="99">99</option><option value="100">100&nbsp;ou plus</option></select></article></fieldset><fieldset><article><legend class="qualification-text">Parmi les catégories suivantes, quelle est celle qui représente le mieux le niveau d’études le plus élevé que vous avez atteint?</legend><div class="qualification-responses"><label for="education-1"><input data-dd-action-name="Click on education" id="education-1" required="" type="radio" value="1" name="education">N'a pas été à l'école / n'a pas terminé l'école primaire</label><label for="education-2"><input data-dd-action-name="Click on education" id="education-2" required="" type="radio" value="2" name="education">Baccalauréat</label><label for="education-3"><input data-dd-action-name="Click on education" id="education-3" required="" type="radio" value="3" name="education">Certificat technique/commercial</label><label for="education-4"><input data-dd-action-name="Click on education" id="education-4" required="" type="radio" value="4" name="education">DEUG/BTS/DUT</label><label for="education-5"><input data-dd-action-name="Click on education" id="education-5" required="" type="radio" value="5" name="education">Université (avec diplôme)</label><label for="education-6"><input data-dd-action-name="Click on education" id="education-6" required="" type="radio" value="6" name="education">École supérieure/Diplôme de Master</label><label for="education-7"><input data-dd-action-name="Click on education" id="education-7" required="" type="radio" value="7" name="education">Doctorat</label><label for="education-8"><input data-dd-action-name="Click on education" id="education-8" required="" type="radio" value="8" name="education">Diplôme d'école d'ingénieur, école de commerce</label></div></article></fieldset><fieldset><article><legend class="qualification-text">Êtes-vous de genre masculin ou féminin?</legend><div class="qualification-responses"><label for="gender-1"><input data-dd-action-name="Click on gender" id="gender-1" required="" type="radio" value="1" name="gender">Masculin</label><label for="gender-2"><input data-dd-action-name="Click on gender" id="gender-2" required="" type="radio" value="2" name="gender">Féminin</label></div></article></fieldset><input id="verisoul-session-id" type="hidden" value="d5d26853-0627-4c54-a135-b079c57aebcd" name="verisoul-session-id"><input id="browser_webgl" type="hidden" value="1273931075" name="browser_webgl"><input id="browser_fonts" type="hidden" value="865174439" name="browser_fonts"><input id="browser_audio" type="hidden" value="2081412741" name="browser_audio"><button aria-label="Submit" data-dd-action-name="Submit form" id="submitButton" type="submit">➔</button></form></main>
-    <script nomodule="">!function(){var e=document,t=e.createElement("script");if(!("noModule"in t)&&"onbeforeload"in t){var n=!1;e.addEventListener("beforeload",(function(e){if(e.target===t)n=!0;else if(!e.target.hasAttribute("nomodule")||!n)return;e.preventDefault()}),!0),t.type="module",t.src=".",e.head.appendChild(t),t.remove()}}();</script>
-    <script nomodule="" crossorigin="" id="vite-legacy-polyfill" src="/public/polyfills-legacy-czzosv3x.js"></script>
-    <script nomodule="" crossorigin="" id="vite-legacy-entry" data-src="/public/index-legacy-isj5alhe.js">System.import(document.getElementById('vite-legacy-entry').getAttribute('data-src'))</script>
-  
+<body class="survey-page non-touch" data-device="">
+
+
+<div id="survey" class="survey-container">
+<div class="survey-section"><div class="page-header"></div>
+<!-- /.page-header --></div>
+<div class="survey-section">
+<div class="survey-body">
+<div class="survey-header">
+
+<div class="progress-bar progress-top" title="barre de progression - 0% terminer">
+<div class="progress-box-outer"><span class="progress-box-completed" style="width: 0%;"></span></div>
+<div class="progress-text"><span class="screen-readers-only">barre de progression </span>0%</div>
+</div>
+<!-- /.progress-bar -->
+</div>
+<!-- /.survey-header -->
+
+<form id="primary" name="primary" method="post" action="/survey/selfserve/53b/2603840" enctype="application/x-www-form-urlencoded">
+<input type="hidden" name="_v2_counter" value="3">
+<!-- @@XYZZY@@ -->
+<div id="question_PS2" class="question select label_PS2  ">
+<h1 title="question" class="question-text" id="question_text_PS2">Veuillez indiquer le sexe de votre/vos enfant(s) pour chacune des tranches d'âge suivantes.</h1>
+<!-- /.question-text -->
+
+<h2 title="instructions" class="instruction-text"></h2>
+<!-- /.instruction-text -->
+<div class="answers answers-table">
+<div class="fir fir-checkbox" style="display: none;">
+<span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded">
+<path d="M15.8,0H3.9C1.8,0,0,2,0,4.1V16c0,2.2,1.8,4,3.9,4h11.8c2.2,0,4.2-1.8,4.2-4V4.1C20,2,18,0,15.8,0z M19,16 c0,1.6-1.6,3-3.2,3H3.9C2.3,19,1,17.7,1,16V4.1C1,2.5,2.3,1,3.9,1h11.8C17.4,1,19,2.5,19,4.1V16z" class="fir-base"></path>
+<path d="M19,16c0,1.6-1.6,3-3.2,3H3.9C2.3,19,1,17.7,1,16V4.1C1,2.5,2.3,1,3.9,1h11.8C17.4,1,19,2.5,19,4.1V16z" class="fir-bg"></path>
+<polygon points="9.1,16.3 2.5,11 4.1,9 8.7,12.6 15.6,3.7 17.7,5.2 " class="fir-selected"></polygon>
+</svg>
+</span>
+</div>
+<div class="fir fir-radio" style="display: none;">
+<span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded">
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</div>
+<table class="grid grid-table-mode setWidth" data-settings="auto-optimize desktop-mode group-by-col table-mode" data-height="" summary="This table contains form elements to answer the survey question" id="-grid-table-1">
+<tbody id="-grid-tbody-1-1">
+<tr class="row mobile-top-border-row">
+<td colspan="3" class="cell nonempty mobile-top-border-cell" id="-grid-row-1-top"></td>
+</tr><tr class="row row-col-legends row-col-legends-top colCount-2" id="-grid-row-1-1">
+<td class="cell empty empty-left empty-top unused desktop border-collapse" id="-grid-cell-1-1-1"></td>
+<th scope="col" id="-grid-cell-1-1-2" class="cell nonempty legend col-legend col-legend-top col-legend-basic legend-level-1 desktop border-collapse   " style="width: 251px; min-width: 251px;">
+Sexe
+</th><th scope="col" id="-grid-cell-1-1-3" class="cell nonempty legend col-legend col-legend-top col-legend-basic legend-level-1 desktop border-collapse   " style="width: 251px; min-width: 251px;">
+Âge
+</th>
+
+</tr>
+</tbody>
+<tbody id="-grid-tbody-1-2"><tr class="row row-elements even colCount-2" id="-grid-row-1-2">
+<th scope="row" class="cell nonempty legend row-legend row-legend-left row-legend-basic legend-level-1 desktop border-collapse  " id="-grid-cell-1-2-1">
+Enfant 1
+</th>
+<td headers="PS2_c1" class="cell nonempty element indent-1 desktop border-collapse groupingCols    " id="-grid-cell-1-2-2">
+<span class="cell-sub-wrapper cell-legend-above">
+<span class="cell-text cell-sub-column"><label for="ans48549.0.0">Enfant 1</label> </span>
+<span class="cell-input cell-sub-column">
+<div class="fir-select"><select name="ans48549.0.0" id="ans48549.0.0" class="input dropdown">
+<option value="-1" selected="">Sélectionnez une seule proposition...</option>
+<option value="0" class="None">Garçon</option>
+<option value="1" class="None">Fille</option>
+</select></div>
+</span>
+</span>
+</td><td headers="PS2_c1" class="cell nonempty element indent-1 desktop border-collapse groupingCols    " id="-grid-cell-1-2-3">
+<span class="cell-sub-wrapper cell-legend-above">
+<span class="cell-text cell-sub-column"><label for="ans48561.0.0">Enfant 1</label> </span>
+<span class="cell-input cell-sub-column">
+<div class="fir-select"><select name="ans48561.0.0" id="ans48561.0.0" class="input dropdown">
+<option value="-1" selected="">Sélectionnez une seule proposition...</option>
+<option value="0" class="None">1</option>
+<option value="1" class="None">2</option>
+<option value="2" class="None">3</option>
+<option value="3" class="None">4</option>
+<option value="4" class="None">5</option>
+<option value="5" class="None">6&nbsp;ans</option>
+<option value="6" class="None">7&nbsp;ans</option>
+<option value="7" class="None">8&nbsp;ans</option>
+<option value="8" class="None">9&nbsp;ans</option>
+<option value="9" class="None">10&nbsp;ans</option>
+<option value="10" class="None">11&nbsp;ans</option>
+<option value="11" class="None">12&nbsp;ans</option>
+<option value="12" class="None">13&nbsp;ans</option>
+<option value="13" class="None">14&nbsp;ans</option>
+<option value="14" class="None">15&nbsp;ans</option>
+<option value="15" class="None">16&nbsp;ans</option>
+<option value="16" class="None">17&nbsp;ans</option>
+<option value="17" class="None">18&nbsp;ans et plus</option>
+</select></div>
+</span>
+</span>
+</td>
+
+</tr><tr class="row row-elements odd colCount-2" id="-grid-row-1-3">
+<th scope="row" class="cell nonempty legend row-legend row-legend-left row-legend-basic legend-level-1 desktop border-collapse  " id="-grid-cell-1-3-1">
+Enfant 2
+</th>
+<td headers="PS2_c1" class="cell nonempty element indent-1 desktop border-collapse groupingCols    " id="-grid-cell-1-3-2">
+<span class="cell-sub-wrapper cell-legend-above">
+<span class="cell-text cell-sub-column"><label for="ans48549.0.1">Enfant 2</label> </span>
+<span class="cell-input cell-sub-column">
+<div class="fir-select"><select name="ans48549.0.1" id="ans48549.0.1" class="input dropdown">
+<option value="-1" selected="">Sélectionnez une seule proposition...</option>
+<option value="0" class="None">Garçon</option>
+<option value="1" class="None">Fille</option>
+</select></div>
+</span>
+</span>
+</td><td headers="PS2_c1" class="cell nonempty element indent-1 desktop border-collapse groupingCols    " id="-grid-cell-1-3-3">
+<span class="cell-sub-wrapper cell-legend-above">
+<span class="cell-text cell-sub-column"><label for="ans48561.0.1">Enfant 2</label> </span>
+<span class="cell-input cell-sub-column">
+<div class="fir-select"><select name="ans48561.0.1" id="ans48561.0.1" class="input dropdown">
+<option value="-1" selected="">Sélectionnez une seule proposition...</option>
+<option value="0" class="None">1</option>
+<option value="1" class="None">2</option>
+<option value="2" class="None">3</option>
+<option value="3" class="None">4</option>
+<option value="4" class="None">5</option>
+<option value="5" class="None">6&nbsp;ans</option>
+<option value="6" class="None">7&nbsp;ans</option>
+<option value="7" class="None">8&nbsp;ans</option>
+<option value="8" class="None">9&nbsp;ans</option>
+<option value="9" class="None">10&nbsp;ans</option>
+<option value="10" class="None">11&nbsp;ans</option>
+<option value="11" class="None">12&nbsp;ans</option>
+<option value="12" class="None">13&nbsp;ans</option>
+<option value="13" class="None">14&nbsp;ans</option>
+<option value="14" class="None">15&nbsp;ans</option>
+<option value="15" class="None">16&nbsp;ans</option>
+<option value="16" class="None">17&nbsp;ans</option>
+<option value="17" class="None">18&nbsp;ans et plus</option>
+</select></div>
+</span>
+</span>
+</td>
+
+</tr><tr class="row row-elements even colCount-2" id="-grid-row-1-4">
+<th scope="row" class="cell nonempty legend row-legend row-legend-left row-legend-basic legend-level-1 desktop border-collapse  " id="-grid-cell-1-4-1">
+Enfant 3
+</th>
+<td headers="PS2_c1" class="cell nonempty element indent-1 desktop border-collapse groupingCols    " id="-grid-cell-1-4-2">
+<span class="cell-sub-wrapper cell-legend-above">
+<span class="cell-text cell-sub-column"><label for="ans48549.0.2">Enfant 3</label> </span>
+<span class="cell-input cell-sub-column">
+<div class="fir-select"><select name="ans48549.0.2" id="ans48549.0.2" class="input dropdown">
+<option value="-1" selected="">Sélectionnez une seule proposition...</option>
+<option value="0" class="None">Garçon</option>
+<option value="1" class="None">Fille</option>
+</select></div>
+</span>
+</span>
+</td><td headers="PS2_c1" class="cell nonempty element indent-1 desktop border-collapse groupingCols    " id="-grid-cell-1-4-3">
+<span class="cell-sub-wrapper cell-legend-above">
+<span class="cell-text cell-sub-column"><label for="ans48561.0.2">Enfant 3</label> </span>
+<span class="cell-input cell-sub-column">
+<div class="fir-select"><select name="ans48561.0.2" id="ans48561.0.2" class="input dropdown">
+<option value="-1" selected="">Sélectionnez une seule proposition...</option>
+<option value="0" class="None">1</option>
+<option value="1" class="None">2</option>
+<option value="2" class="None">3</option>
+<option value="3" class="None">4</option>
+<option value="4" class="None">5</option>
+<option value="5" class="None">6&nbsp;ans</option>
+<option value="6" class="None">7&nbsp;ans</option>
+<option value="7" class="None">8&nbsp;ans</option>
+<option value="8" class="None">9&nbsp;ans</option>
+<option value="9" class="None">10&nbsp;ans</option>
+<option value="10" class="None">11&nbsp;ans</option>
+<option value="11" class="None">12&nbsp;ans</option>
+<option value="12" class="None">13&nbsp;ans</option>
+<option value="13" class="None">14&nbsp;ans</option>
+<option value="14" class="None">15&nbsp;ans</option>
+<option value="15" class="None">16&nbsp;ans</option>
+<option value="16" class="None">17&nbsp;ans</option>
+<option value="17" class="None">18&nbsp;ans et plus</option>
+</select></div>
+</span>
+</span>
+</td>
+
+</tr><tr class="row row-elements odd colCount-2" id="-grid-row-1-5">
+<th scope="row" class="cell nonempty legend row-legend row-legend-left row-legend-basic legend-level-1 desktop border-collapse  " id="-grid-cell-1-5-1">
+Enfant 4
+</th>
+<td headers="PS2_c1" class="cell nonempty element indent-1 desktop border-collapse groupingCols    " id="-grid-cell-1-5-2">
+<span class="cell-sub-wrapper cell-legend-above">
+<span class="cell-text cell-sub-column"><label for="ans48549.0.3">Enfant 4</label> </span>
+<span class="cell-input cell-sub-column">
+<div class="fir-select"><select name="ans48549.0.3" id="ans48549.0.3" class="input dropdown">
+<option value="-1" selected="">Sélectionnez une seule proposition...</option>
+<option value="0" class="None">Garçon</option>
+<option value="1" class="None">Fille</option>
+</select></div>
+</span>
+</span>
+</td><td headers="PS2_c1" class="cell nonempty element indent-1 desktop border-collapse groupingCols    " id="-grid-cell-1-5-3">
+<span class="cell-sub-wrapper cell-legend-above">
+<span class="cell-text cell-sub-column"><label for="ans48561.0.3">Enfant 4</label> </span>
+<span class="cell-input cell-sub-column">
+<div class="fir-select"><select name="ans48561.0.3" id="ans48561.0.3" class="input dropdown">
+<option value="-1" selected="">Sélectionnez une seule proposition...</option>
+<option value="0" class="None">1</option>
+<option value="1" class="None">2</option>
+<option value="2" class="None">3</option>
+<option value="3" class="None">4</option>
+<option value="4" class="None">5</option>
+<option value="5" class="None">6&nbsp;ans</option>
+<option value="6" class="None">7&nbsp;ans</option>
+<option value="7" class="None">8&nbsp;ans</option>
+<option value="8" class="None">9&nbsp;ans</option>
+<option value="9" class="None">10&nbsp;ans</option>
+<option value="10" class="None">11&nbsp;ans</option>
+<option value="11" class="None">12&nbsp;ans</option>
+<option value="12" class="None">13&nbsp;ans</option>
+<option value="13" class="None">14&nbsp;ans</option>
+<option value="14" class="None">15&nbsp;ans</option>
+<option value="15" class="None">16&nbsp;ans</option>
+<option value="16" class="None">17&nbsp;ans</option>
+<option value="17" class="None">18&nbsp;ans et plus</option>
+</select></div>
+</span>
+</span>
+</td>
+
+</tr><tr class="row row-elements even colCount-2" id="-grid-row-1-6">
+<th scope="row" class="cell nonempty legend row-legend row-legend-left row-legend-basic legend-level-1 desktop border-collapse  " id="-grid-cell-1-6-1">
+Enfant 5
+</th>
+<td headers="PS2_c1" class="cell nonempty element indent-1 desktop border-collapse groupingCols    " id="-grid-cell-1-6-2">
+<span class="cell-sub-wrapper cell-legend-above">
+<span class="cell-text cell-sub-column"><label for="ans48549.0.4">Enfant 5</label> </span>
+<span class="cell-input cell-sub-column">
+<div class="fir-select"><select name="ans48549.0.4" id="ans48549.0.4" class="input dropdown">
+<option value="-1" selected="">Sélectionnez une seule proposition...</option>
+<option value="0" class="None">Garçon</option>
+<option value="1" class="None">Fille</option>
+</select></div>
+</span>
+</span>
+</td><td headers="PS2_c1" class="cell nonempty element indent-1 desktop border-collapse groupingCols    " id="-grid-cell-1-6-3">
+<span class="cell-sub-wrapper cell-legend-above">
+<span class="cell-text cell-sub-column"><label for="ans48561.0.4">Enfant 5</label> </span>
+<span class="cell-input cell-sub-column">
+<div class="fir-select"><select name="ans48561.0.4" id="ans48561.0.4" class="input dropdown">
+<option value="-1" selected="">Sélectionnez une seule proposition...</option>
+<option value="0" class="None">1</option>
+<option value="1" class="None">2</option>
+<option value="2" class="None">3</option>
+<option value="3" class="None">4</option>
+<option value="4" class="None">5</option>
+<option value="5" class="None">6&nbsp;ans</option>
+<option value="6" class="None">7&nbsp;ans</option>
+<option value="7" class="None">8&nbsp;ans</option>
+<option value="8" class="None">9&nbsp;ans</option>
+<option value="9" class="None">10&nbsp;ans</option>
+<option value="10" class="None">11&nbsp;ans</option>
+<option value="11" class="None">12&nbsp;ans</option>
+<option value="12" class="None">13&nbsp;ans</option>
+<option value="13" class="None">14&nbsp;ans</option>
+<option value="14" class="None">15&nbsp;ans</option>
+<option value="15" class="None">16&nbsp;ans</option>
+<option value="16" class="None">17&nbsp;ans</option>
+<option value="17" class="None">18&nbsp;ans et plus</option>
+</select></div>
+</span>
+</span>
+</td>
+
+</tr><tr class="row row-elements odd colCount-2" id="-grid-row-1-7">
+<th scope="row" class="cell nonempty legend row-legend row-legend-left row-legend-basic legend-level-1 desktop border-collapse  " id="-grid-cell-1-7-1">
+Enfant 6
+</th>
+<td headers="PS2_c1" class="cell nonempty element indent-1 desktop border-collapse groupingCols    " id="-grid-cell-1-7-2">
+<span class="cell-sub-wrapper cell-legend-above">
+<span class="cell-text cell-sub-column"><label for="ans48549.0.5">Enfant 6</label> </span>
+<span class="cell-input cell-sub-column">
+<div class="fir-select"><select name="ans48549.0.5" id="ans48549.0.5" class="input dropdown">
+<option value="-1" selected="">Sélectionnez une seule proposition...</option>
+<option value="0" class="None">Garçon</option>
+<option value="1" class="None">Fille</option>
+</select></div>
+</span>
+</span>
+</td><td headers="PS2_c1" class="cell nonempty element indent-1 desktop border-collapse groupingCols    " id="-grid-cell-1-7-3">
+<span class="cell-sub-wrapper cell-legend-above">
+<span class="cell-text cell-sub-column"><label for="ans48561.0.5">Enfant 6</label> </span>
+<span class="cell-input cell-sub-column">
+<div class="fir-select"><select name="ans48561.0.5" id="ans48561.0.5" class="input dropdown">
+<option value="-1" selected="">Sélectionnez une seule proposition...</option>
+<option value="0" class="None">1</option>
+<option value="1" class="None">2</option>
+<option value="2" class="None">3</option>
+<option value="3" class="None">4</option>
+<option value="4" class="None">5</option>
+<option value="5" class="None">6&nbsp;ans</option>
+<option value="6" class="None">7&nbsp;ans</option>
+<option value="7" class="None">8&nbsp;ans</option>
+<option value="8" class="None">9&nbsp;ans</option>
+<option value="9" class="None">10&nbsp;ans</option>
+<option value="10" class="None">11&nbsp;ans</option>
+<option value="11" class="None">12&nbsp;ans</option>
+<option value="12" class="None">13&nbsp;ans</option>
+<option value="13" class="None">14&nbsp;ans</option>
+<option value="14" class="None">15&nbsp;ans</option>
+<option value="15" class="None">16&nbsp;ans</option>
+<option value="16" class="None">17&nbsp;ans</option>
+<option value="17" class="None">18&nbsp;ans et plus</option>
+</select></div>
+</span>
+</span>
+</td>
+
+</tr><tr class="row row-elements even colCount-2" id="-grid-row-1-8">
+<th scope="row" class="cell nonempty legend row-legend row-legend-left row-legend-basic legend-level-1 desktop border-collapse  " id="-grid-cell-1-8-1">
+Enfant 7
+</th>
+<td headers="PS2_c1" class="cell nonempty element indent-1 desktop border-collapse groupingCols    " id="-grid-cell-1-8-2">
+<span class="cell-sub-wrapper cell-legend-above">
+<span class="cell-text cell-sub-column"><label for="ans48549.0.6">Enfant 7</label> </span>
+<span class="cell-input cell-sub-column">
+<div class="fir-select"><select name="ans48549.0.6" id="ans48549.0.6" class="input dropdown">
+<option value="-1" selected="">Sélectionnez une seule proposition...</option>
+<option value="0" class="None">Garçon</option>
+<option value="1" class="None">Fille</option>
+</select></div>
+</span>
+</span>
+</td><td headers="PS2_c1" class="cell nonempty element indent-1 desktop border-collapse groupingCols    " id="-grid-cell-1-8-3">
+<span class="cell-sub-wrapper cell-legend-above">
+<span class="cell-text cell-sub-column"><label for="ans48561.0.6">Enfant 7</label> </span>
+<span class="cell-input cell-sub-column">
+<div class="fir-select"><select name="ans48561.0.6" id="ans48561.0.6" class="input dropdown">
+<option value="-1" selected="">Sélectionnez une seule proposition...</option>
+<option value="0" class="None">1</option>
+<option value="1" class="None">2</option>
+<option value="2" class="None">3</option>
+<option value="3" class="None">4</option>
+<option value="4" class="None">5</option>
+<option value="5" class="None">6&nbsp;ans</option>
+<option value="6" class="None">7&nbsp;ans</option>
+<option value="7" class="None">8&nbsp;ans</option>
+<option value="8" class="None">9&nbsp;ans</option>
+<option value="9" class="None">10&nbsp;ans</option>
+<option value="10" class="None">11&nbsp;ans</option>
+<option value="11" class="None">12&nbsp;ans</option>
+<option value="12" class="None">13&nbsp;ans</option>
+<option value="13" class="None">14&nbsp;ans</option>
+<option value="14" class="None">15&nbsp;ans</option>
+<option value="15" class="None">16&nbsp;ans</option>
+<option value="16" class="None">17&nbsp;ans</option>
+<option value="17" class="None">18&nbsp;ans et plus</option>
+</select></div>
+</span>
+</span>
+</td>
+
+</tr><tr class="row row-elements odd colCount-2" id="-grid-row-1-9">
+<th scope="row" class="cell nonempty legend row-legend row-legend-left row-legend-basic legend-level-1 desktop border-collapse  " id="-grid-cell-1-9-1">
+Enfant 8
+</th>
+<td headers="PS2_c1" class="cell nonempty element indent-1 desktop border-collapse groupingCols    " id="-grid-cell-1-9-2">
+<span class="cell-sub-wrapper cell-legend-above">
+<span class="cell-text cell-sub-column"><label for="ans48549.0.7">Enfant 8</label> </span>
+<span class="cell-input cell-sub-column">
+<div class="fir-select"><select name="ans48549.0.7" id="ans48549.0.7" class="input dropdown">
+<option value="-1" selected="">Sélectionnez une seule proposition...</option>
+<option value="0" class="None">Garçon</option>
+<option value="1" class="None">Fille</option>
+</select></div>
+</span>
+</span>
+</td><td headers="PS2_c1" class="cell nonempty element indent-1 desktop border-collapse groupingCols    " id="-grid-cell-1-9-3">
+<span class="cell-sub-wrapper cell-legend-above">
+<span class="cell-text cell-sub-column"><label for="ans48561.0.7">Enfant 8</label> </span>
+<span class="cell-input cell-sub-column">
+<div class="fir-select"><select name="ans48561.0.7" id="ans48561.0.7" class="input dropdown">
+<option value="-1" selected="">Sélectionnez une seule proposition...</option>
+<option value="0" class="None">1</option>
+<option value="1" class="None">2</option>
+<option value="2" class="None">3</option>
+<option value="3" class="None">4</option>
+<option value="4" class="None">5</option>
+<option value="5" class="None">6&nbsp;ans</option>
+<option value="6" class="None">7&nbsp;ans</option>
+<option value="7" class="None">8&nbsp;ans</option>
+<option value="8" class="None">9&nbsp;ans</option>
+<option value="9" class="None">10&nbsp;ans</option>
+<option value="10" class="None">11&nbsp;ans</option>
+<option value="11" class="None">12&nbsp;ans</option>
+<option value="12" class="None">13&nbsp;ans</option>
+<option value="13" class="None">14&nbsp;ans</option>
+<option value="14" class="None">15&nbsp;ans</option>
+<option value="15" class="None">16&nbsp;ans</option>
+<option value="16" class="None">17&nbsp;ans</option>
+<option value="17" class="None">18&nbsp;ans et plus</option>
+</select></div>
+</span>
+</span>
+</td>
+
+</tr></tbody>
+</table>
+<!-- /.grid -->
+</div>
+<!-- /.answers -->
+</div>
+<!-- /.question --><div class="survey-buttons">
+<input type="submit" name="continue" id="btn_continue" class="button continue" value="Continuer &gt;" onclick="var i = document.createElement('input'); i.setAttribute('type', 'hidden');i.setAttribute('value', '1');i.setAttribute('name', '__has_javascript');document.forms.primary.appendChild(i);">
+
+</div>
+<!-- #surveyButtons --><input type="hidden" name="state" value="aa4d558c-422e-44a1-b336-6965f196e3e0">
+<input type="hidden" name="start_time" value="1775536528">
+<input type="hidden" name="_ptime" value="0">
+<script>addHandler(Survey.capturePreciseTime)</script><script>
+$ (window).on("load", function() { setTimeout(function() { Survey.recordPageTiming("selfserve/53b/2603840", "vuqs94q266dcndfg", "06y8amrkz4eat69s");}, 100); });
+</script>
+</form>
+
+
+</div>
+<!-- /.survey-body -->
+</div>
+<div class="survey-section">
+<script>
+var QsIsTesting=0;
+var QsLangCode = {"arabic":"AR","arabic_egypt":"AR","arabic_lebanon":"AR","arabic_morocco":"AR","arabic_qatar":"AR","arabic_saudiarabia":"AR","arabic_uae":"AR","bulgarian":"BG","simplifiedchinese":"ZH-CHS","traditionalchinese":"ZH-CHT","czech":"CS","danish":"DA","dutch":"NL","dutch_belgium":"NL","english":"EN","aus":"EN","english_ca":"EN","english_china":"EN","english_hk":"EN","english_india":"EN","english_id":"EN","english_ireland":"EN","english_my":"EN","english_nigeria":"EN","english_sg":"EN","english_za":"EN","english_tw":"EN","uk":"EN","finnish":"FI","french":"FR","french_belgium":"FR","canadian":"FR","french_lu":"FR","french_ch":"FR","german":"DE","german_austria":"DE","german_lu":"DE","german_ch":"DE","hungarian":"HU","indonesian":"ID","italian":"IT","italian_ch":"IT","japanese":"JA","korean":"KO","malay":"MS","malay_sg":"MS","norwegian":"NN","polish":"PL","portuguese":"PT","portuguese_br":"PT","romanian":"RO","russian":"RU","slovak":"SK","spanish":"ES","spanish_argentina":"ES","spanish_brazil":"ES","spanish_chile":"ES","spanish_colombia":"ES","spanish_ecuador":"ES","spanish_eu":"ES","spanish_peru":"ES","spanish_venezuela":"ES","spanish_latin":"ES","spanish_mexico":"ES","spanish_south":"ES","swedish":"SV","thai":"TH","turkish":"TR","vietnamese":"VI",}["french"];
+$ (document).ready(function(){
+var submitted = 0;
+var disableCollect = document.getElementById('qualityscore_collect_disabled');
+if(!disableCollect && document.forms[0]) {
+$ ('.imperium-ra-question').each(function(){
+var qsRaAttrs = this['imperium-ra-attrs'] || {};
+$ (this).parents('[class*=qsra]').each(function(){
+var arrClass = $ (this).attr('class').split(/\s+/);
+for(var i=0; i<arrClass.length;i++){
+if(arrClass[i].substr(0,4) == 'qsra'){
+var arrQsRa = arrClass[i].substr(4).split('-');
+if(arrQsRa.length == 2)
+qsRaAttrs[arrQsRa[0]] = arrQsRa[1];
+}
+}
+})
+this['imperium-ra-attrs'] = qsRaAttrs;
+});
+$ ("#primary").on("submit", CallQSService);
+}
+function submitForm(){
+if(!submitted){
+submitted = 1;
+$ ("#primary").off("submit", CallQSService).submit();
+}
+}
+function CollectQSDataResponse(data){
+if(QsIsTesting) console.log("QS:", JSON.stringify(data));
+submitForm();
+}
+function CallQSService(e){
+if(!submitted){
+e = e || window.event;
+e.preventDefault ? e.preventDefault() : (e.returnValue = false);
+e.stopPropagation();
+setTimeout(submitForm, 3000);
+try{
+var pageId = $ ("div.question, div.comment").attr("id");
+var matrixData = getMatrixData();
+imperium_qualityscore.CollectData(pageId , matrixData, CollectQSDataResponse);
+}
+catch(e){
+console.error(e);
+submitForm();
+}
+}
+}
+function getInputData(input, questionType, selected){
+var items = input.attr('id').split('.');
+var data = {};
+if(items.length>2){
+if(questionType.includes("group-by-col")){
+data.rowId = input.closest("td").attr('headers').split(" ")[0].split("_").splice(1).join("_");
+data.value = items[2];
+}
+else{
+data.rowId = 'r' + items[2];
+data.value = input.closest("td").attr('headers').split(" ")[0].split("_").splice(1).join("_");
+}
+selected[data.rowId] = selected[data.rowId] || [];
+selected[data.rowId].push(data.value);
+}
+return selected;
+}
+function getMatrixData(){
+try{
+var pageData = [];
+if ($ ('.grid').length == 0) return '';
+var questions = $ ('.question');
+questions.each(function() {
+var $q = $ (this);
+var isGrid = false;
+var qId = $q.attr("id").split("_").splice(1).join("_");
+var question = $ (this).find('.grid');
+var questionType = question.attr('data-settings');
+if(!qId || !questionType)
+return;
+var selected = {};
+if($ (".answers tr.row-elements").first().find("input:radio").length>1){
+isGrid = true;
+$q.find ("div.answers td input:radio:checked").each(function(){
+getInputData($ (this), questionType, selected);
+})
+}
+if($ (".answers tr.row-elements").first().find("input:checkbox").length>1){
+isGrid = true;
+$q.find ("div.answers td input:checkbox:checked").each(function(){
+getInputData($ (this), questionType, selected);
+})
+}
+if(isGrid){
+$q.find ('div.answers td input[type="text"]').filter(function () {
+return !!this.value;
+}).each(function(){
+getInputData($ (this), questionType, selected);
+})
+}
+var qData = [];
+for (var rowId in selected) {
+qData.push(rowId + '-' + selected[rowId].join());
+}
+if(qData.length>0) pageData.push(qId + ':' + qData.join(';'));
+});
+return pageData.join('|');
+}
+catch(e){
+console.error(e);
+return "";
+};
+}
+})
+if(!"3713"){
+$ ('body').append('<input type="hidden" id="GeoCodes" name="GeoCodes" value="1,"/>');
+window.RVIDResponseComplete = window.RVIDResponseComplete || function(data) {}
+}
+window.RealAnswerComplete = window.RealAnswerComplete || function(realAnswerResults){}
+if(QsLangCode){
+$ (".question:not(.number):not(.float)").find('div.answers input[type="text"]:visible').addClass("imperium-ra-question");
+$ (".question.number, .question.float").find('div.answers input[type="text"]:visible.oe-inline').addClass("imperium-ra-question");
+$ ('div.answers textarea:visible').addClass("imperium-ra-question");
+if($ ('.imperium-ra-question').length>0){ $ ('body').append('<input type="hidden" id="LangCode" name="LangCode" value="' + QsLangCode + '">');}
+}
+</script>
+<input type="hidden" id="ClientID" name="ClientID" value="32F0DF3C-D504-46E9-999F-AE32A3D57A44">
+<input type="hidden" id="SurveyID" name="SurveyID" value="selfserve/53b/2603840">
+<input type="hidden" id="PanelistID" name="PanelistID" value="uAZEnFHXlxfV0IvpoBEvEQk1">
+<script type="text/javascript" src="https://d2cjqdos4nhnz5.cloudfront.net/qslib1.0.js"></script></div>
+</div><input type="hidden" name="imperium_qs_time_start" id="imperium_qs_time_start" value="1775536529669">
+<div id="detectBreakpoint"></div>
+<!-- /.survey-container -->
+
 
 </body>
