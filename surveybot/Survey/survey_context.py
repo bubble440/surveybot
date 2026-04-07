@@ -29,6 +29,7 @@ class SurveyContext:
         # FIX-B5: compteur de génération pour éviter qu'un thread plus ancien
         # (réponse OpenAI tardive) n'écrase le résumé produit par un thread plus récent.
         self._summary_gen: int = 0
+        self._summary_thread: threading.Thread | None = None
 
     def record(self, question: str, options: list[str], answer: str) -> None:
         """Append one answered question block to history."""
@@ -65,7 +66,28 @@ class SurveyContext:
                 self.page_count,
                 len(self.history),
             )
-            threading.Thread(target=self._generate_summary, daemon=True).start()
+            t = threading.Thread(target=self._generate_summary, daemon=False)
+            with self._lock:
+                self._summary_thread = t
+            t.start()
+
+    def flush(self, timeout: float = 5.0) -> None:
+        """Wait for any pending background summary; if none was ever generated, do it now (sync).
+
+        Called at survey end to ensure self.summary is written before the process exits.
+        Bounded by *timeout* seconds so it never blocks the caller indefinitely.
+        """
+        with self._lock:
+            thread = self._summary_thread
+            has_history = len(self.history) > 0
+            has_summary = bool(self.summary)
+
+        if thread is not None and thread.is_alive():
+            thread.join(timeout=timeout)
+        elif not has_summary and has_history:
+            # Summary was never triggered (e.g. survey shorter than summary_every_n_pages).
+            # Generate synchronously; _generate_summary() is self-contained and handles errors.
+            self._generate_summary()
 
     def get_context_snippet(self) -> str:
         """Return compact prompt-ready context containing summary + last 5 Q&A."""

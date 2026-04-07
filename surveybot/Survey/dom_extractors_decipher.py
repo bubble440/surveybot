@@ -1177,6 +1177,176 @@ def _extract_decipher_grid_single_col_text_rows(driver, frame_chain: List[Any]) 
 
 
 # ================================================================================
+# DECIPHER - GRID SELECT (group-by-col + div.fir-select > select)
+# ================================================================================
+
+def _extract_decipher_grid_select_blocks(driver, frame_chain: List[Any]) -> List[Dict[str, Any]]:
+    """
+    Extrait les blocs dropdown d'une grille Decipher/FocusVision de type
+    div.question.select + table.grid[data-settings*='group-by-col'] +
+    cellules div.fir-select > select.input.dropdown.
+
+    Garde-fous DOM stricts:
+    - div.question.select (classe 'select' présente — PAS .radio, PAS .checkbox)
+    - table.grid.grid-table-mode[data-settings*='group-by-col'][data-settings*='table-mode']
+    - présence effective de div.fir-select > select.input.dropdown dans la grille
+
+    Un bloc indépendant (itype='dropdown') est produit par combinaison (ligne × colonne).
+    Les options vides (value="-1") sont exclues.
+    """
+    blocks: List[Dict[str, Any]] = []
+
+    try:
+        q_containers = driver.find_elements(By.CSS_SELECTOR, "div.question.select")
+    except Exception:
+        return blocks
+
+    for q_el in q_containers:
+        try:
+            if _has_inline_display_none(q_el):
+                continue
+
+            # Garde-fou: grille group-by-col table-mode uniquement
+            try:
+                grid = q_el.find_element(
+                    By.CSS_SELECTOR,
+                    "table.grid.grid-table-mode[data-settings*='group-by-col'][data-settings*='table-mode']",
+                )
+            except Exception:
+                continue
+
+            # Garde-fou: au moins un select dans la grille
+            try:
+                probe = grid.find_elements(By.CSS_SELECTOR, "div.fir-select > select.input.dropdown")
+            except Exception:
+                probe = []
+            if not probe:
+                continue
+
+            # Question text
+            question = ""
+            try:
+                question = (q_el.find_element(By.CSS_SELECTOR, ".question-text").text or "").strip()
+            except Exception:
+                pass
+            if not question:
+                continue
+
+            # En-têtes de colonnes (dans l'ordre DOM)
+            col_labels: List[str] = []
+            try:
+                for h in grid.find_elements(By.CSS_SELECTOR, "th[scope='col']"):
+                    txt = (h.text or h.get_attribute("textContent") or "").strip()
+                    if txt:
+                        col_labels.append(txt)
+            except Exception:
+                pass
+
+            # Lignes de données
+            try:
+                rows = grid.find_elements(By.CSS_SELECTOR, "tr.row.row-elements")
+            except Exception:
+                continue
+
+            for row in rows:
+                # Label de ligne
+                row_label = ""
+                try:
+                    rh = row.find_element(By.CSS_SELECTOR, "th[scope='row']")
+                    row_label = (rh.text or rh.get_attribute("textContent") or "").strip()
+                except Exception:
+                    pass
+
+                # Select de la ligne (dans l'ordre DOM = colonnes)
+                try:
+                    row_selects = row.find_elements(By.CSS_SELECTOR, "div.fir-select > select.input.dropdown")
+                except Exception:
+                    row_selects = []
+
+                for col_idx, sel in enumerate(row_selects):
+                    sel_id = (sel.get_attribute("id") or "").strip()
+                    sel_name = (sel.get_attribute("name") or "").strip()
+                    if not sel_id and not sel_name:
+                        continue
+
+                    # Options (valeur "-1" = placeholder vide → exclue)
+                    options: List[str] = []
+                    try:
+                        for opt in sel.find_elements(By.CSS_SELECTOR, "option"):
+                            if (opt.get_attribute("value") or "").strip() == "-1":
+                                continue
+                            txt = (opt.text or opt.get_attribute("textContent") or "").strip()
+                            txt = txt.replace("\xa0", " ").strip()
+                            if txt:
+                                options.append(txt)
+                    except Exception:
+                        pass
+
+                    col_label = col_labels[col_idx] if col_idx < len(col_labels) else f"col{col_idx + 1}"
+
+                    parts = [question]
+                    if row_label:
+                        parts.append(row_label)
+                    parts.append(col_label)
+                    q_label = " - ".join(parts)
+
+                    xpath = (
+                        f"//*[@id={_xpath_literal(sel_id)}]"
+                        if sel_id
+                        else f"//select[@name={_xpath_literal(sel_name)}]"
+                    )
+
+                    target_id = make_target_id("single", f"select:{sel_id or sel_name}", q_label)
+
+                    register_target(
+                        target_id,
+                        {
+                            "kind": "single",
+                            "itype": "select",
+                            "question": q_label,
+                            "xpath": xpath,
+                            "alt_xpaths": [],
+                            "tag": "select",
+                            "name": sel_name,
+                            "id": sel_id,
+                            "frame_chain": list(frame_chain or []),
+                            "options": options,
+                            "row_label": row_label,
+                            "col_label": col_label,
+                            "decipher_grid_select": True,
+                        },
+                    )
+
+                    blocks.append(
+                        {
+                            "question": q_label,
+                            "itype": "dropdown",
+                            "options": options,
+                            "max_select": 1,
+                            "min_select": 1,
+                            "target_id": target_id,
+                            "context": {
+                                "kind": "single",
+                                "itype": "select",
+                                "name": sel_name,
+                                "id": sel_id,
+                                "row_label": row_label,
+                                "col_label": col_label,
+                                "decipher_grid_select": True,
+                            },
+                        }
+                    )
+
+        except Exception as e:
+            from Survey.log_utils import is_debug, log_debug
+            if is_debug():
+                log_debug("[DECIPHER_GRID_SELECT]", f"error on q_el: {type(e).__name__}: {e}")
+            continue
+
+    return blocks
+
+
+# ================================================================================
 # DECIPHER - ANSWERS LIST FALLBACK
 # ================================================================================
 
