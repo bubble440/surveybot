@@ -55,21 +55,28 @@ Write-Host "  `$env:ATTACH_ROUTE_PROMPT=1"
 Write-Host ""
 
 # Vars env (attach)
-$env:RUN_ENV="local"
-$env:RUN_MODE="local"
-
-$env:BROWSER_MODE="attach"
-$env:ATTACH_TAB_SELECTOR=$AttachTabSelector
-$env:ATTACH_DEBUGGER_ADDRESS="127.0.0.1:$Port"
-$env:PROXY_URL="185.134.194.152:12323"
-$env:PROXY_USER="14abf236340a1"
+#test prod-like
+$env:RUN_ENV="prod"
+$env:RUN_MODE="prod"
+$env:SURVEY_HEADLESS="1"
 $env:PROXY_PASS="bb82a9e63b"
+$env:PROXY_USER="14abf236340a1"
+$env:PROXY_URL="185.134.194.152:12323"
+$env:ACCOUNT_ID = "topsurveys_test_prod_like"
+$env:DATABASE_URL = "postgres://postgres:3o1L6kfCFxuncbY@localhost:5432/postgres"
+$env:STATE_BACKEND = "postgres"
+
+$env:HTTPS_PROXY = "http://14abf236340a1:bb82a9e63b@185.134.194.152:12323"
+$env:HTTP_PROXY  = "http://14abf236340a1:bb82a9e63b@185.134.194.152:12323"
+
+# $env:BROWSER_MODE="attach"
+# $env:ATTACH_TAB_SELECTOR=$AttachTabSelector
+# $env:ATTACH_DEBUGGER_ADDRESS="127.0.0.1:$Port"
 
 # Tes vars debug
-$env:LOG_LEVEL="INFO"
+$env:LOG_LEVEL="DEBUG"
 $env:DOM_DEBUG_FRAMES="1"
 $env:SURVEY_CTX_DEBUG="1"
-$env:PROXY_LATENCY_MODE="0"
 $env:CTA_INTERCEPT_ONLY="0"
 $env:ATTACH_ROUTE_PROMPT="1"
 $env:BOT_RUN_ID="port_$Port"
