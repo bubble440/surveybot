@@ -1,10 +1,7 @@
 # question_analyzer.py
 from openai import OpenAI
 from bs4 import BeautifulSoup
-import time
-import re
-import os
-import unicodedata
+import time, re, unicodedata
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
