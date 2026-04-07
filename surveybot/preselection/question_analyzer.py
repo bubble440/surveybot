@@ -93,6 +93,32 @@ def _contains_non_option(options):
     return False
 
 
+_NEGATIVE_EXCLUSIVE_EXACT = frozenset({
+    "aucun", "aucune", "none", "jamais", "nsp", "n a",
+})
+
+_NEGATIVE_EXCLUSIVE_SUBSTRINGS = (
+    "aucune de ces",
+    "aucune des",
+    "aucun de ces",
+    "aucun des",
+    "none of the",
+    "non applicable",
+    "not applicable",
+    "je ne sais pas",
+    "dont know",
+    "prefere ne pas repondre",
+    "pas concerne",
+)
+
+
+def _is_negative_exclusive_option(option_text):
+    norm = re.sub(r"[^a-z0-9]+", " ", _normalize_text(str(option_text))).strip()
+    if norm in _NEGATIVE_EXCLUSIVE_EXACT:
+        return True
+    return any(sub in norm for sub in _NEGATIVE_EXCLUSIVE_SUBSTRINGS)
+
+
 def _should_force_non_for_hardware_question(question_text, options):
     normalized_question = _normalize_text(question_text)
     has_hardware_token = any(token in normalized_question for token in _HARDWARE_TOKENS)
@@ -257,6 +283,14 @@ def extract_select_options_js(driver):
 
 
 def reformulate_prompt_for_gpt(question_text, options, itype="radio"):
+    # Pré-filtrage : retirer les options exclusives négatives avant envoi à GPT
+    filtered_options = options
+    if options:
+        filtered_options = [o for o in options if not _is_negative_exclusive_option(o)]
+        removed = [o for o in options if _is_negative_exclusive_option(o)]
+        if removed:
+            log_debug("preselection", f"[PRE-FILTRAGE GPT] Options exclusives négatives retirées : {removed}")
+
     base_rules = (
         "Ne renvoie jamais la question ni d'explications. "
         "Évite toute option exprimant une absence, un refus ou une non-appartenance. "
@@ -285,28 +319,28 @@ def reformulate_prompt_for_gpt(question_text, options, itype="radio"):
 
     )
 
-    if options and itype == "checkbox":
+    if filtered_options and itype == "checkbox":
         return (
             f"Question: {question_text}\n"
             f"{base_rules}"
-            f"Options: {', '.join(options)}\n"
-            "Réponds UNIQUEMENT avec le ou les libellés exacts, séparés par ' | '. "
+            f"Options: {', '.join(filtered_options)}\n"
+            "Réponds UNIQUEMENT avec le ou les libellés exacts, séparés par ‘ | ‘. "
             "Pour une checkbox non exclusive, préfère plusieurs choix plutôt qu’un seul."
             "Pour les questions à choix multiples (checkbox) :"
             "- Par défaut, sélectionne plusieurs options cohérentes avec le profil, pas une seule."
-            "- Sauf si la question implique clairement une réponse exclusive ou un nombre limité évident (ex: année de naissance, âge exact, nombre exact, situation familiale exclusive, réponse négative exclusive, 'aucune de ces propositions', 'je n'ai pas d'enfants', 'je préfère ne pas le dire', 'aucun', 'autre')."
-            "- Par défaut, renvoie entre 5 et 7 options plausibles et variées parmi celles proposées, sauf si une exception exclusive s'applique."
-            "- Si la liste contient moins de 5 options, choisis uniquement l'option la plus plausible parmi celles non-disqualifiantes. Ne tente pas d'atteindre 5 à 7 dans ce cas."
+            "- Sauf si la question implique clairement une réponse exclusive ou un nombre limité évident (ex: année de naissance, âge exact, nombre exact, situation familiale exclusive, réponse négative exclusive, ‘aucune de ces propositions’, ‘je n’ai pas d’enfants’, ‘je préfère ne pas le dire’, ‘aucun’, ‘autre’)."
+            "- Par défaut, renvoie entre 5 et 7 options plausibles et variées parmi celles proposées, sauf si une exception exclusive s’applique."
+            "- Si la liste contient moins de 5 options, choisis uniquement l’option la plus plausible parmi celles non-disqualifiantes. Ne tente pas d’atteindre 5 à 7 dans ce cas."
             "- Ne combine jamais une option exclusive avec d’autres."
             "- Si la question concerne les enfants, le foyer parental, ou l’année de naissance d’enfants : si une option exclusive négative est disponible (‘je n’ai pas d’enfants’, ‘sans enfants’, ‘aucun enfant’, ‘none’, ‘no children’ ou équivalent), choisis-la uniquement. Sinon, ignore cette règle et sélectionne des réponses cohérentes parmi les options proposées."
-            "- Si plusieurs réponses sont renvoyées, utilise exactement le séparateur ' | ' entre les libellés."
+            "- Si plusieurs réponses sont renvoyées, utilise exactement le séparateur ‘ | ‘ entre les libellés."
         )
 
-    if options:
+    if filtered_options:
         return (
             f"Question: {question_text}\n"
             f"{base_rules}"
-            f"Options: {', '.join(options)}\n"
+            f"Options: {', '.join(filtered_options)}\n"
             "Choisis exactement une des options ci-dessus. "
             "Réponds UNIQUEMENT par le libellé de l'option."
         )
@@ -332,7 +366,7 @@ def ask_assistant(prompt_text, api_key, *, question=None, options=None):
     Management.guards.runtime_guard.get_guard().record_openai_call()
 
     completion = client.chat.completions.create(
-        model="gpt-5-nano",
+        model="gpt-4.1-mini",
         max_completion_tokens=5000,
         messages=[
             {"role": "system", "content": ASSISTANT_SYSTEM_PROMPT},
