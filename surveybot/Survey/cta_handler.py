@@ -243,7 +243,7 @@ def disarm_interceptor(driver) -> bool:
 
 def arm_interceptor(driver) -> bool:
     """Arme l'intercepteur JS pour capter/bloquer click+submit+navigations scriptées."""
-    js = """
+    js = r"""
     (() => {
     try {
       const mkTarget = (el) => {
@@ -530,7 +530,7 @@ def _nav_log(prefix: str, msg: str, driver=None):
 
 def _dom_progress_marker(driver):
     """Construit un marqueur léger pour détecter une progression de page."""
-    js = """
+    js = r"""
     return (function () {
       try {
         const url = String(location.href || '');
@@ -816,7 +816,7 @@ def _click_with_intercept(driver, el) -> bool:
 
     try:
         driver.execute_script(
-            """
+            r"""
             const el = arguments[0];
             const tok = arguments[1];
             // Active le filtrage d'interception et marque UNIQUEMENT cet élément.
@@ -1305,6 +1305,81 @@ def click_primary_cta(driver) -> bool:
 
 
 # =============================================================================
+# OVERLAY DISMISSAL (modales consentement, bandeaux cookie)
+# =============================================================================
+
+def _dismiss_blocking_overlays(driver) -> int:
+    """
+    Détecte et ferme les overlays bloquants visibles avant un clic CTA.
+    Critères DOM: position:fixed, z-index >= 1000, contient un bouton visible.
+    Budget: max 5 overlays. Retourne le nombre d'overlays fermés.
+    """
+    JS_FIND_DISMISS_BUTTONS = """
+    return (function() {
+      var MIN_ZINDEX = 1000;
+      var result = [];
+      var seenOverlays = [];
+      var all = document.querySelectorAll('*');
+      for (var i = 0; i < all.length && result.length < 10; i++) {
+        var el = all[i];
+        try {
+          var cs = window.getComputedStyle(el);
+          if (cs.position !== 'fixed') continue;
+          var z = parseInt(cs.zIndex, 10);
+          if (isNaN(z) || z < MIN_ZINDEX) continue;
+          var r = el.getBoundingClientRect();
+          if (r.width < 20 || r.height < 20) continue;
+          if (cs.display === 'none' || cs.visibility === 'hidden' ||
+              parseFloat(cs.opacity) < 0.01) continue;
+          var isDup = false;
+          for (var k = 0; k < seenOverlays.length; k++) {
+            if (seenOverlays[k].contains(el) || el.contains(seenOverlays[k])) {
+              isDup = true; break;
+            }
+          }
+          if (isDup) continue;
+          seenOverlays.push(el);
+          var btns = el.querySelectorAll(
+            'button, [role="button"], input[type="button"], input[type="submit"]'
+          );
+          for (var j = 0; j < btns.length; j++) {
+            var btn = btns[j];
+            var bcs = window.getComputedStyle(btn);
+            if (bcs.display === 'none' || bcs.visibility === 'hidden') continue;
+            var br = btn.getBoundingClientRect();
+            if (br.width < 5 || br.height < 5) continue;
+            result.push(btn);
+            break;
+          }
+        } catch(e) {}
+      }
+      return result;
+    })();
+    """
+    try:
+        buttons = driver.execute_script(JS_FIND_DISMISS_BUTTONS)
+    except Exception:
+        return 0
+
+    if not buttons:
+        return 0
+
+    dismissed = 0
+    for btn in buttons[:5]:
+        try:
+            btn.click()
+            dismissed += 1
+            log_debug("[CTA_OVERLAY]", f"overlay_btn_clicked dismissed={dismissed}")
+            time.sleep(0.3)
+        except Exception:
+            continue
+
+    if dismissed:
+        log_info("[CTA_OVERLAY]", f"overlays_dismissed count={dismissed}")
+    return dismissed
+
+
+# =============================================================================
 # TRY_CLICK_NAVIGATION_CTA
 # =============================================================================
 
@@ -1322,6 +1397,8 @@ def try_click_navigation_cta(driver) -> bool:
     Returns:
         True si CTA navigation cliqué
     """
+    _dismiss_blocking_overlays(driver)
+
     # --- MetrixLab / Toluna: CTA icon-only <div id="next" class="next ..."> ---
     # DOM observé:
     #   <div class="next arrow_on" id="next" style="display:block !important"> ... </div>

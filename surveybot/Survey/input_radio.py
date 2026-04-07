@@ -466,7 +466,7 @@ def click_decipher_mx_carousel_radio(driver, label: str, context_hint: str = "")
     try:
         WebDriverWait(driver, 1.5).until(
             lambda d: d.execute_script(
-                """
+                r"""
                 const rowToken = arguments[0];
                 const colToken = arguments[1];
                 const inputs = Array.from(document.querySelectorAll('input[type="radio"][aria-labelledby]'));

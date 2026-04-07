@@ -729,6 +729,10 @@ def solve_full_survey(driver, api_key, *, account_id: str, survey_context=None):
 
             print("[solve_full_survey] Aucun élément actionnable → survey terminé, soft-restart.")
             guard.record_success()
+            try:
+                _survey_ctx.flush(timeout=5.0)
+            except Exception:
+                pass
             guard.request_survey_restart("survey_end")
             return
 
