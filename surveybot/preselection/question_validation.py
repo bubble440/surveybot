@@ -26,7 +26,6 @@ import re
 import unicodedata
 from typing import Optional
 
-from Management.guards.sensitive_question_guard import is_sensitive_question
 from Management.guards.survey_difficulty_guard import detect_strict_survey
 
 @dataclass
@@ -46,9 +45,6 @@ def validate_question(question_text: str, page_text: str) -> QuestionDecision:
     # ⚠️ Robustesse : certains extracteurs peuvent renvoyer None.
     question_text = question_text or ""
     page_text = page_text or ""
-
-    if is_sensitive_question(question_text):
-        return QuestionDecision("SKIP", "sensitive_question")
 
     dq_reason = detect_disqualification_reason(question_text, page_text)
     if dq_reason:

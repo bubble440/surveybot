@@ -469,7 +469,6 @@ def start_hot_reload_thread():
                 "Management.pause_policy",
                 "Management.redirect_watcher",
                 "Management.guards.runtime_guard",
-                "Management.guards.sensitive_question_guard",
                 "Management.guards.survey_difficulty_guard",
             ],
             poll_interval=0.5,
