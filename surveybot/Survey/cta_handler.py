@@ -1683,6 +1683,19 @@ def try_click_navigation_cta(driver) -> bool:
             if should_filter_encuesta_inline_done and "encuesta__done-button" in cls:
                 continue
 
+            # Exclude CookieYes consent overlay buttons (structural DOM guard).
+            # Triggered by cky-* class tokens on the element itself, NOT by button text.
+            if any(tok.startswith("cky-") for tok in cls_tokens):
+                continue
+
+            # Exclude buttons inside ps-footer Angular component (survey page footer:
+            # privacy policy, legal links…). Triggered by structural ancestor presence.
+            try:
+                if el.find_elements(By.XPATH, "ancestor::ps-footer[1]"):
+                    continue
+            except Exception:
+                pass
+
             disabled_patterns = ("disabled", "btn-disabled", "is-disabled", "button--disabled", "btn--disabled")
             if any(tok in disabled_patterns for tok in cls_tokens):
                 continue
@@ -1791,6 +1804,15 @@ def try_click_navigation_cta(driver) -> bool:
                 score += 10
             if "btn" in cls:
                 score += 5
+
+            # Bonus: button is the direct navigation child of ps-next-button Angular
+            # component. Structural guard — text/aria-label may be empty during Angular
+            # render; this ensures the real nav CTA wins even with score=5 from class alone.
+            try:
+                if el.find_elements(By.XPATH, "ancestor::ps-next-button[1]"):
+                    score += 150
+            except Exception:
+                pass
 
             candidates.append((score, el))
         except Exception:

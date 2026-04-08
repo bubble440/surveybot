@@ -326,6 +326,8 @@ def detect_strict_survey(driver) -> Tuple[bool, Optional[str]]:
 
 # --- AUDIO / VIDEO : strict UNIQUEMENT si obligation explicite ---
 
+    txt = _page_text_lc(driver)
+
     AUDIO_VIDEO_OBLIGATION_KEYWORDS = [
         "écoutez", "regardez", "listen", "watch",
         "please listen", "please watch",

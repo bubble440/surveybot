@@ -94,9 +94,25 @@ class SurveyContext:
         with self._lock:
             summary = self.summary.strip()
             recent = self.history[-5:]
+            # Captured inside lock for the inline fallback (no extra lock needed below)
+            history_len = len(self.history)
+            first_entries = self.history[:3] if not summary else []
 
         if not summary and not recent:
             return ""
+
+        # Async summary thread not done yet — derive a minimal inline fallback from
+        # the first Q&A entries so the prompt is not misleadingly empty.
+        if not summary and first_entries:
+            hints = "; ".join(
+                f"{e.get('question', '')[:60]}: {e.get('answer', '')[:40]}"
+                for e in first_entries
+                if e.get("answer")
+            )
+            if hints:
+                summary = f"(generating — {history_len} answered so far; early answers: {hints})"
+            else:
+                summary = f"(generating — {history_len} answered so far)"
 
         lines = [
             "[Survey context]",
