@@ -41,7 +41,12 @@ STATE_TABLE = os.getenv("STATE_TABLE", "").strip()             # ex: surveybot_a
 STATE_TTL_DAYS = int(os.getenv("STATE_TTL_DAYS", "0") or "0")   # 0 = pas de TTL auto
 
 # Fallback fichier (debug seulement)
-_STATE_DIR = Path(os.getenv("STATE_DIR", "/data/accounts"))
+_default_state_dir = (
+    Path(__file__).parent.parent / "data" / "accounts"
+    if IS_LOCAL
+    else Path("/data/accounts")
+)
+_STATE_DIR = Path(os.getenv("STATE_DIR", str(_default_state_dir)))
 _FILE_LOCK = Lock()
 
 

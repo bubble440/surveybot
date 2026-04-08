@@ -379,12 +379,24 @@ def launch_browser(config: dict | None = None):
             options.add_experimental_option("debuggerAddress", attach_addr)
             print(f"⚠️ ATTACH MODE → {attach_addr}")
         else:
-            # Mode local : Chrome visible
+            # Mode local : headless si LOCAL_HEADLESS=1 ou pas de DISPLAY fiable (WSL)
             options.add_argument("--disable-blink-features=AutomationControlled")
-            options.add_argument("--start-maximized")
+            import sys
+            if sys.platform != "win32":
+                options.add_argument("--no-sandbox")
+                options.add_argument("--disable-dev-shm-usage")
+                options.add_argument("--disable-gpu")
+                force_headless = (os.getenv("LOCAL_HEADLESS", "0") == "1")
+                if force_headless:
+                    options.add_argument("--headless=new")
+                    options.add_argument("--window-size=1920,1080")
+                else:
+                    options.add_argument("--start-maximized")
+            else:
+                options.add_argument("--start-maximized")
             print("🟢 LAUNCHED NEW CHROME SESSION")
-        driver = webdriver.Chrome(options=options, service=Service(log_output=subprocess.DEVNULL))
-        return driver
+            driver = webdriver.Chrome(options=options, service=Service(log_output=subprocess.DEVNULL))
+            return driver
 
     proxy_server, proxy_user, proxy_pass = _parse_proxy_env(config)
     headless = _want_headless()

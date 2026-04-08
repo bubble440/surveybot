@@ -113,14 +113,19 @@ def is_cta_intercept_only() -> bool:
 def should_pause_before_cta() -> bool:
     """
     Retourne True si le bot doit attendre une confirmation utilisateur
-    avant un clic CTA (Suivant/Continuer/etc.).
-    Désactivé en prod-like (prod/local_unattended).
+    avant un clic CTA.
+    Activable en local_unattended via LOCAL_CTA_DEBUG=1 (pour debug prod-like).
+    Désactivé en prod réel (Fly.io) sans condition.
     """
-    if is_prod_like():
+    if not is_local_env():
         return False
     if not _env_truthy("LOCAL_CTA_REQUIRE_ENTER", "0"):
         return False
-    return should_block_for_input()
+    # LOCAL_CTA_DEBUG permet les pauses même en LOCAL_UNATTENDED
+    if LOCAL_UNATTENDED and not _env_truthy("LOCAL_CTA_DEBUG", "0"):
+        return False
+    import sys
+    return getattr(sys.stdin, "isatty", lambda: False)()
 
 
 def should_run_guard_monitor() -> bool:

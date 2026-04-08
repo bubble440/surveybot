@@ -161,9 +161,6 @@ def soft_restart_cleanup(driver):
     IMPORTANT : se replacer sur la page APP (app.topsurveys.app) avant la logique payout,
     sinon la lecture du solde échoue sur la landing marketing.
     """
-    from Survey.survey_solver import _close_other_tabs_in_current_session
-    _close_other_tabs_in_current_session(driver)
-
     # Plus fiable que la landing + clic CTA
     try:
         safe_get(driver, "https://app.topsurveys.app/surveys")
