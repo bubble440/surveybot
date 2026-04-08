@@ -27,13 +27,9 @@ def mark_last_selected_survey_as_blocked() -> None:
 
 def _local_pause(reason: str = "") -> None:
     try:
-        from config import should_block_for_input
-
-        if not should_block_for_input():
+        from config import should_pause_before_cta
+        if not should_pause_before_cta():
             return
-        if not _is_truthy_env(os.getenv("LOCAL_CTA_REQUIRE_ENTER", "0")):
-            return
-
         msg = "[LOCAL][PAUSE] Appuie sur <Enter> pour continuer"
         if reason:
             msg += f" ({reason})"
@@ -44,7 +40,8 @@ def _local_pause(reason: str = "") -> None:
             raise
     except Exception:
         return
-
+    
+    
 def _is_debug_enabled() -> bool:
     return os.getenv("LOG_LEVEL", "INFO").strip().upper() == "DEBUG"
 

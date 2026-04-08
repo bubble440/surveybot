@@ -31,22 +31,11 @@ def _close_other_tabs_in_current_session(driver):
 
 
 def _local_pause_before_cta(reason: str = "") -> None:
-    """
-    LOCAL ONLY: attend que l'utilisateur appuie sur  avant de cliquer un CTA.
-     prod/docker: ne bloque jamais si stdin non-interactif.
-    Active uniquement si LOCAL_CTA_REQUIRE_ENTER=1.
-    
-    En mode LOCAL_UNATTENDED, cette fonction retourne .
-    """
     try:
-        from config import should_block_for_input
-        # En mode unattended ou prod, pas de pause
-        if not should_block_for_input():
+        from config import should_pause_before_cta
+        if not should_pause_before_cta():
             return
-        if not _env_truthy("LOCAL_CTA_REQUIRE_ENTER", "0"):
-            return
-
-        msg = "[LOCAL][PAUSE] Appuie sur  pour autoriser le clic CTA"
+        msg = "[LOCAL][PAUSE] Appuie sur <Enter> pour autoriser le clic CTA"
         if reason:
             msg += f" ({reason})"
         print(msg, flush=True)
@@ -56,7 +45,7 @@ def _local_pause_before_cta(reason: str = "") -> None:
             raise
     except Exception:
         return
-
+    
 
 def _handle_topsurveys_exclusion_popup(driver, account_id) -> bool: #survey_executor
     """
