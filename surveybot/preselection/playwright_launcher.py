@@ -4,6 +4,7 @@ import subprocess
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 from selenium import webdriver
+from Survey.functions import _env_truthy
 
 # IS_LOCAL = os.getenv("RUN_ENV", "local") == "local"
 IS_LOCAL = os.getenv("RUN_ENV", "local") == "local"
@@ -369,7 +370,7 @@ def launch_browser(config: dict | None = None):
     3) On renvoie un driver Selenium (comme avant), mais on conserve Playwright en vie.
     """
     chrome_bin = _detect_chrome_binary()
-    if IS_LOCAL:
+    if IS_LOCAL and not _env_truthy("LOCAL_USE_PROXY"):
         print("[LOCAL] Mode local actif : lancement simple Chrome visible (sans proxy).")
 
         attach_addr = os.getenv("ATTACH_DEBUGGER_ADDRESS", "").strip()
