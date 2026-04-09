@@ -139,6 +139,43 @@ _PARTICIPATION_CONSENT_ALL_TOKENS = [
     "accepte", "autorise", "j'autorise",
 ]
 
+# Détection des questions de disponibilité/volonté de participation (répondant ou tiers désigné).
+# Deux ensembles de tokens doivent être présents simultanément dans le texte de la question.
+_PARTICIPATION_WILLINGNESS_TOKENS = [
+    "disponible", "heureux", "heureuse", "pret", "prete", "d accord",
+    "agree", "willing", "happy", "available", "volontaire",
+]
+_PARTICIPATION_WILLINGNESS_SURVEY_TOKENS = [
+    "enquete", "sondage", "etude", "recherche", "survey", "study",
+]
+
+
+def _preferred_participation_willingness_option(block: Dict[str, Any], options: list[str]) -> str | None:
+    """Détecte les questions 'le participant serait-il disponible/heureux/prêt pour l'enquête ?'
+    et retourne l'option 'oui/yes', car répondre non est systématiquement disqualificatoire."""
+    if not options:
+        return None
+    question = _norm_folded_lc(block.get("question"))
+    instruction = _norm_folded_lc(block.get("instruction"))
+    context_signal = f"{question} {instruction}".strip()
+    has_willingness = any(tok in context_signal for tok in _PARTICIPATION_WILLINGNESS_TOKENS)
+    has_survey_ctx = any(tok in context_signal for tok in _PARTICIPATION_WILLINGNESS_SURVEY_TOKENS)
+    if not (has_willingness and has_survey_ctx):
+        return None
+    yes_option = None
+    has_no_option = False
+    for option in options:
+        folded = _norm_folded_lc(option)
+        if not folded:
+            continue
+        if yes_option is None and folded in ("oui", "yes"):
+            yes_option = option
+        if folded in ("non", "no"):
+            has_no_option = True
+    if yes_option and has_no_option:
+        return yes_option
+    return None
+
 
 _SECTOR_SCREENER_MAX_OPTIONS = 15
 
@@ -388,7 +425,8 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
     lines.append(
         "Pour toute question sur l'ge ou la date de naissance:\n"
         "- Si la question demande explicitement l'ANNE de naissance (ex: 'anne de naissance', 'year of birth', 'birth year', 'born in', 'n en'), rponds UNIQUEMENT avec une anne sur 4 chiffres (YYYY), jamais un ge.\n"
-        "- Si la question demande l'âge (âge, years old, ans, age), réponds UNIQUEMENT avec le chiffre '25', sans JAMAIS ajouter de mot ('ans', 'years', 'yo', etc.).\n"
+        "- Si la question demande l'âge (âge, years old, ans, age) ET qu'elle propose des options fermées (tranches libellées comme '19-44 ans', '18-25', etc.) : choisis PARMI CES OPTIONS la tranche qui inclut 25, comme pour n'importe quelle question radio/dropdown. Ne réponds PAS avec le chiffre brut '25'.\n"
+        "- Si la question demande l'âge (âge, years old, ans, age) ET qu'il n'y a PAS d'options fermées (saisie libre) : réponds UNIQUEMENT avec le chiffre '25', sans JAMAIS ajouter de mot ('ans', 'years', 'yo', etc.).\n"
         "- Si date de naissance avec dropdowns séparés (mois + année):\n"
         "  * Année: choisis une année cohérente pour 25 ans (2001, 2000, 1999).\n"
         "  * Mois: choisis un mois raliste (vite le mois en cours pour viter des ges < 25).\n"
@@ -621,7 +659,8 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
                 lines.append(
                     f"selection_rule: Pour QID={qid}, renvoyer EXACTEMENT 1 valeur"
                 )
-        if (forced_consent := _preferred_survey_consent_option(block, opts)):
+        if (forced_consent := _preferred_survey_consent_option(block, opts)) or \
+                (forced_consent := _preferred_participation_willingness_option(block, opts)):
             lines.append(f"selection_rule: SURVEY_CONSENT_ACCEPT strict -> répondre EXACTEMENT avec '{forced_consent}'")
             lines.append(f"allowed_values_strict: {forced_consent}")
             lines.append("instruction_stricte: Consentement de participation/confidentialité détecté. Tu dois choisir l'option d'acceptation et jamais l'option de refus.")

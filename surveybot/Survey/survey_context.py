@@ -17,7 +17,7 @@ class SurveyContext:
         self,
         session_id: str,
         openai_api_key: str,
-        summary_every_n_pages: int = 1,
+        summary_every_n_pages: int = 5,
     ) -> None:
         self.session_id = session_id
         self.history: list[dict[str, Any]] = []
@@ -196,10 +196,14 @@ class SurveyContext:
                     {
                         "role": "system",
                         "content": (
-                            "You are summarizing a survey session context for an automation system. "
-                            "Write a neutral 3-5 sentence summary describing what the survey appears "
-                            "to be about and what profile the respondent has established so far "
-                            "(e.g., demographics answered, topics covered, industries mentioned)."
+                            "You are building a respondent profile for a survey automation system. "
+                            "Based on the answered Q&A below, write a concise 3-10 sentence profile "
+                            "in the first person (as the respondent). Focus exclusively on: "
+                            "declared demographics (age, gender, occupation, sector), stated opinions, "
+                            "declared behaviors, and any other personal attributes the respondent has "
+                            "revealed through their answers. Do NOT describe the survey topic or theme. "
+                            "Example: 'I am a 35-year-old woman working in healthcare. I use social "
+                            "media daily and I am interested in eco-friendly products...'"
                         ),
                     },
                     {"role": "user", "content": prompt},

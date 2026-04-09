@@ -23,22 +23,11 @@ def _env_truthy(name: str, default: str = "0") -> bool:
 PAUSE_BEFORE_CTA = 1.0  # pause après le dispatch des réponses, avant le clic CTA (laisser le DOM se stabiliser)
 
 def _local_pause_before_cta(reason: str = "") -> None:
-    """
-    LOCAL ONLY: attend que l'utilisateur appuie sur  avant de cliquer un CTA.
-     prod/docker: ne bloque jamais si stdin non-interactif.
-    Active uniquement si LOCAL_CTA_REQUIRE_ENTER=1.
-    
-    En mode LOCAL_UNATTENDED, cette fonction retourne .
-    """
     try:
-        from config import should_block_for_input
-        # En mode unattended ou prod, pas de pause
-        if not should_block_for_input():
+        from config import should_pause_before_cta
+        if not should_pause_before_cta():
             return
-        if not _env_truthy("LOCAL_CTA_REQUIRE_ENTER", "0"):
-            return
-
-        msg = "[LOCAL][PAUSE] Appuie sur  pour autoriser le clic CTA"
+        msg = "[LOCAL][PAUSE] Appuie sur <Enter> pour autoriser le clic CTA"
         if reason:
             msg += f" ({reason})"
         print(msg, flush=True)
@@ -48,7 +37,7 @@ def _local_pause_before_cta(reason: str = "") -> None:
             raise
     except Exception:
         return
-
+    
 def _is_visible_js(driver, el) -> bool:
     """
     Fallback JavaScript pour  la  d'un .
@@ -116,7 +105,7 @@ def _detect_rate_rank_image_eval_dom(driver) -> tuple[bool, str]:
     """
     try:
         dom = driver.execute_script(
-            """
+            r"""
             const txt = (el) => ((el && (el.innerText || el.textContent)) || '').trim();
             const isVisible = (el) => {
               if (!el) return false;
@@ -186,7 +175,7 @@ def _detect_image_only_unresolvable_dom(driver, question_blocks: list[dict]) -> 
 
     try:
         dom = driver.execute_script(
-            """
+            r"""
             const isVisible = (el) => {
               if (!el) return false;
               const s = window.getComputedStyle(el);
