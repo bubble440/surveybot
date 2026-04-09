@@ -5255,18 +5255,35 @@ def execute_actions_plan(
 
             # (NEW) Entre deux actions, le DOM peut re-render (React/Qualtrics/etc.).
             #       On rebuild le registry pour que les target_id restent applicables.
+            #       Exception : checkbox/radio consécutives sur la même question (même qid)
+            #       → le DOM ne se reconstruit pas entre deux options d'un même bloc.
             if ok and rescan_between_actions and idx < (len(actions) - 1):
                 try:
-                    if (itype or "").lower() in ("radio", "checkbox", "dropdown", "text", "number"):
-                        import time
-                        import Survey.dom_analyzer as dom_analyzer
-                        time.sleep(PAUSE_INTER_DISPATCH)  # laisse le framework appliquer l'état
-                        dom_analyzer.analyze_dom(driver)  # clear+rebuild registry (target_id stable-ish)
-                        # 📈 micro-mtrique: nombre de rescans DOM dclenchs sur la page courante
-                        try:
-                            driver._dom_rescans_this_page = int(getattr(driver, "_dom_rescans_this_page", 0)) + 1
-                        except Exception:
-                            pass
+                    itype_lower = (itype or "").lower()
+                    if itype_lower in ("radio", "checkbox", "dropdown", "text", "number"):
+                        # Sauter le rescan si les deux actions consécutives sont des
+                        # checkbox/radio appartenant à la même question (même qid non vide).
+                        next_act = actions[idx + 1]
+                        next_qid = (next_act.get("qid") or "").strip()
+                        next_itype = (next_act.get("itype") or "").strip().lower()
+                        same_question_block = (
+                            itype_lower in ("radio", "checkbox")
+                            and next_itype in ("radio", "checkbox")
+                            and bool(qid)
+                            and next_qid == qid
+                        )
+                        if same_question_block:
+                            log_debug("[DISPATCH]", f"skip rescan idx={idx} same qid={qid!r} ({itype_lower})")
+                        else:
+                            import time
+                            import Survey.dom_analyzer as dom_analyzer
+                            time.sleep(PAUSE_INTER_DISPATCH)  # laisse le framework appliquer l'état
+                            dom_analyzer.analyze_dom(driver)  # clear+rebuild registry (target_id stable-ish)
+                            # 📈 micro-métrique: nombre de rescans DOM déclenchés sur la page courante
+                            try:
+                                driver._dom_rescans_this_page = int(getattr(driver, "_dom_rescans_this_page", 0)) + 1
+                            except Exception:
+                                pass
 
                 except Exception:
                     pass

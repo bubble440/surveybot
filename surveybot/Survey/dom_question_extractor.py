@@ -711,6 +711,48 @@ def _group_key_for_choice(el, itype: str) -> str:
                     if base_name and base_name != clean_name:
                         clean_name = base_name
 
+                    # LimeSurvey multiple-opt pattern: options in the same question
+                    # carry names like <sid>X<gid>X<qid>NA or <sid>X<gid>X<qid>othercbox.
+                    # The sq\d+|a\d+ rule above already handles SQ001…SQ009 and A1–A9;
+                    # this rule covers remaining alphabetic suffixes (NA, othercbox, etc.).
+                    # Guard (scope minimal): ancestor div with id="question{digits}" —
+                    # a LimeSurvey-specific DOM marker, more reliable than class matching.
+                    # Activation: >=2 checkboxes in that container sharing the same prefix.
+                    ls_m = re.match(r"^(\d+x\d+x\d+)([a-z][a-z0-9]*)$", clean_name)
+                    if ls_m:
+                        ls_prefix = ls_m.group(1)
+                        try:
+                            ls_q_divs = el.find_elements(
+                                By.XPATH,
+                                "ancestor::div[starts-with(@id,'question')][1]",
+                            )
+                            if ls_q_divs:
+                                ls_q_id = ls_q_divs[0].get_attribute("id") or ""
+                                if re.match(r"^question\d+$", ls_q_id):
+                                    ls_qc = ls_q_divs[0]
+                                    ls_sibs = ls_qc.find_elements(
+                                        By.XPATH, ".//input[@type='checkbox'][@name]"
+                                    )
+                                    ls_prefix_pat = re.compile(
+                                        rf"^{re.escape(ls_prefix)}[a-z]", re.IGNORECASE
+                                    )
+                                    ls_matching = 0
+                                    for _s in ls_sibs:
+                                        try:
+                                            _sn = _norm_lc(_s.get_attribute("name") or "")
+                                        except Exception:
+                                            continue
+                                        if ls_prefix_pat.match(_sn):
+                                            ls_matching += 1
+                                    if ls_matching >= 2:
+                                        log_debug(
+                                            "[DOM_GROUPING]",
+                                            f"limesurvey_multi_group prefix={ls_prefix} suffix={ls_m.group(2)} q_id={ls_q_id} matching={ls_matching}",
+                                        )
+                                        clean_name = ls_prefix
+                        except Exception:
+                            pass
+
                     # Decipher/FocusVision pattern: checkboxes d'une même question
                     # nommés `ans10518.0.0`, `ans10518.0.1`, etc. Le suffixe final
                     # identifie l'option et ne doit pas créer un groupement distinct.
