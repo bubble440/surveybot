@@ -834,6 +834,8 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
     
     frame_chain = frame_chain or []
     question_blocks: List[Dict[str, Any]] = []
+    table_matrix_row_names: Set[str] = set()
+    table_matrix_sge_prefixes: Set[str] = set()
     clear_registry()
 
     # --- 0) FocusVision cardsort (UI visible) ---
@@ -930,7 +932,22 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
     try:
         table_matrix_blocks = _extract_table_matrix_radio_rows(driver, frame_chain)
         if table_matrix_blocks:
-            return table_matrix_blocks
+            question_blocks.extend(table_matrix_blocks)
+            for _matrix_block in table_matrix_blocks:
+                if not isinstance(_matrix_block, dict):
+                    continue
+                _ctx = (_matrix_block.get("context") or {}) if isinstance(_matrix_block.get("context"), dict) else {}
+                if _ctx.get("table_matrix_radio") is not True:
+                    continue
+                _group_key = _norm_lc(_ctx.get("group_key") or "")
+                if _group_key.startswith("table_matrix_radio:name:"):
+                    _row_name = _group_key.split("table_matrix_radio:name:", 1)[1].strip()
+                    if _row_name:
+                        table_matrix_row_names.add(_row_name)
+                elif _group_key.startswith("table_matrix_sge:name:"):
+                    _sge_prefix = _group_key.split("table_matrix_sge:name:", 1)[1].strip()
+                    if _sge_prefix:
+                        table_matrix_sge_prefixes.add(_sge_prefix)
     except Exception:
         pass
 
@@ -1442,6 +1459,11 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                     continue
             raw_name_key = _group_key_for_choice(el, itype)
             if not raw_name_key:
+                continue
+            raw_name_key_lc = _norm_lc(raw_name_key)
+            if raw_name_key_lc in table_matrix_row_names:
+                continue
+            if any(raw_name_key_lc.startswith(f"{prefix}-") for prefix in table_matrix_sge_prefixes):
                 continue
             group_key = f"{itype}:name:{raw_name_key}"
             if is_debug() and raw_name_key.startswith("dom_container:"):

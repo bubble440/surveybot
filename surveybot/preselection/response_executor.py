@@ -11,16 +11,17 @@ from Survey.log_utils import log_info, log_debug
 
 
 def normalize(text):
-    """Nettoie une chaîne pour comparaison souple"""
+    """Nettoie une chaîne pour comparaison souple (ASCII pur, sans accents ni apostrophes)"""
+    # Remplacements avant décomposition
+    text = text.replace("€", "e").replace("–", "-")
+    # Normalisation Unicode → décomposition, puis suppression des combining characters (Mn)
     text = unicodedata.normalize("NFKD", text)
+    text = "".join(c for c in text if unicodedata.category(c) != "Mn")
     text = text.lower().strip()
-    return (
-        text.replace("€", "e")
-        .replace("à", "a")
-        .replace("–", "-")
-        .replace(",", "")
-        .replace(" ", "")
-    )
+    # Suppression des apostrophes sous toutes leurs formes Unicode et des espaces
+    text = re.sub(r"['\u2018\u2019\u201a\u201b\u02bc\u02b9\u0060\u00b4\uff07]", "", text)
+    text = text.replace(",", "").replace(" ", "")
+    return text.rstrip(".!?")
 
 
 def _is_checked_soft(el) -> bool:

@@ -420,7 +420,7 @@ def _run_survey_impl(driver, api_key, *, account_id: str, ctx=None, payout_name:
 
                         if final_url and "app.topsurveys.app/surveys" in final_url:
                             Survey.log_utils.log_info("SURVEY_HANDLER", "Retour TopSurveys après clic Participer — popup/exclusion attendue")
-                            Survey.survey_executor._handle_topsurveys_exclusion_popup(driver)
+                            Survey.survey_executor._handle_topsurveys_exclusion_popup(driver, account_id)
                             # if _skip_card_and_retry("topsurveys_redirect"):
                             #     return
                             continue
