@@ -8,13 +8,13 @@ from Survey.functions import _env_truthy
 
 # IS_LOCAL = os.getenv("RUN_ENV", "local") == "local"
 IS_LOCAL = os.getenv("RUN_ENV", "local") == "local"
- 
+
 # preselection/playwright_launcher.py
 """
-Launcher alternatif : Playwright lance Chrome avec proxy authentifié,
-puis Selenium s'attache au Chrome existant via remote debugging.
-Objectif : contourner les erreurs proxy auth de Chrome/UC (ERR_INVALID_ARGUMENT, no-proxy, etc.)
-sans réécrire tout le bot qui dépend de Selenium.
+Launcher alternatif : subprocess.Popen lance Chrome directement (sans Playwright),
+puis Selenium s'attache via debuggerAddress.
+Objectif : éviter la contamination CDP/cdc_* de Selenium à l'attach et supprimer
+la bannière "Chrome is being controlled by automated test software".
 """
 
 import json
@@ -22,9 +22,6 @@ import random
 import logging
 import tempfile
 from urllib.parse import urlparse
-import undetected_chromedriver as uc
-
-from playwright.sync_api import sync_playwright
 
 log = logging.getLogger(__name__)
 
@@ -363,11 +360,68 @@ def _detect_chrome_major_version(chrome_bin: str) -> int | None:
     return None
 
 
+def _build_proxy_auth_extension(proxy_user: str, proxy_pass: str, base_dir: str) -> str:
+    """
+    Génère une extension Chrome minimale (manifest v2) dans base_dir/proxy_auth_ext/.
+    Elle écoute webRequest.onAuthRequired et fournit les credentials proxy.
+    Retourne le chemin du répertoire de l'extension.
+
+    Note : --proxy-server=<server> doit être passé en arg Chrome séparément.
+    """
+    ext_dir = os.path.join(base_dir, "proxy_auth_ext")
+    os.makedirs(ext_dir, exist_ok=True)
+
+    manifest = {
+        "version": "1.0.0",
+        "manifest_version": 2,
+        "name": "Chrome Proxy Auth",
+        "permissions": [
+            "proxy",
+            "tabs",
+            "unlimitedStorage",
+            "storage",
+            "<all_urls>",
+            "webRequest",
+            "webRequestBlocking"
+        ],
+        "background": {
+            "scripts": ["background.js"],
+            "persistent": True
+        },
+        "minimum_chrome_version": "22.0.0"
+    }
+
+    # json.dumps assure l'échappement correct des credentials dans le JS
+    background_js = (
+        "chrome.webRequest.onAuthRequired.addListener(\n"
+        "  function(details) {\n"
+        "    return {\n"
+        "      authCredentials: {\n"
+        f"        username: {json.dumps(proxy_user)},\n"
+        f"        password: {json.dumps(proxy_pass)}\n"
+        "      }\n"
+        "    };\n"
+        "  },\n"
+        "  {urls: ['<all_urls>']},\n"
+        "  ['blocking']\n"
+        ");\n"
+    )
+
+    with open(os.path.join(ext_dir, "manifest.json"), "w", encoding="utf-8") as f:
+        json.dump(manifest, f)
+    with open(os.path.join(ext_dir, "background.js"), "w", encoding="utf-8") as f:
+        f.write(background_js)
+
+    return ext_dir
+
+
 def launch_browser(config: dict | None = None):
     """
-    1) Playwright lance Chrome avec proxy authentifié.
-    2) Selenium s'attache au Chrome via debuggerAddress.
-    3) On renvoie un driver Selenium (comme avant), mais on conserve Playwright en vie.
+    Mode prod/prod-like : subprocess.Popen lance Chrome directement,
+    puis Selenium s'attache via debuggerAddress (identique au mode attach manuel).
+
+    Mode local sans proxy : inchangé (webdriver.Chrome direct).
+    Mode attach local (ATTACH_DEBUGGER_ADDRESS) : inchangé.
     """
     chrome_bin = _detect_chrome_binary()
     if IS_LOCAL and not _env_truthy("LOCAL_USE_PROXY"):
@@ -407,150 +461,133 @@ def launch_browser(config: dict | None = None):
     debug_address = os.getenv("REMOTE_DEBUG_ADDRESS", "").strip()
 
     # Profil isolé (évite collisions + garde la session propre)
-    user_data_dir = tempfile.mkdtemp(prefix="pw_chrome_profile_")
+    user_data_dir = tempfile.mkdtemp(prefix="chrome_profile_")
 
-    print(f"[PW] chrome_bin={chrome_bin}")
-    print(f"[PW] headless={headless}")
-    print(f"[PW] debug_port={debug_port}")
-    print(f"[PW] user_data_dir={user_data_dir}")
+    print(f"[LAUNCH] chrome_bin={chrome_bin}")
+    print(f"[LAUNCH] headless={headless}")
+    print(f"[LAUNCH] debug_port={debug_port}")
+    print(f"[LAUNCH] user_data_dir={user_data_dir}")
 
     if proxy_server:
-        print(f"[PW][PROXY] server={proxy_server} user={'yes' if proxy_user else 'no'} pass={'yes' if proxy_pass else 'no'}")
+        print(f"[LAUNCH][PROXY] server={proxy_server} user={'yes' if proxy_user else 'no'} pass={'yes' if proxy_pass else 'no'}")
     else:
-        print("[PW][PROXY] aucun proxy (PROXY_URL vide)")
+        print("[LAUNCH][PROXY] aucun proxy (PROXY_URL vide)")
 
-    # --- 1) Lancer Chrome via Playwright ---
-    pw = sync_playwright().start()
-    try:
-        proxy_cfg = None
-        if proxy_server:
-            # ✅ Playwright gère nativement l'auth proxy ici (c'est le but)
-            proxy_cfg = {"server": proxy_server}
-            if proxy_user and proxy_pass:
-                proxy_cfg["username"] = proxy_user
-                proxy_cfg["password"] = proxy_pass
+    locale, tz = _parse_locale_tz_env()
+    print(f"[LAUNCH][LOCALE] {locale}  [LAUNCH][TZ] {tz}")
 
-        geo = _parse_geo_env()
-        locale, tz = _parse_locale_tz_env()
-        print(f"[PW][GEO] {geo}  [PW][LOCALE] {locale}  [PW][TZ] {tz}")
+    # ── Arguments Chrome ──────────────────────────────────────────────────────
+    # NOTE: --disable-gpu SUPPRIMÉ volontairement.
+    #   Avec Xvfb (DISPLAY=:99), Chrome tourne en mode headed sur un écran
+    #   virtuel et n'a pas besoin de désactiver le GPU.
+    #   --disable-gpu forçait SwiftShader comme renderer WebGL, une signature
+    #   de bot détectée par ThreatMetrix/Datadome dès le premier chargement.
+    cmd = [
+        chrome_bin,
+        f"--remote-debugging-port={debug_port}",
+        "--remote-debugging-allow-origins=*",
+        f"--user-data-dir={user_data_dir}",
+        "--no-first-run",
+        "--no-default-browser-check",
+        "--disable-dev-shm-usage",
+        "--no-sandbox",
+        "--disable-background-networking",
+        "--disable-component-update",
+        "--disable-features=Translate,OptimizationHints",
+        "--disable-blink-features=AutomationControlled",
+        "--window-size=1920,1080",
+        f"--lang={locale}",
+    ]
 
-        # ── Arguments Chrome ──────────────────────────────────────────────────
-        # NOTE: --disable-gpu SUPPRIMÉ volontairement.
-        #   Avec Xvfb (DISPLAY=:99), Chrome tourne en mode headed sur un écran
-        #   virtuel et n'a pas besoin de désactiver le GPU.
-        #   --disable-gpu forçait SwiftShader comme renderer WebGL, une signature
-        #   de bot détectée par ThreatMetrix/Datadome dès le premier chargement.
-        args = [
-            f"--remote-debugging-port={debug_port}",
-            "--remote-debugging-allow-origins=*",
-            "--no-first-run",
-            "--no-default-browser-check",
-            "--disable-dev-shm-usage",
-            "--no-sandbox",
-            "--disable-background-networking",
-            "--disable-component-update",
-            "--disable-features=Translate,OptimizationHints",
-            "--disable-blink-features=AutomationControlled",
-            "--window-size=1920,1080",
-        ]
-        if debug_address:
-            args.append(f"--remote-debugging-address={debug_address}")
-        if headless:
-            # Fallback si Xvfb indisponible (ex: test local sans DISPLAY).
-            # En prod normale, DISPLAY=:99 est positionné par entrypoint.sh
-            # et headless=False → ce bloc ne s'exécute pas.
-            args.append("--headless=new")
+    if proxy_server:
+        cmd.append(f"--proxy-server={proxy_server}")
 
-        context = pw.chromium.launch_persistent_context(
-            user_data_dir=user_data_dir,
-            executable_path=chrome_bin,
-            headless=headless,
-            locale=locale,
-            timezone_id=tz,
-            geolocation=geo,
-            args=args,
-            proxy=proxy_cfg,
+    # Extension proxy auth : uniquement si credentials présents
+    # (--proxy-server= suffit pour les proxies sans auth)
+    ext_dir = None
+    if proxy_server and proxy_user and proxy_pass:
+        ext_dir = _build_proxy_auth_extension(proxy_user, proxy_pass, user_data_dir)
+        cmd.append(f"--load-extension={ext_dir}")
+        print(f"[LAUNCH][PROXY] extension auth générée : {ext_dir}")
+
+    if debug_address:
+        cmd.append(f"--remote-debugging-address={debug_address}")
+
+    if headless:
+        # Fallback si Xvfb indisponible (ex: test local sans DISPLAY).
+        # En prod normale, DISPLAY=:99 est positionné par entrypoint.sh
+        # et headless=False → ce bloc ne s'exécute pas.
+        cmd.append("--headless=new")
+
+    # ── Env subprocess : TZ pour la timezone ─────────────────────────────────
+    proc_env = os.environ.copy()
+    proc_env["TZ"] = tz
+
+    # --- 1) Lancer Chrome via subprocess.Popen ---
+    chrome_proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        env=proc_env,
+    )
+    print(f"[LAUNCH] Chrome PID={chrome_proc.pid}")
+
+    # --- Relay socat : expose le debug port sur 0.0.0.0 ---
+    # (Playwright forçait Chrome sur 127.0.0.1 ; subprocess respecte
+    #  --remote-debugging-address mais socat reste utile en Docker)
+    if debug_address == "0.0.0.0":
+        relay_port = debug_port + 1
+        subprocess.Popen(
+            ["socat",
+             f"TCP-LISTEN:{relay_port},fork,reuseaddr,bind=0.0.0.0",
+             f"TCP:127.0.0.1:{debug_port}"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
         )
+        print(f"[LAUNCH] socat relay 0.0.0.0:{relay_port} → 127.0.0.1:{debug_port}")
 
-        # --- Relay socat : expose le debug port sur 0.0.0.0 ---
-        # Playwright force Chrome sur 127.0.0.1 et ignore --remote-debugging-address.
-        # socat relaie le port relay (debug_port+1) vers 127.0.0.1:debug_port.
-        if debug_address == "0.0.0.0":
-            import subprocess as _sp
-            relay_port = debug_port + 1
-            _sp.Popen(
-                ["socat",
-                 f"TCP-LISTEN:{relay_port},fork,reuseaddr,bind=0.0.0.0",
-                 f"TCP:127.0.0.1:{debug_port}"],
-                stdout=_sp.DEVNULL, stderr=_sp.DEVNULL
-            )
-            print(f"[PW] socat relay 0.0.0.0:{relay_port} → 127.0.0.1:{debug_port}")
-
-        # --- 2) Attacher Selenium au Chrome déjà lancé ---
-        # Attendre que Chrome expose son debug port (jusqu'à 10s)
-        import urllib.request
-        for attempt in range(20):
-            try:
-                urllib.request.urlopen(f"http://127.0.0.1:{debug_port}/json", timeout=1)
-                print(f"[PW] Debug port prêt après {attempt * 0.5:.1f}s")
-                break
-            except Exception:
-                time.sleep(0.5)
-        else:
-            print(f"[PW][WARN] Debug port toujours indisponible après 10s — tentative attach quand même")
-
-        opts = webdriver.ChromeOptions()
-        opts.add_experimental_option("debuggerAddress", f"127.0.0.1:{debug_port}")
-        opts.page_load_strategy = "eager"
-        driver = webdriver.Chrome(options=opts, service=Service(log_output=subprocess.DEVNULL))
-        # 🔧 Fingerprint spoofing via CDP Selenium.
-        # Injecté AVANT new_page() pour que le script soit actif dès la première
-        # vraie navigation. Page.addScriptToEvaluateOnNewDocument persiste pour
-        # toutes les navigations futures du processus Chrome.
-        apply_fingerprint_overrides_cdp(driver)
-        print("[PW][OVERRIDE] Fingerprint overrides enregistrés via CDP Selenium.")
-
-        # new_page() et grant_permissions APRÈS l'injection CDP :
-        # la première page ouverte par Playwright bénéficie déjà du fingerprint.
-        page = context.new_page()
-        # ✅ Permission geolocation : sans ça, beaucoup de sites voient "denied"
+    # --- 2) Attacher Selenium au Chrome déjà lancé ---
+    # Attendre que Chrome expose son debug port (jusqu'à 10s)
+    import urllib.request
+    for attempt in range(20):
         try:
-            context.grant_permissions(["geolocation"], origin="https://app.topsurveys.app")
-            context.grant_permissions(["geolocation"], origin="https://www.topsurveys.app")
-            print("[PW][GEO] permission geolocation accordée pour TopSurveys.")
-        except Exception as e:
-            print(f"[PW][GEO][WARN] grant_permissions a échoué: {e}")
+            urllib.request.urlopen(f"http://127.0.0.1:{debug_port}/json", timeout=1)
+            print(f"[LAUNCH] Debug port prêt après {attempt * 0.5:.1f}s")
+            break
+        except Exception:
+            time.sleep(0.5)
+    else:
+        print(f"[LAUNCH][WARN] Debug port toujours indisponible après 10s — tentative attach quand même")
 
-        try:
-            fingerprint = driver.execute_script("""
-                return {
-                    language: navigator.language,
-                    languages: navigator.languages,
-                    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-                    platform: navigator.platform,
-                    webdriver: navigator.webdriver,
-                    userAgent: navigator.userAgent,
-                    geolocation: !!navigator.geolocation
-                };
-            """)
-            print("[FP][BROWSER]", json.dumps(fingerprint, indent=2))
-        except Exception as e:
-            print("[FP][ERROR]", e)
+    opts = webdriver.ChromeOptions()
+    opts.add_experimental_option("debuggerAddress", f"127.0.0.1:{debug_port}")
+    opts.page_load_strategy = "eager"
+    driver = webdriver.Chrome(options=opts, service=Service(log_output=subprocess.DEVNULL))
 
-        # On garde Playwright vivant en attachant les objets au driver
-        # (sinon garbage collection / fermeture => Selenium perd la session)
-        driver._pw = pw
-        driver._pw_context = context
-        driver._pw_page = page
-        driver._pw_user_data_dir = user_data_dir
-        
-        return driver
+    # Fingerprint spoofing via CDP Selenium.
+    # Injecté AVANT toute navigation pour que le script soit actif dès la première
+    # vraie navigation. Page.addScriptToEvaluateOnNewDocument persiste pour
+    # toutes les navigations futures du processus Chrome.
+    apply_fingerprint_overrides_cdp(driver)
+    print("[LAUNCH][OVERRIDE] Fingerprint overrides enregistrés via CDP Selenium.")
 
-    except Exception:
-        # Ferme proprement Playwright si le lancement ou l'attach a échoué.
-        if pw:
-            try:
-                pw.stop()
-            except Exception:
-                pass
-        raise
+    try:
+        fingerprint = driver.execute_script("""
+            return {
+                language: navigator.language,
+                languages: navigator.languages,
+                timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+                platform: navigator.platform,
+                webdriver: navigator.webdriver,
+                userAgent: navigator.userAgent,
+                geolocation: !!navigator.geolocation
+            };
+        """)
+        print("[FP][BROWSER]", json.dumps(fingerprint, indent=2))
+    except Exception as e:
+        print("[FP][ERROR]", e)
+
+    # Attacher le processus Chrome et le profil au driver pour nettoyage dans main.py
+    driver._chrome_proc = chrome_proc
+    driver._chrome_user_data_dir = user_data_dir
+
+    return driver

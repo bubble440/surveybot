@@ -20,6 +20,24 @@ def format_elapsed_hms(elapsed_seconds: int) -> str:
     return f"{hours:02d}-{minutes:02d}-{seconds:02d}"
 
 
+def init_daily_balance_target(
+    state: Dict[str, Any],
+    balance: float,
+    day: str,
+) -> None:
+    """
+    Initialise les champs de suivi du solde journalier pour `day`.
+    Idempotent : ne fait rien si le jour est déjà présent dans daily_balance_start.
+    """
+    starts = state.setdefault("daily_balance_start", {})
+    if day in starts:
+        return
+
+    starts[day] = balance
+    state.setdefault("daily_balance_target", {})[day] = balance + DAILY_TARGET_EUR
+    state.setdefault("daily_balance_gained", {})[day] = 0.0
+
+
 def ensure_daily_timer_started(
     state: Dict[str, Any],
     *,

@@ -717,10 +717,10 @@ def main():
             # FIX-B4: pas de 'continue' ici — supprime les SystemExit et empêche l'arrêt propre
             try:
                 if driver and (not is_attach_mode()):
-                    # Arrêter Playwright avant Selenium pour libérer la boucle asyncio
-                    if hasattr(driver, '_pw') and driver._pw:
+                    # Terminer le processus Chrome lancé par subprocess.Popen
+                    if hasattr(driver, '_chrome_proc') and driver._chrome_proc:
                         try:
-                            driver._pw.stop()
+                            driver._chrome_proc.terminate()
                         except Exception:
                             pass
                     driver.quit()
