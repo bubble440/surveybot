@@ -36,6 +36,7 @@ CTA_SYNONYMS = {
     "accepter", "accepter et commencer", "next", "continue",
     "submit", "soumettre", "valider", "proceed", "begin",
     "envoyer", "terminer", "send", "confirmer", "confirmez", "confirm",
+    "sauvegarder",
 }
 
 CTA_INTERCEPT_ENV_VAR = "CTA_INTERCEPT_ONLY"
@@ -78,6 +79,7 @@ def looks_like_nav_label(s: str) -> bool:
         "continuer", "suivant", "start", "commencer", "démarrer",
         "accepter", "accepter et commencer", "next", "continue",
         "submit", "soumettre", "valider", "confirmer", "confirmez", "confirm",
+        "sauvegarder",
     }
     return any(k in s for k in nav_kw)
 
@@ -1765,7 +1767,7 @@ def try_click_navigation_cta(driver) -> bool:
             score = 0
             if any(x in t for x in ["continue", "continuer", "next", "suivant", "proceed"]):
                 score += 50
-            if any(x in t for x in ["valider", "submit", "envoyer", "terminer", "send", "start", "commencer", "démarrer", "confirm", "confirmer", "confirmez"]):
+            if any(x in t for x in ["valider", "submit", "envoyer", "terminer", "send", "start", "commencer", "démarrer", "confirm", "confirmer", "confirmez", "sauvegarder"]):
                 score += 30
 
             if el_id == "submitquestion":
