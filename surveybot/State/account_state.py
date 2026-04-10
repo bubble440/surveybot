@@ -92,6 +92,9 @@ def _default_state(account_id: str) -> Dict[str, Any]:
         "last_start_ts": "1970-01-01T00:00:00",
         "daily_earned": {},           # ex: {"2025-12-31": 1.23}
         "daily_target_start_ts": {},  # ex: {"2026-03-17": "2026-03-17T08:00:00"}
+        "daily_balance_start": {},    # ex: {"2026-04-10": 2.50} — solde lu au premier lancement du jour
+        "daily_balance_target": {},   # ex: {"2026-04-10": 3.50} — objectif de solde courant pour la journée
+        "daily_balance_gained": {},   # ex: {"2026-04-10": 1.00} — gain journalier cumulé (survit aux retraits)
         "total_earned": 0.0,
         "updated_ts": _now(),
     }

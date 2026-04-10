@@ -3,9 +3,10 @@ import os
 import re
 import time
 from typing import Tuple
-from State.account_state import update_state
-from State.daily_target import DAILY_TARGET_EUR, record_daily_earning_and_target
+from State.account_state import update_state, load_state
+from State.daily_target import DAILY_TARGET_EUR, record_daily_earning_and_target, init_daily_balance_target, today_str
 from Management.guards.runtime_guard import get_guard
+from Management.notifier import send_telegram
 from selenium.webdriver.common.by import By
 
 # Seuil minimal réel pour déclencher un encaissement sur TopSurveys.
@@ -24,6 +25,18 @@ if not IS_LOCAL:
     from selenium.webdriver.common.action_chains import ActionChains
 # ---------- Helpers ----------
 
+def _notify_cashout_failure(account_id: str, amount: float) -> None:
+    """Envoie une notification Telegram si les credentials sont configurés."""
+    tg_token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
+    tg_chat  = os.getenv("TELEGRAM_CHAT_ID", "").strip()
+    if not tg_token or not tg_chat:
+        return
+    msg = f"[PAYOUT][ÉCHEC] Retrait échoué — compte: {account_id} | montant: {amount:.2f} €"
+    try:
+        send_telegram(msg, tg_token, tg_chat)
+    except Exception:
+        pass
+
 def _wait(driver, timeout=10):
     return WebDriverWait(driver, timeout)
 
@@ -34,10 +47,6 @@ def _js_click(driver, el):
 
 def _find(driver, by, sel, timeout=10):
     return _wait(driver, timeout).until(EC.presence_of_element_located((by, sel)))
-
-def _find_all(driver, by, sel, timeout=10):
-    _wait(driver, timeout).until(EC.presence_of_all_elements_located((by, sel)))
-    return driver.find_elements(by, sel)
 
 # ---------- Lecture du solde & ouverture du modal ----------
 
@@ -262,33 +271,6 @@ def _confirm_claim(driver, maybe_revolut_fullname: str = "", maybe_revolut_tag: 
     except Exception:
         return False
 
-def _parse_amount(text: str) -> float:
-    """
-    Parse un montant € de façon robuste.
-    Exemples acceptés :
-      - "2,19 €"
-      - "2.19€"
-      - "2,19 €"
-      - "€2,19"
-    """
-    if not text:
-        raise ValueError("balance text vide")
-
-    # normalisation unicode + espaces
-    t = (
-        text.replace("\u00a0", " ")  # nbsp
-            .replace("€", "")
-            .strip()
-    )
-
-    # extraction nombre (virgule ou point)
-    m = re.search(r"(\d+[.,]\d+|\d+)", t)
-    if not m:
-        raise ValueError(f"montant non détecté dans '{text}'")
-
-    num = m.group(1).replace(",", ".")
-    return float(num)
-
 def _read_balance(driver) -> float:
     """
     Lecture robuste du solde TopSurveys.
@@ -385,6 +367,7 @@ def check_and_cashout_if_needed(
     print(f"[PAYOUT] Solde détecté: {amount:.2f} €. Ouverture du modal d'encaissement…")
     if not _open_cashout_modal(driver):
         print("[PAYOUT] Impossible d'ouvrir le modal d'encaissement.")
+        _notify_cashout_failure(account_id, amount)
         return False
 
     # Essaye dans l'ordre demandé
@@ -403,6 +386,7 @@ def check_and_cashout_if_needed(
 
     if not success_select:
         print("[PAYOUT] Aucune option d'encaissement sélectionnée (PayPal/Revolut indisponibles ?).")
+        _notify_cashout_failure(account_id, amount)
         return False
 
     # On est maintenant sur /confirm-claim
@@ -411,7 +395,27 @@ def check_and_cashout_if_needed(
         print("[PAYOUT] Récompense réclamée.")
 
         # 🔐 Source de vérité : mise à jour par compte
+        _cashout_result = {"daily_stop": False}
+
         def _apply_gain(st):
+            _today = today_str()
+            init_daily_balance_target(st, amount, _today)
+
+            start = float(st.get("daily_balance_start", {}).get(_today, amount))
+            gained_prev = float(st.get("daily_balance_gained", {}).get(_today, 0.0))
+            gain_avant_retrait = max(0.0, amount - start)
+            gain_total = gained_prev + gain_avant_retrait
+
+            st.setdefault("daily_balance_gained", {})[_today] = gain_total
+
+            if gain_total >= DAILY_TARGET_EUR:
+                _cashout_result["daily_stop"] = True
+            else:
+                solde_post_retrait = amount - MIN_CASHOUT_EUR
+                st.setdefault("daily_balance_target", {})[_today] = (
+                    solde_post_retrait + (DAILY_TARGET_EUR - gain_total)
+                )
+
             record_daily_earning_and_target(
                 st,
                 amount_eur=5.0,
@@ -424,9 +428,17 @@ def check_and_cashout_if_needed(
         # 🧠 Mémoire runtime (cache)
         get_guard().record_earning(5.0)
 
+        if _cashout_result["daily_stop"]:
+            from Management.pause_policy import PausePolicy
+            from Management.guards.runtime_guard import StopReason
+            print(f"[DAILY_STOP] gain journalier >= {DAILY_TARGET_EUR}€ après retrait → arrêt journalier")
+            get_guard().pause(PausePolicy.DAILY_RESET, StopReason.DAILY_TARGET_REACHED)
+            return True  # jamais atteint (pause lève SystemExit)
+
         return True
 
     print("[PAYOUT] Impossible de confirmer la réclamation.")
+    _notify_cashout_failure(account_id, amount)
     return False
 
 def _payout_and_check_daily_stop(driver, account_id: str) -> bool:
@@ -437,17 +449,14 @@ def _payout_and_check_daily_stop(driver, account_id: str) -> bool:
     Retourne False si tout va bien (le bot peut continuer).
     Retourne True / lève SystemExit si DAILY STOP déclenché.
     """
-    import Cash.payout as payout
-    from Cash.payout import MIN_CASHOUT_EUR
-    from State.daily_target import DAILY_TARGET_EUR
-    from Management.guards.runtime_guard import get_guard, StopReason
+    from Management.guards.runtime_guard import StopReason
     from Management.pause_policy import PausePolicy
 
     # 1) Retrait uniquement si solde >= 5 € (MIN_CASHOUT_EUR) :
     #    le modal TopSurveys ne propose que des options >= 5 €,
     #    donc l'ouverture en dessous de ce seuil est inutile.
     try:
-        payout.check_and_cashout_if_needed(
+        check_and_cashout_if_needed(
             driver,
             account_id=account_id,
             min_amount_eur=MIN_CASHOUT_EUR,
@@ -458,15 +467,26 @@ def _payout_and_check_daily_stop(driver, account_id: str) -> bool:
     except Exception as e:
         print(f"[PAYOUT][WARN] retour TopSurveys: {e}")
 
-    # 2) DAILY STOP si objectif journalier déjà atteint
+    # 2) DAILY STOP basé sur le solde courant vs objectif journalier
     guard = get_guard()
-    # FIX-C: même correction que dans soft_restart (launch.py) — le try/except
-    # AttributeError était du dead code en prod. getattr couvre _NullGuard proprement.
-    earnings = float(getattr(getattr(guard, "state", None), "earnings_today_eur", 0.0))
 
-    if earnings >= DAILY_TARGET_EUR:
-        print(f"[DAILY_STOP] {earnings:.2f}€ >= {DAILY_TARGET_EUR}€ → arrêt journalier")
-        guard.pause(PausePolicy.DAILY_RESET, StopReason.DAILY_TARGET_REACHED)
-        return True  # jamais atteint (pause lève SystemExit)
+    try:
+        balance = _read_balance(driver)
+    except Exception as e:
+        print(f"[PAYOUT][WARN] lecture solde pour daily stop: {e}")
+        return False
+
+    _today = today_str()
+    update_state(account_id, lambda st: init_daily_balance_target(st, balance, _today))
+
+    state = load_state(account_id)
+    target_map = state.get("daily_balance_target", {})
+
+    if _today in target_map:
+        target = float(target_map[_today])
+        if balance >= target:
+            print(f"[DAILY_STOP] solde {balance:.2f}€ >= objectif {target:.2f}€ → arrêt journalier")
+            guard.pause(PausePolicy.DAILY_RESET, StopReason.DAILY_TARGET_REACHED)
+            return True  # jamais atteint (pause lève SystemExit)
 
     return False

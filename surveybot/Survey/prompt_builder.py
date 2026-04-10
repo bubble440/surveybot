@@ -498,6 +498,7 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
         "Si le contexte ne permet pas encore de déduire la thématique du survey, applique ces priorités dans l'ordre :\n"
         "- Pour une question de fréquence : choisis l'option la plus haute disponible (ex : \"Tous les jours\", \"Daily\", \"Chaque jour\").\n"
         "- Pour une question d'usage ou de possession : affirme l'usage ou la possession.\n"
+        "- Pour une question d'intention ou de projet futur (signaux : \"intention\", \"prévoyez\", \"envisagez\", \"comptez\", \"planifiez\", \"dans les X mois\", \"prochainement\", ou options présentant une gradation temporelle d'intention du type immédiat > moyen terme > long terme > jamais/non) : choisis TOUJOURS l'option indiquant l'horizon le plus proche (ex : \"dans moins de 3 mois\", \"très bientôt\"). Ne jamais choisir \"Non\", \"Jamais\" ou toute option niant l'intention.\n"
         "- Pour toute autre gradation : choisis l'option la plus engagée ou favorable.\n"
         "Principe général : en l'absence de contexte, une réponse favorable est presque toujours plus sûre qu'une réponse restrictive.\n\n"
         "Ces exemples illustrent ce raisonnement — ils ne constituent PAS des règles fixes :\n"
