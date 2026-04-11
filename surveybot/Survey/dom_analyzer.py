@@ -1478,6 +1478,50 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         except Exception:
             continue
 
+    # --- Fusion des groupes "1 input = 1 name" partageant le même conteneur question
+    # Signal DOM : plusieurs inputs distincts (name différent) rendus dans le même
+    # fieldset/conteneur (ex: jQuery Mobile). Garde-fou : on ne fusionne que les
+    # groupes à exactement 1 élément pour éviter de toucher les groupes légitimes.
+    try:
+        _cont_groups: dict[tuple, list] = {}  # (itype, container_uid) -> [(group_key, els)]
+        for (itype, group_key), els in list(groups.items()):
+            if len(els) != 1:
+                continue
+            try:
+                container = _nearest_question_container(els[0])
+                if container is None:
+                    continue
+                uid = driver.execute_script(
+                    "if (!arguments[0].__sq_uid__) {"
+                    "  arguments[0].__sq_uid__ = ++((window.__sq_uid__ = window.__sq_uid__ || 0));"
+                    "} return arguments[0].__sq_uid__;",
+                    container,
+                )
+                if uid is None:
+                    continue
+                _cont_groups.setdefault((itype, uid), []).append((group_key, els))
+            except Exception:
+                continue
+        for (_itype, _uid), entries in _cont_groups.items():
+            if len(entries) < 2:
+                continue
+            first_key, first_els = entries[0]
+            for other_key, other_els in entries[1:]:
+                first_els.extend(other_els)
+                del groups[(_itype, other_key)]
+            groups[(_itype, first_key)] = first_els
+            if is_debug():
+                try:
+                    log_debug(
+                        "[DOM_GROUPING]",
+                        f"merge_single_name_inputs itype={_itype} uid={_uid} "
+                        f"merged={len(entries)} groups into {first_key}",
+                    )
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
     seen_signatures = set()
     seen_multi_text_groups = set()
 

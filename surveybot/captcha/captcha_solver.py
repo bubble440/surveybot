@@ -9,6 +9,10 @@ TWO_CAPTCHA_KEY = (
     or config.get("TWO_CAPTCHA_KEY")
     or config.get("CAPTCHA_API_KEY")
 )
+CAPSOLVER_API_KEY = (
+    os.getenv("CAPSOLVER_API_KEY")
+    or config.get("CAPSOLVER_API_KEY")
+)
 
 class TwoCaptchaClient:
     def __init__(self, api_key=None, base_url="https://api.2captcha.com",
@@ -358,3 +362,67 @@ class TwoCaptchaClient:
             if res.get("status") == "processing":
                 continue
             raise RuntimeError(f"getTaskResult (enterprise proxy) error: {res}")
+
+
+class CapSolverClient:
+    """Client CapSolver — DataDome uniquement (DataDomeSolverTask)."""
+
+    def __init__(self, api_key=None, base_url="https://api.capsolver.com",
+                 poll_interval=4, timeout=180):
+        self.api_key = CAPSOLVER_API_KEY or api_key
+        self.base_url = base_url
+        self.poll_interval = poll_interval
+        self.timeout = timeout
+
+    def solve_datadome(
+        self,
+        captcha_url: str,
+        website_url: str,
+        user_agent: str,
+        proxy_type: str,
+        proxy_address: str,
+        proxy_port: int,
+        proxy_login: str = "",
+        proxy_password: str = "",
+    ) -> str:
+        """
+        Résout DataDome CAPTCHA via CapSolver (DataDomeSolverTask, proxy obligatoire).
+
+        Retourne la valeur brute du cookie datadome (chaîne depuis solution.cookie),
+        dans le même format que TwoCaptchaClient.solve_datadome().
+        """
+        scheme = proxy_type.lower()
+        if proxy_login and proxy_password:
+            proxy_str = f"{scheme}://{proxy_login}:{proxy_password}@{proxy_address}:{proxy_port}"
+        else:
+            proxy_str = f"{scheme}://{proxy_address}:{proxy_port}"
+
+        task = {
+            "type": "DataDomeSolverTask",
+            "websiteURL": website_url,
+            "captchaUrl": captcha_url,
+            "userAgent": user_agent,
+            "proxy": proxy_str,
+        }
+
+        payload = {"clientKey": self.api_key, "task": task}
+        r = requests.post(f"{self.base_url}/createTask", json=payload, timeout=30).json()
+        if r.get("errorId"):
+            raise RuntimeError(f"createTask (datadome capsolver) error: {r}")
+        task_id = r["taskId"]
+
+        start = time.time()
+        while True:
+            if time.time() - start > self.timeout:
+                raise TimeoutError("CapSolver délai dépassé (DataDomeSolverTask)")
+            time.sleep(self.poll_interval)
+            res = requests.post(
+                f"{self.base_url}/getTaskResult",
+                json={"clientKey": self.api_key, "taskId": task_id},
+                timeout=30,
+            ).json()
+            if res.get("status") == "ready":
+                return res["solution"]["cookie"]
+            if res.get("status") == "processing":
+                continue
+            raise RuntimeError(f"getTaskResult (datadome capsolver) error: {res}")
