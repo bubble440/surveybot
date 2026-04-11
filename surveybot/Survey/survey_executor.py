@@ -1512,7 +1512,7 @@ def execute_survey_page(driver, account_id, api_key, ctx=None):
         prompt = prompt_builder.build_batch_prompt(question_blocks_for_batch, ctx=ctx)
 
         if (os.getenv("LOG_LEVEL") or "").strip().lower() == "debug":
-            print("[PROMPT_DEBUG] ===== PROMPT ENVOYÉ À OPENAI =====")
+            print("🧠 [PROMPT_DEBUG] ===== PROMPT ENVOYÉ À OPENAI =====")
             print(prompt[:20000])  # tronqué pour ne pas noyer les logs
             print("[PROMPT_DEBUG] ===================================")
 
