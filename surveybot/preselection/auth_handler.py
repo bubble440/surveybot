@@ -228,7 +228,7 @@ def login(driver, email, password):
             arguments[0].dispatchEvent(new Event('change', { bubbles: true }));
         """, email_input)
         time.sleep(0.5)
-        print(f"[LOGIN] Email saisi : {email}")
+        print(f"📧 [LOGIN] Email saisi : {email}")
 
         continue_btn = wait.until(
             EC.element_to_be_clickable((
