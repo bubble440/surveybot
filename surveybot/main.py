@@ -723,6 +723,12 @@ def main():
                             driver._chrome_proc.terminate()
                         except Exception:
                             pass
+                    # Terminer le relay pproxy si présent
+                    if hasattr(driver, '_proxy_relay_proc') and driver._proxy_relay_proc:
+                        try:
+                            driver._proxy_relay_proc.terminate()
+                        except Exception:
+                            pass
                     driver.quit()
             except Exception:
                 pass

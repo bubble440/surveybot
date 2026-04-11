@@ -360,59 +360,53 @@ def _detect_chrome_major_version(chrome_bin: str) -> int | None:
     return None
 
 
-def _build_proxy_auth_extension(proxy_user: str, proxy_pass: str, base_dir: str) -> str:
+def _start_proxy_relay(proxy_server: str, proxy_user: str, proxy_pass: str):
     """
-    Génère une extension Chrome minimale (manifest v2) dans base_dir/proxy_auth_ext/.
-    Elle écoute webRequest.onAuthRequired et fournit les credentials proxy.
-    Retourne le chemin du répertoire de l'extension.
+    Lance pproxy en subprocess comme relay local authentifié vers le proxy ISP.
+    Chrome reçoit --proxy-server=http://127.0.0.1:<local_port> sans credentials.
 
-    Note : --proxy-server=<server> doit être passé en arg Chrome séparément.
+    Retourne (proc, local_port). Si le port n'est pas disponible dans les 5s,
+    retourne quand même — le clic Chrome échouera au pire, mais Chrome démarrera.
     """
-    ext_dir = os.path.join(base_dir, "proxy_auth_ext")
-    os.makedirs(ext_dir, exist_ok=True)
+    import socket
 
-    manifest = {
-        "version": "1.0.0",
-        "manifest_version": 2,
-        "name": "Chrome Proxy Auth",
-        "permissions": [
-            "proxy",
-            "tabs",
-            "unlimitedStorage",
-            "storage",
-            "<all_urls>",
-            "webRequest",
-            "webRequestBlocking"
-        ],
-        "background": {
-            "scripts": ["background.js"],
-            "persistent": True
-        },
-        "minimum_chrome_version": "22.0.0"
-    }
+    parsed = urlparse(proxy_server if "://" in proxy_server else "http://" + proxy_server)
+    proxy_host = parsed.hostname
+    proxy_port = parsed.port or 8080
 
-    # json.dumps assure l'échappement correct des credentials dans le JS
-    background_js = (
-        "chrome.webRequest.onAuthRequired.addListener(\n"
-        "  function(details) {\n"
-        "    return {\n"
-        "      authCredentials: {\n"
-        f"        username: {json.dumps(proxy_user)},\n"
-        f"        password: {json.dumps(proxy_pass)}\n"
-        "      }\n"
-        "    };\n"
-        "  },\n"
-        "  {urls: ['<all_urls>']},\n"
-        "  ['blocking']\n"
-        ");\n"
+    local_port = random.randint(34000, 44000)
+    relay_upstream = f"http://{proxy_user}:{proxy_pass}@{proxy_host}:{proxy_port}"
+
+    cmd = [
+        "pproxy",
+        "-l", f"http://127.0.0.1:{local_port}",
+        "-r", relay_upstream,
+    ]
+    print(f"[LAUNCH][RELAY] pproxy 127.0.0.1:{local_port} → {proxy_host}:{proxy_port}")
+
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
     )
 
-    with open(os.path.join(ext_dir, "manifest.json"), "w", encoding="utf-8") as f:
-        json.dump(manifest, f)
-    with open(os.path.join(ext_dir, "background.js"), "w", encoding="utf-8") as f:
-        f.write(background_js)
+    # Attendre que pproxy accepte des connexions (max 5s)
+    deadline = time.time() + 5.0
+    ready = False
+    while time.time() < deadline:
+        try:
+            with socket.create_connection(("127.0.0.1", local_port), timeout=0.5):
+                ready = True
+                break
+        except Exception:
+            time.sleep(0.2)
 
-    return ext_dir
+    if ready:
+        print(f"[LAUNCH][RELAY] pproxy prêt sur port {local_port}")
+    else:
+        print(f"[LAUNCH][RELAY][WARN] pproxy port {local_port} pas encore disponible après 5s — on continue")
+
+    return proc, local_port
 
 
 def launch_browser(config: dict | None = None):
@@ -499,16 +493,14 @@ def launch_browser(config: dict | None = None):
         f"--lang={locale}",
     ]
 
-    if proxy_server:
-        cmd.append(f"--proxy-server={proxy_server}")
-
-    # Extension proxy auth : uniquement si credentials présents
-    # (--proxy-server= suffit pour les proxies sans auth)
-    ext_dir = None
+    relay_proc = None
     if proxy_server and proxy_user and proxy_pass:
-        ext_dir = _build_proxy_auth_extension(proxy_user, proxy_pass, user_data_dir)
-        cmd.append(f"--load-extension={ext_dir}")
-        print(f"[LAUNCH][PROXY] extension auth générée : {ext_dir}")
+        # Relay local pproxy : Chrome reçoit un proxy sans credentials
+        relay_proc, local_port = _start_proxy_relay(proxy_server, proxy_user, proxy_pass)
+        cmd.append(f"--proxy-server=http://127.0.0.1:{local_port}")
+    elif proxy_server:
+        # Proxy sans auth : on passe directement
+        cmd.append(f"--proxy-server={proxy_server}")
 
     if debug_address:
         cmd.append(f"--remote-debugging-address={debug_address}")
@@ -589,5 +581,7 @@ def launch_browser(config: dict | None = None):
     # Attacher le processus Chrome et le profil au driver pour nettoyage dans main.py
     driver._chrome_proc = chrome_proc
     driver._chrome_user_data_dir = user_data_dir
+    if relay_proc is not None:
+        driver._proxy_relay_proc = relay_proc
 
     return driver
