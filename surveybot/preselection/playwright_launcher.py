@@ -362,36 +362,116 @@ def _detect_chrome_major_version(chrome_bin: str) -> int | None:
 
 def _start_proxy_relay(proxy_server: str, proxy_user: str, proxy_pass: str):
     """
-    Lance pproxy en subprocess comme relay local authentifié vers le proxy ISP.
+    Relay HTTP CONNECT en Python pur (sans dépendance externe).
+    Écoute sur 127.0.0.1:<local_port>, intercepte les requêtes CONNECT de Chrome,
+    et les relaie vers le proxy ISP upstream avec Proxy-Authorization: Basic.
     Chrome reçoit --proxy-server=http://127.0.0.1:<local_port> sans credentials.
-
-    Retourne (proc, local_port). Si le port n'est pas disponible dans les 5s,
-    retourne quand même — le clic Chrome échouera au pire, mais Chrome démarrera.
+    Retourne (relay_handle, local_port) — relay_handle a une méthode terminate().
     """
     import socket
+    import threading
+    import base64
 
     parsed = urlparse(proxy_server if "://" in proxy_server else "http://" + proxy_server)
     proxy_host = parsed.hostname
     proxy_port = parsed.port or 8080
 
     local_port = random.randint(34000, 44000)
-    relay_upstream = f"http://{proxy_user}:{proxy_pass}@{proxy_host}:{proxy_port}"
+    auth_b64 = base64.b64encode(f"{proxy_user}:{proxy_pass}".encode()).decode()
+    stop_event = threading.Event()
 
-    cmd = [
-        "pproxy",
-        "-l", f"http://127.0.0.1:{local_port}",
-        "-r", relay_upstream,
-    ]
-    print(f"[LAUNCH][RELAY] pproxy 127.0.0.1:{local_port} → {proxy_host}:{proxy_port}")
+    def _pipe(src: socket.socket, dst: socket.socket) -> None:
+        try:
+            while not stop_event.is_set():
+                data = src.recv(65536)
+                if not data:
+                    break
+                dst.sendall(data)
+        except Exception:
+            pass
+        finally:
+            try:
+                dst.shutdown(socket.SHUT_WR)
+            except Exception:
+                pass
 
-    proc = subprocess.Popen(
-        cmd,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
+    def _handle(client_sock: socket.socket) -> None:
+        upstream_sock = None
+        try:
+            # Lire la requête CONNECT complète de Chrome
+            buf = b""
+            while b"\r\n\r\n" not in buf:
+                chunk = client_sock.recv(4096)
+                if not chunk:
+                    return
+                buf += chunk
 
-    # Attendre que pproxy accepte des connexions (max 5s)
-    deadline = time.time() + 5.0
+            first_line = buf.split(b"\r\n", 1)[0]  # ex: b"CONNECT host:443 HTTP/1.1"
+
+            # Connexion TCP vers le proxy ISP upstream
+            upstream_sock = socket.create_connection((proxy_host, proxy_port), timeout=15)
+
+            # Envoyer CONNECT + auth au proxy upstream
+            connect_req = (
+                first_line + b"\r\n"
+                + b"Proxy-Authorization: Basic " + auth_b64.encode() + b"\r\n"
+                + b"\r\n"
+            )
+            upstream_sock.sendall(connect_req)
+
+            # Lire la réponse upstream (ex: "HTTP/1.1 200 Connection established")
+            resp = b""
+            while b"\r\n\r\n" not in resp:
+                chunk = upstream_sock.recv(4096)
+                if not chunk:
+                    break
+                resp += chunk
+
+            # Transmettre la réponse à Chrome
+            client_sock.sendall(resp)
+
+            # Relay bidirectionnel
+            t1 = threading.Thread(target=_pipe, args=(client_sock, upstream_sock), daemon=True)
+            t2 = threading.Thread(target=_pipe, args=(upstream_sock, client_sock), daemon=True)
+            t1.start()
+            t2.start()
+        except Exception:
+            if upstream_sock:
+                try:
+                    upstream_sock.close()
+                except Exception:
+                    pass
+            try:
+                client_sock.close()
+            except Exception:
+                pass
+
+    def _serve() -> None:
+        srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        srv.bind(("127.0.0.1", local_port))
+        srv.listen(64)
+        srv.settimeout(1.0)
+        try:
+            while not stop_event.is_set():
+                try:
+                    client_sock, _ = srv.accept()
+                    threading.Thread(target=_handle, args=(client_sock,), daemon=True).start()
+                except socket.timeout:
+                    continue
+                except Exception:
+                    break
+        finally:
+            srv.close()
+
+    threading.Thread(target=_serve, daemon=True).start()
+
+    class _RelayHandle:
+        def terminate(self) -> None:
+            stop_event.set()
+
+    # Attendre que le relay accepte des connexions (max 10s)
+    deadline = time.time() + 10.0
     ready = False
     while time.time() < deadline:
         try:
@@ -399,14 +479,16 @@ def _start_proxy_relay(proxy_server: str, proxy_user: str, proxy_pass: str):
                 ready = True
                 break
         except Exception:
-            time.sleep(0.2)
+            time.sleep(0.1)
 
-    if ready:
-        print(f"[LAUNCH][RELAY] pproxy prêt sur port {local_port}")
-    else:
-        print(f"[LAUNCH][RELAY][WARN] pproxy port {local_port} pas encore disponible après 5s — on continue")
+    if not ready:
+        stop_event.set()
+        raise RuntimeError(
+            f"relay HTTP CONNECT n'a pas exposé le port {local_port} après 10s"
+        )
 
-    return proc, local_port
+    print(f"[LAUNCH][RELAY] relay HTTP CONNECT prêt sur port {local_port} → {proxy_host}:{proxy_port}")
+    return _RelayHandle(), local_port
 
 
 def launch_browser(config: dict | None = None):
