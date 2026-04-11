@@ -2024,6 +2024,19 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             if _is_bootstrap_select_toggle(b):
                 continue
 
+            # Filtre CookieYes consent banner : ignore boutons portant data-cky-tag
+            # ou appartenant au conteneur .cky-consent-container
+            try:
+                if b.get_attribute("data-cky-tag") is not None:
+                    continue
+                _in_cky = driver.execute_script(
+                    "return arguments[0].closest('.cky-consent-container') !== null;", b
+                )
+                if _in_cky:
+                    continue
+            except Exception:
+                pass
+
             # Filtre Decipher cardrating : ignore disabled / non-clickable
             cls = _norm_lc(b.get_attribute("class") or "")
             if "sq-cardrating-button" in cls:
