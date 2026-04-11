@@ -380,7 +380,7 @@ def solve_full_survey(driver, api_key, *, account_id: str, survey_context=None):
 
     # 2) Boucle d'exécution des actions
     _no_progress_count = 0        # Option B : succès sans avance de page (single-question)
-    _NO_PROGRESS_THRESHOLD = 3
+    _NO_PROGRESS_THRESHOLD = 8
     last_url = driver.current_url
     last_question_key = ""        # Clé de la dernière question vue (détection intra-page)
     _multi_no_progress_count = 0  # Stuck detection pour pages multi-inputs
