@@ -11,7 +11,7 @@ from preselection.auth_handler import login
 from preselection.survey_navigator import go_to_best_value_survey
 from preselection.survey_handler import run_survey
 from Management.notifier import send_telegram
-from State.account_state import update_state, load_state, try_acquire_cooldown_slot, _now
+from State.account_state import update_state, load_state, try_acquire_cooldown_slot, _now, load_datadome_cookies
 from selenium.common.exceptions import TimeoutException
 from preselection.auth_handler import is_session_expired, handle_proxy_error_page_if_needed
 from Management.pause_policy import PausePolicy
@@ -332,6 +332,31 @@ def _create_driver():
         options.add_argument("--window-size=1920,1080")
         print("🟢 LAUNCHED NEW CHROME SESSION")
     return webdriver.Chrome(options=options, service=Service(log_output=subprocess.DEVNULL))
+
+def restore_datadome_cookies(driver, account_id: str) -> None:
+    """
+    Restaure les cookies DataDome persistés dans le navigateur via CDP.
+    Appelé après le lancement de Chrome, avant le premier chargement de page.
+    Les échecs par cookie sont loggés et ignorés — ne bloque jamais le démarrage.
+    """
+    from Survey.log_utils import log_info, log_debug
+    _TAG = "DATADOME_RESTORE"
+    cookies = load_datadome_cookies(account_id)
+    if not cookies:
+        return
+    log_info(_TAG, f"{len(cookies)} cookie(s) DataDome à restaurer")
+    for domain, cookie_value in cookies.items():
+        try:
+            driver.execute_cdp_cmd("Network.setCookie", {
+                "name": "datadome",
+                "value": cookie_value,
+                "domain": domain,
+                "path": "/",
+            })
+            log_info(_TAG, f"Cookie restauré pour domaine={domain}")
+        except Exception as e:
+            log_info(_TAG, f"Restauration ignorée pour domaine={domain}: {e}")
+
 
 def launch_driver_or_fail(config, account_id: str):
     try:
