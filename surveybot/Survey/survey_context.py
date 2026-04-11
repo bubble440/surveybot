@@ -196,14 +196,13 @@ class SurveyContext:
                     {
                         "role": "system",
                         "content": (
-                            "You are building a respondent profile for a survey automation system. "
-                            "Based on the answered Q&A below, write a concise 3-10 sentence profile "
-                            "in the first person (as the respondent). Focus exclusively on: "
-                            "declared demographics (age, gender, occupation, sector), stated opinions, "
-                            "declared behaviors, and any other personal attributes the respondent has "
-                            "revealed through their answers. Do NOT describe the survey topic or theme. "
-                            "Example: 'I am a 35-year-old woman working in healthcare. I use social "
-                            "media daily and I am interested in eco-friendly products...'"
+                            "Extract only the explicitly declared facts from the survey answers below. "
+                            "Output a single line of key-value pairs separated by periods, format: "
+                            "'Key: Value. Key: Value.' "
+                            "Use short neutral keys (e.g. Age, Gender, Sector, Function, PostalCode, Income). "
+                            "Include ONLY facts directly stated in an answer — no inference, no prose, "
+                            "no survey theme, no first-person. Omit any fact not explicitly answered. "
+                            "Stay under 150 tokens."
                         ),
                     },
                     {"role": "user", "content": prompt},
