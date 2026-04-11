@@ -133,6 +133,10 @@ def _pg_ensure_table(conn) -> None:
                 updated_ts TIMESTAMPTZ DEFAULT now()
             )
         """)
+        cur.execute("""
+            ALTER TABLE account_state
+            ADD COLUMN IF NOT EXISTS datadome_cookies JSONB DEFAULT '{}'
+        """)
     conn.commit()
 
 
@@ -448,3 +452,69 @@ def try_acquire_cooldown_slot(
     if STRICT_NO_FILE_FALLBACK:
         raise RuntimeError("[STATE] try_acquire_cooldown_slot: STATE_BACKEND (postgresql) requis en environnement non-local")
     return False
+
+
+# -----------------------------
+# 🍪 DataDome cookie persistence
+# -----------------------------
+
+def save_datadome_cookie(account_id: str, domain: str, cookie_value: str) -> None:
+    """
+    Persiste le cookie datadome pour un domaine donné.
+    Plusieurs domaines par compte sont supportés (stockés dans datadome_cookies JSONB).
+    No-op si STATE_BACKEND != postgres ou si un argument est vide.
+    """
+    if not _pg_enabled():
+        return
+    if not account_id or not domain or not cookie_value:
+        return
+    conn = _get_pg_conn()
+    _pg_ensure_table(conn)
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """UPDATE account_state
+                   SET datadome_cookies = COALESCE(datadome_cookies, '{}'::jsonb)
+                                         || jsonb_build_object(%s::text, %s::text),
+                       updated_ts = now()
+                   WHERE account_id = %s""",
+                (domain, cookie_value, account_id)
+            )
+        conn.commit()
+    except Exception as e:
+        log.warning(f"[STATE] save_datadome_cookie: err={e}")
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+    finally:
+        conn.close()
+
+
+def load_datadome_cookies(account_id: str) -> Dict[str, str]:
+    """
+    Charge les cookies datadome persistés pour ce compte.
+    Retourne un dict {domain: cookie_value}, vide si aucun ou si STATE_BACKEND != postgres.
+    """
+    if not _pg_enabled():
+        return {}
+    if not account_id:
+        return {}
+    conn = _get_pg_conn()
+    _pg_ensure_table(conn)
+    try:
+        import psycopg2.extras
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                "SELECT datadome_cookies FROM account_state WHERE account_id = %s",
+                (account_id,)
+            )
+            row = cur.fetchone()
+        if not row or not row["datadome_cookies"]:
+            return {}
+        return dict(row["datadome_cookies"])
+    except Exception as e:
+        log.warning(f"[STATE] load_datadome_cookies: err={e}")
+        return {}
+    finally:
+        conn.close()

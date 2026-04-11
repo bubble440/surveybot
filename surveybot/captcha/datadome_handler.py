@@ -1,6 +1,6 @@
 # datadome_handler.py
 """
-Résolution automatique DataDome CAPTCHA via 2Captcha (DataDomeSliderTask).
+Résolution automatique DataDome CAPTCHA via CapSolver (DataDomeSolverTask).
 
 Flow:
   1. _detect_datadome(driver)    → repère l'iframe geo.captcha-delivery.com
@@ -11,11 +11,12 @@ Règles:
   - 1 tentative max — pas de retry.
   - Aucun clic CTA — navigation déléguée au flux survey après driver.refresh().
 """
+import os
 import time
 from urllib.parse import urlparse, parse_qs
 
 from Survey.log_utils import log_info, log_debug
-from captcha.captcha_solver import TwoCaptchaClient
+from captcha.captcha_solver import CapSolverClient
 from captcha.recaptcha_handler import _get_proxy_config
 
 _TAG = "DATADOME_HANDLER"
@@ -104,14 +105,14 @@ def solve_datadome_auto(driver) -> bool:
         return False
 
     website_url = driver.current_url
-    log_info(_TAG, f"Envoi à 2Captcha (url={website_url})")
+    log_info(_TAG, f"Envoi à CapSolver (url={website_url})")
 
-    # 5. Résoudre via 2Captcha (DataDomeSliderTask)
+    # 5. Résoudre via CapSolver (DataDomeSolverTask)
     _t_start = time.time()
     try:
-        client = TwoCaptchaClient()
+        client = CapSolverClient()
         if not client.api_key:
-            log_info(_TAG, "Clé 2Captcha manquante → return False")
+            log_info(_TAG, "Clé CapSolver manquante → return False")
             return False
 
         cookie_raw = client.solve_datadome(
@@ -125,18 +126,18 @@ def solve_datadome_auto(driver) -> bool:
             proxy_password=proxy_cfg.get("proxy_password", ""),
         )
     except TimeoutError as e:
-        log_info(_TAG, f"Timeout 2Captcha ({time.time() - _t_start:.1f}s) : {e}")
+        log_info(_TAG, f"Timeout CapSolver ({time.time() - _t_start:.1f}s) : {e}")
         return False
     except Exception as e:
-        log_info(_TAG, f"Erreur 2Captcha ({time.time() - _t_start:.1f}s) : {e}")
+        log_info(_TAG, f"Erreur CapSolver ({time.time() - _t_start:.1f}s) : {e}")
         return False
 
     if not cookie_raw:
-        log_info(_TAG, "Cookie vide reçu de 2Captcha")
+        log_info(_TAG, "Cookie vide reçu de CapSolver")
         return False
 
     _dur = time.time() - _t_start
-    log_info(_TAG, f"Cookie reçu en {_dur:.1f}s → injection + refresh")
+    log_info(_TAG, f"Cookie CapSolver reçu en {_dur:.1f}s → injection + refresh")
 
     # 6. Extraire la valeur du cookie depuis la chaîne "datadome=VALUE; Path=/; ..."
     if "datadome=" in cookie_raw:
@@ -169,6 +170,16 @@ def solve_datadome_auto(driver) -> bool:
     except Exception as e:
         log_info(_TAG, f"Erreur refresh : {e}")
         return False
+
+    # 9. Persister le cookie pour les sessions futures (effet de bord, ne bloque pas)
+    try:
+        _account_id = os.getenv("ACCOUNT_ID", "")
+        if _account_id:
+            from State.account_state import save_datadome_cookie
+            save_datadome_cookie(_account_id, domain, cookie_value)
+            log_debug(_TAG, f"Cookie datadome persisté en DB pour domaine={domain}")
+    except Exception as _e:
+        log_debug(_TAG, f"Persistance cookie datadome ignorée: {_e}")
 
     log_info(_TAG, "✅ DataDome résolu → page rechargée → navigation déléguée au flux survey")
     return True
