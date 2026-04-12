@@ -12,11 +12,13 @@
 # ------------------------------------------------------------
 
 from __future__ import annotations
-import re, time
+import re, time, logging
 from urllib.parse import urlparse, parse_qs
 from typing import Callable, Optional, Dict, Any
 from selenium.webdriver.common.by import By
 from Survey.frame_utils import iter_frame_chains, switch_to_frame_chain
+
+logger = logging.getLogger("dom_classifier")
 # ============================================================
 # Utils
 # ============================================================
@@ -1319,6 +1321,23 @@ def is_open_textarea(driver) -> bool:
             continue
     return False
 
+
+def is_error_recovery_screen(driver) -> bool:
+    """
+    Détecte la page d'erreur récupérable GreenXP / rx.samplicio.us.
+
+    Critères conjoints (les deux doivent être présents) :
+    - data-testid="layout-card" dans le DOM principal
+    - id="confirmation-button" (bouton "Retour", aria-label="go back")
+    """
+    try:
+        return bool(driver.execute_script(
+            "return !!(document.querySelector('[data-testid=\"layout-card\"]')"
+            " && document.querySelector('#confirmation-button'));"
+        ))
+    except Exception:
+        return False
+
 # ============================================================
 # DOM REGISTRY (ORDRE CRITIQUE)
 # ============================================================
@@ -1348,6 +1367,12 @@ DOM_REGISTRY: list[dict[str, Any]] = [
         "itype": "end_screen",
         "signature": is_end_screen,
         "handler": "handle_end_screen",
+        "openai": False,
+    },
+    {
+        "itype": "error_recovery_screen",
+        "signature": is_error_recovery_screen,
+        "handler": "handle_error_recovery_screen",
         "openai": False,
     },
 
@@ -1389,6 +1414,7 @@ def classify_dom(driver) -> Optional[dict]:
     Retourne le premier mapping DOM_REGISTRY qui match.
     """
     time.sleep(2)
+    logger.info("🔍 [DOM_CLASSIFIER] Début du scan DOM — itération du registry")
     for rule in DOM_REGISTRY:
         try:
             if rule["signature"](driver):

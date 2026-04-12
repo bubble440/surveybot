@@ -712,6 +712,27 @@ def _press_click_release(driver, el):
             el.click()
             return True, False
         except Exception:
+            pass 
+
+    # PureSpectrum (DOM observé):
+    # - button enfant de ps-next-button (Angular component)
+    # move_to_element() génère un mouvement de souris synthétique qui atterrit sur
+    # le bouton fixe CookieYes (button.cky-btn-revisit, position:fixed) au lieu du
+    # bouton "Suivant" → ouvre le modal cookies. Un click() natif contourne ça.
+    is_purespectrum_next_button = False
+    if tag == "button":
+        try:
+            is_purespectrum_next_button = bool(
+                el.find_elements(By.XPATH, "ancestor::ps-next-button[1]")
+            )
+        except Exception:
+            pass
+
+    if is_purespectrum_next_button:
+        try:
+            el.click()
+            return True, False
+        except Exception:
             pass
 
     try:
@@ -1686,9 +1707,16 @@ def try_click_navigation_cta(driver) -> bool:
                 continue
 
             # Exclude CookieYes consent overlay buttons (structural DOM guard).
-            # Triggered by cky-* class tokens on the element itself, NOT by button text.
+            # Triggered by cky-* class tokens on the element itself, OR by an ancestor
+            # bearing data-cky-tag (e.g. data-cky-tag="notice", data-cky-tag="detail").
+            # The ancestor check catches buttons whose own classes lack the cky-* prefix.
             if any(tok.startswith("cky-") for tok in cls_tokens):
                 continue
+            try:
+                if el.find_elements(By.XPATH, "ancestor::*[@data-cky-tag][1]"):
+                    continue
+            except Exception:
+                pass
 
             # Exclude buttons inside ps-footer Angular component (survey page footer:
             # privacy policy, legal links…). Triggered by structural ancestor presence.
