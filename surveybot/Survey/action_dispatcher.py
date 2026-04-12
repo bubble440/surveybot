@@ -4176,6 +4176,45 @@ def handle_start_screen(driver):
 def handle_end_screen(driver):
     return True  # on laisse la redirection se faire
 
+
+def handle_error_recovery_screen(driver):
+    """
+    Page d'erreur récupérable GreenXP (data-testid="layout-card" + id="confirmation-button").
+    Clique le bouton "Retour" pour relancer le flux.
+    """
+    import os
+    from Survey.log_utils import log_info, log_debug
+
+    TAG = "error_recovery"
+
+    intercept_only = (os.getenv("CTA_INTERCEPT_ONLY", "") or "").strip().lower() in ("1", "true", "yes", "on")
+
+    try:
+        btn = driver.find_element("id", "confirmation-button")
+    except Exception:
+        log_info(TAG, "CTA introuvable (#confirmation-button absent)")
+        return False
+
+    if intercept_only:
+        try:
+            driver.execute_script("arguments[0].dispatchEvent(new MouseEvent('click', {bubbles:true, cancelable:true}));", btn)
+            log_info(TAG, "CTA trouvé + interception OK (CTA_INTERCEPT_ONLY)")
+        except Exception as exc:
+            log_info(TAG, f"CTA trouvé + interception impossible : {exc}")
+            return False
+    else:
+        try:
+            btn.click()
+            log_info(TAG, "Bouton 'Retour' cliqué (error_recovery_screen)")
+        except Exception as exc:
+            log_debug(TAG, f"click() échoué, fallback JS : {exc}")
+            try:
+                driver.execute_script("arguments[0].click();", btn)
+            except Exception:
+                return False
+
+    return True
+
 def handle_captcha_guard(driver):
     """
     CAPTCHA / vérification humaine.
