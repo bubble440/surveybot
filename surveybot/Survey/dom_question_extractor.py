@@ -598,6 +598,30 @@ def _group_key_for_choice(el, itype: str) -> str:
     """
     try:
         if itype in ("radio", "checkbox"):
+            # Savanta JQM pattern: fieldset.question-wrapper contenant >=2 inputs
+            # (checkbox ou radio) partageant le même attribut dat= (discriminant
+            # côté serveur). On retourne une clé stable basée sur dat= pour que
+            # tous ces inputs soient fusionnés en un seul question_block.
+            # Guard DOM strict: dat= non vide + fieldset.question-wrapper ancêtre.
+            try:
+                dat_val = _norm_lc(el.get_attribute("dat") or "")
+                if dat_val:
+                    fs_nodes = el.find_elements(
+                        By.XPATH,
+                        "ancestor::fieldset[contains(@class,'question-wrapper')][1]",
+                    )
+                    if fs_nodes:
+                        all_inp = fs_nodes[0].find_elements(
+                            By.XPATH, ".//input[@type='checkbox' or @type='radio']"
+                        )
+                        matching = sum(
+                            1 for inp in all_inp
+                            if _norm_lc(inp.get_attribute("dat") or "") == dat_val
+                        )
+                        if matching >= 2:
+                            return f"fieldset:{dat_val}"
+            except Exception:
+                pass
             name = el.get_attribute("name") or ""
             if name:
                 # Nettoyer le name (enlever les indices si présents)

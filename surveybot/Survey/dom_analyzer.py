@@ -1465,7 +1465,14 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                 continue
             if any(raw_name_key_lc.startswith(f"{prefix}-") for prefix in table_matrix_sge_prefixes):
                 continue
-            group_key = f"{itype}:name:{raw_name_key}"
+            # Savanta JQM fieldset pattern: forcer itype="checkbox" pour que
+            # les radio noneof soient fusionnés avec les checkboxes du même fieldset.
+            if raw_name_key.startswith("fieldset:"):
+                effective_itype = "checkbox"
+                group_key = f"checkbox:fieldset:{raw_name_key[len('fieldset:'):]}"
+            else:
+                effective_itype = itype
+                group_key = f"{itype}:name:{raw_name_key}"
             if is_debug() and raw_name_key.startswith("dom_container:"):
                 try:
                     log_debug(
@@ -1474,7 +1481,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                     )
                 except Exception:
                     pass
-            groups.setdefault((itype, group_key), []).append(el)
+            groups.setdefault((effective_itype, group_key), []).append(el)
         except Exception:
             continue
 
@@ -1567,6 +1574,20 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             # question = depuis conteneur (et on exclut options)
             # Tentative prioritaire: pattern SurveyWriter/SSI (#QText_{N})
             question = _extract_surveywriter_ssi_question(driver, els[0])
+            # Savanta JQM fieldset pattern: extraire la question depuis <legend>
+            # pour éviter d'inclure les sous-titres de sections (Bien-être, etc.).
+            if not question and group_key.startswith("checkbox:fieldset:"):
+                try:
+                    legends = els[0].find_elements(
+                        By.XPATH,
+                        "ancestor::fieldset[contains(@class,'question-wrapper')][1]//legend",
+                    )
+                    if legends:
+                        q_txt = _norm(legends[0].text or "")
+                        if q_txt and _is_question_text(q_txt):
+                            question = q_txt
+                except Exception:
+                    pass
             if not question and raw_name_key.startswith("dom:"):
                 # Groupes sans name natif (ex: Forsta/Confirmit ARIA widgets):
                 # résoudre directement l'aria-labelledby du conteneur radiogroup

@@ -503,6 +503,94 @@ def launch_browser(config: dict | None = None):
     if IS_LOCAL and not _env_truthy("LOCAL_USE_PROXY"):
         print("[LOCAL] Mode local actif : lancement simple Chrome visible (sans proxy).")
 
+        if _env_truthy("ATTACH_PROD_LIKE"):
+            # ── Mode prod-like local (ATTACH_PROD_LIKE=1) ──────────────────────
+            # Lance Chrome exactement comme en prod (profil éphémère, proxy relay,
+            # args anti-détection, fingerprint CDP), puis attend une confirmation
+            # manuelle avant de rendre la main à l'appelant.
+            print("[LOCAL][ATTACH_PROD_LIKE] Lancement Chrome prod-like en local.")
+
+            pl_proxy_server, pl_proxy_user, pl_proxy_pass = _parse_proxy_env(config)
+            pl_debug_port = random.randint(42000, 52000)
+            pl_user_data_dir = tempfile.mkdtemp(prefix="chrome_prodlike_")
+            locale, tz = _parse_locale_tz_env()
+
+            print(f"[LOCAL][ATTACH_PROD_LIKE] debug_port={pl_debug_port}")
+            print(f"[LOCAL][ATTACH_PROD_LIKE] user_data_dir={pl_user_data_dir}")
+            if pl_proxy_server:
+                print(f"[LOCAL][ATTACH_PROD_LIKE] proxy={pl_proxy_server} auth={'yes' if pl_proxy_user else 'no'}")
+            else:
+                print("[LOCAL][ATTACH_PROD_LIKE] aucun proxy (PROXY_URL vide) — on continue sans proxy.")
+
+            pl_cmd = [
+                chrome_bin,
+                f"--remote-debugging-port={pl_debug_port}",
+                "--remote-debugging-allow-origins=*",
+                f"--user-data-dir={pl_user_data_dir}",
+                "--no-first-run",
+                "--no-default-browser-check",
+                "--disable-dev-shm-usage",
+                "--no-sandbox",
+                "--disable-background-networking",
+                "--disable-component-update",
+                "--disable-features=Translate,OptimizationHints",
+                "--disable-blink-features=AutomationControlled",
+                "--window-size=1920,1080",
+                f"--lang={locale}",
+            ]
+
+            pl_relay_proc = None
+            if pl_proxy_server and pl_proxy_user and pl_proxy_pass:
+                pl_relay_proc, pl_local_port = _start_proxy_relay(pl_proxy_server, pl_proxy_user, pl_proxy_pass)
+                pl_cmd.append(f"--proxy-server=http://127.0.0.1:{pl_local_port}")
+            elif pl_proxy_server:
+                pl_cmd.append(f"--proxy-server={pl_proxy_server}")
+
+            pl_proc_env = os.environ.copy()
+            pl_proc_env["TZ"] = tz
+
+            pl_chrome_proc = subprocess.Popen(
+                pl_cmd,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                env=pl_proc_env,
+            )
+            print(f"[LOCAL][ATTACH_PROD_LIKE] Chrome PID={pl_chrome_proc.pid}")
+
+            # Attendre que Chrome expose son debug port (jusqu'à 10s)
+            import urllib.request
+            for attempt in range(20):
+                try:
+                    urllib.request.urlopen(f"http://127.0.0.1:{pl_debug_port}/json", timeout=1)
+                    print(f"[LOCAL][ATTACH_PROD_LIKE] Debug port prêt après {attempt * 0.5:.1f}s")
+                    break
+                except Exception:
+                    time.sleep(0.5)
+            else:
+                print(f"[LOCAL][ATTACH_PROD_LIKE][WARN] Debug port toujours indisponible après 10s — tentative attach quand même")
+
+            pl_opts = webdriver.ChromeOptions()
+            pl_opts.add_experimental_option("debuggerAddress", f"127.0.0.1:{pl_debug_port}")
+            pl_opts.page_load_strategy = "eager"
+            pl_driver = webdriver.Chrome(options=pl_opts, service=Service(log_output=subprocess.DEVNULL))
+
+            apply_fingerprint_overrides_cdp(pl_driver)
+            print("[LOCAL][ATTACH_PROD_LIKE] Fingerprint overrides enregistrés via CDP.")
+
+            print(
+                f"\n[LOCAL][ATTACH_PROD_LIKE] Chrome lancé sur port {pl_debug_port}.\n"
+                f"  → Navigue manuellement vers la page cible dans Chrome.\n"
+                f"  → Appuie sur Entrée ici quand tu es prêt à continuer."
+            )
+            input("[LOCAL][ATTACH_PROD_LIKE] Appuie sur Entrée pour continuer... ")
+
+            pl_driver._chrome_proc = pl_chrome_proc
+            pl_driver._chrome_user_data_dir = pl_user_data_dir
+            if pl_relay_proc is not None:
+                pl_driver._proxy_relay_proc = pl_relay_proc
+
+            return pl_driver
+
         attach_addr = os.getenv("ATTACH_DEBUGGER_ADDRESS", "").strip()
         options = Options()
         if attach_addr:
