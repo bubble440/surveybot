@@ -10,11 +10,11 @@ $env:SURVEY_HEADLESS    = "0"        # visible pour observer
 $env:PROXY_URL          = "185.134.194.152:12323"
 $env:PROXY_USER         = "14abf236340a1"
 $env:PROXY_PASS         = "bb82a9e63b"
-$env:ACCOUNT_ID         = "topsurveys_test_prod_like"
 $env:DATABASE_URL       = "postgres://postgres:3o1L6kfCFxuncbY@localhost:5432/postgres"
 $env:STATE_BACKEND      = "postgres"
 $env:HTTPS_PROXY        = "http://14abf236340a1:bb82a9e63b@185.134.194.152:12323"
 $env:HTTP_PROXY         = "http://14abf236340a1:bb82a9e63b@185.134.194.152:12323"
+$env:LOCAL_USE_PROXY    = "1"
 
 # Vars debug
 $env:LOG_LEVEL          = "DEBUG"

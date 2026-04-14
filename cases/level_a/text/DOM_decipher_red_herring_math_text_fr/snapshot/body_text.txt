@@ -1,9 +1,0 @@
-Un problème est survenu avec certaines données saisies dans le cadre de l'enquête. Les questions contenant des erreurs sont indiquées ci-dessous ; veuillez suivre les instructions associées à chacune d'elles.
-
-Veuillez fournir une réponse à cette équation mathématique :
-
-6 + 6 = ??
-
-Veuillez saisir un nombre entier.
-Entrez votre réponse ci-dessous
-
