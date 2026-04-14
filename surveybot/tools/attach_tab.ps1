@@ -27,7 +27,11 @@ if(-not (Test-Path ".\surveybot\main.py")){
 }
 
 # Lancer Chrome si port non listening
+$env:PROXY_PASS="bb82a9e63b"
+$env:PROXY_USER="14abf236340a1"
+$env:PROXY_URL="185.134.194.152:12323"
 $listen = Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue
+$proxyArg = "--proxy-server=http://$($env:PROXY_URL)"
 if(-not $listen){
   New-Item -ItemType Directory -Force $profileDir | Out-Null
   $chromeArgs = @(
@@ -35,8 +39,10 @@ if(-not $listen){
     "--user-data-dir=$profileDir"
     "--no-first-run"
     "--no-default-browser-check"
+    "--remote-allow-origins=*"
+    $proxyArg
     $TargetUrl
-  )
+  )  
   Start-Process -FilePath $chromePath -ArgumentList $chromeArgs -WindowStyle Minimized | Out-Null
   Write-Host "[PORT $Port] Chrome lancé + URL ouverte: $TargetUrl"
 } else {
@@ -56,22 +62,20 @@ Write-Host ""
 
 # Vars env (attach)
 #test prod-like
-$env:RUN_ENV="prod"
-$env:RUN_MODE="prod"
-$env:SURVEY_HEADLESS="1"
-$env:PROXY_PASS="bb82a9e63b"
-$env:PROXY_USER="14abf236340a1"
-$env:PROXY_URL="185.134.194.152:12323"
-$env:ACCOUNT_ID = "topsurveys_test_prod_like"
+$env:RUN_ENV="local"
+$env:RUN_MODE="local"
+# $env:SURVEY_HEADLESS="1"
+# $env:ACCOUNT_ID = "topsurveys_test_prod_like"
 $env:DATABASE_URL = "postgres://postgres:3o1L6kfCFxuncbY@localhost:5432/postgres"
-$env:STATE_BACKEND = "postgres"
+# $env:STATE_BACKEND = "postgres"
+# $env:LOCAL_USE_PROXY = "1"
 
-$env:HTTPS_PROXY = "http://14abf236340a1:bb82a9e63b@185.134.194.152:12323"
-$env:HTTP_PROXY  = "http://14abf236340a1:bb82a9e63b@185.134.194.152:12323"
+# $env:HTTPS_PROXY = "http://14abf236340a1:bb82a9e63b@185.134.194.152:12323"
+# $env:HTTP_PROXY  = "http://14abf236340a1:bb82a9e63b@185.134.194.152:12323"
 
-# $env:BROWSER_MODE="attach"
-# $env:ATTACH_TAB_SELECTOR=$AttachTabSelector
-# $env:ATTACH_DEBUGGER_ADDRESS="127.0.0.1:$Port"
+$env:BROWSER_MODE="attach"
+$env:ATTACH_TAB_SELECTOR=$AttachTabSelector
+$env:ATTACH_DEBUGGER_ADDRESS="127.0.0.1:$Port"
 
 # Tes vars debug
 $env:LOG_LEVEL="DEBUG"

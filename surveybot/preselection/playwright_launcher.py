@@ -500,6 +500,15 @@ def launch_browser(config: dict | None = None):
     Mode attach local (ATTACH_DEBUGGER_ADDRESS) : inchangé.
     """
     chrome_bin = _detect_chrome_binary()
+
+    attach_addr = os.getenv("ATTACH_DEBUGGER_ADDRESS", "").strip()
+    if attach_addr:
+        print(f"⚠️ ATTACH MODE → {attach_addr}")
+        opts = webdriver.ChromeOptions()
+        opts.add_experimental_option("debuggerAddress", attach_addr)
+        opts.page_load_strategy = "eager"
+        return webdriver.Chrome(options=opts, service=Service(log_output=subprocess.DEVNULL))
+
     if IS_LOCAL and not _env_truthy("LOCAL_USE_PROXY"):
         print("[LOCAL] Mode local actif : lancement simple Chrome visible (sans proxy).")
 
@@ -591,31 +600,25 @@ def launch_browser(config: dict | None = None):
 
             return pl_driver
 
-        attach_addr = os.getenv("ATTACH_DEBUGGER_ADDRESS", "").strip()
         options = Options()
-        if attach_addr:
-            # Mode local : attach à un Chrome existant (géré par run_tabs.ps1)
-            options.add_experimental_option("debuggerAddress", attach_addr)
-            print(f"⚠️ ATTACH MODE → {attach_addr}")
-        else:
-            # Mode local : headless si LOCAL_HEADLESS=1 ou pas de DISPLAY fiable (WSL)
-            options.add_argument("--disable-blink-features=AutomationControlled")
-            import sys
-            if sys.platform != "win32":
-                options.add_argument("--no-sandbox")
-                options.add_argument("--disable-dev-shm-usage")
-                options.add_argument("--disable-gpu")
-                force_headless = (os.getenv("LOCAL_HEADLESS", "0") == "1")
-                if force_headless:
-                    options.add_argument("--headless=new")
-                    options.add_argument("--window-size=1920,1080")
-                else:
-                    options.add_argument("--start-maximized")
+        # Mode local : headless si LOCAL_HEADLESS=1 ou pas de DISPLAY fiable (WSL)
+        options.add_argument("--disable-blink-features=AutomationControlled")
+        import sys
+        if sys.platform != "win32":
+            options.add_argument("--no-sandbox")
+            options.add_argument("--disable-dev-shm-usage")
+            options.add_argument("--disable-gpu")
+            force_headless = (os.getenv("LOCAL_HEADLESS", "0") == "1")
+            if force_headless:
+                options.add_argument("--headless=new")
+                options.add_argument("--window-size=1920,1080")
             else:
                 options.add_argument("--start-maximized")
-            print("🟢 LAUNCHED NEW CHROME SESSION")
-            driver = webdriver.Chrome(options=options, service=Service(log_output=subprocess.DEVNULL))
-            return driver
+        else:
+            options.add_argument("--start-maximized")
+        print("🟢 LAUNCHED NEW CHROME SESSION")
+        driver = webdriver.Chrome(options=options, service=Service(log_output=subprocess.DEVNULL))
+        return driver
 
     proxy_server, proxy_user, proxy_pass = _parse_proxy_env(config)
     headless = _want_headless()

@@ -11,7 +11,7 @@ from preselection.auth_handler import login
 from preselection.survey_navigator import go_to_best_value_survey
 from preselection.survey_handler import run_survey
 from Management.notifier import send_telegram
-from State.account_state import update_state, load_state, try_acquire_cooldown_slot, _now, load_datadome_cookies
+from State.account_state import update_state, load_state, try_acquire_cooldown_slot, _now, load_datadome_cookies, load_cookies
 from selenium.common.exceptions import TimeoutException
 from preselection.auth_handler import is_session_expired, handle_proxy_error_page_if_needed
 from Management.pause_policy import PausePolicy
@@ -333,6 +333,49 @@ def _create_driver():
         print("🟢 LAUNCHED NEW CHROME SESSION")
     return webdriver.Chrome(options=options, service=Service(log_output=subprocess.DEVNULL))
 
+def restore_session_cookies(driver, account_id: str) -> None:
+    """
+    Restaure tous les cookies de session depuis cookie_store via CDP.
+    Appelé après le lancement de Chrome, avant le premier chargement de page.
+    Les cookies expirés sont filtrés. Les échecs par cookie sont loggés et ignorés.
+    Ne bloque jamais le démarrage du bot.
+    """
+    import time as _time
+    from Survey.log_utils import log_info, log_debug
+    _TAG = "SESSION_RESTORE"
+    try:
+        all_cookies = load_cookies(account_id)
+    except Exception as e:
+        log_info(_TAG, f"load_cookies() a échoué, démarrage sans cookies: {e}")
+        return
+    if not all_cookies:
+        return
+    for domain, cookies in all_cookies.items():
+        restored = 0
+        for cookie in cookies:
+            try:
+                expires = cookie.get("expires")
+                if expires is not None and expires != -1 and expires < _time.time():
+                    log_debug(_TAG, f"Cookie expiré ignoré: name={cookie.get('name')} domain={domain}")
+                    continue
+                params = {"name": cookie["name"], "value": cookie["value"], "domain": domain}
+                if "path" in cookie:
+                    params["path"] = cookie["path"]
+                if "secure" in cookie:
+                    params["secure"] = cookie["secure"]
+                if "httpOnly" in cookie:
+                    params["httpOnly"] = cookie["httpOnly"]
+                if expires is not None and expires != -1:
+                    params["expires"] = expires
+                if "sameSite" in cookie:
+                    params["sameSite"] = cookie["sameSite"]
+                driver.execute_cdp_cmd("Network.setCookie", params)
+                restored += 1
+            except Exception as e:
+                log_info(_TAG, f"Cookie ignoré: name={cookie.get('name')} domain={domain}: {e}")
+        log_info(_TAG, f"{restored} cookie(s) restauré(s) pour domaine={domain}")
+
+
 def restore_datadome_cookies(driver, account_id: str) -> None:
     """
     Restaure les cookies DataDome persistés dans le navigateur via CDP.
@@ -454,6 +497,12 @@ def start_hot_reload_thread():
 
         reloader = ModuleReloader(
             [
+                "captcha.captcha_solver",
+                "captcha.datadome_handler",
+                "captcha.normal_captcha",
+                "captcha.recaptcha_handler",
+                "captcha.recaptcha_utils",
+                "captcha.tencent_handler",
                 "Survey.action_dispatcher",
                 "Survey.action_types",
                 "Survey.batch_response_parser",
