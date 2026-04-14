@@ -398,7 +398,7 @@ def _start_proxy_relay(proxy_server: str, proxy_user: str, proxy_pass: str):
     def _handle(client_sock: socket.socket) -> None:
         upstream_sock = None
         try:
-            # Lire la requête CONNECT complète de Chrome
+            # Lire la requête complète de Chrome (CONNECT ou HTTP directe)
             buf = b""
             while b"\r\n\r\n" not in buf:
                 chunk = client_sock.recv(4096)
@@ -411,26 +411,40 @@ def _start_proxy_relay(proxy_server: str, proxy_user: str, proxy_pass: str):
             # Connexion TCP vers le proxy ISP upstream
             upstream_sock = socket.create_connection((proxy_host, proxy_port), timeout=15)
 
-            # Envoyer CONNECT + auth au proxy upstream
-            connect_req = (
-                first_line + b"\r\n"
-                + b"Proxy-Authorization: Basic " + auth_b64.encode() + b"\r\n"
-                + b"\r\n"
-            )
-            upstream_sock.sendall(connect_req)
+            if first_line.upper().startswith(b"CONNECT "):
+                # ── Tunnel HTTPS (CONNECT) ───────────────────────────────────
+                connect_req = (
+                    first_line + b"\r\n"
+                    + b"Proxy-Authorization: Basic " + auth_b64.encode() + b"\r\n"
+                    + b"\r\n"
+                )
+                upstream_sock.sendall(connect_req)
 
-            # Lire la réponse upstream (ex: "HTTP/1.1 200 Connection established")
-            resp = b""
-            while b"\r\n\r\n" not in resp:
-                chunk = upstream_sock.recv(4096)
-                if not chunk:
-                    break
-                resp += chunk
+                # Lire la réponse upstream (ex: "HTTP/1.1 200 Connection established")
+                resp = b""
+                while b"\r\n\r\n" not in resp:
+                    chunk = upstream_sock.recv(4096)
+                    if not chunk:
+                        break
+                    resp += chunk
 
-            # Transmettre la réponse à Chrome
-            client_sock.sendall(resp)
+                # Transmettre la réponse à Chrome
+                client_sock.sendall(resp)
+            else:
+                # ── Requête HTTP directe (non-CONNECT) ──────────────────────
+                # Sur Windows, Chrome émet des GET/POST directs au démarrage
+                # (update, sync, NTP). Injecter Proxy-Authorization après la
+                # première ligne et transmettre au proxy upstream.
+                first_line_end = buf.index(b"\r\n")
+                req_with_auth = (
+                    buf[:first_line_end + 2]
+                    + b"Proxy-Authorization: Basic " + auth_b64.encode() + b"\r\n"
+                    + buf[first_line_end + 2:]
+                )
+                upstream_sock.sendall(req_with_auth)
 
-            # Relay bidirectionnel
+            # Relay bidirectionnel (CONNECT : après établissement du tunnel ;
+            # HTTP directe : relaie la réponse upstream → Chrome)
             t1 = threading.Thread(target=_pipe, args=(client_sock, upstream_sock), daemon=True)
             t2 = threading.Thread(target=_pipe, args=(upstream_sock, client_sock), daemon=True)
             t1.start()
