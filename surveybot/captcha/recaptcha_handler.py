@@ -137,6 +137,25 @@ def _fire_recaptcha_callbacks(driver, token: str) -> dict:
                     }
                 }
             }
+            // DOM-based scan: data-callback attribute (e.g. Decipher)
+            // Certains widgets reCAPTCHA exposent le callback via data-callback HTML
+            // plutôt que via une clé "callback" dans clients — scan complémentaire.
+            var _dcbSeen = {};
+            var rcDivs = document.querySelectorAll('[data-callback]');
+            for (var j = 0; j < rcDivs.length; j++) {
+                var cbName = rcDivs[j].getAttribute('data-callback');
+                if (cbName && !_dcbSeen[cbName] && typeof window[cbName] === 'function') {
+                    _dcbSeen[cbName] = true;
+                    report.callbacks_found++;
+                    report.callback_paths.push('data-callback[' + cbName + ']');
+                    try {
+                        window[cbName](tok);
+                        report.callbacks_called++;
+                    } catch(e) {
+                        report.errors.push('data-cb[' + cbName + ']: ' + String(e));
+                    }
+                }
+            }
         } catch(e) {
             report.errors.push('outer: ' + String(e));
         }

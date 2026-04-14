@@ -6,7 +6,7 @@ import sys, json, time, traceback
 from urllib.parse import urlparse
 from preselection.config_loader import load_config
 from launch import start_heartbeat_thread, acquire_account_lock_or_exit, mark_bot_running
-from launch import install_sigterm_handler, start_runtime_guard, launch_driver_or_fail, init_session_and_enter_surveys, install_sigusr1_handler, restore_datadome_cookies
+from launch import install_sigterm_handler, start_runtime_guard, launch_driver_or_fail, init_session_and_enter_surveys, install_sigusr1_handler, restore_session_cookies
 from launch import start_hot_reload_thread, run_main_loop, build_notifier, soft_restart, start_debug_http_server
 from Management.guards.runtime_guard import get_guard
 from config import is_attach_mode, RUN_ENV, RUN_MODE, BROWSER_MODE, is_prod_like, should_run_guard_monitor, should_run_heartbeat, should_run_hot_reload, log_config_summary
@@ -655,7 +655,7 @@ def main():
             # PATCH: Stocker account_id sur driver pour acces dans survey_executor
             driver._survey_account_id = account_id
 
-            restore_datadome_cookies(driver, account_id)
+            restore_session_cookies(driver, account_id)
 
             def _soft_restart(reason):
                 return soft_restart(

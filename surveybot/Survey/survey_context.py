@@ -158,7 +158,7 @@ class SurveyContext:
         print("=" * 60)
 
     def _generate_summary(self) -> None:
-        """Generate and store a rolling survey summary from full Q&A history."""
+        """Generate and store a rolling persona portrait from recent Q&A, refining the previous summary."""
         try:
             # FIX-B5: on capture le numéro de génération AVANT l'appel réseau.
             # Si un thread plus récent termine avant nous, son résumé (basé sur
@@ -166,27 +166,26 @@ class SurveyContext:
             with self._lock:
                 self._summary_gen += 1
                 my_gen = self._summary_gen
-                history_snapshot = [dict(item) for item in self.history]
+                recent_entries = [dict(item) for item in self.history[-5:]]
+                previous_summary = self.summary
 
-            if not history_snapshot:
+            if not recent_entries:
                 return
 
-            history_lines: list[str] = []
-            for i, entry in enumerate(history_snapshot, start=1):
-                options = ", ".join(entry.get("options", []))
-                history_lines.append(
-                    f"{i}. Question: {entry.get('question', '')}\n"
-                    f"   Options: {options}\n"
-                    f"   Answer: {entry.get('answer', '')}"
+            recent_lines: list[str] = []
+            for entry in recent_entries:
+                recent_lines.append(
+                    f"Q: {entry.get('question', '')}\n"
+                    f"A: {entry.get('answer', '')}"
                 )
 
-            prompt = (
-                "Summarize the following survey progress based on all answered questions so far.\n\n"
-                f"Session ID: {self.session_id}\n"
-                f"Total answered blocks: {len(history_snapshot)}\n\n"
-                "Answered Q&A:\n"
-                + "\n".join(history_lines)
+            prompt_parts = []
+            if previous_summary:
+                prompt_parts.append(f"Portrait actuel du répondant :\n{previous_summary}")
+            prompt_parts.append(
+                "Nouvelles réponses à intégrer :\n" + "\n\n".join(recent_lines)
             )
+            prompt = "\n\n".join(prompt_parts)
 
             client = OpenAI(api_key=self._api_key)
             response = client.chat.completions.create(
@@ -196,13 +195,14 @@ class SurveyContext:
                     {
                         "role": "system",
                         "content": (
-                            "Extract only the explicitly declared facts from the survey answers below. "
-                            "Output a single line of key-value pairs separated by periods, format: "
-                            "'Key: Value. Key: Value.' "
-                            "Use short neutral keys (e.g. Age, Gender, Sector, Function, PostalCode, Income). "
-                            "Include ONLY facts directly stated in an answer — no inference, no prose, "
-                            "no survey theme, no first-person. Omit any fact not explicitly answered. "
-                            "Stay under 150 tokens."
+                            "Tu construis un portrait synthétique du répondant à un sondage. "
+                            "À partir du portrait existant (s'il est fourni) et des nouvelles réponses, "
+                            "produis un portrait mis à jour en prose courte (2-4 phrases max). "
+                            "Le portrait doit décrire le profil du répondant en utilisant uniquement "
+                            "les faits explicitement déclarés dans ses réponses (âge, genre, profession, "
+                            "habitudes, préférences, etc.). Ne fais aucune inférence. "
+                            "Affine le portrait précédent plutôt que de le remplacer entièrement. "
+                            "Réponds uniquement avec le portrait, sans titre ni explication."
                         ),
                     },
                     {"role": "user", "content": prompt},
