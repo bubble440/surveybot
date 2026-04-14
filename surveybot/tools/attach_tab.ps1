@@ -27,9 +27,6 @@ if(-not (Test-Path ".\surveybot\main.py")){
 }
 
 # Lancer Chrome si port non listening
-$env:PROXY_PASS="bb82a9e63b"
-$env:PROXY_USER="14abf236340a1"
-$env:PROXY_URL="185.134.194.152:12323"
 $listen = Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue
 $proxyArg = "--proxy-server=http://$($env:PROXY_URL)"
 if(-not $listen){
@@ -64,9 +61,9 @@ Write-Host ""
 #test prod-like
 $env:RUN_ENV="local"
 $env:RUN_MODE="local"
+$env:DATABASE_URL = "postgres://postgres:3o1L6kfCFxuncbY@localhost:5432/postgres"
 # $env:SURVEY_HEADLESS="1"
 # $env:ACCOUNT_ID = "topsurveys_test_prod_like"
-$env:DATABASE_URL = "postgres://postgres:3o1L6kfCFxuncbY@localhost:5432/postgres"
 # $env:STATE_BACKEND = "postgres"
 # $env:LOCAL_USE_PROXY = "1"
 
@@ -76,6 +73,9 @@ $env:DATABASE_URL = "postgres://postgres:3o1L6kfCFxuncbY@localhost:5432/postgres
 $env:BROWSER_MODE="attach"
 $env:ATTACH_TAB_SELECTOR=$AttachTabSelector
 $env:ATTACH_DEBUGGER_ADDRESS="127.0.0.1:$Port"
+$env:PROXY_PASS="bb82a9e63b"
+$env:PROXY_USER="14abf236340a1"
+$env:PROXY_URL="185.134.194.152:12323"
 
 # Tes vars debug
 $env:LOG_LEVEL="DEBUG"
@@ -87,12 +87,12 @@ $env:BOT_RUN_ID="port_$Port"
 $env:ACTION_DEBUG_TARGET="1"
 $env:LOCAL_CTA_REQUIRE_ENTER="1"
 $env:SURVEY_RESOURCE_BLOCKING="0"
-$env:SNAP_ENABLED="1"
-$env:SNAP_R2_BUCKET="surveybot-snaps"
-$env:SNAP_R2_ACCOUNT_ID="abd97f9fc4f9f5bb4300c66f9cd135b8"
-$env:SNAP_R2_ACCESS_KEY_ID="f4bf1a250dba4cdb8638c565138c3de7"
-$env:SNAP_R2_SECRET_ACCESS_KEY="4e4a5db003a362773c8e4eff3c5441e034a49d4aaa78b3d202b0aecd53e0e742"
 $env:TWO_CAPTCHA_KEY="ff2f59cd67845abf5c1b7db1c0a17cf2"
+# $env:SNAP_ENABLED="1"
+# $env:SNAP_R2_BUCKET="surveybot-snaps"
+# $env:SNAP_R2_ACCOUNT_ID="abd97f9fc4f9f5bb4300c66f9cd135b8"
+# $env:SNAP_R2_ACCESS_KEY_ID="f4bf1a250dba4cdb8638c565138c3de7"
+# $env:SNAP_R2_SECRET_ACCESS_KEY="4e4a5db003a362773c8e4eff3c5441e034a49d4aaa78b3d202b0aecd53e0e742"
 # $env:FAILURE_PIPELINE_TRIGGER_FILE = "C:/tmp/fp_trigger"
 
 # Utiliser python du venv si présent (plus fiable)
