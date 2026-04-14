@@ -360,12 +360,12 @@ def _detect_chrome_major_version(chrome_bin: str) -> int | None:
     return None
 
 
-def _start_proxy_relay(proxy_server: str, proxy_user: str, proxy_pass: str):
+def _start_proxy_relay(proxy_server: str, proxy_user: str, proxy_pass: str, bind_host: str = "127.0.0.1"):
     """
     Relay HTTP CONNECT en Python pur (sans dépendance externe).
-    Écoute sur 127.0.0.1:<local_port>, intercepte les requêtes CONNECT de Chrome,
+    Écoute sur bind_host:<local_port>, intercepte les requêtes CONNECT de Chrome,
     et les relaie vers le proxy ISP upstream avec Proxy-Authorization: Basic.
-    Chrome reçoit --proxy-server=http://127.0.0.1:<local_port> sans credentials.
+    Chrome reçoit --proxy-server=http://<bind_host>:<local_port> sans credentials.
     Retourne (relay_handle, local_port) — relay_handle a une méthode terminate().
     """
     import socket
@@ -463,7 +463,7 @@ def _start_proxy_relay(proxy_server: str, proxy_user: str, proxy_pass: str):
     def _serve() -> None:
         srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        srv.bind(("127.0.0.1", local_port))
+        srv.bind((bind_host, local_port))
         srv.listen(64)
         srv.settimeout(1.0)
         try:
@@ -642,7 +642,20 @@ def launch_browser(config: dict | None = None):
     debug_address = os.getenv("REMOTE_DEBUG_ADDRESS", "").strip()
 
     # Profil isolé (évite collisions + garde la session propre)
-    user_data_dir = tempfile.mkdtemp(prefix="chrome_profile_")
+    # Si chrome_bin est un binaire Windows, créer le profil sous %TEMP% Windows natif
+    # (wslpath -w produit un chemin UNC \\wsl.localhost\... rejeté par Chrome comme profil).
+    if ".exe" in chrome_bin.lower():
+        try:
+            win_temp = subprocess.check_output(
+                ["cmd.exe", "/c", "echo %TEMP%"], text=True
+            ).strip()
+            import uuid
+            user_data_dir = win_temp + "\\chrome_profile_" + uuid.uuid4().hex[:8]
+            os.makedirs(user_data_dir, exist_ok=True)
+        except Exception:
+            user_data_dir = tempfile.mkdtemp(prefix="chrome_profile_")
+    else:
+        user_data_dir = tempfile.mkdtemp(prefix="chrome_profile_")
 
     print(f"[LAUNCH] chrome_bin={chrome_bin}")
     print(f"[LAUNCH] headless={headless}")
@@ -683,8 +696,18 @@ def launch_browser(config: dict | None = None):
     relay_proc = None
     if proxy_server and proxy_user and proxy_pass:
         # Relay local pproxy : Chrome reçoit un proxy sans credentials
-        relay_proc, local_port = _start_proxy_relay(proxy_server, proxy_user, proxy_pass)
-        cmd.append(f"--proxy-server=http://127.0.0.1:{local_port}")
+        # Chrome Windows (WSL) ne peut pas atteindre 127.0.0.1 WSL — on bind sur 0.0.0.0
+        # et on passe l'IP du bridge WSL (hostname -I) à la place de 127.0.0.1.
+        if ".exe" in chrome_bin.lower():
+            try:
+                wsl_ip = subprocess.check_output(["hostname", "-I"], text=True).strip().split()[0]
+            except Exception:
+                wsl_ip = "127.0.0.1"
+            relay_proc, local_port = _start_proxy_relay(proxy_server, proxy_user, proxy_pass, bind_host="0.0.0.0")
+            cmd.append(f"--proxy-server=http://{wsl_ip}:{local_port}")
+        else:
+            relay_proc, local_port = _start_proxy_relay(proxy_server, proxy_user, proxy_pass)
+            cmd.append(f"--proxy-server=http://127.0.0.1:{local_port}")
     elif proxy_server:
         # Proxy sans auth : on passe directement
         cmd.append(f"--proxy-server={proxy_server}")
