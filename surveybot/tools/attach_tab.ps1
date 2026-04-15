@@ -28,7 +28,6 @@ if(-not (Test-Path ".\surveybot\main.py")){
 
 # Lancer Chrome si port non listening
 $listen = Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue
-$proxyArg = "--proxy-server=http://$($env:PROXY_URL)"
 if(-not $listen){
   New-Item -ItemType Directory -Force $profileDir | Out-Null
   $chromeArgs = @(
@@ -37,7 +36,6 @@ if(-not $listen){
     "--no-first-run"
     "--no-default-browser-check"
     "--remote-allow-origins=*"
-    $proxyArg
     $TargetUrl
   )  
   Start-Process -FilePath $chromePath -ArgumentList $chromeArgs -WindowStyle Minimized | Out-Null
@@ -81,7 +79,6 @@ $env:PROXY_URL="185.134.194.152:12323"
 $env:LOG_LEVEL="DEBUG"
 $env:DOM_DEBUG_FRAMES="1"
 $env:SURVEY_CTX_DEBUG="1"
-$env:CTA_INTERCEPT_ONLY="0"
 $env:ATTACH_ROUTE_PROMPT="1"
 $env:BOT_RUN_ID="port_$Port"
 $env:ACTION_DEBUG_TARGET="1"
@@ -89,6 +86,7 @@ $env:LOCAL_CTA_REQUIRE_ENTER="1"
 $env:SURVEY_RESOURCE_BLOCKING="0"
 $env:TWO_CAPTCHA_KEY="ff2f59cd67845abf5c1b7db1c0a17cf2"
 # $env:SNAP_ENABLED="1"
+# $env:CTA_INTERCEPT_ONLY="0"
 # $env:SNAP_R2_BUCKET="surveybot-snaps"
 # $env:SNAP_R2_ACCOUNT_ID="abd97f9fc4f9f5bb4300c66f9cd135b8"
 # $env:SNAP_R2_ACCESS_KEY_ID="f4bf1a250dba4cdb8638c565138c3de7"
