@@ -1665,6 +1665,7 @@ def execute_survey_page(driver, account_id, api_key, ctx=None):
             "#consent-button-confirm",        # Consent modal RGPD (Toluna-like UI)
             "#consent-button-confirm",        # Consent modal RGPD (Toluna-like UI)
             "input.i-contbtn",                   # IntelliSurvey (value vide, id=contbtn)
+            "input[type='image'][name='next']",  # Snap Survey / bouton image nav "next"
         ]        
         try:
             _local_pause_before_cta("cta_only_fallback")
