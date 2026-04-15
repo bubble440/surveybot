@@ -127,9 +127,9 @@ def _has_actionable_elements(driver):
             if any(_is_actionable(el) for el in drv.find_elements(By.XPATH, btn_xpath)):
                 return True
 
-            # Inputs submit / boutons (uniquement visibles)
+            # Inputs submit / boutons (uniquement visibles) — inclut input[type='image'] (Snap Survey etc.)
             submit_buttons = drv.find_elements(
-                By.CSS_SELECTOR, "input[type='submit'], input[type='button'], button"
+                By.CSS_SELECTOR, "input[type='submit'], input[type='button'], input[type='image'], button"
             )
             if any(_is_actionable(el) for el in submit_buttons):
                 return True
