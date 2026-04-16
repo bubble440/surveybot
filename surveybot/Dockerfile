@@ -17,6 +17,7 @@ RUN apt-get update && apt-get install -y \
     curl \
     unzip \
     gnupg \
+    scrot \
     ca-certificates \
     fonts-liberation \
     libnss3 \
