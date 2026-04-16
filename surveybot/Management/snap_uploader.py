@@ -77,18 +77,49 @@ def _build_client():
 
 def _capture_png(driver) -> bytes:
     """
-    Capture un screenshot en bytes.
-    Tente get_screenshot_as_png() (bytes directs, sans fichier intermediaire),
-    avec fallback save_screenshot() si la methode est absente ou echoue.
+    Capture l'intégralité du bureau virtuel Xvfb (pas seulement le viewport Chrome).
+    Cela inclut la barre d'adresse, les flags/icônes du navigateur, les notifications OS, etc.
+
+    Stratégie :
+      1. scrot via $DISPLAY  → capture bureau complet (préféré)
+      2. driver.get_screenshot_as_png() → fallback viewport Selenium
+      3. driver.save_screenshot()       → fallback fichier Selenium
     """
+    import subprocess
+    import tempfile
+
+    display = os.getenv("DISPLAY", ":99")
+
+    # 1. Tentative capture bureau complet via scrot
+    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+        path = tmp.name
+    try:
+        result = subprocess.run(
+            ["scrot", path],
+            env={**os.environ, "DISPLAY": display},
+            timeout=5,
+            capture_output=True,
+        )
+        if result.returncode == 0:
+            with open(path, "rb") as f:
+                return f.read()
+    except Exception:
+        pass
+    finally:
+        try:
+            os.remove(path)
+        except Exception:
+            pass
+
+    # 2. Fallback Selenium — viewport uniquement
     try:
         png = driver.get_screenshot_as_png()
         if png and len(png) > 0:
             return png
     except Exception:
         pass
-    # Fallback : ecriture fichier puis lecture
-    import tempfile
+
+    # 3. Fallback Selenium — via fichier
     with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
         path = tmp.name
     try:
@@ -100,7 +131,6 @@ def _capture_png(driver) -> bytes:
             os.remove(path)
         except Exception:
             pass
-
 
 def capture_and_upload(driver, label: str) -> None:
     """
