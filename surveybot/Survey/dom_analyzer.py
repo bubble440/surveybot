@@ -19,7 +19,7 @@ Architecture:
 
 from __future__ import annotations
 from typing import List, Dict, Any, Tuple, Set
-import os, re
+import os, re, json
 
 from selenium.webdriver.common.by import By
 from Survey.log_utils import is_debug, log_debug, log_info
@@ -2895,6 +2895,45 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
 # POINT D'ENTRÉE - ANALYZE DOM
 # ================================================================================
 
+# Kantar/mrIWeb: détection préalable des metaTypes non supportés (SEJson)
+# ────────────────────────────────────────────────────────────────────────
+
+_SEJSON_UNSUPPORTED_METATYPES = {"dragndrop"}
+
+
+def _detect_sejson_unsupported_metatype(driver) -> str:
+    """
+    Lit le script <script class="SEJson" type="application/json"> injecté par
+    Kantar/mrIWeb et retourne le metaType non supporté si trouvé, sinon "".
+
+    Déclencheur DOM-first : présence de script.SEJson + champ metaType dans
+    _SEJSON_UNSUPPORTED_METATYPES. Aucun effet sur les pages sans ce script.
+    """
+    try:
+        scripts = driver.find_elements(By.CSS_SELECTOR, 'script.SEJson[type="application/json"]')
+        for script in (scripts or []):
+            raw = script.get_attribute("textContent") or script.get_attribute("innerHTML") or ""
+            # Strip HTML comment wrapper: <!-- ... //-->
+            raw = re.sub(r"<!--\s*", "", raw)
+            raw = re.sub(r"\s*//-->", "", raw)
+            raw = raw.strip()
+            if not raw:
+                continue
+            try:
+                data = json.loads(raw)
+            except Exception:
+                continue
+            for q in (data.get("qJSON") or []):
+                meta_type = ((q.get("CustomProps") or {}).get("metaType") or "").lower()
+                if meta_type in _SEJSON_UNSUPPORTED_METATYPES:
+                    return meta_type
+    except Exception:
+        pass
+    return ""
+
+
+# ================================================================================
+
 def analyze_dom(driver) -> List[Dict[str, Any]]:
     """
     Analyse le DOM et retourne une liste de QuestionBlock.
@@ -2903,6 +2942,13 @@ def analyze_dom(driver) -> List[Dict[str, Any]]:
     clear_registry()
 
     _wait_for_survey_dom(driver)
+
+    # Early exit: Kantar/mrIWeb page with unsupported metaType (e.g. dragndrop)
+    _unsupported_meta = _detect_sejson_unsupported_metatype(driver)
+    if _unsupported_meta:
+        log_info("[DOM_ANALYZER]", f"sejson_metatype_unsupported={_unsupported_meta} -> skip extraction (dragndrop_unsupported)")
+        return []
+
     max_depth = int(os.getenv("DOM_FRAME_MAX_DEPTH", "2") or "2")
     best_chain, _meta = _select_best_frame_chain(driver, max_depth=max_depth)
     if is_debug():
