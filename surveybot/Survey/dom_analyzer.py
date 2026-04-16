@@ -1302,7 +1302,8 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
 
         Garde-fou DOM-first strict:
         - input radio/checkbox au format name `ans<d>.<d>.<d>`
-        - dans une table `table.grid.grid-table-mode[data-settings*='table-mode']`
+        - dans une table `table.grid[data-settings*='table-mode']`
+          (couvre à la fois grid-table-mode et grid-list-mode)
         """
         try:
             raw_name = (el.get_attribute("name") or "").strip()
@@ -1317,7 +1318,6 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                 el.find_elements(
                     By.XPATH,
                     "ancestor::table[contains(concat(' ', normalize-space(@class), ' '), ' grid ') and "
-                    "contains(concat(' ', normalize-space(@class), ' '), ' grid-table-mode ') and "
                     "contains(@data-settings, 'table-mode')][1]",
                 )
             )

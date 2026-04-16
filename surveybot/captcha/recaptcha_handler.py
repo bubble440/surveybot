@@ -6,6 +6,7 @@ import json
 from captcha.recaptcha_utils import extract_recaptcha_v2_sitekey, inject_recaptcha_token
 from captcha.captcha_solver import TwoCaptchaClient
 import Management.guards.survey_difficulty_guard
+from Survey.log_utils import log_debug
 
 
 def _get_proxy_config() -> dict | None:
@@ -175,6 +176,31 @@ def _fire_recaptcha_callbacks(driver, token: str) -> dict:
         return JSON.stringify(report);
     })(arguments[0]);
     """
+    # Diagnostic : snapshot de ___grecaptcha_cfg.clients avant d'appeler les callbacks
+    _cfg_js = """
+    return (function() {
+        var out = {
+            present: !!window.___grecaptcha_cfg,
+            clients_count: 0,
+            clients_snapshot: [],
+            grecaptcha_ready: typeof window.grecaptcha !== 'undefined'
+        };
+        if (window.___grecaptcha_cfg) {
+            var clients = Object.values(window.___grecaptcha_cfg.clients || {});
+            out.clients_count = clients.length;
+            for (var i = 0; i < clients.length; i++) {
+                out.clients_snapshot.push(clients[i] ? Object.keys(clients[i]) : []);
+            }
+        }
+        return JSON.stringify(out);
+    })();
+    """
+    try:
+        _cfg_raw = driver.execute_script(_cfg_js)
+        log_debug("RECAPTCHA_HANDLER][CFG_DUMP", _cfg_raw or "(empty)")
+    except Exception as _cfg_e:
+        log_debug("RECAPTCHA_HANDLER][CFG_DUMP", f"execute_script failed: {_cfg_e}")
+
     try:
         raw = driver.execute_script(js, token)
         return json.loads(raw) if raw else {"error": "script returned None"}
