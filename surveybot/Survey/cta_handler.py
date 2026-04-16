@@ -1340,6 +1340,8 @@ def _dismiss_blocking_overlays(driver) -> int:
     JS_FIND_DISMISS_BUTTONS = """
     return (function() {
       var MIN_ZINDEX = 1000;
+      var CLOSE_TAGS = ['accept-button','reject-button','detail-accept-button',
+                        'detail-reject-button','detail-close'];
       var result = [];
       var seenOverlays = [];
       var all = document.querySelectorAll('*');
@@ -1365,15 +1367,33 @@ def _dismiss_blocking_overlays(driver) -> int:
           var btns = el.querySelectorAll(
             'button, [role="button"], input[type="button"], input[type="submit"]'
           );
-          for (var j = 0; j < btns.length; j++) {
-            var btn = btns[j];
-            var bcs = window.getComputedStyle(btn);
-            if (bcs.display === 'none' || bcs.visibility === 'hidden') continue;
-            var br = btn.getBoundingClientRect();
-            if (br.width < 5 || br.height < 5) continue;
-            result.push(btn);
-            break;
+          // 1st pass: prefer explicit close/accept buttons (e.g. CookieYes data-cky-tag)
+          var chosen = null;
+          for (var t = 0; t < CLOSE_TAGS.length && !chosen; t++) {
+            var candidate = el.querySelector('[data-cky-tag="' + CLOSE_TAGS[t] + '"]');
+            if (!candidate) continue;
+            var ccs = window.getComputedStyle(candidate);
+            if (ccs.display === 'none' || ccs.visibility === 'hidden') continue;
+            var cr = candidate.getBoundingClientRect();
+            if (cr.width < 5 || cr.height < 5) continue;
+            chosen = candidate;
           }
+          // 2nd pass: first visible button that is not a dialog-opener
+          if (!chosen) {
+            for (var j = 0; j < btns.length; j++) {
+              var btn = btns[j];
+              if (btn.getAttribute('aria-haspopup') === 'dialog') continue;
+              var tag = btn.getAttribute('data-cky-tag');
+              if (tag === 'settings-button') continue;
+              var bcs = window.getComputedStyle(btn);
+              if (bcs.display === 'none' || bcs.visibility === 'hidden') continue;
+              var br = btn.getBoundingClientRect();
+              if (br.width < 5 || br.height < 5) continue;
+              chosen = btn;
+              break;
+            }
+          }
+          if (chosen) result.push(chosen);
         } catch(e) {}
       }
       return result;
