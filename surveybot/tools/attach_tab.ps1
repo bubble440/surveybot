@@ -57,6 +57,7 @@ Write-Host ""
 
 # Vars env (attach)
 #test prod-like
+$env:ACCOUNT_ID ="topsurveys_bot_001" # Valeur a modifier dans le terminal pour sauvegarder les cookies dans le bon compte.
 $env:RUN_ENV="local"
 $env:RUN_MODE="local"
 $env:DATABASE_URL = "postgres://postgres:3o1L6kfCFxuncbY@localhost:5432/postgres"
