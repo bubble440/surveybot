@@ -1,11 +1,21 @@
 # ------------------------------------------------------------------------------------------------------------------------------------------
-# 
+#  3 Modes de lancement
 # ------------------------------------------------------------------------------------------------------------------------------------------
-
 ![Cartographie des mode de lancement](image-1.png)
 
+## 1 Mode Attach
+ Sa fais via les fichiers ps1 - rien a configurer ### Dans ce mode, le navigateur Chrome ouvert n'a aucun flag.
+
+## 2 Mode prod
+Lancement Fly.io, les variables sont stockées dans Fly Secrets ### Flag et navigateur inconnu car les screenshots ne capture que la page et non le bureau complet.
+
+## 3 Mode Local ()
+
+Se fais dans un terminal WSL, injecte toutes les variables ci dessous et lance le programme. ### Le navigateur est Chromium et le flag est --no-sandbox
+
+
 # ------------------------------------------------------------------------------------------------------------------------------------------
-# Deploiement en mode prod-like (terminal WSL)
+# Deploiement en mode Local (terminal WSL)
 # ------------------------------------------------------------------------------------------------------------------------------------------
 # Activate the terminal
 source /mnt/c/projects/Surveys/.venv-wsl/bin/activate
