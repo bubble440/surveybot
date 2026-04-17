@@ -1657,6 +1657,7 @@ def execute_survey_page(driver, account_id, api_key, ctx=None):
             ".cf-page__question-list button.cf-navigation-ok",  # Confirmit/Forsta fallback scope
             "button.cf-navigation__button.cf-navigation-ok",  # Confirmit/Forsta nav button explicit
             "#btn_continue",                     # Decipher
+            "#btnContinue",                      # navigatorsurveys/PureSpectrum routing page
             "input.continue",                    # Decipher alt
             "[data-role='next']",                # Generic data-role
             "#btn_next",                         # AreYouNet (img inside <a>)
