@@ -593,7 +593,7 @@ def launch_browser(config: dict | None = None):
         "--no-first-run",
         "--no-default-browser-check",
         "--disable-dev-shm-usage",
-        "--no-sandbox",
+        *( ["--no-sandbox"] if os.getuid() == 0 else [] ),
         "--disable-background-networking",
         "--disable-component-update",
         "--disable-features=Translate,OptimizationHints",

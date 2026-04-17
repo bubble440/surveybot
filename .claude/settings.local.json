@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c ' *)",
+      "Bash(python tools/replay_snapshot.py snapshots/20260417_101757_after_dom_analyze)",
+      "Bash(python surveybot/tools/replay_snapshot.py snapshots/20260417_101757_after_dom_analyze)",
+      "Bash(python surveybot/tools/replay_snapshot.py snapshots/20260417_101757_after_dom_analyze --use-dom-outer)"
+    ]
+  }
+}

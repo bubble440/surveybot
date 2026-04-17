@@ -106,6 +106,7 @@ try:
         _extract_groupcaliber_rating_row_blocks,
         _extract_confirmit_cf_carousel_blocks,
         _extract_runtime_dropdown_blocks,
+        _extract_rps_select_blocks,
     )
 
     # Registre et utilitaires
@@ -186,6 +187,7 @@ except ImportError:
         _extract_groupcaliber_rating_row_blocks,
         _extract_confirmit_cf_carousel_blocks,
         _extract_runtime_dropdown_blocks,
+        _extract_rps_select_blocks,
     )
 
 
@@ -1171,6 +1173,16 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         custom_testid_checkbox_blocks = _extract_custom_testid_multi_select_checkbox_blocks(driver, frame_chain)
         if custom_testid_checkbox_blocks:
             return custom_testid_checkbox_blocks
+    except Exception:
+        pass
+
+    # --- 0h-quinquies-rps) rps-select Angular custom (Toluna/SurveyRouter screener) ---
+    # Gate strict : rps-select[@data-selector] + div.selection + div.option-item avec texte.
+    # Précède consent_checkbox : le select Sexe doit prendre le dessus sur le checkbox ng-hide.
+    try:
+        rps_select_blocks = _extract_rps_select_blocks(driver, frame_chain)
+        if rps_select_blocks:
+            return rps_select_blocks
     except Exception:
         pass
 
