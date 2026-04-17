@@ -6998,4 +6998,184 @@ def _extract_confirmit_cf_carousel_blocks(driver, frame_chain: list[int] | None)
             except Exception:
                 continue
 
+
+# ================================================================================
+# RPS-SELECT — ANGULAR CUSTOM DROPDOWN (Toluna / SurveyRouter screener)
+# ================================================================================
+
+def _extract_rps_select_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
+    """Extrait les dropdowns custom Angular `rps-select` (Toluna/SurveyRouter screener).
+
+    Gardes-fous DOM stricts (additifs, non provider-based) :
+      - présence d'au moins un élément `rps-select` visible
+      - chaque `rps-select` contient un `div.rps-select[data-selector]` non vide
+      - présence de `div.selection` cliquable
+      - au moins deux `div.option-item` dans le composant (même dans ng-hide)
+
+    Note DOM : `data-selector` est sur le `div.rps-select` interne, pas sur `rps-select`.
+    Les options sont dans `div.options.ng-hide` et ne sont pas individuellement visibles
+    avant ouverture — on les lit via innerText sans vérification de visibilité.
+    """
+    frame_chain = list(frame_chain or [])
+
+    # Gate rapide : présence du tag personnalisé
+    try:
+        rps_selects = driver.find_elements(By.CSS_SELECTOR, "rps-select")
+    except Exception:
+        return []
+
+    if not rps_selects:
+        return []
+
+    # Gate strict : au moins un wrapper interne porte data-selector + option-items
+    try:
+        gate_wrappers = driver.find_elements(By.CSS_SELECTOR, "div.rps-select[data-selector]")
+    except Exception:
+        gate_wrappers = []
+
+    has_gate = False
+    for w in gate_wrappers:
+        try:
+            items = w.find_elements(By.CSS_SELECTOR, "div.option-item")
+            if len(items) >= 2:
+                has_gate = True
+                break
+        except Exception:
+            continue
+    if not has_gate:
+        return []
+
+    blocks: list[dict] = []
+
+    for outer in rps_selects:
+        try:
+            # Vérifier que l'élément rps-select est dans le DOM et visible
+            try:
+                if not outer.is_displayed():
+                    continue
+            except Exception:
+                continue
+
+            # Trouver le wrapper interne portant data-selector
+            try:
+                wrapper = outer.find_element(By.CSS_SELECTOR, "div.rps-select[data-selector]")
+            except Exception:
+                continue
+
+            data_selector = (wrapper.get_attribute("data-selector") or "").strip()
+            if not data_selector:
+                continue
+
+            # Readonly check (attribut sur wrapper interne)
+            if (wrapper.get_attribute("data-is-readonly") or "").strip().lower() == "true":
+                continue
+
+            # Gate : div.selection présent
+            try:
+                wrapper.find_element(By.CSS_SELECTOR, "div.selection")
+            except Exception:
+                continue
+
+            # Lire les options (dans div.options, potentiellement ng-hide) via JS innerText
+            try:
+                option_items = wrapper.find_elements(By.CSS_SELECTOR, "div.option-item")
+            except Exception:
+                option_items = []
+
+            options: list[str] = []
+            for item in option_items:
+                try:
+                    txt = _norm(
+                        driver.execute_script("return arguments[0].innerText || '';", item)
+                        or item.get_attribute("innerText")
+                        or ""
+                    )
+                    if txt:
+                        options.append(txt)
+                except Exception:
+                    continue
+
+            if len(options) < 2:
+                continue
+
+            # Question : label.select-label
+            question = ""
+            try:
+                lbl = wrapper.find_element(By.CSS_SELECTOR, "label.select-label")
+                question = _norm(
+                    driver.execute_script("return arguments[0].innerText || '';", lbl)
+                    or lbl.get_attribute("innerText")
+                    or ""
+                )
+            except Exception:
+                pass
+            if not question:
+                question = f"Question {data_selector}"
+
+            # XPaths ancrés sur div[@data-selector] (plus stable que rps-select)
+            ds_lit = _xpath_literal(data_selector)
+            selection_xpath = (
+                f"//div[@data-selector={ds_lit}]"
+                f"//div[contains(@class,'selection')]"
+            )
+
+            option_xpath_map: dict[str, str] = {}
+            for opt_txt in options:
+                k = _norm_lc(opt_txt)
+                if not k or k in option_xpath_map:
+                    continue
+                opt_lit = _xpath_literal(opt_txt)
+                xp = (
+                    f"//div[@data-selector={ds_lit}]"
+                    f"//div[contains(@class,'options')]"
+                    f"//div[contains(@class,'option-item') and normalize-space(.)={opt_lit}]"
+                )
+                option_xpath_map[k] = xp
+
+            if len(option_xpath_map) < 2:
+                continue
+
+            group_key = f"rps_select:{data_selector}"
+            target_id = make_target_id("group", group_key, question)
+
+            register_target(
+                target_id,
+                {
+                    "kind": "group",
+                    "itype": "select_rps",
+                    "group_key": group_key,
+                    "question": question,
+                    "option_xpath_map": option_xpath_map,
+                    "selection_xpath": selection_xpath,
+                    "frame_chain": frame_chain,
+                    "rps_select": True,
+                },
+            )
+
+            blocks.append(
+                {
+                    "question": question,
+                    "itype": "select_rps",
+                    "options": options,
+                    "max_select": 1,
+                    "min_select": 1,
+                    "target_id": target_id,
+                    "context": {
+                        "kind": "group",
+                        "group_key": group_key,
+                    },
+                }
+            )
+
+            log_debug(
+                "[DOM_RPS_SELECT]",
+                f"data_selector={data_selector!r} question={question!r} options={options}",
+            )
+
+        except Exception as e:
+            log_debug("[DOM_RPS_SELECT]", f"extract error: {type(e).__name__}: {e}")
+            continue
+
+    return blocks
+
     return blocks

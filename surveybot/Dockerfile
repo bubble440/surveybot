@@ -53,6 +53,13 @@ RUN wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | gpg --dearm
 
 ENV SURVEY_BROWSER_BIN=/usr/bin/google-chrome
 
+# Après l'installation de Chrome, avant COPY app
+RUN useradd -m -u 1000 botuser \
+ && mkdir -p /data/chrome_profiles \
+ && chown -R botuser:botuser /data /app
+
+USER botuser
+
 # =========================
 # PYTHON DEPS
 # =========================
