@@ -667,7 +667,7 @@ def main():
                     return ""
                 _autosave_stop_event = start_profile_autosave(_acct_env, _get_user_data_dir, interval_sec=600)
 
-            restore_session_cookies(driver, account_id)
+            # restore_session_cookies(driver, account_id) #Archivé car le profil sauvegardé contient deja les cookies.
 
             def _soft_restart(reason):
                 return soft_restart(
