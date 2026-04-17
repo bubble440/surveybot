@@ -1233,6 +1233,83 @@ def _handle_cf_carousel_image_blocks(driver, question_blocks: list, api_key: str
 
 
 
+def _handle_phone_verification(driver):
+    """
+    Détecte et traite l'écran interstitiel "Courte pause – Vérifie ton profil"
+    sur topsurveys.app.
+
+    Critères DOM stricts : div.phone-verification-container ET input.phone-number-input
+    présents simultanément. Scoped topsurveys.app uniquement.
+
+    Retourne :
+      True  — écran détecté + numéro saisi + bouton cliqué
+      False — écran détecté mais ACCOUNT_PHONE absent (log + abandon sans clic)
+      None  — écran absent (continuer le flux normal)
+    """
+    try:
+        current_url = driver.current_url or ""
+    except Exception:
+        current_url = ""
+
+    if "topsurveys.app" not in current_url.lower():
+        return None
+
+    try:
+        has_screen = bool(driver.execute_script(
+            "return !!(document.querySelector('div.phone-verification-container')"
+            " && document.querySelector('input.phone-number-input'));"
+        ))
+    except Exception:
+        has_screen = False
+
+    if not has_screen:
+        return None
+
+    phone = (os.getenv("ACCOUNT_PHONE") or "").strip()
+    if not phone:
+        log_info("[PHONE_VERIF]", "Écran vérification téléphone détecté — ACCOUNT_PHONE non défini, abandon")
+        return False
+
+    log_info("[PHONE_VERIF]", "Écran vérification téléphone détecté — saisie du numéro")
+
+    try:
+        inp = driver.find_element(By.CSS_SELECTOR, "input.phone-number-input")
+        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", inp)
+        inp.click()
+        inp.clear()
+        inp.send_keys(phone)
+        log_debug("[PHONE_VERIF]", f"Numéro saisi: {phone}")
+        time.sleep(0.5)
+    except Exception as e:
+        log_info("[PHONE_VERIF]", f"Saisie téléphone échouée: {e}")
+        return False
+
+    try:
+        btn = driver.find_element(
+            By.CSS_SELECTOR,
+            "div.phone-verification-container button.p-btn--fill"
+        )
+    except Exception:
+        log_info("[PHONE_VERIF]", "Bouton Suivant introuvable après saisie")
+        return False
+
+    if _env_truthy("CTA_INTERCEPT_ONLY"):
+        is_disabled = btn.get_attribute("disabled") is not None
+        status = "disabled" if is_disabled else "enabled"
+        log_info("[PHONE_VERIF]", f"CTA_INTERCEPT_ONLY — bouton={status}, interception OK sans navigation")
+        return True
+
+    try:
+        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", btn)
+        driver.execute_script("arguments[0].click();", btn)
+        log_info("[PHONE_VERIF]", "Bouton Suivant cliqué")
+        time.sleep(1.0)
+        return True
+    except Exception as e:
+        log_info("[PHONE_VERIF]", f"Clic Suivant échoué: {e}")
+        return False
+
+
 def _should_skip_post_actions_navigation(driver, question_blocks: list[dict]) -> bool:
     """
     Garde-fou minimal: certains blocs avancent automatiquement après le clic
@@ -1313,6 +1390,13 @@ def execute_survey_page(driver, account_id, api_key, ctx=None):
         _recover_from_network_error(driver)
     except Exception as _nerr_exc:
         pass  # jamais bloquant
+
+    # =========================================================================
+    # PATCH: Écran vérification téléphone TopSurveys ("Courte pause")
+    # =========================================================================
+    _phone_result = _handle_phone_verification(driver)
+    if _phone_result is not None:
+        return _phone_result
 
     # =========================================================================
     # PATCH: Detecter popup TopSurveys
