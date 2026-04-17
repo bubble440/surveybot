@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import os
 import tarfile
+import threading
 
 from Survey.log_utils import log_info, log_debug
 
@@ -106,3 +107,25 @@ def save_profile(account_id: str, src_dir: str) -> None:
 
     except Exception as e:
         _log_warning(f"save_profile échoué pour account_id={account_id}: {e}")
+
+
+def start_profile_autosave(account_id: str, get_user_data_dir, interval_sec: int = 300) -> threading.Event:
+    """
+    Lance un thread daemon qui sauvegarde périodiquement le profil Chrome.
+    get_user_data_dir est un callable (résolution tardive).
+    Retourne un threading.Event à setter pour arrêter le thread proprement.
+    """
+    stop_event = threading.Event()
+
+    def _loop():
+        while not stop_event.wait(interval_sec):
+            try:
+                d = get_user_data_dir()
+                if d:
+                    save_profile(account_id, d)
+            except Exception as e:
+                _log_warning(f"autosave loop erreur pour account_id={account_id}: {e}")
+
+    t = threading.Thread(target=_loop, daemon=True, name=f"profile-autosave-{account_id}")
+    t.start()
+    return stop_event
