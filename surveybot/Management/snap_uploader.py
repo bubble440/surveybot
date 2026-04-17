@@ -87,6 +87,7 @@ def _capture_png(driver) -> bytes:
     """
     import subprocess
     import tempfile
+    from Survey.log_utils import log_info
 
     display = os.getenv("DISPLAY", ":99")
 
@@ -94,23 +95,28 @@ def _capture_png(driver) -> bytes:
     with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
         path = tmp.name
     try:
+        os.remove(path)  # scrot refuse d'écraser un fichier existant
+    except Exception:
+        pass
+    try:
         result = subprocess.run(
             ["scrot", path],
             env={**os.environ, "DISPLAY": display},
             timeout=5,
             capture_output=True,
         )
+        log_info(_TAG, f"scrot returncode={result.returncode} stderr={result.stderr.decode(errors='replace')!r}")
         if result.returncode == 0:
             with open(path, "rb") as f:
                 return f.read()
-    except Exception:
-        pass
+    except Exception as e:
+        log_info(_TAG, f"scrot EXCEPTION {type(e).__name__}: {e}")
     finally:
         try:
             os.remove(path)
         except Exception:
             pass
-
+        
     # 2. Fallback Selenium — viewport uniquement
     try:
         png = driver.get_screenshot_as_png()

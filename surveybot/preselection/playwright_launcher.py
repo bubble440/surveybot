@@ -540,9 +540,20 @@ def launch_browser(config: dict | None = None):
     debug_address = os.getenv("REMOTE_DEBUG_ADDRESS", "").strip()
 
     # Profil isolé (évite collisions + garde la session propre)
-    # Si chrome_bin est un binaire Windows, créer le profil sous %TEMP% Windows natif
-    # (wslpath -w produit un chemin UNC \\wsl.localhost\... rejeté par Chrome comme profil).
-    if ".exe" in chrome_bin.lower():
+    # Si ACCOUNT_ID + DATABASE_URL sont définis, on utilise un répertoire fixe et
+    # on charge le profil persisté depuis Postgres (anti-bot : évite le profil vierge).
+    # Sinon : comportement original (mkdtemp éphémère, ou %TEMP% pour Chrome Windows).
+    _persist_account_id = os.getenv("ACCOUNT_ID", "").strip()
+    _persist_db_url = os.getenv("DATABASE_URL", "").strip()
+
+    if _persist_account_id and _persist_db_url:
+        user_data_dir = f"/tmp/chrome_profile_{_persist_account_id}"
+        os.makedirs(user_data_dir, exist_ok=True)
+        from preselection.chrome_profile_store import load_profile
+        load_profile(_persist_account_id, user_data_dir)
+    elif ".exe" in chrome_bin.lower():
+        # Si chrome_bin est un binaire Windows, créer le profil sous %TEMP% Windows natif
+        # (wslpath -w produit un chemin UNC \\wsl.localhost\... rejeté par Chrome comme profil).
         try:
             win_temp = subprocess.check_output(
                 ["cmd.exe", "/c", "echo %TEMP%"], text=True

@@ -206,6 +206,12 @@ def login(driver, email, password):
     dom_probe(driver)
     wait_for_vue_hydration(driver, timeout=15)
 
+
+    if os.getenv("SNAP_ENABLED", "").strip() == "1":
+        from Management.snap_uploader import new_survey, capture_and_upload
+        new_survey()
+        capture_and_upload(driver, "survey_account")
+
     # --- Étape 1 : Saisir l'email dans le champ inline (landing page, pas de modale)
     try:
         email_input = wait.until(
