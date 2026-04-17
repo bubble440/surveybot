@@ -647,6 +647,7 @@ def main():
     while cycle < max_cycles:
         cycle += 1
         driver = None
+        _autosave_stop_event = None
 
         try:
             driver = launch_driver_or_fail(config, account_id)
@@ -654,6 +655,17 @@ def main():
             runtime_ctx["driver"] = driver
             # PATCH: Stocker account_id sur driver pour acces dans survey_executor
             driver._survey_account_id = account_id
+
+            _acct_env = os.getenv("ACCOUNT_ID", "").strip()
+            _db_env = os.getenv("DATABASE_URL", "").strip()
+            if _acct_env and _db_env:
+                from preselection.chrome_profile_store import start_profile_autosave
+                def _get_user_data_dir(_ctx=runtime_ctx):
+                    _d = _ctx.get("driver")
+                    if _d and hasattr(_d, "_chrome_user_data_dir"):
+                        return _d._chrome_user_data_dir or ""
+                    return ""
+                _autosave_stop_event = start_profile_autosave(_acct_env, _get_user_data_dir, interval_sec=600)
 
             restore_session_cookies(driver, account_id)
 
@@ -719,6 +731,9 @@ def main():
             # FIX-B4: pas de 'continue' ici — supprime les SystemExit et empêche l'arrêt propre
             try:
                 if driver and (not is_attach_mode()):
+                    # Arrêter l'autosave avant la sauvegarde finale pour éviter une double écriture simultanée
+                    if _autosave_stop_event is not None:
+                        _autosave_stop_event.set()
                     # Sauvegarder le profil Chrome avant de quitter (si profil persistant)
                     _acct = os.getenv("ACCOUNT_ID", "").strip()
                     _db   = os.getenv("DATABASE_URL", "").strip()
