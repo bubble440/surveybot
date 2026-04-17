@@ -719,6 +719,12 @@ def main():
             # FIX-B4: pas de 'continue' ici — supprime les SystemExit et empêche l'arrêt propre
             try:
                 if driver and (not is_attach_mode()):
+                    # Sauvegarder le profil Chrome avant de quitter (si profil persistant)
+                    _acct = os.getenv("ACCOUNT_ID", "").strip()
+                    _db   = os.getenv("DATABASE_URL", "").strip()
+                    if _acct and _db and hasattr(driver, "_chrome_user_data_dir") and driver._chrome_user_data_dir:
+                        from preselection.chrome_profile_store import save_profile
+                        save_profile(_acct, driver._chrome_user_data_dir)
                     # Terminer le processus Chrome lancé par subprocess.Popen
                     if hasattr(driver, '_chrome_proc') and driver._chrome_proc:
                         try:

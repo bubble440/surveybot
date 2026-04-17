@@ -12,3 +12,7 @@ primary_region = "cdg"
   cpu_kind = "shared"
   cpus = 1
   memory_mb = 2048
+
+  [mounts]
+  source = "chrome_profiles"
+  destination = "/data/chrome_profiles"
