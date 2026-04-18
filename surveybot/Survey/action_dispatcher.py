@@ -1524,22 +1524,55 @@ def _apply_by_target_id(
             # --- Nfield dragndrop hidden radio (nfield_dragndrop_hidden=True) ---
             # Les inputs radio sont dans un fieldset display:none (DnD React skin).
             # On bypass la vérification de visibilité et on dispatch via JS uniquement.
-            if payload.get("nfield_dragndrop_hidden") and resolved_itype == "radio":
-                _dnd_opt_map = payload.get("option_xpath_map") or {}
-                _dnd_xp = _dnd_opt_map.get(v_norm) or (_dnd_opt_map.get(v_fold) if v_fold else None)
-                if not _dnd_xp:
-                    for _k, _x in _dnd_opt_map.items():
-                        _kn = _norm_lc(_k)
-                        if v_norm and (v_norm == _kn or v_norm in _kn or _kn in v_norm):
-                            _dnd_xp = _x
-                            break
-                        if v_fold and (v_fold == _kn or v_fold in _kn or _kn in v_fold):
-                            _dnd_xp = _x
-                            break
-                if not _dnd_xp:
-                    if debug_target:
-                        log_debug("[TARGET_DEBUG]", f"nfield_dragndrop_hidden: option not found value={value!r} opt_map={list(_dnd_opt_map)}")
-                    return False
+            if payload.get("nfield_dragndrop_hidden") and resolved_itype in ("radio", "matrix"):
+                _dnd_xp = None
+                if resolved_itype == "matrix":
+                    # value: "row_label || col_label"
+                    _dnd_parts = [p.strip() for p in value.split("||", 1)]
+                    if len(_dnd_parts) != 2 or not _dnd_parts[0] or not _dnd_parts[1]:
+                        if debug_target:
+                            log_debug("[TARGET_DEBUG]", f"nfield_dragndrop_hidden matrix: bad format value={value!r}")
+                        return False
+                    _dnd_row_raw, _dnd_col_raw = _dnd_parts
+                    _dnd_nested = payload.get("option_xpath_map") or {}
+                    _dnd_col_map = _dnd_nested.get(_dnd_row_raw)
+                    if not _dnd_col_map:
+                        _rn = _norm_lc(_dnd_row_raw)
+                        for _k, _v in _dnd_nested.items():
+                            if _norm_lc(_k) == _rn:
+                                _dnd_col_map = _v
+                                break
+                    if not _dnd_col_map:
+                        if debug_target:
+                            log_debug("[TARGET_DEBUG]", f"nfield_dragndrop_hidden matrix: row not found row={_dnd_row_raw!r} map={list(_dnd_nested)}")
+                        return False
+                    _dnd_xp = _dnd_col_map.get(_dnd_col_raw)
+                    if not _dnd_xp:
+                        _cn = _norm_lc(_dnd_col_raw)
+                        for _k, _v in _dnd_col_map.items():
+                            if _norm_lc(_k) == _cn:
+                                _dnd_xp = _v
+                                break
+                    if not _dnd_xp:
+                        if debug_target:
+                            log_debug("[TARGET_DEBUG]", f"nfield_dragndrop_hidden matrix: col not found col={_dnd_col_raw!r} row={_dnd_row_raw!r}")
+                        return False
+                else:
+                    _dnd_opt_map = payload.get("option_xpath_map") or {}
+                    _dnd_xp = _dnd_opt_map.get(v_norm) or (_dnd_opt_map.get(v_fold) if v_fold else None)
+                    if not _dnd_xp:
+                        for _k, _x in _dnd_opt_map.items():
+                            _kn = _norm_lc(_k)
+                            if v_norm and (v_norm == _kn or v_norm in _kn or _kn in v_norm):
+                                _dnd_xp = _x
+                                break
+                            if v_fold and (v_fold == _kn or v_fold in _kn or _kn in v_fold):
+                                _dnd_xp = _x
+                                break
+                    if not _dnd_xp:
+                        if debug_target:
+                            log_debug("[TARGET_DEBUG]", f"nfield_dragndrop_hidden: option not found value={value!r} opt_map={list(_dnd_opt_map)}")
+                        return False
                 try:
                     _dnd_cands = driver.find_elements(By.XPATH, _dnd_xp)
                     _dnd_radio = _dnd_cands[0] if _dnd_cands else None

@@ -832,7 +832,7 @@ def _extract_nfield_dragndrop_blocks(driver, frame_chain=None) -> List[Dict[str,
     """
     Nfield dragndrop (metaType=dragndrop): React DnD skin over a hidden mrQuestionTable.
     Guard: div._dragndrop + table.mrQuestionTable both present in DOM.
-    Returns one block per row (item/brand); dispatch via hidden radio JS click.
+    Returns a single matrix block; dispatch via hidden radio JS click per (row, col).
     """
     try:
         if not driver.find_elements(By.CSS_SELECTOR, "div._dragndrop"):
@@ -858,7 +858,19 @@ def _extract_nfield_dragndrop_blocks(driver, frame_chain=None) -> List[Dict[str,
         return []
 
     options_list = [col_headers[i] for i in sorted(col_headers)]
-    blocks = []
+
+    question_label = ""
+    qname = ""
+    try:
+        fieldset = driver.find_element(By.CSS_SELECTOR, "fieldset[questionname]")
+        qname = (fieldset.get_attribute("questionname") or "").strip()
+        legend = fieldset.find_element(By.CSS_SELECTOR, "legend.mrQuestionText")
+        question_label = re.sub(r"\s+", " ", (legend.get_attribute("innerText") or legend.text or "")).strip()
+    except Exception:
+        pass
+
+    matrix_rows: List[str] = []
+    nested_xpath_map: Dict[str, Any] = {}  # {row_label: {col_label: xpath}}
 
     try:
         rows = table.find_elements(By.CSS_SELECTOR, "tr")
@@ -879,8 +891,6 @@ def _extract_nfield_dragndrop_blocks(driver, frame_chain=None) -> List[Dict[str,
                 continue
 
             radio_name = (radios[0].get_attribute("name") or "").strip()
-            if not radio_name:
-                continue
 
             option_xpath_map = {}
             for radio in radios:
@@ -902,24 +912,34 @@ def _extract_nfield_dragndrop_blocks(driver, frame_chain=None) -> List[Dict[str,
             if not option_xpath_map:
                 continue
 
-            target_id = make_target_id("radio", f"dragndrop:{radio_name}", row_label)
-            register_target(target_id, {
-                "kind": "group",
-                "itype": "radio",
-                "option_xpath_map": option_xpath_map,
-                "nfield_dragndrop_hidden": True,
-            })
-
-            blocks.append({
-                "target_id": target_id,
-                "itype": "radio",
-                "label": row_label,
-                "options": options_list,
-            })
+            matrix_rows.append(row_label)
+            nested_xpath_map[row_label] = option_xpath_map
         except Exception:
             continue
 
-    return blocks
+    if not matrix_rows:
+        return []
+
+    if not qname:
+        qname = options_list[0][:30] if options_list else "dnd"
+
+    target_id = make_target_id("matrix", f"dragndrop:{qname}", question_label[:80] or qname)
+    register_target(target_id, {
+        "kind": "group",
+        "itype": "matrix",
+        "option_xpath_map": nested_xpath_map,
+        "nfield_dragndrop_hidden": True,
+    })
+
+    return [{
+        "target_id": target_id,
+        "itype": "matrix",
+        "label": question_label or qname,
+        "options": options_list,
+        "context": {"matrix_rows": matrix_rows},
+        "min_select": len(matrix_rows),
+        "max_select": len(matrix_rows),
+    }]
 
 
 # ================================================================================
