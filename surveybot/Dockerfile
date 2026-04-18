@@ -72,10 +72,8 @@ RUN python -m playwright install chromium
 # =========================
 # APP
 # =========================
+COPY --chmod=755 entrypoint.sh /app/entrypoint.sh
 COPY . /app
-
-# Entrypoint : démarre Xvfb puis l'app
-RUN chmod +x /app/entrypoint.sh
 
 # =========================
 # RUNTIME DEFAULTS

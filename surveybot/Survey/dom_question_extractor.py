@@ -953,7 +953,74 @@ def _group_key_for_choice(el, itype: str) -> str:
                                 )
                                 return qid_prefix
 
+                # Confirmit/Wix pattern: checkboxes of the same question carry distinct
+                # names like `SCR1_1`, `SCR1_6`, `SCR1_3` (pattern: <alphanum_QID>_<digits>).
+                # They share an ancestor fieldset whose id is `fieldset_<QID>`.
+                # Guard DOM strict: both conditions must hold simultaneously —
+                # (1) name matches ^[alpha][alphanum]*_<digits>$, AND
+                # (2) ancestor fieldset[id=fieldset_<QID>] (case-insensitive) exists
+                # with >=2 checkboxes sharing that <QID>_ prefix.
+                confirmit_m = re.match(r"^([a-z][a-z0-9]*)_(\d+)$", clean_name)
+                if confirmit_m:
+                    qid_prefix = confirmit_m.group(1)
+                    fieldset_id_lc = f"fieldset_{qid_prefix}"
+                    _upper = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+                    _lower = "abcdefghijklmnopqrstuvwxyz"
+                    _xp = (
+                        f"ancestor::fieldset["
+                        f"translate(@id,'{_upper}','{_lower}')='{fieldset_id_lc}'"
+                        f"][1]"
+                    )
+                    try:
+                        fs_nodes = el.find_elements(By.XPATH, _xp)
+                    except Exception:
+                        fs_nodes = []
+                    if fs_nodes:
+                        try:
+                            sibling_boxes = fs_nodes[0].find_elements(
+                                By.XPATH, ".//input[@type='checkbox'][@name]"
+                            )
+                        except Exception:
+                            sibling_boxes = []
+                        prefix_pat = re.compile(
+                            rf"^{re.escape(qid_prefix)}_\d+$", re.IGNORECASE
+                        )
+                        matching = sum(
+                            1 for sib in sibling_boxes
+                            if prefix_pat.match(_norm_lc(sib.get_attribute("name") or ""))
+                        )
+                        if matching >= 2:
+                            log_debug(
+                                "[DOM_GROUPING]",
+                                f"confirmit_wix_group prefix={qid_prefix} fieldset={fieldset_id_lc} matching={matching}",
+                            )
+                            return qid_prefix
+
                 return _norm_lc(clean_name)
+
+            # SSI Confirmit / "graphical radiobox" pattern: un widget div[role="radio"]
+            # est un frère direct de l'input natif caché (HideElement) dans le même
+            # conteneur row. Le widget n'a pas d'attribut `name` ; l'input natif a
+            # name="SEXE". Sans ce guard, les deux éléments produisent des clés
+            # différentes → deux question_blocks identiques.
+            # Guard strict: tag != input + sibling input[type="radio"][name] non vide.
+            try:
+                tag_name = (el.tag_name or "").lower()
+                if tag_name != "input":
+                    sibling_inputs = el.find_elements(
+                        By.XPATH,
+                        "../input[@type='radio' and @name and normalize-space(@name)!=''][1]"
+                    )
+                    if sibling_inputs:
+                        native_name = _norm_lc(sibling_inputs[0].get_attribute("name") or "")
+                        if native_name:
+                            log_debug(
+                                "[DOM_GROUPING]",
+                                f"graphical_radio_native_name: widget={tag_name} -> name={native_name}",
+                            )
+                            return f"radio:name:{native_name}"
+            except Exception:
+                pass
 
             # Fallback DOM-first: certains providers (ex: Quantilope) n'exposent
             # aucun `name` sur les radios mais regroupent visuellement les options
