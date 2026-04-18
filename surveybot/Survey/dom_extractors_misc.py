@@ -7178,4 +7178,176 @@ def _extract_rps_select_blocks(driver, frame_chain: list[int] | None) -> list[di
 
     return blocks
 
+
+# ================================================================================
+# SSI / CONFIRMIT NATIVE GRID
+# ================================================================================
+
+def _extract_ssi_confirmit_native_grid_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
+    """
+    SSI/Confirmit native radio grid: div.question.grid > table.inner_table.
+
+    Gate DOM (strict):
+    - div.question.grid
+    - table.inner_table tr.column_header_row td[role="columnheader"] (>= 2 colonnes)
+    - tr[role="radiogroup"] td[role="rowheader"]
+    - td.input_cell.clickable avec div.graphical_select[role="radio"] + input[type="radio"]
+
+    Chaque ligne (tr[role="radiogroup"]) génère un block avec:
+    - question = texte h3 de .header2 + " — " + libellé de ligne
+    - options = textes des en-têtes de colonnes
+    - option_xpath_map = { norm(option) -> xpath du div.graphical_select }
+    """
+    frame_chain = list(frame_chain or [])
+
+    try:
+        grids = driver.find_elements(By.CSS_SELECTOR, "div.question.grid")
+        if not grids:
+            return []
+    except Exception:
+        return []
+
+    blocks: list[dict] = []
+
+    for grid_div in grids[:5]:
+        try:
+            col_header_cells = grid_div.find_elements(
+                By.CSS_SELECTOR,
+                "table.inner_table tr.column_header_row td[role='columnheader']",
+            )
+            if len(col_header_cells) < 2:
+                continue
+
+            col_headers: list[str] = []
+            for th in col_header_cells:
+                txt = _norm(th.text or "")
+                if txt:
+                    col_headers.append(txt)
+            if len(col_headers) < 2:
+                continue
+
+            global_q = ""
+            try:
+                for sel in (".header2 h3", ".header2 p", "h3"):
+                    nodes = grid_div.find_elements(By.CSS_SELECTOR, sel)
+                    for node in nodes:
+                        t = _norm(node.text or "")
+                        if t and len(t) > 5:
+                            global_q = t
+                            break
+                    if global_q:
+                        break
+            except Exception:
+                pass
+
+            rows = grid_div.find_elements(
+                By.CSS_SELECTOR, "table.inner_table tr[role='radiogroup']"
+            )
+            if not rows:
+                continue
+
+            for row in rows[:30]:
+                try:
+                    row_label = ""
+                    try:
+                        rh = row.find_element(By.CSS_SELECTOR, "td[role='rowheader']")
+                        row_label = _norm(rh.text or "")
+                    except Exception:
+                        pass
+                    if not row_label:
+                        continue
+
+                    question = f"{global_q} — {row_label}" if global_q else row_label
+
+                    input_cells = row.find_elements(By.CSS_SELECTOR, "td.input_cell.clickable")
+                    if len(input_cells) < 2:
+                        continue
+
+                    radio_name = ""
+                    try:
+                        first_input = input_cells[0].find_element(
+                            By.CSS_SELECTOR, "input[type='radio']"
+                        )
+                        radio_name = _norm_lc(first_input.get_attribute("name") or "")
+                    except Exception:
+                        pass
+                    if not radio_name:
+                        continue
+
+                    options: list[str] = []
+                    option_xpath_map: dict[str, str] = {}
+                    num_opts = min(len(col_headers), len(input_cells))
+
+                    for idx in range(num_opts):
+                        try:
+                            opt_text = col_headers[idx]
+                            cell = input_cells[idx]
+
+                            click_el = None
+                            try:
+                                click_el = cell.find_element(
+                                    By.CSS_SELECTOR, "div.graphical_select[role='radio']"
+                                )
+                            except Exception:
+                                click_el = cell
+
+                            xp = _best_xpath_for_element(driver, click_el)
+                            if not xp:
+                                continue
+
+                            nk = _norm_key(opt_text)
+                            if nk in option_xpath_map:
+                                continue
+                            option_xpath_map[nk] = xp
+                            options.append(opt_text)
+                        except Exception:
+                            continue
+
+                    if len(options) < 2 or not option_xpath_map:
+                        continue
+
+                    group_key = f"radio:name:{radio_name}"
+                    target_id = make_target_id("group", group_key, question)
+
+                    register_target(
+                        target_id,
+                        {
+                            "kind": "group",
+                            "itype": "radio",
+                            "group_key": group_key,
+                            "question": question,
+                            "option_xpath_map": option_xpath_map,
+                            "frame_chain": frame_chain,
+                            "ssi_confirmit_native_grid": True,
+                        },
+                    )
+
+                    blocks.append(
+                        {
+                            "question": question,
+                            "itype": "radio",
+                            "options": options,
+                            "max_select": 1,
+                            "min_select": 1,
+                            "target_id": target_id,
+                            "context": {
+                                "kind": "group",
+                                "group_key": group_key,
+                            },
+                        }
+                    )
+
+                    log_debug(
+                        "[SSI_GRID]",
+                        f"row={row_label!r} name={radio_name!r} options={options}",
+                    )
+
+                except Exception:
+                    continue
+
+        except Exception:
+            continue
+
+    return blocks
+
     return blocks

@@ -108,6 +108,7 @@ try:
         _extract_confirmit_cf_carousel_blocks,
         _extract_runtime_dropdown_blocks,
         _extract_rps_select_blocks,
+        _extract_ssi_confirmit_native_grid_blocks,
     )
 
     # Registre et utilitaires
@@ -190,6 +191,7 @@ except ImportError:
         _extract_confirmit_cf_carousel_blocks,
         _extract_runtime_dropdown_blocks,
         _extract_rps_select_blocks,
+        _extract_ssi_confirmit_native_grid_blocks,
     )
 
 
@@ -1065,6 +1067,15 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
     except Exception:
         pass
 
+    # --- 0d-4sexies) SSI/Confirmit native radio grid (div.question.grid > table.inner_table) ---
+    # Gate DOM: div.question.grid + tr.column_header_row td[role="columnheader"] + tr[role="radiogroup"].
+    try:
+        ssi_native_grid_blocks = _extract_ssi_confirmit_native_grid_blocks(driver, frame_chain)
+        if ssi_native_grid_blocks:
+            return ssi_native_grid_blocks
+    except Exception:
+        pass
+
     # Pattern spécifique
     # Objectif: extraire les matrices (1 ligne = 1 question radio).
     try:
@@ -1890,6 +1901,37 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                     "group_key": group_key,
                 },
             }
+
+            # Nfield/Kantar rowpicker: tag exclusive radio blocks for post-merge
+            if itype == "radio":
+                try:
+                    if els and all(
+                        _norm_lc(e.get_attribute("isexclusive") or "") in {"true", "1", "yes", "on"}
+                        for e in els
+                    ):
+                        radio_name = _norm_lc(els[0].get_attribute("name") or "")
+                        if radio_name:
+                            block["context"]["nfield_exclusive_radio"] = True
+                            block["context"]["radio_name"] = radio_name
+                except Exception:
+                    pass
+
+            # Nfield/Kantar rowpicker: store checkbox name prefix for post-merge
+            if itype == "checkbox" and group_key.startswith("checkbox:name:dom_container:"):
+                try:
+                    cb_names = [_norm_lc(e.get_attribute("name") or "") for e in els]
+                    cb_names = [n for n in cb_names if n]
+                    if len(cb_names) >= 2:
+                        common = cb_names[0]
+                        for n in cb_names[1:]:
+                            while n and not n.startswith(common):
+                                common = common[:-1]
+                            if not common:
+                                break
+                        if common and common.endswith("-"):
+                            block["context"]["nfield_checkbox_name_prefix"] = common
+                except Exception:
+                    pass
 
             question_blocks.append(block)
             created_group_count += 1
@@ -3066,6 +3108,7 @@ def analyze_dom(driver) -> List[Dict[str, Any]]:
         log_debug("[DOM_CONTEXT_DEBUG]", f"extracted_blocks count={len(blocks or [])} itypes={itypes}")
 
     blocks = _dedupe_question_blocks(blocks)
+    blocks = _merge_nfield_rowpicker_exclusive_radio(blocks)
 
     blocks = _prune_focusvision_fragmented_groups(blocks)
     blocks = _prune_focusvision_auxiliary_openended_singles(blocks)
@@ -3089,6 +3132,91 @@ def analyze_dom(driver) -> List[Dict[str, Any]]:
         log_debug("[DOM_CONTEXT_DEBUG]", f"analyze_dom stage=before_return blocks_count={len(blocks or [])} sample={_blocks_summary_preview(blocks)}")
 
     return blocks
+
+
+def _merge_nfield_rowpicker_exclusive_radio(blocks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Fusionne les paires Kantar/Nfield rowpicker: bloc checkbox DOM-container + radio exclusif.
+
+    Conditions DOM strictes (les deux doivent être vraies dans le même fieldset ancêtre):
+    - bloc checkbox: context.nfield_checkbox_name_prefix = "<prefix>-"
+    - bloc radio: context.nfield_exclusive_radio=True, context.radio_name = "<prefix>"
+    - même texte de question (normalisé)
+
+    Résultat: le radio est absorbé dans le checkbox; ses options sont ajoutées à la fin
+    et listées dans context.exclusive_options.
+    """
+    if not blocks:
+        return blocks
+
+    exclusive_radios: dict[str, Dict[str, Any]] = {}
+    for b in blocks:
+        if not isinstance(b, dict):
+            continue
+        ctx = b.get("context") if isinstance(b.get("context"), dict) else {}
+        if ctx.get("nfield_exclusive_radio") is True:
+            radio_name = _norm_lc(ctx.get("radio_name") or "")
+            if radio_name:
+                exclusive_radios[radio_name] = b
+
+    if not exclusive_radios:
+        return blocks
+
+    absorbed: set[int] = set()
+    result: list[Dict[str, Any]] = []
+
+    for b in blocks:
+        if not isinstance(b, dict):
+            result.append(b)
+            continue
+        ctx = b.get("context") if isinstance(b.get("context"), dict) else {}
+        itype = _norm_lc(b.get("itype") or "")
+
+        if itype != "checkbox":
+            result.append(b)
+            continue
+
+        prefix = _norm_lc(ctx.get("nfield_checkbox_name_prefix") or "")
+        if not (prefix and prefix.endswith("-")):
+            result.append(b)
+            continue
+
+        base = prefix[:-1]
+        radio_block = exclusive_radios.get(base)
+        if radio_block is None:
+            result.append(b)
+            continue
+
+        cb_q = _norm_lc(b.get("question") or "")
+        r_q = _norm_lc(radio_block.get("question") or "")
+        if not (cb_q and r_q and cb_q == r_q):
+            result.append(b)
+            continue
+
+        radio_options = [_norm(o) for o in (radio_block.get("options") or []) if _norm(o)]
+        merged_options = list(b.get("options") or [])
+        seen = {_norm_lc(o) for o in merged_options}
+        for opt in radio_options:
+            if _norm_lc(opt) not in seen:
+                merged_options.append(opt)
+
+        new_ctx = dict(ctx)
+        new_ctx.pop("nfield_checkbox_name_prefix", None)
+        new_ctx["exclusive_options"] = radio_options
+
+        merged = dict(b)
+        merged["options"] = merged_options
+        merged["context"] = new_ctx
+
+        absorbed.add(id(radio_block))
+        result.append(merged)
+
+        log_debug(
+            "[DOM_GROUPING]",
+            f"nfield_rowpicker_merge prefix={prefix} exclusive_opts={radio_options}",
+        )
+
+    return [b for b in result if id(b) not in absorbed]
 
 
 def _dedupe_question_blocks(blocks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
