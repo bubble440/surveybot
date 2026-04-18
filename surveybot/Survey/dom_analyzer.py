@@ -869,6 +869,14 @@ def _extract_nfield_dragndrop_blocks(driver, frame_chain=None) -> List[Dict[str,
     except Exception:
         pass
 
+    # Exclusive columns: column names appearing inside « » in the legend (capacity=1 per Nfield DnD).
+    exclusive_columns: List[str] = []
+    if question_label:
+        for _m in re.findall(r'«\s*([^»]+?)\s*»', question_label):
+            _m = _m.strip()
+            if _m in options_list:
+                exclusive_columns.append(_m)
+
     matrix_rows: List[str] = []
     nested_xpath_map: Dict[str, Any] = {}  # {row_label: {col_label: xpath}}
 
@@ -931,12 +939,16 @@ def _extract_nfield_dragndrop_blocks(driver, frame_chain=None) -> List[Dict[str,
         "nfield_dragndrop_hidden": True,
     })
 
+    ctx_block: Dict[str, Any] = {"matrix_rows": matrix_rows}
+    if exclusive_columns:
+        ctx_block["exclusive_columns"] = exclusive_columns
+
     return [{
         "target_id": target_id,
         "itype": "matrix",
         "label": question_label or qname,
         "options": options_list,
-        "context": {"matrix_rows": matrix_rows},
+        "context": ctx_block,
         "min_select": len(matrix_rows),
         "max_select": len(matrix_rows),
     }]
