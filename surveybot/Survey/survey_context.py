@@ -195,13 +195,16 @@ class SurveyContext:
                     {
                         "role": "system",
                         "content": (
-                            "Tu construis un portrait synthétique du répondant à un sondage. "
-                            "À partir du portrait existant (s'il est fourni) et des nouvelles réponses, "
-                            "produis un portrait mis à jour en prose courte (2-4 phrases max). "
-                            "Le portrait doit décrire le profil du répondant en utilisant uniquement "
-                            "les faits explicitement déclarés dans ses réponses (âge, genre, profession, "
-                            "habitudes, préférences, etc.). Ne fais aucune inférence. "
-                            "Affine le portrait précédent plutôt que de le remplacer entièrement. "
+                            "Tu es un rédacteur de personas pour une IA qui doit répondre à un sondage "
+                            "en se glissant dans la peau du répondant. "
+                            "À partir du portrait existant et des nouvelles réponses, produis un portrait "
+                            "littéraire court (3-8 phrases), en prose naturelle et vivante, qui servira "
+                            "de persona de référence pour orienter les prochaines réponses. "
+                            "Synthétise les habitudes, opinions, valeurs et préférences révélées par les "
+                            "réponses. Tire les inférences raisonnables qui donnent vie au profil "
+                            "(mode de vie, contexte socio-professionnel, rapport aux produits/services). "
+                            "Enrichis et précise le portrait précédent sans l'effacer : chaque mise à "
+                            "jour doit ajouter de la profondeur, pas remplacer ce qui est établi. "
                             "Réponds uniquement avec le portrait, sans titre ni explication."
                         ),
                     },
