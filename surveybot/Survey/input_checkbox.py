@@ -578,6 +578,125 @@ def click_qarts_widget_by_label(driver, target_text: str) -> bool:
 
 
 # =============================================================================
+# KANTAR / NFIELD SWATCHES ROWPICKER
+# =============================================================================
+
+def click_nfield_swatches_by_label(driver, target_text: str, scope=None) -> bool:
+    """
+    Handler pour le widget Kantar/Nfield "swatches" rowpicker.
+
+    Guard DOM (les deux conditions requises simultanément):
+    - input.mrMultiple.styled dans le même contexte (checkboxes natives, non-interactables)
+    - div[tabindex][style*="inset: 0"][style*="cursor: pointer"] (overlay cliquable)
+
+    Identifie la carte par img[alt] ou label texte, clique l'overlay via ActionChains.
+    Vérifie via backgroundColor "228, 231, 248" (sélectionné) après la transition CSS.
+    """
+    _JS_FIND = r"""
+    const root = arguments[0] || document;
+    const norm = s => (s || '')
+      .toLowerCase().normalize('NFKC')
+      .replace(/\u00A0/g, ' ')
+      .replace(/[»«\u201c\u201d"'›→·•:]/g, '')
+      .replace(/\s+/g, ' ').trim();
+    const needle = norm(arguments[1]);
+    if (!needle) return {ok: false, reason: 'empty_needle'};
+
+    // Guard 1: input.mrMultiple.styled cherché au niveau document (peut être hors scope visuel)
+    if (!document.querySelector('input[class*="mrMultiple"][class*="styled"]'))
+      return {ok: false, reason: 'no_mrmultiple'};
+
+    // Guard 2: overlay div[tabindex][style*="inset: 0"][style*="cursor: pointer"] présent dans scope
+    const allOverlays = Array.from(root.querySelectorAll(
+      'div[tabindex][style*="cursor: pointer"][style*="inset: 0"]'
+    ));
+    if (!allOverlays.length) return {ok: false, reason: 'no_overlay'};
+
+    for (const overlay of allOverlays) {
+      const container = overlay.parentElement;
+      if (!container) continue;
+
+      // Texte via span.style-0 (fiable) puis label — img[alt] ignoré (texte non fiable: "IB M", "H 3 C")
+      const span0 = container.querySelector('span.style-0');
+      const span0Txt = norm((span0 && (span0.innerText || span0.textContent)) || '');
+      const lab = container.querySelector('label');
+      const labTxt = norm((lab && (lab.innerText || lab.textContent)) || '');
+      const cardText = span0Txt || labTxt;
+      if (!cardText) continue;
+
+      if (!(cardText === needle || cardText.includes(needle) || needle.includes(cardText)))
+        continue;
+
+      try { overlay.scrollIntoView({block: 'center', inline: 'center'}); } catch(e) {}
+      return overlay;
+    }
+    return null;
+    """
+
+    _JS_VERIFY = r"""
+    const root = arguments[0] || document;
+    const norm = s => (s || '')
+      .toLowerCase().normalize('NFKC')
+      .replace(/\u00A0/g, ' ')
+      .replace(/[»«\u201c\u201d"'›→·•:]/g, '')
+      .replace(/\s+/g, ' ').trim();
+    const needle = norm(arguments[1]);
+    if (!needle) return false;
+
+    const allOverlays = Array.from(root.querySelectorAll(
+      'div[tabindex][style*="cursor: pointer"][style*="inset: 0"]'
+    ));
+    for (const overlay of allOverlays) {
+      const container = overlay.parentElement;
+      if (!container) continue;
+      const span0 = container.querySelector('span.style-0');
+      const span0Txt = norm((span0 && (span0.innerText || span0.textContent)) || '');
+      const lab = container.querySelector('label');
+      const labTxt = norm((lab && (lab.innerText || lab.textContent)) || '');
+      const cardText = span0Txt || labTxt;
+      if (!cardText) continue;
+      if (!(cardText === needle || cardText.includes(needle) || needle.includes(cardText)))
+        continue;
+      // Signal de sélection: backgroundColor du div[transition:background-color 250ms] dans la carte
+      const transDiv = container.querySelector('[style*="transition: background-color"]');
+      const bg = (transDiv ? transDiv.style.backgroundColor : container.style.backgroundColor) || '';
+      return bg.indexOf('228') !== -1 && bg.indexOf('231') !== -1;
+    }
+    // Fallback: un input natif mrMultiple.styled est coché
+    return !!document.querySelector('input[class*="mrMultiple"][class*="styled"]:checked');
+    """
+
+    try:
+        clickable_el = driver.execute_script(_JS_FIND, scope, target_text)
+    except Exception:
+        return False
+
+    if clickable_el is None:
+        log_debug("[TARGET_DEBUG]", f"nfield_swatches: element not found label={target_text!r}")
+        return False
+    if isinstance(clickable_el, dict):
+        reason = clickable_el.get("reason", "unknown")
+        log_debug("[TARGET_DEBUG]", f"nfield_swatches: skip reason={reason!r} label={target_text!r}")
+        return False
+
+    try:
+        ActionChains(driver).move_to_element(clickable_el).click().perform()
+    except Exception as _ce:
+        log_debug("[TARGET_DEBUG]", f"nfield_swatches: ActionChains failed label={target_text!r} err={_ce}")
+        return False
+
+    log_debug("[TARGET_DEBUG]", f"nfield_swatches: click sent label={target_text!r}")
+    try:
+        time.sleep(0.3)  # CSS transition 250ms
+        verified = bool(driver.execute_script(_JS_VERIFY, scope, target_text))
+        log_debug("[TARGET_DEBUG]", f"nfield_swatches: verify={'ok' if verified else 'ko'} label={target_text!r}")
+    except Exception:
+        pass
+
+    return True
+
+
+# =============================================================================
 # FONCTION PRINCIPALE CLICK_CHECKBOX_BY_LABEL
 # =============================================================================
 
@@ -604,6 +723,15 @@ def click_checkbox_by_label(driver, target_text: str, context_hint: str | None =
     #     ET div.hidden.answers avec inputs natifs (size=0, non-interactables directement).
     try:
         if click_qarts_widget_by_label(driver, target_text):
+            return True
+    except Exception:
+        pass
+
+    # 0b) Kantar/Nfield swatches rowpicker : overlay div[tabindex][inset:0] non-interactable
+    #     via input natif ou label. Guard DOM strict : input.mrMultiple.styled
+    #     ET div[tabindex][style*="cursor: pointer"][style*="inset: 0"] dans la même portée.
+    try:
+        if click_nfield_swatches_by_label(driver, target_text, scope=scope):
             return True
     except Exception:
         pass

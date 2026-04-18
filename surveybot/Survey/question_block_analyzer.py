@@ -254,6 +254,58 @@ def _detect_dropdowns(scope: WebElement) -> List[QuestionBlock]:
     return blocks
 
 
+def _extract_matrix_grid_block(group: List[WebElement]) -> Optional[QuestionBlock]:
+    """
+    Nfield mrQuestionTable: radios have rowid/colid attrs; labels are in header
+    td.mrGridQuestionText cells, not in label[for] elements (which are empty spans).
+    Only activates when rowid+colid present AND ancestor table.mrQuestionTable exists.
+    """
+    first = group[0]
+    if first.get_attribute("rowid") is None or first.get_attribute("colid") is None:
+        return None
+
+    # Row label from td.mrGridCategoryText in the same <tr>
+    row_label = ""
+    try:
+        tr = first.find_element(By.XPATH, "ancestor::tr[1]")
+        cat_td = tr.find_element(By.CSS_SELECTOR, "td.mrGridCategoryText")
+        row_label = re.sub(r"\s+", " ", (cat_td.get_attribute("innerText") or cat_td.text or "")).strip()
+    except Exception:
+        pass
+
+    # Column headers from the header row of the enclosing mrQuestionTable
+    col_headers: dict = {}
+    try:
+        table = first.find_element(
+            By.XPATH, "ancestor::table[contains(@class,'mrQuestionTable')][1]"
+        )
+        header_cells = table.find_elements(By.CSS_SELECTOR, "td.mrGridQuestionText")
+        for idx, cell in enumerate(header_cells):
+            txt = re.sub(r"\s+", " ", (cell.get_attribute("innerText") or cell.text or "")).strip()
+            col_headers[idx] = txt
+    except Exception:
+        pass
+
+    if not row_label and not col_headers:
+        return None
+
+    options = []
+    for r in group:
+        try:
+            colid = int(r.get_attribute("colid") or 0)
+        except (ValueError, TypeError):
+            colid = len(options)
+        options.append(col_headers.get(colid, f"col{colid}"))
+
+    return QuestionBlock(
+        itype="radio",
+        label=row_label or f"row{first.get_attribute('rowid')}",
+        dom_el=group[0],
+        container=None,
+        options=options or None,
+    )
+
+
 def _detect_radios(scope: WebElement) -> List[QuestionBlock]:
     blocks = []
     radios = scope.find_elements(By.CSS_SELECTOR, "input[type='radio']")
@@ -266,6 +318,12 @@ def _detect_radios(scope: WebElement) -> List[QuestionBlock]:
         groups.setdefault(name, []).append(r)
 
     for group in groups.values():
+        # Matrix grid (Nfield mrQuestionTable): rowid/colid attrs present
+        matrix_block = _extract_matrix_grid_block(group)
+        if matrix_block is not None:
+            blocks.append(matrix_block)
+            continue
+
         options = []
         for r in group:
             lbl = _extract_label(r)
