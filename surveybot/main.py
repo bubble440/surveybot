@@ -393,10 +393,23 @@ def run_attach_takeover(driver, *, api_key: str, account_id: str) -> None:
 
     _attach_select_tab(driver)
 
+    from Survey.functions import _handle_topsurveys_exclusion_popup
+
     max_steps = int(os.getenv("ATTACH_MAX_STEPS", "100"))
     print(f"[ATTACH] takeover loop start (max_steps={max_steps}) url={_attach_display_url(getattr(driver,'current_url',''))}")
     for i in range(1, max_steps + 1):
         try:
+            # === RETOUR TOPSURVEYS ? ===
+            try:
+                _cur_url = (driver.current_url or "").lower()
+                if "topsurveys.app" in _cur_url:
+                    _handle_topsurveys_exclusion_popup(driver, account_id)
+                    print(f"[ATTACH] Retour TopSurveys détecté step={i} → sortie boucle.")
+                    break
+            except Exception as _e:
+                print(f"[ATTACH][TOPSURVEYS_CHECK] erreur: {_e}")
+                break
+
             # === STRICT GUARD CHECK ===
             # Détecte les pages non supportées (image_evaluation, drag_drop, etc.)
             is_strict, reason = difficulty_guard.detect_strict_survey(driver)
