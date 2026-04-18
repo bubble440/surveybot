@@ -33,6 +33,7 @@ from Survey.input_utils import (
     pause_here,
 )
 from Survey.log_utils import log_debug
+from Survey.input_checkbox import click_qarts_widget_by_label
 
 
 # =============================================================================
@@ -663,6 +664,15 @@ def click_radio_by_label(driver, label: str, context_hint: str | None = None) ->
     Returns:
         True si radio cochée avec succès
     """
+    # QARTS widget (Decipher/LifePoints) : double structure visuelle + grille cachée.
+    # Guard DOM strict : div[id^="sq-QARTS-container-"] + div._rowpicker
+    # ET div.hidden.answers avec inputs natifs (size=0, non-interactables directement).
+    try:
+        if click_qarts_widget_by_label(driver, label):
+            return True
+    except Exception:
+        pass
+
     # Confirmit GridClick (échelle à droite, pas de <input>)
     try:
         # Import dynamique pour éviter circular import
