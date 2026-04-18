@@ -2369,7 +2369,28 @@ def _apply_by_target_id(
                                 inp_guard = None
 
                         if inp_guard is not None:
-                            _dispatch_check_events(inp_guard, force_when_selected=True)
+                            # Guard Angular: ng-model+ng-checked signalent un binding AngularJS.
+                            # JS cb.checked=true+dispatchEvent ne propage pas dans $scope.
+                            # Un click Selenium natif déclenche le cycle $digest normalement.
+                            _is_angular_inp = False
+                            try:
+                                _is_angular_inp = bool(
+                                    inp_guard.get_attribute("ng-model")
+                                    and inp_guard.get_attribute("ng-checked") is not None
+                                )
+                            except Exception:
+                                _is_angular_inp = False
+
+                            if _is_angular_inp:
+                                try:
+                                    inp_guard.click()
+                                except Exception:
+                                    try:
+                                        driver.execute_script("arguments[0].click();", inp_guard)
+                                    except Exception:
+                                        pass
+                            else:
+                                _dispatch_check_events(inp_guard, force_when_selected=True)
 
                         if inp_guard is not None and _is_selected(inp_guard):
                             if is_debug():
