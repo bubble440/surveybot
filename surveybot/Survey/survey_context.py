@@ -110,7 +110,7 @@ class SurveyContext:
                 if e.get("answer")
             )
             if hints:
-                summary = f"(generating — {history_len} answered so far; early answers: {hints})"
+                summary = f"(early answers: {hints})"
             else:
                 summary = f"(generating — {history_len} answered so far)"
 
@@ -195,17 +195,13 @@ class SurveyContext:
                     {
                         "role": "system",
                         "content": (
-                            "Tu es un rédacteur de personas pour une IA qui doit répondre à un sondage "
-                            "en se glissant dans la peau du répondant. "
-                            "À partir du portrait existant et des nouvelles réponses, produis un portrait "
-                            "littéraire court (3-8 phrases), en prose naturelle et vivante, qui servira "
-                            "de persona de référence pour orienter les prochaines réponses. "
-                            "Synthétise les habitudes, opinions, valeurs et préférences révélées par les "
-                            "réponses. Tire les inférences raisonnables qui donnent vie au profil "
-                            "(mode de vie, contexte socio-professionnel, rapport aux produits/services). "
-                            "Enrichis et précise le portrait précédent sans l'effacer : chaque mise à "
-                            "jour doit ajouter de la profondeur, pas remplacer ce qui est établi. "
-                            "Réponds uniquement avec le portrait, sans titre ni explication."
+                            "Tu construis un portrait concis du répondant à un sondage (2-4 phrases max). "
+                            "Règles : "
+                            "1. Mentionne en priorité les faits déclarés explicitement (âge, genre, langue, habitudes, opinions, préférences, choix). "
+                            "2. Si tu fais une inférence raisonnable à partir des réponses, signale-la avec 'probablement'. "
+                            "3. Phrases courtes et directes, pas de métaphores ni de style littéraire. "
+                            "4. Si un portrait précédent est fourni, enrichis-le avec les nouvelles réponses sans effacer ce qui est établi. "
+                            "5. Réponds uniquement avec le portrait, sans titre ni explication."
                         ),
                     },
                     {"role": "user", "content": prompt},
