@@ -1521,6 +1521,52 @@ def _apply_by_target_id(
                     log_debug("[TARGET_DEBUG]", f"qarts_widget dispatch exception: {_short_exc(_qe)}")
                 return False
 
+            # --- Nfield dragndrop hidden radio (nfield_dragndrop_hidden=True) ---
+            # Les inputs radio sont dans un fieldset display:none (DnD React skin).
+            # On bypass la vérification de visibilité et on dispatch via JS uniquement.
+            if payload.get("nfield_dragndrop_hidden") and resolved_itype == "radio":
+                _dnd_opt_map = payload.get("option_xpath_map") or {}
+                _dnd_xp = _dnd_opt_map.get(v_norm) or (_dnd_opt_map.get(v_fold) if v_fold else None)
+                if not _dnd_xp:
+                    for _k, _x in _dnd_opt_map.items():
+                        _kn = _norm_lc(_k)
+                        if v_norm and (v_norm == _kn or v_norm in _kn or _kn in v_norm):
+                            _dnd_xp = _x
+                            break
+                        if v_fold and (v_fold == _kn or v_fold in _kn or _kn in v_fold):
+                            _dnd_xp = _x
+                            break
+                if not _dnd_xp:
+                    if debug_target:
+                        log_debug("[TARGET_DEBUG]", f"nfield_dragndrop_hidden: option not found value={value!r} opt_map={list(_dnd_opt_map)}")
+                    return False
+                try:
+                    _dnd_cands = driver.find_elements(By.XPATH, _dnd_xp)
+                    _dnd_radio = _dnd_cands[0] if _dnd_cands else None
+                except Exception:
+                    _dnd_radio = None
+                if not _dnd_radio:
+                    if debug_target:
+                        log_debug("[TARGET_DEBUG]", f"nfield_dragndrop_hidden: element not found xpath={_dnd_xp}")
+                    return False
+                try:
+                    driver.execute_script(
+                        """
+                        const inp = arguments[0];
+                        try { inp.checked = true; } catch(e) {}
+                        inp.dispatchEvent(new Event('input',  {bubbles:true}));
+                        inp.dispatchEvent(new Event('change', {bubbles:true}));
+                        inp.dispatchEvent(new MouseEvent('click', {bubbles:true}));
+                        """,
+                        _dnd_radio,
+                    )
+                    log_info("[TARGET]", f"apply ok=true strategy=nfield_dragndrop_hidden value={value!r}")
+                    return True
+                except Exception as _dnd_e:
+                    if debug_target:
+                        log_debug("[TARGET_DEBUG]", f"nfield_dragndrop_hidden JS error: {_short_exc(_dnd_e)}")
+                    return False
+
             # --- cas "options map" (radio/checkbox)
             # IMPORTANT: on n'exige pas kind=="group" pour éviter le couplage à la classification (ex: matrix_rows_single_choice)
             opt_map = payload.get("option_xpath_map") or {}
@@ -1954,6 +2000,44 @@ def _apply_by_target_id(
                     if debug_target:
                         log_debug("[TARGET_DEBUG]", f"element not found for xpath={xp} ({type(ex).__name__}: {_short_exc(ex)})")
                     return False
+
+                # Kantar/Nfield swatches rowpicker: inputs natifs dans un fieldset masqué
+                # (style="display: none"), overlay cliquable dans div#container_{questionname}.
+                # Guard DOM strict : fieldset[questionname][display:none] contenant
+                # input.mrMultiple.styled + div#container_{questionname} avec ._rowpicker.
+                # Dans ce cas, cliquer l'input natif (via XPath) échoue toujours avec
+                # ElementNotInteractableException. On redirige vers click_nfield_swatches_by_label.
+                if resolved_itype == "checkbox":
+                    try:
+                        _nfield_qname = driver.execute_script(
+                            """
+                            const el = arguments[0];
+                            if (!el || !el.closest) return null;
+                            const fs = el.closest('fieldset[questionname]');
+                            if (!fs) return null;
+                            const st = fs.getAttribute('style') || '';
+                            const cp = getComputedStyle(fs).display;
+                            if (!(st.indexOf('display: none') !== -1 || st.indexOf('display:none') !== -1 || cp === 'none')) return null;
+                            if (!fs.querySelector('input[class*="mrMultiple"][class*="styled"]')) return null;
+                            const qname = fs.getAttribute('questionname');
+                            if (!qname) return null;
+                            const cont = document.getElementById('container_' + qname);
+                            if (!cont || !cont.querySelector('[data-test="main-contain"]._rowpicker')) return null;
+                            return qname;
+                            """,
+                            el,
+                        )
+                    except Exception:
+                        _nfield_qname = None
+
+                    if _nfield_qname:
+                        from Survey.input_checkbox import click_nfield_swatches_by_label
+                        _sw_ok = click_nfield_swatches_by_label(driver, value, scope=None)
+                        log_debug(
+                            "[TARGET_DEBUG]",
+                            f"nfield_swatches_dispatch: {'ok' if _sw_ok else 'ko'} qname={_nfield_qname!r} value={value!r}",
+                        )
+                        return bool(_sw_ok)
 
                 # Dynata/Decipher "shelf" custom tool:
                 # - #custom-tool-area + .custom-product visibles

@@ -828,6 +828,100 @@ def _find_bootstrap_selectpicker_question_label(el) -> str:
     return ""
 
 
+def _extract_nfield_dragndrop_blocks(driver, frame_chain=None) -> List[Dict[str, Any]]:
+    """
+    Nfield dragndrop (metaType=dragndrop): React DnD skin over a hidden mrQuestionTable.
+    Guard: div._dragndrop + table.mrQuestionTable both present in DOM.
+    Returns one block per row (item/brand); dispatch via hidden radio JS click.
+    """
+    try:
+        if not driver.find_elements(By.CSS_SELECTOR, "div._dragndrop"):
+            return []
+    except Exception:
+        return []
+
+    try:
+        table = driver.find_element(By.CSS_SELECTOR, "table.mrQuestionTable")
+    except Exception:
+        return []
+
+    col_headers: dict = {}
+    try:
+        for idx, cell in enumerate(table.find_elements(By.CSS_SELECTOR, "td.mrGridQuestionText")):
+            txt = re.sub(r"\s+", " ", (cell.get_attribute("innerText") or cell.text or "")).strip()
+            if txt:
+                col_headers[idx] = txt
+    except Exception:
+        pass
+
+    if not col_headers:
+        return []
+
+    options_list = [col_headers[i] for i in sorted(col_headers)]
+    blocks = []
+
+    try:
+        rows = table.find_elements(By.CSS_SELECTOR, "tr")
+    except Exception:
+        return []
+
+    for tr in rows:
+        try:
+            cat_tds = tr.find_elements(By.CSS_SELECTOR, "td.mrGridCategoryText")
+            if not cat_tds:
+                continue
+            row_label = re.sub(r"\s+", " ", (cat_tds[0].get_attribute("innerText") or cat_tds[0].text or "")).strip()
+            if not row_label:
+                continue
+
+            radios = tr.find_elements(By.CSS_SELECTOR, "input[type='radio']")
+            if not radios:
+                continue
+
+            radio_name = (radios[0].get_attribute("name") or "").strip()
+            if not radio_name:
+                continue
+
+            option_xpath_map = {}
+            for radio in radios:
+                try:
+                    colid_str = (radio.get_attribute("colid") or "").strip()
+                    if not colid_str.isdigit():
+                        continue
+                    colid = int(colid_str)
+                    col_label = col_headers.get(colid, "")
+                    if not col_label:
+                        continue
+                    r_id = (radio.get_attribute("id") or "").strip()
+                    xp = (f"//input[@id='{r_id}']" if r_id
+                          else f"//input[@type='radio'][@name='{radio_name}'][@colid='{colid}']")
+                    option_xpath_map[col_label] = xp
+                except Exception:
+                    continue
+
+            if not option_xpath_map:
+                continue
+
+            target_id = make_target_id("radio", f"dragndrop:{radio_name}", row_label)
+            register_target(target_id, {
+                "kind": "group",
+                "itype": "radio",
+                "option_xpath_map": option_xpath_map,
+                "nfield_dragndrop_hidden": True,
+            })
+
+            blocks.append({
+                "target_id": target_id,
+                "itype": "radio",
+                "label": row_label,
+                "options": options_list,
+            })
+        except Exception:
+            continue
+
+    return blocks
+
+
 # ================================================================================
 # FONCTION PRINCIPALE - ANALYSE CONTEXTE DOM ACTUEL
 # ================================================================================
@@ -843,6 +937,14 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
     table_matrix_row_names: Set[str] = set()
     table_matrix_sge_prefixes: Set[str] = set()
     clear_registry()
+
+    # --- 0-pre) Nfield dragndrop (metaType=dragndrop, div._dragndrop + hidden mrQuestionTable) ---
+    try:
+        dnd_blocks = _extract_nfield_dragndrop_blocks(driver, frame_chain)
+        if dnd_blocks:
+            return dnd_blocks
+    except Exception:
+        pass
 
     # --- 0) FocusVision cardsort (UI visible) ---
     # Pattern spécifique
@@ -2954,7 +3056,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
 # Kantar/mrIWeb: détection préalable des metaTypes non supportés (SEJson)
 # ────────────────────────────────────────────────────────────────────────
 
-_SEJSON_UNSUPPORTED_METATYPES = {"dragndrop"}
+_SEJSON_UNSUPPORTED_METATYPES: set = set()  # dragndrop now handled by _extract_nfield_dragndrop_blocks
 
 
 def _detect_sejson_unsupported_metatype(driver) -> str:
