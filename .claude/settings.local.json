@@ -4,7 +4,8 @@
       "Bash(python -c ' *)",
       "Bash(python tools/replay_snapshot.py snapshots/20260417_101757_after_dom_analyze)",
       "Bash(python surveybot/tools/replay_snapshot.py snapshots/20260417_101757_after_dom_analyze)",
-      "Bash(python surveybot/tools/replay_snapshot.py snapshots/20260417_101757_after_dom_analyze --use-dom-outer)"
+      "Bash(python surveybot/tools/replay_snapshot.py snapshots/20260417_101757_after_dom_analyze --use-dom-outer)",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('surveybot/Survey/dom_extractors_misc.py'\\).read\\(\\)\\); print\\('OK'\\)\")"
     ]
   }
 }
