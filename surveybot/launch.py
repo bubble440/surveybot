@@ -13,6 +13,9 @@ from preselection.survey_handler import run_survey
 from Management.notifier import send_telegram
 from State.account_state import update_state, load_state, try_acquire_cooldown_slot, _now, load_datadome_cookies, load_cookies
 from selenium.common.exceptions import TimeoutException
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.common.by import By
 from preselection.auth_handler import is_session_expired, handle_proxy_error_page_if_needed
 from Management.pause_policy import PausePolicy
 import subprocess
@@ -470,8 +473,15 @@ def init_session_and_enter_surveys(driver, config, account_id: str, notify_fn):
 
     safe_get(driver, "https://www.topsurveys.app")
     print("🚀 Brave lancé.")
-    login(driver, email, password)
-    time.sleep(5)
+
+    _SESSION_SELECTOR = (By.CSS_SELECTOR, "[data-test-id='surveys-nav']")
+    try:
+        WebDriverWait(driver, 8).until(EC.presence_of_element_located(_SESSION_SELECTOR))
+        print("[INIT] session active détectée — login ignoré")
+    except TimeoutException:
+        login(driver, email, password)
+        time.sleep(5)
+
     try:
         _payout_and_check_daily_stop(driver, account_id)  # retrait + DAILY STOP
     except Exception as e:
