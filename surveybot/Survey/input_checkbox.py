@@ -712,18 +712,34 @@ def click_checkbox_by_label(driver, target_text: str, context_hint: str | None =
                 label_has_link = False
 
             if label_has_link:
-                try:
-                    driver.execute_script(
-                        """
-                        const cb = arguments[0];
-                        if (!cb.checked) cb.checked = true;
-                        cb.dispatchEvent(new Event('input', { bubbles: true }));
-                        cb.dispatchEvent(new Event('change', { bubbles: true }));
-                        """,
-                        cb,
-                    )
-                except Exception:
-                    pass
+                # Guard Angular: ng-model+ng-checked signalent un binding AngularJS.
+                # JS cb.checked=true+dispatchEvent ne propage pas dans le $scope Angular.
+                # Un click Selenium natif sur l'<input> déclenche le cycle $digest normalement.
+                is_angular_input = bool(
+                    cb.get_attribute("ng-model")
+                    and cb.get_attribute("ng-checked") is not None
+                )
+                if is_angular_input:
+                    try:
+                        cb.click()
+                    except Exception:
+                        js_click(driver, cb)
+                    if is_checked(cb):
+                        return cb
+                    # fallthrough si le click n'a pas suffi
+                else:
+                    try:
+                        driver.execute_script(
+                            """
+                            const cb = arguments[0];
+                            if (!cb.checked) cb.checked = true;
+                            cb.dispatchEvent(new Event('input', { bubbles: true }));
+                            cb.dispatchEvent(new Event('change', { bubbles: true }));
+                            """,
+                            cb,
+                        )
+                    except Exception:
+                        pass
 
             if not is_checked(cb):
                 try:
