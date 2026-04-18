@@ -1627,6 +1627,24 @@ def _extract_qarts_hidden_answers_groups(driver, frame_chain: List[Any]) -> List
             if len(options) < 2:
                 continue
 
+            # Detect qa:autosubmit flag from page-level DQ.questions JS object.
+            # Only applies to radio: on checkbox qa:autosubmit does not trigger immediate
+            # navigation (it may enable the CTA button, but a CTA click is still required).
+            qarts_autosubmit = False
+            if itype == "radio":
+                try:
+                    qname = (inps[0].get_attribute("qartsqname") or "").strip()
+                    if qname:
+                        qarts_autosubmit = bool(driver.execute_script(
+                            "var q=arguments[0];"
+                            "try{return !!(window.DQ&&DQ.questions&&DQ.questions[q]"
+                            "&&DQ.questions[q].q&&DQ.questions[q].q['qa:autosubmit']);}catch(e){return false;}",
+                            qname
+                        ))
+                        log_debug("[QARTS_HIDDEN]", f"autosubmit={qarts_autosubmit} qname={qname}")
+                except Exception:
+                    qarts_autosubmit = False
+
             group_key = f"{itype}:name:{name}"
             target_id = make_target_id("group", group_key, question or name)
 
@@ -1642,6 +1660,7 @@ def _extract_qarts_hidden_answers_groups(driver, frame_chain: List[Any]) -> List
                 "option_xpath_map": option_xpath_map,
                 "qarts_hidden": True,
                 "qarts_widget": True,
+                "qarts_autosubmit": qarts_autosubmit,
             })
 
             blocks.append({
@@ -1655,6 +1674,7 @@ def _extract_qarts_hidden_answers_groups(driver, frame_chain: List[Any]) -> List
                     "kind": "group",
                     "group_key": group_key,
                     "qarts_hidden": True,
+                    "qarts_autosubmit": qarts_autosubmit,
                 },
             })
 

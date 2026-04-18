@@ -1313,9 +1313,9 @@ def _handle_phone_verification(driver):
 def _should_skip_post_actions_navigation(driver, question_blocks: list[dict]) -> bool:
     """
     Garde-fou minimal: certains blocs avancent automatiquement après le clic
-    réponse (ex: Walr cardsort, StudyStream button.choice). La routine CTA
-    post-actions ne doit pas tourner, sinon elle peut cliquer sur l'écran
-    suivant et soumettre prématurément.
+    réponse (ex: Walr cardsort, StudyStream button.choice, QARTS autosubmit).
+    La routine CTA post-actions ne doit pas tourner, sinon elle peut cliquer
+    sur l'écran suivant et soumettre prématurément.
     """
     for block in question_blocks or []:
         try:
@@ -1323,6 +1323,16 @@ def _should_skip_post_actions_navigation(driver, question_blocks: list[dict]) ->
             if isinstance(ctx, dict) and (
                 ctx.get("walr_cardsort") is True or ctx.get("studystream_auto_advance") is True
             ):
+                return True
+        except Exception:
+            continue
+
+    # QARTS autosubmit: cliquer une option radio déclenche la navigation directement.
+    for block in question_blocks or []:
+        try:
+            ctx = block.get("context") if isinstance(block, dict) else None
+            if isinstance(ctx, dict) and ctx.get("qarts_autosubmit") is True:
+                log_info("[QARTS_AUTOSUBMIT]", "autosubmit=true → skip CTA (navigation déjà déclenchée par le clic)")
                 return True
         except Exception:
             continue
