@@ -1506,6 +1506,21 @@ def _apply_by_target_id(
                             )
                         return False
 
+            # --- QARTS widget (Decipher/LifePoints) --------------------------------
+            # Les inputs natifs de la grille cachée (div.hidden.answers) ont size=0 et
+            # ne sont pas interactables. On délègue à click_qarts_widget_by_label qui
+            # cible le div[tabindex="0"] du widget visuel via JS.
+            # Guard : flag posé par _extract_qarts_hidden_answers_groups.
+            if payload.get("qarts_widget") and resolved_itype in ("radio", "checkbox"):
+                try:
+                    from Survey.input_checkbox import click_qarts_widget_by_label
+                    if click_qarts_widget_by_label(driver, value):
+                        log_debug("[TARGET_DEBUG]", f"qarts_widget dispatch ok: value={value!r}")
+                        return True
+                except Exception as _qe:
+                    log_debug("[TARGET_DEBUG]", f"qarts_widget dispatch exception: {_short_exc(_qe)}")
+                return False
+
             # --- cas "options map" (radio/checkbox)
             # IMPORTANT: on n'exige pas kind=="group" pour éviter le couplage à la classification (ex: matrix_rows_single_choice)
             opt_map = payload.get("option_xpath_map") or {}

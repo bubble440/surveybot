@@ -20,10 +20,13 @@ from selenium.webdriver.common.by import By
 try:
     from Survey.dom_utils import _norm_lc, _xpath_literal
     from Survey.dom_registry import register_target, make_target_id
+    from Survey.log_utils import is_debug, log_debug
 except ImportError:
     # Fallback pour tests locaux
     from Survey.dom_utils import _norm_lc, _xpath_literal
     # dom_registry devra être disponible
+    def is_debug(): return False
+    def log_debug(tag, msg): pass
 
 
 # ================================================================================
@@ -1486,5 +1489,175 @@ def _extract_decipher_answers_list_fallback(driver, frame_chain: List[Any]) -> L
     except Exception as e:
         if os.getenv("RUN_ENV", "local") == "local":
             print(f"[DOM_ANALYZER][ERROR] decipher fallback outer: {type(e).__name__}: {e}")
+
+    return blocks
+
+
+# ================================================================================
+# DECIPHER / QARTS - HIDDEN ANSWERS CONTAINER
+# ================================================================================
+
+def _extract_qarts_hidden_answers_groups(driver, frame_chain: List[Any]) -> List[Dict[str, Any]]:
+    """
+    Extrait les blocs radio/checkbox du conteneur masqué des widgets QARTS (Decipher/FocusVision).
+
+    Garde-fous DOM stricts (double signal obligatoire) :
+    - div[data-test="main-contain"] présent  →  widget QARTS actif
+    - div.hidden.answers contenant input[type='radio'] ou input[type='checkbox']
+
+    Les inputs sont stables (id, name, value, qartsid) mais dans un div CSS-masqué.
+    On cible l'ancêtre td.clickableCell via JS-click (bypass visibilité).
+    """
+    blocks: List[Dict[str, Any]] = []
+
+    # Guard 1 : interface visuelle QARTS active
+    #   div[id^="sq-QARTS-container-"] contenant div._rowpicker
+    try:
+        qarts_containers = [
+            c for c in driver.find_elements(By.CSS_SELECTOR, "div[id^='sq-QARTS-container-']")
+            if c.find_elements(By.CSS_SELECTOR, "div._rowpicker")
+        ]
+        if not qarts_containers:
+            return blocks
+    except Exception:
+        return blocks
+
+    # Guard 2 : grille cachée avec inputs portant l'attribut qartsqname
+    try:
+        hidden_containers = driver.find_elements(By.CSS_SELECTOR, "div.hidden.answers")
+    except Exception:
+        return blocks
+    if not hidden_containers:
+        return blocks
+    try:
+        has_qartsqname = any(
+            hc.find_elements(By.CSS_SELECTOR, "input[qartsqname]")
+            for hc in hidden_containers
+        )
+    except Exception:
+        has_qartsqname = False
+    if not has_qartsqname:
+        return blocks
+
+    def _label_text(el) -> str:
+        txt = (el.text or "").strip()
+        if txt:
+            return _clean_decipher_template_markers(txt)
+        for attr in ("innerText", "textContent"):
+            try:
+                raw = (el.get_attribute(attr) or "").strip()
+            except Exception:
+                raw = ""
+            if raw:
+                return _clean_decipher_template_markers(raw)
+        return ""
+
+    for hidden_div in hidden_containers:
+        try:
+            inputs = hidden_div.find_elements(
+                By.CSS_SELECTOR, "input[type='radio'], input[type='checkbox']"
+            )
+        except Exception:
+            continue
+        if len(inputs) < 2:
+            continue
+
+        # Question text — chercher globalement le .question-text le plus proche
+        question = ""
+        try:
+            qt_el = driver.find_element(By.CSS_SELECTOR, ".question-text, h1.question-text")
+            question = _label_text(qt_el)
+        except Exception:
+            question = ""
+
+        itype = "radio"
+        try:
+            if (inputs[0].get_attribute("type") or "").lower() == "checkbox":
+                itype = "checkbox"
+        except Exception:
+            pass
+
+        all_raw_names: Set[str] = {
+            (inp.get_attribute("name") or "").strip()
+            for inp in inputs
+            if (inp.get_attribute("name") or "").strip()
+        }
+        by_name: Dict[str, list] = {}
+        for inp in inputs:
+            name = (inp.get_attribute("name") or "").strip()
+            if not name:
+                continue
+            name = _logical_answers_list_group_name(name, all_raw_names)
+            by_name.setdefault(name, []).append(inp)
+
+        for name, inps in by_name.items():
+            options: List[str] = []
+            option_xpath_map: Dict[str, str] = {}
+            seen: Set[str] = set()
+
+            for inp in inps:
+                inp_id = (inp.get_attribute("id") or "").strip()
+                if not inp_id:
+                    continue
+
+                label_txt = ""
+                try:
+                    lab = hidden_div.find_element(By.CSS_SELECTOR, f"label[for='{inp_id}']")
+                    label_txt = _label_text(lab)
+                except Exception:
+                    pass
+
+                if not label_txt:
+                    continue
+
+                norm = _norm_lc(label_txt)
+                if not norm or norm in seen:
+                    continue
+                seen.add(norm)
+                options.append(label_txt)
+
+                # Cible td.clickableCell (ancêtre visible-JS) ; fallback .element
+                xp = (
+                    f"//input[@id={_xpath_literal(inp_id)}]"
+                    f"/ancestor::*[contains(concat(' ',normalize-space(@class),' '),' clickableCell ')"
+                    f" or contains(concat(' ',normalize-space(@class),' '),' element ')][1]"
+                )
+                option_xpath_map[norm] = xp
+
+            if len(options) < 2:
+                continue
+
+            group_key = f"{itype}:name:{name}"
+            target_id = make_target_id("group", group_key, question or name)
+
+            register_target(target_id, {
+                "kind": "group",
+                "frame_chain": list(frame_chain or []),
+                "itype": itype,
+                "group_key": group_key,
+                "question": question,
+                "input_name": name,
+                "max_select": 1 if itype == "radio" else len(options),
+                "options": options,
+                "option_xpath_map": option_xpath_map,
+                "qarts_hidden": True,
+                "qarts_widget": True,
+            })
+
+            blocks.append({
+                "target_id": target_id,
+                "kind": "group",
+                "itype": itype,
+                "question": question,
+                "options": options,
+                "max_select": 1 if itype == "radio" else len(options),
+                "context": {
+                    "kind": "group",
+                    "group_key": group_key,
+                    "qarts_hidden": True,
+                },
+            })
+
+            log_debug("[QARTS_HIDDEN]", f"extracted group name={name} options={len(options)} question={question[:40]!r}")
 
     return blocks
