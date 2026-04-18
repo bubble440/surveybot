@@ -635,6 +635,13 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
                     "une par ligne de sous_questions_matrix, au format STRICT row_label || col_label, "
                     "séparées par |."
                 )
+                _exc_cols = (ctx or {}).get("exclusive_columns") if isinstance(ctx, dict) else None
+                if _exc_cols and isinstance(_exc_cols, list):
+                    for _exc in _exc_cols:
+                        lines.append(
+                            f"exclusive_column_rule: La colonne \"{_exc}\" n'accepte qu'UNE SEULE marque parmi toutes les lignes. "
+                            f"Exactement 1 ligne doit avoir col_label=\"{_exc}\", toutes les autres doivent utiliser une colonne différente."
+                        )
         elif itype == "checkbox":
             if is_participation_consent_all:
                 strict_values = "|".join(opts)

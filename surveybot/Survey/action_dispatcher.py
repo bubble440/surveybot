@@ -5429,6 +5429,17 @@ def execute_actions_plan(
             reset_attempt_context(driver)
 
             tid = (act.get("target_id") or "").strip()
+
+            # nfield_dragndrop_hidden matrix: reconstruire value="row || col" pour le handler.
+            # Ne pas vider context : l'instruction doit rester 5 parties pour que _parse_action_line
+            # retrouve target_id (si context="", le parser filtre la partie vide → 4 parties → target_id=None).
+            if matrix_row and matrix_col and tid:
+                try:
+                    _dnd_p = get_target(tid) or {}
+                    if _dnd_p.get("nfield_dragndrop_hidden") and (_dnd_p.get("itype") or "").lower() == "matrix":
+                        value = f"{matrix_row} || {matrix_col}"
+                except Exception:
+                    pass
             qid = (act.get("qid") or "").strip()
 
             if tid and qid:
