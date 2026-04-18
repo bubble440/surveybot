@@ -56,7 +56,8 @@ try:
         _extract_decipher_table_text_rows_blocks,
         _extract_decipher_grid_single_col_text_rows,
         _extract_decipher_grid_select_blocks,
-        _extract_decipher_answers_list_fallback
+        _extract_decipher_answers_list_fallback,
+        _extract_qarts_hidden_answers_groups,
     )
 
     from Survey.dom_extractors_areyounet import (
@@ -139,7 +140,8 @@ except ImportError:
         _extract_decipher_table_text_rows_blocks,
         _extract_decipher_grid_single_col_text_rows,
         _extract_decipher_grid_select_blocks,
-        _extract_decipher_answers_list_fallback
+        _extract_decipher_answers_list_fallback,
+        _extract_qarts_hidden_answers_groups,
     )
     from Survey.dom_extractors_areyounet import (
         _extract_areyounet_matrix_blocks,
@@ -3036,6 +3038,8 @@ def analyze_dom(driver) -> List[Dict[str, Any]]:
         blocks.extend(_extract_decipher_grid_select_blocks(driver, frame_chain=chain))
 
         if not blocks:
+            blocks = _extract_qarts_hidden_answers_groups(driver, frame_chain=chain)
+        if not blocks:
             blocks = _extract_decipher_answers_list_fallback(driver, frame_chain=chain)
 
     # Pattern spécifique
@@ -3052,6 +3056,8 @@ def analyze_dom(driver) -> List[Dict[str, Any]]:
                 blocks.extend(_extract_angular_material_radio_groups(driver))
                 blocks.extend(_extract_decipher_grid_select_blocks(driver, frame_chain=chain))
 
+                if not blocks:
+                    blocks = _extract_qarts_hidden_answers_groups(driver, frame_chain=chain)
                 if not blocks:
                     blocks = _extract_decipher_answers_list_fallback(driver, frame_chain=chain)
 

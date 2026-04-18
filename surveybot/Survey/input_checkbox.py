@@ -30,6 +30,7 @@ from Survey.input_utils import (
     find_context_container,
     find_question_container_by_ctx,
 )
+from Survey.log_utils import log_debug
 
 
 # =============================================================================
@@ -450,6 +451,133 @@ def click_confirmit_checktable(driver, label: str, context_hint: str | None = No
 
 
 # =============================================================================
+# QARTS WIDGET HANDLER (Decipher / LifePoints)
+# =============================================================================
+
+def click_qarts_widget_by_label(driver, target_text: str) -> bool:
+    """
+    Handler pour le widget QARTS (Decipher/LifePoints) : checkbox et radio.
+
+    Guard DOM (les deux conditions requises) :
+    - div[id^="sq-QARTS-container-"] contenant div._rowpicker   (interface visuelle)
+    - div.hidden.answers avec inputs natifs cachés size=0       (grille native cachée)
+
+    Clique le div[tabindex="0"][cursor:pointer] du widget visuel.
+    Vérifie la sélection via opacity=1 du premier SVG dans le wrapper.
+    """
+    _JS_FIND = r"""
+    const norm = s => (s || '')
+      .toLowerCase().normalize('NFKC')
+      .replace(/\u00A0/g, ' ')
+      .replace(/[»«\u201c\u201d"'›→·•:]/g, '')
+      .replace(/\s+/g, ' ').trim();
+    const needle = norm(arguments[0]);
+    if (!needle) return {ok: false, reason: 'empty_needle'};
+
+    // Guard 1 : conteneur QARTS avec _rowpicker
+    const containers = Array.from(
+      document.querySelectorAll('div[id^="sq-QARTS-container-"]')
+    ).filter(c => c.querySelector('div._rowpicker'));
+    if (!containers.length) return {ok: false, reason: 'no_qarts_container'};
+
+    // Guard 2 : grille cachée avec inputs natifs
+    if (!document.querySelector(
+      'div.hidden.answers input[type="checkbox"], div.hidden.answers input[type="radio"]'
+    )) return {ok: false, reason: 'no_hidden_answers'};
+
+    for (const container of containers) {
+      const grid = container.querySelector('div.__flexgrid_row');
+      if (!grid) continue;
+
+      for (const wrapper of Array.from(grid.children)) {
+        // Texte de l'option : premier <span> non-vide dans le wrapper
+        let labelText = '';
+        for (const sp of Array.from(wrapper.querySelectorAll('span'))) {
+          const txt = norm(sp.innerText || sp.textContent || '');
+          if (txt) { labelText = txt; break; }
+        }
+        if (!labelText) continue;
+        if (!(labelText === needle || labelText.includes(needle) || needle.includes(labelText))) continue;
+
+        // Zone interactive : div[tabindex="0"] avec cursor:pointer et inset:0
+        const clickable = wrapper.querySelector(
+          'div[tabindex="0"][style*="cursor: pointer"][style*="inset: 0"]'
+        );
+        if (!clickable) continue;
+
+        try { clickable.scrollIntoView({block: 'center', inline: 'center'}); } catch(e) {}
+        return clickable;  // retourne le WebElement pour clic natif Python (isTrusted=true)
+      }
+    }
+    return null;
+    """
+
+    _JS_VERIFY = r"""
+    const norm = s => (s || '')
+      .toLowerCase().normalize('NFKC')
+      .replace(/\u00A0/g, ' ')
+      .replace(/[»«\u201c\u201d"'›→·•:]/g, '')
+      .replace(/\s+/g, ' ').trim();
+    const needle = norm(arguments[0]);
+    if (!needle) return false;
+
+    for (const container of Array.from(
+      document.querySelectorAll('div[id^="sq-QARTS-container-"]')
+    ).filter(c => c.querySelector('div._rowpicker'))) {
+      const grid = container.querySelector('div.__flexgrid_row');
+      if (!grid) continue;
+      for (const wrapper of Array.from(grid.children)) {
+        let labelText = '';
+        for (const sp of Array.from(wrapper.querySelectorAll('span'))) {
+          const txt = norm(sp.innerText || sp.textContent || '');
+          if (txt) { labelText = txt; break; }
+        }
+        if (!labelText) continue;
+        if (!(labelText === needle || labelText.includes(needle) || needle.includes(labelText))) continue;
+        // Premier SVG du div d'icône (margin-left: -25px)
+        const iconDiv = wrapper.querySelector('div[style*="margin-left: -25px"]');
+        if (!iconDiv) continue;
+        const firstSvg = iconDiv.querySelector('svg');
+        if (!firstSvg) continue;
+        return parseFloat(firstSvg.style.opacity || '0') >= 0.9;
+      }
+    }
+    return false;
+    """
+
+    try:
+        clickable_el = driver.execute_script(_JS_FIND, target_text)
+    except Exception:
+        return False
+
+    if clickable_el is None:
+        log_debug("[TARGET_DEBUG]", f"qarts_widget: element not found label={target_text!r}")
+        return False
+    if isinstance(clickable_el, dict):
+        # _JS_FIND retourne un dict uniquement pour les erreurs de guards
+        reason = clickable_el.get('reason', 'unknown')
+        log_debug("[TARGET_DEBUG]", f"qarts_widget: skip reason={reason!r} label={target_text!r}")
+        return False
+
+    # Clic natif via ActionChains : produit isTrusted=true, reconnu par React.
+    try:
+        ActionChains(driver).move_to_element(clickable_el).click().perform()
+    except Exception as _ce:
+        log_debug("[TARGET_DEBUG]", f"qarts_widget: ActionChains failed label={target_text!r} err={_ce}")
+        return False
+
+    log_debug("[TARGET_DEBUG]", f"qarts_widget: click sent label={target_text!r}")
+    try:
+        time.sleep(0.15)
+        verified = bool(driver.execute_script(_JS_VERIFY, target_text))
+        log_debug("[TARGET_DEBUG]", f"qarts_widget: svg_verify={'ok' if verified else 'ko'} label={target_text!r}")
+    except Exception:
+        pass
+
+    return True
+
+
+# =============================================================================
 # FONCTION PRINCIPALE CLICK_CHECKBOX_BY_LABEL
 # =============================================================================
 
@@ -470,6 +598,15 @@ def click_checkbox_by_label(driver, target_text: str, context_hint: str | None =
         return None
 
     scope = find_context_container(driver, context_hint)
+
+    # 0a) QARTS widget (Decipher/LifePoints) : double structure visuelle + grille cachée.
+    #     Guard DOM strict : div[id^="sq-QARTS-container-"] + div._rowpicker
+    #     ET div.hidden.answers avec inputs natifs (size=0, non-interactables directement).
+    try:
+        if click_qarts_widget_by_label(driver, target_text):
+            return True
+    except Exception:
+        pass
 
     # 0) DOM ciblé: Decipher + Dynata MX Carousel superposé à une grille checkbox.
     #    Guard DOM strict: même question contient à la fois la grille .answers-table/.clickableCell
