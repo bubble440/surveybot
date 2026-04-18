@@ -1,5 +1,5 @@
 # push_attach_profile.py
-# Usage : python push_attach_profile.py --account-id topsurveys_bot_001 --port 9222
+# Usage : $env:PYTHONPATH="."; python tools/push_attach_profile.py --account-id topsurveys_bot_001 --port 9222
 
 import argparse, os
 from preselection.chrome_profile_store import save_profile
