@@ -583,8 +583,8 @@ def main():
     account_id = (
         os.getenv("ACCOUNT_ID")
         or config.get("account_id")
-        or config.get("Email")
     )
+    email = config.get("Email")
 
     if not account_id:
         raise RuntimeError("ACCOUNT_ID introuvable")
@@ -627,7 +627,7 @@ def main():
     install_sigusr1_handler()
 
     acquire_account_lock_or_exit(account_id)
-    mark_bot_running(account_id)
+    mark_bot_running(account_id, email)
     from State.account_state import update_state as _update_state, _now as _now_ts
     from State.daily_target import ensure_daily_timer_started as _ensure_timer
     _boot_ts = _now_ts()
