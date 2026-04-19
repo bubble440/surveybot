@@ -16,7 +16,7 @@ def _log_warning(msg: str) -> None:
 
 def _connect():
     import psycopg2
-    db_url = os.getenv("DATABASE_URL", "").strip()
+    db_url = os.getenv("DATABASE_URL", "postgres://postgres:3o1L6kfCFxuncbY@localhost:5432/postgres").strip()
     if not db_url:
         return None
     return psycopg2.connect(db_url)
