@@ -312,8 +312,8 @@ def setup_logging():
         logging.getLogger("uncaught").exception("UNCAUGHT EXCEPTION", exc_info=(exc_type, exc, tb))
     sys.excepthook = _excepthook
 
-def mark_bot_running(account_id: str):
-    print(f"🚀 Démarrage surveybot pour account_id={account_id}")
+def mark_bot_running(account_id: str, email):
+    print(f"🚀 Démarrage surveybot pour account_id={account_id}, EMAIL={email}")
     update_state(account_id, lambda st: (
         st.__setitem__("status", "running"),
         st.__setitem__("last_boot_ts", _now())
@@ -478,6 +478,11 @@ def init_session_and_enter_surveys(driver, config, account_id: str, notify_fn):
     try:
         WebDriverWait(driver, 8).until(EC.presence_of_element_located(_SESSION_SELECTOR))
         print("[INIT] session active détectée — login ignoré")
+        if os.getenv("SNAP_ENABLED", "").strip() == "1":
+            from Management.snap_uploader import new_survey, capture_and_upload
+            new_survey()
+            capture_and_upload(driver, "survey_account")
+
     except TimeoutException:
         login(driver, email, password)
         time.sleep(5)
