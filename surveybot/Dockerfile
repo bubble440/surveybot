@@ -56,7 +56,9 @@ ENV SURVEY_BROWSER_BIN=/usr/bin/google-chrome
 # Après l'installation de Chrome, avant COPY app
 RUN useradd -m -u 1000 botuser \
  && mkdir -p /data/chrome_profiles \
- && chown -R botuser:botuser /data /app
+ && chown -R botuser:botuser /data /app \
+ && mkdir -p /tmp/.X11-unix \
+ && chmod 1777 /tmp/.X11-unix
 
 USER botuser
 

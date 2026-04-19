@@ -1,437 +1,277 @@
-<html class="js fullscreen requestanimationframe raf csscalc supports cssfilters flexwrap csspositionsticky csstransforms3d csstransitions placeholder matchmedia" lang="France French"><head>
-    <meta charset="utf-8">
-            <meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests;object-src 'none';base-uri 'none';form-action http://t2.ktrmr.com http://ts.ktrmr.com http://nfield-respondent-proxy-prod.azurewebsites.net https: 'self';font-src https: 'self';img-src https: 'self' data: blob:;worker-src 'self' blob:;script-src https://*.nfieldmr.com https://*.nfieldbeta.com https://*.ktrmr.cn https://*.kantaroperations.com https://multimedia.kantaroperations.com https://*.ktrmr.cn https://*.jwpcdn.com https://*.nfieldmr.com https://*.nfieldcn.com https://*.googleapis.com https://*.affectiva.com 'self';media-src https: 'self' data: blob:;">
-
-    <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
-    <meta name="robots" content="noindex, nofollow, noarchive">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0">
-    <title>
-    Kantar Survey
-</title>
-    <link rel="shortcut icon" href="https://nfieldap-interviewing-blob-fd.nfieldmr.com/templates-content/Content/1a58d96a-22f5-452f-99ec-5a942f9f299e/dist/img/favicon.ico" type="image/x-icon">
-
-    <!-- referenced template specific stylesheet files -->
-    <link rel="StyleSheet" type="text/css" href="https://nfieldap-interviewing-blob-fd.nfieldmr.com/templates-content/Content/1a58d96a-22f5-452f-99ec-5a942f9f299e/dist/css/bootstrap.min.css">
-<link rel="StyleSheet" type="text/css" href="https://nfieldap-interviewing-blob-fd.nfieldmr.com/templates-content/Content/ea08ef09-fcce-473d-9c1b-33904304673d/themes/8929c10f-76e7-437e-9375-6592b877c640/dist/css/bootstrap.min.css">
-<link rel="StyleSheet" type="text/css" href="https://nfieldap-interviewing-blob-fd.nfieldmr.com/templates-content/Content/1a58d96a-22f5-452f-99ec-5a942f9f299e/dist/css/layout.css">
-<link rel="StyleSheet" type="text/css" href="https://nfieldap-interviewing-blob-fd.nfieldmr.com/templates-content/Content/ea08ef09-fcce-473d-9c1b-33904304673d/themes/8929c10f-76e7-437e-9375-6592b877c640/dist/css/layout.css">
-<link rel="StyleSheet" type="text/css" href="https://nfieldap-interviewing-blob-fd.nfieldmr.com/templates-content/Content/1a58d96a-22f5-452f-99ec-5a942f9f299e/dist/css/theme.css">
-<link rel="StyleSheet" type="text/css" href="https://nfieldap-interviewing-blob-fd.nfieldmr.com/templates-content/Content/ea08ef09-fcce-473d-9c1b-33904304673d/themes/8929c10f-76e7-437e-9375-6592b877c640/dist/css/theme.css">
-
-    
-    <style>
-        
-    </style>
-
-
-
-    
-    
-    
-        <script id="ErrorMessages" type="application/json">
-            ErrorMessages = { InvalidCategory: 'La cat&#233;gorie choisie n\&#39;est pas pr&#233;sente dans la liste de cat&#233;gories disponibles.',ExclusiveCategory: 'La cat&#233;gorie {category} ne peut pas &#234;tre combin&#233;e &#224; d\&#39;autres cat&#233;gories',TooManyDigitsFraction: 'La r&#233;ponse {answer} contient trop de chiffres d&#233;cimaux, le maximum est {maximumDigits}',AnswerTooLong: 'La r&#233;ponse {answer} est trop longue, vous ne pouvez pas d&#233;passer {numberOfCharacters}',MustBeNumeric: 'La r&#233;ponse {answer} doit &#234;tre num&#233;rique',MoreThanMaximum: 'La r&#233;ponse {answer} est trop grande, le maximum est {maximum}',LessThanMinimum: 'La r&#233;ponse {answer} est trop petite, le minimum est {minimum}',TooManyDigitsInIntegerPart: 'La r&#233;ponse {answer} contient trop de chiffres, le maximum est {maximum}',NotInRange: 'La r&#233;ponse {answer} n\&#39;est pas dans la fourchette autoris&#233;e, qui est {range}',AnswerRequired: 'Une r&#233;ponse est n&#233;cessaire',CategoryAnswerRequired: 'Veuillez pr&#233;ciser une r&#233;ponse pour {category}',ItemAnswerRequired: 'Veuillez pr&#233;ciser une r&#233;ponse pour',TooManyAnswers: 'Trop de r&#233;ponses, le maximum est {maximum}',TooFewAnswers: 'Trop peu de r&#233;ponses, le minimum est {minimum}',InterviewButtonUnavailable: 'Le bouton d\&#39;enqu&#234;te n\&#39;est pas disponible',DoNotUseBrowserButtonToNavigate: 'N\&#39;utilisez pas les boutons de votre navigateur, utilisez plut&#244;t les boutons de l\&#39;enqu&#234;te',DoNotUseButtonWithOtherAnswer: 'La r&#233;ponse {item} ne peut pas &#234;tre combin&#233;e &#224; d\&#39;autres r&#233;ponses' };
-                                </script>
-
-
-
-    <!-- referenced template specific javascript files -->
-    <script type="text/javascript" src="https://nfieldap-interviewing-blob-fd.nfieldmr.com/templates-content/Scripts/1a58d96a-22f5-452f-99ec-5a942f9f299e/dist/js/jquery.min.js"></script>
-<script type="text/javascript" src="https://nfieldap-interviewing-blob-fd.nfieldmr.com/templates-content/Scripts/1a58d96a-22f5-452f-99ec-5a942f9f299e/dist/js/nfield/knockout-3.2.0.js"></script>
-<script type="text/javascript" src="https://nfieldap-interviewing-blob-fd.nfieldmr.com/templates-content/Scripts/1a58d96a-22f5-452f-99ec-5a942f9f299e/dist/js/nfield/jquery.nfield-numeric.min.js"></script>
-<script type="text/javascript" src="https://nfieldap-interviewing-blob-fd.nfieldmr.com/templates-content/Scripts/1a58d96a-22f5-452f-99ec-5a942f9f299e/dist/js/nfield/nfield.main.min.js"></script>
-<script type="text/javascript" src="https://nfieldap-interviewing-blob-fd.nfieldmr.com/templates-content/Scripts/1a58d96a-22f5-452f-99ec-5a942f9f299e/dist/js/popper.min.js"></script>
-<script type="text/javascript" src="https://nfieldap-interviewing-blob-fd.nfieldmr.com/templates-content/Scripts/1a58d96a-22f5-452f-99ec-5a942f9f299e/dist/js/bootstrap.min.js"></script>
-<script type="text/javascript" src="https://nfieldap-interviewing-blob-fd.nfieldmr.com/templates-content/Scripts/1a58d96a-22f5-452f-99ec-5a942f9f299e/dist/js/panel-details.js"></script>
-<script type="text/javascript" src="https://nfieldap-interviewing-blob-fd.nfieldmr.com/templates-content/Scripts/1a58d96a-22f5-452f-99ec-5a942f9f299e/dist/js/layout.js"></script><style>.audio-controls{background-color:#e5e5e5;vertical-align:middle;display:inline-block;text-align:center;position:relative;margin:-5px 10px 0 0;line-height:30px;cursor:pointer;height:30px;width:50px;float:left;left:0;top:0;z-index:9999}h2 .audio-controls{line-height:47px;float:initial;height:45px;width:80px}.audio-controls .play-icon{font-size:80%}.audio-controls .bar{background-color:rgba(0,0,0,.3);-webkit-transition:all 10ms;transition:all 10ms;position:absolute;display:block;height:5px;z-index:8;bottom:0;width:0;left:0}.audio-controls .bar.finished{background-color:#ccc;-webkit-transition:all 10ms;transition:all 10ms;height:5px}.audio-controls:hover{background-color:#f2f2f2;text-decoration:none}.audio-button{background-color:#e5e5e5;vertical-align:middle;display:inline-block;border-radius:3px;position:relative;height:35px;width:100px;color:#000;padding:0}.audio-button:hover{background-color:#e5e5e5;text-decoration:none}.audio-button:before{background-color:#f2f2f2;-webkit-transition:all .3s;transition:all .3s;vertical-align:middle;display:inline-block;border-radius:3px;text-align:center;position:absolute;padding:7px 15px;content:'play';height:100%;width:100%;z-index:9;left:0;top:0}.audio-button.pausing:before{content:'play'}.audio-button.playing:before{content:'pause';top:-3px}.first-listen-to-the-audio+.answer-holder{pointer-events:none;opacity:0}</style>
-<script type="text/javascript" src="https://nfieldap-interviewing-blob-fd.nfieldmr.com/templates-content/Scripts/ea08ef09-fcce-473d-9c1b-33904304673d/themes/8929c10f-76e7-437e-9375-6592b877c640/dist/js/custom-layout.js"></script>
-<script type="text/javascript" src="https://nfieldap-interviewing-blob-fd.nfieldmr.com/templates-content/Scripts/1a58d96a-22f5-452f-99ec-5a942f9f299e/dist/js/recordVideo.js"></script>
-<script type="text/javascript" src="https://nfieldap-interviewing-blob-fd.nfieldmr.com/templates-content/Scripts/1a58d96a-22f5-452f-99ec-5a942f9f299e/dist/js/SE/lib/qarts/vendors~main.js"></script>
-<script type="text/javascript" src="https://nfieldap-interviewing-blob-fd.nfieldmr.com/templates-content/Scripts/1a58d96a-22f5-452f-99ec-5a942f9f299e/dist/js/SE/lib/qarts/app_dev.js"></script><style type="text/css" data-glamor=""></style>
-<script type="text/javascript" src="https://nfieldap-interviewing-blob-fd.nfieldmr.com/templates-content/Scripts/1a58d96a-22f5-452f-99ec-5a942f9f299e/dist/js/SE/SurveyEngineOptions.js"></script>
-<script type="text/javascript" src="https://nfieldap-interviewing-blob-fd.nfieldmr.com/templates-content/Scripts/1a58d96a-22f5-452f-99ec-5a942f9f299e/dist/js/SE/SurveyEngine.js"></script>
-
-    <!-- error messages -->
-    
-
-    
-	<script id="projectDetails" type="application/json">		
-	{"projectName":"mysurveyinnfield",
-	"isDebug":"3",
-	"id":"1_999",
-	"serial":1,
-	"isTest":false,
-	"cursorInOpens":"0",
-	"projectVersion":"1",
-	"comp":"Incomplete",
-	"sampleSource":"UnitedStates"}
-	</script>
-		
-
-<style>.question-component {min-height: 0rem;}</style><style data-emotion="css"></style><style>[id^='container_']{min-height: 15rem;}</style><style>label{margin-bottom:0rem !important;}</style><style>div[id^="container_"]{ padding-bottom: 0.5rem !important; padding-top: 0.5rem !important;}</style></head>
-
-<body class="survey-page" role="body">
-    <var id="scriptContent" src="https://nfieldap-interviewing-blob-fd.nfieldmr.com/templates-content/Scripts/1a58d96a-22f5-452f-99ec-5a942f9f299e/"><!--x--></var>
-    <var id="sharedContent" src="https://nfieldap-interviewing-blob-fd.nfieldmr.com/templates-content/Content/1a58d96a-22f5-452f-99ec-5a942f9f299e/"><!--x--></var>
-    <div class="loader" style="display: none;">
-        <div class="lds-ellipsis">
-            <div></div>
-            <div></div>
-            <div></div>
-            <div></div>
-        </div>
-    <p></p></div>
-    <div class="container" style="">
-        
-    
-<!-- RenderingOptions - to read *UIOPTIONS from ODIN script-->
-<!-- CustomProperties - to read *PROPERTIES from ODIN script -->
-
-
-
-
-
-
-<form method="post" action="" novalidate="">
-    <input id="screenId" name="screenId" type="hidden" value="7f16f9c7-e423-4739-a6e6-82319c35990a">
-<input data-val="true" data-val-number="The field HistoryOrder must be a number." data-val-required="The HistoryOrder field is required." id="historyOrder" name="historyOrder" type="hidden" value="0">
-<input name="__RequestVerificationToken" type="hidden" value="LoEwGAvnGPWSZFhxu0TuzSu13UWI1knhla7cEBeSGo18sQoPr9j7iSX7NjXozhCz8-pKJc7iEptFH6_ofs0atOFbFjI1">
-
-		<script id="SEJson" type="application/json"><!--{--><!--"load":"initSurveyEngine();",--><!--"qJSON":[{"QuestionName": "r0.h1","QuestionFullName": "r0.h1","CustomProps": {"metaType": "dragndrop","column$droptype": "img/text","bucketGrid$all$width": "100","row$all$imgdir": "column","column$all$imgdir": "column","row$all$titlesize": "14","row$small$titlesize": "10","row$extrasmall$titlesize": "10","column$all$titlesize": "12","column$small$titlesize": "8","column$extrasmall$titlesize": "8","rowGrid$all$width": "20","columnGrid$all$width": "25","rowGrid$all$padding": "1","rowGrid$all$vgap": "1","row$all$imgpadding": "1","column$all$txtpaddingtb": "1","row$all$txtpaddingtb": "1","row$all$displaydescr": false,"capvalue": "1","pastedetection": true,"projectlink": "https://interviewingap.nfieldmr.com/Interviews/pjTFm/vGFC6ASvvsigculHt721","chkcsp": true,"cspcontent": "upgrade-insecure-requests&#59object-src 'none'&#59base-uri 'none'&#59form-action http://t2.ktrmr.com http://ts.ktrmr.com http://nfield-respondent-proxy-prod.azurewebsites.net https: 'self'&#59font-src https: 'self'&#59img-src https: 'self' data: blob:&#59worker-src 'self' blob:&#59script-src https://multimedia.kantaroperations.com https://*.ktrmr.cn https://*.jwpcdn.com https://*.nfieldmr.com https://*.nfieldcn.com https://*.googleapis.com https://*.affectiva.com 'self'&#59media-src https: 'self' data: blob:&#59","isDebug": false,"surveytitle": "","ShowBackButton": true,"metaType": "dragndrop","column$droptype": "img/text","bucketGrid$all$width": "100","row$all$imgdir": "column","column$all$imgdir": "column","row$all$titlesize": "14","row$small$titlesize": "10","row$extrasmall$titlesize": "10","column$all$titlesize": "12","column$small$titlesize": "8","column$extrasmall$titlesize": "8","rowGrid$all$width": "20","columnGrid$all$width": "25","rowGrid$all$padding": "1","rowGrid$all$vgap": "1","row$all$imgpadding": "1","column$all$txtpaddingtb": "1","row$all$txtpaddingtb": "1","row$all$displaydescr": false,"capvalue": "1","pastedetection": true,"projectlink": "https://interviewingap.nfieldmr.com/Interviews/pjTFm/vGFC6ASvvsigculHt721","chkcsp": true,"cspcontent": "upgrade-insecure-requests&#59object-src 'none'&#59base-uri 'none'&#59form-action http://t2.ktrmr.com http://ts.ktrmr.com http://nfield-respondent-proxy-prod.azurewebsites.net https: 'self'&#59font-src https: 'self'&#59img-src https: 'self' data: blob:&#59worker-src 'self' blob:&#59script-src https://multimedia.kantaroperations.com https://*.ktrmr.cn https://*.jwpcdn.com https://*.nfieldmr.com https://*.nfieldcn.com https://*.googleapis.com https://*.affectiva.com 'self'&#59media-src https: 'self' data: blob:&#59","isDebug": false,"surveytitle": "","ShowBackButton": true,"metaType": "dragndrop","column$droptype": "img/text","bucketGrid$all$width": "100","row$all$imgdir": "column","column$all$imgdir": "column","row$all$titlesize": "14","row$small$titlesize": "10","row$extrasmall$titlesize": "10","column$all$titlesize": "12","column$small$titlesize": "8","column$extrasmall$titlesize": "8","rowGrid$all$width": "20","columnGrid$all$width": "25","rowGrid$all$padding": "1","rowGrid$all$vgap": "1","row$all$imgpadding": "1","column$all$txtpaddingtb": "1","row$all$txtpaddingtb": "1","row$all$displaydescr": false,"capvalue": "1","pastedetection": true,"projectlink": "https://interviewingap.nfieldmr.com/Interviews/pjTFm/vGFC6ASvvsigculHt721","chkcsp": true,"cspcontent": "upgrade-insecure-requests&#59object-src 'none'&#59base-uri 'none'&#59form-action http://t2.ktrmr.com http://ts.ktrmr.com http://nfield-respondent-proxy-prod.azurewebsites.net https: 'self'&#59font-src https: 'self'&#59img-src https: 'self' data: blob:&#59worker-src 'self' blob:&#59script-src https://multimedia.kantaroperations.com https://*.ktrmr.cn https://*.jwpcdn.com https://*.nfieldmr.com https://*.nfieldcn.com https://*.googleapis.com https://*.affectiva.com 'self'&#59media-src https: 'self' data: blob:&#59","isDebug": false,"surveytitle": "","ShowBackButton": true,"metaType": "dragndrop","column$droptype": "img/text","bucketGrid$all$width": "100","row$all$imgdir": "column","column$all$imgdir": "column","row$all$titlesize": "14","row$small$titlesize": "10","row$extrasmall$titlesize": "10","column$all$titlesize": "12","column$small$titlesize": "8","column$extrasmall$titlesize": "8","rowGrid$all$width": "20","columnGrid$all$width": "25","rowGrid$all$padding": "1","rowGrid$all$vgap": "1","row$all$imgpadding": "1","column$all$txtpaddingtb": "1","row$all$txtpaddingtb": "1","row$all$displaydescr": false,"capvalue": "1","pastedetection": true,"projectlink": "https://interviewingap.nfieldmr.com/Interviews/pjTFm/vGFC6ASvvsigculHt721","chkcsp": true,"cspcontent": "upgrade-insecure-requests&#59object-src 'none'&#59base-uri 'none'&#59form-action http://t2.ktrmr.com http://ts.ktrmr.com http://nfield-respondent-proxy-prod.azurewebsites.net https: 'self'&#59font-src https: 'self'&#59img-src https: 'self' data: blob:&#59worker-src 'self' blob:&#59script-src https://multimedia.kantaroperations.com https://*.ktrmr.cn https://*.jwpcdn.com https://*.nfieldmr.com https://*.nfieldcn.com https://*.googleapis.com https://*.affectiva.com 'self'&#59media-src https: 'self' data: blob:&#59","isDebug": false,"surveytitle": "","ShowBackButton": true,"metaType": "dragndrop","column$droptype": "img/text","bucketGrid$all$width": "100","row$all$imgdir": "column","column$all$imgdir": "column","row$all$titlesize": "14","row$small$titlesize": "10","row$extrasmall$titlesize": "10","column$all$titlesize": "12","column$small$titlesize": "8","column$extrasmall$titlesize": "8","rowGrid$all$width": "20","columnGrid$all$width": "25","rowGrid$all$padding": "1","rowGrid$all$vgap": "1","row$all$imgpadding": "1","column$all$txtpaddingtb": "1","row$all$txtpaddingtb": "1","row$all$displaydescr": false,"capvalue": "1","pastedetection": true,"projectlink": "https://interviewingap.nfieldmr.com/Interviews/pjTFm/vGFC6ASvvsigculHt721","chkcsp": true,"cspcontent": "upgrade-insecure-requests&#59object-src 'none'&#59base-uri 'none'&#59form-action http://t2.ktrmr.com http://ts.ktrmr.com http://nfield-respondent-proxy-prod.azurewebsites.net https: 'self'&#59font-src https: 'self'&#59img-src https: 'self' data: blob:&#59worker-src 'self' blob:&#59script-src https://multimedia.kantaroperations.com https://*.ktrmr.cn https://*.jwpcdn.com https://*.nfieldmr.com https://*.nfieldcn.com https://*.googleapis.com https://*.affectiva.com 'self'&#59media-src https: 'self' data: blob:&#59","isDebug": false,"surveytitle": "","ShowBackButton": true,"metaType": "dragndrop","column$droptype": "img/text","bucketGrid$all$width": "100","row$all$imgdir": "column","column$all$imgdir": "column","row$all$titlesize": "14","row$small$titlesize": "10","row$extrasmall$titlesize": "10","column$all$titlesize": "12","column$small$titlesize": "8","column$extrasmall$titlesize": "8","rowGrid$all$width": "20","columnGrid$all$width": "25","rowGrid$all$padding": "1","rowGrid$all$vgap": "1","row$all$imgpadding": "1","column$all$txtpaddingtb": "1","row$all$txtpaddingtb": "1","row$all$displaydescr": false,"capvalue": "1","pastedetection": true,"projectlink": "https://interviewingap.nfieldmr.com/Interviews/pjTFm/vGFC6ASvvsigculHt721","chkcsp": true,"cspcontent": "upgrade-insecure-requests&#59object-src 'none'&#59base-uri 'none'&#59form-action http://t2.ktrmr.com http://ts.ktrmr.com http://nfield-respondent-proxy-prod.azurewebsites.net https: 'self'&#59font-src https: 'self'&#59img-src https: 'self' data: blob:&#59worker-src 'self' blob:&#59script-src https://multimedia.kantaroperations.com https://*.ktrmr.cn https://*.jwpcdn.com https://*.nfieldmr.com https://*.nfieldcn.com https://*.googleapis.com https://*.affectiva.com 'self'&#59media-src https: 'self' data: blob:&#59","isDebug": false,"surveytitle": "","ShowBackButton": true,},"min": null,"max": null}]}--></script>
-
-<div class="row" id="questions">
-
-    
-
-<fieldset class="questionContainer" questionname="r0.h1" style="display: none;">
-   <legend class="mrQuestionText col-sm-12 question-text theme-standard-bg-color2 theme-standard-font-color1"> Si vous deviez choisir n’importe quelle entreprise technologique qui propose des produits, services et/ou solutions technologiques, quelle est la probabilité que vous envisagiez de choisir chacune de ces marques ?<br> <font color="Green" style="font-style:italic"> Veuillez sélectionner une seule marque pour « Mon premier choix ». Si vous avez déjà sélectionné une marque ici et que vous essayez ensuite d'en ajouter une autre, la première marque sera remplacée par votre nouvelle sélection.</font><br>
-                <span class="mrErrorText" style="border-color: Red;">Une réponse est nécessaire<br></span>
-
-        
-        <div class="mrInstruct questionTextBottomPadding">
-            <!--x-->
-        </div>
-    </legend>
-    <div class="col-sm-12 question-component z-depth-1">
-        <table summary=" Si vous deviez choisir n’importe quelle entreprise technologique qui propose des produits, services et/ou solutions technologiques, quelle est la probabilité que vous envisagiez de choisir chacune de ces marques ?   &lt;font color='Green' style='font-style:italic'&gt;  Veuillez sélectionner une seule marque pour « Mon premier choix ». Si vous avez déjà sélectionné une marque ici et que vous essayez ensuite d'en ajouter une autre, la première marque sera remplacée par votre nouvelle sélection. &lt;/font&gt;" class="mrQuestionTable table table-bordered" style="display: table;">
-            <tbody>
-                
-                    <tr>
-                        <td></td>
-
- 
-        <td id="Cell.R0Q30430-h3.1" class="mrGridQuestionText">
-            <div></div>
- Mon premier choix        </td>
-        <td id="Cell.R0Q30430-h3.2" class="mrGridQuestionText">
-            <div></div>
- Je l’envisagerais sérieusement        </td>
-        <td id="Cell.R0Q30430-h3.3" class="mrGridQuestionText">
-            <div></div>
- Je pourrais l’envisager        </td>
-        <td id="Cell.R0Q30430-h3.4" class="mrGridQuestionText">
-            <div></div>
- Je ne l’envisagerais pas        </td>
-                     </tr>
-                    <tr>
-    <td id="cell-R1" class="mrGridCategoryText"><div></div><span class="mrQuestionText" style="color: #585958;">Apple         <img alt="Apple" src="https://multimedia.kantaroperations.com/8016F8B/origin.tns-global.com/Multimedia/KO/Lenovo_Corporate_TO/Apple.jpg" class="img-responsive img-fluid waves-effect waves-light" style="display: none;">
-</span></td>
-        <td id="Cell.R1Q30430-1">            
-            <input type="radio" id="R1Q30430-1" name="answer-r1q30430" value="r1q30430-1" class="mrSingle styled form-control with-gap form-check-input" questionname="answer-r1q30430" data-nfield-categorylist="r1q30430" openendid="" iscode="" otherid="" isexclusive="false" rowid="0" colid="0">
-				   <label for="R1Q30430-1" class="active">
-					   <span style="display:none;">
-
-						</span>
-				   </label>
-
-        </td>
-        <td id="Cell.R1Q30430-2">            
-            <input type="radio" id="R1Q30430-2" name="answer-r1q30430" value="r1q30430-2" class="mrSingle styled form-control with-gap form-check-input" questionname="answer-r1q30430" data-nfield-categorylist="r1q30430" openendid="" iscode="" otherid="" isexclusive="false" rowid="0" colid="1">
-				   <label for="R1Q30430-2" class="active">
-					   <span style="display:none;">
-
-						</span>
-				   </label>
-
-        </td>
-        <td id="Cell.R1Q30430-3">            
-            <input type="radio" id="R1Q30430-3" name="answer-r1q30430" value="r1q30430-3" class="mrSingle styled form-control with-gap form-check-input" questionname="answer-r1q30430" data-nfield-categorylist="r1q30430" openendid="" iscode="" otherid="" isexclusive="false" rowid="0" colid="2">
-				   <label for="R1Q30430-3" class="active">
-					   <span style="display:none;">
-
-						</span>
-				   </label>
-
-        </td>
-        <td id="Cell.R1Q30430-4">            
-            <input type="radio" id="R1Q30430-4" name="answer-r1q30430" value="r1q30430-4" class="mrSingle styled form-control with-gap form-check-input" questionname="answer-r1q30430" data-nfield-categorylist="r1q30430" openendid="" iscode="" otherid="" isexclusive="false" rowid="0" colid="3">
-				   <label for="R1Q30430-4" class="active">
-					   <span style="display:none;">
-
-						</span>
-				   </label>
-
-        </td>
-
-                    </tr>
-                    <tr>
-    <td id="cell-R5" class="mrGridCategoryText"><div></div><span class="mrQuestionText" style="color: #585958;">Huawei         <img alt="Huawei" src="https://multimedia.kantaroperations.com/8016F8B/origin.tns-global.com/Multimedia/KO/Lenovo_Corporate_TO/Huawei.jpg" class="img-responsive img-fluid waves-effect waves-light" style="display: none;">
-</span></td>
-        <td id="Cell.R5Q30430-1">            
-            <input type="radio" id="R5Q30430-1" name="answer-r5q30430" value="r5q30430-1" class="mrSingle styled form-control with-gap form-check-input" questionname="answer-r5q30430" data-nfield-categorylist="r5q30430" openendid="" iscode="" otherid="" isexclusive="false" rowid="1" colid="0">
-				   <label for="R5Q30430-1" class="active">
-					   <span style="display:none;">
-
-						</span>
-				   </label>
-
-        </td>
-        <td id="Cell.R5Q30430-2">            
-            <input type="radio" id="R5Q30430-2" name="answer-r5q30430" value="r5q30430-2" class="mrSingle styled form-control with-gap form-check-input" questionname="answer-r5q30430" data-nfield-categorylist="r5q30430" openendid="" iscode="" otherid="" isexclusive="false" rowid="1" colid="1">
-				   <label for="R5Q30430-2" class="active">
-					   <span style="display:none;">
-
-						</span>
-				   </label>
-
-        </td>
-        <td id="Cell.R5Q30430-3">            
-            <input type="radio" id="R5Q30430-3" name="answer-r5q30430" value="r5q30430-3" class="mrSingle styled form-control with-gap form-check-input" questionname="answer-r5q30430" data-nfield-categorylist="r5q30430" openendid="" iscode="" otherid="" isexclusive="false" rowid="1" colid="2">
-				   <label for="R5Q30430-3" class="active">
-					   <span style="display:none;">
-
-						</span>
-				   </label>
-
-        </td>
-        <td id="Cell.R5Q30430-4">            
-            <input type="radio" id="R5Q30430-4" name="answer-r5q30430" value="r5q30430-4" class="mrSingle styled form-control with-gap form-check-input" questionname="answer-r5q30430" data-nfield-categorylist="r5q30430" openendid="" iscode="" otherid="" isexclusive="false" rowid="1" colid="3">
-				   <label for="R5Q30430-4" class="active">
-					   <span style="display:none;">
-
-						</span>
-				   </label>
-
-        </td>
-
-                    </tr>
-                    <tr>
-    <td id="cell-R7" class="mrGridCategoryText"><div></div><span class="mrQuestionText" style="color: #585958;">Microsoft         <img alt="Microsoft" src="https://multimedia.kantaroperations.com/8016F8B/origin.tns-global.com/Multimedia/KO/Lenovo_Corporate_TO/Microsoft.jpg" class="img-responsive img-fluid waves-effect waves-light" style="display: none;">
-</span></td>
-        <td id="Cell.R7Q30430-1">            
-            <input type="radio" id="R7Q30430-1" name="answer-r7q30430" value="r7q30430-1" class="mrSingle styled form-control with-gap form-check-input" questionname="answer-r7q30430" data-nfield-categorylist="r7q30430" openendid="" iscode="" otherid="" isexclusive="false" rowid="2" colid="0">
-				   <label for="R7Q30430-1" class="active">
-					   <span style="display:none;">
-
-						</span>
-				   </label>
-
-        </td>
-        <td id="Cell.R7Q30430-2">            
-            <input type="radio" id="R7Q30430-2" name="answer-r7q30430" value="r7q30430-2" class="mrSingle styled form-control with-gap form-check-input" questionname="answer-r7q30430" data-nfield-categorylist="r7q30430" openendid="" iscode="" otherid="" isexclusive="false" rowid="2" colid="1">
-				   <label for="R7Q30430-2" class="active">
-					   <span style="display:none;">
-
-						</span>
-				   </label>
-
-        </td>
-        <td id="Cell.R7Q30430-3">            
-            <input type="radio" id="R7Q30430-3" name="answer-r7q30430" value="r7q30430-3" class="mrSingle styled form-control with-gap form-check-input" questionname="answer-r7q30430" data-nfield-categorylist="r7q30430" openendid="" iscode="" otherid="" isexclusive="false" rowid="2" colid="2">
-				   <label for="R7Q30430-3" class="active">
-					   <span style="display:none;">
-
-						</span>
-				   </label>
-
-        </td>
-        <td id="Cell.R7Q30430-4">            
-            <input type="radio" id="R7Q30430-4" name="answer-r7q30430" value="r7q30430-4" class="mrSingle styled form-control with-gap form-check-input" questionname="answer-r7q30430" data-nfield-categorylist="r7q30430" openendid="" iscode="" otherid="" isexclusive="false" rowid="2" colid="3">
-				   <label for="R7Q30430-4" class="active">
-					   <span style="display:none;">
-
-						</span>
-				   </label>
-
-        </td>
-
-                    </tr>
-                    <tr>
-    <td id="cell-R17" class="mrGridCategoryText"><div></div><span class="mrQuestionText" style="color: #585958;">Amazon         <img alt="Amazon" src="https://multimedia.kantaroperations.com/8016F8B/origin.tns-global.com/Multimedia/KO/Lenovo_Corporate_TO/Amazon.jpg" class="img-responsive img-fluid waves-effect waves-light" style="display: none;">
-</span></td>
-        <td id="Cell.R17Q30430-1">            
-            <input type="radio" id="R17Q30430-1" name="answer-r17q30430" value="r17q30430-1" class="mrSingle styled form-control with-gap form-check-input" questionname="answer-r17q30430" data-nfield-categorylist="r17q30430" openendid="" iscode="" otherid="" isexclusive="false" rowid="3" colid="0">
-				   <label for="R17Q30430-1" class="active">
-					   <span style="display:none;">
-
-						</span>
-				   </label>
-
-        </td>
-        <td id="Cell.R17Q30430-2">            
-            <input type="radio" id="R17Q30430-2" name="answer-r17q30430" value="r17q30430-2" class="mrSingle styled form-control with-gap form-check-input" questionname="answer-r17q30430" data-nfield-categorylist="r17q30430" openendid="" iscode="" otherid="" isexclusive="false" rowid="3" colid="1">
-				   <label for="R17Q30430-2" class="active">
-					   <span style="display:none;">
-
-						</span>
-				   </label>
-
-        </td>
-        <td id="Cell.R17Q30430-3">            
-            <input type="radio" id="R17Q30430-3" name="answer-r17q30430" value="r17q30430-3" class="mrSingle styled form-control with-gap form-check-input" questionname="answer-r17q30430" data-nfield-categorylist="r17q30430" openendid="" iscode="" otherid="" isexclusive="false" rowid="3" colid="2">
-				   <label for="R17Q30430-3" class="active">
-					   <span style="display:none;">
-
-						</span>
-				   </label>
-
-        </td>
-        <td id="Cell.R17Q30430-4">            
-            <input type="radio" id="R17Q30430-4" name="answer-r17q30430" value="r17q30430-4" class="mrSingle styled form-control with-gap form-check-input" questionname="answer-r17q30430" data-nfield-categorylist="r17q30430" openendid="" iscode="" otherid="" isexclusive="false" rowid="3" colid="3">
-				   <label for="R17Q30430-4" class="active">
-					   <span style="display:none;">
-
-						</span>
-				   </label>
-
-        </td>
-
-                    </tr>
-                    <tr>
-    <td id="cell-R18" class="mrGridCategoryText"><div></div><span class="mrQuestionText" style="color: #585958;">Google         <img alt="Google" src="https://multimedia.kantaroperations.com/8016F8B/origin.tns-global.com/Multimedia/KO/Lenovo_Corporate_TO/Google.jpg" class="img-responsive img-fluid waves-effect waves-light" style="display: none;">
-</span></td>
-        <td id="Cell.R18Q30430-1">            
-            <input type="radio" id="R18Q30430-1" name="answer-r18q30430" value="r18q30430-1" class="mrSingle styled form-control with-gap form-check-input" questionname="answer-r18q30430" data-nfield-categorylist="r18q30430" openendid="" iscode="" otherid="" isexclusive="false" rowid="4" colid="0">
-				   <label for="R18Q30430-1" class="active">
-					   <span style="display:none;">
-
-						</span>
-				   </label>
-
-        </td>
-        <td id="Cell.R18Q30430-2">            
-            <input type="radio" id="R18Q30430-2" name="answer-r18q30430" value="r18q30430-2" class="mrSingle styled form-control with-gap form-check-input" questionname="answer-r18q30430" data-nfield-categorylist="r18q30430" openendid="" iscode="" otherid="" isexclusive="false" rowid="4" colid="1">
-				   <label for="R18Q30430-2" class="active">
-					   <span style="display:none;">
-
-						</span>
-				   </label>
-
-        </td>
-        <td id="Cell.R18Q30430-3">            
-            <input type="radio" id="R18Q30430-3" name="answer-r18q30430" value="r18q30430-3" class="mrSingle styled form-control with-gap form-check-input" questionname="answer-r18q30430" data-nfield-categorylist="r18q30430" openendid="" iscode="" otherid="" isexclusive="false" rowid="4" colid="2">
-				   <label for="R18Q30430-3" class="active">
-					   <span style="display:none;">
-
-						</span>
-				   </label>
-
-        </td>
-        <td id="Cell.R18Q30430-4">            
-            <input type="radio" id="R18Q30430-4" name="answer-r18q30430" value="r18q30430-4" class="mrSingle styled form-control with-gap form-check-input" questionname="answer-r18q30430" data-nfield-categorylist="r18q30430" openendid="" iscode="" otherid="" isexclusive="false" rowid="4" colid="3">
-				   <label for="R18Q30430-4" class="active">
-					   <span style="display:none;">
-
-						</span>
-				   </label>
-
-        </td>
-
-                    </tr>
-                    <tr>
-    <td id="cell-R21" class="mrGridCategoryText"><div></div><span class="mrQuestionText" style="color: #585958;">IBM         <img alt="IB M" src="https://multimedia.kantaroperations.com/8016F8B/origin.tns-global.com/Multimedia/KO/Lenovo_Corporate_TO/IBM.jpg" class="img-responsive img-fluid waves-effect waves-light" style="display: none;">
-</span></td>
-        <td id="Cell.R21Q30430-1">            
-            <input type="radio" id="R21Q30430-1" name="answer-r21q30430" value="r21q30430-1" class="mrSingle styled form-control with-gap form-check-input" questionname="answer-r21q30430" data-nfield-categorylist="r21q30430" openendid="" iscode="" otherid="" isexclusive="false" rowid="5" colid="0">
-				   <label for="R21Q30430-1" class="active">
-					   <span style="display:none;">
-
-						</span>
-				   </label>
-
-        </td>
-        <td id="Cell.R21Q30430-2">            
-            <input type="radio" id="R21Q30430-2" name="answer-r21q30430" value="r21q30430-2" class="mrSingle styled form-control with-gap form-check-input" questionname="answer-r21q30430" data-nfield-categorylist="r21q30430" openendid="" iscode="" otherid="" isexclusive="false" rowid="5" colid="1">
-				   <label for="R21Q30430-2" class="active">
-					   <span style="display:none;">
-
-						</span>
-				   </label>
-
-        </td>
-        <td id="Cell.R21Q30430-3">            
-            <input type="radio" id="R21Q30430-3" name="answer-r21q30430" value="r21q30430-3" class="mrSingle styled form-control with-gap form-check-input" questionname="answer-r21q30430" data-nfield-categorylist="r21q30430" openendid="" iscode="" otherid="" isexclusive="false" rowid="5" colid="2">
-				   <label for="R21Q30430-3" class="active">
-					   <span style="display:none;">
-
-						</span>
-				   </label>
-
-        </td>
-        <td id="Cell.R21Q30430-4">            
-            <input type="radio" id="R21Q30430-4" name="answer-r21q30430" value="r21q30430-4" class="mrSingle styled form-control with-gap form-check-input" questionname="answer-r21q30430" data-nfield-categorylist="r21q30430" openendid="" iscode="" otherid="" isexclusive="false" rowid="5" colid="3">
-				   <label for="R21Q30430-4" class="active">
-					   <span style="display:none;">
-
-						</span>
-				   </label>
-
-        </td>
-
-                    </tr>
-            </tbody>
-        </table>
-		
-    </div>
-</fieldset><div id="qc_r0.h1" class="qcContainer"><legend class="mrQuestionText col-sm-12 question-text theme-standard-bg-color2 theme-standard-font-color1"> Si vous deviez choisir n’importe quelle entreprise technologique qui propose des produits, services et/ou solutions technologiques, quelle est la probabilité que vous envisagiez de choisir chacune de ces marques ?<br> <font color="Green" style="font-style:italic"> Veuillez sélectionner une seule marque pour « Mon premier choix ». Si vous avez déjà sélectionné une marque ici et que vous essayez ensuite d'en ajouter une autre, la première marque sera remplacée par votre nouvelle sélection.</font><br>
-                <span class="mrErrorText" style="border-color: Red;">Une réponse est nécessaire<br></span>
-
-        
-        <div class="mrInstruct questionTextBottomPadding">
-            <!--x-->
-        </div>
-    </legend></div><div id="container_r0.h1" class="col-sm-12" style="min-height: 15rem; padding-bottom: 1rem;"><div class="_dragndrop" dir="ltr" style="user-select: none; box-sizing: border-box; line-height: normal; white-space: normal; position: relative; display: block; width: 100%; margin: 0px auto;"><div class="__flexgrid_row" dir="ltr" style="box-sizing: border-box; position: relative; width: 100%; margin: 0px auto; padding: 1px; -webkit-box-pack: center; justify-content: center; text-align: center; -webkit-box-align: stretch; align-items: stretch; vertical-align: top; height: auto; display: flex; flex-wrap: wrap;"><div style="transition: order 1000ms 500ms; box-sizing: border-box; position: relative; display: inherit; width: 20%; opacity: 1; vertical-align: inherit; padding: 1px 5px; text-align: left; z-index: unset; transform: none;"><div style="box-sizing: border-box; position: relative; display: inherit; width: 100%; outline: rgb(238, 238, 238) dashed 1px;"><div dir="ltr" style="box-sizing: border-box; position: relative; vertical-align: middle; width: 100%; outline: rgb(238, 238, 238) solid 1px; background-color: rgb(255, 255, 255); line-height: normal; white-space: normal; -webkit-box-direction: normal; -webkit-box-orient: vertical; flex-direction: column; opacity: 0; box-shadow: none; min-height: auto; display: flex;"><div style="transition: background-color 250ms; box-sizing: border-box; position: relative; display: inherit; vertical-align: middle; width: 100%; -webkit-box-flex: 1; flex: 1 0 auto; min-width: 0px; min-height: 0px; -webkit-box-direction: normal; -webkit-box-orient: vertical; flex-direction: column; background-color: rgb(255, 255, 255);"><div style="transition: opacity 250ms; box-sizing: border-box; position: relative; display: inherit; vertical-align: middle; width: 100%; padding: 0px; -webkit-box-align: center; align-items: center; opacity: 0.35; filter: grayscale(100%); border-bottom: 1px solid rgb(245, 245, 245); border-left: 0px; border-right: 0px;"><div style="box-sizing: border-box; position: relative; display: inline-block; vertical-align: middle; width: 100%; margin: 0px; padding: 1px; text-align: center; height: 150px;"><img alt="https://multimedia.kantaroperations.com/8016F8B/origin.tns-global.com/Multimedia/KO/Lenovo_Corporate_TO/Apple.jpg" src="https://multimedia.kantaroperations.com/8016F8B/origin.tns-global.com/Multimedia/KO/Lenovo_Corporate_TO/Apple.jpg" style="box-sizing: border-box; position: relative; display: inline-block; vertical-align: middle; width: auto; height: auto; max-width: 100%; max-height: 100%;"><span style="position: relative; display: inline-block; vertical-align: middle; height: 100%;"></span></div></div><div style="transition: opacity 250ms; box-sizing: border-box; position: relative; width: 100%; padding: 1px 15px; display: inherit; vertical-align: middle; -webkit-box-orient: vertical; -webkit-box-direction: normal; flex-direction: column; -webkit-box-pack: center; justify-content: center; -webkit-box-flex: 1; flex: 1 0 auto; min-width: 0px; min-height: 0px; opacity: 1;"><div style="box-sizing: border-box; position: relative; display: inline-block; vertical-align: middle; width: 100%; padding: 0px; background-color: transparent; text-align: center;"><div style="transition: 500ms; box-sizing: border-box; display: inline-block; width: auto; font-style: inherit; font-variant: inherit; font-weight: inherit; font-stretch: inherit; font-size: inherit; line-height: normal; font-family: inherit; font-optical-sizing: inherit; font-size-adjust: inherit; font-kerning: inherit; font-feature-settings: inherit; font-variation-settings: inherit; font-language-override: inherit; background-color: inherit; white-space: nowrap; max-width: 100%; text-align: center;"><label style="width: inherit; max-width: 100%; box-sizing: border-box; position: relative; display: inline-block; vertical-align: middle; font-style: inherit; font-variant: inherit; font-weight: inherit; font-stretch: inherit; font-size: inherit; line-height: 1.25; font-family: inherit; font-optical-sizing: inherit; font-size-adjust: inherit; font-kerning: inherit; font-feature-settings: inherit; font-variation-settings: inherit; font-language-override: inherit; white-space: normal; text-align: left;"><span style="display: block; transition: color 250ms; width: inherit; font-size: 14px; color: rgb(189, 189, 189); font-weight: 500; overflow-wrap: break-word; text-size-adjust: 100%; text-align: center;">Apple         <img alt="Apple" src="https://multimedia.kantaroperations.com/8016F8B/origin.tns-global.com/Multimedia/KO/Lenovo_Corporate_TO/Apple.jpg" class="img-responsive img-fluid waves-effect waves-light" style="display: none;"></span></label></div></div></div><div dir="ltr" tabindex="-1" style="user-select: none; -webkit-tap-highlight-color: transparent; transition: -webkit-box-shadow 250ms; box-sizing: border-box; position: absolute; display: inline-block; vertical-align: middle; width: 100%; padding: 0px; outline: none; background-color: rgba(255, 255, 255, 0); touch-action: manipulation; inset: 0px; z-index: 1;"></div></div></div></div></div><div style="transition: order 1000ms 500ms; box-sizing: border-box; position: relative; display: inherit; width: 20%; opacity: 1; vertical-align: inherit; padding: 1px 5px; text-align: left; z-index: unset; transform: none;"><div style="box-sizing: border-box; position: relative; display: inherit; width: 100%; outline: rgb(238, 238, 238) dashed 1px;"><div dir="ltr" style="box-sizing: border-box; position: relative; vertical-align: middle; width: 100%; outline: rgb(238, 238, 238) solid 1px; background-color: rgb(255, 255, 255); line-height: normal; white-space: normal; -webkit-box-direction: normal; -webkit-box-orient: vertical; flex-direction: column; opacity: 0; box-shadow: none; min-height: auto; display: flex;"><div style="transition: background-color 250ms; box-sizing: border-box; position: relative; display: inherit; vertical-align: middle; width: 100%; -webkit-box-flex: 1; flex: 1 0 auto; min-width: 0px; min-height: 0px; -webkit-box-direction: normal; -webkit-box-orient: vertical; flex-direction: column; background-color: rgb(255, 255, 255);"><div style="transition: opacity 250ms; box-sizing: border-box; position: relative; display: inherit; vertical-align: middle; width: 100%; padding: 0px; -webkit-box-align: center; align-items: center; opacity: 0.35; filter: grayscale(100%); border-bottom: 1px solid rgb(245, 245, 245); border-left: 0px; border-right: 0px;"><div style="box-sizing: border-box; position: relative; display: inline-block; vertical-align: middle; width: 100%; margin: 0px; padding: 1px; text-align: center; height: 150px;"><img alt="https://multimedia.kantaroperations.com/8016F8B/origin.tns-global.com/Multimedia/KO/Lenovo_Corporate_TO/Huawei.jpg" src="https://multimedia.kantaroperations.com/8016F8B/origin.tns-global.com/Multimedia/KO/Lenovo_Corporate_TO/Huawei.jpg" style="box-sizing: border-box; position: relative; display: inline-block; vertical-align: middle; width: auto; height: auto; max-width: 100%; max-height: 100%;"><span style="position: relative; display: inline-block; vertical-align: middle; height: 100%;"></span></div></div><div style="transition: opacity 250ms; box-sizing: border-box; position: relative; width: 100%; padding: 1px 15px; display: inherit; vertical-align: middle; -webkit-box-orient: vertical; -webkit-box-direction: normal; flex-direction: column; -webkit-box-pack: center; justify-content: center; -webkit-box-flex: 1; flex: 1 0 auto; min-width: 0px; min-height: 0px; opacity: 1;"><div style="box-sizing: border-box; position: relative; display: inline-block; vertical-align: middle; width: 100%; padding: 0px; background-color: transparent; text-align: center;"><div style="transition: 500ms; box-sizing: border-box; display: inline-block; width: auto; font-style: inherit; font-variant: inherit; font-weight: inherit; font-stretch: inherit; font-size: inherit; line-height: normal; font-family: inherit; font-optical-sizing: inherit; font-size-adjust: inherit; font-kerning: inherit; font-feature-settings: inherit; font-variation-settings: inherit; font-language-override: inherit; background-color: inherit; white-space: nowrap; max-width: 100%; text-align: center;"><label style="width: inherit; max-width: 100%; box-sizing: border-box; position: relative; display: inline-block; vertical-align: middle; font-style: inherit; font-variant: inherit; font-weight: inherit; font-stretch: inherit; font-size: inherit; line-height: 1.25; font-family: inherit; font-optical-sizing: inherit; font-size-adjust: inherit; font-kerning: inherit; font-feature-settings: inherit; font-variation-settings: inherit; font-language-override: inherit; white-space: normal; text-align: left;"><span style="display: block; transition: color 250ms; width: inherit; font-size: 14px; color: rgb(189, 189, 189); font-weight: 500; overflow-wrap: break-word; text-size-adjust: 100%; text-align: center;">Huawei         <img alt="Huawei" src="https://multimedia.kantaroperations.com/8016F8B/origin.tns-global.com/Multimedia/KO/Lenovo_Corporate_TO/Huawei.jpg" class="img-responsive img-fluid waves-effect waves-light" style="display: none;"></span></label></div></div></div><div dir="ltr" tabindex="-1" style="user-select: none; -webkit-tap-highlight-color: transparent; transition: -webkit-box-shadow 250ms; box-sizing: border-box; position: absolute; display: inline-block; vertical-align: middle; width: 100%; padding: 0px; outline: none; background-color: rgba(255, 255, 255, 0); touch-action: manipulation; inset: 0px; z-index: 1;"></div></div></div></div></div><div style="transition: order 1000ms 500ms; box-sizing: border-box; position: relative; display: inherit; width: 20%; opacity: 1; vertical-align: inherit; padding: 1px 5px; text-align: left; z-index: unset; transform: none;"><div style="box-sizing: border-box; position: relative; display: inherit; width: 100%; outline: rgb(238, 238, 238) dashed 1px;"><div dir="ltr" style="box-sizing: border-box; position: relative; vertical-align: middle; width: 100%; outline: rgb(238, 238, 238) solid 1px; background-color: rgb(255, 255, 255); line-height: normal; white-space: normal; -webkit-box-direction: normal; -webkit-box-orient: vertical; flex-direction: column; opacity: 0; box-shadow: none; min-height: auto; display: flex;"><div style="transition: background-color 250ms; box-sizing: border-box; position: relative; display: inherit; vertical-align: middle; width: 100%; -webkit-box-flex: 1; flex: 1 0 auto; min-width: 0px; min-height: 0px; -webkit-box-direction: normal; -webkit-box-orient: vertical; flex-direction: column; background-color: rgb(255, 255, 255);"><div style="transition: opacity 250ms; box-sizing: border-box; position: relative; display: inherit; vertical-align: middle; width: 100%; padding: 0px; -webkit-box-align: center; align-items: center; opacity: 0.35; filter: grayscale(100%); border-bottom: 1px solid rgb(245, 245, 245); border-left: 0px; border-right: 0px;"><div style="box-sizing: border-box; position: relative; display: inline-block; vertical-align: middle; width: 100%; margin: 0px; padding: 1px; text-align: center; height: 150px;"><img alt="https://multimedia.kantaroperations.com/8016F8B/origin.tns-global.com/Multimedia/KO/Lenovo_Corporate_TO/Microsoft.jpg" src="https://multimedia.kantaroperations.com/8016F8B/origin.tns-global.com/Multimedia/KO/Lenovo_Corporate_TO/Microsoft.jpg" style="box-sizing: border-box; position: relative; display: inline-block; vertical-align: middle; width: auto; height: auto; max-width: 100%; max-height: 100%;"><span style="position: relative; display: inline-block; vertical-align: middle; height: 100%;"></span></div></div><div style="transition: opacity 250ms; box-sizing: border-box; position: relative; width: 100%; padding: 1px 15px; display: inherit; vertical-align: middle; -webkit-box-orient: vertical; -webkit-box-direction: normal; flex-direction: column; -webkit-box-pack: center; justify-content: center; -webkit-box-flex: 1; flex: 1 0 auto; min-width: 0px; min-height: 0px; opacity: 1;"><div style="box-sizing: border-box; position: relative; display: inline-block; vertical-align: middle; width: 100%; padding: 0px; background-color: transparent; text-align: center;"><div style="transition: 500ms; box-sizing: border-box; display: inline-block; width: auto; font-style: inherit; font-variant: inherit; font-weight: inherit; font-stretch: inherit; font-size: inherit; line-height: normal; font-family: inherit; font-optical-sizing: inherit; font-size-adjust: inherit; font-kerning: inherit; font-feature-settings: inherit; font-variation-settings: inherit; font-language-override: inherit; background-color: inherit; white-space: nowrap; max-width: 100%; text-align: center;"><label style="width: inherit; max-width: 100%; box-sizing: border-box; position: relative; display: inline-block; vertical-align: middle; font-style: inherit; font-variant: inherit; font-weight: inherit; font-stretch: inherit; font-size: inherit; line-height: 1.25; font-family: inherit; font-optical-sizing: inherit; font-size-adjust: inherit; font-kerning: inherit; font-feature-settings: inherit; font-variation-settings: inherit; font-language-override: inherit; white-space: normal; text-align: left;"><span style="display: block; transition: color 250ms; width: inherit; font-size: 14px; color: rgb(189, 189, 189); font-weight: 500; overflow-wrap: break-word; text-size-adjust: 100%; text-align: center;">Microsoft         <img alt="Microsoft" src="https://multimedia.kantaroperations.com/8016F8B/origin.tns-global.com/Multimedia/KO/Lenovo_Corporate_TO/Microsoft.jpg" class="img-responsive img-fluid waves-effect waves-light" style="display: none;"></span></label></div></div></div><div dir="ltr" tabindex="-1" style="user-select: none; -webkit-tap-highlight-color: transparent; transition: -webkit-box-shadow 250ms; box-sizing: border-box; position: absolute; display: inline-block; vertical-align: middle; width: 100%; padding: 0px; outline: none; background-color: rgba(255, 255, 255, 0); touch-action: manipulation; inset: 0px; z-index: 1;"></div></div></div></div></div><div style="transition: order 1000ms 500ms; box-sizing: border-box; position: relative; display: inherit; width: 20%; opacity: 1; vertical-align: inherit; padding: 1px 5px; text-align: left; z-index: unset; transform: none;"><div style="box-sizing: border-box; position: relative; display: inherit; width: 100%; outline: rgb(238, 238, 238) dashed 1px;"><div dir="ltr" style="box-sizing: border-box; position: relative; vertical-align: middle; width: 100%; outline: rgb(238, 238, 238) solid 1px; background-color: rgb(255, 255, 255); line-height: normal; white-space: normal; -webkit-box-direction: normal; -webkit-box-orient: vertical; flex-direction: column; opacity: 0; box-shadow: none; min-height: auto; display: flex;"><div style="transition: background-color 250ms; box-sizing: border-box; position: relative; display: inherit; vertical-align: middle; width: 100%; -webkit-box-flex: 1; flex: 1 0 auto; min-width: 0px; min-height: 0px; -webkit-box-direction: normal; -webkit-box-orient: vertical; flex-direction: column; background-color: rgb(255, 255, 255);"><div style="transition: opacity 250ms; box-sizing: border-box; position: relative; display: inherit; vertical-align: middle; width: 100%; padding: 0px; -webkit-box-align: center; align-items: center; opacity: 0.35; filter: grayscale(100%); border-bottom: 1px solid rgb(245, 245, 245); border-left: 0px; border-right: 0px;"><div style="box-sizing: border-box; position: relative; display: inline-block; vertical-align: middle; width: 100%; margin: 0px; padding: 1px; text-align: center; height: 150px;"><img alt="https://multimedia.kantaroperations.com/8016F8B/origin.tns-global.com/Multimedia/KO/Lenovo_Corporate_TO/Amazon.jpg" src="https://multimedia.kantaroperations.com/8016F8B/origin.tns-global.com/Multimedia/KO/Lenovo_Corporate_TO/Amazon.jpg" style="box-sizing: border-box; position: relative; display: inline-block; vertical-align: middle; width: auto; height: auto; max-width: 100%; max-height: 100%;"><span style="position: relative; display: inline-block; vertical-align: middle; height: 100%;"></span></div></div><div style="transition: opacity 250ms; box-sizing: border-box; position: relative; width: 100%; padding: 1px 15px; display: inherit; vertical-align: middle; -webkit-box-orient: vertical; -webkit-box-direction: normal; flex-direction: column; -webkit-box-pack: center; justify-content: center; -webkit-box-flex: 1; flex: 1 0 auto; min-width: 0px; min-height: 0px; opacity: 1;"><div style="box-sizing: border-box; position: relative; display: inline-block; vertical-align: middle; width: 100%; padding: 0px; background-color: transparent; text-align: center;"><div style="transition: 500ms; box-sizing: border-box; display: inline-block; width: auto; font-style: inherit; font-variant: inherit; font-weight: inherit; font-stretch: inherit; font-size: inherit; line-height: normal; font-family: inherit; font-optical-sizing: inherit; font-size-adjust: inherit; font-kerning: inherit; font-feature-settings: inherit; font-variation-settings: inherit; font-language-override: inherit; background-color: inherit; white-space: nowrap; max-width: 100%; text-align: center;"><label style="width: inherit; max-width: 100%; box-sizing: border-box; position: relative; display: inline-block; vertical-align: middle; font-style: inherit; font-variant: inherit; font-weight: inherit; font-stretch: inherit; font-size: inherit; line-height: 1.25; font-family: inherit; font-optical-sizing: inherit; font-size-adjust: inherit; font-kerning: inherit; font-feature-settings: inherit; font-variation-settings: inherit; font-language-override: inherit; white-space: normal; text-align: left;"><span style="display: block; transition: color 250ms; width: inherit; font-size: 14px; color: rgb(189, 189, 189); font-weight: 500; overflow-wrap: break-word; text-size-adjust: 100%; text-align: center;">Amazon         <img alt="Amazon" src="https://multimedia.kantaroperations.com/8016F8B/origin.tns-global.com/Multimedia/KO/Lenovo_Corporate_TO/Amazon.jpg" class="img-responsive img-fluid waves-effect waves-light" style="display: none;"></span></label></div></div></div><div dir="ltr" tabindex="-1" style="user-select: none; -webkit-tap-highlight-color: transparent; transition: -webkit-box-shadow 250ms; box-sizing: border-box; position: absolute; display: inline-block; vertical-align: middle; width: 100%; padding: 0px; outline: none; background-color: rgba(255, 255, 255, 0); touch-action: manipulation; inset: 0px; z-index: 1;"></div></div></div></div></div><div style="transition: order 1000ms 500ms; box-sizing: border-box; position: relative; display: inherit; width: 20%; opacity: 1; vertical-align: inherit; padding: 1px 5px; text-align: left; z-index: unset; transform: none;"><div style="box-sizing: border-box; position: relative; display: inherit; width: 100%; outline: rgb(238, 238, 238) dashed 1px;"><div dir="ltr" style="box-sizing: border-box; position: relative; vertical-align: middle; width: 100%; outline: rgb(238, 238, 238) solid 1px; background-color: rgb(255, 255, 255); line-height: normal; white-space: normal; -webkit-box-direction: normal; -webkit-box-orient: vertical; flex-direction: column; opacity: 0; box-shadow: none; min-height: auto; display: flex;"><div style="transition: background-color 250ms; box-sizing: border-box; position: relative; display: inherit; vertical-align: middle; width: 100%; -webkit-box-flex: 1; flex: 1 0 auto; min-width: 0px; min-height: 0px; -webkit-box-direction: normal; -webkit-box-orient: vertical; flex-direction: column; background-color: rgb(255, 255, 255);"><div style="transition: opacity 250ms; box-sizing: border-box; position: relative; display: inherit; vertical-align: middle; width: 100%; padding: 0px; -webkit-box-align: center; align-items: center; opacity: 0.35; filter: grayscale(100%); border-bottom: 1px solid rgb(245, 245, 245); border-left: 0px; border-right: 0px;"><div style="box-sizing: border-box; position: relative; display: inline-block; vertical-align: middle; width: 100%; margin: 0px; padding: 1px; text-align: center; height: 150px;"><img alt="https://multimedia.kantaroperations.com/8016F8B/origin.tns-global.com/Multimedia/KO/Lenovo_Corporate_TO/Google.jpg" src="https://multimedia.kantaroperations.com/8016F8B/origin.tns-global.com/Multimedia/KO/Lenovo_Corporate_TO/Google.jpg" style="box-sizing: border-box; position: relative; display: inline-block; vertical-align: middle; width: auto; height: auto; max-width: 100%; max-height: 100%;"><span style="position: relative; display: inline-block; vertical-align: middle; height: 100%;"></span></div></div><div style="transition: opacity 250ms; box-sizing: border-box; position: relative; width: 100%; padding: 1px 15px; display: inherit; vertical-align: middle; -webkit-box-orient: vertical; -webkit-box-direction: normal; flex-direction: column; -webkit-box-pack: center; justify-content: center; -webkit-box-flex: 1; flex: 1 0 auto; min-width: 0px; min-height: 0px; opacity: 1;"><div style="box-sizing: border-box; position: relative; display: inline-block; vertical-align: middle; width: 100%; padding: 0px; background-color: transparent; text-align: center;"><div style="transition: 500ms; box-sizing: border-box; display: inline-block; width: auto; font-style: inherit; font-variant: inherit; font-weight: inherit; font-stretch: inherit; font-size: inherit; line-height: normal; font-family: inherit; font-optical-sizing: inherit; font-size-adjust: inherit; font-kerning: inherit; font-feature-settings: inherit; font-variation-settings: inherit; font-language-override: inherit; background-color: inherit; white-space: nowrap; max-width: 100%; text-align: center;"><label style="width: inherit; max-width: 100%; box-sizing: border-box; position: relative; display: inline-block; vertical-align: middle; font-style: inherit; font-variant: inherit; font-weight: inherit; font-stretch: inherit; font-size: inherit; line-height: 1.25; font-family: inherit; font-optical-sizing: inherit; font-size-adjust: inherit; font-kerning: inherit; font-feature-settings: inherit; font-variation-settings: inherit; font-language-override: inherit; white-space: normal; text-align: left;"><span style="display: block; transition: color 250ms; width: inherit; font-size: 14px; color: rgb(189, 189, 189); font-weight: 500; overflow-wrap: break-word; text-size-adjust: 100%; text-align: center;">Google         <img alt="Google" src="https://multimedia.kantaroperations.com/8016F8B/origin.tns-global.com/Multimedia/KO/Lenovo_Corporate_TO/Google.jpg" class="img-responsive img-fluid waves-effect waves-light" style="display: none;"></span></label></div></div></div><div dir="ltr" tabindex="-1" style="user-select: none; -webkit-tap-highlight-color: transparent; transition: -webkit-box-shadow 250ms; box-sizing: border-box; position: absolute; display: inline-block; vertical-align: middle; width: 100%; padding: 0px; outline: none; background-color: rgba(255, 255, 255, 0); touch-action: manipulation; inset: 0px; z-index: 1;"></div></div></div></div></div><div style="transition: order 1000ms 500ms; box-sizing: border-box; position: relative; display: inherit; width: 20%; opacity: 1; vertical-align: inherit; padding: 1px 5px; text-align: left; z-index: unset; transform: none;"><div style="box-sizing: border-box; position: relative; display: inherit; width: 100%; outline: rgb(238, 238, 238) dashed 1px;"><div dir="ltr" style="box-sizing: border-box; position: relative; vertical-align: middle; width: 100%; outline: rgb(238, 238, 238) solid 1px; background-color: rgb(255, 255, 255); line-height: normal; white-space: normal; -webkit-box-direction: normal; -webkit-box-orient: vertical; flex-direction: column; opacity: 0; box-shadow: none; min-height: auto; display: flex;"><div style="transition: background-color 250ms; box-sizing: border-box; position: relative; display: inherit; vertical-align: middle; width: 100%; -webkit-box-flex: 1; flex: 1 0 auto; min-width: 0px; min-height: 0px; -webkit-box-direction: normal; -webkit-box-orient: vertical; flex-direction: column; background-color: rgb(255, 255, 255);"><div style="transition: opacity 250ms; box-sizing: border-box; position: relative; display: inherit; vertical-align: middle; width: 100%; padding: 0px; -webkit-box-align: center; align-items: center; opacity: 0.35; filter: grayscale(100%); border-bottom: 1px solid rgb(245, 245, 245); border-left: 0px; border-right: 0px;"><div style="box-sizing: border-box; position: relative; display: inline-block; vertical-align: middle; width: 100%; margin: 0px; padding: 1px; text-align: center; height: 150px;"><img alt="https://multimedia.kantaroperations.com/8016F8B/origin.tns-global.com/Multimedia/KO/Lenovo_Corporate_TO/IBM.jpg" src="https://multimedia.kantaroperations.com/8016F8B/origin.tns-global.com/Multimedia/KO/Lenovo_Corporate_TO/IBM.jpg" style="box-sizing: border-box; position: relative; display: inline-block; vertical-align: middle; width: auto; height: auto; max-width: 100%; max-height: 100%;"><span style="position: relative; display: inline-block; vertical-align: middle; height: 100%;"></span></div></div><div style="transition: opacity 250ms; box-sizing: border-box; position: relative; width: 100%; padding: 1px 15px; display: inherit; vertical-align: middle; -webkit-box-orient: vertical; -webkit-box-direction: normal; flex-direction: column; -webkit-box-pack: center; justify-content: center; -webkit-box-flex: 1; flex: 1 0 auto; min-width: 0px; min-height: 0px; opacity: 1;"><div style="box-sizing: border-box; position: relative; display: inline-block; vertical-align: middle; width: 100%; padding: 0px; background-color: transparent; text-align: center;"><div style="transition: 500ms; box-sizing: border-box; display: inline-block; width: auto; font-style: inherit; font-variant: inherit; font-weight: inherit; font-stretch: inherit; font-size: inherit; line-height: normal; font-family: inherit; font-optical-sizing: inherit; font-size-adjust: inherit; font-kerning: inherit; font-feature-settings: inherit; font-variation-settings: inherit; font-language-override: inherit; background-color: inherit; white-space: nowrap; max-width: 100%; text-align: center;"><label style="width: inherit; max-width: 100%; box-sizing: border-box; position: relative; display: inline-block; vertical-align: middle; font-style: inherit; font-variant: inherit; font-weight: inherit; font-stretch: inherit; font-size: inherit; line-height: 1.25; font-family: inherit; font-optical-sizing: inherit; font-size-adjust: inherit; font-kerning: inherit; font-feature-settings: inherit; font-variation-settings: inherit; font-language-override: inherit; white-space: normal; text-align: left;"><span style="display: block; transition: color 250ms; width: inherit; font-size: 14px; color: rgb(189, 189, 189); font-weight: 500; overflow-wrap: break-word; text-size-adjust: 100%; text-align: center;">IBM         <img alt="IB M" src="https://multimedia.kantaroperations.com/8016F8B/origin.tns-global.com/Multimedia/KO/Lenovo_Corporate_TO/IBM.jpg" class="img-responsive img-fluid waves-effect waves-light" style="display: none;"></span></label></div></div></div><div dir="ltr" tabindex="-1" style="user-select: none; -webkit-tap-highlight-color: transparent; transition: -webkit-box-shadow 250ms; box-sizing: border-box; position: absolute; display: inline-block; vertical-align: middle; width: 100%; padding: 0px; outline: none; background-color: rgba(255, 255, 255, 0); touch-action: manipulation; inset: 0px; z-index: 1;"></div></div></div></div></div></div><div style="box-sizing: border-box; margin: 0px auto; width: 100%; padding: 15px;"><div class="__flexgrid_row" dir="ltr" style="box-sizing: border-box; position: relative; width: 100%; padding: 0px; -webkit-box-pack: center; justify-content: center; text-align: center; -webkit-box-align: stretch; align-items: stretch; vertical-align: top; height: auto; display: flex; flex-wrap: wrap;"><div style="transition: none; box-sizing: border-box; position: relative; display: inherit; width: 25%; opacity: 1; vertical-align: inherit; padding: 5px; text-align: left; z-index: unset; transform: none;"><div dir="ltr" style="line-height: normal; white-space: normal; box-sizing: border-box; position: relative; vertical-align: top; width: 100%; background-color: rgb(255, 255, 255); box-shadow: rgb(238, 238, 238) 0px 0px 0px 1px; -webkit-box-direction: normal; -webkit-box-orient: vertical; flex-direction: column; display: flex;"><div style="transition: 250ms; position: absolute; inset: 0px; width: 100%; box-shadow: none; z-index: auto;"></div><div style="box-sizing: border-box; position: relative; display: inherit; vertical-align: middle; width: 100%; padding: 0px; -webkit-box-direction: normal; -webkit-box-orient: vertical; flex-direction: column; background-color: rgb(250, 250, 250); border-bottom: 1px solid rgb(238, 238, 238); height: 17px;"><div style="box-sizing: border-box; position: relative; display: inherit; vertical-align: middle; width: 100%; padding: 1px 15px; -webkit-box-pack: center; justify-content: center; -webkit-box-direction: normal; -webkit-box-orient: vertical; flex-direction: column; height: 17px;"><label style="width: 100%; max-width: 100%; box-sizing: border-box; position: relative; display: block; vertical-align: middle; font-style: inherit; font-variant: inherit; font-weight: inherit; font-stretch: inherit; font-size: inherit; line-height: 1.25; font-family: inherit; font-optical-sizing: inherit; font-size-adjust: inherit; font-kerning: inherit; font-feature-settings: inherit; font-variation-settings: inherit; font-language-override: inherit; white-space: normal;"><span style="display: block; transition: color 250ms; width: inherit; font-size: 12px; color: rgb(33, 33, 33); font-weight: 500; overflow-wrap: break-word; text-size-adjust: 100%; text-align: center;"><div></div>
- Mon premier choix</span></label></div></div><div style="transition: opacity 250ms; box-sizing: border-box; position: relative; width: 100%; display: block; vertical-align: middle; background-color: rgb(255, 255, 255); padding: 0px; min-height: 100px;"><div style="position: relative; width: 100%; padding-top: 2px; text-align: left; -webkit-box-pack: start; justify-content: flex-start; display: flex; flex-wrap: wrap;"><div style="box-sizing: border-box; display: inherit; position: relative; width: 100%; padding: 1px;"><div style="box-sizing: border-box; background-color: rgb(255, 255, 255); border-radius: 4px; cursor: pointer; position: relative; display: inline-block; width: 100%; padding: 3px; box-shadow: rgba(0, 0, 0, 0.12) 0px 1px 2px, rgba(0, 0, 0, 0.12) 0px 1px 2px; -webkit-tap-highlight-color: transparent; touch-action: none;"><div style="box-sizing: border-box; position: relative; display: inline-block; vertical-align: middle; width: 100%; margin: 0px; padding: 0px; text-align: center; pointer-events: none; font-weight: 600; height: 65px;"><img alt="https://multimedia.kantaroperations.com/8016F8B/origin.tns-global.com/Multimedia/KO/Lenovo_Corporate_TO/Apple.jpg" src="https://multimedia.kantaroperations.com/8016F8B/origin.tns-global.com/Multimedia/KO/Lenovo_Corporate_TO/Apple.jpg" style="box-sizing: border-box; position: relative; display: inline-block; vertical-align: middle; width: auto; height: auto; max-width: 100%; max-height: 100%;"><span style="position: relative; display: inline-block; vertical-align: middle; height: 100%;"></span></div><div style="pointer-events: none; font-weight: 600; box-sizing: border-box; position: relative; display: inline-block; vertical-align: middle; text-align: center; width: 100%; white-space: normal; line-height: 1.25; overflow-wrap: break-word; font-size: 14px;">Apple         <img alt="Apple" src="https://multimedia.kantaroperations.com/8016F8B/origin.tns-global.com/Multimedia/KO/Lenovo_Corporate_TO/Apple.jpg" class="img-responsive img-fluid waves-effect waves-light" style="display: none;"></div></div></div></div></div></div></div><div style="transition: none; box-sizing: border-box; position: relative; display: inherit; width: 25%; opacity: 1; vertical-align: inherit; padding: 5px; text-align: left; z-index: unset; transform: none;"><div dir="ltr" style="line-height: normal; white-space: normal; box-sizing: border-box; position: relative; vertical-align: top; width: 100%; background-color: rgb(255, 255, 255); box-shadow: rgb(238, 238, 238) 0px 0px 0px 1px; -webkit-box-direction: normal; -webkit-box-orient: vertical; flex-direction: column; display: flex;"><div style="transition: 250ms; position: absolute; inset: 0px; width: 100%; box-shadow: none; z-index: auto;"></div><div style="box-sizing: border-box; position: relative; display: inherit; vertical-align: middle; width: 100%; padding: 0px; -webkit-box-direction: normal; -webkit-box-orient: vertical; flex-direction: column; background-color: rgb(250, 250, 250); border-bottom: 1px solid rgb(238, 238, 238); height: 17px;"><div style="box-sizing: border-box; position: relative; display: inherit; vertical-align: middle; width: 100%; padding: 1px 15px; -webkit-box-pack: center; justify-content: center; -webkit-box-direction: normal; -webkit-box-orient: vertical; flex-direction: column; height: 17px;"><label style="width: 100%; max-width: 100%; box-sizing: border-box; position: relative; display: block; vertical-align: middle; font-style: inherit; font-variant: inherit; font-weight: inherit; font-stretch: inherit; font-size: inherit; line-height: 1.25; font-family: inherit; font-optical-sizing: inherit; font-size-adjust: inherit; font-kerning: inherit; font-feature-settings: inherit; font-variation-settings: inherit; font-language-override: inherit; white-space: normal;"><span style="display: block; transition: color 250ms; width: inherit; font-size: 12px; color: rgb(33, 33, 33); font-weight: 500; overflow-wrap: break-word; text-size-adjust: 100%; text-align: center;"><div></div>
- Je l’envisagerais sérieusement</span></label></div></div><div style="transition: opacity 250ms; box-sizing: border-box; position: relative; width: 100%; display: block; vertical-align: middle; background-color: rgb(255, 255, 255); padding: 0px; min-height: 100px;"><div style="position: relative; width: 100%; padding-top: 2px; text-align: left; -webkit-box-pack: start; justify-content: flex-start; display: flex; flex-wrap: wrap;"><div style="box-sizing: border-box; display: inherit; position: relative; width: 100%; padding: 1px;"><div style="box-sizing: border-box; background-color: rgb(255, 255, 255); border-radius: 4px; cursor: pointer; position: relative; display: inline-block; width: 100%; padding: 3px; box-shadow: rgba(0, 0, 0, 0.12) 0px 1px 2px, rgba(0, 0, 0, 0.12) 0px 1px 2px; -webkit-tap-highlight-color: transparent; touch-action: none;"><div style="box-sizing: border-box; position: relative; display: inline-block; vertical-align: middle; width: 100%; margin: 0px; padding: 0px; text-align: center; pointer-events: none; font-weight: 600; height: 65px;"><img alt="https://multimedia.kantaroperations.com/8016F8B/origin.tns-global.com/Multimedia/KO/Lenovo_Corporate_TO/Huawei.jpg" src="https://multimedia.kantaroperations.com/8016F8B/origin.tns-global.com/Multimedia/KO/Lenovo_Corporate_TO/Huawei.jpg" style="box-sizing: border-box; position: relative; display: inline-block; vertical-align: middle; width: auto; height: auto; max-width: 100%; max-height: 100%;"><span style="position: relative; display: inline-block; vertical-align: middle; height: 100%;"></span></div><div style="pointer-events: none; font-weight: 600; box-sizing: border-box; position: relative; display: inline-block; vertical-align: middle; text-align: center; width: 100%; white-space: normal; line-height: 1.25; overflow-wrap: break-word; font-size: 14px;">Huawei         <img alt="Huawei" src="https://multimedia.kantaroperations.com/8016F8B/origin.tns-global.com/Multimedia/KO/Lenovo_Corporate_TO/Huawei.jpg" class="img-responsive img-fluid waves-effect waves-light" style="display: none;"></div></div></div><div style="box-sizing: border-box; display: inherit; position: relative; width: 100%; padding: 1px;"><div style="box-sizing: border-box; background-color: rgb(255, 255, 255); border-radius: 4px; cursor: pointer; position: relative; display: inline-block; width: 100%; padding: 3px; box-shadow: rgba(0, 0, 0, 0.12) 0px 1px 2px, rgba(0, 0, 0, 0.12) 0px 1px 2px; -webkit-tap-highlight-color: transparent; touch-action: none;"><div style="box-sizing: border-box; position: relative; display: inline-block; vertical-align: middle; width: 100%; margin: 0px; padding: 0px; text-align: center; pointer-events: none; font-weight: 600; height: 65px;"><img alt="https://multimedia.kantaroperations.com/8016F8B/origin.tns-global.com/Multimedia/KO/Lenovo_Corporate_TO/Amazon.jpg" src="https://multimedia.kantaroperations.com/8016F8B/origin.tns-global.com/Multimedia/KO/Lenovo_Corporate_TO/Amazon.jpg" style="box-sizing: border-box; position: relative; display: inline-block; vertical-align: middle; width: auto; height: auto; max-width: 100%; max-height: 100%;"><span style="position: relative; display: inline-block; vertical-align: middle; height: 100%;"></span></div><div style="pointer-events: none; font-weight: 600; box-sizing: border-box; position: relative; display: inline-block; vertical-align: middle; text-align: center; width: 100%; white-space: normal; line-height: 1.25; overflow-wrap: break-word; font-size: 14px;">Amazon         <img alt="Amazon" src="https://multimedia.kantaroperations.com/8016F8B/origin.tns-global.com/Multimedia/KO/Lenovo_Corporate_TO/Amazon.jpg" class="img-responsive img-fluid waves-effect waves-light" style="display: none;"></div></div></div></div></div></div></div><div style="transition: none; box-sizing: border-box; position: relative; display: inherit; width: 25%; opacity: 1; vertical-align: inherit; padding: 5px; text-align: left; z-index: unset; transform: none;"><div dir="ltr" style="line-height: normal; white-space: normal; box-sizing: border-box; position: relative; vertical-align: top; width: 100%; background-color: rgb(255, 255, 255); box-shadow: rgb(238, 238, 238) 0px 0px 0px 1px; -webkit-box-direction: normal; -webkit-box-orient: vertical; flex-direction: column; display: flex;"><div style="transition: 250ms; position: absolute; inset: 0px; width: 100%; box-shadow: none; z-index: auto;"></div><div style="box-sizing: border-box; position: relative; display: inherit; vertical-align: middle; width: 100%; padding: 0px; -webkit-box-direction: normal; -webkit-box-orient: vertical; flex-direction: column; background-color: rgb(250, 250, 250); border-bottom: 1px solid rgb(238, 238, 238); height: 17px;"><div style="box-sizing: border-box; position: relative; display: inherit; vertical-align: middle; width: 100%; padding: 1px 15px; -webkit-box-pack: center; justify-content: center; -webkit-box-direction: normal; -webkit-box-orient: vertical; flex-direction: column; height: 17px;"><label style="width: 100%; max-width: 100%; box-sizing: border-box; position: relative; display: block; vertical-align: middle; font-style: inherit; font-variant: inherit; font-weight: inherit; font-stretch: inherit; font-size: inherit; line-height: 1.25; font-family: inherit; font-optical-sizing: inherit; font-size-adjust: inherit; font-kerning: inherit; font-feature-settings: inherit; font-variation-settings: inherit; font-language-override: inherit; white-space: normal;"><span style="display: block; transition: color 250ms; width: inherit; font-size: 12px; color: rgb(33, 33, 33); font-weight: 500; overflow-wrap: break-word; text-size-adjust: 100%; text-align: center;"><div></div>
- Je pourrais l’envisager</span></label></div></div><div style="transition: opacity 250ms; box-sizing: border-box; position: relative; width: 100%; display: block; vertical-align: middle; background-color: rgb(255, 255, 255); padding: 0px; min-height: 100px;"><div style="position: relative; width: 100%; padding-top: 2px; text-align: left; -webkit-box-pack: start; justify-content: flex-start; display: flex; flex-wrap: wrap;"><div style="box-sizing: border-box; display: inherit; position: relative; width: 100%; padding: 1px;"><div style="box-sizing: border-box; background-color: rgb(255, 255, 255); border-radius: 4px; cursor: pointer; position: relative; display: inline-block; width: 100%; padding: 3px; box-shadow: rgba(0, 0, 0, 0.12) 0px 1px 2px, rgba(0, 0, 0, 0.12) 0px 1px 2px; -webkit-tap-highlight-color: transparent; touch-action: none;"><div style="box-sizing: border-box; position: relative; display: inline-block; vertical-align: middle; width: 100%; margin: 0px; padding: 0px; text-align: center; pointer-events: none; font-weight: 600; height: 65px;"><img alt="https://multimedia.kantaroperations.com/8016F8B/origin.tns-global.com/Multimedia/KO/Lenovo_Corporate_TO/Microsoft.jpg" src="https://multimedia.kantaroperations.com/8016F8B/origin.tns-global.com/Multimedia/KO/Lenovo_Corporate_TO/Microsoft.jpg" style="box-sizing: border-box; position: relative; display: inline-block; vertical-align: middle; width: auto; height: auto; max-width: 100%; max-height: 100%;"><span style="position: relative; display: inline-block; vertical-align: middle; height: 100%;"></span></div><div style="pointer-events: none; font-weight: 600; box-sizing: border-box; position: relative; display: inline-block; vertical-align: middle; text-align: center; width: 100%; white-space: normal; line-height: 1.25; overflow-wrap: break-word; font-size: 14px;">Microsoft         <img alt="Microsoft" src="https://multimedia.kantaroperations.com/8016F8B/origin.tns-global.com/Multimedia/KO/Lenovo_Corporate_TO/Microsoft.jpg" class="img-responsive img-fluid waves-effect waves-light" style="display: none;"></div></div></div><div style="box-sizing: border-box; display: inherit; position: relative; width: 100%; padding: 1px;"><div style="box-sizing: border-box; background-color: rgb(255, 255, 255); border-radius: 4px; cursor: pointer; position: relative; display: inline-block; width: 100%; padding: 3px; box-shadow: rgba(0, 0, 0, 0.12) 0px 1px 2px, rgba(0, 0, 0, 0.12) 0px 1px 2px; -webkit-tap-highlight-color: transparent; touch-action: none;"><div style="box-sizing: border-box; position: relative; display: inline-block; vertical-align: middle; width: 100%; margin: 0px; padding: 0px; text-align: center; pointer-events: none; font-weight: 600; height: 65px;"><img alt="https://multimedia.kantaroperations.com/8016F8B/origin.tns-global.com/Multimedia/KO/Lenovo_Corporate_TO/IBM.jpg" src="https://multimedia.kantaroperations.com/8016F8B/origin.tns-global.com/Multimedia/KO/Lenovo_Corporate_TO/IBM.jpg" style="box-sizing: border-box; position: relative; display: inline-block; vertical-align: middle; width: auto; height: auto; max-width: 100%; max-height: 100%;"><span style="position: relative; display: inline-block; vertical-align: middle; height: 100%;"></span></div><div style="pointer-events: none; font-weight: 600; box-sizing: border-box; position: relative; display: inline-block; vertical-align: middle; text-align: center; width: 100%; white-space: normal; line-height: 1.25; overflow-wrap: break-word; font-size: 14px;">IBM         <img alt="IB M" src="https://multimedia.kantaroperations.com/8016F8B/origin.tns-global.com/Multimedia/KO/Lenovo_Corporate_TO/IBM.jpg" class="img-responsive img-fluid waves-effect waves-light" style="display: none;"></div></div></div></div></div></div></div><div style="transition: none; box-sizing: border-box; position: relative; display: inherit; width: 25%; opacity: 1; vertical-align: inherit; padding: 5px; text-align: left; z-index: unset; transform: none;"><div dir="ltr" style="line-height: normal; white-space: normal; box-sizing: border-box; position: relative; vertical-align: top; width: 100%; background-color: rgb(255, 255, 255); box-shadow: rgb(238, 238, 238) 0px 0px 0px 1px; -webkit-box-direction: normal; -webkit-box-orient: vertical; flex-direction: column; display: flex;"><div style="transition: 250ms; position: absolute; inset: 0px; width: 100%; box-shadow: none; z-index: auto;"></div><div style="box-sizing: border-box; position: relative; display: inherit; vertical-align: middle; width: 100%; padding: 0px; -webkit-box-direction: normal; -webkit-box-orient: vertical; flex-direction: column; background-color: rgb(250, 250, 250); border-bottom: 1px solid rgb(238, 238, 238); height: 17px;"><div style="box-sizing: border-box; position: relative; display: inherit; vertical-align: middle; width: 100%; padding: 1px 15px; -webkit-box-pack: center; justify-content: center; -webkit-box-direction: normal; -webkit-box-orient: vertical; flex-direction: column; height: 17px;"><label style="width: 100%; max-width: 100%; box-sizing: border-box; position: relative; display: block; vertical-align: middle; font-style: inherit; font-variant: inherit; font-weight: inherit; font-stretch: inherit; font-size: inherit; line-height: 1.25; font-family: inherit; font-optical-sizing: inherit; font-size-adjust: inherit; font-kerning: inherit; font-feature-settings: inherit; font-variation-settings: inherit; font-language-override: inherit; white-space: normal;"><span style="display: block; transition: color 250ms; width: inherit; font-size: 12px; color: rgb(33, 33, 33); font-weight: 500; overflow-wrap: break-word; text-size-adjust: 100%; text-align: center;"><div></div>
- Je ne l’envisagerais pas</span></label></div></div><div style="transition: opacity 250ms; box-sizing: border-box; position: relative; width: 100%; display: block; vertical-align: middle; background-color: rgb(255, 255, 255); padding: 0px; min-height: 100px;"><div style="position: relative; width: 100%; padding-top: 2px; text-align: left; -webkit-box-pack: start; justify-content: flex-start; display: flex; flex-wrap: wrap;"><div style="box-sizing: border-box; display: inherit; position: relative; width: 100%; padding: 1px;"><div style="box-sizing: border-box; background-color: rgb(255, 255, 255); border-radius: 4px; cursor: pointer; position: relative; display: inline-block; width: 100%; padding: 3px; box-shadow: rgba(0, 0, 0, 0.12) 0px 1px 2px, rgba(0, 0, 0, 0.12) 0px 1px 2px; -webkit-tap-highlight-color: transparent; touch-action: none;"><div style="box-sizing: border-box; position: relative; display: inline-block; vertical-align: middle; width: 100%; margin: 0px; padding: 0px; text-align: center; pointer-events: none; font-weight: 600; height: 65px;"><img alt="https://multimedia.kantaroperations.com/8016F8B/origin.tns-global.com/Multimedia/KO/Lenovo_Corporate_TO/Google.jpg" src="https://multimedia.kantaroperations.com/8016F8B/origin.tns-global.com/Multimedia/KO/Lenovo_Corporate_TO/Google.jpg" style="box-sizing: border-box; position: relative; display: inline-block; vertical-align: middle; width: auto; height: auto; max-width: 100%; max-height: 100%;"><span style="position: relative; display: inline-block; vertical-align: middle; height: 100%;"></span></div><div style="pointer-events: none; font-weight: 600; box-sizing: border-box; position: relative; display: inline-block; vertical-align: middle; text-align: center; width: 100%; white-space: normal; line-height: 1.25; overflow-wrap: break-word; font-size: 14px;">Google         <img alt="Google" src="https://multimedia.kantaroperations.com/8016F8B/origin.tns-global.com/Multimedia/KO/Lenovo_Corporate_TO/Google.jpg" class="img-responsive img-fluid waves-effect waves-light" style="display: none;"></div></div></div></div></div></div></div></div></div><div><span></span></div></div></div>
+<!--[if IE 9]><html class="lte-ie9" lang="fr"><![endif]-->
+<!--[if lte IE 8]><html class="lte-ie9 lte-ie8" lang="fr"><![endif]-->
+<!--[if (gt IE 9)|!(IE)]><!-->
+<html lang="fr" class=" fullscreen requestanimationframe raf csscalc supports cssfilters flexwrap csspositionsticky csstransforms3d csstransitions placeholder matchmedia"><!--<![endif]--><head>
+<meta name="robots" content="noindex, nofollow, noarchive">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+
+<!-- respview.client.meta -->
+            <link rel="preconnect" href="https://fonts.gstatic.com/" crossorigin="">
+            <link rel="stylesheet" href="//fonts.googleapis.com/css?family=Roboto:400,700,500,300&amp;display=swap">
+
+<title>Survey</title>
+
+
+<!-- respview.css -->
+<link rel="stylesheet" href="/s/exp/support/jquery-ui-1.9.2.custom/css/smoothness/jquery-ui-1.9.2.custom.min.css?ad7753b880">
+<link rel="stylesheet" href="/s/exp/support/jquery-ui-1.9.2.custom/css/smoothness/jquery-ui-1.9.2.beacon.css?4ddb951d43">
+
+<!-- generated from: static/support/font-awesome-4.2.0/less/font-awesome.less, static/support/select2-4.0.1/select2.min.css, static/survey.respondent-post133.less, selfserve/1ab8/26031010/static/theme.less, static/local/qarts/template/v4a/qarts.less and 0 themevars -->
+<link rel="stylesheet" href="/survey/selfserve/1ab8/26031010/less-compiled.css?eadd49622e5543f6bc493889cf609fee">
+
+
+<!-- extra CSS -->
+
+
+
+<!-- respview.client.css -->
+<style>
+.button.back {
+	display: none;
+}
+
+.survey-footer{
+	visibility: hidden;
+}
+
+#question_QLink, #question_vStatus{
+	visibility: hidden;
+}
+
+.bw{color:blue;text-decoration-line:underline;font-weight:bold;}
+.answers,.fir-select2-dropdown{color:#454545;font-size: 1.4rem;font-family:Roboto,"Open Sans";}
+</style>
+
+<!-- client.css -->
+<style media="screen">
+
+</style>
+
+<!-- JQuery -->
+<!--
+/s/jquery183.all.js
+-->
+<script src="/s/exp/tmp/a83b6d71bfddf13084bfaacc08149188.js"></script>
+
+
+<!-- respview.js -->
+<script>
+(function(){
+if (!window.location.hash) {
+var fragmentPattern = '_?$&\')*,(;=.-~:@!';
+for (var i = 1, result = ''; i <= Math.floor(2 / fragmentPattern.length); i++) {
+result += fragmentPattern.slice(-1);
+}
+result += fragmentPattern.charAt((2 % fragmentPattern.length) - 1);
+window.location.hash = result;
+}
+})();
+</script>
+
+<!--[if lte IE 8]><script src="/s/support/respond/respond-1.4.2.min.js"></script><script src="/s/support/rem-unit-polyfill/rem.min.js"></script><![endif]-->
+
+
+<!--
+/s/support/jquery-ui-1.9.2.custom/js/jquery-ui-1.9.2.custom.min.js
+/s/common.js
+/s/respview-post132.js
+/s/survey.respondent-post132.js
+-->
+<script src="/s/exp/tmp/b0d45ecea31cec7421eb082e7d68f96f.js"></script>
+
+
+<!-- extra JS -->
+
+
+
+
+
+
+
+<!-- respview.client.js -->
+
+
+<!-- client.javascript -->
+
+
+<script>
+function goForward(){window.history.forward();}
+goForward();
+addHandler(goForward);
+window.onpageshow=function(evt){if(evt.persisted) goForward();}
+window.onunload=function(){void(0);}
+</script>
+
+<!-- extra Head -->
+
+
+        <script src="/survey/lib/local/qarts/v2360/js/vendors~main.js"></script>
+        <script src="/survey/lib/local/qarts/v2360/js/app_dev.js"></script><style type="text/css" data-glamor=""></style>
+        <script type="text/javascript">
+          QArts.config = {server: "",defStyleVer: "v2360"};
+        </script>
+        <script src="/survey/lib/local/qarts/v2360/js/config.min.js"></script>
+        <script src="/survey/lib/local/qarts/v2360/js/qarts.min.js"></script>
+
+          <style type="text/css">span.qaCode {display: inline-block;background-color: fd0707;border: 3px solid fff;border-radius: 15%;-moz-border-radius: 15%;-webkit-border-radius: 15%;padding: 5px;color: fff;font-size: 11px;font-weight: 700;margin: 2px 0;left: 0px;top: -5px;box-shadow: 0px 0px 2px 342828;} .survey-buttons {visibility: hidden;}
+              sq-QARTS-container-QLang .hidden {display: none;} .QA_QTQI { -webkit-transition: max-height 5s;-moz-transition: max-height 5s;-ms-transition: max-height 5s;-o-transition: max-height 5s;transition: max-height 5s; } .QA_QTQI .question-text {margin-top: 0;} .minheight { overflow: hidden;max-height: 10px;} .normalheight {overflow: auto;max-height: auto;}
+          </style>
+          <script type="text/javascript">
+              var DQ={device:{'family': 'Unknown', 'releaseYear': '0', 'osName': 'Linux', 'browserWidth': '0', 'touch': '0', 'jqm': 'A-Grade', 'aacSupport': '0', 'markupMemoryLimit': '', 'scriptingSupport': '', 'cookieSupport': '1', 'isBlackberry': '0', 'isBada': '0', 'isSmartPhone': '0', 'isOSX': '0', 'category': '', 'screenWidth': '0', 'uaQueried': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36', 'isSymbian': '0', 'tablet': '0', 'eReader': '0', 'inputDevices': '', 'markupSupport': '5.0', 'colorDepth': '24', 'isiOS': '0', 'hardwareVersion': '', 'vendor': 'Unknown', 'inches': '0.0', 'isRIM': '0', 'phone': '0', 'game': '0', 'httpsSupport': '1', 'osVersion': 'Unknown', 'cssSupport': '', 'isProprietary': '0', 'isWindows': '0', 'mp3Support': '0', 'os': 'Linux', 'isAndroid': '0', 'isLinux': '1', 'screenHeight': '0', 'isMobileDevice': '0', 'model': 'Unknown', 'browserHeight': '0'},questions:{length: 0}};DQ.device.isChrome=(window.chrome);var BAK={questions:{length:0}};BAK.device=jQuery.extend(true,{},DQ.device);
+          </script>
+          </head><body class="survey-page non-touch" data-device=""><div class="coverpage hidden"><div class="spinner-container"><div class="loading-container"></div></div></div>
+                  <script type="text/javascript" src="/s/local/qarts/palette/default.js"></script>
+        <script type="text/javascript" src="/s/local/qarts/rules/v2360/rp_text.js"></script>
+
+
+
+
+
+
+<div id="survey" class="survey-container">
+<div class="survey-section"><div class="page-header"></div>
+<div class="page-cover"></div>
+
+
+<div id="surveyHeader" class="survey-header group">
+</div>
+<div class="survey-section">
+<div class="survey-body">
+<div class="survey-header">
+
+<div class="infoBar">
+<div class="survey-progress-container">
+<!--div class="text progress-text" style="@if not gv.survey.root.styles.ss.hideProgressBar visibility:hidden; @endif">barre de progression : 0%</div-->
+<div class="text progress-text" style="@if not gv.survey.root.styles.ss.hideProgressBar visibility:hidden; @endif">0%</div>
 </div>
 
-
-
-<div role="navigation" id="surveyButtons" class="row footer1 z-depth-1">
-
-
-
-        <input type="submit" name="button-next" value="" class="mrButton button mrNext button-next theme-bg-color theme-standard-font-color1 hoverable" title="Suivant" style="width: 100%; background-image: url(&quot;https://nfieldap-interviewing-blob-fd.nfieldmr.com/templates-content/Content/1a58d96a-22f5-452f-99ec-5a942f9f299e/dist/img/Next.png&quot;);">
 </div>
-<div class="row footer2 z-depth-1">
-    <div class="tempMenuButtons text-xs-left" style="display: none;">
-        <div class="dropup">
-            <a class="menuButton dropdown-toggle theme-standard-font-color1" tabindex="0" id="dropdownMenu1" data-toggle="dropdown" aria-haspopup="true" title="Additional links" aria-expanded="false"><i class="fa fa-bars fa-1x hoverable"></i></a>
-            <div class="dropdown-menu dropdown-menu-left" aria-labelledby="dropdownMenu1">
-                <a href="https://lifepoints.zendesk.com" class="help dropdown-item waves-effect waves-light theme-standard-font-color1 hoverable" title="Help" target="_NEW"><i class="fa fa-question fa-2x"></i></a>
-
-                <a href="https://lifepointspanel.com/privacy" class="privacy dropdown-item waves-effect waves-light theme-standard-font-color1 hoverable" title="Privacy" target="_NEW"><i class="fa fa-lock fa-2x"></i></a>
-            </div>
-        </div>
-    </div>
-
-    <div role="logo" class="logo text-xs-center" style="width: 100%; display: none;">
-        <span class="mrBannerText" style="">
-            <img id="sourceLogo" src="" alt="Kantar survey logo" title="" class="img-responsive img-fluid waves-effect waves-light" style="padding-right: 0px;">
-        </span>
-    </div>
-
+<!-- /.progress-bar -->
+<div class="progress-bar progress-top" title="barre de progression - 0% terminer">
+<div class="progress-box-outer"><span class="progress-box-completed" style="width: 0%;"></span></div>
 </div>
+<!-- /.surveyProgressBar -->
+</div>
+<!-- /.survey-header -->
 
-</form>
+<form id="primary" name="primary" method="post" action="/survey/selfserve/1ab8/26031010" enctype="application/x-www-form-urlencoded">
+<input type="hidden" name="_v2_counter" value="2">
+<!-- @@XYZZY@@ -->
+<div class="QA_QTQI"><h1 title="question" class="question-text" id="question_text_QLang">In which language you would like to take this survey?<br>Dans quelle langue souhaitez-vous répondre à cette enquête&nbsp;?</h1>
+<!-- /.question-text --> <h2 title="instructions" class="instruction-text"></h2>
+<!-- /.instruction-text --></div><div id="sq-QARTS-container-QLang"><div id="sq-QARTS-container-QLang_qartstool" class="qartstool"></div><div class="hidden answers"><div class="answers answers-table">
+<div class="fir fir-checkbox" style="display: none;">
+<span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded">
+<path d="M15.8,0H3.9C1.8,0,0,2,0,4.1V16c0,2.2,1.8,4,3.9,4h11.8c2.2,0,4.2-1.8,4.2-4V4.1C20,2,18,0,15.8,0z M19,16 c0,1.6-1.6,3-3.2,3H3.9C2.3,19,1,17.7,1,16V4.1C1,2.5,2.3,1,3.9,1h11.8C17.4,1,19,2.5,19,4.1V16z" class="fir-base"></path>
+<path d="M19,16c0,1.6-1.6,3-3.2,3H3.9C2.3,19,1,17.7,1,16V4.1C1,2.5,2.3,1,3.9,1h11.8C17.4,1,19,2.5,19,4.1V16z" class="fir-bg"></path>
+<polygon points="9.1,16.3 2.5,11 4.1,9 8.7,12.6 15.6,3.7 17.7,5.2 " class="fir-selected"></polygon>
+</svg>
+</span>
+</div>
+<div class="fir fir-radio" style="display: none;">
+<span class="fir-icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded">
+<circle cx="10" cy="10" r="10" class="fir-base"></circle>
+<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
+<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
+</svg>
+</span>
+</div>
+<table class="grid grid-table-mode" data-settings="force-desktop desktop-mode single-col table-mode" data-height="" summary="This table contains form elements to answer the survey question">
+<tbody><tr class="row row-elements even colCount-1">
+<th scope="row" class="cell nonempty legend row-legend row-legend-left row-legend-basic legend-level-1 desktop border-collapse  ">
+English
+</th>
+<td class="cell nonempty element indent-1 desktop border-collapse groupingCols OneColumnEl    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans2879.0.0" value="0" id="ans2879.0.0" class="input radio">
+</span>
+<span class="cell-text cell-sub-column"><label for="ans2879.0.0">English</label> </span>
+</span>
+</td>
+
+</tr><tr class="row row-elements odd colCount-1">
+<th scope="row" class="cell nonempty legend row-legend row-legend-left row-legend-basic legend-level-1 desktop border-collapse  ">
+French/Français
+</th>
+<td class="cell nonempty element indent-1 desktop border-collapse groupingCols OneColumnEl    clickableCell">
+<span class="cell-sub-wrapper cell-legend-right">
+<span class="cell-input cell-sub-column">
+<input type="radio" name="ans2879.0.0" value="19" id="ans2879.0.19" class="input radio">
+</span>
+<span class="cell-text cell-sub-column"><label for="ans2879.0.19">French/Français</label> </span>
+</span>
+</td>
+
+</tr></tbody>
+</table>
+<!-- /.grid -->
+</div>
+<!-- /.answers -->
+</div>
+<!-- /.question --><script type="text/javascript">
+         if (! DQ.questions["QLang"] ) {
+            DQ.questions.QLang = {label: "QLang", rules: {},container: "sq-QARTS-container-QLang",q: {"comment": "", "qa:winstamp": "https://surveys.lifepointspanel.com/s/local/qarts/images/gr/win_new.png", "qa:hreflink": "", "uid": 2879, "totalColCount": 2, "qa:nextbuttontext": "Continuer", "cols": [{"index": 0, "qa:sldrleftendlabel": "", "uid": 2888, "open": 0, "exclusive": 0, "text": "", "qa:hreftitle": "", "qa:cdescription": "", "qa:rplaceholder": "", "label": "", "qa": ["", ""], "amount": 0, "qa:rdescription": "", "qa:sldrrightendlabel": "", "qa:rsubtitle": "", "qa:hreflink": "", "qa:csubtitle": "", "optional": 0, "openOptional": 0, "qa:rerror": ""}], "qa:ver": "v2360", "qa:remainstr": "", "qa:rowctz": false, "qa:leftendlabel": "", "qa:sldrrightendlabel": "", "qa:tool": "rp", "qa:mandatory": true, "qa:losestamp": "https://surveys.lifepointspanel.com/s/local/qarts/images/gr/lose_new.png", "rows": [{"exclusive": 0, "qa:rdelabelrt": "", "uid": 2880, "text": "English", "openOptional": 0, "qa:hreflink": "", "open": 0, "qa:rgrouptitle": "", "qa:rgroupimage": "", "index": 0, "qa:sldrrightendlabel": "", "qa:hreftitle": "", "amount": 0, "label": "r1", "qa:rplaceholder": "", "qa:rsubtitle": "", "qa:rdescription": "", "qa:rerror": "", "qa:rdelabellt": "", "optional": 0, "rightLegend": "", "qa:sldrleftendlabel": "", "qa": ["", ""], "qa:rgroupsubtitle": ""}, {"exclusive": 0, "qa:rdelabelrt": "", "uid": 2944, "text": "French/Fran\u00e7ais", "openOptional": 0, "qa:hreflink": "", "open": 0, "qa:rgrouptitle": "", "qa:rgroupimage": "", "index": 19, "qa:sldrrightendlabel": "", "qa:hreftitle": "", "amount": 0, "label": "r20", "qa:rplaceholder": "", "qa:rsubtitle": "", "qa:rdescription": "", "qa:rerror": "", "qa:rdelabellt": "", "optional": 0, "rightLegend": "", "qa:sldrleftendlabel": "", "qa": ["", ""], "qa:rgroupsubtitle": ""}], "qa:showrowdesc": true, "title": "In which language you would like to take this survey?\u003cbr /\u003eDans quelle langue souhaitez-vous r\u00e9pondre \u00e0 cette enqu\u00eate\u00a0?", "qa:topstamp": "https://surveys.lifepointspanel.com/s/local/qarts/images/gr/most-popular_new.png", "qa:disliketext": "", "qa:hreftitle": "", "qa:collapseopen": true, "label": "QLang", "qa:scrolltop": "1", "qa:rplaceholder": "", "noanswers": [], "qa:inputmandatory": true, "qa:sldrprefix": "", "haveLeftLegend": true, "qa:style": "g:auto", "type": "radio", "qa:rsubtitle": "", "qa:enableinput": false, "qa:colctz": false, "qa:showcoldesc": true, "errors": [], "verifiers": {}, "qa:rerror": "", "device": {"category": "", "smartphone": false, "tablet": false, "otherMobile": false, "mobileDevice": false, "desktop": true, "width": "0", "iphone": false, "featurephone": false, "android": false, "height": "0", "blackberry": false}, "qa:autosubmit": true, "qa:liketext": "", "haveRightLegend": false, "qa:sldrsuffix": "", "qa:sldrleftendlabel": "", "qa:rightendlabel": "", "qa:timerexpiremsg": "", "qa:usedeciphergroups": "1", "qa:barfill": false, "choices": [{"index": 0, "qa:sldrleftendlabel": "", "uid": 2889, "open": 0, "exclusive": 0, "text": "", "qa:hreftitle": "", "qa:rplaceholder": "", "label": "", "qa": ["", ""], "amount": 0, "qa:rdescription": "", "qa:sldrrightendlabel": "", "qa:rsubtitle": "", "qa:hreflink": "", "optional": 0, "openOptional": 0, "qa:rerror": ""}], "qa:rdescription": "", "qa:atype": "text", "grouping": "cols"} ,debug: false};DQ.questions.QLang.q.isQText = (DQ.questions.QLang.q.type == "text");DQ.questions.QLang.q.tool = "rp";DQ.questions.QLang.q.toolsave = "rp";
+              DQ.questions.QLang.q["qa:usechecker"] = 0
+              DQ.questions.QLang.q["qa:gpalette"] = "g:default";DQ.questions.QLang.q["qa:showbreakpoints"] = "0";DQ.questions.QLang.q.optional = 0;DQ.questions.QLang.q.tname = "qa";BAK.questions.QLang = $ .extend(true,{},DQ.questions.QLang);++DQ.questions.length;DQ.questions.QLang.q.rowgroups = [];DQ.questions.QLang.q.colgroups = [];
+            Survey.question.qarts.setup(DQ.questions.QLang);
+            function setupAnswerMe() {
+                var answerme = "btn_randomize";
+                if ($ (answerme).length) {
+                    $ (answerme).bind("mouseup", function () {
+                        $ (".next2").remove();
+                        $ (".back2").remove();
+                        window.setTimeout(function () {
+                            delete DQ.questions;
+                            DQ.questions = {};
+                            for ( x in BAK.questions ) {
+                                if (typeof BAK.questions[x] === "object" ) {
+                                    $ ("" + BAK.questions[x].container + "_qartstool").empty();
+                                    var qn = BAK.questions[x].label;
+                                    DQ.questions[x] = $ .extend(true,{},BAK.questions[x]); ;
+                                    Survey.question.qarts.setup(DQ.questions[x]);
+                                }
+                            }
+                        }, 50);
+                    });
+                } else {
+                }
+            }
+            $ (function() {
+              //console.log( "ready!",DQ.questions.QLang );
+              //Setup Answer me button
+              if ( DQ.questions.QLang.debug ) {
+                  setupAnswerMe();                  
+              }
+            });
+         }
+     </script><!-- #surveyButtons -->
+<div class="survey-buttons">
+<input type="submit" name="continue" id="btn_continue" class="button continue survey-button interface-btn" value="Continuer »" onclick="var i = document.createElement('input');i.setAttribute('type', 'hidden');i.setAttribute('value', '1');i.setAttribute('name', '__has_javascript');document.forms.primary.appendChild(i);">
+
+</div><input type="hidden" name="state" value="b045e38a-e2a3-4101-ba81-a33ef539813f">
+<input type="hidden" name="start_time" value="1776556816">
+<input type="hidden" name="_ptime" value="0">
+<script>addHandler(Survey.capturePreciseTime)</script><script>
+$ (window).on("load", function() { setTimeout(function() { Survey.recordPageTiming("selfserve/1ab8/26031010", "zgdxptf4se2rf2kt", "6v28p0afp8a05psg");}, 100); });
+</script>
 
 
-    </div>
-    
-	
+
+</div></form>
+<!-- /.survey-body -->
+</div>
+<div class="survey-section"><div id="surveyFooter" class="survey-footer">
+<div class="footer survey-footer-text">
+<a href="https://www.globaltestmarket.com/contact.php?lang=EN" target="_blank">Help</a>
+</div>
+</div>
+<!-- /#surveyFooter --></div>
+</div>
+<div id="detectBreakpoint"></div>
+<!-- /.survey-container -->
 
 
-
-
-</body></html>
+</div></div></body></html>
