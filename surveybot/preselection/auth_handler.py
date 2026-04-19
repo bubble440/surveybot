@@ -105,19 +105,37 @@ def net_probe():
         ip_nat = requests.get("https://api.ipify.org", timeout=8).text
     except Exception as e:
         ip_nat = f"ERR_nat:{e}"
-    env_proxy = os.getenv("HTTPS_PROXY") or os.getenv("HTTP_PROXY")
-    try:
-        ip_proxy = requests.get("https://api.ipify.org", timeout=8,
-                                proxies={'http': env_proxy, 'https': env_proxy}).text if env_proxy else "no-proxy"
-    except Exception as e:
-        ip_proxy = f"ERR_proxy:{e}"
+
+    # Construire le proxy URL depuis les variables du bot (PROXY_URL/USER/PASS)
+    proxy_url  = os.getenv("PROXY_URL", "").strip()
+    proxy_user = os.getenv("PROXY_USER", "").strip()
+    proxy_pass = os.getenv("PROXY_PASS", "").strip()
+
+    if proxy_url:
+        if "://" not in proxy_url:
+            proxy_url = "http://" + proxy_url
+        if proxy_user and proxy_pass:
+            from urllib.parse import urlparse, urlunparse
+            p = urlparse(proxy_url)
+            proxy_url_auth = urlunparse(p._replace(netloc=f"{proxy_user}:{proxy_pass}@{p.hostname}:{p.port}"))
+        else:
+            proxy_url_auth = proxy_url
+        proxies = {"http": proxy_url_auth, "https": proxy_url_auth}
+        try:
+            ip_proxy = requests.get("https://api.ipify.org", timeout=8, proxies=proxies).text
+        except Exception as e:
+            ip_proxy = f"ERR_proxy:{e}"
+    else:
+        ip_proxy = "no-proxy-configured"
+
     try:
         r = requests.get("https://www.topsurveys.app", timeout=10)
         http = f"{r.status_code} len={len(r.text)}"
     except Exception as e:
         http = f"ERR_http:{e}"
-    print(f"[NET] ip_nat={ip_nat} ip_proxy={ip_proxy} topsurveys={http}")
 
+    print(f"[NET] ip_nat={ip_nat} ip_proxy={ip_proxy} topsurveys={http}")
+    
 def snap(driver, label: str = "state"):
     """
     Capture un screenshot et :

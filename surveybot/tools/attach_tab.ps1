@@ -57,7 +57,7 @@ Write-Host ""
 
 # Vars env (attach)
 #test prod-like
-$env:ACCOUNT_ID ="topsurveys_bot_001" # Valeur a modifier dans le terminal pour sauvegarder les cookies dans le bon compte.
+$env:ACCOUNT_ID ="topsurveys_bot_003" # Valeur a modifier dans le terminal pour sauvegarder les cookies dans le bon compte.
 $env:RUN_ENV="local"
 $env:RUN_MODE="local"
 $env:DATABASE_URL = "postgres://postgres:3o1L6kfCFxuncbY@localhost:5432/postgres"
@@ -72,9 +72,9 @@ $env:DATABASE_URL = "postgres://postgres:3o1L6kfCFxuncbY@localhost:5432/postgres
 $env:BROWSER_MODE="attach"
 $env:ATTACH_TAB_SELECTOR=$AttachTabSelector
 $env:ATTACH_DEBUGGER_ADDRESS="127.0.0.1:$Port"
-$env:PROXY_PASS="bb82a9e63b"
-$env:PROXY_USER="14abf236340a1"
-$env:PROXY_URL="185.134.194.152:12323"
+$env:PROXY_PASS="9a42e8da8a"
+$env:PROXY_USER="14a4b3f88b892"
+$env:PROXY_URL="178.210.254.157:12323"
 
 # Tes vars debug
 $env:LOG_LEVEL="DEBUG"
