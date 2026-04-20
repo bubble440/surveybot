@@ -403,9 +403,15 @@ def run_attach_takeover(driver, *, api_key: str, account_id: str) -> None:
             try:
                 _cur_url = (driver.current_url or "").lower()
                 if "topsurveys.app" in _cur_url:
-                    _handle_topsurveys_exclusion_popup(driver, account_id)
-                    print(f"[ATTACH] Retour TopSurveys détecté step={i} → sortie boucle.")
-                    break
+                    # Écran "Courte pause" (vérification téléphone/PIN) : laisser
+                    # execute_survey_page() le traiter via ses handlers dédiés.
+                    _has_phone_screen = bool(driver.execute_script(
+                        "return !!document.querySelector('div.phone-verification-container');"
+                    ))
+                    if not _has_phone_screen:
+                        _handle_topsurveys_exclusion_popup(driver, account_id)
+                        print(f"[ATTACH] Retour TopSurveys détecté step={i} → sortie boucle.")
+                        break
             except Exception as _e:
                 print(f"[ATTACH][TOPSURVEYS_CHECK] erreur: {_e}")
                 break
@@ -664,7 +670,8 @@ def main():
 
         try:
             driver = launch_driver_or_fail(config, account_id)
-
+            driver._survey_account_id = account_id
+            
             runtime_ctx["driver"] = driver
             # PATCH: Stocker account_id sur driver pour acces dans survey_executor
             driver._survey_account_id = account_id

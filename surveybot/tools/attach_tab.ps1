@@ -58,6 +58,10 @@ Write-Host ""
 # Vars env (attach)
 #test prod-like
 $env:ACCOUNT_ID ="topsurveys_bot_003" # Valeur a modifier dans le terminal pour sauvegarder les cookies dans le bon compte.
+$env:PROXY_USER="14a4b3f88b892"
+$env:PROXY_PASS="9a42e8da8a"
+$env:PROXY_URL="178.210.254.157:12323"
+
 $env:RUN_ENV="local"
 $env:RUN_MODE="local"
 $env:DATABASE_URL = "postgres://postgres:3o1L6kfCFxuncbY@localhost:5432/postgres"
@@ -72,9 +76,6 @@ $env:DATABASE_URL = "postgres://postgres:3o1L6kfCFxuncbY@localhost:5432/postgres
 $env:BROWSER_MODE="attach"
 $env:ATTACH_TAB_SELECTOR=$AttachTabSelector
 $env:ATTACH_DEBUGGER_ADDRESS="127.0.0.1:$Port"
-$env:PROXY_PASS="9a42e8da8a"
-$env:PROXY_USER="14a4b3f88b892"
-$env:PROXY_URL="178.210.254.157:12323"
 
 # Tes vars debug
 $env:LOG_LEVEL="DEBUG"
@@ -85,8 +86,8 @@ $env:BOT_RUN_ID="port_$Port"
 $env:ACTION_DEBUG_TARGET="1"
 $env:LOCAL_CTA_REQUIRE_ENTER="1"
 $env:SURVEY_RESOURCE_BLOCKING="0"
-$env:ACCOUNT_PHONE="749659675"
 $env:TWO_CAPTCHA_KEY="ff2f59cd67845abf5c1b7db1c0a17cf2"
+$env:FIVESIM_API_KEY="eyJhbGciOiJSUzUxMiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE4MDgxNjY5MDMsImlhdCI6MTc3NjYzMDkwMywicmF5IjoiMjlkMzI4MGM4YjMzYTI2MWUwYWNiNzMyNjQ3MjY1ZjUiLCJzdWIiOjM5ODIyNjN9.jtHwiXwr-F1PCKJ8Ka79woFNMm4c7VLJYRzgskCrSKSMy9FIxktAUztjEiafTD-Hw_UKGwdUEDZMw2o8K_4JzIwBWa_Gb2noQqODIwF0Pj7xhe1-znbd49wNMJnCsicj03nYRyEefkieZUUROzeKLfGiKESuwk9xqoXxhIcPNu8OZCft6pOxrTmXI26gSgZiwtEDkd2DlvDsMTyRbAAVHEI8BwCS32OhckC4p0GfGwL326R-bk2iN_m1oJ0-cOKaM8B40MT-Fsasfe_IbjNAguPyZtVSjCdiHv91aHfHCYgHKFUOkMpFmRqhBp7T2gthCG6sY462sWBIYFZS2gh9-g"
 # $env:SNAP_ENABLED="1"
 # $env:CTA_INTERCEPT_ONLY="0"
 # $env:SNAP_R2_BUCKET="surveybot-snaps"
