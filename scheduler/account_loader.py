@@ -68,6 +68,19 @@ def list_account_ids() -> list[str]:
     return sorted(_load_all_accounts().keys())
 
 
+def accounts_by_proxy() -> dict[str, list[str]]:
+    """
+    Groupe les comptes par PROXY_ID.
+    Si PROXY_ID est absent, le compte forme son propre groupe (comportement inchangé).
+    Retourne {proxy_id: [account_id, ...]} — groupes et IDs triés de façon déterministe.
+    """
+    groups: dict[str, list[str]] = {}
+    for account_id, acc in _load_all_accounts().items():
+        proxy_id = (acc.get("PROXY_ID") or "").strip() or account_id
+        groups.setdefault(proxy_id, []).append(account_id)
+    return {pid: sorted(aids) for pid, aids in sorted(groups.items())}
+
+
 def load_account(account_id: str) -> dict:
     """
     Retourne le dict de credentials pour un account_id donné.
