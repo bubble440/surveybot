@@ -25,8 +25,8 @@ flyctl proxy 5432 -a surveybot-db
 
 # Variables requises pour que les cookies soient restaurés
 
-export ACCOUNT_ID="topsurveys_bot_003" 
-export EMAIL="antoinne.overstate714@8alias.com" # L'email est associé a un ACCOUNT_ID, regarde account_details.md
+export ACCOUNT_ID="topsurveys_bot_004" 
+export EMAIL="bezbar.pacify458@simplelogin.fr" # L'email est associé a un ACCOUNT_ID, regarde account_details.md
 export DISPLAY=:0
 export RUN_ENV="local"
 export SNAP_ENABLED="0"
