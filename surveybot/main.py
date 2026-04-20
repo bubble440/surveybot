@@ -590,7 +590,10 @@ def main():
         os.getenv("ACCOUNT_ID")
         or config.get("account_id")
     )
-    email = config.get("Email")
+    email = (
+        os.getenv("EMAIL") 
+        or config.get("Email")
+    )
 
     if not account_id:
         raise RuntimeError("ACCOUNT_ID introuvable")
