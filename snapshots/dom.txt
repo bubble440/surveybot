@@ -1,277 +1,32 @@
-<!--[if IE 9]><html class="lte-ie9" lang="fr"><![endif]-->
-<!--[if lte IE 8]><html class="lte-ie9 lte-ie8" lang="fr"><![endif]-->
-<!--[if (gt IE 9)|!(IE)]><!-->
-<html lang="fr" class=" fullscreen requestanimationframe raf csscalc supports cssfilters flexwrap csspositionsticky csstransforms3d csstransitions placeholder matchmedia"><!--<![endif]--><head>
-<meta name="robots" content="noindex, nofollow, noarchive">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-
-<!-- respview.client.meta -->
-            <link rel="preconnect" href="https://fonts.gstatic.com/" crossorigin="">
-            <link rel="stylesheet" href="//fonts.googleapis.com/css?family=Roboto:400,700,500,300&amp;display=swap">
-
-<title>Survey</title>
-
-
-<!-- respview.css -->
-<link rel="stylesheet" href="/s/exp/support/jquery-ui-1.9.2.custom/css/smoothness/jquery-ui-1.9.2.custom.min.css?ad7753b880">
-<link rel="stylesheet" href="/s/exp/support/jquery-ui-1.9.2.custom/css/smoothness/jquery-ui-1.9.2.beacon.css?4ddb951d43">
-
-<!-- generated from: static/support/font-awesome-4.2.0/less/font-awesome.less, static/support/select2-4.0.1/select2.min.css, static/survey.respondent-post133.less, selfserve/1ab8/26031010/static/theme.less, static/local/qarts/template/v4a/qarts.less and 0 themevars -->
-<link rel="stylesheet" href="/survey/selfserve/1ab8/26031010/less-compiled.css?eadd49622e5543f6bc493889cf609fee">
-
-
-<!-- extra CSS -->
-
-
-
-<!-- respview.client.css -->
-<style>
-.button.back {
-	display: none;
-}
-
-.survey-footer{
-	visibility: hidden;
-}
-
-#question_QLink, #question_vStatus{
-	visibility: hidden;
-}
-
-.bw{color:blue;text-decoration-line:underline;font-weight:bold;}
-.answers,.fir-select2-dropdown{color:#454545;font-size: 1.4rem;font-family:Roboto,"Open Sans";}
-</style>
-
-<!-- client.css -->
-<style media="screen">
-
-</style>
-
-<!-- JQuery -->
-<!--
-/s/jquery183.all.js
--->
-<script src="/s/exp/tmp/a83b6d71bfddf13084bfaacc08149188.js"></script>
-
-
-<!-- respview.js -->
+<body class="">
+<noscript>
+	<strong>
+		We're sorry but Prime Opinion doesn't work properly without JavaScript enabled.
+		Please enable it to continue.
+	</strong>
+</noscript>
+<div id="app" class="notranslate" data-v-app=""><!----><div data-v-5e18e4b9="" class="app-layout logged user-balance-showed" style="--6b2bb44b: calc(3.75rem + env(safe-area-inset-top));"><!----><!----><div data-v-5e18e4b9="" class="app-content background"><main data-v-06ec0f30="" class="featured__container home-page" data-test="home-container"><div data-v-06ec0f30="" class="featured__header" data-test="home-header"><div data-v-3d4aee29="" data-v-06ec0f30="" class="balance-card" data-test-id="balance-card-wrapper" style="--0b83c7c0: url(/assets/dots-green-B8f_8G4t.svg);"><!----><div data-v-3d4aee29="" class="balance-card-inner"><div data-v-3d4aee29="" class="balance-card-top"><div data-v-3d4aee29="" class="balance-card-value"><span data-v-25c02bd8="" data-v-3d4aee29="" data-test-id="balance-card-label" class="p-text p-text--primary p-text--xs p-text--500 p-text--none p-text--align-inherit" style="--630ab9e8: var(--inherit);">Équilibre: </span><span data-v-25c02bd8="" data-v-3d4aee29="" data-test-id="balance-card-amount" class="p-text p-text--primary p-text--lg p-text--600 p-text--none p-text--align-inherit" style="--630ab9e8: var(--inherit);">2,15&nbsp;€</span></div><div data-v-3d4aee29="" class="balance-card-progress"><div data-v-fec20f24="" data-v-3d4aee29="" class="p-progress" data-test-id="balance-card-progress" style="--b7c4117a: 0.5rem; --96185aa4: 1.25rem;"><div data-v-fec20f24="" class="p-progress-bar" style="width: 43%; background: var(--p-secondary-500);"></div></div><div data-v-3d4aee29=""><span data-v-25c02bd8="" data-v-3d4aee29="" class="p-text p-text--primary p-text--lg p-text--600 p-text--none p-text--align-inherit" style="--630ab9e8: var(--p-white);">2,15&nbsp;€</span><span data-v-25c02bd8="" data-v-3d4aee29="" class="p-text p-text--primary p-text--sm p-text--600 p-text--none p-text--align-inherit" style="--630ab9e8: var(--p-white);"> / 5,00&nbsp;€</span></div></div></div><div data-v-3d4aee29="" class="balance-card-actions"><button data-v-e7eab2af="" data-v-3d4aee29="" class="balance-card-cashout p-btn p-btn--outline p-btn--grey p-btn--small p-btn--radius-lg p-btn--none" type="button" data-test-id="balance-card-cashout"><!----><span data-v-e7eab2af="" class="p-btn-icon p-btn-icon--left"><svg data-v-3d4aee29="" width="100%" height="100%" color="inherit" viewBox="0 0 28 28" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><mask id="a" width="28" height="28" x="0" y="0" maskUnits="userSpaceOnUse" style="mask-type: alpha;"><path fill="currentColor" d="M0 0h28v28H0z"></path></mask><g mask="url(#a)"><path fill="currentColor" d="M5.833 24.5a2.25 2.25 0 0 1-1.648-.685 2.25 2.25 0 0 1-.685-1.648V5.833q0-.961.685-1.648A2.25 2.25 0 0 1 5.833 3.5h16.334q.961 0 1.648.685.684.686.685 1.648h-9.333q-2.07 0-3.37 1.298Q10.5 8.43 10.5 10.5v7q0 2.07 1.298 3.369 1.298 1.298 3.369 1.298H24.5q0 .961-.685 1.648a2.25 2.25 0 0 1-1.648.685zm9.334-4.667a2.25 2.25 0 0 1-1.648-.685 2.25 2.25 0 0 1-.686-1.648v-7q0-.963.686-1.648a2.25 2.25 0 0 1 1.648-.685h8.166q.963 0 1.648.685.686.685.686 1.648v7q0 .963-.686 1.648a2.25 2.25 0 0 1-1.648.685zm3.5-4.083q.758 0 1.254-.496.495-.495.496-1.254 0-.759-.496-1.254t-1.254-.496-1.255.496q-.495.495-.495 1.254t.495 1.254 1.255.496"></path></g></svg></span><span data-v-e7eab2af="" class="p-btn-label">Encaissement</span><!----></button><button data-v-e7eab2af="" data-v-3d4aee29="" class="balance-card-vip p-btn p-btn--outline p-btn--grey p-btn--small p-btn--radius-lg p-btn--none" type="button" data-test-id="balance-card-vip"><!----><span data-v-e7eab2af="" class="p-btn-icon p-btn-icon--left"><img data-v-3d4aee29="" src="/assets/crown-DqR4Kd9m.svg" alt="VIP"></span><span data-v-e7eab2af="" class="p-btn-label">VIP</span><!----></button></div><!----></div></div></div><!----><div data-v-06ec0f30="" id="prime-featured" class="prime-featured-application" data-test="home-content" data-v-app=""><div data-v-a7ce66dd="" class="integration-script-container" data-test-id="ps-integration-container" style="--p-primary-base: #047857; --p-primary-base-rgb: 4, 120, 87; --p-secondary-base: #FFB43B; --p-secondary-base-rgb: 255, 180, 59; --p-text-default: #202223; --p-text-default-rgb: 32, 34, 35; --p-text-disabled: #8c9196; --p-text-disabled-rgb: 140, 145, 150; --p-state-critical: #D82C0D; --p-state-critical-rgb: 216, 44, 13; --p-state-warning: #ffc453; --p-state-warning-rgb: 255, 196, 83; --p-state-success: #2B735D; --p-state-success-rgb: 43, 115, 93; --p-component-bg: #ffffff; --p-component-bg-rgb: 255, 255, 255; --p-component-border: #e0e0e0; --p-component-border-rgb: 224, 224, 224; --p-bg-default: #f6f8fa; --p-bg-default-rgb: 246, 248, 250; --p-border-default: #3f3f4426; --p-border-default-rgb: 63, 63, 68; --p-grey-50: #fafafa; --p-grey-50-rgb: 250, 250, 250; --p-grey-100: #f5f5f5; --p-grey-100-rgb: 245, 245, 245; --p-grey-200: #eeeeee; --p-grey-200-rgb: 238, 238, 238; --p-grey-300: #edeeef; --p-grey-300-rgb: 237, 238, 239; --p-grey-400: #e0e0e0; --p-grey-400-rgb: 224, 224, 224; --p-grey-500: #9e9e9e; --p-grey-500-rgb: 158, 158, 158; --p-grey-600: #757575; --p-grey-600-rgb: 117, 117, 117; --p-grey-700: #616161; --p-grey-700-rgb: 97, 97, 97; --p-grey-800: #4b4b4b; --p-grey-800-rgb: 75, 75, 75; --p-grey-900: #303030; --p-grey-900-rgb: 48, 48, 48; --p-gradient-base: linear-gradient(92deg, var(--p-primary-base) 1.15%, var(--p-secondary-base) 123.37%); --p-gradient-base-hover: linear-gradient(92deg, var(--p-primary-base) 34.09%, var(--p-secondary-base) 123.73%); --p-gradient-base-1: linear-gradient(92deg, var(--p-secondary-base) 1.15%, var(--p-primary-base) 123.37%); --p-gradient-base-1-hover: linear-gradient(92deg, var(--p-secondary-base) 34.09%, var(--p-primary-base) 123.73%); --p-shadow-base: 0 0 0 1px rgba(63, 63, 68, 0.05), 0 1px 3px 0 rgba(63, 63, 68, 0.15); --p-shadow-button: 0 1px 0 0 rgba(0, 0, 0, 0.05); --p-shadow-button-focus: inset 0 0 0 1.5px var(--p-component-bg); --p-shadow-card: 0 0 1px 0 rgba(0, 0, 0, 0.25), 0 2px 1px 0 rgba(0, 0, 0, 0.05); --p-shadow-popover: 0 2px 10px 0 rgba(0, 0, 0, 0.1), 0 0 2px 0 rgba(0, 0, 0, 0.2); --p-shadow-modal: 0 26px 80px 0 rgba(0, 0, 0, 0.2), 0 0 1px 0 rgba(0, 0, 0, 0.2); --p-primary-hover: #03503a; --p-primary-hover-rgb: 3, 80, 58; --p-primary-1: #1ef7b9; --p-primary-1-rgb: 30, 247, 185; --p-primary-2: #36f8c1; --p-primary-2-rgb: 54, 248, 193; --p-primary-3: #4ff9c9; --p-primary-3-rgb: 79, 249, 201; --p-primary-50: #e6f2ee; --p-primary-50-rgb: 230, 242, 238; --p-primary-100: #cde4dd; --p-primary-100-rgb: 205, 228, 221; --p-primary-200: #abd2c7; --p-primary-200-rgb: 171, 210, 199; --p-primary-300: #82bcab; --p-primary-300-rgb: 130, 188, 171; --p-primary-400: #58a58f; --p-primary-400-rgb: 88, 165, 143; --p-primary-500: #2e8f73; --p-primary-500-rgb: 46, 143, 115; --p-primary-800: #036449; --p-primary-800-rgb: 3, 100, 73; --p-primary-900: #03503a; --p-primary-900-rgb: 3, 80, 58; --p-secondary-hover: #aa7827; --p-secondary-hover-rgb: 170, 120, 39; --p-secondary-1: #ffefd4; --p-secondary-1-rgb: 255, 239, 212; --p-secondary-2: #fff8ed; --p-secondary-2-rgb: 255, 248, 237; --p-secondary-3: #ffe5ba; --p-secondary-3-rgb: 255, 229, 186; --p-secondary-50: #fff8eb; --p-secondary-50-rgb: 255, 248, 235; --p-secondary-100: #fff0d8; --p-secondary-100-rgb: 255, 240, 216; --p-secondary-200: #ffe6be; --p-secondary-200-rgb: 255, 230, 190; --p-secondary-300: #ffda9d; --p-secondary-300-rgb: 255, 218, 157; --p-secondary-400: #ffcd7c; --p-secondary-400-rgb: 255, 205, 124; --p-secondary-500: #ffc15c; --p-secondary-500-rgb: 255, 193, 92; --p-secondary-800: #d59631; --p-secondary-800-rgb: 213, 150, 49; --p-secondary-900: #aa7827; --p-secondary-900-rgb: 170, 120, 39; --ps-surveys-list-bg: #F3F4F6; --ps-pages-bg: #ffffff; --ps-pages-bg-rgb: 255, 255, 255; --ps-components-bg: #ffffff; --ps-components-bg-rgb: 255, 255, 255; --popup-content-vertical-offset: 104px;"><!----><!----><div data-v-76d64db2="" class="common-page" data-test-id=""><div data-v-9ac95a92="" class="default-header"><!----><!----><!----><!----></div><!----><div data-v-6b053ed7="" class="phone-verification-container"><div data-v-efa74f3f="" data-v-6b053ed7="" style="--30f843e0: 100px;"><div data-v-dfaa6251="" data-v-efa74f3f="" class="short-break"><svg data-v-dfaa6251="" width="28px" height="28px" color="#047857" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path opacity="0.2" d="M12.0001 3C10.179 2.99947 8.40054 3.55141 6.89973 4.5829C5.39892 5.6144 4.24633 7.07692 3.59423 8.77726C2.94212 10.4776 2.82118 12.3358 3.24738 14.1063C3.67358 15.8768 4.62687 17.4764 5.98132 18.6937C6.54569 17.5824 7.40677 16.649 8.46912 15.997C9.53147 15.345 10.7536 14.9999 12.0001 15C11.2584 15 10.5334 14.7801 9.91668 14.368C9.3 13.956 8.81935 13.3703 8.53552 12.6851C8.25169 11.9998 8.17743 11.2458 8.32212 10.5184C8.46682 9.79098 8.82397 9.1228 9.34842 8.59835C9.87286 8.0739 10.5411 7.71675 11.2685 7.57206C11.9959 7.42736 12.7499 7.50162 13.4351 7.78545C14.1204 8.06928 14.706 8.54993 15.1181 9.16661C15.5301 9.7833 15.7501 10.5083 15.7501 11.25C15.7501 12.2446 15.355 13.1984 14.6517 13.9017C13.9485 14.6049 12.9946 15 12.0001 15C13.2465 14.9999 14.4687 15.345 15.531 15.997C16.5934 16.649 17.4544 17.5824 18.0188 18.6937C19.3733 17.4764 20.3266 15.8768 20.7528 14.1063C21.179 12.3358 21.058 10.4776 20.4059 8.77726C19.7538 7.07692 18.6012 5.6144 17.1004 4.5829C15.5996 3.55141 13.8212 2.99947 12.0001 3Z" fill="currentColor"></path><path d="M12 21C16.9706 21 21 16.9706 21 12C21 7.02944 16.9706 3 12 3C7.02944 3 3 7.02944 3 12C3 16.9706 7.02944 21 12 21Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path><path d="M12 15C14.0711 15 15.75 13.3211 15.75 11.25C15.75 9.17893 14.0711 7.5 12 7.5C9.92893 7.5 8.25 9.17893 8.25 11.25C8.25 13.3211 9.92893 15 12 15Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path><path d="M5.9812 18.6938C6.54549 17.5823 7.40654 16.6488 8.4689 15.9967C9.53126 15.3446 10.7534 14.9995 12 14.9995C13.2465 14.9995 14.4686 15.3446 15.531 15.9967C16.5934 16.6488 17.4544 17.5823 18.0187 18.6938" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></svg><div data-v-dfaa6251="" class="short-break__text"><div data-v-041a7411="" data-v-dfaa6251="" class="p-text p-text--primary p-text--sm p-text--600 p-text--none p-text--align-inherit" style="--2d80d5e2: var(--p-text-default);">Courte pause</div><div data-v-041a7411="" data-v-dfaa6251="" class="p-text p-text--primary p-text--sm p-text--500 p-text--none p-text--align-inherit" style="--2d80d5e2: var(--p-text-default);">Vérifie ton profil</div></div></div><div data-v-041a7411="" data-v-efa74f3f="" class="phone-verification-label p-text p-text--primary p-text--sm p-text--500 p-text--none p-text--align-inherit" style="--2d80d5e2: var(--p-text-default);">Saisis ton numéro de téléphone portable</div><div data-v-efa74f3f="" class="phone-input-wrapper"><div data-v-efa74f3f="" class="phone-input-field"><div data-v-1e22315c="" class="p-dropdown-container" style="--4b38230a: 100px;"><div data-v-1e22315c=""><div data-v-bd104317="" class="toggle-container"><span data-v-041a7411="" data-v-bd104317="" class="toggle-selected p-text p-text--primary p-text--base p-text--500 p-text--none p-text--align-inherit" style="--2d80d5e2: var(--p-text-default);"><img data-v-bd104317="" src="https://flagcdn.com/20x15/fr.png" srcset="
+			https://flagcdn.com/40x30/fr.png 2x,
+			https://flagcdn.com/60x45/fr.png 3x
+		" width="20" height="15" alt="fr" loading="lazy"> +33</span><svg data-v-bd104317="" width="15px" height="15px" color="#202223" fill="none" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" class="toggle-icon"><polyline points="208 96 128 176 48 96" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="24"></polyline></svg></div></div></div><span data-v-efa74f3f="" class="phone-input-divider"></span><input data-v-efa74f3f="" placeholder="Saisis un chiffre" class="phone-number-input" type="number" inputmode="numeric"></div><!----></div><!----><div data-v-bf255d23="" data-v-efa74f3f="" class="review-modal"><button data-v-3f994f0f="" data-v-bf255d23="" class="review-modal-btn p-btn p-btn--text p-btn--primary p-btn--small p-btn--radius-lg p-btn--none" type="button"><!----><!----><span data-v-3f994f0f="" class="p-btn-label">Pourquoi examinons-nous les comptes ?</span><!----></button><!----></div><button data-v-3f994f0f="" data-v-efa74f3f="" class="p-btn p-btn--fill p-btn--primary p-btn--normal p-btn--radius-lg p-btn--full p-disabled p-btn--none" type="button" disabled=""><!----><!----><span data-v-3f994f0f="" class="p-btn-label">Suivant</span><!----></button></div></div><!----><!----></div><!----><!----><!----><!----><!----><!----><!----></div></div></main><!----></div><!----><nav data-v-9718bc62="" data-v-5e18e4b9="" class="p-app-mobile-nav app-mobile-nav app-mobile-nav" data-test-id="mobile-nav-wrapper" style="--3262d4a4: 64px; --36d85023: -64px; --4083471f: 128px;"><div data-v-9718bc62="" id="floating-actions-container"></div><div data-v-9718bc62="" id="secondary-actions-container"></div><div data-v-f7546789="" data-v-9718bc62="" class="p-divider p-divider--horizontal" style="--c32e84ae: 0; --e6f48cfc: 0; --19b1a97a: 0; --75f3cde7: 0; --31fa3e69: 1px; --40a8aa32: var(--p-grey-200);"><div data-v-f7546789="" class="p-divider-line"></div></div><div data-v-9718bc62="" class="p-app-mobile-nav__wrapper" style="grid-template-columns: repeat(4, minmax(0px, 1fr));"><div data-v-c4f7459d="" data-test-id="home-page-nav" class="p-app-mobile-navigation" style="--6835fb0e: var(--p-primary-base);"><div data-v-c4f7459d="" class="p-app-mobile-nav-wrapper"><div data-v-c4f7459d="" class="p-app-mobile-nav-inner"><div data-v-c4f7459d="" class="p-app-mobile-nav p-is-active"><div data-v-c4f7459d="" class="p-nav-icon-wrapper"><svg data-v-c4f7459d="" width="24px" height="24px" color="inherit" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4.5 21V9l8-6 8 6v12h-6v-7h-4v7h-6Z" fill="currentColor"></path></svg><!----></div><span data-v-25c02bd8="" data-v-c4f7459d="" class="p-text p-text--primary p-text--xs p-text--500 p-text--none p-text--align-inherit" style="--630ab9e8: var(--p-text-default);">Gagne</span></div></div></div></div><!----><div data-v-c4f7459d="" data-test-id="surveys-nav" class="p-app-mobile-navigation" style="--6835fb0e: var(--p-primary-base);"><div data-v-c4f7459d="" class="p-app-mobile-nav-wrapper"><div data-v-c4f7459d="" class="p-app-mobile-nav-inner"><div data-v-c4f7459d="" class="p-app-mobile-nav"><div data-v-c4f7459d="" class="p-nav-icon-wrapper"><svg data-v-c4f7459d="" width="24px" height="24px" color="inherit" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"><path d="M8.558 16.77c.251 0 .461-.086.63-.255.17-.17.254-.38.254-.631 0-.25-.085-.46-.254-.63A.858.858 0 0 0 8.557 15c-.25 0-.46.085-.63.255a.858.858 0 0 0-.254.63c0 .251.085.461.255.63.17.17.38.254.63.254Zm0-3.886c.251 0 .461-.084.63-.254.17-.17.254-.38.254-.63 0-.252-.085-.462-.254-.63a.858.858 0 0 0-.631-.254c-.25 0-.46.084-.63.254a.858.858 0 0 0-.254.63c0 .252.085.462.255.63.17.17.38.254.63.254Zm0-3.884c.251 0 .461-.085.63-.255.17-.17.254-.38.254-.63 0-.251-.085-.461-.254-.63a.857.857 0 0 0-.631-.254c-.25 0-.46.085-.63.254a.857.857 0 0 0-.254.631c0 .25.085.46.255.63.17.17.38.254.63.254Zm3.038 7.634h5.692v-1.5h-5.692v1.5Zm0-3.884h5.692v-1.5h-5.692v1.5Zm0-3.885h5.692v-1.5h-5.692v1.5ZM5.808 20.5c-.505 0-.933-.175-1.283-.525A1.745 1.745 0 0 1 4 18.692V5.308c0-.505.175-.933.525-1.283.35-.35.778-.525 1.283-.525h13.384c.505 0 .933.175 1.283.525.35.35.525.778.525 1.283v13.384c0 .505-.175.933-.525 1.283-.35.35-.778.525-1.283.525H5.808Z" fill="currentColor"></path></svg><!----></div><span data-v-25c02bd8="" data-v-c4f7459d="" class="p-text p-text--primary p-text--xs p-text--500 p-text--none p-text--align-inherit" style="--630ab9e8: var(--p-text-default);">Enquêtes</span></div></div></div></div><!----><div data-v-c4f7459d="" data-test-id="offers-nav" class="p-app-mobile-navigation" style="--6835fb0e: var(--p-primary-base);"><div data-v-c4f7459d="" class="p-app-mobile-nav-wrapper"><div data-v-c4f7459d="" class="p-app-mobile-nav-inner"><div data-v-c4f7459d="" class="p-app-mobile-nav"><div data-v-c4f7459d="" class="p-nav-icon-wrapper"><svg data-v-c4f7459d="" width="24px" height="24px" color="inherit" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"><path fill="currentColor" d="M11.292 18.808h1.366v-1.212a4.408 4.408 0 0 0 2.106-.874c.63-.478.944-1.202.944-2.172 0-.7-.207-1.32-.62-1.858-.412-.538-1.219-1.024-2.419-1.457-1.051-.36-1.75-.67-2.094-.933-.345-.263-.517-.63-.517-1.102 0-.472.176-.855.53-1.15.353-.295.84-.442 1.462-.442.52 0 .94.122 1.26.368.319.245.564.553.736.924l1.235-.496a3.262 3.262 0 0 0-1.022-1.367 2.783 2.783 0 0 0-1.551-.633V5.192h-1.366v1.212c-.852.164-1.507.51-1.964 1.037-.457.528-.686 1.114-.686 1.759 0 .751.228 1.356.683 1.813.455.458 1.197.872 2.225 1.24 1.063.39 1.789.74 2.178 1.05.389.31.583.725.583 1.247 0 .627-.226 1.082-.678 1.366a2.823 2.823 0 0 1-1.533.426c-.563 0-1.066-.169-1.51-.507-.445-.339-.786-.834-1.025-1.485l-1.265.515c.259.743.631 1.332 1.116 1.77.486.437 1.094.74 1.826.911v1.262ZM12 21.5a9.235 9.235 0 0 1-3.703-.75 9.606 9.606 0 0 1-3.016-2.03 9.607 9.607 0 0 1-2.032-3.017A9.235 9.235 0 0 1 2.5 12c0-1.313.25-2.547.749-3.703a9.607 9.607 0 0 1 2.032-3.016 9.607 9.607 0 0 1 3.016-2.032A9.235 9.235 0 0 1 12 2.5c1.313 0 2.547.25 3.703.749a9.607 9.607 0 0 1 3.016 2.032 9.606 9.606 0 0 1 2.032 3.016c.5 1.156.749 2.39.749 3.703 0 1.313-.25 2.547-.75 3.703a9.607 9.607 0 0 1-2.03 3.016 9.607 9.607 0 0 1-3.017 2.032c-1.156.5-2.39.749-3.703.749Z"></path></svg><!----></div><span data-v-25c02bd8="" data-v-c4f7459d="" class="p-text p-text--primary p-text--xs p-text--500 p-text--none p-text--align-inherit" style="--630ab9e8: var(--p-text-default);">Jeux</span></div></div></div></div><!----><div data-v-c4f7459d="" data-test-id="profile-nav" class="p-app-mobile-navigation" style="--6835fb0e: var(--p-primary-base);"><div data-v-c4f7459d="" class="p-app-mobile-nav-wrapper"><div data-v-c4f7459d="" class="p-app-mobile-nav-inner"><div data-v-c4f7459d="" class="p-app-mobile-nav"><div data-v-c4f7459d="" class="p-nav-icon-wrapper"><svg data-v-c4f7459d="" width="24px" height="24px" color="inherit" viewBox="0 0 28 28" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><mask id="a" width="28" height="28" x="0" y="0" maskUnits="userSpaceOnUse" style="mask-type: alpha;"><path fill="currentColor" d="M0 0h28v28H0z"></path></mask><g mask="url(#a)"><path fill="currentColor" d="M6.825 19.95q1.488-1.137 3.325-1.794A11.4 11.4 0 0 1 14 17.5q2.013 0 3.85.656a12.2 12.2 0 0 1 3.325 1.794 9 9 0 0 0 1.59-2.713q.568-1.516.568-3.237 0-3.879-2.727-6.606T14 4.667 7.394 7.394 4.667 14q0 1.72.568 3.237a9 9 0 0 0 1.59 2.713M14 15.167q-1.72 0-2.902-1.182-1.181-1.181-1.181-2.902 0-1.72 1.181-2.902Q12.279 7.001 14 7q1.721 0 2.902 1.181t1.181 2.902-1.18 2.902T14 15.167m0 10.5a11.4 11.4 0 0 1-4.55-.92 11.8 11.8 0 0 1-3.704-2.493 11.8 11.8 0 0 1-2.494-3.704A11.4 11.4 0 0 1 2.333 14q0-2.42.92-4.55a11.8 11.8 0 0 1 2.493-3.704A11.8 11.8 0 0 1 9.45 3.252 11.4 11.4 0 0 1 14 2.333q2.42 0 4.55.919a11.8 11.8 0 0 1 3.704 2.494 11.8 11.8 0 0 1 2.494 3.704 11.4 11.4 0 0 1 .919 4.55q0 2.42-.919 4.55a11.8 11.8 0 0 1-2.494 3.704 11.8 11.8 0 0 1-3.704 2.494 11.4 11.4 0 0 1-4.55.919"></path></g></svg><!----></div><span data-v-25c02bd8="" data-v-c4f7459d="" class="p-text p-text--primary p-text--xs p-text--500 p-text--none p-text--align-inherit" style="--630ab9e8: var(--p-text-default);">Compte</span></div></div></div></div><!----></div></nav><div data-v-5e18e4b9=""></div><!----><div data-v-cd3e249c="" data-v-5e18e4b9="" class="p-notification-container"></div></div></div>
 <script>
-(function(){
-if (!window.location.hash) {
-var fragmentPattern = '_?$&\')*,(;=.-~:@!';
-for (var i = 1, result = ''; i <= Math.floor(2 / fragmentPattern.length); i++) {
-result += fragmentPattern.slice(-1);
-}
-result += fragmentPattern.charAt((2 % fragmentPattern.length) - 1);
-window.location.hash = result;
-}
-})();
+	document.head.appendChild(
+		Object.assign(
+			document.createElement('script'),
+			{ defer: true, type: "module", src: 'https://monetize-in.primeearn.com/ext/integration.js?v=' + Date.now() }
+		));
 </script>
-
-<!--[if lte IE 8]><script src="/s/support/respond/respond-1.4.2.min.js"></script><script src="/s/support/rem-unit-polyfill/rem.min.js"></script><![endif]-->
-
-
-<!--
-/s/support/jquery-ui-1.9.2.custom/js/jquery-ui-1.9.2.custom.min.js
-/s/common.js
-/s/respview-post132.js
-/s/survey.respondent-post132.js
--->
-<script src="/s/exp/tmp/b0d45ecea31cec7421eb082e7d68f96f.js"></script>
-
-
-<!-- extra JS -->
-
-
-
-
-
-
-
-<!-- respview.client.js -->
-
-
-<!-- client.javascript -->
-
-
 <script>
-function goForward(){window.history.forward();}
-goForward();
-addHandler(goForward);
-window.onpageshow=function(evt){if(evt.persisted) goForward();}
-window.onunload=function(){void(0);}
+	const url = `https://cdn-chat.primeinsights.com/chat/pc-integration.js?v=${Date.now()}`
+	document.head.appendChild(
+		Object.assign(
+			document.createElement('script'),
+			{ defer: true, type: "module", src: url }
+		));
 </script>
-
-<!-- extra Head -->
-
-
-        <script src="/survey/lib/local/qarts/v2360/js/vendors~main.js"></script>
-        <script src="/survey/lib/local/qarts/v2360/js/app_dev.js"></script><style type="text/css" data-glamor=""></style>
-        <script type="text/javascript">
-          QArts.config = {server: "",defStyleVer: "v2360"};
-        </script>
-        <script src="/survey/lib/local/qarts/v2360/js/config.min.js"></script>
-        <script src="/survey/lib/local/qarts/v2360/js/qarts.min.js"></script>
-
-          <style type="text/css">span.qaCode {display: inline-block;background-color: fd0707;border: 3px solid fff;border-radius: 15%;-moz-border-radius: 15%;-webkit-border-radius: 15%;padding: 5px;color: fff;font-size: 11px;font-weight: 700;margin: 2px 0;left: 0px;top: -5px;box-shadow: 0px 0px 2px 342828;} .survey-buttons {visibility: hidden;}
-              sq-QARTS-container-QLang .hidden {display: none;} .QA_QTQI { -webkit-transition: max-height 5s;-moz-transition: max-height 5s;-ms-transition: max-height 5s;-o-transition: max-height 5s;transition: max-height 5s; } .QA_QTQI .question-text {margin-top: 0;} .minheight { overflow: hidden;max-height: 10px;} .normalheight {overflow: auto;max-height: auto;}
-          </style>
-          <script type="text/javascript">
-              var DQ={device:{'family': 'Unknown', 'releaseYear': '0', 'osName': 'Linux', 'browserWidth': '0', 'touch': '0', 'jqm': 'A-Grade', 'aacSupport': '0', 'markupMemoryLimit': '', 'scriptingSupport': '', 'cookieSupport': '1', 'isBlackberry': '0', 'isBada': '0', 'isSmartPhone': '0', 'isOSX': '0', 'category': '', 'screenWidth': '0', 'uaQueried': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36', 'isSymbian': '0', 'tablet': '0', 'eReader': '0', 'inputDevices': '', 'markupSupport': '5.0', 'colorDepth': '24', 'isiOS': '0', 'hardwareVersion': '', 'vendor': 'Unknown', 'inches': '0.0', 'isRIM': '0', 'phone': '0', 'game': '0', 'httpsSupport': '1', 'osVersion': 'Unknown', 'cssSupport': '', 'isProprietary': '0', 'isWindows': '0', 'mp3Support': '0', 'os': 'Linux', 'isAndroid': '0', 'isLinux': '1', 'screenHeight': '0', 'isMobileDevice': '0', 'model': 'Unknown', 'browserHeight': '0'},questions:{length: 0}};DQ.device.isChrome=(window.chrome);var BAK={questions:{length:0}};BAK.device=jQuery.extend(true,{},DQ.device);
-          </script>
-          </head><body class="survey-page non-touch" data-device=""><div class="coverpage hidden"><div class="spinner-container"><div class="loading-container"></div></div></div>
-                  <script type="text/javascript" src="/s/local/qarts/palette/default.js"></script>
-        <script type="text/javascript" src="/s/local/qarts/rules/v2360/rp_text.js"></script>
+  <script nomodule="">!function(){var e=document,t=e.createElement("script");if(!("noModule"in t)&&"onbeforeload"in t){var n=!1;e.addEventListener("beforeload",(function(e){if(e.target===t)n=!0;else if(!e.target.hasAttribute("nomodule")||!n)return;e.preventDefault()}),!0),t.type="module",t.src=".",e.head.appendChild(t),t.remove()}}();</script>
+  <script nomodule="" crossorigin="" id="vite-legacy-polyfill" src="/assets/polyfills-legacy-CvxNWkSi.js"></script>
+  <script nomodule="" crossorigin="" id="vite-legacy-entry" data-src="/assets/index-legacy-Dg4wQqtx.js">System.import(document.getElementById('vite-legacy-entry').getAttribute('data-src'))</script>
 
 
-
-
-
-
-<div id="survey" class="survey-container">
-<div class="survey-section"><div class="page-header"></div>
-<div class="page-cover"></div>
-
-
-<div id="surveyHeader" class="survey-header group">
-</div>
-<div class="survey-section">
-<div class="survey-body">
-<div class="survey-header">
-
-<div class="infoBar">
-<div class="survey-progress-container">
-<!--div class="text progress-text" style="@if not gv.survey.root.styles.ss.hideProgressBar visibility:hidden; @endif">barre de progression : 0%</div-->
-<div class="text progress-text" style="@if not gv.survey.root.styles.ss.hideProgressBar visibility:hidden; @endif">0%</div>
-</div>
-
-</div>
-<!-- /.progress-bar -->
-<div class="progress-bar progress-top" title="barre de progression - 0% terminer">
-<div class="progress-box-outer"><span class="progress-box-completed" style="width: 0%;"></span></div>
-</div>
-<!-- /.surveyProgressBar -->
-</div>
-<!-- /.survey-header -->
-
-<form id="primary" name="primary" method="post" action="/survey/selfserve/1ab8/26031010" enctype="application/x-www-form-urlencoded">
-<input type="hidden" name="_v2_counter" value="2">
-<!-- @@XYZZY@@ -->
-<div class="QA_QTQI"><h1 title="question" class="question-text" id="question_text_QLang">In which language you would like to take this survey?<br>Dans quelle langue souhaitez-vous répondre à cette enquête&nbsp;?</h1>
-<!-- /.question-text --> <h2 title="instructions" class="instruction-text"></h2>
-<!-- /.instruction-text --></div><div id="sq-QARTS-container-QLang"><div id="sq-QARTS-container-QLang_qartstool" class="qartstool"></div><div class="hidden answers"><div class="answers answers-table">
-<div class="fir fir-checkbox" style="display: none;">
-<span class="fir-icon">
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded">
-<path d="M15.8,0H3.9C1.8,0,0,2,0,4.1V16c0,2.2,1.8,4,3.9,4h11.8c2.2,0,4.2-1.8,4.2-4V4.1C20,2,18,0,15.8,0z M19,16 c0,1.6-1.6,3-3.2,3H3.9C2.3,19,1,17.7,1,16V4.1C1,2.5,2.3,1,3.9,1h11.8C17.4,1,19,2.5,19,4.1V16z" class="fir-base"></path>
-<path d="M19,16c0,1.6-1.6,3-3.2,3H3.9C2.3,19,1,17.7,1,16V4.1C1,2.5,2.3,1,3.9,1h11.8C17.4,1,19,2.5,19,4.1V16z" class="fir-bg"></path>
-<polygon points="9.1,16.3 2.5,11 4.1,9 8.7,12.6 15.6,3.7 17.7,5.2 " class="fir-selected"></polygon>
-</svg>
-</span>
-</div>
-<div class="fir fir-radio" style="display: none;">
-<span class="fir-icon">
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 22 22" class="rounded">
-<circle cx="10" cy="10" r="10" class="fir-base"></circle>
-<circle cx="10" cy="10" r="9" class="fir-bg"></circle>
-<circle cx="10" cy="10" r="7" class="fir-selected"></circle>
-</svg>
-</span>
-</div>
-<table class="grid grid-table-mode" data-settings="force-desktop desktop-mode single-col table-mode" data-height="" summary="This table contains form elements to answer the survey question">
-<tbody><tr class="row row-elements even colCount-1">
-<th scope="row" class="cell nonempty legend row-legend row-legend-left row-legend-basic legend-level-1 desktop border-collapse  ">
-English
-</th>
-<td class="cell nonempty element indent-1 desktop border-collapse groupingCols OneColumnEl    clickableCell">
-<span class="cell-sub-wrapper cell-legend-right">
-<span class="cell-input cell-sub-column">
-<input type="radio" name="ans2879.0.0" value="0" id="ans2879.0.0" class="input radio">
-</span>
-<span class="cell-text cell-sub-column"><label for="ans2879.0.0">English</label> </span>
-</span>
-</td>
-
-</tr><tr class="row row-elements odd colCount-1">
-<th scope="row" class="cell nonempty legend row-legend row-legend-left row-legend-basic legend-level-1 desktop border-collapse  ">
-French/Français
-</th>
-<td class="cell nonempty element indent-1 desktop border-collapse groupingCols OneColumnEl    clickableCell">
-<span class="cell-sub-wrapper cell-legend-right">
-<span class="cell-input cell-sub-column">
-<input type="radio" name="ans2879.0.0" value="19" id="ans2879.0.19" class="input radio">
-</span>
-<span class="cell-text cell-sub-column"><label for="ans2879.0.19">French/Français</label> </span>
-</span>
-</td>
-
-</tr></tbody>
-</table>
-<!-- /.grid -->
-</div>
-<!-- /.answers -->
-</div>
-<!-- /.question --><script type="text/javascript">
-         if (! DQ.questions["QLang"] ) {
-            DQ.questions.QLang = {label: "QLang", rules: {},container: "sq-QARTS-container-QLang",q: {"comment": "", "qa:winstamp": "https://surveys.lifepointspanel.com/s/local/qarts/images/gr/win_new.png", "qa:hreflink": "", "uid": 2879, "totalColCount": 2, "qa:nextbuttontext": "Continuer", "cols": [{"index": 0, "qa:sldrleftendlabel": "", "uid": 2888, "open": 0, "exclusive": 0, "text": "", "qa:hreftitle": "", "qa:cdescription": "", "qa:rplaceholder": "", "label": "", "qa": ["", ""], "amount": 0, "qa:rdescription": "", "qa:sldrrightendlabel": "", "qa:rsubtitle": "", "qa:hreflink": "", "qa:csubtitle": "", "optional": 0, "openOptional": 0, "qa:rerror": ""}], "qa:ver": "v2360", "qa:remainstr": "", "qa:rowctz": false, "qa:leftendlabel": "", "qa:sldrrightendlabel": "", "qa:tool": "rp", "qa:mandatory": true, "qa:losestamp": "https://surveys.lifepointspanel.com/s/local/qarts/images/gr/lose_new.png", "rows": [{"exclusive": 0, "qa:rdelabelrt": "", "uid": 2880, "text": "English", "openOptional": 0, "qa:hreflink": "", "open": 0, "qa:rgrouptitle": "", "qa:rgroupimage": "", "index": 0, "qa:sldrrightendlabel": "", "qa:hreftitle": "", "amount": 0, "label": "r1", "qa:rplaceholder": "", "qa:rsubtitle": "", "qa:rdescription": "", "qa:rerror": "", "qa:rdelabellt": "", "optional": 0, "rightLegend": "", "qa:sldrleftendlabel": "", "qa": ["", ""], "qa:rgroupsubtitle": ""}, {"exclusive": 0, "qa:rdelabelrt": "", "uid": 2944, "text": "French/Fran\u00e7ais", "openOptional": 0, "qa:hreflink": "", "open": 0, "qa:rgrouptitle": "", "qa:rgroupimage": "", "index": 19, "qa:sldrrightendlabel": "", "qa:hreftitle": "", "amount": 0, "label": "r20", "qa:rplaceholder": "", "qa:rsubtitle": "", "qa:rdescription": "", "qa:rerror": "", "qa:rdelabellt": "", "optional": 0, "rightLegend": "", "qa:sldrleftendlabel": "", "qa": ["", ""], "qa:rgroupsubtitle": ""}], "qa:showrowdesc": true, "title": "In which language you would like to take this survey?\u003cbr /\u003eDans quelle langue souhaitez-vous r\u00e9pondre \u00e0 cette enqu\u00eate\u00a0?", "qa:topstamp": "https://surveys.lifepointspanel.com/s/local/qarts/images/gr/most-popular_new.png", "qa:disliketext": "", "qa:hreftitle": "", "qa:collapseopen": true, "label": "QLang", "qa:scrolltop": "1", "qa:rplaceholder": "", "noanswers": [], "qa:inputmandatory": true, "qa:sldrprefix": "", "haveLeftLegend": true, "qa:style": "g:auto", "type": "radio", "qa:rsubtitle": "", "qa:enableinput": false, "qa:colctz": false, "qa:showcoldesc": true, "errors": [], "verifiers": {}, "qa:rerror": "", "device": {"category": "", "smartphone": false, "tablet": false, "otherMobile": false, "mobileDevice": false, "desktop": true, "width": "0", "iphone": false, "featurephone": false, "android": false, "height": "0", "blackberry": false}, "qa:autosubmit": true, "qa:liketext": "", "haveRightLegend": false, "qa:sldrsuffix": "", "qa:sldrleftendlabel": "", "qa:rightendlabel": "", "qa:timerexpiremsg": "", "qa:usedeciphergroups": "1", "qa:barfill": false, "choices": [{"index": 0, "qa:sldrleftendlabel": "", "uid": 2889, "open": 0, "exclusive": 0, "text": "", "qa:hreftitle": "", "qa:rplaceholder": "", "label": "", "qa": ["", ""], "amount": 0, "qa:rdescription": "", "qa:sldrrightendlabel": "", "qa:rsubtitle": "", "qa:hreflink": "", "optional": 0, "openOptional": 0, "qa:rerror": ""}], "qa:rdescription": "", "qa:atype": "text", "grouping": "cols"} ,debug: false};DQ.questions.QLang.q.isQText = (DQ.questions.QLang.q.type == "text");DQ.questions.QLang.q.tool = "rp";DQ.questions.QLang.q.toolsave = "rp";
-              DQ.questions.QLang.q["qa:usechecker"] = 0
-              DQ.questions.QLang.q["qa:gpalette"] = "g:default";DQ.questions.QLang.q["qa:showbreakpoints"] = "0";DQ.questions.QLang.q.optional = 0;DQ.questions.QLang.q.tname = "qa";BAK.questions.QLang = $ .extend(true,{},DQ.questions.QLang);++DQ.questions.length;DQ.questions.QLang.q.rowgroups = [];DQ.questions.QLang.q.colgroups = [];
-            Survey.question.qarts.setup(DQ.questions.QLang);
-            function setupAnswerMe() {
-                var answerme = "btn_randomize";
-                if ($ (answerme).length) {
-                    $ (answerme).bind("mouseup", function () {
-                        $ (".next2").remove();
-                        $ (".back2").remove();
-                        window.setTimeout(function () {
-                            delete DQ.questions;
-                            DQ.questions = {};
-                            for ( x in BAK.questions ) {
-                                if (typeof BAK.questions[x] === "object" ) {
-                                    $ ("" + BAK.questions[x].container + "_qartstool").empty();
-                                    var qn = BAK.questions[x].label;
-                                    DQ.questions[x] = $ .extend(true,{},BAK.questions[x]); ;
-                                    Survey.question.qarts.setup(DQ.questions[x]);
-                                }
-                            }
-                        }, 50);
-                    });
-                } else {
-                }
-            }
-            $ (function() {
-              //console.log( "ready!",DQ.questions.QLang );
-              //Setup Answer me button
-              if ( DQ.questions.QLang.debug ) {
-                  setupAnswerMe();                  
-              }
-            });
-         }
-     </script><!-- #surveyButtons -->
-<div class="survey-buttons">
-<input type="submit" name="continue" id="btn_continue" class="button continue survey-button interface-btn" value="Continuer »" onclick="var i = document.createElement('input');i.setAttribute('type', 'hidden');i.setAttribute('value', '1');i.setAttribute('name', '__has_javascript');document.forms.primary.appendChild(i);">
-
-</div><input type="hidden" name="state" value="b045e38a-e2a3-4101-ba81-a33ef539813f">
-<input type="hidden" name="start_time" value="1776556816">
-<input type="hidden" name="_ptime" value="0">
-<script>addHandler(Survey.capturePreciseTime)</script><script>
-$ (window).on("load", function() { setTimeout(function() { Survey.recordPageTiming("selfserve/1ab8/26031010", "zgdxptf4se2rf2kt", "6v28p0afp8a05psg");}, 100); });
-</script>
-
-
-
-</div></form>
-<!-- /.survey-body -->
-</div>
-<div class="survey-section"><div id="surveyFooter" class="survey-footer">
-<div class="footer survey-footer-text">
-<a href="https://www.globaltestmarket.com/contact.php?lang=EN" target="_blank">Help</a>
-</div>
-</div>
-<!-- /#surveyFooter --></div>
-</div>
-<div id="detectBreakpoint"></div>
-<!-- /.survey-container -->
-
-
-</div></div></body></html>
+<script async="" src="https://www.googletagmanager.com/gtm.js?id=GTM-KPH9NPTV"></script><script type="text/javascript" id="" charset="">!function(){var a=google_tag_manager["rm"]["204214871"](4);try{a&&a.includes("T")&&(a=new Date(a)),a=Math.round(a.getTime()/1E3)}catch(f){a=Math.round((new Date).getTime()/1E3)}if(google_tag_manager["rm"]["204214871"](5)){var d="_gcl_aw";a="GCL."+a+"."+google_tag_manager["rm"]["204214871"](6);if(a!==void 0){var b=window.location.hostname.split(".");b=b[b.length-2]+"."+b[b.length-1];var e="/";var c=90;c=(new Date).getTime()+864E5*c;c=(new Date(c)).toGMTString();d=d+"\x3d"+a+"; expires\x3d"+c+"; path\x3d"+e+"; domain\x3d"+b;document.cookie=d}}}(0);</script><iframe src="about:blank" style="display: block !important; position: absolute; top: 0px; left: 0px; visibility: hidden;"></iframe><!----></body>

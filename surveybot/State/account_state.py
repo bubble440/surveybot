@@ -96,6 +96,8 @@ def _default_state(account_id: str) -> Dict[str, Any]:
         "daily_balance_target": {},   # ex: {"2026-04-10": 3.50} — objectif de solde courant pour la journée
         "daily_balance_gained": {},   # ex: {"2026-04-10": 1.00} — gain journalier cumulé (survit aux retraits)
         "total_earned": 0.0,
+        "fivesim_phone": "",
+        "fivesim_order_id": "",
         "updated_ts": _now(),
     }
 

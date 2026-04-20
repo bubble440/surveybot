@@ -1243,7 +1243,7 @@ def _handle_phone_verification(driver):
 
     Retourne :
       True  — écran détecté + numéro saisi + bouton cliqué
-      False — écran détecté mais ACCOUNT_PHONE absent (log + abandon sans clic)
+      False — écran détecté mais impossible d'obtenir un numéro (log + abandon)
       None  — écran absent (continuer le flux normal)
     """
     try:
@@ -1265,12 +1265,32 @@ def _handle_phone_verification(driver):
     if not has_screen:
         return None
 
-    phone = (os.getenv("ACCOUNT_PHONE") or "").strip()
+    log_info("[PHONE_VERIF]", "Écran vérification téléphone détecté — résolution du numéro")
+
+    account_id = getattr(driver, "_survey_account_id", None)
+    api_key_5sim = (os.getenv("FIVESIM_API_KEY") or "").strip()
+
+    phone = None
+    if api_key_5sim and account_id:
+        try:
+            from Survey.fivesim_client import buy_number, reuse_number
+            from State.account_state import load_state
+            state = load_state(account_id)
+            stored_phone = (state.get("fivesim_phone") or "").strip()
+            if stored_phone:
+                log_debug("[PHONE_VERIF]", f"Tentative reuse numéro existant: {stored_phone}")
+                phone, _ = reuse_number(account_id, stored_phone)
+            else:
+                log_debug("[PHONE_VERIF]", "Aucun numéro en state → achat nouveau")
+                phone, _ = buy_number(account_id)
+        except Exception as e:
+            log_info("[PHONE_VERIF]", f"5sim indisponible ({e}) — fallback ACCOUNT_PHONE")
+
     if not phone:
-        log_info("[PHONE_VERIF]", "Écran vérification téléphone détecté — ACCOUNT_PHONE non défini, abandon")
+        log_info("[PHONE_VERIF]", "Aucun numéro disponible (5sim + ACCOUNT_PHONE absents) — abandon")
         return False
 
-    log_info("[PHONE_VERIF]", "Écran vérification téléphone détecté — saisie du numéro")
+    log_info("[PHONE_VERIF]", "Saisie du numéro de téléphone")
 
     try:
         inp = driver.find_element(By.CSS_SELECTOR, "input.phone-number-input")
@@ -1308,6 +1328,125 @@ def _handle_phone_verification(driver):
     except Exception as e:
         log_info("[PHONE_VERIF]", f"Clic Suivant échoué: {e}")
         return False
+
+
+def _handle_pin_verification(driver):
+    """
+    Détecte et traite l'écran de saisie du code PIN à 6 chiffres (après vérification téléphone)
+    sur topsurveys.app.
+
+    Critères DOM stricts : div.phone-verification-container ET 6 input.pin-input-item présents.
+    Scoped topsurveys.app uniquement.
+
+    Retourne :
+      True  — PIN saisi + bouton Confirmer cliqué
+      False — écran détecté mais order_id absent ou timeout 5sim ou erreur
+      None  — écran absent (continuer le flux normal)
+    """
+    try:
+        current_url = driver.current_url or ""
+    except Exception:
+        current_url = ""
+
+    if "topsurveys.app" not in current_url.lower():
+        return None
+
+    try:
+        pin_inputs = driver.find_elements(By.CSS_SELECTOR,
+            "div.phone-verification-container input.pin-input-item")
+    except Exception:
+        return None
+
+    if len(pin_inputs) < 6:
+        return None
+
+    log_info("[PIN_VERIF]", "Écran PIN détecté (6 inputs pin-input-item)")
+
+    # Résolution de l'order_id : account_state en priorité, env en fallback
+    account_id = getattr(driver, "_survey_account_id", None)
+    order_id = ""
+    if account_id:
+        try:
+            from State.account_state import load_state
+            state = load_state(account_id)
+            order_id = (state.get("fivesim_order_id") or "").strip()
+            log_debug("[PIN_VERIF]", f"order_id depuis account_state: {order_id}")
+        except Exception as e:
+            log_debug("[PIN_VERIF]", f"load_state échoué: {e}")
+
+    if not order_id:
+        order_id = (os.getenv("FIVESIM_ORDER_ID") or "").strip()
+        if order_id:
+            log_info("[PIN_VERIF]", "Fallback FIVESIM_ORDER_ID (env statique)")
+
+    if not order_id:
+        log_info("[PIN_VERIF]", "order_id introuvable (account_state + env) — abandon")
+        return False
+
+    try:
+        from Survey.fivesim_client import poll_sms_code
+        pin_code = poll_sms_code(order_id)
+    except Exception as e:
+        log_info("[PIN_VERIF]", f"poll_sms_code échoué: {e}")
+        return False
+
+    if not pin_code:
+        log_info("[PIN_VERIF]", "Code PIN non reçu dans le délai imparti (60s) — abandon")
+        return False
+
+    log_info("[PIN_VERIF]", f"Code PIN reçu ({len(pin_code)} chiffres) — saisie")
+
+    try:
+        pin_inputs = driver.find_elements(By.CSS_SELECTOR,
+            "div.phone-verification-container input.pin-input-item")
+        for i, digit in enumerate(pin_code[:6]):
+            inp = pin_inputs[i]
+            driver.execute_script("arguments[0].scrollIntoView({block:'center'});", inp)
+            inp.click()
+            inp.send_keys(digit)
+            time.sleep(0.1)
+    except Exception as e:
+        log_info("[PIN_VERIF]", f"Saisie PIN échouée: {e}")
+        return False
+
+    # Attendre que le bouton Confirmer soit enabled (3s max)
+    confirm_btn = None
+    for _ in range(30):
+        try:
+            btn = driver.find_element(By.CSS_SELECTOR,
+                "div.phone-verification-container button.p-btn--fill")
+            if btn.get_attribute("disabled") is None:
+                confirm_btn = btn
+                break
+        except Exception:
+            pass
+        time.sleep(0.1)
+
+    if confirm_btn is None:
+        log_info("[PIN_VERIF]", "Bouton Confirmer toujours désactivé après 3s — abandon")
+        return False
+
+    if _env_truthy("CTA_INTERCEPT_ONLY"):
+        log_info("[PIN_VERIF]", "CTA_INTERCEPT_ONLY — interception OK, bouton Confirmer enabled, pas de clic")
+        return True
+
+    try:
+        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", confirm_btn)
+        driver.execute_script("arguments[0].click();", confirm_btn)
+        log_info("[PIN_VERIF]", "Bouton Confirmer cliqué")
+        time.sleep(1.0)
+    except Exception as e:
+        log_info("[PIN_VERIF]", f"Clic Confirmer échoué: {e}")
+        return False
+
+    # Finaliser la commande 5sim (best-effort)
+    try:
+        from Survey.fivesim_client import finish_order
+        finish_order(order_id)
+    except Exception:
+        pass
+
+    return True
 
 
 def _should_skip_post_actions_navigation(driver, question_blocks: list[dict]) -> bool:
@@ -1407,6 +1546,13 @@ def execute_survey_page(driver, account_id, api_key, ctx=None):
     _phone_result = _handle_phone_verification(driver)
     if _phone_result is not None:
         return _phone_result
+
+    # =========================================================================
+    # PATCH: Écran saisie code PIN TopSurveys (après vérification téléphone)
+    # =========================================================================
+    _pin_result = _handle_pin_verification(driver)
+    if _pin_result is not None:
+        return _pin_result
 
     # =========================================================================
     # PATCH: Detecter popup TopSurveys
