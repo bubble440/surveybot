@@ -659,7 +659,7 @@ def launch_browser(config: dict | None = None):
     # --- 2) Attacher Selenium au Chrome déjà lancé ---
     # Attendre que Chrome expose son debug port (jusqu'à 10s)
     import urllib.request
-    for attempt in range(20):
+    for attempt in range(120):
         try:
             urllib.request.urlopen(f"http://127.0.0.1:{debug_port}/json", timeout=1)
             print(f"[LAUNCH] Debug port prêt après {attempt * 0.5:.1f}s")
@@ -667,7 +667,7 @@ def launch_browser(config: dict | None = None):
         except Exception:
             time.sleep(0.5)
     else:
-        print(f"[LAUNCH][WARN] Debug port toujours indisponible après 10s — tentative attach quand même")
+        print(f"[LAUNCH][WARN] Debug port toujours indisponible après 60s — tentative attach quand même")
 
     opts = webdriver.ChromeOptions()
     opts.add_experimental_option("debuggerAddress", f"127.0.0.1:{debug_port}")
