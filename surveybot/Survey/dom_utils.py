@@ -182,6 +182,28 @@ def _is_actionable_visible(el) -> bool:
                     return True
             except Exception:
                 pass
+            # GfK mrIWeb: select.mrDropdown est dans un .platform_clone masqué ;
+            # le widget custom .combo_master visible est dans le même .acc_ct parent.
+            try:
+                el_classes = (el.get_attribute("class") or "").lower()
+                if "mrdropdown" in el_classes:
+                    platform_clones = el.find_elements(
+                        By.XPATH,
+                        "ancestor::div[contains(concat(' ',normalize-space(@class),' '),' platform_clone ')][1]",
+                    )
+                    if platform_clones:
+                        combo_widgets = platform_clones[0].find_elements(
+                            By.XPATH,
+                            "preceding-sibling::*["
+                            "contains(concat(' ',normalize-space(@class),' '),' combo_master ') or "
+                            "contains(concat(' ',normalize-space(@class),' '),' combo_ct ')"
+                            "][1]",
+                        )
+                        for widget in combo_widgets:
+                            if widget.is_displayed():
+                                return True
+            except Exception:
+                pass
             return False
 
         # 3) Cas standard: vérifier is_displayed()

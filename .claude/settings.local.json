@@ -6,7 +6,12 @@
       "Bash(python surveybot/tools/replay_snapshot.py snapshots/20260417_101757_after_dom_analyze)",
       "Bash(python surveybot/tools/replay_snapshot.py snapshots/20260417_101757_after_dom_analyze --use-dom-outer)",
       "Bash(python -c \"import ast; ast.parse\\(open\\('surveybot/Survey/dom_extractors_misc.py'\\).read\\(\\)\\); print\\('OK'\\)\")",
-      "Bash(python3 -c ' *)"
+      "Bash(python3 -c ' *)",
+      "Bash(python -c \"import sys; sys.path.insert\\(0,'C:/projects/Surveys/surveybot'\\); from Survey.dom_extractors_misc import _extract_gfk_accordion_radio_rows; print\\('OK'\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('C:/projects/Surveys/surveybot/Survey/dom_extractors_misc.py'\\).read\\(\\)\\); print\\('syntax OK'\\)\")",
+      "Bash(python -c \"from surveybot.Survey.dom_extractors_misc import _extract_kantar_rowrank_blocks; print\\('import OK'\\)\")",
+      "Bash(python -c \"from Survey.dom_extractors_misc import _extract_kantar_rowrank_blocks; print\\('import OK'\\)\")",
+      "Bash(python -c \"from Survey.dom_analyzer import analyze_dom, _extract_kantar_rowrank_blocks; print\\('dom_analyzer import OK'\\)\")"
     ]
   }
 }

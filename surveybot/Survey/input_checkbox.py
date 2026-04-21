@@ -967,6 +967,35 @@ def click_checkbox_by_label(driver, target_text: str, context_hint: str | None =
 
             scroll_into_view(driver, cb)
 
+            # GfK/AngularJS: l'input porte ng-model mais l'état est géré par
+            # pCheckBox() via ng-click sur div.prettycheckbox — is_selected() sur
+            # l'input natif retourne toujours False (le $scope Angular contrôle la
+            # valeur, pas .checked). On clique le div.prettycheckbox[ng-click] et
+            # on vérifie via <a class="checked"> (ng-class binding Angular).
+            # Guard DOM strict: ng-model non vide + prettycheckbox[ng-click] dans muCT.
+            _ng_model = cb.get_attribute("ng-model") or ""
+            if _ng_model:
+                try:
+                    _pretty = cb.find_elements(
+                        By.XPATH,
+                        "ancestor::*[contains(@class,'muCT')][1]"
+                        "//div[contains(@class,'prettycheckbox') and @ng-click]",
+                    )
+                    if _pretty:
+                        scroll_into_view(driver, _pretty[0])
+                        try:
+                            _pretty[0].click()
+                        except Exception:
+                            ActionChains(driver).move_to_element(_pretty[0]).click().perform()
+                        _a_checked = bool(
+                            _pretty[0].find_elements(By.XPATH, ".//a[contains(@class,'checked')]")
+                        )
+                        if _a_checked or is_checked(cb):
+                            return cb
+                        continue
+                except Exception:
+                    pass
+
             # Guard DOM minimal: si le label contient un lien (<a>), on évite tout
             # clic sur le label/texte pour ne jamais déclencher de navigation parasite.
             # On agit uniquement sur l'input checkbox lié.
@@ -1012,7 +1041,11 @@ def click_checkbox_by_label(driver, target_text: str, context_hint: str | None =
                 except Exception:
                     js_click(driver, cb)
 
-            force_checkbox_events(driver, cb)
+            # Ne dispatch les events que si le click n'a pas suffi.
+            # Sur AngularJS (ng-model), le click natif déclenche déjà le $digest;
+            # un second `change` bubbling retogglerait la valeur.
+            if not is_checked(cb):
+                force_checkbox_events(driver, cb)
 
             if is_checked(cb):
                 return cb
