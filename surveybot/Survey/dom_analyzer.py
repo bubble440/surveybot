@@ -1780,6 +1780,29 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                 container = _nearest_question_container(els[0])
                 question = _extract_question_from_container(container, options) if container else ""
 
+            # mrIWeb/GfK: inputs carry class "mrSingle" but no ancestor matches
+            # standard container selectors. span.mrQuestionText is a DOM sibling
+            # of the choices container — query it directly, scoped to the same form.
+            if not question:
+                try:
+                    if "mrsingle" in _norm_lc(els[0].get_attribute("class") or ""):
+                        scope_nodes = els[0].find_elements(By.XPATH, "ancestor::form[1]")
+                        scope = scope_nodes[0] if scope_nodes else None
+                        q_spans = (
+                            scope.find_elements(By.CSS_SELECTOR, "span.mrQuestionText")
+                            if scope else
+                            driver.find_elements(By.CSS_SELECTOR, "span.mrQuestionText")
+                        )
+                        opt_lc = {_norm_lc(o) for o in options if o}
+                        for q_span in q_spans:
+                            txt = _norm(q_span.text or q_span.get_attribute("innerText") or "")
+                            if txt and _is_question_text(txt) and _norm_lc(txt) not in opt_lc:
+                                question = txt
+                                log_debug("[DOM_CONTEXT]", f"mriweb_mrsingle_fallback resolved question={question[:60]!r}")
+                                break
+                except Exception:
+                    pass
+
             # Pattern spécifique
             if not question:
                 # Pattern spécifique
