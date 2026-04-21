@@ -203,6 +203,72 @@ def _log_injection_report(report: dict) -> None:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# Résolution NielsenIQ slider (drag ActionChains)
+# ──────────────────────────────────────────────────────────────────────────────
+
+def solve_nielseniq_slider_auto(driver) -> bool:
+    """
+    Résolution du slider puzzle NielsenIQ (web70.gfk.com) via drag ActionChains.
+    Widget : .verify-move-block (poignée) → position left du .verify-gap.
+    1 tentative max. Aucun clic CTA.
+    """
+    from selenium.webdriver.common.action_chains import ActionChains
+
+    try:
+        has_widget = bool(driver.execute_script(
+            "return !!(document.querySelector('.verify-move-block') && "
+            "document.querySelector('.verify-gap') && "
+            "document.querySelector('.verify-bar-area'));"
+        ))
+        if not has_widget:
+            log_debug(_TAG, "solve_nielseniq_slider_auto: widget .verify-move-block introuvable")
+            return False
+
+        gap_left = driver.execute_script(
+            "var gap = document.querySelector('.verify-gap');"
+            "if (!gap) return null;"
+            "var m = (gap.style.left || '').match(/([\\d.]+)px/);"
+            "return m ? parseFloat(m[1]) : null;"
+        )
+        if gap_left is None:
+            log_info(_TAG, "solve_nielseniq_slider_auto: impossible d'extraire left du .verify-gap")
+            return False
+
+        log_info(_TAG, f"solve_nielseniq_slider_auto: gap_left={gap_left}px — drag en cours")
+
+        handle = driver.find_element("css selector", ".verify-move-block")
+        actions = ActionChains(driver)
+        actions.click_and_hold(handle)
+        steps = 8
+        step_x = gap_left / steps
+        for _ in range(steps):
+            actions.move_by_offset(int(step_x), 0)
+            actions.pause(0.05)
+        actions.release()
+        actions.perform()
+
+        time.sleep(1.0)
+
+        widget_gone = bool(driver.execute_script(
+            "var panel = document.querySelector('.verify-img-panel');"
+            "if (!panel) return true;"
+            "var cs = getComputedStyle(panel);"
+            "return cs.display === 'none' || cs.visibility === 'hidden';"
+        ))
+
+        if widget_gone:
+            log_info(_TAG, "✅ solve_nielseniq_slider_auto: widget disparu → résolu")
+            return True
+
+        log_info(_TAG, "❌ solve_nielseniq_slider_auto: widget toujours présent après drag")
+        return False
+
+    except Exception as e:
+        log_info(_TAG, f"❌ solve_nielseniq_slider_auto: exception — {e}")
+        return False
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Orchestrateur principal
 # ──────────────────────────────────────────────────────────────────────────────
 
@@ -248,7 +314,12 @@ def solve_tencent_auto(driver) -> bool:
             log_info(_TAG, "❌ jQuery slideVerify bypass — btn_continue introuvable via JS")
             return False
 
-        log_info(_TAG, "appId introuvable dans le DOM — abandon")
+        log_info(_TAG, "appId introuvable et #btn_continue absent — tentative drag NielsenIQ")
+        if solve_nielseniq_slider_auto(driver):
+            return True
+        from Management.guards.runtime_guard import get_guard
+        get_guard().signal_strict_survey("slider_captcha_unresolvable")
+        log_info(_TAG, "❌ slider NielsenIQ non résolvable → abandon")
         return False
     log_info(_TAG, f"appId extrait : {app_id}")
 

@@ -4475,12 +4475,17 @@ def handle_captcha_guard(driver):
         is_tencent = False
 
     if is_tencent:
+        from Survey.log_utils import log_info as _log_info
         try:
             from captcha.tencent_handler import solve_tencent_auto
-            return solve_tencent_auto(driver)
+            _solved = solve_tencent_auto(driver)
         except Exception as _te:
-            print(f"[TENCENT_HANDLER] Exception inattendue : {_te}")
-            # fall through to manual handling below
+            _log_info("CAPTCHA_GUARD", f"Exception inattendue tencent_handler : {_te}")
+            _solved = False
+        if not _solved:
+            from Management.guards.runtime_guard import get_guard
+            get_guard().signal_strict_survey("slider_captcha_unresolvable")
+        return _solved
 
     # PROD/DOCKER: arret controlé (pas de bypass)
     if captcha_behavior == "restart":
