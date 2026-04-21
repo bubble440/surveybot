@@ -14,21 +14,25 @@ def _log_warning(msg: str) -> None:
     log_info(f"[{_TAG}][WARN]", msg)
 
 
+_CHUNK_SIZE = 4 * 1024 * 1024  # 4 MB par chunk
+
+
 def _connect():
     import psycopg2
     db_url = os.getenv("DATABASE_URL", "postgres://postgres:3o1L6kfCFxuncbY@localhost:5432/postgres").strip()
     if not db_url:
         return None
-    return psycopg2.connect(db_url)
-
+    return psycopg2.connect(db_url, connect_timeout=60, options="-c statement_timeout=120000")
 
 def _ensure_table(conn) -> None:
     with conn.cursor() as cur:
         cur.execute("""
-            CREATE TABLE IF NOT EXISTS chrome_profile_store (
-                account_id  TEXT PRIMARY KEY,
-                profile_data BYTEA,
-                saved_at    TIMESTAMPTZ
+            CREATE TABLE IF NOT EXISTS chrome_profile_chunks (
+                account_id  TEXT,
+                chunk_index INT,
+                chunk_data  BYTEA,
+                saved_at    TIMESTAMPTZ,
+                PRIMARY KEY (account_id, chunk_index)
             )
         """)
     conn.commit()
@@ -109,21 +113,22 @@ def load_profile(account_id: str, dest_dir: str) -> None:
             _ensure_table(conn)
             with conn.cursor() as cur:
                 cur.execute(
-                    "SELECT profile_data FROM chrome_profile_store WHERE account_id = %s",
+                    "SELECT chunk_data FROM chrome_profile_chunks"
+                    " WHERE account_id = %s ORDER BY chunk_index",
                     (account_id,),
                 )
-                row = cur.fetchone()
+                rows = cur.fetchall()
         finally:
             conn.close()
 
-        if row is None:
+        if not rows:
             log_info(_TAG, f"Aucun profil persisté pour account_id={account_id} — premier run.")
             return
 
-        data = bytes(row[0])
+        data = b"".join(bytes(r[0]) for r in rows)
         with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as tf:
             tf.extractall(dest_dir)
-        log_info(_TAG, f"Profil chargé depuis Postgres pour account_id={account_id} ({len(data)} octets).")
+        log_info(_TAG, f"Profil chargé depuis Postgres pour account_id={account_id} ({len(data)} octets, {len(rows)} chunks).")
 
     except Exception as e:
         _log_warning(f"load_profile échoué pour account_id={account_id}: {e}")
@@ -131,16 +136,13 @@ def load_profile(account_id: str, dest_dir: str) -> None:
 
 def save_profile(account_id: str, src_dir: str) -> None:
     """
-    Archive src_dir en tar.gz et fait un upsert dans chrome_profile_store.
-    Les fichiers verrouillés (ex: Cache Windows) sont ignorés individuellement.
+    Archive src_dir en tar.gz et stocke le blob en chunks dans chrome_profile_chunks.
+    Chaque chunk est inséré dans une transaction séparée pour éviter les coupures réseau
+    sur les gros transferts via WireGuard/Fly.io.
     Ne lève jamais d'exception : tout échec est loggué et ignoré.
     """
     try:
         import psycopg2
-        conn = _connect()
-        if conn is None:
-            _log_warning("DATABASE_URL absent — profil non sauvegardé.")
-            return
 
         buf = io.BytesIO()
         with tarfile.open(fileobj=buf, mode="w:gz") as tf:
@@ -150,24 +152,38 @@ def save_profile(account_id: str, src_dir: str) -> None:
         if skipped:
             log_info(_TAG, f"{skipped} fichier(s) ignoré(s) (verrouillés) pour account_id={account_id}.")
 
+        chunks = [data[i:i + _CHUNK_SIZE] for i in range(0, len(data), _CHUNK_SIZE)]
+        n_chunks = len(chunks)
+        log_debug(_TAG, f"save_profile: {len(data)} octets → {n_chunks} chunk(s) de {_CHUNK_SIZE // 1024 // 1024} MB pour account_id={account_id}.")
+
+        conn = _connect()
+        if conn is None:
+            _log_warning("DATABASE_URL absent — profil non sauvegardé.")
+            return
+
         try:
             _ensure_table(conn)
+            # Suppression des anciens chunks en une seule transaction
             with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    INSERT INTO chrome_profile_store (account_id, profile_data, saved_at)
-                    VALUES (%s, %s, NOW())
-                    ON CONFLICT (account_id) DO UPDATE
-                        SET profile_data = EXCLUDED.profile_data,
-                            saved_at     = EXCLUDED.saved_at
-                    """,
-                    (account_id, psycopg2.Binary(data)),
-                )
+                cur.execute("DELETE FROM chrome_profile_chunks WHERE account_id = %s", (account_id,))
             conn.commit()
+
+            # Insertion de chaque chunk dans sa propre transaction
+            for idx, chunk in enumerate(chunks):
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        INSERT INTO chrome_profile_chunks (account_id, chunk_index, chunk_data, saved_at)
+                        VALUES (%s, %s, %s, NOW())
+                        """,
+                        (account_id, idx, psycopg2.Binary(chunk)),
+                    )
+                conn.commit()
+                log_debug(_TAG, f"Chunk {idx + 1}/{n_chunks} inséré pour account_id={account_id}.")
         finally:
             conn.close()
 
-        log_info(_TAG, f"Profil sauvegardé dans Postgres pour account_id={account_id} ({len(data)} octets).")
+        log_info(_TAG, f"Profil sauvegardé dans Postgres pour account_id={account_id} ({len(data)} octets, {n_chunks} chunks).")
 
     except Exception as e:
         _log_warning(f"save_profile échoué pour account_id={account_id}: {e}")
