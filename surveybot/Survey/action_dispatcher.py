@@ -1970,7 +1970,6 @@ def _apply_by_target_id(
 
                     # 2) ActionChains (souvent plus robuste quand le DOM est “capricieux)
                     try:
-                        from selenium.webdriver.common.action_chains import ActionChains
                         ActionChains(driver).move_to_element(node).pause(0.05).click().perform()
                         return True
                     except Exception as e:
@@ -2148,7 +2147,6 @@ def _apply_by_target_id(
                         if not ok:
                             # Tentative 2 : ActionChains (animation Confirmit parfois async)
                             try:
-                                from selenium.webdriver.common.action_chains import ActionChains
                                 ActionChains(driver).move_to_element(btn_el).pause(0.05).click().perform()
                                 time.sleep(0.15)
                                 ok = (btn_el.get_attribute("aria-checked") or "").strip().lower() == "true"
