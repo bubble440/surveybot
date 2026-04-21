@@ -14,7 +14,7 @@ Ces extracteurs utilisent des patterns DOM spécifiques à chaque plateforme.
 
 from __future__ import annotations
 from typing import List, Dict, Any, Set, Tuple
-import os, re, time, zlib
+import json, os, re, time, zlib
 from selenium.webdriver.common.by import By
 from Survey.log_utils import log_debug, log_info, is_debug
 
@@ -3919,6 +3919,214 @@ def _extract_kantar_rowpicker_radio_blocks(driver, frame_chain: list[int] | None
     return blocks
 
 
+def _extract_kantar_rowrank_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
+    """Extraction ranking pour Kantar rowrank (metaType=rowrank, mrIWeb).
+
+    Gate DOM strict:
+    - div[id^='container_'] [data-test='main-contain']._rowrank
+    - guard: input[type='text'].mrEdit[name*='Qslice'] dans questionContainer correspondant
+
+    Les cartes visuelles sont cliquées dans l'ordre voulu (1er clic = rang 1, etc.).
+    max_select est lu depuis CustomProps.row$capvalue dans le script SEJson.
+    """
+    frame_chain = list(frame_chain or [])
+
+    try:
+        rankers = driver.find_elements(
+            By.CSS_SELECTOR,
+            "div[id^='container_'] [data-test='main-contain']._rowrank",
+        )
+    except Exception:
+        return []
+
+    if not rankers:
+        return []
+
+    blocks: list[dict] = []
+
+    for ranker in rankers:
+        try:
+            container = ranker.find_element(By.XPATH, "ancestor::div[starts-with(@id,'container_')][1]")
+            container_id = (container.get_attribute("id") or "").strip()
+        except Exception:
+            continue
+
+        if not container_id.startswith("container_"):
+            continue
+
+        q_suffix = container_id[len("container_"):].strip()
+        if not q_suffix:
+            continue
+
+        # Guard: Qslice text inputs must be present in the hidden questionContainer
+        try:
+            qslice_inputs = driver.find_elements(
+                By.CSS_SELECTOR,
+                f".questionContainer[questionname^='{q_suffix}'] input[type='text'].mrEdit[name*='Qslice']",
+            )
+        except Exception:
+            qslice_inputs = []
+
+        if not qslice_inputs:
+            continue
+
+        # Extract question text from qcContainer
+        question = ""
+        try:
+            q_nodes = driver.find_elements(By.CSS_SELECTOR, f"#qc_{q_suffix} span.mrQuestionText")
+        except Exception:
+            q_nodes = []
+
+        if not q_nodes:
+            try:
+                q_nodes = driver.find_elements(
+                    By.CSS_SELECTOR,
+                    f".questionContainer[questionname$='.{q_suffix}'] span.mrQuestionText",
+                )
+            except Exception:
+                q_nodes = []
+
+        for qn in q_nodes:
+            q_txt = _norm(qn.text or qn.get_attribute("innerText") or "")
+            if q_txt and len(q_txt) >= 8:
+                question = q_txt
+                break
+
+        if not question:
+            continue
+
+        # Build label→mrEdit map from the hidden mrQuestionTable rows.
+        # Each tr has: td.mrGridCategoryText > span.mrQuestionText (label)
+        #              td > input.mrEdit[name*='Qslice'] (carries rowid).
+        # This is the authoritative mapping — order-independent.
+        label_to_mrinput: dict[str, object] = {}
+        try:
+            rows = driver.find_elements(
+                By.CSS_SELECTOR,
+                f".questionContainer[questionname^='{q_suffix}'] table.mrQuestionTable tr",
+            )
+            for row in rows:
+                try:
+                    lbl_node = row.find_element(By.CSS_SELECTOR, "td.mrGridCategoryText span.mrQuestionText")
+                    mr_inp = row.find_element(By.CSS_SELECTOR, "input[type='text'].mrEdit[name*='Qslice']")
+                except Exception:
+                    continue
+                lbl = _norm(lbl_node.text or lbl_node.get_attribute("innerText") or "")
+                if lbl:
+                    label_to_mrinput[_norm_key(lbl)] = mr_inp
+        except Exception:
+            pass
+
+        # Extract options from visual flex cards
+        try:
+            cards = ranker.find_elements(By.CSS_SELECTOR, "div.__flexgrid_row > div")
+        except Exception:
+            cards = []
+
+        options: list[str] = []
+        option_xpath_map: dict[str, str] = {}
+
+        for card in cards:
+            try:
+                label_nodes = card.find_elements(By.CSS_SELECTOR, "label span")
+            except Exception:
+                continue
+
+            label_text = ""
+            for ln in label_nodes:
+                txt = _norm(ln.text or ln.get_attribute("innerText") or "")
+                if txt:
+                    label_text = txt
+                    break
+
+            if not label_text:
+                continue
+
+            nk = _norm_key(label_text)
+            if not nk or nk in option_xpath_map:
+                continue
+
+            # Match by label to the mrEdit that carries rowid (order-independent).
+            mr_inp = label_to_mrinput.get(nk)
+            if mr_inp is None:
+                continue
+            xp = _best_xpath_for_element(driver, mr_inp)
+            if not xp:
+                continue
+
+            option_xpath_map[nk] = xp
+            options.append(label_text)
+
+        if len(options) < 2 or len(option_xpath_map) < 2:
+            continue
+
+        # Read max_select and captype from SEJson CustomProps row$capvalue / row$captype
+        max_select = 3
+        cap_hard = False
+        try:
+            scripts = driver.find_elements(By.CSS_SELECTOR, 'script.SEJson[type="application/json"]')
+            for script in (scripts or []):
+                raw = script.get_attribute("textContent") or script.get_attribute("innerHTML") or ""
+                raw = re.sub(r"<!--\s*", "", raw)
+                raw = re.sub(r"\s*//-->", "", raw)
+                raw = raw.strip()
+                if not raw:
+                    continue
+                try:
+                    data = json.loads(raw)
+                except Exception:
+                    continue
+                for q in (data.get("qJSON") or []):
+                    props = q.get("CustomProps") or {}
+                    cap = str(props.get("row$capvalue") or "").strip()
+                    if cap.isdigit():
+                        max_select = max(1, int(cap))
+                    captype = str(props.get("row$captype") or "").strip().lower()
+                    if captype == "hard":
+                        cap_hard = True
+                    if cap.isdigit():
+                        break
+        except Exception:
+            pass
+
+        group_key = f"kantar_rowrank:checkbox:{q_suffix}"
+        target_id = make_target_id("group", group_key, question)
+
+        register_target(
+            target_id,
+            {
+                "kind": "group",
+                "itype": "checkbox",
+                "group_key": group_key,
+                "question": question,
+                "option_xpath_map": option_xpath_map,
+                "frame_chain": frame_chain,
+                "kantar_rowrank": True,
+            },
+        )
+
+        context: dict = {
+            "kind": "group",
+            "group_key": group_key,
+            "kantar_rowrank": True,
+        }
+        if cap_hard:
+            context["cap_hard"] = True
+
+        blocks.append(
+            {
+                "question": question,
+                "itype": "checkbox",
+                "options": options,
+                "max_select": max_select,
+                "target_id": target_id,
+                "context": context,
+            }
+        )
+
+    return blocks
+
+
 def _extract_label_radio_list_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
     """Extraction radio pour listes `label.radio` sans input natif.
 
@@ -7349,5 +7557,201 @@ def _extract_ssi_confirmit_native_grid_blocks(driver, frame_chain: list[int] | N
             continue
 
     return blocks
+
+
+def _extract_gfk_accordion_radio_rows(driver, frame_chain: list[int] | None) -> list[dict]:
+    """
+    Extrait les matrices radio GfK mrIWeb rendues en accordéon Angular (ng-app="GfKMD").
+
+    Gate DOM strict (additif):
+      - div.acc_ct contenant au moins 2 div.acc-element[question-number][statement-number]
+      - chaque acc-element contient des input.mrSingle[type='radio'] dans div.acc-answers
+    """
+    blocks: list[dict] = []
+
+    try:
+        containers = driver.find_elements(By.CSS_SELECTOR, "div.acc_ct")
+    except Exception:
+        return blocks
+
+    if not containers:
+        return blocks
+
+    for container in containers:
+        try:
+            acc_elements = container.find_elements(
+                By.CSS_SELECTOR,
+                "div.acc-element[question-number][statement-number]",
+            )
+            if len(acc_elements) < 2:
+                continue
+
+            # Gate: at least one mrSingle radio must exist inside
+            gate = container.find_elements(
+                By.CSS_SELECTOR, "div.acc-element input.mrSingle[type='radio']"
+            )
+            if not gate:
+                continue
+
+            # Main question text (span.mrQuestionText with id starting "qt")
+            main_question = ""
+            try:
+                q_nodes = driver.find_elements(
+                    By.CSS_SELECTOR, "span.mrQuestionText[id^='qt']"
+                )
+                if q_nodes:
+                    main_question = _norm(
+                        q_nodes[0].text or q_nodes[0].get_attribute("innerText") or ""
+                    )
+            except Exception:
+                main_question = ""
+
+            candidate_rows: list[dict] = []
+
+            for acc_el in acc_elements:
+                try:
+                    stmt_nodes = acc_el.find_elements(
+                        By.CSS_SELECTOR, "div.statement-text span.mrQuestionText"
+                    )
+                    if not stmt_nodes:
+                        continue
+                    row_label = _norm(
+                        stmt_nodes[0].text or stmt_nodes[0].get_attribute("innerText") or ""
+                    )
+                    if not row_label:
+                        continue
+
+                    q_num = acc_el.get_attribute("question-number") or "0"
+                    s_num = acc_el.get_attribute("statement-number") or "0"
+
+                    ans_items = acc_el.find_elements(
+                        By.CSS_SELECTOR, "div.acc-answers div.acc-ans-item"
+                    )
+                    if len(ans_items) < 2:
+                        continue
+
+                    options: list[str] = []
+                    option_xpath_map: dict[str, str] = {}
+
+                    for item_idx, item in enumerate(ans_items):
+                        try:
+                            label_nodes = item.find_elements(
+                                By.CSS_SELECTOR, "span.mrQuestionText"
+                            )
+                            if label_nodes:
+                                label_txt = _norm(
+                                    label_nodes[0].text
+                                    or label_nodes[0].get_attribute("innerText")
+                                    or ""
+                                )
+                            else:
+                                label_txt = _norm(
+                                    item.text or item.get_attribute("innerText") or ""
+                                )
+                            if not label_txt:
+                                continue
+
+                            key = _norm_key(label_txt)
+                            if key in option_xpath_map:
+                                continue
+
+                            # Click the acc-ans-item div (Angular ng-click handler).
+                            # Anchor via radio input id inside the item for maximum stability.
+                            radio_in_item = item.find_elements(
+                                By.CSS_SELECTOR, "input.mrSingle[type='radio']"
+                            )
+                            if radio_in_item:
+                                rid = (radio_in_item[0].get_attribute("id") or "").strip()
+                                if rid:
+                                    xp = (
+                                        f"//input[@id={_xpath_literal(rid)}]"
+                                        f"/ancestor::div[contains(concat(' ',normalize-space(@class),' '),"
+                                        f"' acc-ans-item ')][1]"
+                                    )
+                                else:
+                                    xp = (
+                                        f"//div[contains(concat(' ',normalize-space(@class),' '),' acc-element ')]"
+                                        f"[@question-number='{q_num}'][@statement-number='{s_num}']"
+                                        f"//div[contains(concat(' ',normalize-space(@class),' '),' acc-answers ')]"
+                                        f"//div[contains(concat(' ',normalize-space(@class),' '),' acc-ans-item ')]"
+                                        f"[{item_idx + 1}]"
+                                    )
+                            else:
+                                continue
+
+                            option_xpath_map[key] = xp
+                            options.append(label_txt)
+                        except Exception:
+                            continue
+
+                    if len(options) < 2:
+                        continue
+
+                    # pre_click: expand button — only needed if section is currently collapsed
+                    expand_xp = None
+                    acc_classes = (acc_el.get_attribute("class") or "").lower()
+                    is_expanded = "border_blue" in acc_classes
+                    if not is_expanded:
+                        try:
+                            btn = acc_el.find_element(By.CSS_SELECTOR, "button.acc_top_button")
+                            expand_xp = _best_xpath_for_element(driver, btn)
+                        except Exception:
+                            expand_xp = None
+
+                    radio_name = ""
+                    try:
+                        first_radio = acc_el.find_element(
+                            By.CSS_SELECTOR, "input.mrSingle[type='radio']"
+                        )
+                        radio_name = (first_radio.get_attribute("name") or "").strip()
+                    except Exception:
+                        pass
+
+                    group_key = (
+                        f"gfk_acc:{radio_name}" if radio_name else f"gfk_acc:{q_num}:{s_num}"
+                    )
+                    row_question = (
+                        f"{main_question} \u2014 {row_label}" if main_question else row_label
+                    )
+                    target_id = make_target_id("group", group_key, row_question)
+
+                    payload: dict = {
+                        "kind": "group",
+                        "itype": "radio",
+                        "group_key": group_key,
+                        "question": row_question,
+                        "option_xpath_map": option_xpath_map,
+                        "frame_chain": frame_chain or [],
+                        "gfk_accordion": True,
+                    }
+                    if expand_xp:
+                        payload["pre_click_xpaths"] = [expand_xp]
+
+                    register_target(target_id, payload)
+
+                    candidate_rows.append(
+                        {
+                            "question": row_question,
+                            "itype": "radio",
+                            "options": options,
+                            "max_select": 1,
+                            "target_id": target_id,
+                            "context": {
+                                "kind": "group",
+                                "group_key": group_key,
+                                "gfk_accordion": True,
+                            },
+                        }
+                    )
+                except Exception:
+                    continue
+
+            if candidate_rows:
+                blocks.extend(candidate_rows)
+        except Exception:
+            continue
+
+    if blocks:
+        log_debug("[DOM_GFK_ACCORDION]", f"rows_extracted={len(blocks)}")
 
     return blocks

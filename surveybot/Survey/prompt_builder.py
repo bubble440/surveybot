@@ -488,6 +488,18 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
     )
 
     lines.append(
+        "RÈGLE COHÉRENCE CONTEXTE → APPROFONDISSEMENT :\n"
+        "Avant de répondre, consulte systématiquement le [Survey context] (Summary + Recent Q&A).\n"
+        "Si une question vise à approfondir ou préciser une information déjà établie dans le contexte "
+        "(ex : marque, produit, lieu, habitude, événement, date, comportement, situation personnelle…), "
+        "tu DOIS utiliser cette information comme point de départ pour choisir dans la liste.\n"
+        "En cas d'ambiguïté entre plusieurs options compatibles : préfère l'option la plus récente, "
+        "la plus précise, ou la plus cohérente avec le persona (cadre supérieur, urbain, revenus élevés).\n"
+        "INTERDIT ABSOLU : choisir une option vague ou de repli ('Autre', 'Other', 'Je ne sais pas', "
+        "'Non concerné', etc.) quand une option concrète de la liste est compatible avec le contexte établi."
+    )    
+    
+    lines.append(
         "RÈGLE ABSOLUE DE PROGRESSION (priorité maximale sur le persona) :\n"
         "L'objectif premier est de progresser dans le survey. Le persona est un point de départ — il doit être adapté si une réponse trop fidèle entraînerait une disqualification évidente.\n\n"
         "Pour toute question où les options décrivent une gradation (fréquence, intensité, quantité, niveau d'usage, degré d'implication), raisonne en trois étapes :\n"
@@ -649,6 +661,10 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
                     f"selection_rule: PARTICIPATION_CONSENT_ALL strict -> répondre EXACTEMENT avec '{strict_values}'"
                 )
                 lines.append(f"allowed_values_strict: {strict_values}")
+            elif _is_truthy((ctx or {}).get("cap_hard")):
+                lines.append(
+                    f"selection_rule: Pour QID={qid}, renvoyer EXACTEMENT {max_sel} valeur(s) séparée(s) par | (obligatoire, pas un plafond). / For QID={qid}, return EXACTLY {max_sel} values separated by |."
+                )
             else:
                 lines.append(
                     f"selection_rule: Pour QID={qid}, renvoyer entre 1 et {max_sel} valeur(s) séparée(s) par |. / For QID={qid}, return between 1 and {max_sel} values separated by |."

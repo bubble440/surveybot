@@ -95,6 +95,7 @@ try:
         _extract_consent_modal_radio_block,
         _extract_runtime_answerrow_radio_blocks,
         _extract_kantar_rowpicker_radio_blocks,
+        _extract_kantar_rowrank_blocks,
         _extract_label_radio_list_blocks,
         _extract_qualtrics_choice_structure_radio_blocks,
         _extract_qualtrics_choice_structure_checkbox_blocks,
@@ -109,6 +110,7 @@ try:
         _extract_runtime_dropdown_blocks,
         _extract_rps_select_blocks,
         _extract_ssi_confirmit_native_grid_blocks,
+        _extract_gfk_accordion_radio_rows,
     )
 
     # Registre et utilitaires
@@ -178,6 +180,7 @@ except ImportError:
         _extract_consent_modal_radio_block,
         _extract_runtime_answerrow_radio_blocks,
         _extract_kantar_rowpicker_radio_blocks,
+        _extract_kantar_rowrank_blocks,
         _extract_label_radio_list_blocks,
         _extract_qualtrics_choice_structure_radio_blocks,
         _extract_qualtrics_choice_structure_checkbox_blocks,
@@ -192,6 +195,7 @@ except ImportError:
         _extract_runtime_dropdown_blocks,
         _extract_rps_select_blocks,
         _extract_ssi_confirmit_native_grid_blocks,
+        _extract_gfk_accordion_radio_rows,
     )
 
 
@@ -1278,6 +1282,15 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
     except Exception:
         pass
 
+    # --- 0h-bis-2a-bis) Kantar rowrank (classement ordinal, metaType=rowrank, mrIWeb) ---
+    # Objectif: extraire les cartes visuelles ._rowrank + guard Qslice inputs.
+    try:
+        kantar_rowrank_blocks = _extract_kantar_rowrank_blocks(driver, frame_chain)
+        if kantar_rowrank_blocks:
+            return kantar_rowrank_blocks
+    except Exception:
+        pass
+
     # --- 0h-bis-2b) Listes label.radio sans input natif (Angular custom) ---
     # Objectif: extraire les groupes single-select rendus via labels cliquables.
     try:
@@ -1375,6 +1388,15 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         ps_date_blocks = _extract_purespectrum_mobile_date_blocks(driver, frame_chain)
         if ps_date_blocks:
             return ps_date_blocks
+    except Exception:
+        pass
+
+    # --- 0i-bis-0) GfK mrIWeb accordéon Angular (div.acc_ct / div.acc-element) ---
+    # Objectif: extraire les sous-questions accordion GfK avant les extracteurs génériques.
+    try:
+        gfk_accordion_blocks = _extract_gfk_accordion_radio_rows(driver, frame_chain)
+        if gfk_accordion_blocks:
+            return gfk_accordion_blocks
     except Exception:
         pass
 
@@ -1780,12 +1802,13 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                 container = _nearest_question_container(els[0])
                 question = _extract_question_from_container(container, options) if container else ""
 
-            # mrIWeb/GfK: inputs carry class "mrSingle" but no ancestor matches
-            # standard container selectors. span.mrQuestionText is a DOM sibling
+            # mrIWeb/GfK: inputs carry class "mrSingle" or "mrMultiple" but no ancestor
+            # matches standard container selectors. span.mrQuestionText is a DOM sibling
             # of the choices container — query it directly, scoped to the same form.
             if not question:
                 try:
-                    if "mrsingle" in _norm_lc(els[0].get_attribute("class") or ""):
+                    _el_cls = _norm_lc(els[0].get_attribute("class") or "")
+                    if "mrsingle" in _el_cls or "mrmultiple" in _el_cls:
                         scope_nodes = els[0].find_elements(By.XPATH, "ancestor::form[1]")
                         scope = scope_nodes[0] if scope_nodes else None
                         q_spans = (
@@ -1798,7 +1821,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                             txt = _norm(q_span.text or q_span.get_attribute("innerText") or "")
                             if txt and _is_question_text(txt) and _norm_lc(txt) not in opt_lc:
                                 question = txt
-                                log_debug("[DOM_CONTEXT]", f"mriweb_mrsingle_fallback resolved question={question[:60]!r}")
+                                log_debug("[DOM_CONTEXT]", f"mriweb_mr_fallback resolved question={question[:60]!r}")
                                 break
                 except Exception:
                     pass
@@ -2593,6 +2616,29 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
 
             if itype == "dropdown" and not question:
                 question = _find_bootstrap_selectpicker_question_label(el) or ""
+
+            # GfK mrIWeb: select.mrDropdown — span.mrQuestionText est un sibling DOM
+            # du conteneur de choix, pas dans le même conteneur standard.
+            if itype == "dropdown" and not question:
+                try:
+                    el_classes = (el.get_attribute("class") or "").lower()
+                    if "mrdropdown" in el_classes:
+                        scope_nodes = el.find_elements(By.XPATH, "ancestor::form[1]")
+                        scope = scope_nodes[0] if scope_nodes else None
+                        q_spans = (
+                            scope.find_elements(By.CSS_SELECTOR, "span.mrQuestionText")
+                            if scope else
+                            driver.find_elements(By.CSS_SELECTOR, "span.mrQuestionText")
+                        )
+                        opt_lc = {_norm_lc(o) for o in dropdown_options_for_question if o}
+                        for q_span in q_spans:
+                            txt = _norm(q_span.text or q_span.get_attribute("innerText") or "")
+                            if txt and _is_question_text(txt) and _norm_lc(txt) not in opt_lc:
+                                question = txt
+                                log_debug("[DOM_CONTEXT]", f"mriweb_mrdropdown_fallback resolved question={question[:60]!r}")
+                                break
+                except Exception:
+                    pass
 
             if not question:
                 question = _find_associated_label(driver, el) or ""

@@ -666,6 +666,20 @@ def _group_key_for_choice(el, itype: str) -> str:
 
                     group_container = fieldsets[0] if fieldsets else (mr_tables[0] if mr_tables else None)
 
+                    # GfK/mrIWeb (SPSSMR/HTMLPlayer): les checkboxes d'une question
+                    # partagent un ancêtre div.muAll sans fieldset ni mrQuestionTable.
+                    # Guard DOM strict : contains(@class,'muAll') + in_mr_form vérifié ci-dessous.
+                    if group_container is None:
+                        try:
+                            muall_nodes = el.find_elements(
+                                By.XPATH,
+                                "ancestor::*[contains(@class,'muAll')][1]",
+                            )
+                            if muall_nodes:
+                                group_container = muall_nodes[0]
+                        except Exception:
+                            pass
+
                     if group_container is not None:
                         try:
                             in_mr_form = bool(
