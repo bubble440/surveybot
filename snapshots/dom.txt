@@ -1,41 +1,25 @@
---- QUESTIONS ---
-
-Q1
-target_id: group_8d08dbc92e2f
-contexte: Quel type de carburant envisageriez-vous pour votre prochain véhicule ? Veuillez sélectionner jusqu'à 3 réponses dans l'ordre où vous les considérez.
-itype: checkbox
-max_select: 3
-selection_rule: Pour QID=Q1, renvoyer EXACTEMENT 3 valeur(s) séparée(s) par | (obligatoire, pas un plafond). / For QID=Q1, return EXACTLY 3 values separated by |.
-options: Gazole/Essence | Diesel | Hybride (principalement un moteur à essence avec une puissance supplémentaire fournie par des batteries) | 100 % électrique/entièrement électrique (véhicule électrique rechargeable sans moteur à essence) | Hybride rechargeable (moteur à essence mais fonctionnant sur de courtes distances uniquement sur batterie, devant être branchée pour se charger) | Autre
-Plusieurs réponses possibles (max 3). Sélectionne uniquement les options cohérentes avec le profil du répondant. Ne sélectionne pas plus que nécessaire.
-
-Réponds maintenant.
-Respecte STRICTEMENT le format.
-RAPPEL: Quand plusieurs valeurs sont requises, sépare-les par "|" (jamais par virgule).
-Ne renvoie rien d'autre.
-[PROMPT_DEBUG] ===================================
 [survey_executor][debug] qid_constraints={'Q1': 3}
-[batch_response_parser] raw response Q1 //// group_8d08dbc92e2f //// 100 % électrique/entièrement électrique (véhicule électrique rechargeable sans moteur à essence)|Hybride rechargeable (moteur à essence mais fonctionnant sur de courtes distances uniquement sur batterie, devant être branchée pour se charger)|Hybride (principalement un moteur à essence avec une puissance supplémentaire fournie par des batteries) //// checkbox //// Quel type de carburant envisageriez-vous pour votre prochain véhicule ? Veuillez sélectionner jusqu'a 3 réponses dans l'ordre où vous les considérez.
-[batch_response_parser] qid=Q1 min_select=1 max_select=3 received=3 final_count=3 values=['100 % électrique/entièrement électrique (véhicule électrique rechargeable sans moteur à essence)', 'Hybride rechargeable (moteur à essence mais fonctionnant sur de courtes distances uniquement sur batterie, devant être branchée pour se charger)', 'Hybride (principalement un moteur à essence avec une puissance supplémentaire fournie par des batteries)']
-[TARGET] execute_action raw="Q1 //// group_8d08dbc92e2f //// 100 % électrique/entièrement électrique (véhicule électrique rechargeable sans moteur à essence) //// checkbox //// Quel type de carburant envisageriez-vous pour votre prochain véhicule ? Veuillez sélectionner jusqu'a 3 réponses dans l'ordre où vous les considérez."
+[batch_response_parser] raw response Q1 //// group_8d08dbc92e2f //// 100 % électrique/entièrement électrique (véhicule électrique rechargeable sans moteur à essence)|Hybride rechargeable (moteur à essence mais fonctionnant sur de courtes distances uniquement sur batterie, devant être branchée pour se charger)|Hybride (principalement un moteur à essence avec une puissance supplémentaire fournie par des batteries) //// checkbox //// Quel type de carburant envisageriez-vous pour votre prochain véhicule ? Veuillez sélectionner jusqu'à 3 réponses dans l'ordre où vous les considérez.
+[batch_response_parser] qid=Q1 min_select=1 max_select=3 received=3 final_count=3 values=['100 % électrique/entièrement électrique (véhicule électrique rechargeable sans moteur à essence)', 'Hybride rechargeable (moteur à essence mais fonctionnant sur de courtes distances uniquement sur batterie, devant être branchée pour se charger)', 'Hybride (principalement un moteur à essence avec une puissance supplémentaire fournie par des batteries)']
+[TARGET] execute_action raw="Q1 //// group_8d08dbc92e2f //// 100 % électrique/entièrement électrique (véhicule électrique rechargeable sans moteur à essence) //// checkbox //// Quel type de carburant envisageriez-vous pour votre prochain véhicule ? Veuillez sélectionner jusqu'à 3 réponses dans l'ordre où vous les considérez."
 [TARGET] parsed target_id='group_8d08dbc92e2f' itype='checkbox' value='100 % électrique/entièrement électrique (véhicule électrique rechargeable sans moteur à essence)' context_len=149
-[TARGET_DEBUG] kantar_rowrank: rowid absent sur xp='/html/body/form/div[2]/div/div[3]/div/div/div[4]/div/div/div/div[2]'
+[TARGET_DEBUG] kantar_rowrank: clic overlay échoué: UnboundLocalError: cannot access local variable 'ActionChains' where it is not associated with a value
 [TARGET_DEBUG] qarts_widget: skip reason='no_qarts_container' label='100 % électrique/entièrement électrique (véhicule électrique rechargeable sans moteur à essence)'
 [TARGET_DEBUG] nfield_swatches: skip reason='no_mrmultiple' label='100 % électrique/entièrement électrique (véhicule électrique rechargeable sans moteur à essence)'
 [TARGET_DEBUG] qarts_widget: skip reason='no_qarts_container' label='100 % électrique/entièrement électrique (véhicule électrique rechargeable sans moteur à essence)'
 [TARGET] apply ok=false reason=no_strategy strategy=none itype='checkbox' target_id='group_8d08dbc92e2f'
-[TARGET_DEBUG] Aucune stratégie n'a abouti pour: Q1 //// group_8d08dbc92e2f //// 100 % électrique/entièrement électrique (véhicule électrique rechargeable sans moteur à essence) //// checkbox //// Quel type de carburant envisageriez-vous pour votre prochain véhicule ? Veuillez sélectionner jusqu'a 3 réponses dans l'ordre où vous les considérez.
-[TARGET] execute_action raw="Q1 //// group_8d08dbc92e2f //// Hybride rechargeable (moteur à essence mais fonctionnant sur de courtes distances uniquement sur batterie, devant être branchée pour se charger) //// checkbox //// Quel type de carburant envisageriez-vous pour votre prochain véhicule ? Veuillez sélectionner jusqu'a 3 réponses dans l'ordre où vous les considérez."
+[TARGET_DEBUG] Aucune stratégie n'a abouti pour: Q1 //// group_8d08dbc92e2f //// 100 % électrique/entièrement électrique (véhicule électrique rechargeable sans moteur à essence) //// checkbox //// Quel type de carburant envisageriez-vous pour votre prochain véhicule ? Veuillez sélectionner jusqu'à 3 réponses dans l'ordre où vous les considérez.
+[TARGET] execute_action raw="Q1 //// group_8d08dbc92e2f //// Hybride rechargeable (moteur à essence mais fonctionnant sur de courtes distances uniquement sur batterie, devant être branchée pour se charger) //// checkbox //// Quel type de carburant envisageriez-vous pour votre prochain véhicule ? Veuillez sélectionner jusqu'à 3 réponses dans l'ordre où vous les considérez."
 [TARGET] parsed target_id='group_8d08dbc92e2f' itype='checkbox' value='Hybride rechargeable (moteur à essence mais fonctionnant sur de courtes distances uniquement sur batterie, devant être branchée pour se charger)' context_len=149
-[TARGET_DEBUG] kantar_rowrank: rowid absent sur xp='/html/body/form/div[2]/div/div[3]/div/div/div[5]/div/div/div/div[2]'
+[TARGET_DEBUG] kantar_rowrank: clic overlay échoué: UnboundLocalError: cannot access local variable 'ActionChains' where it is not associated with a value
 [TARGET_DEBUG] qarts_widget: skip reason='no_qarts_container' label='Hybride rechargeable (moteur à essence mais fonctionnant sur de courtes distances uniquement sur batterie, devant être branchée pour se charger)'
 [TARGET_DEBUG] nfield_swatches: skip reason='no_mrmultiple' label='Hybride rechargeable (moteur à essence mais fonctionnant sur de courtes distances uniquement sur batterie, devant être branchée pour se charger)'
 [TARGET_DEBUG] qarts_widget: skip reason='no_qarts_container' label='Hybride rechargeable (moteur à essence mais fonctionnant sur de courtes distances uniquement sur batterie, devant être branchée pour se charger)'
 [TARGET] apply ok=true strategy=checkbox_fallback_radio reason=applied
 [DISPATCH] skip rescan idx=1 same qid='Q1' (checkbox)
-[TARGET] execute_action raw="Q1 //// group_8d08dbc92e2f //// Hybride (principalement un moteur à essence avec une puissance supplémentaire fournie par des batteries) //// checkbox //// Quel type de carburant envisageriez-vous pour votre prochain véhicule ? Veuillez sélectionner jusqu'a 3 réponses dans l'ordre où vous les considérez."
+[TARGET] execute_action raw="Q1 //// group_8d08dbc92e2f //// Hybride (principalement un moteur à essence avec une puissance supplémentaire fournie par des batteries) //// checkbox //// Quel type de carburant envisageriez-vous pour votre prochain véhicule ? Veuillez sélectionner jusqu'à 3 réponses dans l'ordre où vous les considérez."
 [TARGET] parsed target_id='group_8d08dbc92e2f' itype='checkbox' value='Hybride (principalement un moteur à essence avec une puissance supplémentaire fournie par des batteries)' context_len=149
-[TARGET_DEBUG] kantar_rowrank: rowid absent sur xp='/html/body/form/div[2]/div/div[3]/div/div/div[3]/div/div/div/div[2]'
+[TARGET_DEBUG] kantar_rowrank: clic overlay échoué: UnboundLocalError: cannot access local variable 'ActionChains' where it is not associated with a value
 [TARGET_DEBUG] checkbox reuse cached_strategy=checkbox_fallback_radio target_id=group_8d08dbc92e2f
 [TARGET_DEBUG] qarts_widget: skip reason='no_qarts_container' label='Hybride (principalement un moteur à essence avec une puissance supplémentaire fournie par des batteries)'
 [TARGET] apply ok=true strategy=checkbox_fallback_radio reason=applied
