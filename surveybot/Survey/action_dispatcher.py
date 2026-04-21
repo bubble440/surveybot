@@ -1600,9 +1600,154 @@ def _apply_by_target_id(
                         log_debug("[TARGET_DEBUG]", f"nfield_dragndrop_hidden JS error: {_short_exc(_dnd_e)}")
                     return False
 
+            # --- Kantar rowrank : clic sur overlay visuel (div[tabindex='0']) via rowid ---
+            # xp_rr pointe vers l'input.mrEdit caché → on lit son rowid pour cibler
+            # le bon enfant de .__flexgrid_row, puis on clique l'overlay interactif.
+            # Guard DOM strict : .__flexgrid_row présent ; sinon fall-through vers chemin générique.
+            opt_map = payload.get("option_xpath_map") or {}
+            if payload.get("kantar_rowrank") and opt_map and resolved_itype == "checkbox":
+                try:
+                    _rr_has_grid = bool(driver.find_elements(By.CSS_SELECTOR, ".__flexgrid_row"))
+                except Exception:
+                    _rr_has_grid = False
+
+                if _rr_has_grid:
+                    # 1) Lookup option dans opt_map (fuzzy identique au chemin générique)
+                    xp_rr = opt_map.get(v_norm) or (opt_map.get(v_fold) if v_fold else None)
+                    if not xp_rr:
+                        for k, x in opt_map.items():
+                            if not k:
+                                continue
+                            k_norm = _norm_lc(k)
+                            k_fold = _fold_norm_lc(k)
+                            if v_norm and (v_norm == k_norm or v_norm in k_norm or k_norm in v_norm):
+                                xp_rr = x
+                                break
+                            if v_fold and (
+                                v_fold == k_norm or v_fold in k_norm or k_norm in v_fold
+                                or v_fold == k_fold or v_fold in k_fold or k_fold in v_fold
+                            ):
+                                xp_rr = x
+                                break
+
+                    if not xp_rr:
+                        if debug_target:
+                            log_debug("[TARGET_DEBUG]", f"kantar_rowrank: option introuvable value={value!r} opt_map={len(opt_map)}")
+                        return False
+
+                    # 2) Rang ordinal positionné par execute_actions_plan (1-based)
+                    ordinal = int(getattr(driver, "_kantar_rowrank_ordinal", 1) or 1)
+
+                    # 3) Résoudre l'input.mrEdit → lire rowid (0-based index de la carte)
+                    try:
+                        mr_input = driver.find_element(By.XPATH, xp_rr)
+                        rowid_str = (mr_input.get_attribute("rowid") or "").strip()
+                        rowid = int(rowid_str) if rowid_str.isdigit() else None
+                    except Exception as _rr_fe:
+                        if debug_target:
+                            log_debug("[TARGET_DEBUG]", f"kantar_rowrank: find mrEdit error: {_short_exc(_rr_fe)}")
+                        return False
+
+                    if rowid is None:
+                        if debug_target:
+                            log_debug("[TARGET_DEBUG]", f"kantar_rowrank: rowid absent sur xp={xp_rr!r}")
+                        return False
+
+                    # 4) Cibler le div overlay dans le Nième enfant de .__flexgrid_row (N = rowid).
+                    #    scrollIntoView inclus pour garantir que l'élément est dans le viewport
+                    #    avant que ActionChains tente le clic (évite les faux-positifs silencieux).
+                    try:
+                        overlay = driver.execute_script(
+                            """
+                            var rowid = arguments[0];
+                            var grids = document.querySelectorAll('.__flexgrid_row');
+                            for (var g = 0; g < grids.length; g++) {
+                                var cards = grids[g].querySelectorAll(':scope > div');
+                                if (rowid < cards.length) {
+                                    var ov = cards[rowid].querySelector(
+                                        'div[tabindex="0"][style*="cursor: pointer"][style*="inset: 0"]'
+                                    );
+                                    if (ov) {
+                                        try { ov.scrollIntoView({block:'center',inline:'center'}); } catch(e) {}
+                                        return ov;
+                                    }
+                                }
+                            }
+                            return null;
+                            """,
+                            rowid,
+                        )
+                    except Exception as _rr_oe:
+                        overlay = None
+                        if debug_target:
+                            log_debug("[TARGET_DEBUG]", f"kantar_rowrank: overlay lookup error: {_short_exc(_rr_oe)}")
+
+                    if not overlay:
+                        if debug_target:
+                            log_debug("[TARGET_DEBUG]", f"kantar_rowrank: overlay introuvable rowid={rowid}")
+                        return False
+
+                    # 5) Cliquer l'overlay via ActionChains (isTrusted=true, reconnu par React)
+                    import time as _time_rr
+                    _time_rr.sleep(0.1)  # laisse le scroll se stabiliser
+                    clicked_rr = False
+                    try:
+                        ActionChains(driver).move_to_element(overlay).click().perform()
+                        clicked_rr = True
+                    except Exception as _rr_ce:
+                        if debug_target:
+                            log_debug("[TARGET_DEBUG]", f"kantar_rowrank: clic overlay échoué: {_short_exc(_rr_ce)}")
+
+                    if not clicked_rr:
+                        return False
+
+                    # 5b) Vérification DOM : badge bleu (rgb(64,81,188)) sur le div de transition interne.
+                    _time_rr.sleep(0.35)  # CSS transition 250 ms
+                    try:
+                        _rr_verified = bool(driver.execute_script(
+                            """
+                            var rowid = arguments[0];
+                            var grids = document.querySelectorAll('.__flexgrid_row');
+                            for (var g = 0; g < grids.length; g++) {
+                                var cards = grids[g].querySelectorAll(':scope > div');
+                                if (rowid < cards.length) {
+                                    var td = cards[rowid].querySelector('[style*="transition: background-color"]');
+                                    var bg = td ? td.style.backgroundColor : '';
+                                    return bg.indexOf('64') !== -1 && bg.indexOf('81') !== -1;
+                                }
+                            }
+                            return false;
+                            """,
+                            rowid,
+                        ))
+                    except Exception:
+                        _rr_verified = True  # impossibilité de vérifier → on suppose ok
+                    log_debug("[TARGET_DEBUG]", f"kantar_rowrank: verify={'ok' if _rr_verified else 'ko'} rowid={rowid} ordinal={ordinal}")
+
+                    # 6) Filet de sécurité : si le widget n'a pas écrit la valeur, écrire ordinal
+                    try:
+                        driver.execute_script(
+                            """
+                            var inp = arguments[0], rank = arguments[1];
+                            if (!inp.value) {
+                                inp.value = rank;
+                                ['input','change'].forEach(function(n){
+                                    inp.dispatchEvent(new Event(n,{bubbles:true,cancelable:true}));
+                                });
+                            }
+                            """,
+                            mr_input, str(ordinal),
+                        )
+                    except Exception as _rr_w:
+                        if debug_target:
+                            log_debug("[TARGET_DEBUG]", f"kantar_rowrank: write fallback error: {_short_exc(_rr_w)}")
+
+                    log_info("[TARGET]", f"apply ok=true strategy=kantar_rowrank_ordinal value={value!r} ordinal={ordinal}")
+                    return True
+                # _rr_has_grid=False → fall through vers chemin générique opt_map
+
             # --- cas "options map" (radio/checkbox)
             # IMPORTANT: on n'exige pas kind=="group" pour éviter le couplage à la classification (ex: matrix_rows_single_choice)
-            opt_map = payload.get("option_xpath_map") or {}
             if opt_map and resolved_itype in ("radio", "checkbox"):
 
                 # 1) lookup direct
@@ -5364,6 +5509,10 @@ def execute_actions_plan(
     # Mémoire locale par bloc, bornée au plan d'actions courant.
     _init_block_strategy_memory(driver)
 
+    # Compteurs ordinaux kantar_rowrank : réinitialisés à chaque plan (par qid)
+    driver._kantar_rr_counts = {}
+    driver._kantar_rowrank_ordinal = 1
+
     try:
         url_before = driver.current_url
     except Exception:
@@ -5446,6 +5595,20 @@ def execute_actions_plan(
                 except Exception:
                     pass
             qid = (act.get("qid") or "").strip()
+
+            # Kantar rowrank: calcul du rang ordinal pour cette action dans le plan
+            if tid:
+                try:
+                    _rr_p = get_target(tid) or {}
+                    if _rr_p.get("kantar_rowrank"):
+                        _rr_key = qid or tid
+                        _rr_counts = driver._kantar_rr_counts
+                        _rr_counts[_rr_key] = _rr_counts.get(_rr_key, 0) + 1
+                        driver._kantar_rowrank_ordinal = _rr_counts[_rr_key]
+                    else:
+                        driver._kantar_rowrank_ordinal = 1
+                except Exception:
+                    driver._kantar_rowrank_ordinal = 1
 
             if tid and qid:
                 instruction = f"{qid} //// {tid} //// {value} //// {itype} //// {context}"

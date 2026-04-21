@@ -26,6 +26,7 @@ from Survey.input_utils import (
     PLACEHOLDER_TOKENS,
     similarity,
 )
+from Survey.log_utils import log_debug
 
 
 # =============================================================================
@@ -729,6 +730,75 @@ def select_option_with_hint(
         
         for sel_el in try_selects:
             try:
+                # GfK mrIWeb: .mrDropdown in .platform_clone — Selenium Select won't
+                # trigger Angular $digest; must click .cb_el then .cb_item_row.
+                sel_classes = (sel_el.get_attribute("class") or "").lower()
+                if "mrdropdown" in sel_classes:
+                    # Locate .combo_master: primary — via .acc_ct ancestor; fallback — preceding-sibling of .platform_clone
+                    combo_masters = sel_el.find_elements(
+                        By.XPATH,
+                        "ancestor::div[contains(concat(' ',normalize-space(@class),' '),' acc_ct ')][1]"
+                        "/div[contains(concat(' ',normalize-space(@class),' '),' combo_master ')]",
+                    )
+                    log_debug("gfk-combo", f"combo_masters via acc_ct: {len(combo_masters)}")
+                    if not combo_masters:
+                        combo_masters = sel_el.find_elements(
+                            By.XPATH,
+                            "ancestor::div[contains(concat(' ',normalize-space(@class),' '),' platform_clone ')][1]"
+                            "/preceding-sibling::div[contains(concat(' ',normalize-space(@class),' '),' combo_master ')][1]",
+                        )
+                        log_debug("gfk-combo", f"combo_masters via preceding-sibling: {len(combo_masters)}")
+                    if combo_masters:
+                        cm = combo_masters[0]
+                        cb_els = cm.find_elements(By.CSS_SELECTOR, ".cb_el")
+                        if cb_els:
+                            driver.execute_script("arguments[0].click();", cb_els[0])
+                            # Wait for .b_l_ct (Angular ng-show) to become visible
+                            deadline = time.time() + 2.0
+                            cb_list = None
+                            while time.time() < deadline:
+                                b_l_cts = cm.find_elements(By.CSS_SELECTOR, ".b_l_ct")
+                                if b_l_cts and b_l_cts[0].is_displayed():
+                                    lists = b_l_cts[0].find_elements(By.CSS_SELECTOR, ".cb_list")
+                                    if lists:
+                                        cb_list = lists[0]
+                                        break
+                                time.sleep(0.05)
+                            # Fallback: try button.combo_button if .b_l_ct still hidden
+                            if cb_list is None:
+                                btns = cb_els[0].find_elements(By.CSS_SELECTOR, "button.combo_button")
+                                if btns:
+                                    driver.execute_script("arguments[0].click();", btns[0])
+                                    deadline2 = time.time() + 2.0
+                                    while time.time() < deadline2:
+                                        b_l_cts = cm.find_elements(By.CSS_SELECTOR, ".b_l_ct")
+                                        if b_l_cts and b_l_cts[0].is_displayed():
+                                            lists = b_l_cts[0].find_elements(By.CSS_SELECTOR, ".cb_list")
+                                            if lists:
+                                                cb_list = lists[0]
+                                                break
+                                        time.sleep(0.05)
+                            if cb_list:
+                                for row in cb_list.find_elements(By.CSS_SELECTOR, ".cb_item_row"):
+                                    try:
+                                        items = row.find_elements(By.CSS_SELECTOR, ".cb_item")
+                                        if not items:
+                                            continue
+                                        txt = norm_txt(items[0].get_attribute("innerText") or items[0].text)
+                                        if target == txt or (target and target in txt):
+                                            driver.execute_script("arguments[0].click();", row)
+                                            print(f"✓ Option sélectionnée (gfk-combo) : {option_text}. source: input_dropdown.py")
+                                            try:
+                                                driver._ui_overlay_opened = None
+                                            except Exception:
+                                                pass
+                                            return True
+                                    except Exception:
+                                        continue
+                            log_debug("gfk-combo", f"cb_list not visible or option '{option_text}' not found")
+                    # mrDropdown detected but selection failed — don't fall through to Selenium Select
+                    continue
+
                 S = Select(sel_el)
                 opt = _pick_matching_option(S.options, target)
                 if not opt:

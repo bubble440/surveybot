@@ -1983,7 +1983,30 @@ def execute_survey_page(driver, account_id, api_key, ctx=None):
                             print(f"[CTA_FALLBACK] Clicked by ID: {cta_id}")
                             break
                     except Exception:
-                        pass            
+                        pass
+            # Phase 3: CTA structurel (mrIWeb mrNext, etc.) via scorer
+            if not clicked:
+                cta_intercept_only = _env_truthy("CTA_INTERCEPT_ONLY", "0")
+                try:
+                    if cta_intercept_only:
+                        from selenium.webdriver.common.by import By as _By
+                        _btn = None
+                        try:
+                            _btn = driver.find_element(_By.CSS_SELECTOR, "input[type='submit'][name='_NNext']")
+                        except Exception:
+                            pass
+                        if _btn and _btn.is_displayed():
+                            driver.execute_script("arguments[0].dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}))", _btn)
+                            clicked = True
+                            log_debug("[CTA_FALLBACK]", "Phase 3: mrIWeb structural CTA intercepted (CTA_INTERCEPT_ONLY)")
+                        else:
+                            log_debug("[CTA_FALLBACK]", "Phase 3: CTA_INTERCEPT_ONLY — structural CTA not found")
+                    else:
+                        clicked = bool(input_handler.try_click_navigation_cta_any_context(driver))
+                        if clicked:
+                            log_debug("[CTA_FALLBACK]", "Phase 3: structural CTA clicked via try_click_navigation_cta_any_context")
+                except Exception as _e3:
+                    log_debug("[CTA_FALLBACK]", f"Phase 3 error: {type(_e3).__name__}: {_e3}")
             if clicked:
                 print(" CTA  via recherche par texte")
                 try:
