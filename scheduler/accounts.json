@@ -1,9 +1,22 @@
-[ 
+[
   {
-  "ACCOUNT_ID": "topsurveys_bot_203",
-  "PROXY_ID": "178.210.254.157",
-  "EMAIL": "bezbar.pacify458@simplelogin.fr",
-  "PROXY_PASS": "9a42e8da8a",
-  "PROXY_USER": "14a4b3f88b892",
-  "PROXY_URL": "178.210.254.157:12323"
- }]
+    "PROXY_ID": "178.210.254.157",
+    "PROXY_USER": "14a4b3f88b892",
+    "PROXY_PASS": "9a42e8da8a",
+    "PROXY_URL": "178.210.254.157:12323",
+    "ACCOUNTS": [
+      { "ACCOUNT_ID": "topsurveys_bot_203", "EMAIL": "bezbar.pacify458@simplelogin.fr" }
+    ]
+  },
+  {
+    "PROXY_ID": "185.134.194.152",
+    "PROXY_USER": "14abf236340a1",
+    "PROXY_PASS": "bb82a9e63b",
+    "PROXY_URL": "185.134.194.152:12323",
+    "ACCOUNTS": [
+      { "ACCOUNT_ID": "topsurveys_bot_206", "EMAIL": "julius.unhidden240@8alias.com" },
+      { "ACCOUNT_ID": "topsurveys_bot_207", "EMAIL": "qatar.chimp729@8shield.net" },
+      { "ACCOUNT_ID": "topsurveys_bot_208", "EMAIL": "katarina.helper961@8shield.net" }
+    ]
+  }
+]
