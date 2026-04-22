@@ -20,14 +20,9 @@ def _load_all_accounts() -> dict:
       {
         "ACCOUNT_ID": "bot_001",
         "EMAIL": "bot001@example.com",
-        "PASSWORD": "xxx",
         "PROXY_URL": "http://...",
         "PROXY_USER": "user",
         "PROXY_PASS": "pass",
-        "GEO_LAT": "48.8566",
-        "GEO_LON": "2.3522",
-        "SURVEY_LANG": "fr-FR",
-        "SURVEY_TZ": "Europe/Paris"
       },
       ...
     ]
@@ -36,7 +31,6 @@ def _load_all_accounts() -> dict:
     if _cache is not None:
         return _cache
 
-    raw = os.getenv("ACCOUNTS_JSON", "").strip()
     raw = os.getenv("ACCOUNTS_JSON", "").strip()
     print(f"[ACCOUNT_LOADER] ACCOUNTS_JSON length={len(raw)} preview={raw[:800]!r}", flush=True)
     if not raw:
@@ -94,7 +88,7 @@ def load_account(account_id: str) -> dict:
     account = accounts[account_id]
 
     # Validation des champs critiques
-    missing = [f for f in ("EMAIL", "PASSWORD", "PROXY_URL") if not account.get(f)]
+    missing = [f for f in ("EMAIL", "PROXY_URL") if not account.get(f)]
     if missing:
         raise RuntimeError(
             f"[ACCOUNT_LOADER] Champs manquants pour {account_id}: {missing}"

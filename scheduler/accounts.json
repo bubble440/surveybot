@@ -1,15 +1,9 @@
 [ 
   {
-  "SNAP_ENABLED": "1",
   "ACCOUNT_ID": "topsurveys_bot_203",
   "PROXY_ID": "178.210.254.157",
-  "EMAIL": "antoinne.overstate714@8alias.com",
-  "PASSWORD": "P@ssw0rD!123",
+  "EMAIL": "bezbar.pacify458@simplelogin.fr",
   "PROXY_PASS": "9a42e8da8a",
   "PROXY_USER": "14a4b3f88b892",
-  "PROXY_URL": "178.210.254.157:12323",
-  "SNAP_R2_BUCKET": "surveybot-snaps",
-  "SNAP_R2_ACCOUNT_ID": "abd97f9fc4f9f5bb4300c66f9cd135b8",
-  "SNAP_R2_ACCESS_KEY_ID": "f4bf1a250dba4cdb8638c565138c3de7",
-  "SNAP_R2_SECRET_ACCESS_KEY": "4e4a5db003a362773c8e4eff3c5441e034a49d4aaa78b3d202b0aecd53e0e742"
+  "PROXY_URL": "178.210.254.157:12323"
  }]
