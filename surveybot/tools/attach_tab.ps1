@@ -58,9 +58,9 @@ Write-Host ""
 # Vars env (attach)
 #test prod-like
 $env:ACCOUNT_ID ="topsurveys_bot_101" # Valeur a modifier dans le terminal pour sauvegarder les cookies dans le bon compte.
-$env:PROXY_USER="14abf236340a1"
-$env:PROXY_PASS="bb82a9e63b"
-$env:PROXY_URL="185.134.194.152:12323"
+# $env:PROXY_USER="14abf236340a1"
+# $env:PROXY_PASS="bb82a9e63b"
+# $env:PROXY_URL="185.134.194.152:12323" #Ces 3 valeurs sont responsable de l'ouverture du pop-up de saisi des creds lors du launch.
 
 $env:RUN_ENV="local"
 $env:RUN_MODE="local"

@@ -20,9 +20,10 @@ tmp/
 # Docker leftovers
 *.pid
 
-# snapshots
+# snapshots / debug captures
 snapshots
 snapshots/
+debug_*.html
 surveybot/Utils/config
 
 surveybot/README
