@@ -12,20 +12,29 @@ _cache: dict | None = None
 
 def _load_all_accounts() -> dict:
     """
-    Parse ACCOUNTS_JSON une seule fois.
-    Format attendu : liste de dicts, chacun avec au minimum ACCOUNT_ID.
+    Parse ACCOUNTS_JSON une seule fois. Supporte deux formats :
 
-    Exemple :
+    Format groupé (recommandé) — un objet par proxy, emails listés dedans :
     [
       {
-        "ACCOUNT_ID": "bot_001",
-        "EMAIL": "bot001@example.com",
-        "PROXY_URL": "http://...",
+        "PROXY_ID": "1.2.3.4",
+        "PROXY_URL": "1.2.3.4:12323",
         "PROXY_USER": "user",
         "PROXY_PASS": "pass",
-      },
+        "ACCOUNTS": [
+          { "ACCOUNT_ID": "bot_001", "EMAIL": "a@example.com" },
+          { "ACCOUNT_ID": "bot_002", "EMAIL": "b@example.com" }
+        ]
+      }
+    ]
+
+    Format plat legacy (rétrocompatible) — un objet par compte :
+    [
+      { "ACCOUNT_ID": "bot_001", "EMAIL": "a@example.com", "PROXY_URL": "...", ... },
       ...
     ]
+
+    Dans les deux cas, _cache contient des dicts plats {ACCOUNT_ID -> credentials complets}.
     """
     global _cache
     if _cache is not None:
@@ -40,18 +49,33 @@ def _load_all_accounts() -> dict:
         )
 
     try:
-        accounts_list = json.loads(raw)
+        data = json.loads(raw)
     except json.JSONDecodeError as e:
         raise RuntimeError(f"[ACCOUNT_LOADER] ACCOUNTS_JSON invalide (JSON malformé): {e}")
 
-    if not isinstance(accounts_list, list):
+    if not isinstance(data, list):
         raise RuntimeError("[ACCOUNT_LOADER] ACCOUNTS_JSON doit être une liste JSON")
+
+    # Détection du format : groupé si le premier élément contient "ACCOUNTS"
+    if data and "ACCOUNTS" in data[0]:
+        # Format groupé : dépliage des groupes proxy en dicts plats
+        accounts_list = []
+        for group in data:
+            proxy_fields = {k: v for k, v in group.items() if k != "ACCOUNTS"}
+            for acc in group.get("ACCOUNTS", []):
+                # Les champs du compte ont priorité sur les champs proxy (override possible)
+                accounts_list.append({**proxy_fields, **acc})
+    else:
+        # Format plat legacy
+        accounts_list = data
 
     _cache = {}
     for acc in accounts_list:
         account_id = acc.get("ACCOUNT_ID", "").strip()
         if not account_id:
             raise RuntimeError(f"[ACCOUNT_LOADER] Compte sans ACCOUNT_ID: {acc}")
+        if account_id in _cache:
+            raise RuntimeError(f"[ACCOUNT_LOADER] ACCOUNT_ID dupliqué: {account_id}")
         _cache[account_id] = acc
 
     return _cache
