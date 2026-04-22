@@ -44,6 +44,11 @@ def _ensure_table(conn) -> None:
 # Dossiers exclus de l'archive : volumineux et recréés automatiquement par Chrome.
 # Inutiles pour l'anti-détection (cache HTTP, bytecode JS, shaders GPU, extensions).
 # Périmètre établi par analyse réelle du profil (profile_size_check.py).
+# Fichiers de lock créés par Chrome à chaque démarrage et supprimés à l'arrêt propre.
+# Ne doivent jamais être archivés : ils encodent le hostname/PID de la machine source
+# et font croire à Chrome cible que le profil est verrouillé par un autre processus.
+_EXCLUDED_FILES = {"SingletonLock", "SingletonSocket", "SingletonCookie"}
+
 _EXCLUDED_DIRS = {
     # Racine du profil
     "Cache",
@@ -88,6 +93,9 @@ def _tar_add_safe(tf: tarfile.TarFile, src_dir: str) -> int:
             skipped += 1
 
         for fname in files:
+            if fname in _EXCLUDED_FILES:
+                skipped += 1
+                continue
             fpath = os.path.join(root, fname)
             rel = os.path.relpath(fpath, src_dir)
             try:
