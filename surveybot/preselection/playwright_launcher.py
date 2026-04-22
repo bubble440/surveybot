@@ -639,12 +639,18 @@ def launch_browser(config: dict | None = None):
     proc_env = os.environ.copy()
     proc_env["TZ"] = tz
 
-    singleton_lock = os.path.join(user_data_dir, "SingletonLock")
-    if os.path.exists(singleton_lock):
-        os.remove(singleton_lock)
-        print("[LAUNCH] SingletonLock supprimé")
+    _LOCK_FILES = ["SingletonLock", "lockfile", "CrashpadMetrics-active.pma"]
+    for _lf in _LOCK_FILES:
+        _lf_path = os.path.join(user_data_dir, _lf)
+        if os.path.exists(_lf_path):
+            try:
+                os.remove(_lf_path)
+                print(f"[LAUNCH] Lock file supprimé: {_lf}")
+            except Exception as _e:
+                print(f"[LAUNCH][WARN] Impossible de supprimer {_lf}: {_e}")
 
     # --- 1) Lancer Chrome via subprocess.Popen ---
+    import threading as _threading
     chrome_proc = subprocess.Popen(
         cmd,
         stdout=subprocess.DEVNULL,
@@ -654,10 +660,18 @@ def launch_browser(config: dict | None = None):
     )
     print(f"[LAUNCH] Chrome PID={chrome_proc.pid}")
 
-    time.sleep(3)
-    ret = chrome_proc.poll()
-    if ret is not None:
-        print(f"[LAUNCH][FATAL] Chrome a quitté immédiatement avec code={ret}")
+    # Drain stderr en thread daemon : évite le blocage pipe-buffer et rend
+    # les messages Chrome (OOM, crash, profil lock) visibles en cas de mort.
+    _stderr_lines: list[str] = []
+
+    def _drain_stderr(proc):
+        try:
+            for raw in proc.stderr:
+                _stderr_lines.append(raw.decode(errors="replace").rstrip())
+        except Exception:
+            pass
+
+    _threading.Thread(target=_drain_stderr, args=(chrome_proc,), daemon=True).start()
 
     # --- Relay socat : expose le debug port sur 0.0.0.0 ---
     # (Playwright forçait Chrome sur 127.0.0.1 ; subprocess respecte
@@ -673,9 +687,15 @@ def launch_browser(config: dict | None = None):
         print(f"[LAUNCH] socat relay 0.0.0.0:{relay_port} → 127.0.0.1:{debug_port}")
 
     # --- 2) Attacher Selenium au Chrome déjà lancé ---
-    # Attendre que Chrome expose son debug port (jusqu'à 10s)
+    # Attendre que Chrome expose son debug port (jusqu'à 60s).
+    # À chaque itération : vérifier que Chrome est toujours vivant avant de réessayer.
     import urllib.request
     for attempt in range(120):
+        ret = chrome_proc.poll()
+        if ret is not None:
+            stderr_tail = "\n".join(_stderr_lines[-30:])
+            print(f"[LAUNCH][FATAL] Chrome mort (code={ret}) après {attempt * 0.5:.1f}s.\nstderr:\n{stderr_tail}")
+            raise RuntimeError(f"Chrome a quitté avec code={ret}")
         try:
             urllib.request.urlopen(f"http://127.0.0.1:{debug_port}/json", timeout=1)
             print(f"[LAUNCH] Debug port prêt après {attempt * 0.5:.1f}s")
@@ -683,7 +703,8 @@ def launch_browser(config: dict | None = None):
         except Exception:
             time.sleep(0.5)
     else:
-        print(f"[LAUNCH][WARN] Debug port toujours indisponible après 60s — tentative attach quand même")
+        stderr_tail = "\n".join(_stderr_lines[-30:])
+        print(f"[LAUNCH][WARN] Debug port toujours indisponible après 60s.\nstderr:\n{stderr_tail}")
 
     opts = webdriver.ChromeOptions()
     opts.add_experimental_option("debuggerAddress", f"127.0.0.1:{debug_port}")
