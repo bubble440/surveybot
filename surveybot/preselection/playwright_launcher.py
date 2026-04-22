@@ -313,8 +313,9 @@ def apply_fingerprint_overrides_cdp(driver) -> None:
     try:
         import re as _re
         raw_ua = driver.execute_script("return navigator.userAgent") or ""
-        # Remplacer HeadlessChrome → Chrome et Linux x86_64 → Windows NT 10.0; Win64; x64
+        # Remplacer HeadlessChrome → Chrome, supprimer "X11; " et "Linux x86_64" → Windows NT
         spoofed_ua = _re.sub(r"HeadlessChrome", "Chrome", raw_ua)
+        spoofed_ua = _re.sub(r"X11;\s*", "", spoofed_ua)
         spoofed_ua = _re.sub(r"Linux x86_64", "Windows NT 10.0; Win64; x64", spoofed_ua)
         driver.execute_cdp_cmd("Network.setUserAgentOverride", {
             "userAgent": spoofed_ua,
@@ -629,19 +630,34 @@ def launch_browser(config: dict | None = None):
         # En prod normale, DISPLAY=:99 est positionné par entrypoint.sh
         # et headless=False → ce bloc ne s'exécute pas.
         cmd.append("--headless=new")
+    elif os.environ.get("DISPLAY") and ".exe" not in chrome_bin.lower():
+        # Mode Xvfb (prod Linux) : activer WebGL via ANGLE/SwiftShader.
+        # Sans GPU physique, Chrome ne crée pas de contexte WebGL sans ces flags.
+        cmd.extend(["--use-gl=angle", "--use-angle=swiftshader"])
 
     # ── Env subprocess : TZ pour la timezone ─────────────────────────────────
     proc_env = os.environ.copy()
     proc_env["TZ"] = tz
 
+    singleton_lock = os.path.join(user_data_dir, "SingletonLock")
+    if os.path.exists(singleton_lock):
+        os.remove(singleton_lock)
+        print("[LAUNCH] SingletonLock supprimé")
+
     # --- 1) Lancer Chrome via subprocess.Popen ---
     chrome_proc = subprocess.Popen(
         cmd,
         stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
         env=proc_env,
+        start_new_session=True
     )
     print(f"[LAUNCH] Chrome PID={chrome_proc.pid}")
+
+    time.sleep(3)
+    ret = chrome_proc.poll()
+    if ret is not None:
+        print(f"[LAUNCH][FATAL] Chrome a quitté immédiatement avec code={ret}")
 
     # --- Relay socat : expose le debug port sur 0.0.0.0 ---
     # (Playwright forçait Chrome sur 127.0.0.1 ; subprocess respecte
@@ -652,7 +668,7 @@ def launch_browser(config: dict | None = None):
             ["socat",
              f"TCP-LISTEN:{relay_port},fork,reuseaddr,bind=0.0.0.0",
              f"TCP:127.0.0.1:{debug_port}"],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE
         )
         print(f"[LAUNCH] socat relay 0.0.0.0:{relay_port} → 127.0.0.1:{debug_port}")
 
