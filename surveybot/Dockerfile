@@ -66,8 +66,9 @@ USER botuser
 # PYTHON DEPS
 # =========================
 COPY requirements.txt /app/requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt
-
+RUN pip install --no-cache-dir -r requirements.txt \
+ && pip install --no-cache-dir psycopg2-binary
+ 
 # Playwright browsers (chromium only; Chrome est externe)
 RUN python -m playwright install chromium
 

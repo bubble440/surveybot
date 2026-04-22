@@ -11,7 +11,8 @@
       "Bash(python -c \"import ast; ast.parse\\(open\\('C:/projects/Surveys/surveybot/Survey/dom_extractors_misc.py'\\).read\\(\\)\\); print\\('syntax OK'\\)\")",
       "Bash(python -c \"from surveybot.Survey.dom_extractors_misc import _extract_kantar_rowrank_blocks; print\\('import OK'\\)\")",
       "Bash(python -c \"from Survey.dom_extractors_misc import _extract_kantar_rowrank_blocks; print\\('import OK'\\)\")",
-      "Bash(python -c \"from Survey.dom_analyzer import analyze_dom, _extract_kantar_rowrank_blocks; print\\('dom_analyzer import OK'\\)\")"
+      "Bash(python -c \"from Survey.dom_analyzer import analyze_dom, _extract_kantar_rowrank_blocks; print\\('dom_analyzer import OK'\\)\")",
+      "Bash(git rm *)"
     ]
   }
 }
