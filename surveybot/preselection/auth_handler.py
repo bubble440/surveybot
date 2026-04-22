@@ -298,7 +298,7 @@ def login(driver, email, password):
             pwd_input.send_keys(password)
             print("🔁 Fallback : mot de passe injecté via send_keys()")
         else:
-            print("🔑 Mot de passe injecté via JS.")
+            print(f"🔑 Mot de passe: {password}, injecté via JS.")
             time.sleep(1)  # petit délai pour que Vue traite les événements et active le bouton
             
         # ✅ Corrigé ici : bouton Se connecter avec data-test-id
