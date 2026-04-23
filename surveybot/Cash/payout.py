@@ -27,8 +27,8 @@ if not IS_LOCAL:
 
 def _notify_cashout_failure(account_id: str, amount: float) -> None:
     """Envoie une notification Telegram si les credentials sont configurés."""
-    tg_token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
-    tg_chat  = os.getenv("TELEGRAM_CHAT_ID", "").strip()
+    tg_token = os.getenv("telegram_bot_token", "").strip()
+    tg_chat  = os.getenv("telegram_chat_id", "").strip()
     if not tg_token or not tg_chat:
         return
     msg = f"[PAYOUT][ÉCHEC] Retrait échoué — compte: {account_id} | montant: {amount:.2f} €"
