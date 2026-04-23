@@ -29,7 +29,12 @@ def main() -> None:
 
         print(f"[SCHEDULER] {len(all_ids)} compte(s) / {len(proxy_groups)} proxy — tick")
 
-        states = load_states_batch(all_ids)
+        try:
+            states = load_states_batch(all_ids)
+        except Exception:
+            print("[SCHEDULER] Postgres inaccessible — tick annulé (fail-closed)")
+            time.sleep(LOOP_INTERVAL)
+            continue
 
         launched = 0
         for proxy_id, candidate_ids in proxy_groups.items():

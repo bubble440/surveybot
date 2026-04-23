@@ -12,14 +12,13 @@ from datetime import datetime, timezone, timedelta
 
 log = logging.getLogger("state_reader")
 
-DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
-STATE_BACKEND = os.getenv("STATE_BACKEND", "").strip().lower()
-
 _TZ = timezone(timedelta(hours=2))
 
 
 def _pg_enabled() -> bool:
-    return STATE_BACKEND == "postgres" and bool(DATABASE_URL)
+    db_url = os.getenv("DATABASE_URL", "").strip()
+    backend = os.getenv("STATE_BACKEND", "").strip().lower()
+    return backend == "postgres" and bool(db_url)
 
 
 def load_states_batch(account_ids: list[str]) -> dict[str, dict]:
@@ -35,11 +34,12 @@ def load_states_batch(account_ids: list[str]) -> dict[str, dict]:
     if not _pg_enabled():
         return {aid: {} for aid in account_ids}
 
+    db_url = os.getenv("DATABASE_URL", "").strip()
     try:
         import psycopg2
         import psycopg2.extras
 
-        conn = psycopg2.connect(DATABASE_URL)
+        conn = psycopg2.connect(db_url)
         conn.autocommit = True
         try:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
@@ -57,8 +57,8 @@ def load_states_batch(account_ids: list[str]) -> dict[str, dict]:
         return result
 
     except Exception as e:
-        log.warning(f"[STATE_READER] load_states_batch failed: {e} — tous les comptes considérés disponibles")
-        return {aid: {} for aid in account_ids}
+        log.error(f"[STATE_READER] load_states_batch failed: {e} — tick annulé (fail-closed)")
+        raise
 
 
 def is_in_cooldown(state: dict) -> bool:
