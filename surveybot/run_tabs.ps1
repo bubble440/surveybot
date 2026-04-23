@@ -1,6 +1,6 @@
 # 1 fenêtre Windows Terminal, 1 tab par port, chaque tab exécute tools\attach_tab.ps1
 
-$ports = 9301
+$ports = 9101
 $projectDir = "C:\projects\Surveys"
 $tabScript  = "C:\projects\Surveys\surveybot\tools\attach_tab.ps1"
 

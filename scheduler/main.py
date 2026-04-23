@@ -6,7 +6,7 @@ from fly import start_task
 from state_reader import is_in_cooldown, load_states_batch
 
 RUN_ENV       = os.getenv("RUN_ENV", "prod").lower()
-LOOP_INTERVAL = int(os.getenv("LOOP_INTERVAL_SEC", "180"))
+LOOP_INTERVAL = int(os.getenv("LOOP_INTERVAL_SEC", "120"))
 
 
 def _pick_candidate(proxy_id: str, candidate_ids: list[str], states: dict[str, dict]) -> str | None:
