@@ -720,6 +720,15 @@ def solve_full_survey(driver, api_key, *, account_id: str, survey_context=None):
                 last_question_key = (_qa.extract_question_text(_html) or "")[:150]
             except Exception:
                 last_question_key = ""
+            # Stuck detection : execute_survey_page() échoue sans changement d'URL
+            if current_url == last_url:
+                _cta_fail_count += 1
+                if _cta_fail_count >= 3:
+                    from Survey.log_utils import log_info
+                    log_info("STUCK", f"CTA en échec {_cta_fail_count} fois sur la même URL → soft-restart")
+                    guard.record_success()
+                    guard.request_survey_restart("cta_fail_no_progress")
+                    return
 
         # d) Conditions d’arrêt
         # if _looks_like_end_screen(driver):
