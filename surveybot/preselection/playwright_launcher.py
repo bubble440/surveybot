@@ -637,7 +637,7 @@ def launch_browser(config: dict | None = None):
 
     relay_proc = None
     if proxy_server and proxy_user and proxy_pass:
-        # Relay local pproxy : Chrome reçoit un proxy sans credentials
+        # Relay local pproxy : Chrome reçoit un proxy sans credentials 
         # Chrome Windows (WSL) ne peut pas atteindre 127.0.0.1 WSL — on bind sur 0.0.0.0
         # et on passe l'IP du bridge WSL (hostname -I) à la place de 127.0.0.1.
         if ".exe" in chrome_bin.lower():
