@@ -3201,6 +3201,186 @@ def _apply_by_target_id(
                     except Exception:
                         return False
 
+            # --- cas runtime_dropdown (Toluna/QuickSurveys React Select custom) ---
+            # Guard DOM strict : flag runtime_dropdown posé par _extract_runtime_dropdown_blocks
+            if payload.get("runtime_dropdown"):
+                container_id = payload.get("container_id") or ""
+                parts = payload.get("runtime_dropdown_parts") or []
+                if not container_id:
+                    return False
+                try:
+                    container = driver.find_element(By.ID, container_id)
+                except Exception:
+                    log_debug("[TARGET_DEBUG]", f"runtime_dropdown container '{container_id}' introuvable")
+                    return False
+                try:
+                    wrappers = container.find_elements(By.CSS_SELECTOR, "[data-testid='MultiValueSelectWrapper']")
+                except Exception:
+                    return False
+                if not wrappers:
+                    return False
+
+                _MONTH_FR = {
+                    "1": "janvier", "01": "janvier", "2": "fevrier", "02": "fevrier",
+                    "3": "mars", "03": "mars", "4": "avril", "04": "avril",
+                    "5": "mai", "05": "mai", "6": "juin", "06": "juin",
+                    "7": "juillet", "07": "juillet", "8": "aout", "08": "aout",
+                    "9": "septembre", "09": "septembre", "10": "octobre",
+                    "11": "novembre", "12": "decembre",
+                }
+
+                def _nopt(s: str) -> str:
+                    s = (s or "").replace("\xa0", " ")
+                    s = unicodedata.normalize("NFKD", s)
+                    s = "".join(c for c in s if not unicodedata.combining(c))
+                    return re.sub(r"\s+", " ", s).strip().lower()
+
+                def _rsp_pick(wrapper, target_val: str, part_hint: str = "") -> bool:
+                    v = (target_val or "").strip()
+                    if not v:
+                        return False
+                    v_norm = _nopt(v)
+                    if part_hint == "month":
+                        v_norm = _MONTH_FR.get(v, v_norm)
+                    try:
+                        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", wrapper)
+                        wrapper.click()
+                    except Exception:
+                        return False
+                    menu = None
+                    for _ in range(8):
+                        try:
+                            menus = driver.find_elements(By.CSS_SELECTOR, "[class*='-menu']")
+                            visible = [m for m in menus if m.is_displayed()]
+                            if visible:
+                                menu = visible[-1]
+                                break
+                        except Exception:
+                            pass
+                        time.sleep(0.1)
+                    if not menu:
+                        log_debug("[TARGET_DEBUG]", f"runtime_dropdown: menu non ouvert pour '{v}'")
+                        return False
+                    try:
+                        opts = menu.find_elements(By.CSS_SELECTOR, "[class*='-option']")
+                    except Exception:
+                        opts = []
+                    for opt in opts:
+                        try:
+                            t = _nopt(opt.text or "")
+                            if t and (t == v_norm or v_norm in t or t in v_norm):
+                                opt.click()
+                                return True
+                        except Exception:
+                            continue
+                    # fallback ordinal pour les valeurs numériques (ex: mois "04" → 4ème option)
+                    if v.isdigit():
+                        num = int(v)
+                        real = [
+                            o for o in opts
+                            if _nopt(o.text or "") and not any(
+                                tok in _nopt(o.text or "")
+                                for tok in ("selectionn", "choisir", "select", "veuillez")
+                            )
+                        ]
+                        if 1 <= num <= len(real):
+                            try:
+                                real[num - 1].click()
+                                return True
+                            except Exception:
+                                pass
+                    try:
+                        from selenium.webdriver.common.keys import Keys as _Keys
+                        comboboxes = driver.find_elements(By.CSS_SELECTOR, "input[role='combobox']")
+                        if comboboxes:
+                            comboboxes[-1].send_keys(_Keys.ESCAPE)
+                    except Exception:
+                        pass
+                    log_debug("[TARGET_DEBUG]", f"runtime_dropdown: option '{v}' introuvable dans le menu")
+                    return False
+
+                v = (value or "").strip()
+                if not v:
+                    return False
+
+                if parts:
+                    raw_parts = None
+                    if "|" in v:
+                        raw_parts = [p.strip() for p in v.split("|")]
+                    elif "/" in v:
+                        raw_parts = [p.strip() for p in v.split("/")]
+                    elif v.count("-") >= 2:
+                        raw_parts = [p.strip() for p in v.split("-")]
+
+                    if raw_parts and len(raw_parts) >= len(parts):
+                        # DD/MM/YYYY (convention française) → mapper sur les parts
+                        if "/" in v and len(raw_parts) == 3:
+                            date_map = {"day": raw_parts[0], "month": raw_parts[1], "year": raw_parts[2]}
+                        else:
+                            date_map = {p: raw_parts[i] for i, p in enumerate(parts) if i < len(raw_parts)}
+                        ok_count = 0
+                        for i, part in enumerate(parts):
+                            if i >= len(wrappers):
+                                break
+                            pval = date_map.get(part, "")
+                            if pval and _rsp_pick(wrappers[i], pval, part_hint=part):
+                                ok_count += 1
+                                time.sleep(0.15)
+                        return ok_count > 0
+                    else:
+                        # valeur unique : tenter chaque wrapper dans l'ordre des parts
+                        for i, wrapper in enumerate(wrappers[: len(parts)]):
+                            part = parts[i] if i < len(parts) else ""
+                            if _rsp_pick(wrapper, v, part_hint=part):
+                                return True
+                        return False
+                else:
+                    return _rsp_pick(wrappers[0], v)
+
+            # --- cas runtime_text (Toluna/QuickSurveys textarea natif) ---
+            # Guard DOM strict : flag runtime_text posé par _extract_runtime_dropdown_blocks
+            if payload.get("runtime_text"):
+                container_id = payload.get("container_id") or ""
+                if not container_id:
+                    return False
+                try:
+                    container = driver.find_element(By.ID, container_id)
+                except Exception:
+                    log_debug("[TARGET_DEBUG]", f"runtime_text container '{container_id}' introuvable")
+                    return False
+                try:
+                    ta = container.find_element(By.CSS_SELECTOR, "textarea")
+                except Exception:
+                    log_debug("[TARGET_DEBUG]", f"runtime_text: textarea introuvable dans '{container_id}'")
+                    return False
+                driver.execute_script("arguments[0].scrollIntoView({block:'center'});", ta)
+                # React contrôle la valeur via son état interne : ta.clear() n'a aucun effet.
+                # On vide via le setter natif + event 'input' pour notifier React, puis on saisit.
+                try:
+                    driver.execute_script(
+                        """
+                        var el = arguments[0];
+                        var setter = Object.getOwnPropertyDescriptor(
+                            window.HTMLTextAreaElement.prototype, 'value'
+                        ).set;
+                        setter.call(el, '');
+                        el.dispatchEvent(new Event('input', {bubbles: true}));
+                        """,
+                        ta,
+                    )
+                except Exception:
+                    try:
+                        from selenium.webdriver.common.keys import Keys as _Keys
+                        ta.send_keys(_Keys.CONTROL + "a")
+                        ta.send_keys(_Keys.DELETE)
+                    except Exception:
+                        pass
+                try:
+                    ta.send_keys(value or "")
+                    return True
+                except Exception:
+                    return False
+
             return False
 
         # Exécuter dans le bon frame si possible
