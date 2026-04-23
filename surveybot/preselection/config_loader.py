@@ -48,6 +48,8 @@ def load_config() -> dict:
         "PAYOUT_NAME": "payout_name",
         "PAYOUT_REVOLUT_TAG": "payout_revolut_tag",
         "ACCOUNT_ID":"account_id",
+        "TELEGRAM_BOT_TOKEN": "telegram_bot_token",
+        "TELEGRAM_CHAT_ID":   "telegram_chat_id",
     }
 
     for src, dst in key_aliases.items():
