@@ -3191,6 +3191,27 @@ def _detect_sejson_unsupported_metatype(driver) -> str:
     return ""
 
 
+def _find_fullscreen_iframe_idx(driver) -> "int | None":
+    """Retourne l'index (dans default_content) de la première iframe fullscreen overlay.
+
+    Garde-fou DOM strict: style doit contenir position:fixed ET width:100% ET height:100%.
+    Ne détecte pas les iframes partielles.
+    """
+    try:
+        driver.switch_to.default_content()
+        frames = driver.find_elements(By.CSS_SELECTOR, "iframe, frame")
+    except Exception:
+        return None
+    for idx, frame in enumerate(frames):
+        try:
+            style = (frame.get_attribute("style") or "").lower().replace(" ", "")
+            if "position:fixed" in style and "width:100%" in style and "height:100%" in style:
+                return idx
+        except Exception:
+            continue
+    return None
+
+
 # ================================================================================
 
 def analyze_dom(driver) -> List[Dict[str, Any]]:
@@ -3309,6 +3330,18 @@ def analyze_dom(driver) -> List[Dict[str, Any]]:
     if is_debug():
         itypes = sorted({str((b or {}).get("itype") or "") for b in (blocks or []) if (b or {}).get("itype")})
         log_debug("[DOM_CONTEXT_DEBUG]", f"extracted_blocks count={len(blocks or [])} itypes={itypes}")
+
+    # Iframe fullscreen overlay (ex. Tobii/sticky.ai consent modal)
+    # Déclenché uniquement si aucun bloc trouvé via le chemin normal.
+    if not blocks:
+        fs_idx = _find_fullscreen_iframe_idx(driver)
+        if fs_idx is not None:
+            log_debug("[DOM_CONTEXT_DEBUG]", f"fullscreen_iframe detected idx={fs_idx} trying consent extraction")
+            with switch_to_frame_chain(driver, [fs_idx]) as ok:
+                if ok:
+                    blocks = _extract_single_consent_checkbox_block(driver, [fs_idx])
+                    if blocks:
+                        log_info("[DOM_ANALYZER]", f"fullscreen_iframe_consent frame_idx={fs_idx} blocks={len(blocks)}")
 
     blocks = _dedupe_question_blocks(blocks)
     blocks = _merge_nfield_rowpicker_exclusive_radio(blocks)
