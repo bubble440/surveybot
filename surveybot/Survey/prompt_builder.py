@@ -486,6 +486,15 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
         "indiquant une possession indirecte ou une absence de possession.\n"
         "Un répondant déclarant ne pas posséder un bien est souvent exclu des études portant sur ce bien."
     )
+    
+    lines.append(
+        "RÈGLE WEBCAM :\n"
+        "Si une question demande si tu acceptes, consens, ou es prêt à utiliser une webcam ou une caméra "
+        "(pour être filmé, enregistré, ou participer via vidéo), "
+        "choisis TOUJOURS l'option négative (Non, No, Je refuse, Je ne souhaite pas, etc.).\n"
+        "Cette règle s'applique uniquement au consentement d'usage actif — "
+        "pas aux questions de simple possession d'un équipement."
+    )
 
     lines.append(
         "RÈGLE COHÉRENCE CONTEXTE → APPROFONDISSEMENT :\n"

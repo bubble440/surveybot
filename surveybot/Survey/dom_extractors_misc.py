@@ -3645,14 +3645,60 @@ def _extract_runtime_dropdown_blocks(driver, frame_chain: list[int] | None) -> l
             except Exception:
                 continue
 
-            if not container.find_elements(
+            wrappers_dd = container.find_elements(
                 By.CSS_SELECTOR,
-                "[data-testid='MultiValueSelectWrapper'] input[role='combobox']",
+                "[data-testid='MultiValueSelectWrapper']",
+            )
+            if not wrappers_dd or not wrappers_dd[0].find_elements(
+                By.CSS_SELECTOR, "input[role='combobox']"
             ):
                 continue
 
+            # Ouvrir le menu React Select pour lire les options (portail dynamique).
+            options_list: list[str] = []
+            try:
+                wrapper_dd = wrappers_dd[0]
+                driver.execute_script("arguments[0].scrollIntoView({block:'center'});", wrapper_dd)
+                wrapper_dd.click()
+                menu_el = None
+                for _ in range(8):
+                    try:
+                        menus = driver.find_elements(By.CSS_SELECTOR, "[class*='-menu']")
+                        visible = [m for m in menus if m.is_displayed()]
+                        if visible:
+                            menu_el = visible[-1]
+                            break
+                    except Exception:
+                        pass
+                    time.sleep(0.1)
+                if menu_el:
+                    for opt_el in menu_el.find_elements(By.CSS_SELECTOR, "[class*='-option']"):
+                        try:
+                            t = _norm(opt_el.text or opt_el.get_attribute("innerText") or "")
+                            if t:
+                                options_list.append(t)
+                        except Exception:
+                            continue
+                    log_debug("[DOM_CONTEXT_DEBUG]", f"runtime_dropdown qid={qid_raw} options={len(options_list)}")
+                else:
+                    log_debug("[DOM_CONTEXT_DEBUG]", f"runtime_dropdown qid={qid_raw} menu non ouvert")
+                # Fermer le menu
+                try:
+                    combobox = wrapper_dd.find_element(By.CSS_SELECTOR, "input[role='combobox']")
+                    from selenium.webdriver.common.keys import Keys as _Keys
+                    combobox.send_keys(_Keys.ESCAPE)
+                except Exception:
+                    try:
+                        wrapper_dd.click()
+                    except Exception:
+                        pass
+            except Exception as _e:
+                log_debug("[DOM_CONTEXT_DEBUG]", f"runtime_dropdown qid={qid_raw} option_read_error={type(_e).__name__}")
+
             group_key = f"runtime_dropdown:{qid_raw}"
-            target_id = make_target_id("group", group_key, question)
+            # Utiliser group_key (contient l'ID question stable) au lieu du texte de question
+            # pour que le target_id soit identique entre le scan initial et les rescans inter-actions.
+            target_id = make_target_id("group", group_key, group_key)
             register_target(
                 target_id,
                 {
@@ -3669,7 +3715,7 @@ def _extract_runtime_dropdown_blocks(driver, frame_chain: list[int] | None) -> l
                 {
                     "question": question,
                     "itype": "select",
-                    "options": [],
+                    "options": options_list,
                     "max_select": 1,
                     "target_id": target_id,
                     "context": {
@@ -3719,7 +3765,7 @@ def _extract_runtime_dropdown_blocks(driver, frame_chain: list[int] | None) -> l
                 n = len(wrappers)
                 parts = ["month", "day", "year"][:n]
                 group_key = f"runtime_dropdown:{qid_raw}"
-                target_id = make_target_id("group", group_key, question)
+                target_id = make_target_id("group", group_key, group_key)
                 register_target(
                     target_id,
                     {
@@ -3784,7 +3830,7 @@ def _extract_runtime_dropdown_blocks(driver, frame_chain: list[int] | None) -> l
                     continue
 
                 field_key = f"runtime_text:{qid_raw}"
-                target_id = make_target_id("field", field_key, question)
+                target_id = make_target_id("field", field_key, field_key)
                 register_target(
                     target_id,
                     {
