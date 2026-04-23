@@ -12,7 +12,9 @@
       "Bash(python -c \"from surveybot.Survey.dom_extractors_misc import _extract_kantar_rowrank_blocks; print\\('import OK'\\)\")",
       "Bash(python -c \"from Survey.dom_extractors_misc import _extract_kantar_rowrank_blocks; print\\('import OK'\\)\")",
       "Bash(python -c \"from Survey.dom_analyzer import analyze_dom, _extract_kantar_rowrank_blocks; print\\('dom_analyzer import OK'\\)\")",
-      "Bash(git rm *)"
+      "Bash(git rm *)",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('surveybot/Survey/dom_analyzer.py'\\).read\\(\\)\\); print\\('dom_analyzer OK'\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('surveybot/Survey/dom_extractors_misc.py'\\).read\\(\\)\\); print\\('dom_extractors_misc OK'\\)\")"
     ]
   }
 }

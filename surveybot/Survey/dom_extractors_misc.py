@@ -2487,6 +2487,18 @@ def _extract_single_consent_checkbox_block(driver, frame_chain: list[int] | None
             cb = form_checkboxes[0]
             break
 
+    # Pattern privacy-policy-wrap (Tobii/sticky.ai iframe consent)
+    # Garde-fou: div.privacy-policy-wrap unique + checkbox unique, sans form requis.
+    if cb is None:
+        try:
+            ppw_checkboxes = driver.find_elements(
+                By.CSS_SELECTOR, "div.privacy-policy-wrap input[type='checkbox']"
+            )
+        except Exception:
+            ppw_checkboxes = []
+        if len(ppw_checkboxes) == 1:
+            cb = ppw_checkboxes[0]
+
     if cb is None:
         return []
 
@@ -2526,6 +2538,19 @@ def _extract_single_consent_checkbox_block(driver, frame_chain: list[int] | None
 
         has_accept_cta = len(ctas) > 0
 
+    # Pattern privacy-policy-wrap: bouton disabled sans <form> requis.
+    if not has_accept_cta:
+        try:
+            ppw = driver.find_elements(By.CSS_SELECTOR, "div.privacy-policy-wrap")
+            if ppw:
+                disabled_btns = driver.find_elements(
+                    By.CSS_SELECTOR,
+                    "button[disabled], input[type='submit'][disabled], input[type='button'][disabled]",
+                )
+                has_accept_cta = len(disabled_btns) > 0
+        except Exception:
+            pass
+
     if not has_accept_cta:
         return []
 
@@ -2551,6 +2576,23 @@ def _extract_single_consent_checkbox_block(driver, frame_chain: list[int] | None
                 label_txt = _norm(parent_labels[0].text or parent_labels[0].get_attribute("innerText") or "")
         except Exception:
             label_txt = ""
+
+    # Fallback label pour privacy-policy-wrap: texte adjacent (SPA sans label[for]).
+    if not label_txt:
+        try:
+            ppw = driver.find_elements(By.CSS_SELECTOR, "div.privacy-policy-wrap")
+            if ppw:
+                for xpath in ("following-sibling::*[1]", "parent::*/following-sibling::*[1]"):
+                    try:
+                        el = cb.find_element(By.XPATH, xpath)
+                        txt = _norm(el.text or el.get_attribute("innerText") or "")
+                        if txt:
+                            label_txt = txt
+                            break
+                    except Exception:
+                        continue
+        except Exception:
+            pass
 
     if not label_txt:
         return []
