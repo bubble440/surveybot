@@ -391,6 +391,7 @@ def _start_proxy_relay(proxy_server: str, proxy_user: str, proxy_pass: str, bind
     local_port = random.randint(34000, 44000)
     auth_b64 = base64.b64encode(f"{proxy_user}:{proxy_pass}".encode()).decode()
     stop_event = threading.Event()
+    _ready_event = threading.Event()
 
     def _pipe(src: socket.socket, dst: socket.socket) -> None:
         try:
@@ -477,6 +478,8 @@ def _start_proxy_relay(proxy_server: str, proxy_user: str, proxy_pass: str, bind
         srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         srv.bind((bind_host, local_port))
         srv.listen(64)
+        # Signal readiness exactly here: OS will queue incoming connections from now on.
+        _ready_event.set()
         srv.settimeout(1.0)
         try:
             while not stop_event.is_set():
@@ -496,24 +499,34 @@ def _start_proxy_relay(proxy_server: str, proxy_user: str, proxy_pass: str, bind
         def terminate(self) -> None:
             stop_event.set()
 
-    # Attendre que le relay accepte des connexions (max 10s)
-    deadline = time.time() + 10.0
-    ready = False
-    while time.time() < deadline:
-        try:
-            with socket.create_connection(("127.0.0.1", local_port), timeout=0.5):
-                ready = True
-                break
-        except Exception:
-            time.sleep(0.1)
-
-    if not ready:
+    # Phase 1 — attendre que listen() soit effectif (Event positionné par _serve).
+    # Garantit que l'OS peut désormais mettre des connexions en file d'attente.
+    if not _ready_event.wait(timeout=5.0):
         stop_event.set()
         raise RuntimeError(
-            f"relay HTTP CONNECT n'a pas exposé le port {local_port} après 10s"
+            f"[RELAY] listen() n'a pas abouti sur le port {local_port} après 5s"
         )
 
-    print(f"[LAUNCH][RELAY] relay HTTP CONNECT prêt sur port {local_port} → {proxy_host}:{proxy_port}")
+    # Phase 2 — sonde TCP active : vérifier que le relay reçoit effectivement
+    # des connexions (et non que le thread est mort juste après listen()).
+    # Budget explicite : 20 tentatives × 50 ms = 1 s max.
+    _PROBE_HOST = "127.0.0.1"
+    _PROBE_MAX = 20
+    for _attempt in range(_PROBE_MAX):
+        try:
+            with socket.create_connection((_PROBE_HOST, local_port), timeout=0.3):
+                break
+        except OSError:
+            if _attempt == _PROBE_MAX - 1:
+                stop_event.set()
+                raise RuntimeError(
+                    f"[RELAY] relay non joignable sur {_PROBE_HOST}:{local_port} "
+                    f"après {_PROBE_MAX} tentatives"
+                )
+            time.sleep(0.05)
+
+    log.info("[LAUNCH][RELAY] relay HTTP CONNECT prêt sur port %d → %s:%d",
+             local_port, proxy_host, proxy_port)
     return _RelayHandle(), local_port
 
 
@@ -573,9 +586,10 @@ def launch_browser(config: dict | None = None):
     print(f"[LAUNCH] user_data_dir={user_data_dir}")
 
     if proxy_server:
-        print(f"[LAUNCH][PROXY] server={proxy_server} user={'yes' if proxy_user else 'no'} pass={'yes' if proxy_pass else 'no'}")
+        log.info("[LAUNCH][PROXY] server=%s user=%s pass=%s",
+                 proxy_server, "yes" if proxy_user else "no", "yes" if proxy_pass else "no")
     else:
-        print("[LAUNCH][PROXY] aucun proxy (PROXY_URL vide)")
+        log.info("[LAUNCH][PROXY] aucun proxy (PROXY_URL vide)")
 
     locale, tz = _parse_locale_tz_env()
     print(f"[LAUNCH][LOCALE] {locale}  [LAUNCH][TZ] {tz}")
@@ -595,9 +609,27 @@ def launch_browser(config: dict | None = None):
         "--no-default-browser-check",
         "--disable-dev-shm-usage",
         *( ["--no-sandbox"] if os.getuid() == 0 else [] ),
-        "--disable-background-networking",
-        "--disable-component-update",
-        "--disable-features=Translate,OptimizationHints",
+        # ── Réseau interne Chrome — neutralisation complète ────────────────────
+        # Ces connexions surviennent dès le lancement, avant le premier driver.get(),
+        # et saturent/contournent le relay proxy, déclenchant la popup d'auth native.
+        "--disable-background-networking",       # déjà présent — base
+        "--disable-component-update",            # déjà présent — base
+        "--disable-sync",                        # Google Sync (contacts, bookmarks…)
+        "--no-pings",                            # hyperlink auditing pings
+        "--disable-domain-reliability",          # rapports d'erreurs réseau → Google
+        "--disable-client-side-phishing-detection",  # modèle ML local, pas de réseau
+        "--safebrowsing-disable-auto-update",    # stoppe le téléchargement des listes Safe Browsing
+        "--disable-features=Translate,OptimizationHints,SafeBrowsingProtections,"
+            "SafeBrowsingRealTimeUrlLookupEnabled,ChromeWhatsNewUI,"
+            "NetworkService,MediaRouter,DialMediaRouteProvider",
+        # ── NTP / background fetch ────────────────────────────────────────────
+        "--ash-no-nudges",                       # supprime les popups Ash (ChromeOS no-op sur Linux)
+        "--disable-ntp-most-likely-favicons-from-server",  # NTP : pas de fetch favicon
+        "--disable-search-engine-choice-screen",  # pas de requête réseau au démarrage
+        # ── Extensions & notifications (pas de connexion background) ─────────
+        "--disable-extensions",
+        "--disable-notifications",
+        # ── Anti-fingerprint / automation ────────────────────────────────────
         "--disable-blink-features=AutomationControlled",
         "--window-size=1920,1080",
         f"--lang={locale}",
