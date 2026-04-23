@@ -421,6 +421,25 @@ def solve_full_survey(driver, api_key, *, account_id: str, survey_context=None):
                 # === AUTO : résolution 2Captcha (local + prod) ===
                 if captcha_behavior == "auto_2captcha":
                     print("[CAPTCHA] Tentative de résolution automatique via 2Captcha...")
+                    # Anti-boucle : budget de 2 résolutions consécutives sur la même URL
+                    _captcha_url_now = ""
+                    try:
+                        _captcha_url_now = driver.current_url or ""
+                    except Exception:
+                        pass
+                    _last_captcha_url = getattr(driver, "_auto2captcha_last_url", None)
+                    _captcha_attempts = getattr(driver, "_auto2captcha_attempts", 0)
+                    if _last_captcha_url != _captcha_url_now:
+                        _captcha_attempts = 0
+                    _captcha_attempts += 1
+                    setattr(driver, "_auto2captcha_last_url", _captcha_url_now)
+                    setattr(driver, "_auto2captcha_attempts", _captcha_attempts)
+                    if _captcha_attempts > 2:
+                        from Survey.log_utils import log_info
+                        log_info("CAPTCHA", f"Boucle captcha détectée ({_captcha_attempts} résolutions sans navigation) → soft-restart")
+                        Management.guards.runtime_guard.get_guard().record_success()
+                        Management.guards.runtime_guard.get_guard().signal_strict_survey("captcha_loop_detected")
+                        return
                     try:
                         from captcha.recaptcha_handler import solve_recaptcha_v2_auto
                         resolved = solve_recaptcha_v2_auto(driver)
