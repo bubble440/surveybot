@@ -1476,6 +1476,18 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
 
     groups: Dict[tuple[str, str], List[Any]] = {}
 
+    def _is_sq_atm1d_widget_element(el) -> bool:
+        """Skip elements inside a sq-atm1d widget (handled by _extract_focusvision_answers_list_groups)."""
+        try:
+            return bool(
+                el.find_elements(
+                    By.XPATH,
+                    "ancestor::ul[contains(concat(' ', normalize-space(@class), ' '), ' sq-atm1d-buttons ')]",
+                )
+            )
+        except Exception:
+            return False
+
     def _is_focusvision_table_mode_matrix_cell(el) -> bool:
         """
         Détecte les cellules d'une grille Decipher/FocusVision `table-mode`
@@ -1575,6 +1587,8 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             if itype not in ("radio", "checkbox"):
                 continue
             if _is_focusvision_table_mode_matrix_cell(el):
+                continue
+            if _is_sq_atm1d_widget_element(el):
                 continue
             # Decipher/FocusVision: les options marquées `no-answer`
             # ("je ne souhaite pas répondre", "je ne sais pas", etc.)

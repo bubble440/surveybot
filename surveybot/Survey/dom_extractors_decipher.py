@@ -404,6 +404,18 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
             atm1d_buttons = []
 
         if len(atm1d_buttons) >= 2:
+            # Deduce itype from role="radiogroup" on the ul, or role="radio" on the li.
+            itype_atm1d = "checkbox"
+            try:
+                ul_buttons = q.find_element(By.CSS_SELECTOR, ".sq-atm1d-widget .sq-atm1d-buttons")
+                ul_role = (ul_buttons.get_attribute("role") or "").strip().lower()
+                if ul_role == "radiogroup":
+                    itype_atm1d = "radio"
+                elif (atm1d_buttons[0].get_attribute("role") or "").strip().lower() == "radio":
+                    itype_atm1d = "radio"
+            except Exception:
+                pass
+
             options: list[str] = []
             option_xpath_map: dict[str, str] = {}
             exclusive_options_norm: list[str] = []
@@ -445,18 +457,19 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
                     exclusive_options_norm.append(legend_norm)
 
             if len(options) >= 2:
-                group_key = "checkbox:atm1d"
+                group_key = f"{itype_atm1d}:atm1d"
+                max_sel = 1 if itype_atm1d == "radio" else len(options)
                 target_id = make_target_id("group", group_key, question or "atm1d")
                 register_target(
                     target_id,
                     {
                         "kind": "group",
                         "frame_chain": list(frame_chain or []),
-                        "itype": "checkbox",
+                        "itype": itype_atm1d,
                         "group_key": group_key,
                         "question": question,
                         "input_name": "atm1d",
-                        "max_select": len(options),
+                        "max_select": max_sel,
                         "options": options,
                         "option_xpath_map": option_xpath_map,
                         "meta": {
@@ -470,14 +483,14 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
                     {
                         "target_id": target_id,
                         "kind": "group",
-                        "itype": "checkbox",
+                        "itype": itype_atm1d,
                         "question": question,
                         "options": options,
-                        "max_select": len(options),
+                        "max_select": max_sel,
+                        "min_select": 1,
                         "context": {
                             "kind": "group",
                             "group_key": group_key,
-                            "focusvision_answers_list": True,
                         },
                     }
                 )
