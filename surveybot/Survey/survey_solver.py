@@ -549,6 +549,17 @@ def solve_full_survey(driver, api_key, *, account_id: str, survey_context=None):
             guard.request_survey_restart("net_err_max_attempts")
             return  # abandon propre du survey
 
+        # --- Détection page d’erreur applicative Toluna (div.errorPage) ---
+        try:
+            _error_page = driver.find_elements("css selector", "div.errorPage")
+            if _error_page:
+                log_info("TOLUNA-ERR", "Page d’erreur applicative détectée (div.errorPage) → soft-restart.")
+                guard.record_success()
+                guard.request_survey_restart("toluna_error_page")
+                return
+        except Exception:
+            pass
+
         # -------------------------------------------------------------------
         # a) Laisser GPT décider de l’action à partir de la capture d’écran
         success = Survey.survey_executor.execute_survey_page(driver, account_id, api_key, ctx=_survey_ctx)

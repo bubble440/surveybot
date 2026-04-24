@@ -720,10 +720,6 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
             lines.append("options: (cardsort_mapping_attendu)")
         elif opts:
             lines.append("options: " + " | ".join(opts))
-            if itype == "checkbox" and not is_participation_consent_all:
-                lines.append(
-                    f"Sélectionne uniquement les options cohérentes avec le profil du répondant. Ne sélectionne pas plus que nécessaire."
-                )
         else:
             lines.append("options: (champ ouvert)")
 
@@ -823,7 +819,7 @@ def filter_blocks_for_openai(question_blocks: list) -> list:
             continue
 
         # types acceptés
-        if it_lc in {"radio", "checkbox", "dropdown", "text", "textarea", "matrix_rows_single_choice", "matrix"}:
+        if it_lc in {"radio", "checkbox", "dropdown", "text", "textarea", "matrix_rows_single_choice", "matrix", "select_rps"}:
             kept.append(qb)
 
     return kept
