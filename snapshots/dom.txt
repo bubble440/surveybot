@@ -1,81 +1,78 @@
-<body>
-<div id="app"><div class="surveyWrapper css-1hyd3be ex887d00" data-aut="Runtime_SurveyWrapper" style="pointer-events: auto;"><div data-aut="Runtime_ToastsWrapper" class="css-1tyvq0w ey0dlkz0"></div><div data-aut="Runtime_InnerWrapper" class="css-mxq67n e1dmco3"><div data-aut="Runtime_DevicePreviewWrapper" class="css-1fbxsqs e1dmco2"><div data-aut="Runtime_TabletSpeaker" class="css-1ygx8p9 e1dmco0"></div><div class="virtual-viewport css-h6796o e1dmco1" data-aut="Runtime_DeviceInnerWrapper"><div class="survey-content-wrapper css-j9zjzl e1lmjrqq0" data-aut="Runtime_SectionWrapper"><div data-aut="Runtime_PageWrapper" class="css-1j1j4vr enajf9s0"><div class="header css-1ybgirz e14n35sw0" data-aut="Runtime_Wrapper"><div data-aut="Runtime_OuterWrapper" class="css-wkieti e1wsru662"><div data-aut="Runtime_Wrapper" class="css-1h37pem e1wsru661"></div></div><div data-aut="Runtime_OuterWrapper" class="css-ljrkz4 e18gx8fp3"><div data-aut="Runtime_Wrapper" class="css-z3vnq1 e18gx8fp2"><div data-aut="Runtime_Completed" class="css-nplaun e18gx8fp1"></div><div data-aut="Runtime_Rest" class="css-apnjh2 e18gx8fp0"></div></div></div></div><div class="contentWrapper css-10w8k9o emqqziw1" color="#fbfbff" data-aut="Runtime_Wrapper"><div data-aut="Runtime_InnerWrapper" class="css-63740j emqqziw0"><div data-aut="Runtime_ScrollWrapper" class="css-ss4gmc er2d44v0"><div id="pageQuestionsScrollBar" data-aut="Runtime_Scrollbars" style="position: relative; overflow: hidden; width: 100%; height: 100%;"><div style="position: absolute; inset: 0px; overflow: scroll; margin-right: -15px; margin-bottom: -15px;"><div class="scroll-container css-vma8vg er2d44v2" data-aut="Runtime_ScrollContainer"><div data-aut="Runtime_GroupWrapper-72338329" class="group-wrapper css-tankzd ek0fzxi1"><div class="group_questions css-1fttcpj ek0fzxi3" id="group_72338329" data-aut="Runtime_TitleAndQuestionsWrapper"><div data-aut="Runtime_GroupQuestionsGrid" class="css-1ollu6t ek0fzxi2"><div data-aut="Runtime_QuestionWrapper" class="css-zebi56 ek0fzxi0"><span data-aut="Runtime_CutCopyDetectionArea" class="css-0 etx41fg0"><div id="question_72338329" class="choice_question display_normal multi_choice css-1u8qly9 etx41fg7" data-aut="Runtime_QuestionWrapper"><div data-aut="Runtime_QuestionTitleAndSubtitleWrapper" class="css-131muu2 en6dj7d2"><div class="question_title css-axbsz9 e1mlglyq3" data-aut="Runtime_Wrapper"><div class="title-wrapper css-zjik7 e1mlglyq2" data-aut="Runtime_QuestionTitleAndDescriptionWrapper"><div data-aut="Runtime_TitleWrapper" class="css-1xdhyk6 e1mlglyq0"><div data-aut="Runtime_InlineImagesWrapper" class="css-jytmr4 epbpuem0"><div class="text" data-aut="Runtime-TextComponent" style="width: 100%;"><p class="ql-align-justify"><span style="font-style: normal; font-weight: bold; font-size: 11pt;">Parmi les produits suivants, quels sont ceux que vous avez achetés au cours des 12 derniers mois ?</span><span style="font-style: normal; font-weight: normal; font-size: 11pt;">&nbsp;</span></p><p class="ql-align-justify"><span style="font-weight: normal; font-style: italic; font-size: 11pt; color: rgb(0, 0, 0);">Plusieurs&nbsp;réponses&nbsp;possibles.&nbsp;</span><span style="font-weight: normal; font-style: normal; font-size: 11pt; color: rgb(0, 0, 0);">&nbsp;</span></p></div></div></div></div></div></div><div id="question_container_72338329" data-aut="Runtime_div_1"><div data-aut="Runtime_AnswerWrapper" class="css-jj8bla erhhz202"><div class="answer css-yi3sgw erhhz201" id="636425768" data-aut="Runtime_AnswerRow"><div data-aut="Runtime_CenterWrapper" class="css-d117uh erhhz200"><div data-aut="Runtime_AnswerText" class="css-7dtp08 erhhz203"><div data-aut="Runtime_InlineImagesWrapper" class="css-jytmr4 epbpuem0"><div class="text" data-aut="Runtime-TextComponent" style="width: 100%;">Déodorant</div></div></div><div data-aut="Runtime_InputWrapper" class="css-6onz0d erhhz204"><div class="check_box css-1ksyyfj e41o6jl1" data-aut="Runtime_Wrapper"><div name="v" data-aut="Runtime_IconBox" class="css-ab734x e41o6jl0"><svg width="12" height="9" viewBox="0 0 12 9" fill="none" xmlns="http://www.w3.org/2000/svg" data-aut="Runtime_CheckmarkIcon"><path fill-rule="evenodd" clip-rule="evenodd" d="M11.23 0.880124C11.6639 1.31404 11.6639 2.01756 11.23 2.45147L5.1189 8.56258C4.91053 8.77096 4.62791 8.88802 4.33322 8.88802C4.03854 8.88802 3.75592 8.77096 3.54755 8.56258L0.769773 5.78481C0.335857 5.35089 0.335857 4.64737 0.769773 4.21346C1.20369 3.77954 1.90721 3.77954 2.34112 4.21346L4.33322 6.20556L9.65866 0.880125C10.0926 0.446209 10.7961 0.446209 11.23 0.880124Z" fill="white"></path></svg></div></div></div></div></div></div><div data-aut="Runtime_AnswerWrapper" class="css-jj8bla erhhz202"><div class="answer css-yi3sgw erhhz201" id="636425774" data-aut="Runtime_AnswerRow"><div data-aut="Runtime_CenterWrapper" class="css-d117uh erhhz200"><div data-aut="Runtime_AnswerText" class="css-7dtp08 erhhz203"><div data-aut="Runtime_InlineImagesWrapper" class="css-jytmr4 epbpuem0"><div class="text" data-aut="Runtime-TextComponent" style="width: 100%;">Café (moulu ou en grains)</div></div></div><div data-aut="Runtime_InputWrapper" class="css-6onz0d erhhz204"><div class="check_box css-1ksyyfj e41o6jl1" data-aut="Runtime_Wrapper"><div name="v" data-aut="Runtime_IconBox" class="css-ab734x e41o6jl0"><svg width="12" height="9" viewBox="0 0 12 9" fill="none" xmlns="http://www.w3.org/2000/svg" data-aut="Runtime_CheckmarkIcon"><path fill-rule="evenodd" clip-rule="evenodd" d="M11.23 0.880124C11.6639 1.31404 11.6639 2.01756 11.23 2.45147L5.1189 8.56258C4.91053 8.77096 4.62791 8.88802 4.33322 8.88802C4.03854 8.88802 3.75592 8.77096 3.54755 8.56258L0.769773 5.78481C0.335857 5.35089 0.335857 4.64737 0.769773 4.21346C1.20369 3.77954 1.90721 3.77954 2.34112 4.21346L4.33322 6.20556L9.65866 0.880125C10.0926 0.446209 10.7961 0.446209 11.23 0.880124Z" fill="white"></path></svg></div></div></div></div></div></div><div data-aut="Runtime_AnswerWrapper" class="css-jj8bla erhhz202"><div class="answer css-yi3sgw erhhz201" id="636425772" data-aut="Runtime_AnswerRow"><div data-aut="Runtime_CenterWrapper" class="css-d117uh erhhz200"><div data-aut="Runtime_AnswerText" class="css-7dtp08 erhhz203"><div data-aut="Runtime_InlineImagesWrapper" class="css-jytmr4 epbpuem0"><div class="text" data-aut="Runtime-TextComponent" style="width: 100%;">Boissons non alcoolisées (gazeuses ou non)</div></div></div><div data-aut="Runtime_InputWrapper" class="css-6onz0d erhhz204"><div class="check_box css-1ksyyfj e41o6jl1" data-aut="Runtime_Wrapper"><div name="v" data-aut="Runtime_IconBox" class="css-ab734x e41o6jl0"><svg width="12" height="9" viewBox="0 0 12 9" fill="none" xmlns="http://www.w3.org/2000/svg" data-aut="Runtime_CheckmarkIcon"><path fill-rule="evenodd" clip-rule="evenodd" d="M11.23 0.880124C11.6639 1.31404 11.6639 2.01756 11.23 2.45147L5.1189 8.56258C4.91053 8.77096 4.62791 8.88802 4.33322 8.88802C4.03854 8.88802 3.75592 8.77096 3.54755 8.56258L0.769773 5.78481C0.335857 5.35089 0.335857 4.64737 0.769773 4.21346C1.20369 3.77954 1.90721 3.77954 2.34112 4.21346L4.33322 6.20556L9.65866 0.880125C10.0926 0.446209 10.7961 0.446209 11.23 0.880124Z" fill="white"></path></svg></div></div></div></div></div></div><div data-aut="Runtime_AnswerWrapper" class="css-jj8bla erhhz202"><div class="answer css-yi3sgw erhhz201" id="636425783" data-aut="Runtime_AnswerRow"><div data-aut="Runtime_CenterWrapper" class="css-d117uh erhhz200"><div data-aut="Runtime_AnswerText" class="css-7dtp08 erhhz203"><div data-aut="Runtime_InlineImagesWrapper" class="css-jytmr4 epbpuem0"><div class="text" data-aut="Runtime-TextComponent" style="width: 100%;">Produits de soin des cheveux</div></div></div><div data-aut="Runtime_InputWrapper" class="css-6onz0d erhhz204"><div class="check_box css-1ksyyfj e41o6jl1" data-aut="Runtime_Wrapper"><div name="v" data-aut="Runtime_IconBox" class="css-ab734x e41o6jl0"><svg width="12" height="9" viewBox="0 0 12 9" fill="none" xmlns="http://www.w3.org/2000/svg" data-aut="Runtime_CheckmarkIcon"><path fill-rule="evenodd" clip-rule="evenodd" d="M11.23 0.880124C11.6639 1.31404 11.6639 2.01756 11.23 2.45147L5.1189 8.56258C4.91053 8.77096 4.62791 8.88802 4.33322 8.88802C4.03854 8.88802 3.75592 8.77096 3.54755 8.56258L0.769773 5.78481C0.335857 5.35089 0.335857 4.64737 0.769773 4.21346C1.20369 3.77954 1.90721 3.77954 2.34112 4.21346L4.33322 6.20556L9.65866 0.880125C10.0926 0.446209 10.7961 0.446209 11.23 0.880124Z" fill="white"></path></svg></div></div></div></div></div></div><div data-aut="Runtime_AnswerWrapper" class="css-jj8bla erhhz202"><div class="answer css-yi3sgw erhhz201" id="636425798" data-aut="Runtime_AnswerRow"><div data-aut="Runtime_CenterWrapper" class="css-d117uh erhhz200"><div data-aut="Runtime_AnswerText" class="css-7dtp08 erhhz203"><div data-aut="Runtime_InlineImagesWrapper" class="css-jytmr4 epbpuem0"><div class="text" data-aut="Runtime-TextComponent" style="width: 100%;">Dentifrice</div></div></div><div data-aut="Runtime_InputWrapper" class="css-6onz0d erhhz204"><div class="check_box css-1ksyyfj e41o6jl1" data-aut="Runtime_Wrapper"><div name="v" data-aut="Runtime_IconBox" class="css-1md3656 e41o6jl0"><svg width="12" height="9" viewBox="0 0 12 9" fill="none" xmlns="http://www.w3.org/2000/svg" data-aut="Runtime_CheckmarkIcon"><path fill-rule="evenodd" clip-rule="evenodd" d="M11.23 0.880124C11.6639 1.31404 11.6639 2.01756 11.23 2.45147L5.1189 8.56258C4.91053 8.77096 4.62791 8.88802 4.33322 8.88802C4.03854 8.88802 3.75592 8.77096 3.54755 8.56258L0.769773 5.78481C0.335857 5.35089 0.335857 4.64737 0.769773 4.21346C1.20369 3.77954 1.90721 3.77954 2.34112 4.21346L4.33322 6.20556L9.65866 0.880125C10.0926 0.446209 10.7961 0.446209 11.23 0.880124Z" fill="white"></path></svg></div></div></div></div></div></div><div data-aut="Runtime_AnswerWrapper" class="css-jj8bla erhhz202"><div class="answer css-yi3sgw erhhz201" id="636425799" data-aut="Runtime_AnswerRow"><div data-aut="Runtime_CenterWrapper" class="css-d117uh erhhz200"><div data-aut="Runtime_AnswerText" class="css-7dtp08 erhhz203"><div data-aut="Runtime_InlineImagesWrapper" class="css-jytmr4 epbpuem0"><div class="text" data-aut="Runtime-TextComponent" style="width: 100%;">Thé et infusions</div></div></div><div data-aut="Runtime_InputWrapper" class="css-6onz0d erhhz204"><div class="check_box css-1ksyyfj e41o6jl1" data-aut="Runtime_Wrapper"><div name="v" data-aut="Runtime_IconBox" class="css-1md3656 e41o6jl0"><svg width="12" height="9" viewBox="0 0 12 9" fill="none" xmlns="http://www.w3.org/2000/svg" data-aut="Runtime_CheckmarkIcon"><path fill-rule="evenodd" clip-rule="evenodd" d="M11.23 0.880124C11.6639 1.31404 11.6639 2.01756 11.23 2.45147L5.1189 8.56258C4.91053 8.77096 4.62791 8.88802 4.33322 8.88802C4.03854 8.88802 3.75592 8.77096 3.54755 8.56258L0.769773 5.78481C0.335857 5.35089 0.335857 4.64737 0.769773 4.21346C1.20369 3.77954 1.90721 3.77954 2.34112 4.21346L4.33322 6.20556L9.65866 0.880125C10.0926 0.446209 10.7961 0.446209 11.23 0.880124Z" fill="white"></path></svg></div></div></div></div></div></div><div data-aut="Runtime_AnswerWrapper" class="css-jj8bla erhhz202"><div class="answer css-yi3sgw erhhz201" id="636425771" data-aut="Runtime_AnswerRow"><div data-aut="Runtime_CenterWrapper" class="css-d117uh erhhz200"><div data-aut="Runtime_AnswerText" class="css-7dtp08 erhhz203"><div data-aut="Runtime_InlineImagesWrapper" class="css-jytmr4 epbpuem0"><div class="text" data-aut="Runtime-TextComponent" style="width: 100%;">Maquillage</div></div></div><div data-aut="Runtime_InputWrapper" class="css-6onz0d erhhz204"><div class="check_box css-1ksyyfj e41o6jl1" data-aut="Runtime_Wrapper"><div name="v" data-aut="Runtime_IconBox" class="css-1md3656 e41o6jl0"><svg width="12" height="9" viewBox="0 0 12 9" fill="none" xmlns="http://www.w3.org/2000/svg" data-aut="Runtime_CheckmarkIcon"><path fill-rule="evenodd" clip-rule="evenodd" d="M11.23 0.880124C11.6639 1.31404 11.6639 2.01756 11.23 2.45147L5.1189 8.56258C4.91053 8.77096 4.62791 8.88802 4.33322 8.88802C4.03854 8.88802 3.75592 8.77096 3.54755 8.56258L0.769773 5.78481C0.335857 5.35089 0.335857 4.64737 0.769773 4.21346C1.20369 3.77954 1.90721 3.77954 2.34112 4.21346L4.33322 6.20556L9.65866 0.880125C10.0926 0.446209 10.7961 0.446209 11.23 0.880124Z" fill="white"></path></svg></div></div></div></div></div></div><div data-aut="Runtime_AnswerWrapper" class="css-jj8bla erhhz202"><div class="answer css-yi3sgw erhhz201" id="636425787" data-aut="Runtime_AnswerRow"><div data-aut="Runtime_CenterWrapper" class="css-d117uh erhhz200"><div data-aut="Runtime_AnswerText" class="css-7dtp08 erhhz203"><div data-aut="Runtime_InlineImagesWrapper" class="css-jytmr4 epbpuem0"><div class="text" data-aut="Runtime-TextComponent" style="width: 100%;">Parfum (eau de parfum, eau de toilette, etc.)</div></div></div><div data-aut="Runtime_InputWrapper" class="css-6onz0d erhhz204"><div class="check_box css-1ksyyfj e41o6jl1" data-aut="Runtime_Wrapper"><div name="v" data-aut="Runtime_IconBox" class="css-1md3656 e41o6jl0"><svg width="12" height="9" viewBox="0 0 12 9" fill="none" xmlns="http://www.w3.org/2000/svg" data-aut="Runtime_CheckmarkIcon"><path fill-rule="evenodd" clip-rule="evenodd" d="M11.23 0.880124C11.6639 1.31404 11.6639 2.01756 11.23 2.45147L5.1189 8.56258C4.91053 8.77096 4.62791 8.88802 4.33322 8.88802C4.03854 8.88802 3.75592 8.77096 3.54755 8.56258L0.769773 5.78481C0.335857 5.35089 0.335857 4.64737 0.769773 4.21346C1.20369 3.77954 1.90721 3.77954 2.34112 4.21346L4.33322 6.20556L9.65866 0.880125C10.0926 0.446209 10.7961 0.446209 11.23 0.880124Z" fill="white"></path></svg></div></div></div></div></div></div><div data-aut="Runtime_AnswerWrapper" class="css-jj8bla erhhz202"><div class="answer css-yi3sgw erhhz201" id="636425794" data-aut="Runtime_AnswerRow"><div data-aut="Runtime_CenterWrapper" class="css-d117uh erhhz200"><div data-aut="Runtime_AnswerText" class="css-7dtp08 erhhz203"><div data-aut="Runtime_InlineImagesWrapper" class="css-jytmr4 epbpuem0"><div class="text" data-aut="Runtime-TextComponent" style="width: 100%;">Gel douche</div></div></div><div data-aut="Runtime_InputWrapper" class="css-6onz0d erhhz204"><div class="check_box css-1ksyyfj e41o6jl1" data-aut="Runtime_Wrapper"><div name="v" data-aut="Runtime_IconBox" class="css-1md3656 e41o6jl0"><svg width="12" height="9" viewBox="0 0 12 9" fill="none" xmlns="http://www.w3.org/2000/svg" data-aut="Runtime_CheckmarkIcon"><path fill-rule="evenodd" clip-rule="evenodd" d="M11.23 0.880124C11.6639 1.31404 11.6639 2.01756 11.23 2.45147L5.1189 8.56258C4.91053 8.77096 4.62791 8.88802 4.33322 8.88802C4.03854 8.88802 3.75592 8.77096 3.54755 8.56258L0.769773 5.78481C0.335857 5.35089 0.335857 4.64737 0.769773 4.21346C1.20369 3.77954 1.90721 3.77954 2.34112 4.21346L4.33322 6.20556L9.65866 0.880125C10.0926 0.446209 10.7961 0.446209 11.23 0.880124Z" fill="white"></path></svg></div></div></div></div></div></div><div data-aut="Runtime_AnswerWrapper" class="css-jj8bla erhhz202"><div class="answer css-yi3sgw erhhz201" id="636425812" data-aut="Runtime_AnswerRow"><div data-aut="Runtime_CenterWrapper" class="css-d117uh erhhz200"><div data-aut="Runtime_AnswerText" class="css-7dtp08 erhhz203"><div data-aut="Runtime_InlineImagesWrapper" class="css-jytmr4 epbpuem0"><div class="text" data-aut="Runtime-TextComponent" style="width: 100%;">Aucune de ces propositions</div></div></div><div data-aut="Runtime_InputWrapper" class="css-6onz0d erhhz204"><div class="radio_button css-3a3t0i e1mwldkx1" data-aut="Runtime_Wrapper"><div data-aut="Runtime_InnerFill" class="css-6jnjs4 e1mwldkx0"></div></div></div></div></div></div></div></div></span></div></div></div></div></div></div><div style="position: absolute; height: 6px; right: 2px; bottom: 2px; left: 2px; border-radius: 3px; visibility: hidden;"><div style="position: relative; display: block; height: 100%; cursor: pointer; border-radius: inherit; background-color: rgba(0, 0, 0, 0.2); width: 0px;"></div></div><div data-aut="Runtime_div_1" style="position: absolute; width: 16px; right: 0px; bottom: 5px; top: 5px; padding-top: 2px; padding-bottom: 2px; background-color: transparent; visibility: hidden;"><div data-aut="Runtime_div" style="position: relative; display: block; width: 10px; background-color: rgb(220, 220, 220); border-radius: 5px; left: 0px; right: 0px; height: 0px;"></div></div></div></div><div class="footer css-1jf0zmo e13zlbb96" data-aut="Runtime_NavigationBorderWrapper"><div class="navigation css-1ymaa1w e13zlbb95" data-aut="Runtime_NavigationWrapper"><div data-aut="Runtime_FooterLogoActionWrapper" class="css-e9hc0q e13zlbb90"><div data-aut="Runtime_LeftSide" class="css-15cqwnf e13zlbb92"><div data-aut="Runtime_FooterImage" class="css-162a2i1 e13zlbb93"><svg width="125" height="23" viewBox="0 0 125 23" fill="none" xmlns="http://www.w3.org/2000/svg" data-aut="Runtime_Logo"><path d="M43.513 10.4976H36.7765V17.7039C36.7765 18.5506 37.2782 19.0523 38.1859 19.0523H43.513V22.5612H37.4667C34.7727 22.5612 33.1748 20.9953 33.1748 18.3302V10.4976H30.6693V6.98873H33.1748V1.56592H36.7794V6.98583H43.5159V10.4947L43.513 10.4976Z" fill="#042444"></path><path d="M44.7977 14.7575C44.7977 10.1524 48.1181 6.54785 53.2277 6.54785C58.3373 6.54785 61.5301 10.1524 61.5301 14.7575C61.5301 19.3625 58.2097 22.999 53.2277 22.999C48.2457 22.999 44.7977 19.3654 44.7977 14.7575ZM57.9256 14.7894C57.9256 12.1273 56.0464 10.0277 53.2248 10.0277C50.4032 10.0277 48.4313 12.1273 48.4313 14.7894C48.4313 17.4515 50.3423 19.551 53.2248 19.551C56.1073 19.551 57.9256 17.3877 57.9256 14.7894Z" fill="#042444"></path><path d="M63.9082 0H67.5128V17.7039C67.5128 18.5826 68.0464 19.0813 68.9221 19.0813H71.2102V22.5583H68.2958C65.4741 22.5583 63.9082 20.9924 63.9082 18.2955V0Z" fill="#042444"></path><path d="M72.8718 7.01758H76.4763V15.4476C76.4763 17.7356 77.9176 19.5539 80.2984 19.5539C82.6792 19.5539 84.1843 17.7356 84.1843 15.4476V7.01758H87.7889V15.4766C87.7889 20.0526 84.8426 22.996 80.3013 22.996C75.7601 22.996 72.8747 20.0497 72.8747 15.4766V7.01758H72.8718Z" fill="#042444"></path><path d="M106.052 13.6006V22.5613H102.448V14.1631C102.448 11.7185 100.975 10.0888 98.7504 10.0888C96.3696 10.0888 94.5514 11.9389 94.5514 14.6329V22.5613H90.9468V6.98879H94.4876V8.99552H94.6123C95.7403 7.49047 97.5586 6.5509 99.6581 6.5509C103.544 6.5509 106.049 9.21301 106.049 13.6006H106.052Z" fill="#042444"></path><path d="M121.436 6.98862H125.009V22.5611H121.436V20.305H121.28C120.244 21.8709 118.429 22.999 115.984 22.999C111.597 23.0628 108.308 19.6786 108.308 14.7893C108.308 9.90012 111.504 6.51593 115.984 6.54783C118.397 6.57973 120.247 7.64399 121.28 9.14904H121.436V6.98572V6.98862ZM121.404 14.7575C121.404 12.0953 119.525 9.96391 116.704 9.96391C113.882 9.96391 111.942 12.0634 111.942 14.7575C111.942 17.4515 113.853 19.551 116.704 19.551C119.554 19.551 121.404 17.3877 121.404 14.7575Z" fill="#042444"></path><path d="M0 13.6325H22.9991V9.36963H0V13.6325Z" fill="#007EE2"></path><path d="M13.6323 22.9991V0H9.36948V22.9991H13.6323Z" fill="#ED0A8D"></path><path d="M1.86169 4.87469L18.1243 21.1373L21.1373 18.1243L4.87469 1.86169L1.86169 4.87469Z" fill="#00CAEB"></path><path d="M4.87469 21.1403L21.1373 4.87762L18.1243 1.86462L1.86169 18.1244L4.87469 21.1374V21.1403Z" fill="#00CAEB"></path><path d="M8.48602 11.501L11.5003 8.48668C13.1633 10.1497 13.1633 12.8523 11.5003 14.5153L8.48602 11.501Z" fill="#0017AC"></path><path d="M14.5133 11.501L11.499 14.5153C9.83599 12.8523 9.83599 10.1497 11.499 8.48668L14.5133 11.501Z" fill="#0017AC"></path></svg></div></div></div><div data-aut="Runtime_PreviousAndNextWrapper" class="css-wjtz3f e13zlbb94"><button type="submit" data-aut="Runtime_Wrapper" class="css-1x32bth e120io4m0">Suivant</button></div></div></div></div></div></div></div></div></div></div></div></div>
+<html ng-app="RunTimeApp" lang="en"><!--<![endif]--><head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <meta name="viewport" content="width=320,  initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=1" id="viewport-meta">
+    
 
-<script type="text/javascript">
+
+    
+    <link href="/Asset/Runtime/errorPage.css" rel="stylesheet">
+
+    
+  
+  
+</head>
 
 
+<!--[if IE 9]>
+<body class="{{$root.bodyClass}}" xmlns:ng="http://angularjs.org" id="ng-app"> <![endif]-->
+<!--[if gt IE 9]><!-->
+<body ng-cloak="" class="{{$root.bodyClass}}" watch-window-resize="">
+<!--<![endif]-->
+<div ng-show="$root.showGlassPane" class="glassPane">
+    <div class="loader">Loading...</div>
+</div>
 
-    let isSameDomain;
-    try {
-      isSameDomain = window.location.hostname === window.parent.location.hostname;
-    } catch(e) {
-      isSameDomain = false;
-    }
-
-    var RuntimeGlobals = {
-        "ApiKey": 'TkVaOTZEMnQyT0VLSkJtaFBueGp6VEpiVUU4eUMwTzJnUnJPalhGY1dsSlIrK2ZmNFI4RzZjNm5OYmUzbGdMNg==',
-        "cultureId": 6,
-        "cultureIso": 'fr-FR',
-        "supportedRtlCultures": [35,40,53,60,62,69,77,79,80,84,100,278,262,264],
-        "location": '2', //frame location (NG=1, Other=2, NPD=3, NG_Profile_Survey='ProfileSurveysPage')
-        "upsLocation": '',
-        "parentUrl": 'https://project.tolunastart.com',
-        "isTolunaPanelist": true,
-        "sampleXpressUnderTheHood": '1',
-        "isSharable": true,
-        "hideSurveyTitle":true,
-        "hideBackButton":true,
-        "hideCopyright":false,
-        "hideTqsBranding":false,
-        "panelistId": '348397333',
-        "isTI2020": true,
-
-        //needed only for API calls
-        "respondentGid": '85c7dc3c-a91b-4caa-8ffa-2a5bc06aa60b',
-        "respondentTypeCode": '[RespondentTypeCode]',
-        "srGid": '85c7dc3c-a91b-4caa-8ffa-2a5bc06aa60b!93d73f86c98b5451c8fb49117d93d8b8802',
-        "facetId": '',
-
-        //persist mode
-        "hasMRSD": false,
-        "isTest": false,
-        "disableServerCaching":false,
-        "disableLocalStorageCaching":false,
-
-        "disableGoogleAnalytics": false,
-
-        //traits
-        "allowUnsafeHtml":true,
-        "rumDataDog": false,
-
-        "isRaas": false,
-        "getSurveyDataUrl": '',
-        "getDataPostData": null,
-        "fdsStartData": "",
-        "themeSurveyId": 3335126,
-
-        //runtime as a service
-        "isProfileSurvey": false,
-        "customCssLink": '',
-        "isEmbedded": false,
-        "siteContext": '1',
-        "IsTemplatedSurvey": false,
-
-        // global functions
-        "onPreviewDone": false && isSameDomain && window.parent._gf ? window.parent._gf.closePreviewPopup : {},
-        
-        //Probing
-        "disableProbing": false,
-        "probingLoadingThreshold": 4000,
-        "probingLoadingTimeout": 10000
-    };
-</script>
-
-<script type="text/javascript" src="https://baruntime.tolunastart.com/runtime.js"></script>
+    
 
 
 
+<div class="errorPage">
+    <div class="topDiv">
+        <div class="bigTitle">We are sorry</div>
+        <div class="smallText">An error has occurred with your survey</div>
+    </div>
+    <div class="middleDiv">
+        <div class="manImgDiv">
+            <img src="/Asset/Runtime/Images/error-page-man.png">
+        </div>
+    </div>
+    <div class="bottomDiv">
+        <div>
+            <div class="bottomDivTxt">This survey was created with</div>
+            <div class="icon-quicksurveyslogo"></div>
+            <div class="socialButtons">
+                <a href="https://www.facebook.com/TolunaCorporate" class="socialLink-facebook" target="_blank">
+                    <div>
+                        <div class="icon-facebook"></div>
+                    </div>
+                </a>
+                <a href="https://twitter.com/TolunaQuick" class="socialLink-twitter" target="_blank">
+                    <div>
+                        <div class="icon-twitter"></div>
+                    </div>
+                </a>
+                <a href="https://www.youtube.com/TolunaQuick" class="socialLink-youtube" target="_blank">
+                    <div>
+                        <div class="icon-youtube"></div>
+                    </div>
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+    <script type="text/javascript">
+        var TQS = TQS || { Runtime: {} };
+        TQS.Runtime.Globals =TQS.Runtime.Globals|| {
+            "location": '2',
+            "parentUrl": 'https://project.tolunastart.com',
+            "isMobileDevice": false
+            };
+    </script>
+    <script src="/Scripts/JQuery/jquery-1.8.3.min.js"></script>
+    <script src="/MVCScripts/Runtime/Application/appErrorPage.js"></script>
 
 
 
-</body>
+ </body></html>
