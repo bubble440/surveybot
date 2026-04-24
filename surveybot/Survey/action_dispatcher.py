@@ -2661,66 +2661,29 @@ def _apply_by_target_id(
                             log_info("[TARGET]", f"apply ok=true strategy=toluna_runtime_answerrow reason=already_selected value='{value}'")
                             return True
 
-                        # Clic JS direct sur Runtime_Wrapper depuis el (WebElement de l'iframe) :
-                        # - garantit le bon contexte document même dans un iframe
-                        # - évite StaleElementReferenceException sur _toluna_wrapper séparé
+                        # Re-fetch par ID pour survivre au re-render React qui invalide el.
+                        _toluna_clicked = False
                         try:
                             driver.execute_script(
-                                "arguments[0].querySelector(\"[data-aut='Runtime_Wrapper']\").click()",
-                                el,
+                                """
+                                var row = document.getElementById(arguments[0]);
+                                if (!row) throw new Error('row not found: ' + arguments[0]);
+                                row.querySelector("[data-aut='Runtime_Wrapper']").click();
+                                """,
+                                _toluna_row_id,
                             )
+                            _toluna_clicked = True
                         except Exception:
-                            _click_candidate(el, "toluna_runtime_answerrow")
-
-                        # Poll via el (WebElement iframe-aware) : évite document.getElementById
-                        # qui opère sur le document parent et non l'iframe.
-                        # Fallback driver.find_element si el devient stale.
-                        _toluna_ok = False
-                        _t0 = time.time()
-                        while time.time() - _t0 < 1.0:
                             try:
-                                _cls_now = driver.execute_script(
-                                    """
-                                    const row = arguments[0];
-                                    if (!row) return null;
-                                    const wrapper = row.querySelector("[data-aut='Runtime_Wrapper']");
-                                    if (!wrapper) return null;
-                                    const inner = wrapper.querySelector(
-                                        "[data-aut='Runtime_IconBox'], [data-aut='Runtime_InnerFill']"
-                                    );
-                                    return inner ? (inner.className || '') : null;
-                                    """,
-                                    el,
-                                )
+                                el.click()
+                                _toluna_clicked = True
                             except Exception:
-                                try:
-                                    _cls_now = driver.execute_script(
-                                        """
-                                        const rowId = arguments[0];
-                                        const row = rowId ? document.getElementById(rowId) : null;
-                                        if (!row) return null;
-                                        const wrapper = row.querySelector("[data-aut='Runtime_Wrapper']");
-                                        if (!wrapper) return null;
-                                        const inner = wrapper.querySelector(
-                                            "[data-aut='Runtime_IconBox'], [data-aut='Runtime_InnerFill']"
-                                        );
-                                        return inner ? (inner.className || '') : null;
-                                        """,
-                                        _toluna_row_id,
-                                    )
-                                except Exception:
-                                    _cls_now = None
-                            log_info("[TARGET]", f"toluna_runtime_answerrow: poll cls_now={_cls_now!r} cls_ref={_cls_unchecked!r}")
-                            if _cls_now is not None and _cls_now != _cls_unchecked:
-                                _toluna_ok = True
-                                break
-                            time.sleep(0.05)
+                                pass
 
-                        if _toluna_ok:
-                            log_info("[TARGET]", f"apply ok=true strategy=toluna_runtime_answerrow reason=class_changed value='{value}'")
+                        if _toluna_clicked:
+                            time.sleep(0.15)
+                            log_info("[TARGET]", f"apply ok=true strategy=toluna_runtime_answerrow reason=clicked value='{value}'")
                             return True
-                        if debug_target:
-                            log_debug("[TARGET_DEBUG]", f"toluna_runtime_answerrow: class unchanged after click value='{value}' xpath='{xp}'")
                         return False
 
                     label_anchor_guard_active = False
