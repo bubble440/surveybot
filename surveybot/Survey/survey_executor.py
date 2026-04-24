@@ -79,8 +79,20 @@ def _has_unfilled_required_inputs(driver) -> bool:
             };
             // Text/number/email inputs required and empty
             var textSel = "input[required][type='text'], input[required][type='number'], input[required][type='email'], textarea[required]";
+            var isAngularHelper = function(el) {
+                if ((el.className || '').indexOf('hold-model') !== -1) return true;
+                if (el.getAttribute('tabindex') === '-1') return true;
+                var p = el.parentElement;
+                while (p) {
+                    var tag = p.tagName ? p.tagName.toLowerCase() : '';
+                    if (tag === 'rps-select') return true;
+                    if (p.hasAttribute && p.hasAttribute('data-selector') && (p.className || '').indexOf('rps-select') !== -1) return true;
+                    p = p.parentElement;
+                }
+                return false;
+            };
             var textInputs = Array.from(document.querySelectorAll(textSel));
-            if (textInputs.some(function(el) { return isVisible(el) && !(el.value || '').trim(); })) return true;
+            if (textInputs.some(function(el) { return isVisible(el) && !isAngularHelper(el) && !(el.value || '').trim(); })) return true;
             // Required selects with no value
             var selects = Array.from(document.querySelectorAll("select[required]"));
             if (selects.some(function(el) { return isVisible(el) && !el.value; })) return true;

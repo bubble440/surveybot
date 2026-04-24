@@ -793,9 +793,11 @@ def filter_blocks_for_openai(question_blocks: list) -> list:
 
         it_lc = _norm_lc(it)
 
-        # Normalisation: certains extracteurs renvoient "select"
-        # On le traite comme "dropdown" (sinon DOM1 -> vidé -> abandon DOM-only)
-        if it_lc == "select":
+        # Normalisation: certains extracteurs renvoient "select" ou "select_rps"
+        # On les traite comme "dropdown" (itype connu de GPT) pour éviter les hallucinations.
+        # L'entrée DOM_REGISTRY conserve itype="select_rps" et rps_select=True : le dispatcher
+        # détecte le widget Angular via reg_itype, indépendamment de ce que GPT retourne.
+        if it_lc in ("select", "select_rps"):
             it_lc = "dropdown"
             if isinstance(qb, dict):
                 qb["itype"] = "dropdown"
