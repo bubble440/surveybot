@@ -2614,6 +2614,115 @@ def _apply_by_target_id(
                             log_debug("[TARGET_DEBUG]", f"decipher clickableCell no checked/selected signal: value='{value}' xpath='{xp}'")
                         return False
 
+                    # --- Toluna Runtime AnswerRow (check_box / radio_button custom, sans input natif) ---
+                    # Guard DOM : row = [data-aut='Runtime_AnswerRow'] + [data-aut='Runtime_Wrapper']
+                    #             présent + aucun <input> natif.
+                    # Signal : changement de classe css-* sur l'enfant interne
+                    #   check_box  → [data-aut='Runtime_IconBox']
+                    #   radio_button → [data-aut='Runtime_InnerFill']
+                    # La classe capturée AVANT le clic = référence "non-coché" ; stockée dans
+                    # le payload (dict live) pour idempotence sur retries.
+                    # Le poll post-clic utilise document.getElementById(rowId) pour survivre
+                    # aux re-renders React qui invalident la référence WebElement originale.
+                    log_info("[TARGET]", "toluna_runtime_answerrow: entering block")
+                    try:
+                        _toluna_guard = driver.execute_script(
+                            """
+                            const el = arguments[0];
+                            if (!el || !el.closest) return null;
+                            if (!el.closest("[data-aut='Runtime_AnswerRow']")) return null;
+                            const wrapper = el.querySelector("[data-aut='Runtime_Wrapper']");
+                            if (!wrapper) return null;
+                            if (el.querySelector("input[type='checkbox'], input[type='radio']")) return null;
+                            const inner = wrapper.querySelector(
+                                "[data-aut='Runtime_IconBox'], [data-aut='Runtime_InnerFill']"
+                            );
+                            if (!inner) return null;
+                            return { cls: inner.className || '', rowId: el.id || '' };
+                            """,
+                            el,
+                        )
+                    except Exception:
+                        _toluna_guard = None
+
+                    log_info("[TARGET]", f"toluna_runtime_answerrow: guard={_toluna_guard!r}")
+                    if isinstance(_toluna_guard, dict) and _toluna_guard.get("cls") is not None:
+                        _toluna_cls_pre = _toluna_guard.get("cls", "")
+                        _toluna_row_id = (_toluna_guard.get("rowId") or "").strip()
+
+                        _cls_ref_key = f"_toluna_cls_unchecked_{xp}"
+                        _cls_unchecked = payload.get(_cls_ref_key)
+                        if _cls_unchecked is None:
+                            _cls_unchecked = _toluna_cls_pre
+                            payload[_cls_ref_key] = _cls_unchecked
+
+                        # Idempotence : classe actuelle ≠ référence → déjà coché
+                        if _toluna_cls_pre != _cls_unchecked:
+                            log_info("[TARGET]", f"apply ok=true strategy=toluna_runtime_answerrow reason=already_selected value='{value}'")
+                            return True
+
+                        # Clic JS direct sur Runtime_Wrapper depuis el (WebElement de l'iframe) :
+                        # - garantit le bon contexte document même dans un iframe
+                        # - évite StaleElementReferenceException sur _toluna_wrapper séparé
+                        try:
+                            driver.execute_script(
+                                "arguments[0].querySelector(\"[data-aut='Runtime_Wrapper']\").click()",
+                                el,
+                            )
+                        except Exception:
+                            _click_candidate(el, "toluna_runtime_answerrow")
+
+                        # Poll via el (WebElement iframe-aware) : évite document.getElementById
+                        # qui opère sur le document parent et non l'iframe.
+                        # Fallback driver.find_element si el devient stale.
+                        _toluna_ok = False
+                        _t0 = time.time()
+                        while time.time() - _t0 < 1.0:
+                            try:
+                                _cls_now = driver.execute_script(
+                                    """
+                                    const row = arguments[0];
+                                    if (!row) return null;
+                                    const wrapper = row.querySelector("[data-aut='Runtime_Wrapper']");
+                                    if (!wrapper) return null;
+                                    const inner = wrapper.querySelector(
+                                        "[data-aut='Runtime_IconBox'], [data-aut='Runtime_InnerFill']"
+                                    );
+                                    return inner ? (inner.className || '') : null;
+                                    """,
+                                    el,
+                                )
+                            except Exception:
+                                try:
+                                    _cls_now = driver.execute_script(
+                                        """
+                                        const rowId = arguments[0];
+                                        const row = rowId ? document.getElementById(rowId) : null;
+                                        if (!row) return null;
+                                        const wrapper = row.querySelector("[data-aut='Runtime_Wrapper']");
+                                        if (!wrapper) return null;
+                                        const inner = wrapper.querySelector(
+                                            "[data-aut='Runtime_IconBox'], [data-aut='Runtime_InnerFill']"
+                                        );
+                                        return inner ? (inner.className || '') : null;
+                                        """,
+                                        _toluna_row_id,
+                                    )
+                                except Exception:
+                                    _cls_now = None
+                            log_info("[TARGET]", f"toluna_runtime_answerrow: poll cls_now={_cls_now!r} cls_ref={_cls_unchecked!r}")
+                            if _cls_now is not None and _cls_now != _cls_unchecked:
+                                _toluna_ok = True
+                                break
+                            time.sleep(0.05)
+
+                        if _toluna_ok:
+                            log_info("[TARGET]", f"apply ok=true strategy=toluna_runtime_answerrow reason=class_changed value='{value}'")
+                            return True
+                        if debug_target:
+                            log_debug("[TARGET_DEBUG]", f"toluna_runtime_answerrow: class unchanged after click value='{value}' xpath='{xp}'")
+                        return False
+
                     label_anchor_guard_active = False
                     try:
                         label_anchor_guard_active = (el.tag_name or "").lower() == "label" and bool(

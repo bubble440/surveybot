@@ -3381,12 +3381,13 @@ def _extract_button_choice_radio_blocks(driver, frame_chain: list[int] | None) -
 
 
 def _extract_runtime_answerrow_radio_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
-    """Extraction des radios custom basées sur des wrappers `.answer[data-aut='Runtime_AnswerRow']`.
+    """Extraction des radios/checkboxes custom basées sur des wrappers `.answer[data-aut='Runtime_AnswerRow']`.
 
     Gate strict (DOM observable):
     - texte question via `[data-aut='Runtime_QuestionTitleAndDescriptionWrapper'] [data-aut='Runtime-TextComponent']`
-    - options via `.answer[data-aut='Runtime_AnswerRow']`
-    - contrôle radio custom via `.radio_button[data-aut='Runtime_Wrapper']`
+    - options via `.answer[data-aut='Runtime_AnswerRow']` dans `div.choice_question`
+    - contrôle custom via `.radio_button[data-aut='Runtime_Wrapper']` (radio)
+      ou `.check_box[data-aut='Runtime_Wrapper']` (checkbox/multi-choix)
     """
     frame_chain = list(frame_chain or [])
     debug = (os.getenv("DOM_CONTEXT_DEBUG", "") or "").strip().lower() in {"1", "true", "yes", "on"}
@@ -3412,12 +3413,20 @@ def _extract_runtime_answerrow_radio_blocks(driver, frame_chain: list[int] | Non
         return []
 
     blocks: list[dict] = []
-    grouped_rows: dict[str, list[Any]] = {}
+    # Maps question_container_id → list of (row, has_checkbox)
+    grouped_rows: dict[str, list[tuple[Any, bool]]] = {}
 
     for row in answer_rows:
         try:
-            radio_wrappers = row.find_elements(By.CSS_SELECTOR, ".radio_button[data-aut='Runtime_Wrapper']")
-            if not radio_wrappers:
+            # Scope guard: la row doit être dans un div.choice_question
+            try:
+                row.find_element(By.XPATH, "ancestor::div[contains(@class,'choice_question')][1]")
+            except Exception:
+                continue
+
+            has_radio = bool(row.find_elements(By.CSS_SELECTOR, ".radio_button[data-aut='Runtime_Wrapper']"))
+            has_checkbox = bool(row.find_elements(By.CSS_SELECTOR, ".check_box[data-aut='Runtime_Wrapper']"))
+            if not has_radio and not has_checkbox:
                 continue
 
             question_container = None
@@ -3445,7 +3454,7 @@ def _extract_runtime_answerrow_radio_blocks(driver, frame_chain: list[int] | Non
             if not question_container_id:
                 question_container_id = "runtime_question_default"
 
-            grouped_rows.setdefault(question_container_id, []).append(row)
+            grouped_rows.setdefault(question_container_id, []).append((row, has_checkbox))
         except Exception:
             continue
 
@@ -3453,9 +3462,13 @@ def _extract_runtime_answerrow_radio_blocks(driver, frame_chain: list[int] | Non
         print(f"[DOM_CONTEXT_DEBUG] runtime_answerrow grouped_rows keys={sorted(grouped_rows.keys())}")
 
     try:
-        for qid, rows in grouped_rows.items():
-            if len(rows) < 2:
+        for qid, row_tuples in grouped_rows.items():
+            if len(row_tuples) < 2:
                 continue
+
+            rows = [r for r, _ in row_tuples]
+            has_any_checkbox = any(cb for _, cb in row_tuples)
+            itype_for_group = "checkbox" if has_any_checkbox else "radio"
 
             question = ""
             try:
@@ -3535,14 +3548,14 @@ def _extract_runtime_answerrow_radio_blocks(driver, frame_chain: list[int] | Non
             if len(options) < 2 or len(option_xpath_map) < 2:
                 continue
 
-            group_key = f"runtime_answerrow:radio:{qid}"
+            group_key = f"runtime_answerrow:{itype_for_group}:{qid}"
             target_id = make_target_id("group", group_key, question)
 
             register_target(
                 target_id,
                 {
                     "kind": "group",
-                    "itype": "radio",
+                    "itype": itype_for_group,
                     "group_key": group_key,
                     "question": question,
                     "option_xpath_map": option_xpath_map,
@@ -3554,9 +3567,9 @@ def _extract_runtime_answerrow_radio_blocks(driver, frame_chain: list[int] | Non
             blocks.append(
                 {
                     "question": question,
-                    "itype": "radio",
+                    "itype": itype_for_group,
                     "options": options,
-                    "max_select": 1,
+                    "max_select": 1 if itype_for_group == "radio" else len(options),
                     "target_id": target_id,
                     "context": {
                         "kind": "group",
