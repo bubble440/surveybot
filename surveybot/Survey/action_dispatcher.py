@@ -5620,6 +5620,11 @@ def execute_action(
                     log_debug("[TARGET_DEBUG]", f"checkbox reuse cached_strategy={preferred_strategy} target_id={cache_key}")
                 if _run_checkbox_strategy(preferred_strategy):
                     return True
+                # DOM state changed after previous clicks — invalidate cache and retry full list
+                if cache_key and cache_key in checkbox_cache:
+                    del checkbox_cache[cache_key]
+                log_debug("[TARGET_DEBUG]", f"checkbox cache invalidated after failure target_id={cache_key}, retrying full strategy list")
+                preferred_strategy = None
 
             for strategy_name in ordered_strategies:
                 if strategy_name == preferred_strategy:
