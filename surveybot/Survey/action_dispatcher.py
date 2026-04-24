@@ -1233,6 +1233,7 @@ def _apply_by_target_id(
             # resolved_itype == "select_rps" garde la compat si GPT le renvoie tel quel.
             # payload.get("rps_select") est le flag explicite posé par l'extracteur.
             if resolved_itype == "select_rps" or reg_itype == "select_rps" or payload.get("rps_select"):
+                import time
                 opt_map = payload.get("option_xpath_map") or {}
                 selection_xpath = (payload.get("selection_xpath") or "").strip()
 
@@ -1259,6 +1260,7 @@ def _apply_by_target_id(
                     return False
 
                 def _click_rps_node(xpath: str) -> bool:
+                    """Ouvre le dropdown (click standard sur div.selection)."""
                     if not xpath:
                         return False
                     node = _find_best_visible(xpath)
@@ -1284,11 +1286,92 @@ def _apply_by_target_id(
                         except Exception:
                             return False
 
+                # Extraire data_selector depuis group_key ("rps_select:{data_selector}")
+                # pour la vérification hold-model ng-valid après dispatch.
+                _gk = (payload.get("group_key") or "")
+                _rps_ds = _gk.split(":", 1)[1] if _gk.startswith("rps_select:") else ""
+
+                def _mousedown_rps_option(xpath: str) -> bool:
+                    """Sélectionne une option via mousedown (handler ng-mousedown d'Angular).
+                    Vérifie la sélection effective via hold-model ng-valid (max 600 ms).
+                    """
+                    if not xpath:
+                        return False
+                    try:
+                        cands = driver.find_elements(By.XPATH, xpath)
+                        node = cands[0] if cands else None
+                    except Exception:
+                        node = None
+                    if node is None:
+                        return False
+                    try:
+                        driver.execute_script("arguments[0].scrollIntoView({block:'center', inline:'center'});", node)
+                    except Exception:
+                        pass
+                    # Tenter mousedown puis click comme fallback
+                    dispatched = False
+                    try:
+                        driver.execute_script(
+                            "arguments[0].dispatchEvent(new MouseEvent('mousedown',{bubbles:true,cancelable:true,view:window}));",
+                            node,
+                        )
+                        dispatched = True
+                    except Exception:
+                        pass
+                    if not dispatched:
+                        try:
+                            node.click()
+                            dispatched = True
+                        except Exception:
+                            try:
+                                driver.execute_script("arguments[0].click();", node)
+                                dispatched = True
+                            except Exception:
+                                pass
+                    if not dispatched:
+                        return False
+                    # Vérifier la sélection effective via hold-model ng-valid (budget 600 ms / 12 x 50 ms)
+                    if _rps_ds:
+                        _dl = time.time() + 0.6
+                        while time.time() < _dl:
+                            try:
+                                confirmed = driver.execute_script(
+                                    """
+                                    var ds = arguments[0];
+                                    var inp = document.querySelector(
+                                        "div[data-selector='" + ds + "'] input.hold-model"
+                                    );
+                                    if (!inp) return false;
+                                    return inp.classList.contains('ng-valid') &&
+                                           (inp.value || '').trim() !== '';
+                                    """,
+                                    _rps_ds,
+                                )
+                                if confirmed:
+                                    return True
+                            except Exception:
+                                pass
+                            time.sleep(0.05)
+                        return False
+                    # Pas de data_selector : on retourne True sur la bonne foi du dispatch
+                    return True
+
                 if selection_xpath:
                     _click_rps_node(selection_xpath)
-                    time.sleep(0.2)
+                    # Attendre que JSP recalcule les dimensions des options (max 1.5 s, budget 15 x 100 ms)
+                    _deadline = time.time() + 1.5
+                    while time.time() < _deadline:
+                        try:
+                            cands = driver.find_elements(By.XPATH, xp)
+                            if cands:
+                                r = cands[0].rect or {}
+                                if (r.get("width") or 0) > 2 and (r.get("height") or 0) > 2:
+                                    break
+                        except Exception:
+                            pass
+                        time.sleep(0.1)
 
-                clicked = _click_rps_node(xp)
+                clicked = _mousedown_rps_option(xp)
                 if clicked:
                     log_debug("[DOM_RPS_SELECT]", f"select_rps ok: target_id='{target_id}' value='{value}'")
                     return True
@@ -3467,7 +3550,8 @@ def _apply_by_target_id(
 
         return _apply_in_current_context()
 
-    except Exception:
+    except Exception as _e:
+        log_info("[DISPATCH_ERROR]", f"_apply_in_current_context exception target_id={target_id!r} itype={itype!r}: {type(_e).__name__}: {_e}")
         return False
 
 # ------------------- Parsing "libellé //// type" -------------------
