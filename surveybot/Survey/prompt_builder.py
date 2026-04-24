@@ -135,7 +135,7 @@ _CONSENT_REJECT_PATTERNS = [
 
 _PARTICIPATION_CONSENT_ALL_TOKENS = [
     "confidentialite", "politique de", "privacy", "collecte", "donnees",
-    "participer", "participation", "etude de marche", "lu", "compris",
+    "participer", "participation", "etude de marche", "compris",
     "accepte", "autorise", "j'autorise",
 ]
 
@@ -353,13 +353,13 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
 
     lines.append(
         "Tu es un répondant ADULTE (25 ans). "
-        "Tu vois ci-dessous TOUTES les questions présentes sur une page de survey."
+        "Tu vois ci-dessous TOUTES les questions présentes sur une page de survey.\n"
     )
 
     lines.append(
         "Tu dois répondre à CHAQUE question.\n"
         "Tu ne dois JAMAIS lister toutes les options.\n"
-        "Tu dois proposer uniquement la/les réponse(s) nécessaires selon la règle de sélection."
+        "Tu dois proposer uniquement la/les réponse(s) nécessaires selon la règle de sélection.\n"
     )
 
     # ✅ FORMAT RENFORC: exigence explicite de "|" comme sparateur
@@ -371,25 +371,25 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
         "- Si plusieurs valeurs sont nécessaires, les séparer UNIQUEMENT par \"|\".\n"
         "- Exemple: Q1 //// group_abc //// Option A|Option B|Option C //// checkbox //// ...\n"
         "- NE JAMAIS utiliser la virgule \",\" comme séparateur (les options peuvent en contenir).\n"
-        "- AUCUNE explication. Aucun texte hors format."
+        "- AUCUNE explication. Aucun texte hors format.\n"
     )
 
     lines.append(
         "RÈGLE CHAMP MULTI-CASES (context.kind=multi_text) :\n"
         "- Ce n'est PAS une multi-sélection checkbox: c'est un champ composé de plusieurs cases texte.\n"
         "- Si max_select >= 2, valeur DOIT contenir EXACTEMENT max_select segments séparés par \"|\".\n"
-        "- Exemple DOB (3 cases): 03|02|2001"
+        "- Exemple DOB (3 cases): 03|02|2001\n"
     )
 
     lines.append(
         "RèGLE NOMBRE DE RéPONSES:\n"
         "- Ne déduis PAS le nombre depuis le provider/source.\n"
-        "- Pour chaque QID, le nombre de valeurs à renvoyer est défini par la selection_rule de ce QID. Ne pas utiliser max_select comme cible à atteindre : c'est un plafond, pas une obligation."
+        "- Pour chaque QID, le nombre de valeurs à renvoyer est défini par la selection_rule de ce QID. Ne pas utiliser max_select comme cible à atteindre : c'est un plafond, pas une obligation.\n"
     )
 
     lines.append(
         "Champs ouverts (text/textarea) : si la question contient un exemple (ex: 'E.g.' / 'Ex:'), "
-        "N'UTILISE PAS l'exemple comme valeur. Donne une valeur réaliste (ex: code postal FR -> 75001)."
+        "N'UTILISE PAS l'exemple comme valeur. Donne une valeur réaliste (ex: code postal FR -> 75001).\n"
     )
 
     lines.append(
@@ -398,7 +398,7 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
         "- valeur DOIT être une option existante (si options listées)\n"
         "- RÈGLE ABSOLUE : utilise UNIQUEMENT les options listées ci-dessus, mot pour mot. N'invente PAS d'option absente de la liste, même si elle te semble logiquement attendue.\n"
         "- évite : non, jamais, aucun, je préfère ne pas répondre\n"
-        "- contexte doit correspondre exactement é  la question affichée"
+        "- contexte doit correspondre exactement é  la question affichée\n"
     )
 
     lines.append(
@@ -409,7 +409,7 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
         "- Exemple attendu: Crédit consommation || Transféré vers Revolut\n"
         "- Exemple multi-colonnes (checkbox): Whey protéines || Amazon|Decathlon\n"
         "- Exemple matrix_active_row (colonne(s) seule(s)): En ligne, sur Amazon|En magasin, chez Decathlon\n"
-        "- INTERDIT: répondre uniquement une colonne (ex: 'Transféré vers Revolut')."
+        "- INTERDIT: répondre uniquement une colonne (ex: 'Transféré vers Revolut').\n"
     )
 
     # Contrainte sexe/genre : toujours masculin, avec l'intitulé exact de l'option
@@ -418,7 +418,7 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
         "choisis TOUJOURS l'option qui fait référence au genre masculin "
         "(Homme, Masculin, Male, Man, M, H, etc.) parmi les options proposées. "
         "Utilise EXACTEMENT l'intitulé tel qu'il apparaît dans la liste d'options. "
-        "Évite systématiquement: X, Autre, Non-binaire, Préfère ne pas répondre."
+        "Évite systématiquement: X, Autre, Non-binaire, Préfère ne pas répondre.\n"
     )
 
     # Contrainte ge / anne de naissance
@@ -430,7 +430,7 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
         "- Si date de naissance avec dropdowns séparés (mois + année):\n"
         "  * Année: choisis une année cohérente pour 25 ans (2001, 2000, 1999).\n"
         "  * Mois: choisis un mois raliste (vite le mois en cours pour viter des ges < 25).\n"
-        "  * Exemple: 'Juillet' pour le mois, '2000' pour l'année."
+        "  * Exemple: 'Juillet' pour le mois, '2000' pour l'année.\n"
     )
 
     # ── PERSONA FINANCIER ──────────────────────────────────────────────────
@@ -457,7 +457,7 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
         "  Ces réponses DISQUALIFIENT le répondant.\n"
         "- Si la question est perçue comme indiscrète (revenu, patrimoine, situation fiscale) : "
         "  réponds quand même avec une valeur haute cohérente avec le persona. "
-        "  Un répondant aisé n'hésite pas sur ces sujets."
+        "  Un répondant aisé n'hésite pas sur ces sujets.\n"
     )
 
     lines.append(
@@ -470,7 +470,7 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
         "une entreprise de taille significative (évite la tranche la plus basse et "
         "les tranches inférieures à 100 millions).\n"
         "- Si la tranche la plus haute semble extrême, choisis la DEUXIÈME en partant du haut.\n"
-        "- INTERDIT ABSOLU : ne jamais choisir la tranche la plus basse ni 'Je ne sais pas'."
+        "- INTERDIT ABSOLU : ne jamais choisir la tranche la plus basse ni 'Je ne sais pas'.\n"
     )
 
     lines.append(
@@ -484,7 +484,7 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
         "ou tout équivalent sémantique indiquant une possession personnelle directe.\n"
         "Ne jamais choisir 'J'ai accès', 'Je loue', 'J'emprunte', 'Non, pas d'accès', ou toute option\n"
         "indiquant une possession indirecte ou une absence de possession.\n"
-        "Un répondant déclarant ne pas posséder un bien est souvent exclu des études portant sur ce bien."
+        "Un répondant déclarant ne pas posséder un bien est souvent exclu des études portant sur ce bien.\n"
     )
     
     lines.append(
@@ -493,8 +493,20 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
         "(pour être filmé, enregistré, ou participer via vidéo), "
         "choisis TOUJOURS l'option négative (Non, No, Je refuse, Je ne souhaite pas, etc.).\n"
         "Cette règle s'applique uniquement au consentement d'usage actif — "
-        "pas aux questions de simple possession d'un équipement."
+        "pas aux questions de simple possession d'un équipement.\n"
     )
+
+    lines.append(
+            "RÈGLE JAMAIS / NEVER (question d'exclusion négative) :\n"
+            "Si une question demande, parmi une liste d'options (marques, produits, services, catégories), "
+            "lesquelles tu n'achèterais JAMAIS, n'utiliserais JAMAIS, n'envisagerais JAMAIS "
+            "(signaux : 'jamais', 'never', 'n'envisageriez jamais', 'would never', 'n'achèteriez jamais', "
+            "'ne consommeriez jamais', 'would never buy', 'would never use', 'would never consider'),\n"
+            "ET que la liste d'options contient une option exclusive négative du type "
+            "'Aucune de ces marques', 'Aucune de ces options', 'Aucune', 'None of these', 'None of the above',\n"
+            "alors tu DOIS choisir UNIQUEMENT cette option exclusive négative.\n"
+            "C'est la réponse la plus favorable pour un profil actif et consommateur.\n"
+        )
 
     lines.append(
         "RÈGLE COHÉRENCE CONTEXTE → APPROFONDISSEMENT :\n"
@@ -505,7 +517,7 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
         "En cas d'ambiguïté entre plusieurs options compatibles : préfère l'option la plus récente, "
         "la plus précise, ou la plus cohérente avec le persona (cadre supérieur, urbain, revenus élevés).\n"
         "INTERDIT ABSOLU : choisir une option vague ou de repli ('Autre', 'Other', 'Je ne sais pas', "
-        "'Non concerné', etc.) quand une option concrète de la liste est compatible avec le contexte établi."
+        "'Non concerné', etc.) quand une option concrète de la liste est compatible avec le contexte établi.\n"
     )    
     
     lines.append(
@@ -531,7 +543,7 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
         "- Adapte chaque ligne en fonction de sa pertinence avec le sujet du survey.\n"
         "- Vise une cohérence globale crédible : un répondant très actif sur le sujet principal, avec des usages secondaires réalistes.\n\n"
         "INTERDIT dans tous les cas :\n"
-        "- Choisir \"Jamais\", \"Rarement\", \"Presque jamais\", \"Aucune fois\" pour le comportement central du survey, sauf contexte explicite contraire."
+        "- Choisir \"Jamais\", \"Rarement\", \"Presque jamais\", \"Aucune fois\" pour le comportement central du survey, sauf contexte explicite contraire.\n"
     )    
     
     lines.append(
@@ -564,7 +576,7 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
         "alors tu DOIS choisir UNIQUEMENT cette option exclusive négative, sans aucune autre valeur.\n"
         "Ce type de question est un screener anti-industrie : choisir n'importe quel secteur de la liste"
         "entraîne une disqualification immédiate, même si ce secteur est cohérent avec le persona.\n"
-        "Cette règle ne s'applique que si la question concerne le répondant seul OU son foyer/famille/entourage."
+        "Cette règle ne s'applique que si la question concerne le répondant seul OU son foyer/famille/entourage.\n"
     )
     lines.append("\n--- QUESTIONS ---")
 
@@ -674,10 +686,6 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
                 lines.append(
                     f"selection_rule: Pour QID={qid}, renvoyer EXACTEMENT {max_sel} valeur(s) séparée(s) par | (obligatoire, pas un plafond). / For QID={qid}, return EXACTLY {max_sel} values separated by |."
                 )
-            else:
-                lines.append(
-                    f"selection_rule: Pour QID={qid}, renvoyer entre 1 et {max_sel} valeur(s) séparée(s) par |. / For QID={qid}, return between 1 and {max_sel} values separated by |."
-                )
         else:
             if is_multi_text:
                 lines.append(
@@ -714,7 +722,7 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
             lines.append("options: " + " | ".join(opts))
             if itype == "checkbox" and not is_participation_consent_all:
                 lines.append(
-                    f"Plusieurs réponses possibles (max {max_sel}). Sélectionne uniquement les options cohérentes avec le profil du répondant. Ne sélectionne pas plus que nécessaire."
+                    f"Sélectionne uniquement les options cohérentes avec le profil du répondant. Ne sélectionne pas plus que nécessaire."
                 )
         else:
             lines.append("options: (champ ouvert)")

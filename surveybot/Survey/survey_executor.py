@@ -1781,7 +1781,6 @@ def execute_survey_page(driver, account_id, api_key, ctx=None):
                 "itype": (b.get("itype") or ""),
                 "options": (b.get("options") or []),
                 "max_select": int(b.get("max_select", 1) or 1),
-                "min_select": int(b.get("min_select", 1) or 1),
                 "target_id": (b.get("target_id") or ""),
                 "kind": (b.get("kind") or ""),
                 "cards": (b.get("cards") or []),
