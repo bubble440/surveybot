@@ -2700,78 +2700,79 @@ def _apply_by_target_id(
                             log_debug("[TARGET_DEBUG]", f"decipher clickableCell no checked/selected signal: value='{value}' xpath='{xp}'")
                         return False
 
-                    # --- Toluna Runtime AnswerRow (check_box / radio_button custom, sans input natif) ---
-                    # Guard DOM : row = [data-aut='Runtime_AnswerRow'] + [data-aut='Runtime_Wrapper']
-                    #             présent + aucun <input> natif.
-                    # Signal : changement de classe css-* sur l'enfant interne
-                    #   check_box  → [data-aut='Runtime_IconBox']
-                    #   radio_button → [data-aut='Runtime_InnerFill']
-                    # La classe capturée AVANT le clic = référence "non-coché" ; stockée dans
-                    # le payload (dict live) pour idempotence sur retries.
-                    # Le poll post-clic utilise document.getElementById(rowId) pour survivre
-                    # aux re-renders React qui invalident la référence WebElement originale.
-                    log_info("[TARGET]", "toluna_runtime_answerrow: entering block")
+                # --- Toluna Runtime AnswerRow (check_box / radio_button custom, sans input natif) ---
+                # Guard DOM : row = [data-aut='Runtime_AnswerRow'] + [data-aut='Runtime_Wrapper']
+                #             présent + aucun <input> natif.
+                # Signal : changement de classe css-* sur l'enfant interne
+                #   check_box  → [data-aut='Runtime_IconBox']
+                #   radio_button → [data-aut='Runtime_InnerFill']
+                # La classe capturée AVANT le clic = référence "non-coché" ; stockée dans
+                # le payload (dict live) pour idempotence sur retries.
+                # Le poll post-clic utilise document.getElementById(rowId) pour survivre
+                # aux re-renders React qui invalident la référence WebElement originale.
+                log_info("[TARGET]", "toluna_runtime_answerrow: entering block")
+                try:
+                    _toluna_guard = driver.execute_script(
+                        """
+                        const el = arguments[0];
+                        if (!el || !el.closest) return null;
+                        if (!el.closest("[data-aut='Runtime_AnswerRow']")) return null;
+                        const wrapper = el.querySelector("[data-aut='Runtime_Wrapper']");
+                        if (!wrapper) return null;
+                        if (el.querySelector("input[type='checkbox'], input[type='radio']")) return null;
+                        const inner = wrapper.querySelector(
+                            "[data-aut='Runtime_IconBox'], [data-aut='Runtime_InnerFill']"
+                        );
+                        if (!inner) return null;
+                        return { cls: inner.className || '', rowId: el.id || '' };
+                        """,
+                        el,
+                    )
+                except Exception:
+                    _toluna_guard = None
+
+                log_info("[TARGET]", f"toluna_runtime_answerrow: guard={_toluna_guard!r}")
+                if isinstance(_toluna_guard, dict) and _toluna_guard.get("cls") is not None:
+                    _toluna_cls_pre = _toluna_guard.get("cls", "")
+                    _toluna_row_id = (_toluna_guard.get("rowId") or "").strip()
+
+                    _cls_ref_key = f"_toluna_cls_unchecked_{xp}"
+                    _cls_unchecked = payload.get(_cls_ref_key)
+                    if _cls_unchecked is None:
+                        _cls_unchecked = _toluna_cls_pre
+                        payload[_cls_ref_key] = _cls_unchecked
+
+                    # Idempotence : classe actuelle ≠ référence → déjà coché
+                    if _toluna_cls_pre != _cls_unchecked:
+                        log_info("[TARGET]", f"apply ok=true strategy=toluna_runtime_answerrow reason=already_selected value='{value}'")
+                        return True
+
+                    # Re-fetch par ID pour survivre au re-render React qui invalide el.
+                    _toluna_clicked = False
                     try:
-                        _toluna_guard = driver.execute_script(
+                        driver.execute_script(
                             """
-                            const el = arguments[0];
-                            if (!el || !el.closest) return null;
-                            if (!el.closest("[data-aut='Runtime_AnswerRow']")) return null;
-                            const wrapper = el.querySelector("[data-aut='Runtime_Wrapper']");
-                            if (!wrapper) return null;
-                            if (el.querySelector("input[type='checkbox'], input[type='radio']")) return null;
-                            const inner = wrapper.querySelector(
-                                "[data-aut='Runtime_IconBox'], [data-aut='Runtime_InnerFill']"
-                            );
-                            if (!inner) return null;
-                            return { cls: inner.className || '', rowId: el.id || '' };
+                            var row = document.getElementById(arguments[0]);
+                            if (!row) throw new Error('row not found: ' + arguments[0]);
+                            row.querySelector("[data-aut='Runtime_Wrapper']").click();
                             """,
-                            el,
+                            _toluna_row_id,
                         )
+                        _toluna_clicked = True
                     except Exception:
-                        _toluna_guard = None
-
-                    log_info("[TARGET]", f"toluna_runtime_answerrow: guard={_toluna_guard!r}")
-                    if isinstance(_toluna_guard, dict) and _toluna_guard.get("cls") is not None:
-                        _toluna_cls_pre = _toluna_guard.get("cls", "")
-                        _toluna_row_id = (_toluna_guard.get("rowId") or "").strip()
-
-                        _cls_ref_key = f"_toluna_cls_unchecked_{xp}"
-                        _cls_unchecked = payload.get(_cls_ref_key)
-                        if _cls_unchecked is None:
-                            _cls_unchecked = _toluna_cls_pre
-                            payload[_cls_ref_key] = _cls_unchecked
-
-                        # Idempotence : classe actuelle ≠ référence → déjà coché
-                        if _toluna_cls_pre != _cls_unchecked:
-                            log_info("[TARGET]", f"apply ok=true strategy=toluna_runtime_answerrow reason=already_selected value='{value}'")
-                            return True
-
-                        # Re-fetch par ID pour survivre au re-render React qui invalide el.
-                        _toluna_clicked = False
                         try:
-                            driver.execute_script(
-                                """
-                                var row = document.getElementById(arguments[0]);
-                                if (!row) throw new Error('row not found: ' + arguments[0]);
-                                row.querySelector("[data-aut='Runtime_Wrapper']").click();
-                                """,
-                                _toluna_row_id,
-                            )
+                            el.click()
                             _toluna_clicked = True
                         except Exception:
-                            try:
-                                el.click()
-                                _toluna_clicked = True
-                            except Exception:
-                                pass
+                            pass
 
-                        if _toluna_clicked:
-                            time.sleep(0.15)
-                            log_info("[TARGET]", f"apply ok=true strategy=toluna_runtime_answerrow reason=clicked value='{value}'")
-                            return True
-                        return False
+                    if _toluna_clicked:
+                        time.sleep(0.15)
+                        log_info("[TARGET]", f"apply ok=true strategy=toluna_runtime_answerrow reason=clicked value='{value}'")
+                        return True
+                    return False
 
+                if resolved_itype == "checkbox":
                     label_anchor_guard_active = False
                     try:
                         label_anchor_guard_active = (el.tag_name or "").lower() == "label" and bool(
