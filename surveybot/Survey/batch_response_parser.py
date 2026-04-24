@@ -389,53 +389,6 @@ def _is_birth_year_question_text(*texts: str) -> bool:
     return any(_fold_lc(hint) in haystack for hint in _BIRTH_YEAR_HINTS)
 
 
-def _build_filler_values(
-    qid: str,
-    selected_values: list[str],
-    options: list[str],
-    expected_count: int,
-) -> list[str]:
-    """Complète de manière déterministe jusqu'à expected_count."""
-    if len(selected_values) >= expected_count:
-        return selected_values[:expected_count]
-
-    result = list(selected_values)
-    selected_folded = {str(v or "").strip().lower() for v in result if str(v or "").strip()}
-    option_pool = [str(opt or "").strip() for opt in options if str(opt or "").strip()]
-
-    if not option_pool:
-        _warn_log(
-            f"qid={qid} fill_shortfall_no_option_pool expected={expected_count} "
-            f"current={len(result)} -> returning partial result without padding"
-        )
-        return result
-
-    for opt in option_pool:
-        if len(result) >= expected_count:
-            break
-        if opt.lower() in selected_folded:
-            continue
-        result.append(opt)
-        selected_folded.add(opt.lower())
-
-    if len(result) < expected_count:
-        fallback_value = ""
-        if result:
-            fallback_value = result[-1]
-        elif option_pool:
-            fallback_value = option_pool[0]
-
-        if fallback_value:
-            _warn_log(
-                f"qid={qid} fill_shortfall_without_enough_unique_options expected={expected_count} "
-                f"current={len(result)} fallback_repeat={fallback_value!r}"
-            )
-            while len(result) < expected_count:
-                result.append(fallback_value)
-
-    return result
-
-
 def _selection_bounds_for_qid(qid: str, raw_max: int, qmeta: dict | None, itype_hint: str = "") -> tuple[int, int]:
     """Retourne (min_select, max_select) bornés de manière prévisible."""
     max_select = max(1, int(raw_max or 1))
@@ -463,16 +416,7 @@ def _selection_bounds_for_qid(qid: str, raw_max: int, qmeta: dict | None, itype_
     if itype != "checkbox":
         return 1, 1
 
-    min_raw = qmeta.get("min_select", 1)
-    try:
-        min_select = int(min_raw)
-    except Exception:
-        min_select = 1
-
-    min_select = max(0, min_select)
-    min_select = min(min_select, max_select)
-    return min_select, max_select
-
+    return 1, max_select
 
 def _enforce_selection_ranges(actions: list[dict], constraints: dict[str, int], qid_meta: dict | None = None) -> list[dict]:
     if not constraints:
@@ -527,20 +471,6 @@ def _enforce_selection_ranges(actions: list[dict], constraints: dict[str, int], 
             f"qid={qid} min_select={min_select} max_select={max_select} "
             f"received={len(raw_values)} final_count={len(completed_values)} values={completed_values}"
         )
-
-        # ✅ Repli sur option connue quand toutes les valeurs ont été rejetées (hallucination LLM)
-        if (
-            len(completed_values) < min_select
-            and min_select >= 1
-            and options
-            and itype in _FIXED_LIST_ITYPES
-        ):
-            non_exclusive = [o for o in options if not _is_exclusive_value(o)]
-            fallback = (non_exclusive or options)[0]
-            log_info("[batch_response_parser]",
-                     f"qid={qid} repli forcé sur option connue: {fallback!r} "
-                     f"(completed_values vide, min_select={min_select})")
-            completed_values = [fallback]
 
         template = q_actions[-1] if q_actions else {
             "qid": qid,
@@ -1016,179 +946,12 @@ def _norm_lc(s: str | None) -> str:
     return re.sub(r"\s+", " ", (s or "")).strip().lower()
 
 
-_MULTI_HINT_PATTERNS = (
-    r"veuillez\s+selectionner\s+toutes?\s+les\s+reponses?\s+pertinentes?",
-    r"plusieurs\s+reponses?\s+possibles?",
-)
-
-_BULK_EXCLUSIVE_PATTERNS = (
-    r"aucun",
-    r"aucune",
-    r"aucune\s+de\s+ces",
-    r"aucun\s+de\s+ces",
-    r"ne\s+sait\s+pas",
-    r"nspp",
-    r"autre",
-    r"autres",
-    r"preciser",
-    r"je\s+prefere\s+ne\s+pas\s+repondre",
-)
-
-_NEGATIVE_EXCLUSIVE_PATTERNS = (
-    r"^aucun(e)?(\s|$)",
-    r"^aucun(e)?\s+de\s+ces",
-    r"^none(\s|$)",
-    r"^none\s+of\s+(the|these|those)",
-    r"^non(\s|$)",
-)
-
-_SECTOR_SCREENER_SHORT_OPTIONS_MAX = 15
-
-
 def _fold_lc(s: str | None) -> str:
     base = (s or "")
     base = unicodedata.normalize("NFKD", base)
     base = "".join(ch for ch in base if not unicodedata.combining(ch))
     return _norm_lc(base)
 
-
-def _is_checkbox_bulk_multi_target(meta: dict | None) -> bool:
-    if not isinstance(meta, dict):
-        return False
-    if _norm_lc(meta.get("itype") or "") != "checkbox":
-        return False
-    max_select = int(meta.get("max_select", 1) or 1)
-    if max_select <= 1:
-        return False
-    qtxt = _fold_lc(meta.get("question") or "")
-    if not qtxt:
-        return False
-    return any(re.search(pat, qtxt) for pat in _MULTI_HINT_PATTERNS)
-
-
-def _is_bulk_exclusive_option(label: str) -> bool:
-    folded = _fold_lc(label)
-    if not folded:
-        return True
-    return any(re.search(pat, folded, re.IGNORECASE) for pat in _BULK_EXCLUSIVE_PATTERNS)
-
-
-def _pick_sector_screener_negative_exclusive(meta: dict | None) -> str | None:
-    if not isinstance(meta, dict):
-        return None
-    if _norm_lc(meta.get("itype") or "") != "checkbox":
-        return None
-
-    question = str(meta.get("question") or "")
-    if not is_sector_activity_question(question):
-        return None
-
-    options = [str(o or "").strip() for o in (meta.get("options") or []) if str(o or "").strip()]
-    if not options or len(options) >= _SECTOR_SCREENER_SHORT_OPTIONS_MAX:
-        return None
-
-    for option in options:
-        folded = _fold_lc(option)
-        if any(re.search(pat, folded, re.IGNORECASE) for pat in _NEGATIVE_EXCLUSIVE_PATTERNS):
-            return option
-    return None
-
-
-def _expand_checkbox_bulk_actions(actions: list, qid_meta: dict | None = None) -> list:
-    """
-    Policy ciblée (DOM-first):
-    - checkbox multi-select avec indice explicite dans la question
-    - exclure options exclusives (aucune/autre/nspp/...)
-    - si <=15 options non exclusives: cocher ceil(90%) des premières (ordre DOM)
-    """
-    if not actions:
-        return actions
-
-    qid_meta = qid_meta or {}
-
-    # Une seule passe bornée: pas de retry / pas de boucle infinie
-    transformed = list(actions)
-    planned_by_qid: dict[str, tuple[list[str], dict]] = {}
-
-    for a in actions:
-        if not isinstance(a, dict):
-            continue
-        if _norm_lc(a.get("itype") or "") != "checkbox":
-            continue
-        qid = (a.get("qid") or "").strip().upper()
-        if not qid or qid in planned_by_qid:
-            continue
-        meta = qid_meta.get(qid)
-
-        # Règle prioritaire : screener secteur courte liste -> exclusive négative unique.
-        # Ne dépend pas des hints "multi" ni de max_select: c'est une contrainte métier.
-        sector_negative_exclusive = _pick_sector_screener_negative_exclusive(meta)
-        if sector_negative_exclusive:
-            planned_by_qid[qid] = ([sector_negative_exclusive], a)
-            log_debug(
-                "CHECKBOX_BULK",
-                f"qid={qid} sector_screener_negative_exclusive='{sector_negative_exclusive}'",
-            )
-            continue
-
-        if not _is_checkbox_bulk_multi_target(meta):
-            continue
-
-        options = [str(o or "").strip() for o in (meta.get("options") or []) if str(o or "").strip()]
-        if not options:
-            continue
-
-        non_exclusive = [opt for opt in options if not _is_bulk_exclusive_option(opt)]
-        excluded_count = len(options) - len(non_exclusive)
-
-        if not non_exclusive or len(non_exclusive) > 15:
-            print(
-                f"[CHECKBOX_BULK] qid={qid} total_options={len(options)} "
-                f"excluded={excluded_count} k_requested=0 k_selected=0 reason=outside_policy"
-            )
-            continue
-
-        max_select_raw = meta.get("max_select")
-        try:
-            max_select = int(max_select_raw)
-        except Exception:
-            max_select = 0
-
-        if max_select > 0:
-            k_requested = min(max_select, len(non_exclusive))
-        else:
-            k_requested = len(non_exclusive)
-        k_selected = min(k_requested, len(non_exclusive))
-        picked = non_exclusive[:k_selected]
-        planned_by_qid[qid] = (picked, a)
-        print(
-            f"[CHECKBOX_BULK] qid={qid} total_options={len(options)} excluded={excluded_count} "
-            f"k_requested={k_requested} k_selected={k_selected}"
-        )
-
-    if not planned_by_qid:
-        return transformed
-
-    replaced: list = []
-    replaced_done: set[str] = set()
-    for a in transformed:
-        if not isinstance(a, dict):
-            replaced.append(a)
-            continue
-        qid = (a.get("qid") or "").strip().upper()
-        if qid in planned_by_qid:
-            if qid in replaced_done:
-                continue
-            picked, seed = planned_by_qid[qid]
-            for val in picked:
-                new_a = dict(seed)
-                new_a["value"] = val
-                replaced.append(new_a)
-            replaced_done.add(qid)
-            continue
-        replaced.append(a)
-
-    return replaced
 
 def _is_system_scope(scope: str | None) -> bool:
     v = _norm_lc(scope)
@@ -1407,11 +1170,6 @@ def sanitize_actions(actions: list, qid_meta: dict | None = None) -> list:
                     a = dict(a); a["value"] = months_en_to_fr[v_lc]
 
         cleaned.append(a)
-
-    # =========================================================================
-    # ÉTAPE FINALE (1): expansion deterministic des checkbox multi ciblées
-    # =========================================================================
-    cleaned = _expand_checkbox_bulk_actions(cleaned, qid_meta)
 
     # =========================================================================
     # ÉTAPE FINALE: Filtrage des conflits d'options exclusives
