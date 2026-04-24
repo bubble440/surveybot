@@ -1229,7 +1229,10 @@ def _apply_by_target_id(
                 return False
 
             # --- select_rps: dropdown Angular custom rps-select (Toluna/SurveyRouter) ---
-            if resolved_itype == "select_rps" or payload.get("rps_select"):
+            # reg_itype est lu directement du registry (jamais altéré par GPT) : c'est le signal fiable.
+            # resolved_itype == "select_rps" garde la compat si GPT le renvoie tel quel.
+            # payload.get("rps_select") est le flag explicite posé par l'extracteur.
+            if resolved_itype == "select_rps" or reg_itype == "select_rps" or payload.get("rps_select"):
                 opt_map = payload.get("option_xpath_map") or {}
                 selection_xpath = (payload.get("selection_xpath") or "").strip()
 
