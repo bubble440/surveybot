@@ -503,6 +503,19 @@ def run_attach_takeover(driver, *, api_key: str, account_id: str) -> None:
 
         ### Résultat attendu dans les logs avec clé 2Captcha configurée
             
+            # --- Détection page d'erreur applicative (Toluna: div.errorPage, Confirmit: div.errorpage-wrapper) ---
+            try:
+                from selenium.webdriver.common.by import By
+                _error_els = driver.find_elements(
+                    By.XPATH,
+                    "//*[contains(translate(@class,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'errorpage')]",
+                )
+                if _error_els:
+                    print(f"[PLATFORM-ERR] Page d'erreur applicative détectée (class~='errorpage') step={i} url={_attach_display_url(driver.current_url)} → sortie boucle.")
+                    break
+            except Exception:
+                pass
+
             ok = survey_executor.execute_survey_page(driver, account_id, api_key, ctx=_ctx)
             _ctx.maybe_update_summary()                                           # ← ajouter cette ligne
             print(f"[ATTACH] step={i}/{max_steps} ok={ok} url={_attach_display_url(driver.current_url)}")
