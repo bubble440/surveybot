@@ -754,6 +754,40 @@ def click_checkbox_by_label(driver, target_text: str, context_hint: str | None =
     except Exception:
         pass
 
+    # Toluna Runtime : cliquer une option non encore cochée (div custom, sans <input> natif).
+    # Guard DOM : [data-aut='Runtime_AnswerRow'] présent (≥2 rows) + pas d'input natif dans la cible.
+    # Clic sur targetRow (listener React attaché sur le conteneur, pas sur le wrapper interne).
+    # Vérification post-clic : la classe IconBox doit avoir changé.
+    try:
+        _toluna_click_ok = driver.execute_script(
+            r"""
+            const norm = s => (s || '').toLowerCase().normalize('NFKC')
+                .replace(/\u00A0/g,' ').replace(/[»«\u201c\u201d"'›→·•:]/g,'')
+                .replace(/\s+/g,' ').trim();
+            const needle = norm(arguments[0]);
+            const allRows = Array.from(document.querySelectorAll("[data-aut='Runtime_AnswerRow']"));
+            if (allRows.length < 2) return false;
+            const targetRow = allRows.find(r => {
+                const txt = norm(r.innerText || r.textContent || '');
+                return txt === needle || txt.includes(needle) || needle.includes(txt);
+            });
+            if (!targetRow) return false;
+            if (targetRow.querySelector("input[type='checkbox'], input[type='radio']")) return false;
+            const inner = targetRow.querySelector("[data-aut='Runtime_IconBox'], [data-aut='Runtime_InnerFill']");
+            if (!inner) return false;
+            const clsBefore = inner.className || '';
+            targetRow.click();
+            const clsAfter = inner.className || '';
+            return clsAfter !== clsBefore;
+            """,
+            target_text,
+        )
+        if _toluna_click_ok:
+            log_debug("[TARGET_DEBUG]", f"click_checkbox_by_label: toluna_runtime click ok label={target_text!r}")
+            return True
+    except Exception:
+        pass
+
     scope = find_context_container(driver, context_hint)
 
     # 0a) QARTS widget (Decipher/LifePoints) : double structure visuelle + grille cachée.
