@@ -716,6 +716,44 @@ def click_checkbox_by_label(driver, target_text: str, context_hint: str | None =
     if not needle:
         return None
 
+    # Guard Toluna Runtime : si l'option est déjà cochée, ne pas cliquer (évite de la décocher).
+    # Activé uniquement si la structure Runtime_AnswerRow est détectée dans le DOM.
+    try:
+        _toluna_checked = driver.execute_script(
+            r"""
+            const norm = s => (s || '').toLowerCase().normalize('NFKC')
+                .replace(/\u00A0/g,' ').replace(/[»«\u201c\u201d"'›→·•:]/g,'')
+                .replace(/\s+/g,' ').trim();
+            const needle = norm(arguments[0]);
+            const allRows = Array.from(document.querySelectorAll("[data-aut='Runtime_AnswerRow']"));
+            if (allRows.length < 2) return false;
+            const targetRow = allRows.find(r => {
+                const txt = norm(r.innerText || r.textContent || '');
+                return txt === needle || txt.includes(needle) || needle.includes(txt);
+            });
+            if (!targetRow) return false;
+            const wrapper = targetRow.querySelector("[data-aut='Runtime_Wrapper']");
+            if (!wrapper) return false;
+            const inner = wrapper.querySelector("[data-aut='Runtime_IconBox'], [data-aut='Runtime_InnerFill']");
+            if (!inner) return false;
+            const allInners = allRows.map(r => {
+                const w = r.querySelector("[data-aut='Runtime_Wrapper']");
+                return w ? w.querySelector("[data-aut='Runtime_IconBox'], [data-aut='Runtime_InnerFill']") : null;
+            }).filter(Boolean);
+            if (allInners.length < 2) return false;
+            const counts = {};
+            for (const i of allInners) { const c = i.className || ''; counts[c] = (counts[c] || 0) + 1; }
+            const uncheckedCls = Object.keys(counts).reduce((a, b) => counts[b] > counts[a] ? b : a);
+            return (inner.className || '') !== uncheckedCls;
+            """,
+            target_text,
+        )
+        if _toluna_checked:
+            log_debug("[TARGET_DEBUG]", f"click_checkbox_by_label: toluna already_checked skip label={target_text!r}")
+            return True
+    except Exception:
+        pass
+
     scope = find_context_container(driver, context_hint)
 
     # 0a) QARTS widget (Decipher/LifePoints) : double structure visuelle + grille cachée.
