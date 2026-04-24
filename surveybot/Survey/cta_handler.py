@@ -1576,6 +1576,34 @@ def try_click_navigation_cta(driver) -> bool:
     except Exception:
         pass
 
+    # --- Toluna/QuickSurveys: bouton submit dans le footer de navigation ---
+    # DOM observé: div[data-aut="Runtime_PreviousAndNextWrapper"] > ... > button[type="submit"]
+    # Le label ("En voir plus", etc.) peut ne pas figurer dans CTA_SYNONYMS.
+    # Guard: activé uniquement si ce wrapper est présent dans le DOM.
+    try:
+        toluna_nav_btns = driver.find_elements(
+            By.CSS_SELECTOR,
+            '[data-aut="Runtime_PreviousAndNextWrapper"] button[type="submit"]',
+        )
+        for btn in toluna_nav_btns:
+            try:
+                if not btn.is_displayed() or not btn.is_enabled():
+                    continue
+                if (btn.get_attribute("aria-disabled") or "").lower() == "true":
+                    continue
+                driver.execute_script("arguments[0].scrollIntoView({block:'center'});", btn)
+                _nav_log("[CTA_NAV]", "CTA_FOUND pattern=toluna_nav_wrapper", driver)
+                clicked = _click_with_intercept(driver, btn)
+                _nav_log("[CTA_NAV]", f"CTA_CLICKED pattern=toluna_nav_wrapper PROGRESSED={str(bool(clicked)).lower()}", driver)
+                if clicked:
+                    if _cta_intercept_enabled():
+                        _nav_log("[CTA_NAV]", "INTERCEPT_OK pattern=toluna_nav_wrapper", driver)
+                    return True
+            except Exception:
+                continue
+    except Exception:
+        pass
+
     # --- AreYouNet / runet : CTA image sans texte ---
     try:
         btns = driver.find_elements(By.CSS_SELECTOR, "#btn_next")

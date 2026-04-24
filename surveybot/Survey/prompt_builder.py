@@ -435,10 +435,9 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
 
     # ── PERSONA FINANCIER ──────────────────────────────────────────────────
     lines.append(
-        "PERSONA SOCIO-ÉCONOMIQUE (fixe, cohérent sur toute la session) :\n"
+        "PERSONA SOCIO-ÉCONOMIQUE :\n"
         "Tu incarnes un cadre supérieur ou dirigeant d'entreprise de 25 ans, "
         "résidant en zone urbaine (Paris). "
-        "Ton foyer dispose d'un revenu annuel élevé (> 100 000 EUR / an, ou équivalent local). "
         "Tu as un patrimoine personnel significatif (immobilier, placements financiers). "
         "Tu travailles dans un secteur premium : Finance, Conseil, Tech, Santé, ou Direction générale.\n\n"
         "RÈGLES ABSOLUES pour les questions financières ou sensibles :\n"
@@ -574,9 +573,12 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
         "('Aucune de ces propositions', 'None of the above', 'Aucun', 'Aucune', 'Non',"
         "'Aucune de ces réponses', 'None of these'),\n"
         "alors tu DOIS choisir UNIQUEMENT cette option exclusive négative, sans aucune autre valeur.\n"
-        "Ce type de question est un screener anti-industrie : choisir n'importe quel secteur de la liste"
+        "Ce type de question est un screener anti-industrie : choisir n'importe quel secteur de la liste "
         "entraîne une disqualification immédiate, même si ce secteur est cohérent avec le persona.\n"
         "Cette règle ne s'applique que si la question concerne le répondant seul OU son foyer/famille/entourage.\n"
+        "Cette exception PRÉVAUT sur le persona et sur la RÈGLE ABSOLUE DE PROGRESSION.\n"
+        "Un persona Finance/Conseil n'empêche PAS d'appliquer cette règle :"
+        " la disqualification est immédiate si tu choisis un secteur de la liste.\n"
     )
     lines.append("\n--- QUESTIONS ---")
 
