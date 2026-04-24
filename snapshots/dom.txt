@@ -1,78 +1,8 @@
-<html ng-app="RunTimeApp" lang="en"><!--<![endif]--><head>
-    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-    <meta name="viewport" content="width=320,  initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=1" id="viewport-meta">
-    
-
-
-    
-    <link href="/Asset/Runtime/errorPage.css" rel="stylesheet">
-
-    
-  
-  
-</head>
-
-
-<!--[if IE 9]>
-<body class="{{$root.bodyClass}}" xmlns:ng="http://angularjs.org" id="ng-app"> <![endif]-->
-<!--[if gt IE 9]><!-->
-<body ng-cloak="" class="{{$root.bodyClass}}" watch-window-resize="">
-<!--<![endif]-->
-<div ng-show="$root.showGlassPane" class="glassPane">
-    <div class="loader">Loading...</div>
-</div>
-
-    
-
-
-
-<div class="errorPage">
-    <div class="topDiv">
-        <div class="bigTitle">We are sorry</div>
-        <div class="smallText">An error has occurred with your survey</div>
-    </div>
-    <div class="middleDiv">
-        <div class="manImgDiv">
-            <img src="/Asset/Runtime/Images/error-page-man.png">
-        </div>
-    </div>
-    <div class="bottomDiv">
-        <div>
-            <div class="bottomDivTxt">This survey was created with</div>
-            <div class="icon-quicksurveyslogo"></div>
-            <div class="socialButtons">
-                <a href="https://www.facebook.com/TolunaCorporate" class="socialLink-facebook" target="_blank">
-                    <div>
-                        <div class="icon-facebook"></div>
-                    </div>
-                </a>
-                <a href="https://twitter.com/TolunaQuick" class="socialLink-twitter" target="_blank">
-                    <div>
-                        <div class="icon-twitter"></div>
-                    </div>
-                </a>
-                <a href="https://www.youtube.com/TolunaQuick" class="socialLink-youtube" target="_blank">
-                    <div>
-                        <div class="icon-youtube"></div>
-                    </div>
-                </a>
-            </div>
-        </div>
-    </div>
-</div>
-
-
-    <script type="text/javascript">
-        var TQS = TQS || { Runtime: {} };
-        TQS.Runtime.Globals =TQS.Runtime.Globals|| {
-            "location": '2',
-            "parentUrl": 'https://project.tolunastart.com',
-            "isMobileDevice": false
-            };
-    </script>
-    <script src="/Scripts/JQuery/jquery-1.8.3.min.js"></script>
-    <script src="/MVCScripts/Runtime/Application/appErrorPage.js"></script>
-
-
-
- </body></html>
+<body>
+  <app-root ng-version="19.2.15"><router-outlet></router-outlet><app-survey-final><div><div class="container"><!----><div><div class="wrap"><div class="page-header"><h1 translate="srvyFinal.heading1" dir="ltr"> Vous y êtes presque…</h1></div><div class="clear"></div><form novalidate="" role="form" name="demographic_form" class="form-inline d-flex ng-untouched ng-pristine ng-valid"><!----><div class="text-left p-x-15 flex-75"><div><p translate="srvyFinal.msgPara" class="m-t-0">Vous allez à présent être redirigé(e) vers l'enquête où vous pourriez devoir répondre à d'autres questions de qualification.</p></div><div class="clear"></div><div><h3 translate="srvyFinal.honest">Soyez honnête</h3><p translate="srvyFinal.prdctOpinionMsg" class="m-t-0">Votre avis influence de vrais produits. N'oubliez pas de lire attentivement et d'être honnête.</p></div><div class="clear"></div><div><h3 translate="srvyFinal.respnsble">Soyez responsable</h3><p translate="srvyFinal.rsnpAns" class="m-t-0">Les réponses sont régulièrement examinées aux fins de clarté.</p></div><!----><div class="d-flex flex-justified-right m-t-20"><button type="submit" translate="srvyFinal.btnLtsDo" class="next_btn">Allons-y</button></div></div><!----><!----></form><div class="page-footer"></div></div></div><!----></div></div><!----></app-survey-final><!----><!----></app-root>
+  <noscript>
+    <h1>JavaScript Required</h1>
+    <p>Please enable JavaScript to continue using this application.</p>
+  </noscript>
+<link rel="modulepreload" href="chunk-TZFPLRKY.js"><link rel="modulepreload" href="chunk-LIL5XAWA.js"><link rel="modulepreload" href="chunk-SEB6HFLA.js"><link rel="modulepreload" href="chunk-H5ILLOOE.js"><link rel="modulepreload" href="chunk-NF5QZS34.js"><link rel="modulepreload" href="chunk-VDACZSUG.js"><script src="polyfills-GFIOSHUA.js" type="module"></script><script src="main-DS2SQUIW.js" type="module"></script>
+</body>
