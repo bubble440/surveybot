@@ -4450,6 +4450,64 @@ def handle_consent_screen(driver):
     if _handle_walr_intro_final_gate():
         return True
 
+    # 0quinquies) Angular survey-final redirect gate (ex: edgesurvey.innovatemr.net)
+    #             DOM: <app-survey-final> + button.next_btn visible + aucun input répondable.
+    def _handle_angular_survey_final_gate() -> bool:
+        try:
+            btn_sel = driver.execute_script(r"""
+                const isVisible = (el) => {
+                    if (!el) return false;
+                    const s = window.getComputedStyle(el);
+                    if (!s || s.display === 'none' || s.visibility === 'hidden') return false;
+                    const r = el.getBoundingClientRect();
+                    return !!(r && r.width > 10 && r.height > 10);
+                };
+                const root = document.querySelector('app-survey-final, [class*="survey-final"]');
+                if (!root) return null;
+                const answerables = Array.from(document.querySelectorAll(
+                    'input[type="radio"], input[type="checkbox"], select, textarea, input[type="text"], input[type="number"], input[type="email"], input[type="tel"], input[type="search"]'
+                )).filter(isVisible);
+                if (answerables.length > 0) return null;
+                const btn = document.querySelector('button.next_btn') ||
+                            document.querySelector('button[type="submit"]');
+                if (!btn || !isVisible(btn)) return null;
+                return btn.className || 'button[type="submit"]';
+            """)
+        except Exception:
+            btn_sel = None
+        if not btn_sel:
+            return False
+
+        from Survey.log_utils import log_info, log_debug
+        log_info("CONSENT", "angular survey-final gate détecté — clic CTA next_btn")
+
+        try:
+            try:
+                btn = driver.find_element(By.CSS_SELECTOR, "button.next_btn")
+            except Exception:
+                btn = driver.find_element(By.CSS_SELECTOR, "button[type='submit']")
+        except Exception:
+            return False
+
+        intercept_only = (os.getenv("CTA_INTERCEPT_ONLY", "") or "").strip().lower() in {"1", "true", "yes", "on"}
+        if intercept_only:
+            label = _norm_lc(btn.text or "allons-y")
+            log_info("CONSENT", f"CTA_INTERCEPT_ONLY: interception angular survey-final CTA '{label}'")
+            try:
+                import Survey.input_handler
+                Survey.input_handler.click_cta_strong_any_context(driver, label)
+            except Exception:
+                pass
+            return True
+
+        if not _click_best_effort(btn):
+            log_debug("CONSENT", "angular survey-final: _click_best_effort a échoué")
+            return False
+        return _wait_change(before_sig, before_url, timeout_s=8.0)
+
+    if _handle_angular_survey_final_gate():
+        return True
+
     # 1) Chercher le plus grand overlay CMP visible
     #    IMPORTANT: on ignore les containers cachés (ex: CookieYes avec .cky-hide)
     def _has_hidden_ancestor(el) -> bool:
