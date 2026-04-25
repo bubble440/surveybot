@@ -146,19 +146,20 @@ def _find_associated_label(driver, el) -> str:
         # 0) Widgets ARIA custom: label via aria-labelledby (Forsta/Confirmit, etc.)
         aria_labelledby = (el.get_attribute("aria-labelledby") or "").strip()
         if aria_labelledby:
-            try:
-                parts = [p for p in aria_labelledby.split() if p]
-                texts = []
-                for ref_id in parts:
+            parts = [p for p in aria_labelledby.split() if p]
+            texts = []
+            for ref_id in parts:
+                try:
                     node = driver.find_element(By.ID, ref_id)
                     txt = _norm(node.text or node.get_attribute("innerText") or "")
                     if txt and txt not in texts:
                         texts.append(txt)
+                except Exception:
+                    pass
+            if texts:
                 joined = _norm(" ".join(texts))
                 if _is_valid_option_label(joined):
                     return joined
-            except Exception:
-                pass
 
         # 1) Label avec for=id
         el_id = el.get_attribute("id")
@@ -363,7 +364,7 @@ def _nearest_question_container(el):
             "]"
         )
         if containers:
-            return containers[0]
+            return containers[-1]
         return None
     except Exception:
         return None
