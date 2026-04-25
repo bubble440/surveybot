@@ -3280,16 +3280,17 @@ def _apply_by_target_id(
                         best_val = None
                         best_idx = None
 
-                        # matching strict puis partiel
+                        # 1) match exact (texte ou value) — toute la liste avant fallback partiel
                         for i, t, ov in real_opts:
-                            if (t == v_lc) or (v_lc in t) or (t in v_lc):
+                            if t == v_lc or ov.strip().lower() == v_lc:
                                 best_val = ov
                                 best_idx = i
                                 break
 
+                        # 2) match partiel uniquement si aucun exact trouvé
                         if best_val is None:
                             for i, t, ov in real_opts:
-                                if v_lc and (v_lc in t):
+                                if v_lc and (v_lc in t or t in v_lc):
                                     best_val = ov
                                     best_idx = i
                                     break
