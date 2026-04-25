@@ -6339,6 +6339,134 @@ def _extract_decipher_clickable_ranking_blocks(driver, frame_chain: list[int] | 
     ]
 
 
+def _extract_toluna_runtime_ranking_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
+    """Ranking séquentiel par clic (Toluna Runtime, display_clicking_order).
+
+    Gate DOM strict:
+    - div[id^='question_'].ranking_question.display_clicking_order
+    - options via div.answer[data-aut='Runtime_RankingItemWrapper']
+    - aucun .answer[data-aut='Runtime_AnswerRow'] (évite overlap avec l'extracteur radio/checkbox)
+    """
+    frame_chain = list(frame_chain or [])
+
+    try:
+        ranking_containers = driver.find_elements(
+            By.CSS_SELECTOR,
+            "div[id^='question_'].ranking_question.display_clicking_order",
+        )
+    except Exception:
+        return []
+
+    if not ranking_containers:
+        return []
+
+    # Guard: si des AnswerRow sont présents, l'extracteur radio/checkbox couvre déjà la page.
+    try:
+        if driver.find_elements(By.CSS_SELECTOR, ".answer[data-aut='Runtime_AnswerRow']"):
+            return []
+    except Exception:
+        pass
+
+    blocks: list[dict] = []
+
+    for container in ranking_containers:
+        try:
+            qid = (container.get_attribute("id") or "").strip()
+
+            q_nodes = container.find_elements(
+                By.CSS_SELECTOR,
+                "[data-aut='Runtime_QuestionTitleAndDescriptionWrapper'] [data-aut='Runtime-TextComponent']",
+            )
+            question = ""
+            for qn in q_nodes:
+                txt = _norm(qn.text or qn.get_attribute("innerText") or "")
+                if txt and len(txt) >= 5:
+                    question = txt
+                    break
+
+            if not question:
+                continue
+
+            option_nodes = container.find_elements(
+                By.CSS_SELECTOR,
+                "div.answer[data-aut='Runtime_RankingItemWrapper']",
+            )
+            if len(option_nodes) < 2:
+                continue
+
+            options: list[str] = []
+            option_xpath_map: dict[str, str] = {}
+
+            for node in option_nodes:
+                try:
+                    text_nodes = node.find_elements(
+                        By.CSS_SELECTOR,
+                        "[data-aut='Runtime_AnswerText'] [data-aut='Runtime-TextComponent']",
+                    )
+                    label_text = ""
+                    for tn in text_nodes:
+                        txt = _norm(tn.text or tn.get_attribute("innerText") or "")
+                        if txt:
+                            label_text = txt
+                            break
+                    if not label_text:
+                        continue
+                    nk = _norm_key(label_text)
+                    if not nk or nk in option_xpath_map:
+                        continue
+                    node_id = (node.get_attribute("id") or "").strip()
+                    xp = f"//*[@id={_xpath_literal(node_id)}]" if node_id else _best_xpath_for_element(driver, node)
+                    if not xp:
+                        continue
+                    option_xpath_map[nk] = xp
+                    options.append(label_text)
+                except Exception:
+                    continue
+
+            if len(options) < 2:
+                continue
+
+            max_select = len(options)
+            m = re.search(r"les\s+(\d+)\s+éléments?", question, re.IGNORECASE)
+            if m:
+                max_select = max(1, int(m.group(1)))
+
+            group_key = f"toluna_runtime_ranking:{_norm_key(question)}"
+            target_id = make_target_id("group", group_key, question)
+
+            register_target(
+                target_id,
+                {
+                    "kind": "group",
+                    "itype": "checkbox",
+                    "group_key": group_key,
+                    "question": question,
+                    "option_xpath_map": option_xpath_map,
+                    "frame_chain": frame_chain,
+                    "toluna_runtime_ranking": True,
+                },
+            )
+
+            blocks.append(
+                {
+                    "question": question,
+                    "itype": "checkbox",
+                    "options": options,
+                    "max_select": max_select,
+                    "target_id": target_id,
+                    "context": {
+                        "kind": "group",
+                        "group_key": group_key,
+                        "toluna_runtime_ranking": True,
+                    },
+                }
+            )
+        except Exception:
+            continue
+
+    return blocks
+
+
 def _extract_savanta_jqm_carousel_block(driver, frame_chain: list[int] | None) -> list[dict]:
     """Extrait le bloc courant d'un carousel jQuery Mobile / Slick (Savanta).
 

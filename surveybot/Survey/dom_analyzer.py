@@ -94,6 +94,7 @@ try:
         _extract_single_consent_checkbox_block,
         _extract_consent_modal_radio_block,
         _extract_runtime_answerrow_radio_blocks,
+        _extract_toluna_runtime_ranking_blocks,
         _extract_kantar_rowpicker_radio_blocks,
         _extract_kantar_rowrank_blocks,
         _extract_label_radio_list_blocks,
@@ -179,6 +180,7 @@ except ImportError:
         _extract_single_consent_checkbox_block,
         _extract_consent_modal_radio_block,
         _extract_runtime_answerrow_radio_blocks,
+        _extract_toluna_runtime_ranking_blocks,
         _extract_kantar_rowpicker_radio_blocks,
         _extract_kantar_rowrank_blocks,
         _extract_label_radio_list_blocks,
@@ -1272,6 +1274,16 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
     except Exception as e:
         if is_debug():
             log_debug("[DOM_CONTEXT_DEBUG]", f"runtime_extractor_exception={type(e).__name__}: {e}")
+
+    # --- 0h-bis-2a-0) Toluna ranking séquentiel par clic (display_clicking_order) ---
+    # Objectif: extraire ranking_question sans input natif (options = RankingItemWrapper).
+    try:
+        toluna_ranking_blocks = _extract_toluna_runtime_ranking_blocks(driver, frame_chain)
+        if toluna_ranking_blocks:
+            return toluna_ranking_blocks
+    except Exception as e:
+        if is_debug():
+            log_debug("[DOM_CONTEXT_DEBUG]", f"toluna_ranking_extractor_exception={type(e).__name__}: {e}")
 
     # --- 0h-bis-2a) Kantar rowpicker (cartes cliquables sans input radio natif visible) ---
     # Objectif: extraire les options dans `div._rowpicker[data-test='main-contain']`.

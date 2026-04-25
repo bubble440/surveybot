@@ -1133,7 +1133,6 @@ def _apply_by_target_id(
                         log_debug("[TARGET_DEBUG]", f"mx carousel scale click failed: target_id='{target_id}' value='{value}'")
                     return False
 
-                import time
                 end = time.time() + 1.2
                 while time.time() < end:
                     try:
@@ -1233,7 +1232,6 @@ def _apply_by_target_id(
             # resolved_itype == "select_rps" garde la compat si GPT le renvoie tel quel.
             # payload.get("rps_select") est le flag explicite posé par l'extracteur.
             if resolved_itype == "select_rps" or reg_itype == "select_rps" or payload.get("rps_select"):
-                import time
                 opt_map = payload.get("option_xpath_map") or {}
                 selection_xpath = (payload.get("selection_xpath") or "").strip()
 
@@ -1442,7 +1440,6 @@ def _apply_by_target_id(
                     return False
 
                 try:
-                    import time
                     from selenium.webdriver.common.keys import Keys
                     row_el = driver.find_element(By.CSS_SELECTOR, f"[id='{row_id}']")
                     handle_el = row_el.find_element(By.CSS_SELECTOR, ".cf-slider__handle[role='slider']")
@@ -2506,6 +2503,37 @@ def _apply_by_target_id(
                     if debug_target:
                         log_debug("[TARGET_DEBUG]", f"decipher_clickable_ranking no rank signal after click: value='{value}' xpath='{xp}'")
                     return False
+
+                if payload.get("toluna_runtime_ranking"):
+                    log_info("[TARGET]", f"toluna_runtime_ranking: clicking value='{value}'")
+                    clicked = _click_candidate(el, "toluna_runtime_ranking")
+                    if not clicked:
+                        log_info("[TARGET]", f"toluna_runtime_ranking: click failed value='{value}'")
+                        return False
+                    # Attente du signal DOM post-clic : div[data-aut='Runtime_Rank'] avec texte numérique.
+                    _rank_confirmed = False
+                    _rank_deadline = time.time() + 1.5
+                    while time.time() < _rank_deadline:
+                        try:
+                            _rank_confirmed = driver.execute_script(
+                                """
+                                const el = arguments[0];
+                                if (!el) return false;
+                                const rank = el.querySelector("[data-aut='Runtime_Rank']");
+                                if (!rank) return false;
+                                return /\d/.test(rank.textContent || '');
+                                """,
+                                el,
+                            )
+                        except Exception:
+                            _rank_confirmed = False
+                        if _rank_confirmed:
+                            break
+                        time.sleep(0.1)
+                    if not _rank_confirmed:
+                        log_info("[TARGET]", f"toluna_runtime_ranking: rank signal timeout value='{value}'")
+                        return False
+                    return True
 
                 def _is_decipher_mx_collapsible_checkbox_selected(cell_node) -> bool:
                     """Validation stricte de sélection pour Decipher MX Collapsible checkbox.
@@ -6056,7 +6084,6 @@ def execute_actions_plan(
             # Wait DOM stable after dropdown (budget borné)
             if ok and before_sig and (itype or "").strip().lower() == "dropdown":
                 try:
-                    import time
                     t0 = time.time()
                     last = None
                     stable_hits = 0
@@ -6113,7 +6140,6 @@ def execute_actions_plan(
                         if same_question_block:
                             log_debug("[DISPATCH]", f"skip rescan idx={idx} same qid={qid!r} ({itype_lower})")
                         else:
-                            import time
                             import Survey.dom_analyzer as dom_analyzer
                             time.sleep(PAUSE_INTER_DISPATCH)  # laisse le framework appliquer l'état
                             dom_analyzer.analyze_dom(driver)  # clear+rebuild registry (target_id stable-ish)
