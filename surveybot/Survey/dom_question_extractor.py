@@ -151,7 +151,7 @@ def _find_associated_label(driver, el) -> str:
             for ref_id in parts:
                 try:
                     node = driver.find_element(By.ID, ref_id)
-                    txt = _norm(node.text or node.get_attribute("innerText") or "")
+                    txt = _norm(node.text or node.get_attribute("innerText") or node.get_attribute("textContent") or "")
                     if txt and txt not in texts:
                         texts.append(txt)
                 except Exception:
