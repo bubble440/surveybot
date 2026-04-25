@@ -1422,10 +1422,6 @@ LAUNCH_DELAY_SEC=2            # delai anti-burst entre lancements
 Étape 3 — Rédaction du patch (PATCH_LLM)
   ├── "claude" → claude --print --file patch_request.md
   └── "codex"  → codex --approval-mode full-auto "<contenu>"
-
-Étape 4 — Validation
-  └── replay_snapshot.py → dom_analyzer.out.json
-  └── diff produit vs expected → PASS ✅ / FAIL ❌
 ```
 
 **Déclenchement manuel** (attach mode, depuis PowerShell) :
