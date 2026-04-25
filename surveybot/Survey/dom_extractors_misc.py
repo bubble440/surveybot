@@ -7569,11 +7569,14 @@ def _extract_confirmit_cf_carousel_blocks(driver, frame_chain: list[int] | None)
     if not carousels:
         return []
 
-    # Gate 2: au moins un item contient des div.cf-answer-button
+    # Gate 2: au moins un item contient des boutons de réponse
+    # Deux variantes connues : div.cf-answer-button (ancienne) et div.cf-button-answer (nouvelle)
     gate_ok = False
     for c in carousels:
         try:
-            if c.find_elements(By.CSS_SELECTOR, "div.cf-carousel__content-item div.cf-answer-button"):
+            has_old = bool(c.find_elements(By.CSS_SELECTOR, "div.cf-carousel__content-item div.cf-answer-button"))
+            has_new = bool(c.find_elements(By.CSS_SELECTOR, "div.cf-carousel__content-item div.cf-button-answer"))
+            if has_old or has_new:
                 gate_ok = True
                 break
         except Exception:
@@ -7635,11 +7638,19 @@ def _extract_confirmit_cf_carousel_blocks(driver, frame_chain: list[int] | None)
                 if not question:
                     continue
 
-                # Boutons de réponse dans cet item
+                # Boutons de réponse dans cet item — deux variantes DOM :
+                # ancienne : div.cf-answer-button > div.cf-answer-button__text
+                # nouvelle : div.cf-button-answer > div.cf-button.cf-button-answer__button[role="radio"]
+                #            > div.cf-button-answer__text  (cliquable : id = btn_id + "_control")
                 try:
                     btn_divs = item.find_elements(By.CSS_SELECTOR, "div.cf-answer-button")
+                    use_new_variant = False
+                    if not btn_divs:
+                        btn_divs = item.find_elements(By.CSS_SELECTOR, "div.cf-button-answer")
+                        use_new_variant = True
                 except Exception:
                     btn_divs = []
+                    use_new_variant = False
                 if not btn_divs:
                     continue
 
@@ -7650,13 +7661,24 @@ def _extract_confirmit_cf_carousel_blocks(driver, frame_chain: list[int] | None)
                 for btn in btn_divs[:20]:  # budget anti-explosion
                     try:
                         btn_id = (btn.get_attribute("id") or "").strip()
-                        # Texte depuis div.cf-answer-button__text (enfant)
                         opt_text = ""
-                        try:
-                            txt_el = btn.find_element(By.CSS_SELECTOR, "div.cf-answer-button__text")
-                            opt_text = _norm(txt_el.get_attribute("textContent") or "")
-                        except Exception:
-                            pass
+                        if use_new_variant:
+                            # Texte depuis div.cf-button-answer__text
+                            try:
+                                txt_el = btn.find_element(By.CSS_SELECTOR, "div.cf-button-answer__text")
+                                opt_text = _norm(txt_el.get_attribute("textContent") or "")
+                            except Exception:
+                                pass
+                            # Élément cliquable : div avec role="radio", id = btn_id + "_control"
+                            click_id = f"{btn_id}_control" if btn_id else ""
+                        else:
+                            # Texte depuis div.cf-answer-button__text (variante ancienne)
+                            try:
+                                txt_el = btn.find_element(By.CSS_SELECTOR, "div.cf-answer-button__text")
+                                opt_text = _norm(txt_el.get_attribute("textContent") or "")
+                            except Exception:
+                                pass
+                            click_id = btn_id
                         if not opt_text:
                             opt_text = _norm(btn.get_attribute("textContent") or "")
                         if not opt_text:
@@ -7668,8 +7690,8 @@ def _extract_confirmit_cf_carousel_blocks(driver, frame_chain: list[int] | None)
                         nk = _norm_key(opt_text)
                         if nk not in option_xpath_map:
                             options.append(opt_text)
-                            if btn_id:
-                                option_xpath_map[nk] = f"//*[@id={_xpath_literal(btn_id)}]"
+                            if click_id:
+                                option_xpath_map[nk] = f"//*[@id={_xpath_literal(click_id)}]"
                             else:
                                 xp = _best_xpath_for_element(btn)
                                 if xp:
@@ -7728,6 +7750,8 @@ def _extract_confirmit_cf_carousel_blocks(driver, frame_chain: list[int] | None)
                 )
             except Exception:
                 continue
+
+    return blocks
 
 
 # ================================================================================
