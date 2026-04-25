@@ -8130,3 +8130,127 @@ def _extract_gfk_accordion_radio_rows(driver, frame_chain: list[int] | None) -> 
         log_debug("[DOM_GFK_ACCORDION]", f"rows_extracted={len(blocks)}")
 
     return blocks
+
+
+# ================================================================================
+# QUALTRICS - CHAMP TEXTE LIBRE (layout SL / type TE)
+# ================================================================================
+
+def _extract_qualtrics_sl_text_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
+    """Extraction ciblée des champs texte libre Qualtrics layout SL (type TE).
+
+    Gate DOM strict (additif) :
+    - div.QuestionOuter contenant div.Inner.SL
+    - input[type="TEXT"][name^="QR~"] unique dans le conteneur
+
+    Ne couvre PAS les radios, checkboxes, dropdowns ou matrix —
+    ceux-ci restent gérés par leurs extracteurs respectifs.
+    """
+    frame_chain = list(frame_chain or [])
+    blocks: list[dict] = []
+
+    try:
+        containers = driver.find_elements(By.CSS_SELECTOR, "div.QuestionOuter")
+    except Exception:
+        return blocks
+
+    for idx, container in enumerate(containers):
+        # Gate strict : div.Inner.SL doit être présent
+        try:
+            sl_inner = container.find_elements(By.CSS_SELECTOR, "div.Inner.SL")
+        except Exception:
+            sl_inner = []
+        if not sl_inner:
+            continue
+
+        # Un seul input[type="TEXT"][name^="QR~"] attendu
+        try:
+            inputs = container.find_elements(
+                By.CSS_SELECTOR,
+                "input[type='TEXT'][name^='QR~']",
+            )
+        except Exception:
+            inputs = []
+        if len(inputs) != 1:
+            continue
+
+        inp = inputs[0]
+        inp_id = (inp.get_attribute("id") or "").strip()
+        inp_name = (inp.get_attribute("name") or "").strip()
+        if not inp_id and not inp_name:
+            continue
+
+        # Texte de la question : legend > label.QuestionText ou label.QuestionText
+        question = ""
+        for q_sel in (
+            "fieldset legend label.QuestionText",
+            "legend label.QuestionText",
+            "label.QuestionText",
+            "div.QuestionText",
+        ):
+            try:
+                q_nodes = container.find_elements(By.CSS_SELECTOR, q_sel)
+            except Exception:
+                q_nodes = []
+            for qn in q_nodes:
+                txt = _norm(qn.text or qn.get_attribute("innerText") or "")
+                if txt:
+                    question = txt
+                    break
+            if question:
+                break
+
+        if not question:
+            continue
+
+        single_key = f"qualtrics_sl_text:{inp_id}:{inp_name}"
+        target_id = make_target_id("single", single_key, question)
+        xpath = _best_xpath_for_element(driver, inp)
+
+        alt_xpaths: list[str] = []
+        try:
+            if inp_name:
+                alt_xpaths.append(f"//input[@name={_xpath_literal(inp_name)}]")
+            if inp_id:
+                alt_xpaths.append(f"//*[@id='{inp_id}']")
+        except Exception:
+            pass
+        alt_xpaths = [x for x in dict.fromkeys(alt_xpaths) if x and x != xpath][:4]
+
+        register_target(
+            target_id,
+            {
+                "kind": "single",
+                "itype": "text",
+                "question": question,
+                "xpath": xpath,
+                "alt_xpaths": alt_xpaths,
+                "tag": "input",
+                "name": inp_name,
+                "id": inp_id,
+                "frame_chain": frame_chain,
+                "qualtrics_sl_text": True,
+            },
+        )
+
+        blocks.append(
+            {
+                "question": question,
+                "itype": "text",
+                "options": [],
+                "max_select": 1,
+                "min_select": 1,
+                "target_id": target_id,
+                "context": {
+                    "kind": "single",
+                    "tag": "input",
+                    "name": inp_name,
+                    "id": inp_id,
+                    "qualtrics_sl_text": True,
+                    "container_index": idx,
+                },
+            }
+        )
+
+    log_debug("[DOM_QUALTRICS_SL_TEXT]", f"blocks_extracted={len(blocks)}")
+    return blocks

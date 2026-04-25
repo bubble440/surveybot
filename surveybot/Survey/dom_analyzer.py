@@ -101,6 +101,7 @@ try:
         _extract_qualtrics_choice_structure_radio_blocks,
         _extract_qualtrics_choice_structure_checkbox_blocks,
         _extract_qualtrics_dl_select_blocks,
+        _extract_qualtrics_sl_text_blocks,
         _extract_qualtrics_matrix_dropdown_row_blocks,
         _extract_decipher_clickable_ranking_blocks,
         _extract_savanta_jqm_carousel_block,
@@ -188,6 +189,7 @@ except ImportError:
         _extract_qualtrics_choice_structure_radio_blocks,
         _extract_qualtrics_choice_structure_checkbox_blocks,
         _extract_qualtrics_dl_select_blocks,
+        _extract_qualtrics_sl_text_blocks,
         _extract_qualtrics_matrix_dropdown_row_blocks,
         _extract_decipher_clickable_ranking_blocks,
         _extract_savanta_jqm_carousel_block,
@@ -1344,6 +1346,15 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         qualtrics_dl_blocks = _extract_qualtrics_dl_select_blocks(driver, frame_chain)
         if qualtrics_dl_blocks:
             question_blocks.extend(qualtrics_dl_blocks)
+            _qualtrics_page = True
+    except Exception:
+        pass
+
+    # --- 0h-bis-3d) Qualtrics texte libre (input[type=TEXT] dans QuestionOuter.SL / type TE) ---
+    try:
+        qualtrics_sl_text_blocks = _extract_qualtrics_sl_text_blocks(driver, frame_chain)
+        if qualtrics_sl_text_blocks:
+            question_blocks.extend(qualtrics_sl_text_blocks)
             _qualtrics_page = True
     except Exception:
         pass
