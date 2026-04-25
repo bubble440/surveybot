@@ -1324,8 +1324,18 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
     try:
         qualtrics_choice_blocks = _extract_qualtrics_choice_structure_radio_blocks(driver, frame_chain)
         if qualtrics_choice_blocks:
-            question_blocks.extend(qualtrics_choice_blocks)
-            _qualtrics_page = True
+            if table_matrix_row_names:
+                _filtered_qc = []
+                for _qb in qualtrics_choice_blocks:
+                    _qctx = _qb.get("context") if isinstance(_qb.get("context"), dict) else {}
+                    _qgk = _norm_lc(_qctx.get("group_key") or "")
+                    if _qgk.startswith("radio:name:") and _qgk[len("radio:name:"):] in table_matrix_row_names:
+                        continue
+                    _filtered_qc.append(_qb)
+                qualtrics_choice_blocks = _filtered_qc
+            if qualtrics_choice_blocks:
+                question_blocks.extend(qualtrics_choice_blocks)
+                _qualtrics_page = True
     except Exception:
         pass
 
