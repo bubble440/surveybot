@@ -4541,6 +4541,154 @@ def _extract_qualtrics_choice_structure_radio_blocks(driver, frame_chain: list[i
 
             continue
 
+        # Layout Qualtrics Likert/SingleAnswer: grille Yes/No rendue comme table.ChoiceStructure
+        # où chaque tr.ChoiceRow porte un name distinct (ex: QR~QID3615~27).
+        # Gate DOM strict: div.Inner avec classe Likert ou SingleAnswer + tr.ChoiceRow multi-name.
+        try:
+            likert_nodes = container.find_elements(
+                By.CSS_SELECTOR, "div.Inner.Likert, div.Inner.SingleAnswer"
+            )
+        except Exception:
+            likert_nodes = []
+
+        if likert_nodes:
+            try:
+                choice_rows = container.find_elements(
+                    By.CSS_SELECTOR, "table.ChoiceStructure > tbody > tr.ChoiceRow"
+                )
+            except Exception:
+                choice_rows = []
+
+            # Confirm multi-name: at least 2 rows with distinct names
+            row_names = []
+            for _cr in choice_rows:
+                try:
+                    _rr = _cr.find_elements(By.CSS_SELECTOR, "input[type='radio'][name^='QR~']")
+                    if _rr:
+                        _n = (_rr[0].get_attribute("name") or "").strip()
+                        if _n:
+                            row_names.append(_n)
+                except Exception:
+                    pass
+
+            if len(set(row_names)) >= 2:
+                # Read column headers (Yes / No) from thead
+                col_headers: list[str] = []
+                try:
+                    thead_ths = container.find_elements(
+                        By.CSS_SELECTOR,
+                        "table.ChoiceStructure thead tr.Answers th.Selection span.LabelWrapper span",
+                    )
+                except Exception:
+                    thead_ths = []
+                for th_node in thead_ths:
+                    hdr = _norm(th_node.text or th_node.get_attribute("innerText") or "")
+                    if hdr:
+                        col_headers.append(hdr)
+
+                for row_idx, row in enumerate(choice_rows):
+                    try:
+                        row_radios = row.find_elements(
+                            By.CSS_SELECTOR, "input[type='radio'][name^='QR~']"
+                        )
+                    except Exception:
+                        row_radios = []
+                    if len(row_radios) < 2:
+                        continue
+
+                    try:
+                        row_group_name = (row_radios[0].get_attribute("name") or "").strip()
+                    except Exception:
+                        row_group_name = ""
+                    if not row_group_name:
+                        continue
+
+                    # Statement text from th.c1 label span
+                    statement = ""
+                    for stmt_sel in (
+                        "th.c1 span.LabelWrapper div.table-cell label span",
+                        "th.c1 label span",
+                        "th.c1 span",
+                    ):
+                        try:
+                            stmt_nodes = row.find_elements(By.CSS_SELECTOR, stmt_sel)
+                        except Exception:
+                            stmt_nodes = []
+                        for sn in stmt_nodes:
+                            cand = _norm(sn.text or sn.get_attribute("innerText") or "")
+                            if cand:
+                                statement = cand
+                                break
+                        if statement:
+                            break
+                    if not statement:
+                        continue
+
+                    row_question = f"{question} {statement}" if question else statement
+
+                    # Map col_headers to radios by column position
+                    effective_headers = col_headers if col_headers else [
+                        _norm(r.get_attribute("value") or "") for r in row_radios
+                    ]
+                    # Build option_xpath_map aligned by position
+                    row_options: list[str] = []
+                    row_xpath_map: dict[str, str] = {}
+                    for col_i, col_hdr in enumerate(effective_headers):
+                        if col_i >= len(row_radios):
+                            break
+                        nk = _norm_key(col_hdr)
+                        if not nk or nk in row_xpath_map:
+                            continue
+                        opt_radio = row_radios[col_i]
+                        try:
+                            opt_id = (opt_radio.get_attribute("id") or "").strip()
+                        except Exception:
+                            opt_id = ""
+                        xp = (
+                            f"//*[@id={_xpath_literal(opt_id)}]"
+                            if opt_id
+                            else _best_xpath_for_element(driver, opt_radio)
+                        )
+                        if not xp:
+                            continue
+                        row_options.append(col_hdr)
+                        row_xpath_map[nk] = xp
+
+                    if len(row_options) < 2:
+                        continue
+
+                    row_group_key = f"radio:name:{row_group_name.lower()}"
+                    row_target_id = make_target_id("group", row_group_key, row_question)
+                    register_target(
+                        row_target_id,
+                        {
+                            "kind": "group",
+                            "itype": "radio",
+                            "group_key": row_group_key,
+                            "question": row_question,
+                            "option_xpath_map": row_xpath_map,
+                            "frame_chain": frame_chain,
+                            "qualtrics_choice_structure_radio": True,
+                            "qualtrics_likert_grid": True,
+                        },
+                    )
+                    blocks.append(
+                        {
+                            "question": row_question,
+                            "itype": "radio",
+                            "options": row_options,
+                            "max_select": _compute_max_select("radio", row_options),
+                            "target_id": row_target_id,
+                            "context": {
+                                "kind": "group",
+                                "group_key": row_group_key,
+                            },
+                            "min_select": 1,
+                        }
+                    )
+
+                continue
+
         group_name = ""
         options: list[str] = []
         option_xpath_map: dict[str, str] = {}
