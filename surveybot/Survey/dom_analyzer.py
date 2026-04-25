@@ -100,6 +100,7 @@ try:
         _extract_label_radio_list_blocks,
         _extract_qualtrics_choice_structure_radio_blocks,
         _extract_qualtrics_choice_structure_checkbox_blocks,
+        _extract_qualtrics_dl_select_blocks,
         _extract_qualtrics_matrix_dropdown_row_blocks,
         _extract_decipher_clickable_ranking_blocks,
         _extract_savanta_jqm_carousel_block,
@@ -186,6 +187,7 @@ except ImportError:
         _extract_label_radio_list_blocks,
         _extract_qualtrics_choice_structure_radio_blocks,
         _extract_qualtrics_choice_structure_checkbox_blocks,
+        _extract_qualtrics_dl_select_blocks,
         _extract_qualtrics_matrix_dropdown_row_blocks,
         _extract_decipher_clickable_ranking_blocks,
         _extract_savanta_jqm_carousel_block,
@@ -1314,10 +1316,14 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
 
     # --- 0h-bis-3) Qualtrics ChoiceStructure radios (QuestionOuter + QR~) ---
     # Objectif: extraire les radios Qualtrics non couvertes par le générique.
+    # On accumule (pas de return immédiat) pour pouvoir capturer d'autres types de
+    # questions Qualtrics présentes sur la même page (ex: dropdown DL).
+    _qualtrics_page = False
     try:
         qualtrics_choice_blocks = _extract_qualtrics_choice_structure_radio_blocks(driver, frame_chain)
         if qualtrics_choice_blocks:
-            return qualtrics_choice_blocks
+            question_blocks.extend(qualtrics_choice_blocks)
+            _qualtrics_page = True
     except Exception:
         pass
 
@@ -1326,9 +1332,24 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
     try:
         qualtrics_choice_checkbox_blocks = _extract_qualtrics_choice_structure_checkbox_blocks(driver, frame_chain)
         if qualtrics_choice_checkbox_blocks:
-            return qualtrics_choice_checkbox_blocks
+            question_blocks.extend(qualtrics_choice_checkbox_blocks)
+            _qualtrics_page = True
     except Exception:
         pass
+
+    # --- 0h-bis-3c) Qualtrics DL dropdown (1 <select> unique par QuestionOuter.DL) ---
+    # Objectif: extraire les questions dropdown Qualtrics layout DL non couvertes
+    # par le générique singles (qui n'est atteint que si aucun extracteur radio n'a rien trouvé).
+    try:
+        qualtrics_dl_blocks = _extract_qualtrics_dl_select_blocks(driver, frame_chain)
+        if qualtrics_dl_blocks:
+            question_blocks.extend(qualtrics_dl_blocks)
+            _qualtrics_page = True
+    except Exception:
+        pass
+
+    if _qualtrics_page and question_blocks:
+        return question_blocks
 
     # --- 0h-ter-0) QuestMindshare chatbot (div[data-testid^="option-"] sans input natif) ---
     # Gate strict : div[data-testid^="option-"][tabindex="0"] présent.

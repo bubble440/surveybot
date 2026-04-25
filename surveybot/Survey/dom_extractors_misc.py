@@ -4643,6 +4643,152 @@ def _extract_qualtrics_choice_structure_radio_blocks(driver, frame_chain: list[i
     return blocks
 
 
+def _extract_qualtrics_dl_select_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
+    """Extraction ciblée des dropdowns Qualtrics layout DL (1 <select> unique par question).
+
+    Gate DOM strict (additif) :
+    - div.QuestionOuter contenant div.Inner.DL
+    - select.ChoiceStructure[name^='QR~'] unique dans le conteneur
+    - label.QuestionText ou legend label.QuestionText comme texte de question
+
+    Ne couvre PAS les matrix dropdowns (plusieurs selects par conteneur) —
+    ceux-ci restent gérés par _extract_qualtrics_matrix_dropdown_row_blocks.
+    """
+    frame_chain = list(frame_chain or [])
+    blocks: list[dict] = []
+
+    try:
+        containers = driver.find_elements(By.CSS_SELECTOR, "div.QuestionOuter")
+    except Exception:
+        return blocks
+
+    for idx, container in enumerate(containers):
+        # Gate strict : div.Inner.DL doit être présent dans ce conteneur
+        try:
+            dl_inner = container.find_elements(By.CSS_SELECTOR, "div.Inner.DL")
+        except Exception:
+            dl_inner = []
+        if not dl_inner:
+            continue
+
+        # Un seul <select> Qualtrics attendu (sinon c'est une matrix → autre extracteur)
+        try:
+            selects = container.find_elements(
+                By.CSS_SELECTOR,
+                "select.ChoiceStructure[name^='QR~']",
+            )
+        except Exception:
+            selects = []
+        if len(selects) != 1:
+            continue
+
+        sel = selects[0]
+        sel_id = (sel.get_attribute("id") or "").strip()
+        sel_name = (sel.get_attribute("name") or "").strip()
+        if not sel_id and not sel_name:
+            continue
+
+        # Texte de la question : legend > label.QuestionText ou label.QuestionText
+        question = ""
+        for q_sel in (
+            "fieldset legend label.QuestionText",
+            "legend label.QuestionText",
+            "label.QuestionText",
+            "div.QuestionText",
+        ):
+            try:
+                q_nodes = container.find_elements(By.CSS_SELECTOR, q_sel)
+            except Exception:
+                q_nodes = []
+            for qn in q_nodes:
+                txt = _norm(qn.text or qn.get_attribute("innerText") or "")
+                if txt:
+                    question = txt
+                    break
+            if question:
+                break
+
+        if not question:
+            continue
+
+        # Options (on ignore la première option vierge aria-label="Vierge")
+        options: list[str] = []
+        try:
+            option_nodes = sel.find_elements(By.TAG_NAME, "option")
+        except Exception:
+            option_nodes = []
+
+        for opt in option_nodes:
+            try:
+                if opt.get_attribute("disabled"):
+                    continue
+                aria = (opt.get_attribute("aria-label") or "").strip().lower()
+                if aria in ("vierge", "blank", ""):
+                    val = (opt.get_attribute("value") or "").strip()
+                    if not val or "null" in val.lower():
+                        continue
+                txt = _norm(opt.text or opt.get_attribute("innerText") or "")
+                if txt:
+                    options.append(txt)
+            except Exception:
+                continue
+
+        options = list(dict.fromkeys(options))
+        if not options:
+            continue
+
+        single_key = f"qualtrics_dl_select:{sel_id}:{sel_name}"
+        target_id = make_target_id("single", single_key, question)
+        xpath = _best_xpath_for_element(driver, sel)
+
+        alt_xpaths: list[str] = []
+        try:
+            if sel_name:
+                alt_xpaths.append(f"//select[@name={_xpath_literal(sel_name)}]")
+            if sel_id:
+                alt_xpaths.append(f"//*[@id='{sel_id}']")
+        except Exception:
+            pass
+        alt_xpaths = [x for x in dict.fromkeys(alt_xpaths) if x and x != xpath][:4]
+
+        register_target(
+            target_id,
+            {
+                "kind": "single",
+                "itype": "select",
+                "question": question,
+                "xpath": xpath,
+                "alt_xpaths": alt_xpaths,
+                "tag": "select",
+                "name": sel_name,
+                "id": sel_id,
+                "frame_chain": frame_chain,
+                "qualtrics_dl_select": True,
+            },
+        )
+
+        blocks.append(
+            {
+                "question": question,
+                "itype": "select",
+                "options": options,
+                "max_select": 1,
+                "min_select": 1,
+                "target_id": target_id,
+                "context": {
+                    "kind": "single",
+                    "tag": "select",
+                    "name": sel_name,
+                    "id": sel_id,
+                    "qualtrics_dl_select": True,
+                    "container_index": idx,
+                },
+            }
+        )
+
+    return blocks
+
+
 def _extract_qualtrics_choice_structure_checkbox_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
     """Extraction ciblée des checkboxes Qualtrics `ChoiceStructure` (layout MAVR/MAHR).
 
