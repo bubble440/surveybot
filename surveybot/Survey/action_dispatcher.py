@@ -5931,6 +5931,29 @@ def _get_block_strategy_memory(driver) -> dict:
         cache["radio"] = {}
     return cache
 
+def _same_matrix_table(tid1: str, tid2: str) -> bool:
+    """True if both target_ids are rows of the same table_matrix_radio (same parent QID)."""
+    try:
+        p1 = get_target(tid1) or {}
+        p2 = get_target(tid2) or {}
+        if not (p1.get("table_matrix_radio") and p2.get("table_matrix_radio")):
+            return False
+        prefix = "table_matrix_radio:name:"
+        gk1 = p1.get("group_key") or ""
+        gk2 = p2.get("group_key") or ""
+        if not (gk1.startswith(prefix) and gk2.startswith(prefix)):
+            return False
+        name1 = gk1[len(prefix):]
+        name2 = gk2[len(prefix):]
+        parts1 = name1.rsplit("~", 1)
+        parts2 = name2.rsplit("~", 1)
+        if len(parts1) < 2 or len(parts2) < 2:
+            return False
+        return parts1[0].lower() == parts2[0].lower()
+    except Exception:
+        return False
+
+
 def execute_actions_plan(
     driver,
     actions: list[dict],
@@ -6147,8 +6170,13 @@ def execute_actions_plan(
                             and bool(qid)
                             and next_qid == qid
                         )
+                        _skip_reason = f"same qid={qid!r}" if same_question_block else ""
+                        if not same_question_block and itype_lower == "radio" and next_itype == "radio" and tid and next_tid:
+                            if _same_matrix_table(tid, next_tid):
+                                same_question_block = True
+                                _skip_reason = f"same matrix table tid={tid!r}"
                         if same_question_block:
-                            log_debug("[DISPATCH]", f"skip rescan idx={idx} same qid={qid!r} ({itype_lower})")
+                            log_debug("[DISPATCH]", f"skip rescan idx={idx} {_skip_reason} ({itype_lower})")
                         else:
                             import Survey.dom_analyzer as dom_analyzer
                             time.sleep(PAUSE_INTER_DISPATCH)  # laisse le framework appliquer l'état
