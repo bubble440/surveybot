@@ -580,6 +580,16 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
         "Un persona Finance/Conseil n'empêche PAS d'appliquer cette règle :"
         " la disqualification est immédiate si tu choisis un secteur de la liste.\n"
     )
+
+    lines.append(
+    "RÈGLE SÉLECTION MINIMALE :\n"
+    "Si le texte de la question indique explicitement un nombre minimum ou exact de réponses attendues "
+    "(signaux : 'choisissez X', 'sélectionnez X', 'les X éléments', 'choose X', 'select X', 'pick X', "
+    "'au moins X', 'at least X', 'exactly X', 'X options', 'X réponses'), "
+    "tu DOIS sélectionner AU MINIMUM ce nombre de valeurs, séparées par |.\n"
+    "Ne jamais renvoyer moins de valeurs que le nombre indiqué dans la question.\n"
+    )
+    
     lines.append("\n--- QUESTIONS ---")
 
     for i, block in enumerate(question_blocks or [], start=1):
