@@ -2511,19 +2511,29 @@ def _apply_by_target_id(
                         log_info("[TARGET]", f"toluna_runtime_ranking: click failed value='{value}'")
                         return False
                     # Attente du signal DOM post-clic : div[data-aut='Runtime_Rank'] avec texte numérique.
+                    # IMPORTANT : après le clic, Toluna re-render le node React → `el` devient stale.
+                    # On ne passe plus `el` au script JS : on requête le DOM vivant en cherchant le
+                    # wrapper dont le texte contient `value` ET qui porte un Runtime_Rank numérique.
                     _rank_confirmed = False
                     _rank_deadline = time.time() + 1.5
+                    _value_js = value  # capture locale (pas de fermeture sur `value` qui peut muter)
                     while time.time() < _rank_deadline:
                         try:
                             _rank_confirmed = driver.execute_script(
                                 """
-                                const el = arguments[0];
-                                if (!el) return false;
-                                const rank = el.querySelector("[data-aut='Runtime_Rank']");
-                                if (!rank) return false;
-                                return /\d/.test(rank.textContent || '');
+                                const needle = (arguments[0] || '').trim().toLowerCase();
+                                const wrappers = document.querySelectorAll(
+                                    "div.answer[data-aut='Runtime_RankingItemWrapper']"
+                                );
+                                for (const w of wrappers) {
+                                    const txt = (w.textContent || '').trim().toLowerCase();
+                                    if (!txt.includes(needle)) continue;
+                                    const rank = w.querySelector("[data-aut='Runtime_Rank']");
+                                    if (rank && /\d/.test(rank.textContent || '')) return true;
+                                }
+                                return false;
                                 """,
-                                el,
+                                _value_js,
                             )
                         except Exception:
                             _rank_confirmed = False
