@@ -7442,15 +7442,17 @@ def _extract_confirmit_cf_bipolar_button_grid_blocks(driver, frame_chain: list[i
                             },
                         }
                     )
-                    log_debug(
-                        "[DOM_CONFIRMIT_CF_BIPOLAR]",
-                        f"row={row_id!r} question={current_title!r} options={options} poles={poles}",
-                    )
                 except Exception:
                     continue
         except Exception:
             continue
 
+    if blocks:
+        distinct_titles = list(dict.fromkeys(b["question"] for b in blocks))
+        log_debug(
+            "[DOM_CONFIRMIT_CF_BIPOLAR]",
+            f"{len(blocks)} blocs extraits, questions={distinct_titles}",
+        )
     return blocks
 
 
