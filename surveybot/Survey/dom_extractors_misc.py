@@ -7159,6 +7159,19 @@ def _extract_confirmit_cf_desktop_grid_blocks(driver, frame_chain: list[int] | N
             if len(scale_labels) < 2:
                 continue
 
+            # Titre global de la grille: remonter au div.cf-question ancêtre
+            grid_title = ""
+            try:
+                q_container = table.find_element(
+                    By.XPATH, "ancestor::div[contains(@class,'cf-question')]"
+                )
+                q_text_el = q_container.find_element(
+                    By.CSS_SELECTOR, "div.cf-question__text"
+                )
+                grid_title = _norm(q_text_el.get_attribute("textContent") or "")
+            except Exception:
+                pass
+
             # Lignes: tr[role='radiogroup'] dans tbody
             try:
                 rows = table.find_elements(By.CSS_SELECTOR, "tbody tr[role='radiogroup']")
@@ -7174,20 +7187,21 @@ def _extract_confirmit_cf_desktop_grid_blocks(driver, frame_chain: list[int] | N
                         continue
 
                     # Question depuis aria-labelledby du tr
-                    question = ""
+                    row_label = ""
                     labelledby = (row.get_attribute("aria-labelledby") or "").strip()
                     if labelledby:
                         for ref_id in labelledby.split():
                             try:
                                 node = driver.find_element(By.ID, ref_id)
-                                txt = _norm(node.text or node.get_attribute("innerText") or "")
+                                txt = _norm(node.get_attribute("textContent") or node.text or "")
                                 if txt:
-                                    question = txt
+                                    row_label = txt
                                     break
                             except Exception:
                                 continue
-                    if not question:
+                    if not row_label:
                         continue
+                    question = f"{grid_title} - {row_label}" if grid_title else row_label
 
                     # Radios dans la ligne
                     try:
@@ -7256,6 +7270,191 @@ def _extract_confirmit_cf_desktop_grid_blocks(driver, frame_chain: list[int] | N
 
 
 # ================================================================================
+# FORSTA/CONFIRMIT - BIPOLAR BUTTON RATING SCALE (cf-question--answer-buttons-grid)
+# ================================================================================
+
+def _extract_confirmit_cf_bipolar_button_grid_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
+    """Forsta/Confirmit CF bipolar button rating scale: cf-question--answer-buttons-grid.
+
+    Gate DOM (distinct from classic matrix):
+    - table.cf-table-layout avec tbody div.cf-button-answer__button[role='radio']
+    - pas de div.cf-radio (variante bipolaire, sans thead de colonnes partagées)
+
+    Par div.cf-question--answer-buttons-grid (en ordre document) :
+    - question : cf-question__text, avec carry-forward si vide (blocs liés visuellement)
+    - par tr[role='radiogroup'] dans le contenu desktop :
+      - pôle gauche : premier ID aria-labelledby → cf-desktop-grid__answer-text
+      - labels numériques : innerText de div.cf-button-answer__text (exclut spans display:none)
+      - pôle droit : deuxième ID aria-labelledby → cf-desktop-grid__right-text
+      - options = [pôle_gauche] + [labels numériques] + [pôle_droit]
+    """
+    frame_chain = list(frame_chain or [])
+
+    try:
+        tables = driver.find_elements(By.CSS_SELECTOR, "table.cf-table-layout")
+    except Exception:
+        return []
+    if not tables:
+        return []
+
+    # Gate : variante bipolaire détectée par cf-button-answer__button (pas cf-radio)
+    gate_ok = False
+    for t in tables:
+        try:
+            if t.find_elements(By.CSS_SELECTOR, "tbody div.cf-button-answer__button[role='radio']"):
+                gate_ok = True
+                break
+        except Exception:
+            continue
+    if not gate_ok:
+        return []
+
+    blocks: list[dict] = []
+    last_title = ""
+
+    try:
+        cf_questions = driver.find_elements(
+            By.CSS_SELECTOR, "div.cf-question--answer-buttons-grid"
+        )
+    except Exception:
+        return []
+
+    for q_div in cf_questions[:20]:  # budget anti-explosion
+        try:
+            # Question avec carry-forward du dernier titre non-vide
+            try:
+                q_text_el = q_div.find_element(By.CSS_SELECTOR, "div.cf-question__text")
+                title = _norm(q_text_el.get_attribute("textContent") or "")
+            except Exception:
+                title = ""
+            if title:
+                last_title = title
+            current_title = last_title
+
+            # Lignes desktop uniquement (le mobile est exclu)
+            try:
+                rows = q_div.find_elements(
+                    By.CSS_SELECTOR,
+                    "div.cf-question__content--desktop tr[role='radiogroup']",
+                )
+            except Exception:
+                rows = []
+
+            for row in rows[:5]:  # typiquement 1 ligne par cf-question
+                try:
+                    row_id = (row.get_attribute("id") or "").strip()
+                    if not row_id:
+                        continue
+
+                    labelledby = (row.get_attribute("aria-labelledby") or "").strip()
+                    label_ids = labelledby.split() if labelledby else []
+
+                    # Pôle gauche (premier ID aria-labelledby)
+                    left_pole = ""
+                    if label_ids:
+                        try:
+                            el = driver.find_element(By.ID, label_ids[0])
+                            left_pole = _norm(el.get_attribute("textContent") or el.text or "")
+                        except Exception:
+                            pass
+
+                    # Pôle droit (deuxième ID aria-labelledby)
+                    right_pole = ""
+                    if len(label_ids) >= 2:
+                        try:
+                            el = driver.find_element(By.ID, label_ids[1])
+                            right_pole = _norm(el.get_attribute("textContent") or el.text or "")
+                        except Exception:
+                            pass
+
+                    # Boutons radio (cf-button-answer__button), labels via innerText (exclut spans display:none)
+                    try:
+                        btn_divs = row.find_elements(
+                            By.CSS_SELECTOR, "div.cf-button-answer__button[role='radio']"
+                        )
+                    except Exception:
+                        btn_divs = []
+                    if not btn_divs:
+                        continue
+
+                    numeric_labels: list[str] = []
+                    for btn in btn_divs:
+                        try:
+                            txt_el = btn.find_element(By.CSS_SELECTOR, "div.cf-button-answer__text")
+                            label = _norm(txt_el.get_attribute("innerText") or "")
+                            if label:
+                                numeric_labels.append(label)
+                        except Exception:
+                            continue
+                    if not numeric_labels:
+                        continue
+
+                    # options = labels numériques seuls (cliquables) ; pôles exclus
+                    options: list[str] = list(numeric_labels)
+
+                    row_id_lc = row_id.lower()
+                    row_cls = _norm_lc(row.get_attribute("class") or "")
+                    group_key = f"radio:name:dom:{labelledby}|{row_id_lc}|{row_cls}"
+
+                    # option_xpath_map : uniquement les boutons numériques cliquables
+                    option_xpath_map: dict[str, str] = {}
+                    for lbl, btn in zip(numeric_labels, btn_divs):
+                        try:
+                            ctrl_id = (btn.get_attribute("id") or "").strip()
+                            if ctrl_id:
+                                option_xpath_map[_norm_key(lbl)] = f"//*[@id={_xpath_literal(ctrl_id)}]"
+                            else:
+                                xp = _best_xpath_for_element(btn)
+                                if xp:
+                                    option_xpath_map[_norm_key(lbl)] = xp
+                        except Exception:
+                            continue
+
+                    poles: list[str] = [p for p in [left_pole, right_pole] if p]
+
+                    target_id = make_target_id("group", group_key, current_title)
+                    register_target(
+                        target_id,
+                        {
+                            "kind": "group",
+                            "itype": "radio",
+                            "group_key": group_key,
+                            "question": current_title,
+                            "option_xpath_map": option_xpath_map,
+                            "poles": poles,
+                            "frame_chain": frame_chain,
+                            "confirmit_cf_bipolar_grid": True,
+                        },
+                    )
+
+                    blocks.append(
+                        {
+                            "question": current_title,
+                            "itype": "radio",
+                            "options": options,
+                            "poles": poles,
+                            "max_select": 1,
+                            "min_select": 1,
+                            "target_id": target_id,
+                            "context": {
+                                "kind": "group",
+                                "group_key": group_key,
+                            },
+                        }
+                    )
+                    log_debug(
+                        "[DOM_CONFIRMIT_CF_BIPOLAR]",
+                        f"row={row_id!r} question={current_title!r} options={options} poles={poles}",
+                    )
+                except Exception:
+                    continue
+        except Exception:
+            continue
+
+    return blocks
+
+
+# ================================================================================
 # FORSTA/CONFIRMIT - HORIZONTAL RATING SCALE SINGLE (cf-hrs-single)
 # ================================================================================
 
@@ -7311,6 +7510,19 @@ def _extract_confirmit_cf_hrs_single_blocks(driver, frame_chain: list[int] | Non
                         continue
             if not question:
                 continue
+
+            # Prepend matrix/grid parent question text from ancestor div.cf-question__text
+            try:
+                ancestor = rg.find_element(
+                    By.XPATH,
+                    "ancestor::div[contains(concat(' ',normalize-space(@class),' '),' cf-question ')][1]"
+                )
+                q_text_el = ancestor.find_element(By.CSS_SELECTOR, "div.cf-question__text")
+                parent_q = _norm(q_text_el.get_attribute("textContent") or q_text_el.text or "")
+                if parent_q:
+                    question = f"{parent_q} – {question}"
+            except Exception:
+                pass
 
             try:
                 item_divs = rg.find_elements(

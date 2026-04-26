@@ -2247,6 +2247,53 @@ def _apply_by_target_id(
                             log_debug("[TARGET_DEBUG]", f"cf_carousel_item exception: {_short_exc(exc)}")
                         return False
 
+                # --- Confirmit CF HRS single (cf-hrs-single, grille NPS multi-marques) ---
+                # Les div.cf-horizontal-rating-item pour les questions hors-viewport ont size=0 :
+                # _find_best_visible échoue puis radio_main fait une recherche textuelle globale
+                # qui coche toujours le premier bloc visible (LCL).
+                # On bypasse la contrainte de visibilité : scroll inline puis JS click, vérifié
+                # via aria-checked="true" sur le div[role='radio'].
+                if payload.get("confirmit_cf_hrs_single"):
+                    try:
+                        _hrs_cands = driver.find_elements(By.XPATH, xp)
+                        _hrs_el = _hrs_cands[0] if _hrs_cands else None
+                    except Exception:
+                        _hrs_el = None
+                    if _hrs_el is None:
+                        if debug_target:
+                            log_debug("[TARGET_DEBUG]", f"confirmit_cf_hrs_single: element not found xpath={xp}")
+                        return False
+                    try:
+                        driver.execute_script(
+                            "arguments[0].scrollIntoView({block:'center', inline:'center'});", _hrs_el
+                        )
+                    except Exception:
+                        pass
+                    _hrs_ok = False
+                    try:
+                        driver.execute_script("arguments[0].click();", _hrs_el)
+                        time.sleep(0.15)
+                        try:
+                            _hrs_ok = ((_hrs_el.get_attribute("aria-checked") or "").strip().lower() == "true")
+                        except Exception:
+                            _hrs_ok = True  # stale = clic probablement appliqué
+                    except Exception as exc:
+                        if debug_target:
+                            log_debug("[TARGET_DEBUG]", f"confirmit_cf_hrs_single: JS click failed: {_short_exc(exc)}")
+                    if not _hrs_ok:
+                        try:
+                            ActionChains(driver).move_to_element(_hrs_el).pause(0.05).click().perform()
+                            time.sleep(0.15)
+                            _hrs_ok = ((_hrs_el.get_attribute("aria-checked") or "").strip().lower() == "true")
+                        except Exception:
+                            pass
+                    if _hrs_ok:
+                        log_info("[TARGET]", "apply ok=true strategy=confirmit_cf_hrs_single reason=aria_checked")
+                        return True
+                    if debug_target:
+                        log_debug("[TARGET_DEBUG]", f"confirmit_cf_hrs_single: aria-checked not set after click xpath={xp}")
+                    return False
+
                 # 1) trouver l'élément cible (label/span/input)
                 _ensure_pre_clicks_ready(xp)
                 try:
