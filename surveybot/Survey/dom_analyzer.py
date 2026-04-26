@@ -107,6 +107,7 @@ try:
         _extract_savanta_jqm_carousel_block,
         _extract_questmindshare_chatbot_blocks,
         _extract_confirmit_cf_desktop_grid_blocks,
+        _extract_confirmit_cf_bipolar_button_grid_blocks,
         _extract_confirmit_cf_hrs_single_blocks,
         _extract_groupcaliber_rating_row_blocks,
         _extract_confirmit_cf_carousel_blocks,
@@ -195,6 +196,7 @@ except ImportError:
         _extract_savanta_jqm_carousel_block,
         _extract_questmindshare_chatbot_blocks,
         _extract_confirmit_cf_desktop_grid_blocks,
+        _extract_confirmit_cf_bipolar_button_grid_blocks,
         _extract_confirmit_cf_hrs_single_blocks,
         _extract_groupcaliber_rating_row_blocks,
         _extract_confirmit_cf_carousel_blocks,
@@ -1180,6 +1182,16 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         confirmit_cf_grid_blocks = _extract_confirmit_cf_desktop_grid_blocks(driver, frame_chain)
         if confirmit_cf_grid_blocks:
             return confirmit_cf_grid_blocks
+    except Exception:
+        pass
+
+    # --- 0d-4bis-b) Forsta/Confirmit CF bipolar button rating scale (cf-button-answer__button) ---
+    # Objectif: extraire les questions bipolaires avec boutons numérotés (sans cf-radio ni thead).
+    # Gate DOM: table.cf-table-layout + tbody div.cf-button-answer__button[role='radio'].
+    try:
+        confirmit_bipolar_blocks = _extract_confirmit_cf_bipolar_button_grid_blocks(driver, frame_chain)
+        if confirmit_bipolar_blocks:
+            return confirmit_bipolar_blocks
     except Exception:
         pass
 

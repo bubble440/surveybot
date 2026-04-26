@@ -743,6 +743,35 @@ def _handle_forcewatch_video_gate(driver) -> str:
         has_forcewatch_video = False
 
     if not has_forcewatch_video:
+        # Détection complémentaire : player ISD (div#ISD présent dans le DOM)
+        # + .cf-navigation__button masqué via CSS (computed style) — pattern Forsta/Confirmit.
+        # Critère 1 : existence structurelle de div#ISD (pas de check visibilité — vidéo peut
+        #             encore charger au moment de l'exécution, BoundingClientRect = 0).
+        # Critère 2 : getComputedStyle pour tenir compte des règles CSS injectées (<style>),
+        #             pas seulement du style inline (getAttribute('style') insuffisant).
+        try:
+            has_isd_gate = bool(driver.execute_script(
+                """
+                const isdRoot = document.querySelector('#ISD');
+                if (!isdRoot) return false;
+                const navBtn = document.querySelector('.cf-navigation__button');
+                if (!navBtn) return false;
+                return window.getComputedStyle(navBtn).display === 'none';
+                """
+            ))
+        except Exception:
+            has_isd_gate = False
+
+        if has_isd_gate:
+            print("[VIDEO_GATE] ISD video_gate detected -> soft_restart")
+            log_debug("[VIDEO_GATE]", "ISD player + masked cf-navigation__button confirmed")
+            try:
+                import Management.guards.runtime_guard as runtime_guard
+                runtime_guard.get_guard().request_survey_restart("video_gate_isd")
+            except Exception as e:
+                print(f"[VIDEO_GATE][WARN] soft_restart request failed: {type(e).__name__}: {e}")
+            return "soft_restart"
+
         return "no_match"
 
     try:
@@ -1765,7 +1794,7 @@ def execute_survey_page(driver, account_id, api_key, ctx=None):
 
         if (os.getenv("LOG_LEVEL") or "").strip().lower() == "debug":
             print("🧠 [PROMPT_DEBUG] ===== PROMPT ENVOYÉ À OPENAI =====")
-            print(prompt[:20000])  # tronqué pour ne pas noyer les logs
+            print(prompt[:200000])  # tronqué pour ne pas noyer les logs
             print("[PROMPT_DEBUG] ===================================")
 
         instruction_raw = client.responses.create(

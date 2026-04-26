@@ -519,6 +519,29 @@ def run_attach_takeover(driver, *, api_key: str, account_id: str) -> None:
             ok = survey_executor.execute_survey_page(driver, account_id, api_key, ctx=_ctx)
             _ctx.maybe_update_summary()                                           # ← ajouter cette ligne
             print(f"[ATTACH] step={i}/{max_steps} ok={ok} url={_attach_display_url(driver.current_url)}")
+
+            if not ok:
+                try:
+                    _is_isd_gate = bool(driver.execute_script(
+                        """
+                        const isVisible = (el) => {
+                          if (!el) return false;
+                          const s = window.getComputedStyle(el);
+                          if (!s || s.display === 'none' || s.visibility === 'hidden') return false;
+                          const r = el.getBoundingClientRect();
+                          return !!(r && r.width > 0 && r.height > 0);
+                        };
+                        const isdRoot = document.querySelector('#ISD, [id^="rootDiv_"]');
+                        if (!isdRoot) return false;
+                        const video = isdRoot.querySelector('video');
+                        return !!(video && isVisible(video));
+                        """
+                    ))
+                except Exception:
+                    _is_isd_gate = False
+                if _is_isd_gate:
+                    print(f"[ATTACH][VIDEO_GATE] Page vidéo ISD non résolvable détectée step={i} → sortie boucle.")
+                    break
         except Exception as e:
             print(f"[ATTACH][ERROR] step={i} {type(e).__name__}: {e}")
             break
