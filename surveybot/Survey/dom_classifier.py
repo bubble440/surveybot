@@ -737,6 +737,33 @@ def is_start_screen(driver) -> bool:
     except Exception:
         pass
 
+    # Vérifier les options Confirmit CF rendues en div[role="radio"] dans une question single-choice.
+    # Ces éléments ne sont PAS des <input> natifs et ne sont pas comptés par real_inputs_count.
+    # Gate strict : div.cf-question--single doit être présent (évite les faux positifs sur pages
+    # contenant des role="radio" dans des zones non-actives ou des widgets désactivés).
+    try:
+        has_confirmit_single_radios = driver.execute_script("""
+            const questions = Array.from(document.querySelectorAll('div.cf-question--single'));
+            for (const q of questions) {
+                const radios = Array.from(q.querySelectorAll('div.cf-radio[role="radio"]'));
+                for (const r of radios) {
+                    try {
+                        const s = getComputedStyle(r);
+                        if (s.display === 'none' || s.visibility === 'hidden') continue;
+                        const rect = r.getBoundingClientRect();
+                        if (rect.width > 0 && rect.height > 0) return true;
+                    } catch(_) { continue; }
+                }
+            }
+            return false;
+        """)
+        if has_confirmit_single_radios:
+            from Survey.log_utils import log_debug
+            log_debug("[DOM_CLASSIFIER]", "is_start_screen: div.cf-radio[role='radio'] visibles dans cf-question--single => pas un start_screen")
+            return False
+    except Exception:
+        pass
+
     return True
 
 def _has_visible_answerables(driver) -> bool:
