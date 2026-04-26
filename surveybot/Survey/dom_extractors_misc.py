@@ -8640,3 +8640,176 @@ def _extract_qualtrics_sl_text_blocks(driver, frame_chain: list[int] | None) -> 
 
     log_debug("[DOM_QUALTRICS_SL_TEXT]", f"blocks_extracted={len(blocks)}")
     return blocks
+
+
+# ================================================================================
+# FORSTA/CONFIRMIT - SINGLE-CHOICE VERTICAL LIST (cf-question--single + cf-list)
+# ================================================================================
+
+def _extract_confirmit_cf_single_choice_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
+    """Forsta/Confirmit single-choice question: div[role='radio'] in a vertical cf-list.
+
+    Gate DOM strict (additif) :
+    - présence de div.cf-question--single
+    - au moins un div.cf-list contenant div.cf-radio[role='radio'] à l'intérieur
+    - le conteneur ne doit PAS être dans une table.cf-table-layout
+      (pattern grid couvert par _extract_confirmit_cf_desktop_grid_blocks)
+
+    Structure ciblée (exemple id Q100) :
+      div.cf-question--single#Q100
+        div.cf-question__text#Q100_text          ← texte de la question
+        div.cf-list
+          div.cf-list__item
+            div.cf-radio-answer
+              div.cf-radio[role='radio']#Q100_1_control   ← cible du clic
+              div.cf-radio-answer__text#Q100_1_text       ← texte de l'option
+    """
+    frame_chain = list(frame_chain or [])
+
+    # Gate 1: au moins un div.cf-question--single présent
+    try:
+        q_containers = driver.find_elements(By.CSS_SELECTOR, "div.cf-question--single")
+    except Exception:
+        return []
+    if not q_containers:
+        return []
+
+    # Gate 2: au moins un contient div.cf-list > div.cf-radio[role='radio']
+    gate_ok = False
+    for qc in q_containers:
+        try:
+            if qc.find_elements(By.CSS_SELECTOR, "div.cf-list div.cf-radio[role='radio']"):
+                gate_ok = True
+                break
+        except Exception:
+            continue
+    if not gate_ok:
+        return []
+
+    blocks: list[dict] = []
+
+    for qc in q_containers[:20]:  # budget anti-explosion
+        try:
+            # Exclure les containers imbriqués dans une table.cf-table-layout (grids)
+            try:
+                in_table = qc.find_elements(
+                    By.XPATH,
+                    "ancestor::table[contains(concat(' ',normalize-space(@class),' '),' cf-table-layout ')]"
+                )
+                if in_table:
+                    continue
+            except Exception:
+                pass
+
+            # Texte de la question depuis div.cf-question__text
+            question = ""
+            try:
+                q_text_el = qc.find_element(By.CSS_SELECTOR, "div.cf-question__text")
+                question = _norm(
+                    q_text_el.get_attribute("textContent") or q_text_el.text or ""
+                )
+            except Exception:
+                pass
+            if not question:
+                continue
+
+            # Options depuis les items de la liste verticale
+            try:
+                list_items = qc.find_elements(
+                    By.CSS_SELECTOR, "div.cf-list div.cf-list__item"
+                )
+            except Exception:
+                list_items = []
+            if not list_items:
+                continue
+
+            options: list[str] = []
+            option_xpath_map: dict[str, str] = {}
+
+            for item in list_items[:40]:  # budget anti-explosion
+                try:
+                    # Texte de l'option depuis div.cf-radio-answer__text
+                    opt_text = ""
+                    try:
+                        txt_el = item.find_element(By.CSS_SELECTOR, "div.cf-radio-answer__text")
+                        opt_text = _norm(
+                            txt_el.get_attribute("textContent") or txt_el.text or ""
+                        )
+                    except Exception:
+                        pass
+                    if not opt_text:
+                        # Fallback : texte brut du cf-radio-answer
+                        try:
+                            ra = item.find_element(By.CSS_SELECTOR, "div.cf-radio-answer")
+                            opt_text = _norm(ra.get_attribute("textContent") or ra.text or "")
+                        except Exception:
+                            pass
+                    if not opt_text:
+                        continue
+
+                    # Cible du clic : div.cf-radio[role='radio']
+                    ctrl_id = ""
+                    try:
+                        ctrl = item.find_element(By.CSS_SELECTOR, "div.cf-radio[role='radio']")
+                        ctrl_id = (ctrl.get_attribute("id") or "").strip()
+                    except Exception:
+                        pass
+
+                    nk = _norm_key(opt_text)
+                    if nk in option_xpath_map:
+                        continue
+                    options.append(opt_text)
+                    if ctrl_id:
+                        option_xpath_map[nk] = f"//*[@id={_xpath_literal(ctrl_id)}]"
+                    else:
+                        try:
+                            xp = _best_xpath_for_element(ctrl)
+                            if xp:
+                                option_xpath_map[nk] = xp
+                        except Exception:
+                            pass
+                except Exception:
+                    continue
+
+            if len(options) < 2 or not option_xpath_map:
+                continue
+
+            q_id = (qc.get_attribute("id") or "").strip()
+            group_key = f"radio:cf-single:{q_id}" if q_id else f"radio:cf-single:{question[:40]}"
+            target_id = make_target_id("group", group_key, question)
+
+            register_target(
+                target_id,
+                {
+                    "kind": "group",
+                    "itype": "radio",
+                    "group_key": group_key,
+                    "question": question,
+                    "option_xpath_map": option_xpath_map,
+                    "frame_chain": frame_chain,
+                    "confirmit_cf_single": True,
+                },
+            )
+
+            blocks.append(
+                {
+                    "question": question,
+                    "itype": "radio",
+                    "options": options,
+                    "max_select": 1,
+                    "min_select": 1,
+                    "target_id": target_id,
+                    "context": {
+                        "kind": "group",
+                        "group_key": group_key,
+                    },
+                }
+            )
+            log_debug(
+                "[DOM_CONFIRMIT_CF_SINGLE]",
+                f"q_id={q_id!r} question={question!r} options={options}",
+            )
+        except Exception:
+            continue
+
+    return blocks

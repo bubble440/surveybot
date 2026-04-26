@@ -22,7 +22,11 @@
       "Bash(python -c \"import ast; ast.parse\\(open\\('surveybot/Survey/dom_extractors_misc.py', encoding='utf-8'\\).read\\(\\)\\); print\\('OK'\\)\")",
       "Bash(python -m py_compile surveybot/Survey/action_dispatcher.py)",
       "Bash(python -m py_compile surveybot/Survey/dom_extractors_misc.py)",
-      "Bash(python -c \"import ast; ast.parse\\(open\\('surveybot/Survey/survey_executor.py'\\).read\\(\\)\\); print\\('OK'\\)\")"
+      "Bash(python -c \"import ast; ast.parse\\(open\\('surveybot/Survey/survey_executor.py'\\).read\\(\\)\\); print\\('OK'\\)\")",
+      "Bash(python -c \"from surveybot.Survey.dom_extractors_misc import _extract_confirmit_cf_single_choice_blocks; print\\('import OK'\\)\")",
+      "Bash(python -c \"from Survey.dom_extractors_misc import _extract_confirmit_cf_single_choice_blocks; print\\('import OK'\\)\")",
+      "Bash(python -c \"from Survey.dom_analyzer import analyze_dom; print\\('dom_analyzer import OK'\\)\")",
+      "Bash(python -c \"from Survey.dom_classifier import is_start_screen, classify_dom; print\\('import OK'\\)\")"
     ]
   }
 }

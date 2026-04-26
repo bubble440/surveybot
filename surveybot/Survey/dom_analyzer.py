@@ -111,6 +111,7 @@ try:
         _extract_confirmit_cf_hrs_single_blocks,
         _extract_groupcaliber_rating_row_blocks,
         _extract_confirmit_cf_carousel_blocks,
+        _extract_confirmit_cf_single_choice_blocks,
         _extract_runtime_dropdown_blocks,
         _extract_rps_select_blocks,
         _extract_ssi_confirmit_native_grid_blocks,
@@ -200,6 +201,7 @@ except ImportError:
         _extract_confirmit_cf_hrs_single_blocks,
         _extract_groupcaliber_rating_row_blocks,
         _extract_confirmit_cf_carousel_blocks,
+        _extract_confirmit_cf_single_choice_blocks,
         _extract_runtime_dropdown_blocks,
         _extract_rps_select_blocks,
         _extract_ssi_confirmit_native_grid_blocks,
@@ -1220,6 +1222,15 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         confirmit_carousel_blocks = _extract_confirmit_cf_carousel_blocks(driver, frame_chain)
         if confirmit_carousel_blocks:
             return confirmit_carousel_blocks
+    except Exception:
+        pass
+
+    # --- 0d-4septies) Forsta/Confirmit CF single-choice vertical (cf-question--single + cf-list) ---
+    # Gate DOM: div.cf-question--single + div.cf-list div.cf-radio[role='radio'] (hors table.cf-table-layout).
+    try:
+        confirmit_single_blocks = _extract_confirmit_cf_single_choice_blocks(driver, frame_chain)
+        if confirmit_single_blocks:
+            return confirmit_single_blocks
     except Exception:
         pass
 
