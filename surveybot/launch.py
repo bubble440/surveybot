@@ -130,8 +130,8 @@ def _make_sigterm_handler(aid: str):
     return _handle_sigterm
 
 def build_notifier(config):
-    tg_token = config.get("telegram_bot_token")
-    tg_chat  = config.get("telegram_chat_id")
+    tg_token = os.getenv("telegram_bot_token", "").strip()
+    tg_chat  = os.getenv("telegram_chat_id", "").strip()
 
     def _notify(msg: str):
         # Console (toujours)
