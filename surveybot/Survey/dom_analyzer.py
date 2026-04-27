@@ -768,6 +768,41 @@ def _choice_option_has_inline_open_text(driver, choice_el) -> bool:
         return False
 
 
+def _get_choice_trailing_open_info(driver, choice_el) -> dict | None:
+    """
+    Détecte si une option radio/checkbox embarque un champ texte via .trailing-open /
+    .openend-inline (pattern YouGov "Je préfère me décrire"). Retourne {"name":..., "id":...}
+    du champ texte si trouvé et visible, sinon None.
+    Permet d'inclure l'option dans le groupe tout en identifiant le bloc text autonome
+    à supprimer.
+    """
+    try:
+        result = driver.execute_script(
+            r"""
+            const el = arguments[0];
+            if (!el) return null;
+            const label = el.closest('label')
+                || (el.id ? document.querySelector('label[for="' + el.id + '"]') : null);
+            if (!label) return null;
+            const inp = label.querySelector(
+                '.trailing-open input[type="text"], .openend-inline input[type="text"]'
+            );
+            if (!inp) return null;
+            const st = window.getComputedStyle(inp);
+            if (!st || st.display === 'none' || st.visibility === 'hidden') return null;
+            const r = inp.getBoundingClientRect();
+            if (r.width === 0 && r.height === 0) return null;
+            return { name: inp.name || '', id: inp.id || '' };
+            """,
+            choice_el,
+        )
+        if result and (result.get("name") or result.get("id")):
+            return result
+        return None
+    except Exception:
+        return None
+
+
 def _is_modal_related_control(driver, el) -> bool:
     """
     Ignore les contrôles UI liés à des modals/dialogs (confirmation/info)
@@ -1812,9 +1847,21 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             # options = labels des inputs
             options: List[str] = []
             option_elements: List[Tuple[Any, str]] = []
+            inline_openend_names: List[str] = []
             for e in els:
                 lbl = _find_associated_label(driver, e)
-                if lbl and not _choice_option_has_inline_open_text(driver, e):
+                if not lbl:
+                    continue
+                trailing_info = _get_choice_trailing_open_info(driver, e)
+                if trailing_info:
+                    # Option avec champ texte inline (.trailing-open/.openend-inline) :
+                    # on l'inclut dans le groupe et on mémorise le name/id pour pruning.
+                    option_elements.append((e, lbl))
+                    options.append(lbl)
+                    nm = (trailing_info.get("name") or trailing_info.get("id") or "").strip()
+                    if nm:
+                        inline_openend_names.append(nm)
+                elif not _choice_option_has_inline_open_text(driver, e):
                     option_elements.append((e, lbl))
                     options.append(lbl)
             # Pattern spécifique
@@ -2161,16 +2208,17 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                 },
             )
 
+            _block_ctx: Dict[str, Any] = {"kind": "group", "group_key": group_key}
+            if inline_openend_names:
+                _block_ctx["inline_openend_names"] = list(dict.fromkeys(inline_openend_names))
+
             block = {
                 "question": question,
                 "itype": itype,
                 "options": options,
                 "max_select": _compute_max_select(itype, options, _selection_signal_text(driver, els[0], question)),
                 "target_id": target_id,
-                "context": {
-                    "kind": "group",
-                    "group_key": group_key,
-                },
+                "context": _block_ctx,
             }
 
             # Nfield/Kantar rowpicker: tag exclusive radio blocks for post-merge
@@ -3439,6 +3487,7 @@ def analyze_dom(driver) -> List[Dict[str, Any]]:
 
     blocks = _prune_focusvision_fragmented_groups(blocks)
     blocks = _prune_focusvision_auxiliary_openended_singles(blocks)
+    blocks = _prune_trailing_open_inline_singles(blocks)
 
     for block in blocks or []:
         if not isinstance(block, dict):
@@ -3827,4 +3876,41 @@ def _prune_focusvision_auxiliary_openended_singles(blocks: List[Dict[str, Any]])
         if not (drop_named or drop_nameless):
             pruned.append(b)
 
+    return pruned
+
+
+def _prune_trailing_open_inline_singles(blocks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Supprime les blocs text autonomes dont le name/id correspond à un champ texte
+    embarqué dans .trailing-open/.openend-inline d'une option radio/checkbox.
+
+    Déclenché uniquement quand au moins un groupe a `inline_openend_names` dans son contexte
+    (posé par le chemin d'assemblage radio/checkbox lors de la détection .trailing-open).
+    """
+    inline_names: set[str] = set()
+    for b in (blocks or []):
+        if not isinstance(b, dict):
+            continue
+        context = (b.get("context") or {}) if isinstance(b.get("context"), dict) else {}
+        for nm in (context.get("inline_openend_names") or []):
+            nm_norm = _norm((nm or "")).strip()
+            if nm_norm:
+                inline_names.add(nm_norm)
+
+    if not inline_names:
+        return blocks
+
+    pruned: list[dict] = []
+    for b in (blocks or []):
+        if not isinstance(b, dict):
+            continue
+        itype = _norm((b.get("itype") or "")).lower()
+        context = (b.get("context") or {}) if isinstance(b.get("context"), dict) else {}
+        if itype in {"text", "textarea"} and context.get("kind") == "single":
+            input_name = _norm((context.get("name") or "")).strip()
+            input_id = _norm((context.get("id") or "")).strip()
+            if (input_name and input_name in inline_names) or (input_id and input_id in inline_names):
+                log_debug("[DOM_CONTEXT]", f"prune_trailing_open_inline name={input_name!r} id={input_id!r}")
+                continue
+        pruned.append(b)
     return pruned
