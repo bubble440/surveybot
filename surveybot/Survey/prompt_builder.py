@@ -460,6 +460,25 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
     )
 
     lines.append(
+        "RÈGLE RÉSIDENCE (priorité absolue sur RÈGLE ABSOLUE DE PROGRESSION) :\n"
+        "Pour toute question dont le texte ou les options correspondent à un pays, "
+        "une région, ou une ville de résidence du répondant "
+        "(signaux question : 'où habitez-vous', 'pays de résidence', 'country of residence', "
+        "'where do you live', 'where do you reside', 'your country', 'votre pays', "
+        "'région de résidence', 'ville de résidence', 'city of residence', 'city where you live', "
+        "'lieu de résidence', 'place of residence', 'domicile', 'home country', 'pays où vous vivez' ; "
+        "signaux options : liste de pays dont 'France', 'Germany', 'United Kingdom', 'États-Unis', etc.) :\n"
+        "- Tu DOIS sélectionner l'option correspondant à la France (ou Paris pour les questions de ville) "
+        "parmi les options proposées, en utilisant EXACTEMENT l'intitulé tel qu'il apparaît dans la liste.\n"
+        "- Si 'France' n'est pas disponible mais qu'une option 'Europe' ou 'Europe occidentale' existe, "
+        "choisis-la.\n"
+        "- Cette règle s'applique indépendamment de la position de l'option dans la liste "
+        "et indépendamment du contexte du survey.\n"
+        "- INTERDIT : choisir un autre pays ou une autre ville au motif que c'est la première option, "
+        "la plus fréquente, ou la plus 'favorable' selon la thématique du survey.\n"
+    )
+
+    lines.append(
         "RÈGLE CHIFFRE D'AFFAIRES / TAILLE D'ENTREPRISE :\n"
         "Si la question porte sur le chiffre d'affaires, les revenus annuels, "
         "le budget ou la taille de l'entreprise où travaille le répondant "
