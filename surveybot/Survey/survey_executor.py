@@ -1491,13 +1491,44 @@ def _handle_pin_verification(driver):
     return True
 
 
-def _should_skip_post_actions_navigation(driver, question_blocks: list[dict]) -> bool:
+def _should_skip_post_actions_navigation(
+    driver,
+    question_blocks: list[dict],
+    *,
+    before_url: str | None = None,
+    before_sig=None,
+) -> bool:
     """
     Garde-fou minimal: certains blocs avancent automatiquement après le clic
-    réponse (ex: Walr cardsort, StudyStream button.choice, QARTS autosubmit).
+    réponse (ex: Walr cardsort, StudyStream button.choice, QARTS autosubmit,
+    Askia auto-navigation via tr.myresponse JS handler).
     La routine CTA post-actions ne doit pas tourner, sinon elle peut cliquer
     sur l'écran suivant et soumettre prématurément.
     """
+    # ── Détection auto-navigation post-dispatch (critère purement DOM-observable) ──
+    # Si l'URL a changé entre le clic réponse et l'appel CTA, la navigation a déjà
+    # eu lieu — on ne doit pas cliquer le CTA, quel que soit le provider.
+    # Pour les changements DOM-only (SPA sans changement d'URL), on exige en plus
+    # la présence du marqueur Askia (form[action*="AskiaExt.dll"]) pour éviter les
+    # faux-positifs sur les plateformes qui mutent le DOM sur sélection radio.
+    if before_url is not None:
+        try:
+            url_changed = driver.current_url != before_url
+            if url_changed:
+                log_info("[AUTONAV]", "URL changée après clic radio → skip CTA (navigation déjà effectuée)")
+                return True
+        except Exception:
+            pass
+        if before_sig is not None:
+            try:
+                import Management.redirect_watcher as _rw
+                if _rw._dom_signature(driver) != before_sig:
+                    if driver.find_elements(By.CSS_SELECTOR, "form[action*='AskiaExt.dll']"):
+                        log_info("[ASKIA_AUTONAV]", "DOM changé après clic radio Askia → skip CTA")
+                        return True
+            except Exception:
+                pass
+
     for block in question_blocks or []:
         try:
             ctx = block.get("context") if isinstance(block, dict) else None
@@ -1835,6 +1866,15 @@ def execute_survey_page(driver, account_id, api_key, ctx=None):
         actions = batch_response_parser.parse_batch_response(raw_text, constraints=qid_constraints, qid_meta=qid_meta)
         actions = batch_response_parser.sanitize_actions(actions, qid_meta=qid_meta)
 
+        # Snapshot pré-dispatch : sert à détecter si le clic réponse a déjà
+        # déclenché une navigation (ex: Askia tr.myresponse auto-submit).
+        try:
+            _pre_dispatch_url = driver.current_url
+            _pre_dispatch_sig = redirect_watcher._dom_signature(driver)
+        except Exception:
+            _pre_dispatch_url = None
+            _pre_dispatch_sig = None
+
         #  "plan" (multi actions) + anti-double-fallback par action
         result = action_dispatcher.execute_actions_plan(driver, actions, stop_on_navigation=True)
 
@@ -1865,9 +1905,14 @@ def execute_survey_page(driver, account_id, api_key, ctx=None):
             except Exception as e:
                 print(f"[SURVEY_CTX] record error: {e}")
                 
-        # --- Post-actions CTA nav (sauf Walr cardsort géré par answer-button) ---
-        if _should_skip_post_actions_navigation(driver, question_blocks):
-            print("[WALR_CS] skip post-actions CTA navigation (cardsort flow)")
+        # --- Post-actions CTA nav (sauf auto-navigation déjà déclenchée) ---
+        if _should_skip_post_actions_navigation(
+            driver,
+            question_blocks,
+            before_url=_pre_dispatch_url,
+            before_sig=_pre_dispatch_sig,
+        ):
+            print("[AUTONAV] skip post-actions CTA navigation (auto-navigation déjà effectuée)")
         elif _has_unfilled_required_inputs(driver):
             # Des champs required sont encore vides → ne pas soumettre le formulaire maintenant.
             # La boucle externe relancera execute_survey_page pour remplir les champs restants.

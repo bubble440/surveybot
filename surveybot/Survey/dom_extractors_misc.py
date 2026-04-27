@@ -1292,6 +1292,15 @@ def _extract_table_matrix_radio_rows(driver, frame_chain: list[int] | None) -> l
             matrix_question = _norm(_find_question_text_near_element(driver, table))
             if not matrix_question:
                 matrix_question = _norm(table.get_attribute("aria-label") or "")
+            if not matrix_question:
+                try:
+                    lbl = driver.find_element(
+                        By.CSS_SELECTOR,
+                        "td[class*='askia-question-label'], td[class*='askia-caption']",
+                    )
+                    matrix_question = _norm(lbl.text or lbl.get_attribute("innerText") or "")
+                except Exception:
+                    pass
 
             if sge_like_matrix:
                 first = row_candidates[0]
