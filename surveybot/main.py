@@ -392,6 +392,7 @@ def run_attach_takeover(driver, *, api_key: str, account_id: str) -> None:
     survey_solver._current_survey_ctx = _ctx
 
     _attach_select_tab(driver)
+    driver._survey_account_id = account_id
 
     from Survey.functions import _handle_topsurveys_exclusion_popup
 
@@ -503,6 +504,14 @@ def run_attach_takeover(driver, *, api_key: str, account_id: str) -> None:
 
         ### Résultat attendu dans les logs avec clé 2Captcha configurée
             
+            # --- Récupération erreur applicative YouGov (#notification.alert-error visible) ---
+            _yg_result = survey_solver._recover_from_yougov_app_error(driver)
+            if _yg_result == survey_solver._YG_ERR_RECOVERED:
+                continue
+            if _yg_result == survey_solver._YG_ERR_EXHAUSTED:
+                print(f"[YG-APP-ERR] Erreur applicative YouGov non récupérée après budget step={i} → sortie boucle.")
+                break
+
             # --- Détection page d'erreur applicative (Toluna: div.errorPage, Confirmit: div.errorpage-wrapper) ---
             try:
                 from selenium.webdriver.common.by import By
@@ -580,6 +589,7 @@ def run_attach_preselection_takeover(driver, *, api_key: str, account_id: str) -
     survey_solver._current_survey_ctx = _ctx
 
     _attach_select_tab(driver)
+    driver._survey_account_id = account_id
 
     max_rounds = int(os.getenv("ATTACH_PRESELECTION_MAX_ROUNDS", "15"))
     transition_timeout_s = int(os.getenv("ATTACH_PRESELECTION_TRANSITION_TIMEOUT_S", "45"))

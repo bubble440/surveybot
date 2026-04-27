@@ -1309,6 +1309,7 @@ def _handle_phone_verification(driver):
     log_info("[PHONE_VERIF]", "Écran vérification téléphone détecté — résolution du numéro")
 
     account_id = getattr(driver, "_survey_account_id", None)
+    log_info("account_id", f"account_id: {account_id}")
     api_key_5sim = (os.getenv("FIVESIM_API_KEY") or "").strip()
 
     phone = None

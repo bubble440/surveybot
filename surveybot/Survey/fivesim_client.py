@@ -26,14 +26,22 @@ def _get(url: str, api_key: str) -> dict:
         return json.loads(resp.read().decode())
 
 
+def _normalize_phone(raw: str) -> str:
+    """Retire '+' et le préfixe pays '33' pour retourner le numéro national seul."""
+    digits = raw.lstrip("+")
+    if digits.startswith("33") and len(digits) >= 11:
+        digits = digits[2:]
+    return digits
+
+
 def buy_number(account_id: str) -> tuple[str, str]:
     """Achète un nouveau numéro virtuel français et persiste phone+order_id dans account_state."""
     api_key = _api_key()
     data = _get(
-        "https://5sim.net/v1/user/buy/activation/france/any/other?reuse=1",
+        "https://5sim.net/v1/user/buy/activation/france/any/other",
         api_key,
     )
-    phone = str(data["phone"]).lstrip("+")
+    phone = _normalize_phone(str(data["phone"]))
     order_id = str(data["id"])
     log_info(f"[{_TAG}]", f"Numéro acheté: {phone}, order_id={order_id}")
     _persist(account_id, phone, order_id)
@@ -53,6 +61,7 @@ def reuse_number(account_id: str, phone: str) -> tuple[str, str]:
         if "reuse not possible" in status or "reuse expired" in status:
             raise ValueError(f"reuse refusé: {status}")
         order_id = str(data["id"])
+        phone = _normalize_phone(phone)
         log_info(f"[{_TAG}]", f"Numéro réutilisé: {phone}, order_id={order_id}")
         _persist(account_id, phone, order_id)
         return phone, order_id
