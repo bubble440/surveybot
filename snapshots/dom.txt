@@ -1,8 +1,83 @@
-<body>
-  <app-root ng-version="19.2.15"><router-outlet></router-outlet><app-survey-final><div><div class="container"><!----><div><div class="wrap"><div class="page-header"><h1 translate="srvyFinal.heading1" dir="ltr"> Vous y êtes presque…</h1></div><div class="clear"></div><form novalidate="" role="form" name="demographic_form" class="form-inline d-flex ng-untouched ng-pristine ng-valid"><!----><div class="text-left p-x-15 flex-75"><div><p translate="srvyFinal.msgPara" class="m-t-0">Vous allez à présent être redirigé(e) vers l'enquête où vous pourriez devoir répondre à d'autres questions de qualification.</p></div><div class="clear"></div><div><h3 translate="srvyFinal.honest">Soyez honnête</h3><p translate="srvyFinal.prdctOpinionMsg" class="m-t-0">Votre avis influence de vrais produits. N'oubliez pas de lire attentivement et d'être honnête.</p></div><div class="clear"></div><div><h3 translate="srvyFinal.respnsble">Soyez responsable</h3><p translate="srvyFinal.rsnpAns" class="m-t-0">Les réponses sont régulièrement examinées aux fins de clarté.</p></div><!----><div class="d-flex flex-justified-right m-t-20"><button type="submit" translate="srvyFinal.btnLtsDo" class="next_btn">Allons-y</button></div></div><!----><!----></form><div class="page-footer"></div></div></div><!----></div></div><!----></app-survey-final><!----><!----></app-root>
-  <noscript>
-    <h1>JavaScript Required</h1>
-    <p>Please enable JavaScript to continue using this application.</p>
-  </noscript>
-<link rel="modulepreload" href="chunk-TZFPLRKY.js"><link rel="modulepreload" href="chunk-LIL5XAWA.js"><link rel="modulepreload" href="chunk-SEB6HFLA.js"><link rel="modulepreload" href="chunk-H5ILLOOE.js"><link rel="modulepreload" href="chunk-NF5QZS34.js"><link rel="modulepreload" href="chunk-VDACZSUG.js"><script src="polyfills-GFIOSHUA.js" type="module"></script><script src="main-DS2SQUIW.js" type="module"></script>
-</body>
+TARGET_DEBUG] action_dispatcher file=C:\projects\Surveys\surveybot\Survey\action_dispatcher.py
+[TARGET] execute_action raw="Q1 //// group_29411ac3d5d9 //// Je joue actuellement (j'ai joué au cours des 30 derniers jours) //// radio //// Voici une liste de genres de jeux mobiles. Veuillez sélectionner la réponse qui représente le mieux votre expérience avec chacun. [Objets cachés (June’s Journey, Criminal Case, The Secret Society, etc.)]"
+[TARGET] parsed target_id='group_29411ac3d5d9' itype='radio' value="Je joue actuellement (j'ai joué au cours des 30 derniers jours)" context_len=203
+[TARGET] toluna_runtime_answerrow: entering block
+[TARGET] toluna_runtime_answerrow: guard=None
+[TARGET] apply ok=true strategy=target_id reason=applied
+[DOM_CONTEXT_DEBUG] runtime_signature rows=0 wrappers=0 in_selected_context=False
+[DOM_CONTEXT_DEBUG] analyze_dom selected_chain=[] selected_ps_date_question=0 score=100
+[DOM_CONTEXT_DEBUG] analyze_dom stage=context_selected blocks_count=0 chain_len=0
+[WALR_CS] Pas de #cardSortContainer
+[WALR_CS] bloc retourné: False
+[DOM_QUALTRICS_SL_TEXT] blocks_extracted=0
+[DOM_CONTEXT_DEBUG] analyze_dom choice_groups detected=0 created=0 rejected={}
+[DOM_CONTEXT_DEBUG] extracted_blocks count=36 itypes=['radio']
+[DOM_CONTEXT] extracted_blocks count=36 itypes=['radio'] question_len=203 options_count=108
+[DOM_CONTEXT_DEBUG] analyze_dom stage=raw_extraction blocks_count=36 sample=[{'itype': 'radio', 'question': 'Voici une liste de genres de jeux mobiles. Veuillez sélecti', 'options': 3}, {'itype': 'radio', 'question': 'Voici une liste de genres de jeux mobiles. Veuillez sélecti', 'options': 3}, {'itype': 'radio', 'question': 'Voici une liste de genres de jeux mobiles. Veuillez sélecti', 'options': 3}]
+[DOM_CONTEXT_DEBUG] analyze_dom stage=before_return blocks_count=36 sample=[{'itype': 'radio', 'question': 'Voici une liste de genres de jeux mobiles. Veuillez sélecti', 'options': 3}, {'itype': 'radio', 'question': 'Voici une liste de genres de jeux mobiles. Veuillez sélecti', 'options': 3}, {'itype': 'radio', 'question': 'Voici une liste de genres de jeux mobiles. Veuillez sélecti', 'options': 3}]
+[TARGET] execute_action raw="Q2 //// group_f173d95682b9 //// Je joue actuellement (j'ai joué au cours des 30 derniers jours) //// radio //// Voici une liste de genres de jeux mobiles. Veuillez sélectionner la réponse qui représente le mieux votre expérience avec chacun. [Jeu de réflexion physique (Angry Birds 2, Cut the Rope 2, Mais, où est Swampy ? 2, etc.)]"
+[TARGET] parsed target_id='group_f173d95682b9' itype='radio' value="Je joue actuellement (j'ai joué au cours des 30 derniers jours)" context_len=220
+[TARGET] toluna_runtime_answerrow: entering block
+[TARGET] toluna_runtime_answerrow: guard=None
+[TARGET] apply ok=true strategy=target_id reason=applied
+[DOM_CONTEXT_DEBUG] runtime_signature rows=0 wrappers=0 in_selected_context=False
+[DOM_CONTEXT_DEBUG] analyze_dom selected_chain=[] selected_ps_date_question=0 score=100
+[DOM_CONTEXT_DEBUG] analyze_dom stage=context_selected blocks_count=0 chain_len=0
+[WALR_CS] Pas de #cardSortContainer
+[WALR_CS] bloc retourné: False
+[DOM_QUALTRICS_SL_TEXT] blocks_extracted=0
+[DOM_CONTEXT_DEBUG] analyze_dom choice_groups detected=0 created=0 rejected={}
+[DOM_CONTEXT_DEBUG] extracted_blocks count=36 itypes=['radio']
+[DOM_CONTEXT] extracted_blocks count=36 itypes=['radio'] question_len=203 options_count=108
+[DOM_CONTEXT_DEBUG] analyze_dom stage=raw_extraction blocks_count=36 sample=[{'itype': 'radio', 'question': 'Voici une liste de genres de jeux mobiles. Veuillez sélecti', 'options': 3}, {'itype': 'radio', 'question': 'Voici une liste de genres de jeux mobiles. Veuillez sélecti', 'options': 3}, {'itype': 'radio', 'question': 'Voici une liste de genres de jeux mobiles. Veuillez sélecti', 'options': 3}]
+[DOM_CONTEXT_DEBUG] analyze_dom stage=before_return blocks_count=36 sample=[{'itype': 'radio', 'question': 'Voici une liste de genres de jeux mobiles. Veuillez sélecti', 'options': 3}, {'itype': 'radio', 'question': 'Voici une liste de genres de jeux mobiles. Veuillez sélecti', 'options': 3}, {'itype': 'radio', 'question': 'Voici une liste de genres de jeux mobiles. Veuillez sélecti', 'options': 3}]
+[TARGET] execute_action raw="Q3 //// group_a79e9f96e2b6 //// Je jouais auparavant (j'ai joué avant, mais pas au cours des 30 derniers jours) //// radio //// Voici une liste de genres de jeux mobiles. Veuillez sélectionner la réponse qui représente le mieux votre expérience avec chacun. [Simulateur de ferme (Hay Day, FarmVille 2 : Escapade rurale, etc.)]"
+[TARGET] parsed target_id='group_a79e9f96e2b6' itype='radio' value="Je jouais auparavant (j'ai joué avant, mais pas au cours des 30 derniers jours)" context_len=198
+[TARGET] toluna_runtime_answerrow: entering block
+[TARGET] toluna_runtime_answerrow: guard=None
+[TARGET] apply ok=true strategy=target_id reason=applied
+[DOM_CONTEXT_DEBUG] runtime_signature rows=0 wrappers=0 in_selected_context=False
+[DOM_CONTEXT_DEBUG] analyze_dom selected_chain=[] selected_ps_date_question=0 score=100
+[DOM_CONTEXT_DEBUG] analyze_dom stage=context_selected blocks_count=0 chain_len=0
+[WALR_CS] Pas de #cardSortContainer
+[WALR_CS] bloc retourné: False
+[DOM_QUALTRICS_SL_TEXT] blocks_extracted=0
+[DOM_CONTEXT_DEBUG] analyze_dom choice_groups detected=0 created=0 rejected={}
+[DOM_CONTEXT_DEBUG] extracted_blocks count=36 itypes=['radio']
+[DOM_CONTEXT] extracted_blocks count=36 itypes=['radio'] question_len=203 options_count=108
+[DOM_CONTEXT_DEBUG] analyze_dom stage=raw_extraction blocks_count=36 sample=[{'itype': 'radio', 'question': 'Voici une liste de genres de jeux mobiles. Veuillez sélecti', 'options': 3}, {'itype': 'radio', 'question': 'Voici une liste de genres de jeux mobiles. Veuillez sélecti', 'options': 3}, {'itype': 'radio', 'question': 'Voici une liste de genres de jeux mobiles. Veuillez sélecti', 'options': 3}]
+[DOM_CONTEXT_DEBUG] analyze_dom stage=before_return blocks_count=36 sample=[{'itype': 'radio', 'question': 'Voici une liste de genres de jeux mobiles. Veuillez sélecti', 'options': 3}, {'itype': 'radio', 'question': 'Voici une liste de genres de jeux mobiles. Veuillez sélecti', 'options': 3}, {'itype': 'radio', 'question': 'Voici une liste de genres de jeux mobiles. Veuillez sélecti', 'options': 3}]
+[TARGET] execute_action raw="Q4 //// group_671945106a11 //// Je joue actuellement (j'ai joué au cours des 30 derniers jours) //// radio //// Voici une liste de genres de jeux mobiles. Veuillez sélectionner la réponse qui représente le mieux votre expérience avec chacun. [Jeu de mots (Wordle, Connections, Wordscapes, Mots Entre Amis, etc.)]"
+[TARGET] parsed target_id='group_671945106a11' itype='radio' value="Je joue actuellement (j'ai joué au cours des 30 derniers jours)" context_len=200
+[TARGET] toluna_runtime_answerrow: entering block
+[TARGET] toluna_runtime_answerrow: guard=None
+[TARGET] apply ok=true strategy=target_id reason=applied
+[DOM_CONTEXT_DEBUG] runtime_signature rows=0 wrappers=0 in_selected_context=False
+[DOM_CONTEXT_DEBUG] analyze_dom selected_chain=[] selected_ps_date_question=0 score=100
+[DOM_CONTEXT_DEBUG] analyze_dom stage=context_selected blocks_count=0 chain_len=0
+[WALR_CS] Pas de #cardSortContainer
+[WALR_CS] bloc retourné: False
+[DOM_QUALTRICS_SL_TEXT] blocks_extracted=0
+[DOM_CONTEXT_DEBUG] analyze_dom choice_groups detected=0 created=0 rejected={}
+[DOM_CONTEXT_DEBUG] extracted_blocks count=36 itypes=['radio']
+[DOM_CONTEXT] extracted_blocks count=36 itypes=['radio'] question_len=203 options_count=108
+[DOM_CONTEXT_DEBUG] analyze_dom stage=raw_extraction blocks_count=36 sample=[{'itype': 'radio', 'question': 'Voici une liste de genres de jeux mobiles. Veuillez sélecti', 'options': 3}, {'itype': 'radio', 'question': 'Voici une liste de genres de jeux mobiles. Veuillez sélecti', 'options': 3}, {'itype': 'radio', 'question': 'Voici une liste de genres de jeux mobiles. Veuillez sélecti', 'options': 3}]
+[DOM_CONTEXT_DEBUG] analyze_dom stage=before_return blocks_count=36 sample=[{'itype': 'radio', 'question': 'Voici une liste de genres de jeux mobiles. Veuillez sélecti', 'options': 3}, {'itype': 'radio', 'question': 'Voici une liste de genres de jeux mobiles. Veuillez sélecti', 'options': 3}, {'itype': 'radio', 'question': 'Voici une liste de genres de jeux mobiles. Veuillez sélecti', 'options': 3}]
+[TARGET] execute_action raw="Q5 //// group_1d63e28eaea0 //// Je joue actuellement (j'ai joué au cours des 30 derniers jours) //// radio //// Voici une liste de genres de jeux mobiles. Veuillez sélectionner la réponse qui représente le mieux votre expérience avec chacun. [Jeux basés sur la localisation/Réalité augmentée (AR) (Pokémon Go, Monster Hunter Now, etc.)]"
+[TARGET] parsed target_id='group_1d63e28eaea0' itype='radio' value="Je joue actuellement (j'ai joué au cours des 30 derniers jours)" context_len=224
+[TARGET] toluna_runtime_answerrow: entering block
+[TARGET] toluna_runtime_answerrow: guard=None
+[TARGET] apply ok=true strategy=target_id reason=applied
+[DOM_CONTEXT_DEBUG] runtime_signature rows=0 wrappers=0 in_selected_context=False
+[DOM_CONTEXT_DEBUG] analyze_dom selected_chain=[] selected_ps_date_question=0 score=100
+[DOM_CONTEXT_DEBUG] analyze_dom stage=context_selected blocks_csount=0 chain_len=0
+[WALR_CS] Pas de #cardSortContainer
+[WALR_CS] bloc retourné: False
+[DOM_QUALTRICS_SL_TEXT] blocks_extracted=0
+[DOM_CONTEXT_DEBUG] analyze_dom choice_groups detected=0 created=0 rejected={}
+[DOM_CONTEXT_DEBUG] extracted_blocks count=36 itypes=['radio']
+[DOM_CONTEXT] extracted_blocks count=36 itypes=['radio'] question_len=203 options_count=108
+[DOM_CONTEXT_DEBUG] analyze_dom stage=raw_extraction blocks_count=36 sample=[{'itype': 'radio', 'question': 'Voici une liste de genres de jeux mobiles. Veuillez sélecti', 'options': 3}, {'itype': 'radio', 'question': 'Voici une liste de genres de jeux mobiles. Veuillez sélecti', 'options': 3}, {'itype': 'radio', 'question': 'Voici une liste de genres de jeux mobiles. Veuillez sélecti', 'options': 3}]
+[DOM_CONTEXT_DEBUG] analyze_dom stage=before_return blocks_count=36 sample=[{'itype': 'radio', 'question': 'Voici une liste de genres de jeux mobiles. Veuillez sélecti', 'options': 3}, {'itype': 'radio', 'question': 'Voici une liste de genres de jeux mobiles. Veuillez sélecti', 'options': 3}, {'itype': 'radio', 'question': 'Voici une liste de genres de jeux mobiles. Veuillez sélecti', 'options': 3}]
+[TARGET] execute_action raw="Q6 //// group_838e0a2d94ba //// Je jouais auparavant (j'ai joué avant, mais pas au cours des 30 derniers jours) //// radio //// Voici une liste de genres de jeux mobiles. Veuillez sélectionner la réponse qui représente le mieux votre expérience avec chacun. [Jeu de hasard au casino (Coin Master, myVegas Slots, Slotomania Slots, etc.)]"
+[TARGET] parsed target_id='group_838e0a2d94ba' itype='radio' value="Je jouais auparavant (j'ai joué avant, mais pas au cours des 30 derniers jours)" context_len=208
