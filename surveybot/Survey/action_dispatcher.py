@@ -5985,43 +5985,34 @@ def _same_matrix_table(tid1: str, tid2: str) -> bool:
         p1 = get_target(tid1) or {}
         p2 = get_target(tid2) or {}
 
-        log_debug("[SMT_DIAG]",
-            f"tid1={tid1!r} tid2={tid2!r} "
-            f"tmr1={p1.get('table_matrix_radio')} tmr2={p2.get('table_matrix_radio')} "
-            f"rar1={p1.get('runtime_answerrow_radio')} rar2={p2.get('runtime_answerrow_radio')} "
-            f"gk1={p1.get('group_key')!r} gk2={p2.get('group_key')!r} "
-            f"in1={p1.get('input_name')!r} in2={p2.get('input_name')!r} "
-            f"p1_keys={sorted(p1.keys())} p2_keys={sorted(p2.keys())}"
-        )
-
         # Classic HTML table matrix radio (table_matrix_radio)
         if p1.get("table_matrix_radio") and p2.get("table_matrix_radio"):
             prefix = "table_matrix_radio:name:"
             gk1 = p1.get("group_key") or ""
             gk2 = p2.get("group_key") or ""
             if not (gk1.startswith(prefix) and gk2.startswith(prefix)):
-                log_debug("[SMT_DIAG]", f"table_matrix_radio: bad prefix gk1={gk1!r} gk2={gk2!r} → False")
                 return False
             name1 = gk1[len(prefix):]
             name2 = gk2[len(prefix):]
             parts1 = name1.rsplit("~", 1)
             parts2 = name2.rsplit("~", 1)
             if len(parts1) < 2 or len(parts2) < 2:
-                log_debug("[SMT_DIAG]", f"table_matrix_radio: no tilde parts1={parts1} parts2={parts2} → False")
                 return False
-            result = parts1[0].lower() == parts2[0].lower()
-            log_debug("[SMT_DIAG]", f"table_matrix_radio: parts1[0]={parts1[0]!r} parts2[0]={parts2[0]!r} → {result}")
-            return result
+            return parts1[0].lower() == parts2[0].lower()
 
         # Toluna Runtime AnswerRow grid
         if p1.get("runtime_answerrow_radio") and p2.get("runtime_answerrow_radio"):
             opts1 = frozenset((p1.get("option_xpath_map") or {}).keys())
             opts2 = frozenset((p2.get("option_xpath_map") or {}).keys())
-            result = bool(opts1 and opts2 and opts1 == opts2)
-            log_debug("[SMT_DIAG]", f"runtime_answerrow: opts_match={result}")
-            return result
+            return bool(opts1 and opts2 and opts1 == opts2)
 
-        # Decipher/FocusVision per-row blocks: group_key = "radio:name:<input_name>"
+        # Decipher/FocusVision per-row blocks: group_key = "radio:name:<input_name>".
+        # Two rows belong to the same grid when they share the same columns.
+        # Primary: compare input_name prefix before last dot (e.g. "ans26138.0.1" and
+        #   "ans26138.0.23" share "ans26138.0").
+        # Fallback: when input_name has no dot (e.g. "QGENRE_MOBILE_r13_left"), compare
+        #   the frozenset of option_xpath_map keys — all rows of the same grid share
+        #   identical columns.
         _rn = "radio:name:"
         gk1 = (p1.get("group_key") or "")
         gk2 = (p2.get("group_key") or "")
@@ -6032,15 +6023,14 @@ def _same_matrix_table(tid1: str, tid2: str) -> bool:
                 dot1 = in1.rfind(".")
                 dot2 = in2.rfind(".")
                 if dot1 > 0 and dot2 > 0:
-                    result = in1[:dot1] == in2[:dot2]
-                    log_debug("[SMT_DIAG]", f"radio:name: in1={in1!r} in2={in2!r} prefix1={in1[:dot1]!r} prefix2={in2[:dot2]!r} → {result}")
-                    return result
-            log_debug("[SMT_DIAG]", f"radio:name: in1={in1!r} in2={in2!r} → no dot/empty → False")
+                    return in1[:dot1] == in2[:dot2]
+            opts1 = frozenset((p1.get("option_xpath_map") or {}).keys())
+            opts2 = frozenset((p2.get("option_xpath_map") or {}).keys())
+            if opts1 and opts2:
+                return opts1 == opts2
 
-        log_debug("[SMT_DIAG]", "no matching branch → False")
         return False
-    except Exception as e:
-        log_debug("[SMT_DIAG]", f"exception → {type(e).__name__}: {e}")
+    except Exception:
         return False
 
 
