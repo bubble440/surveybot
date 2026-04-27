@@ -327,7 +327,79 @@ def _recover_from_network_error(driver) -> str:
 
     return _NET_ERR_EXHAUSTED
 
-    
+
+# Valeurs de retour de _recover_from_yougov_app_error()
+_YG_ERR_CLEAN     = "clean"      # page saine, rien à faire
+_YG_ERR_RECOVERED = "recovered"  # erreur récupérée → appelant fait continue
+_YG_ERR_EXHAUSTED = "exhausted"  # tentatives épuisées → appelant fait soft-restart
+
+_YG_MAX_ATTEMPTS = 3
+
+def _recover_from_yougov_app_error(driver) -> str:
+    """
+    Détecte la page d'erreur applicative YouGov (#notification.alert-error visible +
+    #main_cont masqué) et tente jusqu'à _YG_MAX_ATTEMPTS driver.get() pour récupérer.
+
+    Signal DOM ciblé :
+      - #notification affiché (display != 'none') avec class contenant 'alert-error'
+      - #main_cont masqué (display == 'none')
+
+    Retourne :
+      _YG_ERR_CLEAN     — page saine (chemin rapide)
+      _YG_ERR_RECOVERED — erreur récupérée → appelant doit faire `continue`
+      _YG_ERR_EXHAUSTED — tentatives épuisées → appelant doit soft-restart
+    """
+    try:
+        notif = driver.find_element(By.ID, "notification")
+        notif_classes = notif.get_attribute("class") or ""
+        notif_display = notif.value_of_css_property("display")
+        if "alert-error" not in notif_classes or notif_display == "none":
+            return _YG_ERR_CLEAN
+        # Vérifie que le contenu sondage est bien masqué (évite les faux positifs)
+        main_cont = driver.find_element(By.ID, "main_cont")
+        if main_cont.value_of_css_property("display") != "none":
+            return _YG_ERR_CLEAN
+    except Exception:
+        return _YG_ERR_CLEAN
+
+    try:
+        current_url = driver.current_url or ""
+    except Exception:
+        current_url = ""
+
+    for attempt in range(1, _YG_MAX_ATTEMPTS + 1):
+        log_info("YG-APP-ERR", f"Erreur applicative YouGov (tentative {attempt}/{_YG_MAX_ATTEMPTS}) → attente 10s puis reload")
+        time.sleep(10)
+        try:
+            driver.get(current_url)
+        except Exception as e:
+            log_info("YG-APP-ERR", f"driver.get() a échoué (tentative {attempt}) : {e}")
+            return _YG_ERR_EXHAUSTED
+
+        try:
+            from Management import redirect_watcher as _rw
+            _rw.wait_for_page_load(driver, timeout=30)
+        except Exception:
+            time.sleep(5)
+
+        # Page revenue à la normale si #notification n'est plus visible en erreur
+        try:
+            notif = driver.find_element(By.ID, "notification")
+            still_error = (
+                "alert-error" in (notif.get_attribute("class") or "")
+                and notif.value_of_css_property("display") != "none"
+            )
+        except Exception:
+            still_error = False
+
+        if not still_error:
+            log_info("YG-APP-ERR", f"Page récupérée après {attempt} tentative(s)")
+            return _YG_ERR_RECOVERED
+
+    log_info("YG-APP-ERR", f"Page toujours en erreur après {_YG_MAX_ATTEMPTS} tentatives → abandon")
+    return _YG_ERR_EXHAUSTED
+
+
 # Référence module-level au SurveyContext actif — mis à jour par solve_full_survey()
 # Utilisé par le handler SIGUSR1 (launch.py) pour dump terminal à la demande.
 _current_survey_ctx = None
@@ -544,10 +616,18 @@ def solve_full_survey(driver, api_key, *, account_id: str, survey_context=None):
         # --- Récupération erreur réseau Chrome (ERR_TUNNEL_CONNECTION_FAILED) ---
         _net_result = _recover_from_network_error(driver)
         if _net_result == _NET_ERR_RECOVERED:
-            continue  # page revenue à la normale → relancer l'itération
+            continue  # page revenue à la normale → relancer l’itération
         if _net_result == _NET_ERR_EXHAUSTED:
             guard.request_survey_restart("net_err_max_attempts")
             return  # abandon propre du survey
+
+        # --- Récupération erreur applicative YouGov (#notification.alert-error visible) ---
+        _yg_result = _recover_from_yougov_app_error(driver)
+        if _yg_result == _YG_ERR_RECOVERED:
+            continue
+        if _yg_result == _YG_ERR_EXHAUSTED:
+            guard.request_survey_restart("yougov_app_err_max_attempts")
+            return
 
         # --- Détection page d’erreur applicative (Toluna: div.errorPage, Confirmit: div.errorpage-wrapper) ---
         try:
