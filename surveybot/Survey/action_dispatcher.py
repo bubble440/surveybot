@@ -5980,25 +5980,67 @@ def _get_block_strategy_memory(driver) -> dict:
     return cache
 
 def _same_matrix_table(tid1: str, tid2: str) -> bool:
-    """True if both target_ids are rows of the same table_matrix_radio (same parent QID)."""
+    """True if both target_ids are rows of the same table (same parent block)."""
     try:
         p1 = get_target(tid1) or {}
         p2 = get_target(tid2) or {}
-        if not (p1.get("table_matrix_radio") and p2.get("table_matrix_radio")):
-            return False
-        prefix = "table_matrix_radio:name:"
-        gk1 = p1.get("group_key") or ""
-        gk2 = p2.get("group_key") or ""
-        if not (gk1.startswith(prefix) and gk2.startswith(prefix)):
-            return False
-        name1 = gk1[len(prefix):]
-        name2 = gk2[len(prefix):]
-        parts1 = name1.rsplit("~", 1)
-        parts2 = name2.rsplit("~", 1)
-        if len(parts1) < 2 or len(parts2) < 2:
-            return False
-        return parts1[0].lower() == parts2[0].lower()
-    except Exception:
+
+        log_debug("[SMT_DIAG]",
+            f"tid1={tid1!r} tid2={tid2!r} "
+            f"tmr1={p1.get('table_matrix_radio')} tmr2={p2.get('table_matrix_radio')} "
+            f"rar1={p1.get('runtime_answerrow_radio')} rar2={p2.get('runtime_answerrow_radio')} "
+            f"gk1={p1.get('group_key')!r} gk2={p2.get('group_key')!r} "
+            f"in1={p1.get('input_name')!r} in2={p2.get('input_name')!r} "
+            f"p1_keys={sorted(p1.keys())} p2_keys={sorted(p2.keys())}"
+        )
+
+        # Classic HTML table matrix radio (table_matrix_radio)
+        if p1.get("table_matrix_radio") and p2.get("table_matrix_radio"):
+            prefix = "table_matrix_radio:name:"
+            gk1 = p1.get("group_key") or ""
+            gk2 = p2.get("group_key") or ""
+            if not (gk1.startswith(prefix) and gk2.startswith(prefix)):
+                log_debug("[SMT_DIAG]", f"table_matrix_radio: bad prefix gk1={gk1!r} gk2={gk2!r} → False")
+                return False
+            name1 = gk1[len(prefix):]
+            name2 = gk2[len(prefix):]
+            parts1 = name1.rsplit("~", 1)
+            parts2 = name2.rsplit("~", 1)
+            if len(parts1) < 2 or len(parts2) < 2:
+                log_debug("[SMT_DIAG]", f"table_matrix_radio: no tilde parts1={parts1} parts2={parts2} → False")
+                return False
+            result = parts1[0].lower() == parts2[0].lower()
+            log_debug("[SMT_DIAG]", f"table_matrix_radio: parts1[0]={parts1[0]!r} parts2[0]={parts2[0]!r} → {result}")
+            return result
+
+        # Toluna Runtime AnswerRow grid
+        if p1.get("runtime_answerrow_radio") and p2.get("runtime_answerrow_radio"):
+            opts1 = frozenset((p1.get("option_xpath_map") or {}).keys())
+            opts2 = frozenset((p2.get("option_xpath_map") or {}).keys())
+            result = bool(opts1 and opts2 and opts1 == opts2)
+            log_debug("[SMT_DIAG]", f"runtime_answerrow: opts_match={result}")
+            return result
+
+        # Decipher/FocusVision per-row blocks: group_key = "radio:name:<input_name>"
+        _rn = "radio:name:"
+        gk1 = (p1.get("group_key") or "")
+        gk2 = (p2.get("group_key") or "")
+        if gk1.startswith(_rn) and gk2.startswith(_rn):
+            in1 = (p1.get("input_name") or "").strip()
+            in2 = (p2.get("input_name") or "").strip()
+            if in1 and in2:
+                dot1 = in1.rfind(".")
+                dot2 = in2.rfind(".")
+                if dot1 > 0 and dot2 > 0:
+                    result = in1[:dot1] == in2[:dot2]
+                    log_debug("[SMT_DIAG]", f"radio:name: in1={in1!r} in2={in2!r} prefix1={in1[:dot1]!r} prefix2={in2[:dot2]!r} → {result}")
+                    return result
+            log_debug("[SMT_DIAG]", f"radio:name: in1={in1!r} in2={in2!r} → no dot/empty → False")
+
+        log_debug("[SMT_DIAG]", "no matching branch → False")
+        return False
+    except Exception as e:
+        log_debug("[SMT_DIAG]", f"exception → {type(e).__name__}: {e}")
         return False
 
 
@@ -6219,6 +6261,11 @@ def execute_actions_plan(
                             and next_qid == qid
                         )
                         _skip_reason = f"same qid={qid!r}" if same_question_block else ""
+                        # [DIAG] log avant guard _same_matrix_table
+                        log_debug("[RESCAN_DIAG]",
+                            f"idx={idx} ok={ok} itype={itype_lower!r} next_itype={next_itype!r} "
+                            f"tid={tid!r} next_tid={next_tid!r} same_qblock={same_question_block}"
+                        )
                         if not same_question_block and itype_lower == "radio" and next_itype == "radio" and tid and next_tid:
                             if _same_matrix_table(tid, next_tid):
                                 same_question_block = True

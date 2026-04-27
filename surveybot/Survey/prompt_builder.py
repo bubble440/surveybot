@@ -570,6 +570,24 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
     "Ne jamais renvoyer moins de valeurs que le nombre indiqué dans la question.\n"
     )
     
+    lines.append(
+        "RÈGLE TABLEAU RADIO HOMOGÈNE (distribution réaliste) :\n"
+        "Quand ce batch contient 8 questions radio ou plus qui partagent toutes le même jeu d'options "
+        "(ex : une grille d'expérience produit / genre de jeu / comportement avec des options du type "
+        "\"actif / ancien / jamais\" ou \"oui / parfois / non\"), tu DOIS distribuer les réponses de "
+        "façon réaliste et variée. Un répondant humain ne pratique pas activement 30 activités en même temps.\n\n"
+        "Règles de distribution à respecter IMPÉRATIVEMENT dans ce cas :\n"
+        "- Option la plus active (ex : \"Je joue actuellement\") : attribuée à 40-65 % des lignes.\n"
+        "- Option intermédiaire (ex : \"Je jouais auparavant\") : attribuée à 15-30 % des lignes.\n"
+        "- Option la plus passive (ex : \"Je n'ai jamais joué\") : attribuée au reste des lignes.\n"
+        "- INTERDIT : répondre la même valeur pour toutes les lignes sans exception.\n"
+        "- Varie les choix de manière imprévisible (ni alternance régulière, ni bloc uniforme).\n\n"
+        "PRIORITÉ : Cette règle est subordonnée aux règles suivantes qui s'appliquent TOUJOURS EN PREMIER "
+        "sur leurs lignes respectives : SURVEY_CONSENT_ACCEPT, RÈGLE SECTEUR, RÈGLE WEBCAM, RÈGLE JAMAIS / NEVER.\n"
+        "Cette règle ne s'applique PAS aux questions radio unitaires, aux checkboxes, aux matrices, "
+        "ni aux screeners disqualificatoires.\n"
+    )
+
     lines.append("\n--- QUESTIONS ---")
 
     for i, block in enumerate(question_blocks or [], start=1):
