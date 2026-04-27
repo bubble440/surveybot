@@ -219,6 +219,15 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
                         row_header_id = ""
                     if not row_label:
                         continue
+                    # Skip open-ended rows (e.g. "Autre, préciser"): selecting a radio
+                    # on such a row would fail the CTA because the inline OE field is empty.
+                    try:
+                        if row_header is not None and row_header.find_elements(
+                            By.CSS_SELECTOR, "input[type='text'].oe"
+                        ):
+                            continue
+                    except Exception:
+                        pass
 
                     try:
                         row_inputs = row.find_elements(By.CSS_SELECTOR, "input[type='radio'], input[type='checkbox']")
@@ -510,6 +519,9 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
         raw_triplets: list[tuple[str, str, str]] = []
         if matrix_table is not None:
             for inp in inputs:
+                inp_type = (inp.get_attribute("type") or "").strip().lower()
+                if inp_type not in ("radio", "checkbox"):
+                    continue
                 raw_name = (inp.get_attribute("name") or "").strip()
                 m = re.fullmatch(r"(ans\d+)\.(\d+)\.(\d+)", raw_name)
                 if not m:
@@ -517,11 +529,20 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
                     break
                 raw_triplets.append((m.group(1), m.group(2), m.group(3)))
 
-        if raw_triplets:
+        if matrix_table is not None and raw_triplets:
             stems = {t[0] for t in raw_triplets}
-            col_idx = {t[1] for t in raw_triplets}
-            row_idx = {t[2] for t in raw_triplets}
-            if len(stems) == 1 and len(col_idx) >= 2 and len(row_idx) >= 2:
+            # Use DOM-structural counts instead of name-based col/row cardinality:
+            # the name pattern ans{Q}.{VALUE}.{ROW} encodes a value, not a column index,
+            # so len(col_idx) would always be 1 even on a multi-column grid.
+            try:
+                dom_col_count = len(matrix_table.find_elements(By.CSS_SELECTOR, "th[scope='col']"))
+            except Exception:
+                dom_col_count = 0
+            try:
+                dom_row_count = len(matrix_table.find_elements(By.CSS_SELECTOR, "th[scope='row']"))
+            except Exception:
+                dom_row_count = 0
+            if len(stems) == 1 and dom_col_count >= 2 and dom_row_count >= 2:
                 matrix_mode = True
                 matrix_group_name = next(iter(stems))
 
@@ -547,6 +568,11 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
                     hid = (h.get_attribute("id") or "").strip()
                     m = re.search(r"_r(\d+)_left$", hid)
                     if not m:
+                        continue
+                    # Exclude open-ended "Autre (préciser)" rows: their row-header
+                    # contains an inline text input, so selecting a radio option would
+                    # trigger a CTA failure due to the empty OE field.
+                    if h.find_elements(By.CSS_SELECTOR, "input[type='text'].oe"):
                         continue
                     txt = (h.text or h.get_attribute("innerText") or h.get_attribute("textContent") or "").strip()
                     if txt:
