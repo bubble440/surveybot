@@ -324,7 +324,7 @@ def detect_strict_survey(driver) -> Tuple[bool, Optional[str]]:
             continue
 
 
-# --- AUDIO / VIDEO : strict UNIQUEMENT si obligation explicite ---
+    # --- AUDIO / VIDEO : strict UNIQUEMENT si obligation explicite ---
 
     txt = _page_text_lc(driver)
 

@@ -64,6 +64,7 @@ $env:ACCOUNT_ID ="topsurveys_bot_101" # Valeur a modifier dans le terminal pour 
 
 $env:RUN_ENV="local"
 $env:RUN_MODE="local"
+$env:STATE_BACKEND = "postgres"
 $env:DATABASE_URL = "postgres://postgres:3o1L6kfCFxuncbY@localhost:5432/postgres"
 # $env:SURVEY_HEADLESS="1"
 # $env:ACCOUNT_ID = "topsurveys_test_prod_like"
