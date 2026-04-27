@@ -1585,16 +1585,16 @@ def execute_survey_page(driver, account_id, api_key, ctx=None):
     # =========================================================================
     # PATCH: Écran vérification téléphone TopSurveys ("Courte pause")
     # =========================================================================
-    _phone_result = _handle_phone_verification(driver)
-    if _phone_result is not None:
-        return _phone_result
+    # _phone_result = _handle_phone_verification(driver)
+    # if _phone_result is not None:
+        # return _phone_result
 
     # =========================================================================
     # PATCH: Écran saisie code PIN TopSurveys (après vérification téléphone)
     # =========================================================================
-    _pin_result = _handle_pin_verification(driver)
-    if _pin_result is not None:
-        return _pin_result
+    # _pin_result = _handle_pin_verification(driver)
+    # if _pin_result is not None:
+        # return _pin_result
 
     # =========================================================================
     # PATCH: Detecter popup TopSurveys
