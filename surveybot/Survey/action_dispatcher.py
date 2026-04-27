@@ -5876,7 +5876,18 @@ def execute_action(
             answer_text = label or ""
 
             radio_cache = _get_block_strategy_memory(driver).get("radio", {})
-            radio_cache_key = (target_id or "").strip() or _norm_lc(ctx)
+            _tp = target_payload or {}
+            _tmr_opt_keys = (
+                frozenset((_tp.get("option_xpath_map") or {}).keys())
+                if _tp.get("table_matrix_radio")
+                else frozenset()
+            )
+            if _tmr_opt_keys:
+                radio_cache_key = "tmr:" + ",".join(sorted(_tmr_opt_keys))
+                if debug_target:
+                    log_debug("[TARGET_DEBUG]", f"radio shared_cache_key={radio_cache_key!r} target_id={target_id!r}")
+            else:
+                radio_cache_key = (target_id or "").strip() or _norm_lc(ctx)
 
             def _run_radio_strategy(strategy_name: str) -> bool:
                 if strategy_name == "aa_answer_matrix":
@@ -5987,18 +5998,9 @@ def _same_matrix_table(tid1: str, tid2: str) -> bool:
 
         # Classic HTML table matrix radio (table_matrix_radio)
         if p1.get("table_matrix_radio") and p2.get("table_matrix_radio"):
-            prefix = "table_matrix_radio:name:"
-            gk1 = p1.get("group_key") or ""
-            gk2 = p2.get("group_key") or ""
-            if not (gk1.startswith(prefix) and gk2.startswith(prefix)):
-                return False
-            name1 = gk1[len(prefix):]
-            name2 = gk2[len(prefix):]
-            parts1 = name1.rsplit("~", 1)
-            parts2 = name2.rsplit("~", 1)
-            if len(parts1) < 2 or len(parts2) < 2:
-                return False
-            return parts1[0].lower() == parts2[0].lower()
+            opts1 = frozenset((p1.get("option_xpath_map") or {}).keys())
+            opts2 = frozenset((p2.get("option_xpath_map") or {}).keys())
+            return bool(opts1 and opts2 and opts1 == opts2)
 
         # Toluna Runtime AnswerRow grid
         if p1.get("runtime_answerrow_radio") and p2.get("runtime_answerrow_radio"):

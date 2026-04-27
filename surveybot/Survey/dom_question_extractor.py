@@ -88,6 +88,8 @@ def _find_question_text_near_element(driver, el) -> str:
               const e = walker.currentNode;
               if (!e || badTags.has(e.tagName)) continue;
               if (!isVisible(e)) continue;
+              if (e.id === "error-summary") continue;
+              if (e.className && typeof e.className === "string" && e.className.indexOf("error") !== -1) continue;
 
               const t = (e.innerText || "").trim();
               if (!t || t.length < 8) continue;
