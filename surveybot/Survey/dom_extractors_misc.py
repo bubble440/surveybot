@@ -1167,6 +1167,193 @@ def _extract_rnw_ionicon_multi_choice_blocks(driver, frame_chain: list[int] | No
 
 
 # ================================================================================
+# ASKIA — RESPONSIVE TABLE CHECKBOX MATRIX (adc-responsiveTable)
+# ================================================================================
+
+def _extract_askia_responsive_table_checkbox_rows(driver, frame_chain: list[int] | None) -> list[dict]:
+    """Extraction DOM-only des matrices Askia ResponsiveTable checkbox.
+
+    Gate DOM strict et additif :
+    - form[name="FormAskia"]
+    - div.adc-responsiveTable > table avec thead th.responsesitems
+    - tbody tr.askiarow[data-id] avec un libellé de ligne et >=2 checkboxes
+
+    Produit 1 bloc checkbox par ligne de matrice. Ne dépend pas du provider :
+    l'activation se fait uniquement sur la structure DOM observable du widget.
+    """
+    frame_chain = list(frame_chain or [])
+
+    try:
+        if not driver.find_elements(By.CSS_SELECTOR, "form[name='FormAskia']"):
+            return []
+    except Exception:
+        return []
+
+    try:
+        containers = driver.find_elements(By.CSS_SELECTOR, "div.adc-responsiveTable")
+    except Exception:
+        return []
+
+    if not containers:
+        return []
+
+    blocks: list[dict] = []
+
+    for cidx, container in enumerate(containers[:10], start=1):
+        try:
+            try:
+                table = container.find_element(By.CSS_SELECTOR, "table")
+            except Exception:
+                continue
+
+            try:
+                header_nodes = table.find_elements(By.CSS_SELECTOR, "thead th.responsesitems")
+            except Exception:
+                header_nodes = []
+
+            col_headers: list[str] = []
+            for h in header_nodes:
+                try:
+                    txt = _norm(h.text or h.get_attribute("innerText") or h.get_attribute("textContent") or "")
+                except Exception:
+                    txt = ""
+                if txt and txt not in col_headers:
+                    col_headers.append(txt)
+
+            if len(col_headers) < 2:
+                continue
+
+            try:
+                rows = table.find_elements(By.CSS_SELECTOR, "tbody tr.askiarow[data-id]")
+            except Exception:
+                rows = []
+
+            if len(rows) < 2:
+                continue
+
+            matrix_question = ""
+            try:
+                q_nodes = driver.find_elements(
+                    By.CSS_SELECTOR,
+                    "td.askia-question-label, td[class*='askia-caption'], td[class*='askia-question-label']",
+                )
+                for qn in q_nodes:
+                    txt = _norm(qn.text or qn.get_attribute("innerText") or "")
+                    if txt:
+                        # Le span d'instruction (#indic) est dans le même td : garder le titre seul.
+                        matrix_question = _norm(txt.splitlines()[0])
+                        break
+            except Exception:
+                matrix_question = ""
+
+            for ridx, row in enumerate(rows[:40], start=1):
+                try:
+                    row_id = (row.get_attribute("data-id") or "").strip()
+
+                    row_label = ""
+                    try:
+                        label_nodes = row.find_elements(By.CSS_SELECTOR, "td.respLabel span.items, td.respLabel")
+                    except Exception:
+                        label_nodes = []
+                    for node in label_nodes:
+                        txt = _norm(node.text or node.get_attribute("innerText") or "")
+                        if txt:
+                            row_label = txt
+                            break
+                    if not row_label:
+                        continue
+
+                    try:
+                        boxes = row.find_elements(By.CSS_SELECTOR, "td.response input[type='checkbox'][name]")
+                    except Exception:
+                        boxes = []
+                    if len(boxes) < 2:
+                        continue
+
+                    options: list[str] = []
+                    option_xpath_map: dict[str, str] = {}
+                    num_options = min(len(col_headers), len(boxes))
+                    if num_options < 2:
+                        continue
+
+                    for idx in range(num_options):
+                        opt_text = col_headers[idx]
+                        box = boxes[idx]
+                        box_id = (box.get_attribute("id") or "").strip()
+                        box_name = (box.get_attribute("name") or "").strip()
+                        box_value = (box.get_attribute("value") or "").strip()
+
+                        if box_id:
+                            xp = f"(//*[@id={_xpath_literal(box_id)}])[1]"
+                        elif box_name and box_value:
+                            xp = (
+                                f"(//input[@type='checkbox' and @name={_xpath_literal(box_name)} "
+                                f"and @value={_xpath_literal(box_value)}])[1]"
+                            )
+                        else:
+                            xp = _best_xpath_for_element(driver, box)
+
+                        if not xp:
+                            continue
+
+                        nk = _norm_key(opt_text)
+                        if not nk or nk in option_xpath_map:
+                            continue
+                        option_xpath_map[nk] = xp
+                        options.append(opt_text)
+
+                    if len(options) < 2 or not option_xpath_map:
+                        continue
+
+                    question = f"{matrix_question} {row_label}" if matrix_question else row_label
+                    group_key = f"askia_responsive_table_checkbox:{row_id or cidx}:{ridx}"
+                    target_id = make_target_id("group", group_key, question)
+
+                    register_target(
+                        target_id,
+                        {
+                            "kind": "group",
+                            "itype": "checkbox",
+                            "group_key": group_key,
+                            "question": question,
+                            "option_xpath_map": option_xpath_map,
+                            "frame_chain": frame_chain,
+                            "matrix_question": matrix_question,
+                            "matrix_row": row_label,
+                            "matrix_columns": col_headers,
+                            "askia_responsive_table_checkbox": True,
+                        },
+                    )
+
+                    blocks.append(
+                        {
+                            "question": question,
+                            "itype": "checkbox",
+                            "options": options,
+                            "max_select": _compute_max_select("checkbox", options),
+                            "target_id": target_id,
+                            "context": {
+                                "kind": "group",
+                                "group_key": group_key,
+                                "matrix_question": matrix_question,
+                                "matrix_row": row_label,
+                                "matrix_columns": col_headers,
+                                "askia_responsive_table_checkbox": True,
+                            },
+                        }
+                    )
+                except Exception:
+                    continue
+        except Exception:
+            continue
+
+    if blocks:
+        log_debug("[DOM_ASKIA_RESP_TABLE]", f"blocks={len(blocks)}")
+
+    return blocks
+
+
+# ================================================================================
 # GENERIC TABLE MATRIX (RADIO PER ROW)
 # ================================================================================
 
