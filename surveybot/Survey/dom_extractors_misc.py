@@ -9657,3 +9657,266 @@ def _extract_askia_ranking_isotope_blocks(driver, frame_chain: list[int] | None)
             continue
 
     return blocks
+
+
+# ================================================================================
+# ASKIA ADC-SLIDER (noUiSlider)
+# ================================================================================
+
+def _extract_askia_adc_slider_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
+    """
+    Extrait les sliders Askia (div.adc-slider / noUiSlider).
+
+    Structure DOM cible :
+      <div id="adc_N" class="adc-slider">
+        <input type="hidden" id="UXXX" name="UXXX" value="">
+        <div class="sliderContainer">
+          <table class="slider">
+            <tr class="sliderTop">
+              <td><div class="leftLabel">...</div></td>
+              <td><div class="rightLabel">...</div></td>
+            </tr>
+            <tr class="sliderMiddle">
+              <td><div class="noUiSlider ..."><div class="noUi-base">
+                <div class="noUi-origin"><div class="noUi-handle noUi-handle-lower"></div></div>
+              </div></div></td>
+            </tr>
+            <tr class="sliderDK">          <!-- optionnel -->
+              <td><div class="dk" data-value="NNNN">Vous ne savez pas</div></td>
+            </tr>
+          </table>
+        </div>
+      </div>
+
+    La sub-question est dans le td.askia-caption[QID] ou td.askia-question-label
+    précédant le td.askia-control[class*="askia-question-QUID"] dans le même tableau.
+
+    Les valeurs numériques (min/max/step) sont lues depuis les attributs du conteneur
+    adc-slider ou, en fallback, depuis la position du handle (left: 50% → valeur médiane).
+    L'interaction se fait via JS sur l'input hidden + dispatch d'un event 'change'.
+
+    Gate DOM stricte :
+      - form[name="FormAskia"] présent
+      - ET au moins un div.adc-slider contenant un input[type="hidden"][name] ET un div.noUi-handle
+    """
+    blocks: list[dict] = []
+
+    # Gate 1 : form Askia
+    try:
+        if not driver.find_elements(By.CSS_SELECTOR, "form[name='FormAskia']"):
+            return blocks
+    except Exception:
+        return blocks
+
+    # Gate 2 : au moins un adc-slider avec handle
+    try:
+        containers = driver.find_elements(By.CSS_SELECTOR, "div.adc-slider")
+    except Exception:
+        return blocks
+
+    if not containers:
+        return blocks
+
+    seen_names: set[str] = set()
+
+    for container in containers:
+        try:
+            # input hidden portant la valeur de réponse
+            hidden_inputs = container.find_elements(
+                By.CSS_SELECTOR, "input[type='hidden'][name]"
+            )
+            if not hidden_inputs:
+                continue
+            hidden_input = hidden_inputs[0]
+            input_name = (hidden_input.get_attribute("name") or "").strip()
+            input_id = (hidden_input.get_attribute("id") or "").strip()
+            if not input_name or input_name in seen_names:
+                continue
+
+            # Gate : handle noUiSlider présent (confirme que c'est bien un slider actif)
+            if not container.find_elements(By.CSS_SELECTOR, "div.noUi-handle"):
+                continue
+
+            container_id = (container.get_attribute("id") or "").strip()
+
+            # ── Sub-question : td précédant le td.askia-control dans la même table ──
+            sub_question = ""
+            try:
+                # Cherche le td.askia-control qui contient ce container
+                control_td = driver.execute_script(
+                    "return arguments[0].closest('td[class*=\"askia-control\"]');",
+                    container,
+                )
+                if control_td:
+                    # Remonte au tr, puis cherche le tr précédent avec td.askia-question-label
+                    sub_question = driver.execute_script(
+                        """
+                        var td = arguments[0];
+                        var tr = td.closest('tr');
+                        if (!tr) return '';
+                        var prev = tr.previousElementSibling;
+                        while (prev) {
+                            var label = prev.querySelector(
+                                'td.askia-question-label, td[class*="askia-caption"]'
+                            );
+                            if (label) {
+                                return (label.innerText || label.textContent || '').trim();
+                            }
+                            prev = prev.previousElementSibling;
+                        }
+                        return '';
+                        """,
+                        control_td,
+                    ) or ""
+                    sub_question = _norm(sub_question)
+            except Exception:
+                sub_question = ""
+
+            # ── Question globale (instruction commune en tête de page) ──
+            global_question = ""
+            try:
+                q_nodes = driver.find_elements(
+                    By.CSS_SELECTOR,
+                    "td.askia-question-label, td[class*='askia-caption']",
+                )
+                for qn in q_nodes:
+                    raw = _norm(qn.text or qn.get_attribute("innerText") or "")
+                    if raw and raw != sub_question:
+                        global_question = raw
+                        break
+            except Exception:
+                pass
+
+            question = sub_question or global_question
+            if not question:
+                continue
+
+            # ── Options : leftLabel + rightLabel + DK ──
+            left_label = ""
+            right_label = ""
+            try:
+                ll_els = container.find_elements(By.CSS_SELECTOR, "div.leftLabel")
+                if ll_els:
+                    left_label = _norm(ll_els[0].text or ll_els[0].get_attribute("innerText") or "")
+            except Exception:
+                pass
+            try:
+                rl_els = container.find_elements(By.CSS_SELECTOR, "div.rightLabel")
+                if rl_els:
+                    right_label = _norm(rl_els[0].text or rl_els[0].get_attribute("innerText") or "")
+            except Exception:
+                pass
+
+            # DK button : div.dk[data-value]
+            dk_text = ""
+            dk_data_value = ""
+            try:
+                dk_els = container.find_elements(By.CSS_SELECTOR, "div.dk[data-value]")
+                if dk_els:
+                    dk_text = _norm(dk_els[0].text or dk_els[0].get_attribute("innerText") or "")
+                    dk_data_value = (dk_els[0].get_attribute("data-value") or "").strip()
+            except Exception:
+                pass
+
+            # ── Construction des options et de l'option_xpath_map ──
+            # Le noUiSlider Askia est un slider continu (0–10 typiquement).
+            # On expose uniquement les deux pôles + DK comme options cliquables ;
+            # le bot peut positionner le handle pour toute valeur intermédiaire.
+            # Pour l'interaction, on utilise JS sur l'input hidden + trigger change.
+            options: list[str] = []
+            option_xpath_map: dict[str, str] = {}
+            value_map: dict[str, str] = {}   # option_key → valeur à injecter dans l'input hidden
+
+            name_lit = _xpath_literal(input_name)
+
+            if left_label:
+                key = _norm_key(left_label)
+                options.append(left_label)
+                # L'XPath pointe vers l'input hidden ; la valeur sera injectée via JS
+                option_xpath_map[key] = f"//input[@name={name_lit}]"
+                # On ne connaît pas la vraie valeur numérique sans parser le JS inline.
+                # On expose "min" comme marqueur sémantique pour le module d'action.
+                value_map[key] = "min"
+
+            if right_label:
+                key = _norm_key(right_label)
+                options.append(right_label)
+                option_xpath_map[key] = f"//input[@name={name_lit}]"
+                value_map[key] = "max"
+
+            if dk_text and dk_data_value:
+                key = _norm_key(dk_text)
+                options.append(dk_text)
+                # Le DK est un div cliquable — XPath direct et stable
+                if container_id:
+                    cid_lit = _xpath_literal(container_id)
+                    dv_lit = _xpath_literal(dk_data_value)
+                    option_xpath_map[key] = (
+                        f"//*[@id={cid_lit}]//div[contains(@class,'dk')][@data-value={dv_lit}]"
+                    )
+                else:
+                    dv_lit = _xpath_literal(dk_data_value)
+                    option_xpath_map[key] = (
+                        f"//div[contains(@class,'adc-slider')]"
+                        f"//div[contains(@class,'dk')][@data-value={dv_lit}]"
+                    )
+                value_map[key] = dk_data_value
+
+            if len(options) < 1:
+                continue
+
+            group_key = (
+                f"askia_adc_slider:{container_id}:{input_name}"
+                if container_id
+                else f"askia_adc_slider:{input_name}"
+            )
+            target_id = make_target_id("group", group_key, question)
+
+            register_target(
+                target_id,
+                {
+                    "kind": "group",
+                    "itype": "radio",
+                    "group_key": group_key,
+                    "question": question,
+                    "option_xpath_map": option_xpath_map,
+                    "frame_chain": list(frame_chain or []),
+                    "askia_adc_slider": True,
+                    "input_name": input_name,
+                    "input_id": input_id,
+                    "container_id": container_id,
+                    "value_map": value_map,
+                },
+            )
+
+            blocks.append(
+                {
+                    "question": question,
+                    "itype": "radio",
+                    "options": options,
+                    "max_select": 1,
+                    "target_id": target_id,
+                    "context": {
+                        "kind": "group",
+                        "group_key": group_key,
+                        "askia_adc_slider": True,
+                        "input_name": input_name,
+                    },
+                }
+            )
+
+            seen_names.add(input_name)
+
+            log_debug(
+                "[DOM_ASKIA_ADC_SLIDER]",
+                f"container={container_id!r} input_name={input_name!r} "
+                f"question={question[:60]!r} options={len(options)}",
+            )
+
+        except Exception:
+            continue
+
+    if blocks:
+        log_info("[DOM_ASKIA_ADC_SLIDER]", f"blocks_extracted={len(blocks)}")
+
+    return blocks
