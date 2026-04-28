@@ -1,83 +1,799 @@
-TARGET_DEBUG] action_dispatcher file=C:\projects\Surveys\surveybot\Survey\action_dispatcher.py
-[TARGET] execute_action raw="Q1 //// group_29411ac3d5d9 //// Je joue actuellement (j'ai joué au cours des 30 derniers jours) //// radio //// Voici une liste de genres de jeux mobiles. Veuillez sélectionner la réponse qui représente le mieux votre expérience avec chacun. [Objets cachés (June’s Journey, Criminal Case, The Secret Society, etc.)]"
-[TARGET] parsed target_id='group_29411ac3d5d9' itype='radio' value="Je joue actuellement (j'ai joué au cours des 30 derniers jours)" context_len=203
-[TARGET] toluna_runtime_answerrow: entering block
-[TARGET] toluna_runtime_answerrow: guard=None
-[TARGET] apply ok=true strategy=target_id reason=applied
-[DOM_CONTEXT_DEBUG] runtime_signature rows=0 wrappers=0 in_selected_context=False
-[DOM_CONTEXT_DEBUG] analyze_dom selected_chain=[] selected_ps_date_question=0 score=100
-[DOM_CONTEXT_DEBUG] analyze_dom stage=context_selected blocks_count=0 chain_len=0
-[WALR_CS] Pas de #cardSortContainer
-[WALR_CS] bloc retourné: False
-[DOM_QUALTRICS_SL_TEXT] blocks_extracted=0
-[DOM_CONTEXT_DEBUG] analyze_dom choice_groups detected=0 created=0 rejected={}
-[DOM_CONTEXT_DEBUG] extracted_blocks count=36 itypes=['radio']
-[DOM_CONTEXT] extracted_blocks count=36 itypes=['radio'] question_len=203 options_count=108
-[DOM_CONTEXT_DEBUG] analyze_dom stage=raw_extraction blocks_count=36 sample=[{'itype': 'radio', 'question': 'Voici une liste de genres de jeux mobiles. Veuillez sélecti', 'options': 3}, {'itype': 'radio', 'question': 'Voici une liste de genres de jeux mobiles. Veuillez sélecti', 'options': 3}, {'itype': 'radio', 'question': 'Voici une liste de genres de jeux mobiles. Veuillez sélecti', 'options': 3}]
-[DOM_CONTEXT_DEBUG] analyze_dom stage=before_return blocks_count=36 sample=[{'itype': 'radio', 'question': 'Voici une liste de genres de jeux mobiles. Veuillez sélecti', 'options': 3}, {'itype': 'radio', 'question': 'Voici une liste de genres de jeux mobiles. Veuillez sélecti', 'options': 3}, {'itype': 'radio', 'question': 'Voici une liste de genres de jeux mobiles. Veuillez sélecti', 'options': 3}]
-[TARGET] execute_action raw="Q2 //// group_f173d95682b9 //// Je joue actuellement (j'ai joué au cours des 30 derniers jours) //// radio //// Voici une liste de genres de jeux mobiles. Veuillez sélectionner la réponse qui représente le mieux votre expérience avec chacun. [Jeu de réflexion physique (Angry Birds 2, Cut the Rope 2, Mais, où est Swampy ? 2, etc.)]"
-[TARGET] parsed target_id='group_f173d95682b9' itype='radio' value="Je joue actuellement (j'ai joué au cours des 30 derniers jours)" context_len=220
-[TARGET] toluna_runtime_answerrow: entering block
-[TARGET] toluna_runtime_answerrow: guard=None
-[TARGET] apply ok=true strategy=target_id reason=applied
-[DOM_CONTEXT_DEBUG] runtime_signature rows=0 wrappers=0 in_selected_context=False
-[DOM_CONTEXT_DEBUG] analyze_dom selected_chain=[] selected_ps_date_question=0 score=100
-[DOM_CONTEXT_DEBUG] analyze_dom stage=context_selected blocks_count=0 chain_len=0
-[WALR_CS] Pas de #cardSortContainer
-[WALR_CS] bloc retourné: False
-[DOM_QUALTRICS_SL_TEXT] blocks_extracted=0
-[DOM_CONTEXT_DEBUG] analyze_dom choice_groups detected=0 created=0 rejected={}
-[DOM_CONTEXT_DEBUG] extracted_blocks count=36 itypes=['radio']
-[DOM_CONTEXT] extracted_blocks count=36 itypes=['radio'] question_len=203 options_count=108
-[DOM_CONTEXT_DEBUG] analyze_dom stage=raw_extraction blocks_count=36 sample=[{'itype': 'radio', 'question': 'Voici une liste de genres de jeux mobiles. Veuillez sélecti', 'options': 3}, {'itype': 'radio', 'question': 'Voici une liste de genres de jeux mobiles. Veuillez sélecti', 'options': 3}, {'itype': 'radio', 'question': 'Voici une liste de genres de jeux mobiles. Veuillez sélecti', 'options': 3}]
-[DOM_CONTEXT_DEBUG] analyze_dom stage=before_return blocks_count=36 sample=[{'itype': 'radio', 'question': 'Voici une liste de genres de jeux mobiles. Veuillez sélecti', 'options': 3}, {'itype': 'radio', 'question': 'Voici une liste de genres de jeux mobiles. Veuillez sélecti', 'options': 3}, {'itype': 'radio', 'question': 'Voici une liste de genres de jeux mobiles. Veuillez sélecti', 'options': 3}]
-[TARGET] execute_action raw="Q3 //// group_a79e9f96e2b6 //// Je jouais auparavant (j'ai joué avant, mais pas au cours des 30 derniers jours) //// radio //// Voici une liste de genres de jeux mobiles. Veuillez sélectionner la réponse qui représente le mieux votre expérience avec chacun. [Simulateur de ferme (Hay Day, FarmVille 2 : Escapade rurale, etc.)]"
-[TARGET] parsed target_id='group_a79e9f96e2b6' itype='radio' value="Je jouais auparavant (j'ai joué avant, mais pas au cours des 30 derniers jours)" context_len=198
-[TARGET] toluna_runtime_answerrow: entering block
-[TARGET] toluna_runtime_answerrow: guard=None
-[TARGET] apply ok=true strategy=target_id reason=applied
-[DOM_CONTEXT_DEBUG] runtime_signature rows=0 wrappers=0 in_selected_context=False
-[DOM_CONTEXT_DEBUG] analyze_dom selected_chain=[] selected_ps_date_question=0 score=100
-[DOM_CONTEXT_DEBUG] analyze_dom stage=context_selected blocks_count=0 chain_len=0
-[WALR_CS] Pas de #cardSortContainer
-[WALR_CS] bloc retourné: False
-[DOM_QUALTRICS_SL_TEXT] blocks_extracted=0
-[DOM_CONTEXT_DEBUG] analyze_dom choice_groups detected=0 created=0 rejected={}
-[DOM_CONTEXT_DEBUG] extracted_blocks count=36 itypes=['radio']
-[DOM_CONTEXT] extracted_blocks count=36 itypes=['radio'] question_len=203 options_count=108
-[DOM_CONTEXT_DEBUG] analyze_dom stage=raw_extraction blocks_count=36 sample=[{'itype': 'radio', 'question': 'Voici une liste de genres de jeux mobiles. Veuillez sélecti', 'options': 3}, {'itype': 'radio', 'question': 'Voici une liste de genres de jeux mobiles. Veuillez sélecti', 'options': 3}, {'itype': 'radio', 'question': 'Voici une liste de genres de jeux mobiles. Veuillez sélecti', 'options': 3}]
-[DOM_CONTEXT_DEBUG] analyze_dom stage=before_return blocks_count=36 sample=[{'itype': 'radio', 'question': 'Voici une liste de genres de jeux mobiles. Veuillez sélecti', 'options': 3}, {'itype': 'radio', 'question': 'Voici une liste de genres de jeux mobiles. Veuillez sélecti', 'options': 3}, {'itype': 'radio', 'question': 'Voici une liste de genres de jeux mobiles. Veuillez sélecti', 'options': 3}]
-[TARGET] execute_action raw="Q4 //// group_671945106a11 //// Je joue actuellement (j'ai joué au cours des 30 derniers jours) //// radio //// Voici une liste de genres de jeux mobiles. Veuillez sélectionner la réponse qui représente le mieux votre expérience avec chacun. [Jeu de mots (Wordle, Connections, Wordscapes, Mots Entre Amis, etc.)]"
-[TARGET] parsed target_id='group_671945106a11' itype='radio' value="Je joue actuellement (j'ai joué au cours des 30 derniers jours)" context_len=200
-[TARGET] toluna_runtime_answerrow: entering block
-[TARGET] toluna_runtime_answerrow: guard=None
-[TARGET] apply ok=true strategy=target_id reason=applied
-[DOM_CONTEXT_DEBUG] runtime_signature rows=0 wrappers=0 in_selected_context=False
-[DOM_CONTEXT_DEBUG] analyze_dom selected_chain=[] selected_ps_date_question=0 score=100
-[DOM_CONTEXT_DEBUG] analyze_dom stage=context_selected blocks_count=0 chain_len=0
-[WALR_CS] Pas de #cardSortContainer
-[WALR_CS] bloc retourné: False
-[DOM_QUALTRICS_SL_TEXT] blocks_extracted=0
-[DOM_CONTEXT_DEBUG] analyze_dom choice_groups detected=0 created=0 rejected={}
-[DOM_CONTEXT_DEBUG] extracted_blocks count=36 itypes=['radio']
-[DOM_CONTEXT] extracted_blocks count=36 itypes=['radio'] question_len=203 options_count=108
-[DOM_CONTEXT_DEBUG] analyze_dom stage=raw_extraction blocks_count=36 sample=[{'itype': 'radio', 'question': 'Voici une liste de genres de jeux mobiles. Veuillez sélecti', 'options': 3}, {'itype': 'radio', 'question': 'Voici une liste de genres de jeux mobiles. Veuillez sélecti', 'options': 3}, {'itype': 'radio', 'question': 'Voici une liste de genres de jeux mobiles. Veuillez sélecti', 'options': 3}]
-[DOM_CONTEXT_DEBUG] analyze_dom stage=before_return blocks_count=36 sample=[{'itype': 'radio', 'question': 'Voici une liste de genres de jeux mobiles. Veuillez sélecti', 'options': 3}, {'itype': 'radio', 'question': 'Voici une liste de genres de jeux mobiles. Veuillez sélecti', 'options': 3}, {'itype': 'radio', 'question': 'Voici une liste de genres de jeux mobiles. Veuillez sélecti', 'options': 3}]
-[TARGET] execute_action raw="Q5 //// group_1d63e28eaea0 //// Je joue actuellement (j'ai joué au cours des 30 derniers jours) //// radio //// Voici une liste de genres de jeux mobiles. Veuillez sélectionner la réponse qui représente le mieux votre expérience avec chacun. [Jeux basés sur la localisation/Réalité augmentée (AR) (Pokémon Go, Monster Hunter Now, etc.)]"
-[TARGET] parsed target_id='group_1d63e28eaea0' itype='radio' value="Je joue actuellement (j'ai joué au cours des 30 derniers jours)" context_len=224
-[TARGET] toluna_runtime_answerrow: entering block
-[TARGET] toluna_runtime_answerrow: guard=None
-[TARGET] apply ok=true strategy=target_id reason=applied
-[DOM_CONTEXT_DEBUG] runtime_signature rows=0 wrappers=0 in_selected_context=False
-[DOM_CONTEXT_DEBUG] analyze_dom selected_chain=[] selected_ps_date_question=0 score=100
-[DOM_CONTEXT_DEBUG] analyze_dom stage=context_selected blocks_csount=0 chain_len=0
-[WALR_CS] Pas de #cardSortContainer
-[WALR_CS] bloc retourné: False
-[DOM_QUALTRICS_SL_TEXT] blocks_extracted=0
-[DOM_CONTEXT_DEBUG] analyze_dom choice_groups detected=0 created=0 rejected={}
-[DOM_CONTEXT_DEBUG] extracted_blocks count=36 itypes=['radio']
-[DOM_CONTEXT] extracted_blocks count=36 itypes=['radio'] question_len=203 options_count=108
-[DOM_CONTEXT_DEBUG] analyze_dom stage=raw_extraction blocks_count=36 sample=[{'itype': 'radio', 'question': 'Voici une liste de genres de jeux mobiles. Veuillez sélecti', 'options': 3}, {'itype': 'radio', 'question': 'Voici une liste de genres de jeux mobiles. Veuillez sélecti', 'options': 3}, {'itype': 'radio', 'question': 'Voici une liste de genres de jeux mobiles. Veuillez sélecti', 'options': 3}]
-[DOM_CONTEXT_DEBUG] analyze_dom stage=before_return blocks_count=36 sample=[{'itype': 'radio', 'question': 'Voici une liste de genres de jeux mobiles. Veuillez sélecti', 'options': 3}, {'itype': 'radio', 'question': 'Voici une liste de genres de jeux mobiles. Veuillez sélecti', 'options': 3}, {'itype': 'radio', 'question': 'Voici une liste de genres de jeux mobiles. Veuillez sélecti', 'options': 3}]
-[TARGET] execute_action raw="Q6 //// group_838e0a2d94ba //// Je jouais auparavant (j'ai joué avant, mais pas au cours des 30 derniers jours) //// radio //// Voici une liste de genres de jeux mobiles. Veuillez sélectionner la réponse qui représente le mieux votre expérience avec chacun. [Jeu de hasard au casino (Coin Master, myVegas Slots, Slotomania Slots, etc.)]"
-[TARGET] parsed target_id='group_838e0a2d94ba' itype='radio' value="Je jouais auparavant (j'ai joué avant, mais pas au cours des 30 derniers jours)" context_len=208
+<body onload="loadFormAskia();">
+<div id="mainframe">
+<div id="headercontent">
+	<div class="empty-row">&nbsp;</div>
+</div>
+
+<div class="framecontainer">
+	<div class="framecontent">
+
+<ul id="header">
+
+<div id="navcontent">
+	<ul id="navcontainer">
+
+                                 <li id="navcontentmiddle">
+
+<table width="100%">
+<tbody><tr>
+<td><img id="responsiveMOBILE" src="https://moai-surveys.com/webprod/Resources/Observatoire_Tendances_Conso_2026/Logo_Moai3.png" alt="MOAI" align="center" width="25%" style="padding: 20px 0 20px 0;"></td>
+</tr>
+
+</tbody></table>
+
+<div id="progress" title="40%"><div class="progressbar" style="width: 40%;">&nbsp; </div></div>
+<hr>
+
+
+<form name="FormAskia" action="https://moai-surveys.com/webprod/cgi-bin/AskiaExt.dll?Action=DoInterview&amp;Survey=7U02693XGLUP65Q3&amp;Intvw=7U024UZIOWPSE4X2&amp;Mri=e3o=" method="post" accept-charset="UTF-8">
+	<input name="iehack" type="hidden" value="☠">
+	<input name="sessionToken" type="hidden" value="{9084CEDF-B9DA-4A4E-B7A0-A1EAEFBE2E4C}">
+	<input type="hidden" name="Action" value="CommitScreen">
+	<input type="hidden" name="Survey" value="0003GQI4JRPB9J9U">
+	<input type="hidden" name="Intvw" value="7U024UZIOWPSE4X2">
+	<input type="hidden" name="Mri" value="e3o=">
+	<input type="hidden" name="Position" value="350">
+
+<table border="0" cellpadding="0" cellspacing="0" width="100%">
+	<tbody><tr>
+		<td class="label askia-caption350 askia-question-label askia-question-350"> Et quel(s) canal(aux) utilisez-vous pour…
+<br><span id="indic">
+Plusieurs réponses possibles par type de demande.
+</span>
+</td>
+	</tr>
+	<tr>
+		<td class="askia-control askia-question-350"> <div id="adc_1" class="adc-responsiveTable">
+    <table>
+        <thead id="adc_1_thead">
+            <tr>
+                <th class="firstColumn respLabel" style="transform: translateY(0px);">&nbsp;</th>
+                
+                <th class="othersColumns responsesitems" style="transform: translateY(0px);">
+                    <div class="head">
+                    
+                    Le téléphone
+                    
+                    
+                    </div>
+                </th>
+                
+                <th class="othersColumns responsesitems" style="transform: translateY(0px);">
+                    <div class="head">
+                    
+                    La visio / appel vidéo
+                    
+                    
+                    </div>
+                </th>
+                
+                <th class="othersColumns responsesitems" style="transform: translateY(0px);">
+                    <div class="head">
+                    
+                    Le courrier
+                    
+                    
+                    </div>
+                </th>
+                
+                <th class="othersColumns responsesitems" style="transform: translateY(0px);">
+                    <div class="head">
+                    
+                    Le mail
+                    
+                    
+                    </div>
+                </th>
+                
+                <th class="othersColumns responsesitems" style="transform: translateY(0px);">
+                    <div class="head">
+                    
+                    Le face-à-face en agence
+                    
+                    
+                    </div>
+                </th>
+                
+                <th class="othersColumns responsesitems" style="transform: translateY(0px);">
+                    <div class="head">
+                    
+                    L’application mobile
+                    
+                    
+                    </div>
+                </th>
+                
+                <th class="othersColumns responsesitems" style="transform: translateY(0px);">
+                    <div class="head">
+                    
+                    Le site internet
+                    
+                    
+                    </div>
+                </th>
+                
+            </tr>
+        </thead>
+        <tbody>
+            
+            <tr data-id="M350" class="askiarow">
+                <td class="respLabel">
+                    <a class="askiadisplay active">
+                        
+                        <span class="items">Déclarer un sinistre</span>
+                        
+                        
+                    </a>
+                </td>
+                
+                <td class="response" style="">
+                    <input type="checkbox" id="askia-input350_5040" class="" name="M350 5040" value="5040">
+                    <label for="askia-input350_5040" class="askia-checkbox"></label>
+                    <label for="askia-input350_5040" class="responsesitems">
+                        
+                        Le téléphone
+                        
+                    </label>
+                </td>
+                
+                <td class="response" style="">
+                    <input type="checkbox" id="askia-input350_5045" class="" name="M350 5045" value="5045">
+                    <label for="askia-input350_5045" class="askia-checkbox"></label>
+                    <label for="askia-input350_5045" class="responsesitems">
+                        
+                        La visio / appel vidéo
+                        
+                    </label>
+                </td>
+                
+                <td class="response" style="">
+                    <input type="checkbox" id="askia-input350_5042" class="" name="M350 5042" value="5042">
+                    <label for="askia-input350_5042" class="askia-checkbox"></label>
+                    <label for="askia-input350_5042" class="responsesitems">
+                        
+                        Le courrier
+                        
+                    </label>
+                </td>
+                
+                <td class="response" style="">
+                    <input type="checkbox" id="askia-input350_5041" class="" name="M350 5041" value="5041">
+                    <label for="askia-input350_5041" class="askia-checkbox"></label>
+                    <label for="askia-input350_5041" class="responsesitems">
+                        
+                        Le mail
+                        
+                    </label>
+                </td>
+                
+                <td class="response" style="">
+                    <input type="checkbox" id="askia-input350_5039" class="" name="M350 5039" value="5039">
+                    <label for="askia-input350_5039" class="askia-checkbox"></label>
+                    <label for="askia-input350_5039" class="responsesitems">
+                        
+                        Le face-à-face en agence
+                        
+                    </label>
+                </td>
+                
+                <td class="response" style="">
+                    <input type="checkbox" id="askia-input350_5044" class="" name="M350 5044" value="5044">
+                    <label for="askia-input350_5044" class="askia-checkbox"></label>
+                    <label for="askia-input350_5044" class="responsesitems">
+                        
+                        L’application mobile
+                        
+                    </label>
+                </td>
+                
+                <td class="response" style="">
+                    <input type="checkbox" id="askia-input350_5043" class="" name="M350 5043" value="5043">
+                    <label for="askia-input350_5043" class="askia-checkbox"></label>
+                    <label for="askia-input350_5043" class="responsesitems">
+                        
+                        Le site internet
+                        
+                    </label>
+                </td>
+                
+            </tr>
+            
+            <tr data-id="M352" class="askiarow">
+                <td class="respLabel">
+                    <a class="askiadisplay">
+                        
+                        <span class="items">Faire une réclamation</span>
+                        
+                        
+                    </a>
+                </td>
+                
+                <td class="response" style="display: none;">
+                    <input type="checkbox" id="askia-input352_5040" class="" name="M352 5040" value="5040">
+                    <label for="askia-input352_5040" class="askia-checkbox"></label>
+                    <label for="askia-input352_5040" class="responsesitems">
+                        
+                        Le téléphone
+                        
+                    </label>
+                </td>
+                
+                <td class="response" style="display: none;">
+                    <input type="checkbox" id="askia-input352_5045" class="" name="M352 5045" value="5045">
+                    <label for="askia-input352_5045" class="askia-checkbox"></label>
+                    <label for="askia-input352_5045" class="responsesitems">
+                        
+                        La visio / appel vidéo
+                        
+                    </label>
+                </td>
+                
+                <td class="response" style="display: none;">
+                    <input type="checkbox" id="askia-input352_5042" class="" name="M352 5042" value="5042">
+                    <label for="askia-input352_5042" class="askia-checkbox"></label>
+                    <label for="askia-input352_5042" class="responsesitems">
+                        
+                        Le courrier
+                        
+                    </label>
+                </td>
+                
+                <td class="response" style="display: none;">
+                    <input type="checkbox" id="askia-input352_5041" class="" name="M352 5041" value="5041">
+                    <label for="askia-input352_5041" class="askia-checkbox"></label>
+                    <label for="askia-input352_5041" class="responsesitems">
+                        
+                        Le mail
+                        
+                    </label>
+                </td>
+                
+                <td class="response" style="display: none;">
+                    <input type="checkbox" id="askia-input352_5039" class="" name="M352 5039" value="5039">
+                    <label for="askia-input352_5039" class="askia-checkbox"></label>
+                    <label for="askia-input352_5039" class="responsesitems">
+                        
+                        Le face-à-face en agence
+                        
+                    </label>
+                </td>
+                
+                <td class="response" style="display: none;">
+                    <input type="checkbox" id="askia-input352_5044" class="" name="M352 5044" value="5044">
+                    <label for="askia-input352_5044" class="askia-checkbox"></label>
+                    <label for="askia-input352_5044" class="responsesitems">
+                        
+                        L’application mobile
+                        
+                    </label>
+                </td>
+                
+                <td class="response" style="display: none;">
+                    <input type="checkbox" id="askia-input352_5043" class="" name="M352 5043" value="5043">
+                    <label for="askia-input352_5043" class="askia-checkbox"></label>
+                    <label for="askia-input352_5043" class="responsesitems">
+                        
+                        Le site internet
+                        
+                    </label>
+                </td>
+                
+            </tr>
+            
+            <tr data-id="M354" class="askiarow">
+                <td class="respLabel">
+                    <a class="askiadisplay">
+                        
+                        <span class="items">Consulter/gérer vos comptes</span>
+                        
+                        
+                    </a>
+                </td>
+                
+                <td class="response" style="display: none;">
+                    <input type="checkbox" id="askia-input354_5040" class="" name="M354 5040" value="5040">
+                    <label for="askia-input354_5040" class="askia-checkbox"></label>
+                    <label for="askia-input354_5040" class="responsesitems">
+                        
+                        Le téléphone
+                        
+                    </label>
+                </td>
+                
+                <td class="response" style="display: none;">
+                    <input type="checkbox" id="askia-input354_5045" class="" name="M354 5045" value="5045">
+                    <label for="askia-input354_5045" class="askia-checkbox"></label>
+                    <label for="askia-input354_5045" class="responsesitems">
+                        
+                        La visio / appel vidéo
+                        
+                    </label>
+                </td>
+                
+                <td class="response" style="display: none;">
+                    <input type="checkbox" id="askia-input354_5042" class="" name="M354 5042" value="5042">
+                    <label for="askia-input354_5042" class="askia-checkbox"></label>
+                    <label for="askia-input354_5042" class="responsesitems">
+                        
+                        Le courrier
+                        
+                    </label>
+                </td>
+                
+                <td class="response" style="display: none;">
+                    <input type="checkbox" id="askia-input354_5041" class="" name="M354 5041" value="5041">
+                    <label for="askia-input354_5041" class="askia-checkbox"></label>
+                    <label for="askia-input354_5041" class="responsesitems">
+                        
+                        Le mail
+                        
+                    </label>
+                </td>
+                
+                <td class="response" style="display: none;">
+                    <input type="checkbox" id="askia-input354_5039" class="" name="M354 5039" value="5039">
+                    <label for="askia-input354_5039" class="askia-checkbox"></label>
+                    <label for="askia-input354_5039" class="responsesitems">
+                        
+                        Le face-à-face en agence
+                        
+                    </label>
+                </td>
+                
+                <td class="response" style="display: none;">
+                    <input type="checkbox" id="askia-input354_5044" class="" name="M354 5044" value="5044">
+                    <label for="askia-input354_5044" class="askia-checkbox"></label>
+                    <label for="askia-input354_5044" class="responsesitems">
+                        
+                        L’application mobile
+                        
+                    </label>
+                </td>
+                
+                <td class="response" style="display: none;">
+                    <input type="checkbox" id="askia-input354_5043" class="" name="M354 5043" value="5043">
+                    <label for="askia-input354_5043" class="askia-checkbox"></label>
+                    <label for="askia-input354_5043" class="responsesitems">
+                        
+                        Le site internet
+                        
+                    </label>
+                </td>
+                
+            </tr>
+            
+            <tr data-id="M356" class="askiarow">
+                <td class="respLabel">
+                    <a class="askiadisplay">
+                        
+                        <span class="items">Souscrire un nouveau contrat</span>
+                        
+                        
+                    </a>
+                </td>
+                
+                <td class="response" style="display: none;">
+                    <input type="checkbox" id="askia-input356_5040" class="" name="M356 5040" value="5040">
+                    <label for="askia-input356_5040" class="askia-checkbox"></label>
+                    <label for="askia-input356_5040" class="responsesitems">
+                        
+                        Le téléphone
+                        
+                    </label>
+                </td>
+                
+                <td class="response" style="display: none;">
+                    <input type="checkbox" id="askia-input356_5045" class="" name="M356 5045" value="5045">
+                    <label for="askia-input356_5045" class="askia-checkbox"></label>
+                    <label for="askia-input356_5045" class="responsesitems">
+                        
+                        La visio / appel vidéo
+                        
+                    </label>
+                </td>
+                
+                <td class="response" style="display: none;">
+                    <input type="checkbox" id="askia-input356_5042" class="" name="M356 5042" value="5042">
+                    <label for="askia-input356_5042" class="askia-checkbox"></label>
+                    <label for="askia-input356_5042" class="responsesitems">
+                        
+                        Le courrier
+                        
+                    </label>
+                </td>
+                
+                <td class="response" style="display: none;">
+                    <input type="checkbox" id="askia-input356_5041" class="" name="M356 5041" value="5041">
+                    <label for="askia-input356_5041" class="askia-checkbox"></label>
+                    <label for="askia-input356_5041" class="responsesitems">
+                        
+                        Le mail
+                        
+                    </label>
+                </td>
+                
+                <td class="response" style="display: none;">
+                    <input type="checkbox" id="askia-input356_5039" class="" name="M356 5039" value="5039">
+                    <label for="askia-input356_5039" class="askia-checkbox"></label>
+                    <label for="askia-input356_5039" class="responsesitems">
+                        
+                        Le face-à-face en agence
+                        
+                    </label>
+                </td>
+                
+                <td class="response" style="display: none;">
+                    <input type="checkbox" id="askia-input356_5044" class="" name="M356 5044" value="5044">
+                    <label for="askia-input356_5044" class="askia-checkbox"></label>
+                    <label for="askia-input356_5044" class="responsesitems">
+                        
+                        L’application mobile
+                        
+                    </label>
+                </td>
+                
+                <td class="response" style="display: none;">
+                    <input type="checkbox" id="askia-input356_5043" class="" name="M356 5043" value="5043">
+                    <label for="askia-input356_5043" class="askia-checkbox"></label>
+                    <label for="askia-input356_5043" class="responsesitems">
+                        
+                        Le site internet
+                        
+                    </label>
+                </td>
+                
+            </tr>
+            
+            <tr data-id="M358" class="askiarow">
+                <td class="respLabel">
+                    <a class="askiadisplay">
+                        
+                        <span class="items">Vous informer sur une offre bancaire ou assurancielle auprès de votre organisme  </span>
+                        
+                        
+                    </a>
+                </td>
+                
+                <td class="response" style="display: none;">
+                    <input type="checkbox" id="askia-input358_5040" class="" name="M358 5040" value="5040">
+                    <label for="askia-input358_5040" class="askia-checkbox"></label>
+                    <label for="askia-input358_5040" class="responsesitems">
+                        
+                        Le téléphone
+                        
+                    </label>
+                </td>
+                
+                <td class="response" style="display: none;">
+                    <input type="checkbox" id="askia-input358_5045" class="" name="M358 5045" value="5045">
+                    <label for="askia-input358_5045" class="askia-checkbox"></label>
+                    <label for="askia-input358_5045" class="responsesitems">
+                        
+                        La visio / appel vidéo
+                        
+                    </label>
+                </td>
+                
+                <td class="response" style="display: none;">
+                    <input type="checkbox" id="askia-input358_5042" class="" name="M358 5042" value="5042">
+                    <label for="askia-input358_5042" class="askia-checkbox"></label>
+                    <label for="askia-input358_5042" class="responsesitems">
+                        
+                        Le courrier
+                        
+                    </label>
+                </td>
+                
+                <td class="response" style="display: none;">
+                    <input type="checkbox" id="askia-input358_5041" class="" name="M358 5041" value="5041">
+                    <label for="askia-input358_5041" class="askia-checkbox"></label>
+                    <label for="askia-input358_5041" class="responsesitems">
+                        
+                        Le mail
+                        
+                    </label>
+                </td>
+                
+                <td class="response" style="display: none;">
+                    <input type="checkbox" id="askia-input358_5039" class="" name="M358 5039" value="5039">
+                    <label for="askia-input358_5039" class="askia-checkbox"></label>
+                    <label for="askia-input358_5039" class="responsesitems">
+                        
+                        Le face-à-face en agence
+                        
+                    </label>
+                </td>
+                
+                <td class="response" style="display: none;">
+                    <input type="checkbox" id="askia-input358_5044" class="" name="M358 5044" value="5044">
+                    <label for="askia-input358_5044" class="askia-checkbox"></label>
+                    <label for="askia-input358_5044" class="responsesitems">
+                        
+                        L’application mobile
+                        
+                    </label>
+                </td>
+                
+                <td class="response" style="display: none;">
+                    <input type="checkbox" id="askia-input358_5043" class="" name="M358 5043" value="5043">
+                    <label for="askia-input358_5043" class="askia-checkbox"></label>
+                    <label for="askia-input358_5043" class="responsesitems">
+                        
+                        Le site internet
+                        
+                    </label>
+                </td>
+                
+            </tr>
+            
+        </tbody>
+    </table>
+</div>
+</td>
+	</tr>
+</tbody></table>
+
+<script>
+$( function() {
+$("tr [data-other]").each( function() {
+theAttr = $( this ).attr( "data-other" );
+$( this ).append( "&nbsp;" ).append( function() {
+return $("[data-specify=" + theAttr + "]");
+} );
+} );
+$("[data-specify]").click( false );
+} )
+</script>
+	<br><br> <input type="submit" title="Precedent" value="&lt;" class="button" name="Previous">		<p id="navseparator">&nbsp;</p>
+<input type="submit" id="Bnext" title="Suivant" value="&gt;" class="button" name="Next">		</form></li>	
+	</ul>
+</div><input type="submit" value="&lt;&gt;" style="visibility:hidden" name="askiaStay">
+<script type="text/javascript">
+	try {
+		//Mode to display the error when it's detected
+		ErrorStack.displayMode=eErrorDisplayMode.none;
+
+		//Mode to display the summary of errors messages on validation
+		ValidatorSummary.mode=eValidatorSummaryMode.NONE;
+	}
+	 catch(ex){/* Do Nothing */}
+</script>
+<!-- Initialize all questions when the page is loaded -->
+<script type="text/javascript">
+/* <![CDATA[ */
+	try {
+
+	}
+	catch(ex){/* Do Nothing */}
+/* ]]> */
+</script>
+
+		<div id="liprogress" title="40%"><div class="progressbar" style="width: 40%;">&nbsp;
+ </div></div> &nbsp;
+
+<div> &nbsp; </div>
+
+<br>&nbsp;
+
+</ul>
+
+<script type="text/javascript">
+$(document).ready(function () {
+
+    $(".myresponse:has(input)").css({
+        "background-color": "transparent",
+        "color": "#ffffff"
+    });
+
+    $(".myresponse:not(:has(input))").css("display", "none");
+
+
+    function applyColor(selector, activeColor, textColorSelected) {
+
+        $(selector + ":has(input)").each(function () {
+
+            var selectedInput = 0;
+
+            $(this).find("input").each(function () {
+                if ($(this).is(":checked")) {
+                    selectedInput = 1;
+                }
+            });
+
+            $(this).css("background-color", selectedInput ? activeColor : "transparent");
+            $(this).css("color", selectedInput ? textColorSelected : "#211B50");
+
+        });
+    }
+
+
+    function colorResponse() {
+
+        applyColor(".myresponse", "#C7C8CC", "#ffffff");
+        applyColor(".myresponseCenter", "#C7C8CC", "#ffffff");
+
+        applyColor(".myresponse1", "", "#ffffff");
+        applyColor(".myresponse2", "#ff0000", "#ffffff");
+        applyColor(".myresponse3", "#008000", "#ffffff");
+        applyColor(".myresponse4", "#ffff00", "#ffffff");
+        applyColor(".myresponse5", "#ffA500", "#ffffff");
+        applyColor(".myresponse6", "", "#ffffff");
+        applyColor(".myresponse7", "", "#ffffff");
+        applyColor(".myresponse8", "", "#ffffff");
+        applyColor(".myresponse9", "", "#ffffff");
+        applyColor(".myresponse10", "", "#ffffff");
+
+        applyColor(".myresponseNSP", "", "#ffffff");
+        applyColor(".myresponseNSP2", "", "#ffffff");
+
+
+        applyColor(".myresponseNC0", "#7d0000", "#ffffff");
+        applyColor(".myresponseNC1", "#C00000", "#ffffff");
+        applyColor(".myresponseNC2", "#DD0200", "#ffffff");
+        applyColor(".myresponseNC3", "#E15001", "#ffffff");
+        applyColor(".myresponseNC4", "#DF9800", "#ffffff");
+        applyColor(".myresponseNC5", "#DBB100", "#ffffff");
+        applyColor(".myresponseNC6", "#DFD501", "#ffffff");
+        applyColor(".myresponseNC7", "#9DDF01", "#ffffff");
+        applyColor(".myresponseNC8", "#2DE102", "#ffffff");
+        applyColor(".myresponseNC9", "#04C514", "#ffffff");
+        applyColor(".myresponseNC10", "#00B050", "#ffffff");
+        applyColor(".myresponseNCNSP", "#afaeb5", "#ffffff");
+
+    }
+
+
+    function colorGridResponse() {
+
+        $(".gridmyresponse:has(input)").each(function () {
+
+            var selectedInput = 0;
+
+            $(this).find("input").each(function () {
+                if ($(this).is(":checked")) {
+                    selectedInput = 1;
+                }
+            });
+
+            $(this).css("background-color",
+                selectedInput ? "#C7C8CC" : "transparent"
+            );
+
+        });
+    }
+
+
+
+    function bindResponse(selector, hoverColor, hoverTextColor) {
+
+        $(selector + ":has(input)").hover(function () {
+
+            $(this).css({
+                "background-color": hoverColor,
+                "color": hoverTextColor,
+                "cursor": "pointer"
+            });
+
+        }, function () {
+            colorResponse();
+        });
+
+
+        $(selector).click(function () {
+            $(this).find("span").get(0).click();
+            colorResponse();
+        });
+
+
+        $(selector + " input").click(function (event) {
+
+            if ($(this).is("[type=text]")) {
+                event.stopPropagation();
+                $(this).focus();
+            }
+
+            colorResponse();
+        });
+
+
+        $(selector + " span").click(function (event) {
+            
+            colorResponse();
+        });
+
+    }
+
+
+
+    bindResponse(".myresponse", "#C7C8CC", "#ffffff");
+    bindResponse(".myresponseCenter", "#C7C8CC", "#ffffff");
+
+    bindResponse(".myresponse1", "", "#ffffff");
+    bindResponse(".myresponse2", "#ff0000", "#ffffff");
+    bindResponse(".myresponse3", "#008000", "#ffffff");
+    bindResponse(".myresponse4", "#ffff00", "#ffffff");
+    bindResponse(".myresponse5", "#ffA500", "#ffffff");
+    bindResponse(".myresponse6", "", "#ffffff");
+    bindResponse(".myresponse7", "", "#ffffff");
+    bindResponse(".myresponse8", "", "#ffffff");
+    bindResponse(".myresponse9", "", "#ffffff");
+    bindResponse(".myresponse10", "", "#ffffff");
+
+    bindResponse(".myresponseNSP", "", "#ffffff");
+    bindResponse(".myresponseNSP2", "", "#ffffff");
+
+
+    bindResponse(".myresponseNC0", "#7d0000", "#ffffff");
+    bindResponse(".myresponseNC1", "#C00000", "#ffffff");
+    bindResponse(".myresponseNC2", "#DD0200", "#ffffff");
+    bindResponse(".myresponseNC3", "#E15001", "#ffffff");
+    bindResponse(".myresponseNC4", "#DF9800", "#ffffff");
+    bindResponse(".myresponseNC5", "#DBB100", "#ffffff");
+    bindResponse(".myresponseNC6", "#DFD501", "#ffffff");
+    bindResponse(".myresponseNC7", "#9DDF01", "#ffffff");
+    bindResponse(".myresponseNC8", "#2DE102", "#ffffff");
+    bindResponse(".myresponseNC9", "#04C514", "#ffffff");
+    bindResponse(".myresponseNC10", "#00B050", "#ffffff");
+    bindResponse(".myresponseNCNSP", "#afaeb5", "#ffffff");
+
+
+
+    $(".myresponseclassic:has(input)").hover(function () {
+        $(this).css({
+            "background-color": "#f7f7f7",
+            "cursor": "pointer"
+        });
+    }, function () {
+        $(this).css("background-color", "");
+    });
+
+    $(".myresponseclassic").click(function () {
+        $(this).find("span").get(0).click();
+    });
+
+    $(".myresponseclassic input").click(function (event) {
+        if ($(this).is("[type=text]")) {
+            event.stopPropagation();
+            $(this).focus();
+        }
+    });
+
+    $(".myresponseclassic span").click(function (event) {
+        
+    });
+
+
+
+    $(".gridmyresponse, .gridmyresponse span, .gridmyresponse input").click(function () {
+        colorGridResponse();
+    });
+
+
+
+    $(".progressbar").animate({
+        width: "40%"
+    }, "slow");
+
+
+
+    colorResponse();
+    colorGridResponse();
+
+});
+</script>
+
+<script type="text/javascript" src="https://moai-surveys.com/webprod/Resources/Observatoire_Tendances_Conso_2026/submit.js"></script>
+<script type="text/javascript" src="https://moai-surveys.com/webprod/Resources/Observatoire_Tendances_Conso_2026/ResponsiveTable/simplbox.js"></script>
+<script type="text/javascript" src="https://moai-surveys.com/webprod/Resources/Observatoire_Tendances_Conso_2026/ResponsiveTable/responsiveTable.js"></script>
+<script type="text/javascript">(function () {
+    var responsivetable = new ResponsiveTable({
+        instanceId: 1,
+        headerFixed: 0,
+        currentQuestion: 'C02_ITEMS',
+        responsiveWidth : '10000px',
+        accordion : 1
+    });
+} ());</script>
+
+	
+</div></div></div></body>
