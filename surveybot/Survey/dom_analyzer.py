@@ -118,6 +118,7 @@ try:
         _extract_gfk_accordion_radio_rows,
         _extract_askia_statement_list_blocks,
         _extract_askia_myresponse_radio_blocks,
+        _extract_askia_myresponse_checkbox_blocks,
         _extract_askia_ranking_isotope_blocks,
     )
 
@@ -211,6 +212,7 @@ except ImportError:
         _extract_gfk_accordion_radio_rows,
         _extract_askia_statement_list_blocks,
         _extract_askia_myresponse_radio_blocks,
+        _extract_askia_myresponse_checkbox_blocks,
         _extract_askia_ranking_isotope_blocks,
     )
 
@@ -1138,6 +1140,15 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         askia_mr_blocks = _extract_askia_myresponse_radio_blocks(driver, frame_chain)
         if askia_mr_blocks:
             return askia_mr_blocks
+    except Exception:
+        pass
+
+    # --- 0c-quinquies-bis) Askia myresponse* : question checkbox (name chk<QID> <optId>)
+    # Gate DOM strict : form[name="FormAskia"] + td[class*="myresponse"] input[type="checkbox"][name^="chk"] >= 2
+    try:
+        askia_cb_blocks = _extract_askia_myresponse_checkbox_blocks(driver, frame_chain)
+        if askia_cb_blocks:
+            return askia_cb_blocks
     except Exception:
         pass
 
