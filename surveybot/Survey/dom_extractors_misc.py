@@ -9787,7 +9787,10 @@ def _extract_askia_adc_slider_blocks(driver, frame_chain: list[int] | None) -> l
             except Exception:
                 pass
 
-            question = sub_question or global_question
+            if sub_question and global_question:
+                question = f"{global_question} | {sub_question}"
+            else:
+                question = sub_question or global_question
             if not question:
                 continue
 
@@ -9819,9 +9822,9 @@ def _extract_askia_adc_slider_blocks(driver, frame_chain: list[int] | None) -> l
                 pass
 
             # ── Construction des options et de l'option_xpath_map ──
-            # Le noUiSlider Askia est un slider continu (0–10 typiquement).
-            # On expose uniquement les deux pôles + DK comme options cliquables ;
-            # le bot peut positionner le handle pour toute valeur intermédiaire.
+            # Le noUiSlider Askia va de 0 à 10 (11 positions).
+            # On expose chaque position numérique comme option explicite, avec libellé de pôle
+            # aux extrêmes, pour que le bot puisse viser n'importe quelle valeur de déplacement.
             # Pour l'interaction, on utilise JS sur l'input hidden + trigger change.
             options: list[str] = []
             option_xpath_map: dict[str, str] = {}
@@ -9829,20 +9832,20 @@ def _extract_askia_adc_slider_blocks(driver, frame_chain: list[int] | None) -> l
 
             name_lit = _xpath_literal(input_name)
 
-            if left_label:
-                key = _norm_key(left_label)
-                options.append(left_label)
-                # L'XPath pointe vers l'input hidden ; la valeur sera injectée via JS
+            # ── Positions 0–10 : libellés lisibles avec contexte aux pôles ──
+            # Format : "0% (100% seul(e) en autonomie)", "50%", "100% (100% accompagné...)"
+            for pct in range(0, 101, 10):
+                position = pct // 10  # 0..10
+                if pct == 0 and left_label:
+                    label = f"{pct}% ({left_label})"
+                elif pct == 100 and right_label:
+                    label = f"{pct}% ({right_label})"
+                else:
+                    label = f"{pct}%"
+                key = _norm_key(label)
+                options.append(label)
                 option_xpath_map[key] = f"//input[@name={name_lit}]"
-                # On ne connaît pas la vraie valeur numérique sans parser le JS inline.
-                # On expose "min" comme marqueur sémantique pour le module d'action.
-                value_map[key] = "min"
-
-            if right_label:
-                key = _norm_key(right_label)
-                options.append(right_label)
-                option_xpath_map[key] = f"//input[@name={name_lit}]"
-                value_map[key] = "max"
+                value_map[key] = str(position)   # position 0..10 utilisée par action_dispatcher
 
             if dk_text and dk_data_value:
                 key = _norm_key(dk_text)
@@ -9895,6 +9898,7 @@ def _extract_askia_adc_slider_blocks(driver, frame_chain: list[int] | None) -> l
                     "itype": "radio",
                     "options": options,
                     "max_select": 1,
+                    "min_select": 1,
                     "target_id": target_id,
                     "context": {
                         "kind": "group",
