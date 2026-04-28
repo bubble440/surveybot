@@ -1524,11 +1524,20 @@ def _should_skip_post_actions_navigation(
                 import Management.redirect_watcher as _rw
                 if _rw._dom_signature(driver) != before_sig:
                     if driver.find_elements(By.CSS_SELECTOR, "form[action*='AskiaExt.dll']"):
-                        log_info("[ASKIA_AUTONAV]", "DOM changé après clic radio Askia → skip CTA")
-                        return True
+                        # Guard: si la page contient un widget ranking Askia (adc-ranking-isotope),
+                        # le changement DOM est une animation isotope (translate3d), PAS une navigation.
+                        # Dans ce cas, ne pas skip le CTA — la page attend le clic "Suivant".
+                        has_ranking_widget = bool(
+                            driver.find_elements(By.CSS_SELECTOR, "div.adc-ranking-isotope")
+                        )
+                        if has_ranking_widget:
+                            log_info("[ASKIA_AUTONAV]", "DOM changé mais widget ranking détecté → animation isotope, CTA requis")
+                        else:
+                            log_info("[ASKIA_AUTONAV]", "DOM changé après clic radio Askia → skip CTA")
+                            return True
             except Exception:
                 pass
-
+            
     for block in question_blocks or []:
         try:
             ctx = block.get("context") if isinstance(block, dict) else None
