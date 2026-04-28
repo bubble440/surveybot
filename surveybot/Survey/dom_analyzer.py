@@ -120,6 +120,7 @@ try:
         _extract_askia_myresponse_radio_blocks,
         _extract_askia_myresponse_checkbox_blocks,
         _extract_askia_ranking_isotope_blocks,
+        _extract_askia_adc_slider_blocks,
     )
 
     # Registre et utilitaires
@@ -214,6 +215,7 @@ except ImportError:
         _extract_askia_myresponse_radio_blocks,
         _extract_askia_myresponse_checkbox_blocks,
         _extract_askia_ranking_isotope_blocks,
+        _extract_askia_adc_slider_blocks,
     )
 
 
@@ -1159,6 +1161,15 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         askia_rank_blocks = _extract_askia_ranking_isotope_blocks(driver, frame_chain)
         if askia_rank_blocks:
             return askia_rank_blocks
+    except Exception:
+        pass
+
+    # --- 0c-sexies) Askia adc-slider (noUiSlider) : sliders discrets sur input hidden
+    # Gate DOM strict : form[name="FormAskia"] + div.adc-slider + input[type=hidden][name] + div.noUi-handle
+    try:
+        askia_slider_blocks = _extract_askia_adc_slider_blocks(driver, frame_chain)
+        if askia_slider_blocks:
+            return askia_slider_blocks
     except Exception:
         pass
 
