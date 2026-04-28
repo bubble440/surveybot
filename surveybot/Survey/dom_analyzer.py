@@ -119,6 +119,7 @@ try:
         _extract_askia_statement_list_blocks,
         _extract_askia_myresponse_radio_blocks,
         _extract_askia_myresponse_checkbox_blocks,
+        _extract_askia_responsive_table_checkbox_rows,
         _extract_askia_ranking_isotope_blocks,
         _extract_askia_adc_slider_blocks,
     )
@@ -214,6 +215,7 @@ except ImportError:
         _extract_askia_statement_list_blocks,
         _extract_askia_myresponse_radio_blocks,
         _extract_askia_myresponse_checkbox_blocks,
+        _extract_askia_responsive_table_checkbox_rows,
         _extract_askia_ranking_isotope_blocks,
         _extract_askia_adc_slider_blocks,
     )
@@ -1151,6 +1153,15 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         askia_cb_blocks = _extract_askia_myresponse_checkbox_blocks(driver, frame_chain)
         if askia_cb_blocks:
             return askia_cb_blocks
+    except Exception:
+        pass
+
+    # --- 0c-quinquies-ter) Askia ResponsiveTable checkbox matrix : 1 bloc par ligne
+    # Gate DOM strict : form[name="FormAskia"] + div.adc-responsiveTable + tr.askiarow[data-id]
+    try:
+        askia_rt_blocks = _extract_askia_responsive_table_checkbox_rows(driver, frame_chain)
+        if askia_rt_blocks:
+            return askia_rt_blocks
     except Exception:
         pass
 

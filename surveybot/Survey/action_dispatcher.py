@@ -2925,6 +2925,58 @@ def _apply_by_target_id(
                                 f"checkbox label anchor guard did not select input: value='{value}' xpath='{xp}'",
                             )
 
+                # --- Askia ResponsiveTable checkbox (inputs non-interactables masqués par CSS) ---
+                # Guard DOM strict : flag askia_responsive_table_checkbox posé par l'extracteur.
+                # Stratégie unique : clic JS sur le <label for=inputId> associé à l'input résolu,
+                # ou forçage direct checked=true + dispatchEvent si le label est absent.
+                # Vérification stricte via input.checked après action.
+                # Ne pas modifier le chemin générique (fall-through si flag absent).
+                if payload.get("askia_responsive_table_checkbox") and resolved_itype == "checkbox":
+                    _artc_ok = bool(driver.execute_script(
+                        """
+                        var node = arguments[0];
+                        if (!node) return false;
+
+                        // Remonter à l'input si node est un label ou un wrapper
+                        var input = null;
+                        if ((node.tagName || '').toLowerCase() === 'input' && (node.type || '').toLowerCase() === 'checkbox') {
+                            input = node;
+                        }
+                        if (!input && node.querySelector) {
+                            input = node.querySelector("input[type='checkbox']");
+                        }
+                        if (!input && node.getAttribute) {
+                            var fid = node.getAttribute('for');
+                            if (fid) {
+                                var byId = document.getElementById(fid);
+                                if (byId && (byId.type || '').toLowerCase() === 'checkbox') input = byId;
+                            }
+                        }
+                        if (!input) return false;
+
+                        // Préférer le clic sur le label (déclenche les handlers Askia)
+                        var inputId = input.getAttribute('id') || '';
+                        var label = inputId ? document.querySelector('label[for="' + inputId + '"]') : null;
+                        if (label) {
+                            try { label.click(); } catch(e) {}
+                        } else {
+                            // Pas de label : forcer checked + events
+                            try { input.checked = true; } catch(e) {}
+                            try { input.dispatchEvent(new Event('input',  { bubbles: true })); } catch(e) {}
+                            try { input.dispatchEvent(new Event('change', { bubbles: true })); } catch(e) {}
+                        }
+                        return !!input.checked;
+                        """,
+                        el,
+                    ))
+                    if _artc_ok:
+                        log_info("[TARGET]", "apply ok=true strategy=askia_responsive_table_checkbox reason=label_js_click")
+                        _maybe_advance_mx_vertical_carousel_after_answer()
+                        return True
+                    if debug_target:
+                        log_debug("[TARGET_DEBUG]", f"askia_responsive_table_checkbox: input.checked=false after label click value='{value}' xpath='{xp}'")
+                    return False
+
                 _click_candidate(el, "target")
 
                 _maybe_advance_mx_vertical_carousel_after_answer()
