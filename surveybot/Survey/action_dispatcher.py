@@ -5662,6 +5662,116 @@ def execute_action(
         if target_id:
             try:
                 _p = get_target(target_id) or {}
+
+                # ── Askia ADC Slider (noUiSlider) ──────────────────────────────────────
+                # L'input hidden n'est pas interactable via Selenium click.
+                # On injecte la valeur numérique (0–10) directement via JS,
+                # puis on dispatche les events attendus par l'adcSlider jQuery plugin.
+                if _p.get("askia_adc_slider"):
+                    skip_apply_by_target_id = True
+                    _adc_input_name = (_p.get("input_name") or "").strip()
+                    _adc_value_map = _p.get("value_map") or {}
+                    _adc_dk_xpath = None
+
+                    # Résoudre la valeur numérique depuis value_map
+                    _v_norm_adc = _norm_lc(value)
+                    _v_fold_adc = _fold_norm_lc(value)
+                    _adc_numeric = (
+                        _adc_value_map.get(_v_norm_adc)
+                        or (_adc_value_map.get(_v_fold_adc) if _v_fold_adc else None)
+                    )
+                    if not _adc_numeric:
+                        for _k, _v in _adc_value_map.items():
+                            _kn = _norm_lc(_k)
+                            if _v_norm_adc and (_v_norm_adc == _kn or _v_norm_adc in _kn or _kn in _v_norm_adc):
+                                _adc_numeric = _v
+                                break
+                            _kf = _fold_norm_lc(_k)
+                            if _v_fold_adc and (_v_fold_adc == _kn or _v_fold_adc in _kn or _kn in _v_fold_adc
+                                                or _v_fold_adc == _kf or _v_fold_adc in _kf or _kf in _v_fold_adc):
+                                _adc_numeric = _v
+                                break
+
+                    if _adc_numeric and _adc_input_name:
+                        # Cas DK : valeur non numérique → clic sur div.dk
+                        _is_dk = not str(_adc_numeric).lstrip("-").isdigit()
+                        if _is_dk:
+                            # Récupérer le XPath DK depuis option_xpath_map
+                            _adc_opt_map = _p.get("option_xpath_map") or {}
+                            _adc_dk_xpath = (
+                                _adc_opt_map.get(_v_norm_adc)
+                                or (_adc_opt_map.get(_v_fold_adc) if _v_fold_adc else None)
+                            )
+                            if _adc_dk_xpath:
+                                try:
+                                    _dk_el = driver.find_element(By.XPATH, _adc_dk_xpath)
+                                    driver.execute_script("arguments[0].scrollIntoView({block:'center'});", _dk_el)
+                                    driver.execute_script("arguments[0].click();", _dk_el)
+                                    log_info("[TARGET]", "apply ok=true strategy=askia_adc_slider_dk reason=applied")
+                                    # Cache
+                                    _radio_cache_adc = _get_block_strategy_memory(driver).get("radio", {})
+                                    _radio_cache_adc["askia_adc_slider"] = "target_id"
+                                    continue
+                                except Exception as _dk_e:
+                                    log_debug("[TARGET_DEBUG]", f"askia_adc_slider DK click failed: {_short_exc(_dk_e)}")
+                            continue
+                        else:
+                            # Cas slider numérique : inject JS value + trigger noUiSlider
+                            _adc_pos = int(_adc_numeric)   # 0–10
+                            _adc_ok = False
+                            try:
+                                _adc_ok = bool(driver.execute_script(
+                                    """
+                                    var name = arguments[0], pos = arguments[1];
+                                    var inp = document.querySelector("input[type='hidden'][name='" + name + "']");
+                                    if (!inp) return false;
+                                    // Remonter au container adc-slider
+                                    var container = inp.closest('.adc-slider');
+                                    if (!container) return false;
+                                    // Récupérer les items depuis le plugin jQuery (valeurs 5306-5317)
+                                    var jqCont = window.jQuery && window.jQuery(container);
+                                    var items = null;
+                                    try { items = jqCont && jqCont.data('adcSlider') && jqCont.data('adcSlider').items; } catch(e) {}
+                                    var targetValue = null;
+                                    if (items && items[pos] && items[pos].value !== undefined) {
+                                        targetValue = String(items[pos].value);
+                                    } else {
+                                        // fallback: la valeur brute du DOM correspond à 5306+pos
+                                        targetValue = String(5306 + pos);
+                                    }
+                                    // Injecter dans l'input hidden
+                                    var nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+                                    nativeInputValueSetter.call(inp, targetValue);
+                                    inp.dispatchEvent(new Event('input',  {bubbles:true}));
+                                    inp.dispatchEvent(new Event('change', {bubbles:true}));
+                                    // Mettre à jour le handle noUiSlider (visuel)
+                                    var origin = container.querySelector('.noUi-origin');
+                                    if (origin) {
+                                        origin.style.left = (pos * 10) + '%';
+                                    }
+                                    // Marquer le container comme selected
+                                    var sc = container.querySelector('.sliderContainer');
+                                    if (sc) { sc.classList.add('selected'); }
+                                    return true;
+                                    """,
+                                    _adc_input_name,
+                                    _adc_pos,
+                                ))
+                            except Exception as _adc_e:
+                                log_debug("[TARGET_DEBUG]", f"askia_adc_slider JS inject failed: {_short_exc(_adc_e)}")
+
+                            if _adc_ok:
+                                log_info("[TARGET]", f"apply ok=true strategy=askia_adc_slider reason=applied pos={_adc_pos}")
+                                # Cache partagé : toute la page utilise la même stratégie
+                                _radio_cache_adc = _get_block_strategy_memory(driver).get("radio", {})
+                                _radio_cache_adc["askia_adc_slider"] = "target_id"
+                                continue
+                            else:
+                                log_debug("[TARGET_DEBUG]", f"askia_adc_slider JS inject returned false name={_adc_input_name!r}")
+                    else:
+                        log_debug("[TARGET_DEBUG]", f"askia_adc_slider: valeur non résolue value={value!r} value_map={list(_adc_value_map.keys())[:5]}")
+                    continue
+
                 _m = _p.get("meta") or {}
                 if (_m.get("source") or "").strip().lower() == "sq-sliderpoints":
                     skip_apply_by_target_id = True
@@ -5882,7 +5992,12 @@ def execute_action(
                 if _tp.get("table_matrix_radio")
                 else frozenset()
             )
-            if _tmr_opt_keys:
+            if _tp.get("askia_adc_slider"):
+                # Tous les sliders Askia ADC de la page partagent la même clé de cache
+                radio_cache_key = "askia_adc_slider"
+                if debug_target:
+                    log_debug("[TARGET_DEBUG]", f"radio askia_adc_slider shared_cache_key={radio_cache_key!r} target_id={target_id!r}")
+            elif _tmr_opt_keys:
                 radio_cache_key = "tmr:" + ",".join(sorted(_tmr_opt_keys))
                 if debug_target:
                     log_debug("[TARGET_DEBUG]", f"radio shared_cache_key={radio_cache_key!r} target_id={target_id!r}")
