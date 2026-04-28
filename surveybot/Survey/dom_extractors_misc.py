@@ -9218,6 +9218,219 @@ def _extract_askia_myresponse_radio_blocks(driver, frame_chain: list[int] | None
 
 
 # ================================================================================
+# ASKIA — QUESTION CHECKBOX myresponse* (td cliquables + input checkbox masqué)
+# ================================================================================
+
+def _extract_askia_myresponse_checkbox_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
+    """Extraction checkbox pour pages Askia AskiaExt à structure myresponse*.
+
+    Gate DOM strict (additif, non provider-wide) :
+    - form[name="FormAskia"] présent dans le DOM
+    - au moins 2 td[class*="myresponse"] contenant chacune un input[type="checkbox"]
+      dont le name suit le pattern chk<QID> <optId> (ex: chkM312 5010, chkM312 5013)
+
+    Structure ciblée :
+      <td class="myresponse askia-response askia-question-312">
+        <input type="hidden" name="M312 5010" ...>
+        <input type="checkbox" name="chkM312 5010" class="askia-live">
+        <span id="cpt312_5010">En demandant conseil à votre entourage</span>
+      </td>
+
+    Groupement : toutes les checkboxes dont le name commence par le même préfixe
+    "chk<QID>" (partie avant l'espace) sont regroupées en un seul bloc.
+
+    Le clic doit cibler le <td> cliquable (handler jQuery bindé dessus),
+    pas le <input> masqué.
+
+    La question est extraite depuis td[class*="askia-question-label"]
+    ou td[class*="askia-caption"].
+
+    Produit exactement 1 bloc checkbox par groupe QID.
+    """
+    frame_chain = list(frame_chain or [])
+
+    # Gate 1 : form Askia présent
+    try:
+        if not driver.find_elements(By.CSS_SELECTOR, "form[name='FormAskia']"):
+            return []
+    except Exception:
+        return []
+
+    # Gate 2 : au moins 2 td myresponse avec input checkbox name^="chk"
+    try:
+        sample = driver.find_elements(
+            By.CSS_SELECTOR,
+            "td[class*='myresponse'] input[type='checkbox'][name]",
+        )
+    except Exception:
+        return []
+
+    chk_sample = [
+        el for el in sample
+        if (el.get_attribute("name") or "").lower().startswith("chk")
+    ]
+    if len(chk_sample) < 2:
+        return []
+
+    # Récupérer tous les td myresponse* portant un input checkbox name^="chk"
+    try:
+        response_tds = driver.find_elements(
+            By.CSS_SELECTOR,
+            "td[class*='myresponse']",
+        )
+    except Exception:
+        return []
+
+    # Regrouper par préfixe "chk<QID>" (partie du name avant l'espace)
+    # Ex: "chkM312 5010" -> préfixe "chkm312", option id "5010"
+    grouped: dict[str, list] = {}  # prefix -> list of td elements
+    for td in response_tds:
+        try:
+            boxes = td.find_elements(
+                By.CSS_SELECTOR, "input[type='checkbox'][name]"
+            )
+            if not boxes:
+                continue
+            raw_name = (boxes[0].get_attribute("name") or "").strip()
+            if not raw_name.lower().startswith("chk"):
+                continue
+            # Préfixe stable = partie avant le premier espace (chk<QID>)
+            prefix = raw_name.split(" ")[0].lower()
+            if not prefix:
+                continue
+            grouped.setdefault(prefix, []).append(td)
+        except Exception:
+            continue
+
+    if not grouped:
+        return []
+
+    # Texte de question global : td askia-question-label ou askia-caption
+    question = ""
+    try:
+        q_nodes = driver.find_elements(
+            By.CSS_SELECTOR,
+            "td.askia-question-label, td[class*='askia-caption'], td[class*='askia-question-label']",
+        )
+        for qn in q_nodes:
+            txt = _norm(qn.text or qn.get_attribute("innerText") or "")
+            if txt and len(txt) >= 3:
+                question = txt
+                break
+    except Exception:
+        question = ""
+
+    blocks: list[dict] = []
+
+    for prefix, tds in grouped.items():
+        if len(tds) < 2:
+            continue
+
+        options: list[str] = []
+        option_xpath_map: dict[str, str] = {}
+
+        for td in tds:
+            try:
+                boxes = td.find_elements(By.CSS_SELECTOR, "input[type='checkbox']")
+                if not boxes:
+                    continue
+                box = boxes[0]
+                box_id = (box.get_attribute("id") or "").strip()
+                box_name = (box.get_attribute("name") or "").strip()
+
+                # Texte de l'option : span[id*="cpt"] en priorité, sinon innerText du td
+                label_txt = ""
+                try:
+                    spans = td.find_elements(By.CSS_SELECTOR, "span[id*='cpt']")
+                    if spans:
+                        label_txt = _norm(
+                            spans[0].text or spans[0].get_attribute("innerText") or ""
+                        )
+                except Exception:
+                    pass
+
+                if not label_txt:
+                    label_txt = _norm(td.text or td.get_attribute("innerText") or "")
+
+                if not label_txt:
+                    continue
+
+                nk = _norm_key(label_txt)
+                if not nk or nk in option_xpath_map:
+                    continue
+
+                # XPath ciblant le td cliquable via l'id ou le name de la checkbox
+                if box_id:
+                    xp = (
+                        f"//input[@id={_xpath_literal(box_id)}]"
+                        f"/ancestor::td[contains(concat(' ',normalize-space(@class),' '),"
+                        f"' myresponse')][1]"
+                    )
+                elif box_name:
+                    name_lit = _xpath_literal(box_name)
+                    xp = (
+                        f"//input[@type='checkbox' and @name={name_lit}]"
+                        f"/ancestor::td[contains(concat(' ',normalize-space(@class),' '),"
+                        f"' myresponse')][1]"
+                    )
+                else:
+                    xp = _best_xpath_for_element(driver, td)
+
+                if not xp:
+                    continue
+
+                option_xpath_map[nk] = xp
+                options.append(label_txt)
+
+            except Exception:
+                continue
+
+        if len(options) < 2 or not option_xpath_map:
+            continue
+
+        q_text = question or f"Question {prefix}"
+        group_key = f"checkbox:name:{prefix}"
+        target_id = make_target_id("group", group_key, q_text)
+
+        register_target(
+            target_id,
+            {
+                "kind": "group",
+                "itype": "checkbox",
+                "group_key": group_key,
+                "question": q_text,
+                "option_xpath_map": option_xpath_map,
+                "frame_chain": frame_chain,
+                "askia_myresponse_checkbox": True,
+            },
+        )
+
+        max_sel = _compute_max_select("checkbox", options, q_text)
+        blocks.append(
+            {
+                "question": q_text,
+                "itype": "checkbox",
+                "options": options,
+                "max_select": max_sel,
+                "min_select": 1,
+                "target_id": target_id,
+                "context": {
+                    "kind": "group",
+                    "group_key": group_key,
+                    "askia_myresponse_checkbox": True,
+                },
+            }
+        )
+
+        log_debug(
+            "[DOM_ASKIA_MYRESPONSE_CB]",
+            f"prefix={prefix!r} question={q_text!r} options={options}",
+        )
+
+    return blocks
+
+
+# ================================================================================
 # ASKIA — RANKING ISOTOPE (div.adc-ranking-isotope + div.statement[data-value])
 # ================================================================================
 
