@@ -9215,4 +9215,232 @@ def _extract_askia_myresponse_radio_blocks(driver, frame_chain: list[int] | None
         )
  
     return blocks
- 
+
+
+# ================================================================================
+# ASKIA — RANKING ISOTOPE (div.adc-ranking-isotope + div.statement[data-value])
+# ================================================================================
+
+def _extract_askia_ranking_isotope_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
+    """
+    Extrait les questions Askia rendues comme widget de classement (ranking).
+
+    Structure DOM cible (moai-surveys.com — adc-ranking-isotope) :
+      <form name="FormAskia">
+        <div id="adc_N" class="adc-ranking-isotope ...">
+          <div class="istope-item statement isotope-item" data-value="5002">
+            <span class="rank_text"></span>
+            <span class="statement_text">L'expertise des conseillers</span>
+          </div>
+          ...
+          <input type="hidden" name="R310 5002" id="R310_5002" value="">
+          ...
+        </div>
+      </form>
+
+    Le widget JS (adcRanking) lit les inputs hidden R{Q}_{V} pour enregistrer
+    le rang sélectionné. Le clic se fait sur le div.statement directement.
+
+    Gate DOM additif strict :
+      1. form[name="FormAskia"] présent
+      2. Au moins un div[class*="adc-ranking-isotope"] dans le DOM
+      3. Au moins 2 div.statement[data-value] dans ce conteneur,
+         chacun portant un span.statement_text non vide
+
+    Produit 1 bloc "checkbox" (sélection multiple ordonnée, max=setMax)
+    par conteneur adc-ranking-isotope. Le max_select est lu depuis le
+    script inline (setMax) ou fallback len(options).
+
+    Le XPath cible le div.statement par data-value pour que l'action
+    dispatcher clique dessus directement.
+    """
+    frame_chain = list(frame_chain or [])
+
+    # Gate 1 : form Askia présent
+    try:
+        if not driver.find_elements(By.CSS_SELECTOR, "form[name='FormAskia']"):
+            return []
+    except Exception:
+        return []
+
+    # Gate 2 : conteneur adc-ranking-isotope présent
+    try:
+        containers = driver.find_elements(
+            By.CSS_SELECTOR, "div[class*='adc-ranking-isotope']"
+        )
+    except Exception:
+        return []
+
+    if not containers:
+        return []
+
+    blocks: list[dict] = []
+
+    for container in containers:
+        try:
+            container_id = (container.get_attribute("id") or "").strip()
+
+            # Gate 3 : au moins 2 div.statement[data-value] avec span.statement_text
+            try:
+                statement_divs = container.find_elements(
+                    By.CSS_SELECTOR, "div.statement[data-value]"
+                )
+            except Exception:
+                continue
+
+            if len(statement_divs) < 2:
+                continue
+
+            # Extraire les options : texte depuis span.statement_text
+            options: list[str] = []
+            option_xpath_map: dict[str, str] = {}
+
+            for div in statement_divs:
+                try:
+                    data_value = (div.get_attribute("data-value") or "").strip()
+                    if not data_value:
+                        continue
+
+                    # Texte depuis span.statement_text en priorité
+                    label_txt = ""
+                    try:
+                        spans = div.find_elements(By.CSS_SELECTOR, "span.statement_text")
+                        if spans:
+                            label_txt = _norm(
+                                spans[0].text or spans[0].get_attribute("innerText") or ""
+                            )
+                    except Exception:
+                        pass
+
+                    if not label_txt:
+                        label_txt = _norm(div.text or div.get_attribute("innerText") or "")
+
+                    if not label_txt:
+                        continue
+
+                    nk = _norm_key(label_txt)
+                    if not nk or nk in option_xpath_map:
+                        continue
+
+                    # XPath stable : div.statement dans le conteneur par data-value
+                    if container_id:
+                        xp = (
+                            f"//*[@id={_xpath_literal(container_id)}]"
+                            f"//div[contains(concat(' ',normalize-space(@class),' '),' statement ')]"
+                            f"[@data-value={_xpath_literal(data_value)}]"
+                        )
+                    else:
+                        xp = (
+                            f"//div[contains(concat(' ',normalize-space(@class),' '),'adc-ranking-isotope')]"
+                            f"//div[contains(concat(' ',normalize-space(@class),' '),' statement ')]"
+                            f"[@data-value={_xpath_literal(data_value)}]"
+                        )
+
+                    option_xpath_map[nk] = xp
+                    options.append(label_txt)
+
+                except Exception:
+                    continue
+
+            if len(options) < 2 or not option_xpath_map:
+                continue
+
+            # Question depuis td.askia-question-label / td[class*='askia-caption']
+            question = ""
+            try:
+                q_nodes = driver.find_elements(
+                    By.CSS_SELECTOR,
+                    "td.askia-question-label, td[class*='askia-caption'], "
+                    "td[class*='askia-question-label']",
+                )
+                for qn in q_nodes:
+                    # Exclure le contenu du span#indic (instruction de cardinalité)
+                    txt = _norm(driver.execute_script(
+                        """
+                        const td = arguments[0];
+                        if (!td) return '';
+                        const clone = td.cloneNode(true);
+                        const indic = clone.querySelector('#indic, span[id="indic"]');
+                        if (indic) indic.remove();
+                        return (clone.innerText || clone.textContent || '').replace(/\\s+/g, ' ').trim();
+                        """,
+                        qn,
+                    ) or "")
+                    if txt and len(txt) >= 3:
+                        question = txt
+                        break
+            except Exception:
+                question = ""
+
+            if not question:
+                question = f"Classement {container_id}" if container_id else "Classement"
+
+            # max_select : lire setMax dans le script inline, fallback len(options)
+            max_select = len(options)
+            try:
+                set_max_raw = driver.execute_script(
+                    """
+                    const cid = arguments[0];
+                    if (!cid) return null;
+                    // Chercher setMax dans le texte des scripts inline
+                    const scripts = document.querySelectorAll('script');
+                    const re = /setMax\\s*:\\s*parseInt\\(['"]?(\\d+)['"]?\\)/;
+                    for (const s of scripts) {
+                        const m = (s.textContent || '').match(re);
+                        if (m) return parseInt(m[1], 10);
+                    }
+                    return null;
+                    """,
+                    container_id,
+                )
+                if set_max_raw and isinstance(set_max_raw, (int, float)) and int(set_max_raw) >= 1:
+                    max_select = int(set_max_raw)
+            except Exception:
+                pass
+
+            group_key = (
+                f"askia_ranking:{container_id}"
+                if container_id
+                else f"askia_ranking:opts:{_norm_key('|'.join(options[:4]))}"
+            )
+            target_id = make_target_id("group", group_key, question)
+
+            register_target(
+                target_id,
+                {
+                    "kind": "group",
+                    "itype": "checkbox",
+                    "group_key": group_key,
+                    "question": question,
+                    "option_xpath_map": option_xpath_map,
+                    "frame_chain": frame_chain,
+                    "askia_ranking_isotope": True,
+                    "max_select": max_select,
+                },
+            )
+
+            blocks.append(
+                {
+                    "question": question,
+                    "itype": "checkbox",
+                    "options": options,
+                    "max_select": max_select,
+                    "target_id": target_id,
+                    "context": {
+                        "kind": "group",
+                        "group_key": group_key,
+                        "askia_ranking_isotope": True,
+                    },
+                }
+            )
+
+            log_debug(
+                "[DOM_ASKIA_RANKING]",
+                f"container={container_id!r} question={question[:60]!r} "
+                f"options={len(options)} max_select={max_select}",
+            )
+
+        except Exception:
+            continue
+
+    return blocks
