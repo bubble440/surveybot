@@ -1442,6 +1442,64 @@ def try_click_navigation_cta(driver) -> bool:
     """
     _dismiss_blocking_overlays(driver)
 
+    # --- Askia StatementList: CTA visuel <div class="nextStatement Btn"> ---
+    # DOM observé (moai-surveys.com et autres providers Askia) :
+    #   <div class="nextStatement Btn" style="visibility: visible;">
+    #       <div class="img"></div>
+    #   </div>
+    #   <input type="submit" id="Bnext" name="Next" style="display: none;">
+    #
+    # Le div.nextStatement.Btn est le CTA visuel géré par StatementList.js (Askia).
+    # Il porte onmousedown="return false;" — ActionChains (press/release) ne déclenche
+    # pas le handler. Un el.click() natif Selenium dispatch l'event click directement.
+    # Le submit réel (Bnext) est display:none — rejeté par _is_visible() — on cible le div.
+    #
+    # Garde-fous DOM stricts : présence simultanée de .nextStatement.Btn ET d'un
+    # input[name="Next"][type="submit"] dans le DOM, plus un conteneur adc-statementList.
+    try:
+        next_stmt_els = driver.find_elements(
+            By.CSS_SELECTOR, "div.nextStatement.Btn"
+        )
+        for el in next_stmt_els:
+            try:
+                # Garde 1 : visible (visibility:visible suffit)
+                if not _is_visible(driver, el):
+                    continue
+                # Garde 2 : input[name="Next"][type="submit"] doit exister (signature Askia)
+                form_submit = driver.find_elements(
+                    By.CSS_SELECTOR,
+                    "input[type='submit'][name='Next'], input[type='submit'][id='Bnext']",
+                )
+                if not form_submit:
+                    continue
+                # Garde 3 : conteneur adc-statementList présent (Askia widget)
+                if not driver.find_elements(
+                    By.CSS_SELECTOR, "[class*='adc-statementList'], [id^='adc_']"
+                ):
+                    continue
+                driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
+                log_debug("[CTA_NAV]", "CTA_FOUND pattern=askia_statement_list selector=div.nextStatement.Btn")
+                # el.click() natif : contourne onmousedown=false, déclenche le handler JS Askia
+                try:
+                    el.click()
+                    clicked = True
+                except Exception:
+                    clicked = False
+                log_debug(
+                    "[CTA_NAV]",
+                    f"CTA_CLICKED pattern=askia_statement_list PROGRESSED={str(clicked).lower()}",
+                )
+                if clicked:
+                    if _cta_intercept_enabled():
+                        _nav_log("[CTA_NAV]", "INTERCEPT_OK pattern=askia_statement_list", driver)
+                    else:
+                        _nav_log("[CTA_NAV]", "CLICKED pattern=askia_statement_list", driver)
+                    return True
+            except Exception:
+                continue
+    except Exception:
+        pass
+
     # --- MetrixLab / Toluna: CTA icon-only <div id="next" class="next ..."> ---
     # DOM observé:
     #   <div class="next arrow_on" id="next" style="display:block !important"> ... </div>

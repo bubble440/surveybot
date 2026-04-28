@@ -116,6 +116,8 @@ try:
         _extract_rps_select_blocks,
         _extract_ssi_confirmit_native_grid_blocks,
         _extract_gfk_accordion_radio_rows,
+        _extract_askia_statement_list_blocks,
+        _extract_askia_myresponse_radio_blocks,
     )
 
     # Registre et utilitaires
@@ -206,6 +208,8 @@ except ImportError:
         _extract_rps_select_blocks,
         _extract_ssi_confirmit_native_grid_blocks,
         _extract_gfk_accordion_radio_rows,
+        _extract_askia_statement_list_blocks,
+        _extract_askia_myresponse_radio_blocks,
     )
 
 
@@ -359,14 +363,42 @@ def _is_checkbox_optout_companion_for_text(driver, els: List[Any], options: List
 
     Garde-fous DOM-first (tous requis):
     - groupe checkbox singleton (1 input, 1 option)
-    - signal opt-out observable sur l'input (name *_XREF / value REF / isexclusive=true / openendid)
+    - signal opt-out observable sur l'input (name *_XREF / value REF / isexclusive=true / openendid
+      / class askia-exclusive)
     - libellé option = "je ne souhaite pas répondre" (ou équivalent proche)
+      EXCEPTION Askia : libellé libre si class="askia-exclusive" + textarea dans le même <table>
     - `openendid` référence un input texte/textarea présent dans le même conteneur de question
     """
     if len(els or []) != 1 or len(options or []) != 1:
         return False
 
     el = els[0]
+
+    # --- Pattern Askia : class="askia-exclusive" ---
+    # Garde-fous stricts (DOM-first) :
+    #   1. L'input porte la classe "askia-exclusive"
+    #   2. Un <textarea> existe dans le même ancêtre <table> (même question composite)
+    # Le libellé n'est pas contraint (typiquement "Vous ne savez pas").
+    try:
+        el_classes = _norm_lc(el.get_attribute("class") or "")
+        if "askia-exclusive" in el_classes:
+            try:
+                ancestor_tables = el.find_elements(By.XPATH, "ancestor::table[1]")
+                if ancestor_tables:
+                    has_textarea = bool(
+                        ancestor_tables[0].find_elements(By.CSS_SELECTOR, "textarea")
+                    )
+                    if has_textarea:
+                        log_debug(
+                            "[DOM_GROUPING]",
+                            f"skip_askia_exclusive_optout option={options[0]!r}",
+                        )
+                        return True
+            except Exception:
+                pass
+    except Exception:
+        pass
+
     opt_lc = _norm_lc(options[0])
     if not any(
         token in opt_lc
@@ -1085,6 +1117,25 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         rnw_multi_blocks = _extract_rnw_ionicon_multi_choice_blocks(driver, frame_chain)
         if rnw_multi_blocks:
             return rnw_multi_blocks
+    except Exception:
+        pass
+
+    # --- 0c-ter) Askia StatementList (widget propriétaire AskiaExt / adc-statementList) ---
+    # Gate DOM strict : div[class*='adc-statementList'] + div.responseItem[data-value] + span.statement_text[data-id]
+    # Produit 1 bloc checkbox pour le statement actuellement visible.
+    try:
+        askia_sl_blocks = _extract_askia_statement_list_blocks(driver, frame_chain)
+        if askia_sl_blocks:
+            return askia_sl_blocks
+    except Exception:
+        pass
+
+    # --- 0c-quater) Askia myresponse* : question radio/NPS sur td cliquables (input masqué)
+    # Gate DOM strict : form[name="FormAskia"] + td[class*="myresponse"] input[type="radio"] >= 2
+    try:
+        askia_mr_blocks = _extract_askia_myresponse_radio_blocks(driver, frame_chain)
+        if askia_mr_blocks:
+            return askia_mr_blocks
     except Exception:
         pass
 
@@ -2778,6 +2829,74 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                                 break
                 except Exception:
                     pass
+
+            # Askia (AskiaExt.dll) : select.askia-live dont le td de label ne contient
+            # que le sous-label court (ex: "Votre complémentaire santé :").
+            # Le titre global ("Aujourd'hui, auprès de quel organisme...") est dans le
+            # td ancêtre portant à la fois "askia-caption<N>" et "askia-question-label".
+            # Ce td englobant n'est pas le td immédiat du select, donc _extract_question_from_container
+            # le manque. Ce bloc remonte explicitement chercher ce titre et le concatène
+            # au sous-label déjà trouvé.
+            #
+            # Gate DOM strict :
+            # - itype == "dropdown"
+            # - select porte la classe "askia-live"
+            # - la question courante est non-vide mais courte (< 80 chars) — probable sous-label
+            # Non-régression : si la question est déjà longue (titre global déjà capturé),
+            # le bloc ne s'exécute pas.
+            if (
+                itype == "dropdown"
+                and "askia-live" in _norm_lc(el.get_attribute("class") or "")
+                and question
+                and len(question) < 80
+            ):
+                try:
+                    # Remonter au td qui porte à la fois "askia-caption" et "askia-question-label"
+                    parent_label_tds = el.find_elements(
+                        By.XPATH,
+                        "ancestor::td["
+                        "contains(@class,'askia-caption') and "
+                        "contains(@class,'askia-question-label')"
+                        "][1]"
+                    )
+                    if parent_label_tds:
+                        parent_td = parent_label_tds[0]
+                        # Extraire le textContent complet du td en excluant le contenu
+                        # du span#indic (sous-titre instructionnel) et les inputs/selects.
+                        parent_full_txt = _norm(
+                            el.parent.execute_script(
+                                """
+                                const td = arguments[0];
+                                if (!td) return '';
+                                const clone = td.cloneNode(true);
+                                // Supprimer les éléments non textuels (inputs, selects, spans d'instruction)
+                                clone.querySelectorAll('input, select, textarea, script, style').forEach(n => n.remove());
+                                // Supprimer span#indic (sous-titre Askia)
+                                const indic = clone.querySelector('#indic, span[id="indic"]');
+                                if (indic) indic.remove();
+                                return (clone.innerText || clone.textContent || '').replace(/\\s+/g, ' ').trim();
+                                """,
+                                parent_td,
+                            ) or ""
+                        )
+                        # Le titre global est valide s'il est substantiellement plus long
+                        # que la question courante (sous-label seul).
+                        if parent_full_txt and len(parent_full_txt) > len(question) + 10:
+                            # Concaténer : titre global + sous-label (déjà dans question)
+                            # Le sous-label peut être déjà présent dans parent_full_txt
+                            # (certains rendus Askia l'incluent inline) — on déduplique.
+                            if _norm_lc(question) not in _norm_lc(parent_full_txt):
+                                question = _norm(f"{parent_full_txt} {question}")
+                            else:
+                                question = parent_full_txt
+                            log_debug(
+                                "[DOM_ASKIA_SELECT]",
+                                f"parent_label_resolved name={el.get_attribute('name')!r} "
+                                f"question={question[:80]!r}",
+                            )
+                except Exception:
+                    pass
+
 
             if not question:
                 question = _find_associated_label(driver, el) or ""
