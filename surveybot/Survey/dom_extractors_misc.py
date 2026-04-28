@@ -8528,6 +8528,198 @@ def _extract_gfk_accordion_radio_rows(driver, frame_chain: list[int] | None) -> 
 
 
 # ================================================================================
+# ASKIA STATEMENTLIST - widget propriétaire AskiaExt (adc-statementList)
+# ================================================================================
+
+def _extract_askia_statement_list_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
+    """
+    Extrait la question courante du widget Askia StatementList (div.adc-statementList).
+
+    Structure DOM cible :
+      div[class*='adc-statementList']
+        div.statement > span.statement_text[data-id]   ← items rotatifs (1 visible)
+        div.responseItem[data-value][data-id]           ← options cliquables
+
+    Gate DOM strict (additif, ne casse pas les autres extracteurs) :
+      - présence d'un div[class*='adc-statementList']
+      - ET au moins un div.responseItem[data-value] dans ce conteneur
+      - ET au moins un span.statement_text[data-id] dans ce conteneur
+
+    Produit UN bloc pour le statement actuellement visible (style != display:none).
+    L'extracteur est appelé à chaque analyse DOM → le bot traite un statement à la fois.
+    """
+    blocks: list[dict] = []
+
+    # Gate 1 : conteneur adc-statementList présent
+    try:
+        containers = driver.find_elements(
+            By.CSS_SELECTOR, "div[class*='adc-statementList']"
+        )
+    except Exception:
+        return blocks
+
+    if not containers:
+        return blocks
+
+    for container in containers:
+        try:
+            # Gate 2 : au moins un responseItem[data-value]
+            response_items = container.find_elements(
+                By.CSS_SELECTOR, "div.responseItem[data-value]"
+            )
+            if not response_items:
+                continue
+
+            # Gate 3 : au moins un statement_text[data-id]
+            all_statements = container.find_elements(
+                By.CSS_SELECTOR, "span.statement_text[data-id]"
+            )
+            if not all_statements:
+                continue
+
+            # Trouver le statement actuellement visible (style vide ou pas display:none)
+            visible_statement = None
+            for stmt in all_statements:
+                try:
+                    style = (stmt.get_attribute("style") or "").lower()
+                    if "display:none" not in style.replace(" ", "") and "display: none" not in style:
+                        visible_statement = stmt
+                        break
+                except Exception:
+                    continue
+
+            if visible_statement is None:
+                # Fallback : premier statement
+                visible_statement = all_statements[0]
+
+            current_stmt_text = _norm(
+                visible_statement.text
+                or visible_statement.get_attribute("innerText")
+                or ""
+            )
+            if not current_stmt_text:
+                continue
+
+            # Texte de la question globale : td[class*='askia-caption'] ou td.askia-question-label
+            global_question = ""
+            try:
+                q_nodes = driver.find_elements(
+                    By.CSS_SELECTOR,
+                    "td.askia-question-label, td[class*='askia-caption']",
+                )
+                for qn in q_nodes:
+                    raw = _norm(qn.text or qn.get_attribute("innerText") or "")
+                    if raw:
+                        global_question = raw
+                        break
+            except Exception:
+                global_question = ""
+
+            question = (
+                f"{global_question} — {current_stmt_text}"
+                if global_question
+                else current_stmt_text
+            )
+
+            # Construire option_xpath_map : option_text → xpath du div.responseItem
+            container_id = (container.get_attribute("id") or "").strip()
+            options: list[str] = []
+            option_xpath_map: dict[str, str] = {}
+
+            for item in response_items:
+                try:
+                    data_id = (item.get_attribute("data-id") or "").strip()
+                    span_nodes = item.find_elements(By.CSS_SELECTOR, "span.response_text")
+                    label_txt = ""
+                    if span_nodes:
+                        label_txt = _norm(
+                            span_nodes[0].text
+                            or span_nodes[0].get_attribute("innerText")
+                            or ""
+                        )
+                    if not label_txt:
+                        label_txt = _norm(item.text or item.get_attribute("innerText") or "")
+                    if not label_txt:
+                        continue
+
+                    key = _norm_key(label_txt)
+                    if key in option_xpath_map:
+                        continue
+
+                    # XPath le plus stable : conteneur par id + responseItem par data-id
+                    if container_id and data_id:
+                        xp = (
+                            f"//*[@id={_xpath_literal(container_id)}]"
+                            f"//div[contains(concat(' ',normalize-space(@class),' '),' responseItem ')]"
+                            f"[@data-id={_xpath_literal(data_id)}]"
+                        )
+                    elif data_id:
+                        xp = (
+                            f"//div[contains(concat(' ',normalize-space(@class),' '),' adc-statementList ')]"
+                            f"//div[contains(concat(' ',normalize-space(@class),' '),' responseItem ')]"
+                            f"[@data-id={_xpath_literal(data_id)}]"
+                        )
+                    else:
+                        xp = _best_xpath_for_element(driver, item)
+
+                    if not xp:
+                        continue
+
+                    option_xpath_map[key] = xp
+                    options.append(label_txt)
+                except Exception:
+                    continue
+
+            if len(options) < 2:
+                continue
+
+            current_data_id = (visible_statement.get_attribute("data-id") or "").strip()
+            group_key = (
+                f"askia_stmtlist:{container_id}:stmt{current_data_id}"
+                if container_id
+                else f"askia_stmtlist:stmt{current_data_id}"
+            )
+
+            target_id = make_target_id("group", group_key, question)
+
+            register_target(
+                target_id,
+                {
+                    "kind": "group",
+                    "itype": "checkbox",
+                    "group_key": group_key,
+                    "question": question,
+                    "option_xpath_map": option_xpath_map,
+                    "frame_chain": list(frame_chain or []),
+                    "askia_statement_list": True,
+                    "container_id": container_id,
+                },
+            )
+
+            blocks.append(
+                {
+                    "question": question,
+                    "itype": "checkbox",
+                    "options": options,
+                    "max_select": len(options),
+                    "target_id": target_id,
+                    "context": {
+                        "kind": "group",
+                        "group_key": group_key,
+                        "askia_statement_list": True,
+                    },
+                }
+            )
+
+        except Exception:
+            continue
+
+    if blocks:
+        log_debug("[DOM_ASKIA_STMT]", f"blocks_extracted={len(blocks)}")
+
+    return blocks
+
+# ================================================================================
 # QUALTRICS - CHAMP TEXTE LIBRE (layout SL / type TE)
 # ================================================================================
 
@@ -8822,3 +9014,205 @@ def _extract_confirmit_cf_single_choice_blocks(driver, frame_chain: list[int] | 
             continue
 
     return blocks
+
+
+# ================================================================================
+# ASKIA — QUESTION RADIO / NPS myresponse* (td cliquables + input radio masqué)
+# ================================================================================
+ 
+def _extract_askia_myresponse_radio_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
+    """Extraction radio pour pages Askia AskiaExt à structure myresponse*.
+ 
+    Gate DOM strict (additif, non provider-wide) :
+    - form[name="FormAskia"] présent dans le DOM
+    - au moins 2 td[class*="myresponse"] contenant chacune un input[type="radio"]
+ 
+    Structure ciblée :
+      <td class="myresponseNC1 askia-response askia-question-222">
+        <input type="radio" name="U222" value="4896" style="display:none">
+        <span id="cpt222_4896">1</span>
+      </td>
+ 
+    Le clic doit cibler le <td> cliquable (handler jQuery bindé dessus),
+    pas le <input> masqué. Le texte de l'option est extrait du <span id="cptQ_V">.
+ 
+    La question est extraite depuis td[class*="askia-question-label"]
+    ou td[class*="askia-caption"].
+ 
+    Produit exactement 1 bloc radio par groupe name (= 1 question par page
+    dans le pattern Askia standard).
+    """
+    frame_chain = list(frame_chain or [])
+ 
+    # Gate 1 : form Askia présent
+    try:
+        if not driver.find_elements(By.CSS_SELECTOR, "form[name='FormAskia']"):
+            return []
+    except Exception:
+        return []
+ 
+    # Gate 2 : au moins 2 td myresponse avec input radio
+    try:
+        sample = driver.find_elements(
+            By.CSS_SELECTOR,
+            "td[class*='myresponse'] input[type='radio']",
+        )
+    except Exception:
+        return []
+ 
+    if len(sample) < 2:
+        return []
+ 
+    # Récupérer tous les td cliquables (myresponse*) portant un input radio
+    try:
+        response_tds = driver.find_elements(
+            By.CSS_SELECTOR,
+            "td[class*='myresponse']",
+        )
+    except Exception:
+        return []
+ 
+    # Regrouper par name de l'input radio contenu dans le td
+    grouped: dict[str, list] = {}  # name -> list of td elements
+    for td in response_tds:
+        try:
+            radios = td.find_elements(By.CSS_SELECTOR, "input[type='radio'][name]")
+            if not radios:
+                continue
+            name = (radios[0].get_attribute("name") or "").strip()
+            if not name:
+                continue
+            grouped.setdefault(name, []).append(td)
+        except Exception:
+            continue
+ 
+    if not grouped:
+        return []
+ 
+    # Texte de question global : td askia-question-label ou askia-caption
+    question = ""
+    try:
+        q_nodes = driver.find_elements(
+            By.CSS_SELECTOR,
+            "td.askia-question-label, td[class*='askia-caption'], td[class*='askia-question-label']",
+        )
+        for qn in q_nodes:
+            txt = _norm(qn.text or qn.get_attribute("innerText") or "")
+            if txt and len(txt) >= 3:
+                question = txt
+                break
+    except Exception:
+        question = ""
+ 
+    blocks: list[dict] = []
+ 
+    for group_name, tds in grouped.items():
+        if len(tds) < 2:
+            continue
+ 
+        options: list[str] = []
+        option_xpath_map: dict[str, str] = {}
+ 
+        for td in tds:
+            try:
+                # Extraire la valeur et le libellé de l'option
+                radios = td.find_elements(By.CSS_SELECTOR, "input[type='radio']")
+                if not radios:
+                    continue
+                radio = radios[0]
+                value = (radio.get_attribute("value") or "").strip()
+                radio_id = (radio.get_attribute("id") or "").strip()
+ 
+                # Texte de l'option : span[id*="cpt"] en priorité, sinon innerText du td
+                label_txt = ""
+                try:
+                    spans = td.find_elements(By.CSS_SELECTOR, "span[id*='cpt']")
+                    if spans:
+                        label_txt = _norm(
+                            spans[0].text or spans[0].get_attribute("innerText") or ""
+                        )
+                except Exception:
+                    pass
+ 
+                if not label_txt:
+                    label_txt = _norm(td.text or td.get_attribute("innerText") or "")
+ 
+                if not label_txt:
+                    continue
+ 
+                nk = _norm_key(label_txt)
+                if not nk or nk in option_xpath_map:
+                    continue
+ 
+                # XPath ciblant le td cliquable (handler jQuery) via radio id ou value+name
+                # On préfère l'id du radio comme ancre stable, puis fallback name+value.
+                if radio_id:
+                    xp = (
+                        f"//input[@id={_xpath_literal(radio_id)}]"
+                        f"/ancestor::td[contains(concat(' ',normalize-space(@class),' '),"
+                        f"' myresponse')][1]"
+                    )
+                elif value:
+                    name_lit = _xpath_literal(group_name)
+                    val_lit = _xpath_literal(value)
+                    xp = (
+                        f"//input[@type='radio' and @name={name_lit} and @value={val_lit}]"
+                        f"/ancestor::td[contains(concat(' ',normalize-space(@class),' '),"
+                        f"' myresponse')][1]"
+                    )
+                else:
+                    xp = _best_xpath_for_element(driver, td)
+ 
+                if not xp:
+                    continue
+ 
+                option_xpath_map[nk] = xp
+                options.append(label_txt)
+ 
+            except Exception:
+                continue
+ 
+        if len(options) < 2 or not option_xpath_map:
+            continue
+ 
+        # Fallback question si non trouvée globalement
+        q_text = question or f"Question {group_name}"
+ 
+        group_key = f"radio:name:{group_name}"
+        target_id = make_target_id("group", group_key, q_text)
+ 
+        register_target(
+            target_id,
+            {
+                "kind": "group",
+                "itype": "radio",
+                "group_key": group_key,
+                "question": q_text,
+                "option_xpath_map": option_xpath_map,
+                "frame_chain": frame_chain,
+                "askia_myresponse": True,
+            },
+        )
+ 
+        blocks.append(
+            {
+                "question": q_text,
+                "itype": "radio",
+                "options": options,
+                "max_select": _compute_max_select("radio", options),
+                "target_id": target_id,
+                "context": {
+                    "kind": "group",
+                    "group_key": group_key,
+                    "askia_myresponse": True,
+                },
+            }
+        )
+ 
+        log_debug(
+            "[DOM_ASKIA_MYRESPONSE]",
+            f"name={group_name!r} question={q_text!r} options={options}",
+        )
+ 
+    return blocks
+ 

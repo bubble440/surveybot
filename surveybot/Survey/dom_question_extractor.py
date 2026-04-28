@@ -211,6 +211,18 @@ def _find_associated_label(driver, el) -> str:
         except Exception:
             pass
 
+        # 4b) Span directement adjacent à l'input dans le même conteneur
+        #     (ex: Askia — <td><input class="askia-live"/><span>Label</span></td>).
+        #     Déclenché uniquement quand les stratégies label/aria/parent ont échoué.
+        try:
+            sibling_spans = el.find_elements(By.XPATH, "following-sibling::span[1]")
+            for span in sibling_spans:
+                txt = _norm(span.text or "")
+                if txt and len(txt) <= 300 and _is_valid_option_label(txt):
+                    return txt
+        except Exception:
+            pass
+
         # 5) Fallback DOM ciblé: options custom sans <label for="..."> explicite.
         # Scope strict DOM: on cherche le plus proche wrapper d'option
         # (et non le conteneur global de question) pour éviter de capturer
@@ -235,6 +247,14 @@ def _find_associated_label(driver, el) -> str:
                   'label, .radio-checkbox-wrapper, .checkbox-wrapper, .radio-wrapper, .category-option, .answer-option, .answer_options, .option, li, [role="option"], [class*="option-item"], [class*="choice-item"]'
                 );
                 if (!optionHost || !isVisible(optionHost)) return '';
+
+                // Guard: si l'optionHost contient plusieurs inputs avec le même name,
+                // c'est un conteneur de section, pas un wrapper d'option — ignorer.
+                const iName = (input.getAttribute('name') || '').trim();
+                if (iName) {
+                  const esc = iName.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+                  if (optionHost.querySelectorAll('input[name="' + esc + '"]').length > 1) return '';
+                }
 
                 const candidates = [];
                 const nodes = optionHost.querySelectorAll('span, div, p, strong, em, label');
