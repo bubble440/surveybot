@@ -5959,6 +5959,67 @@ def execute_action(
                     value,
                     allow_mx_vertical_carousel_advance=allow_mx_vertical_carousel_advance,
                 ):
+                    if applied:
+                        # Post-vérification spécifique MetrixLab/Toluna checkboxQT/radioQT.
+                        # Le clic seul ne suffit pas: cette UI custom ne confirme pas l'état via
+                        # input.checked de manière fiable. L'état réel est porté par:
+                        #   - .option_checkbox.input_on
+                        #   - .option_label.input_label_on
+                        try:
+                            verified = driver.execute_script(
+                                r"""
+                                const tid = arguments[0];
+                                if (!tid) return true;
+
+                                const groups = Array.from(document.querySelectorAll('div.answer_options'));
+                                if (!groups.length) return true;
+
+                                const hasQt = groups.some(w => {
+                                    const inp = w.querySelector('input[name]');
+                                    return inp && /^(checkbox|radio)$/i.test(inp.type || '') && (inp.className || '').includes('QT');
+                                });
+                                if (!hasQt) return true;
+
+                                // Cas group_<hash> : vérifier qu'au moins une option du groupe est réellement activée
+                                if (String(tid).startsWith('group_')) {
+                                    return groups.some(w => {
+                                    const cb = w.querySelector('.option_checkbox');
+                                    const lb = w.querySelector('.option_label');
+                                    return !!(
+                                        (cb && cb.classList.contains('input_on')) ||
+                                        (lb && lb.classList.contains('input_label_on'))
+                                    );
+                                    });
+                                }
+
+                                // Cas option individuelle : tenter de retrouver le wrapper via l'input enregistré
+                                const allInputs = Array.from(document.querySelectorAll('div.answer_options input[name]'));
+                                for (const inp of allInputs) {
+                                    const wrap = inp.closest('div.answer_options');
+                                    if (!wrap) continue;
+                                    const cb = wrap.querySelector('.option_checkbox');
+                                    const lb = wrap.querySelector('.option_label');
+                                    if (
+                                    (cb && cb.classList.contains('input_on')) ||
+                                    (lb && lb.classList.contains('input_label_on'))
+                                    ) {
+                                    return true;
+                                    }
+                                }
+                                return false;
+                                """,
+                                target_id,
+                            )
+                        except Exception:
+                            verified = False
+
+                        if verified:
+                            return True
+
+                        # Faux positif: la stratégie target_id a "cliqué" mais l'UI n'a pas appliqué l'état.
+                        # Continuer vers le fallback label-based au lieu de déclarer succès.
+                        applied = False
+
                     log_info("[TARGET]", "apply ok=true strategy=target_id reason=applied")
                     return True
             except Exception as e:
