@@ -754,6 +754,17 @@ def parse_batch_response(raw: str, constraints: Optional[Dict[str, int]] = None,
 
     lines = [l.strip() for l in raw.splitlines() if l.strip()]
 
+    # Index inverse target_id -> QID pour tolérer les réponses où OpenAI met
+    # le target_id à la place du QID en première colonne.
+    target_to_qid: Dict[str, str] = {}
+    if isinstance(qid_meta, dict):
+        for _qid, _meta in qid_meta.items():
+            if not isinstance(_meta, dict):
+                continue
+            _tid = str(_meta.get("target_id") or "").strip()
+            if _tid:
+                target_to_qid[_tid] = str(_qid).strip().upper()
+
     kept_count: Dict[str, int] = {}
     kept_values: Dict[str, set] = {}
     # ✅ Anti-doublons : OpenAI peut répéter la même action sur plusieurs QIDs.
@@ -779,8 +790,16 @@ def parse_batch_response(raw: str, constraints: Optional[Dict[str, int]] = None,
             itype = parts[3].strip().lower()
             context = parts[4].strip()
         elif len(parts) == 4:
-            # compat: QID //// valeur //// itype //// contexte
-            qid = parts[0].strip()
+            # Compat supporté:
+            #   1) QID //// valeur //// itype //// contexte
+            #   2) target_id //// valeur //// itype //// contexte
+            first = parts[0].strip()
+            m_first = _QID_RE.search(first)
+            if m_first:
+                qid = m_first.group(0).upper()
+            else:
+                target_id = first
+                qid = target_to_qid.get(target_id)
             value = parts[1].strip()
             itype = parts[2].strip().lower()
             context = parts[3].strip()
@@ -796,6 +815,14 @@ def parse_batch_response(raw: str, constraints: Optional[Dict[str, int]] = None,
         if qid:
             m = _QID_RE.search(qid)
             qid = (m.group(0) if m else qid).upper()
+
+        # Récupération secondaire: si OpenAI a mis le target_id dans la colonne QID
+        # du format 5 champs, on le remappe ici.
+        if constraints is not None and qid and qid not in constraints:
+            recovered_qid = target_to_qid.get(qid)
+            if recovered_qid:
+                target_id = target_id or qid
+                qid = recovered_qid
 
         # mode batch strict
         if constraints is not None:
@@ -948,6 +975,17 @@ def _norm_lc(s: str | None) -> str:
 
 def _fold_lc(s: str | None) -> str:
     base = (s or "")
+    # Neutraliser les variantes typographiques AVANT NFKD :
+    # - apostrophes courbes/spéciales → ASCII '
+    # - espaces insécables / fine / autres → espace ordinaire
+    # Sans ça, deux libellés visuellement identiques mais encodés différemment
+    # (LLM vs DOM) produisent un ratio SequenceMatcher < 0.80 et sont rejetés.
+    base = base.replace("\u2019", "'").replace("\u2018", "'") \
+               .replace("\u02bc", "'").replace("\u0060", "'") \
+               .replace("\u00ab", "").replace("\u00bb", "") \
+               .replace("\u00a0", " ").replace("\u202f", " ") \
+               .replace("\u2009", " ").replace("\u2002", " ") \
+               .replace("\u2003", " ")
     base = unicodedata.normalize("NFKD", base)
     base = "".join(ch for ch in base if not unicodedata.combining(ch))
     return _norm_lc(base)

@@ -756,35 +756,46 @@ def click_checkbox_by_label(driver, target_text: str, context_hint: str | None =
 
     # Toluna Runtime : cliquer une option non encore cochée (div custom, sans <input> natif).
     # Guard DOM : [data-aut='Runtime_AnswerRow'] présent (≥2 rows) + pas d'input natif dans la cible.
-    # Clic sur targetRow (listener React attaché sur le conteneur, pas sur le wrapper interne).
-    # Vérification post-clic : la classe IconBox doit avoir changé.
+    # Clic via Selenium (hors JS) : le listener React est attaché sur le conteneur targetRow.
+    # Vérification post-clic après time.sleep : React re-rend de façon asynchrone, la vérification
+    # JS synchrone (clsBefore vs clsAfter dans le même tick) retourne toujours false avant ce patch.
     try:
-        _toluna_click_ok = driver.execute_script(
+        _toluna_row = driver.execute_script(
             r"""
             const norm = s => (s || '').toLowerCase().normalize('NFKC')
                 .replace(/\u00A0/g,' ').replace(/[»«\u201c\u201d"'›→·•:]/g,'')
                 .replace(/\s+/g,' ').trim();
             const needle = norm(arguments[0]);
             const allRows = Array.from(document.querySelectorAll("[data-aut='Runtime_AnswerRow']"));
-            if (allRows.length < 2) return false;
+            if (allRows.length < 2) return null;
             const targetRow = allRows.find(r => {
                 const txt = norm(r.innerText || r.textContent || '');
                 return txt === needle || txt.includes(needle) || needle.includes(txt);
             });
-            if (!targetRow) return false;
-            if (targetRow.querySelector("input[type='checkbox'], input[type='radio']")) return false;
+            if (!targetRow) return null;
+            if (targetRow.querySelector("input[type='checkbox'], input[type='radio']")) return null;
             const inner = targetRow.querySelector("[data-aut='Runtime_IconBox'], [data-aut='Runtime_InnerFill']");
-            if (!inner) return false;
-            const clsBefore = inner.className || '';
-            targetRow.click();
-            const clsAfter = inner.className || '';
-            return clsAfter !== clsBefore;
+            if (!inner) return null;
+            return { row: targetRow, inner, clsBefore: inner.className || '' };
             """,
             target_text,
         )
-        if _toluna_click_ok:
-            log_debug("[TARGET_DEBUG]", f"click_checkbox_by_label: toluna_runtime click ok label={target_text!r}")
-            return True
+        if _toluna_row and isinstance(_toluna_row, dict):
+            _row_el = _toluna_row.get("row")
+            _inner_el = _toluna_row.get("inner")
+            _cls_before = _toluna_row.get("clsBefore", "")
+            if _row_el is not None and _inner_el is not None:
+                scroll_into_view(driver, _row_el)
+                try:
+                    _row_el.click()
+                except Exception:
+                    ActionChains(driver).move_to_element(_row_el).click().perform()
+                # Laisser React re-rendre avant la vérification
+                time.sleep(0.15)
+                _cls_after = driver.execute_script("return arguments[0].className || '';", _inner_el)
+                if _cls_after != _cls_before:
+                    log_debug("[TARGET_DEBUG]", f"click_checkbox_by_label: toluna_runtime click ok label={target_text!r}")
+                    return True
     except Exception:
         pass
 
@@ -944,16 +955,24 @@ def click_checkbox_by_label(driver, target_text: str, context_hint: str | None =
     except Exception:
         pass
 
-    # 1) DOM ciblé: wrappers .answer_options avec input.checkbox.radioQT (Metrix-like single-select)
-    #    Critères strictement DOM (pas de règle provider globale).
+    # 1) DOM ciblé: wrappers .answer_options avec input[class*="QT"] (checkboxQT ou radioQT)
+    #    (MetrixLab/Toluna SPA). L'état visuel coché est porté par div.option_checkbox.input_on
+    #    et/ou div.option_label.input_label_on, pas de manière fiable par input.checked.
+    #
+    #    Point important:
+    #    - on NE clique PAS via JS sur le wrapper, car certains handlers UI exigent un évènement
+    #      utilisateur "trusted".
+    #    - on trouve le meilleur wrapper en JS, puis on clique en Selenium natif / ActionChains.
+    #    - la vérification est refaite via une nouvelle recherche DOM après un léger délai.
     try:
-        clicked_input = driver.execute_script(
+        metrixlab_target = driver.execute_script(
             r"""
             const root = arguments[0] || document;
             const norm = s => (s || '')
               .toLowerCase()
               .normalize('NFKC')
               .replace(/\u00A0/g, ' ')
+              .replace(/[’']/g, "'")
               .replace(/\s+/g, ' ')
               .trim();
             const needle = norm(arguments[1]);
@@ -962,53 +981,132 @@ def click_checkbox_by_label(driver, target_text: str, context_hint: str | None =
             const wrappers = Array.from(root.querySelectorAll('div.answer_options'));
             if (!wrappers.length) return null;
 
-            // Guard DOM: on active cette logique uniquement si la structure radioQT est observée.
-            const radioQtInputs = wrappers
-              .map(w => w.querySelector('input[type="checkbox"].radioQT[name]'))
-              .filter(Boolean);
-            if (radioQtInputs.length < 2) return null;
+            // Guard DOM strict:
+            // - input QT avec name partagé entre plusieurs options
+            const qtInputs = wrappers
+              .map(w => w.querySelector('input[name]'))
+              .filter(inp =>
+                inp &&
+                /^(checkbox|radio)$/i.test(inp.type || '') &&
+                (inp.className || '').includes('QT')
+              );
+            if (qtInputs.length < 2) return null;
 
             const nameCounts = new Map();
-            for (const inp of radioQtInputs) {
-              const k = (inp.getAttribute('name') || '').trim();
-              if (!k) continue;
-              nameCounts.set(k, (nameCounts.get(k) || 0) + 1);
+            for (const inp of qtInputs) {
+              const name = (inp.getAttribute('name') || '').trim();
+              if (!name) continue;
+              nameCounts.set(name, (nameCounts.get(name) || 0) + 1);
             }
             const hasSharedName = Array.from(nameCounts.values()).some(v => v >= 2);
             if (!hasSharedName) return null;
 
             const candidates = [];
             for (const wrap of wrappers) {
-              const inp = wrap.querySelector('input[type="checkbox"].radioQT[name]');
+              const inp = wrap.querySelector('input[name]');
               if (!inp) continue;
+              if (!/^(checkbox|radio)$/i.test(inp.type || '')) continue;
+              if (!(inp.className || '').includes('QT')) continue;
 
               const labelNode = wrap.querySelector('.option_label, .option_label span, span');
-              const txt = norm((labelNode && (labelNode.innerText || labelNode.textContent)) || wrap.innerText || wrap.textContent || '');
+              const txt = norm(
+                (labelNode && (labelNode.innerText || labelNode.textContent)) ||
+                wrap.innerText ||
+                wrap.textContent ||
+                ''
+              );
               if (!txt) continue;
               if (!(txt === needle || txt.includes(needle) || needle.includes(txt))) continue;
 
-              candidates.push({wrap, inp, score: txt === needle ? 2 : 1, len: txt.length});
+              const checkboxDiv = wrap.querySelector('.option_checkbox');
+              const labelDiv = wrap.querySelector('.option_label');
+              candidates.push({
+                wrap,
+                inp,
+                checkboxDiv,
+                labelDiv,
+                score: txt === needle ? 2 : 1,
+                len: txt.length,
+              });
             }
             if (!candidates.length) return null;
 
             candidates.sort((a, b) => (b.score - a.score) || (b.len - a.len));
             const best = candidates[0];
-
-            best.wrap.scrollIntoView({block: 'center', inline: 'center'});
-            best.wrap.click();
-
-            const selectedRadio = best.wrap.querySelector('div.option_radio');
-            if (!(selectedRadio && selectedRadio.classList.contains('input_on'))) {
-              return null;
-            }
-
-            return best.inp;
+            try { best.wrap.scrollIntoView({block: 'center', inline: 'center'}); } catch(e) {}
+            return [best.wrap, best.inp, best.checkboxDiv, best.labelDiv];
             """,
             scope,
             target_text,
         )
-        if clicked_input:
-            return clicked_input
+        if isinstance(metrixlab_target, list) and len(metrixlab_target) >= 2 and metrixlab_target[0] is not None:
+            clicked_wrap = metrixlab_target[0]
+            clicked_input = metrixlab_target[1]
+            clicked_checkbox_div = metrixlab_target[2] if len(metrixlab_target) > 2 else None
+            clicked_label_div = metrixlab_target[3] if len(metrixlab_target) > 3 else None
+
+            try:
+                scroll_into_view(driver, clicked_wrap)
+            except Exception:
+                pass
+
+            clicked = False
+            for candidate in (clicked_checkbox_div, clicked_label_div, clicked_wrap, clicked_input):
+                if candidate is None:
+                    continue
+                try:
+                    candidate.click()
+                    clicked = True
+                    break
+                except Exception:
+                    try:
+                        ActionChains(driver).move_to_element(candidate).click().perform()
+                        clicked = True
+                        break
+                    except Exception:
+                        continue
+
+            if clicked:
+                time.sleep(0.20)
+                verify_ok = driver.execute_script(
+                    r"""
+                    const root = arguments[0] || document;
+                    const norm = s => (s || '')
+                      .toLowerCase()
+                      .normalize('NFKC')
+                      .replace(/\u00A0/g, ' ')
+                      .replace(/[’']/g, "'")
+                      .replace(/\s+/g, ' ')
+                      .trim();
+                    const needle = norm(arguments[1]);
+                    if (!needle) return false;
+
+                    const wrappers = Array.from(root.querySelectorAll('div.answer_options'));
+                    for (const wrap of wrappers) {
+                      const labelNode = wrap.querySelector('.option_label, .option_label span, span');
+                      const txt = norm(
+                        (labelNode && (labelNode.innerText || labelNode.textContent)) ||
+                        wrap.innerText ||
+                        wrap.textContent ||
+                        ''
+                      );
+                      if (!txt) continue;
+                      if (!(txt === needle || txt.includes(needle) || needle.includes(txt))) continue;
+
+                      const checkboxDiv = wrap.querySelector('.option_checkbox');
+                      const labelDiv = wrap.querySelector('.option_label');
+                      const checkboxOn = !!(checkboxDiv && checkboxDiv.classList.contains('input_on'));
+                      const labelOn = !!(labelDiv && labelDiv.classList.contains('input_label_on'));
+                      if (checkboxOn || labelOn) return true;
+                    }
+                    return false;
+                    """,
+                    scope,
+                    target_text,
+                )
+                if verify_ok:
+                    log_debug("[TARGET_DEBUG]", f"click_checkbox_by_label: metrixlab QT ok label={target_text!r}")
+                    return clicked_input
     except Exception:
         pass
 

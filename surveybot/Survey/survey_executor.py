@@ -1831,19 +1831,30 @@ def execute_survey_page(driver, account_id, api_key, ctx=None):
 
     if question_blocks:
         question_blocks_for_batch = prompt_builder.expand_question_blocks_for_batch(question_blocks)
-        prompt = prompt_builder.build_batch_prompt(question_blocks_for_batch, ctx=ctx)
+
+        # Séparation system / user pour activer le prompt caching OpenAI.
+        # build_system_prompt() retourne un contenu statique identique entre tous les appels :
+        # le cache s'active automatiquement dès le 2e appel (préfixe ≥ 1 024 tokens identiques).
+        # Pour vérifier : usage.prompt_tokens_details.cached_tokens > 0 dans la réponse API.
+        system_prompt = prompt_builder.build_system_prompt()
+        user_prompt = prompt_builder.build_batch_prompt(question_blocks_for_batch, ctx=ctx)
 
         if (os.getenv("LOG_LEVEL") or "").strip().lower() == "debug":
-            print("🧠 [PROMPT_DEBUG] ===== PROMPT ENVOYÉ À OPENAI =====")
-            print(prompt[:200000])  # tronqué pour ne pas noyer les logs
+            print("🧠 [PROMPT_DEBUG] ===== SYSTEM PROMPT =====")
+            print(system_prompt[:5000])
+            print("🧠 [PROMPT_DEBUG] ===== USER PROMPT =====")
+            print(user_prompt[:200000])
             print("[PROMPT_DEBUG] ===================================")
 
-        instruction_raw = client.responses.create(
-            input=prompt,
-            model="gpt-5-nano",
+        instruction_raw = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user",   "content": user_prompt},
+            ],
         )
 
-        raw_text = instruction_raw.output_text
+        raw_text = instruction_raw.choices[0].message.content or ""
         # contraintes max_select par QID (doit matcher le build_batch_prompt)
         qid_constraints = {
             f"Q{i}": (
