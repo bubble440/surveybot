@@ -6108,14 +6108,13 @@ def execute_action(
             ):
                 return True
 
-            open_hint = (ctx or "").strip() or label
-            _opened = _try(driver, "dropdown_open", lambda:
-                Survey.input_handler.open_dropdown_generic(driver, hint=open_hint, context_hint=ctx)
-            )
-            if _opened:
-                driver._last_dropdown_hint = open_hint
+            # Point d'entrée unique pour les dropdowns.
+            # select_option_with_hint sélectionne directement les <select> natifs
+            # et ouvre lui-même les dropdowns custom. Ne pas appeler dropdown_open
+            # avant: sur un <select> natif, l'ouverture/focus clavier peut modifier
+            # la valeur courante avant l'application de la réponse attendue.
+            field_hint = ctx or label
 
-            field_hint = ctx or getattr(driver, "_last_dropdown_hint", None) or label
             if _try(driver, "dropdown_select", lambda:
                 Survey.input_handler.select_option_with_hint(
                     driver, label, field_hint=field_hint, context_hint=ctx
@@ -6126,15 +6125,6 @@ def execute_action(
 
             # nettoyage: ne pas polluer l'action suivante
             driver._last_dropdown_hint = None
-
-            field_hint = ctx or getattr(driver, "_last_dropdown_hint", None)
-            if _try(driver, "dropdown_select", lambda:
-                Survey.input_handler.select_option_with_hint(
-                    driver, label, field_hint=field_hint, context_hint=ctx
-                )
-            ):
-                driver._last_dropdown_hint = None
-                return True
 
         # ==========================================================
         # 🟦 CHECKBOX
