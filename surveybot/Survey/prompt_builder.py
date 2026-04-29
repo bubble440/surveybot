@@ -302,25 +302,34 @@ def expand_question_blocks_for_batch(question_blocks: List[Dict[str, Any]]) -> L
 # Construction du prompt
 # =========================
 
-def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
+
+# =========================
+# System prompt (bloc fixe — prompt caching OpenAI)
+# =========================
+
+# Estimation conservative du nombre de tokens du system prompt.
+# OpenAI met en cache automatiquement à partir de 1 024 tokens identiques en préfixe.
+# Si cette valeur descend sous 1 024 après une modification des règles, le cache
+# ne s'active plus. À vérifier via usage.prompt_tokens_details.cached_tokens > 0.
+SYSTEM_PROMPT_TOKEN_ESTIMATE = 1100
+
+
+def build_system_prompt() -> str:
     """
-    Construit un prompt OpenAI pour répondre é  TOUTES les questions en une fois.
-    Format de sortie robuste avec QID + max_select + target_id.
-    
-    IMPORTANT: Pour les multi-select, le séparateur OBLIGATOIRE est "|".
+    Retourne le bloc de règles invariant destiné au message 'system'.
+
+    Ce contenu est STRICTEMENT STATIQUE : aucune variable dynamique, aucun QID,
+    aucune option de question. Cela garantit que la chaîne est byte-perfect identique
+    entre tous les appels, ce qui active le prompt caching OpenAI dès le premier appel
+    (cache hit automatique pour gpt-4o-mini à partir de 1 024 tokens de préfixe identique).
+
+    Pour vérifier l'activation du cache : inspecter
+    `usage.prompt_tokens_details.cached_tokens` dans la réponse API (valeur > 0 = cache hit).
+
+    NE PAS modifier cette fonction sans mesurer l'impact : toute modification
+    invalide le cache pour TOUS les bots jusqu'au prochain warm-up (~1 appel).
     """
     lines: list[str] = []
-    question_blocks = expand_question_blocks_for_batch(question_blocks)
-
-    # Inject survey session context if available (coherence across pages)
-    if ctx is not None:
-        try:
-            snippet = ctx.get_context_snippet()
-            if snippet:
-                lines.append(snippet)
-                lines.append("")  # blank separator
-        except Exception:
-            pass
 
     lines.append(
         "Tu es un répondant ADULTE (25 ans). "
@@ -604,6 +613,31 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
         "ni aux screeners disqualificatoires.\n"
     )
 
+    return "\n".join(lines)
+
+
+def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
+    """
+    Construit un prompt OpenAI pour répondre é  TOUTES les questions en une fois.
+    Format de sortie robuste avec QID + max_select + target_id.
+    
+    IMPORTANT: Pour les multi-select, le séparateur OBLIGATOIRE est "|".
+    """
+    lines: list[str] = []
+    question_blocks = expand_question_blocks_for_batch(question_blocks)
+
+    # Inject survey session context if available (coherence across pages)
+    if ctx is not None:
+        try:
+            snippet = ctx.get_context_snippet()
+            if snippet:
+                lines.append(snippet)
+                lines.append("")  # blank separator
+        except Exception:
+            pass
+
+    # Règles fixes → déportées dans build_system_prompt() pour le prompt caching OpenAI.
+    # Passer build_system_prompt() comme message 'system' dans l'appel API.
     lines.append("\n--- QUESTIONS ---")
 
     for i, block in enumerate(question_blocks or [], start=1):

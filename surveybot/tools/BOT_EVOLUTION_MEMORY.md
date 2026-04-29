@@ -76,3 +76,31 @@ Contexte patch :
   (ElementNotInteractableException sur input natif + ActionChains, "has no size and location").
   Stratégie unique (pas de fallback empilés). Retourne False immédiatement si input.checked=false.
   Log : "[TARGET] apply ok=true strategy=askia_responsive_table_checkbox reason=label_js_click"
+
+### execute_action — post-vérification target_id MetrixLab/Toluna QT
+Fichier : Survey/action_dispatcher.py
+Emplacement : dans `execute_action()`, immédiatement après le retour positif de `_apply_by_target_id(...)`
+  et avant le log `strategy=target_id reason=applied`.
+Guard d'activation :
+- `target_id` présent
+- `_apply_by_target_id(...)` a renvoyé `True`
+- page contenant des wrappers `div.answer_options` avec `input.checkboxQT/radioQT`
+Patterns couverts :
+- MetrixLab / Toluna SPA avec options sous forme de `div.answer_options`
+- État sélectionné porté visuellement par `.option_checkbox.input_on`
+  et/ou `.option_label.input_label_on`
+- Cas où la stratégie `target_id` réussit techniquement (clic/dispatch) mais sans effet UI réel
+- Blocage du faux positif : ne pas logger `apply ok=true strategy=target_id` tant que le DOM
+  ne montre pas une option réellement activée
+Patterns exclus :
+- Checkboxes/radios natifs validés par `input.checked`
+- Widgets custom déjà vérifiés dans `_apply_by_target_id` (QARTS, Nfield swatches,
+  Askia ResponsiveTable, Toluna Runtime AnswerRow, etc.)
+- Toute page sans structure `div.answer_options` + input `*QT`
+Contexte patch :
+- [2026-04] Fix d'un faux succès sur question checkbox MetrixLab/Toluna (`group_4fe25a510f06`).
+  Le parser et le dispatcher produisaient bien l'action, mais `execute_action()` déclarait
+  `strategy=target_id reason=applied` alors que l'UI restait inchangée. La validation correcte
+  sur ce provider repose sur les classes DOM `input_on` / `input_label_on`, pas sur le simple
+  succès du clic ni sur `input.checked`.
+
