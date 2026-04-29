@@ -2307,6 +2307,102 @@ def _apply_by_target_id(
                         log_debug("[TARGET_DEBUG]", f"element not found for xpath={xp} ({type(ex).__name__}: {_short_exc(ex)})")
                     return False
 
+                # --- Askia Ranking Isotope (adcRanking jQuery plugin) ---
+                # Guard DOM strict : flag askia_ranking_isotope posé par l'extracteur.
+                # Le widget adcRanking branche ses handlers via $.fn.on('click', ...) —
+                # un click Selenium natif ou JS vanilla ne traverse pas jQuery, le plugin
+                # reste muet. Stratégie : $(element).trigger('click') via le jQuery de la page,
+                # suivi d'une vérification sur l'input hidden associé (id="R{qid}_{data-value}").
+                # data-value est extrait depuis l'élément cible (div[data-value]).
+                if payload.get("askia_ranking_isotope") and resolved_itype == "checkbox":
+                    _adc_ok = bool(driver.execute_script(
+                        """
+                        var el = arguments[0];
+                        if (!el) return false;
+
+                        // Récupère le data-value sur le div cible (ou son ancêtre .statement)
+                        var dataValue = el.getAttribute('data-value');
+                        if (!dataValue) {
+                            var stmt = el.closest ? el.closest('[data-value]') : null;
+                            if (stmt) dataValue = stmt.getAttribute('data-value');
+                        }
+
+                        // Déclenche le clic via jQuery pour activer le plugin adcRanking
+                        if (typeof jQuery !== 'undefined') {
+                            jQuery(el).trigger('click');
+                        } else if (typeof $ !== 'undefined' && typeof $.fn !== 'undefined') {
+                            $(el).trigger('click');
+                        } else {
+                            return false;
+                        }
+
+                        // Vérification : l'input hidden associé doit avoir une valeur non vide
+                        // Format attendu : id="R{qid}_{data-value}" (ex: R609_4385)
+                        if (!dataValue) return true;  // pas de data-value → on fait confiance au clic
+                        var hiddenInputs = document.querySelectorAll('input[type="hidden"][id$="_' + dataValue + '"]');
+                        for (var i = 0; i < hiddenInputs.length; i++) {
+                            if ((hiddenInputs[i].value || '').trim() !== '') return true;
+                        }
+                        // Délai possible : vérification après 80 ms (synchrone impossible, on retourne true
+                        // sur la bonne foi du trigger — la vérification asynchrone se fera côté Python)
+                        return true;
+                        """,
+                        el,
+                    ))
+                    if _adc_ok:
+                        # Vérification asynchrone : l'input hidden doit avoir une valeur dans les 600 ms
+                        _data_value = None
+                        try:
+                            _data_value = driver.execute_script(
+                                """
+                                var el = arguments[0];
+                                if (!el) return null;
+                                var dv = el.getAttribute('data-value');
+                                if (!dv) {
+                                    var s = el.closest ? el.closest('[data-value]') : null;
+                                    if (s) dv = s.getAttribute('data-value');
+                                }
+                                return dv || null;
+                                """,
+                                el,
+                            )
+                        except Exception:
+                            _data_value = None
+
+                        _adc_confirmed = False
+                        if _data_value:
+                            _deadline = time.time() + 0.6
+                            while time.time() < _deadline:
+                                try:
+                                    _adc_confirmed = bool(driver.execute_script(
+                                        """
+                                        var dv = arguments[0];
+                                        var inputs = document.querySelectorAll('input[type="hidden"][id$="_' + dv + '"]');
+                                        for (var i = 0; i < inputs.length; i++) {
+                                            if ((inputs[i].value || '').trim() !== '') return true;
+                                        }
+                                        return false;
+                                        """,
+                                        _data_value,
+                                    ))
+                                    if _adc_confirmed:
+                                        break
+                                except Exception:
+                                    pass
+                                time.sleep(0.05)
+                        else:
+                            _adc_confirmed = True  # pas de data-value = on ne peut pas vérifier
+
+                        if _adc_confirmed:
+                            log_info("[TARGET]", f"apply ok=true strategy=askia_ranking_isotope reason=jquery_trigger value='{value}'")
+                            return True
+                        if debug_target:
+                            log_debug("[TARGET_DEBUG]", f"askia_ranking_isotope: input hidden vide après trigger value='{value}' data-value={_data_value!r}")
+                    else:
+                        if debug_target:
+                            log_debug("[TARGET_DEBUG]", f"askia_ranking_isotope: jQuery non disponible ou trigger échoué value='{value}' xpath='{xp}'")
+                    return False
+
                 # Kantar/Nfield swatches rowpicker: inputs natifs dans un fieldset masqué
                 # (style="display: none"), overlay cliquable dans div#container_{questionname}.
                 # Guard DOM strict : fieldset[questionname][display:none] contenant

@@ -507,8 +507,24 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
         "la plus précise, ou la plus cohérente avec le persona (cadre supérieur, urbain, revenus élevés).\n"
         "INTERDIT ABSOLU : choisir une option vague ou de repli ('Autre', 'Other', 'Je ne sais pas', "
         "'Non concerné', etc.) quand une option concrète de la liste est compatible avec le contexte établi.\n"
-    )    
-    
+    )
+
+    lines.append(
+        "RÈGLE OPTION 'AUTRE' / 'OTHER' (priorité haute) :\n"
+        "Dans une liste de choix (checkbox, radio, dropdown), ne JAMAIS sélectionner une option libellée "
+        "'Autre', 'Autres', 'Other', 'Others', 'Autre (précisez)', 'Other (please specify)', "
+        "'Autre chose', 'Something else', ou tout équivalent demandant une saisie libre complémentaire, "
+        "SAUF si cette option apparaît dans une matrice ou un tableau (itype=matrix).\n\n"
+        "Raison : sélectionner 'Autre' déclenche systématiquement un champ texte ouvert impossible à remplir "
+        "automatiquement, ce qui bloque la progression du survey.\n\n"
+        "RÈGLE DE SUBSTITUTION : si 'Autre' était la seule option pertinente selon le persona, "
+        "choisis à la place l'option concrète la plus proche dans la liste. "
+        "Si aucune option concrète n'est adaptée, choisis l'option la plus neutre ou la plus générique "
+        "(hors options exclusives de type 'Aucun' / 'None of the above').\n"
+        "EXCEPTION : cette règle ne s'applique PAS quand 'Autre' est dans une matrice (itype=matrix). "
+        "Dans ce cas, 'Autre' est une colonne standard, pas un déclencheur de champ libre.\n"
+    )
+
     lines.append(
         "RÈGLE ABSOLUE DE PROGRESSION (priorité maximale sur le persona) :\n"
         "L'objectif premier est de progresser dans le survey. Le persona est un point de départ — il doit être adapté si une réponse trop fidèle entraînerait une disqualification évidente.\n\n"
