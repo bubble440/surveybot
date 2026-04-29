@@ -50,9 +50,29 @@ Contexte patch :
 | Plateforme | Extracteur A | Extracteur B | Signal de discrimination |
 |---|---|---|---|
 | Askia | _extract_askia_adc_slider | _extract_askia_adc_responsive_table | class du div principal : adc-slider vs adc-responsiveTable |
+| Askia | _apply_by_target_id (askia_responsive_table_checkbox) | chemin générique opt_map | flag `askia_responsive_table_checkbox` dans le payload registry |
 
 ---
 
 ## FONCTIONS CRITIQUES NON EXTRACTEURS
 
-[Vide — à compléter au fur et à mesure]
+### _apply_by_target_id — bloc askia_responsive_table_checkbox
+Fichier : Survey/action_dispatcher.py
+Emplacement : dans le bloc `if opt_map and resolved_itype in ("radio", "checkbox")`,
+  juste avant `_click_candidate(el, "target")`.
+Guard d'activation : `payload.get("askia_responsive_table_checkbox") and resolved_itype == "checkbox"`
+Patterns couverts :
+- Matrices checkbox Askia ResponsiveTable (div.adc-responsiveTable, tr[data-id])
+- Inputs `<input type="checkbox">` non-interactables (masqués CSS, taille 0) pointés par option_xpath_map
+- Clic JS sur `<label for=inputId>` si présent → déclenche les handlers Askia natifs
+- Fallback : `input.checked = true` + dispatchEvent input/change si aucun label trouvé
+- Vérification stricte : `input.checked === true` après action
+Patterns exclus :
+- Sliders noUiSlider (div.adc-slider) → _extract_askia_adc_slider
+- Radios classiques Askia (div.myresponse) → chemin générique opt_map
+- Tout autre itype (radio, text…) → pas de guard activé
+Contexte patch :
+- [2025] Fix bug : sélection échouant à partir de la 2ème question de matrice
+  (ElementNotInteractableException sur input natif + ActionChains, "has no size and location").
+  Stratégie unique (pas de fallback empilés). Retourne False immédiatement si input.checked=false.
+  Log : "[TARGET] apply ok=true strategy=askia_responsive_table_checkbox reason=label_js_click"
