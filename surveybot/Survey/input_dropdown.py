@@ -397,7 +397,10 @@ def open_dropdown_generic(driver, hint: str | None = None, context_hint: str | N
         print("❌ Aucun dropdown à ouvrir. source: input_dropdown.py")
         return False
     
-    # [PATCH] Ouvrir réellement les <select> natifs
+    # Les <select> natifs ne doivent pas être "ouverts" ici.
+    # Leur sélection se fait directement dans select_option_with_hint().
+    # Cliquer/focuser un select natif puis envoyer ARROW_DOWN peut modifier
+    # une valeur déjà correcte avant la vraie sélection.
     if el.tag_name.lower() == "select":
         try:
             try:
@@ -406,14 +409,6 @@ def open_dropdown_generic(driver, hint: str | None = None, context_hint: str | N
                 already_filled = False
 
             driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
-            try:
-                el.click()
-            except Exception:
-                ActionChains(driver).move_to_element(el).click().perform()
-            try:
-                el.send_keys(Keys.ARROW_DOWN)
-            except Exception:
-                pass
             try:
                 driver._ui_overlay_opened = {
                     "type": "dropdown",
@@ -426,7 +421,7 @@ def open_dropdown_generic(driver, hint: str | None = None, context_hint: str | N
                 driver._last_dropdown_hint = hint or ""
             except Exception:
                 pass
-            print("🔒 Dropdown (natif) ouvert. source: input_dropdown.py")
+            print("ℹ️ Dropdown natif repéré sans ouverture; sélection directe attendue. source: input_dropdown.py")
             return True
         except Exception:
             print("⚠️ Select natif ciblé: ouverture impossible → on continuera par sélection directe. source: input_dropdown.py")
