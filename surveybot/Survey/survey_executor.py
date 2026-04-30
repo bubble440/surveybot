@@ -1583,6 +1583,23 @@ def _should_skip_post_actions_navigation(
         except Exception:
             continue
 
+    # Confirmit cf-hrs-single carousel : skip CTA sauf sur le dernier card.
+    for block in question_blocks or []:
+        try:
+            ctx = block.get("context") if isinstance(block, dict) else None
+            if not (isinstance(ctx, dict) and ctx.get("confirmit_cf_hrs_single_carousel") is True):
+                continue
+            if not ctx.get("is_last_carousel_item", True):
+                log_info(
+                    "[CONFIRMIT_CAROUSEL]",
+                    f"card {ctx.get('carousel_index', '?') + 1}/{ctx.get('carousel_total', '?')} "
+                    f"(non-dernier) → skip CTA",
+                )
+                return True
+            break  # dernier card : ne pas skip
+        except Exception:
+            continue
+
     # Critères DOM explicites (défense en profondeur si le contexte est absent)
     try:
         if driver.find_elements(By.CSS_SELECTOR, "#cardSortContainer button.answer-button"):
