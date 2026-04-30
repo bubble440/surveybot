@@ -112,6 +112,8 @@ try:
         _extract_groupcaliber_rating_row_blocks,
         _extract_confirmit_cf_carousel_blocks,
         _extract_confirmit_cf_single_choice_blocks,
+        _extract_confirmit_cf_numeric_list_blocks,
+        _extract_confirmit_cf_open_list_blocks,
         _extract_runtime_dropdown_blocks,
         _extract_rps_select_blocks,
         _extract_ssi_confirmit_native_grid_blocks,
@@ -208,6 +210,8 @@ except ImportError:
         _extract_groupcaliber_rating_row_blocks,
         _extract_confirmit_cf_carousel_blocks,
         _extract_confirmit_cf_single_choice_blocks,
+        _extract_confirmit_cf_numeric_list_blocks,
+        _extract_confirmit_cf_open_list_blocks,
         _extract_runtime_dropdown_blocks,
         _extract_rps_select_blocks,
         _extract_ssi_confirmit_native_grid_blocks,
@@ -1356,14 +1360,26 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
     except Exception:
         pass
 
-    # --- 0d-4septies) Forsta/Confirmit CF single-choice vertical (cf-question--single + cf-list) ---
-    # Gate DOM: div.cf-question--single + div.cf-list div.cf-radio[role='radio'] (hors table.cf-table-layout).
+    # --- 0d-4septies/octies/nonies) Forsta/Confirmit CF : accumulation multi-types ---
+    # Une même page peut contenir simultanément plusieurs types CF (single + numeric-list +
+    # open-list). On collecte les blocs des trois extracteurs avant de retourner, sans return
+    # intermédiaire entre eux.
+    # Gates DOM : chaque extracteur a sa propre gate stricte, les types absents renvoient [].
+    cf_combined: list[dict] = []
     try:
-        confirmit_single_blocks = _extract_confirmit_cf_single_choice_blocks(driver, frame_chain)
-        if confirmit_single_blocks:
-            return confirmit_single_blocks
+        cf_combined.extend(_extract_confirmit_cf_single_choice_blocks(driver, frame_chain))
     except Exception:
         pass
+    try:
+        cf_combined.extend(_extract_confirmit_cf_numeric_list_blocks(driver, frame_chain))
+    except Exception:
+        pass
+    try:
+        cf_combined.extend(_extract_confirmit_cf_open_list_blocks(driver, frame_chain))
+    except Exception:
+        pass
+    if cf_combined:
+        return cf_combined
 
     # --- 0d-4sexies) SSI/Confirmit native radio grid (div.question.grid > table.inner_table) ---
     # Gate DOM: div.question.grid + tr.column_header_row td[role="columnheader"] + tr[role="radiogroup"].

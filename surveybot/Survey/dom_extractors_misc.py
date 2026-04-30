@@ -9204,9 +9204,257 @@ def _extract_confirmit_cf_single_choice_blocks(driver, frame_chain: list[int] | 
 
 
 # ================================================================================
+# FORSTA/CONFIRMIT — NUMERIC-LIST (cf-question--numeric-list + input[type=number])
+# ================================================================================
+
+def _extract_confirmit_cf_numeric_list_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
+    """Forsta/Confirmit Wix : question numérique (âge, nombre…) dans cf-question--numeric-list.
+
+    Gate DOM strict (additif) :
+    - au moins un div.cf-question--numeric-list présent
+    - contient un input[type="number"]
+
+    Structure ciblée :
+      div.cf-question--numeric-list#AGE
+        div.cf-question__text#AGE_text         ← texte de la question
+        div.cf-grid-layout
+          div.cf-numeric-list-answer
+            input[type="number"]#AGE_1_input   ← cible de saisie
+    """
+    frame_chain = list(frame_chain or [])
+    blocks: list[dict] = []
+
+    try:
+        containers = driver.find_elements(By.CSS_SELECTOR, "div.cf-question--numeric-list")
+    except Exception:
+        return blocks
+    if not containers:
+        return blocks
+
+    for qc in containers[:20]:
+        try:
+            inputs = qc.find_elements(By.CSS_SELECTOR, "input[type='number']")
+            if not inputs:
+                continue
+            inp = inputs[0]
+            inp_id = (inp.get_attribute("id") or "").strip()
+            inp_name = (inp.get_attribute("name") or "").strip()
+            if not inp_id and not inp_name:
+                continue
+
+            question = ""
+            try:
+                q_el = qc.find_element(By.CSS_SELECTOR, "div.cf-question__text")
+                question = _norm(q_el.get_attribute("textContent") or q_el.text or "")
+            except Exception:
+                pass
+            if not question:
+                continue
+
+            q_id = (qc.get_attribute("id") or "").strip()
+            single_key = f"confirmit_cf_numeric:{q_id}:{inp_id}"
+            target_id = make_target_id("single", single_key, question)
+
+            try:
+                xpath = _best_xpath_for_element(driver, inp)
+            except Exception:
+                xpath = f"//*[@id='{inp_id}']" if inp_id else f"//input[@name='{inp_name}']"
+
+            alt_xpaths: list[str] = []
+            if inp_id:
+                alt_xpaths.append(f"//*[@id='{inp_id}']")
+            if inp_name:
+                alt_xpaths.append(f"//input[@name={_xpath_literal(inp_name)}]")
+            alt_xpaths = [x for x in dict.fromkeys(alt_xpaths) if x and x != xpath][:4]
+
+            register_target(
+                target_id,
+                {
+                    "kind": "single",
+                    "itype": "number",
+                    "question": question,
+                    "xpath": xpath,
+                    "alt_xpaths": alt_xpaths,
+                    "tag": "input",
+                    "name": inp_name,
+                    "id": inp_id,
+                    "frame_chain": frame_chain,
+                    "confirmit_cf_numeric_list": True,
+                },
+            )
+
+            blocks.append(
+                {
+                    "question": question,
+                    "itype": "number",
+                    "options": [],
+                    "max_select": 1,
+                    "min_select": 1,
+                    "target_id": target_id,
+                    "context": {
+                        "kind": "single",
+                        "tag": "input",
+                        "name": inp_name,
+                        "id": inp_id,
+                        "confirmit_cf_numeric_list": True,
+                    },
+                }
+            )
+            log_debug(
+                "[DOM_CONFIRMIT_CF_NUMERIC]",
+                f"q_id={q_id!r} inp_id={inp_id!r} question={question!r}",
+            )
+        except Exception:
+            continue
+
+    if blocks:
+        log_info("[DOM_CONFIRMIT_CF_NUMERIC]", f"blocks_extracted={len(blocks)}")
+    return blocks
+
+
+# ================================================================================
+# FORSTA/CONFIRMIT — OPEN-LIST (cf-question--open-list + input[type=text])
+# ================================================================================
+
+def _extract_confirmit_cf_open_list_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
+    """Forsta/Confirmit Wix : champ texte libre dans cf-question--open-list (code postal…).
+
+    Gate DOM strict (additif) :
+    - au moins un div.cf-question--open-list présent
+    - contient un input[type="text"]
+
+    Point piégeux : div.cf-question__text peut être vide (ex. CP).
+    Dans ce cas, le libellé se trouve dans le bloc cf-question--info qui précède
+    immédiatement dans le DOM. On le récupère via JS previousElementSibling.
+
+    Structure ciblée :
+      div.cf-question--info#i9622
+        div.cf-question__text#i9622_text  ← libellé si CP_text est vide
+      div.cf-question--open-list#CP
+        div.cf-question__text#CP_text     ← peut être vide
+        div.cf-grid-layout
+          div.cf-open-list-answer
+            input[type="text"]#CP_1_input ← cible de saisie
+    """
+    frame_chain = list(frame_chain or [])
+    blocks: list[dict] = []
+
+    try:
+        containers = driver.find_elements(By.CSS_SELECTOR, "div.cf-question--open-list")
+    except Exception:
+        return blocks
+    if not containers:
+        return blocks
+
+    for qc in containers[:20]:
+        try:
+            inputs = qc.find_elements(By.CSS_SELECTOR, "input[type='text']")
+            if not inputs:
+                continue
+            inp = inputs[0]
+            inp_id = (inp.get_attribute("id") or "").strip()
+            inp_name = (inp.get_attribute("name") or "").strip()
+            if not inp_id and not inp_name:
+                continue
+
+            # Texte de la question : priorité au cf-question__text interne
+            question = ""
+            try:
+                q_el = qc.find_element(By.CSS_SELECTOR, "div.cf-question__text")
+                question = _norm(q_el.get_attribute("textContent") or q_el.text or "")
+            except Exception:
+                pass
+
+            # Fallback : libellé dans le frère cf-question--info précédent
+            if not question:
+                try:
+                    question = driver.execute_script(
+                        """
+                        var el = arguments[0];
+                        var prev = el.previousElementSibling;
+                        while (prev) {
+                            if (prev.classList.contains('cf-question--info')) {
+                                var t = prev.querySelector('.cf-question__text');
+                                if (t) return (t.textContent || t.innerText || '').trim();
+                            }
+                            prev = prev.previousElementSibling;
+                        }
+                        return '';
+                        """,
+                        qc,
+                    ) or ""
+                    question = _norm(question)
+                except Exception:
+                    pass
+
+            if not question:
+                continue
+
+            q_id = (qc.get_attribute("id") or "").strip()
+            single_key = f"confirmit_cf_open_list:{q_id}:{inp_id}"
+            target_id = make_target_id("single", single_key, question)
+
+            try:
+                xpath = _best_xpath_for_element(driver, inp)
+            except Exception:
+                xpath = f"//*[@id='{inp_id}']" if inp_id else f"//input[@name='{inp_name}']"
+
+            alt_xpaths: list[str] = []
+            if inp_id:
+                alt_xpaths.append(f"//*[@id='{inp_id}']")
+            if inp_name:
+                alt_xpaths.append(f"//input[@name={_xpath_literal(inp_name)}]")
+            alt_xpaths = [x for x in dict.fromkeys(alt_xpaths) if x and x != xpath][:4]
+
+            register_target(
+                target_id,
+                {
+                    "kind": "single",
+                    "itype": "text",
+                    "question": question,
+                    "xpath": xpath,
+                    "alt_xpaths": alt_xpaths,
+                    "tag": "input",
+                    "name": inp_name,
+                    "id": inp_id,
+                    "frame_chain": frame_chain,
+                    "confirmit_cf_open_list": True,
+                },
+            )
+
+            blocks.append(
+                {
+                    "question": question,
+                    "itype": "text",
+                    "options": [],
+                    "max_select": 1,
+                    "min_select": 1,
+                    "target_id": target_id,
+                    "context": {
+                        "kind": "single",
+                        "tag": "input",
+                        "name": inp_name,
+                        "id": inp_id,
+                        "confirmit_cf_open_list": True,
+                    },
+                }
+            )
+            log_debug(
+                "[DOM_CONFIRMIT_CF_OPEN_LIST]",
+                f"q_id={q_id!r} inp_id={inp_id!r} question={question!r}",
+            )
+        except Exception:
+            continue
+
+    if blocks:
+        log_info("[DOM_CONFIRMIT_CF_OPEN_LIST]", f"blocks_extracted={len(blocks)}")
+    return blocks
+
+
+# ================================================================================
 # ASKIA — QUESTION RADIO / NPS myresponse* (td cliquables + input radio masqué)
 # ================================================================================
- 
+
 def _extract_askia_myresponse_radio_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
     """Extraction radio pour pages Askia AskiaExt à structure myresponse*.
  
