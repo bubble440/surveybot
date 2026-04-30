@@ -166,6 +166,26 @@ Contexte patch :
 - [2026-04] Fix : question extraite = "CHOISISSEZ UNE OU PLUSIEURS RÉPONSES" au lieu de
   "Parmi les produits suivants… CHOISISSEZ UNE OU PLUSIEURS RÉPONSES". Double guard strict.
 
+### button_group générique — détection multi-select image-choice (div[role="listbox"].image-select)
+Fichier : Survey/dom_analyzer.py
+Emplacement : boucle btn_groups, bloc de calcul `_is_choice_multiple`, après le guard `ChoiceMultiple_ChoiceFields`.
+Guard d'activation : `btns[0].closest('div[role="listbox"]')` dont la classe contient `image-select`
+  ou `image-choice-question__answers`.
+Patterns couverts :
+- Questions image-choice multi-sélection : conteneur `div[role="listbox"]` avec classe `image-select`
+  (et variante `image-select--compact image-choice-question__answers`).
+- Options rendues en `button[role="option"]` avec `aria-selected`; aucun `ul[data-test-id="ChoiceMultiple_ChoiceFields"]`.
+- Guard `ChoiceMultiple_ChoiceFields` retourne False → sans ce patch : itype=radio, max_select=1 (faux).
+- Avec patch : `_is_choice_multiple=True` → itype=checkbox, max_select=len(options).
+Patterns exclus :
+- Questions image-choice mono-sélection (si applicable) → guard non activé si pas de listbox.image-select.
+- Boutons hors `div[role="listbox"].image-select` → chemin existant inchangé.
+Contexte patch :
+- [2026-04] Fix : question "Parmi les marques suivantes, lesquelles connaissez-vous ?"
+  extraite itype=radio/max_select=1 au lieu de checkbox. Le guard `ChoiceMultiple_ChoiceFields`
+  ne matche pas le conteneur `div[role="listbox"]` de l'image-choice. Correction additive,
+  guard DOM strict sur classe `image-select`, pas de modification du guard existant.
+
 ### singles — filtre champ texte libre dans choice-question__custom-field-container
 Fichier : Survey/dom_analyzer.py
 Emplacement : chemin `other_inputs`, après `_is_other_specify_choice_companion`, avant `looks_like_other`.
@@ -183,3 +203,68 @@ Patterns exclus :
 Contexte patch :
 - [2026-04] Fix : bloc `itype=text, question="System U"` créé à tort depuis le champ libre
   de la liste de courses. Double guard DOM strict, patch minimal additif.
+
+  ---
+
+## PLATEFORME : FORSTA / CONFIRMIT WIX
+Signature : form action `*.aspx`, class `cf-page`, questions dans `div.cf-question.cf-question--{type}`.
+Plusieurs types de questions peuvent coexister sur une même page.
+Les extracteurs CF sont regroupés dans un bloc d'accumulation commun dans dom_analyzer.py
+(pattern extend, pas return séquentiel).
+
+### _extract_confirmit_cf_single_choice_blocks
+Fichier : Survey/dom_extractors_misc.py
+Patterns couverts :
+- div.cf-question--single contenant div.cf-list > div.cf-radio[role='radio']
+- Texte depuis div.cf-question__text, options depuis div.cf-radio-answer__text
+- Exclusion des conteneurs dans table.cf-table-layout (grids)
+Patterns exclus :
+- cf-question--numeric-list → _extract_confirmit_cf_numeric_list_blocks
+- cf-question--open-list → _extract_confirmit_cf_open_list_blocks
+- table.cf-table-layout (grids) → _extract_confirmit_cf_desktop_grid_blocks
+Contexte patch :
+- [2026-04] Création. Intégré dans un bloc d'accumulation commun avec les deux
+  extracteurs ci-dessous pour gérer les pages multi-types.
+
+### _extract_confirmit_cf_numeric_list_blocks
+Fichier : Survey/dom_extractors_misc.py
+Patterns couverts :
+- div.cf-question--numeric-list contenant input[type="number"].cf-numeric-list-answer__input
+- Texte depuis div.cf-question__text
+- Flag payload : confirmit_cf_numeric_list=True
+Patterns exclus :
+- cf-question--single → _extract_confirmit_cf_single_choice_blocks
+- cf-question--open-list → _extract_confirmit_cf_open_list_blocks
+Contexte patch :
+- [2026-04] Création. itype retourné = "number", normalisé en "text" dans
+  filter_blocks_for_openai() (prompt_builder.py) avant envoi à OpenAI.
+
+### _extract_confirmit_cf_open_list_blocks
+Fichier : Survey/dom_extractors_misc.py
+Patterns couverts :
+- div.cf-question--open-list contenant input[type="text"].cf-open-list-answer__input
+- Texte depuis div.cf-question__text ; si vide, fallback JS sur le frère
+  div.cf-question--info précédent (pattern CP : libellé dans i9622_text, input dans CP)
+- Flag payload : confirmit_cf_open_list=True
+Patterns exclus :
+- cf-question--single → _extract_confirmit_cf_single_choice_blocks
+- cf-question--numeric-list → _extract_confirmit_cf_numeric_list_blocks
+Contexte patch :
+- [2026-04] Création. Piège documenté : div.cf-question__text peut être vide
+  (ex. CP) ; le libellé réel est dans le bloc --info immédiatement précédent.
+
+### filter_blocks_for_openai — normalisation itype number → text
+Fichier : Survey/prompt_builder.py
+Emplacement : fonction filter_blocks_for_openai(), bloc de normalisation avant le set des types acceptés.
+Guard d'activation : it_lc == "number"
+Patterns couverts :
+- Blocs itype="number" produits par _extract_confirmit_cf_numeric_list_blocks
+- Normalisés en itype="text" (même traitement qu'un champ libre) avant envoi à OpenAI
+- Le DOM_REGISTRY conserve itype="number" et confirmit_cf_numeric_list=True :
+  le dispatcher n'est pas affecté
+Patterns exclus :
+- Tout autre itype → non affecté
+Contexte patch :
+- [2026-04] Fix : itype="number" absent du set des types acceptés →
+  blocs éjectés silencieusement, jamais soumis à OpenAI. Correction par
+  normalisation number→text, cohérente avec le pattern select→dropdown existant.
