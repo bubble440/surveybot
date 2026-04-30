@@ -2810,6 +2810,117 @@ def _apply_by_target_id(
                         return False
                     return True
 
+                # --- Confirmit/Forsta Wix ranking (cf-question--ranking) ---
+                # Guard DOM strict : flag confirmit_cf_ranking posé par _extract_confirmit_cf_ranking_blocks.
+                # L'interaction est un clic séquentiel sur des div[role="button"] — pas d'input natif.
+                # Chaque clic attribue le rang suivant. La valeur `value` est le texte de l'option à cliquer.
+                # Validation : cf-ranking-answer--selected apparaît sur la div après clic réussi.
+                # Cas quota atteint : cf-ranking-answer--disabled sur les items restants → succès complet,
+                # pas un échec — le dispatcher peut recevoir une valeur qui ne trouve plus de div cliquable.
+                if payload.get("confirmit_cf_ranking") and resolved_itype == "checkbox":
+                    # Recherche de la div cible par texte normalisé, directement dans le DOM vivant.
+                    # On ne réutilise pas `el` (xpath du groupe) mais on cherche l'item par son texte.
+                    _cfr_clicked = bool(driver.execute_script(
+                        """
+                        const norm = s => (s || '').toLowerCase()
+                            .normalize('NFKC')
+                            .replace(/\u00A0/g, ' ')
+                            .replace(/\s+/g, ' ')
+                            .trim();
+                        const needle = norm(arguments[0]);
+                        const items = document.querySelectorAll(
+                            'div.cf-list__item.cf-ranking-answer[role="button"]'
+                        );
+                        for (const item of items) {
+                            // Ignorer les items déjà sélectionnés
+                            if (item.classList.contains('cf-ranking-answer--selected')) continue;
+                            // Ignorer les items désactivés (quota atteint côté DOM)
+                            if (item.classList.contains('cf-ranking-answer--disabled')) continue;
+                            const txtEl = item.querySelector('div.cf-ranking-answer__text');
+                            if (!txtEl) continue;
+                            if (norm(txtEl.textContent) === needle) {
+                                item.click();
+                                return true;
+                            }
+                        }
+                        return false;
+                        """,
+                        value,
+                    ))
+                    if not _cfr_clicked:
+                        # Vérifier si l'item est déjà sélectionné (action déjà appliquée) ou quota atteint
+                        _cfr_already = bool(driver.execute_script(
+                            """
+                            const norm = s => (s || '').toLowerCase()
+                                .normalize('NFKC')
+                                .replace(/\u00A0/g, ' ')
+                                .replace(/\s+/g, ' ')
+                                .trim();
+                            const needle = norm(arguments[0]);
+                            const items = document.querySelectorAll(
+                                'div.cf-list__item.cf-ranking-answer'
+                            );
+                            for (const item of items) {
+                                const txtEl = item.querySelector('div.cf-ranking-answer__text');
+                                if (!txtEl) continue;
+                                if (norm(txtEl.textContent) !== needle) continue;
+                                // Déjà sélectionné = ok
+                                if (item.classList.contains('cf-ranking-answer--selected')) return true;
+                                // Quota atteint (disabled) sans être sélectionné = on ne peut plus cliquer
+                                if (item.classList.contains('cf-ranking-answer--disabled')) return true;
+                            }
+                            return false;
+                            """,
+                            value,
+                        ))
+                        if _cfr_already:
+                            log_info("[TARGET]", f"apply ok=true strategy=confirmit_cf_ranking reason=already_selected_or_quota value='{value}'")
+                            return True
+                        if debug_target:
+                            log_debug("[TARGET_DEBUG]", f"confirmit_cf_ranking: item not found or not clickable value='{value}'")
+                        return False
+
+                    # Validation post-clic : l'item doit porter cf-ranking-answer--selected
+                    _cfr_confirmed = False
+                    _cfr_deadline = time.time() + 1.0
+                    while time.time() < _cfr_deadline:
+                        try:
+                            _cfr_confirmed = bool(driver.execute_script(
+                                """
+                                const norm = s => (s || '').toLowerCase()
+                                    .normalize('NFKC')
+                                    .replace(/\u00A0/g, ' ')
+                                    .replace(/\s+/g, ' ')
+                                    .trim();
+                                const needle = norm(arguments[0]);
+                                const items = document.querySelectorAll(
+                                    'div.cf-list__item.cf-ranking-answer'
+                                );
+                                for (const item of items) {
+                                    const txtEl = item.querySelector('div.cf-ranking-answer__text');
+                                    if (!txtEl) continue;
+                                    if (norm(txtEl.textContent) !== needle) continue;
+                                    if (item.classList.contains('cf-ranking-answer--selected')) return true;
+                                    // Quota atteint immédiatement (max_select=1 ou dernier rang)
+                                    if (item.classList.contains('cf-ranking-answer--disabled')) return true;
+                                }
+                                return false;
+                                """,
+                                value,
+                            ))
+                        except Exception:
+                            _cfr_confirmed = False
+                        if _cfr_confirmed:
+                            break
+                        time.sleep(0.05)
+
+                    if _cfr_confirmed:
+                        log_info("[TARGET]", f"apply ok=true strategy=confirmit_cf_ranking reason=selected value='{value}'")
+                        return True
+                    if debug_target:
+                        log_debug("[TARGET_DEBUG]", f"confirmit_cf_ranking: no selection signal after click value='{value}'")
+                    return False
+
                 def _is_decipher_mx_collapsible_checkbox_selected(cell_node) -> bool:
                     """Validation stricte de sélection pour Decipher MX Collapsible checkbox.
 

@@ -124,6 +124,7 @@ try:
         _extract_askia_responsive_table_checkbox_rows,
         _extract_askia_ranking_isotope_blocks,
         _extract_askia_adc_slider_blocks,
+        _extract_confirmit_cf_ranking_blocks,
     )
 
     # Registre et utilitaires
@@ -222,6 +223,7 @@ except ImportError:
         _extract_askia_responsive_table_checkbox_rows,
         _extract_askia_ranking_isotope_blocks,
         _extract_askia_adc_slider_blocks,
+        _extract_confirmit_cf_ranking_blocks,
     )
 
 
@@ -1365,6 +1367,13 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
     # open-list). On collecte les blocs des trois extracteurs avant de retourner, sans return
     # intermédiaire entre eux.
     # Gates DOM : chaque extracteur a sa propre gate stricte, les types absents renvoient [].
+    try:
+        ranking_blocks = _extract_confirmit_cf_ranking_blocks(driver, frame_chain)
+        if ranking_blocks:
+            return ranking_blocks
+    except Exception:
+        pass
+
     cf_combined: list[dict] = []
     try:
         cf_combined.extend(_extract_confirmit_cf_single_choice_blocks(driver, frame_chain))
@@ -2619,7 +2628,33 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                 continue
 
             question = ""
+
+            # Guard Forsta/Confirmit : si le conteneur est dans un ancêtre
+            # div[class*="cf-question"], lire le texte depuis div.cf-question__text
+            # (+ div.cf-question__instruction si présente).
+            # Scopé strictement : déclenché uniquement si cf-question__text non vide trouvé.
             if cont:
+                try:
+                    _cf_q_text = driver.execute_script(
+                        """
+                        const el = arguments[0];
+                        const cfq = el.closest('[class*="cf-question"]');
+                        if (!cfq) return null;
+                        const txt = cfq.querySelector('.cf-question__text');
+                        if (!txt || !txt.innerText.trim()) return null;
+                        const instr = cfq.querySelector('.cf-question__instruction');
+                        const parts = [txt.innerText.trim()];
+                        if (instr && instr.innerText.trim()) parts.push(instr.innerText.trim());
+                        return parts.join(' ');
+                        """,
+                        cont,
+                    )
+                    if _cf_q_text:
+                        question = _norm(_cf_q_text)
+                except Exception:
+                    pass
+
+            if not question and cont:
                 question = _extract_question_from_container(cont, options=options) or ""
 
             if not question:
@@ -3109,7 +3144,8 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
 
                             const wrappers = [
                               '.cf-radio-answer', '.cf-checkbox-answer',
-                              '[role="radio"]', '[role="checkbox"]'
+                              '[role="radio"]', '[role="checkbox"]',
+                              '.cf-ranking-answer'
                             ];
 
                             for (const sel of wrappers) {
