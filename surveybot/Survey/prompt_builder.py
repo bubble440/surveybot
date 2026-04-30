@@ -495,16 +495,16 @@ def build_system_prompt() -> str:
     )
 
     lines.append(
-            "RÈGLE JAMAIS / NEVER (question d'exclusion négative) :\n"
-            "Si une question demande, parmi une liste d'options (marques, produits, services, catégories), "
-            "lesquelles tu n'achèterais JAMAIS, n'utiliserais JAMAIS, n'envisagerais JAMAIS "
-            "(signaux : 'jamais', 'never', 'n'envisageriez jamais', 'would never', 'n'achèteriez jamais', "
-            "'ne consommeriez jamais', 'would never buy', 'would never use', 'would never consider'),\n"
-            "ET que la liste d'options contient une option exclusive négative du type "
-            "'Aucune de ces marques', 'Aucune de ces options', 'Aucune', 'None of these', 'None of the above',\n"
-            "alors tu DOIS choisir UNIQUEMENT cette option exclusive négative.\n"
-            "C'est la réponse la plus favorable pour un profil actif et consommateur.\n"
-        )
+        "RÈGLE JAMAIS / NEVER (question d'exclusion négative) :\n"
+        "Si une question demande, parmi une liste d'options (marques, produits, services, catégories), "
+        "lesquelles tu n'achèterais JAMAIS, n'utiliserais JAMAIS, n'envisagerais JAMAIS "
+        "(signaux : 'jamais', 'never', 'n'envisageriez jamais', 'would never', 'n'achèteriez jamais', "
+        "'ne consommeriez jamais', 'would never buy', 'would never use', 'would never consider'),\n"
+        "ET que la liste d'options contient une option exclusive négative du type "
+        "'Aucune de ces marques', 'Aucune de ces options', 'Aucune', 'None of these', 'None of the above',\n"
+        "alors tu DOIS choisir UNIQUEMENT cette option exclusive négative.\n"
+        "C'est la réponse la plus favorable pour un profil actif et consommateur.\n"
+    )
 
     lines.append(
         "RÈGLE COHÉRENCE CONTEXTE → APPROFONDISSEMENT :\n"
@@ -596,21 +596,21 @@ def build_system_prompt() -> str:
     )
     
     lines.append(
-        "RÈGLE TABLEAU RADIO HOMOGÈNE (distribution réaliste) :\n"
-        "Quand ce batch contient 8 questions radio ou plus qui partagent toutes le même jeu d'options "
-        "(ex : une grille d'expérience produit / genre de jeu / comportement avec des options du type "
-        "\"actif / ancien / jamais\" ou \"oui / parfois / non\"), tu DOIS distribuer les réponses de "
-        "façon réaliste et variée. Un répondant humain ne pratique pas activement 30 activités en même temps.\n\n"
-        "Règles de distribution à respecter IMPÉRATIVEMENT dans ce cas :\n"
-        "- Option la plus active : attribuée à 40-65 % des lignes.\n"
-        "- Option intermédiaire : attribuée à 15-30 % des lignes.\n"
-        "- Option la plus passive : attribuée au reste des lignes.\n"
-        "- INTERDIT : répondre la même valeur pour toutes les lignes sans exception.\n"
-        "- Varie les choix de manière imprévisible (ni alternance régulière, ni bloc uniforme).\n\n"
-        "PRIORITÉ : Cette règle est subordonnée aux règles suivantes qui s'appliquent TOUJOURS EN PREMIER "
-        "sur leurs lignes respectives : SURVEY_CONSENT_ACCEPT, RÈGLE SECTEUR, RÈGLE WEBCAM, RÈGLE JAMAIS / NEVER.\n"
-        "Cette règle ne s'applique PAS aux questions radio unitaires, aux checkboxes, aux matrices, "
-        "ni aux screeners disqualificatoires.\n"
+    "RÈGLE TABLEAU RADIO HOMOGÈNE (distribution réaliste) :\n"
+    "Quand ce batch contient 8 questions radio ou plus qui partagent toutes le même jeu d'options "
+    "(ex : une grille d'expérience produit / genre de jeu / comportement avec des options du type "
+    "\"actif / ancien / jamais\" ou \"oui / parfois / non\"), tu DOIS distribuer les réponses de "
+    "façon réaliste et variée. Un répondant humain ne pratique pas activement 30 activités en même temps.\n\n"
+    "Règles de distribution à respecter IMPÉRATIVEMENT dans ce cas :\n"
+    "- Option la plus active : attribuée à 40-65 % des lignes.\n"
+    "- Option intermédiaire : attribuée à 15-30 % des lignes.\n"
+    "- Option la plus passive : attribuée au reste des lignes.\n"
+    "- INTERDIT : répondre la même valeur pour toutes les lignes sans exception.\n"
+    "- Varie les choix de manière imprévisible (ni alternance régulière, ni bloc uniforme).\n\n"
+    "PRIORITÉ : Cette règle est subordonnée aux règles suivantes qui s'appliquent TOUJOURS EN PREMIER "
+    "sur leurs lignes respectives : SURVEY_CONSENT_ACCEPT, RÈGLE SECTEUR, RÈGLE WEBCAM, RÈGLE JAMAIS / NEVER.\n"
+    "Cette règle ne s'applique PAS aux questions radio unitaires, aux checkboxes, aux matrices, "
+    "ni aux screeners disqualificatoires.\n"
     )
 
     return "\n".join(lines)
