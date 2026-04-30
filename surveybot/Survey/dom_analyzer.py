@@ -2650,16 +2650,25 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             if not question:
                 continue
 
-            # Détection multi-select interview-layout : ul[data-test-id="ChoiceMultiple_ChoiceFields"]
-            # Guard DOM strict : le ul ancêtre immédiat des boutons porte ce data-test-id.
-            # Si présent → itype=checkbox, max_select non contraint (len options).
+            # Détection multi-select interview-layout.
+            # Guard A : ul[data-test-id="ChoiceMultiple_ChoiceFields"] (choix texte standard).
+            # Guard B : div[role="listbox"] portant class image-select ou image-choice-question__answers
+            #           (image-choice multi-sélection). Scopé strictement par ces attributs DOM.
+            # Si l'un des deux est vrai → itype=checkbox, max_select=len(options).
             # Sinon → comportement par défaut radio/1.
             _is_choice_multiple = False
             try:
                 _is_choice_multiple = driver.execute_script(
                     """
-                    const ul = arguments[0].closest('ul[data-test-id="ChoiceMultiple_ChoiceFields"]');
-                    return ul !== null;
+                    const btn = arguments[0];
+                    const ul = btn.closest('ul[data-test-id="ChoiceMultiple_ChoiceFields"]');
+                    if (ul !== null) return true;
+                    const lb = btn.closest('div[role="listbox"]');
+                    if (lb !== null) {
+                        const cls = lb.className || '';
+                        return cls.includes('image-select') || cls.includes('image-choice-question__answers');
+                    }
+                    return false;
                     """,
                     btns[0],
                 )
