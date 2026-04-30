@@ -2529,6 +2529,18 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             except Exception:
                 pass
 
+            # Filtre interview-footer : les boutons spéciaux (Aucun(e), Passer…)
+            # dans .interview-footer__options-container sont des options de navigation
+            # de page, pas des choix de réponse. Guard DOM strict : ancêtre direct.
+            try:
+                _in_footer = driver.execute_script(
+                    "return arguments[0].closest('.interview-footer__options-container') !== null;", b
+                )
+                if _in_footer:
+                    continue
+            except Exception:
+                pass
+
             # Filtre Decipher cardrating : ignore disabled / non-clickable
             cls = _norm_lc(b.get_attribute("class") or "")
             if "sq-cardrating-button" in cls:
@@ -2596,6 +2608,32 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
 
             if not question:
                 question = _norm(_find_question_text_near_element(driver, btns[0]))
+
+            # Patch interview-layout : quand le conteneur est dans .interview-question,
+            # la vraie question principale est dans h1.interview-header__title (frère
+            # dans .interview-layout), hors scope du conteneur. On la récupère et on
+            # la préfixe au hint déjà extrait (ex : "CHOISISSEZ UNE OU PLUSIEURS RÉPONSES").
+            # Guard DOM strict : les deux sélecteurs doivent exister simultanément.
+            try:
+                _in_interview_q = driver.execute_script(
+                    "return arguments[0].closest('.interview-question') !== null;", cont
+                ) if cont else False
+                if _in_interview_q:
+                    _h1_els = driver.find_elements(By.CSS_SELECTOR, "h1.interview-header__title")
+                    if _h1_els:
+                        _h1_txt = _norm(_h1_els[0].text or _h1_els[0].get_attribute("innerText") or "")
+                        if _h1_txt:
+                            # Concatène : titre principal + hint (si différent)
+                            if question and _norm_lc(_h1_txt) not in _norm_lc(question):
+                                question = f"{_h1_txt} {question}"
+                            elif not question:
+                                question = _h1_txt
+                            log_debug(
+                                "[DOM_BUTTON_GROUP]",
+                                f"interview_layout_h1 recovered: {_h1_txt[:80]!r}",
+                            )
+            except Exception:
+                pass
 
             # Pattern spécifique
             qlc = _norm_lc(question)

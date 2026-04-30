@@ -292,7 +292,7 @@ def _recover_from_network_error(driver) -> str:
         current_url = ""
 
     # -- Boucle de récupération : exactement 2 tentatives max --
-    _MAX_ATTEMPTS = 2
+    _MAX_ATTEMPTS = 5
     for attempt in range(1, _MAX_ATTEMPTS + 1):
         log_info("NET-ERR", f"Erreur réseau (tentative {attempt}/{_MAX_ATTEMPTS}) → attente 15s")
         time.sleep(15)
@@ -300,11 +300,13 @@ def _recover_from_network_error(driver) -> str:
         # driver.get() évite le dialog natif Chrome "Confirm Form Resubmission"
         # (overlay hors DOM, inaccessible à Selenium) qui apparaît avec driver.refresh()
         # sur une page POST en erreur.
+        # PATCH: on ne sort PAS de la boucle si driver.get() échoue sur cette tentative ;
+        # on passe à la tentative suivante pour épuiser le budget avant d'abandonner.
         try:
             driver.get(current_url)
         except Exception as e:
-            log_info("NET-ERR", f"driver.get() a échoué (tentative {attempt}) : {e}")
-            return _NET_ERR_EXHAUSTED
+            log_info("NET-ERR", f"driver.get() a échoué (tentative {attempt}/{_MAX_ATTEMPTS}) : {e}")
+            continue  # tenter les itérations restantes avant d'abandonner
 
         # Attente chargement
         try:
