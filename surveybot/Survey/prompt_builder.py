@@ -671,6 +671,15 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
         lines.append(f"\n{qid}")
         lines.append(f"target_id: {target_id}")
         lines.append(f"contexte: {q}")
+        if ctx.get("confirmit_cf_numeric_list") and ctx.get("multi_sum_total"):
+            group_q = _escape(str(ctx.get("group_question", "") or ""))
+            if group_q and group_q != q:
+                lines.append(f"groupe_contexte: {group_q}")
+            lines.append(
+                f"contrainte_somme: Ce champ fait partie d'une répartition en pourcentage."
+                f" La somme de TOUTES les valeurs du groupe doit être exactement {int(ctx['multi_sum_total'])}."
+                " Choisis une valeur entière cohérente avec les autres lignes du groupe."
+            )
         if ctx.get("decipher_table_text_rows") is True:
             row_label = _escape(str(ctx.get("row_label", "")))
             if row_label:

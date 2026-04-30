@@ -229,8 +229,12 @@ Contexte patch :
 ### _extract_confirmit_cf_numeric_list_blocks
 Fichier : Survey/dom_extractors_misc.py
 Patterns couverts :
-- div.cf-question--numeric-list contenant input[type="number"].cf-numeric-list-answer__input
-- Texte depuis div.cf-question__text
+- div.cf-question--numeric-list contenant N × div.cf-numeric-list-answer, chacun avec input[type="number"]
+- Un bloc distinct produit par ligne (row_label depuis div.cf-numeric-list-answer__text)
+- Texte global depuis div.cf-question__text (contexte du groupe, non la question de ligne)
+- Répartition (autoSum) : détectée par div.cf-numeric-list-auto-sum → multi_sum_total=100
+  + group_id + group_question propagés dans context et DOM_REGISTRY
+- Fallback : si aucun div.cf-numeric-list-answer, retombe sur inputs[0] (question âge…)
 - Flag payload : confirmit_cf_numeric_list=True
 Patterns exclus :
 - cf-question--single → _extract_confirmit_cf_single_choice_blocks
@@ -238,6 +242,8 @@ Patterns exclus :
 Contexte patch :
 - [2026-04] Création. itype retourné = "number", normalisé en "text" dans
   filter_blocks_for_openai() (prompt_builder.py) avant envoi à OpenAI.
+- [2026-04] Fix : extraction incomplète (1 bloc au lieu de N). Itération sur chaque
+  div.cf-numeric-list-answer. Ajout contrainte multi_sum_total dans context pour prompt.
 
 ### _extract_confirmit_cf_open_list_blocks
 Fichier : Survey/dom_extractors_misc.py
@@ -268,3 +274,55 @@ Contexte patch :
 - [2026-04] Fix : itype="number" absent du set des types acceptés →
   blocs éjectés silencieusement, jamais soumis à OpenAI. Correction par
   normalisation number→text, cohérente avec le pattern select→dropdown existant.
+
+### build_batch_prompt — contrainte somme répartition Confirmit
+Fichier : Survey/prompt_builder.py
+Emplacement : boucle de rendu des blocs, juste après `lines.append(f"contexte: {q}")`.
+Guard d'activation : ctx.get("confirmit_cf_numeric_list") ET ctx.get("multi_sum_total") truthy.
+Patterns couverts :
+- Blocs répartition Forsta/Confirmit (N lignes, somme=100) issus de _extract_confirmit_cf_numeric_list_blocks
+- Injection de `groupe_contexte` (question parente) si différente du libellé de ligne
+- Injection de `contrainte_somme` indiquant la somme obligatoire du groupe (ex. 100)
+Patterns exclus :
+- Blocs sans confirmit_cf_numeric_list → non affectés
+- Blocs sans multi_sum_total (question numérique simple, âge…) → non affectés
+Contexte patch :
+- [2026-04] Fix : OpenAI répondait à chaque ligne indépendamment sans garantie de somme=100.
+  Patch minimal additif, guard double (flag + total), pas de modification du format QID existant.
+
+  ### _extract_confirmit_cf_numeric_list_blocks
+Fichier : Survey/dom_extractors_misc.py
+Patterns couverts :
+- div.cf-question--numeric-list contenant N lignes div.cf-numeric-list-answer,
+  chacune avec div.cf-numeric-list-answer__text (label) + input[type="number"]
+- Un bloc distinct produit par ligne ; question du bloc = label de la ligne
+- Fallback : si aucun div.cf-numeric-list-answer trouvé (ex. question d'âge à
+  input unique), un seul bloc produit avec inputs[0] et question = texte parent
+- Détection répartition : présence de div.cf-numeric-list-auto-sum ⟹
+  multi_sum_total=100 injecté dans le contexte de chaque bloc du groupe,
+  avec group_id=q_id et group_question=texte de la question parente
+- Flag payload : confirmit_cf_numeric_list=True
+Patterns exclus :
+- cf-question--single → _extract_confirmit_cf_single_choice_blocks
+- cf-question--open-list → _extract_confirmit_cf_open_list_blocks
+Contexte patch :
+- [2026-04] Création. itype retourné = "number", normalisé en "text" dans
+  filter_blocks_for_openai() (prompt_builder.py) avant envoi à OpenAI.
+- [2026-04] Fix : inputs[0] uniquement → N blocs (un par div.cf-numeric-list-answer).
+  Ajout détection répartition via div.cf-numeric-list-auto-sum + injection
+  multi_sum_total / group_id / group_question dans contexte et registry.
+
+### filter_blocks_for_openai — contrainte_somme répartition
+Fichier : Survey/prompt_builder.py
+Emplacement : rendu de chaque bloc dans la boucle de construction du prompt.
+Guard d'activation : ctx.get("confirmit_cf_numeric_list") and ctx.get("multi_sum_total")
+Patterns couverts :
+- Blocs issus d'une question de répartition (multi_sum_total présent) :
+  injection de groupe_contexte (question parente) et contrainte_somme dans
+  le prompt OpenAI, indiquant que la somme du groupe doit être exactement 100
+- Blocs sans multi_sum_total (ex. âge) : aucune contrainte ajoutée
+Patterns exclus :
+- Tout bloc sans flag confirmit_cf_numeric_list → non affecté
+Contexte patch :
+- [2026-04] Ajout. Complète le fix extraction N-blocs : OpenAI reçoit désormais
+  le contexte de groupe et la contrainte de somme pour chaque ligne de répartition.
