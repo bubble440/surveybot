@@ -949,6 +949,122 @@ def _apply_by_target_id(
 
             debug_target = is_debug()
 
+            def _apply_toluna_runtime_answerrow_cached() -> bool:
+                """
+                Toluna Runtime AnswerRow checkbox:
+                - DOM custom sans input natif exploitable dans la row cible
+                - cache uniquement le chemin DOM/strategy, jamais un WebElement stale
+                - réutilisable pour les sélections suivantes du même target_id
+                """
+                if resolved_itype != "checkbox":
+                    return False
+
+                cache_key = f"{target_id}|toluna_runtime_answerrow|checkbox"
+                path_cache = getattr(driver, "_target_path_cache", None)
+                if not isinstance(path_cache, dict):
+                    path_cache = {}
+                    setattr(driver, "_target_path_cache", path_cache)
+
+                cached = path_cache.get(cache_key)
+                if cached:
+                    log_debug("[TARGET_DEBUG]", f"toluna_runtime_answerrow cache hit target_id={target_id}")
+
+                try:
+                    data = driver.execute_script(
+                        r"""
+                        const norm = s => (s || '').toLowerCase().normalize('NFKC')
+                          .replace(/\u00A0/g, ' ')
+                          .replace(/[»«\u201c\u201d"'›→·•:]/g, '')
+                          .replace(/\s+/g, ' ')
+                          .trim();
+
+                        const needle = norm(arguments[0]);
+                        const rows = Array.from(document.querySelectorAll("[data-aut='Runtime_AnswerRow']"));
+                        if (!needle) return { ok: false, reason: 'empty_needle' };
+                        if (rows.length < 2) return { ok: false, reason: 'no_runtime_rows' };
+
+                        const targetRow = rows.find(r => {
+                          const txt = norm(r.innerText || r.textContent || '');
+                          return txt === needle || txt.includes(needle) || needle.includes(txt);
+                        });
+                        if (!targetRow) return { ok: false, reason: 'row_not_found' };
+
+                        // Ce handler est volontairement limité aux rows custom Runtime.
+                        // Les rows avec input natif restent gérées par les chemins existants.
+                        if (targetRow.querySelector("input[type='checkbox'], input[type='radio']")) {
+                          return { ok: false, reason: 'native_input_present' };
+                        }
+
+                        const wrapper = targetRow.querySelector("[data-aut='Runtime_Wrapper']");
+                        const inner = targetRow.querySelector("[data-aut='Runtime_IconBox'], [data-aut='Runtime_InnerFill']");
+                        if (!wrapper || !inner) return { ok: false, reason: 'missing_runtime_state_nodes' };
+
+                        const inners = rows.map(r => {
+                          const w = r.querySelector("[data-aut='Runtime_Wrapper']");
+                          return w ? w.querySelector("[data-aut='Runtime_IconBox'], [data-aut='Runtime_InnerFill']") : null;
+                        }).filter(Boolean);
+                        if (inners.length < 2) return { ok: false, reason: 'not_enough_state_nodes' };
+
+                        const counts = {};
+                        for (const i of inners) {
+                          const cls = i.className || '';
+                          counts[cls] = (counts[cls] || 0) + 1;
+                        }
+                        const uncheckedCls = Object.keys(counts).reduce((a, b) => counts[b] > counts[a] ? b : a);
+                        const alreadyChecked = (inner.className || '') !== uncheckedCls;
+
+                        return {
+                          ok: true,
+                          row: targetRow,
+                          inner: inner,
+                          clsBefore: inner.className || '',
+                          alreadyChecked: alreadyChecked
+                        };
+                        """,
+                        value,
+                    )
+                except Exception as e:
+                    log_debug("[TARGET_DEBUG]", f"toluna_runtime_answerrow probe failed: {type(e).__name__}: {e}")
+                    return False
+
+                if not isinstance(data, dict) or not data.get("ok"):
+                    if cached:
+                        path_cache.pop(cache_key, None)
+                    reason = data.get("reason") if isinstance(data, dict) else "invalid_probe_result"
+                    log_debug("[TARGET_DEBUG]", f"toluna_runtime_answerrow skip reason={reason!r} label={value!r}")
+                    return False
+
+                if data.get("alreadyChecked"):
+                    path_cache[cache_key] = {"kind": "toluna_runtime_answerrow"}
+                    log_debug("[TARGET_DEBUG]", f"toluna_runtime_answerrow already_checked label={value!r}")
+                    return True
+
+                row_el = data.get("row")
+                inner_el = data.get("inner")
+                cls_before = data.get("clsBefore") or ""
+                if row_el is None or inner_el is None:
+                    return False
+
+                try:
+                    driver.execute_script("arguments[0].scrollIntoView({block:'center'});", row_el)
+                    try:
+                        row_el.click()
+                    except Exception:
+                        ActionChains(driver).move_to_element(row_el).click().perform()
+                    time.sleep(0.15)
+                    cls_after = driver.execute_script("return arguments[0].className || '';", inner_el)
+                except Exception as e:
+                    log_debug("[TARGET_DEBUG]", f"toluna_runtime_answerrow click failed label={value!r} err={type(e).__name__}: {e}")
+                    return False
+
+                if cls_after != cls_before:
+                    path_cache[cache_key] = {"kind": "toluna_runtime_answerrow"}
+                    log_debug("[TARGET_DEBUG]", f"toluna_runtime_answerrow applied cache_set target_id={target_id} label={value!r}")
+                    return True
+
+                log_debug("[TARGET_DEBUG]", f"toluna_runtime_answerrow not_applied label={value!r}")
+                return False
+
             def _find_best_visible(xpath: str):
                 try:
                     cands = driver.find_elements(By.XPATH, xpath)
@@ -1832,6 +1948,12 @@ def _apply_by_target_id(
             # --- cas "options map" (radio/checkbox)
             # IMPORTANT: on n'exige pas kind=="group" pour éviter le couplage à la classification (ex: matrix_rows_single_choice)
             if opt_map and resolved_itype in ("radio", "checkbox"):
+
+                # Toluna Runtime AnswerRow: chemin DOM custom prioritaire et idempotent.
+                # Évite le faux échec _apply_by_target_id puis fallback legacy checkbox_main
+                # sur chaque option du même groupe.
+                if _apply_toluna_runtime_answerrow_cached():
+                    return True
 
                 # 1) lookup direct
                 xp = opt_map.get(v_norm) or (opt_map.get(v_fold) if v_fold else None)
@@ -4944,6 +5066,225 @@ def handle_drag_drop_logic(driver):
             )
         return clicked
 
+    def _cdkdrag_cards_ready() -> bool:
+        """
+        Vérifie que les cards Angular CDK sont réellement rendues dans le viewport :
+        au moins un [cdkdrag] doit avoir width > 0 ET height > 0.
+        Retourne False si les éléments existent mais n'ont pas encore de dimensions
+        (cas typique d'un chargement incomplet côté Angular CDK).
+        """
+        try:
+            return bool(driver.execute_script("""
+                const drags = Array.from(document.querySelectorAll('[cdkdrag], .cdk-drag'));
+                if (!drags.length) return false;
+                return drags.some(function(el) {
+                    const r = el.getBoundingClientRect();
+                    return r.width > 0 && r.height > 0;
+                });
+            """))
+        except Exception:
+            return False
+
+    def _wait_cards_ready(timeout: float = 8.0) -> bool:
+        """Attend que les cards cdkdrag aient des dimensions valides (budget borné)."""
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            if _cdkdrag_cards_ready():
+                return True
+            time.sleep(0.3)
+        return False
+
+    def _run_drag_attempt(target_value: str) -> bool:
+        """
+        Cœur du drag-and-drop : localise la source, vérifie les coordonnées,
+        exécute le drag (CDP ou ActionChains) et valide le résultat.
+        Retourne True si le drag a abouti (drop_zone remplie ou bouton Next activé).
+        """
+        draggables = driver.find_elements(By.CSS_SELECTOR, "[cdkdrag], .cdk-drag, [draggable='true']")
+        try:
+            drop_zone = driver.find_element(
+                By.CSS_SELECTOR,
+                "#dropZoneList.cdk-drop-list.drop-zone, #dropZoneList.drop-zone, #dropZoneList",
+            )
+            print("[DRAGDROP] drop_zone_selected id=dropZoneList ok=true")
+        except Exception:
+            print("[DRAGDROP] drop_zone_selected id=dropZoneList ok=false")
+            return False
+        if not draggables or not drop_zone:
+            return False
+
+        source = None
+        source_selector = ""
+        for drag in draggables:
+            try:
+                imgs = drag.find_elements(By.CSS_SELECTOR, f'img[alt="{target_value}"]')
+                if imgs:
+                    source = drag
+                    source_selector = f'img[alt="{target_value}"]'
+                    break
+            except Exception:
+                continue
+
+        if source is None:
+            for drag in draggables:
+                try:
+                    imgs = drag.find_elements(By.CSS_SELECTOR, "img")
+                except Exception:
+                    imgs = []
+                for img in imgs:
+                    try:
+                        src = (img.get_attribute("src") or "")
+                    except Exception:
+                        src = ""
+                    if f'/{target_value}.png' in src or target_value in src:
+                        source = drag
+                        source_selector = f'img[src*="{target_value}"]'
+                        break
+                if source is not None:
+                    break
+
+        if source is None:
+            for drag in draggables:
+                txt = _el_text(drag)
+                if target_value in txt:
+                    source = drag
+                    source_selector = "draggable_text"
+                    break
+
+        if source is None:
+            return False
+
+        print(f"[DRAGDROP] source_found selector={source_selector}")
+
+        next_buttons = driver.find_elements(By.CSS_SELECTOR, "button[aria-label='Go to next question']")
+        next_button = next_buttons[0] if next_buttons else None
+
+        offsets = [(0, 0), (15, 0)]
+        can_use_cdp = hasattr(driver, "execute_cdp_cmd")
+        is_local_env = (os.getenv("RUN_ENV", "local") or "local").strip().lower() == "local"
+        for idx, (ox, oy) in enumerate(offsets, start=1):
+            print(f"[DRAGDROP] attempt={idx} start")
+            try:
+                driver.execute_script("arguments[0].scrollIntoView({block:'center'});", source)
+                driver.execute_script("arguments[0].scrollIntoView({block:'center'});", drop_zone)
+                points = driver.execute_script(
+                    """
+                    const src = arguments[0];
+                    const dst = arguments[1];
+                    const ox = arguments[2] || 0;
+                    const oy = arguments[3] || 0;
+                    if (!src || !dst) return null;
+                    const srcRect = src.getBoundingClientRect();
+                    const dstRect = dst.getBoundingClientRect();
+                    const endX = Math.floor(dstRect.left + dstRect.width / 2 + ox);
+                    const endY = Math.floor(dstRect.top + dstRect.height / 2 + oy);
+                    const atPoint = document.elementFromPoint(endX, endY);
+                    const insideDropZone = !!(atPoint && (atPoint === dst || dst.contains(atPoint)));
+                    const insideDraggable = !!(atPoint && atPoint.closest('[cdkdrag], .cdk-drag, [draggable="true"]'));
+                    return {
+                        startX: Math.floor(srcRect.left + srcRect.width / 2),
+                        startY: Math.floor(srcRect.top + srcRect.height / 2),
+                        endX,
+                        endY,
+                        verified: insideDropZone && !insideDraggable,
+                        elementTag: atPoint ? atPoint.tagName.toLowerCase() : '',
+                        elementId: atPoint && atPoint.id ? atPoint.id : '',
+                        elementClass: atPoint && atPoint.className ? String(atPoint.className) : '',
+                    };
+                    """,
+                    source,
+                    drop_zone,
+                    ox,
+                    oy,
+                )
+                if not points:
+                    raise RuntimeError("drag_points_unavailable")
+
+                element_desc = f"{points.get('elementTag', '')}#{points.get('elementId', '')}.{points.get('elementClass', '')}".strip(".")
+                point_ok = bool(points.get("verified"))
+                print(f"[DRAGDROP] end_point_verified ok={str(point_ok).lower()} elementFromPoint={element_desc}")
+                if not point_ok:
+                    continue
+
+                drag_done = False
+                if can_use_cdp:
+                    start_x = int(points.get("startX", 0))
+                    start_y = int(points.get("startY", 0))
+                    end_x = int(points.get("endX", 0))
+                    end_y = int(points.get("endY", 0))
+
+                    driver.execute_cdp_cmd(
+                        "Input.dispatchMouseEvent",
+                        {"type": "mouseMoved", "x": start_x, "y": start_y, "button": "none"},
+                    )
+                    driver.execute_cdp_cmd(
+                        "Input.dispatchMouseEvent",
+                        {"type": "mousePressed", "x": start_x, "y": start_y, "button": "left", "clickCount": 1},
+                    )
+
+                    steps = 8
+                    for step in range(1, steps + 1):
+                        x = int(start_x + ((end_x - start_x) * step) / steps)
+                        y = int(start_y + ((end_y - start_y) * step) / steps)
+                        driver.execute_cdp_cmd(
+                            "Input.dispatchMouseEvent",
+                            {"type": "mouseMoved", "x": x, "y": y, "button": "left", "buttons": 1},
+                        )
+                        time.sleep(0.02)
+
+                    driver.execute_cdp_cmd(
+                        "Input.dispatchMouseEvent",
+                        {"type": "mouseReleased", "x": end_x, "y": end_y, "button": "left", "clickCount": 1},
+                    )
+                    drag_done = True
+                elif is_local_env:
+                    chain = ActionChains(driver).click_and_hold(source).move_to_element(drop_zone)
+                    if ox or oy:
+                        chain = chain.move_by_offset(ox, oy)
+                    chain.release().perform()
+                    drag_done = True
+                else:
+                    raise RuntimeError("cdp_unavailable_non_local")
+
+                if not drag_done:
+                    raise RuntimeError("pointer_drag_failed")
+                print(f"[DRAGDROP] attempt={idx} dropped")
+            except Exception as e:
+                print(f"[DRAGDROP] attempt={idx} dropped error={_short_exc(e)}")
+                continue
+
+            deadline = time.time() + 3.0
+            enabled = False
+            in_drop_zone = False
+            while time.time() < deadline:
+                try:
+                    in_drop_zone = bool(
+                        driver.execute_script(
+                            """
+                            const dst = arguments[0];
+                            if (!dst) return false;
+                            const draggableInZone = dst.querySelector('[cdkdrag], .cdk-drag, [draggable="true"]');
+                            const hasVisibleContent = (dst.innerText || '').trim().length > 0;
+                            return !!(draggableInZone || hasVisibleContent);
+                            """,
+                            drop_zone,
+                        )
+                    )
+                except Exception:
+                    in_drop_zone = False
+                if next_button is not None and _is_enabled(next_button):
+                    enabled = True
+                    break
+                time.sleep(0.2)
+
+            print(f"[DRAGDROP] attempt={idx} next_enabled={str(enabled).lower()} in_drop_zone={str(in_drop_zone).lower()}")
+            if enabled or in_drop_zone:
+                _attempt_cta_once()
+                return True
+
+        return False
+
+    # --- Extraction de la valeur cible depuis le titre de la question ---
     title_candidates = driver.find_elements(
         By.CSS_SELECTOR,
         "p.question-title[psquestiontitle], p.question-title, [psquestiontitle]",
@@ -4962,188 +5303,24 @@ def handle_drag_drop_logic(driver):
     if not target_value:
         return False
 
-    draggables = driver.find_elements(By.CSS_SELECTOR, "[cdkdrag], .cdk-drag, [draggable='true']")
-    try:
-        drop_zone = driver.find_element(
-            By.CSS_SELECTOR,
-            "#dropZoneList.cdk-drop-list.drop-zone, #dropZoneList.drop-zone, #dropZoneList",
-        )
-        print("[DRAGDROP] drop_zone_selected id=dropZoneList ok=true")
-    except Exception:
-        print("[DRAGDROP] drop_zone_selected id=dropZoneList ok=false")
-        return False
-    if not draggables or not drop_zone:
-        return False
-
-    source = None
-    source_selector = ""
-    for drag in draggables:
+    # --- Garde : si les cards cdkdrag sont présentes mais sans dimensions (Angular CDK
+    # pas encore initialisé), on rafraîchit la page une seule fois et on attend le rendu
+    # avant de tenter le drag. Signal discriminant : au moins un [cdkdrag] dans le DOM
+    # mais aucun avec getBoundingClientRect().width > 0. ---
+    cards_in_dom = bool(driver.find_elements(By.CSS_SELECTOR, "[cdkdrag], .cdk-drag"))
+    if cards_in_dom and not _cdkdrag_cards_ready():
+        print("[DRAGDROP] cards_not_ready=true → refresh + wait (max 8s)")
         try:
-            imgs = drag.find_elements(By.CSS_SELECTOR, f'img[alt="{target_value}"]')
-            if imgs:
-                source = drag
-                source_selector = f'img[alt="{target_value}"]'
-                break
-        except Exception:
-            continue
+            driver.refresh()
+        except Exception as _ref_e:
+            print(f"[DRAGDROP] refresh_failed error={_short_exc(_ref_e)}")
+            return False
+        if not _wait_cards_ready(timeout=8.0):
+            print("[DRAGDROP] cards_still_not_ready after refresh → abort")
+            return False
+        print("[DRAGDROP] cards_ready after refresh → retry drag")
 
-    if source is None:
-        for drag in draggables:
-            try:
-                imgs = drag.find_elements(By.CSS_SELECTOR, "img")
-            except Exception:
-                imgs = []
-            for img in imgs:
-                try:
-                    src = (img.get_attribute("src") or "")
-                except Exception:
-                    src = ""
-                if f'/{target_value}.png' in src or target_value in src:
-                    source = drag
-                    source_selector = f'img[src*="{target_value}"]'
-                    break
-            if source is not None:
-                break
-
-    if source is None:
-        for drag in draggables:
-            txt = _el_text(drag)
-            if target_value in txt:
-                source = drag
-                source_selector = "draggable_text"
-                break
-
-    if source is None:
-        return False
-
-    print(f"[DRAGDROP] source_found selector={source_selector}")
-
-    next_buttons = driver.find_elements(By.CSS_SELECTOR, "button[aria-label='Go to next question']")
-    next_button = next_buttons[0] if next_buttons else None
-
-    offsets = [(0, 0), (15, 0)]
-    can_use_cdp = hasattr(driver, "execute_cdp_cmd")
-    is_local_env = (os.getenv("RUN_ENV", "local") or "local").strip().lower() == "local"
-    for idx, (ox, oy) in enumerate(offsets, start=1):
-        print(f"[DRAGDROP] attempt={idx} start")
-        try:
-            driver.execute_script("arguments[0].scrollIntoView({block:'center'});", source)
-            driver.execute_script("arguments[0].scrollIntoView({block:'center'});", drop_zone)
-            points = driver.execute_script(
-                """
-                const src = arguments[0];
-                const dst = arguments[1];
-                const ox = arguments[2] || 0;
-                const oy = arguments[3] || 0;
-                if (!src || !dst) return null;
-                const srcRect = src.getBoundingClientRect();
-                const dstRect = dst.getBoundingClientRect();
-                const endX = Math.floor(dstRect.left + dstRect.width / 2 + ox);
-                const endY = Math.floor(dstRect.top + dstRect.height / 2 + oy);
-                const atPoint = document.elementFromPoint(endX, endY);
-                const insideDropZone = !!(atPoint && (atPoint === dst || dst.contains(atPoint)));
-                const insideDraggable = !!(atPoint && atPoint.closest('[cdkdrag], .cdk-drag, [draggable="true"]'));
-                return {
-                    startX: Math.floor(srcRect.left + srcRect.width / 2),
-                    startY: Math.floor(srcRect.top + srcRect.height / 2),
-                    endX,
-                    endY,
-                    verified: insideDropZone && !insideDraggable,
-                    elementTag: atPoint ? atPoint.tagName.toLowerCase() : '',
-                    elementId: atPoint && atPoint.id ? atPoint.id : '',
-                    elementClass: atPoint && atPoint.className ? String(atPoint.className) : '',
-                };
-                """,
-                source,
-                drop_zone,
-                ox,
-                oy,
-            )
-            if not points:
-                raise RuntimeError("drag_points_unavailable")
-
-            element_desc = f"{points.get('elementTag', '')}#{points.get('elementId', '')}.{points.get('elementClass', '')}".strip(".")
-            point_ok = bool(points.get("verified"))
-            print(f"[DRAGDROP] end_point_verified ok={str(point_ok).lower()} elementFromPoint={element_desc}")
-            if not point_ok:
-                continue
-
-            if can_use_cdp:
-                start_x = int(points.get("startX", 0))
-                start_y = int(points.get("startY", 0))
-                end_x = int(points.get("endX", 0))
-                end_y = int(points.get("endY", 0))
-
-                driver.execute_cdp_cmd(
-                    "Input.dispatchMouseEvent",
-                    {"type": "mouseMoved", "x": start_x, "y": start_y, "button": "none"},
-                )
-                driver.execute_cdp_cmd(
-                    "Input.dispatchMouseEvent",
-                    {"type": "mousePressed", "x": start_x, "y": start_y, "button": "left", "clickCount": 1},
-                )
-
-                steps = 8
-                for step in range(1, steps + 1):
-                    x = int(start_x + ((end_x - start_x) * step) / steps)
-                    y = int(start_y + ((end_y - start_y) * step) / steps)
-                    driver.execute_cdp_cmd(
-                        "Input.dispatchMouseEvent",
-                        {"type": "mouseMoved", "x": x, "y": y, "button": "left", "buttons": 1},
-                    )
-                    time.sleep(0.02)
-
-                driver.execute_cdp_cmd(
-                    "Input.dispatchMouseEvent",
-                    {"type": "mouseReleased", "x": end_x, "y": end_y, "button": "left", "clickCount": 1},
-                )
-                drag_done = True
-            elif is_local_env:
-                chain = ActionChains(driver).click_and_hold(source).move_to_element(drop_zone)
-                if ox or oy:
-                    chain = chain.move_by_offset(ox, oy)
-                chain.release().perform()
-                drag_done = True
-            else:
-                raise RuntimeError("cdp_unavailable_non_local")
-
-            if not drag_done:
-                raise RuntimeError("pointer_drag_failed")
-            print(f"[DRAGDROP] attempt={idx} dropped")
-        except Exception as e:
-            print(f"[DRAGDROP] attempt={idx} dropped error={_short_exc(e)}")
-            continue
-
-        deadline = time.time() + 3.0
-        enabled = False
-        in_drop_zone = False
-        while time.time() < deadline:
-            try:
-                in_drop_zone = bool(
-                    driver.execute_script(
-                        """
-                        const dst = arguments[0];
-                        if (!dst) return false;
-                        const draggableInZone = dst.querySelector('[cdkdrag], .cdk-drag, [draggable="true"]');
-                        const hasVisibleContent = (dst.innerText || '').trim().length > 0;
-                        return !!(draggableInZone || hasVisibleContent);
-                        """,
-                        drop_zone,
-                    )
-                )
-            except Exception:
-                in_drop_zone = False
-            if next_button is not None and _is_enabled(next_button):
-                enabled = True
-                break
-            time.sleep(0.2)
-
-        print(f"[DRAGDROP] attempt={idx} next_enabled={str(enabled).lower()} in_drop_zone={str(in_drop_zone).lower()}")
-        if enabled or in_drop_zone:
-            _attempt_cta_once()
-            return True
-
-    return False
+    return _run_drag_attempt(target_value)
 
 def handle_start_screen(driver):
     """
