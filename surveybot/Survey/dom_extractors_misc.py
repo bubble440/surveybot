@@ -9233,15 +9233,6 @@ def _extract_confirmit_cf_numeric_list_blocks(driver, frame_chain: list[int] | N
 
     for qc in containers[:20]:
         try:
-            inputs = qc.find_elements(By.CSS_SELECTOR, "input[type='number']")
-            if not inputs:
-                continue
-            inp = inputs[0]
-            inp_id = (inp.get_attribute("id") or "").strip()
-            inp_name = (inp.get_attribute("name") or "").strip()
-            if not inp_id and not inp_name:
-                continue
-
             question = ""
             try:
                 q_el = qc.find_element(By.CSS_SELECTOR, "div.cf-question__text")
@@ -9252,58 +9243,118 @@ def _extract_confirmit_cf_numeric_list_blocks(driver, frame_chain: list[int] | N
                 continue
 
             q_id = (qc.get_attribute("id") or "").strip()
-            single_key = f"confirmit_cf_numeric:{q_id}:{inp_id}"
-            target_id = make_target_id("single", single_key, question)
 
+            # Detect multi-sum constraint: auto-sum row present ⟹ répartition totale=100
+            multi_sum_total: int | None = None
             try:
-                xpath = _best_xpath_for_element(driver, inp)
+                if qc.find_elements(By.CSS_SELECTOR, "div.cf-numeric-list-auto-sum"):
+                    multi_sum_total = 100
             except Exception:
-                xpath = f"//*[@id='{inp_id}']" if inp_id else f"//input[@name='{inp_name}']"
+                pass
 
-            alt_xpaths: list[str] = []
-            if inp_id:
-                alt_xpaths.append(f"//*[@id='{inp_id}']")
-            if inp_name:
-                alt_xpaths.append(f"//input[@name={_xpath_literal(inp_name)}]")
-            alt_xpaths = [x for x in dict.fromkeys(alt_xpaths) if x and x != xpath][:4]
+            # Build a list of (row_label, input_element) pairs — one per answer row.
+            # Fallback to a single entry using inputs[0] when no cf-numeric-list-answer wrappers exist.
+            row_pairs: list[tuple[str, object]] = []
+            try:
+                answer_rows = qc.find_elements(By.CSS_SELECTOR, "div.cf-numeric-list-answer")
+            except Exception:
+                answer_rows = []
 
-            register_target(
-                target_id,
-                {
-                    "kind": "single",
-                    "itype": "number",
-                    "question": question,
-                    "xpath": xpath,
-                    "alt_xpaths": alt_xpaths,
-                    "tag": "input",
-                    "name": inp_name,
-                    "id": inp_id,
-                    "frame_chain": frame_chain,
-                    "confirmit_cf_numeric_list": True,
-                },
-            )
+            if answer_rows:
+                for row in answer_rows[:50]:
+                    try:
+                        row_label = ""
+                        try:
+                            label_el = row.find_element(By.CSS_SELECTOR, "div.cf-numeric-list-answer__text")
+                            row_label = _norm(label_el.get_attribute("textContent") or label_el.text or "")
+                        except Exception:
+                            pass
+                        inp = row.find_element(By.CSS_SELECTOR, "input[type='number']")
+                        row_pairs.append((row_label, inp))
+                    except Exception:
+                        continue
+            else:
+                # Fallback: single input without row wrapper (e.g. age question variant)
+                try:
+                    raw_inputs = qc.find_elements(By.CSS_SELECTOR, "input[type='number']")
+                    if raw_inputs:
+                        row_pairs.append(("", raw_inputs[0]))
+                except Exception:
+                    pass
 
-            blocks.append(
-                {
-                    "question": question,
-                    "itype": "number",
-                    "options": [],
-                    "max_select": 1,
-                    "min_select": 1,
-                    "target_id": target_id,
-                    "context": {
+            if not row_pairs:
+                continue
+
+            for row_label, inp in row_pairs:
+                try:
+                    inp_id = (inp.get_attribute("id") or "").strip()
+                    inp_name = (inp.get_attribute("name") or "").strip()
+                    if not inp_id and not inp_name:
+                        continue
+
+                    block_question = row_label if row_label else question
+
+                    single_key = f"confirmit_cf_numeric:{q_id}:{inp_id}"
+                    target_id = make_target_id("single", single_key, block_question)
+
+                    try:
+                        xpath = _best_xpath_for_element(driver, inp)
+                    except Exception:
+                        xpath = f"//*[@id='{inp_id}']" if inp_id else f"//input[@name='{inp_name}']"
+
+                    alt_xpaths: list[str] = []
+                    if inp_id:
+                        alt_xpaths.append(f"//*[@id='{inp_id}']")
+                    if inp_name:
+                        alt_xpaths.append(f"//input[@name={_xpath_literal(inp_name)}]")
+                    alt_xpaths = [x for x in dict.fromkeys(alt_xpaths) if x and x != xpath][:4]
+
+                    registry_payload: dict = {
+                        "kind": "single",
+                        "itype": "number",
+                        "question": block_question,
+                        "xpath": xpath,
+                        "alt_xpaths": alt_xpaths,
+                        "tag": "input",
+                        "name": inp_name,
+                        "id": inp_id,
+                        "frame_chain": frame_chain,
+                        "confirmit_cf_numeric_list": True,
+                    }
+                    block_ctx: dict = {
                         "kind": "single",
                         "tag": "input",
                         "name": inp_name,
                         "id": inp_id,
                         "confirmit_cf_numeric_list": True,
-                    },
-                }
-            )
-            log_debug(
-                "[DOM_CONFIRMIT_CF_NUMERIC]",
-                f"q_id={q_id!r} inp_id={inp_id!r} question={question!r}",
-            )
+                    }
+                    if multi_sum_total is not None:
+                        registry_payload["multi_sum_total"] = multi_sum_total
+                        registry_payload["group_id"] = q_id
+                        registry_payload["group_question"] = question
+                        block_ctx["multi_sum_total"] = multi_sum_total
+                        block_ctx["group_id"] = q_id
+                        block_ctx["group_question"] = question
+
+                    register_target(target_id, registry_payload)
+
+                    blocks.append(
+                        {
+                            "question": block_question,
+                            "itype": "number",
+                            "options": [],
+                            "max_select": 1,
+                            "min_select": 1,
+                            "target_id": target_id,
+                            "context": block_ctx,
+                        }
+                    )
+                    log_debug(
+                        "[DOM_CONFIRMIT_CF_NUMERIC]",
+                        f"q_id={q_id!r} inp_id={inp_id!r} row_label={row_label!r}",
+                    )
+                except Exception:
+                    continue
         except Exception:
             continue
 
