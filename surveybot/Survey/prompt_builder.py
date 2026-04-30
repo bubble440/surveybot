@@ -855,6 +855,13 @@ def filter_blocks_for_openai(question_blocks: list) -> list:
             if isinstance(qb, dict):
                 qb["itype"] = "dropdown"
 
+        # Normalisation: "number" → "text" (champ numérique, traité comme saisie libre par GPT).
+        # Le dispatcher lit itype depuis DOM_REGISTRY, pas depuis ce bloc : pas d'impact aval.
+        if it_lc == "number":
+            it_lc = "text"
+            if isinstance(qb, dict):
+                qb["itype"] = "text"
+
         # On n'envoie jamais les buttons é  OpenAI (on les clique nous-mêmes)
         if it_lc == "button":
             continue
