@@ -7695,66 +7695,172 @@ def _extract_confirmit_cf_hrs_single_blocks(driver, frame_chain: list[int] | Non
     for rg in radiogroups[:20]:  # budget anti-explosion
         try:
             labelledby = (rg.get_attribute("aria-labelledby") or "").strip()
-            question = ""
-            if labelledby:
-                for ref_id in labelledby.split():
-                    try:
-                        node = driver.find_element(By.ID, ref_id)
-                        txt = _norm(node.text or node.get_attribute("innerText") or "")
-                        if txt:
-                            question = txt
-                            break
-                    except Exception:
-                        continue
-            if not question:
-                continue
 
-            # Prepend matrix/grid parent question text from ancestor div.cf-question__text
+            # --- Gate carousel : cf-hrs-single enfant de cf-carousel__content-item ---
+            carousel_item_id = None
             try:
-                ancestor = rg.find_element(
+                carousel_content_item = rg.find_element(
                     By.XPATH,
-                    "ancestor::div[contains(concat(' ',normalize-space(@class),' '),' cf-question ')][1]"
+                    "ancestor::div[contains(concat(' ',normalize-space(@class),' '),"
+                    "' cf-carousel__content-item ')][1]"
                 )
-                q_text_el = ancestor.find_element(By.CSS_SELECTOR, "div.cf-question__text")
-                parent_q = _norm(q_text_el.get_attribute("textContent") or q_text_el.text or "")
-                if parent_q:
-                    question = f"{parent_q} – {question}"
+                carousel_item_id = (carousel_content_item.get_attribute("id") or "").strip()
             except Exception:
                 pass
 
-            try:
-                item_divs = rg.find_elements(
-                    By.CSS_SELECTOR, "div.cf-horizontal-rating-item[role='radio']"
-                )
-            except Exception:
-                item_divs = []
-            if not item_divs:
-                continue
+            if carousel_item_id:
+                # --- Mode carousel : seulement le card courant (--current) ---
+                carousel_classes = (carousel_content_item.get_attribute("class") or "")
+                if "cf-carousel__content-item--current" not in carousel_classes:
+                    continue  # card non-courant : ignoré cette itération
 
-            options: list[str] = []
-            option_xpath_map: dict[str, str] = {}
-            for item in item_divs[:30]:  # budget anti-explosion
+                # Position dans le carousel (index 0-based, total, is_last)
+                carousel_index = 0
+                carousel_total = 1
                 try:
-                    aria_label = _norm(item.get_attribute("aria-label") or "")
-                    text = aria_label or _norm(item.text or item.get_attribute("innerText") or "")
-                    if not text:
-                        continue
-                    if text not in options:
-                        options.append(text)
-                    ctrl_id = (item.get_attribute("id") or "").strip()
-                    if ctrl_id:
-                        option_xpath_map[_norm_key(text)] = f"//*[@id={_xpath_literal(ctrl_id)}]"
-                    else:
-                        xp = _best_xpath_for_element(item)
-                        if xp:
-                            option_xpath_map[_norm_key(text)] = xp
+                    carousel_content_root = carousel_content_item.find_element(
+                        By.XPATH, "parent::div"
+                    )
+                    all_items = carousel_content_root.find_elements(
+                        By.CSS_SELECTOR, "div.cf-carousel__content-item"
+                    )
+                    carousel_total = len(all_items) if all_items else 1
+                    for idx, ci in enumerate(all_items):
+                        if (ci.get_attribute("id") or "").strip() == carousel_item_id:
+                            carousel_index = idx
+                            break
                 except Exception:
+                    pass
+                is_last_carousel_item = (carousel_index == carousel_total - 1)
+
+                # item_id = e.g. "Q3_1" (strip suffix "_carousel_content")
+                item_id = carousel_item_id.replace("_carousel_content", "")
+                question = ""
+                try:
+                    span = driver.find_element(By.ID, f"{item_id}_text")
+                    question = _norm(span.text or span.get_attribute("innerText") or "")
+                except Exception:
+                    pass
+                if not question:
                     continue
 
-            if not options:
-                continue
+                # Préfixe : texte de la question globale (div.cf-question__text)
+                try:
+                    ancestor = rg.find_element(
+                        By.XPATH,
+                        "ancestor::div[contains(concat(' ',normalize-space(@class),' '),"
+                        "' cf-question ')][1]"
+                    )
+                    q_text_el = ancestor.find_element(By.CSS_SELECTOR, "div.cf-question__text")
+                    parent_q = _norm(q_text_el.get_attribute("textContent") or q_text_el.text or "")
+                    if parent_q:
+                        question = f"{parent_q} – {question}"
+                except Exception:
+                    pass
 
-            group_key = f"radio:name:dom:{labelledby}|cf-hrs-single"
+                # Options : innerText uniquement (aria-label contient le texte de ligne en préfixe)
+                try:
+                    item_divs = rg.find_elements(
+                        By.CSS_SELECTOR, "div.cf-horizontal-rating-item[role='radio']"
+                    )
+                except Exception:
+                    item_divs = []
+                if not item_divs:
+                    continue
+
+                options: list[str] = []
+                option_xpath_map: dict[str, str] = {}
+                for item in item_divs[:30]:
+                    try:
+                        text = _norm(item.text or item.get_attribute("innerText") or "")
+                        if not text:
+                            continue
+                        if text not in options:
+                            options.append(text)
+                        ctrl_id = (item.get_attribute("id") or "").strip()
+                        if ctrl_id:
+                            option_xpath_map[_norm_key(text)] = f"//*[@id={_xpath_literal(ctrl_id)}]"
+                        else:
+                            xp = _best_xpath_for_element(item)
+                            if xp:
+                                option_xpath_map[_norm_key(text)] = xp
+                    except Exception:
+                        continue
+
+                if not options:
+                    continue
+
+                group_key = f"radio:name:dom:{labelledby}|cf-hrs-single|{item_id}"
+                _carousel_ctx = {
+                    "confirmit_cf_hrs_single_carousel": True,
+                    "carousel_index": carousel_index,
+                    "carousel_total": carousel_total,
+                    "is_last_carousel_item": is_last_carousel_item,
+                }
+
+            else:
+                # --- Mode standalone (hors carousel) : comportement inchangé ---
+                question = ""
+                if labelledby:
+                    for ref_id in labelledby.split():
+                        try:
+                            node = driver.find_element(By.ID, ref_id)
+                            txt = _norm(node.text or node.get_attribute("innerText") or "")
+                            if txt:
+                                question = txt
+                                break
+                        except Exception:
+                            continue
+                if not question:
+                    continue
+
+                # Prepend matrix/grid parent question text from ancestor div.cf-question__text
+                try:
+                    ancestor = rg.find_element(
+                        By.XPATH,
+                        "ancestor::div[contains(concat(' ',normalize-space(@class),' '),' cf-question ')][1]"
+                    )
+                    q_text_el = ancestor.find_element(By.CSS_SELECTOR, "div.cf-question__text")
+                    parent_q = _norm(q_text_el.get_attribute("textContent") or q_text_el.text or "")
+                    if parent_q:
+                        question = f"{parent_q} – {question}"
+                except Exception:
+                    pass
+
+                try:
+                    item_divs = rg.find_elements(
+                        By.CSS_SELECTOR, "div.cf-horizontal-rating-item[role='radio']"
+                    )
+                except Exception:
+                    item_divs = []
+                if not item_divs:
+                    continue
+
+                options: list[str] = []
+                option_xpath_map: dict[str, str] = {}
+                for item in item_divs[:30]:  # budget anti-explosion
+                    try:
+                        aria_label = _norm(item.get_attribute("aria-label") or "")
+                        text = aria_label or _norm(item.text or item.get_attribute("innerText") or "")
+                        if not text:
+                            continue
+                        if text not in options:
+                            options.append(text)
+                        ctrl_id = (item.get_attribute("id") or "").strip()
+                        if ctrl_id:
+                            option_xpath_map[_norm_key(text)] = f"//*[@id={_xpath_literal(ctrl_id)}]"
+                        else:
+                            xp = _best_xpath_for_element(item)
+                            if xp:
+                                option_xpath_map[_norm_key(text)] = xp
+                    except Exception:
+                        continue
+
+                if not options:
+                    continue
+
+                group_key = f"radio:name:dom:{labelledby}|cf-hrs-single"
+                _carousel_ctx = {}
             target_id = make_target_id("group", group_key, question)
             register_target(
                 target_id,
@@ -7766,6 +7872,7 @@ def _extract_confirmit_cf_hrs_single_blocks(driver, frame_chain: list[int] | Non
                     "option_xpath_map": option_xpath_map,
                     "frame_chain": frame_chain,
                     "confirmit_cf_hrs_single": True,
+                    **_carousel_ctx,
                 },
             )
 
@@ -7780,12 +7887,13 @@ def _extract_confirmit_cf_hrs_single_blocks(driver, frame_chain: list[int] | Non
                     "context": {
                         "kind": "group",
                         "group_key": group_key,
+                        **_carousel_ctx,
                     },
                 }
             )
             log_debug(
                 "[DOM_CONFIRMIT_CF_HRS_SINGLE]",
-                f"labelledby={labelledby!r} question={question!r} options={options}",
+                f"labelledby={labelledby!r} question={question!r} options={options} carousel_ctx={_carousel_ctx}",
             )
         except Exception:
             continue
