@@ -2650,7 +2650,26 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             if not question:
                 continue
 
-            sig = (question, "radio")
+            # Détection multi-select interview-layout : ul[data-test-id="ChoiceMultiple_ChoiceFields"]
+            # Guard DOM strict : le ul ancêtre immédiat des boutons porte ce data-test-id.
+            # Si présent → itype=checkbox, max_select non contraint (len options).
+            # Sinon → comportement par défaut radio/1.
+            _is_choice_multiple = False
+            try:
+                _is_choice_multiple = driver.execute_script(
+                    """
+                    const ul = arguments[0].closest('ul[data-test-id="ChoiceMultiple_ChoiceFields"]');
+                    return ul !== null;
+                    """,
+                    btns[0],
+                )
+            except Exception:
+                _is_choice_multiple = False
+
+            _block_itype = "checkbox" if _is_choice_multiple else "radio"
+            _block_max_select = len(options) if _is_choice_multiple else 1
+
+            sig = (question, _block_itype)
             if sig in seen_signatures:
                 continue
             seen_signatures.add(sig)
@@ -2659,7 +2678,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             cid = (cont.get_attribute("id") or "").strip() if cont else ""
             ccl = _norm_lc(cont.get_attribute("class") or "") if cont else ""
             opt_sig = "|".join(_norm_key(o) for o in (options[:5] or []))
-            group_key = f"radio:button_group:{cid}:{ccl}:{opt_sig}"
+            group_key = f"{_block_itype}:button_group:{cid}:{ccl}:{opt_sig}"
 
             target_id = make_target_id("group", group_key, question)
 
@@ -2679,7 +2698,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                 target_id,
                 {
                     "kind": "group",
-                    "itype": "radio",
+                    "itype": _block_itype,
                     "group_key": group_key,
                     "question": question,
                     "option_xpath_map": option_xpath_map,
@@ -2690,9 +2709,9 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             question_blocks.append(
                 {
                     "question": question,
-                    "itype": "radio",
+                    "itype": _block_itype,
                     "options": options,
-                    "max_select": 1,
+                    "max_select": _block_max_select,
                     "target_id": target_id,
                     "context": {"kind": "group", "group_key": group_key},
                 }
@@ -3022,6 +3041,26 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
 
             if itype in ("text", "textarea") and _is_other_specify_choice_companion(driver, el, container, question):
                 continue
+
+            # Filtre interview-layout "Autre" : un input[type=text][role="option"] dans
+            # div.choice-question__custom-field-container est le champ libre de la liste
+            # de choix (options rendues en <button role="option">, pas en input natif).
+            # Sans ce guard, _is_other_specify_choice_companion ne le détecte pas
+            # (0 input radio/checkbox dans le conteneur) → bloc text parasite créé.
+            # Guard DOM strict : les deux conditions doivent tenir simultanément.
+            if itype in ("text", "textarea"):
+                try:
+                    _role_opt = _norm_lc(el.get_attribute("role") or "")
+                    if _role_opt == "option":
+                        _in_custom = driver.execute_script(
+                            "return arguments[0].closest('.choice-question__custom-field-container') !== null;",
+                            el,
+                        )
+                        if _in_custom:
+                            log_debug("[DOM_DEBUG]", "skip_interview_layout_custom_text_field role=option")
+                            continue
+                except Exception:
+                    pass
 
             # Champs "other/specify" attachés à une option radio/checkbox custom:
             # ne pas les remonter comme question autonome.

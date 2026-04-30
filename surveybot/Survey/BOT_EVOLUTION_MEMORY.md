@@ -123,3 +123,63 @@ Contexte patch :
   La stratégie retenue est unique : pour les dropdowns, passer directement par `dropdown_select`.
   Validation observée : l'option `0` reste appliquée et l'exécution atteint ensuite le CTA.
 
+---
+
+## PLATEFORME : INTERVIEW-LAYOUT (areyounet / Potloc-style)
+Signature DOM : `div.interview-layout` contenant `div.interview-header` + `div.interview-question` + `div.interview-footer__container`
+Inputs : `button.choice-question__field[role="option"][data-test-id="ChoiceFields_Field-{uuid}"]` dans `ul.choice-question__field-list`
+Options spéciales footer : `button[data-test-id="InterviewFooter_SpecialOption-*"]` dans `div.interview-footer__options-container`
+Champ libre "Autre" : `<input type="text" role="option">` dans `div.choice-question__custom-field-container`
+
+### button_group générique — filtre interview-footer__options-container
+Fichier : Survey/dom_analyzer.py
+Emplacement : boucle `for b in btn_like`, après le filtre CookieYes, avant `_nearest_question_container`.
+Guard d'activation : `closest('.interview-footer__options-container') !== null`
+Patterns couverts :
+- Boutons spéciaux de page ("Aucun(e)", "Passer") dans `div.interview-footer__options-container`
+- Ces boutons passent tous les filtres génériques (visibles, texte ≥ 2 chars, non-nav) mais
+  ne sont pas des choix de réponse : ce sont des options de navigation de page.
+- Le filtre les exclut avant groupement → pas de bloc parasite créé.
+Patterns exclus :
+- Tout bouton hors de `.interview-footer__options-container` → non affecté.
+- Boutons nav classiques (Continuer…) déjà filtrés par `_is_nav_like_choice`.
+Contexte patch :
+- [2026-04] Fix : "Aucun(e)" et "Passer" formaient un 2e question_block indépendant
+  avec itype=radio. Guard DOM strict via `closest`, aucun impact inter-provider.
+
+### button_group générique — récupération h1.interview-header__title
+Fichier : Survey/dom_analyzer.py
+Emplacement : boucle `for _gk, g in btn_groups.items()`, après `_extract_question_from_container` et
+  `_find_question_text_near_element`, avant le filtre "un problème est survenu".
+Guard d'activation : `closest('.interview-question') !== null` sur le conteneur résolu
+  ET existence de `h1.interview-header__title` dans la page.
+Patterns couverts :
+- Layout où la question principale est dans `h1.interview-header__title` (frère de
+  `.interview-question` dans `.interview-layout`), hors scope du conteneur résolu.
+- Sans ce patch, seul le `h3.hint-text` ("CHOISISSEZ UNE OU PLUSIEURS RÉPONSES") est extrait.
+- Le texte du h1 est préfixé à la question déjà extraite si non déjà inclus.
+- Log debug : "[DOM_BUTTON_GROUP] interview_layout_h1 recovered: ..."
+Patterns exclus :
+- Tout conteneur hors de `.interview-question` → guard non activé.
+- Tout DOM sans `h1.interview-header__title` → guard non activé.
+Contexte patch :
+- [2026-04] Fix : question extraite = "CHOISISSEZ UNE OU PLUSIEURS RÉPONSES" au lieu de
+  "Parmi les produits suivants… CHOISISSEZ UNE OU PLUSIEURS RÉPONSES". Double guard strict.
+
+### singles — filtre champ texte libre dans choice-question__custom-field-container
+Fichier : Survey/dom_analyzer.py
+Emplacement : chemin `other_inputs`, après `_is_other_specify_choice_companion`, avant `looks_like_other`.
+Guard d'activation : `itype in ("text", "textarea")` ET `role="option"` ET
+  `closest('.choice-question__custom-field-container') !== null`.
+Patterns couverts :
+- `<input type="text" role="option">` dans `div.choice-question__custom-field-container`
+  (champ libre "Autre" de la liste, options rendues en `<button role="option">` non natifs).
+- `_is_other_specify_choice_companion` ne le détecte pas : 0 `input[type=radio/checkbox]`
+  dans le conteneur → garde-fou `< 2` → retourne False → bloc text parasite créé.
+- Log debug : "[DOM_DEBUG] skip_interview_layout_custom_text_field role=option"
+Patterns exclus :
+- Tout input sans `role="option"` → non affecté.
+- Tout input hors de `.choice-question__custom-field-container` → non affecté.
+Contexte patch :
+- [2026-04] Fix : bloc `itype=text, question="System U"` créé à tort depuis le champ libre
+  de la liste de courses. Double guard DOM strict, patch minimal additif.
