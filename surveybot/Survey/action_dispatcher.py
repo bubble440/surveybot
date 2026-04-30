@@ -3013,6 +3013,41 @@ def _apply_by_target_id(
                 # le payload (dict live) pour idempotence sur retries.
                 # Le poll post-clic utilise document.getElementById(rowId) pour survivre
                 # aux re-renders React qui invalident la référence WebElement originale.
+
+                # Guard interview-layout : bouton <button role="option"> dans
+                # ul[data-test-id="ChoiceMultiple_ChoiceFields"] — clic direct + vérification
+                # aria-selected="true". Ce provider ne porte pas de Runtime_AnswerRow.
+                # Court-circuit avant toluna_runtime_answerrow pour éviter faux négatif.
+                _is_interview_layout_btn = False
+                try:
+                    _is_interview_layout_btn = driver.execute_script(
+                        """
+                        const el = arguments[0];
+                        if (!el || !el.closest) return false;
+                        if ((el.tagName || '').toLowerCase() !== 'button') return false;
+                        if ((el.getAttribute('role') || '').toLowerCase() !== 'option') return false;
+                        return el.closest('ul[data-test-id="ChoiceMultiple_ChoiceFields"]') !== null;
+                        """,
+                        el,
+                    )
+                except Exception:
+                    _is_interview_layout_btn = False
+
+                if _is_interview_layout_btn:
+                    # Idempotence : déjà sélectionné ?
+                    if (el.get_attribute("aria-selected") or "").strip().lower() == "true":
+                        log_info("[TARGET]", f"apply ok=true strategy=interview_layout_btn reason=already_selected value='{value}'")
+                        return True
+                    clicked = _click_candidate(el, "interview_layout_btn")
+                    if clicked:
+                        import time as _time
+                        _time.sleep(0.1)
+                        if (el.get_attribute("aria-selected") or "").strip().lower() == "true":
+                            log_info("[TARGET]", f"apply ok=true strategy=interview_layout_btn reason=clicked value='{value}'")
+                            return True
+                        log_debug("[TARGET_DEBUG]", f"interview_layout_btn aria-selected not true after click value='{value}'")
+                    return False
+
                 log_info("[TARGET]", "toluna_runtime_answerrow: entering block")
                 try:
                     _toluna_guard = driver.execute_script(
@@ -6136,6 +6171,7 @@ def execute_action(
                     value,
                     allow_mx_vertical_carousel_advance=allow_mx_vertical_carousel_advance,
                 ):
+                    applied = True  # initialisation explicite avant post-verification MetrixLab
                     if applied:
                         # Post-vérification spécifique MetrixLab/Toluna checkboxQT/radioQT.
                         # Le clic seul ne suffit pas: cette UI custom ne confirme pas l'état via
