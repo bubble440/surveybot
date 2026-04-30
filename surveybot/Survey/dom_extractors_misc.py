@@ -10518,3 +10518,186 @@ def _extract_askia_adc_slider_blocks(driver, frame_chain: list[int] | None) -> l
         log_info("[DOM_ASKIA_ADC_SLIDER]", f"blocks_extracted={len(blocks)}")
 
     return blocks
+
+
+# ================================================================================
+# CONFIRMIT / FORSTA WIX — QUESTION RANKING (cf-question--ranking)
+# ================================================================================
+
+def _extract_confirmit_cf_ranking_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
+    """Forsta/Confirmit Wix : question de classement par clic séquentiel.
+
+    Gate DOM strict (additif) :
+    - au moins un div.cf-question--ranking présent
+    - contient des div.cf-list__item.cf-ranking-answer[role="button"]
+
+    Mécanique d'interaction :
+    Chaque option est un div[role="button"] cliquable. Un clic attribue le rang
+    suivant disponible (cf-ranking-answer__rank passe de "-" à "1", "2", …).
+    L'ordre des clics détermine le classement — il n'y a pas d'input natif à cocher.
+    Le dispatcher doit cliquer les options dans l'ordre des valeurs reçues d'OpenAI
+    (valeur "1" = cliquer en premier, "2" = en deuxième, etc.).
+
+    Contrainte max : portée par multiCount.max dans le JSON Confirmit inline.
+    On la lit depuis div.cf-question__instruction (mention "cinq", "5", etc.) ou
+    on la fixe à 5 par défaut si la lecture échoue — comportement safe.
+
+    Structure ciblée :
+      div.cf-question.cf-question--ranking#Q11
+        div.cf-question__text           ← texte de la question
+        div.cf-question__instruction    ← instruction de classement (incluse dans le contexte)
+        div.cf-list
+          div.cf-list__item.cf-ranking-answer[role="button"]#Q11_11
+            div.cf-ranking-answer__rank  ← "-" si non sélectionné, entier sinon
+            div.cf-ranking-answer__content
+              div.cf-ranking-answer__text  ← texte de l'option
+          ... (N items, dont éventuellement un avec cf-ranking-answer__other-input)
+
+    Signal de sélection : cf-ranking-answer--selected + aria-pressed="true" sur la div.
+    Signal de quota atteint : les items non sélectionnés reçoivent cf-ranking-answer--disabled.
+
+    Un seul bloc est produit par question (itype="checkbox", max_select=max_rank).
+    Les options excluent les items contenant uniquement un champ texte libre "Autres".
+    """
+    frame_chain = list(frame_chain or [])
+    blocks: list[dict] = []
+
+    try:
+        containers = driver.find_elements(By.CSS_SELECTOR, "div.cf-question--ranking")
+    except Exception:
+        return blocks
+    if not containers:
+        return blocks
+
+    for qc in containers[:10]:
+        try:
+            # --- Gate : présence d'au moins 2 items ranking cliquables ---
+            items = qc.find_elements(
+                By.CSS_SELECTOR,
+                "div.cf-list__item.cf-ranking-answer[role='button']",
+            )
+            if len(items) < 2:
+                continue
+
+            # --- Texte de la question ---
+            question = ""
+            try:
+                q_el = qc.find_element(By.CSS_SELECTOR, "div.cf-question__text")
+                question = _norm(q_el.get_attribute("textContent") or q_el.text or "")
+            except Exception:
+                pass
+            if not question:
+                continue
+
+            # --- Instruction de classement ---
+            instruction = ""
+            try:
+                ins_el = qc.find_element(By.CSS_SELECTOR, "div.cf-question__instruction")
+                instruction = _norm(ins_el.get_attribute("textContent") or ins_el.text or "")
+            except Exception:
+                pass
+
+            # Fusionner l'instruction dans le texte de question exposé à OpenAI.
+            # Sans cette fusion, OpenAI ne voit pas la contrainte de classement.
+            question_for_openai = f"{question} {instruction}".strip() if instruction else question
+
+            # --- Extraction des options (texte des items, sauf champ "Autres" pur) ---
+            options: list[str] = []
+            item_ids: list[str] = []
+            item_xpaths: list[str] = []
+
+            for item in items:
+                try:
+                    item_id = (item.get_attribute("id") or "").strip()
+
+                    # Exclure les items qui ne contiennent qu'un input texte libre (Autres)
+                    has_text_div = bool(item.find_elements(
+                        By.CSS_SELECTOR, "div.cf-ranking-answer__text"
+                    ))
+                    if not has_text_div:
+                        # Item "Autres" sans texte structuré → on l'ignore
+                        continue
+
+                    txt_el = item.find_element(By.CSS_SELECTOR, "div.cf-ranking-answer__text")
+                    txt = _norm(txt_el.get_attribute("textContent") or txt_el.text or "")
+                    if not txt:
+                        continue
+
+                    try:
+                        xpath = _best_xpath_for_element(driver, item)
+                    except Exception:
+                        xpath = f"//*[@id='{item_id}']" if item_id else ""
+                    if not xpath:
+                        continue
+
+                    options.append(txt)
+                    item_ids.append(item_id)
+                    item_xpaths.append(xpath)
+                except Exception:
+                    continue
+
+            if len(options) < 2:
+                continue
+
+            # max_select = nombre total d'options disponibles.
+            # Le "cinq" de l'instruction est une contrainte métier transmise via question_for_openai,
+            # pas une limite DOM — OpenAI choisira lui-même combien d'options classer.
+            max_select = len(options)
+
+            q_id = (qc.get_attribute("id") or "").strip()
+            group_key = f"confirmit_cf_ranking:{q_id}:{question[:60]}"
+            target_id = make_target_id("group", group_key, question)
+
+            # Registry : on stocke la carte texte→xpath pour le dispatcher
+            option_xpath_map: dict[str, str] = {
+                _norm_lc(txt): xpath
+                for txt, xpath in zip(options, item_xpaths)
+            }
+
+            register_target(
+                target_id,
+                {
+                    "kind": "group",
+                    "itype": "checkbox",
+                    "question": question,
+                    "instruction": instruction,
+                    "options": options,
+                    "item_ids": item_ids,
+                    "option_xpath_map": option_xpath_map,
+                    "frame_chain": frame_chain,
+                    "q_id": q_id,
+                    "confirmit_cf_ranking": True,
+                },
+            )
+
+            blocks.append(
+                {
+                    # question_for_openai intègre l'instruction de classement pour qu'OpenAI
+                    # comprenne la contrainte (classer de 1 à N, 1 = plus important).
+                    "question": question_for_openai,
+                    "itype": "checkbox",
+                    "options": options,
+                    "max_select": max_select,
+                    "min_select": 1,
+                    "target_id": target_id,
+                    "context": {
+                        "kind": "group",
+                        "group_key": group_key,
+                        "instruction": instruction,
+                        "confirmit_cf_ranking": True,
+                    },
+                }
+            )
+
+            log_debug(
+                "[DOM_CONFIRMIT_CF_RANKING]",
+                f"q_id={q_id!r} options={len(options)} max_select={max_select} "
+                f"question={question[:60]!r}",
+            )
+
+        except Exception:
+            continue
+
+    if blocks:
+        log_info("[DOM_CONFIRMIT_CF_RANKING]", f"blocks_extracted={len(blocks)}")
+    return blocks

@@ -51,6 +51,7 @@ Contexte patch :
 |---|---|---|---|
 | Askia | _extract_askia_adc_slider | _extract_askia_adc_responsive_table | class du div principal : adc-slider vs adc-responsiveTable |
 | Askia | _apply_by_target_id (askia_responsive_table_checkbox) | chemin générique opt_map | flag `askia_responsive_table_checkbox` dans le payload registry |
+| Confirmit | _extract_confirmit_cf_ranking_blocks | _extract_confirmit_cf_single_choice_blocks / _cf_numeric_list / _cf_open_list | class `cf-question--ranking` sur le div parent |
 
 ---
 
@@ -368,3 +369,43 @@ Contexte patch :
   Cause : _should_skip_post_actions_navigation ne couvrait pas ce cas (URL stable,
   pas de marqueur connu). Correction : enrichissement du context à l'extraction +
   lecture du flag is_last_carousel_item dans la fonction de skip.
+---
+
+## PLATEFORME : CONFIRMIT / FORSTA WIX — RANKING
+Signature DOM : `div.cf-question.cf-question--ranking` contenant `div.cf-list` avec N `div.cf-list__item.cf-ranking-answer[role="button"]`
+Interaction : clic séquentiel sur les divs — chaque clic attribue le rang suivant. Pas d'input natif.
+Signal sélection : `cf-ranking-answer--selected` + `aria-pressed="true"` sur la div + `cf-ranking-answer__rank` contient un entier.
+Signal quota atteint : items non sélectionnés reçoivent `cf-ranking-answer--disabled`.
+
+### _extract_confirmit_cf_ranking_blocks
+Fichier : Survey/dom_extractors_misc.py
+Patterns couverts :
+- div.cf-question--ranking contenant N div.cf-list__item.cf-ranking-answer[role="button"]
+- Texte depuis div.cf-question__text ; instruction depuis div.cf-question__instruction
+- question_for_openai = question + " " + instruction (fusion pour qu'OpenAI voie la contrainte de classement)
+- max_select = len(options) (nombre total d'items DOM, pas la contrainte métier "cinq")
+- Options = textes des div.cf-ranking-answer__text ; items "Autres" (sans cette div) exclus
+- Flag payload : confirmit_cf_ranking=True
+- option_xpath_map stocké dans le registry (texte normalisé → xpath de la div)
+Patterns exclus :
+- cf-question--single → _extract_confirmit_cf_single_choice_blocks
+- cf-question--numeric-list → _extract_confirmit_cf_numeric_list_blocks
+- cf-question--open-list → _extract_confirmit_cf_open_list_blocks
+Contexte patch :
+- [2026-04] Création. Extraction correcte + dispatcher.
+- [2026-04] Fix max_select=1 (regex capturait le "1" de "où 1 correspond à").
+  Corrigé : max_select = len(options).
+- [2026-04] Fix instruction invisible pour OpenAI (stockée dans context uniquement).
+  Corrigé : fusion dans question_for_openai.
+
+### _apply_by_target_id — bloc confirmit_cf_ranking
+Fichier : Survey/action_dispatcher.py
+Emplacement : dans _apply_by_target_id(), après le guard toluna_runtime_ranking.
+Guard d'activation : payload.get("confirmit_cf_ranking") and resolved_itype == "checkbox"
+Patterns couverts :
+- Clic JS direct sur div.cf-list__item.cf-ranking-answer[role="button"] par texte normalisé
+- Items déjà sélectionnés (cf-ranking-answer--selected) ou disabled (quota atteint) → True immédiat
+- Validation post-clic : cf-ranking-answer--selected présent dans les 1s, ou disabled (dernier rang)
+- Pas de Selenium click natif (div[role="button"] non interactable) — JS click uniquement
+Patterns exclus :
+- Tout autre provider ranking → guards dédiés (askia_ranking_isotope, decipher_clickable_ranking, toluna_runtime_ranking)
