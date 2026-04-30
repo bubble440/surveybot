@@ -326,3 +326,45 @@ Patterns exclus :
 Contexte patch :
 - [2026-04] Ajout. Complète le fix extraction N-blocs : OpenAI reçoit désormais
   le contexte de groupe et la contrainte de somme pour chaque ligne de répartition.
+
+### _extract_confirmit_cf_hrs_single_blocks — mode carousel
+Fichier : Survey/dom_extractors_misc.py
+Patterns couverts :
+- div.cf-question--carousel-horizontal-rating-scale-grid : div.cf-carousel contenant
+  N div.cf-carousel__content-item, chacun wrappant un div.cf-hrs-single[role='radiogroup']
+  avec 3 div.cf-horizontal-rating-item[role='radio']
+- Gate carousel : cf-hrs-single enfant de div.cf-carousel__content-item (XPATH ancestor)
+- 1 bloc produit par item ; question = texte du span#{item_id}_text (texte de ligne)
+  préfixé par div.cf-question__text (question globale)
+- Options : innerText des div.cf-horizontal-rating-item (sans préfixe de ligne)
+  → les aria-label contiennent la ligne en préfixe, donc non utilisés en mode carousel
+- group_key = radio:name:dom:{labelledby}|cf-hrs-single|{item_id} (discriminant unique)
+- context enrichi : is_last_carousel_item (bool), carousel_item_index, carousel_total_items
+- Flag payload : confirmit_cf_hrs_single=True
+Patterns exclus :
+- div.cf-hrs-single standalone (hors div.cf-carousel__content-item) → chemin existant inchangé
+- div.cf-carousel avec div.cf-answer-button ou div.cf-button-answer → _extract_confirmit_cf_carousel_blocks
+Contexte patch :
+- [2026-04] Fix extraction 1 bloc/27 options → N blocs × 3 options. Cause : aria-labelledby
+  identique pour tous les radiogroups → group_key identique → dédupliqué en 1 seul bloc.
+  Correction : gate ancestor carousel + group_key discriminé par item_id + options via innerText.
+
+### _should_skip_post_actions_navigation — skip CTA carousel cf-hrs-single intermédiaire
+Fichier : Survey/survey_executor.py
+Guard d'activation : présence dans question_blocks d'au moins un bloc avec context portant
+  is_last_carousel_item=False (carousel intermédiaire non terminé)
+Patterns couverts :
+- Pages cf-question--carousel-horizontal-rating-scale-grid : après chaque sélection,
+  le carousel avance automatiquement vers le card suivant (mutation DOM intra-page, URL stable).
+  Le CTA de navigation ne doit être tenté qu'après le dernier card.
+- Skip CTA si is_last_carousel_item=False sur le bloc dispatché.
+- CTA autorisé si is_last_carousel_item=True (dernier card) ou si aucun marqueur carousel présent.
+Patterns exclus :
+- Blocs cf-hrs-single standalone (pas de is_last_carousel_item dans le context) → non affectés
+- Autres providers avec auto-navigation (walr_cardsort, studystream_auto_advance,
+  qarts_autosubmit) → inchangés
+Contexte patch :
+- [2026-04] Fix : CTA tenté après chaque card au lieu d'attendre le dernier.
+  Cause : _should_skip_post_actions_navigation ne couvrait pas ce cas (URL stable,
+  pas de marqueur connu). Correction : enrichissement du context à l'extraction +
+  lecture du flag is_last_carousel_item dans la fonction de skip.
