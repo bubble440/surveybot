@@ -695,7 +695,12 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
             lines.append("matrix_active_row_value_rule: valeur DOIT contenir UNIQUEMENT la/les colonne(s), sans row_label")
             lines.append("matrix_example_active_row: Transféré vers Revolut")
         lines.append(f"itype: {itype}")
-        display_max_sel = min(max_sel, 5) if max_sel > 3 else max_sel
+        if itype == "checkbox" and opts and len(opts) <= 10:
+            _excl_pats = ("autre", "other", "aucun", "aucune", "none", "nsp", "n/a", "je ne sais")
+            _n_valid = max(1, sum(1 for o in opts if not any(p in _norm_folded_lc(o) for p in _excl_pats)))
+            display_max_sel = min(max_sel, max(2, _n_valid // 2))
+        else:
+            display_max_sel = min(max_sel, 5) if max_sel > 3 else max_sel
         lines.append(f"max_select: {display_max_sel}")
         is_multi_text = (
             itype in {"text", "textarea", "number"}
@@ -747,6 +752,11 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
             if _is_truthy((ctx or {}).get("cap_hard")):
                 lines.append(
                     f"selection_rule: Pour QID={qid}, renvoyer EXACTEMENT {max_sel} valeur(s) séparée(s) par | (obligatoire, pas un plafond). / For QID={qid}, return EXACTLY {max_sel} values separated by |."
+                )
+            else:
+                lines.append(
+                    f"selection_rule: Pour QID={qid}, sélectionner entre 1 et {display_max_sel} option(s) pertinente(s) séparée(s) par |. "
+                    f"max_select={display_max_sel} est un PLAFOND. Ne jamais sélectionner 'Autre'/'Other' ni d'option exclusive."
                 )
         else:
             if is_multi_text:
