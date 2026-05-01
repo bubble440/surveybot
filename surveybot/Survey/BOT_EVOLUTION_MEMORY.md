@@ -409,3 +409,31 @@ Patterns couverts :
 - Pas de Selenium click natif (div[role="button"] non interactable) — JS click uniquement
 Patterns exclus :
 - Tout autre provider ranking → guards dédiés (askia_ranking_isotope, decipher_clickable_ranking, toluna_runtime_ranking)
+---
+
+## PLATEFORME : SUPPLIER (supplier-{N} / js-question-options)
+Signature DOM : `<body class="supplier-{N}">`, form `#aspnetForm`, conteneur `div#templates`.
+Structure : `div#templates > div.question + div.answer > div.options.js-question-options`.
+Inputs : `input[type="radio" | "checkbox"]` dans `label.radio` ou `label.checkbox`,
+  name = `question_{N}`, id = `option-{N}`.
+Caractéristique clé : `div.question` (texte) et `div.answer` (inputs) sont des frères,
+  pas dans une relation ancêtre/descendant — contrairement à la majorité des autres providers.
+
+### _nearest_question_container — guard js-question-options
+Fichier : Survey/dom_question_extractor.py
+Emplacement : dans `_nearest_question_container()`, avant le retour du conteneur trouvé.
+Guard d'activation : conteneur trouvé a la classe `js-question-options` (ou `js-resize-choices`).
+Patterns couverts :
+- `div.options.js-question-options` matche le XPath `contains(@class,'question')` via le token
+  `js-question-options` → `_nearest_question_container` retournait ce div, qui ne contient
+  que les options (pas le texte de la question).
+- Fix : si le conteneur trouvé contient `js-question-options`, on remonte chercher
+  `div.question` sibling de `div.answer` dans le parent commun (`div#templates`).
+- Question correcte extraite depuis `div.question` frère de l'ancêtre `div.answer`.
+Patterns exclus :
+- Tout conteneur sans classe `js-question-options` → chemin existant inchangé.
+Contexte patch :
+- [2026-05] Bug : question extraite = concaténation des options au lieu du texte de la question.
+  Cause racine : `div.options.js-question-options` matché à tort comme conteneur de question
+  (token "question" dans le nom de classe CSS). Structure frère div.question / div.answer
+  non gérée par le chemin générique. Extraction validée : question_blocks.json correct.
