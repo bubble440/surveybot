@@ -365,7 +365,7 @@ class TwoCaptchaClient:
 
 
 class CapSolverClient:
-    """Client CapSolver — DataDome uniquement (DataDomeSolverTask)."""
+    """Client CapSolver — DataDome + reCAPTCHA v2 (standard, enterprise, proxy/proxyless)."""
 
     def __init__(self, api_key=None, base_url="https://api.capsolver.com",
                  poll_interval=4, timeout=180):
@@ -373,6 +373,113 @@ class CapSolverClient:
         self.base_url = base_url
         self.poll_interval = poll_interval
         self.timeout = timeout
+
+    def _poll(self, task_id: str, label: str) -> dict:
+        start = time.time()
+        while True:
+            if time.time() - start > self.timeout:
+                raise TimeoutError(f"CapSolver délai dépassé ({label})")
+            time.sleep(self.poll_interval)
+            res = requests.post(
+                f"{self.base_url}/getTaskResult",
+                json={"clientKey": self.api_key, "taskId": task_id},
+                timeout=30,
+            ).json()
+            if res.get("status") == "ready":
+                return res["solution"]
+            if res.get("status") == "processing":
+                continue
+            raise RuntimeError(f"getTaskResult ({label}) error: {res}")
+
+    def solve_recaptcha_v2(self, sitekey: str, url: str, invisible: bool = False) -> str:
+        payload = {
+            "clientKey": self.api_key,
+            "task": {
+                "type": "ReCaptchaV2TaskProxyless",
+                "websiteURL": url,
+                "websiteKey": sitekey,
+                "isInvisible": bool(invisible),
+            },
+        }
+        r = requests.post(f"{self.base_url}/createTask", json=payload, timeout=30).json()
+        if r.get("errorId"):
+            raise RuntimeError(f"createTask error: {r}")
+        return self._poll(r["taskId"], "ReCaptchaV2TaskProxyless")["gRecaptchaResponse"]
+
+    def solve_recaptcha_v2_with_proxy(
+        self,
+        sitekey: str,
+        url: str,
+        proxy_type: str,
+        proxy_address: str,
+        proxy_port: int,
+        proxy_login: str = "",
+        proxy_password: str = "",
+        invisible: bool = False,
+    ) -> str:
+        task = {
+            "type": "ReCaptchaV2Task",
+            "websiteURL": url,
+            "websiteKey": sitekey,
+            "isInvisible": bool(invisible),
+            "proxyType": proxy_type,
+            "proxyAddress": proxy_address,
+            "proxyPort": int(proxy_port),
+        }
+        if proxy_login:
+            task["proxyLogin"] = proxy_login
+        if proxy_password:
+            task["proxyPassword"] = proxy_password
+        payload = {"clientKey": self.api_key, "task": task}
+        r = requests.post(f"{self.base_url}/createTask", json=payload, timeout=30).json()
+        if r.get("errorId"):
+            raise RuntimeError(f"createTask (proxy) error: {r}")
+        return self._poll(r["taskId"], "ReCaptchaV2Task")["gRecaptchaResponse"]
+
+    def solve_recaptcha_v2_enterprise(self, sitekey: str, url: str, invisible: bool = False) -> str:
+        payload = {
+            "clientKey": self.api_key,
+            "task": {
+                "type": "ReCaptchaV2EnterpriseTaskProxyless",
+                "websiteURL": url,
+                "websiteKey": sitekey,
+                "isInvisible": bool(invisible),
+            },
+        }
+        r = requests.post(f"{self.base_url}/createTask", json=payload, timeout=30).json()
+        if r.get("errorId"):
+            raise RuntimeError(f"createTask error: {r}")
+        return self._poll(r["taskId"], "ReCaptchaV2EnterpriseTaskProxyless")["gRecaptchaResponse"]
+
+    def solve_recaptcha_v2_enterprise_with_proxy(
+        self,
+        sitekey: str,
+        url: str,
+        proxy_type: str,
+        proxy_address: str,
+        proxy_port: int,
+        proxy_login: str = "",
+        proxy_password: str = "",
+        invisible: bool = False,
+    ) -> str:
+        task = {
+            "type": "ReCaptchaV2EnterpriseTask",
+            "websiteURL": url,
+            "websiteKey": sitekey,
+            "isInvisible": bool(invisible),
+            "proxyType": proxy_type,
+            "proxyAddress": proxy_address,
+            "proxyPort": int(proxy_port),
+        }
+        if proxy_login:
+            task["proxyLogin"] = proxy_login
+        if proxy_password:
+            task["proxyPassword"] = proxy_password
+        payload = {"clientKey": self.api_key, "task": task}
+        r = requests.post(f"{self.base_url}/createTask", json=payload, timeout=30).json()
+        if r.get("errorId"):
+            raise RuntimeError(f"createTask (enterprise proxy) error: {r}")
+        return self._poll(r["taskId"], "ReCaptchaV2EnterpriseTask")["gRecaptchaResponse"]
 
     def solve_datadome(
         self,

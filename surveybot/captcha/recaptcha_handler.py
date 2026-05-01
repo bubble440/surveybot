@@ -4,7 +4,7 @@ import time
 import json
 
 from captcha.recaptcha_utils import extract_recaptcha_v2_sitekey, inject_recaptcha_token
-from captcha.captcha_solver import TwoCaptchaClient
+from captcha.captcha_solver import TwoCaptchaClient, CapSolverClient
 import Management.guards.survey_difficulty_guard
 from Survey.log_utils import log_debug
 
@@ -293,10 +293,11 @@ def solve_recaptcha_v2_auto(driver) -> bool:
     current_url = driver.current_url
     proxy_cfg = _get_proxy_config()
     mode = "proxy" if proxy_cfg else "proxyless"
-    print(f"[RECAPTCHA_HANDLER] Envoi à 2Captcha (mode={mode}, variant={variant}, url={current_url})")
+    provider = os.getenv("CAPTCHA_PROVIDER", "2captcha").strip().lower()
+    client = CapSolverClient() if provider == "capsolver" else TwoCaptchaClient()
+    print(f"[RECAPTCHA_HANDLER] Envoi à {provider} (mode={mode}, variant={variant}, url={current_url})")
     try:
-        client = TwoCaptchaClient()
-        _t_2captcha = time.time()
+        _t_api = time.time()
         if is_enterprise:
             # Enterprise : Proxyless forcé — RecaptchaV2EnterpriseTaskProxyless est
             # le type correct pour les sites survey (IPSOS, Qualtrics...) qui n'exigent
@@ -316,17 +317,17 @@ def solve_recaptcha_v2_auto(driver) -> bool:
         else:
             token = client.solve_recaptcha_v2(sitekey, current_url, invisible)
     except TimeoutError as e:
-        print(f"[RECAPTCHA_HANDLER] Timeout 2Captcha ({time.time() - _t_2captcha:.1f}s) : {e}")
+        print(f"[RECAPTCHA_HANDLER] Timeout {provider} ({time.time() - _t_api:.1f}s) : {e}")
         return False
     except Exception as e:
-        print(f"[RECAPTCHA_HANDLER] Erreur 2Captcha ({time.time() - _t_2captcha:.1f}s) : {e}")
+        print(f"[RECAPTCHA_HANDLER] Erreur {provider} ({time.time() - _t_api:.1f}s) : {e}")
         return False
 
     if not token:
-        print("[RECAPTCHA_HANDLER] Token vide reçu de 2Captcha")
+        print(f"[RECAPTCHA_HANDLER] Token vide reçu de {provider}")
         return False
 
-    _dur_2captcha = time.time() - _t_2captcha
+    _dur_2captcha = time.time() - _t_api
     print(f"[RECAPTCHA_HANDLER] Token reçu en {_dur_2captcha:.1f}s ({len(token)} chars), injection...")
 
     # 3. Injecter le token dans #g-recaptcha-response
@@ -353,5 +354,5 @@ def solve_recaptcha_v2_auto(driver) -> bool:
     # 6. Navigation déléguée au flux survey — 0 clic CTA ici
     _dur_total = time.time() - _t_start
     print(f"[RECAPTCHA_HANDLER] ✅ Résolution terminée en {_dur_total:.1f}s "
-          f"(2Captcha: {_dur_2captcha:.1f}s) → navigation déléguée au flux survey")
+          f"({provider}: {_dur_2captcha:.1f}s) → navigation déléguée au flux survey")
     return True
