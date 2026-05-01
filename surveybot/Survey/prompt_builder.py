@@ -423,8 +423,6 @@ def build_system_prompt() -> str:
         "RÈGLES ABSOLUES pour les questions financières ou sensibles :\n"
         "- Revenu du foyer / personnel : choisis TOUJOURS la tranche la plus élevée disponible "
         "  parmi les options (ex: '100 000 EUR et plus', '250 000+', 'Plus d'1 million EUR', etc.).\n"
-        "- Si la tranche la plus haute semble excessive (ex: '10M EUR+'), "
-        "  choisis la DEUXIÈME tranche en partant du haut.\n"
         "- Secteur d'activité : 'Finance', 'Conseil', 'Technologies de l'Information', "
         "  'Direction / Management', 'Santé' — dans cet ordre de préférence selon les options.\n"
         "- Statut professionnel : 'Cadre supérieur', 'Dirigeant', 'Travailleur indépendant / Freelance' "
@@ -467,7 +465,6 @@ def build_system_prompt() -> str:
         "- Choisis TOUJOURS une tranche élevée, cohérente avec un grand groupe ou "
         "une entreprise de taille significative (évite la tranche la plus basse et "
         "les tranches inférieures à 100 millions).\n"
-        "- Si la tranche la plus haute semble extrême, choisis la DEUXIÈME en partant du haut.\n"
         "- INTERDIT ABSOLU : ne jamais choisir la tranche la plus basse ni 'Je ne sais pas'.\n"
     )
 
@@ -560,6 +557,22 @@ def build_system_prompt() -> str:
         "- Choisir \"Jamais\", \"Rarement\", \"Presque jamais\", \"Aucune fois\" pour le comportement central du survey, sauf contexte explicite contraire.\n"
     )    
     
+    lines.append(
+        "RÈGLE DURÉE/FRÉQUENCE CONSOMMATION MÉDIAS (priorité absolue sur RÈGLE ABSOLUE DE PROGRESSION) :\n"
+        "Pour toute question portant sur une durée ou une fréquence de consommation de médias\n"
+        "(signaux question : 'combien de temps', 'combien d'heures', 'heures par jour', 'hours per day',\n"
+        "'time spent', 'temps passé', 'temps consacré', options en gradation horaire\n"
+        "du type '0-1h', '1-2h', '2-4h', '4-6h', 'Plus de 6h', 'More than 6 hours', etc. ;\n"
+        "signaux médias : 'streaming', 'télévision', 'TV', 'séries', 'films', 'vidéos', 'YouTube',\n"
+        "'Netflix', 'réseaux sociaux', 'social media', 'TikTok', 'Instagram', 'podcast', 'radio',\n"
+        "'musique', 'jeux vidéo', 'gaming', 'internet', 'web', 'news', 'actualités') :\n"
+        "- Tu DOIS sélectionner SYSTÉMATIQUEMENT l'option la plus haute disponible dans la liste.\n"
+        "- INTERDIT ABSOLU : modérer cette réponse en fonction du persona (âge, profession, crédibilité).\n"
+        "- INTERDIT ABSOLU : appliquer une 'cohérence globale crédible' ou 'adapter en fonction de la pertinence' sur ces questions.\n"
+        "- Ces questions sont des screeners d'éligibilité : une valeur faible ou moyenne DISQUALIFIE.\n"
+        "- Cette règle s'applique que la question soit isolée ou dans une liste/matrice, pour chaque ligne média.\n"
+    )
+
     lines.append(
         "RÈGLE OPTIONS EXCLUSIVES :\n"
         "Une option exclusive est une option qui, par nature, annule toutes les autres "
