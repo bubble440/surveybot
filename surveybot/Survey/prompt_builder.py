@@ -646,8 +646,11 @@ def build_system_prompt() -> str:
     "- Varie les choix de manière imprévisible (ni alternance régulière, ni bloc uniforme).\n\n"
     "PRIORITÉ : Cette règle est subordonnée aux règles suivantes qui s'appliquent TOUJOURS EN PREMIER "
     "sur leurs lignes respectives : SURVEY_CONSENT_ACCEPT, RÈGLE SECTEUR, RÈGLE WEBCAM, RÈGLE JAMAIS / NEVER.\n"
-    "Cette règle ne s'applique PAS aux questions radio unitaires, aux checkboxes, aux matrices, "
-    "ni aux screeners disqualificatoires.\n"
+    "Cette règle ne s'applique PAS aux questions radio unitaires, aux checkboxes, "
+    "aux blocs dont le champ itype vaut 'matrix' (matrices non dépliées), "
+    "ni aux screeners disqualificatoires. "
+    "Elle S'APPLIQUE en revanche aux blocs itype=radio issus d'une grille dépliée "
+    "(même si leur contexte mentionne table_matrix_radio, matrix_row ou matrix_columns).\n"
     )
 
     return "\n".join(lines)
