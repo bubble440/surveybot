@@ -93,6 +93,7 @@ try:
         _extract_custom_testid_multi_select_checkbox_blocks,
         _extract_single_consent_checkbox_block,
         _extract_consent_modal_radio_block,
+        _extract_confirmit_wix_fieldset_radio_block,
         _extract_runtime_answerrow_radio_blocks,
         _extract_toluna_runtime_ranking_blocks,
         _extract_kantar_rowpicker_radio_blocks,
@@ -192,6 +193,7 @@ except ImportError:
         _extract_custom_testid_multi_select_checkbox_blocks,
         _extract_single_consent_checkbox_block,
         _extract_consent_modal_radio_block,
+        _extract_confirmit_wix_fieldset_radio_block,
         _extract_runtime_answerrow_radio_blocks,
         _extract_toluna_runtime_ranking_blocks,
         _extract_kantar_rowpicker_radio_blocks,
@@ -1594,6 +1596,16 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         consent_modal_blocks = _extract_consent_modal_radio_block(driver, frame_chain)
         if consent_modal_blocks:
             return consent_modal_blocks
+    except Exception:
+        pass
+
+    # --- 0h-sexies) Confirmit/Wix natif fieldset radio (layout /wix/2/) ---
+    # Objectif: couvrir les pages Toluna/Confirmit avec fieldset[id^="fieldset_"] +
+    # confirmit-table où les inputs radio sont à top:-9000px (non interactables).
+    try:
+        wix_fieldset_blocks = _extract_confirmit_wix_fieldset_radio_block(driver, frame_chain)
+        if wix_fieldset_blocks:
+            return wix_fieldset_blocks
     except Exception:
         pass
 
