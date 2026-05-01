@@ -1033,6 +1033,45 @@ def _group_key_for_choice(el, itype: str) -> str:
                             )
                             return qid_prefix
 
+                # ARIA-group pattern (SurveyJS / sd-selectbase and similar): options of
+                # the same checkbox question carry distinct names but all share a single
+                # fieldset[role="group"][aria-labelledby] container.
+                # Guard DOM strict: ancestor fieldset[@role="group"][@aria-labelledby]
+                # + >=2 checkboxes with ALL-distinct names → group by aria-labelledby.
+                try:
+                    grp_fs = el.find_elements(
+                        By.XPATH,
+                        "ancestor::fieldset[@role='group'][@aria-labelledby][1]",
+                    )
+                except Exception:
+                    grp_fs = []
+
+                if grp_fs:
+                    grp_labelledby = _norm_lc(
+                        grp_fs[0].get_attribute("aria-labelledby") or ""
+                    )
+                    if grp_labelledby:
+                        try:
+                            sib_boxes = grp_fs[0].find_elements(
+                                By.XPATH, ".//input[@type='checkbox'][@name]"
+                            )
+                        except Exception:
+                            sib_boxes = []
+                        sib_names = []
+                        for _s in sib_boxes:
+                            try:
+                                _nm = _norm_lc(_s.get_attribute("name") or "")
+                            except Exception:
+                                _nm = ""
+                            if _nm:
+                                sib_names.append(_nm)
+                        if len(sib_names) >= 2 and len(set(sib_names)) == len(sib_names):
+                            log_debug(
+                                "[DOM_GROUPING]",
+                                f"aria_group_fieldset key={grp_labelledby} boxes={len(sib_names)}",
+                            )
+                            return grp_labelledby
+
                 return _norm_lc(clean_name)
 
             # SSI Confirmit / "graphical radiobox" pattern: un widget div[role="radio"]

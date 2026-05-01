@@ -2025,7 +2025,7 @@ def _apply_by_target_id(
                 def _dispatch_check_events(inp, force_when_selected=False):
                     """Set checkbox/radio de façon idempotente.
 
-                    But: éviter le “coché puis décoché quand plusieurs stratégies s'enchaînent
+                    But: éviter le "coché puis décoché quand plusieurs stratégies s'enchaînent
                     (click label + events) et que la page a des handlers custom.
 
                     - checkbox: checked=true + input/change (PAS de click synthétique)
@@ -2165,34 +2165,49 @@ def _apply_by_target_id(
                         time.sleep(0.05)
 
                 def _click_candidate(node, label: str) -> bool:
-                    # 1) click webdriver standard
-                    try:
-                        node.click()
-                        return True
-                    except Exception as e:
-                        if debug_target:
-                            log_debug("[TARGET_DEBUG]", f"native click failed on {label}: {_short_exc(e)}")
+                    # Cache de méthode gagnante borné au plan courant (target_id = clé de groupe)
+                    _cm_cache = _get_block_strategy_memory(driver)['click_method']
+                    _first = _cm_cache.get(target_id, 1)  # 1 = tout tenter
+                    if _first > 1 and debug_target:
+                        log_debug("[TARGET_DEBUG]", f"_click_candidate: skip_to={_first} target_id={target_id}")
 
-                    # 2) ActionChains (souvent plus robuste quand le DOM est “capricieux)
-                    try:
-                        ActionChains(driver).move_to_element(node).pause(0.05).click().perform()
-                        return True
-                    except Exception as e:
-                        if debug_target:
-                            log_debug("[TARGET_DEBUG]", f"actionchains click failed on {label}: {_short_exc(e)}")
+                    # 1) click webdriver standard
+                    if _first <= 1:
+                        try:
+                            node.click()
+                            _cm_cache[target_id] = 1
+                            return True
+                        except Exception as e:
+                            if debug_target:
+                                log_debug("[TARGET_DEBUG]", f"native click failed on {label}: {_short_exc(e)}")
+
+                    # 2) ActionChains (souvent plus robuste quand le DOM est "capricieux")
+                    if _first <= 2:
+                        try:
+                            ActionChains(driver).move_to_element(node).pause(0.05).click().perform()
+                            _cm_cache[target_id] = 2
+                            return True
+                        except Exception as e:
+                            if debug_target:
+                                log_debug("[TARGET_DEBUG]", f"actionchains click failed on {label}: {_short_exc(e)}")
 
                     # 3) CDP click (trusted-ish)
-                    if _cdp_click(node):
-                        return True
+                    if _first <= 3:
+                        if _cdp_click(node):
+                            _cm_cache[target_id] = 3
+                            return True
 
                     # 4) JS click (dernier recours, parfois ignoré si anti-bot)
                     try:
                         driver.execute_script("arguments[0].click();", node)
+                        _cm_cache[target_id] = 4
                         return True
                     except Exception as e:
                         if debug_target:
                             log_debug("[TARGET_DEBUG]", f"js click failed on {label}: {_short_exc(e)}")
-                        return False
+
+                    _cm_cache.pop(target_id, None)  # invalider si tout échoue
+                    return False
 
                 # 0) pre-clicks (ex: ouvrir un panneau accordéon AVANT de chercher l'option)
                 # IMPORTANT: certains panels sont lazy-rendered: tant que le panel est fermé,
@@ -3060,7 +3075,7 @@ def _apply_by_target_id(
                     except Exception:
                         pass
 
-                # 2) clic “normal sur la cible
+                # 2) clic "normal sur la cible
                 # Decipher/FocusVision answers-list avec input natif masqué (fir-hidden):
                 # la vraie surface cliquable est le wrapper `.clickableCell`.
                 # On applique une stratégie unique et DOM-gardée pour éviter les faux positifs.
@@ -6613,7 +6628,7 @@ def reset_attempt_context(driver):
 
 def _init_block_strategy_memory(driver) -> dict:
     """Initialise la mémoire locale des stratégies réussies (durée: plan courant)."""
-    cache = {"checkbox": {}, "radio": {}}
+    cache = {"checkbox": {}, "radio": {}, "click_method": {}}
     driver._block_strategy_memory = cache
     return cache
 
@@ -6626,6 +6641,8 @@ def _get_block_strategy_memory(driver) -> dict:
         cache["checkbox"] = {}
     if not isinstance(cache.get("radio"), dict):
         cache["radio"] = {}
+    if not isinstance(cache.get("click_method"), dict):
+        cache["click_method"] = {}
     return cache
 
 def _same_matrix_table(tid1: str, tid2: str) -> bool:
@@ -6712,7 +6729,7 @@ def execute_actions_plan(
     actions = (actions or [])
     # IMPORTANT: si OpenAI a renvoyé un plan plus long que MAX_ACTIONS_PER_PLAN,
     # on ne tronque pas ici : le parser batch borne déja  (max_select / qid_constraints),
-    # donc la taille reste controlée. Tronquer = “dernières questions jamais appliquées”.
+    # donc la taille reste controlée. Tronquer = "dernières questions jamais appliquées".
     if actions and len(actions) > max_actions:
         print(f"[PLAN] MAX_ACTIONS_PER_PLAN={max_actions} < actions={len(actions)} -> pas de cap (plan déja  borné)")
         max_actions = len(actions)
