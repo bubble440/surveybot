@@ -3028,6 +3028,17 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                         question = q_txt
             except Exception:
                 pass
+            if not question and itype in ("text", "textarea"):
+                try:
+                    _el_id = (el.get_attribute("id") or "").strip()
+                    if _el_id:
+                        _lbl = driver.find_element(By.CSS_SELECTOR, f'label[for="{_el_id}"]')
+                        _lbl_txt = _norm(_lbl.text or _lbl.get_attribute("textContent") or "")
+                        if _lbl_txt and _is_question_text(_lbl_txt):
+                            question = _lbl_txt
+                            log_debug("[DOM_DEBUG]", f"text_label_for_priority id={_el_id!r} question={question[:60]!r}")
+                except Exception:
+                    pass
             if not question and container:
                 question = _extract_question_from_container(
                     container,
