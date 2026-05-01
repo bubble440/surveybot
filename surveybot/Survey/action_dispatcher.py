@@ -6716,8 +6716,12 @@ def execute_action(
             except Exception:
                 pass
 
-            if _try(driver, "text_input", lambda:
-                Survey.input_handler.fill_text_input(driver, label, context_hint=ctx)
+            _field_id = None
+            if target_payload:
+                _blk_ctx = target_payload.get("context") or {}
+                _field_id = (_blk_ctx.get("id") or "").strip() or None
+            if _try(driver, "text_input", lambda fid=_field_id:
+                Survey.input_handler.fill_text_input(driver, label, context_hint=ctx, element_id=fid)
             ):
                 return True
 
