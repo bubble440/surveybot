@@ -43,17 +43,6 @@ Contexte patch :
 - [date à compléter] Création initiale pour pages Askia multi-sliders noUiSlider.
   Un input hidden U{N} par slider, plusieurs adc-slider possibles sur une même page.
 
----
-
-## FRONTIÈRES INTER-EXTRACTEURS
-
-| Plateforme | Extracteur A | Extracteur B | Signal de discrimination |
-|---|---|---|---|
-| Askia | _extract_askia_adc_slider | _extract_askia_adc_responsive_table | class du div principal : adc-slider vs adc-responsiveTable |
-| Askia | _apply_by_target_id (askia_responsive_table_checkbox) | chemin générique opt_map | flag `askia_responsive_table_checkbox` dans le payload registry |
-| Confirmit | _extract_confirmit_cf_ranking_blocks | _extract_confirmit_cf_single_choice_blocks / _cf_numeric_list / _cf_open_list | class `cf-question--ranking` sur le div parent |
-
----
 
 ## FONCTIONS CRITIQUES NON EXTRACTEURS
 
@@ -504,3 +493,107 @@ Contexte patch :
   (non vide mais incorrect). Fix final : détection _is_confirmit via find_elements sur
   la table courante, écrasement inconditionnel de matrix_question si _is_confirmit,
   troncature portée à 500.
+
+  ---
+
+## PLATEFORME : TOLUNA / CONFIRMIT WIX NATIF — RANKED ORDER CLICK
+Signature DOM : `fieldset[id^="fieldset_"].confirmit-rankedorderclick-default` dans `/wix/2/` URL.
+Composant JS : `Y.WixInstance.addComponent({"type":"RankedOrderClick", ...})` (wix-ranked-order-click YUI).
+Structure items : `td.confirmit-abtn.confirmit-rankedorderclick[tabindex="0"]` contenant
+  `input[type="checkbox"][hidden]` + `label[for=...]` + `span.confirmit-ranked-order-value`.
+Signal sélection : classe `confirmit-rankedorderclick-selected` sur la td + valeur numérique dans span.
+Distinct de : `cf-question--ranking` (Forsta moderne) → pas de td.confirmit-rankedorderclick.
+
+### _extract_confirmit_wix_rankedorderclick_block
+Fichier : Survey/dom_extractors_misc.py
+Patterns couverts :
+- fieldset[id^="fieldset_"].confirmit-rankedorderclick-default contenant table.confirmit-table
+- Items : td.confirmit-rankedorderclick avec label[for=cq{N}_{M}]
+- Question : div[id$="_text"].question_text_ng
+- Instruction : div[id$="_comment"].instruction_text → fusionnée dans question_for_openai
+- min_select extrait depuis le texte d'erreur div[id$="_error"].error_text (pattern "fournir N réponses")
+- itype produit : "checkbox" ; flag payload : confirmit_wix_rankedorderclick=True
+- Labels tronqués à 80 chars (même convention que _extract_confirmit_wix_fieldset_radio_block)
+Patterns exclus :
+- fieldset sans classe confirmit-rankedorderclick-default → _extract_confirmit_wix_fieldset_radio_block
+- div.cf-question--ranking (Forsta moderne) → _extract_confirmit_cf_ranking_blocks
+Contexte patch :
+- [2026-05] Création. Extracteur dédié, additionnel. Le layout /wix/2/ avec ranked-order-click
+  n'était couvert ni par _extract_confirmit_wix_fieldset_radio_block (itype=radio, pas de ranking)
+  ni par _extract_confirmit_cf_ranking_blocks (guard cf-question--ranking absent).
+
+### _apply_by_target_id — bloc confirmit_wix_rankedorderclick
+Fichier : Survey/action_dispatcher.py
+Guard d'activation : payload.get("confirmit_wix_rankedorderclick") and resolved_itype == "checkbox"
+Patterns couverts :
+- td.confirmit-rankedorderclick[tabindex="0"] : Selenium click natif (déclenche les handlers YUI)
+- Fallback si ElementNotInteractable : MouseEvent bubbles+cancelable via JS (pas td.click() direct)
+- Vérification post-clic : span.confirmit-ranked-order-value contient un entier dans les 1s
+- Item déjà sélectionné (confirmit-rankedorderclick-selected présent) → True immédiat
+- Matching label : normalisation NFKC + collapse whitespace + startsWith (labels longs tronqués)
+Patterns exclus :
+- cf-question--ranking (Forsta moderne) → bloc confirmit_cf_ranking
+- Checkboxes Confirmit non-ranking → chemin générique opt_map
+Contexte patch :
+- [2026-05] Création. Bug : td.click() JS direct ne déclenchait pas les handlers YUI
+  → animation visuelle sans sélection réelle sur les rangs 2 et 3. Fix : Selenium click natif
+  en premier (tabindex="0" = interactable), MouseEvent JS en fallback. Validation sur
+  span.confirmit-ranked-order-value (entier présent) plutôt que sur la classe CSS seule.
+
+
+---
+
+## PLATEFORME : TOLUNA / CONFIRMIT WIX NATIF — INPUT TEXT NUMÉRIQUE
+Signature DOM : form action `/wix/2/`, `fieldset[id^="fieldset_"]` contenant
+  `table.confirmit-table` avec un seul `input[type="text"]`.
+Distinct de : layout radio (_extract_confirmit_wix_fieldset_radio_block) et
+  ranking (_extract_confirmit_wix_rankedorderclick_block).
+
+### dom_analyzer.py — priorité label[for] pour itype text/textarea
+
+Fichier : Survey/dom_analyzer.py
+Emplacement : boucle "autres inputs", immédiatement après le bloc
+  `ancestor::fieldset[1]//legend[contains(@class,'qualification-text')]`,
+  avant l'appel à `_extract_question_from_container()`.
+
+Patterns couverts :
+- input[type="text"] avec id (ex: `progRH1`) dont le `<label for="id">` portant
+  la vraie question est un sibling DOM hors du fieldset parent (dans
+  `div[id$="_text"].question_text_ng`).
+- `_extract_question_from_container()` retourne l'instruction de format
+  (ex: "(Veuillez saisir un nombre à quatre chiffres.)") car le fieldset
+  ne contient que l'input et l'instruction, pas le label de question.
+
+Logique du patch :
+- Guard : `not question and itype in ("text", "textarea") and el_id`
+- Cherche `label[for="{el_id}"]` via driver (portée globale, pas limitée au
+  fieldset).
+- Valide avec `_is_question_text()`.
+- Si valide → affecte `question`, log debug `text_label_for_priority`.
+- `_extract_question_from_container()` n'est appelé qu'en fallback (si toujours
+  vide après ce bloc).
+
+Patterns exclus :
+- inputs sans id → guard `_el_id` vide, bloc ignoré.
+- itype dropdown → chemin séparé inchangé.
+- Matrices radio/checkbox Confirmit → extracteurs dédiés (0h-sexies).
+
+Contexte patch :
+- [2026-05] Création. Symptôme : question_blocks.json contenait l'instruction
+  "(Veuillez saisir un nombre à quatre chiffres.)" à la place de la vraie
+  question "En quelle année sommes-nous ?". Cause : `_extract_question_from_container()`
+  agrège le texte du fieldset (instruction uniquement) avant que `label[for]`
+  soit consulté. Fix : lecture `label[for=id]` en priorité, portée driver globale.
+
+  
+---
+
+## FRONTIÈRES INTER-EXTRACTEURS
+
+| Plateforme | Extracteur A | Extracteur B | Signal de discrimination |
+|---|---|---|---|
+| Askia | _extract_askia_adc_slider | _extract_askia_adc_responsive_table | class du div principal : adc-slider vs adc-responsiveTable |
+| Askia | _apply_by_target_id (askia_responsive_table_checkbox) | chemin générique opt_map | flag `askia_responsive_table_checkbox` dans le payload registry |
+| Confirmit | _extract_confirmit_cf_ranking_blocks | _extract_confirmit_cf_single_choice_blocks / _cf_numeric_list / _cf_open_list | class `cf-question--ranking` sur le div parent |
+| Toluna/Confirmit wix natif | _extract_confirmit_wix_rankedorderclick_block | _extract_confirmit_wix_fieldset_radio_block | classe fieldset : confirmit-rankedorderclick-default présente ou absente |
+---
