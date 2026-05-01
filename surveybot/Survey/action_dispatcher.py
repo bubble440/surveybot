@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 import re, unicodedata, os, time, zlib
 from selenium.webdriver.common.by import By
 import Survey.input_handler
@@ -2946,6 +2946,108 @@ def _apply_by_target_id(
                         return True
                     if debug_target:
                         log_debug("[TARGET_DEBUG]", f"confirmit_cf_ranking: no selection signal after click value='{value}'")
+                    return False
+
+                # --- Confirmit/Wix natif ranked-order-click (/wix/2/ fieldset.confirmit-rankedorderclick-default) ---
+                # Guard DOM strict : flag confirmit_wix_rankedorderclick pose par _extract_confirmit_wix_rankedorderclick_block.
+                # Interaction : Selenium click natif sur td.confirmit-rankedorderclick (declenche la sequence
+                # mousedown/mouseup/click que le composant YUI3 wix-answer-buttons ecoute via event delegation).
+                # td.click() JS pur ne declenche que l'evenement click - insuffisant pour les rangs 2+.
+                # Fallback : dispatchEvent mousedown+mouseup+click si le clic Selenium natif echoue.
+                # Validation enrichie : confirmit-rankedorderclick-selected ET span.confirmit-ranked-order-value >= 1 chiffre.
+                if payload.get("confirmit_wix_rankedorderclick") and resolved_itype == "checkbox":
+                    # Lookup XPath dans option_xpath_map par valeur normalisee
+                    _cwroc_map = payload.get("option_xpath_map") or {}
+                    _cwroc_xp = _cwroc_map.get(v_norm) or (_cwroc_map.get(v_fold) if v_fold else None)
+                    if not _cwroc_xp:
+                        for _ck, _cx in _cwroc_map.items():
+                            if not _ck:
+                                continue
+                            _ckn = _norm_lc(_ck)
+                            if v_norm and (v_norm == _ckn or v_norm in _ckn or _ckn in v_norm):
+                                _cwroc_xp = _cx
+                                break
+
+                    if not _cwroc_xp:
+                        if debug_target:
+                            log_debug("[TARGET_DEBUG]", f"confirmit_wix_rankedorderclick: option introuvable value={value!r} map={len(_cwroc_map)}")
+                        return False
+
+                    # Resoudre l'element td
+                    _cwroc_el = None
+                    try:
+                        _cwroc_el = driver.find_element(By.XPATH, _cwroc_xp)
+                    except Exception:
+                        pass
+
+                    if not _cwroc_el:
+                        if debug_target:
+                            log_debug("[TARGET_DEBUG]", f"confirmit_wix_rankedorderclick: td introuvable xp={_cwroc_xp!r}")
+                        return False
+
+                    # Verifier si deja selectionne (idempotence)
+                    try:
+                        if "confirmit-rankedorderclick-selected" in (_cwroc_el.get_attribute("class") or ""):
+                            log_info("[TARGET]", f"apply ok=true strategy=confirmit_wix_rankedorderclick reason=already_selected value='{value}'")
+                            return True
+                    except Exception:
+                        pass
+
+                    # Strategie 1 : Selenium click natif (sequence souris complete -> YUI handlers fiables)
+                    _cwroc_clicked = False
+                    try:
+                        _cwroc_el.click()
+                        _cwroc_clicked = True
+                    except Exception:
+                        pass
+
+                    # Strategie 2 (fallback) : dispatchEvent mousedown+mouseup+click avec bubbles:true
+                    if not _cwroc_clicked:
+                        try:
+                            driver.execute_script(
+                                """
+                                const el = arguments[0];
+                                ['mousedown', 'mouseup', 'click'].forEach(type => {
+                                    el.dispatchEvent(new MouseEvent(type, {bubbles: true, cancelable: true, view: window}));
+                                });
+                                """,
+                                _cwroc_el,
+                            )
+                            _cwroc_clicked = True
+                        except Exception:
+                            pass
+
+                    if not _cwroc_clicked:
+                        if debug_target:
+                            log_debug("[TARGET_DEBUG]", f"confirmit_wix_rankedorderclick: clic impossible value='{value}'")
+                        return False
+
+                    # Validation : confirmit-rankedorderclick-selected + span.confirmit-ranked-order-value contient un chiffre
+                    # (classe seule peut etre posee transitorement ; le chiffre dans le span confirme le rang YUI)
+                    _cwroc_confirmed = False
+                    _cwroc_deadline = time.time() + 1.0
+                    while time.time() < _cwroc_deadline:
+                        try:
+                            _cwroc_confirmed = bool(driver.execute_script(
+                                """
+                                const el = arguments[0];
+                                if (!el || !el.classList.contains('confirmit-rankedorderclick-selected')) return false;
+                                const span = el.querySelector('span.confirmit-ranked-order-value');
+                                return span ? /\d/.test(span.textContent) : true;
+                                """,
+                                _cwroc_el,
+                            ))
+                        except Exception:
+                            _cwroc_confirmed = False
+                        if _cwroc_confirmed:
+                            break
+                        time.sleep(0.05)
+
+                    if _cwroc_confirmed:
+                        log_info("[TARGET]", f"apply ok=true strategy=confirmit_wix_rankedorderclick reason=selected value='{value}'")
+                        return True
+                    if debug_target:
+                        log_debug("[TARGET_DEBUG]", f"confirmit_wix_rankedorderclick: pas de signal de selection apres clic value='{value}'")
                     return False
 
                 def _is_decipher_mx_collapsible_checkbox_selected(cell_node) -> bool:

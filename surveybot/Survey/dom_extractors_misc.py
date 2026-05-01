@@ -3281,6 +3281,164 @@ def _extract_confirmit_wix_fieldset_radio_block(driver, frame_chain: list[int] |
     return blocks
 
 
+def _extract_confirmit_wix_rankedorderclick_block(driver, frame_chain: list[int] | None) -> list[dict]:
+    """Extraction ranked-order-click Confirmit/Wix natif (/wix/2/ URL, fieldset.confirmit-rankedorderclick-default).
+
+    Gate DOM (triple) :
+    - fieldset[id^="fieldset_"] avec classe confirmit-rankedorderclick-default
+    - td.confirmit-rankedorderclick dans ce fieldset (au moins 2)
+    - au moins 2 labels extraibles
+
+    Mécanique :
+    - inputs sont input[type="checkbox"] masqués (style="display:none") — non cliquables nativement
+    - td.confirmit-rankedorderclick (tabindex="0") est le vrai élément cliquable
+    - chaque clic sur une td non sélectionnée attribue le rang suivant
+    - signal de sélection : classe confirmit-rankedorderclick-selected sur la td
+
+    Exclusions strictes :
+    - Layout radio natif (/wix/2/ avec input[type="radio"]) → _extract_confirmit_wix_fieldset_radio_block
+    - Layouts Forsta modernes (div.cf-question) → extracteurs cf_* dédiés
+    """
+    frame_chain = list(frame_chain or [])
+
+    try:
+        fieldsets = driver.find_elements(
+            By.CSS_SELECTOR, "fieldset[id^='fieldset_'].confirmit-rankedorderclick-default"
+        )
+    except Exception:
+        return []
+    if not fieldsets:
+        return []
+
+    blocks: list[dict] = []
+    _LABEL_MAX = 80
+
+    for fieldset in fieldsets:
+        try:
+            tds = fieldset.find_elements(By.CSS_SELECTOR, "td.confirmit-rankedorderclick")
+            if len(tds) < 2:
+                continue
+
+            fs_id = fieldset.get_attribute("id") or ""
+            group_name = fs_id[len("fieldset_"):] if fs_id.startswith("fieldset_") else ""
+
+            # Question depuis div[id="{group_name}_text"]
+            question = ""
+            if group_name:
+                try:
+                    q_els = driver.find_elements(By.CSS_SELECTOR, f"div[id='{group_name}_text']")
+                    if q_els:
+                        question = _norm(q_els[0].text or q_els[0].get_attribute("innerText") or "")
+                except Exception:
+                    pass
+            if not question:
+                try:
+                    q_els = driver.find_elements(By.CSS_SELECTOR, "div[id$='_text'].question_text_ng")
+                    if q_els:
+                        question = _norm(q_els[0].text or q_els[0].get_attribute("innerText") or "")
+                except Exception:
+                    pass
+            if not question:
+                question = group_name or fs_id
+
+            # Instruction depuis div[id="{group_name}_comment"]
+            instruction = ""
+            if group_name:
+                try:
+                    ins_els = driver.find_elements(By.CSS_SELECTOR, f"div[id='{group_name}_comment']")
+                    if ins_els:
+                        instruction = _norm(ins_els[0].text or ins_els[0].get_attribute("innerText") or "")
+                except Exception:
+                    pass
+            if not instruction:
+                try:
+                    ins_els = driver.find_elements(By.CSS_SELECTOR, "div.instruction_text")
+                    if ins_els:
+                        instruction = _norm(ins_els[0].text or ins_els[0].get_attribute("innerText") or "")
+                except Exception:
+                    pass
+
+            question_for_openai = f"{question} {instruction}".strip() if instruction else question
+
+            # Options : label[for=checkbox_id] dans chaque td
+            options: list[str] = []
+            option_xpath_map: dict[str, str] = {}
+
+            for td in tds:
+                try:
+                    inp = td.find_elements(By.CSS_SELECTOR, "input[type='checkbox']")
+                    if not inp:
+                        continue
+                    cid = (inp[0].get_attribute("id") or "").strip()
+                    if not cid:
+                        continue
+                    lbl = ""
+                    try:
+                        lbl_el = td.find_element(By.CSS_SELECTOR, f"label[for='{cid}']")
+                        lbl = _norm(lbl_el.text or lbl_el.get_attribute("innerText") or "")
+                    except Exception:
+                        pass
+                    if not lbl:
+                        continue
+                    lbl = lbl[:_LABEL_MAX]
+                    key = _norm_key(lbl)
+                    if key in option_xpath_map:
+                        continue
+                    cid_lit = _xpath_literal(cid)
+                    option_xpath_map[key] = f"//input[@id={cid_lit}]/ancestor::td[1]"
+                    options.append(lbl)
+                except Exception:
+                    continue
+
+            if len(options) < 2:
+                continue
+
+            group_key = f"confirmit_wix_rankedorderclick:{group_name}"
+            target_id = make_target_id("group", group_key, question)
+
+            register_target(
+                target_id,
+                {
+                    "kind": "group",
+                    "itype": "checkbox",
+                    "group_key": group_key,
+                    "question": question,
+                    "instruction": instruction,
+                    "options": options,
+                    "option_xpath_map": option_xpath_map,
+                    "frame_chain": frame_chain,
+                    "confirmit_wix_rankedorderclick": True,
+                },
+            )
+
+            log_debug(
+                "[CONFIRMIT_WIX_RANKEDORDERCLICK]",
+                f"group_name={group_name!r} options={len(options)} question={question[:60]!r}",
+            )
+
+            blocks.append({
+                "question": question_for_openai,
+                "itype": "checkbox",
+                "options": options,
+                "max_select": len(options),
+                "min_select": 1,
+                "target_id": target_id,
+                "context": {
+                    "kind": "group",
+                    "group_key": group_key,
+                    "instruction": instruction,
+                    "confirmit_wix_rankedorderclick": True,
+                },
+            })
+
+        except Exception:
+            continue
+
+    if blocks:
+        log_info("[CONFIRMIT_WIX_RANKEDORDERCLICK]", f"blocks_extracted={len(blocks)}")
+    return blocks
+
+
 def _extract_ipsos_slider_question_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
     """IPSOS sliders (bootstrap-slider): extraction DOM-only en blocs exploitables.
 
