@@ -94,6 +94,7 @@ try:
         _extract_single_consent_checkbox_block,
         _extract_consent_modal_radio_block,
         _extract_confirmit_wix_fieldset_radio_block,
+        _extract_confirmit_wix_rankedorderclick_block,
         _extract_runtime_answerrow_radio_blocks,
         _extract_toluna_runtime_ranking_blocks,
         _extract_kantar_rowpicker_radio_blocks,
@@ -194,6 +195,7 @@ except ImportError:
         _extract_single_consent_checkbox_block,
         _extract_consent_modal_radio_block,
         _extract_confirmit_wix_fieldset_radio_block,
+        _extract_confirmit_wix_rankedorderclick_block,
         _extract_runtime_answerrow_radio_blocks,
         _extract_toluna_runtime_ranking_blocks,
         _extract_kantar_rowpicker_radio_blocks,
@@ -1606,6 +1608,17 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         wix_fieldset_blocks = _extract_confirmit_wix_fieldset_radio_block(driver, frame_chain)
         if wix_fieldset_blocks:
             return wix_fieldset_blocks
+    except Exception:
+        pass
+
+    # --- 0h-septies) Confirmit/Wix natif ranked-order-click (layout /wix/2/) ---
+    # Objectif: couvrir les questions de classement séquentiel (RankedOrderClick) où
+    # les inputs sont des checkbox masqués et la td.confirmit-rankedorderclick est la cible de clic.
+    # Gate strict : fieldset.confirmit-rankedorderclick-default + td.confirmit-rankedorderclick.
+    try:
+        wix_rank_blocks = _extract_confirmit_wix_rankedorderclick_block(driver, frame_chain)
+        if wix_rank_blocks:
+            return wix_rank_blocks
     except Exception:
         pass
 
