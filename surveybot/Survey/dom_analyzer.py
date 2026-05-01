@@ -2056,6 +2056,26 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                                 question = _norm(" ".join(texts))
                 except Exception:
                     pass
+            # Pattern screener-style: div.answer > div.options.js-question-options
+            # La question est dans div.question, frère précédent de div.answer.
+            # Guard: présence d'un ancêtre div avec classe js-question-options
+            # dont le parent immédiat est un div avec classe "answer".
+            if not question:
+                try:
+                    q_nodes = els[0].find_elements(
+                        By.XPATH,
+                        "ancestor::div[contains(@class,'js-question-options')][1]"
+                        "/parent::div[contains(@class,'answer')]"
+                        "/preceding-sibling::*[contains(@class,'question')][1]"
+                    )
+                    if q_nodes:
+                        q_txt = _norm(q_nodes[0].text or q_nodes[0].get_attribute("innerText") or "")
+                        if q_txt and _is_question_text(q_txt):
+                            question = q_txt
+                            log_debug("[DOM_CONTEXT]", f"js_question_options_sibling resolved question={question[:60]!r}")
+                except Exception:
+                    pass
+
             if not question:
                 # Fallback: extraction générique via conteneur
                 container = _nearest_question_container(els[0])
