@@ -22,6 +22,7 @@ from typing import List, Dict, Any
 from copy import deepcopy
 import unicodedata
 import re
+from datetime import datetime
 
 try:
     from Survey.dom_selection_rules import (
@@ -399,6 +400,14 @@ def build_system_prompt() -> str:
         "(Homme, Masculin, Male, Man, M, H, etc.) parmi les options proposées. "
         "Utilise EXACTEMENT l'intitulé tel qu'il apparaît dans la liste d'options. "
         "Évite systématiquement: X, Autre, Non-binaire, Préfère ne pas répondre.\n"
+    )
+
+    # Règle : année courante (calculée dynamiquement)
+    lines.append(
+        f"Si la question demande l'ANNÉE COURANTE (ex: 'en quelle année sommes-nous', "
+        f"'what year is it', 'quelle est l'année actuelle / en cours', "
+        f"'current year', 'année en cours'), réponds UNIQUEMENT avec {datetime.now().year} "
+        f"(chiffre brut, sans texte additionnel).\n"
     )
 
     # Contrainte ge / anne de naissance
