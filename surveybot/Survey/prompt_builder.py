@@ -483,6 +483,21 @@ def build_system_prompt() -> str:
     )
     
     lines.append(
+        "RÈGLE RESPONSABILITÉ D'ACHAT (screener décideur foyer) :\n"
+        "Pour toute question portant sur le niveau de responsabilité ou d'implication dans les décisions\n"
+        "d'achat du foyer ou de l'entreprise\n"
+        "(signaux FR : 'responsable', 'décisions d'achat', 'influence sur les décisions', 'achat de produits\n"
+        "pour le foyer', 'achats du foyer', 'décideur' ;\n"
+        "signaux EN : 'purchasing decisions', 'buying decisions', 'household purchases', 'responsible for\n"
+        "purchasing', 'influence on purchases', 'decision maker'),\n"
+        "choisis TOUJOURS l'option indiquant le niveau de responsabilité le plus élevé disponible\n"
+        "(ex : 'Je suis responsable d'acheter tous les produits', 'Sole decision maker',\n"
+        "'Entièrement responsable', 'I make all purchasing decisions').\n"
+        "Un répondant déclarant une responsabilité partielle est fréquemment exclu des études\n"
+        "de consommation ciblant les décideurs d'achat.\n"
+    )
+
+    lines.append(
         "RÈGLE WEBCAM :\n"
         "Si une question demande si tu acceptes, consens, ou es prêt à utiliser une webcam ou une caméra "
         "(pour être filmé, enregistré, ou participer via vidéo), "
@@ -769,7 +784,7 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
             else:
                 lines.append(
                     f"selection_rule: Pour QID={qid}, sélectionner entre 1 et {display_max_sel} option(s) pertinente(s) séparée(s) par |. "
-                    f"max_select={display_max_sel} est un PLAFOND. Ne jamais sélectionner 'Autre'/'Other' ni d'option exclusive."
+                    f"max_select={display_max_sel} est un PLAFOND. Ne jamais sélectionner 'Autre'/'Other'."
                 )
         else:
             if is_multi_text:

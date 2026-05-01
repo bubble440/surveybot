@@ -967,6 +967,8 @@ def _apply_by_target_id(
 
                 cached = path_cache.get(cache_key)
                 if cached:
+                    if cached.get("kind") == "no_runtime_rows":
+                        return False
                     log_debug("[TARGET_DEBUG]", f"toluna_runtime_answerrow cache hit target_id={target_id}")
 
                 try:
@@ -1028,9 +1030,11 @@ def _apply_by_target_id(
                     return False
 
                 if not isinstance(data, dict) or not data.get("ok"):
-                    if cached:
-                        path_cache.pop(cache_key, None)
                     reason = data.get("reason") if isinstance(data, dict) else "invalid_probe_result"
+                    if reason == "no_runtime_rows":
+                        path_cache[cache_key] = {"kind": "no_runtime_rows"}
+                    elif cached:
+                        path_cache.pop(cache_key, None)
                     log_debug("[TARGET_DEBUG]", f"toluna_runtime_answerrow skip reason={reason!r} label={value!r}")
                     return False
 
@@ -1947,7 +1951,15 @@ def _apply_by_target_id(
 
             # --- cas "options map" (radio/checkbox)
             # IMPORTANT: on n'exige pas kind=="group" pour éviter le couplage à la classification (ex: matrix_rows_single_choice)
-            if opt_map and resolved_itype in ("radio", "checkbox"):
+            # Priorité au cache de stratégie checkbox : si une stratégie est déjà connue pour ce
+            # target_id, sauter tout le bloc opt_map (toluna probe + xpath + clicks) et laisser
+            # le dispatch checkbox ci-dessous la réutiliser directement.
+            _skip_opt_map_for_cached_checkbox = (
+                resolved_itype == "checkbox"
+                and bool((target_id or "").strip())
+                and bool(_get_block_strategy_memory(driver).get("checkbox", {}).get((target_id or "").strip()))
+            )
+            if opt_map and resolved_itype in ("radio", "checkbox") and not _skip_opt_map_for_cached_checkbox:
 
                 # Toluna Runtime AnswerRow: chemin DOM custom prioritaire et idempotent.
                 # Évite le faux échec _apply_by_target_id puis fallback legacy checkbox_main
@@ -3174,28 +3186,32 @@ def _apply_by_target_id(
                         log_debug("[TARGET_DEBUG]", f"interview_layout_btn aria-selected not true after click value='{value}'")
                     return False
 
-                log_info("[TARGET]", "toluna_runtime_answerrow: entering block")
-                try:
-                    _toluna_guard = driver.execute_script(
-                        """
-                        const el = arguments[0];
-                        if (!el || !el.closest) return null;
-                        if (!el.closest("[data-aut='Runtime_AnswerRow']")) return null;
-                        const wrapper = el.querySelector("[data-aut='Runtime_Wrapper']");
-                        if (!wrapper) return null;
-                        if (el.querySelector("input[type='checkbox'], input[type='radio']")) return null;
-                        const inner = wrapper.querySelector(
-                            "[data-aut='Runtime_IconBox'], [data-aut='Runtime_InnerFill']"
-                        );
-                        if (!inner) return null;
-                        return { cls: inner.className || '', rowId: el.id || '' };
-                        """,
-                        el,
-                    )
-                except Exception:
-                    _toluna_guard = None
-
-                log_info("[TARGET]", f"toluna_runtime_answerrow: guard={_toluna_guard!r}")
+                _toluna_guard = None
+                _toluna_neg = getattr(driver, "_target_path_cache", {}).get(
+                    f"{target_id}|toluna_runtime_answerrow|checkbox", {}
+                )
+                if not (_toluna_neg and _toluna_neg.get("kind") == "no_runtime_rows"):
+                    log_info("[TARGET]", "toluna_runtime_answerrow: entering block")
+                    try:
+                        _toluna_guard = driver.execute_script(
+                            """
+                            const el = arguments[0];
+                            if (!el || !el.closest) return null;
+                            if (!el.closest("[data-aut='Runtime_AnswerRow']")) return null;
+                            const wrapper = el.querySelector("[data-aut='Runtime_Wrapper']");
+                            if (!wrapper) return null;
+                            if (el.querySelector("input[type='checkbox'], input[type='radio']")) return null;
+                            const inner = wrapper.querySelector(
+                                "[data-aut='Runtime_IconBox'], [data-aut='Runtime_InnerFill']"
+                            );
+                            if (!inner) return null;
+                            return { cls: inner.className || '', rowId: el.id || '' };
+                            """,
+                            el,
+                        )
+                    except Exception:
+                        pass
+                    log_info("[TARGET]", f"toluna_runtime_answerrow: guard={_toluna_guard!r}")
                 if isinstance(_toluna_guard, dict) and _toluna_guard.get("cls") is not None:
                     _toluna_cls_pre = _toluna_guard.get("cls", "")
                     _toluna_row_id = (_toluna_guard.get("rowId") or "").strip()
