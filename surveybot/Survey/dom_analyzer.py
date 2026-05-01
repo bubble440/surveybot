@@ -2594,8 +2594,32 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                 if _norm_lc(b.get_attribute("data-disabled") or "") in ("true", "1"):
                     continue
 
+            # Exclude <tr role="button"> in <thead> (lookup table column headers, not selectable)
+            _b_tag = _norm_lc(getattr(b, "tag_name", "") or "")
+            if _b_tag == "th":
+                continue
+            if _b_tag == "tr":
+                try:
+                    _in_thead = driver.execute_script(
+                        "return arguments[0].closest('thead') !== null;", b
+                    )
+                    if _in_thead:
+                        continue
+                except Exception:
+                    pass
+
             # Texte (pour cardrating, le texte est dans le <li>)
             t = _norm(b.text or b.get_attribute("innerText") or b.get_attribute("value") or "")
+            if _b_tag == "tr":
+                # Voxco lookup table: build label from <td> cells (not raw row text)
+                try:
+                    _tds = b.find_elements(By.CSS_SELECTOR, "td")
+                    _td_texts = [_norm(td.text or td.get_attribute("innerText") or "") for td in _tds]
+                    _td_texts = [x for x in _td_texts if x]
+                    if _td_texts:
+                        t = " | ".join(_td_texts)
+                except Exception:
+                    pass
             if (not t or len(t) < 2) and "sq-cardrating-button" in cls:
                 # Pattern spécifique
                 try:
@@ -2635,14 +2659,52 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             if len(btns) < 2:
                 continue
 
-            # Pattern spécifique
             options: List[str] = []
+            _is_lookup_table = False
+            _lookup_columns: List[str] = []
+            _lookup_rows: List[Dict[str, Any]] = []
+            _btns_are_tr = btns and _norm_lc(getattr(btns[0], "tag_name", "") or "") == "tr"
             for b in btns:
-                tt = _norm(b.text or b.get_attribute("innerText") or b.get_attribute("value") or "")
+                if _btns_are_tr:
+                    try:
+                        _tds = b.find_elements(By.CSS_SELECTOR, "td")
+                        _td_texts = [_norm(td.text or td.get_attribute("innerText") or "") for td in _tds]
+                        tt = " | ".join(x for x in _td_texts if x)
+                    except Exception:
+                        tt = _norm(b.text or b.get_attribute("innerText") or b.get_attribute("value") or "")
+                else:
+                    tt = _norm(b.text or b.get_attribute("innerText") or b.get_attribute("value") or "")
                 if not tt or _is_nav_like_choice(tt):
                     continue
                 if tt not in options:
                     options.append(tt)
+            if _btns_are_tr:
+                # Extract lookup table columns and row metadata from the enclosing <table>
+                try:
+                    _table_el = driver.execute_script(
+                        "return arguments[0].closest('table');", btns[0]
+                    )
+                    if _table_el:
+                        _th_els = _table_el.find_elements(By.CSS_SELECTOR, "thead th")
+                        _lookup_columns = [
+                            _norm(th.text or th.get_attribute("innerText") or "") for th in _th_els
+                        ]
+                        _lookup_columns = [c for c in _lookup_columns if c]
+                        if _lookup_columns:
+                            _is_lookup_table = True
+                            for b in btns:
+                                _row_id = (b.get_attribute("id") or "").strip()
+                                _tds = b.find_elements(By.CSS_SELECTOR, "td")
+                                _row_vals: Dict[str, str] = {}
+                                for i, td in enumerate(_tds):
+                                    if i < len(_lookup_columns):
+                                        _row_vals[_lookup_columns[i]] = _norm(
+                                            td.text or td.get_attribute("innerText") or ""
+                                        )
+                                if _row_vals:
+                                    _lookup_rows.append({"row_id": _row_id, "values": _row_vals})
+                except Exception:
+                    pass
 
             if len(options) < 2:
                 continue
@@ -2764,7 +2826,15 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
 
             option_xpath_map = {}
             for b in btns:
-                lbl = _norm(b.text or b.get_attribute("innerText") or b.get_attribute("value") or "")
+                if _btns_are_tr:
+                    try:
+                        _tds = b.find_elements(By.CSS_SELECTOR, "td")
+                        _td_texts = [_norm(td.text or td.get_attribute("innerText") or "") for td in _tds]
+                        lbl = " | ".join(x for x in _td_texts if x)
+                    except Exception:
+                        lbl = _norm(b.text or b.get_attribute("innerText") or b.get_attribute("value") or "")
+                else:
+                    lbl = _norm(b.text or b.get_attribute("innerText") or b.get_attribute("value") or "")
                 if not lbl or _is_nav_like_choice(lbl):
                     continue
                 xp = _best_xpath_for_element(driver, b)
@@ -2774,17 +2844,25 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             if not option_xpath_map:
                 continue
 
-            register_target(
-                target_id,
-                {
-                    "kind": "group",
-                    "itype": _block_itype,
-                    "group_key": group_key,
-                    "question": question,
-                    "option_xpath_map": option_xpath_map,
-                    "frame_chain": frame_chain,
-                },
-            )
+            _reg_ctx: Dict[str, Any] = {
+                "kind": "group",
+                "itype": _block_itype,
+                "group_key": group_key,
+                "question": question,
+                "option_xpath_map": option_xpath_map,
+                "frame_chain": frame_chain,
+            }
+            if _is_lookup_table:
+                _reg_ctx["lookup_table"] = True
+                _reg_ctx["columns"] = _lookup_columns
+                _reg_ctx["rows"] = _lookup_rows
+            register_target(target_id, _reg_ctx)
+
+            _q_ctx: Dict[str, Any] = {"kind": "group", "group_key": group_key}
+            if _is_lookup_table:
+                _q_ctx["lookup_table"] = True
+                _q_ctx["columns"] = _lookup_columns
+                _q_ctx["rows"] = _lookup_rows
 
             question_blocks.append(
                 {
@@ -2793,7 +2871,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                     "options": options,
                     "max_select": _block_max_select,
                     "target_id": target_id,
-                    "context": {"kind": "group", "group_key": group_key},
+                    "context": _q_ctx,
                 }
             )
         except Exception:
