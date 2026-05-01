@@ -711,7 +711,7 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
         if itype == "checkbox" and opts and len(opts) <= 10:
             _excl_pats = ("autre", "other", "aucun", "aucune", "none", "nsp", "n/a", "je ne sais")
             _n_valid = max(1, sum(1 for o in opts if not any(p in _norm_folded_lc(o) for p in _excl_pats)))
-            display_max_sel = min(max_sel, max(2, _n_valid // 2))
+            display_max_sel = min(max_sel, _n_valid)
         else:
             display_max_sel = min(max_sel, 5) if max_sel > 3 else max_sel
         lines.append(f"max_select: {display_max_sel}")
