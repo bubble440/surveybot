@@ -517,7 +517,10 @@ def run_attach_takeover(driver, *, api_key: str, account_id: str) -> None:
                 from selenium.webdriver.common.by import By
                 _error_els = driver.find_elements(
                     By.XPATH,
-                    "//*[contains(translate(@class,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'errorpage')]",
+                    "//*["
+                    "contains(concat(' ', normalize-space(@class), ' '), ' errorPage ') or "
+                    "contains(concat(' ', normalize-space(@class), ' '), ' errorpage-wrapper ')"
+                    "]",
                 )
                 if _error_els:
                     print(f"[PLATFORM-ERR] Page d'erreur applicative détectée (class~='errorpage') step={i} url={_attach_display_url(driver.current_url)} → sortie boucle.")

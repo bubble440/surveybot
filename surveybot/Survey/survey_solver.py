@@ -635,7 +635,10 @@ def solve_full_survey(driver, api_key, *, account_id: str, survey_context=None):
         try:
             _error_els = driver.find_elements(
                 By.XPATH,
-                "//*[contains(translate(@class,’ABCDEFGHIJKLMNOPQRSTUVWXYZ’,’abcdefghijklmnopqrstuvwxyz’),’errorpage’)]",
+                "//*["
+                "contains(concat(‘ ‘, normalize-space(@class), ‘ ‘), ‘ errorPage ‘) or "
+                "contains(concat(‘ ‘, normalize-space(@class), ‘ ‘), ‘ errorpage-wrapper ‘)"
+                "]",
             )
             if _error_els:
                 log_info("PLATFORM-ERR", "Page d’erreur applicative détectée (class~=’errorpage’) → soft-restart.")

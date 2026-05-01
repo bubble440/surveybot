@@ -3043,6 +3043,139 @@ def _extract_consent_modal_radio_block(driver, frame_chain: list[int] | None) ->
     ]
 
 
+def _extract_confirmit_wix_fieldset_radio_block(driver, frame_chain: list[int] | None) -> list[dict]:
+    """Extraction radio Confirmit/Wix natif (fieldset[id^="fieldset_"] + confirmit-table).
+
+    Cas ciblé : pages Toluna layout /wix/2/ où les options radio sont rendues dans
+    fieldset[id^="fieldset_"] > table.confirmit-table. Les inputs sont CSS
+    position:absolute;top:-9000px — non cliquables via Selenium standard.
+    Le clic doit cibler le <a href="javascript:void(0)"> dans la même <td> que l'input.
+
+    Gate DOM (triple) :
+    - fieldset[id^="fieldset_"] présent
+    - table.confirmit-table dans ce fieldset
+    - au moins 2 input[type="radio"] partageant le même name dans ce fieldset
+
+    Exclusions strictes :
+    - Ne touche pas _extract_consent_modal_radio_block (#modal-container + .consent-form-radiogroup)
+    - Ne touche pas _extract_single_consent_checkbox_block (checkboxes)
+    - Ne touche pas les layouts Forsta/Confirmit modernes (div.cf-question)
+    """
+    frame_chain = list(frame_chain or [])
+
+    try:
+        fieldsets = driver.find_elements(By.CSS_SELECTOR, "fieldset[id^='fieldset_']")
+    except Exception:
+        return []
+    if not fieldsets:
+        return []
+
+    blocks: list[dict] = []
+
+    for fieldset in fieldsets:
+        try:
+            if not fieldset.find_elements(By.CSS_SELECTOR, "table.confirmit-table"):
+                continue
+            radios = fieldset.find_elements(By.CSS_SELECTOR, "input[type='radio']")
+            if len(radios) < 2:
+                continue
+        except Exception:
+            continue
+
+        # Vérifie que tous les radios partagent un même name unique
+        try:
+            names: set[str] = set()
+            for r in radios:
+                n = (r.get_attribute("name") or "").strip()
+                if n:
+                    names.add(n)
+            if len(names) != 1:
+                continue
+            group_name = next(iter(names))
+        except Exception:
+            continue
+
+        # Question depuis div[id="{group_name}_text"]
+        question = ""
+        try:
+            q_els = driver.find_elements(By.CSS_SELECTOR, f"div[id='{group_name}_text']")
+            if q_els:
+                question = _norm(q_els[0].text or q_els[0].get_attribute("innerText") or "")
+        except Exception:
+            pass
+        if not question:
+            try:
+                q_els = driver.find_elements(By.CSS_SELECTOR, "div[id$='_text'].question_text_ng")
+                if q_els:
+                    question = _norm(q_els[0].text or q_els[0].get_attribute("innerText") or "")
+            except Exception:
+                pass
+        if not question:
+            question = group_name
+
+        # Construit options et option_xpath_map (clic sur <a> de la même <td>)
+        options: list[str] = []
+        option_xpath_map: dict[str, str] = {}
+
+        for radio in radios:
+            try:
+                rid = (radio.get_attribute("id") or "").strip()
+                if not rid:
+                    continue
+                label = ""
+                try:
+                    lbl = driver.find_element(By.CSS_SELECTOR, f"label[for='{rid}']")
+                    label = _norm(lbl.text or lbl.get_attribute("innerText") or "")
+                except Exception:
+                    pass
+                if not label:
+                    continue
+                key = _norm_key(label)
+                if key in option_xpath_map:
+                    continue
+                rid_lit = _xpath_literal(rid)
+                option_xpath_map[key] = f"//input[@id={rid_lit}]/ancestor::td[1]//a[1]"
+                options.append(label)
+            except Exception:
+                continue
+
+        if len(options) < 2:
+            continue
+
+        group_key = f"radio:name:{group_name}"
+        target_id = make_target_id("group", group_key, question)
+
+        register_target(
+            target_id,
+            {
+                "kind": "group",
+                "itype": "radio",
+                "group_key": group_key,
+                "question": question,
+                "option_xpath_map": option_xpath_map,
+                "frame_chain": frame_chain,
+                "confirmit_wix_fieldset_radio": True,
+            },
+        )
+
+        log_debug("[CONFIRMIT_WIX_FIELDSET]", f"detected group_name={group_name} options={len(options)}")
+
+        blocks.append({
+            "question": question,
+            "itype": "radio",
+            "options": options,
+            "max_select": _compute_max_select("radio", options),
+            "target_id": target_id,
+            "context": {
+                "kind": "group",
+                "group_key": group_key,
+                "confirmit_wix_fieldset_radio": True,
+            },
+        })
+
+    return blocks
+
+
 def _extract_ipsos_slider_question_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
     """IPSOS sliders (bootstrap-slider): extraction DOM-only en blocs exploitables.
 
