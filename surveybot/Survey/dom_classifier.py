@@ -235,7 +235,26 @@ def _is_formal_survey_question_page(driver) -> bool:
                 const radios = qBody.querySelectorAll('input[type="radio"], input[type="checkbox"], [role="radio"], [role="checkbox"]');
                 if (radios.length >= 2) return true;
             }
-            
+
+            // --- Toluna / Confirmit Wix natif (/wix/2/) ---
+            // Guard strict : fieldset[id^="fieldset_"] + table.confirmit-table + radios cq* + labels textuels
+            const wixFieldset = document.querySelector('fieldset[id^="fieldset_"]');
+            if (wixFieldset && wixFieldset.querySelector('table.confirmit-table')) {
+                const wixRadios = wixFieldset.querySelectorAll('input[type="radio"]');
+                if (wixRadios.length >= 2) {
+                    let wixTextLabels = 0;
+                    for (const r of wixRadios) {
+                        if (!r.id) continue;
+                        const lab = wixFieldset.querySelector(
+                            `td.answer_label_ng label[for="${r.id}"],` +
+                            `td.alternating_answer_label_ng label[for="${r.id}"]`
+                        );
+                        if (lab && (lab.innerText || '').trim().length > 0) wixTextLabels++;
+                    }
+                    if (wixTextLabels >= 2) return true;
+                }
+            }
+
             return false;
         """))
     except Exception:

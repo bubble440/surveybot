@@ -437,3 +437,43 @@ Contexte patch :
   Cause racine : `div.options.js-question-options` matché à tort comme conteneur de question
   (token "question" dans le nom de classe CSS). Structure frère div.question / div.answer
   non gérée par le chemin générique. Extraction validée : question_blocks.json correct.
+
+## `_extract_confirmit_wix_fieldset_radio_block`
+**Fichier :** `dom_extractors_misc.py`
+**Enregistré dans :** `dom_analyzer.py` step `0h-sexies` (pipelines standard et fallback)
+
+**Patterns couverts :**
+- Layout Toluna/Confirmit natif (`/wix/2/` URL pattern)
+- `fieldset[id^="fieldset_"]` contenant une `confirmit-table`
+- Inputs `input[type="radio"]` masqués (`position:absolute; top:-9000px`), non interactables via Selenium standard
+- Question : `div[id$="_text"].question_text_ng` (ou class `statementfontdesktoplayout2014`)
+- Labels : `td.answer_label_ng label[for=<radio_id>]` ou `td.alternating_answer_label_ng label[for=<radio_id>]`
+- Clic ciblé sur le `<a href="javascript:void(0)">` ou `<img>` dans la même `<td>` que l'input (pas l'input lui-même)
+
+**Patterns exclus :**
+- Layouts Confirmit modernes (`cf-question`, `cf-question--single`, `cf-question--ranking`)
+- Modals de consentement (`#modal-container`, `.consent-form-radiogroup`) → `_extract_consent_modal_radio_block`
+- Checkboxes de consentement → `_extract_single_consent_checkbox_block`
+
+**itype produit :** `radio`
+
+## `_extract_confirmit_wix_fieldset_radio_block`
+**Fichier :** `dom_extractors_misc.py`
+**Enregistré dans :** `dom_analyzer.py` step `0h-sexies` (pipelines standard et fallback)
+
+**Patterns couverts :**
+- Layout Toluna/Confirmit natif (`/wix/2/` URL pattern)
+- `fieldset[id^="fieldset_"]` contenant une `table.confirmit-table`
+- Inputs `input[type="radio"]` masqués (`position:absolute; top:-9000px`), non interactables via Selenium standard
+- Question : `div[id$="_text"].question_text_ng` (ou class `statementfontdesktoplayout2014`)
+- Labels : `td.answer_label_ng label[for=<radio_id>]` ou `td.alternating_answer_label_ng label[for=<radio_id>]`
+- Clic ciblé sur le `<a href="javascript:void(0)">` dans la même `<td>` que l'input (XPath : `//input[@id=...]/ancestor::td[1]//a[1]`)
+
+**Troncature labels :** `_LABEL_MAX = 80` — les labels DOM sont tronqués à 80 caractères avant d'être stockés dans `options` et comme clés d'`option_xpath_map`. Garantit la correspondance exacte même quand le LLM abrège un label long dans sa réponse.
+
+**Patterns exclus :**
+- Layouts Confirmit modernes (`cf-question`, `cf-question--single`, `cf-question--ranking`)
+- Modals de consentement (`#modal-container`, `.consent-form-radiogroup`) → `_extract_consent_modal_radio_block`
+- Checkboxes de consentement → `_extract_single_consent_checkbox_block`
+
+**itype produit :** `radio`

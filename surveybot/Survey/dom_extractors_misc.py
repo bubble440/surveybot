@@ -3114,6 +3114,10 @@ def _extract_confirmit_wix_fieldset_radio_block(driver, frame_chain: list[int] |
             question = group_name
 
         # Construit options et option_xpath_map (clic sur <a> de la même <td>)
+        # Les labels peuvent dépasser 100 chars ; on les tronque à 80 pour que la clé
+        # de lookup et la valeur envoyée au LLM soient à la même longueur maximale,
+        # rendant la correspondance exacte même si le LLM abrège un label long.
+        _LABEL_MAX = 80
         options: list[str] = []
         option_xpath_map: dict[str, str] = {}
 
@@ -3130,6 +3134,7 @@ def _extract_confirmit_wix_fieldset_radio_block(driver, frame_chain: list[int] |
                     pass
                 if not label:
                     continue
+                label = label[:_LABEL_MAX]
                 key = _norm_key(label)
                 if key in option_xpath_map:
                     continue
