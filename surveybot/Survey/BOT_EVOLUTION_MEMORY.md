@@ -477,3 +477,30 @@ Contexte patch :
 - Checkboxes de consentement → `_extract_single_consent_checkbox_block`
 
 **itype produit :** `radio`
+
+---
+
+### _extract_table_matrix_radio_rows — fallback matrix_question Toluna/Confirmit natif
+Fichier : Survey/dom_extractors_misc.py
+Patterns couverts par le fallback (additif, après lignes 1479–1490) :
+- Layout Toluna/Confirmit natif (/wix/2/) avec table.confirmit-grid imbriquée dans
+  des tables conteneurs (class widthpartdesktoplayout2014, contentdesktoplayout2014, etc.)
+- _find_question_text_near_element échoue ou retourne le texte d'instruction
+  (div.instruction_text) car la table courante est un conteneur externe, pas la grille
+- Détection : table_cls contient "confirmit-grid" OU table.find_elements("table.confirmit-grid")
+  retourne un résultat → flag _is_confirmit=True
+- Si _is_confirmit : recherche driver.find_elements("div.question_text_ng"), premier
+  résultat non vide, tronqué à 500 caractères → écrase matrix_question quelle que soit
+  sa valeur précédente (couvre aussi le cas où _find_question_text_near_element a retourné
+  un texte d'instruction au lieu du texte de question)
+Patterns exclus :
+- Layouts sans table.confirmit-grid → chemin existant inchangé
+- Matrices Askia, SGE, IntelliSurvey, Encuesta → guards distincts, non affectés
+Contexte patch :
+- [2026-05] Trois itérations. Échec 1 : guard "confirmit-grid" in table_cls ne s'activait
+  pas car la table traitée était le conteneur externe (pas la grille elle-même).
+  Échec 2 : troncature 300 chars coupait le texte à 2 chars de la fin (texte = 302 chars)
+  + fallback ne s'activait pas quand matrix_question contenait un texte d'instruction
+  (non vide mais incorrect). Fix final : détection _is_confirmit via find_elements sur
+  la table courante, écrasement inconditionnel de matrix_question si _is_confirmit,
+  troncature portée à 500.
