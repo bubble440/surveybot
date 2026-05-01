@@ -1489,6 +1489,24 @@ def _extract_table_matrix_radio_rows(driver, frame_chain: list[int] | None) -> l
                 except Exception:
                     pass
 
+            _is_confirmit = "confirmit-grid" in table_cls
+            if not _is_confirmit:
+                try:
+                    _is_confirmit = bool(table.find_elements(By.CSS_SELECTOR, "table.confirmit-grid"))
+                except Exception:
+                    pass
+            if _is_confirmit:
+                try:
+                    els = driver.find_elements(By.CSS_SELECTOR, "div.question_text_ng")
+                    for el in els:
+                        txt = _norm(el.text or el.get_attribute("innerText") or "")
+                        if txt:
+                            matrix_question = txt[:500]
+                            log_debug("TABLE_MATRIX", f"confirmit_text_ng matrix_question={matrix_question[:60]!r}")
+                            break
+                except Exception:
+                    pass
+
             if sge_like_matrix:
                 first = row_candidates[0]
                 row_count = len(row_candidates)
