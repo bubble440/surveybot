@@ -173,7 +173,7 @@ def swagbucks_zip_patch(driver, value: str) -> bool:
 # FONCTION PRINCIPALE DE SAISIE TEXTE
 # =============================================================================
 
-def fill_text_input(driver, text: str, context_hint: str | None = None) -> bool:
+def fill_text_input(driver, text: str, context_hint: str | None = None, element_id: str | None = None) -> bool:
     """
     Saisie fiable dans input/textarea/contenteditable :
     - scroll+focus
@@ -313,6 +313,15 @@ def fill_text_input(driver, text: str, context_hint: str | None = None) -> bool:
                             raw = "0" + raw
                     set_input_value_with_events(driver, el, raw if raw else lbl)
                     return True
+
+    if field is None and element_id:
+        try:
+            field = driver.find_element(By.ID, element_id)
+        except Exception:
+            try:
+                field = driver.find_element(By.NAME, element_id)
+            except Exception:
+                pass
 
     if field is None:
         field = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, selector)))

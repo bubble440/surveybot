@@ -597,3 +597,61 @@ Contexte patch :
 | Confirmit | _extract_confirmit_cf_ranking_blocks | _extract_confirmit_cf_single_choice_blocks / _cf_numeric_list / _cf_open_list | class `cf-question--ranking` sur le div parent |
 | Toluna/Confirmit wix natif | _extract_confirmit_wix_rankedorderclick_block | _extract_confirmit_wix_fieldset_radio_block | classe fieldset : confirmit-rankedorderclick-default présente ou absente |
 ---
+
+## PLATEFORME : TOLUNA / CONFIRMIT WIX NATIF — INPUT TEXT NUMÉRIQUE (SUITE)
+
+### fill_text_input — paramètre element_id pour résolution directe par id/name
+Fichier : Survey/input_text.py
+Emplacement : signature `fill_text_input(driver, text, context_hint=None, element_id=None)`,
+  bloc de résolution du champ, avant le fallback `WebDriverWait` générique.
+Guard d'activation : `field is None and element_id`
+Patterns couverts :
+- Champ texte Toluna/Confirmit wix natif (`input[type="text"]`, ex: `id="progRH1"`)
+  pour lequel `find_context_container` ne trouve pas de scope (DOM layout tabulaire générique
+  sans `cf-question*` ni attribut data ciblable).
+- `element_id` transmis depuis `action_dispatcher.py` via `target_payload["context"]["id"]`
+  (clé `"id"` du context extrait par le DOM analyzer).
+- Résolution : `By.ID` en priorité, fallback `By.NAME` si introuvable par id.
+- Le `WebDriverWait` générique n'est tenté qu'après (guard `field is None` toujours présent).
+Patterns exclus :
+- Champs avec scope résolu par `find_context_container` → `element_id` inutilisé.
+- Champs Swagbucks, PureSpectrum captcha, date-triplet → chemins dédiés inchangés.
+Contexte patch :
+- [2026-05] Fix : `fill_text_input` résolvait le champ via `WebDriverWait` générique
+  quand `find_context_container` retournait `None` (scope absent sur layout Toluna/Confirmit
+  `/wix/2/` avec tables imbriquées). Risque de cibler un champ incorrect.
+  Correction : ajout du paramètre `element_id`; `action_dispatcher.py` l'alimente via
+  `target_payload["context"]["id"]` avant de passer à `fill_text_input`.
+
+### execute_action — passage de context.id à fill_text_input via element_id
+Fichier : Survey/action_dispatcher.py
+Emplacement : branche `itype in ("text", "number")`, immédiatement avant l'appel `_try("text_input", ...)`.
+Guard d'activation : `target_payload` présent ET `target_payload["context"]["id"]` non vide.
+Patterns couverts :
+- Lecture de `_field_id = target_payload.get("context", {}).get("id", "").strip() or None`
+- Passage de `_field_id` à `fill_text_input(..., element_id=_field_id)` via closure
+  `lambda fid=_field_id: ...` (évite capture tardive de la variable).
+Patterns exclus :
+- itype hors ("text", "number") → bloc non atteint.
+- target_payload absent ou context["id"] vide → `_field_id = None`, comportement inchangé.
+Contexte patch :
+- [2026-05] Additionnel au fix fill_text_input/element_id. Minimal, une seule ligne de lecture
+  + transmission. Pas de modification du format de la réponse parser ni du DOM_REGISTRY.
+
+### build_batch_prompt — règle année courante dynamique
+Fichier : Survey/prompt_builder.py
+Emplacement : section règles dates/années du system prompt, avant les règles naissance/âge.
+Guard d'activation : toujours injecté (règle statique dans le prompt, valeur calculée au runtime).
+Patterns couverts :
+- Questions demandant l'année en cours : "en quelle année sommes-nous",
+  "what year is it", "quelle est l'année actuelle / en cours", "current year", "année en cours".
+- Valeur injectée : `datetime.now().year` (calculé au moment de la construction du prompt).
+- Format de réponse attendu : entier 4 chiffres uniquement, pas de phrase.
+Patterns exclus :
+- Questions demandant l'année de naissance → règle distincte (birth year) inchangée.
+- Questions d'âge avec options fermées → règle distincte inchangée.
+Contexte patch :
+- [2026-05] Fix : GPT retournait 2023 (année de training) sur "En quelle année sommes-nous ?"
+  car aucune règle ne couvrait les questions sur l'année courante (distincte de l'année de
+  naissance). La règle naissance existante n'activait pas sur cette formulation.
+  Correction : injection dynamique de `datetime.now().year` dans le system prompt.
