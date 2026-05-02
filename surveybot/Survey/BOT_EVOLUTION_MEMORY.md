@@ -395,6 +395,33 @@ Patterns exclus :
 
 ---
 
+### _extract_confirmit_wix_checkbox_grid_blocks
+Fichier : Survey/dom_extractors_misc.py
+Enregistré dans : dom_analyzer.py (step dédié)
+Guard (triple) : `fieldset[id^="fieldset_"]` + `table.confirmit-grid` dans ce fieldset + ≥2 `th.grid_scale_ng`
+Patterns couverts :
+- Colonnes : `th.grid_scale_ng` — label via `childNodes[nodeType=3]` JS direct (exclut `div[style*="display:none"]`)
+- Lignes : `tbody tr` contenant `td.grid_answer_input` ou `td.grid_alternating_answer_input`
+- Facteur (label ligne) : `th.grid_answer_label_ng` ou `th.grid_alternating_answer_label_ng`, même technique JS direct
+- `rowIdx` extrait du `name` du premier `input[type=checkbox]` : pattern `x{col}_{row}`
+- 1 bloc par ligne visible (rowIdx ≠ 98) ; `question = {global} {instruction} - {facteur}` ; options = col_labels
+- `option_xpath_map` scopé par `input[@id]` : `//input[@id={cb_id}]/ancestor::td[1]` — un XPath par colonne
+- Flag payload : `confirmit_wix_checkbox_grid=True` ; `group_key : confirmit_checkbox_grid:row:{rowIdx}`
+Patterns exclus :
+- `table.confirmit-table` → _extract_confirmit_wix_fieldset_radio_block
+- fieldset avec `confirmit-rankedorderclick-default` → _extract_confirmit_wix_rankedorderclick_block
+- rowIdx=98 ("Autre") → laissé au bloc text extrait ailleurs
+
+### _apply_by_target_id — exclusion _skip_opt_map_for_cached_checkbox pour confirmit_wix_checkbox_grid
+Fichier : Survey/action_dispatcher.py
+Emplacement : calcul de `_skip_opt_map_for_cached_checkbox`, bloc `# --- cas "options map" (radio/checkbox)`.
+Guard : condition `_skip_opt_map_for_cached_checkbox` ajoute `and not payload.get("confirmit_wix_checkbox_grid")`
+Problème résolu : sans ce guard, dès que `checkbox_main` réussit sur la première option d'un bloc (E.leclerc — première occurrence dans le DOM), le cache l'enregistre sous `target_id`. Pour les options suivantes du même bloc et pour toutes les lignes suivantes, `_skip_opt_map_for_cached_checkbox=True` bypassait l'`option_xpath_map`, forçant `checkbox_main` à chercher le label en pleine page → fausse correspondance sur la première occurrence déjà cochée → `ok=True` silencieux, case non cochée.
+Correction : `confirmit_wix_checkbox_grid` doit toujours passer par l'`option_xpath_map` (XPath scopé par `input[@id]`), jamais par `checkbox_main` seul.
+Patterns exclus :
+- Tous blocs checkbox sans `confirmit_wix_checkbox_grid` → comportement cache inchangé
+
+
 ## FRONTIÈRES INTER-EXTRACTEURS
 
 | Plateforme | Extracteur A | Extracteur B | Signal de discrimination |
@@ -403,4 +430,5 @@ Patterns exclus :
 | Askia | askia_responsive_table_checkbox (dispatcher) | chemin générique opt_map | flag `askia_responsive_table_checkbox` dans le payload |
 | Confirmit | _extract_confirmit_cf_ranking_blocks | _extract_confirmit_cf_single/numeric/open | class `cf-question--ranking` sur le div parent |
 | Toluna/Confirmit wix | _extract_confirmit_wix_rankedorderclick_block | _extract_confirmit_wix_fieldset_radio_block | classe `confirmit-rankedorderclick-default` présente ou absente sur le fieldset |
+| Toluna/Confirmit wix | _extract_confirmit_wix_checkbox_grid_blocks | _extract_confirmit_wix_fieldset_radio_block | `table.confirmit-grid` présente dans le fieldset (vs `table.confirmit-table`) |
 | Kantar mrIWeb | _extract_kantar_rowpicker_radio_blocks | extracteur générique radio | flag `kantar_rowpicker_radio` dans le payload + guard dispatcher avant `_find_best_visible` |
