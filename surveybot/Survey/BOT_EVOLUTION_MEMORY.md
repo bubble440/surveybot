@@ -236,18 +236,22 @@ Signature DOM : form action `/wix/2/`, `fieldset[id^="fieldset_"]` contenant `ta
 ### _extract_confirmit_wix_fieldset_radio_block
 Fichier : Survey/dom_extractors_misc.py
 Enregistré dans : `dom_analyzer.py` step `0h-sexies`
-Guard : `fieldset[id^="fieldset_"]` contenant `table.confirmit-table` avec `input[type="radio"]`
+Guard : `fieldset[id^="fieldset_"]` + `table.confirmit-table` — 3 variantes selon les inputs présents :
+- ≥2 `input[type="radio"]` même `name` → itype=radio
+- 0 radio + ≥2 `input[type="checkbox"]` → itype=checkbox (pure-checkbox multi-select, ex. Toluna /wix/2/)
+- 1 `radio[issinglepunch="true"]` + ≥2 checkboxes → itype=checkbox (mixte)
 Patterns couverts :
-- Inputs radio masqués (`position:absolute; top:-9000px`) — non interactables via Selenium standard
-- Question : `div[id$="_text"].question_text_ng` (ou class `statementfontdesktoplayout2014`)
-- Labels : `td.answer_label_ng label[for=<radio_id>]` ou `td.alternating_answer_label_ng label[for=<radio_id>]`
-- Clic : `<a href="javascript:void(0)">` dans la même `<td>` que l'input (XPath : `//input[@id=...]/ancestor::td[1]//a[1]`)
-- Labels tronqués à 80 chars (`_LABEL_MAX=80`) pour garantir la correspondance même si le LLM abrège
+- Inputs masqués (`position:absolute; top:-9000px`) — non interactables via Selenium standard
+- Question : `div[id="{gname}_text"]` puis `div[id$="_text"].question_text_ng` (fallback)
+- Clic : `<a href="javascript:void(0)">` dans la même `<td>` (XPath : `//input[@id=...]/ancestor::td[1]//a[1]`)
+- Labels tronqués à 80 chars (`_LABEL_MAX=80`)
+- Flag payload : `confirmit_wix_fieldset_radio=True`
 Patterns exclus :
 - Layouts Confirmit modernes (`cf-question--*`) → extracteurs cf_*
 - Modals consentement (`#modal-container`, `.consent-form-radiogroup`) → `_extract_consent_modal_radio_block`
 - Checkboxes consentement → `_extract_single_consent_checkbox_block`
 - fieldset avec classe `confirmit-rankedorderclick-default` → `_extract_confirmit_wix_rankedorderclick_block`
+- `table.confirmit-grid` dans le fieldset → `_extract_confirmit_wix_checkbox_grid_blocks`
 
 ### _extract_confirmit_wix_rankedorderclick_block
 Fichier : Survey/dom_extractors_misc.py
@@ -412,14 +416,24 @@ Patterns exclus :
 - fieldset avec `confirmit-rankedorderclick-default` → _extract_confirmit_wix_rankedorderclick_block
 - rowIdx=98 ("Autre") → laissé au bloc text extrait ailleurs
 
-### _apply_by_target_id — exclusion _skip_opt_map_for_cached_checkbox pour confirmit_wix_checkbox_grid
+### _apply_by_target_id — exclusion _skip_opt_map_for_cached_checkbox pour confirmit_wix_checkbox_grid et confirmit_wix_fieldset_radio
 Fichier : Survey/action_dispatcher.py
 Emplacement : calcul de `_skip_opt_map_for_cached_checkbox`, bloc `# --- cas "options map" (radio/checkbox)`.
-Guard : condition `_skip_opt_map_for_cached_checkbox` ajoute `and not payload.get("confirmit_wix_checkbox_grid")`
-Problème résolu : sans ce guard, dès que `checkbox_main` réussit sur la première option d'un bloc (E.leclerc — première occurrence dans le DOM), le cache l'enregistre sous `target_id`. Pour les options suivantes du même bloc et pour toutes les lignes suivantes, `_skip_opt_map_for_cached_checkbox=True` bypassait l'`option_xpath_map`, forçant `checkbox_main` à chercher le label en pleine page → fausse correspondance sur la première occurrence déjà cochée → `ok=True` silencieux, case non cochée.
-Correction : `confirmit_wix_checkbox_grid` doit toujours passer par l'`option_xpath_map` (XPath scopé par `input[@id]`), jamais par `checkbox_main` seul.
+Guard : `and not payload.get("confirmit_wix_checkbox_grid") and not payload.get("confirmit_wix_fieldset_radio")`
+Problème résolu : sans ce guard, dès que `checkbox_main` réussit sur la première option, le cache l'enregistre sous `target_id`. Pour les options suivantes, `_skip_opt_map_for_cached_checkbox=True` bypasse l'`option_xpath_map` → `checkbox_main` cherche le label en pleine page sur des labels tronqués → fausse correspondance ou échec.
+Correction : ces blocs doivent toujours passer par `option_xpath_map` (XPath scopé par `input[@id]`).
 Patterns exclus :
-- Tous blocs checkbox sans `confirmit_wix_checkbox_grid` → comportement cache inchangé
+- Tous blocs checkbox sans ces flags → comportement cache inchangé
+
+### _apply_by_target_id — vérification post-clic img src pour confirmit_wix_fieldset_radio checkbox
+Fichier : Survey/action_dispatcher.py
+Emplacement : dans le chemin XPath opt_map, juste avant `return False` final (après `_wait_checked` et `_ipsos_slider_value_matches`).
+Guard : `payload.get("confirmit_wix_fieldset_radio") and resolved_itype == "checkbox"`
+Problème résolu : `el` est un `<a href="javascript:void(0)">` ; l'input est un **sibling** dans la même `<td>`, pas un descendant → `_first_input_under(el)` retourne None → `inp_id=None` → `_wait_checked(None, None)` → False. De plus, cliquer le `<a>` ne met pas `input.checked=true` (YUI image-buttons) → vérification `e.checked` toujours False.
+Correction : après le clic, vérifier `el.find_element(By.XPATH, './/img[1]')` — src passe de `check_up.png` à `check_down.png` quand la case est cochée.
+Patterns exclus :
+- Radios Toluna wix (même flag, mais itype=radio) → chemin radio distinct, `_wait_checked` fonctionne sur `input[name]:checked`
+- Tout payload sans `confirmit_wix_fieldset_radio`
 
 
 ## FRONTIÈRES INTER-EXTRACTEURS
@@ -431,4 +445,5 @@ Patterns exclus :
 | Confirmit | _extract_confirmit_cf_ranking_blocks | _extract_confirmit_cf_single/numeric/open | class `cf-question--ranking` sur le div parent |
 | Toluna/Confirmit wix | _extract_confirmit_wix_rankedorderclick_block | _extract_confirmit_wix_fieldset_radio_block | classe `confirmit-rankedorderclick-default` présente ou absente sur le fieldset |
 | Toluna/Confirmit wix | _extract_confirmit_wix_checkbox_grid_blocks | _extract_confirmit_wix_fieldset_radio_block | `table.confirmit-grid` présente dans le fieldset (vs `table.confirmit-table`) |
+| Toluna/Confirmit wix | _extract_confirmit_wix_fieldset_radio_block (pure-checkbox) | _extract_confirmit_wix_fieldset_radio_block (radio) | 0 radio + ≥2 checkboxes dans `table.confirmit-table` → itype=checkbox ; ≥2 radios → itype=radio |
 | Kantar mrIWeb | _extract_kantar_rowpicker_radio_blocks | extracteur générique radio | flag `kantar_rowpicker_radio` dans le payload + guard dispatcher avant `_find_best_visible` |
