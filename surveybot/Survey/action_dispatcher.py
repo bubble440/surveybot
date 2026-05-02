@@ -1958,6 +1958,7 @@ def _apply_by_target_id(
                 resolved_itype == "checkbox"
                 and bool((target_id or "").strip())
                 and bool(_get_block_strategy_memory(driver).get("checkbox", {}).get((target_id or "").strip()))
+                and not payload.get("confirmit_wix_checkbox_grid")
             )
             if opt_map and resolved_itype in ("radio", "checkbox") and not _skip_opt_map_for_cached_checkbox:
 
