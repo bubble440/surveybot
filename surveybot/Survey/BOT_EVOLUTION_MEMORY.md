@@ -254,6 +254,20 @@ Patterns exclus :
   (couvre aussi le cas pure-checkbox 0 radio + ≥2 checkboxes avec `td.confirmit-rankedorderclick`)
 - `table.confirmit-grid` dans le fieldset → `_extract_confirmit_wix_checkbox_grid_blocks`
 
+### _apply_by_target_id — cache de stratégie gagnante (_cm_strategy_cache)
+Fichier : Survey/action_dispatcher.py
+Emplacement : bloc `toluna_runtime_answerrow` dans `_click_candidate`, avant la séquence de fallbacks.
+Guard : `cm_key` présent dans `_cm_strategy_cache` (dict module-level, clé = identifiant de structure DOM, ex: `"cmix_simple_grid"`)
+Patterns couverts :
+- Grilles Toluna cmix_simple_grid (12 lignes, mêmes colonnes) : la première stratégie qui réussit
+  est mémorisée sous `cm_key` ; les lignes suivantes sautent directement à `skip_to=N`
+- Clé de cache : `cm_key` extrait du `group_key` du payload (ex: `cmix_simple_grid:name:62212050` → clé `cmix_simple_grid`)
+- Cache reset : à chaque nouvelle page (appelé depuis survey_executor au début d'un nouveau step)
+- Log au skip : `[TARGET_DEBUG] _click_candidate: skip_to={N} cm_key='{cm_key}'`
+Patterns exclus :
+- Blocs sans `cm_key` → séquence complète inchangée
+- Structures avec un seul item (cache inutile) → skip_to=0, comportement identique à avant
+
 ### _extract_confirmit_wix_rankedorderclick_block
 Fichier : Survey/dom_extractors_misc.py
 Guard : `fieldset[id^="fieldset_"].confirmit-rankedorderclick-default`
