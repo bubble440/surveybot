@@ -642,6 +642,110 @@ def fallback_click_radio_js_generic(driver, target_text: str) -> bool:
 
 
 # =============================================================================
+# KANTAR / mrIWeb ROWPICKER RADIO
+# =============================================================================
+
+def click_kantar_rowpicker_radio(driver, label: str) -> bool:
+    """
+    Kantar/mrIWeb _rowpicker (React overlay, div[id^='container_']).
+
+    Guard DOM strict: div[id^='container_'] [data-test='main-contain']._rowpicker
+    Cible le div[tabindex='0'][style*='inset'] overlay de la carte correspondant au label.
+    Vérifie l'input[type=radio] natif de la couche classique (label[for]).
+
+    Non-régression: guard exclu pour div[id^='sq-QARTS-container-'] (Decipher/LifePoints).
+    """
+    _JS_FIND = r"""
+    const norm = s => (s || '')
+      .toLowerCase().normalize('NFKC')
+      .replace(/ /g, ' ')
+      .replace(/[»«“”"'‘’›→·•:]/g, '')
+      .replace(/\s+/g, ' ').trim();
+    const needle = norm(arguments[0]);
+    if (!needle) return null;
+
+    const pickers = Array.from(document.querySelectorAll(
+      "div[id^='container_'] [data-test='main-contain']._rowpicker"
+    ));
+    if (!pickers.length) return null;
+
+    for (const picker of pickers) {
+      for (const lab of Array.from(picker.querySelectorAll('label'))) {
+        const txt = norm(lab.innerText || lab.textContent || '');
+        if (!txt || !(txt === needle || txt.includes(needle) || needle.includes(txt))) continue;
+
+        // Remonter au conteneur flex direct parent de l'overlay (div[dir="ltr"] le plus proche)
+        const cardContainer = lab.closest('div[dir="ltr"]');
+        if (!cardContainer) continue;
+
+        const overlay = cardContainer.querySelector('div[tabindex="0"]');
+        if (!overlay) continue;
+
+        // Vérifier que c'est bien l'overlay interactif (cursor dans le style inline)
+        const st = overlay.getAttribute('style') || '';
+        if (!st.includes('cursor')) continue;
+
+        try { overlay.scrollIntoView({block: 'center', inline: 'center'}); } catch(e) {}
+        return overlay;
+      }
+    }
+    return null;
+    """
+
+    _JS_VERIFY = r"""
+    const norm = s => (s || '')
+      .toLowerCase().normalize('NFKC')
+      .replace(/ /g, ' ')
+      .replace(/[»«“”‘’›→·•:]/g, '')
+      .replace(/\s+/g, ' ').trim();
+    const needle = norm(arguments[0]);
+    const pickers = Array.from(document.querySelectorAll(
+      "div[id^='container_'] [data-test='main-contain']._rowpicker"
+    ));
+    for (const picker of pickers) {
+      for (const lab of Array.from(picker.querySelectorAll('label'))) {
+        const txt = norm(lab.innerText || lab.textContent || '');
+        if (!txt || !(txt === needle || txt.includes(needle) || needle.includes(txt))) continue;
+        const card = lab.closest('div[dir="ltr"]');
+        if (!card) continue;
+        const transDiv = card.querySelector('div[style*="transition: background-color"]');
+        if (!transDiv) continue;
+        const bg = transDiv.style.backgroundColor || window.getComputedStyle(transDiv).backgroundColor;
+        return !!(bg && bg !== 'rgb(255, 255, 255)' && bg !== 'rgba(255, 255, 255, 1)' && bg !== '');
+      }
+    }
+    return false;
+    """
+
+    try:
+        overlay = driver.execute_script(_JS_FIND, label)
+    except Exception:
+        return False
+
+    if overlay is None:
+        return False
+
+    try:
+        overlay.click()
+    except Exception:
+        try:
+            ActionChains(driver).move_to_element(overlay).click().perform()
+        except Exception:
+            log_debug("[TARGET_DEBUG]", f"kantar_rowpicker: overlay_click_failed label={label!r}")
+            return False
+
+    time.sleep(0.15)
+
+    try:
+        ok = bool(driver.execute_script(_JS_VERIFY, label))
+    except Exception:
+        ok = False
+
+    log_debug("[TARGET_DEBUG]", f"kantar_rowpicker: native_verify={'ok' if ok else 'ko'} label={label!r}")
+    return ok
+
+
+# =============================================================================
 # FONCTION PRINCIPALE CLICK_RADIO_BY_LABEL
 # =============================================================================
 
@@ -669,6 +773,14 @@ def click_radio_by_label(driver, label: str, context_hint: str | None = None) ->
     # ET div.hidden.answers avec inputs natifs (size=0, non-interactables directement).
     try:
         if click_qarts_widget_by_label(driver, label):
+            return True
+    except Exception:
+        pass
+
+    # Kantar/mrIWeb _rowpicker (React overlay, div[id^="container_"]).
+    # Guard DOM strict : div[id^='container_'] [data-test='main-contain']._rowpicker
+    try:
+        if click_kantar_rowpicker_radio(driver, label):
             return True
     except Exception:
         pass

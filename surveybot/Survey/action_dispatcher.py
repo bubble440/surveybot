@@ -1967,6 +1967,19 @@ def _apply_by_target_id(
                 if _apply_toluna_runtime_answerrow_cached():
                     return True
 
+                # Kantar/mrIWeb rowpicker radio : inputs natifs dans div.questionContainer[display:none]
+                # ne sont jamais interactables — _find_best_visible retourne l'input caché (fallback)
+                # et _click_candidate échoue avec ElementNotInteractableException.
+                # Bypass total du chemin XPath/_find_best_visible ; flag posé par _extract_kantar_rowpicker_radio_blocks.
+                if payload.get("kantar_rowpicker_radio") and resolved_itype == "radio":
+                    from Survey.input_radio import click_kantar_rowpicker_radio
+                    _rp_ok = click_kantar_rowpicker_radio(driver, value)
+                    log_debug(
+                        "[TARGET_DEBUG]",
+                        f"kantar_rowpicker_radio_dispatch: {'ok' if _rp_ok else 'ko'} value={value!r}",
+                    )
+                    return bool(_rp_ok)
+
                 # 1) lookup direct
                 xp = opt_map.get(v_norm) or (opt_map.get(v_fold) if v_fold else None)
 
@@ -2448,6 +2461,38 @@ def _apply_by_target_id(
                 try:
                     el = _find_best_visible(xp)
                     if not el:
+                        # Kantar/mrIWeb rowpicker radio : el non résolu (XPath dans display:none).
+                        # Guard document-level : input[class*="mrSingle"][questionname] masqué
+                        # ET div#container_{qname}[data-test="main-contain"]._rowpicker présent.
+                        if resolved_itype == "radio":
+                            try:
+                                _kantar_rp_qname_doc = driver.execute_script(
+                                    """
+                                    for (const inp of Array.from(document.querySelectorAll('input[class*="mrSingle"][questionname]'))) {
+                                        const cont = inp.closest('[questionname]') || inp.closest('div.questionContainer');
+                                        if (!cont) continue;
+                                        const st = cont.getAttribute('style') || '';
+                                        const cp = getComputedStyle(cont).display;
+                                        if (!(st.includes('display: none') || st.includes('display:none') || cp === 'none')) continue;
+                                        const qname = inp.getAttribute('questionname') || cont.getAttribute('questionname');
+                                        if (!qname) continue;
+                                        const rp = document.getElementById('container_' + qname);
+                                        if (!rp || !rp.querySelector('[data-test="main-contain"]._rowpicker')) continue;
+                                        return qname;
+                                    }
+                                    return null;
+                                    """
+                                )
+                            except Exception:
+                                _kantar_rp_qname_doc = None
+                            if _kantar_rp_qname_doc:
+                                from Survey.input_radio import click_kantar_rowpicker_radio
+                                _rp_ok = click_kantar_rowpicker_radio(driver, value)
+                                log_debug(
+                                    "[TARGET_DEBUG]",
+                                    f"kantar_rowpicker_radio_dispatch: {'ok' if _rp_ok else 'ko'} qname={_kantar_rp_qname_doc!r} value={value!r}",
+                                )
+                                return bool(_rp_ok)
                         if debug_target:
                             log_debug("[TARGET_DEBUG]", f"element not found for xpath: {xp}")
                         return False
@@ -2589,6 +2634,42 @@ def _apply_by_target_id(
                             f"nfield_swatches_dispatch: {'ok' if _sw_ok else 'ko'} qname={_nfield_qname!r} value={value!r}",
                         )
                         return bool(_sw_ok)
+
+                # Kantar/mrIWeb _rowpicker radio : input[class*="mrSingle"] dans div.questionContainer
+                # masquée (display:none), overlay React cliquable dans div#container_{questionname}.
+                # Guard DOM strict : input.mrSingle dans conteneur display:none
+                # ET div#container_{questionname} [data-test="main-contain"]._rowpicker présent.
+                if resolved_itype == "radio":
+                    try:
+                        _kantar_rp_qname = driver.execute_script(
+                            """
+                            const el = arguments[0];
+                            if (!el || !el.closest) return null;
+                            const cont = el.closest('[questionname]') || el.closest('div.questionContainer');
+                            if (!cont) return null;
+                            const st = cont.getAttribute('style') || '';
+                            const cp = getComputedStyle(cont).display;
+                            if (!(st.includes('display: none') || st.includes('display:none') || cp === 'none')) return null;
+                            if (!cont.querySelector('input[class*="mrSingle"]')) return null;
+                            const qname = cont.getAttribute('questionname');
+                            if (!qname) return null;
+                            const rp = document.getElementById('container_' + qname);
+                            if (!rp || !rp.querySelector('[data-test="main-contain"]._rowpicker')) return null;
+                            return qname;
+                            """,
+                            el,
+                        )
+                    except Exception:
+                        _kantar_rp_qname = None
+
+                    if _kantar_rp_qname:
+                        from Survey.input_radio import click_kantar_rowpicker_radio
+                        _rp_ok = click_kantar_rowpicker_radio(driver, value)
+                        log_debug(
+                            "[TARGET_DEBUG]",
+                            f"kantar_rowpicker_radio_dispatch: {'ok' if _rp_ok else 'ko'} qname={_kantar_rp_qname!r} value={value!r}",
+                        )
+                        return bool(_rp_ok)
 
                 # Dynata/Decipher "shelf" custom tool:
                 # - #custom-tool-area + .custom-product visibles
