@@ -14,644 +14,393 @@
 #
 # FORMAT PAR ENTRÉE :
 # ### Nom de la fonction
-# Fichier, patterns couverts, patterns exclus, contexte du dernier patch.
-# Max ~25 lignes par entrée. Rester factuel et DOM-centrique.
+# Fichier, guard, patterns couverts, patterns exclus, note DOM si non-intuitive.
+# Max ~15 lignes par entrée.
 
 ---
 
 ## PLATEFORME : ASKIA
 Signature : `<body onload="loadFormAskia();">`, form action `AskiaExt.dll`
 Inputs : schéma `M{N} {value}` (checkbox/radio) ou `U{N}` (hidden slider)
-Note : plusieurs types de questions peuvent coexister sur une même page.
-Les extracteurs Askia sont indépendants et leurs résultats sont concaténés.
+Plusieurs types de questions peuvent coexister sur une même page — extracteurs indépendants, résultats concaténés.
 
 ### _extract_askia_adc_slider
 Fichier : Survey/dom_extractors_misc.py
+Guard : `div.adc-slider` contenant `div.noUiSlider` + `div.noUi-handle`
 Patterns couverts :
-- Conteneur : div.adc-slider contenant div.noUiSlider + div.noUi-handle
-- Input hidden : <input type="hidden" name="U{N}"> dans le même conteneur
-- Labels pôles : div.leftLabel, div.rightLabel
-- Bouton DK optionnel : div.dk[data-value]
-- Sous-question : td.askia-question-label ou td[class*="askia-caption"] dans le tr précédent
+- Input hidden `<input type="hidden" name="U{N}">` dans le même conteneur
+- Labels pôles : `div.leftLabel`, `div.rightLabel` ; bouton DK optionnel : `div.dk[data-value]`
+- Sous-question : `td.askia-question-label` ou `td[class*="askia-caption"]` dans le tr précédent
 - Question globale possible en tête de page (format retourné : "global | sous-question")
 - Valeurs exposées : 0%…100% par pas de 10, + DK si présent
 Patterns exclus :
-- Matrices checkbox (div.adc-responsiveTable, tr[data-id]) → extracteur distinct
-- Radios classiques Askia (div.myresponse, span.items) → extracteur distinct
+- Matrices checkbox (`div.adc-responsiveTable`) → extracteur distinct
+- Radios classiques Askia (`div.myresponse`) → extracteur distinct
 - Sliders Decipher sq-sliderpoints → input_slider.py
-Contexte patch :
-- [date à compléter] Création initiale pour pages Askia multi-sliders noUiSlider.
-  Un input hidden U{N} par slider, plusieurs adc-slider possibles sur une même page.
-
-
-## FONCTIONS CRITIQUES NON EXTRACTEURS
 
 ### _apply_by_target_id — bloc askia_responsive_table_checkbox
 Fichier : Survey/action_dispatcher.py
-Emplacement : dans le bloc `if opt_map and resolved_itype in ("radio", "checkbox")`,
-  juste avant `_click_candidate(el, "target")`.
-Guard d'activation : `payload.get("askia_responsive_table_checkbox") and resolved_itype == "checkbox"`
+Emplacement : bloc `if opt_map and resolved_itype in ("radio", "checkbox")`, avant `_click_candidate`.
+Guard : `payload.get("askia_responsive_table_checkbox") and resolved_itype == "checkbox"`
 Patterns couverts :
-- Matrices checkbox Askia ResponsiveTable (div.adc-responsiveTable, tr[data-id])
-- Inputs `<input type="checkbox">` non-interactables (masqués CSS, taille 0) pointés par option_xpath_map
-- Clic JS sur `<label for=inputId>` si présent → déclenche les handlers Askia natifs
-- Fallback : `input.checked = true` + dispatchEvent input/change si aucun label trouvé
-- Vérification stricte : `input.checked === true` après action
+- Inputs `<input type="checkbox">` masqués CSS (taille 0) dans `div.adc-responsiveTable`
+- Clic JS sur `<label for=inputId>` → déclenche les handlers Askia natifs
+- Fallback : `input.checked = true` + dispatchEvent input/change si aucun label
+- Vérification : `input.checked === true` après action
 Patterns exclus :
-- Sliders noUiSlider (div.adc-slider) → _extract_askia_adc_slider
-- Radios classiques Askia (div.myresponse) → chemin générique opt_map
-- Tout autre itype (radio, text…) → pas de guard activé
-Contexte patch :
-- [2025] Fix bug : sélection échouant à partir de la 2ème question de matrice
-  (ElementNotInteractableException sur input natif + ActionChains, "has no size and location").
-  Stratégie unique (pas de fallback empilés). Retourne False immédiatement si input.checked=false.
-  Log : "[TARGET] apply ok=true strategy=askia_responsive_table_checkbox reason=label_js_click"
-
-### execute_action — post-vérification target_id MetrixLab/Toluna QT
-Fichier : Survey/action_dispatcher.py
-Emplacement : dans `execute_action()`, immédiatement après le retour positif de `_apply_by_target_id(...)`
-  et avant le log `strategy=target_id reason=applied`.
-Guard d'activation :
-- `target_id` présent
-- `_apply_by_target_id(...)` a renvoyé `True`
-- page contenant des wrappers `div.answer_options` avec `input.checkboxQT/radioQT`
-Patterns couverts :
-- MetrixLab / Toluna SPA avec options sous forme de `div.answer_options`
-- État sélectionné porté visuellement par `.option_checkbox.input_on`
-  et/ou `.option_label.input_label_on`
-- Cas où la stratégie `target_id` réussit techniquement (clic/dispatch) mais sans effet UI réel
-- Blocage du faux positif : ne pas logger `apply ok=true strategy=target_id` tant que le DOM
-  ne montre pas une option réellement activée
-Patterns exclus :
-- Checkboxes/radios natifs validés par `input.checked`
-- Widgets custom déjà vérifiés dans `_apply_by_target_id` (QARTS, Nfield swatches,
-  Askia ResponsiveTable, Toluna Runtime AnswerRow, etc.)
-- Toute page sans structure `div.answer_options` + input `*QT`
-Contexte patch :
-- [2026-04] Fix d'un faux succès sur question checkbox MetrixLab/Toluna (`group_4fe25a510f06`).
-  Le parser et le dispatcher produisaient bien l'action, mais `execute_action()` déclarait
-  `strategy=target_id reason=applied` alors que l'UI restait inchangée. La validation correcte
-  sur ce provider repose sur les classes DOM `input_on` / `input_label_on`, pas sur le simple
-  succès du clic ni sur `input.checked`.
-
-### execute_action / open_dropdown_generic — dropdown natif sans ouverture préalable
-Fichiers : Survey/action_dispatcher.py, Survey/input_dropdown.py
-Emplacement : branche `itype == "dropdown"` dans `execute_action()`, et branche `<select>` native dans `open_dropdown_generic()`.
-Guard d'activation : action dropdown avec target/question résolu, présence possible d'un `<select>` natif.
-Patterns couverts :
-- Dropdown natif `<select>` déjà présent dans le DOM et sélectionnable directement par `select_option_with_hint()`.
-- Cas Toluna/MerlinAI où l'option `0` est la réponse valide et peut déjà être visible avant action.
-- Sélection directe par valeur/texte via `select_option_with_hint()`, sans appel préalable à `dropdown_open`.
-- `open_dropdown_generic()` ne doit pas cliquer/focuser/envoyer `ARROW_DOWN` sur un `<select>` natif.
-Patterns exclus :
-- Dropdown custom nécessitant ouverture de menu avant sélection visuelle.
-- Bootstrap-select / GfK `.mrDropdown` / RPS custom : restent gérés dans `select_option_with_hint()` par leurs guards DOM dédiés.
-- CTA/navigation : aucun changement de comportement attendu.
-Contexte patch :
-- [2026-04] Fix bug : l'ouverture préalable du dropdown natif envoyait un effet clavier/focus
-  qui pouvait déplacer ou invalider la valeur sélectionnée avant la vraie sélection.
-  La stratégie retenue est unique : pour les dropdowns, passer directement par `dropdown_select`.
-  Validation observée : l'option `0` reste appliquée et l'exécution atteint ensuite le CTA.
+- Sliders noUiSlider → _extract_askia_adc_slider
+- Radios classiques Askia → chemin générique opt_map
 
 ---
 
 ## PLATEFORME : INTERVIEW-LAYOUT (areyounet / Potloc-style)
-Signature DOM : `div.interview-layout` contenant `div.interview-header` + `div.interview-question` + `div.interview-footer__container`
-Inputs : `button.choice-question__field[role="option"][data-test-id="ChoiceFields_Field-{uuid}"]` dans `ul.choice-question__field-list`
-Options spéciales footer : `button[data-test-id="InterviewFooter_SpecialOption-*"]` dans `div.interview-footer__options-container`
+Signature DOM : `div.interview-layout` > `div.interview-header` + `div.interview-question` + `div.interview-footer__container`
+Inputs : `button.choice-question__field[role="option"]` dans `ul.choice-question__field-list`
+Options spéciales footer : `button[data-test-id="InterviewFooter_SpecialOption-*"]`
 Champ libre "Autre" : `<input type="text" role="option">` dans `div.choice-question__custom-field-container`
 
 ### button_group générique — filtre interview-footer__options-container
 Fichier : Survey/dom_analyzer.py
-Emplacement : boucle `for b in btn_like`, après le filtre CookieYes, avant `_nearest_question_container`.
-Guard d'activation : `closest('.interview-footer__options-container') !== null`
+Emplacement : boucle `for b in btn_like`, après filtre CookieYes, avant `_nearest_question_container`.
+Guard : `closest('.interview-footer__options-container') !== null`
 Patterns couverts :
-- Boutons spéciaux de page ("Aucun(e)", "Passer") dans `div.interview-footer__options-container`
-- Ces boutons passent tous les filtres génériques (visibles, texte ≥ 2 chars, non-nav) mais
-  ne sont pas des choix de réponse : ce sont des options de navigation de page.
-- Le filtre les exclut avant groupement → pas de bloc parasite créé.
+- Boutons "Aucun(e)", "Passer" dans `.interview-footer__options-container` — options de navigation, pas des réponses
+- Exclus avant groupement → pas de bloc parasite
 Patterns exclus :
-- Tout bouton hors de `.interview-footer__options-container` → non affecté.
-- Boutons nav classiques (Continuer…) déjà filtrés par `_is_nav_like_choice`.
-Contexte patch :
-- [2026-04] Fix : "Aucun(e)" et "Passer" formaient un 2e question_block indépendant
-  avec itype=radio. Guard DOM strict via `closest`, aucun impact inter-provider.
+- Tout bouton hors de `.interview-footer__options-container`
 
 ### button_group générique — récupération h1.interview-header__title
 Fichier : Survey/dom_analyzer.py
-Emplacement : boucle `for _gk, g in btn_groups.items()`, après `_extract_question_from_container` et
-  `_find_question_text_near_element`, avant le filtre "un problème est survenu".
-Guard d'activation : `closest('.interview-question') !== null` sur le conteneur résolu
-  ET existence de `h1.interview-header__title` dans la page.
+Emplacement : boucle btn_groups, après `_extract_question_from_container`, avant filtre "un problème est survenu".
+Guard : `closest('.interview-question') !== null` ET `h1.interview-header__title` existe dans la page
 Patterns couverts :
-- Layout où la question principale est dans `h1.interview-header__title` (frère de
-  `.interview-question` dans `.interview-layout`), hors scope du conteneur résolu.
-- Sans ce patch, seul le `h3.hint-text` ("CHOISISSEZ UNE OU PLUSIEURS RÉPONSES") est extrait.
-- Le texte du h1 est préfixé à la question déjà extraite si non déjà inclus.
-- Log debug : "[DOM_BUTTON_GROUP] interview_layout_h1 recovered: ..."
+- Question principale dans `h1.interview-header__title` (frère de `.interview-question` dans `.interview-layout`), hors scope du conteneur résolu
+- Sans ce patch : seul le `h3.hint-text` ("CHOISISSEZ UNE OU PLUSIEURS RÉPONSES") est extrait
+- Le texte du h1 est préfixé à la question si non déjà inclus
 Patterns exclus :
-- Tout conteneur hors de `.interview-question` → guard non activé.
-- Tout DOM sans `h1.interview-header__title` → guard non activé.
-Contexte patch :
-- [2026-04] Fix : question extraite = "CHOISISSEZ UNE OU PLUSIEURS RÉPONSES" au lieu de
-  "Parmi les produits suivants… CHOISISSEZ UNE OU PLUSIEURS RÉPONSES". Double guard strict.
+- Conteneurs hors `.interview-question`
+- DOM sans `h1.interview-header__title`
 
-### button_group générique — détection multi-select image-choice (div[role="listbox"].image-select)
+### button_group générique — détection multi-select image-choice
 Fichier : Survey/dom_analyzer.py
-Emplacement : boucle btn_groups, bloc de calcul `_is_choice_multiple`, après le guard `ChoiceMultiple_ChoiceFields`.
-Guard d'activation : `btns[0].closest('div[role="listbox"]')` dont la classe contient `image-select`
-  ou `image-choice-question__answers`.
+Emplacement : boucle btn_groups, bloc `_is_choice_multiple`, après guard `ChoiceMultiple_ChoiceFields`.
+Guard : `btns[0].closest('div[role="listbox"]')` avec classe `image-select` ou `image-choice-question__answers`
 Patterns couverts :
-- Questions image-choice multi-sélection : conteneur `div[role="listbox"]` avec classe `image-select`
-  (et variante `image-select--compact image-choice-question__answers`).
-- Options rendues en `button[role="option"]` avec `aria-selected`; aucun `ul[data-test-id="ChoiceMultiple_ChoiceFields"]`.
-- Guard `ChoiceMultiple_ChoiceFields` retourne False → sans ce patch : itype=radio, max_select=1 (faux).
-- Avec patch : `_is_choice_multiple=True` → itype=checkbox, max_select=len(options).
+- Questions image-choice multi-sélection : `div[role="listbox"].image-select` avec `button[role="option"]`
+- Sans ce patch : itype=radio, max_select=1 (faux) car `ChoiceMultiple_ChoiceFields` ne matche pas ce conteneur
 Patterns exclus :
-- Questions image-choice mono-sélection (si applicable) → guard non activé si pas de listbox.image-select.
-- Boutons hors `div[role="listbox"].image-select` → chemin existant inchangé.
-Contexte patch :
-- [2026-04] Fix : question "Parmi les marques suivantes, lesquelles connaissez-vous ?"
-  extraite itype=radio/max_select=1 au lieu de checkbox. Le guard `ChoiceMultiple_ChoiceFields`
-  ne matche pas le conteneur `div[role="listbox"]` de l'image-choice. Correction additive,
-  guard DOM strict sur classe `image-select`, pas de modification du guard existant.
+- Boutons hors `div[role="listbox"].image-select`
 
-### singles — filtre champ texte libre dans choice-question__custom-field-container
+### singles — filtre champ texte libre choice-question__custom-field-container
 Fichier : Survey/dom_analyzer.py
 Emplacement : chemin `other_inputs`, après `_is_other_specify_choice_companion`, avant `looks_like_other`.
-Guard d'activation : `itype in ("text", "textarea")` ET `role="option"` ET
-  `closest('.choice-question__custom-field-container') !== null`.
+Guard : `itype in ("text", "textarea")` ET `role="option"` ET `closest('.choice-question__custom-field-container') !== null`
 Patterns couverts :
-- `<input type="text" role="option">` dans `div.choice-question__custom-field-container`
-  (champ libre "Autre" de la liste, options rendues en `<button role="option">` non natifs).
-- `_is_other_specify_choice_companion` ne le détecte pas : 0 `input[type=radio/checkbox]`
-  dans le conteneur → garde-fou `< 2` → retourne False → bloc text parasite créé.
-- Log debug : "[DOM_DEBUG] skip_interview_layout_custom_text_field role=option"
+- `<input type="text" role="option">` dans `.choice-question__custom-field-container` (champ libre "Autre")
+- `_is_other_specify_choice_companion` ne le détecte pas (0 input radio/checkbox dans le conteneur) → bloc text parasite sans ce guard
 Patterns exclus :
-- Tout input sans `role="option"` → non affecté.
-- Tout input hors de `.choice-question__custom-field-container` → non affecté.
-Contexte patch :
-- [2026-04] Fix : bloc `itype=text, question="System U"` créé à tort depuis le champ libre
-  de la liste de courses. Double guard DOM strict, patch minimal additif.
+- Tout input sans `role="option"` ou hors `.choice-question__custom-field-container`
 
-  ---
+---
 
 ## PLATEFORME : FORSTA / CONFIRMIT WIX
-Signature : form action `*.aspx`, class `cf-page`, questions dans `div.cf-question.cf-question--{type}`.
-Plusieurs types de questions peuvent coexister sur une même page.
-Les extracteurs CF sont regroupés dans un bloc d'accumulation commun dans dom_analyzer.py
-(pattern extend, pas return séquentiel).
+Signature : form action `*.aspx`, class `cf-page`, questions dans `div.cf-question.cf-question--{type}`
+Extracteurs CF regroupés dans un bloc d'accumulation commun (pattern extend, pas return séquentiel).
 
 ### _extract_confirmit_cf_single_choice_blocks
 Fichier : Survey/dom_extractors_misc.py
+Guard : `div.cf-question--single` contenant `div.cf-list > div.cf-radio[role='radio']`
 Patterns couverts :
-- div.cf-question--single contenant div.cf-list > div.cf-radio[role='radio']
-- Texte depuis div.cf-question__text, options depuis div.cf-radio-answer__text
-- Exclusion des conteneurs dans table.cf-table-layout (grids)
+- Texte depuis `div.cf-question__text`, options depuis `div.cf-radio-answer__text`
+- Exclusion des conteneurs dans `table.cf-table-layout` (grids)
 Patterns exclus :
-- cf-question--numeric-list → _extract_confirmit_cf_numeric_list_blocks
-- cf-question--open-list → _extract_confirmit_cf_open_list_blocks
-- table.cf-table-layout (grids) → _extract_confirmit_cf_desktop_grid_blocks
-Contexte patch :
-- [2026-04] Création. Intégré dans un bloc d'accumulation commun avec les deux
-  extracteurs ci-dessous pour gérer les pages multi-types.
+- `cf-question--numeric-list` → _extract_confirmit_cf_numeric_list_blocks
+- `cf-question--open-list` → _extract_confirmit_cf_open_list_blocks
+- `table.cf-table-layout` → _extract_confirmit_cf_desktop_grid_blocks
 
 ### _extract_confirmit_cf_numeric_list_blocks
 Fichier : Survey/dom_extractors_misc.py
+Guard : `div.cf-question--numeric-list` contenant `div.cf-numeric-list-answer`
 Patterns couverts :
-- div.cf-question--numeric-list contenant N × div.cf-numeric-list-answer, chacun avec input[type="number"]
-- Un bloc distinct produit par ligne (row_label depuis div.cf-numeric-list-answer__text)
-- Texte global depuis div.cf-question__text (contexte du groupe, non la question de ligne)
-- Répartition (autoSum) : détectée par div.cf-numeric-list-auto-sum → multi_sum_total=100
-  + group_id + group_question propagés dans context et DOM_REGISTRY
-- Fallback : si aucun div.cf-numeric-list-answer, retombe sur inputs[0] (question âge…)
-- Flag payload : confirmit_cf_numeric_list=True
+- Un bloc distinct par ligne : `div.cf-numeric-list-answer__text` (label) + `input[type="number"]`
+- Fallback : si aucun `div.cf-numeric-list-answer`, un seul bloc sur `inputs[0]` (ex : question âge)
+- Répartition : `div.cf-numeric-list-auto-sum` → `multi_sum_total=100` + `group_id` + `group_question` dans context
+- Flag payload : `confirmit_cf_numeric_list=True` ; itype retourné = "number" (normalisé "text" dans prompt_builder)
 Patterns exclus :
-- cf-question--single → _extract_confirmit_cf_single_choice_blocks
-- cf-question--open-list → _extract_confirmit_cf_open_list_blocks
-Contexte patch :
-- [2026-04] Création. itype retourné = "number", normalisé en "text" dans
-  filter_blocks_for_openai() (prompt_builder.py) avant envoi à OpenAI.
-- [2026-04] Fix : extraction incomplète (1 bloc au lieu de N). Itération sur chaque
-  div.cf-numeric-list-answer. Ajout contrainte multi_sum_total dans context pour prompt.
+- `cf-question--single`, `cf-question--open-list`
 
 ### _extract_confirmit_cf_open_list_blocks
 Fichier : Survey/dom_extractors_misc.py
+Guard : `div.cf-question--open-list` contenant `input[type="text"].cf-open-list-answer__input`
 Patterns couverts :
-- div.cf-question--open-list contenant input[type="text"].cf-open-list-answer__input
-- Texte depuis div.cf-question__text ; si vide, fallback JS sur le frère
-  div.cf-question--info précédent (pattern CP : libellé dans i9622_text, input dans CP)
-- Flag payload : confirmit_cf_open_list=True
+- Texte depuis `div.cf-question__text`
+- Fallback : si vide, cherche le frère `div.cf-question--info` précédent (pattern CP — libellé dans `i{N}_text`, input dans CP)
+- Flag payload : `confirmit_cf_open_list=True`
 Patterns exclus :
-- cf-question--single → _extract_confirmit_cf_single_choice_blocks
-- cf-question--numeric-list → _extract_confirmit_cf_numeric_list_blocks
-Contexte patch :
-- [2026-04] Création. Piège documenté : div.cf-question__text peut être vide
-  (ex. CP) ; le libellé réel est dans le bloc --info immédiatement précédent.
+- `cf-question--single`, `cf-question--numeric-list`
 
 ### filter_blocks_for_openai — normalisation itype number → text
 Fichier : Survey/prompt_builder.py
-Emplacement : fonction filter_blocks_for_openai(), bloc de normalisation avant le set des types acceptés.
-Guard d'activation : it_lc == "number"
+Guard : `it_lc == "number"`
 Patterns couverts :
-- Blocs itype="number" produits par _extract_confirmit_cf_numeric_list_blocks
-- Normalisés en itype="text" (même traitement qu'un champ libre) avant envoi à OpenAI
-- Le DOM_REGISTRY conserve itype="number" et confirmit_cf_numeric_list=True :
-  le dispatcher n'est pas affecté
+- Blocs `itype="number"` (Confirmit numeric list) normalisés en `"text"` avant envoi à OpenAI
+- DOM_REGISTRY conserve `itype="number"` et `confirmit_cf_numeric_list=True` → dispatcher non affecté
 Patterns exclus :
-- Tout autre itype → non affecté
-Contexte patch :
-- [2026-04] Fix : itype="number" absent du set des types acceptés →
-  blocs éjectés silencieusement, jamais soumis à OpenAI. Correction par
-  normalisation number→text, cohérente avec le pattern select→dropdown existant.
+- Tout autre itype
 
 ### build_batch_prompt — contrainte somme répartition Confirmit
 Fichier : Survey/prompt_builder.py
-Emplacement : boucle de rendu des blocs, juste après `lines.append(f"contexte: {q}")`.
-Guard d'activation : ctx.get("confirmit_cf_numeric_list") ET ctx.get("multi_sum_total") truthy.
+Emplacement : boucle de rendu des blocs, après `lines.append(f"contexte: {q}")`.
+Guard : `ctx.get("confirmit_cf_numeric_list")` ET `ctx.get("multi_sum_total")` truthy
 Patterns couverts :
-- Blocs répartition Forsta/Confirmit (N lignes, somme=100) issus de _extract_confirmit_cf_numeric_list_blocks
-- Injection de `groupe_contexte` (question parente) si différente du libellé de ligne
-- Injection de `contrainte_somme` indiquant la somme obligatoire du groupe (ex. 100)
+- Injection de `groupe_contexte` (question parente) et `contrainte_somme` dans le prompt pour les blocs de répartition (somme=100)
 Patterns exclus :
-- Blocs sans confirmit_cf_numeric_list → non affectés
-- Blocs sans multi_sum_total (question numérique simple, âge…) → non affectés
-Contexte patch :
-- [2026-04] Fix : OpenAI répondait à chaque ligne indépendamment sans garantie de somme=100.
-  Patch minimal additif, guard double (flag + total), pas de modification du format QID existant.
-
-  ### _extract_confirmit_cf_numeric_list_blocks
-Fichier : Survey/dom_extractors_misc.py
-Patterns couverts :
-- div.cf-question--numeric-list contenant N lignes div.cf-numeric-list-answer,
-  chacune avec div.cf-numeric-list-answer__text (label) + input[type="number"]
-- Un bloc distinct produit par ligne ; question du bloc = label de la ligne
-- Fallback : si aucun div.cf-numeric-list-answer trouvé (ex. question d'âge à
-  input unique), un seul bloc produit avec inputs[0] et question = texte parent
-- Détection répartition : présence de div.cf-numeric-list-auto-sum ⟹
-  multi_sum_total=100 injecté dans le contexte de chaque bloc du groupe,
-  avec group_id=q_id et group_question=texte de la question parente
-- Flag payload : confirmit_cf_numeric_list=True
-Patterns exclus :
-- cf-question--single → _extract_confirmit_cf_single_choice_blocks
-- cf-question--open-list → _extract_confirmit_cf_open_list_blocks
-Contexte patch :
-- [2026-04] Création. itype retourné = "number", normalisé en "text" dans
-  filter_blocks_for_openai() (prompt_builder.py) avant envoi à OpenAI.
-- [2026-04] Fix : inputs[0] uniquement → N blocs (un par div.cf-numeric-list-answer).
-  Ajout détection répartition via div.cf-numeric-list-auto-sum + injection
-  multi_sum_total / group_id / group_question dans contexte et registry.
-
-### filter_blocks_for_openai — contrainte_somme répartition
-Fichier : Survey/prompt_builder.py
-Emplacement : rendu de chaque bloc dans la boucle de construction du prompt.
-Guard d'activation : ctx.get("confirmit_cf_numeric_list") and ctx.get("multi_sum_total")
-Patterns couverts :
-- Blocs issus d'une question de répartition (multi_sum_total présent) :
-  injection de groupe_contexte (question parente) et contrainte_somme dans
-  le prompt OpenAI, indiquant que la somme du groupe doit être exactement 100
-- Blocs sans multi_sum_total (ex. âge) : aucune contrainte ajoutée
-Patterns exclus :
-- Tout bloc sans flag confirmit_cf_numeric_list → non affecté
-Contexte patch :
-- [2026-04] Ajout. Complète le fix extraction N-blocs : OpenAI reçoit désormais
-  le contexte de groupe et la contrainte de somme pour chaque ligne de répartition.
+- Blocs sans `confirmit_cf_numeric_list` ou sans `multi_sum_total`
 
 ### _extract_confirmit_cf_hrs_single_blocks — mode carousel
 Fichier : Survey/dom_extractors_misc.py
+Guard : `div.cf-question--carousel-horizontal-rating-scale-grid` avec `div.cf-carousel` contenant `div.cf-carousel__content-item > div.cf-hrs-single[role='radiogroup']`
 Patterns couverts :
-- div.cf-question--carousel-horizontal-rating-scale-grid : div.cf-carousel contenant
-  N div.cf-carousel__content-item, chacun wrappant un div.cf-hrs-single[role='radiogroup']
-  avec 3 div.cf-horizontal-rating-item[role='radio']
-- Gate carousel : cf-hrs-single enfant de div.cf-carousel__content-item (XPATH ancestor)
-- 1 bloc produit par item ; question = texte du span#{item_id}_text (texte de ligne)
-  préfixé par div.cf-question__text (question globale)
-- Options : innerText des div.cf-horizontal-rating-item (sans préfixe de ligne)
-  → les aria-label contiennent la ligne en préfixe, donc non utilisés en mode carousel
-- group_key = radio:name:dom:{labelledby}|cf-hrs-single|{item_id} (discriminant unique)
-- context enrichi : is_last_carousel_item (bool), carousel_item_index, carousel_total_items
-- Flag payload : confirmit_cf_hrs_single=True
+- 1 bloc par item ; question = `span#{item_id}_text` préfixé par `div.cf-question__text`
+- Options : `innerText` des `div.cf-horizontal-rating-item` (pas `aria-label` — contient le préfixe de ligne)
+- `group_key = radio:name:dom:{labelledby}|cf-hrs-single|{item_id}` (discriminant unique par item)
+- Context enrichi : `is_last_carousel_item`, `carousel_item_index`, `carousel_total_items`
+- Flag payload : `confirmit_cf_hrs_single=True`
+Note DOM : sans `item_id` dans le `group_key`, tous les radiogroups ont le même `aria-labelledby` → dédupliqués en 1 seul bloc.
 Patterns exclus :
-- div.cf-hrs-single standalone (hors div.cf-carousel__content-item) → chemin existant inchangé
-- div.cf-carousel avec div.cf-answer-button ou div.cf-button-answer → _extract_confirmit_cf_carousel_blocks
-Contexte patch :
-- [2026-04] Fix extraction 1 bloc/27 options → N blocs × 3 options. Cause : aria-labelledby
-  identique pour tous les radiogroups → group_key identique → dédupliqué en 1 seul bloc.
-  Correction : gate ancestor carousel + group_key discriminé par item_id + options via innerText.
+- `div.cf-hrs-single` standalone (hors `div.cf-carousel__content-item`) → chemin existant
+- `div.cf-carousel` avec `div.cf-answer-button` → _extract_confirmit_cf_carousel_blocks
 
 ### _should_skip_post_actions_navigation — skip CTA carousel cf-hrs-single intermédiaire
 Fichier : Survey/survey_executor.py
-Guard d'activation : présence dans question_blocks d'au moins un bloc avec context portant
-  is_last_carousel_item=False (carousel intermédiaire non terminé)
+Guard : au moins un bloc dans `question_blocks` avec `context.is_last_carousel_item=False`
 Patterns couverts :
-- Pages cf-question--carousel-horizontal-rating-scale-grid : après chaque sélection,
-  le carousel avance automatiquement vers le card suivant (mutation DOM intra-page, URL stable).
-  Le CTA de navigation ne doit être tenté qu'après le dernier card.
-- Skip CTA si is_last_carousel_item=False sur le bloc dispatché.
-- CTA autorisé si is_last_carousel_item=True (dernier card) ou si aucun marqueur carousel présent.
+- Pages carousel cf-hrs-single : après chaque sélection, le carousel avance automatiquement (mutation DOM, URL stable)
+- CTA bloqué tant que `is_last_carousel_item=False` ; autorisé si `True` ou marqueur absent
 Patterns exclus :
-- Blocs cf-hrs-single standalone (pas de is_last_carousel_item dans le context) → non affectés
-- Autres providers avec auto-navigation (walr_cardsort, studystream_auto_advance,
-  qarts_autosubmit) → inchangés
-Contexte patch :
-- [2026-04] Fix : CTA tenté après chaque card au lieu d'attendre le dernier.
-  Cause : _should_skip_post_actions_navigation ne couvrait pas ce cas (URL stable,
-  pas de marqueur connu). Correction : enrichissement du context à l'extraction +
-  lecture du flag is_last_carousel_item dans la fonction de skip.
+- Blocs cf-hrs-single standalone (pas de `is_last_carousel_item` dans context)
+- Autres providers auto-navigation (walr_cardsort, studystream_auto_advance, qarts_autosubmit)
+
 ---
 
 ## PLATEFORME : CONFIRMIT / FORSTA WIX — RANKING
-Signature DOM : `div.cf-question.cf-question--ranking` contenant `div.cf-list` avec N `div.cf-list__item.cf-ranking-answer[role="button"]`
-Interaction : clic séquentiel sur les divs — chaque clic attribue le rang suivant. Pas d'input natif.
-Signal sélection : `cf-ranking-answer--selected` + `aria-pressed="true"` sur la div + `cf-ranking-answer__rank` contient un entier.
-Signal quota atteint : items non sélectionnés reçoivent `cf-ranking-answer--disabled`.
+Signature DOM : `div.cf-question.cf-question--ranking` > `div.cf-list` > N `div.cf-list__item.cf-ranking-answer[role="button"]`
+Interaction : clic séquentiel — chaque clic attribue le rang suivant. Pas d'input natif.
+Signal sélection : `cf-ranking-answer--selected` + `aria-pressed="true"` + `cf-ranking-answer__rank` contient un entier.
+Signal quota : items non sélectionnés reçoivent `cf-ranking-answer--disabled`.
 
 ### _extract_confirmit_cf_ranking_blocks
 Fichier : Survey/dom_extractors_misc.py
+Guard : `div.cf-question--ranking`
 Patterns couverts :
-- div.cf-question--ranking contenant N div.cf-list__item.cf-ranking-answer[role="button"]
-- Texte depuis div.cf-question__text ; instruction depuis div.cf-question__instruction
-- question_for_openai = question + " " + instruction (fusion pour qu'OpenAI voie la contrainte de classement)
-- max_select = len(options) (nombre total d'items DOM, pas la contrainte métier "cinq")
-- Options = textes des div.cf-ranking-answer__text ; items "Autres" (sans cette div) exclus
-- Flag payload : confirmit_cf_ranking=True
-- option_xpath_map stocké dans le registry (texte normalisé → xpath de la div)
+- Texte depuis `div.cf-question__text` ; instruction depuis `div.cf-question__instruction` fusionnée dans `question_for_openai`
+- `max_select = len(options)` (nombre total d'items DOM)
+- Options = textes des `div.cf-ranking-answer__text` ; items "Autres" (sans cette div) exclus
+- Flag payload : `confirmit_cf_ranking=True`
 Patterns exclus :
-- cf-question--single → _extract_confirmit_cf_single_choice_blocks
-- cf-question--numeric-list → _extract_confirmit_cf_numeric_list_blocks
-- cf-question--open-list → _extract_confirmit_cf_open_list_blocks
-Contexte patch :
-- [2026-04] Création. Extraction correcte + dispatcher.
-- [2026-04] Fix max_select=1 (regex capturait le "1" de "où 1 correspond à").
-  Corrigé : max_select = len(options).
-- [2026-04] Fix instruction invisible pour OpenAI (stockée dans context uniquement).
-  Corrigé : fusion dans question_for_openai.
+- `cf-question--single`, `cf-question--numeric-list`, `cf-question--open-list`
 
 ### _apply_by_target_id — bloc confirmit_cf_ranking
 Fichier : Survey/action_dispatcher.py
-Emplacement : dans _apply_by_target_id(), après le guard toluna_runtime_ranking.
-Guard d'activation : payload.get("confirmit_cf_ranking") and resolved_itype == "checkbox"
+Emplacement : dans `_apply_by_target_id()`, après guard `toluna_runtime_ranking`.
+Guard : `payload.get("confirmit_cf_ranking") and resolved_itype == "checkbox"`
 Patterns couverts :
-- Clic JS direct sur div.cf-list__item.cf-ranking-answer[role="button"] par texte normalisé
-- Items déjà sélectionnés (cf-ranking-answer--selected) ou disabled (quota atteint) → True immédiat
-- Validation post-clic : cf-ranking-answer--selected présent dans les 1s, ou disabled (dernier rang)
-- Pas de Selenium click natif (div[role="button"] non interactable) — JS click uniquement
+- Clic JS direct sur `div.cf-list__item.cf-ranking-answer[role="button"]`
+- Item déjà sélectionné ou disabled → `True` immédiat
+- Validation : `cf-ranking-answer--selected` présent dans les 1s, ou disabled (dernier rang)
 Patterns exclus :
-- Tout autre provider ranking → guards dédiés (askia_ranking_isotope, decipher_clickable_ranking, toluna_runtime_ranking)
+- Autres providers ranking (askia_ranking_isotope, decipher_clickable_ranking, toluna_runtime_ranking)
+
 ---
 
 ## PLATEFORME : SUPPLIER (supplier-{N} / js-question-options)
-Signature DOM : `<body class="supplier-{N}">`, form `#aspnetForm`, conteneur `div#templates`.
-Structure : `div#templates > div.question + div.answer > div.options.js-question-options`.
-Inputs : `input[type="radio" | "checkbox"]` dans `label.radio` ou `label.checkbox`,
-  name = `question_{N}`, id = `option-{N}`.
-Caractéristique clé : `div.question` (texte) et `div.answer` (inputs) sont des frères,
-  pas dans une relation ancêtre/descendant — contrairement à la majorité des autres providers.
+Signature DOM : `<body class="supplier-{N}">`, form `#aspnetForm`, conteneur `div#templates`
+Structure : `div#templates > div.question + div.answer > div.options.js-question-options`
+Note DOM : `div.question` (texte) et `div.answer` (inputs) sont frères, pas ancêtre/descendant — contrairement à la majorité des providers.
 
 ### _nearest_question_container — guard js-question-options
 Fichier : Survey/dom_question_extractor.py
 Emplacement : dans `_nearest_question_container()`, avant le retour du conteneur trouvé.
-Guard d'activation : conteneur trouvé a la classe `js-question-options` (ou `js-resize-choices`).
+Guard : conteneur trouvé a la classe `js-question-options` (ou `js-resize-choices`)
 Patterns couverts :
-- `div.options.js-question-options` matche le XPath `contains(@class,'question')` via le token
-  `js-question-options` → `_nearest_question_container` retournait ce div, qui ne contient
-  que les options (pas le texte de la question).
-- Fix : si le conteneur trouvé contient `js-question-options`, on remonte chercher
-  `div.question` sibling de `div.answer` dans le parent commun (`div#templates`).
-- Question correcte extraite depuis `div.question` frère de l'ancêtre `div.answer`.
+- `div.options.js-question-options` matche à tort `contains(@class,'question')` via le token `js-question-options`
+- Fix : remontée vers `div.question` frère de `div.answer` dans le parent commun (`div#templates`)
 Patterns exclus :
-- Tout conteneur sans classe `js-question-options` → chemin existant inchangé.
-Contexte patch :
-- [2026-05] Bug : question extraite = concaténation des options au lieu du texte de la question.
-  Cause racine : `div.options.js-question-options` matché à tort comme conteneur de question
-  (token "question" dans le nom de classe CSS). Structure frère div.question / div.answer
-  non gérée par le chemin générique. Extraction validée : question_blocks.json correct.
-
-## `_extract_confirmit_wix_fieldset_radio_block`
-**Fichier :** `dom_extractors_misc.py`
-**Enregistré dans :** `dom_analyzer.py` step `0h-sexies` (pipelines standard et fallback)
-
-**Patterns couverts :**
-- Layout Toluna/Confirmit natif (`/wix/2/` URL pattern)
-- `fieldset[id^="fieldset_"]` contenant une `confirmit-table`
-- Inputs `input[type="radio"]` masqués (`position:absolute; top:-9000px`), non interactables via Selenium standard
-- Question : `div[id$="_text"].question_text_ng` (ou class `statementfontdesktoplayout2014`)
-- Labels : `td.answer_label_ng label[for=<radio_id>]` ou `td.alternating_answer_label_ng label[for=<radio_id>]`
-- Clic ciblé sur le `<a href="javascript:void(0)">` ou `<img>` dans la même `<td>` que l'input (pas l'input lui-même)
-
-**Patterns exclus :**
-- Layouts Confirmit modernes (`cf-question`, `cf-question--single`, `cf-question--ranking`)
-- Modals de consentement (`#modal-container`, `.consent-form-radiogroup`) → `_extract_consent_modal_radio_block`
-- Checkboxes de consentement → `_extract_single_consent_checkbox_block`
-
-**itype produit :** `radio`
-
-## `_extract_confirmit_wix_fieldset_radio_block`
-**Fichier :** `dom_extractors_misc.py`
-**Enregistré dans :** `dom_analyzer.py` step `0h-sexies` (pipelines standard et fallback)
-
-**Patterns couverts :**
-- Layout Toluna/Confirmit natif (`/wix/2/` URL pattern)
-- `fieldset[id^="fieldset_"]` contenant une `table.confirmit-table`
-- Inputs `input[type="radio"]` masqués (`position:absolute; top:-9000px`), non interactables via Selenium standard
-- Question : `div[id$="_text"].question_text_ng` (ou class `statementfontdesktoplayout2014`)
-- Labels : `td.answer_label_ng label[for=<radio_id>]` ou `td.alternating_answer_label_ng label[for=<radio_id>]`
-- Clic ciblé sur le `<a href="javascript:void(0)">` dans la même `<td>` que l'input (XPath : `//input[@id=...]/ancestor::td[1]//a[1]`)
-
-**Troncature labels :** `_LABEL_MAX = 80` — les labels DOM sont tronqués à 80 caractères avant d'être stockés dans `options` et comme clés d'`option_xpath_map`. Garantit la correspondance exacte même quand le LLM abrège un label long dans sa réponse.
-
-**Patterns exclus :**
-- Layouts Confirmit modernes (`cf-question`, `cf-question--single`, `cf-question--ranking`)
-- Modals de consentement (`#modal-container`, `.consent-form-radiogroup`) → `_extract_consent_modal_radio_block`
-- Checkboxes de consentement → `_extract_single_consent_checkbox_block`
-
-**itype produit :** `radio`
+- Tout conteneur sans classe `js-question-options`
 
 ---
 
-### _extract_table_matrix_radio_rows — fallback matrix_question Toluna/Confirmit natif
+## PLATEFORME : TOLUNA / CONFIRMIT WIX NATIF
+Signature DOM : form action `/wix/2/`, `fieldset[id^="fieldset_"]` contenant `table.confirmit-table`
+
+### _extract_confirmit_wix_fieldset_radio_block
 Fichier : Survey/dom_extractors_misc.py
-Patterns couverts par le fallback (additif, après lignes 1479–1490) :
-- Layout Toluna/Confirmit natif (/wix/2/) avec table.confirmit-grid imbriquée dans
-  des tables conteneurs (class widthpartdesktoplayout2014, contentdesktoplayout2014, etc.)
-- _find_question_text_near_element échoue ou retourne le texte d'instruction
-  (div.instruction_text) car la table courante est un conteneur externe, pas la grille
-- Détection : table_cls contient "confirmit-grid" OU table.find_elements("table.confirmit-grid")
-  retourne un résultat → flag _is_confirmit=True
-- Si _is_confirmit : recherche driver.find_elements("div.question_text_ng"), premier
-  résultat non vide, tronqué à 500 caractères → écrase matrix_question quelle que soit
-  sa valeur précédente (couvre aussi le cas où _find_question_text_near_element a retourné
-  un texte d'instruction au lieu du texte de question)
+Enregistré dans : `dom_analyzer.py` step `0h-sexies`
+Guard : `fieldset[id^="fieldset_"]` contenant `table.confirmit-table` avec `input[type="radio"]`
+Patterns couverts :
+- Inputs radio masqués (`position:absolute; top:-9000px`) — non interactables via Selenium standard
+- Question : `div[id$="_text"].question_text_ng` (ou class `statementfontdesktoplayout2014`)
+- Labels : `td.answer_label_ng label[for=<radio_id>]` ou `td.alternating_answer_label_ng label[for=<radio_id>]`
+- Clic : `<a href="javascript:void(0)">` dans la même `<td>` que l'input (XPath : `//input[@id=...]/ancestor::td[1]//a[1]`)
+- Labels tronqués à 80 chars (`_LABEL_MAX=80`) pour garantir la correspondance même si le LLM abrège
 Patterns exclus :
-- Layouts sans table.confirmit-grid → chemin existant inchangé
-- Matrices Askia, SGE, IntelliSurvey, Encuesta → guards distincts, non affectés
-Contexte patch :
-- [2026-05] Trois itérations. Échec 1 : guard "confirmit-grid" in table_cls ne s'activait
-  pas car la table traitée était le conteneur externe (pas la grille elle-même).
-  Échec 2 : troncature 300 chars coupait le texte à 2 chars de la fin (texte = 302 chars)
-  + fallback ne s'activait pas quand matrix_question contenait un texte d'instruction
-  (non vide mais incorrect). Fix final : détection _is_confirmit via find_elements sur
-  la table courante, écrasement inconditionnel de matrix_question si _is_confirmit,
-  troncature portée à 500.
-
-  ---
-
-## PLATEFORME : TOLUNA / CONFIRMIT WIX NATIF — RANKED ORDER CLICK
-Signature DOM : `fieldset[id^="fieldset_"].confirmit-rankedorderclick-default` dans `/wix/2/` URL.
-Composant JS : `Y.WixInstance.addComponent({"type":"RankedOrderClick", ...})` (wix-ranked-order-click YUI).
-Structure items : `td.confirmit-abtn.confirmit-rankedorderclick[tabindex="0"]` contenant
-  `input[type="checkbox"][hidden]` + `label[for=...]` + `span.confirmit-ranked-order-value`.
-Signal sélection : classe `confirmit-rankedorderclick-selected` sur la td + valeur numérique dans span.
-Distinct de : `cf-question--ranking` (Forsta moderne) → pas de td.confirmit-rankedorderclick.
+- Layouts Confirmit modernes (`cf-question--*`) → extracteurs cf_*
+- Modals consentement (`#modal-container`, `.consent-form-radiogroup`) → `_extract_consent_modal_radio_block`
+- Checkboxes consentement → `_extract_single_consent_checkbox_block`
+- fieldset avec classe `confirmit-rankedorderclick-default` → `_extract_confirmit_wix_rankedorderclick_block`
 
 ### _extract_confirmit_wix_rankedorderclick_block
 Fichier : Survey/dom_extractors_misc.py
+Guard : `fieldset[id^="fieldset_"].confirmit-rankedorderclick-default`
 Patterns couverts :
-- fieldset[id^="fieldset_"].confirmit-rankedorderclick-default contenant table.confirmit-table
-- Items : td.confirmit-rankedorderclick avec label[for=cq{N}_{M}]
-- Question : div[id$="_text"].question_text_ng
-- Instruction : div[id$="_comment"].instruction_text → fusionnée dans question_for_openai
-- min_select extrait depuis le texte d'erreur div[id$="_error"].error_text (pattern "fournir N réponses")
-- itype produit : "checkbox" ; flag payload : confirmit_wix_rankedorderclick=True
-- Labels tronqués à 80 chars (même convention que _extract_confirmit_wix_fieldset_radio_block)
+- Items : `td.confirmit-rankedorderclick[tabindex="0"]` avec `label[for=cq{N}_{M}]`
+- Question : `div[id$="_text"].question_text_ng` ; instruction fusionnée dans `question_for_openai`
+- `min_select` extrait depuis `div[id$="_error"].error_text` (pattern "fournir N réponses")
+- itype produit : "checkbox" ; flag : `confirmit_wix_rankedorderclick=True`
+- Labels tronqués à 80 chars (même convention que fieldset_radio_block)
 Patterns exclus :
-- fieldset sans classe confirmit-rankedorderclick-default → _extract_confirmit_wix_fieldset_radio_block
-- div.cf-question--ranking (Forsta moderne) → _extract_confirmit_cf_ranking_blocks
-Contexte patch :
-- [2026-05] Création. Extracteur dédié, additionnel. Le layout /wix/2/ avec ranked-order-click
-  n'était couvert ni par _extract_confirmit_wix_fieldset_radio_block (itype=radio, pas de ranking)
-  ni par _extract_confirmit_cf_ranking_blocks (guard cf-question--ranking absent).
+- fieldset sans `confirmit-rankedorderclick-default` → _extract_confirmit_wix_fieldset_radio_block
+- `div.cf-question--ranking` (Forsta moderne) → _extract_confirmit_cf_ranking_blocks
 
 ### _apply_by_target_id — bloc confirmit_wix_rankedorderclick
 Fichier : Survey/action_dispatcher.py
-Guard d'activation : payload.get("confirmit_wix_rankedorderclick") and resolved_itype == "checkbox"
+Guard : `payload.get("confirmit_wix_rankedorderclick") and resolved_itype == "checkbox"`
 Patterns couverts :
-- td.confirmit-rankedorderclick[tabindex="0"] : Selenium click natif (déclenche les handlers YUI)
-- Fallback si ElementNotInteractable : MouseEvent bubbles+cancelable via JS (pas td.click() direct)
-- Vérification post-clic : span.confirmit-ranked-order-value contient un entier dans les 1s
-- Item déjà sélectionné (confirmit-rankedorderclick-selected présent) → True immédiat
-- Matching label : normalisation NFKC + collapse whitespace + startsWith (labels longs tronqués)
+- Selenium click natif sur `td.confirmit-rankedorderclick[tabindex="0"]` (tabindex → interactable)
+- Fallback si ElementNotInteractable : `MouseEvent bubbles+cancelable` via JS
+- Validation : `span.confirmit-ranked-order-value` contient un entier dans les 1s
+- Item déjà sélectionné (`confirmit-rankedorderclick-selected`) → `True` immédiat
+Note DOM : `td.click()` JS direct ne déclenche pas les handlers YUI — Selenium click natif obligatoire.
 Patterns exclus :
-- cf-question--ranking (Forsta moderne) → bloc confirmit_cf_ranking
+- `cf-question--ranking` → bloc `confirmit_cf_ranking`
 - Checkboxes Confirmit non-ranking → chemin générique opt_map
-Contexte patch :
-- [2026-05] Création. Bug : td.click() JS direct ne déclenchait pas les handlers YUI
-  → animation visuelle sans sélection réelle sur les rangs 2 et 3. Fix : Selenium click natif
-  en premier (tabindex="0" = interactable), MouseEvent JS en fallback. Validation sur
-  span.confirmit-ranked-order-value (entier présent) plutôt que sur la classe CSS seule.
 
+### _extract_table_matrix_radio_rows — fallback confirmit-grid
+Fichier : Survey/dom_extractors_misc.py
+Emplacement : après lignes 1479–1490, additif.
+Guard : `"confirmit-grid" in table_cls` OU `table.find_elements("table.confirmit-grid")` retourne un résultat → `_is_confirmit=True`
+Patterns couverts :
+- `table.confirmit-grid` imbriquée dans des tables conteneurs (class `widthpartdesktoplayout2014`, etc.)
+- Si `_is_confirmit` : `matrix_question` écrasé inconditionnellement par `driver.find_elements("div.question_text_ng")[0]`, tronqué à 500 chars
+Note DOM : la table traitée peut être le conteneur externe (pas la grille elle-même) — d'où la détection via `find_elements` sur la table courante, pas sur `table_cls` seul.
+Patterns exclus :
+- Tables sans `table.confirmit-grid` → chemin existant inchangé
+- Matrices Askia, SGE, IntelliSurvey, Encuesta → guards distincts
+
+### dom_analyzer.py — priorité label[for] pour itype text/textarea
+Fichier : Survey/dom_analyzer.py
+Emplacement : boucle "autres inputs", avant `_extract_question_from_container()`.
+Guard : `not question and itype in ("text", "textarea") and el_id`
+Patterns couverts :
+- `input[type="text"]` avec id dont le `<label for="id">` est hors du fieldset parent (dans `div[id$="_text"].question_text_ng`)
+- `_extract_question_from_container()` retournerait l'instruction de format au lieu de la question
+- Résolution : `label[for="{el_id}"]` portée globale driver, validé par `_is_question_text()`
+Patterns exclus :
+- Inputs sans id
+- itype dropdown → chemin séparé inchangé
+- Matrices radio/checkbox Confirmit → extracteurs dédiés
+
+### fill_text_input — paramètre element_id
+Fichier : Survey/input_text.py
+Guard : `field is None and element_id`
+Patterns couverts :
+- Champ texte Toluna/Confirmit `/wix/2/` pour lequel `find_context_container` retourne `None`
+- Résolution : `By.ID` en priorité, fallback `By.NAME`
+- `element_id` transmis depuis `action_dispatcher.py` via `target_payload["context"]["id"]`
+Patterns exclus :
+- Champs avec scope résolu par `find_context_container` → `element_id` inutilisé
+
+### execute_action — passage context.id → fill_text_input
+Fichier : Survey/action_dispatcher.py
+Emplacement : branche `itype in ("text", "number")`, avant `_try("text_input", ...)`.
+Guard : `target_payload` présent ET `target_payload["context"]["id"]` non vide
+Patterns couverts :
+- Lecture `_field_id = target_payload.get("context", {}).get("id", "").strip() or None`
+- Passage via closure `lambda fid=_field_id: ...` (évite capture tardive)
+Patterns exclus :
+- itype hors ("text", "number") ; context["id"] vide → `_field_id=None`, comportement inchangé
+
+### build_batch_prompt — règle année courante dynamique
+Fichier : Survey/prompt_builder.py
+Guard : toujours injecté (règle statique, valeur calculée au runtime)
+Patterns couverts :
+- Questions "en quelle année sommes-nous", "what year is it", "current year", "année en cours"
+- Valeur injectée : `datetime.now().year` ; format attendu : entier 4 chiffres
+Patterns exclus :
+- Questions année de naissance → règle birth year distincte
+- Questions âge avec options fermées → règle distincte
+
+### execute_action — post-vérification target_id MetrixLab/Toluna QT
+Fichier : Survey/action_dispatcher.py
+Emplacement : après retour positif de `_apply_by_target_id()`, avant log `strategy=target_id reason=applied`.
+Guard : `target_id` présent ET `_apply_by_target_id()` → `True` ET page avec `div.answer_options` + `input.checkboxQT/radioQT`
+Patterns couverts :
+- État sélectionné porté par `.option_checkbox.input_on` et/ou `.option_label.input_label_on`
+- Bloque le faux positif : ne logue `apply ok=true` que si le DOM confirme l'activation
+Patterns exclus :
+- Checkboxes/radios natifs validés par `input.checked`
+- Widgets déjà vérifiés dans `_apply_by_target_id` (QARTS, Nfield, Askia, Toluna Runtime, etc.)
+
+### execute_action / open_dropdown_generic — dropdown natif sans ouverture préalable
+Fichiers : Survey/action_dispatcher.py, Survey/input_dropdown.py
+Guard : action dropdown + présence possible d'un `<select>` natif
+Patterns couverts :
+- `<select>` natif sélectionnable directement par `select_option_with_hint()` sans `dropdown_open`
+- `open_dropdown_generic()` ne clique/focus/envoie pas `ARROW_DOWN` sur un `<select>` natif
+Patterns exclus :
+- Dropdown custom nécessitant ouverture de menu
+- Bootstrap-select / GfK `.mrDropdown` / RPS custom → guards DOM dédiés dans `select_option_with_hint()`
 
 ---
 
-## PLATEFORME : TOLUNA / CONFIRMIT WIX NATIF — INPUT TEXT NUMÉRIQUE
-Signature DOM : form action `/wix/2/`, `fieldset[id^="fieldset_"]` contenant
-  `table.confirmit-table` avec un seul `input[type="text"]`.
-Distinct de : layout radio (_extract_confirmit_wix_fieldset_radio_block) et
-  ranking (_extract_confirmit_wix_rankedorderclick_block).
+## PLATEFORME : KANTAR / mrIWeb — ROWPICKER RADIO (REACT OVERLAY)
+Signature DOM : `form[name="mrForm"]` (sa.ktrmr.com), `metaType="rowpicker"` dans le SEJson.
+Double couche : `div.questionContainer[questionname][display:none]` (inputs natifs non interactables) + `div#container_{questionname}._rowpicker` (cartes React cliquables).
 
-### dom_analyzer.py — priorité label[for] pour itype text/textarea
-
-Fichier : Survey/dom_analyzer.py
-Emplacement : boucle "autres inputs", immédiatement après le bloc
-  `ancestor::fieldset[1]//legend[contains(@class,'qualification-text')]`,
-  avant l'appel à `_extract_question_from_container()`.
-
+### _extract_kantar_rowpicker_radio_blocks
+Fichier : Survey/dom_extractors_misc.py
+Emplacement : appelée en priorité dans `analyze_dom` avant l'extracteur générique radio/checkbox.
+Guard : `div[id^='container_'] [data-test='main-contain']._rowpicker` présent dans le DOM
 Patterns couverts :
-- input[type="text"] avec id (ex: `progRH1`) dont le `<label for="id">` portant
-  la vraie question est un sibling DOM hors du fieldset parent (dans
-  `div[id$="_text"].question_text_ng`).
-- `_extract_question_from_container()` retourne l'instruction de format
-  (ex: "(Veuillez saisir un nombre à quatre chiffres.)") car le fieldset
-  ne contient que l'input et l'instruction, pas le label de question.
-
-Logique du patch :
-- Guard : `not question and itype in ("text", "textarea") and el_id`
-- Cherche `label[for="{el_id}"]` via driver (portée globale, pas limitée au
-  fieldset).
-- Valide avec `_is_question_text()`.
-- Si valide → affecte `question`, log debug `text_label_for_priority`.
-- `_extract_question_from_container()` n'est appelé qu'en fallback (si toujours
-  vide après ce bloc).
-
+- Question : `#qc_{q_suffix} span.mrQuestionText` ; variante : `.questionContainer[questionname$='.{q_suffix}'] span.mrQuestionText`
+- Cartes : itération sur les overlays `div[dir='ltr'][tabindex='0']` dans le picker ; remontée au conteneur de carte via `ancestor::div[@dir='ltr'][not(@tabindex)][1]` ; label depuis `label span`
+- `option_xpath_map` pointe sur l'overlay (seul élément interactable), pas sur les inputs natifs
+- Flag payload : `kantar_rowpicker_radio=True` ; `group_key` : `kantar_rowpicker:radio:{q_suffix}`
+Note DOM : l'overlay `div[dir='ltr'][tabindex='0']` est séparé de la carte `div[dir='ltr']` par un div intermédiaire sans attribut `dir` — `div[@tabindex='0']` (enfant direct) ne matche pas ; il faut itérer sur les overlays et remonter.
 Patterns exclus :
-- inputs sans id → guard `_el_id` vide, bloc ignoré.
-- itype dropdown → chemin séparé inchangé.
-- Matrices radio/checkbox Confirmit → extracteurs dédiés (0h-sexies).
+- `div[id^='sq-QARTS-container-']` (Decipher/LifePoints QARTS) → extracteur séparé
+- `_rowrank` (metaType=rowrank) → `_extract_kantar_rowrank_blocks`
+- Inputs natifs `input[type=radio][class*="mrSingle"]` dans `div.questionContainer` → jamais ciblés
 
-Contexte patch :
-- [2026-05] Création. Symptôme : question_blocks.json contenait l'instruction
-  "(Veuillez saisir un nombre à quatre chiffres.)" à la place de la vraie
-  question "En quelle année sommes-nous ?". Cause : `_extract_question_from_container()`
-  agrège le texte du fieldset (instruction uniquement) avant que `label[for]`
-  soit consulté. Fix : lecture `label[for=id]` en priorité, portée driver globale.
+### kantar_rowpicker_radio — guard dispatcher
+Fichier : Survey/action_dispatcher.py
+Emplacement : bloc opt_map, avant toute résolution de `el` par `_find_best_visible`.
+Guard : `payload.get("kantar_rowpicker_radio") and resolved_itype == "radio"`
+Patterns couverts :
+- Bypass total de `_find_best_visible` / `_click_candidate` → appel direct `click_kantar_rowpicker_radio(driver, value)`
+Note DOM : `_find_best_visible` a un fallback qui retourne le meilleur candidat même non-visible — les inputs dans `display:none` sont retournés (tag=input, score=100), ce qui court-circuite tout guard placé après.
+Patterns exclus :
+- Tous les autres itypes et providers
 
-  
+### click_kantar_rowpicker_radio
+Fichier : Survey/input_radio.py
+Guard : appelée uniquement depuis le guard `kantar_rowpicker_radio` du dispatcher.
+Patterns couverts :
+- `_JS_FIND` : cherche l'overlay par label dans `._rowpicker`, via `closest('div[dir="ltr"]')` + `querySelector('div[tabindex="0"]')` avec vérification `cursor` dans le style
+- Clic : `overlay.click()`, fallback `ActionChains`
+- `_JS_VERIFY` : changement de `background-color` sur `div[style*="transition: background-color"]` de la carte
+Note DOM : `input.checked` toujours `false` sur ce DOM — les inputs natifs dans `display:none` ne sont jamais synchronisés par React. Vérification obligatoirement via background-color de la carte.
+Patterns exclus :
+- `div[id^='sq-QARTS-container-']` → guard DOM distinct
+
 ---
 
 ## FRONTIÈRES INTER-EXTRACTEURS
 
 | Plateforme | Extracteur A | Extracteur B | Signal de discrimination |
 |---|---|---|---|
-| Askia | _extract_askia_adc_slider | _extract_askia_adc_responsive_table | class du div principal : adc-slider vs adc-responsiveTable |
-| Askia | _apply_by_target_id (askia_responsive_table_checkbox) | chemin générique opt_map | flag `askia_responsive_table_checkbox` dans le payload registry |
-| Confirmit | _extract_confirmit_cf_ranking_blocks | _extract_confirmit_cf_single_choice_blocks / _cf_numeric_list / _cf_open_list | class `cf-question--ranking` sur le div parent |
-| Toluna/Confirmit wix natif | _extract_confirmit_wix_rankedorderclick_block | _extract_confirmit_wix_fieldset_radio_block | classe fieldset : confirmit-rankedorderclick-default présente ou absente |
----
-
-## PLATEFORME : TOLUNA / CONFIRMIT WIX NATIF — INPUT TEXT NUMÉRIQUE (SUITE)
-
-### fill_text_input — paramètre element_id pour résolution directe par id/name
-Fichier : Survey/input_text.py
-Emplacement : signature `fill_text_input(driver, text, context_hint=None, element_id=None)`,
-  bloc de résolution du champ, avant le fallback `WebDriverWait` générique.
-Guard d'activation : `field is None and element_id`
-Patterns couverts :
-- Champ texte Toluna/Confirmit wix natif (`input[type="text"]`, ex: `id="progRH1"`)
-  pour lequel `find_context_container` ne trouve pas de scope (DOM layout tabulaire générique
-  sans `cf-question*` ni attribut data ciblable).
-- `element_id` transmis depuis `action_dispatcher.py` via `target_payload["context"]["id"]`
-  (clé `"id"` du context extrait par le DOM analyzer).
-- Résolution : `By.ID` en priorité, fallback `By.NAME` si introuvable par id.
-- Le `WebDriverWait` générique n'est tenté qu'après (guard `field is None` toujours présent).
-Patterns exclus :
-- Champs avec scope résolu par `find_context_container` → `element_id` inutilisé.
-- Champs Swagbucks, PureSpectrum captcha, date-triplet → chemins dédiés inchangés.
-Contexte patch :
-- [2026-05] Fix : `fill_text_input` résolvait le champ via `WebDriverWait` générique
-  quand `find_context_container` retournait `None` (scope absent sur layout Toluna/Confirmit
-  `/wix/2/` avec tables imbriquées). Risque de cibler un champ incorrect.
-  Correction : ajout du paramètre `element_id`; `action_dispatcher.py` l'alimente via
-  `target_payload["context"]["id"]` avant de passer à `fill_text_input`.
-
-### execute_action — passage de context.id à fill_text_input via element_id
-Fichier : Survey/action_dispatcher.py
-Emplacement : branche `itype in ("text", "number")`, immédiatement avant l'appel `_try("text_input", ...)`.
-Guard d'activation : `target_payload` présent ET `target_payload["context"]["id"]` non vide.
-Patterns couverts :
-- Lecture de `_field_id = target_payload.get("context", {}).get("id", "").strip() or None`
-- Passage de `_field_id` à `fill_text_input(..., element_id=_field_id)` via closure
-  `lambda fid=_field_id: ...` (évite capture tardive de la variable).
-Patterns exclus :
-- itype hors ("text", "number") → bloc non atteint.
-- target_payload absent ou context["id"] vide → `_field_id = None`, comportement inchangé.
-Contexte patch :
-- [2026-05] Additionnel au fix fill_text_input/element_id. Minimal, une seule ligne de lecture
-  + transmission. Pas de modification du format de la réponse parser ni du DOM_REGISTRY.
-
-### build_batch_prompt — règle année courante dynamique
-Fichier : Survey/prompt_builder.py
-Emplacement : section règles dates/années du system prompt, avant les règles naissance/âge.
-Guard d'activation : toujours injecté (règle statique dans le prompt, valeur calculée au runtime).
-Patterns couverts :
-- Questions demandant l'année en cours : "en quelle année sommes-nous",
-  "what year is it", "quelle est l'année actuelle / en cours", "current year", "année en cours".
-- Valeur injectée : `datetime.now().year` (calculé au moment de la construction du prompt).
-- Format de réponse attendu : entier 4 chiffres uniquement, pas de phrase.
-Patterns exclus :
-- Questions demandant l'année de naissance → règle distincte (birth year) inchangée.
-- Questions d'âge avec options fermées → règle distincte inchangée.
-Contexte patch :
-- [2026-05] Fix : GPT retournait 2023 (année de training) sur "En quelle année sommes-nous ?"
-  car aucune règle ne couvrait les questions sur l'année courante (distincte de l'année de
-  naissance). La règle naissance existante n'activait pas sur cette formulation.
-  Correction : injection dynamique de `datetime.now().year` dans le system prompt.
+| Askia | _extract_askia_adc_slider | _extract_askia_adc_responsive_table | class du div principal : `adc-slider` vs `adc-responsiveTable` |
+| Askia | askia_responsive_table_checkbox (dispatcher) | chemin générique opt_map | flag `askia_responsive_table_checkbox` dans le payload |
+| Confirmit | _extract_confirmit_cf_ranking_blocks | _extract_confirmit_cf_single/numeric/open | class `cf-question--ranking` sur le div parent |
+| Toluna/Confirmit wix | _extract_confirmit_wix_rankedorderclick_block | _extract_confirmit_wix_fieldset_radio_block | classe `confirmit-rankedorderclick-default` présente ou absente sur le fieldset |
+| Kantar mrIWeb | _extract_kantar_rowpicker_radio_blocks | extracteur générique radio | flag `kantar_rowpicker_radio` dans le payload + guard dispatcher avant `_find_best_visible` |

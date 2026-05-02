@@ -3281,6 +3281,225 @@ def _extract_confirmit_wix_fieldset_radio_block(driver, frame_chain: list[int] |
     return blocks
 
 
+def _extract_confirmit_wix_checkbox_grid_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
+    """Confirmit/Wix grille checkbox multi-colonnes (layout /wix/2/).
+
+    Cas ciblé : fieldset[id^="fieldset_"] + table.confirmit-grid avec
+    th.grid_scale_ng (colonnes) et td.grid_answer_input /
+    td.grid_alternating_answer_input (cellules). Chaque ligne visible
+    (rowIdx ≠ 98) produit 1 bloc checkbox avec toutes les colonnes comme options.
+
+    Gate DOM (triple) :
+    - fieldset[id^="fieldset_"] présent
+    - table.confirmit-grid dans ce fieldset
+    - ≥2 th.grid_scale_ng dans la table
+
+    Exclusions strictes :
+    - table.confirmit-table → _extract_confirmit_wix_fieldset_radio_block
+    - rowIdx=98 ("Autre") → laissé au bloc text extrait ailleurs
+    """
+    frame_chain = list(frame_chain or [])
+
+    try:
+        fieldsets = driver.find_elements(By.CSS_SELECTOR, "fieldset[id^='fieldset_']")
+    except Exception:
+        return []
+    if not fieldsets:
+        return []
+
+    # JS : récupère uniquement les nœuds texte directs (exclut les div hidden)
+    _JS_DIRECT_TEXT = (
+        "var n=arguments[0],t='';"
+        "for(var i=0;i<n.childNodes.length;i++){"
+        "if(n.childNodes[i].nodeType===3)t+=n.childNodes[i].textContent;"
+        "}return t;"
+    )
+
+    blocks: list[dict] = []
+
+    for fieldset in fieldsets:
+        try:
+            grid_tables = fieldset.find_elements(By.CSS_SELECTOR, "table.confirmit-grid")
+            if not grid_tables:
+                continue
+            grid_table = grid_tables[0]
+
+            # ── Colonnes ──────────────────────────────────────────────────────
+            col_ths = grid_table.find_elements(By.CSS_SELECTOR, "th.grid_scale_ng")
+            if len(col_ths) < 2:
+                continue
+
+            col_labels: list[str] = []
+            for th in col_ths:
+                lbl = ""
+                try:
+                    lbl = _norm(driver.execute_script(_JS_DIRECT_TEXT, th) or "")
+                except Exception:
+                    pass
+                if not lbl:
+                    try:
+                        lbl = _norm(driver.execute_script("return arguments[0].innerText;", th) or "")
+                    except Exception:
+                        lbl = _norm(th.text or "")
+                if lbl:
+                    col_labels.append(lbl)
+
+            if len(col_labels) < 2:
+                continue
+
+            # ── Question globale + instruction ─────────────────────────────────
+            fs_id = fieldset.get_attribute("id") or ""
+            group_name = fs_id[len("fieldset_"):] if fs_id.startswith("fieldset_") else ""
+
+            question_text = ""
+            if group_name:
+                try:
+                    q_els = driver.find_elements(By.CSS_SELECTOR, f"div[id='{group_name}_text']")
+                    if q_els:
+                        question_text = _norm(q_els[0].text or q_els[0].get_attribute("innerText") or "")
+                except Exception:
+                    pass
+            if not question_text:
+                try:
+                    q_els = driver.find_elements(By.CSS_SELECTOR, "div[id$='_text'].question_text_ng")
+                    if q_els:
+                        question_text = _norm(q_els[0].text or q_els[0].get_attribute("innerText") or "")
+                except Exception:
+                    pass
+
+            instruction = ""
+            if group_name:
+                try:
+                    ins_els = driver.find_elements(By.CSS_SELECTOR, f"div[id='{group_name}_comment']")
+                    if ins_els:
+                        instruction = _norm(ins_els[0].text or ins_els[0].get_attribute("innerText") or "")
+                except Exception:
+                    pass
+
+            full_question = f"{question_text} {instruction}".strip() if instruction else question_text
+            if not full_question:
+                full_question = group_name
+
+            # ── Lignes ─────────────────────────────────────────────────────────
+            try:
+                rows = grid_table.find_elements(By.CSS_SELECTOR, "tbody tr")
+            except Exception:
+                continue
+
+            for row in rows:
+                try:
+                    cells = row.find_elements(
+                        By.CSS_SELECTOR,
+                        "td.grid_answer_input, td.grid_alternating_answer_input",
+                    )
+                    if not cells:
+                        continue
+
+                    # Détermine rowIdx depuis le name du premier checkbox trouvé
+                    row_idx: str | None = None
+                    for cell in cells:
+                        try:
+                            cbs = cell.find_elements(By.CSS_SELECTOR, "input[type='checkbox']")
+                            if cbs:
+                                m = re.search(r"_(\d+)$", cbs[0].get_attribute("name") or "")
+                                if m:
+                                    row_idx = m.group(1)
+                                break
+                        except Exception:
+                            continue
+                    if row_idx is None:
+                        continue
+
+                    # Exclure la ligne "Autre" (rowIdx=98)
+                    if row_idx == "98":
+                        continue
+
+                    # Texte du facteur depuis le th de la ligne
+                    factor_text = ""
+                    try:
+                        row_th_els = row.find_elements(
+                            By.CSS_SELECTOR,
+                            "th.grid_answer_label_ng, th.grid_alternating_answer_label_ng",
+                        )
+                        if row_th_els:
+                            factor_text = _norm(
+                                driver.execute_script(_JS_DIRECT_TEXT, row_th_els[0]) or ""
+                            )
+                            if not factor_text:
+                                factor_text = _norm(row_th_els[0].text or "")
+                    except Exception:
+                        pass
+                    if not factor_text:
+                        continue
+
+                    row_question = f"{full_question} - {factor_text}" if full_question else factor_text
+
+                    # Options et option_xpath_map
+                    options: list[str] = []
+                    option_xpath_map: dict[str, str] = {}
+                    for cell, col_lbl in zip(cells[: len(col_labels)], col_labels):
+                        try:
+                            cbs = cell.find_elements(By.CSS_SELECTOR, "input[type='checkbox']")
+                            if not cbs:
+                                continue
+                            cb_id = (cbs[0].get_attribute("id") or "").strip()
+                            if not cb_id:
+                                continue
+                            id_lit = _xpath_literal(cb_id)
+                            xp = f"//input[@id={id_lit}]/ancestor::td[1]//a[1]"
+                            k = _norm_key(col_lbl)
+                            if k not in option_xpath_map:
+                                option_xpath_map[k] = xp
+                                options.append(col_lbl)
+                        except Exception:
+                            continue
+
+                    if not options:
+                        continue
+
+                    group_key = f"confirmit_checkbox_grid:row:{row_idx}"
+                    target_id = make_target_id("group", group_key, row_question)
+
+                    register_target(
+                        target_id,
+                        {
+                            "kind": "group",
+                            "itype": "checkbox",
+                            "group_key": group_key,
+                            "question": row_question,
+                            "option_xpath_map": option_xpath_map,
+                            "frame_chain": frame_chain,
+                            "confirmit_wix_checkbox_grid": True,
+                        },
+                    )
+
+                    log_debug(
+                        "[CONFIRMIT_WIX_CHECKBOX_GRID]",
+                        f"row={row_idx} factor={factor_text[:40]} options={len(options)}",
+                    )
+
+                    blocks.append({
+                        "question": row_question,
+                        "itype": "checkbox",
+                        "options": options,
+                        "max_select": len(options),
+                        "min_select": 1,
+                        "target_id": target_id,
+                        "context": {
+                            "kind": "group",
+                            "group_key": group_key,
+                        },
+                    })
+
+                except Exception:
+                    continue
+
+        except Exception:
+            continue
+
+    return blocks
+
+
 def _extract_confirmit_wix_rankedorderclick_block(driver, frame_chain: list[int] | None) -> list[dict]:
     """Extraction ranked-order-click Confirmit/Wix natif (/wix/2/ URL, fieldset.confirmit-rankedorderclick-default).
 
@@ -4540,16 +4759,17 @@ def _extract_kantar_rowpicker_radio_blocks(driver, frame_chain: list[int] | None
             continue
 
         try:
-            cards = picker.find_elements(By.CSS_SELECTOR, "div.__flexgrid_row > div")
+            overlays = picker.find_elements(By.CSS_SELECTOR, "div[dir='ltr'][tabindex='0']")
         except Exception:
-            cards = []
+            overlays = []
 
         options: list[str] = []
         option_xpath_map: dict[str, str] = {}
 
-        for card in cards:
+        for overlay in overlays:
             try:
-                clickable = card.find_element(By.CSS_SELECTOR, "div[tabindex='0']")
+                # Remonter au conteneur de carte : plus proche ancêtre div[dir="ltr"] sans tabindex.
+                card = overlay.find_element(By.XPATH, "ancestor::div[@dir='ltr'][not(@tabindex)][1]")
                 label_nodes = card.find_elements(By.CSS_SELECTOR, "label span")
             except Exception:
                 continue
@@ -4568,7 +4788,7 @@ def _extract_kantar_rowpicker_radio_blocks(driver, frame_chain: list[int] | None
             if not nk or nk in option_xpath_map:
                 continue
 
-            xp = _best_xpath_for_element(driver, clickable)
+            xp = _best_xpath_for_element(driver, overlay)
             if not xp:
                 continue
 
