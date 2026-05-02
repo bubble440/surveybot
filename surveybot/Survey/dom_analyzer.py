@@ -93,6 +93,7 @@ try:
         _extract_custom_testid_multi_select_checkbox_blocks,
         _extract_single_consent_checkbox_block,
         _extract_consent_modal_radio_block,
+        _extract_confirmit_wix_checkbox_grid_blocks,
         _extract_confirmit_wix_fieldset_radio_block,
         _extract_confirmit_wix_rankedorderclick_block,
         _extract_runtime_answerrow_radio_blocks,
@@ -194,6 +195,7 @@ except ImportError:
         _extract_custom_testid_multi_select_checkbox_blocks,
         _extract_single_consent_checkbox_block,
         _extract_consent_modal_radio_block,
+        _extract_confirmit_wix_checkbox_grid_blocks,
         _extract_confirmit_wix_fieldset_radio_block,
         _extract_confirmit_wix_rankedorderclick_block,
         _extract_runtime_answerrow_radio_blocks,
@@ -1598,6 +1600,16 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         consent_modal_blocks = _extract_consent_modal_radio_block(driver, frame_chain)
         if consent_modal_blocks:
             return consent_modal_blocks
+    except Exception:
+        pass
+
+    # --- 0h-sexies-a) Confirmit/Wix grille checkbox multi-colonnes (layout /wix/2/) ---
+    # Objectif: couvrir les grilles confirmit-grid (table.confirmit-grid) avec checkboxes
+    # à top:-9000px. 1 bloc par ligne-facteur (rowIdx≠98), options = colonnes détaillants.
+    try:
+        wix_cb_grid_blocks = _extract_confirmit_wix_checkbox_grid_blocks(driver, frame_chain)
+        if wix_cb_grid_blocks:
+            return wix_cb_grid_blocks
     except Exception:
         pass
 
