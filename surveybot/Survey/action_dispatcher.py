@@ -2193,16 +2193,19 @@ def _apply_by_target_id(
 
                 def _click_candidate(node, label: str) -> bool:
                     # Cache de méthode gagnante borné au plan courant (target_id = clé de groupe)
+                    # cmix_simple_grid : toutes les lignes partagent la même structure DOM,
+                    # donc la méthode gagnante est partagée via une clé commune.
                     _cm_cache = _get_block_strategy_memory(driver)['click_method']
-                    _first = _cm_cache.get(target_id, 1)  # 1 = tout tenter
+                    _cm_key = "cmix_simple_grid" if payload.get("cmix_simple_grid") else target_id
+                    _first = _cm_cache.get(_cm_key, 1)  # 1 = tout tenter
                     if _first > 1 and debug_target:
-                        log_debug("[TARGET_DEBUG]", f"_click_candidate: skip_to={_first} target_id={target_id}")
+                        log_debug("[TARGET_DEBUG]", f"_click_candidate: skip_to={_first} cm_key={_cm_key!r}")
 
                     # 1) click webdriver standard
                     if _first <= 1:
                         try:
                             node.click()
-                            _cm_cache[target_id] = 1
+                            _cm_cache[_cm_key] = 1
                             return True
                         except Exception as e:
                             if debug_target:
@@ -2212,7 +2215,7 @@ def _apply_by_target_id(
                     if _first <= 2:
                         try:
                             ActionChains(driver).move_to_element(node).pause(0.05).click().perform()
-                            _cm_cache[target_id] = 2
+                            _cm_cache[_cm_key] = 2
                             return True
                         except Exception as e:
                             if debug_target:
@@ -2221,19 +2224,19 @@ def _apply_by_target_id(
                     # 3) CDP click (trusted-ish)
                     if _first <= 3:
                         if _cdp_click(node):
-                            _cm_cache[target_id] = 3
+                            _cm_cache[_cm_key] = 3
                             return True
 
                     # 4) JS click (dernier recours, parfois ignoré si anti-bot)
                     try:
                         driver.execute_script("arguments[0].click();", node)
-                        _cm_cache[target_id] = 4
+                        _cm_cache[_cm_key] = 4
                         return True
                     except Exception as e:
                         if debug_target:
                             log_debug("[TARGET_DEBUG]", f"js click failed on {label}: {_short_exc(e)}")
 
-                    _cm_cache.pop(target_id, None)  # invalider si tout échoue
+                    _cm_cache.pop(_cm_key, None)  # invalider si tout échoue
                     return False
 
                 # 0) pre-clicks (ex: ouvrir un panneau accordéon AVANT de chercher l'option)

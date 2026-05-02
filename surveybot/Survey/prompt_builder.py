@@ -737,7 +737,7 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
         lines.append(f"itype: {itype}")
         if itype == "checkbox" and opts and len(opts) <= 10:
             _excl_pats = ("autre", "other", "aucun", "aucune", "none", "nsp", "n/a", "je ne sais")
-            _n_valid = max(1, sum(1 for o in opts if not any(p in _norm_folded_lc(o) for p in _excl_pats)))
+            _n_valid = max(1, sum(1 for o in opts if not any(_norm_folded_lc(o).startswith(p) for p in _excl_pats)))
             display_max_sel = min(max_sel, _n_valid)
         else:
             display_max_sel = min(max_sel, 5) if max_sel > 3 else max_sel
@@ -796,7 +796,7 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
             else:
                 lines.append(
                     f"selection_rule: Pour QID={qid}, sélectionner entre 1 et {display_max_sel} option(s) pertinente(s) séparée(s) par |. "
-                    f"max_select={display_max_sel} est un PLAFOND. Ne jamais sélectionner 'Autre'/'Other'."
+                    f"Ne jamais sélectionner 'Autre'/'Other'."
                 )
         else:
             if is_multi_text:
