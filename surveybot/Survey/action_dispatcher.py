@@ -1959,6 +1959,7 @@ def _apply_by_target_id(
                 and bool((target_id or "").strip())
                 and bool(_get_block_strategy_memory(driver).get("checkbox", {}).get((target_id or "").strip()))
                 and not payload.get("confirmit_wix_checkbox_grid")
+                and not payload.get("confirmit_wix_fieldset_radio")
             )
             if opt_map and resolved_itype in ("radio", "checkbox") and not _skip_opt_map_for_cached_checkbox:
 
@@ -3729,6 +3730,17 @@ def _apply_by_target_id(
 
                 if _ipsos_slider_value_matches(el, value):
                     return True
+
+                # Toluna wix checkbox : l'input est un sibling du <a>, pas un enfant —
+                # inp_id reste None. Vérifier via src de l'<img> (check_up → check_down).
+                if payload.get("confirmit_wix_fieldset_radio") and resolved_itype == "checkbox":
+                    try:
+                        img = el.find_element(By.XPATH, ".//img[1]")
+                        src = (img.get_attribute("src") or "").lower()
+                        if "check_down" in src:
+                            return True
+                    except Exception:
+                        pass
 
                 if debug_target:
                     log_debug("[TARGET_DEBUG]", f"selection failed after waits: value='{value}' xpath='{xp}' inp_id='{inp_id}' inp_name='{inp_name}'")
@@ -6675,7 +6687,18 @@ def execute_action(
                 label = ctx
 
             checkbox_cache = _get_block_strategy_memory(driver).get("checkbox", {})
-            cache_key = (target_id or "").strip() or _norm_lc(ctx)
+            _cb_payload = target_payload or {}
+            _cwcg_opt_keys = (
+                frozenset((_cb_payload.get("option_xpath_map") or {}).keys())
+                if _cb_payload.get("confirmit_wix_checkbox_grid")
+                else frozenset()
+            )
+            if _cwcg_opt_keys:
+                cache_key = "cwcg:" + ",".join(sorted(_cwcg_opt_keys))
+                if debug_target:
+                    log_debug("[TARGET_DEBUG]", f"checkbox shared_cache_key={cache_key!r} target_id={target_id!r}")
+            else:
+                cache_key = (target_id or "").strip() or _norm_lc(ctx)
 
             def _run_checkbox_strategy(strategy_name: str) -> bool:
                 strategy_map = {

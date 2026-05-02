@@ -3069,10 +3069,12 @@ def _extract_confirmit_wix_fieldset_radio_block(driver, frame_chain: list[int] |
     position:absolute;top:-9000px — non cliquables via Selenium standard.
     Le clic doit cibler le <a href="javascript:void(0)"> dans la même <td> que l'input.
 
-    Gate DOM (triple) :
+    Gate DOM :
     - fieldset[id^="fieldset_"] présent
     - table.confirmit-table dans ce fieldset
-    - au moins 2 input[type="radio"] partageant le même name dans ce fieldset
+    - ≥2 input[type="radio"] partageant le même name → itype=radio
+    - 0 radio + ≥2 input[type="checkbox"] → itype=checkbox (pure-checkbox multi-select)
+    - 1 radio[issinglepunch="true"] + ≥2 checkboxes → itype=checkbox (mixte)
 
     Exclusions strictes :
     - Ne touche pas _extract_consent_modal_radio_block (#modal-container + .consent-form-radiogroup)
@@ -3098,7 +3100,87 @@ def _extract_confirmit_wix_fieldset_radio_block(driver, frame_chain: list[int] |
             if len(radios) < 2:
                 # Fieldset mixte : 1 radio[issinglepunch="true"] + ≥2 checkboxes
                 # → un seul bloc itype=checkbox regroupant toutes les options.
-                if len(radios) == 1:
+                # Pure checkbox (0 radios) : même mécanique, guard issinglepunch absent.
+                if len(radios) == 0:
+                    try:
+                        _cbs = fieldset.find_elements(By.CSS_SELECTOR, "input[type='checkbox']")
+                        if len(_cbs) >= 2:
+                            _fs_id = fieldset.get_attribute("id") or ""
+                            _gname = _fs_id[len("fieldset_"):] if _fs_id.startswith("fieldset_") else ""
+                            if _gname:
+                                _q = ""
+                                try:
+                                    _qels = driver.find_elements(By.CSS_SELECTOR, f"div[id='{_gname}_text']")
+                                    if _qels:
+                                        _q = _norm(_qels[0].text or _qels[0].get_attribute("innerText") or "")
+                                except Exception:
+                                    pass
+                                if not _q:
+                                    try:
+                                        _qels = driver.find_elements(By.CSS_SELECTOR, "div[id$='_text'].question_text_ng")
+                                        if _qels:
+                                            _q = _norm(_qels[0].text or _qels[0].get_attribute("innerText") or "")
+                                    except Exception:
+                                        pass
+                                if not _q:
+                                    _q = _gname
+                                _opts: list[str] = []
+                                _omap: dict[str, str] = {}
+                                for _inp in _cbs:
+                                    try:
+                                        _iid = (_inp.get_attribute("id") or "").strip()
+                                        if not _iid:
+                                            continue
+                                        _lbl = ""
+                                        try:
+                                            _le = driver.find_element(By.CSS_SELECTOR, f"label[for='{_iid}']")
+                                            _lbl = _norm(_le.text or _le.get_attribute("innerText") or "")
+                                        except Exception:
+                                            pass
+                                        if not _lbl:
+                                            continue
+                                        _lbl = _lbl[:80]
+                                        _k = _norm_key(_lbl)
+                                        if _k in _omap:
+                                            continue
+                                        _iid_lit = _xpath_literal(_iid)
+                                        _omap[_k] = f"//input[@id={_iid_lit}]/ancestor::td[1]//a[1]"
+                                        _opts.append(_lbl)
+                                    except Exception:
+                                        continue
+                                if len(_opts) >= 2:
+                                    _gk = f"checkbox:name:{_gname}"
+                                    _tid = make_target_id("group", _gk, _q)
+                                    register_target(
+                                        _tid,
+                                        {
+                                            "kind": "group",
+                                            "itype": "checkbox",
+                                            "group_key": _gk,
+                                            "question": _q,
+                                            "option_xpath_map": _omap,
+                                            "frame_chain": frame_chain,
+                                            "confirmit_wix_fieldset_radio": True,
+                                        },
+                                    )
+                                    log_debug("[CONFIRMIT_WIX_FIELDSET]", f"pure-checkbox group_name={_gname} options={len(_opts)}")
+                                    _ms = _compute_max_select("checkbox", _opts, _q)
+                                    blocks.append({
+                                        "question": _q,
+                                        "itype": "checkbox",
+                                        "options": _opts,
+                                        "max_select": _ms,
+                                        "min_select": 1,
+                                        "target_id": _tid,
+                                        "context": {
+                                            "kind": "group",
+                                            "group_key": _gk,
+                                            "confirmit_wix_fieldset_radio": True,
+                                        },
+                                    })
+                    except Exception:
+                        pass
+                elif len(radios) == 1:
                     try:
                         _issp = (radios[0].get_attribute("issinglepunch") or "").lower() == "true"
                         _cbs = fieldset.find_elements(By.CSS_SELECTOR, "input[type='checkbox']") if _issp else []
