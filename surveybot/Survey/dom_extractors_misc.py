@@ -3094,6 +3094,9 @@ def _extract_confirmit_wix_fieldset_radio_block(driver, frame_chain: list[int] |
 
     for fieldset in fieldsets:
         try:
+            _fs_cls = fieldset.get_attribute("class") or ""
+            if "confirmit-rankedorderclick-default" in _fs_cls:
+                continue
             if not fieldset.find_elements(By.CSS_SELECTOR, "table.confirmit-table"):
                 continue
             radios = fieldset.find_elements(By.CSS_SELECTOR, "input[type='radio']")

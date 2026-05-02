@@ -251,6 +251,7 @@ Patterns exclus :
 - Modals consentement (`#modal-container`, `.consent-form-radiogroup`) → `_extract_consent_modal_radio_block`
 - Checkboxes consentement → `_extract_single_consent_checkbox_block`
 - fieldset avec classe `confirmit-rankedorderclick-default` → `_extract_confirmit_wix_rankedorderclick_block`
+  (couvre aussi le cas pure-checkbox 0 radio + ≥2 checkboxes avec `td.confirmit-rankedorderclick`)
 - `table.confirmit-grid` dans le fieldset → `_extract_confirmit_wix_checkbox_grid_blocks`
 
 ### _extract_confirmit_wix_rankedorderclick_block
@@ -262,6 +263,8 @@ Patterns couverts :
 - `min_select` extrait depuis `div[id$="_error"].error_text` (pattern "fournir N réponses")
 - itype produit : "checkbox" ; flag : `confirmit_wix_rankedorderclick=True`
 - Labels tronqués à 80 chars (même convention que fieldset_radio_block)
+- Couvre aussi le cas pure-checkbox (0 radio + ≥2 checkboxes masqués) dès que le fieldset
+  porte `confirmit-rankedorderclick-default` — interaction toujours via `td.confirmit-rankedorderclick`
 Patterns exclus :
 - fieldset sans `confirmit-rankedorderclick-default` → _extract_confirmit_wix_fieldset_radio_block
 - `div.cf-question--ranking` (Forsta moderne) → _extract_confirmit_cf_ranking_blocks
@@ -443,7 +446,7 @@ Patterns exclus :
 | Askia | _extract_askia_adc_slider | _extract_askia_adc_responsive_table | class du div principal : `adc-slider` vs `adc-responsiveTable` |
 | Askia | askia_responsive_table_checkbox (dispatcher) | chemin générique opt_map | flag `askia_responsive_table_checkbox` dans le payload |
 | Confirmit | _extract_confirmit_cf_ranking_blocks | _extract_confirmit_cf_single/numeric/open | class `cf-question--ranking` sur le div parent |
-| Toluna/Confirmit wix | _extract_confirmit_wix_rankedorderclick_block | _extract_confirmit_wix_fieldset_radio_block | classe `confirmit-rankedorderclick-default` présente ou absente sur le fieldset |
+| Toluna/Confirmit wix | _extract_confirmit_wix_rankedorderclick_block | _extract_confirmit_wix_fieldset_radio_block | classe `confirmit-rankedorderclick-default` présente sur le fieldset — discriminant prioritaire, indépendamment du type d'input (radio ou checkbox) |
 | Toluna/Confirmit wix | _extract_confirmit_wix_checkbox_grid_blocks | _extract_confirmit_wix_fieldset_radio_block | `table.confirmit-grid` présente dans le fieldset (vs `table.confirmit-table`) |
 | Toluna/Confirmit wix | _extract_confirmit_wix_fieldset_radio_block (pure-checkbox) | _extract_confirmit_wix_fieldset_radio_block (radio) | 0 radio + ≥2 checkboxes dans `table.confirmit-table` → itype=checkbox ; ≥2 radios → itype=radio |
 | Kantar mrIWeb | _extract_kantar_rowpicker_radio_blocks | extracteur générique radio | flag `kantar_rowpicker_radio` dans le payload + guard dispatcher avant `_find_best_visible` |
