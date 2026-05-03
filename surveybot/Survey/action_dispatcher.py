@@ -3736,7 +3736,7 @@ def _apply_by_target_id(
 
                 # Toluna wix checkbox : l'input est un sibling du <a>, pas un enfant —
                 # inp_id reste None. Vérifier via src de l'<img> (check_up → check_down).
-                if payload.get("confirmit_wix_fieldset_radio") and resolved_itype == "checkbox":
+                if (payload.get("confirmit_wix_fieldset_radio") or payload.get("confirmit_wix_checkbox_grid")) and resolved_itype == "checkbox":
                     try:
                         img = el.find_element(By.XPATH, ".//img[1]")
                         src = (img.get_attribute("src") or "").lower()

@@ -3531,7 +3531,7 @@ def _extract_confirmit_wix_checkbox_grid_blocks(driver, frame_chain: list[int] |
                             if not cb_id:
                                 continue
                             id_lit = _xpath_literal(cb_id)
-                            xp = f"//input[@id={id_lit}]/ancestor::td[1]"
+                            xp = f"//input[@id={id_lit}]/ancestor::td[1]//a[1]"
                             k = _norm_key(col_lbl)
                             if k not in option_xpath_map:
                                 option_xpath_map[k] = xp
@@ -11401,4 +11401,136 @@ def _extract_confirmit_cf_ranking_blocks(driver, frame_chain: list[int] | None) 
 
     if blocks:
         log_info("[DOM_CONFIRMIT_CF_RANKING]", f"blocks_extracted={len(blocks)}")
+    return blocks
+
+
+# ================================================================================
+# PLATEFORME : DATADIGGERS ICONTROL (AngularJS Screener)
+# ================================================================================
+
+def _extract_datadiggers_icontrol_radio_block(driver, frame_chain=None) -> list[dict]:
+    """
+    Extraction radio DataDiggers icontrol (api-icontrol.datadiggers-mr.com, AngularJS Screener).
+
+    Guard DOM strict:
+      div.main_survey_page + form[id^="attention_questions_"]
+
+    Structure:
+      form.middle_cart[id^="attention_questions_"]
+        h5.questions > span.main_crd_heding          <- question
+        div.survey_radioBtn > div.opt_color > input[type=radio]#N + label[for=N]  <- options
+    """
+    blocks: list[dict] = []
+    try:
+        # Guard 1 : div.main_survey_page présent
+        if not driver.find_elements(By.CSS_SELECTOR, "div.main_survey_page"):
+            return blocks
+
+        # Guard 2 : form[id^="attention_questions_"] dans cette page
+        forms = driver.find_elements(
+            By.CSS_SELECTOR,
+            "div.main_survey_page form[id^='attention_questions_']",
+        )
+        if not forms:
+            return blocks
+        form = forms[0]
+
+        # Question : span.main_crd_heding dans h5.questions
+        question = ""
+        try:
+            q_els = form.find_elements(By.CSS_SELECTOR, "h5.questions span.main_crd_heding")
+            if q_els:
+                question = (q_els[0].get_attribute("textContent") or q_els[0].text or "").strip()
+        except Exception:
+            pass
+
+        if not question:
+            return blocks
+
+        # Options : div.survey_radioBtn > div.opt_color > input[type=radio] + label
+        options: list[str] = []
+        option_xpath_map: dict[str, str] = {}
+        try:
+            radio_btns = form.find_elements(By.CSS_SELECTOR, "div.survey_radioBtn")
+            for btn in radio_btns:
+                try:
+                    inp_els = btn.find_elements(
+                        By.CSS_SELECTOR, "div.opt_color input[type='radio']"
+                    )
+                    label_els = btn.find_elements(By.CSS_SELECTOR, "div.opt_color label")
+                    if not label_els:
+                        continue
+                    label_text = (
+                        label_els[0].get_attribute("textContent") or label_els[0].text or ""
+                    ).strip()
+                    if not label_text:
+                        continue
+                    nk = _norm_lc(label_text)
+                    if not nk or nk in option_xpath_map:
+                        continue
+
+                    # XPath ancré sur l'input id pour unicité, remonte au div.survey_radioBtn cliquable
+                    if inp_els:
+                        inp_id = (inp_els[0].get_attribute("id") or "").strip()
+                        inp_name = (inp_els[0].get_attribute("name") or "").strip()
+                        if inp_id:
+                            name_cond = (
+                                f" and @name={_xpath_literal(inp_name)}" if inp_name else ""
+                            )
+                            xp = (
+                                f"//form[starts-with(@id,'attention_questions_')]"
+                                f"//input[@id={_xpath_literal(inp_id)}{name_cond}]"
+                                f"/ancestor::div[contains(@class,'survey_radioBtn')][1]"
+                            )
+                        else:
+                            xp = _best_xpath_for_element(btn)
+                    else:
+                        xp = _best_xpath_for_element(btn)
+
+                    options.append(label_text)
+                    option_xpath_map[nk] = xp
+                except Exception:
+                    continue
+        except Exception:
+            pass
+
+        if not options:
+            return blocks
+
+        group_key = "datadiggers_icontrol:radio:attention_questions"
+        target_id = make_target_id("group", group_key, question)
+        register_target(
+            target_id,
+            {
+                "kind": "group",
+                "group_key": group_key,
+                "option_xpath_map": option_xpath_map,
+                "datadiggers_icontrol_radio": True,
+            },
+        )
+
+        blocks.append(
+            {
+                "question": question,
+                "itype": "radio",
+                "options": options,
+                "max_select": 1,
+                "min_select": 1,
+                "target_id": target_id,
+                "context": {
+                    "kind": "group",
+                    "group_key": group_key,
+                    "option_xpath_map": option_xpath_map,
+                    "datadiggers_icontrol_radio": True,
+                },
+            }
+        )
+
+        log_info(
+            "[DOM_DATADIGGERS_ICONTROL]",
+            f"extracted 1 radio block q={question[:60]!r} options={len(options)}",
+        )
+    except Exception:
+        pass
+
     return blocks

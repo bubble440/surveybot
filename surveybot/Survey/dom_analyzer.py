@@ -128,6 +128,7 @@ try:
         _extract_askia_ranking_isotope_blocks,
         _extract_askia_adc_slider_blocks,
         _extract_confirmit_cf_ranking_blocks,
+        _extract_datadiggers_icontrol_radio_block,
     )
 
     # Registre et utilitaires
@@ -230,6 +231,7 @@ except ImportError:
         _extract_askia_ranking_isotope_blocks,
         _extract_askia_adc_slider_blocks,
         _extract_confirmit_cf_ranking_blocks,
+        _extract_datadiggers_icontrol_radio_block,
     )
 
 
@@ -1713,6 +1715,15 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         button_choice_blocks = _extract_button_choice_radio_blocks(driver, frame_chain)
         if button_choice_blocks:
             return button_choice_blocks
+    except Exception:
+        pass
+
+    # --- 0i-quinquies) DataDiggers icontrol (AngularJS Screener) ---
+    # Guard DOM strict : div.main_survey_page + form[id^="attention_questions_"]
+    try:
+        dd_blocks = _extract_datadiggers_icontrol_radio_block(driver, frame_chain)
+        if dd_blocks:
+            return dd_blocks
     except Exception:
         pass
 
