@@ -129,6 +129,7 @@ try:
         _extract_askia_adc_slider_blocks,
         _extract_confirmit_cf_ranking_blocks,
         _extract_datadiggers_icontrol_radio_block,
+        _extract_prodege_prescreener_radio_block,
     )
 
     # Registre et utilitaires
@@ -232,6 +233,7 @@ except ImportError:
         _extract_askia_adc_slider_blocks,
         _extract_confirmit_cf_ranking_blocks,
         _extract_datadiggers_icontrol_radio_block,
+        _extract_prodege_prescreener_radio_block,
     )
 
 
@@ -1724,6 +1726,15 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         dd_blocks = _extract_datadiggers_icontrol_radio_block(driver, frame_chain)
         if dd_blocks:
             return dd_blocks
+    except Exception:
+        pass
+
+    # --- 0i-sexies) Prodege/Swagbucks prescreener (prsrvy.com) ---
+    # Guard DOM strict : div.profilerContainer + p.profilerQuestionText
+    try:
+        prodege_blocks = _extract_prodege_prescreener_radio_block(driver, frame_chain)
+        if prodege_blocks:
+            return prodege_blocks
     except Exception:
         pass
 

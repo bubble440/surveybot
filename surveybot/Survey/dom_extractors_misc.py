@@ -11534,3 +11534,127 @@ def _extract_datadiggers_icontrol_radio_block(driver, frame_chain=None) -> list[
         pass
 
     return blocks
+
+
+def _extract_prodege_prescreener_radio_block(driver, frame_chain=None) -> list[dict]:
+    """
+    Extraction radio Prodege/Swagbucks prescreener (prsrvy.com).
+
+    Guard DOM double :
+      1. div.profilerContainer présent
+      2. p.profilerQuestionText présent dans ce conteneur
+
+    Structure :
+      div.profilerContainer > div.profilerContent > section.profilerQuestionSection
+        div.profilerQuestion > p.profilerQuestionText          <- question
+        ul.profilerAnswer[data-type="radio"]
+          li.profilerAnswerRadio
+            input.profilerRadioInput[type=radio][id][name]     <- input natif
+            label.profilerRadioLabel                           <- libellé
+    """
+    blocks: list[dict] = []
+    try:
+        # Guard 1 : div.profilerContainer présent
+        containers = driver.find_elements(By.CSS_SELECTOR, "div.profilerContainer")
+        if not containers:
+            return blocks
+
+        # Guard 2 : p.profilerQuestionText présent (discriminant Prodege strict)
+        q_els = driver.find_elements(By.CSS_SELECTOR, "div.profilerContainer p.profilerQuestionText")
+        if not q_els:
+            return blocks
+
+        question = (q_els[0].get_attribute("textContent") or q_els[0].text or "").strip()
+        if not question:
+            return blocks
+
+        # Options : li.profilerAnswerRadio > label.profilerRadioLabel + input
+        options: list[str] = []
+        option_xpath_map: dict[str, str] = {}
+
+        li_els = driver.find_elements(
+            By.CSS_SELECTOR,
+            "div.profilerContainer li.profilerAnswerRadio",
+        )
+        for li in li_els:
+            try:
+                label_els = li.find_elements(By.CSS_SELECTOR, "label.profilerRadioLabel")
+                inp_els = li.find_elements(By.CSS_SELECTOR, "input.profilerRadioInput[type='radio']")
+                if not label_els:
+                    continue
+                label_text = (
+                    label_els[0].get_attribute("textContent") or label_els[0].text or ""
+                ).strip()
+                if not label_text:
+                    continue
+                nk = _norm_lc(label_text)
+                if not nk or nk in option_xpath_map:
+                    continue
+                if inp_els:
+                    inp_id = (inp_els[0].get_attribute("id") or "").strip()
+                    if inp_id:
+                        xp = (
+                            f"//div[contains(@class,'profilerContainer')]"
+                            f"//input[@type='radio'][@id={_xpath_literal(inp_id)}]"
+                        )
+                    else:
+                        xp = _best_xpath_for_element(li)
+                else:
+                    xp = _best_xpath_for_element(li)
+                options.append(label_text)
+                option_xpath_map[nk] = xp
+            except Exception:
+                continue
+
+        if not options:
+            return blocks
+
+        # group_key basé sur le name commun des inputs (ex: question_3)
+        inp_name = ""
+        try:
+            all_inputs = driver.find_elements(
+                By.CSS_SELECTOR,
+                "div.profilerContainer input.profilerRadioInput[type='radio']",
+            )
+            if all_inputs:
+                inp_name = (all_inputs[0].get_attribute("name") or "").strip()
+        except Exception:
+            pass
+        group_key = f"prodege_prescreener:radio:{inp_name or 'profiler'}"
+
+        target_id = make_target_id("group", group_key, question)
+        register_target(
+            target_id,
+            {
+                "kind": "group",
+                "group_key": group_key,
+                "option_xpath_map": option_xpath_map,
+                "prodege_prescreener_radio": True,
+            },
+        )
+
+        blocks.append(
+            {
+                "question": question,
+                "itype": "radio",
+                "options": options,
+                "max_select": 1,
+                "min_select": 1,
+                "target_id": target_id,
+                "context": {
+                    "kind": "group",
+                    "group_key": group_key,
+                    "option_xpath_map": option_xpath_map,
+                    "prodege_prescreener_radio": True,
+                },
+            }
+        )
+
+        log_info(
+            "[DOM_PRODEGE_PRESCREENER]",
+            f"extracted 1 radio block q={question[:60]!r} options={len(options)}",
+        )
+    except Exception:
+        pass
+
+    return blocks
