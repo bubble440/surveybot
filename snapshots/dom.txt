@@ -1,54 +1,180 @@
-[survey_executor][debug] qid_constraints={'Q1': 5}
-[batch_response_parser] raw response Q1 //// group_49405a220841 //// Art et artisanat|Cuisine|Voyager|Jouer de la musique|Lecture //// checkbox //// Quels-sont vos passe-temps et centres d'intérêts ? Suivant
-[batch_response_parser] qid=Q1 min_select=1 max_select=5 received=5 final_count=5 values=['Art et artisanat', 'Cuisine', 'Voyager', 'Jouer de la musique', 'Lecture']
-[TARGET] execute_action raw="Q1 //// group_49405a220841 //// Art et artisanat //// checkbox //// Quels-sont vos passe-temps et centres d'intérêts ? Suivant"
-[TARGET] parsed target_id='group_49405a220841' itype='checkbox' value='Art et artisanat' context_len=58
-[TARGET] toluna_runtime_answerrow: entering block
-[TARGET] toluna_runtime_answerrow: guard=None
-[TARGET_DEBUG] _apply_by_target_id exception: UnboundLocalError: cannot access local variable 'applied' where it is not associated with a value
-[TARGET_DEBUG] qarts_widget: skip reason='no_qarts_container' label='Art et artisanat'
-[TARGET_DEBUG] nfield_swatches: skip reason='no_mrmultiple' label='Art et artisanat'
-[TARGET] apply ok=true strategy=checkbox_main reason=applied
-[RESCAN_DIAG] idx=0 ok=True itype='checkbox' next_itype='checkbox' tid='group_49405a220841' next_tid='group_49405a220841' same_qblock=True
+[batch_response_parser] qid=Q1 min_select=1 max_select=3 received=2 final_count=2 values=['Deporvillage', 'Amazon Haul']
+[batch_response_parser] qid=Q2 min_select=1 max_select=3 received=2 final_count=2 values=['Aliexpress', 'Amazon Haul']
+[batch_response_parser] qid=Q3 min_select=1 max_select=3 received=2 final_count=2 values=['Deporvillage', 'Aliexpress']
+[batch_response_parser] qid=Q4 min_select=1 max_select=3 received=2 final_count=2 values=['Aliexpress', 'Amazon Haul']
+[batch_response_parser] qid=Q5 min_select=1 max_select=3 received=2 final_count=2 values=['Deporvillage', 'Amazon Haul']
+[batch_response_parser] qid=Q6 min_select=1 max_select=3 received=2 final_count=2 values=['Aliexpress', 'Amazon Haul']
+[batch_response_parser] qid=Q7 min_select=1 max_select=3 received=2 final_count=2 values=['Deporvillage', 'Amazon Haul']
+[batch_response_parser] qid=Q8 min_select=1 max_select=3 received=2 final_count=2 values=['Aliexpress', 'Amazon Haul']
+[batch_response_parser] qid=Q9 min_select=1 max_select=3 received=2 final_count=2 values=['Deporvillage', 'Amazon Haul']
+[batch_response_parser] qid=Q10 min_select=1 max_select=3 received=2 final_count=2 values=['Aliexpress', 'Amazon Haul']
+[batch_response_parser] qid=Q11 min_select=1 max_select=3 received=2 final_count=2 values=['Aliexpress', 'Amazon Haul']
+[batch_response_parser] qid=Q12 min_select=1 max_select=3 received=2 final_count=2 values=['Aliexpress', 'Amazon Haul']
+[batch_response_parser] qid=Q13 min_select=1 max_select=3 received=2 final_count=2 values=['Aliexpress', 'Amazon Haul']
+[batch_response_parser] qid=Q14 min_select=1 max_select=3 received=2 final_count=2 values=['Aliexpress', 'Amazon Haul']
+[batch_response_parser] qid=Q15 min_select=1 max_select=3 received=2 final_count=2 values=['Aliexpress', 'Amazon Haul']
+[TARGET_DEBUG] action_dispatcher file=C:\projects\Surveys\surveybot\Survey\action_dispatcher.py
+[TARGET] execute_action raw='Q1 //// group_f65f27677498 //// Deporvillage //// checkbox //// Qu’aimez-vous le plus à propos des détaillants qui offrent les prix les plus bas pour les Articles de sport, de remise en forme et d’extérieur (vêtements de sports, exercice physique et remise en forme, loisirs d’extérieur, etc.) ? Pour chaque détaillant ci-dessous, sélectionnez au moins une raison pour laquelle vous l’avez classé comme étant un détaillant à bas prix. Si votre réponse n’est pas dans la liste, sélectionnez « Autre (veuillez préciser) » et ajoutez un commentaire. (Veuillez sélectionner toutes les réponses qui correspondent.) - Les prix sont les mêmes pour un produit, quelle que soit sa couleur, sa taille ou sa saveur'
+[TARGET] parsed target_id='group_f65f27677498' itype='checkbox' value='Deporvillage' context_len=639
+[TARGET_DEBUG] toluna_runtime_answerrow skip reason='no_runtime_rows' label='Deporvillage'
+[RESCAN_DIAG] idx=0 ok=True itype='checkbox' next_itype='checkbox' tid='group_f65f27677498' next_tid='group_f65f27677498' same_qblock=True
 [DISPATCH] skip rescan idx=0 same qid='Q1' (checkbox)
-[TARGET] execute_action raw="Q1 //// group_49405a220841 //// Cuisine //// checkbox //// Quels-sont vos passe-temps et centres d'intérêts ? Suivant"
-[TARGET] parsed target_id='group_49405a220841' itype='checkbox' value='Cuisine' context_len=58
-[TARGET] toluna_runtime_answerrow: entering block
-[TARGET] toluna_runtime_answerrow: guard=None
-[TARGET_DEBUG] _apply_by_target_id exception: UnboundLocalError: cannot access local variable 'applied' where it is not associated with a value
-[TARGET_DEBUG] checkbox reuse cached_strategy=checkbox_main target_id=group_49405a220841
-[TARGET_DEBUG] qarts_widget: skip reason='no_qarts_container' label='Cuisine'
-[TARGET_DEBUG] nfield_swatches: skip reason='no_mrmultiple' label='Cuisine'
-[TARGET] apply ok=true strategy=checkbox_main reason=applied
-[RESCAN_DIAG] idx=1 ok=True itype='checkbox' next_itype='checkbox' tid='group_49405a220841' next_tid='group_49405a220841' same_qblock=True
-[DISPATCH] skip rescan idx=1 same qid='Q1' (checkbox)
-[TARGET] execute_action raw="Q1 //// group_49405a220841 //// Voyager //// checkbox //// Quels-sont vos passe-temps et centres d'intérêts ? Suivant"
-[TARGET] parsed target_id='group_49405a220841' itype='checkbox' value='Voyager' context_len=58
-[TARGET] toluna_runtime_answerrow: entering block
-[TARGET] toluna_runtime_answerrow: guard=None
-[TARGET_DEBUG] _apply_by_target_id exception: UnboundLocalError: cannot access local variable 'applied' where it is not associated with a value
-[TARGET_DEBUG] checkbox reuse cached_strategy=checkbox_main target_id=group_49405a220841
-[TARGET_DEBUG] qarts_widget: skip reason='no_qarts_container' label='Voyager'
-[TARGET_DEBUG] nfield_swatches: skip reason='no_mrmultiple' label='Voyager'
-[TARGET] apply ok=true strategy=checkbox_main reason=applied
-[RESCAN_DIAG] idx=2 ok=True itype='checkbox' next_itype='checkbox' tid='group_49405a220841' next_tid='group_49405a220841' same_qblock=True
-[DISPATCH] skip rescan idx=2 same qid='Q1' (checkbox)
-[TARGET] execute_action raw="Q1 //// group_49405a220841 //// Jouer de la musique //// checkbox //// Quels-sont vos passe-temps et centres d'intérêts ? Suivant"
-[TARGET] parsed target_id='group_49405a220841' itype='checkbox' value='Jouer de la musique' context_len=58
-[TARGET] toluna_runtime_answerrow: entering block
-[TARGET] toluna_runtime_answerrow: guard=None
-[TARGET_DEBUG] _apply_by_target_id exception: UnboundLocalError: cannot access local variable 'applied' where it is not associated with a value
-[TARGET_DEBUG] checkbox reuse cached_strategy=checkbox_main target_id=group_49405a220841
-[TARGET_DEBUG] qarts_widget: skip reason='no_qarts_container' label='Jouer de la musique'
-[TARGET_DEBUG] nfield_swatches: skip reason='no_mrmultiple' label='Jouer de la musique'
-[TARGET] apply ok=true strategy=checkbox_main reason=applied
-[RESCAN_DIAG] idx=3 ok=True itype='checkbox' next_itype='checkbox' tid='group_49405a220841' next_tid='group_49405a220841' same_qblock=True
-[DISPATCH] skip rescan idx=3 same qid='Q1' (checkbox)
-[TARGET] execute_action raw="Q1 //// group_49405a220841 //// Lecture //// checkbox //// Quels-sont vos passe-temps et centres d'intérêts ? Suivant"
-[TARGET] parsed target_id='group_49405a220841' itype='checkbox' value='Lecture' context_len=58
-[TARGET] toluna_runtime_answerrow: entering block
-[TARGET] toluna_runtime_answerrow: guard=None
-[TARGET_DEBUG] _apply_by_target_id exception: UnboundLocalError: cannot access local variable 'applied' where it is not associated with a value
-[TARGET_DEBUG] checkbox reuse cached_strategy=checkbox_main target_id=group_49405a220841
-[TARGET_DEBUG] qarts_widget: skip reason='no_qarts_container' label='Lecture'
-[TARGET_DEBUG] nfield_swatches: skip reason='no_mrmultiple' label='Lecture'
+[TARGET] execute_action raw='Q1 //// group_f65f27677498 //// Amazon Haul //// checkbox //// Qu’aimez-vous le plus à propos des détaillants qui offrent les prix les plus bas pour les Articles de sport, de remise en forme et d’extérieur (vêtements de sports, exercice physique et remise en forme, loisirs d’extérieur, etc.) ? Pour chaque détaillant ci-dessous, sélectionnez au moins une raison pour laquelle vous l’avez classé comme étant un détaillant à bas prix. Si votre réponse n’est pas dans la liste, sélectionnez « Autre (veuillez préciser) » et ajoutez un commentaire. (Veuillez sélectionner toutes les réponses qui correspondent.) - Les prix sont les mêmes pour un produit, quelle que soit sa couleur, sa taille ou sa saveur'
+[TARGET] parsed target_id='group_f65f27677498' itype='checkbox' value='Amazon Haul' context_len=639
+[RESCAN_DIAG] idx=1 ok=True itype='checkbox' next_itype='checkbox' tid='group_f65f27677498' next_tid='group_38b40cd395bf' same_qblock=False
+[DOM_CONTEXT_DEBUG] runtime_signature rows=0 wrappers=0 in_selected_context=False
+[DOM_CONTEXT_DEBUG] analyze_dom selected_chain=[] selected_ps_date_question=0 score=90
+[DOM_CONTEXT_DEBUG] analyze_dom stage=context_selected blocks_count=0 chain_len=0
+[WALR_CS] Pas de #cardSortContainer
+[WALR_CS] bloc retourné: False
+[DOM_QUALTRICS_SL_TEXT] blocks_extracted=0
+[CONFIRMIT_WIX_CHECKBOX_GRID] row=16 factor=Les prix sont les mêmes pour un produit options=3
+[CONFIRMIT_WIX_CHECKBOX_GRID] row=6 factor=Frais d’expédition peu élevés (expéd options=3
+[CONFIRMIT_WIX_CHECKBOX_GRID] row=17 factor=Disponibilité d'un vaste choix de produ options=3
+[CONFIRMIT_WIX_CHECKBOX_GRID] row=3 factor=Réductions, bonnes affaires, remises en options=3
+[CONFIRMIT_WIX_CHECKBOX_GRID] row=8 factor=Prix proposés pour les articles en surs options=3
+[CONFIRMIT_WIX_CHECKBOX_GRID] row=2 factor=Prix inférieurs vus sur le site/le maga options=3
+[CONFIRMIT_WIX_CHECKBOX_GRID] row=11 factor=Disponibilité des formats de conditionn options=3
+[CONFIRMIT_WIX_CHECKBOX_GRID] row=1 factor=Bas prix vus dans les publicités, promo options=3
+[CONFIRMIT_WIX_CHECKBOX_GRID] row=18 factor=Financement à 0 %, financement gratuit, options=3
+[CONFIRMIT_WIX_CHECKBOX_GRID] row=7 factor=Faible coût des retours (c.-à-d. le co options=3
+[CONFIRMIT_WIX_CHECKBOX_GRID] row=13 factor=Disponibilité des marques du distribute options=3
+[CONFIRMIT_WIX_CHECKBOX_GRID] row=5 factor=Facilité de recherche des produits à p options=3
+[CONFIRMIT_WIX_CHECKBOX_GRID] row=14 factor=Promotions sur les produits bien visible options=3
+[CONFIRMIT_WIX_CHECKBOX_GRID] row=12 factor=L’adhésion Premium me permet de bénéf options=3
+[CONFIRMIT_WIX_CHECKBOX_GRID] row=15 factor=Facilité d’identification des produits  options=3
+[DOM_CONTEXT_DEBUG] extracted_blocks count=15 itypes=['checkbox']
+[DOM_CONTEXT] extracted_blocks count=15 itypes=['checkbox'] question_len=656 options_count=45
+[DOM_CONTEXT_DEBUG] analyze_dom stage=raw_extraction blocks_count=15 sample=[{'itype': 'checkbox', 'question': 'Qu’aimez-vous le plus à propos des détaillants qui offrent', 'options': 3}, {'itype': 'checkbox', 'question': 'Qu’aimez-vous le plus à propos des détaillants qui offrent', 'options': 3}, {'itype': 'checkbox', 'question': 'Qu’aimez-vous le plus à propos des détaillants qui offrent', 'options': 3}]
+[DOM_CONTEXT_DEBUG] analyze_dom stage=before_return blocks_count=15 sample=[{'itype': 'checkbox', 'question': 'Qu’aimez-vous le plus à propos des détaillants qui offrent', 'options': 3}, {'itype': 'checkbox', 'question': 'Qu’aimez-vous le plus à propos des détaillants qui offrent', 'options': 3}, {'itype': 'checkbox', 'question': 'Qu’aimez-vous le plus à propos des détaillants qui offrent', 'options': 3}]
+[TARGET] execute_action raw='Q2 //// group_38b40cd395bf //// Aliexpress //// checkbox //// Qu’aimez-vous le plus à propos des détaillants qui offrent les prix les plus bas pour les Articles de sport, de remise en forme et d’extérieur (vêtements de sports, exercice physique et remise en forme, loisirs d’extérieur, etc.) ? Pour chaque détaillant ci-dessous, sélectionnez au moins une raison pour laquelle vous l’avez classé comme étant un détaillant à bas prix. Si votre réponse n’est pas dans la liste, sélectionnez « Autre (veuillez préciser) » et ajoutez un commentaire. (Veuillez sélectionner toutes les réponses qui correspondent.) - Frais d’expédition peu élevés (expédition gratuite incluse)'
+[TARGET] parsed target_id='group_38b40cd395bf' itype='checkbox' value='Aliexpress' context_len=607
+[TARGET_DEBUG] toluna_runtime_answerrow skip reason='no_runtime_rows' label='Aliexpress'
+[RESCAN_DIAG] idx=2 ok=True itype='checkbox' next_itype='checkbox' tid='group_38b40cd395bf' next_tid='group_38b40cd395bf' same_qblock=True
+[DISPATCH] skip rescan idx=2 same qid='Q2' (checkbox)
+[TARGET] execute_action raw='Q2 //// group_38b40cd395bf //// Amazon Haul //// checkbox //// Qu’aimez-vous le plus à propos des détaillants qui offrent les prix les plus bas pour les Articles de sport, de remise en forme et d’extérieur (vêtements de sports, exercice physique et remise en forme, loisirs d’extérieur, etc.) ? Pour chaque détaillant ci-dessous, sélectionnez au moins une raison pour laquelle vous l’avez classé comme étant un détaillant à bas prix. Si votre réponse n’est pas dans la liste, sélectionnez « Autre (veuillez préciser) » et ajoutez un commentaire. (Veuillez sélectionner toutes les réponses qui correspondent.) - Frais d’expédition peu élevés (expédition gratuite incluse)'
+[TARGET] parsed target_id='group_38b40cd395bf' itype='checkbox' value='Amazon Haul' context_len=607
+[RESCAN_DIAG] idx=3 ok=True itype='checkbox' next_itype='checkbox' tid='group_38b40cd395bf' next_tid='group_3114a835d18f' same_qblock=False
+[DOM_CONTEXT_DEBUG] runtime_signature rows=0 wrappers=0 in_selected_context=False
+[DOM_CONTEXT_DEBUG] analyze_dom selected_chain=[] selected_ps_date_question=0 score=90
+[DOM_CONTEXT_DEBUG] analyze_dom stage=context_selected blocks_count=0 chain_len=0
+[WALR_CS] Pas de #cardSortContainer
+[WALR_CS] bloc retourné: False
+[DOM_QUALTRICS_SL_TEXT] blocks_extracted=0
+[CONFIRMIT_WIX_CHECKBOX_GRID] row=16 factor=Les prix sont les mêmes pour un produit options=3
+[CONFIRMIT_WIX_CHECKBOX_GRID] row=6 factor=Frais d’expédition peu élevés (expéd options=3
+[CONFIRMIT_WIX_CHECKBOX_GRID] row=17 factor=Disponibilité d'un vaste choix de produ options=3
+[CONFIRMIT_WIX_CHECKBOX_GRID] row=3 factor=Réductions, bonnes affaires, remises en options=3
+[CONFIRMIT_WIX_CHECKBOX_GRID] row=8 factor=Prix proposés pour les articles en surs options=3
+[CONFIRMIT_WIX_CHECKBOX_GRID] row=2 factor=Prix inférieurs vus sur le site/le maga options=3
+[CONFIRMIT_WIX_CHECKBOX_GRID] row=11 factor=Disponibilité des formats de conditionn options=3
+[CONFIRMIT_WIX_CHECKBOX_GRID] row=1 factor=Bas prix vus dans les publicités, promo options=3
+[CONFIRMIT_WIX_CHECKBOX_GRID] row=18 factor=Financement à 0 %, financement gratuit, options=3
+[CONFIRMIT_WIX_CHECKBOX_GRID] row=7 factor=Faible coût des retours (c.-à-d. le co options=3
+[CONFIRMIT_WIX_CHECKBOX_GRID] row=13 factor=Disponibilité des marques du distribute options=3
+[CONFIRMIT_WIX_CHECKBOX_GRID] row=5 factor=Facilité de recherche des produits à p options=3
+[CONFIRMIT_WIX_CHECKBOX_GRID] row=14 factor=Promotions sur les produits bien visible options=3
+[CONFIRMIT_WIX_CHECKBOX_GRID] row=12 factor=L’adhésion Premium me permet de bénéf options=3
+[CONFIRMIT_WIX_CHECKBOX_GRID] row=15 factor=Facilité d’identification des produits  options=3
+[DOM_CONTEXT_DEBUG] extracted_blocks count=15 itypes=['checkbox']
+[DOM_CONTEXT] extracted_blocks count=15 itypes=['checkbox'] question_len=656 options_count=45
+[DOM_CONTEXT_DEBUG] analyze_dom stage=raw_extraction blocks_count=15 sample=[{'itype': 'checkbox', 'question': 'Qu’aimez-vous le plus à propos des détaillants qui offrent', 'options': 3}, {'itype': 'checkbox', 'question': 'Qu’aimez-vous le plus à propos des détaillants qui offrent', 'options': 3}, {'itype': 'checkbox', 'question': 'Qu’aimez-vous le plus à propos des détaillants qui offrent', 'options': 3}]
+[DOM_CONTEXT_DEBUG] analyze_dom stage=before_return blocks_count=15 sample=[{'itype': 'checkbox', 'question': 'Qu’aimez-vous le plus à propos des détaillants qui offrent', 'options': 3}, {'itype': 'checkbox', 'question': 'Qu’aimez-vous le plus à propos des détaillants qui offrent', 'options': 3}, {'itype': 'checkbox', 'question': 'Qu’aimez-vous le plus à propos des détaillants qui offrent', 'options': 3}]
+[TARGET] execute_action raw="Q3 //// group_3114a835d18f //// Deporvillage //// checkbox //// Qu’aimez-vous le plus à propos des détaillants qui offrent les prix les plus bas pour les Articles de sport, de remise en forme et d’extérieur (vêtements de sports, exercice physique et remise en forme, loisirs d’extérieur, etc.) ? Pour chaque détaillant ci-dessous, sélectionnez au moins une raison pour laquelle vous l’avez classé comme étant un détaillant à bas prix. Si votre réponse n’est pas dans la liste, sélectionnez « Autre (veuillez préciser) » et ajoutez un commentaire. (Veuillez sélectionner toutes les réponses qui correspondent.) - Disponibilité d'un vaste choix de produits à bas prix"
+[TARGET] parsed target_id='group_3114a835d18f' itype='checkbox' value='Deporvillage' context_len=601
+[TARGET_DEBUG] toluna_runtime_answerrow skip reason='no_runtime_rows' label='Deporvillage'
+[RESCAN_DIAG] idx=4 ok=True itype='checkbox' next_itype='checkbox' tid='group_3114a835d18f' next_tid='group_3114a835d18f' same_qblock=True
+[DISPATCH] skip rescan idx=4 same qid='Q3' (checkbox)
+[TARGET] execute_action raw="Q3 //// group_3114a835d18f //// Aliexpress //// checkbox //// Qu’aimez-vous le plus à propos des détaillants qui offrent les prix les plus bas pour les Articles de sport, de remise en forme et d’extérieur (vêtements de sports, exercice physique et remise en forme, loisirs d’extérieur, etc.) ? Pour chaque détaillant ci-dessous, sélectionnez au moins une raison pour laquelle vous l’avez classé comme étant un détaillant à bas prix. Si votre réponse n’est pas dans la liste, sélectionnez « Autre (veuillez préciser) » et ajoutez un commentaire. (Veuillez sélectionner toutes les réponses qui correspondent.) - Disponibilité d'un vaste choix de produits à bas prix"
+[TARGET] parsed target_id='group_3114a835d18f' itype='checkbox' value='Aliexpress' context_len=601
+[RESCAN_DIAG] idx=5 ok=True itype='checkbox' next_itype='checkbox' tid='group_3114a835d18f' next_tid='group_6d91a521f736' same_qblock=False
+[DOM_CONTEXT_DEBUG] runtime_signature rows=0 wrappers=0 in_selected_context=False
+[DOM_CONTEXT_DEBUG] analyze_dom selected_chain=[] selected_ps_date_question=0 score=90
+[DOM_CONTEXT_DEBUG] analyze_dom stage=context_selected blocks_count=0 chain_len=0
+[WALR_CS] Pas de #cardSortContainer
+[WALR_CS] bloc retourné: False
+[DOM_QUALTRICS_SL_TEXT] blocks_extracted=0
+[CONFIRMIT_WIX_CHECKBOX_GRID] row=16 factor=Les prix sont les mêmes pour un produit options=3
+[CONFIRMIT_WIX_CHECKBOX_GRID] row=6 factor=Frais d’expédition peu élevés (expéd options=3
+[CONFIRMIT_WIX_CHECKBOX_GRID] row=17 factor=Disponibilité d'un vaste choix de produ options=3
+[CONFIRMIT_WIX_CHECKBOX_GRID] row=3 factor=Réductions, bonnes affaires, remises en options=3
+[CONFIRMIT_WIX_CHECKBOX_GRID] row=8 factor=Prix proposés pour les articles en surs options=3
+[CONFIRMIT_WIX_CHECKBOX_GRID] row=2 factor=Prix inférieurs vus sur le site/le maga options=3
+[CONFIRMIT_WIX_CHECKBOX_GRID] row=11 factor=Disponibilité des formats de conditionn options=3
+[CONFIRMIT_WIX_CHECKBOX_GRID] row=1 factor=Bas prix vus dans les publicités, promo options=3
+[CONFIRMIT_WIX_CHECKBOX_GRID] row=18 factor=Financement à 0 %, financement gratuit, options=3
+[CONFIRMIT_WIX_CHECKBOX_GRID] row=7 factor=Faible coût des retours (c.-à-d. le co options=3
+[CONFIRMIT_WIX_CHECKBOX_GRID] row=13 factor=Disponibilité des marques du distribute options=3
+[CONFIRMIT_WIX_CHECKBOX_GRID] row=5 factor=Facilité de recherche des produits à p options=3
+[CONFIRMIT_WIX_CHECKBOX_GRID] row=14 factor=Promotions sur les produits bien visible options=3
+[CONFIRMIT_WIX_CHECKBOX_GRID] row=12 factor=L’adhésion Premium me permet de bénéf options=3
+[CONFIRMIT_WIX_CHECKBOX_GRID] row=15 factor=Facilité d’identification des produits  options=3
+[DOM_CONTEXT_DEBUG] extracted_blocks count=15 itypes=['checkbox']
+[DOM_CONTEXT] extracted_blocks count=15 itypes=['checkbox'] question_len=656 options_count=45
+[DOM_CONTEXT_DEBUG] analyze_dom stage=raw_extraction blocks_count=15 sample=[{'itype': 'checkbox', 'question': 'Qu’aimez-vous le plus à propos des détaillants qui offrent', 'options': 3}, {'itype': 'checkbox', 'question': 'Qu’aimez-vous le plus à propos des détaillants qui offrent', 'options': 3}, {'itype': 'checkbox', 'question': 'Qu’aimez-vous le plus à propos des détaillants qui offrent', 'options': 3}]
+[DOM_CONTEXT_DEBUG] analyze_dom stage=before_return blocks_count=15 sample=[{'itype': 'checkbox', 'question': 'Qu’aimez-vous le plus à propos des détaillants qui offrent', 'options': 3}, {'itype': 'checkbox', 'question': 'Qu’aimez-vous le plus à propos des détaillants qui offrent', 'options': 3}, {'itype': 'checkbox', 'question': 'Qu’aimez-vous le plus à propos des détaillants qui offrent', 'options': 3}]
+[TARGET] execute_action raw='Q4 //// group_6d91a521f736 //// Aliexpress //// checkbox //// Qu’aimez-vous le plus à propos des détaillants qui offrent les prix les plus bas pour les Articles de sport, de remise en forme et d’extérieur (vêtements de sports, exercice physique et remise en forme, loisirs d’extérieur, etc.) ? Pour chaque détaillant ci-dessous, sélectionnez au moins une raison pour laquelle vous l’avez classé comme étant un détaillant à bas prix. Si votre réponse n’est pas dans la liste, sélectionnez « Autre (veuillez préciser) » et ajoutez un commentaire. (Veuillez sélectionner toutes les réponses qui correspondent.) - Réductions, bonnes affaires, remises en espèces, codes promotionnels'
+[TARGET] parsed target_id='group_6d91a521f736' itype='checkbox' value='Aliexpress' context_len=616
+[TARGET_DEBUG] toluna_runtime_answerrow skip reason='no_runtime_rows' label='Aliexpress'
+[RESCAN_DIAG] idx=6 ok=True itype='checkbox' next_itype='checkbox' tid='group_6d91a521f736' next_tid='group_6d91a521f736' same_qblock=True
+[DISPATCH] skip rescan idx=6 same qid='Q4' (checkbox)
+[TARGET] execute_action raw='Q4 //// group_6d91a521f736 //// Amazon Haul //// checkbox //// Qu’aimez-vous le plus à propos des détaillants qui offrent les prix les plus bas pour les Articles de sport, de remise en forme et d’extérieur (vêtements de sports, exercice physique et remise en forme, loisirs d’extérieur, etc.) ? Pour chaque détaillant ci-dessous, sélectionnez au moins une raison pour laquelle vous l’avez classé comme étant un détaillant à bas prix. Si votre réponse n’est pas dans la liste, sélectionnez « Autre (veuillez préciser) » et ajoutez un commentaire. (Veuillez sélectionner toutes les réponses qui correspondent.) - Réductions, bonnes affaires, remises en espèces, codes promotionnels'
+[TARGET] parsed target_id='group_6d91a521f736' itype='checkbox' value='Amazon Haul' context_len=616
+[RESCAN_DIAG] idx=7 ok=True itype='checkbox' next_itype='checkbox' tid='group_6d91a521f736' next_tid='group_96e1e8d1f84a' same_qblock=False
+[DOM_CONTEXT_DEBUG] runtime_signature rows=0 wrappers=0 in_selected_context=False
+[DOM_CONTEXT_DEBUG] analyze_dom selected_chain=[] selected_ps_date_question=0 score=90
+[DOM_CONTEXT_DEBUG] analyze_dom stage=context_selected blocks_count=0 chain_len=0
+[WALR_CS] Pas de #cardSortContainer
+[WALR_CS] bloc retourné: False
+[DOM_QUALTRICS_SL_TEXT] blocks_extracted=0
+[CONFIRMIT_WIX_CHECKBOX_GRID] row=16 factor=Les prix sont les mêmes pour un produit options=3
+[CONFIRMIT_WIX_CHECKBOX_GRID] row=6 factor=Frais d’expédition peu élevés (expéd options=3
+[CONFIRMIT_WIX_CHECKBOX_GRID] row=17 factor=Disponibilité d'un vaste choix de produ options=3
+[CONFIRMIT_WIX_CHECKBOX_GRID] row=3 factor=Réductions, bonnes affaires, remises en options=3
+[CONFIRMIT_WIX_CHECKBOX_GRID] row=8 factor=Prix proposés pour les articles en surs options=3
+[CONFIRMIT_WIX_CHECKBOX_GRID] row=2 factor=Prix inférieurs vus sur le site/le maga options=3
+[CONFIRMIT_WIX_CHECKBOX_GRID] row=11 factor=Disponibilité des formats de conditionn options=3
+[CONFIRMIT_WIX_CHECKBOX_GRID] row=1 factor=Bas prix vus dans les publicités, promo options=3
+[CONFIRMIT_WIX_CHECKBOX_GRID] row=18 factor=Financement à 0 %, financement gratuit, options=3
+[CONFIRMIT_WIX_CHECKBOX_GRID] row=7 factor=Faible coût des retours (c.-à-d. le co options=3
+[CONFIRMIT_WIX_CHECKBOX_GRID] row=13 factor=Disponibilité des marques du distribute options=3
+[CONFIRMIT_WIX_CHECKBOX_GRID] row=5 factor=Facilité de recherche des produits à p options=3
+[CONFIRMIT_WIX_CHECKBOX_GRID] row=14 factor=Promotions sur les produits bien visible options=3
+[CONFIRMIT_WIX_CHECKBOX_GRID] row=12 factor=L’adhésion Premium me permet de bénéf options=3
+[CONFIRMIT_WIX_CHECKBOX_GRID] row=15 factor=Facilité d’identification des produits  options=3
+[DOM_CONTEXT_DEBUG] extracted_blocks count=15 itypes=['checkbox']
+[DOM_CONTEXT] extracted_blocks count=15 itypes=['checkbox'] question_len=656 options_count=45
+[DOM_CONTEXT_DEBUG] analyze_dom stage=raw_extraction blocks_count=15 sample=[{'itype': 'checkbox', 'question': 'Qu’aimez-vous le plus à propos des détaillants qui offrent', 'options': 3}, {'itype': 'checkbox', 'question': 'Qu’aimez-vous le plus à propos des détaillants qui offrent', 'options': 3}, {'itype': 'checkbox', 'question': 'Qu’aimez-vous le plus à propos des détaillants qui offrent', 'options': 3}]
+[DOM_CONTEXT_DEBUG] analyze_dom stage=before_return blocks_count=15 sample=[{'itype': 'checkbox', 'question': 'Qu’aimez-vous le plus à propos des détaillants qui offrent', 'options': 3}, {'itype': 'checkbox', 'question': 'Qu’aimez-vous le plus à propos des détaillants qui offrent', 'options': 3}, {'itype': 'checkbox', 'question': 'Qu’aimez-vous le plus à propos des détaillants qui offrent', 'options': 3}]
+[TARGET] execute_action raw='Q5 //// group_96e1e8d1f84a //// Deporvillage //// checkbox //// Qu’aimez-vous le plus à propos des détaillants qui offrent les prix les plus bas pour les Articles de sport, de remise en forme et d’extérieur (vêtements de sports, exercice physique et remise en forme, loisirs d’extérieur, etc.) ? Pour chaque détaillant ci-dessous, sélectionnez au moins une raison pour laquelle vous l’avez classé comme étant un détaillant à bas prix. Si votre réponse n’est pas dans la liste, sélectionnez « Autre (veuillez préciser) » et ajoutez un commentaire. (Veuillez sélectionner toutes les réponses qui correspondent.) - Prix proposés pour les articles en surstock (liquidation, magasin d’usine) ou reconditionnés (retournés/d’occasion)'
+[TARGET] parsed target_id='group_96e1e8d1f84a' itype='checkbox' value='Deporvillage' context_len=663
+[TARGET_DEBUG] toluna_runtime_answerrow skip reason='no_runtime_rows' label='Deporvillage'
+[RESCAN_DIAG] idx=8 ok=True itype='checkbox' next_itype='checkbox' tid='group_96e1e8d1f84a' next_tid='group_96e1e8d1f84a' same_qblock=True
+[DISPATCH] skip rescan idx=8 same qid='Q5' (checkbox)
+[TARGET] execute_action raw='Q5 //// group_96e1e8d1f84a //// Amazon Haul //// checkbox //// Qu’aimez-vous le plus à propos des détaillants qui offrent les prix les plus bas pour les Articles de sport, de remise en forme et d’extérieur (vêtements de sports, exercice physique et remise en forme, loisirs d’extérieur, etc.) ? Pour chaque détaillant ci-dessous, sélectionnez au moins une raison pour laquelle vous l’avez classé comme étant un détaillant à bas prix. Si votre réponse n’est pas dans la liste, sélectionnez « Autre (veuillez préciser) » et ajoutez un commentaire. (Veuillez sélectionner toutes les réponses qui correspondent.) - Prix proposés pour les articles en surstock (liquidation, magasin d’usine) ou reconditionnés (retournés/d’occasion)'
+[TARGET] parsed target_id='group_96e1e8d1f84a' itype='checkbox' value='Amazon Haul' context_len=663
+[RESCAN_DIAG] idx=9 ok=True itype='checkbox' next_itype='checkbox' tid='group_96e1e8d1f84a' next_tid='group_f80443bd1041' same_qblock=False
+[DOM_CONTEXT_DEBUG] runtime_signature rows=0 wrappers=0 in_selected_context=False
+[DOM_CONTEXT_DEBUG] analyze_dom selected_chain=[] selected_ps_date_question=0 score=90
+[DOM_CONTEXT_DEBUG] analyze_dom stage=context_selected blocks_count=0 chain_len=0
+[WALR_CS] Pas de #cardSortContainer
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

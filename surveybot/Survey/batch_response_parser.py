@@ -734,6 +734,23 @@ def _find_best_option_match(value: str, options: list[str], threshold: float = 0
             best_opt = opt
     if best_score >= threshold:
         return (best_opt, False, best_score)
+
+    # Résolution suffixe numérique exact.
+    # Cas : GPT abrège "Je suis certain(e) que j'achèterai auprès de ce détaillant 7" → "7".
+    # Guard : valeur reçue = entier pur ET exactement une option se termine par ce chiffre
+    # précédé d'un non-chiffre (évite "7" de matcher "17" ou "71").
+    if re.fullmatch(r"\d+", v_fold.strip()):
+        num_str = re.escape(v_fold.strip())
+        suffix_candidates = [
+            opt for opt in options
+            if re.search(r"(?<!\d)" + num_str + r"$", _fold_lc(opt))
+        ]
+        if len(suffix_candidates) == 1:
+            _debug_log(
+                f"numeric_suffix_match: {value!r} -> {suffix_candidates[0]!r}"
+            )
+            return (suffix_candidates[0], False, 0.95)
+
     return None
 
 
