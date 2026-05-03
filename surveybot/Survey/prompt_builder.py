@@ -383,6 +383,16 @@ def build_system_prompt() -> str:
     )
 
     lines.append(
+        "RÈGLE VALEUR VERBATIM (priorité absolue) :\n"
+        "Retourne chaque option EXACTEMENT telle qu'elle apparaît dans la ligne `options:`, "
+        "sans abréviation, sans reformulation, sans raccourci.\n"
+        "INTERDIT ABSOLU : retourner uniquement le chiffre terminal d'une option "
+        "(ex: retourner '7' au lieu de l'option complète "
+        "'Je suis certain(e) que j'achèterai auprès de ce détaillant 7').\n"
+        "Cette règle s'applique même si le suffixe chiffré te semble redondant ou évident.\n"
+    )
+
+    lines.append(
         "RÈGLE SPÉCIALE MATRICES (itype=matrix) :\n"
         "- valeur DOIT être au format STRICT: row_label || col_label (ou row_label || col1|col2|col3 pour matrices checkbox multi-colonnes)\n"
         "- Si matrix_active_row est fourni dans le contexte, row_label DOIT être EXACTEMENT cette valeur (ne choisis jamais une autre ligne).\n"
@@ -633,26 +643,28 @@ def build_system_prompt() -> str:
     )
     
     lines.append(
-    "RÈGLE TABLEAU RADIO HOMOGÈNE (distribution réaliste) :\n"
-    "Quand ce batch contient 8 questions radio ou plus qui partagent toutes le même jeu d'options "
-    "(ex : une grille d'expérience produit / genre de jeu / comportement avec des options du type "
-    "\"actif / ancien / jamais\" ou \"oui / parfois / non\"), tu DOIS distribuer les réponses de "
-    "façon réaliste et variée. Un répondant humain ne pratique pas activement 30 activités en même temps.\n\n"
-    "Règles de distribution à respecter IMPÉRATIVEMENT dans ce cas :\n"
-    "- Option la plus active : attribuée à 40-65 % des lignes.\n"
-    "- Option intermédiaire : attribuée à 15-30 % des lignes.\n"
-    "- Option la plus passive : attribuée au reste des lignes.\n"
-    "- INTERDIT : répondre la même valeur pour toutes les lignes sans exception.\n"
-    "- Varie les choix de manière imprévisible (ni alternance régulière, ni bloc uniforme).\n\n"
-    "PRIORITÉ : Cette règle est subordonnée aux règles suivantes qui s'appliquent TOUJOURS EN PREMIER "
-    "sur leurs lignes respectives : SURVEY_CONSENT_ACCEPT, RÈGLE SECTEUR, RÈGLE WEBCAM, RÈGLE JAMAIS / NEVER.\n"
-    "Cette règle ne s'applique PAS aux questions radio unitaires, aux checkboxes, "
-    "aux blocs dont le champ itype vaut 'matrix' (matrices non dépliées), "
-    "ni aux screeners disqualificatoires. "
-    "Elle S'APPLIQUE en revanche aux blocs itype=radio issus d'une grille dépliée "
-    "(même si leur contexte mentionne table_matrix_radio, matrix_row ou matrix_columns).\n"
+        "RÈGLE TABLEAU RADIO HOMOGÈNE (distribution réaliste) :\n"
+        "Quand ce batch contient 8 questions radio ou plus qui partagent TOUTES le même jeu\n"
+        "d'options identique (mêmes libellés, même nombre d'options), quelle que soit la nature\n"
+        "de ces options (échelle numérique, fréquence, comportement, Likert, probabilité, etc.),\n"
+        "tu DOIS distribuer les réponses de façon réaliste et variée.\n"
+        "Un répondant humain n'a pas la même opinion, le même comportement ou la même intention\n"
+        "vis-à-vis de 8 éléments ou plus différents.\n\n"
+        "Règles de distribution à respecter IMPÉRATIVEMENT dans ce cas :\n"
+        "- Option la plus active/favorable : attribuée à 40-65 % des lignes.\n"
+        "- Option intermédiaire : attribuée à 15-30 % des lignes.\n"
+        "- Option la plus passive/défavorable : attribuée au reste des lignes.\n"
+        "- INTERDIT : répondre la même valeur pour toutes les lignes sans exception.\n"
+        "- Varie les choix de manière imprévisible (ni alternance régulière, ni bloc uniforme).\n\n"
+        "PRIORITÉ : Cette règle est subordonnée aux règles suivantes qui s'appliquent TOUJOURS EN PREMIER\n"
+        "sur leurs lignes respectives : SURVEY_CONSENT_ACCEPT, RÈGLE SECTEUR, RÈGLE WEBCAM, RÈGLE JAMAIS / NEVER.\n"
+        "Cette règle ne s'applique PAS aux questions radio unitaires, aux checkboxes,\n"
+        "aux blocs dont le champ itype vaut 'matrix' (matrices non dépliées),\n"
+        "ni aux screeners disqualificatoires.\n"
+        "Elle S'APPLIQUE en revanche aux blocs itype=radio issus d'une grille dépliée\n"
+        "(même si leur contexte mentionne table_matrix_radio, matrix_row ou matrix_columns).\n"
     )
-
+    
     return "\n".join(lines)
 
 

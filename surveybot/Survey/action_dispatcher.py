@@ -7147,6 +7147,15 @@ def execute_actions_plan(
                             if _same_matrix_table(tid, next_tid):
                                 same_question_block = True
                                 _skip_reason = f"same matrix table tid={tid!r}"
+                        if not same_question_block and itype_lower == "checkbox" and next_itype == "checkbox" and tid and next_tid:
+                            _p1 = get_target(tid) or {}
+                            _p2 = get_target(next_tid) or {}
+                            if _p1.get("confirmit_wix_checkbox_grid") and _p2.get("confirmit_wix_checkbox_grid"):
+                                _opts1 = frozenset((_p1.get("option_xpath_map") or {}).keys())
+                                _opts2 = frozenset((_p2.get("option_xpath_map") or {}).keys())
+                                if _opts1 and _opts2 and _opts1 == _opts2:
+                                    same_question_block = True
+                                    _skip_reason = f"same confirmit_wix_checkbox_grid tid={tid!r}"
                         if same_question_block:
                             log_debug("[DISPATCH]", f"skip rescan idx={idx} {_skip_reason} ({itype_lower})")
                         else:
