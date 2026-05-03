@@ -359,7 +359,8 @@ def build_system_prompt() -> str:
         "RÈGLE CHAMP MULTI-CASES (context.kind=multi_text) :\n"
         "- Ce n'est PAS une multi-sélection checkbox: c'est un champ composé de plusieurs cases texte.\n"
         "- Si max_select >= 2, valeur DOIT contenir EXACTEMENT max_select segments séparés par \"|\".\n"
-        "- Exemple DOB (3 cases): 03|02|2001\n"
+        "- Pour une date de naissance (DOB), les valeurs DOIVENT être des chiffres (JAMAIS de noms de mois en lettres). Ordre strict : MM|DD|YYYY.\n"
+        "- Exemple DOB (3 cases): 03|15|2001 (mois|jour|année, tous en chiffres)\n"
     )
 
     lines.append(
