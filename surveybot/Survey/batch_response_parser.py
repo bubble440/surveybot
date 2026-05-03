@@ -356,6 +356,32 @@ _MONTHS_EN = {
     "dec": 12,
 }
 
+_MONTHS_FR = {
+    "janvier": 1,
+    "jan": 1,
+    "fevrier": 2,
+    "février": 2,
+    "mars": 3,
+    "avril": 4,
+    "avr": 4,
+    "mai": 5,
+    "juin": 6,
+    "juillet": 7,
+    "juil": 7,
+    "aout": 8,
+    "août": 8,
+    "septembre": 9,
+    "sep": 9,
+    "sept": 9,
+    "octobre": 10,
+    "oct": 10,
+    "novembre": 11,
+    "nov": 11,
+    "decembre": 12,
+    "décembre": 12,
+    "dec": 12,
+}
+
 
 def _debug_enabled() -> bool:
     lvl = (os.getenv("LOG_LEVEL") or "").strip().lower()
@@ -527,6 +553,23 @@ def _normalize_date_triplet_for_multi_text(value: str) -> str | None:
                 return f"{month:02d}|{day:02d}|{year:04d}"
 
     return None
+
+
+def _normalize_multi_text_month_segments(value: str) -> str:
+    """Normalise les noms de mois en lettres dans une valeur multi_text déjà segmentée par |."""
+    all_months: dict = {**_MONTHS_EN, **_MONTHS_FR}
+    segs = value.split("|")
+    out = []
+    changed = False
+    for seg in segs:
+        s = seg.strip()
+        month_num = all_months.get(s.lower())
+        if month_num is not None:
+            out.append(f"{month_num:02d}")
+            changed = True
+        else:
+            out.append(s)
+    return "|".join(out) if changed else value
 
 
 def _is_matrix_action(itype: str, qid: str | None, target_id: str | None, qid_meta: dict | None) -> bool:
@@ -877,6 +920,11 @@ def parse_batch_response(raw: str, constraints: Optional[Dict[str, int]] = None,
             normalized = _normalize_date_triplet_for_multi_text(value)
             if normalized:
                 _debug_log(f"normalized multi_text date triplet: {value!r} -> {normalized!r}")
+                value = normalized
+        elif is_multi_text_target and "|" in value:
+            normalized = _normalize_multi_text_month_segments(value)
+            if normalized != value:
+                _debug_log(f"normalized multi_text month segments: {value!r} -> {normalized!r}")
                 value = normalized
 
         is_matrix = _is_matrix_action(itype=itype, qid=qid, target_id=target_id, qid_meta=qid_meta)

@@ -3584,36 +3584,86 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                                     continue
 
                             if field_payloads:
-                                register_target(
-                                    multi_target_id,
-                                    {
-                                        "kind": "multi_text",
-                                        "itype": itype,
-                                        "question": question,
-                                        "fields": field_payloads,
-                                        "frame_chain": frame_chain,
-                                        "meta": {"max_items": max_items, "multi_text": True},
-                                    },
-                                )
-
-                                question_blocks.append(
-                                    {
-                                        "question": question,
-                                        "itype": itype,
-                                        "options": [],
-                                        "max_select": max_items,  # Pattern spécifique
-                                        "target_id": multi_target_id,
-                                        "context": {
+                                if has_date_triplet:
+                                    _date_role_map = [
+                                        ("month", date_tokens["month"], "Birth month (MM)"),
+                                        ("day",   date_tokens["day"],   "Birth day (DD)"),
+                                        ("year",  date_tokens["year"],  "Birth year (YYYY)"),
+                                    ]
+                                    _added = 0
+                                    for _role, _toks, _q_label in _date_role_map:
+                                        _matched = next(
+                                            (
+                                                (i, fp)
+                                                for i, (fp, blob) in enumerate(zip(field_payloads, field_blobs))
+                                                if any(tok in blob for tok in _toks)
+                                            ),
+                                            None,
+                                        )
+                                        if _matched is None:
+                                            continue
+                                        _idx, _fp = _matched
+                                        _tid = make_target_id("date", f"{effective_group_key}:{_role}", question)
+                                        register_target(
+                                            _tid,
+                                            {
+                                                "kind": "single",
+                                                "itype": "text",
+                                                "question": _q_label,
+                                                "xpath": _fp["xpath"],
+                                                "alt_xpaths": _fp["alt_xpaths"],
+                                                "tag": _fp["tag"],
+                                                "name": _fp["name"],
+                                                "id": _fp["id"],
+                                                "frame_chain": frame_chain,
+                                            },
+                                        )
+                                        question_blocks.append(
+                                            {
+                                                "question": _q_label,
+                                                "itype": "text",
+                                                "options": [],
+                                                "max_select": 1,
+                                                "target_id": _tid,
+                                                "context": {"kind": "single"},
+                                                "min_select": 1,
+                                            }
+                                        )
+                                        _added += 1
+                                    if _added:
+                                        seen_multi_text_groups.add(effective_group_key)
+                                        continue
+                                else:
+                                    register_target(
+                                        multi_target_id,
+                                        {
                                             "kind": "multi_text",
-                                            "fields_count": len(field_payloads),
-                                            "max_items": max_items,
-                                            "name_prefix": prefix or "",
+                                            "itype": itype,
+                                            "question": question,
+                                            "fields": field_payloads,
+                                            "frame_chain": frame_chain,
+                                            "meta": {"max_items": max_items, "multi_text": True},
                                         },
-                                    }
-                                )
+                                    )
 
-                                seen_multi_text_groups.add(effective_group_key)
-                                continue
+                                    question_blocks.append(
+                                        {
+                                            "question": question,
+                                            "itype": itype,
+                                            "options": [],
+                                            "max_select": max_items,  # Pattern spécifique
+                                            "target_id": multi_target_id,
+                                            "context": {
+                                                "kind": "multi_text",
+                                                "fields_count": len(field_payloads),
+                                                "max_items": max_items,
+                                                "name_prefix": prefix or "",
+                                            },
+                                        }
+                                    )
+
+                                    seen_multi_text_groups.add(effective_group_key)
+                                    continue
                 except Exception:
                     pass
 
