@@ -1385,6 +1385,22 @@ def is_error_recovery_screen(driver) -> bool:
         return False
 
 
+def is_prodege_data_privacy_screen(driver) -> bool:
+    """
+    Détecte la page de consentement Prodege (prsrvy.com /surveys/data-privacy).
+    Guard exclusif : form#dataPrivacyAgreeForm + input.dataPrivacyCheckboxRequired + button#dataPrivacySubmitBtn.
+    """
+    try:
+        return bool(driver.execute_script(r"""
+            if (!document.querySelector('form#dataPrivacyAgreeForm')) return false;
+            if (!document.querySelector('input.dataPrivacyCheckboxRequired')) return false;
+            if (!document.querySelector('button#dataPrivacySubmitBtn')) return false;
+            return true;
+        """))
+    except Exception:
+        return False
+
+
 def is_datadiggers_icontrol_final_screen(driver) -> bool:
     """
     Détecte la page de transition DataDiggers iControl post-qualification.
@@ -1422,6 +1438,12 @@ DOM_REGISTRY: list[dict[str, Any]] = [
         "itype": "start_screen",
         "signature": is_start_screen,
         "handler": "handle_start_screen",
+        "openai": False,
+    },
+    {
+        "itype": "prodege_data_privacy_screen",
+        "signature": is_prodege_data_privacy_screen,
+        "handler": "handle_prodege_data_privacy_screen",
         "openai": False,
     },
     {

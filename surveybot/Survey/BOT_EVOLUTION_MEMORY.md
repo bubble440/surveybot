@@ -475,6 +475,33 @@ Patterns exclus :
 - Autres types de questions DataDiggers non observés (questionType != 0)
 Note DOM : `input.checked` non fiable sur ce DOM Angular — la sélection passe par `ng-click` sur `div.survey_radioBtn` qui met à jour `demographic.selected_opt` dans le scope Angular. Le clic doit cibler le `div.survey_radioBtn` (via XPath), pas l'input nu.
 
+---
+
+## CHAMP DATE TRIPLET (DOM générique — prsrvy.com / Prodege et similaires)
+Signature DOM : 3 `<input type="text">` dans un même conteneur, avec `name` ou `id`
+contenant les tokens `date_m` / `date_d` / `date_y` (ou variantes : `month`, `day`, `year`, `mm`, `dd`, etc.)
+Log discriminant : `[DOM_DATE_MULTI_TEXT] detected date triplet`
+
+### Extracteur date triplet — 3 blocs distincts
+Fichier : Survey/dom_analyzer.py
+Emplacement : boucle `singles`, branche `has_date_triplet`, après détection des tokens mois/jour/année.
+Guard : `has_date_triplet=True` (≥3 champs + présence des 3 tokens month/day/year dans les blobs de champ)
+Patterns couverts :
+- Création de 3 blocs indépendants (itype=text, max_select=1), un par rôle : month / day / year
+- `target_id` préfixé `date_` avec suffixe de rôle : `date_{hash}:month`, `date_{hash}:day`, `date_{hash}:year`
+- `context.kind = "single"` (pas `multi_text`) — traité comme 3 champs simples par le parser
+- Questions soumises à GPT : "Birth month (MM)", "Birth day (DD)", "Birth year (YYYY)"
+- GPT répond avec 3 chiffres distincts (ex: `06`, `15`, `1998`) — format naturel, sans logique multi_text
+- `seen_multi_text_groups` mis à jour après insertion pour éviter doublon
+Patterns exclus :
+- Triplets non détectés (tokens absents dans les blobs) → chemin `multi_text` classique (max_select=N)
+- Autres groupes de champs texte sans token date → extracteur multi_text générique inchangé
+Note architecture : avant ce patch, le triplet était extrait comme 1 seul bloc `multi_text` (max_select=3).
+GPT produisait des valeurs hétérogènes (mois en lettres, ordre non garanti) → `received=0` dans
+`_enforce_selection_ranges` car les 3 actions perdaient leur `qid` ou étaient rejetées silencieusement.
+La séparation en 3 blocs distincts supprime toute logique spéciale dans `batch_response_parser.py`.
+
+
 ## FRONTIÈRES INTER-EXTRACTEURS
 
 | Plateforme | Extracteur A | Extracteur B | Signal de discrimination |

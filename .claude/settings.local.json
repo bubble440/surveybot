@@ -33,7 +33,11 @@
       "Bash(python _fix_verify.py)",
       "Bash(python -)",
       "Bash(python -c \"import py_compile; py_compile.compile\\('surveybot/Survey/prompt_builder.py', doraise=True\\); print\\('syntax OK'\\)\")",
-      "Bash(python -c \"import py_compile; py_compile.compile\\('surveybot/Survey/batch_response_parser.py', doraise=True\\); print\\('syntax OK'\\)\")"
+      "Bash(python -c \"import py_compile; py_compile.compile\\('surveybot/Survey/batch_response_parser.py', doraise=True\\); print\\('syntax OK'\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('C:/projects/Surveys/surveybot/Survey/dom_classifier.py'\\).read\\(\\)\\); print\\('dom_classifier OK'\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('C:/projects/Surveys/surveybot/Survey/dom_classifier.py', encoding='utf-8'\\).read\\(\\)\\); print\\('dom_classifier OK'\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('C:/projects/Surveys/surveybot/Survey/action_dispatcher.py', encoding='utf-8'\\).read\\(\\)\\); print\\('action_dispatcher OK'\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('surveybot/Survey/dom_analyzer.py', encoding='utf-8'\\).read\\(\\)\\); print\\('OK'\\)\")"
     ]
   }
 }

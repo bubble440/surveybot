@@ -4618,6 +4618,129 @@ def handle_datadiggers_icontrol_final_screen(driver):
     return False
 
 
+def handle_prodege_data_privacy_screen(driver):
+    """
+    Handler pour la page de consentement Prodege (prsrvy.com /surveys/data-privacy).
+    Guard : form#dataPrivacyAgreeForm + input.dataPrivacyCheckboxRequired + button#dataPrivacySubmitBtn.
+    Coche toutes les cases .dataPrivacyCheckboxRequired via clic label (déclenche les handlers JS natifs),
+    puis clique button#dataPrivacySubmitBtn.
+    CTA_INTERCEPT_ONLY : interception sans navigation.
+    """
+    import time
+    from Survey.log_utils import log_info, log_debug
+
+    intercept_only = (os.getenv("CTA_INTERCEPT_ONLY", "") or "").strip().lower() in {"1", "true", "yes", "on"}
+
+    # Vérification guard strict
+    try:
+        guard_ok = bool(driver.execute_script(r"""
+            return !!(
+                document.querySelector('form#dataPrivacyAgreeForm') &&
+                document.querySelector('input.dataPrivacyCheckboxRequired') &&
+                document.querySelector('button#dataPrivacySubmitBtn')
+            );
+        """))
+    except Exception:
+        guard_ok = False
+
+    if not guard_ok:
+        log_info("[PRODEGE_CONSENT]", "guard non satisfait — page non reconnue")
+        return False
+
+    log_info("[PRODEGE_CONSENT]", "page détectée — cochage des cases requises")
+
+    # Clic sur chaque label[for] des cases .dataPrivacyCheckboxRequired
+    try:
+        checked_count = int(driver.execute_script(r"""
+            const inputs = Array.from(document.querySelectorAll(
+                'form#dataPrivacyAgreeForm input.dataPrivacyCheckboxRequired'
+            ));
+            let n = 0;
+            for (const inp of inputs) {
+                if (inp.checked) { n++; continue; }
+                const id = inp.id;
+                let label = id ? document.querySelector('label[for="' + id + '"]') : null;
+                if (label) {
+                    try { label.click(); } catch(_) {}
+                } else {
+                    try { inp.checked = true; } catch(_) {}
+                    try { inp.dispatchEvent(new Event('change', {bubbles: true})); } catch(_) {}
+                }
+                if (inp.checked) n++;
+            }
+            return n;
+        """) or 0)
+    except Exception:
+        checked_count = 0
+
+    log_info("[PRODEGE_CONSENT]", f"cases cochées={checked_count}")
+
+    # Vérifier que toutes les cases requises sont cochées
+    try:
+        all_checked = bool(driver.execute_script(r"""
+            const inputs = Array.from(document.querySelectorAll(
+                'form#dataPrivacyAgreeForm input.dataPrivacyCheckboxRequired'
+            ));
+            return inputs.length > 0 && inputs.every(i => i.checked);
+        """))
+    except Exception:
+        all_checked = False
+
+    if not all_checked:
+        log_info("[PRODEGE_CONSENT]", "toutes les cases ne sont pas cochées — abandon")
+        return False
+
+    # Récupération du bouton de soumission
+    try:
+        btn = driver.find_element(By.CSS_SELECTOR, "button#dataPrivacySubmitBtn")
+    except Exception:
+        log_info("[PRODEGE_CONSENT]", "button#dataPrivacySubmitBtn introuvable")
+        return False
+
+    if intercept_only:
+        log_info("[PRODEGE_CONSENT]", "CTA_INTERCEPT_ONLY — interception button#dataPrivacySubmitBtn")
+        try:
+            import Survey.input_handler
+            ok = Survey.input_handler.click_cta_strong_any_context(driver, "Continue")
+        except Exception:
+            ok = False
+        log_info("[PRODEGE_CONSENT]", f"INTERCEPT_{'OK' if ok else 'IMPOSSIBLE'}")
+        return ok
+
+    log_info("[PRODEGE_CONSENT]", "clic button#dataPrivacySubmitBtn")
+    try:
+        before_url = driver.current_url or ""
+    except Exception:
+        before_url = ""
+
+    try:
+        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", btn)
+        time.sleep(0.1)
+        btn.click()
+    except Exception:
+        try:
+            driver.execute_script(
+                "arguments[0].dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));",
+                btn,
+            )
+        except Exception:
+            log_info("[PRODEGE_CONSENT]", "clic bouton échoué")
+            return False
+
+    end = time.time() + 10.0
+    while time.time() < end:
+        time.sleep(0.3)
+        try:
+            if driver.current_url != before_url:
+                log_info("[PRODEGE_CONSENT]", "navigation détectée — consentement accepté")
+                return True
+        except Exception:
+            pass
+
+    log_debug("[PRODEGE_CONSENT]", "timeout — aucune navigation après clic Submit")
+    return False
+
+
 def handle_consent_screen(driver):
     """
     Résout un écran/bandeau de consentement (cookies/RGPD) quand il est réellement bloquant.
