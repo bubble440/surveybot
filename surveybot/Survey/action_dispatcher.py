@@ -4553,6 +4553,71 @@ def _wait_for_button_effect(driver, *, timeout=6):
 
     return False
 
+def handle_datadiggers_icontrol_final_screen(driver):
+    """
+    Handler pour la page de transition DataDiggers iControl post-qualification.
+    Clique button.next_btn[translate="srvyFinal.btnLtsDo"] dans div.wrap.infrmtion
+    pour déclencher ng-submit sendRecaptcha() et rediriger vers le sondage externe.
+    """
+    import time
+    from Survey.log_utils import log_info, log_debug
+
+    intercept_only = (os.getenv("CTA_INTERCEPT_ONLY", "") or "").strip().lower() in {"1", "true", "yes", "on"}
+
+    try:
+        btn = driver.find_element(
+            By.CSS_SELECTOR,
+            "div.wrap.infrmtion button.next_btn[translate='srvyFinal.btnLtsDo']",
+        )
+    except Exception:
+        log_info("[DD_FINAL]", "CTA introuvable")
+        return False
+
+    if intercept_only:
+        label = (btn.text or "début").strip() or "début"
+        log_info("[DD_FINAL]", f"CTA_INTERCEPT_ONLY: interception DataDiggers final-screen CTA '{label}'")
+        try:
+            import Survey.input_handler
+            ok = Survey.input_handler.click_cta_strong_any_context(driver, label)
+        except Exception:
+            ok = False
+        log_info("[DD_FINAL]", f"INTERCEPT_{'OK' if ok else 'IMPOSSIBLE'}")
+        return ok
+
+    log_info("[DD_FINAL]", "CTA trouvé — clic button.next_btn (ng-submit DataDiggers)")
+    try:
+        before_url = driver.current_url or ""
+    except Exception:
+        before_url = ""
+
+    try:
+        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", btn)
+        time.sleep(0.1)
+        btn.click()
+    except Exception:
+        try:
+            driver.execute_script(
+                "arguments[0].dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));",
+                btn,
+            )
+        except Exception:
+            log_info("[DD_FINAL]", "clic échoué — bouton inaccessible")
+            return False
+
+    end = time.time() + 10.0
+    while time.time() < end:
+        time.sleep(0.3)
+        try:
+            if driver.current_url != before_url:
+                log_info("[DD_FINAL]", "navigation détectée — redirection OK")
+                return True
+        except Exception:
+            pass
+
+    log_debug("[DD_FINAL]", "timeout — aucune navigation après clic CTA DataDiggers final-screen")
+    return False
+
+
 def handle_consent_screen(driver):
     """
     Résout un écran/bandeau de consentement (cookies/RGPD) quand il est réellement bloquant.

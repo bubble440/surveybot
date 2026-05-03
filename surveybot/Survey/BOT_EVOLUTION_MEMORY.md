@@ -452,6 +452,28 @@ Patterns exclus :
 - Radios Toluna wix (même flag, mais itype=radio) → chemin radio distinct, `_wait_checked` fonctionne sur `input[name]:checked`
 - Tout payload sans `confirmit_wix_fieldset_radio`
 
+---
+
+## PLATEFORME : DATADIGGERS ICONTROL (AngularJS Screener)
+Signature DOM : `div.main_survey_page` + `form[id^="attention_questions_"]`, `ng-app="dataDiggerBackendApp"`
+Domaine observé : api-icontrol.datadiggers-mr.com
+
+### _extract_datadiggers_icontrol_radio_block
+Fichier : Survey/dom_extractors_misc.py
+Enregistré dans : dom_analyzer.py (step 0i-quinquies, avant le pipeline générique radio/checkbox)
+Guard (double) :
+  1. `div.main_survey_page` présent dans le DOM
+  2. `div.main_survey_page form[id^='attention_questions_']` présent
+Patterns couverts :
+- Question : `h5.questions > span.main_crd_heding` dans le form (hors conteneur des inputs)
+- Options : `div.survey_radioBtn > div.opt_color > input[type=radio]` + `label` (4 options typiques)
+- Tous les radios partagent `name="radio-group"` — non discriminant, ignoré
+- XPath option ancré sur `input[@id]` + `@name` → remonte à `div.survey_radioBtn[1]` (cliquable)
+- Flag payload : `datadiggers_icontrol_radio=True`
+- Bouton navigation : `button[type=submit].next_btn` avec `ng-disabled` Angular (déclenché par modèle, pas par `input.checked`)
+Patterns exclus :
+- Autres types de questions DataDiggers non observés (questionType != 0)
+Note DOM : `input.checked` non fiable sur ce DOM Angular — la sélection passe par `ng-click` sur `div.survey_radioBtn` qui met à jour `demographic.selected_opt` dans le scope Angular. Le clic doit cibler le `div.survey_radioBtn` (via XPath), pas l'input nu.
 
 ## FRONTIÈRES INTER-EXTRACTEURS
 
