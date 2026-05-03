@@ -474,6 +474,109 @@ def _detect_image_only_unresolvable_dom(driver, question_blocks: list[dict]) -> 
     return True, pattern_reason, fingerprint
 
 
+# ---------------------------------------------------------------------------
+# DÉTECTION PAGE DE DISQUALIFICATION / FIN DE SONDAGE
+# Guard DOM : aucun input exploitable (branche else execute_survey_page) +
+#   signal textuel de rejet OU iframe callback panel (samplicio.us, etc.)
+# Non-régression : ces signaux n'apparaissent pas sur les pages intro/consent.
+# ---------------------------------------------------------------------------
+
+_DISQ_TEXT_SIGNALS = [
+    "ne vous êtes pas qualifié",
+    "vous ne vous y êtes pas qualifié",
+    "not qualified",
+    "not eligible",
+    "quota full",
+    "quota is full",
+    "survey is closed",
+    "survey closed",
+    "survey has ended",
+    "survey has been closed",
+    "no longer available",
+    "screened out",
+    "disqualified",
+    "you have been disqualified",
+]
+
+_DISQ_CALLBACK_PATTERNS = ["samplicio.us", "clientcallback", "client_callback"]
+
+
+def _detect_disqualification_page(driver) -> tuple:
+    """Retourne (True, signal) si la page est une page de disqualification/fin, (False, '') sinon."""
+    try:
+        cb_src = driver.execute_script(
+            """
+            var iframes = document.querySelectorAll('iframe[src]');
+            for (var i = 0; i < iframes.length; i++) {
+                var s = (iframes[i].getAttribute('src') || '').toLowerCase();
+                if (s.includes('samplicio.us') || s.includes('clientcallback') || s.includes('client_callback')) {
+                    return s;
+                }
+            }
+            return null;
+            """
+        )
+        if cb_src:
+            return True, f"callback_iframe:{str(cb_src)[:80]}"
+    except Exception:
+        pass
+
+    try:
+        body_text = driver.execute_script(
+            "return (document.body && document.body.innerText) || '';"
+        )
+        body_lc = _norm_lc(body_text or "")
+        for sig in _DISQ_TEXT_SIGNALS:
+            if sig in body_lc:
+                return True, f"disq_text:{sig}"
+    except Exception:
+        pass
+
+    return False, ""
+
+
+def _budgeted_disqualification_restart(driver) -> str:
+    """
+    Retourne:
+      - "restarted"        si page disqualification détectée + soft_restart demandé,
+      - "budget_exhausted" si détecté mais budget anti-boucle dépassé,
+      - "no_match"         sinon.
+    """
+    is_disq, signal = _detect_disqualification_page(driver)
+    if not is_disq:
+        return "no_match"
+
+    try:
+        current_url = driver.current_url or ""
+    except Exception:
+        current_url = ""
+    up = urlsplit(current_url)
+    budget_key = f"{up.scheme}://{up.netloc}{up.path}"
+
+    try:
+        counters = getattr(driver, "_disq_page_seen", None)
+        if not isinstance(counters, dict):
+            counters = {}
+        current = int(counters.get(budget_key, 0) or 0)
+        max_hits = 1
+        if current >= max_hits:
+            log_info("[DISQ_PAGE]", f"budget_exhausted key={budget_key} hits={current}/{max_hits}")
+            driver._disq_page_seen = counters
+            return "budget_exhausted"
+        counters[budget_key] = current + 1
+        driver._disq_page_seen = counters
+    except Exception:
+        pass
+
+    log_info("[DISQ_PAGE]", f"disqualification détectée ({signal}) -> soft_restart key={budget_key}")
+    try:
+        import Management.guards.runtime_guard as runtime_guard
+        runtime_guard.get_guard().request_survey_restart(f"disqualification_page:{signal}")
+    except Exception as e:
+        print(f"[DISQ_PAGE][WARN] soft_restart request failed: {type(e).__name__}: {e}")
+    return "restarted"
+
+
 def _budgeted_dom_only_abort_for_image_eval(driver) -> str:
     """
     Retourne:
@@ -1983,6 +2086,12 @@ def execute_survey_page(driver, account_id, api_key, ctx=None):
         if dom_only_abort == "restarted":
             return True
         if dom_only_abort == "budget_exhausted":
+            return False
+
+        disq_abort = _budgeted_disqualification_restart(driver)
+        if disq_abort == "restarted":
+            return True
+        if disq_abort == "budget_exhausted":
             return False
 
         # DOM-only: si le DOM est insuffisant, on abandonne proprement.
