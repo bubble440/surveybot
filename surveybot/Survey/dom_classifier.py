@@ -1384,6 +1384,27 @@ def is_error_recovery_screen(driver) -> bool:
     except Exception:
         return False
 
+
+def is_datadiggers_icontrol_final_screen(driver) -> bool:
+    """
+    Détecte la page de transition DataDiggers iControl post-qualification.
+    Guard DOM exclusif à cette page, absent des pages de questions (form[id^="attention_questions_"]).
+    """
+    try:
+        return bool(driver.execute_script(r"""
+            const wrap = document.querySelector('div.wrap.infrmtion');
+            if (!wrap) return false;
+            const btn = wrap.querySelector('button.next_btn[translate="srvyFinal.btnLtsDo"]');
+            if (!btn) return false;
+            const s = window.getComputedStyle(btn);
+            if (!s || s.display === 'none' || s.visibility === 'hidden') return false;
+            const r = btn.getBoundingClientRect();
+            return !!(r && r.width > 10 && r.height > 10);
+        """))
+    except Exception:
+        return False
+
+
 # ============================================================
 # DOM REGISTRY (ORDRE CRITIQUE)
 # ============================================================
@@ -1401,6 +1422,12 @@ DOM_REGISTRY: list[dict[str, Any]] = [
         "itype": "start_screen",
         "signature": is_start_screen,
         "handler": "handle_start_screen",
+        "openai": False,
+    },
+    {
+        "itype": "datadiggers_icontrol_final_screen",
+        "signature": is_datadiggers_icontrol_final_screen,
+        "handler": "handle_datadiggers_icontrol_final_screen",
         "openai": False,
     },
     {
