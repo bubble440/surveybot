@@ -3531,7 +3531,7 @@ def _extract_confirmit_wix_checkbox_grid_blocks(driver, frame_chain: list[int] |
                             if not cb_id:
                                 continue
                             id_lit = _xpath_literal(cb_id)
-                            xp = f"//input[@id={id_lit}]/ancestor::td[1]//a[1]"
+                            xp = f"//input[@id={id_lit}]/ancestor::td[1]"
                             k = _norm_key(col_lbl)
                             if k not in option_xpath_map:
                                 option_xpath_map[k] = xp
