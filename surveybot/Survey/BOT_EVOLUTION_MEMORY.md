@@ -501,6 +501,31 @@ GPT produisait des valeurs hétérogènes (mois en lettres, ordre non garanti) �
 `_enforce_selection_ranges` car les 3 actions perdaient leur `qid` ou étaient rejetées silencieusement.
 La séparation en 3 blocs distincts supprime toute logique spéciale dans `batch_response_parser.py`.
 
+---
+
+## PLATEFORME : PRODEGE / SWAGBUCKS PRESCREENER (prsrvy.com)
+Signature DOM : `div.profilerContainer` > `div.profilerContent` > `section.profilerQuestionSection`
+Domaine observé : prsrvy.com (Prodege/Swagbucks)
+Question : `p.profilerQuestionText`
+Options : `ul.profilerAnswer[data-type="radio"]` > `li.profilerAnswerRadio` > `input.profilerRadioInput[type=radio]` + `label.profilerRadioLabel`
+Log discriminant : `[DOM_PRODEGE_PRESCREENER] extracted 1 radio block`
+
+### _extract_prodege_prescreener_radio_block
+Fichier : Survey/dom_extractors_misc.py
+Enregistré dans : dom_analyzer.py (step 0i-sexies, avant le pipeline générique radio/checkbox)
+Guard (double) :
+  1. `div.profilerContainer` présent dans le DOM
+  2. `div.profilerContainer p.profilerQuestionText` présent
+Patterns couverts :
+- Question : `p.profilerQuestionText` (textContent)
+- Options : `li.profilerAnswerRadio > label.profilerRadioLabel` + `input.profilerRadioInput[type=radio]`
+- XPath option ancré sur `input[@id]` dans `div.profilerContainer` (scope strict)
+- `group_key = prodege_prescreener:radio:{input_name}` (ex: `question_3`)
+- Flag payload : `prodege_prescreener_radio=True` ; itype=radio, max_select=1
+- Dispatch : chemin générique `opt_map` (aucun bloc dispatcher spécifique)
+Patterns exclus :
+- `ul.profilerAnswer[data-type!="radio"]` (non observé, guard passif)
+
 
 ## FRONTIÈRES INTER-EXTRACTEURS
 
@@ -513,3 +538,5 @@ La séparation en 3 blocs distincts supprime toute logique spéciale dans `batch
 | Toluna/Confirmit wix | _extract_confirmit_wix_checkbox_grid_blocks | _extract_confirmit_wix_fieldset_radio_block | `table.confirmit-grid` présente dans le fieldset (vs `table.confirmit-table`) |
 | Toluna/Confirmit wix | _extract_confirmit_wix_fieldset_radio_block (pure-checkbox) | _extract_confirmit_wix_fieldset_radio_block (radio) | 0 radio + ≥2 checkboxes dans `table.confirmit-table` → itype=checkbox ; ≥2 radios → itype=radio |
 | Kantar mrIWeb | _extract_kantar_rowpicker_radio_blocks | extracteur générique radio | flag `kantar_rowpicker_radio` dans le payload + guard dispatcher avant `_find_best_visible` |
+| Prodege/Swagbucks | _extract_prodege_prescreener_radio_block | extracteur générique radio/checkbox | `div.profilerContainer` + `p.profilerQuestionText` (step 0i-sexies, retour immédiat si match) |
+- Tout DOM sans `div.profilerContainer` ou sans `p.profilerQuestionText`
