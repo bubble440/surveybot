@@ -527,6 +527,32 @@ Patterns exclus :
 - `ul.profilerAnswer[data-type!="radio"]` (non observé, guard passif)
 
 
+## PLATEFORME : DECIPHER / FOCUSVISION — DROPDOWN + CHAMP "AUTRE" FRÈRE
+
+### Pruning du bloc text companion d'un dropdown Decipher (div.question[id$="_open"])
+Fichier : dom_analyzer.py (pipeline post-extraction)
+Guard : présence d'un `div.question[id]` frère dont l'id est `<QID>_open` et dont le div.question du dropdown a l'id `<QID>`
+
+**Symptôme corrigé :**
+Sur les pages Decipher/FocusVision exposant une question dropdown (`div.question.noRows.noCols` + `div.fir-select > select.input.dropdown`) accompagnée d'un champ texte libre "Autre" rendu dans un `div.question` frère avec id suffixé `_open` (ex: `question_Q8x2` / `question_Q8x2_open`), le bot extrait deux blocs distincts — un `itype=dropdown` et un `itype=text` — ce qui conduit GPT à produire deux réponses pour une seule question.
+
+**Cause racine :**
+Les guards existants (`_is_open_ended_choice_companion`, `_is_other_specify_choice_companion`, `_prune_focusvision_auxiliary_openended_singles`) ne couvrent pas ce pattern : le champ texte est dans un `div.question` séparé (frère DOM), sans radio/checkbox dans son propre scope, sans préfixe `oe*` sur son `name`, et le groupe dropdown ne produit pas d'entrée `aux_openended_names`.
+
+**Signal DOM discriminant :**
+`id` du `div.question` contenant le dropdown = `question_<QID>` ; `id` du `div.question` contenant le `input[type='text']` = `question_<QID>_open`. Ce suffixe `_open` sur le conteneur frère est le signal Decipher de companion explicite.
+
+**Fix appliqué :**
+Nouvelle passe de pruning post-extraction dans `dom_analyzer.py` : pour chaque bloc `itype=text/textarea` de kind `single`, si son `div.question` parent a un `id` suffixé `_open` et qu'un bloc `itype=dropdown` avec `id` préfixe correspondant (`id[:-5]`) existe dans les blocs, le bloc text est supprimé.
+
+**Patterns couverts :**
+- `div.question[id="question_<QID>"]` + `div.fir-select > select.input.dropdown` (dropdown principal)
+- `div.question[id="question_<QID>_open"]` + `input[type='text']` (companion supprimé)
+
+**Patterns exclus :**
+- Champs `_open` sans bloc dropdown frère correspondant (ex : question texte libre standalone)
+- `oe*` open-ended dans le même conteneur que des radio/checkbox (couvert par `_is_open_ended_choice_companion`)
+
 ---
 
 ## PLATEFORME : QUALTRICS — MULTI-CASES TEXTE LIBRE (FORM, N inputs)
