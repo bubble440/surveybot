@@ -58,6 +58,7 @@ try:
         _extract_decipher_grid_select_blocks,
         _extract_decipher_answers_list_fallback,
         _extract_qarts_hidden_answers_groups,
+        _extract_decipher_ranksort_dropdown_blocks,
     )
 
     from Survey.dom_extractors_areyounet import (
@@ -165,6 +166,7 @@ except ImportError:
         _extract_decipher_grid_select_blocks,
         _extract_decipher_answers_list_fallback,
         _extract_qarts_hidden_answers_groups,
+        _extract_decipher_ranksort_dropdown_blocks,
     )
     from Survey.dom_extractors_areyounet import (
         _extract_areyounet_matrix_blocks,
@@ -1770,6 +1772,16 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         prodege_blocks = _extract_prodege_prescreener_radio_block(driver, frame_chain)
         if prodege_blocks:
             return prodege_blocks
+    except Exception:
+        pass
+
+    # --- 0i-septies) Decipher/NorstatSurveys ranksort dropdown (div.question.sq-ranksort) ---
+    # Guard DOM strict : div.question.sq-ranksort
+    # Cible : selects dans table.grid[display:none] — invisibles pour le pipeline générique.
+    try:
+        ranksort_blocks = _extract_decipher_ranksort_dropdown_blocks(driver, frame_chain)
+        if ranksort_blocks:
+            return ranksort_blocks
     except Exception:
         pass
 
