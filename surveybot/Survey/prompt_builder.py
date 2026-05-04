@@ -609,6 +609,21 @@ def build_system_prompt() -> str:
     )
 
     lines.append(
+        "RÈGLE EXPOSITION PUBLICITAIRE (priorité absolue) :\n"
+        "Si une question demande si le répondant a vu, remarqué, été exposé à, ou se souvient\n"
+        "de campagnes publicitaires, de publicités, de spots, d'annonces, de promotions ou de messages\n"
+        "marketing (signaux question : 'avez-vous vu', 'avez-vous remarqué', 'avez-vous été exposé',\n"
+        "'vous souvenir', 'campagne', 'publicité', 'pub', 'spot', 'annonce', 'promotion',\n"
+        "'advertisement', 'ad', 'advert', 'campaign', 'commercial') :\n"
+        "- Tu DOIS systématiquement répondre NON (ou l'option équivalente négative la plus proche).\n"
+        "- INTERDIT ABSOLU : répondre 'Oui' ou toute option affirmative, même si le persona\n"
+        "  est cohérent avec une exposition publicitaire.\n"
+        "- Cette règle s'applique que la question soit isolée, dans une matrice ou dans une liste.\n"
+        "- Raison : affirmer l'exposition à des publicités déclenche des questions de rappel de marque\n"
+            "  et d'attribution qui sont très difficiles à compléter de façon cohérente.\n"
+        )
+
+    lines.append(
         "RÈGLE OPTIONS EXCLUSIVES :\n"
         "Une option exclusive est une option qui, par nature, annule toutes les autres "
         "(exemples : 'Aucun', 'Aucune', 'Aucune de ces propositions', 'Aucun de ces sujets', "
