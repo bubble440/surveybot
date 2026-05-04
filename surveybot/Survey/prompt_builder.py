@@ -755,7 +755,6 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
             display_max_sel = min(max_sel, _n_valid)
         else:
             display_max_sel = min(max_sel, 5) if max_sel > 3 else max_sel
-        lines.append(f"max_select: {display_max_sel}")
         is_multi_text = (
             itype in {"text", "textarea", "number"}
             and max_sel >= 2
@@ -764,6 +763,9 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
                 or str((ctx or {}).get("kind") or "") == "multi_text"
             )
         )
+        if is_multi_text:
+            display_max_sel = max_sel
+        lines.append(f"max_select: {display_max_sel}")
         if is_cardsort:
             lines.append(
                 "selection_rule: Pour QID={qid}, renvoyer EXACTEMENT une affectation par carte au format "
