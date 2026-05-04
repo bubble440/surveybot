@@ -555,6 +555,43 @@ Nouvelle passe de pruning post-extraction dans `dom_analyzer.py` : pour chaque b
 
 ---
 
+## PLATEFORME : DECIPHER / NORSTAT — RANKSORT (sq-ranksort, table.grid display:none)
+Signature DOM : `div.question.sq-ranksort` contenant `h1.question-text`, `h2.instruction-text`,
+et `table.grid[style*="display:none"]` avec N `tr.row.row-elements` (1 `<th>` + 1 `select.input.dropdown` par item)
+Log discriminant : `[DOM_DECIPHER_RANKSORT] extracted 1 ranksort block: N items, M ranks`
+
+### _extract_decipher_ranksort_dropdown_blocks
+Fichier : Survey/dom_extractors_decipher.py
+Guard (double) :
+  1. `div.question.sq-ranksort` présent dans le DOM
+  2. `table.grid` contenant au moins 1 `tr.row.row-elements` avec `<th>` + `select.input.dropdown`
+Patterns couverts :
+- Produit UN SEUL bloc `itype=checkbox`, `kind=group`
+- `question` = texte h1 + instruction h2 fusionnés
+- `options` = liste des textes `<th>` dans l'ordre DOM (les items à classer)
+- `max_select` = `min_select` = nombre d'options hors placeholder dans un select (ex : 3)
+- Registry payload : `rank_labels` (["Rang 1", "Rang 2", "Rang 3"]), `item_select_map`
+  (item_norm → {sel_id, sel_name}), flag `decipher_ranksort_dropdown=True`
+- La table.grid étant CSS-cachée (`display:none`), les selects ne sont pas visibles ;
+  le pipeline générique les rejetait → ce bloc remplace les N anciens blocs dropdown
+Patterns exclus :
+- Autres extracteurs Decipher (answers-list, grid, QARTS) → pas de `div.question.sq-ranksort`
+
+### _apply_by_target_id — bloc decipher_ranksort_dropdown
+Fichier : Survey/action_dispatcher.py
+Emplacement : avant le chemin générique `opt_map`, guard `payload.get("decipher_ranksort_dropdown") and resolved_itype == "checkbox"`
+Guard : flag `decipher_ranksort_dropdown=True` + `resolved_itype == "checkbox"`
+Patterns couverts :
+- `value` = texte de l'item retourné par GPT (résolution fuzzy via `item_select_map`)
+- `ordinal` = position 1-based de l'item dans la réponse GPT (tracké via `driver._decipher_ranksort_ordinal`)
+- Sélection JS sur le select display:none : `selectedIndex` + `dispatchEvent('change')`
+- Rang assigné = `rank_labels[ordinal - 1]` (1er item → Rang 1, 2ème → Rang 2, …)
+- Compteurs ordinaux (`driver._decipher_ranksort_counts`) réinitialisés à chaque plan dans `execute_actions_plan`
+Patterns exclus :
+- Blocs checkbox sans flag `decipher_ranksort_dropdown` → chemin générique inchangé
+
+---
+
 ## PLATEFORME : QUALTRICS — MULTI-CASES TEXTE LIBRE (FORM, N inputs)
 Signature DOM : `div.QuestionOuter.TE` > `div.Inner.FORM` > `fieldset` > `table` > N `<tr>` avec `<input type="text" name="QR~{QID}~{N}~TEXT">`
 Distinct de `div.Inner.SL` (1 seul input) → couvert par `_extract_qualtrics_sl_text_blocks`.

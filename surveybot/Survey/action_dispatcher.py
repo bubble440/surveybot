@@ -1982,6 +1982,69 @@ def _apply_by_target_id(
                     )
                     return bool(_rp_ok)
 
+                # Guard decipher_ranksort_dropdown : 1 bloc checkbox, N items à classer.
+                # value = texte de l'item retourné par GPT ; ordinal = sa position (1-based) dans la réponse.
+                # On set le select de cet item à rank_labels[ordinal-1] via JS (le select est display:none).
+                if payload.get("decipher_ranksort_dropdown") and resolved_itype == "checkbox":
+                    _rs_item_map = payload.get("item_select_map") or {}
+                    _rs_rank_labels = payload.get("rank_labels") or []
+                    if not _rs_item_map or not _rs_rank_labels:
+                        return False
+
+                    # Résolution item → select par normalisation fuzzy
+                    _rs_sel_info = _rs_item_map.get(v_norm) or (_rs_item_map.get(v_fold) if v_fold else None)
+                    if not _rs_sel_info:
+                        for _rs_k, _rs_v in _rs_item_map.items():
+                            _rs_kn = _norm_lc(_rs_k)
+                            if v_norm and (v_norm == _rs_kn or v_norm in _rs_kn or _rs_kn in v_norm):
+                                _rs_sel_info = _rs_v
+                                break
+                            if v_fold:
+                                _rs_kf = _fold_norm_lc(_rs_k)
+                                if v_fold == _rs_kn or v_fold in _rs_kn or _rs_kn in v_fold or v_fold == _rs_kf or _rs_kf in v_fold:
+                                    _rs_sel_info = _rs_v
+                                    break
+
+                    if not _rs_sel_info:
+                        log_debug("[TARGET_DEBUG]", f"decipher_ranksort: item introuvable value={value!r}")
+                        return False
+
+                    _rs_ordinal = int(getattr(driver, "_decipher_ranksort_ordinal", 1) or 1)
+                    if _rs_ordinal < 1 or _rs_ordinal > len(_rs_rank_labels):
+                        log_debug("[TARGET_DEBUG]", f"decipher_ranksort: ordinal {_rs_ordinal} hors borne (max {len(_rs_rank_labels)})")
+                        return False
+
+                    _rs_rank_value = _rs_rank_labels[_rs_ordinal - 1]  # ex: "Rang 1"
+                    _rs_sel_id = (_rs_sel_info.get("sel_id") or "").strip()
+                    _rs_sel_name = (_rs_sel_info.get("sel_name") or "").strip()
+
+                    # Sélection via JS (fiable sur select display:none)
+                    _rs_ok = bool(driver.execute_script(
+                        """
+                        var sel_id = arguments[0], sel_name = arguments[1], rank_text = arguments[2];
+                        var sel = sel_id ? document.getElementById(sel_id)
+                                        : document.querySelector('select[name="' + sel_name + '"]');
+                        if (!sel) return false;
+                        for (var i = 0; i < sel.options.length; i++) {
+                            var t = (sel.options[i].textContent || sel.options[i].text || '').trim();
+                            if (t === rank_text) {
+                                sel.selectedIndex = i;
+                                sel.dispatchEvent(new Event('change', {bubbles: true}));
+                                return true;
+                            }
+                        }
+                        return false;
+                        """,
+                        _rs_sel_id,
+                        _rs_sel_name,
+                        _rs_rank_value,
+                    ))
+                    log_debug(
+                        "[TARGET_DEBUG]",
+                        f"decipher_ranksort: {'ok' if _rs_ok else 'ko'} item={value!r} rank={_rs_rank_value!r} sel={_rs_sel_id or _rs_sel_name!r}",
+                    )
+                    return _rs_ok
+
                 # 1) lookup direct
                 xp = opt_map.get(v_norm) or (opt_map.get(v_fold) if v_fold else None)
 
@@ -7130,6 +7193,10 @@ def execute_actions_plan(
     driver._kantar_rr_counts = {}
     driver._kantar_rowrank_ordinal = 1
 
+    # Compteurs ordinaux decipher_ranksort : réinitialisés à chaque plan (par qid)
+    driver._decipher_ranksort_counts = {}
+    driver._decipher_ranksort_ordinal = 1
+
     try:
         url_before = driver.current_url
     except Exception:
@@ -7226,6 +7293,23 @@ def execute_actions_plan(
                         driver._kantar_rowrank_ordinal = 1
                 except Exception:
                     driver._kantar_rowrank_ordinal = 1
+
+            # Decipher ranksort: rang ordinal (1-based) pour cette action dans le plan
+            if tid:
+                try:
+                    _rs_p = get_target(tid) or {}
+                    if _rs_p.get("decipher_ranksort_dropdown"):
+                        _rs_key = qid or tid
+                        if not hasattr(driver, "_decipher_ranksort_counts"):
+                            driver._decipher_ranksort_counts = {}
+                        driver._decipher_ranksort_counts[_rs_key] = (
+                            driver._decipher_ranksort_counts.get(_rs_key, 0) + 1
+                        )
+                        driver._decipher_ranksort_ordinal = driver._decipher_ranksort_counts[_rs_key]
+                    else:
+                        driver._decipher_ranksort_ordinal = 1
+                except Exception:
+                    driver._decipher_ranksort_ordinal = 1
 
             if tid and qid:
                 instruction = f"{qid} //// {tid} //// {value} //// {itype} //// {context}"

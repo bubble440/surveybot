@@ -1533,6 +1533,166 @@ def _extract_decipher_answers_list_fallback(driver, frame_chain: List[Any]) -> L
 
 
 # ================================================================================
+# DECIPHER / NORSTAT — RANKSORT DROPDOWN (sq-ranksort, table.grid display:none)
+# ================================================================================
+
+def _extract_decipher_ranksort_dropdown_blocks(driver, frame_chain: List[Any]) -> List[Dict[str, Any]]:
+    """
+    Extrait UN seul bloc checkbox pour une question de classement Decipher/NorstatSurveys.
+
+    Guard DOM strict :
+    - div.question.sq-ranksort (classe 'sq-ranksort' obligatoire)
+    - table.grid contenant des tr.row.row-elements avec <th> (item) + select.input.dropdown
+
+    Cas couvert : la table.grid a style="display:none" → les selects sont CSS-cachés
+    et rejetés par le filtre not_actionable_visible du pipeline générique.
+
+    Produit UN bloc unique :
+    - itype='checkbox', options = liste des textes d'items dans l'ordre DOM
+    - max_select = nombre de rangs disponibles (= nombre d'options hors placeholder)
+    - Registry payload : rank_labels + item_select_map (item_norm → {sel_id, sel_name})
+    - Le dispatcher assigne "Rang N" au Nième item retourné par GPT.
+    """
+    blocks: List[Dict[str, Any]] = []
+
+    try:
+        containers = driver.find_elements(By.CSS_SELECTOR, "div.question.sq-ranksort")
+    except Exception:
+        return blocks
+
+    if not containers:
+        return blocks
+
+    for q_el in containers:
+        try:
+            # Question globale
+            global_q = ""
+            try:
+                global_q = (q_el.find_element(By.CSS_SELECTOR, "h1.question-text").text or "").strip()
+            except Exception:
+                pass
+            if not global_q:
+                continue
+
+            # Instruction optionnelle fusionnée dans la question
+            instruction = ""
+            try:
+                instruction = (q_el.find_element(By.CSS_SELECTOR, "h2.instruction-text").text or "").strip()
+            except Exception:
+                pass
+            question_text = f"{global_q} {instruction}".strip() if instruction else global_q
+
+            # Table grid (display:none — accès DOM direct sans vérification visibilité)
+            try:
+                grid = q_el.find_element(By.CSS_SELECTOR, "table.grid")
+            except Exception:
+                continue
+
+            # Lignes de données
+            try:
+                rows = grid.find_elements(By.CSS_SELECTOR, "tr.row.row-elements")
+            except Exception:
+                rows = []
+
+            if not rows:
+                continue
+
+            # Collecter items + sélects dans l'ordre DOM
+            item_texts: List[str] = []
+            item_select_map: Dict[str, Dict[str, str]] = {}
+            rank_labels: List[str] = []
+
+            for row in rows:
+                # Texte de l'item (th)
+                item_text = ""
+                try:
+                    th = row.find_element(By.CSS_SELECTOR, "th")
+                    item_text = (th.text or th.get_attribute("textContent") or "").strip()
+                except Exception:
+                    pass
+                if not item_text:
+                    continue
+
+                # Select dropdown de cet item
+                try:
+                    sel = row.find_element(By.CSS_SELECTOR, "select.input.dropdown")
+                except Exception:
+                    continue
+
+                sel_id = (sel.get_attribute("id") or "").strip()
+                sel_name = (sel.get_attribute("name") or "").strip()
+                if not sel_id and not sel_name:
+                    continue
+
+                # Rang labels (identiques pour tous les selects — lire une fois)
+                if not rank_labels:
+                    try:
+                        for opt in sel.find_elements(By.CSS_SELECTOR, "option"):
+                            if (opt.get_attribute("value") or "").strip() == "-1":
+                                continue
+                            txt = (opt.text or opt.get_attribute("textContent") or "").replace("\xa0", " ").strip()
+                            if txt:
+                                rank_labels.append(txt)
+                    except Exception:
+                        pass
+
+                item_texts.append(item_text)
+                item_select_map[_norm_lc(item_text)] = {"sel_id": sel_id, "sel_name": sel_name}
+
+            if not item_texts or not rank_labels:
+                continue
+
+            max_select = len(rank_labels)
+
+            # group_key stable (basé sur la question normalisée)
+            group_key = f"decipher_ranksort:checkbox:{_norm_lc(global_q)[:60]}"
+            target_id = make_target_id("group", group_key, question_text)
+
+            register_target(
+                target_id,
+                {
+                    "kind": "group",
+                    "itype": "checkbox",
+                    "question": question_text,
+                    "options": item_texts,
+                    "max_select": max_select,
+                    "rank_labels": rank_labels,
+                    "item_select_map": item_select_map,
+                    "frame_chain": list(frame_chain or []),
+                    "decipher_ranksort_dropdown": True,
+                },
+            )
+
+            blocks.append(
+                {
+                    "question": question_text,
+                    "itype": "checkbox",
+                    "options": item_texts,
+                    "max_select": max_select,
+                    "min_select": max_select,
+                    "target_id": target_id,
+                    "context": {
+                        "kind": "group",
+                        "itype": "checkbox",
+                        "decipher_ranksort_dropdown": True,
+                    },
+                }
+            )
+
+            log_debug(
+                "[DOM_DECIPHER_RANKSORT]",
+                f"extracted 1 ranksort block: {len(item_texts)} items, {max_select} ranks",
+            )
+
+        except Exception as exc:
+            if is_debug():
+                log_debug("[DOM_DECIPHER_RANKSORT]", f"error: {type(exc).__name__}: {exc}")
+            continue
+
+    return blocks
+
+
+# ================================================================================
 # DECIPHER / QARTS - HIDDEN ANSWERS CONTAINER
 # ================================================================================
 
