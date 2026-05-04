@@ -11787,3 +11787,154 @@ def _extract_prodege_prescreener_radio_block(driver, frame_chain=None) -> list[d
         pass
 
     return blocks
+
+
+def _extract_researchnow_autoscreener_radio_blocks(driver, frame_chain=None) -> list[dict]:
+    """
+    Extraction radio ResearchNow/PureSpectrum auto-screener (surveymyopinion.researchnow.com).
+
+    Guard DOM double :
+      1. [ng-controller*="autoScreenerController"] présent
+      2. div.parameter-rendered.single_select.tooBigForDropdown présent
+
+    Problème résolu : les inputs radio de ce screener AngularJS ont des attributs
+    `name` tous différents (31, 33, 35…). Le pipeline générique crée 1 groupe par
+    name → 7 blocs au lieu de 1. Ce extracteur opère directement sur
+    div.questionAndAnswerWrap pour regrouper toutes les options en 1 seul bloc.
+
+    Structure :
+      div[ng-controller*="autoScreenerController"]
+        div.parameter-rendered.single_select.tooBigForDropdown
+          div.questionAndAnswerWrap
+            div.questionText.ng-binding       <- question
+            div.answers
+              div.answer.ng-scope
+                div.answer-wrapper
+                  label > input[type=radio][id][name][value] + span.ng-binding
+    """
+    blocks: list[dict] = []
+    try:
+        # Guard 1 : autoScreenerController
+        if not driver.find_elements(
+            By.CSS_SELECTOR, "[ng-controller*='autoScreenerController']"
+        ):
+            return blocks
+
+        # Guard 2 : parameter-rendered.single_select.tooBigForDropdown
+        params = driver.find_elements(
+            By.CSS_SELECTOR,
+            "div.parameter-rendered.single_select.tooBigForDropdown",
+        )
+        if not params:
+            return blocks
+
+        for param in params:
+            try:
+                wrap_els = param.find_elements(
+                    By.CSS_SELECTOR, "div.questionAndAnswerWrap"
+                )
+                if not wrap_els:
+                    continue
+                wrap = wrap_els[0]
+
+                question = ""
+                try:
+                    q_els = wrap.find_elements(By.CSS_SELECTOR, "div.questionText")
+                    if q_els:
+                        question = (
+                            q_els[0].get_attribute("textContent") or q_els[0].text or ""
+                        ).strip()
+                except Exception:
+                    pass
+                if not question:
+                    continue
+
+                options: list[str] = []
+                option_xpath_map: dict[str, str] = {}
+
+                answer_wrappers = wrap.find_elements(By.CSS_SELECTOR, "div.answer-wrapper")
+                for ans in answer_wrappers:
+                    try:
+                        inp_els = ans.find_elements(
+                            By.CSS_SELECTOR, "label input[type='radio']"
+                        )
+                        span_els = ans.find_elements(By.CSS_SELECTOR, "label span")
+                        if not span_els:
+                            continue
+                        label_text = (
+                            span_els[0].get_attribute("textContent")
+                            or span_els[0].text
+                            or ""
+                        ).strip()
+                        if not label_text:
+                            continue
+                        nk = _norm_lc(label_text)
+                        if not nk or nk in option_xpath_map:
+                            continue
+                        if not inp_els:
+                            continue
+                        inp_id = (inp_els[0].get_attribute("id") or "").strip()
+                        inp_name = (inp_els[0].get_attribute("name") or "").strip()
+                        inp_val = (inp_els[0].get_attribute("value") or "").strip()
+                        if inp_id:
+                            name_cond = (
+                                f" and @name={_xpath_literal(inp_name)}" if inp_name else ""
+                            )
+                            val_cond = (
+                                f" and @value={_xpath_literal(inp_val)}" if inp_val else ""
+                            )
+                            xp = (
+                                f"//input[@type='radio'][@id={_xpath_literal(inp_id)}"
+                                f"{name_cond}{val_cond}]"
+                            )
+                        elif inp_val:
+                            xp = f"//input[@type='radio'][@value={_xpath_literal(inp_val)}]"
+                        else:
+                            continue
+                        options.append(label_text)
+                        option_xpath_map[nk] = xp
+                    except Exception:
+                        continue
+
+                if not options:
+                    continue
+
+                group_key = f"researchnow_autoscreener:radio:{_norm_key(question)}"
+                target_id = make_target_id("group", group_key, question)
+                register_target(
+                    target_id,
+                    {
+                        "kind": "group",
+                        "group_key": group_key,
+                        "option_xpath_map": option_xpath_map,
+                        "researchnow_autoscreener_radio": True,
+                    },
+                )
+                blocks.append(
+                    {
+                        "question": question,
+                        "itype": "radio",
+                        "options": options,
+                        "max_select": 1,
+                        "min_select": 1,
+                        "target_id": target_id,
+                        "context": {
+                            "kind": "group",
+                            "group_key": group_key,
+                            "option_xpath_map": option_xpath_map,
+                            "researchnow_autoscreener_radio": True,
+                        },
+                    }
+                )
+            except Exception:
+                continue
+
+        if blocks:
+            log_info(
+                "[DOM_RESEARCHNOW_AUTOSCREENER]",
+                f"extracted {len(blocks)} radio block(s)",
+            )
+    except Exception:
+        pass
+
+    return blocks
