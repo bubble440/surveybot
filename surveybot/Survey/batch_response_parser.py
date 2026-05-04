@@ -408,11 +408,11 @@ _BIRTH_YEAR_HINTS = (
 )
 
 
-def _is_birth_year_question_text(*texts: str) -> bool:
-    haystack = " ".join(_fold_lc(t) for t in texts if t)
-    if not haystack:
-        return False
-    return any(_fold_lc(hint) in haystack for hint in _BIRTH_YEAR_HINTS)
+# def _is_birth_year_question_text(*texts: str) -> bool:
+#     haystack = " ".join(_fold_lc(t) for t in texts if t)
+#     if not haystack:
+#         return False
+#     return any(_fold_lc(hint) in haystack for hint in _BIRTH_YEAR_HINTS)
 
 
 def _selection_bounds_for_qid(qid: str, raw_max: int, qmeta: dict | None, itype_hint: str = "") -> tuple[int, int]:
@@ -1244,20 +1244,20 @@ def sanitize_actions(actions: list, qid_meta: dict | None = None) -> list:
         meta_question = (meta.get("question") or "") if isinstance(meta, dict) else ""
         meta_year_span = _year_span_from_options(meta_opts)
 
-        if it in {"text", "textarea", "number"} and _is_birth_year_question_text(ctx_lc, raw_lc, meta_question):
-            maybe_year = re.search(r"\b\d{1,4}\b", str(v or ""))
-            if maybe_year:
-                parsed_num = int(maybe_year.group(0))
-                if parsed_num < 1900 or parsed_num > now_year:
-                    corrected_year = (now_year - parsed_num) if 0 < parsed_num < 120 else (now_year - 25)
-                    if corrected_year < 1900 or corrected_year > now_year:
-                        corrected_year = now_year - 25
-                    _warn_log(
-                        f"qid={act_qid or '?'} invalid_birth_year_value={parsed_num} corrected_to={corrected_year}"
-                    )
-                    a = dict(a)
-                    a["value"] = str(corrected_year)
-                    a["raw"] = (a.get("raw") or "") + f" [sanitized_birth_year:{parsed_num}->{corrected_year}]"
+        # if it in {"text", "textarea", "number"} and _is_birth_year_question_text(ctx_lc, raw_lc, meta_question):
+        #     maybe_year = re.search(r"\b\d{1,4}\b", str(v or ""))
+        #     if maybe_year:
+        #         parsed_num = int(maybe_year.group(0))
+        #         if parsed_num < 1900 or parsed_num > now_year:
+        #             corrected_year = (now_year - parsed_num) if 0 < parsed_num < 120 else (now_year - 25)
+        #             if corrected_year < 1900 or corrected_year > now_year:
+        #                 corrected_year = now_year - 25
+        #             _warn_log(
+        #                 f"qid={act_qid or '?'} invalid_birth_year_value={parsed_num} corrected_to={corrected_year}"
+        #             )
+        #             a = dict(a)
+        #             a["value"] = str(corrected_year)
+        #             a["raw"] = (a.get("raw") or "") + f" [sanitized_birth_year:{parsed_num}->{corrected_year}]"
 
         # DOB "explicite" (keywords/range) OU DOB "implicite" (options années sur grande plage + mois sur la page)
         is_dob_like_by_options = bool(

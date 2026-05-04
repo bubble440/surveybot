@@ -678,6 +678,36 @@ Patterns exclus :
 
 ---
 
+## PLATEFORME : RESEARCHNOW / SURVEYMYOPINION — AUTOSCREENER RADIO
+Signature DOM : surveymyopinion.researchnow.com — page screener AngularJS.
+`[ng-controller*="autoScreenerController"]` > `div.parameter-rendered.single_select.tooBigForDropdown`
+> `div.questionAndAnswerWrap` > `div.questionText.ng-binding` + `div.answers > div.answer-wrapper`
+> `label > input[type=radio][id][name][value] + span.ng-binding`
+Log discriminant : `[DOM_RESEARCHNOW_AUTOSCREENER] extracted N radio block(s)`
+
+### _extract_researchnow_autoscreener_radio_blocks
+Fichier : Survey/dom_extractors_misc.py
+Enregistré dans : dom_analyzer.py (step 0i-octies, retour immédiat si match — avant le pipeline générique radio)
+Guard (double) :
+  1. `[ng-controller*="autoScreenerController"]` présent dans le DOM
+  2. `div.parameter-rendered.single_select.tooBigForDropdown` présent
+Patterns couverts :
+- Question : `div.questionText` (`textContent`)
+- Options : `label span.ng-binding` (`textContent`) dans chaque `div.answer-wrapper`
+- `option_xpath_map` ancré sur `input[@type='radio'][@id][@name][@value]` (triple attribut) — discriminant fort par option
+- `group_key = researchnow_autoscreener:radio:{norm_key(question)}`
+- Flag payload : `researchnow_autoscreener_radio=True` ; itype=radio, max_select=min_select=1
+- 1 bloc par `div.parameter-rendered` (N questions sur même page → N blocs)
+- Dispatch : chemin générique `opt_map` (aucun bloc dispatcher spécifique)
+Problème résolu : les N inputs radio ont des `name` différents (31, 33, 35…) → le pipeline générique
+crée 1 groupe par `name`, soit N blocs distincts au lieu de 1. Ce extracteur opère sur
+`div.questionAndAnswerWrap` pour regrouper toutes les options en 1 seul bloc.
+Patterns exclus :
+- `div.parameter-rendered` sans class `single_select.tooBigForDropdown` → pipeline générique
+- Pages ResearchNow sans `ng-controller*="autoScreenerController"` → pipeline générique
+
+---
+
 ## FRONTIÈRES INTER-EXTRACTEURS
 
 | Plateforme | Extracteur A | Extracteur B | Signal de discrimination |
@@ -691,4 +721,5 @@ Patterns exclus :
 | Kantar mrIWeb | _extract_kantar_rowpicker_radio_blocks | extracteur générique radio | flag `kantar_rowpicker_radio` dans le payload + guard dispatcher avant `_find_best_visible` |
 | Prodege/Swagbucks | _extract_prodege_prescreener_radio_block | extracteur générique radio/checkbox | `div.profilerContainer` + `p.profilerQuestionText` (step 0i-sexies, retour immédiat si match) |
 | Qualtrics TE | _extract_qualtrics_form_multi_text_blocks | _extract_qualtrics_sl_text_blocks | `div.Inner.FORM` + ≥2 inputs (multi-cases) vs `div.Inner.SL` + 1 input (champ unique) |
+| ResearchNow | _extract_researchnow_autoscreener_radio_blocks | extracteur générique radio | `[ng-controller*="autoScreenerController"]` + `div.parameter-rendered.single_select.tooBigForDropdown` (step 0i-octies, retour immédiat si match) |
 - Tout DOM sans `div.profilerContainer` ou sans `p.profilerQuestionText`

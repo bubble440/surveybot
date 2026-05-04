@@ -132,6 +132,7 @@ try:
         _extract_confirmit_cf_ranking_blocks,
         _extract_datadiggers_icontrol_radio_block,
         _extract_prodege_prescreener_radio_block,
+        _extract_researchnow_autoscreener_radio_blocks,
     )
 
     # Registre et utilitaires
@@ -238,6 +239,7 @@ except ImportError:
         _extract_confirmit_cf_ranking_blocks,
         _extract_datadiggers_icontrol_radio_block,
         _extract_prodege_prescreener_radio_block,
+        _extract_researchnow_autoscreener_radio_blocks,
     )
 
 
@@ -1782,6 +1784,17 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         ranksort_blocks = _extract_decipher_ranksort_dropdown_blocks(driver, frame_chain)
         if ranksort_blocks:
             return ranksort_blocks
+    except Exception:
+        pass
+
+    # --- 0i-octies) ResearchNow/PureSpectrum auto-screener (surveymyopinion.researchnow.com) ---
+    # Guard DOM strict : [ng-controller*="autoScreenerController"] +
+    #                    div.parameter-rendered.single_select.tooBigForDropdown
+    # Problème : inputs radio avec name différents (31, 33, 35…) → 7 groupes au lieu de 1.
+    try:
+        rn_blocks = _extract_researchnow_autoscreener_radio_blocks(driver, frame_chain)
+        if rn_blocks:
+            return rn_blocks
     except Exception:
         pass
 
