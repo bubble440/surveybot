@@ -1027,6 +1027,56 @@ def parse_batch_response(raw: str, constraints: Optional[Dict[str, int]] = None,
                 }
             )
 
+    # --- Fallback : ligne brute sans //// pour bloc multi_text unique (mode batch strict) ---
+    # Déclenché quand GPT renvoie les valeurs | sans enveloppe QID //// target_id //// ...
+    # Conditions strictes :
+    #   1. mode batch strict (constraints non None)
+    #   2. exactement 1 QID dans constraints avec context.kind=multi_text
+    #   3. ce QID n'a encore aucune action générée
+    #   4. le raw brut contient exactement 1 ligne sans "////"
+    if constraints is not None:
+        _mt_qids: list[str] = []
+        for _qid_c in constraints:
+            _qmeta_c = (qid_meta or {}).get(_qid_c) if isinstance(qid_meta, dict) else None
+            if not isinstance(_qmeta_c, dict):
+                continue
+            _ctx_c = _qmeta_c.get("context") if isinstance(_qmeta_c.get("context"), dict) else {}
+            if str((_ctx_c or {}).get("kind") or "") == "multi_text":
+                _mt_qids.append(_qid_c)
+        if len(_mt_qids) == 1:
+            _qid_mt = _mt_qids[0]
+            _answered = {(a.get("qid") or "").upper() for a in actions}
+            if _qid_mt not in _answered:
+                _bare_lines = [l.strip() for l in raw.splitlines() if l.strip() and "////" not in l]
+                if len(_bare_lines) == 1:
+                    _bare_val = _bare_lines[0]
+                    _mx_mt = int(constraints.get(_qid_mt, 1) or 1)
+                    _qmeta_mt: dict = (qid_meta or {}).get(_qid_mt) or {}  # type: ignore[assignment]
+                    _tid_mt = str(_qmeta_mt.get("target_id") or "").strip()
+                    _itype_mt = str(_qmeta_mt.get("itype") or "text").strip().lower() or "text"
+                    _ctx_mt_str = str(_qmeta_mt.get("question") or "")
+                    _vals_mt = _split_values(_bare_val, itype=_itype_mt, max_select=_mx_mt)
+                    _debug_log(
+                        f"multi_text_bare_fallback: qid={_qid_mt} target_id={_tid_mt!r} "
+                        f"segments={len(_vals_mt)} raw={_bare_val!r}"
+                    )
+                    for _v in _vals_mt:
+                        _v = (_v or "").strip()
+                        if not _v:
+                            continue
+                        actions.append({
+                            "qid": _qid_mt,
+                            "target_id": _tid_mt,
+                            "value": _v,
+                            "itype": _itype_mt,
+                            "context": _ctx_mt_str,
+                            "matrix_row_label": None,
+                            "matrix_col_label": None,
+                            "cardsort_card_label": None,
+                            "cardsort_bucket_labels": None,
+                            "raw": _bare_val,
+                        })
+
     actions = _coerce_to_negative_frequency_option(actions, qid_meta=qid_meta)
 
     if constraints:

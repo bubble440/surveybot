@@ -7344,6 +7344,11 @@ def execute_actions_plan(
                                 if _opts1 and _opts2 and _opts1 == _opts2:
                                     same_question_block = True
                                     _skip_reason = f"same confirmit_wix_checkbox_grid tid={tid!r}"
+                        if not same_question_block and itype_lower in ("text", "textarea", "number") \
+                                and next_itype in ("text", "textarea", "number") and tid and next_tid \
+                                and tid == next_tid:
+                            same_question_block = True
+                            _skip_reason = f"same multi_text target_id={tid!r}"
                         if same_question_block:
                             log_debug("[DISPATCH]", f"skip rescan idx={idx} {_skip_reason} ({itype_lower})")
                         else:

@@ -527,6 +527,50 @@ Patterns exclus :
 - `ul.profilerAnswer[data-type!="radio"]` (non observé, guard passif)
 
 
+---
+
+## PLATEFORME : QUALTRICS — MULTI-CASES TEXTE LIBRE (FORM, N inputs)
+Signature DOM : `div.QuestionOuter.TE` > `div.Inner.FORM` > `fieldset` > `table` > N `<tr>` avec `<input type="text" name="QR~{QID}~{N}~TEXT">`
+Distinct de `div.Inner.SL` (1 seul input) → couvert par `_extract_qualtrics_sl_text_blocks`.
+Log discriminant : `[DOM_QUALTRICS_FORM_MULTI_TEXT] blocks_extracted=1`
+
+### _extract_qualtrics_form_multi_text_blocks
+Fichier : Survey/dom_extractors_misc.py
+Guard (double) :
+  1. `div.QuestionOuter.TE` contenant `div.Inner.FORM`
+  2. ≥2 `input[type="TEXT"][name^="QR~"]` dans ce même conteneur
+Patterns couverts :
+- Question : `fieldset legend label.QuestionText` (fallback : `legend label.QuestionText`, `label.QuestionText`, `div.QuestionText`)
+- N inputs distincts : `id="QR~{QID}~{N}"`, `name="QR~{QID}~{N}~TEXT"` avec N = 1..10 (ou plus)
+- 1 bloc unique `kind=multi_text`, `max_select=N`, `target_id` préfixé `multi_`
+- Payload `fields` : liste ordonnée de dicts `{xpath, alt_xpaths, name, id, tag}` — un par input
+- Dispatch : chemin générique `kind=multi_text` du dispatcher (aucun bloc dispatcher spécifique)
+Patterns exclus :
+- `div.Inner.SL` avec 1 seul input → `_extract_qualtrics_sl_text_blocks` inchangé
+- Matrices, radios, checkboxes Qualtrics → leurs extracteurs respectifs
+
+### parse_batch_response — fallback multi_text_bare
+Fichier : Survey/batch_response_parser.py
+Guard : ligne brute sans `////` + `qid_meta` contient exactement 1 QID + ce QID a `context.kind=multi_text`
+Problème résolu : GPT répond parfois à une question multi_text avec la chaîne brute de valeurs (`A|B|C|...`) sans préfixe QID. En mode batch strict, cette ligne est rejetée (pas de QID valide) → 0 actions.
+Correction : si les 3 conditions du guard sont réunies, mapper la ligne brute comme valeur du seul QID présent, puis la traiter normalement via `_split_values`.
+Patterns exclus :
+- Lignes contenant `////` → parsing normal inchangé
+- `qid_meta` avec plus d'un QID → fallback non activé (ambiguïté)
+- Blocs avec `context.kind != "multi_text"` → fallback non activé
+
+### execute_actions_plan — skip rescan same_qblock pour itype text même target_id
+Fichier : Survey/action_dispatcher.py
+Emplacement : bloc `rescan_between_actions`, condition `same_question_block`.
+Guard : `itype_lower == "text"` ET `next_itype == "text"` ET `tid == next_tid` ET `tid` non vide
+Problème résolu : pour un bloc multi_text à N cases, N actions consécutives ont le même target_id et itype=text. La condition `same_question_block` ne couvrait que radio/checkbox → N-1 rescans DOM déclenchés inutilement (la structure DOM ne change pas entre deux send_keys sur des inputs distincts d'un même bloc).
+Correction : étendre `same_question_block = True` quand deux actions text consécutives partagent le même target_id non vide.
+Patterns exclus :
+- target_id différents entre deux actions text → rescan maintenu
+- itype non text → comportement inchangé
+
+---
+
 ## FRONTIÈRES INTER-EXTRACTEURS
 
 | Plateforme | Extracteur A | Extracteur B | Signal de discrimination |
@@ -539,4 +583,5 @@ Patterns exclus :
 | Toluna/Confirmit wix | _extract_confirmit_wix_fieldset_radio_block (pure-checkbox) | _extract_confirmit_wix_fieldset_radio_block (radio) | 0 radio + ≥2 checkboxes dans `table.confirmit-table` → itype=checkbox ; ≥2 radios → itype=radio |
 | Kantar mrIWeb | _extract_kantar_rowpicker_radio_blocks | extracteur générique radio | flag `kantar_rowpicker_radio` dans le payload + guard dispatcher avant `_find_best_visible` |
 | Prodege/Swagbucks | _extract_prodege_prescreener_radio_block | extracteur générique radio/checkbox | `div.profilerContainer` + `p.profilerQuestionText` (step 0i-sexies, retour immédiat si match) |
+| Qualtrics TE | _extract_qualtrics_form_multi_text_blocks | _extract_qualtrics_sl_text_blocks | `div.Inner.FORM` + ≥2 inputs (multi-cases) vs `div.Inner.SL` + 1 input (champ unique) |
 - Tout DOM sans `div.profilerContainer` ou sans `p.profilerQuestionText`

@@ -9840,6 +9840,135 @@ def _extract_qualtrics_sl_text_blocks(driver, frame_chain: list[int] | None) -> 
 
 
 # ================================================================================
+# QUALTRICS - CHAMP TEXTE LIBRE MULTI-CASES (layout FORM / type TE, N inputs)
+# ================================================================================
+
+def _extract_qualtrics_form_multi_text_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
+    """Extraction des champs texte libre Qualtrics layout FORM avec N cases (type TE).
+
+    Gate DOM strict (additif) :
+    - div.QuestionOuter.TE contenant div.Inner.FORM
+    - ≥2 input[type="TEXT"][name^="QR~"] dans le même QuestionOuter
+
+    Ne couvre PAS div.Inner.SL (1 input seul) → _extract_qualtrics_sl_text_blocks.
+    """
+    frame_chain = list(frame_chain or [])
+    blocks: list[dict] = []
+
+    try:
+        containers = driver.find_elements(By.CSS_SELECTOR, "div.QuestionOuter.TE")
+    except Exception:
+        return blocks
+
+    for idx, container in enumerate(containers):
+        # Gate strict : div.Inner.FORM doit être présent
+        try:
+            form_inner = container.find_elements(By.CSS_SELECTOR, "div.Inner.FORM")
+        except Exception:
+            form_inner = []
+        if not form_inner:
+            continue
+
+        # ≥2 inputs[type="TEXT"][name^="QR~"] attendus
+        try:
+            inputs = container.find_elements(
+                By.CSS_SELECTOR,
+                "input[type='TEXT'][name^='QR~']",
+            )
+        except Exception:
+            inputs = []
+        if len(inputs) < 2:
+            continue
+
+        # Texte de la question depuis fieldset legend (propre, sans les labels 1..N)
+        question = ""
+        for q_sel in (
+            "fieldset legend label.QuestionText",
+            "legend label.QuestionText",
+            "label.QuestionText",
+            "div.QuestionText",
+        ):
+            try:
+                q_nodes = container.find_elements(By.CSS_SELECTOR, q_sel)
+            except Exception:
+                q_nodes = []
+            for qn in q_nodes:
+                txt = _norm(qn.text or qn.get_attribute("innerText") or "")
+                if txt:
+                    question = txt
+                    break
+            if question:
+                break
+
+        if not question:
+            continue
+
+        # Construction des field_payloads (un dict par input)
+        field_payloads = []
+        for inp in inputs:
+            try:
+                fid = (inp.get_attribute("id") or "").strip()
+                fname = (inp.get_attribute("name") or "").strip()
+                if not fid and not fname:
+                    continue
+                fxp = _best_xpath_for_element(driver, inp)
+                falt: list[str] = []
+                try:
+                    if fname:
+                        falt.append(f"//input[@name={_xpath_literal(fname)}]")
+                    if fid:
+                        falt.append(f"//*[@id='{fid}']")
+                except Exception:
+                    pass
+                falt = [x for x in dict.fromkeys(falt) if x and x != fxp][:4]
+                field_payloads.append(
+                    {"xpath": fxp, "alt_xpaths": falt, "name": fname, "id": fid, "tag": "input"}
+                )
+            except Exception:
+                continue
+
+        if len(field_payloads) < 2:
+            continue
+
+        n = len(field_payloads)
+        first_name = (inputs[0].get_attribute("name") or "").strip()
+        multi_key = f"qualtrics_form_multi_text:{idx}:{first_name}"
+        multi_target_id = make_target_id("multi", multi_key, question)
+
+        register_target(
+            multi_target_id,
+            {
+                "kind": "multi_text",
+                "itype": "text",
+                "question": question,
+                "fields": field_payloads,
+                "frame_chain": frame_chain,
+                "meta": {"max_items": n, "multi_text": True, "qualtrics_form_multi_text": True},
+            },
+        )
+
+        blocks.append(
+            {
+                "question": question,
+                "itype": "text",
+                "options": [],
+                "max_select": n,
+                "min_select": n,
+                "target_id": multi_target_id,
+                "context": {
+                    "kind": "multi_text",
+                    "fields_count": n,
+                    "max_items": n,
+                    "name_prefix": first_name,
+                },
+            }
+        )
+
+    log_debug("[DOM_QUALTRICS_FORM_MULTI_TEXT]", f"blocks_extracted={len(blocks)}")
+    return blocks
+
+
+# ================================================================================
 # FORSTA/CONFIRMIT - SINGLE-CHOICE VERTICAL LIST (cf-question--single + cf-list)
 # ================================================================================
 
