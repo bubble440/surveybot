@@ -634,6 +634,50 @@ Patterns exclus :
 
 ---
 
+## PLATEFORME : DECIPHER / FOCUSVISION — MATRICE TRANSPOSÉE (colonnes = questions, lignes = options)
+Signature DOM : `div.question[role='radiogroup']` > `.answers.answers-list` >
+`table.grid[data-settings*='group-by-row'][data-settings*='table-mode']`
+avec ≥2 `th[scope='col']` (en-têtes de colonnes = questions distinctes)
+et N `tr.row-elements` (lignes = options de réponse communes à toutes les colonnes).
+Log discriminant : `[DOM_DECIPHER_COL_SPLIT] extracted {N} column blocks for question …`
+
+### _extract_focusvision_answers_list_groups — sous-branche col-split
+Fichier : Survey/dom_extractors_decipher.py
+Emplacement : dans la branche `group_by_row_table`, ajoutée comme sous-branche additionnelle
+après la boucle existante sur `tr.row-elements`, déclenchée avant elle si le guard col-split est vrai.
+Guard (double) :
+  1. `table.grid[data-settings*='group-by-row']` présent (guard parent inchangé)
+  2. ≥2 `th[scope='col']` dont le texte est non vide ET les inputs radio sont répartis
+     par colonne (discriminant : `name` des inputs suffixé `.<col_idx>`, ex: `ans36163.0`, `ans36163.1`)
+Patterns couverts :
+- 1 bloc radio par colonne (`th[scope='col']`) ; question = question parente + `[label colonne]`
+- Options = textes des `th[scope='row']` de chaque ligne (identiques pour toutes les colonnes)
+- `group_key = radio:name:{base_name}.{col_idx}` (ex: `radio:name:ans36163.0`)
+- `option_xpath_map` ancré sur `input[@id]` dans la cellule correspondant à la colonne
+- `context.focusvision_answers_list = True` ; `min_select = max_select = 1`
+Patterns exclus :
+- Matrices classiques `group-by-row` (ligne = sous-question, colonne = échelle) → boucle row existante inchangée
+- Blocs sans `th[scope='col']` multiples → chemin existant
+- `div.question.sq-ranksort` → `_extract_decipher_ranksort_dropdown_blocks`
+
+### build_batch_prompt — sibling_uniqueness_rule pour blocs radio à options identiques
+Fichier : Survey/prompt_builder.py
+Emplacement : boucle principale `build_batch_prompt`, rendu par bloc, après `lines.append(f"itype: {itype}")`.
+Guard : groupe de ≥2 blocs `itype=radio` sur la même page partageant exactement le même
+`frozenset` d'options normalisées (`_norm_folded_lc`). Détection pré-boucle, résultat stocké
+dans un dict `{qid → [qid_sibling, …]}`.
+Patterns couverts :
+- Pour chaque bloc du groupe, injection d'une ligne :
+  `sibling_uniqueness_rule: ta valeur doit être DIFFÉRENTE de celle choisie pour {QID_sibling, …}`
+- Empêche GPT de retourner la même option pour deux colonnes d'une même matrice transposée
+- Ne prescrit aucune valeur spécifique : GPT garde le choix, contraint seulement à la différence
+Patterns exclus :
+- Blocs avec options différentes → pas de sibling détecté, règle non injectée
+- `itype != radio` → non concerné
+- RÈGLE TABLEAU RADIO HOMOGÈNE (seuil ≥8) → non modifiée, reste indépendante
+
+---
+
 ## FRONTIÈRES INTER-EXTRACTEURS
 
 | Plateforme | Extracteur A | Extracteur B | Signal de discrimination |

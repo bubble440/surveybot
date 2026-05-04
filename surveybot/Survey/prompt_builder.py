@@ -707,6 +707,26 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
 
     # Règles fixes → déportées dans build_system_prompt() pour le prompt caching OpenAI.
     # Passer build_system_prompt() comme message 'system' dans l'appel API.
+
+    # --- groupes de blocs radio partageant exactement les mêmes options ---
+    # Guard strict : itype=radio, options normalisées identiques, groupe taille ≥ 2.
+    # Usage : injecter sibling_uniqueness_rule par bloc pour forcer des réponses distinctes.
+    _sibling_map: dict[int, list[int]] = {}
+    _opts_to_idxs: dict[frozenset, list[int]] = {}
+    for _si, _sb in enumerate(question_blocks):
+        if _norm_folded_lc(_sb.get("itype", "")) != "radio":
+            continue
+        _sb_opts = [o for o in (_sb.get("options") or []) if o]
+        if len(_sb_opts) < 2:
+            continue
+        _sk = frozenset(_norm_folded_lc(o) for o in _sb_opts)
+        _opts_to_idxs.setdefault(_sk, []).append(_si)
+    for _sk, _si_list in _opts_to_idxs.items():
+        if len(_si_list) < 2:
+            continue
+        for _si in _si_list:
+            _sibling_map[_si] = [j for j in _si_list if j != _si]
+
     lines.append("\n--- QUESTIONS ---")
 
     for i, block in enumerate(question_blocks or [], start=1):
@@ -856,6 +876,14 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
                 lines.append("instruction_stricte: Consent modal. Tu dois choisir l'option de consentement positive et jamais l'option de refus.")
             else:
                 lines.append("selection_rule: choisir une option valide de la liste")
+
+        _sib_qids = _sibling_map.get(i - 1)
+        if _sib_qids:
+            _sib_labels = ", ".join(f"Q{j + 1}" for j in _sib_qids)
+            lines.append(
+                f"sibling_uniqueness_rule: ta valeur doit être DIFFÉRENTE de celle choisie "
+                f"pour les QID suivants qui ont les mêmes options : {_sib_labels}"
+            )
 
         if is_cardsort:
             lines.append("cards_cardsort: " + " | ".join(cards))
