@@ -1,23 +1,14 @@
-[ATTACH] step=1/100 ok=False url=https://www.prsrvy.com
-[DOM_CLASSIFIER][CAPTCHA] captcha_detected=false reason=no_visible_captcha_challenge
-[DOM_CONTEXT_DEBUG] runtime_signature rows=0 wrappers=0 in_selected_context=False
-[DOM_CONTEXT_DEBUG] analyze_dom selected_chain=[] selected_ps_date_question=0 score=65
+[DOM_CONTEXT_DEBUG] analyze_dom selected_chain=[] selected_ps_date_question=0 score=80
 [DOM_CONTEXT_DEBUG] analyze_dom stage=context_selected blocks_count=0 chain_len=0
 [WALR_CS] Pas de #cardSortContainer
 [WALR_CS] bloc retourné: False
 [DOM_QUALTRICS_SL_TEXT] blocks_extracted=0
-[DOM_CONTEXT_DEBUG] analyze_dom choice_groups detected=0 created=0 rejected={}
-[SINGLES_SKIP] not_actionable_visible itype=unknown id='INDCloseBtn' name=''
-[SINGLES_SKIP] not_actionable_visible itype=unknown id='INDmenu-btn' name=''
-[SINGLES_SKIP] not_actionable_visible itype=unknown id='' name=''
-[SINGLES_SKIP] not_actionable_visible itype=unknown id='' name=''
-[SINGLES_SKIP] not_actionable_visible itype=unknown id='' name=''
-[DOM_DATE_MULTI_TEXT] detected date triplet fields=3 names=['date_m', 'date_d', 'date_y']
+[DOM_QUALTRICS_FORM_MULTI_TEXT] blocks_extracted=1
 [DOM_CONTEXT_DEBUG] extracted_blocks count=1 itypes=['text']
-[DOM_CONTEXT] extracted_blocks count=1 itypes=['text'] question_len=34 options_count=0
-[DOM_CONTEXT_DEBUG] analyze_dom stage=raw_extraction blocks_count=1 sample=[{'itype': 'text', 'question': 'When were you born? Month Day Year', 'options': 0}]
-[DOM_CONTEXT_DEBUG] analyze_dom stage=before_return blocks_count=1 sample=[{'itype': 'text', 'question': 'When were you born? Month Day Year', 'options': 0}]
-[DOM_ONLY_ABORT] detector_no_match inputs=0 visible_wrappers=0 input_groups=0 image_groups=0 image_options=0 clickable_groups=0 clickable_image_options=0 clickable_visible=5 instruction=0 visual_tiles=0
+[DOM_CONTEXT] extracted_blocks count=1 itypes=['text'] question_len=177 options_count=0
+[DOM_CONTEXT_DEBUG] analyze_dom stage=raw_extraction blocks_count=1 sample=[{'itype': 'text', 'question': 'Lorsque vous pensez aux sites et applis de voyages, quels no', 'options': 0}]
+[DOM_CONTEXT_DEBUG] analyze_dom stage=before_return blocks_count=1 sample=[{'itype': 'text', 'question': 'Lorsque vous pensez aux sites et applis de voyages, quels no', 'options': 0}]
+[DOM_ONLY_ABORT] detector_no_match inputs=0 visible_wrappers=0 input_groups=0 image_groups=0 image_options=0 clickable_groups=0 clickable_image_options=0 clickable_visible=1 instruction=0 visual_tiles=0
 🧠 [PROMPT_DEBUG] ===== SYSTEM PROMPT =====
 Tu es un répondant ADULTE (25 ans). Tu vois ci-dessous TOUTES les questions présentes sur une page de survey.
 
@@ -72,7 +63,7 @@ Pour toute question sur le sexe ou le genre, choisis TOUJOURS l'option qui fait 
 
 Si la question demande l'ANNÉE COURANTE (ex: 'en quelle année sommes-nous', 'what year is it', 'quelle est l'année actuelle / en cours', 'current year', 'année en cours'), réponds UNIQUEMENT avec 2026 (chiffre brut, sans texte additionnel).
 
-Pour toute question sur l'ge ou la date de naissance:
+Pour toute question sur l'age ou la date de naissance:
 - Si la question demande explicitement l'ANNE de naissance (ex: 'anne de naissance', 'year of birth', 'birth year', 'born in', 'n en'), rponds UNIQUEMENT avec une anne sur 4 chiffres (YYYY), jamais un ge.
 - Si la question demande l'âge (âge, years old, ans, age) ET qu'elle propose des options fermées (tranches libellées comme '19-44 ans', '18-25', etc.) : choisis PARMI CES OPTIONS la tranche qui inclut 25, comme pour n'importe quelle question radio/dropdown. Ne réponds PAS avec le chiffre brut '25'.
 - Si la question demande l'âge (âge, years old, ans, age) ET qu'il n'y a PAS d'options fermées (saisie libre) : réponds UNIQUEMENT avec le chiffre '25', sans JAMAIS ajouter de mot ('ans', 'years', 'yo', etc.).
@@ -84,12 +75,12 @@ Pour toute question sur l'ge ou la date de naissance:
 --- QUESTIONS ---
 
 Q1
-target_id: multi_ab9ddf03c44d
-contexte: When were you born? Month Day Year
+target_id: multi_20d5e8259abc
+contexte: Lorsque vous pensez aux sites et applis de voyages, quels noms vous viennent à l'esprit ? Veuillez saisir vos réponses dans les cases ci-dessous (une seule réponse par case).
 itype: text
-max_select: 3
-CHAMP MULTI-CASES: fournir EXACTEMENT 3 valeurs séparées par | (ex pour marques de sport: Nike|Adidas|Puma|Reebok|Under Armour)
-selection_rule: Pour QID=Q1, renvoyer EXACTEMENT 3 valeurs séparées par |. Pas de répétition. Valeurs différentes obligatoires.
+max_select: 5
+CHAMP MULTI-CASES: fournir EXACTEMENT 10 valeurs séparées par | (ex pour marques de sport: Nike|Adidas|Puma|Reebok|Under Armour)
+selection_rule: Pour QID=Q1, renvoyer EXACTEMENT 10 valeurs séparées par |. Pas de répétition. Valeurs différentes obligatoires.
 options: (champ ouvert)
 
 Réponds maintenant.
@@ -97,112 +88,6 @@ Respecte STRICTEMENT le format.
 RAPPEL: Quand plusieurs valeurs sont requises, sépare-les par "|" (jamais par virgule).
 Ne renvoie rien d'autre.
 [PROMPT_DEBUG] ===================================
-[survey_executor][debug] qid_constraints={'Q1': 3}
-[batch_response_parser] raw response 06|15|1998
-[batch_response_parser] qid=Q1 min_select=3 max_select=3 received=0 final_count=0 values=[]
-[LOCAL][PAUSE] Appuie sur <Enter> pour autoriser le clic CTA (navigation_cta)
-
-[CTA_NAV] CTA_NOT_FOUND (no candidates) url=https://www.prsrvy.com
-[ATTACH] step=2/100 ok=False url=https://www.prsrvy.com
-[DOM_CLASSIFIER][CAPTCHA] captcha_detected=false reason=no_visible_captcha_challenge
-[DOM_CONTEXT_DEBUG] runtime_signature rows=0 wrappers=0 in_selected_context=False
-[DOM_CONTEXT_DEBUG] analyze_dom selected_chain=[] selected_ps_date_question=0 score=65
-[DOM_CONTEXT_DEBUG] analyze_dom stage=context_selected blocks_count=0 chain_len=0
-[WALR_CS] Pas de #cardSortContainer
-[WALR_CS] bloc retourné: False
-[DOM_QUALTRICS_SL_TEXT] blocks_extracted=0
-[DOM_CONTEXT_DEBUG] analyze_dom choice_groups detected=0 created=0 rejected={}
-[SINGLES_SKIP] not_actionable_visible itype=unknown id='INDCloseBtn' name=''
-[SINGLES_SKIP] not_actionable_visible itype=unknown id='INDmenu-btn' name=''
-[SINGLES_SKIP] not_actionable_visible itype=unknown id='' name=''
-[SINGLES_SKIP] not_actionable_visible itype=unknown id='' name=''
-[SINGLES_SKIP] not_actionable_visible itype=unknown id='' name=''
-[DOM_DATE_MULTI_TEXT] detected date triplet fields=3 names=['date_m', 'date_d', 'date_y']
-[DOM_CONTEXT_DEBUG] extracted_blocks count=1 itypes=['text']
-[DOM_CONTEXT] extracted_blocks count=1 itypes=['text'] question_len=34 options_count=0
-[DOM_CONTEXT_DEBUG] analyze_dom stage=raw_extraction blocks_count=1 sample=[{'itype': 'text', 'question': 'When were you born? Month Day Year', 'options': 0}]
-[DOM_CONTEXT_DEBUG] analyze_dom stage=before_return blocks_count=1 sample=[{'itype': 'text', 'question': 'When were you born? Month Day Year', 'options': 0}]
-[DOM_ONLY_ABORT] detector_no_match inputs=0 visible_wrappers=0 input_groups=0 image_groups=0 image_options=0 clickable_groups=0 clickable_image_options=0 clickable_visible=5 instruction=0 visual_tiles=0
-🧠 [PROMPT_DEBUG] ===== SYSTEM PROMPT =====
-Tu es un répondant ADULTE (25 ans). Tu vois ci-dessous TOUTES les questions présentes sur une page de survey.
-
-Tu dois répondre à CHAQUE question.
-Tu ne dois JAMAIS lister toutes les options.
-Tu dois proposer uniquement la/les réponse(s) nécessaires selon la règle de sélection.
-
-FORMAT STRICT (une ligne par question) :
-QID //// target_id //// valeur //// itype //// contexte
-
-RèGLES CRITIQUES:
-- Pour chaque QID, le nombre de valeurs à renvoyer est défini par la selection_rule de ce QID. Ne pas utiliser max_select comme cible à atteindre : c'est un plafond, pas une obligation.
-- Si plusieurs valeurs sont nécessaires, les séparer UNIQUEMENT par "|".
-- Exemple: Q1 //// group_abc //// Option A|Option B|Option C //// checkbox //// ...
-- NE JAMAIS utiliser la virgule "," comme séparateur (les options peuvent en contenir).
-- AUCUNE explication. Aucun texte hors format.
-
-RÈGLE CHAMP MULTI-CASES (context.kind=multi_text) :
-- Ce n'est PAS une multi-sélection checkbox: c'est un champ composé de plusieurs cases texte.
-- Si max_select >= 2, valeur DOIT contenir EXACTEMENT max_select segments séparés par "|".
-- Pour une date de naissance (DOB), les valeurs DOIVENT être des chiffres (JAMAIS de noms de mois en lettres). Ordre strict : MM|DD|YYYY.
-- Exemple DOB (3 cases): 03|15|2001 (mois|jour|année, tous en chiffres)
-
-RèGLE NOMBRE DE RéPONSES:
-- Ne déduis PAS le nombre depuis le provider/source.
-- Pour chaque QID, le nombre de valeurs à renvoyer est défini par la selection_rule de ce QID. Ne pas utiliser max_select comme cible à atteindre : c'est un plafond, pas une obligation.
-
-Champs ouverts (text/textarea) : si la question contient un exemple (ex: 'E.g.' / 'Ex:'), N'UTILISE PAS l'exemple comme valeur. Donne une valeur réaliste (ex: code postal FR -> 75001).
-
-Contraintes :
-- itype doit être l'un de : {radio, checkbox, dropdown, text, textarea, button}
-- valeur DOIT être une option existante (si options listées)
-- RÈGLE ABSOLUE : utilise UNIQUEMENT les options listées ci-dessus, mot pour mot. N'invente PAS d'option absente de la liste, même si elle te semble logiquement attendue.
-- évite : non, jamais, aucun, je préfère ne pas répondre
-- contexte doit correspondre exactement é  la question affichée
-
-RÈGLE VALEUR VERBATIM (priorité absolue) :
-Retourne chaque option EXACTEMENT telle qu'elle apparaît dans la ligne `options:`, sans abréviation, sans reformulation, sans raccourci.
-INTERDIT ABSOLU : retourner uniquement le chiffre terminal d'une option (ex: retourner '7' au lieu de l'option complète 'Je suis certain(e) que j'achèterai auprès de ce détaillant 7').
-Cette règle s'applique même si le suffixe chiffré te semble redondant ou évident.
-
-RÈGLE SPÉCIALE MATRICES (itype=matrix) :
-- valeur DOIT être au format STRICT: row_label || col_label (ou row_label || col1|col2|col3 pour matrices checkbox multi-colonnes)
-- Si matrix_active_row est fourni dans le contexte, row_label DOIT être EXACTEMENT cette valeur (ne choisis jamais une autre ligne).
-- EXCEPTION matrix_active_row: quand matrix_active_row est fourni, valeur DOIT contenir UNIQUEMENT la/les colonne(s) (col_label ou col1|col2|col3), sans row_label.
-- Exemple attendu: Crédit consommation || Transféré vers Revolut
-- Exemple multi-colonnes (checkbox): Whey protéines || Amazon|Decathlon
-- Exemple matrix_active_row (colonne(s) seule(s)): En ligne, sur Amazon|En magasin, chez Decathlon
-- INTERDIT: répondre uniquement une colonne (ex: 'Transféré vers Revolut').
-
-Pour toute question sur le sexe ou le genre, choisis TOUJOURS l'option qui fait référence au genre masculin (Homme, Masculin, Male, Man, M, H, etc.) parmi les options proposées. Utilise EXACTEMENT l'intitulé tel qu'il apparaît dans la liste d'options. Évite systématiquement: X, Autre, Non-binaire, Préfère ne pas répondre.
-
-Si la question demande l'ANNÉE COURANTE (ex: 'en quelle année sommes-nous', 'what year is it', 'quelle est l'année actuelle / en cours', 'current year', 'année en cours'), réponds UNIQUEMENT avec 2026 (chiffre brut, sans texte additionnel).
-
-Pour toute question sur l'ge ou la date de naissance:
-- Si la question demande explicitement l'ANNE de naissance (ex: 'anne de naissance', 'year of birth', 'birth year', 'born in', 'n en'), rponds UNIQUEMENT avec une anne sur 4 chiffres (YYYY), jamais un ge.
-- Si la question demande l'âge (âge, years old, ans, age) ET qu'elle propose des options fermées (tranches libellées comme '19-44 ans', '18-25', etc.) : choisis PARMI CES OPTIONS la tranche qui inclut 25, comme pour n'importe quelle question radio/dropdown. Ne réponds PAS avec le chiffre brut '25'.
-- Si la question demande l'âge (âge, years old, ans, age) ET qu'il n'y a PAS d'options fermées (saisie libre) : réponds UNIQUEMENT avec le chiffre '25', sans JAMAIS ajouter de mot ('ans', 'years', 'yo', etc.).
-- Si date de naissance avec dropdowns séparés (mois + année):
-  * Année: choisis une année cohérente pour 25 ans (2001, 2000, 1999).
-  * Mois: choisis un mois raliste (vite le mois en cours pour viter des ges <
-🧠 [PROMPT_DEBUG] ===== USER PROMPT =====
-
---- QUESTIONS ---
-
-Q1
-target_id: multi_ab9ddf03c44d
-contexte: When were you born? Month Day Year
-itype: text
-max_select: 3
-CHAMP MULTI-CASES: fournir EXACTEMENT 3 valeurs séparées par | (ex pour marques de sport: Nike|Adidas|Puma|Reebok|Under Armour)
-selection_rule: Pour QID=Q1, renvoyer EXACTEMENT 3 valeurs séparées par |. Pas de répétition. Valeurs différentes obligatoires.
-options: (champ ouvert)
-
-Réponds maintenant.
-Respecte STRICTEMENT le format.
-RAPPEL: Quand plusieurs valeurs sont requises, sépare-les par "|" (jamais par virgule).
-Ne renvoie rien d'autre.
-[PROMPT_DEBUG] ===================================
-[survey_executor][debug] qid_constraints={'Q1': 3}
-[batch_response_parser] raw response 01|15|2001
-[batch_response_parser] qid=Q1 min_select=3 max_select=3 received=0 final_count=0 values=[]
-[LOCAL][PAUSE] Appuie sur <Enter> pour autoriser le clic CTA (navigation_cta)
+[survey_executor][debug] qid_constraints={'Q1': 10}
+[batch_response_parser] raw response Booking.com|Airbnb|Expedia|Kayak|Trivago|Lastminute.com|Skyscanner|Hotels.com|Voyages-sncf.com|Go Voyages
+[batch_response_parser] qid=Q1 min_select=10 max_select=10 received=0 final_count=0 values=[]
