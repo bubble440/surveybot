@@ -402,6 +402,130 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
                 if blocks:
                     continue
 
+        # --- group-by-col table : 1 bloc par colonne, lignes = options ---
+        # Guard DOM strict : table.grid[data-settings*='group-by-col'][data-settings*='table-mode']
+        # + ≥2 th[scope='col'] (en-têtes de colonnes = sous-questions)
+        # + inputs name=ans{Q}.{col_idx}.{N} avec col_idx discriminant (middle group)
+        group_by_col_table: Any = None
+        try:
+            cand_gc = answers.find_elements(
+                By.CSS_SELECTOR,
+                "table.grid[data-settings*='group-by-col'][data-settings*='table-mode']",
+            )
+            group_by_col_table = cand_gc[0] if cand_gc else None
+        except Exception:
+            group_by_col_table = None
+
+        if group_by_col_table is not None:
+            try:
+                col_hdr_nodes_gc = group_by_col_table.find_elements(By.CSS_SELECTOR, "th[scope='col']")
+            except Exception:
+                col_hdr_nodes_gc = []
+            col_hdr_texts_gc: list[str] = [_visible_text(h) for h in col_hdr_nodes_gc if _visible_text(h)]
+
+            try:
+                row_nodes_gc = group_by_col_table.find_elements(By.CSS_SELECTOR, "tr.row-elements")
+            except Exception:
+                row_nodes_gc = []
+
+            # col_idx (int) → list of (row_label, input_element)
+            col_inputs_gc: dict[int, list[tuple[str, Any]]] = {}
+            for row_gc in row_nodes_gc:
+                row_lbl_gc = ""
+                try:
+                    rh_gc = row_gc.find_element(By.CSS_SELECTOR, "th[scope='row']")
+                    if rh_gc.find_elements(By.CSS_SELECTOR, "input[type='text'].oe"):
+                        continue
+                    row_lbl_gc = _visible_text(rh_gc)
+                except Exception:
+                    pass
+                if not row_lbl_gc:
+                    continue
+                try:
+                    row_inps_gc = row_gc.find_elements(
+                        By.CSS_SELECTOR, "input[type='radio'], input[type='checkbox']"
+                    )
+                except Exception:
+                    row_inps_gc = []
+                for inp_gc in row_inps_gc:
+                    raw_nm_gc = (inp_gc.get_attribute("name") or "").strip()
+                    m_gc = re.fullmatch(r"ans\d+\.(\d+)\.\d+", raw_nm_gc)
+                    if not m_gc:
+                        continue
+                    ci_gc = int(m_gc.group(1))
+                    col_inputs_gc.setdefault(ci_gc, []).append((row_lbl_gc, inp_gc))
+
+            col_indices_gc = sorted(col_inputs_gc.keys())
+            if len(col_indices_gc) >= 2 and len(col_hdr_texts_gc) >= 2:
+                for ci_gc in col_indices_gc:
+                    pairs_gc = col_inputs_gc[ci_gc]
+                    if len(pairs_gc) < 2:
+                        continue
+                    hdr_gc = col_hdr_texts_gc[ci_gc] if ci_gc < len(col_hdr_texts_gc) else f"Col {ci_gc + 1}"
+                    itype_gc = "radio"
+                    try:
+                        if (pairs_gc[0][1].get_attribute("type") or "").strip().lower() == "checkbox":
+                            itype_gc = "checkbox"
+                    except Exception:
+                        pass
+                    opts_gc: list[str] = []
+                    xmap_gc: dict[str, str] = {}
+                    seen_gc: set[str] = set()
+                    for lbl_gc, inp_gc2 in pairs_gc:
+                        iid_gc = (inp_gc2.get_attribute("id") or "").strip()
+                        if not iid_gc:
+                            continue
+                        lnorm_gc = _norm_lc(lbl_gc)
+                        if not lnorm_gc or lnorm_gc in seen_gc:
+                            continue
+                        seen_gc.add(lnorm_gc)
+                        opts_gc.append(lbl_gc)
+                        xmap_gc[lnorm_gc] = (
+                            f"//input[@id={_xpath_literal(iid_gc)}]"
+                            "/ancestor::*[contains(concat(' ',normalize-space(@class),' '),' clickableCell ')"
+                            " or contains(concat(' ',normalize-space(@class),' '),' element ')][1]"
+                        )
+                    if len(opts_gc) < 2:
+                        continue
+                    raw_col_nm_gc = f"col_{ci_gc}"
+                    if pairs_gc:
+                        m2_gc = re.match(r"(ans\d+\.\d+)", (pairs_gc[0][1].get_attribute("name") or ""))
+                        if m2_gc:
+                            raw_col_nm_gc = m2_gc.group(1)
+                    col_q_gc = f"{question} [{hdr_gc}]" if question else hdr_gc
+                    gkey_gc = f"{itype_gc}:name:{raw_col_nm_gc}"
+                    tid_gc = make_target_id("group", gkey_gc, col_q_gc)
+                    register_target(tid_gc, {
+                        "kind": "group",
+                        "frame_chain": list(frame_chain or []),
+                        "itype": itype_gc,
+                        "group_key": gkey_gc,
+                        "question": col_q_gc,
+                        "input_name": raw_col_nm_gc,
+                        "max_select": 1 if itype_gc == "radio" else len(opts_gc),
+                        "options": opts_gc,
+                        "option_xpath_map": xmap_gc,
+                    })
+                    blocks.append({
+                        "target_id": tid_gc,
+                        "kind": "group",
+                        "itype": itype_gc,
+                        "question": col_q_gc,
+                        "options": opts_gc,
+                        "max_select": 1 if itype_gc == "radio" else len(opts_gc),
+                        "min_select": 1,
+                        "context": {
+                            "kind": "group",
+                            "group_key": gkey_gc,
+                            "focusvision_answers_list": True,
+                            "aux_openended_names": [],
+                            "matrix_rows": [],
+                            "matrix_columns": [],
+                        },
+                    })
+                if blocks:
+                    continue
+
         # Regrouper par name logique
         atm1d_buttons = []
         try:

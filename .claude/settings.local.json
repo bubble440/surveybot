@@ -37,7 +37,8 @@
       "Bash(python -c \"import ast; ast.parse\\(open\\('C:/projects/Surveys/surveybot/Survey/dom_classifier.py'\\).read\\(\\)\\); print\\('dom_classifier OK'\\)\")",
       "Bash(python -c \"import ast; ast.parse\\(open\\('C:/projects/Surveys/surveybot/Survey/dom_classifier.py', encoding='utf-8'\\).read\\(\\)\\); print\\('dom_classifier OK'\\)\")",
       "Bash(python -c \"import ast; ast.parse\\(open\\('C:/projects/Surveys/surveybot/Survey/action_dispatcher.py', encoding='utf-8'\\).read\\(\\)\\); print\\('action_dispatcher OK'\\)\")",
-      "Bash(python -c \"import ast; ast.parse\\(open\\('surveybot/Survey/dom_analyzer.py', encoding='utf-8'\\).read\\(\\)\\); print\\('OK'\\)\")"
+      "Bash(python -c \"import ast; ast.parse\\(open\\('surveybot/Survey/dom_analyzer.py', encoding='utf-8'\\).read\\(\\)\\); print\\('OK'\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('surveybot/Survey/dom_extractors_decipher.py'\\).read\\(\\)\\); print\\('syntax OK'\\)\")"
     ]
   }
 }
