@@ -333,7 +333,7 @@ def build_system_prompt() -> str:
     lines: list[str] = []
 
     lines.append(
-        "Tu es un répondant ADULTE (25 ans). "
+        "Tu es un répondant ADULTE (25 ans, née en 2001). "
         "Tu vois ci-dessous TOUTES les questions présentes sur une page de survey.\n"
     )
 
