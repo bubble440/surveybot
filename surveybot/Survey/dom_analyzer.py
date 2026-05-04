@@ -520,6 +520,30 @@ def _is_open_ended_choice_companion(el, container) -> bool:
     return False
 
 
+def _is_decipher_dropdown_open_companion(container) -> bool:
+    """
+    Détecte le champ texte "Autre" compagnon d'un dropdown Decipher/FocusVision.
+
+    Pattern DOM : le div.question parent du champ texte porte simultanément
+    - id="question_<QID>_open"  (suffixe _open sur l'id de la question)
+    - class="... label_<QID>_open ..."  (même suffixe sur la classe label)
+    Le dropdown correspondant est dans un div.question frère avec id="question_<QID>"
+    et class="... label_<QID> ...".  Ces deux conditions conjointes sont un signal
+    Decipher exclusif — aucun autre provider n'utilise ce schéma d'id/class.
+    Guard : double condition id + class → zéro faux positif inter-platform.
+    """
+    if not container:
+        return False
+    try:
+        cid = _norm_lc(container.get_attribute("id") or "")
+        cls = _norm_lc(container.get_attribute("class") or "")
+    except Exception:
+        return False
+    id_open = bool(re.match(r"^question_\w+_open$", cid))
+    cls_open = bool(re.search(r"\blabel_\w+_open\b", cls))
+    return id_open and cls_open
+
+
 def _is_angular_material_image_only_textarea_question(
     driver,
     el,
@@ -3281,6 +3305,10 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             if itype in ("text", "textarea") and _is_other_specify_choice_companion(driver, el, container, question):
                 continue
 
+            if itype in ("text", "textarea") and _is_decipher_dropdown_open_companion(container):
+                log_debug("[DOM_DEBUG]", "skip_decipher_dropdown_open_companion")
+                continue
+
             # Filtre interview-layout "Autre" : un input[type=text][role="option"] dans
             # div.choice-question__custom-field-container est le champ libre de la liste
             # de choix (options rendues en <button role="option">, pas en input natif).
@@ -4028,6 +4056,22 @@ def analyze_dom(driver) -> List[Dict[str, Any]]:
         question_text = block.get("question")
         options = [str(o) for o in (block.get("options") or []) if str(o).strip()]
         block["min_select"] = _compute_min_select(itype, question_text, options, max_select)
+
+    # Pour les blocs qualtrics_choice_structure_checkbox avec matrix_row_index,
+    # min_select doit être 1 : "Sélectionnez toutes les réponses qui s'appliquent"
+    # est une instruction DOM libre, pas un minimum imposé. L'extracteur inclut le
+    # texte complet de la question dans row_question, ce qui déclenche
+    # has_explicit_multi_indicator → min_select = max_select (artefact).
+    for block in blocks or []:
+        if not isinstance(block, dict):
+            continue
+        ctx_b = block.get("context") if isinstance(block.get("context"), dict) else {}
+        if (
+            ctx_b.get("qualtrics_choice_structure_checkbox") is True
+            and ctx_b.get("matrix_row_index") is not None
+            and not ctx_b.get("cap_hard")
+        ):
+            block["min_select"] = 1
 
     summary_itypes = sorted({str((b or {}).get("itype") or "") for b in (blocks or []) if (b or {}).get("itype")})
     options_count = sum(len((b or {}).get("options") or []) for b in (blocks or []))
