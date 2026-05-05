@@ -528,6 +528,22 @@ def run_attach_takeover(driver, *, api_key: str, account_id: str) -> None:
             except Exception:
                 pass
 
+            # --- Détection page d'erreur applicative Decipher/YourSurveyNow (div.survey-error visible) ---
+            try:
+                _decipher_err_els = [
+                    el for el in driver.find_elements(By.CSS_SELECTOR, "div.survey-error")
+                    if el.is_displayed()
+                ]
+                if _decipher_err_els:
+                    try:
+                        _derr_txt = (_decipher_err_els[0].text or "").strip()[:200]
+                    except Exception:
+                        _derr_txt = ""
+                    print(f"[PLATFORM-ERR] Page d'erreur Decipher (div.survey-error) step={i} url={_attach_display_url(driver.current_url)} texte={_derr_txt!r} → sortie boucle.")
+                    break
+            except Exception:
+                pass
+
             ok = survey_executor.execute_survey_page(driver, account_id, api_key, ctx=_ctx)
             _ctx.maybe_update_summary()                                           # ← ajouter cette ligne
             print(f"[ATTACH] step={i}/{max_steps} ok={ok} url={_attach_display_url(driver.current_url)}")

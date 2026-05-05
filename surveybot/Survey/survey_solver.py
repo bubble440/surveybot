@@ -648,6 +648,26 @@ def solve_full_survey(driver, api_key, *, account_id: str, survey_context=None):
         except Exception:
             pass
 
+        # --- Détection page d’erreur applicative Decipher/YourSurveyNow (div.survey-error visible) ---
+        try:
+            _decipher_err_els = [
+                el for el in driver.find_elements(By.CSS_SELECTOR, "div.survey-error")
+                if el.is_displayed()
+            ]
+            if _decipher_err_els:
+                try:
+                    _derr_url = driver.current_url or ""
+                    _derr_txt = (_decipher_err_els[0].text or "").strip()[:200]
+                    log_info("PLATFORM-ERR", f"div.survey-error url={_derr_url} texte={_derr_txt!r}")
+                except Exception:
+                    pass
+                log_info("PLATFORM-ERR", "Page d’erreur applicative Decipher détectée (div.survey-error visible) → soft-restart.")
+                guard.record_success()
+                guard.request_survey_restart("decipher_survey_error")
+                return
+        except Exception:
+            pass
+
         # -------------------------------------------------------------------
         # a) Laisser GPT décider de l’action à partir de la capture d’écran
         success = Survey.survey_executor.execute_survey_page(driver, account_id, api_key, ctx=_survey_ctx)
