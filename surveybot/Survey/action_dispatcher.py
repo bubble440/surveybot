@@ -7335,6 +7335,18 @@ def execute_actions_plan(
             except Exception:
                 before_sig = None
 
+            # Capture DOM length before action to detect mutation post-click.
+            # Used by the rescan guard below; skipped if not needed (last action).
+            _body_len_before = None
+            if rescan_between_actions and idx < (len(actions) - 1):
+                try:
+                    if (itype or "").strip().lower() in ("radio", "checkbox"):
+                        _body_len_before = int(
+                            driver.execute_script("return document.body.innerHTML.length") or 0
+                        )
+                except Exception:
+                    _body_len_before = None
+
             next_tid = ""
             if idx < (len(actions) - 1):
                 try:
@@ -7433,6 +7445,16 @@ def execute_actions_plan(
                                 and tid == next_tid:
                             same_question_block = True
                             _skip_reason = f"same multi_text target_id={tid!r}"
+                        if not same_question_block and _body_len_before is not None:
+                            try:
+                                _body_len_after = int(
+                                    driver.execute_script("return document.body.innerHTML.length") or 0
+                                )
+                                if _body_len_after == _body_len_before and _body_len_before > 0:
+                                    same_question_block = True
+                                    _skip_reason = f"dom_unchanged body_len={_body_len_before}"
+                            except Exception:
+                                pass
                         if same_question_block:
                             log_debug("[DISPATCH]", f"skip rescan idx={idx} {_skip_reason} ({itype_lower})")
                         else:
