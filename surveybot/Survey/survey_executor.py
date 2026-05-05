@@ -630,6 +630,7 @@ def _budgeted_soft_restart_for_image_only_inputs(driver, question_blocks: list[d
     Retourne:
       - "restarted" si image-only non résoluble + soft_restart demandé,
       - "budget_exhausted" si budget anti-boucle dépassé,
+      - "random_selected" si sélection aléatoire réussie (image_only_wrapped_inputs uniquement),
       - "no_match" sinon.
     """
     is_match, pattern_reason, dom_fp = _detect_image_only_unresolvable_dom(driver, question_blocks)
@@ -660,6 +661,49 @@ def _budgeted_soft_restart_for_image_only_inputs(driver, question_blocks: list[d
         driver._dom_only_abort_seen = counters
     except Exception:
         pass
+
+    if pattern_reason == "image_only_wrapped_inputs":
+        try:
+            clicked = driver.execute_script(
+                r"""
+                const isVisible = (el) => {
+                  if (!el) return false;
+                  const s = window.getComputedStyle(el);
+                  if (!s || s.display === 'none' || s.visibility === 'hidden') return false;
+                  const r = el.getBoundingClientRect();
+                  return !!(r && r.width > 0 && r.height > 0);
+                };
+                const inputs = Array.from(document.querySelectorAll(
+                  "input[type='radio'][name], input[type='checkbox'][name]"
+                ));
+                const interactable = inputs.filter((inp) => {
+                  if (inp.disabled) return false;
+                  const lbl = inp.id
+                    ? document.querySelector('label[for="' + CSS.escape(inp.id) + '"]')
+                    : null;
+                  const wrapper = lbl
+                    || inp.closest('label')
+                    || inp.closest('[tabindex], [role="radio"], [role="checkbox"]');
+                  return isVisible(wrapper || inp);
+                });
+                if (!interactable.length) return null;
+                const idx = Math.floor(Math.random() * interactable.length);
+                const inp = interactable[idx];
+                const lbl = inp.id
+                  ? document.querySelector('label[for="' + CSS.escape(inp.id) + '"]')
+                  : null;
+                (lbl || inp).click();
+                return inp.id || inp.name || 'ok';
+                """
+            )
+        except Exception as _e:
+            clicked = None
+            log_debug("DOM_ONLY_ABORT", f"image_only_wrapped_inputs random_click failed: {type(_e).__name__}: {_e}")
+
+        if clicked:
+            log_info("DOM_ONLY_ABORT", f"image_only_wrapped_inputs -> random_selected input={clicked} key={budget_key}")
+            return "random_selected"
+        log_info("DOM_ONLY_ABORT", f"image_only_wrapped_inputs -> no_interactable_inputs key={budget_key}")
 
     reason = f"dom_only_abort:{pattern_reason}"
     print(
@@ -1841,6 +1885,24 @@ def execute_survey_page(driver, account_id, api_key, ctx=None):
         return True
     if image_only_abort == "budget_exhausted":
         return False
+    if image_only_abort == "random_selected":
+        print("[DOM_ONLY_ABORT] image_only_wrapped_inputs random_selected -> CTA direct")
+        intercept_only = _env_truthy("CTA_INTERCEPT_ONLY")
+        try:
+            before_url = driver.current_url
+            before_sig = redirect_watcher._dom_signature(driver)
+            time.sleep(PAUSE_BEFORE_CTA)
+            _local_pause_before_cta("navigation_cta")
+            clicked = input_handler.try_click_navigation_cta_any_context(driver)
+            if intercept_only:
+                print(f"[DOM_ONLY_ABORT] CTA_INTERCEPT_ONLY — clic={'OK' if clicked else 'NOT FOUND'}, pas de navigation")
+            elif clicked:
+                redirect_watcher.wait_for_navigation_or_dom_change(
+                    driver, before_url=before_url, before_sig=before_sig, timeout=10
+                )
+        except Exception as _cta_e:
+            print(f"[DOM_ONLY_ABORT] random_selected CTA error (non-bloquant): {_cta_e}")
+        return True
 
     open_text_image_abort = _budgeted_soft_restart_for_open_text_embedded_image(driver, question_blocks)
     if open_text_image_abort == "restarted":
