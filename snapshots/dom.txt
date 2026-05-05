@@ -1,93 +1,189 @@
-[DOM_CONTEXT_DEBUG] analyze_dom selected_chain=[] selected_ps_date_question=0 score=80
-[DOM_CONTEXT_DEBUG] analyze_dom stage=context_selected blocks_count=0 chain_len=0
-[WALR_CS] Pas de #cardSortContainer
-[WALR_CS] bloc retourné: False
-[DOM_QUALTRICS_SL_TEXT] blocks_extracted=0
-[DOM_QUALTRICS_FORM_MULTI_TEXT] blocks_extracted=1
-[DOM_CONTEXT_DEBUG] extracted_blocks count=1 itypes=['text']
-[DOM_CONTEXT] extracted_blocks count=1 itypes=['text'] question_len=177 options_count=0
-[DOM_CONTEXT_DEBUG] analyze_dom stage=raw_extraction blocks_count=1 sample=[{'itype': 'text', 'question': 'Lorsque vous pensez aux sites et applis de voyages, quels no', 'options': 0}]
-[DOM_CONTEXT_DEBUG] analyze_dom stage=before_return blocks_count=1 sample=[{'itype': 'text', 'question': 'Lorsque vous pensez aux sites et applis de voyages, quels no', 'options': 0}]
-[DOM_ONLY_ABORT] detector_no_match inputs=0 visible_wrappers=0 input_groups=0 image_groups=0 image_options=0 clickable_groups=0 clickable_image_options=0 clickable_visible=1 instruction=0 visual_tiles=0
-🧠 [PROMPT_DEBUG] ===== SYSTEM PROMPT =====
-Tu es un répondant ADULTE (25 ans). Tu vois ci-dessous TOUTES les questions présentes sur une page de survey.
+selection_rule: Pour QID=Q6, renvoyer EXACTEMENT 1 valeur
+options: Au moins une fois par jour | Au moins une fois par semaine | Plusieurs fois par mois | Une fois par mois | Moins souvent/Jamais
 
-Tu dois répondre à CHAQUE question.
-Tu ne dois JAMAIS lister toutes les options.
-Tu dois proposer uniquement la/les réponse(s) nécessaires selon la règle de sélection.
+Q7
+target_id: group_05199cefda4f
+contexte: Lire un livre
+itype: radio
+max_select: 1
+selection_rule: Pour QID=Q7, renvoyer EXACTEMENT 1 valeur
+options: Au moins une fois par jour | Au moins une fois par semaine | Plusieurs fois par mois | Une fois par mois | Moins souvent/Jamais
 
-FORMAT STRICT (une ligne par question) :
-QID //// target_id //// valeur //// itype //// contexte
+Q8
+target_id: group_d1650925cb4e
+contexte: Regarder un film
+itype: radio
+max_select: 1
+selection_rule: Pour QID=Q8, renvoyer EXACTEMENT 1 valeur
+options: Au moins une fois par jour | Au moins une fois par semaine | Plusieurs fois par mois | Une fois par mois | Moins souvent/Jamais
 
-RèGLES CRITIQUES:
-- Pour chaque QID, le nombre de valeurs à renvoyer est défini par la selection_rule de ce QID. Ne pas utiliser max_select comme cible à atteindre : c'est un plafond, pas une obligation.
-- Si plusieurs valeurs sont nécessaires, les séparer UNIQUEMENT par "|".
-- Exemple: Q1 //// group_abc //// Option A|Option B|Option C //// checkbox //// ...
-- NE JAMAIS utiliser la virgule "," comme séparateur (les options peuvent en contenir).
-- AUCUNE explication. Aucun texte hors format.
+Q9
+target_id: group_c75bf35a343f
+contexte: Faire de l’exercice
+itype: radio
+max_select: 1
+selection_rule: Pour QID=Q9, renvoyer EXACTEMENT 1 valeur
+options: Au moins une fois par jour | Au moins une fois par semaine | Plusieurs fois par mois | Une fois par mois | Moins souvent/Jamais
 
-RÈGLE CHAMP MULTI-CASES (context.kind=multi_text) :
-- Ce n'est PAS une multi-sélection checkbox: c'est un champ composé de plusieurs cases texte.
-- Si max_select >= 2, valeur DOIT contenir EXACTEMENT max_select segments séparés par "|".
-- Pour une date de naissance (DOB), les valeurs DOIVENT être des chiffres (JAMAIS de noms de mois en lettres). Ordre strict : MM|DD|YYYY.
-- Exemple DOB (3 cases): 03|15|2001 (mois|jour|année, tous en chiffres)
+Q10
+target_id: group_08fb2fc030d2
+contexte: Regarder la télévision
+itype: radio
+max_select: 1
+selection_rule: Pour QID=Q10, renvoyer EXACTEMENT 1 valeur
+options: Au moins une fois par jour | Au moins une fois par semaine | Plusieurs fois par mois | Une fois par mois | Moins souvent/Jamais
 
-RèGLE NOMBRE DE RéPONSES:
-- Ne déduis PAS le nombre depuis le provider/source.
-- Pour chaque QID, le nombre de valeurs à renvoyer est défini par la selection_rule de ce QID. Ne pas utiliser max_select comme cible à atteindre : c'est un plafond, pas une obligation.
+Q11
+target_id: group_9cb1e0384edb
+contexte: Cuisiner/Pâtisser
+itype: radio
+max_select: 1
+selection_rule: Pour QID=Q11, renvoyer EXACTEMENT 1 valeur
+options: Au moins une fois par jour | Au moins une fois par semaine | Plusieurs fois par mois | Une fois par mois | Moins souvent/Jamais
 
-Champs ouverts (text/textarea) : si la question contient un exemple (ex: 'E.g.' / 'Ex:'), N'UTILISE PAS l'exemple comme valeur. Donne une valeur réaliste (ex: code postal FR -> 75001).
-
-Contraintes :
-- itype doit être l'un de : {radio, checkbox, dropdown, text, textarea, button}
-- valeur DOIT être une option existante (si options listées)
-- RÈGLE ABSOLUE : utilise UNIQUEMENT les options listées ci-dessus, mot pour mot. N'invente PAS d'option absente de la liste, même si elle te semble logiquement attendue.
-- évite : non, jamais, aucun, je préfère ne pas répondre
-- contexte doit correspondre exactement é  la question affichée
-
-RÈGLE VALEUR VERBATIM (priorité absolue) :
-Retourne chaque option EXACTEMENT telle qu'elle apparaît dans la ligne `options:`, sans abréviation, sans reformulation, sans raccourci.
-INTERDIT ABSOLU : retourner uniquement le chiffre terminal d'une option (ex: retourner '7' au lieu de l'option complète 'Je suis certain(e) que j'achèterai auprès de ce détaillant 7').
-Cette règle s'applique même si le suffixe chiffré te semble redondant ou évident.
-
-RÈGLE SPÉCIALE MATRICES (itype=matrix) :
-- valeur DOIT être au format STRICT: row_label || col_label (ou row_label || col1|col2|col3 pour matrices checkbox multi-colonnes)
-- Si matrix_active_row est fourni dans le contexte, row_label DOIT être EXACTEMENT cette valeur (ne choisis jamais une autre ligne).
-- EXCEPTION matrix_active_row: quand matrix_active_row est fourni, valeur DOIT contenir UNIQUEMENT la/les colonne(s) (col_label ou col1|col2|col3), sans row_label.
-- Exemple attendu: Crédit consommation || Transféré vers Revolut
-- Exemple multi-colonnes (checkbox): Whey protéines || Amazon|Decathlon
-- Exemple matrix_active_row (colonne(s) seule(s)): En ligne, sur Amazon|En magasin, chez Decathlon
-- INTERDIT: répondre uniquement une colonne (ex: 'Transféré vers Revolut').
-
-Pour toute question sur le sexe ou le genre, choisis TOUJOURS l'option qui fait référence au genre masculin (Homme, Masculin, Male, Man, M, H, etc.) parmi les options proposées. Utilise EXACTEMENT l'intitulé tel qu'il apparaît dans la liste d'options. Évite systématiquement: X, Autre, Non-binaire, Préfère ne pas répondre.
-
-Si la question demande l'ANNÉE COURANTE (ex: 'en quelle année sommes-nous', 'what year is it', 'quelle est l'année actuelle / en cours', 'current year', 'année en cours'), réponds UNIQUEMENT avec 2026 (chiffre brut, sans texte additionnel).
-
-Pour toute question sur l'age ou la date de naissance:
-- Si la question demande explicitement l'ANNE de naissance (ex: 'anne de naissance', 'year of birth', 'birth year', 'born in', 'n en'), rponds UNIQUEMENT avec une anne sur 4 chiffres (YYYY), jamais un ge.
-- Si la question demande l'âge (âge, years old, ans, age) ET qu'elle propose des options fermées (tranches libellées comme '19-44 ans', '18-25', etc.) : choisis PARMI CES OPTIONS la tranche qui inclut 25, comme pour n'importe quelle question radio/dropdown. Ne réponds PAS avec le chiffre brut '25'.
-- Si la question demande l'âge (âge, years old, ans, age) ET qu'il n'y a PAS d'options fermées (saisie libre) : réponds UNIQUEMENT avec le chiffre '25', sans JAMAIS ajouter de mot ('ans', 'years', 'yo', etc.).
-- Si date de naissance avec dropdowns séparés (mois + année):
-  * Année: choisis une année cohérente pour 25 ans (2001, 2000, 1999).
-  * Mois: choisis un mois raliste (vite le mois en cours pour viter des ges <
-🧠 [PROMPT_DEBUG] ===== USER PROMPT =====
-
---- QUESTIONS ---
-
-Q1
-target_id: multi_20d5e8259abc
-contexte: Lorsque vous pensez aux sites et applis de voyages, quels noms vous viennent à l'esprit ? Veuillez saisir vos réponses dans les cases ci-dessous (une seule réponse par case).
-itype: text
-max_select: 5
-CHAMP MULTI-CASES: fournir EXACTEMENT 10 valeurs séparées par | (ex pour marques de sport: Nike|Adidas|Puma|Reebok|Under Armour)
-selection_rule: Pour QID=Q1, renvoyer EXACTEMENT 10 valeurs séparées par |. Pas de répétition. Valeurs différentes obligatoires.
-options: (champ ouvert)
+Q12
+target_id: group_52b8ebfe5ee6
+contexte: Jouer à des jeux de société
+itype: radio
+max_select: 1
+selection_rule: Pour QID=Q12, renvoyer EXACTEMENT 1 valeur
+options: Au moins une fois par jour | Au moins une fois par semaine | Plusieurs fois par mois | Une fois par mois | Moins souvent/Jamais
 
 Réponds maintenant.
 Respecte STRICTEMENT le format.
 RAPPEL: Quand plusieurs valeurs sont requises, sépare-les par "|" (jamais par virgule).
 Ne renvoie rien d'autre.
 [PROMPT_DEBUG] ===================================
-[survey_executor][debug] qid_constraints={'Q1': 10}
-[batch_response_parser] raw response Booking.com|Airbnb|Expedia|Kayak|Trivago|Lastminute.com|Skyscanner|Hotels.com|Voyages-sncf.com|Go Voyages
-[batch_response_parser] qid=Q1 min_select=10 max_select=10 received=0 final_count=0 values=[]
+[survey_executor][debug] qid_constraints={'Q1': 1, 'Q2': 1, 'Q3': 1, 'Q4': 1, 'Q5': 1, 'Q6': 1, 'Q7': 1, 'Q8': 1, 'Q9': 1, 'Q10': 1, 'Q11': 1, 'Q12': 1}
+[batch_response_parser] raw response Q1 //// group_7334ce58c0cf //// Au moins une fois par semaine //// radio //// Pratiquer un sport
+Q2 //// group_b2628affe497 //// Au moins une fois par jour //// radio //// Acheter en ligne
+Q3 //// group_b92618b29f75 //// Au moins une fois par semaine //// radio //// Faire les boutiques/Aller au supermarché
+Q4 //// group_07e6723e5719 //// Au moins une fois par semaine //// radio //// Jouer à des jeux vidéo
+Q5 //// group_5961e3eb2b49 //// Au moins une fois par semaine //// radio //// Voir des amis
+Q6 //// group_2a51232b636d //// Plusieurs fois par mois //// radio //// Écouter un podcast
+Q7 //// group_05199cefda4f //// Une fois par mois //// radio //// Lire un livre
+Q8 //// group_d1650925cb4e //// Plusieurs fois par mois //// radio //// Regarder un film
+Q9 //// group_c75bf35a343f //// Au moins une fois par semaine //// radio //// Faire de l’exercice
+Q10 //// group_08fb2fc030d2 //// Au moins une fois par semaine //// radio //// Regarder la télévision
+Q11 //// group_9cb1e0384edb //// Au moins une fois par mois //// radio //// Cuisiner/Pâtisser
+Q12 //// group_52b8ebfe5ee6 //// Une fois par mois //// radio //// Jouer à des jeux de société
+[batch_response_parser] qid=Q11 valeur substituée fuzzy (score=0.88): 'Au moins une fois par mois' -> 'Au moins une fois par jour'
+[batch_response_parser] qid=Q1 min_select=1 max_select=1 received=1 final_count=1 values=['Au moins une fois par semaine']
+[batch_response_parser] qid=Q2 min_select=1 max_select=1 received=1 final_count=1 values=['Au moins une fois par jour']
+[batch_response_parser] qid=Q3 min_select=1 max_select=1 received=1 final_count=1 values=['Au moins une fois par semaine']
+[batch_response_parser] qid=Q4 min_select=1 max_select=1 received=1 final_count=1 values=['Au moins une fois par semaine']
+[batch_response_parser] qid=Q5 min_select=1 max_select=1 received=1 final_count=1 values=['Au moins une fois par semaine']
+[batch_response_parser] qid=Q6 min_select=1 max_select=1 received=1 final_count=1 values=['Plusieurs fois par mois']
+[batch_response_parser] qid=Q7 min_select=1 max_select=1 received=1 final_count=1 values=['Une fois par mois']
+[batch_response_parser] qid=Q8 min_select=1 max_select=1 received=1 final_count=1 values=['Plusieurs fois par mois']
+[batch_response_parser] qid=Q9 min_select=1 max_select=1 received=1 final_count=1 values=['Au moins une fois par semaine']
+[batch_response_parser] qid=Q10 min_select=1 max_select=1 received=1 final_count=1 values=['Au moins une fois par semaine']
+[batch_response_parser] qid=Q11 min_select=1 max_select=1 received=1 final_count=1 values=['Au moins une fois par jour']
+[batch_response_parser] qid=Q12 min_select=1 max_select=1 received=1 final_count=1 values=['Une fois par mois']
+[TARGET] execute_action raw='Q1 //// group_7334ce58c0cf //// Au moins une fois par semaine //// radio //// Pratiquer un sport'
+[TARGET] parsed target_id='group_7334ce58c0cf' itype='radio' value='Au moins une fois par semaine' context_len=18
+[TARGET] toluna_runtime_answerrow: entering block
+[TARGET] toluna_runtime_answerrow: guard=None
+[TARGET_DEBUG] native click failed on target: ElementNotInteractableException: element not interactable (Session info: chrome=147.0.7727.138); For documentation on this error, please visit: https://www.selenium.dev/documentation/webdriver/troubleshooting/errors#elementnotinteractableexception
+[RESCAN_DIAG] idx=0 ok=True itype='radio' next_itype='radio' tid='group_7334ce58c0cf' next_tid='group_b2628affe497' same_qblock=False
+[DOM_CONTEXT_DEBUG] runtime_signature rows=0 wrappers=0 in_selected_context=False
+[DOM_CONTEXT_DEBUG] analyze_dom selected_chain=[] selected_ps_date_question=0 score=80
+[DOM_CONTEXT_DEBUG] analyze_dom stage=context_selected blocks_count=0 chain_len=0
+[WALR_CS] Pas de #cardSortContainer
+[WALR_CS] bloc retourné: False
+[DOM_CONTEXT_DEBUG] extracted_blocks count=12 itypes=['radio']
+[DOM_CONTEXT] extracted_blocks count=12 itypes=['radio'] question_len=18 options_count=60
+[DOM_CONTEXT_DEBUG] analyze_dom stage=raw_extraction blocks_count=12 sample=[{'itype': 'radio', 'question': 'Pratiquer un sport', 'options': 5}, {'itype': 'radio', 'question': 'Acheter en ligne', 'options': 5}, {'itype': 'radio', 'question': 'Faire les boutiques/Aller au supermarché', 'options': 5}]
+[DOM_CONTEXT_DEBUG] analyze_dom stage=before_return blocks_count=12 sample=[{'itype': 'radio', 'question': 'Pratiquer un sport', 'options': 5}, {'itype': 'radio', 'question': 'Acheter en ligne', 'options': 5}, {'itype': 'radio', 'question': 'Faire les boutiques/Aller au supermarché', 'options': 5}]
+[TARGET] execute_action raw='Q2 //// group_b2628affe497 //// Au moins une fois par jour //// radio //// Acheter en ligne'
+[TARGET] parsed target_id='group_b2628affe497' itype='radio' value='Au moins une fois par jour' context_len=16
+[TARGET] toluna_runtime_answerrow: entering block
+[TARGET] toluna_runtime_answerrow: guard=None
+[TARGET_DEBUG] _click_candidate: skip_to=2 cm_key='cmix_simple_grid'
+[RESCAN_DIAG] idx=1 ok=True itype='radio' next_itype='radio' tid='group_b2628affe497' next_tid='group_b92618b29f75' same_qblock=False
+[DOM_CONTEXT_DEBUG] runtime_signature rows=0 wrappers=0 in_selected_context=False
+[DOM_CONTEXT_DEBUG] analyze_dom selected_chain=[] selected_ps_date_question=0 score=80
+[DOM_CONTEXT_DEBUG] analyze_dom stage=context_selected blocks_count=0 chain_len=0
+[WALR_CS] Pas de #cardSortContainer
+[WALR_CS] bloc retourné: False
+[DOM_CONTEXT_DEBUG] extracted_blocks count=12 itypes=['radio']
+[DOM_CONTEXT] extracted_blocks count=12 itypes=['radio'] question_len=18 options_count=60
+[DOM_CONTEXT_DEBUG] analyze_dom stage=raw_extraction blocks_count=12 sample=[{'itype': 'radio', 'question': 'Pratiquer un sport', 'options': 5}, {'itype': 'radio', 'question': 'Acheter en ligne', 'options': 5}, {'itype': 'radio', 'question': 'Faire les boutiques/Aller au supermarché', 'options': 5}]
+[DOM_CONTEXT_DEBUG] analyze_dom stage=before_return blocks_count=12 sample=[{'itype': 'radio', 'question': 'Pratiquer un sport', 'options': 5}, {'itype': 'radio', 'question': 'Acheter en ligne', 'options': 5}, {'itype': 'radio', 'question': 'Faire les boutiques/Aller au supermarché', 'options': 5}]
+[TARGET] execute_action raw='Q3 //// group_b92618b29f75 //// Au moins une fois par semaine //// radio //// Faire les boutiques/Aller au supermarché'
+[TARGET] parsed target_id='group_b92618b29f75' itype='radio' value='Au moins une fois par semaine' context_len=40
+[TARGET] toluna_runtime_answerrow: entering block
+[TARGET] toluna_runtime_answerrow: guard=None
+[TARGET_DEBUG] _click_candidate: skip_to=2 cm_key='cmix_simple_grid'
+[RESCAN_DIAG] idx=2 ok=True itype='radio' next_itype='radio' tid='group_b92618b29f75' next_tid='group_07e6723e5719' same_qblock=False
+[DOM_CONTEXT_DEBUG] runtime_signature rows=0 wrappers=0 in_selected_context=False
+[DOM_CONTEXT_DEBUG] analyze_dom selected_chain=[] selected_ps_date_question=0 score=80
+[DOM_CONTEXT_DEBUG] analyze_dom stage=context_selected blocks_count=0 chain_len=0
+[WALR_CS] Pas de #cardSortContainer
+[WALR_CS] bloc retourné: False
+[DOM_CONTEXT_DEBUG] extracted_blocks count=12 itypes=['radio']
+[DOM_CONTEXT] extracted_blocks count=12 itypes=['radio'] question_len=18 options_count=60
+[DOM_CONTEXT_DEBUG] analyze_dom stage=raw_extraction blocks_count=12 sample=[{'itype': 'radio', 'question': 'Pratiquer un sport', 'options': 5}, {'itype': 'radio', 'question': 'Acheter en ligne', 'options': 5}, {'itype': 'radio', 'question': 'Faire les boutiques/Aller au supermarché', 'options': 5}]
+[DOM_CONTEXT_DEBUG] analyze_dom stage=before_return blocks_count=12 sample=[{'itype': 'radio', 'question': 'Pratiquer un sport', 'options': 5}, {'itype': 'radio', 'question': 'Acheter en ligne', 'options': 5}, {'itype': 'radio', 'question': 'Faire les boutiques/Aller au supermarché', 'options': 5}]
+[TARGET] execute_action raw='Q4 //// group_07e6723e5719 //// Au moins une fois par semaine //// radio //// Jouer à des jeux vidéo'
+[TARGET] parsed target_id='group_07e6723e5719' itype='radio' value='Au moins une fois par semaine' context_len=22
+[TARGET] toluna_runtime_answerrow: entering block
+[TARGET] toluna_runtime_answerrow: guard=None
+[TARGET_DEBUG] _click_candidate: skip_to=2 cm_key='cmix_simple_grid'
+[RESCAN_DIAG] idx=3 ok=True itype='radio' next_itype='radio' tid='group_07e6723e5719' next_tid='group_5961e3eb2b49' same_qblock=False
+[DOM_CONTEXT_DEBUG] runtime_signature rows=0 wrappers=0 in_selected_context=False
+[DOM_CONTEXT_DEBUG] analyze_dom selected_chain=[] selected_ps_date_question=0 score=80
+[DOM_CONTEXT_DEBUG] analyze_dom stage=context_selected blocks_count=0 chain_len=0
+[WALR_CS] Pas de #cardSortContainer
+[WALR_CS] bloc retourné: False
+[DOM_CONTEXT_DEBUG] extracted_blocks count=12 itypes=['radio']
+[DOM_CONTEXT] extracted_blocks count=12 itypes=['radio'] question_len=18 options_count=60
+[DOM_CONTEXT_DEBUG] analyze_dom stage=raw_extraction blocks_count=12 sample=[{'itype': 'radio', 'question': 'Pratiquer un sport', 'options': 5}, {'itype': 'radio', 'question': 'Acheter en ligne', 'options': 5}, {'itype': 'radio', 'question': 'Faire les boutiques/Aller au supermarché', 'options': 5}]
+[DOM_CONTEXT_DEBUG] analyze_dom stage=before_return blocks_count=12 sample=[{'itype': 'radio', 'question': 'Pratiquer un sport', 'options': 5}, {'itype': 'radio', 'question': 'Acheter en ligne', 'options': 5}, {'itype': 'radio', 'question': 'Faire les boutiques/Aller au supermarché', 'options': 5}]
+[TARGET] execute_action raw='Q5 //// group_5961e3eb2b49 //// Au moins une fois par semaine //// radio //// Voir des amis'
+[TARGET] parsed target_id='group_5961e3eb2b49' itype='radio' value='Au moins une fois par semaine' context_len=13
+[TARGET] toluna_runtime_answerrow: entering block
+[TARGET] toluna_runtime_answerrow: guard=None
+[TARGET_DEBUG] _click_candidate: skip_to=2 cm_key='cmix_simple_grid'
+[RESCAN_DIAG] idx=4 ok=True itype='radio' next_itype='radio' tid='group_5961e3eb2b49' next_tid='group_2a51232b636d' same_qblock=False
+[DOM_CONTEXT_DEBUG] runtime_signature rows=0 wrappers=0 in_selected_context=False
+[DOM_CONTEXT_DEBUG] analyze_dom selected_chain=[] selected_ps_date_question=0 score=80
+[DOM_CONTEXT_DEBUG] analyze_dom stage=context_selected blocks_count=0 chain_len=0
+[WALR_CS] Pas de #cardSortContainer
+[WALR_CS] bloc retourné: False
+[DOM_CONTEXT_DEBUG] extracted_blocks count=12 itypes=['radio']
+[DOM_CONTEXT] extracted_blocks count=12 itypes=['radio'] question_len=18 options_count=60
+[DOM_CONTEXT_DEBUG] analyze_dom stage=raw_extraction blocks_count=12 sample=[{'itype': 'radio', 'question': 'Pratiquer un sport', 'options': 5}, {'itype': 'radio', 'question': 'Acheter en ligne', 'options': 5}, {'itype': 'radio', 'question': 'Faire les boutiques/Aller au supermarché', 'options': 5}]
+[DOM_CONTEXT_DEBUG] analyze_dom stage=before_return blocks_count=12 sample=[{'itype': 'radio', 'question': 'Pratiquer un sport', 'options': 5}, {'itype': 'radio', 'question': 'Acheter en ligne', 'options': 5}, {'itype': 'radio', 'question': 'Faire les boutiques/Aller au supermarché', 'options': 5}]
+[TARGET] execute_action raw='Q6 //// group_2a51232b636d //// Plusieurs fois par mois //// radio //// Écouter un podcast'
+[TARGET] parsed target_id='group_2a51232b636d' itype='radio' value='Plusieurs fois par mois' context_len=18
+[TARGET] toluna_runtime_answerrow: entering block
+[TARGET] toluna_runtime_answerrow: guard=None
+[TARGET_DEBUG] _click_candidate: skip_to=2 cm_key='cmix_simple_grid'
+[RESCAN_DIAG] idx=5 ok=True itype='radio' next_itype='radio' tid='group_2a51232b636d' next_tid='group_05199cefda4f' same_qblock=False
+[DOM_CONTEXT_DEBUG] runtime_signature rows=0 wrappers=0 in_selected_context=False
+[DOM_CONTEXT_DEBUG] analyze_dom selected_chain=[] selected_ps_date_question=0 score=80
+[DOM_CONTEXT_DEBUG] analyze_dom stage=context_selected blocks_count=0 chain_len=0
+[WALR_CS] Pas de #cardSortContainer
+[WALR_CS] bloc retourné: False
+[DOM_CONTEXT_DEBUG] extracted_blocks count=12 itypes=['radio']
+[DOM_CONTEXT] extracted_blocks count=12 itypes=['radio'] question_len=18 options_count=60
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
