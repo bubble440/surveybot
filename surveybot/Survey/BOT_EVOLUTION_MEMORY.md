@@ -708,6 +708,70 @@ Patterns exclus :
 
 ---
 
+## PLATEFORME : DECIPHER / YOURSURVEYNOW — PAGE D'ERREUR APPLICATIVE
+Signature DOM : `div.survey-error` visible contenant un message d'erreur serveur
+(ex. "ERROR: SE-03 Variable 'psid' required for list='101'").
+Apparaît quand le lien de suivi est invalide ou expiré (paramètre psid manquant).
+
+### Détection div.survey-error — survey_solver.py (route prod)
+Fichier : Survey/survey_solver.py
+Emplacement : boucle solve_full_survey, après le bloc errorPage/errorpage-wrapper,
+avant l'appel à execute_survey_page().
+Guard : `div.survey-error` visible (is_displayed()) dans le DOM courant.
+Patterns couverts :
+- Détecte et logue : URL courante + texte du premier élément (tronqué 200 chars)
+- Déclenche guard.record_success() + guard.request_survey_restart("decipher_survey_error")
+Patterns exclus :
+- div.errorPage, div.errorpage-wrapper → bloc précédent inchangé
+- Pages Decipher avec questions valides → aucun div.survey-error visible
+
+### Détection div.survey-error — main.py (route attach)
+Fichier : main.py
+Emplacement : boucle run_attach_takeover, après le bloc errorPage/errorpage-wrapper,
+avant l'appel à execute_survey_page().
+Guard : même guard DOM que survey_solver.py
+Patterns couverts :
+- Logue via print : [PLATFORM-ERR] step + url + texte (tronqué 200 chars) → break
+Patterns exclus :
+- Identiques à la route prod ci-dessus
+
+---
+
+## PLATEFORME : BULBSHARE
+Signature DOM : `my.bulbshare.com` — `div.pollItemWrap` > `div.css-jp04m` > `h2.pollItemTitle`
++ `div.itemRulesWrapper` (instruction) + `div.css-gos33m` > `button.css-12slb6h` (options).
+Boutons UI : `button[data-survey-progress]` (barre 0%) et `button[data-survey-bulbshare]` (branding).
+
+### Filtre btn_like — data-survey-progress / data-survey-bulbshare
+Fichier : Survey/dom_analyzer.py
+Emplacement : boucle `for b in btn_like`, après filtre interview-footer, avant Decipher cardrating.
+Guard : `b.get_attribute("data-survey-progress") is not None` OU `b.get_attribute("data-survey-bulbshare") is not None`
+Patterns couverts :
+- Bouton "0%" (`data-survey-progress="true"`) dans le footer Bulbshare → exclu (non réponse)
+- Bouton "Powered by Bulbshare" (`data-survey-bulbshare="true"`) → exclu (non réponse)
+- Sans ce filtre : ces 2 boutons formaient un 2e bloc parasite avec question polluée
+Patterns exclus :
+- Tout bouton sans ces attributs → pipeline inchangé
+
+### Patch question btn_groups — h2.pollItemTitle dans .pollItemWrap
+Fichier : Survey/dom_analyzer.py
+Emplacement : boucle btn_groups, section résolution question, après le guard interview-layout.
+Guard (double) :
+  1. `cont.closest('.pollItemWrap')` retourne un élément non null
+  2. `h2.pollItemTitle` existe dans ce `.pollItemWrap`
+Patterns couverts :
+- Question depuis `h2.pollItemTitle` (textContent)
+- Instruction depuis `div.itemRulesWrapper` (textContent, si non vide) — concaténée à la question
+- Résultat final : "Quel type de voiture conduisez-vous ? Required / Choose at least 1 answer"
+- Sans ce patch : `_extract_question_from_container` sur `div.css-gos33m` ne trouve que les options
+  → question vide ou tronquée via `_find_question_text_near_element`
+Log discriminant : `[DOM_BUTTON_GROUP] bulbshare_pollItemWrap recovered: …`
+Patterns exclus :
+- Conteneurs hors `.pollItemWrap` → chemins existants inchangés
+- `.pollItemWrap` sans `h2.pollItemTitle` → chemin existant inchangé
+
+---
+
 ## FRONTIÈRES INTER-EXTRACTEURS
 
 | Plateforme | Extracteur A | Extracteur B | Signal de discrimination |
