@@ -2705,6 +2705,17 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             except Exception:
                 pass
 
+            # Filtre Bulbshare UI : progress bar (data-survey-progress) et branding
+            # (data-survey-bulbshare) ne sont pas des options de réponse.
+            try:
+                if (
+                    b.get_attribute("data-survey-progress") is not None
+                    or b.get_attribute("data-survey-bulbshare") is not None
+                ):
+                    continue
+            except Exception:
+                pass
+
             # Filtre Decipher cardrating : ignore disabled / non-clickable
             cls = _norm_lc(b.get_attribute("class") or "")
             if "sq-cardrating-button" in cls:
@@ -2883,6 +2894,31 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                             log_debug(
                                 "[DOM_BUTTON_GROUP]",
                                 f"interview_layout_h1 recovered: {_h1_txt[:80]!r}",
+                            )
+            except Exception:
+                pass
+
+            # Patch Bulbshare (my.bulbshare.com) : quand le conteneur résolu est
+            # dans .pollItemWrap, la question réelle est dans h2.pollItemTitle et
+            # l'instruction dans div.itemRulesWrapper — tous deux hors scope du
+            # conteneur div.css-gos33m. Guard DOM strict : .pollItemWrap + h2.pollItemTitle.
+            try:
+                _poll_wrap = driver.execute_script(
+                    "return arguments[0].closest('.pollItemWrap');", cont
+                ) if cont else None
+                if _poll_wrap:
+                    _h2_els = _poll_wrap.find_elements(By.CSS_SELECTOR, "h2.pollItemTitle")
+                    if _h2_els:
+                        _poll_q = _norm(_h2_els[0].text or _h2_els[0].get_attribute("innerText") or "")
+                        if _poll_q:
+                            _rules_els = _poll_wrap.find_elements(By.CSS_SELECTOR, "div.itemRulesWrapper")
+                            _rules_txt = ""
+                            if _rules_els:
+                                _rules_txt = _norm(_rules_els[0].text or _rules_els[0].get_attribute("innerText") or "")
+                            question = f"{_poll_q} {_rules_txt}".strip() if _rules_txt else _poll_q
+                            log_debug(
+                                "[DOM_BUTTON_GROUP]",
+                                f"bulbshare_pollItemWrap recovered: {question[:120]!r}",
                             )
             except Exception:
                 pass
