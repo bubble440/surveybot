@@ -175,7 +175,7 @@ def _attach_pick_ui_active_tab(driver, handles):
 
     return None
 
-def _attach_select_tab(driver) -> None:
+def _attach_select_tab(driver, *, exclude_url_pred=None) -> None:
     """
     Sélection d'onglet en mode attach (LOCAL).
 
@@ -210,6 +210,9 @@ def _attach_select_tab(driver) -> None:
     handles = list(getattr(driver, "window_handles", []) or [])
     if not handles:
         return
+
+    def _is_candidate(u: str) -> bool:
+        return _attach_is_user_web_url(u) and not (exclude_url_pred and exclude_url_pred(u))
 
     def _switch(i: int) -> bool:
         try:
@@ -250,7 +253,7 @@ def _attach_select_tab(driver) -> None:
             if not _switch(i):
                 continue
             u = _safe_url()
-            if _attach_is_user_web_url(u):
+            if _is_candidate(u):
                 last_web = (i, u)
         if last_web is not None:
             i, _ = last_web
@@ -265,7 +268,7 @@ def _attach_select_tab(driver) -> None:
             if not _switch(i):
                 continue
             u = _safe_url()
-            if _attach_is_user_web_url(u) and (url_contains in u):
+            if _is_candidate(u) and (url_contains in u):
                 print(f"[ATTACH] Tab=url_contains idx={i} url={_attach_display_url(u)}")
                 return
         print(f"[ATTACH] Tab=url_contains NOT FOUND ({url_contains})")
@@ -277,7 +280,7 @@ def _attach_select_tab(driver) -> None:
             if not _switch(i):
                 continue
             u = _safe_url()
-            if not _attach_is_user_web_url(u):
+            if not _is_candidate(u):
                 continue
             t = _safe_title().strip().lower()
             if needle and (needle in t):
@@ -292,7 +295,7 @@ def _attach_select_tab(driver) -> None:
             if not _switch(i):
                 continue
             u = _safe_url()
-            if not _attach_is_user_web_url(u):
+            if not _is_candidate(u):
                 continue
             txt = _safe_body_text_prefix(8000).lower()
             if needle and (needle in txt):
@@ -311,7 +314,7 @@ def _attach_select_tab(driver) -> None:
                 if not _switch(i):
                     continue
                 u = _safe_url()
-                if _attach_is_user_web_url(u):
+                if _is_candidate(u):
                     web_handles.append((i, u, _safe_title().strip().replace("\n", " "), _attach_tab_score(driver)))
             print("[ATTACH] Tabs disponibles (idx | score=(actionables,text) | title | url):")
             for d, (i, u, t, sc) in enumerate(web_handles):
@@ -324,7 +327,7 @@ def _attach_select_tab(driver) -> None:
                     idx = web_handles[didx][0]
                     _switch(idx)
                     u = _safe_url()
-                    if _attach_is_user_web_url(u):
+                    if _is_candidate(u):
                         print(f"[ATTACH] Tab=pick didx={didx} idx={idx} url={_attach_display_url(u)}")
                         return
                     print(f"[ATTACH] Tab=pick didx={didx} idx={idx} non-web url={_attach_display_url(u)} -> fallback last_web")
@@ -339,7 +342,7 @@ def _attach_select_tab(driver) -> None:
     if mode in ("current", "active", "focused"):
         # No-op prédictible: on ne tente PAS de deviner le focus UI.
         u = _safe_url()
-        if _attach_is_user_web_url(u):
+        if _is_candidate(u):
             print(f"[ATTACH] Tab=current(no-op) url={_attach_display_url(u)}")
             return
         # si on est tombé sur chrome://tab-search etc., on fallback
@@ -364,7 +367,7 @@ def _attach_select_tab(driver) -> None:
         idx = max(0, min(idx, len(handles) - 1))
         _switch(idx)
         u = _safe_url()
-        if _attach_is_user_web_url(u):
+        if _is_candidate(u):
             print(f"[ATTACH] Tab=index idx={idx} url={_attach_display_url(u)}")
             return
         print(f"[ATTACH] Tab=index idx={idx} non-web url={_attach_display_url(u)} -> fallback last_web")
@@ -391,7 +394,7 @@ def run_attach_takeover(driver, *, api_key: str, account_id: str) -> None:
     _ctx = SurveyContext(session_id=account_id, openai_api_key=api_key)
     survey_solver._current_survey_ctx = _ctx
 
-    _attach_select_tab(driver)
+    _attach_select_tab(driver, exclude_url_pred=lambda u: "topsurveys.app" in (u or "").lower())
     driver._survey_account_id = account_id
 
     from Survey.functions import _handle_topsurveys_exclusion_popup

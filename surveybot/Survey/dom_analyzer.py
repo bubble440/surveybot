@@ -107,6 +107,7 @@ try:
         _extract_qualtrics_dl_select_blocks,
         _extract_qualtrics_sl_text_blocks,
         _extract_qualtrics_form_multi_text_blocks,
+        _extract_qualtrics_te_matrix_multi_text_blocks,
         _extract_qualtrics_matrix_dropdown_row_blocks,
         _extract_decipher_clickable_ranking_blocks,
         _extract_savanta_jqm_carousel_block,
@@ -214,6 +215,7 @@ except ImportError:
         _extract_qualtrics_dl_select_blocks,
         _extract_qualtrics_sl_text_blocks,
         _extract_qualtrics_form_multi_text_blocks,
+        _extract_qualtrics_te_matrix_multi_text_blocks,
         _extract_qualtrics_matrix_dropdown_row_blocks,
         _extract_decipher_clickable_ranking_blocks,
         _extract_savanta_jqm_carousel_block,
@@ -1593,6 +1595,18 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         qualtrics_form_multi_text_blocks = _extract_qualtrics_form_multi_text_blocks(driver, frame_chain)
         if qualtrics_form_multi_text_blocks:
             question_blocks.extend(qualtrics_form_multi_text_blocks)
+            _qualtrics_page = True
+    except Exception:
+        pass
+
+    # --- 0h-bis-3f) Qualtrics texte libre Matrix-TE multi-cases (div.QuestionOuter.Matrix.mf + div.Inner.TE) ---
+    # Couvre les pages de type "Matrix Fill Text" où div.Inner.TE contient une table.ChoiceStructure
+    # avec N tr.ChoiceRow, chacun portant un input[type='text'][name^='QR~'].
+    # Distinct du layout FORM (div.Inner.FORM) → extracteur séparé, même format de sortie.
+    try:
+        qualtrics_te_matrix_multi_text_blocks = _extract_qualtrics_te_matrix_multi_text_blocks(driver, frame_chain)
+        if qualtrics_te_matrix_multi_text_blocks:
+            question_blocks.extend(qualtrics_te_matrix_multi_text_blocks)
             _qualtrics_page = True
     except Exception:
         pass
