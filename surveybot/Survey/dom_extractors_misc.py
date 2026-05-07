@@ -9969,6 +9969,144 @@ def _extract_qualtrics_form_multi_text_blocks(driver, frame_chain: list[int] | N
 
 
 # ================================================================================
+# QUALTRICS - CHAMP TEXTE LIBRE MULTI-CASES (layout Matrix-TE / type TE, N inputs)
+# ================================================================================
+
+def _extract_qualtrics_te_matrix_multi_text_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
+    """Extraction multi-texte Qualtrics layout Matrix-TE (div.QuestionOuter.Matrix.mf + div.Inner.TE).
+
+    Gate DOM strict (additif) :
+    - div.QuestionOuter.Matrix.mf (outer a les deux classes Matrix ET mf)
+    - div.Inner.TE présent dans ce QuestionOuter (sans div.Inner.FORM)
+    - ≥2 input[type='text'][name^='QR~'] dans table.ChoiceStructure > tbody > tr.ChoiceRow
+
+    Ne couvre PAS div.Inner.FORM → _extract_qualtrics_form_multi_text_blocks.
+    Log discriminant : [DOM_QUALTRICS_TE_MATRIX_MULTI_TEXT] blocks_extracted=N
+    """
+    frame_chain = list(frame_chain or [])
+    blocks: list[dict] = []
+
+    try:
+        containers = driver.find_elements(By.CSS_SELECTOR, "div.QuestionOuter.Matrix.mf")
+    except Exception:
+        return blocks
+
+    for idx, container in enumerate(containers):
+        # Gate strict : div.Inner.TE doit être présent, div.Inner.FORM absent
+        try:
+            te_inner = container.find_elements(By.CSS_SELECTOR, "div.Inner.TE")
+        except Exception:
+            te_inner = []
+        if not te_inner:
+            continue
+
+        try:
+            form_inner = container.find_elements(By.CSS_SELECTOR, "div.Inner.FORM")
+        except Exception:
+            form_inner = []
+        if form_inner:
+            continue
+
+        # ≥2 inputs text dans tr.ChoiceRow de table.ChoiceStructure
+        try:
+            inputs = container.find_elements(
+                By.CSS_SELECTOR,
+                "table.ChoiceStructure tbody tr.ChoiceRow td input[type='text'][name^='QR~']",
+            )
+        except Exception:
+            inputs = []
+        if len(inputs) < 2:
+            continue
+
+        # Texte de la question
+        question = ""
+        for q_sel in (
+            "fieldset legend label.QuestionText",
+            "legend label.QuestionText",
+            "label.QuestionText",
+            "div.QuestionText",
+        ):
+            try:
+                q_nodes = container.find_elements(By.CSS_SELECTOR, q_sel)
+            except Exception:
+                q_nodes = []
+            for qn in q_nodes:
+                txt = _norm(qn.text or qn.get_attribute("innerText") or "")
+                if txt:
+                    question = txt
+                    break
+            if question:
+                break
+
+        if not question:
+            continue
+
+        # Construction des field_payloads
+        field_payloads = []
+        for inp in inputs:
+            try:
+                fid = (inp.get_attribute("id") or "").strip()
+                fname = (inp.get_attribute("name") or "").strip()
+                if not fid and not fname:
+                    continue
+                fxp = _best_xpath_for_element(driver, inp)
+                falt: list[str] = []
+                try:
+                    if fname:
+                        falt.append(f"//input[@name={_xpath_literal(fname)}]")
+                    if fid:
+                        falt.append(f"//*[@id='{fid}']")
+                except Exception:
+                    pass
+                falt = [x for x in dict.fromkeys(falt) if x and x != fxp][:4]
+                field_payloads.append(
+                    {"xpath": fxp, "alt_xpaths": falt, "name": fname, "id": fid, "tag": "input"}
+                )
+            except Exception:
+                continue
+
+        if len(field_payloads) < 2:
+            continue
+
+        n = len(field_payloads)
+        first_name = (inputs[0].get_attribute("name") or "").strip()
+        multi_key = f"qualtrics_te_matrix_multi_text:{idx}:{first_name}"
+        multi_target_id = make_target_id("multi", multi_key, question)
+
+        register_target(
+            multi_target_id,
+            {
+                "kind": "multi_text",
+                "itype": "text",
+                "question": question,
+                "fields": field_payloads,
+                "frame_chain": frame_chain,
+                "meta": {"max_items": n, "multi_text": True, "qualtrics_te_matrix_multi_text": True},
+            },
+        )
+
+        blocks.append(
+            {
+                "question": question,
+                "itype": "text",
+                "options": [],
+                "max_select": n,
+                "min_select": 1,
+                "target_id": multi_target_id,
+                "context": {
+                    "kind": "multi_text",
+                    "fields_count": n,
+                    "max_items": n,
+                    "name_prefix": first_name,
+                },
+            }
+        )
+
+    log_debug("[DOM_QUALTRICS_TE_MATRIX_MULTI_TEXT]", f"blocks_extracted={len(blocks)}")
+    return blocks
+
+
+# ================================================================================
 # FORSTA/CONFIRMIT - SINGLE-CHOICE VERTICAL LIST (cf-question--single + cf-list)
 # ================================================================================
 

@@ -772,6 +772,37 @@ Patterns exclus :
 
 ---
 
+## PLATEFORME : QUALTRICS — MATRIX-TE MULTI-TEXT
+Signature DOM : `div.QuestionOuter.BorderColor.Matrix.mf` (outer a les deux classes `Matrix` ET `mf`)
++ `div.Inner.BorderColor.TE` + `fieldset` > `table.ChoiceStructure` > N `tr.ChoiceRow`
+chacun portant `input[type='text'][name^='QR~QID{N}~{row}~1~TEXT']`.
+Plateforme observée : surveys.ipsossay.com (Ipsos KnowledgePanel, Qualtrics hébergé).
+Distingué de `div.Inner.FORM` (layout horizontal → `_extract_qualtrics_form_multi_text_blocks`).
+
+### _extract_qualtrics_te_matrix_multi_text_blocks
+Fichier : Survey/dom_extractors_misc.py
+Enregistré dans : dom_analyzer.py (step 0h-bis-3f), après `_extract_qualtrics_form_multi_text_blocks`.
+Pose `_qualtrics_page = True` → le `return` anticipé à la fin du bloc Qualtrics supprime
+implicitement les blocs checkbox singleton co-localisés (ex. QID315 "Je n'en connais aucun")
+qui auraient été produits par `_extract_qualtrics_choice_structure_checkbox_blocks` (step 0h-bis-3b).
+Guard (additif) :
+  1. `div.QuestionOuter.Matrix.mf` présent
+  2. `div.Inner.TE` présent dans ce QuestionOuter
+  3. `div.Inner.FORM` absent (sinon → `_extract_qualtrics_form_multi_text_blocks`)
+  4. ≥2 `input[type='text'][name^='QR~']` dans `table.ChoiceStructure tbody tr.ChoiceRow td`
+Patterns couverts :
+- N cases texte libres (saisie de marques, apps, etc.) dans une grille Qualtrics Matrix-TE
+- Question depuis `fieldset legend label.QuestionText` (ou fallback `label.QuestionText`, `div.QuestionText`)
+- `name_prefix` = name du premier input ; `fields_count` = N ; `min_select=1`, `max_select=N`
+- Flag payload : `qualtrics_te_matrix_multi_text=True`
+- Log discriminant : `[DOM_QUALTRICS_TE_MATRIX_MULTI_TEXT] blocks_extracted=N`
+Patterns exclus :
+- `div.Inner.FORM` présent → `_extract_qualtrics_form_multi_text_blocks`
+- `div.Inner.SL` (1 input seul) → `_extract_qualtrics_sl_text_blocks`
+- Matrices radio/checkbox Qualtrics → `_extract_qualtrics_choice_structure_radio/checkbox_blocks`
+
+---
+
 ## FRONTIÈRES INTER-EXTRACTEURS
 
 | Plateforme | Extracteur A | Extracteur B | Signal de discrimination |
@@ -785,5 +816,5 @@ Patterns exclus :
 | Kantar mrIWeb | _extract_kantar_rowpicker_radio_blocks | extracteur générique radio | flag `kantar_rowpicker_radio` dans le payload + guard dispatcher avant `_find_best_visible` |
 | Prodege/Swagbucks | _extract_prodege_prescreener_radio_block | extracteur générique radio/checkbox | `div.profilerContainer` + `p.profilerQuestionText` (step 0i-sexies, retour immédiat si match) |
 | Qualtrics TE | _extract_qualtrics_form_multi_text_blocks | _extract_qualtrics_sl_text_blocks | `div.Inner.FORM` + ≥2 inputs (multi-cases) vs `div.Inner.SL` + 1 input (champ unique) |
+| Qualtrics TE | _extract_qualtrics_te_matrix_multi_text_blocks | _extract_qualtrics_form_multi_text_blocks | `div.QuestionOuter.Matrix.mf` + `div.Inner.TE` (sans `div.Inner.FORM`) vs `div.Inner.FORM` seul |
 | ResearchNow | _extract_researchnow_autoscreener_radio_blocks | extracteur générique radio | `[ng-controller*="autoScreenerController"]` + `div.parameter-rendered.single_select.tooBigForDropdown` (step 0i-octies, retour immédiat si match) |
-- Tout DOM sans `div.profilerContainer` ou sans `p.profilerQuestionText`
