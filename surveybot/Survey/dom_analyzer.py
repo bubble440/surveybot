@@ -108,6 +108,7 @@ try:
         _extract_qualtrics_sl_text_blocks,
         _extract_qualtrics_form_multi_text_blocks,
         _extract_qualtrics_te_matrix_multi_text_blocks,
+        _extract_qualtrics_bankedsa_single_row_radio_blocks,
         _extract_qualtrics_matrix_dropdown_row_blocks,
         _extract_decipher_clickable_ranking_blocks,
         _extract_savanta_jqm_carousel_block,
@@ -216,6 +217,7 @@ except ImportError:
         _extract_qualtrics_sl_text_blocks,
         _extract_qualtrics_form_multi_text_blocks,
         _extract_qualtrics_te_matrix_multi_text_blocks,
+        _extract_qualtrics_bankedsa_single_row_radio_blocks,
         _extract_qualtrics_matrix_dropdown_row_blocks,
         _extract_decipher_clickable_ranking_blocks,
         _extract_savanta_jqm_carousel_block,
@@ -1607,6 +1609,16 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         qualtrics_te_matrix_multi_text_blocks = _extract_qualtrics_te_matrix_multi_text_blocks(driver, frame_chain)
         if qualtrics_te_matrix_multi_text_blocks:
             question_blocks.extend(qualtrics_te_matrix_multi_text_blocks)
+            _qualtrics_page = True
+    except Exception:
+        pass
+
+    # --- 0h-bis-3g) Qualtrics Matrix.mf BankedSA 1-ligne (div.customChoice + 1 ChoiceRow same name) ---
+    # Couvre le cas CS_BankedSA single-row non couvert par 0h-bis-3 (garde multi-name exclut 1 seule ligne).
+    try:
+        qualtrics_bankedsa_blocks = _extract_qualtrics_bankedsa_single_row_radio_blocks(driver, frame_chain)
+        if qualtrics_bankedsa_blocks:
+            question_blocks.extend(qualtrics_bankedsa_blocks)
             _qualtrics_page = True
     except Exception:
         pass

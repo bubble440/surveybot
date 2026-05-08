@@ -830,6 +830,35 @@ Patterns exclus :
 
 ---
 
+## PLATEFORME : QUALTRICS — MATRIX.MF BANKEDSA SINGLE-ROW (Ipsos KnowledgePanel)
+Signature DOM : `div.QuestionOuter.Matrix.mf` + `div.customChoice` (injecté par `CS_BankedSA()`)
++ `table.ChoiceStructure` avec `display:none` contenant exactement **1 tr.ChoiceRow** en tbody.
+Tous les radios de cette ligne partagent le même `name` (`QR~QIDn~1`).
+Distingué du cas multi-lignes BankedSA (≥2 ChoiceRow) géré par `_extract_qualtrics_choice_structure_radio_blocks`
+dont la branche Likert exige `len(set(row_names)) >= 2` — silencieusement sauté pour 1 seule ligne.
+Observé sur surveys.ipsossay.com (Ipsos KnowledgePanel).
+
+### _extract_qualtrics_bankedsa_single_row_radio_blocks
+Fichier : Survey/dom_extractors_misc.py
+Enregistré dans : dom_analyzer.py (step 0h-bis-3g), après `_extract_qualtrics_te_matrix_multi_text_blocks`.
+Pose `_qualtrics_page = True` → déclenche le `return` anticipé du bloc Qualtrics.
+Guard (additif, tous requis) :
+  1. `div.QuestionOuter.Matrix.mf` présent
+  2. `div.customChoice` présent dans ce conteneur (signal CS_BankedSA rendu)
+  3. `table.ChoiceStructure > tbody > tr.ChoiceRow` : exactement 1 ligne
+  4. ≥2 `input[type='radio'][name^='QR~']` dans cette ligne, tous avec le même `name`
+Patterns couverts :
+- Question depuis `fieldset legend label.QuestionText`, `legend .QuestionText`, `caption.QuestionText`, `div.QuestionText` (priorité décroissante)
+- Options depuis `thead tr.Answers th.Selection span.LabelWrapper span` ; fallback : `value` des radios
+- `group_key` = `radio:name:{group_name.lower()}` ; flags payload : `qualtrics_choice_structure_radio=True`, `qualtrics_bankedsa_single_row=True`
+- Log discriminant : `[DOM_QUALTRICS_BANKEDSA_SINGLE_ROW] extracted 1 radio block: question=… options=…`
+Patterns exclus :
+- ≥2 ChoiceRow dans tbody → `_extract_qualtrics_choice_structure_radio_blocks` (branche Likert multi-lignes)
+- Absence de `div.customChoice` → extracteurs Qualtrics standards inchangés
+- `div.Inner.TE` → `_extract_qualtrics_te_matrix_multi_text_blocks`
+
+---
+
 ## FRONTIÈRES INTER-EXTRACTEURS
 
 | Plateforme | Extracteur A | Extracteur B | Signal de discrimination |
@@ -846,3 +875,4 @@ Patterns exclus :
 | Qualtrics TE | _extract_qualtrics_te_matrix_multi_text_blocks | _extract_qualtrics_form_multi_text_blocks | `div.QuestionOuter.Matrix.mf` + `div.Inner.TE` (sans `div.Inner.FORM`) vs `div.Inner.FORM` seul |
 | ResearchNow | _extract_researchnow_autoscreener_radio_blocks | extracteur générique radio | `[ng-controller*="autoScreenerController"]` + `div.parameter-rendered.single_select.tooBigForDropdown` (step 0i-octies, retour immédiat si match) |
 | Qualtrics BankedSA | _extract_table_matrix_radio_rows (patch caption/legend) | chemin _find_question_text_near_element | `table.ChoiceStructure` avec `display:none` + `caption.QuestionText` ou `fieldset > legend > .QuestionText` |
+| Qualtrics BankedSA | _extract_qualtrics_bankedsa_single_row_radio_blocks | _extract_qualtrics_choice_structure_radio_blocks | `div.customChoice` présent + exactement 1 tr.ChoiceRow (single-row) vs ≥2 ChoiceRow même name (multi-lignes Likert) |

@@ -12111,4 +12111,170 @@ def _extract_researchnow_autoscreener_radio_blocks(driver, frame_chain=None) -> 
     except Exception:
         pass
 
+
+def _extract_qualtrics_bankedsa_single_row_radio_blocks(
+    driver, frame_chain: list[int] | None
+) -> list[dict]:
+    """Qualtrics Matrix.mf BankedSA — 1 seule ChoiceRow, N colonnes = options.
+
+    Guard DOM strict (additif) :
+    1. div.QuestionOuter.Matrix.mf
+    2. div.customChoice présent (signal CS_BankedSA() JS render)
+    3. table.ChoiceStructure avec exactement 1 tr.ChoiceRow en tbody
+    4. Tous les radios de cette ligne partagent le même name (QR~QIDn~1)
+
+    Non-couverture par _extract_qualtrics_choice_structure_radio_blocks :
+    la branche Likert de cet extracteur exige len(set(row_names)) >= 2
+    (multi-lignes). Avec 1 seule ligne, elle est silencieusement sautée.
+    """
+    frame_chain = list(frame_chain or [])
+    blocks: list[dict] = []
+
+    try:
+        containers = driver.find_elements(By.CSS_SELECTOR, "div.QuestionOuter.Matrix.mf")
+    except Exception:
+        return blocks
+
+    for idx, container in enumerate(containers):
+        try:
+            custom_choice_els = container.find_elements(By.CSS_SELECTOR, "div.customChoice")
+        except Exception:
+            custom_choice_els = []
+        if not custom_choice_els:
+            continue
+
+        try:
+            choice_rows = container.find_elements(
+                By.CSS_SELECTOR, "table.ChoiceStructure > tbody > tr.ChoiceRow"
+            )
+        except Exception:
+            choice_rows = []
+        if len(choice_rows) != 1:
+            continue
+
+        row = choice_rows[0]
+        try:
+            row_radios = row.find_elements(
+                By.CSS_SELECTOR, "input[type='radio'][name^='QR~']"
+            )
+        except Exception:
+            row_radios = []
+        if len(row_radios) < 2:
+            continue
+
+        try:
+            names = {(r.get_attribute("name") or "").strip() for r in row_radios}
+        except Exception:
+            names = set()
+        if len(names) != 1:
+            continue
+        group_name = next(iter(names))
+        if not group_name:
+            continue
+
+        question = ""
+        for q_sel in (
+            "fieldset legend label.QuestionText",
+            "legend .QuestionText",
+            "caption.QuestionText",
+            "div.QuestionText",
+        ):
+            try:
+                q_nodes = container.find_elements(By.CSS_SELECTOR, q_sel)
+            except Exception:
+                q_nodes = []
+            for qn in q_nodes:
+                txt = _norm(qn.text or qn.get_attribute("innerText") or "")
+                if txt:
+                    question = txt
+                    break
+            if question:
+                break
+        if not question:
+            continue
+
+        col_headers: list[str] = []
+        try:
+            thead_ths = container.find_elements(
+                By.CSS_SELECTOR,
+                "table.ChoiceStructure thead tr.Answers th.Selection span.LabelWrapper span",
+            )
+        except Exception:
+            thead_ths = []
+        for th_node in thead_ths:
+            hdr = _norm(th_node.text or th_node.get_attribute("innerText") or "")
+            if hdr:
+                col_headers.append(hdr)
+
+        if len(col_headers) < 2:
+            col_headers = [_norm(r.get_attribute("value") or "") for r in row_radios]
+
+        if len(col_headers) < 2:
+            continue
+
+        options: list[str] = []
+        option_xpath_map: dict[str, str] = {}
+        for col_i, col_hdr in enumerate(col_headers):
+            if col_i >= len(row_radios):
+                break
+            nk = _norm_key(col_hdr)
+            if not nk or nk in option_xpath_map:
+                continue
+            opt_radio = row_radios[col_i]
+            try:
+                opt_id = (opt_radio.get_attribute("id") or "").strip()
+            except Exception:
+                opt_id = ""
+            xp = (
+                f"//*[@id={_xpath_literal(opt_id)}]"
+                if opt_id
+                else _best_xpath_for_element(driver, opt_radio)
+            )
+            if not xp:
+                continue
+            options.append(col_hdr)
+            option_xpath_map[nk] = xp
+
+        if len(options) < 2:
+            continue
+
+        group_key = f"radio:name:{group_name.lower()}"
+        target_id = make_target_id("group", group_key, question)
+        register_target(
+            target_id,
+            {
+                "kind": "group",
+                "itype": "radio",
+                "group_key": group_key,
+                "question": question,
+                "option_xpath_map": option_xpath_map,
+                "frame_chain": frame_chain,
+                "qualtrics_choice_structure_radio": True,
+                "qualtrics_bankedsa_single_row": True,
+            },
+        )
+        blocks.append(
+            {
+                "question": question,
+                "itype": "radio",
+                "options": options,
+                "max_select": _compute_max_select("radio", options),
+                "target_id": target_id,
+                "context": {
+                    "kind": "group",
+                    "group_key": group_key,
+                    "qualtrics_choice_structure_radio": True,
+                    "qualtrics_bankedsa_single_row": True,
+                    "container_index": idx,
+                },
+                "min_select": 1,
+            }
+        )
+        log_debug(
+            "DOM_QUALTRICS_BANKEDSA_SINGLE_ROW",
+            f"extracted 1 radio block: question={question[:60]!r} options={options}",
+        )
+
+    return blocks
+
     return blocks

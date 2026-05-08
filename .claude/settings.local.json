@@ -42,7 +42,9 @@
       "Bash(python -c \"import ast; ast.parse\\(open\\('surveybot/Survey/dom_extractors_misc.py'\\).read\\(\\)\\); print\\('OK dom_extractors_misc'\\)\")",
       "Bash(python -c \"import ast; ast.parse\\(open\\('surveybot/Survey/dom_extractors_misc.py', encoding='utf-8'\\).read\\(\\)\\); print\\('OK dom_extractors_misc'\\)\")",
       "Bash(python -c \"import ast; ast.parse\\(open\\('surveybot/Survey/dom_analyzer.py', encoding='utf-8'\\).read\\(\\)\\); print\\('OK dom_analyzer'\\)\")",
-      "Bash(python3 -c \"import ast; ast.parse\\(open\\('C:/projects/Surveys/surveybot/Survey/dom_extractors_misc.py', encoding='utf-8'\\).read\\(\\)\\); print\\('OK'\\)\")"
+      "Bash(python3 -c \"import ast; ast.parse\\(open\\('C:/projects/Surveys/surveybot/Survey/dom_extractors_misc.py', encoding='utf-8'\\).read\\(\\)\\); print\\('OK'\\)\")",
+      "Bash(python -c \"from surveybot.Survey.dom_extractors_misc import _extract_qualtrics_bankedsa_single_row_radio_blocks; print\\('import OK'\\)\")",
+      "Bash(python -c \"from Survey.dom_extractors_misc import _extract_qualtrics_bankedsa_single_row_radio_blocks; print\\('import OK'\\)\")"
     ]
   }
 }
