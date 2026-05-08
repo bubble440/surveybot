@@ -695,7 +695,32 @@ def is_start_screen(driver) -> bool:
     # "démarrer" = bouton start courant sur Quantilope/plateformes FR
     if not any(k in txt for k in ["bienvenue", "welcome", "commencer", "démarrer", "start"]):
         return False
-    
+
+    # QuestMindshare — SPA chatbot cumulatif : "bienvenue" reste dans l'historique DOM
+    # sur toutes les pages. Si message-container + options/instructions actifs sont présents,
+    # c'est une question active, pas un start_screen.
+    try:
+        is_questmindshare_active = driver.execute_script("""
+            const hasMsgContainer = !!document.querySelector('div[data-testid="message-container"]');
+            if (!hasMsgContainer) return false;
+            const hasOptions = Array.from(document.querySelectorAll('[data-testid^="option-"]')).some(function(el) {
+                try {
+                    const s = getComputedStyle(el);
+                    if (s.display === 'none' || s.visibility === 'hidden') return false;
+                    const r = el.getBoundingClientRect();
+                    return r.width > 2 && r.height > 2;
+                } catch(_) { return false; }
+            });
+            const hasInstructions = !!document.querySelector('div[data-testid="instructions"]');
+            return hasOptions || hasInstructions;
+        """)
+        if is_questmindshare_active:
+            from Survey.log_utils import log_debug
+            log_debug("[DOM_CLASSIFIER]", "is_start_screen: QuestMindshare message-container + options/instructions actifs => pas un start_screen")
+            return False
+    except Exception:
+        pass
+
     # Compter les inputs utilisateur RÉELS (pas les reCAPTCHA/hCaptcha cachés)
     try:
         real_inputs_count = driver.execute_script("""
@@ -847,6 +872,21 @@ def _has_visible_answerables(driver) -> bool:
           if (!txt) continue;
           roleCount++;
           if (roleCount >= 2) return true; // 2+ options visibles => page answerable
+        }catch(_){}
+      }
+
+      // 5) QuestMindshare chatbot: div[data-testid^="option-"][tabindex="0"]
+      //    Ces éléments n'ont ni role="button", ni input natif, ni classe spécifique.
+      //    Seuil: 2 éléments visibles minimum (anti-faux-positifs).
+      const qmOptions = Array.from(document.querySelectorAll(
+        'div[data-testid^="option-"][tabindex="0"]'
+      ));
+      let qmCount = 0;
+      for (const qm of qmOptions){
+        try{
+          if (!isVisible(qm)) continue;
+          qmCount++;
+          if (qmCount >= 2) return true;
         }catch(_){}
       }
 
