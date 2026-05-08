@@ -1488,6 +1488,42 @@ def _extract_table_matrix_radio_rows(driver, frame_chain: list[int] | None) -> l
                     matrix_question = _norm(lbl.text or lbl.get_attribute("innerText") or "")
                 except Exception:
                     pass
+            # Qualtrics BankedSA: table.ChoiceStructure est display:none → getBoundingClientRect
+            # retourne 0, donc _find_question_text_near_element échoue. La question est dans
+            # caption.QuestionText (enfant direct de la table) ou fieldset > legend > .QuestionText.
+            if not matrix_question:
+                try:
+                    cap = table.find_element(
+                        By.CSS_SELECTOR,
+                        "caption.QuestionText, caption[class*='QuestionText']",
+                    )
+                    matrix_question = _norm(cap.text or cap.get_attribute("innerText") or "")
+                    if matrix_question:
+                        log_debug("TABLE_MATRIX", f"bankedsa_caption matrix_question={matrix_question[:60]!r}")
+                except Exception:
+                    pass
+            if not matrix_question:
+                try:
+                    matrix_question = _norm(driver.execute_script(
+                        """
+                        var el = arguments[0], max = 8;
+                        while (el && max-- > 0) {
+                            el = el.parentElement;
+                            if (el && el.tagName === 'FIELDSET') {
+                                var leg = el.querySelector(
+                                    'legend label.QuestionText, legend .QuestionText'
+                                );
+                                if (leg) return (leg.innerText || leg.textContent || '').trim();
+                            }
+                        }
+                        return '';
+                        """,
+                        table,
+                    ) or "")
+                    if matrix_question:
+                        log_debug("TABLE_MATRIX", f"bankedsa_fieldset_legend matrix_question={matrix_question[:60]!r}")
+                except Exception:
+                    pass
 
             _is_confirmit = "confirmit-grid" in table_cls
             if not _is_confirmit:
