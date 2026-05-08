@@ -803,6 +803,33 @@ Patterns exclus :
 
 ---
 
+## PLATEFORME : QUALTRICS — MATRIX RADIO BANKEDSA (Ipsos KnowledgePanel)
+Signature DOM : `div.QuestionOuter.Matrix.mf` + `fieldset` contenant une `table.ChoiceStructure`
+avec `display:none` (masquée par `CS_BankedSA()`) et une `div.customChoice` > `div.bankedrow`
+générée dynamiquement par le JS Qualtrics. Observé sur surveys.ipsossay.com.
+Les radios sont présents dans `table.ChoiceStructure tbody tr.ChoiceRow` (non visible à l'écran
+mais accessibles via Selenium). La question globale est dans `caption.QuestionText` (enfant direct
+de la table) ou dans `fieldset > legend > label.QuestionText`.
+
+### _extract_table_matrix_radio_rows — patch BankedSA matrix_question
+Fichier : Survey/dom_extractors_misc.py
+Emplacement : après les 3 tentatives existantes de résolution de matrix_question
+(aria-label, askia-caption), avant le bloc _is_confirmit.
+Guard : `not matrix_question` — s'active uniquement si toutes les tentatives précédentes ont échoué.
+Patterns couverts :
+- Tentative 1 : `caption.QuestionText` ou `caption[class*='QuestionText']` enfant direct de la table
+  → `table.find_element(By.CSS_SELECTOR, ...)` + `.text` / `.innerText`
+  → log discriminant : `[TABLE_MATRIX] bankedsa_caption matrix_question=…`
+- Tentative 2 : remontée JS jusqu'à `FIELDSET` ancêtre (max 8 niveaux) puis
+  `legend label.QuestionText, legend .QuestionText` → `innerText`
+  → log discriminant : `[TABLE_MATRIX] bankedsa_fieldset_legend matrix_question=…`
+Patterns exclus :
+- Tables avec `display:block` (couvertes par `_find_question_text_near_element`)
+- `div.cm-simple-grid__table` → _extract_cmix_simple_grid_question_blocks
+- confirmit-grid → bloc _is_confirmit existant (inchangé)
+
+---
+
 ## FRONTIÈRES INTER-EXTRACTEURS
 
 | Plateforme | Extracteur A | Extracteur B | Signal de discrimination |
@@ -818,3 +845,4 @@ Patterns exclus :
 | Qualtrics TE | _extract_qualtrics_form_multi_text_blocks | _extract_qualtrics_sl_text_blocks | `div.Inner.FORM` + ≥2 inputs (multi-cases) vs `div.Inner.SL` + 1 input (champ unique) |
 | Qualtrics TE | _extract_qualtrics_te_matrix_multi_text_blocks | _extract_qualtrics_form_multi_text_blocks | `div.QuestionOuter.Matrix.mf` + `div.Inner.TE` (sans `div.Inner.FORM`) vs `div.Inner.FORM` seul |
 | ResearchNow | _extract_researchnow_autoscreener_radio_blocks | extracteur générique radio | `[ng-controller*="autoScreenerController"]` + `div.parameter-rendered.single_select.tooBigForDropdown` (step 0i-octies, retour immédiat si match) |
+| Qualtrics BankedSA | _extract_table_matrix_radio_rows (patch caption/legend) | chemin _find_question_text_near_element | `table.ChoiceStructure` avec `display:none` + `caption.QuestionText` ou `fieldset > legend > .QuestionText` |
