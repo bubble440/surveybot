@@ -119,6 +119,8 @@ try:
         _extract_groupcaliber_rating_row_blocks,
         _extract_confirmit_cf_carousel_blocks,
         _extract_confirmit_cf_single_choice_blocks,
+        _extract_confirmit_cf_single_image_choice_blocks,
+        _extract_confirmit_cf_multi_choice_blocks,
         _extract_confirmit_cf_numeric_list_blocks,
         _extract_confirmit_cf_open_list_blocks,
         _extract_runtime_dropdown_blocks,
@@ -228,6 +230,8 @@ except ImportError:
         _extract_groupcaliber_rating_row_blocks,
         _extract_confirmit_cf_carousel_blocks,
         _extract_confirmit_cf_single_choice_blocks,
+        _extract_confirmit_cf_single_image_choice_blocks,
+        _extract_confirmit_cf_multi_choice_blocks,
         _extract_confirmit_cf_numeric_list_blocks,
         _extract_confirmit_cf_open_list_blocks,
         _extract_runtime_dropdown_blocks,
@@ -1421,6 +1425,14 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
     cf_combined: list[dict] = []
     try:
         cf_combined.extend(_extract_confirmit_cf_single_choice_blocks(driver, frame_chain))
+    except Exception:
+        pass
+    try:
+        cf_combined.extend(_extract_confirmit_cf_single_image_choice_blocks(driver, frame_chain))
+    except Exception:
+        pass
+    try:
+        cf_combined.extend(_extract_confirmit_cf_multi_choice_blocks(driver, frame_chain))
     except Exception:
         pass
     try:

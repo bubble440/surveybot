@@ -181,6 +181,42 @@ Patterns exclus :
 - Blocs cf-hrs-single standalone (pas de `is_last_carousel_item` dans context)
 - Autres providers auto-navigation (walr_cardsort, studystream_auto_advance, qarts_autosubmit)
 
+### _extract_confirmit_cf_single_image_choice_blocks
+Fichier : Survey/dom_extractors_misc.py
+Enregistré dans : dom_analyzer.py (bloc cf_combined, après _extract_confirmit_cf_single_choice_blocks)
+Guard (double) :
+  1. `div.cf-question--single` présent
+  2. contient `div.cf-image-answer` ET `div.cf-image[role='radio']`
+Patterns couverts :
+- Question single-choice dont les options sont des images (ex : silhouettes genre Toluna)
+- Texte option depuis `div.cf-image-answer__text` ; fallback : `aria-label` du contrôle ; fallback : `alt` de `img`
+- Cible du clic : `div.cf-image[role='radio']` (par id)
+- `group_key = radio:cf-single-image:{q_id}` ; flag payload : `confirmit_cf_single_image=True`
+- Log discriminant : `[DOM_CONFIRMIT_CF_SINGLE_IMAGE] blocks_extracted=N`
+Patterns exclus :
+- `div.cf-radio[role='radio']` standard → `_extract_confirmit_cf_single_choice_blocks` (inchangé)
+- `div.cf-question--multi` → `_extract_confirmit_cf_multi_choice_blocks`
+
+### _extract_confirmit_cf_multi_choice_blocks
+Fichier : Survey/dom_extractors_misc.py
+Enregistré dans : dom_analyzer.py (bloc cf_combined, après _extract_confirmit_cf_single_image_choice_blocks)
+Guard (double) :
+  1. `div.cf-question--multi` présent
+  2. contient `div.cf-checkbox[role='checkbox']`
+Patterns couverts :
+- Question multi-choice (checkbox) : options dans `div.cf-checkbox-answer__text`, cible `div.cf-checkbox[role='checkbox']`
+- Option exclusive (type cf-radio-answer avec role='checkbox') : fallback `div.cf-radio-answer__text` + `div.cf-radio[role='checkbox']`
+- `max_select = len(options)`, `min_select = 1`
+- `group_key = checkbox:cf-multi:{q_id}` ; flag payload : `confirmit_cf_multi=True`
+- Log discriminant : `[DOM_CONFIRMIT_CF_MULTI] blocks_extracted=N`
+Patterns exclus :
+- `div.cf-question--single` → extracteurs single existants
+- `div.cf-question--numeric-list`, `--open-list`, `--ranking` → leurs extracteurs respectifs
+- `table.cf-table-layout` (grids) → `_extract_confirmit_cf_desktop_grid_blocks`
+
+| Toluna/Confirmit wix | _extract_confirmit_cf_single_image_choice_blocks | _extract_confirmit_cf_single_choice_blocks | `div.cf-image-answer` + `div.cf-image[role='radio']` présents dans le conteneur (vs `div.cf-radio[role='radio']` standard) |
+| Toluna/Confirmit wix | _extract_confirmit_cf_multi_choice_blocks | extracteurs single/numeric/open | class `cf-question--multi` sur le div parent + `div.cf-checkbox[role='checkbox']` présent |
+
 ---
 
 ## PLATEFORME : CONFIRMIT / FORSTA WIX — RANKING
