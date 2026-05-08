@@ -7966,7 +7966,7 @@ def _extract_questmindshare_chatbot_blocks(driver, frame_chain: list[int] | None
                 txt = _norm(el.text or el.get_attribute("innerText") or "")
             except Exception:
                 txt = ""
-            if txt and len(txt) >= 5:
+            if txt:
                 question = txt
                 break
     except Exception:

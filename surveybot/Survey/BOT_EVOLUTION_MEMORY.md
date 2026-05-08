@@ -859,6 +859,35 @@ Patterns exclus :
 
 ---
 
+## PLATEFORME : QUESTMINDSHARE CHATBOT
+Signature DOM : SPA React/Next.js (insights.questmindshare.com)
+DOM cumulatif : l'historique de chat reste dans le DOM sur toutes les pages — le message
+d'accueil "Bienvenue et merci de votre participation !" est présent à chaque step.
+Options : div[data-testid^="option-"][tabindex="0"] (sans role="button", sans input natif, sans classe spécifique).
+
+### is_start_screen — hard guard QuestMindshare
+Fichier : Survey/dom_classifier.py
+Emplacement : début de is_start_screen, après le check du mot-clé "bienvenue", avant real_inputs_count.
+Guard : div[data-testid="message-container"] présent ET (≥1 div[data-testid^="option-"] visible OU div[data-testid="instructions"] présent)
+Patterns couverts :
+- DOM chatbot cumulatif où "bienvenue" reste dans l'historique : sans ce guard, is_start_screen retournait True sur chaque step
+- Retourne False immédiatement si QuestMindshare actif
+- Log : "is_start_screen: QuestMindshare message-container + options/instructions actifs => pas un start_screen"
+Patterns exclus :
+- Pages sans div[data-testid="message-container"] → guard inactif
+
+### _has_visible_answerables — section 5 QuestMindshare
+Fichier : Survey/dom_classifier.py
+Emplacement : bloc JS de _has_visible_answerables, après section 4 (roleButtons), avant return false.
+Guard : div[data-testid^="option-"][tabindex="0"] visibles, seuil ≥ 2
+Patterns couverts :
+- Options QuestMindshare sans role="button", sans input natif, ignorées par les sections 1–4
+- Seuil 2 éléments visibles minimum (anti-faux-positifs)
+- Sans ce guard : is_end_screen retournait True car _has_visible_answerables retournait False
+Patterns exclus :
+- Éléments div[data-testid^="option-"] non visibles ou < 2 visibles
+---
+
 ## FRONTIÈRES INTER-EXTRACTEURS
 
 | Plateforme | Extracteur A | Extracteur B | Signal de discrimination |
