@@ -890,6 +890,25 @@ def _has_visible_answerables(driver) -> bool:
         }catch(_){}
       }
 
+      // 5b) QuestMindshare chatbot single-option: seuil réduit à 1 quand
+      //     div[data-testid="message-container"] (discriminant SPA QM) est présent
+      //     ET div[data-testid="instructions"] visible confirme une question active.
+      //     Couvre les pages à choix unique (ex: bouton "Continuer" RGPD, 1 option).
+      const qmMsgCont = document.querySelector('div[data-testid="message-container"]');
+      if (qmMsgCont) {
+        const qmInstr = document.querySelector('div[data-testid="instructions"]');
+        if (qmInstr && isVisible(qmInstr)) return true;
+        for (const opt of document.querySelectorAll('div[data-testid^="option-"][tabindex="0"]')) {
+          try { if (isVisible(opt)) return true; } catch(_) {}
+        }
+      }
+
+      // 6) QuestMindshare chatbot: input[data-testid="question-input"] (question ouverte)
+      //    Input sans attribut type= explicite — non capturé par la section 1 (input[type='text']).
+      //    Guard data-testid strict: discriminant QuestMindshare uniquement.
+      const qmTextInput = document.querySelector('input[data-testid="question-input"]');
+      if (qmTextInput && isVisible(qmTextInput)) return true;
+
       return false;
     """
 
