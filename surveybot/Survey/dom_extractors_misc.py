@@ -10615,6 +10615,362 @@ def _extract_confirmit_cf_open_list_blocks(driver, frame_chain: list[int] | None
 
 
 # ================================================================================
+# FORSTA/CONFIRMIT — SINGLE IMAGE-CHOICE (cf-question--single + cf-image-answer)
+# ================================================================================
+
+def _extract_confirmit_cf_single_image_choice_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
+    """Forsta/Confirmit single-choice avec images : div.cf-image-answer dans cf-question--single.
+
+    Gate DOM strict (additif) :
+    - présence de div.cf-question--single
+    - au moins un contient div.cf-image-answer ET div.cf-image[role='radio']
+    (distinct de _extract_confirmit_cf_single_choice_blocks qui exige div.cf-radio[role='radio'])
+
+    Structure ciblée (exemple id SEXE) :
+      div.cf-question--single#SEXE
+        div.cf-question__text#SEXE_text          ← texte de la question
+        div.cf-list
+          div.cf-list__item
+            div.cf-image-answer#SEXE_1
+              div.cf-image-answer__control
+                div.cf-image[role='radio']#SEXE_1_control  ← cible du clic
+                  img[alt='Un homme']
+              div.cf-image-answer__text                    ← parfois absent
+    Fallback texte option : aria-label sur div.cf-image[role='radio'].
+    """
+    frame_chain = list(frame_chain or [])
+
+    # Gate 1 : au moins un div.cf-question--single présent
+    try:
+        q_containers = driver.find_elements(By.CSS_SELECTOR, "div.cf-question--single")
+    except Exception:
+        return []
+    if not q_containers:
+        return []
+
+    # Gate 2 : au moins un contient à la fois div.cf-image-answer et div.cf-image[role='radio']
+    gate_ok = False
+    for qc in q_containers:
+        try:
+            if (qc.find_elements(By.CSS_SELECTOR, "div.cf-image-answer")
+                    and qc.find_elements(By.CSS_SELECTOR, "div.cf-image[role='radio']")):
+                gate_ok = True
+                break
+        except Exception:
+            continue
+    if not gate_ok:
+        return []
+
+    blocks: list[dict] = []
+
+    for qc in q_containers[:20]:
+        try:
+            # Ignorer les conteneurs sans image-answer
+            try:
+                img_answers = qc.find_elements(By.CSS_SELECTOR, "div.cf-image-answer")
+            except Exception:
+                img_answers = []
+            if not img_answers:
+                continue
+
+            # Vérifier présence de div.cf-image[role='radio'] (gate discriminante)
+            try:
+                ctrl_els = qc.find_elements(By.CSS_SELECTOR, "div.cf-image[role='radio']")
+            except Exception:
+                ctrl_els = []
+            if not ctrl_els:
+                continue
+
+            # Texte de la question
+            question = ""
+            try:
+                q_text_el = qc.find_element(By.CSS_SELECTOR, "div.cf-question__text")
+                question = _norm(q_text_el.get_attribute("textContent") or q_text_el.text or "")
+            except Exception:
+                pass
+            if not question:
+                continue
+
+            options: list[str] = []
+            option_xpath_map: dict[str, str] = {}
+
+            for item in img_answers[:40]:
+                try:
+                    # Texte : priorité div.cf-image-answer__text, fallback aria-label du contrôle
+                    opt_text = ""
+                    try:
+                        txt_el = item.find_element(By.CSS_SELECTOR, "div.cf-image-answer__text")
+                        opt_text = _norm(txt_el.get_attribute("textContent") or txt_el.text or "")
+                    except Exception:
+                        pass
+                    if not opt_text:
+                        try:
+                            ctrl = item.find_element(By.CSS_SELECTOR, "div.cf-image[role='radio']")
+                            opt_text = _norm(ctrl.get_attribute("aria-label") or "")
+                        except Exception:
+                            pass
+                    if not opt_text:
+                        # Fallback : alt de l'image
+                        try:
+                            img_el = item.find_element(By.CSS_SELECTOR, "img")
+                            opt_text = _norm(img_el.get_attribute("alt") or "")
+                        except Exception:
+                            pass
+                    if not opt_text:
+                        continue
+
+                    # Cible du clic : div.cf-image[role='radio']
+                    ctrl_id = ""
+                    try:
+                        ctrl = item.find_element(By.CSS_SELECTOR, "div.cf-image[role='radio']")
+                        ctrl_id = (ctrl.get_attribute("id") or "").strip()
+                    except Exception:
+                        pass
+
+                    nk = _norm_key(opt_text)
+                    if nk in option_xpath_map:
+                        continue
+                    options.append(opt_text)
+                    if ctrl_id:
+                        option_xpath_map[nk] = f"//*[@id={_xpath_literal(ctrl_id)}]"
+                    else:
+                        try:
+                            xp = _best_xpath_for_element(ctrl)
+                            if xp:
+                                option_xpath_map[nk] = xp
+                        except Exception:
+                            pass
+                except Exception:
+                    continue
+
+            if len(options) < 2 or not option_xpath_map:
+                continue
+
+            q_id = (qc.get_attribute("id") or "").strip()
+            group_key = f"radio:cf-single-image:{q_id}" if q_id else f"radio:cf-single-image:{question[:40]}"
+            target_id = make_target_id("group", group_key, question)
+
+            register_target(
+                target_id,
+                {
+                    "kind": "group",
+                    "itype": "radio",
+                    "group_key": group_key,
+                    "question": question,
+                    "option_xpath_map": option_xpath_map,
+                    "frame_chain": frame_chain,
+                    "confirmit_cf_single_image": True,
+                },
+            )
+
+            blocks.append(
+                {
+                    "question": question,
+                    "itype": "radio",
+                    "options": options,
+                    "max_select": 1,
+                    "min_select": 1,
+                    "target_id": target_id,
+                    "context": {
+                        "kind": "group",
+                        "group_key": group_key,
+                    },
+                }
+            )
+            log_debug(
+                "[DOM_CONFIRMIT_CF_SINGLE_IMAGE]",
+                f"q_id={q_id!r} question={question!r} options={options}",
+            )
+        except Exception:
+            continue
+
+    if blocks:
+        log_info("[DOM_CONFIRMIT_CF_SINGLE_IMAGE]", f"blocks_extracted={len(blocks)}")
+    return blocks
+
+
+# ================================================================================
+# FORSTA/CONFIRMIT — MULTI-CHOICE (cf-question--multi + cf-checkbox[role='checkbox'])
+# ================================================================================
+
+def _extract_confirmit_cf_multi_choice_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
+    """Forsta/Confirmit multi-choice : div.cf-checkbox[role='checkbox'] dans cf-question--multi.
+
+    Gate DOM strict (additif) :
+    - présence de div.cf-question--multi
+    - au moins un contient div.cf-checkbox[role='checkbox']
+
+    Structure ciblée (exemple id SECTEUR_ETUDE) :
+      div.cf-question--multi#SECTEUR_ETUDE
+        div.cf-question__text            ← texte de la question
+        div.cf-list[role='group']
+          div.cf-list__item
+            div.cf-checkbox-answer
+              div.cf-checkbox[role='checkbox']#{ID}_control  ← cible du clic
+              div.cf-checkbox-answer__text#{ID}_text         ← texte de l'option
+          div.cf-list__item  (option exclusive éventuelle)
+            div.cf-radio-answer  (role='checkbox' sur le contrôle interne)
+              div.cf-radio[role='checkbox']#{ID}_control     ← même schéma
+              div.cf-radio-answer__text#{ID}_text
+    """
+    frame_chain = list(frame_chain or [])
+
+    # Gate 1 : au moins un div.cf-question--multi présent
+    try:
+        q_containers = driver.find_elements(By.CSS_SELECTOR, "div.cf-question--multi")
+    except Exception:
+        return []
+    if not q_containers:
+        return []
+
+    # Gate 2 : au moins un contient div.cf-checkbox[role='checkbox']
+    gate_ok = False
+    for qc in q_containers:
+        try:
+            if qc.find_elements(By.CSS_SELECTOR, "div.cf-checkbox[role='checkbox']"):
+                gate_ok = True
+                break
+        except Exception:
+            continue
+    if not gate_ok:
+        return []
+
+    blocks: list[dict] = []
+
+    for qc in q_containers[:20]:
+        try:
+            # Vérifier présence du gate discriminant dans ce conteneur
+            try:
+                checkboxes = qc.find_elements(By.CSS_SELECTOR, "div.cf-checkbox[role='checkbox']")
+            except Exception:
+                checkboxes = []
+            if not checkboxes:
+                continue
+
+            # Texte de la question
+            question = ""
+            try:
+                q_text_el = qc.find_element(By.CSS_SELECTOR, "div.cf-question__text")
+                question = _norm(q_text_el.get_attribute("textContent") or q_text_el.text or "")
+            except Exception:
+                pass
+            if not question:
+                continue
+
+            # Items de la liste : cf-checkbox-answer ET cf-radio-answer (option exclusive)
+            try:
+                list_items = qc.find_elements(By.CSS_SELECTOR, "div.cf-list div.cf-list__item")
+            except Exception:
+                list_items = []
+            if not list_items:
+                continue
+
+            options: list[str] = []
+            option_xpath_map: dict[str, str] = {}
+
+            for item in list_items[:50]:
+                try:
+                    opt_text = ""
+                    ctrl_id = ""
+
+                    # Priorité : cf-checkbox-answer
+                    try:
+                        txt_el = item.find_element(By.CSS_SELECTOR, "div.cf-checkbox-answer__text")
+                        opt_text = _norm(txt_el.get_attribute("textContent") or txt_el.text or "")
+                    except Exception:
+                        pass
+                    if opt_text:
+                        try:
+                            ctrl = item.find_element(By.CSS_SELECTOR, "div.cf-checkbox[role='checkbox']")
+                            ctrl_id = (ctrl.get_attribute("id") or "").strip()
+                        except Exception:
+                            pass
+
+                    # Fallback : cf-radio-answer avec role='checkbox' (option exclusive)
+                    if not opt_text:
+                        try:
+                            txt_el = item.find_element(By.CSS_SELECTOR, "div.cf-radio-answer__text")
+                            opt_text = _norm(txt_el.get_attribute("textContent") or txt_el.text or "")
+                        except Exception:
+                            pass
+                        if opt_text:
+                            try:
+                                ctrl = item.find_element(By.CSS_SELECTOR, "div.cf-radio[role='checkbox']")
+                                ctrl_id = (ctrl.get_attribute("id") or "").strip()
+                            except Exception:
+                                # Fallback : tout élément avec role='checkbox' dans l'item
+                                try:
+                                    ctrl = item.find_element(By.CSS_SELECTOR, "[role='checkbox']")
+                                    ctrl_id = (ctrl.get_attribute("id") or "").strip()
+                                except Exception:
+                                    pass
+
+                    if not opt_text:
+                        continue
+
+                    nk = _norm_key(opt_text)
+                    if nk in option_xpath_map:
+                        continue
+                    options.append(opt_text)
+                    if ctrl_id:
+                        option_xpath_map[nk] = f"//*[@id={_xpath_literal(ctrl_id)}]"
+                    else:
+                        try:
+                            xp = _best_xpath_for_element(ctrl)
+                            if xp:
+                                option_xpath_map[nk] = xp
+                        except Exception:
+                            pass
+                except Exception:
+                    continue
+
+            if len(options) < 2 or not option_xpath_map:
+                continue
+
+            q_id = (qc.get_attribute("id") or "").strip()
+            group_key = f"checkbox:cf-multi:{q_id}" if q_id else f"checkbox:cf-multi:{question[:40]}"
+            target_id = make_target_id("group", group_key, question)
+
+            register_target(
+                target_id,
+                {
+                    "kind": "group",
+                    "itype": "checkbox",
+                    "group_key": group_key,
+                    "question": question,
+                    "option_xpath_map": option_xpath_map,
+                    "frame_chain": frame_chain,
+                    "confirmit_cf_multi": True,
+                },
+            )
+
+            blocks.append(
+                {
+                    "question": question,
+                    "itype": "checkbox",
+                    "options": options,
+                    "max_select": len(options),
+                    "min_select": 1,
+                    "target_id": target_id,
+                    "context": {
+                        "kind": "group",
+                        "group_key": group_key,
+                    },
+                }
+            )
+            log_debug(
+                "[DOM_CONFIRMIT_CF_MULTI]",
+                f"q_id={q_id!r} question={question!r} options={options}",
+            )
+        except Exception:
+            continue
+
+    if blocks:
+        log_info("[DOM_CONFIRMIT_CF_MULTI]", f"blocks_extracted={len(blocks)}")
+    return blocks
+
+
+# ================================================================================
 # ASKIA — QUESTION RADIO / NPS myresponse* (td cliquables + input radio masqué)
 # ================================================================================
 
