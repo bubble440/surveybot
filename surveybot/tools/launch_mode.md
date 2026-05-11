@@ -72,7 +72,7 @@ flyctl ssh console -a surveybot-bot -s
 
 ## Étape 3 — Dans le shell Linux (une commande à la fois)
 pip install boto3 pillow selenium --quiet
-DISPLAY=:99 PROXY_URL="" PROXY_USER="" PROXY_PASS="" ACCOUNT_ID=topsurveys_bot_001 python tools/fingerprint_check.py
+DISPLAY=:99 PROXY_URL="http://14abf236340a1:bb82a9e63b@185.134.194.152:12323" PROXY_USER="14abf236340a1" PROXY_PASS="bb82a9e63b" ACCOUNT_ID=topsurveys_bot_001 python tools/fingerprint_check.py
 # Les PNG sont sauvegardés dans /tmp/fp_*.png
 # L'upload R2 échouera si SNAP_R2_ACCOUNT_ID n'est pas défini — c'est normal, les PNG locaux suffisent
 
