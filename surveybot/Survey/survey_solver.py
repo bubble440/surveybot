@@ -8,13 +8,10 @@ from selenium.webdriver.common.action_chains import ActionChains  # [AJOUT]
 from selenium.webdriver.common.by import By
 import time, os
 from Survey.log_utils import log_debug, log_info
-from Survey.functions import _handle_topsurveys_exclusion_popup
-
-
 class TopSurveysReturn(BaseException):
-    """Sentinelle levée quand _handle_topsurveys_exclusion_popup réussit.
+    """Sentinelle levée quand handle_post_survey() signale un retour sur la plateforme.
     Hérite de BaseException pour traverser les blocs except Exception sans être avalée.
-    Interceptée dans _run_survey_impl pour reboucler sur la préselection.
+    Interceptée dans survey_handler pour reboucler sur la préselection.
     """
 
 STABILIZE_SLEEP = 2.0       # délai court entre deux actions pour laisser le DOM respirer
@@ -22,19 +19,18 @@ PAUSE_BEFORE_FIRST_SCAN = 1.5  # post-chargement, avant le premier scan DOM (abs
 PAUSE_POST_CTA_NAV = 2.0       # après navigation CTA, avant toute interaction avec la nouvelle page
 
 
-def _switch_to_external_tab(driver):
+def _switch_to_external_tab(driver, platform):
     """
-    Basculer sur l’onglet du survey (≠ TopSurveys).
+    Basculer sur l’onglet du survey (onglet n’appartenant pas à la plateforme).
     Utile juste après avoir cliqué sur « Participer ».
     """
     time.sleep(3)  # laisse le temps aux nouveaux onglets d’apparaître
     for handle in driver.window_handles:
         driver.switch_to.window(handle)
-        current_url = driver.current_url
-        if "topsurveys.app" not in current_url:
-            print(f"🧭 Onglet externe détecté : {current_url}")
+        if not platform.is_on_platform(driver):
+            print(f"🧭 Onglet externe détecté : {driver.current_url}")
             return True
-    print("⚠ Aucun onglet externe détecté. Reste sur TopSurveys.")
+    print("⚠ Aucun onglet externe détecté. Reste sur la plateforme.")
     return False
 
 
@@ -410,7 +406,9 @@ def get_current_survey_ctx():
     """Retourne le SurveyContext actif, ou None si aucun survey en cours."""
     return _current_survey_ctx
 
-def solve_full_survey(driver, api_key, *, account_id: str, survey_context=None):
+def solve_full_survey(driver, api_key, *, account_id: str, survey_context=None, platform):
+    if platform is None:
+        raise ValueError("solve_full_survey() exige un paramètre platform non None")
     import Management.redirect_watcher as redirect_watcher
     from Survey.survey_context import SurveyContext
     import Survey.survey_executor  
@@ -445,7 +443,7 @@ def solve_full_survey(driver, api_key, *, account_id: str, survey_context=None):
         print("⚠ Impossible de forcer le focus onglet :", e)
 
 
-    _switch_to_external_tab(driver)
+    _switch_to_external_tab(driver, platform=platform)
 
     # 1) Attendre que la redirection s’arrête sur une URL stable
     final_url = redirect_watcher.wait_for_final_redirection(driver)
@@ -603,17 +601,18 @@ def solve_full_survey(driver, api_key, *, account_id: str, survey_context=None):
                 return        
         
         # -------------------------------------------------------------------
-        # CHECK TOPSURVEYS AVANT execute_survey_page
+        # CHECK RETOUR PLATEFORME AVANT execute_survey_page
         # Evite tout chemin alternatif sur le popup "Bon travail !" (disqualification)
         # -------------------------------------------------------------------
         try:
-            current_url_check = (driver.current_url or "").lower()
-            if "topsurveys.app" in current_url_check:
-                if _handle_topsurveys_exclusion_popup(driver, account_id):
-                    print("[PRE-EXEC] Retour TopSurveys traite -> arret solve_full_survey()")
+            if platform.is_on_platform(driver):
+                if platform.handle_post_survey(driver, account_id):
+                    print("[PRE-EXEC] Retour plateforme traité -> arrêt solve_full_survey()")
                     raise TopSurveysReturn()
+        except TopSurveysReturn:
+            raise
         except Exception as e:
-            print(f"[PRE-EXEC] Check TopSurveys echoue: {e}")
+            print(f"[PRE-EXEC] Check plateforme échoué: {e}")
 
         # --- Récupération erreur réseau Chrome (ERR_TUNNEL_CONNECTION_FAILED) ---
         _net_result = _recover_from_network_error(driver)
@@ -793,13 +792,16 @@ def solve_full_survey(driver, api_key, *, account_id: str, survey_context=None):
             redirect_watcher.wait_for_page_load(driver, timeout=30)
             time.sleep(PAUSE_POST_CTA_NAV)  # absorbe la latence proxy avant d’interagir avec la page suivante
 
-            # Retour TopSurveys ? Traite popup ‘Complète’ ou disqualification, puis relance.
+            # Retour plateforme ? Traite popup ‘Complète’ ou disqualification, puis relance.
             try:
-                if _handle_topsurveys_exclusion_popup(driver, account_id):
-                    print("[solve_full_survey] Retour TopSurveys → arrêt.")
-                    raise TopSurveysReturn()
+                if platform.is_on_platform(driver):
+                    if platform.handle_post_survey(driver, account_id):
+                        print("[solve_full_survey] Retour plateforme → arrêt.")
+                        raise TopSurveysReturn()
+            except TopSurveysReturn:
+                raise
             except Exception as e:
-                print(f"[solve_full_survey] Hook TopSurveys échoué : {e}")
+                print(f"[solve_full_survey] Hook plateforme échoué : {e}")
 
             continue
 

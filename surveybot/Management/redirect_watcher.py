@@ -47,10 +47,14 @@ def wait_for_final_redirection(driver, max_wait=30):
     print(f"⏱️ Temps d'attente dépassé ({max_wait}s), URL actuelle : {driver.current_url}")
     return driver.current_url
 
-def switch_to_latest_window_and_close_others(driver, base_handles, timeout=10, prefer_external=True):
+def switch_to_latest_window_and_close_others(driver, base_handles, timeout=10, prefer_external=True, platform_domains=None):
     """
-    Switch vers le nouvel onglet (survey) ET ferme les anciens onglets (ex: TopSurveys).
+    Switch vers le nouvel onglet (survey) ET ferme les anciens onglets (ex: plateforme).
+    platform_domains : liste de domaines appartenant à la plateforme (ex: ['topsurveys.app']).
+                       Si None, utilise ['topsurveys.app'] pour la rétrocompatibilité.
     """
+    _domains = platform_domains if platform_domains is not None else ["topsurveys.app"]
+
     start = time.time()
 
     while time.time() - start < timeout:
@@ -90,7 +94,7 @@ def switch_to_latest_window_and_close_others(driver, base_handles, timeout=10, p
                 try:
                     driver.switch_to.window(h)
                     url = driver.current_url or ""
-                    if "topsurveys.app" not in url:
+                    if not any(d in url for d in _domains):
                         # fermer les autres
                         for oh in current_handles:
                             if oh != h:
