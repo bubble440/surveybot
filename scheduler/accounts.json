@@ -1,12 +1,11 @@
 [
   {
-    "PROXY_ID": "81.181.236.36",
-    "PROXY_USER": "14a4b3f88b892",
-    "PROXY_PASS": "9a42e8da8a",
-    "PROXY_URL": "81.181.236.36:12323",
+    "PROXY_ID": "72.9.174.121",
+    "PROXY_USER": "14acfbee9aeeb",
+    "PROXY_PASS": "34d65cf2d8",
+    "PROXY_URL": "72.9.174.121:12323",
     "ACCOUNTS": [
-      { "ACCOUNT_ID": "topsurveys_bot_102", "EMAIL": "serpentar.could147@8alias.com" },
-      { "ACCOUNT_ID": "topsurveys_bot_101", "EMAIL": "aristocrate.majorette532@8shield.net" }
+      { "ACCOUNT_ID": "topsurveys_bot_103", "EMAIL": "apex.such555@8shield.net" }
     ]
   },
   {

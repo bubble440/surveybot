@@ -158,22 +158,20 @@ def build_notifier(config):
         
     return _notify
 
-def soft_restart_cleanup(driver):
+def soft_restart_cleanup(driver, platform=None):
     """
     Prépare un soft restart.
-    IMPORTANT : se replacer sur la page APP (app.topsurveys.app) avant la logique payout,
+    IMPORTANT : se replacer sur la page APP avant la logique payout,
     sinon la lecture du solde échoue sur la landing marketing.
     """
-    # Plus fiable que la landing + clic CTA
+    _home = platform.get_home_url() if platform else "https://app.topsurveys.app/surveys"
     try:
-        safe_get(driver, "https://app.topsurveys.app/surveys")
+        safe_get(driver, _home)
     except Exception as e:
-        print(f"[SOFT_RESTART][WARN] échec accès app /surveys: {e}")
-        # Fallback best-effort : on retente la landing (au pire, le flow suivant récupère)
-        safe_get(driver, "https://www.topsurveys.app")
+        print(f"[SOFT_RESTART][WARN] échec accès {_home}: {e}")
 
 
-def soft_restart_resume(ctx, driver):
+def soft_restart_resume(ctx, driver, platform=None):
     from Survey.survey_context import SurveyContext
 
     # Détection de redirection silencieuse vers la landing/login page.
@@ -181,12 +179,18 @@ def soft_restart_resume(ctx, driver):
     _LOGIN_SELECTOR = "[data-test-id='check-email-field-input']"
     if driver.find_elements("css selector", _LOGIN_SELECTOR):
         print("[SOFT_RESTART] session expirée détectée → re-login")
-        login(driver, ctx["email"], ctx["password"])
+        if platform:
+            platform.login(driver, {"Email": ctx["email"], "Password": ctx["password"]})
+        else:
+            login(driver, ctx["email"], ctx["password"])
         if driver.find_elements("css selector", _LOGIN_SELECTOR):
             raise RuntimeError("soft_restart_resume: re-login échoué, page de login toujours présente")
 
     survey_ctx = SurveyContext(session_id=ctx["account_id"], openai_api_key=ctx["api_key"])
-    go_to_best_value_survey(driver)
+    if platform:
+        platform.select_survey(driver)
+    else:
+        go_to_best_value_survey(driver)
     run_survey(
         driver,
         ctx["api_key"],
@@ -196,10 +200,10 @@ def soft_restart_resume(ctx, driver):
         payout_revolut_tag=ctx.get("payout_revolut_tag", ""),
     )
 
-def soft_restart(ctx, driver, reason):
+def soft_restart(ctx, driver, reason, platform=None):
     print(f"[SOFT_RESTART] {reason}")
 
-    soft_restart_cleanup(driver)
+    soft_restart_cleanup(driver, platform=platform)
     time.sleep(1)
 
     # DAILY STOP : si l'objectif journalier (1€) est atteint, on s'arrête
@@ -216,7 +220,7 @@ def soft_restart(ctx, driver, reason):
         guard.pause(PausePolicy.DAILY_RESET, StopReason.DAILY_TARGET_REACHED)
         return  # jamais atteint (pause lève SystemExit)
 
-    soft_restart_resume(ctx, driver)
+    soft_restart_resume(ctx, driver, platform=platform)
 
 def start_runtime_guard(account_id: str, notify_fn, on_soft_restart):
     state = load_state(account_id)
@@ -464,14 +468,13 @@ def start_debug_http_server(survey_ctx_getter):
     threading.Thread(target=server.serve_forever, daemon=True).start()
     print(f"[DEBUG_HTTP] Serveur actif → http://localhost:{debug_port}/ctx")
     
-def init_session_and_enter_surveys(driver, config, account_id: str, notify_fn):
-    email = config.get("Email")
-    password = config.get("Password")
+def init_session_and_enter_surveys(driver, config, account_id: str, notify_fn, platform=None):
     api_key = config.get("openai_api_key")
     payout_name = config.get("payout_name")
     payout_revolut_tag = config.get("payout_revolut_tag")
 
-    safe_get(driver, "https://www.topsurveys.app")
+    _home_url = platform.get_home_url() if platform else "https://www.topsurveys.app"
+    safe_get(driver, _home_url)
     print("🚀 Brave lancé.")
 
     _SESSION_SELECTOR = (By.CSS_SELECTOR, "[data-test-id='surveys-nav']")
@@ -484,7 +487,12 @@ def init_session_and_enter_surveys(driver, config, account_id: str, notify_fn):
             capture_and_upload(driver, "survey_account")
 
     except TimeoutException:
-        login(driver, email, password)
+        if platform:
+            platform.login(driver, config)
+        else:
+            email = config.get("Email")
+            password = config.get("Password")
+            login(driver, email, password)
         time.sleep(5)
 
     try:
@@ -493,7 +501,10 @@ def init_session_and_enter_surveys(driver, config, account_id: str, notify_fn):
         print(f"[PAYOUT][WARN] Encaissement automatique: {e}")
 
     time.sleep(3)
-    go_to_best_value_survey(driver)
+    if platform:
+        platform.select_survey(driver)
+    else:
+        go_to_best_value_survey(driver)
 
     return api_key, payout_name, payout_revolut_tag
 
@@ -579,7 +590,7 @@ def start_hot_reload_thread():
         
 _HOT_RELOAD_STARTED = False
 
-def run_main_loop(driver, api_key: str, account_id: str, payout_name: str = "", payout_revolut_tag: str = ""):
+def run_main_loop(driver, api_key: str, account_id: str, payout_name: str = "", payout_revolut_tag: str = "", platform=None):
     from Survey.survey_context import SurveyContext
 
     survey_ctx = SurveyContext(session_id=account_id, openai_api_key=api_key)

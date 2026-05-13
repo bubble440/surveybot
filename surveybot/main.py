@@ -8,6 +8,7 @@ from preselection.config_loader import load_config
 from launch import start_heartbeat_thread, acquire_account_lock_or_exit, mark_bot_running
 from launch import install_sigterm_handler, start_runtime_guard, launch_driver_or_fail, init_session_and_enter_surveys, install_sigusr1_handler, restore_session_cookies
 from launch import start_hot_reload_thread, run_main_loop, build_notifier, soft_restart, start_debug_http_server
+from platforms import get_platform
 from Management.guards.runtime_guard import get_guard
 from config import is_attach_mode, RUN_ENV, RUN_MODE, BROWSER_MODE, is_prod_like, should_run_guard_monitor, should_run_heartbeat, should_run_hot_reload, log_config_summary
 
@@ -644,6 +645,7 @@ def run_attach_preselection_takeover(driver, *, api_key: str, account_id: str) -
 
 def main():
     config = load_config()
+    platform = get_platform()
 
     print(
         f"[BOOT] RUN_ENV={RUN_ENV} RUN_MODE={RUN_MODE} BROWSER_MODE={BROWSER_MODE} attach={is_attach_mode()}",
@@ -765,6 +767,7 @@ def main():
                     runtime_ctx["session"],
                     runtime_ctx["driver"],
                     reason,
+                    platform=platform,
                 )
 
             # FIX: guard initialisé AVANT init_session_and_enter_surveys pour que
@@ -778,7 +781,7 @@ def main():
                     )
                 get_guard().attach_driver(driver)
 
-            api_key, payout_name, payout_revolut_tag = init_session_and_enter_surveys(driver, config, account_id, notify_fn)
+            api_key, payout_name, payout_revolut_tag = init_session_and_enter_surveys(driver, config, account_id, notify_fn, platform=platform)
 
             runtime_ctx["session"] = {
                 "account_id": account_id,
@@ -793,7 +796,7 @@ def main():
                 start_hot_reload_thread()
                 hot_reload_started = True
 
-            run_main_loop(driver, api_key, account_id, payout_name=payout_name, payout_revolut_tag=payout_revolut_tag)
+            run_main_loop(driver, api_key, account_id, payout_name=payout_name, payout_revolut_tag=payout_revolut_tag, platform=platform)
 
         except SystemExit:
             raise
