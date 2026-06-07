@@ -175,15 +175,22 @@ def soft_restart_resume(ctx, driver, platform=None):
     from Survey.survey_context import SurveyContext
 
     # Détection de redirection silencieuse vers la landing/login page.
-    # safe_get() ne la détecte pas (pas d'erreur HTTP), on la sonde via son sélecteur DOM discriminant.
-    _LOGIN_SELECTOR = "[data-test-id='check-email-field-input']"
-    if driver.find_elements("css selector", _LOGIN_SELECTOR):
+    # safe_get() ne la détecte pas (pas d'erreur HTTP), on la sonde via ses sélecteurs DOM.
+    # Deux interfaces de login possibles :
+    #   topsurveys.app     → check-email-field-input
+    #   app.topsurveys.app → app-page-email-field-input
+    from preselection.auth_handler import LOGIN_PAGE_SELECTORS
+    _on_login_page = any(
+        driver.find_elements("css selector", sel)
+        for sel in LOGIN_PAGE_SELECTORS
+    )
+    if _on_login_page:
         print("[SOFT_RESTART] session expirée détectée → re-login")
         if platform:
             platform.login(driver, {"Email": ctx["email"], "Password": ctx["password"]})
         else:
             login(driver, ctx["email"], ctx["password"])
-        if driver.find_elements("css selector", _LOGIN_SELECTOR):
+        if any(driver.find_elements("css selector", sel) for sel in LOGIN_PAGE_SELECTORS):
             raise RuntimeError("soft_restart_resume: re-login échoué, page de login toujours présente")
 
     survey_ctx = SurveyContext(session_id=ctx["account_id"], openai_api_key=ctx["api_key"])

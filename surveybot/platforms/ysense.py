@@ -2,26 +2,108 @@ from __future__ import annotations
 
 from typing import List
 
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import TimeoutException
+
 from platforms.base import Platform
-from Survey.log_utils import log_info
+from Survey.log_utils import log_info, log_debug
 
 _TAG = "[YSENSE]"
+_LOGIN_URL = "https://www.ysense.com/login"
 
 
 class YSensePlatform(Platform):
-    """
-    Squelette ySense — chaque méthode lève NotImplementedError.
-    À implémenter quand le support ySense sera développé.
-    """
 
     def login(self, driver, config: dict) -> bool:
-        """
-        Doit remplir le formulaire email + password de ySense (https://www.ysense.com),
-        soumettre et vérifier que la session est active avant de retourner True.
-        L'email est dans config['Email'], le mot de passe dans config['Password'].
-        """
-        log_info(_TAG, "login() called")
-        raise NotImplementedError(f"{_TAG} login() non implémenté")
+        email = config["Email"]
+        password = config["Password"]
+        log_info(_TAG, f"login() — navigation vers {_LOGIN_URL}")
+
+        driver.get(_LOGIN_URL)
+
+        # Attendre la présence du champ email (server-rendered, pas de SPA hydration)
+        try:
+            email_input = WebDriverWait(driver, 20).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, "input#username"))
+            )
+        except TimeoutException:
+            log_info(_TAG, "login() — timeout : input#username introuvable")
+            return False
+
+        log_debug(_TAG, "login() — champ email présent dans le DOM")
+
+        email_input.clear()
+        email_input.send_keys(email)
+        driver.execute_script(
+            "arguments[0].dispatchEvent(new Event('input',  { bubbles: true }));"
+            "arguments[0].dispatchEvent(new Event('change', { bubbles: true }));",
+            email_input,
+        )
+        log_debug(_TAG, "login() — email saisi")
+
+        try:
+            pwd_input = driver.find_element(By.CSS_SELECTOR, "input[type='password']")
+        except Exception as e:
+            log_info(_TAG, f"login() — champ password introuvable : {e}")
+            return False
+
+        driver.execute_script(
+            "arguments[0].value = arguments[1];"
+            "arguments[0].dispatchEvent(new Event('input',  { bubbles: true }));"
+            "arguments[0].dispatchEvent(new Event('change', { bubbles: true }));",
+            pwd_input,
+            password,
+        )
+        if not (pwd_input.get_attribute("value") or "").strip():
+            pwd_input.clear()
+            pwd_input.send_keys(password)
+            log_debug(_TAG, "login() — mot de passe injecté via fallback send_keys()")
+        else:
+            log_debug(_TAG, "login() — mot de passe injecté via JS")
+
+        # Recaptcha si présent et visible
+        try:
+            rc = driver.find_element(By.CSS_SELECTOR, "div#recaptcha-login")
+            if rc.is_displayed():
+                log_info(_TAG, "login() — recaptcha détecté, résolution en cours…")
+                from captcha import recaptcha_handler
+                recaptcha_handler.solve_recaptcha_v2_auto(driver)
+                log_info(_TAG, "login() — recaptcha résolu")
+        except Exception:
+            pass
+
+        # Soumettre via JS click
+        try:
+            submit_btn = driver.find_element(By.CSS_SELECTOR, "button.sbutton.large")
+            driver.execute_script("arguments[0].click();", submit_btn)
+            log_info(_TAG, "login() — bouton de soumission cliqué")
+        except Exception as e:
+            log_info(_TAG, f"login() — bouton de soumission introuvable : {e}")
+            return False
+
+        # Vérifier le succès : URL sans /login dans les 15s
+        try:
+            WebDriverWait(driver, 15).until(
+                lambda d: "/login" not in d.current_url
+            )
+            log_info(_TAG, "login() — succès (URL sans /login)")
+            return True
+        except TimeoutException:
+            pass
+
+        # Fallback : div#errors vide
+        try:
+            errors_div = driver.find_element(By.CSS_SELECTOR, "div#errors")
+            if not (errors_div.text or "").strip():
+                log_info(_TAG, "login() — succès (div#errors vide)")
+                return True
+        except Exception:
+            pass
+
+        log_info(_TAG, "login() — échec : /login toujours dans l'URL")
+        return False
 
     def select_survey(self, driver) -> bool:
         """
@@ -52,12 +134,15 @@ class YSensePlatform(Platform):
         raise NotImplementedError(f"{_TAG} is_on_platform() non implémenté")
 
     def is_session_expired(self, driver) -> bool:
-        """
-        Doit détecter une expiration de session ySense : redirection vers la page de
-        connexion, message d'erreur de session, token invalide, etc.
-        """
-        log_info(_TAG, "is_session_expired() called")
-        raise NotImplementedError(f"{_TAG} is_session_expired() non implémenté")
+        try:
+            url = driver.current_url or ""
+            if "/login" in url:
+                return True
+            src = (driver.page_source or "").lower()
+            signals = ["sign in", "session expired", "please log in", "your session"]
+            return any(s in src for s in signals)
+        except Exception:
+            return False
 
     def get_platform_name(self) -> str:
         return "ysense"

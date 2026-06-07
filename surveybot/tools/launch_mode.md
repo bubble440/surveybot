@@ -77,10 +77,10 @@ DISPLAY=:99 PROXY_URL="http://14abf236340a1:bb82a9e63b@185.134.194.152:12323" PR
 # L'upload R2 échouera si SNAP_R2_ACCOUNT_ID n'est pas défini — c'est normal, les PNG locaux suffisent
 
 ## Étape 4 — Récupérer les PNG (nouveau terminal PowerShell, pas dans le SSH, en gardant le SSH ouvert)
-flyctl ssh sftp get /tmp/fp_canvas.png -a surveybot-bot
-flyctl ssh sftp get /tmp/fp_webgl.png -a surveybot-bot
-flyctl ssh sftp get /tmp/fp_javascript.png -a surveybot-bot
-flyctl ssh sftp get /tmp/fp_ip.png -a surveybot-bot
+flyctl ssh sftp get /tmp/prod_canvas.png -a surveybot-bot
+flyctl ssh sftp get /tmp/prod_webgl.png -a surveybot-bot
+flyctl ssh sftp get /tmp/prod_javascript.png -a surveybot-bot
+flyctl ssh sftp get /tmp/prod_ip.png -a surveybot-bot
 # Les fichiers atterrissent dans le répertoire courant PowerShell
 
 ## Étape 5 — Détruire la machine idle après les tests (PowerShell)
@@ -105,3 +105,16 @@ flyctl machine destroy <ID-DE-LA-MACHINE> -a surveybot-bot --force
 # Corrections à apporter (dans playwright_launcher.py) :
 #   1. User-Agent HTTP : utiliser CDP Network.setUserAgentOverride (en plus du patch JS)
 #   2. WebGL : ajouter --use-gl=angle --use-angle=swiftshader aux args Chrome
+
+
+
+
+
+
+
+
+
+$env:ACCOUNT_ID="test-account"
+$env:PLATFORM="ysense"
+$env:EMAIL="qatar.chimp729@8shield.net"
+$env:PASSWORD="p@ssw0rD!123"

@@ -261,16 +261,117 @@ def _fingerprint_js() -> str:
             } catch(e) {}
         }
 
-        // ── WebGL renderer (SwiftShader = signal bot connu) ──────────────────
-        // Même si le renderer réel est SwiftShader (pas de GPU en container),
-        // on spoofe la chaîne pour correspondre à un Intel intégré classique.
+        // ── WebGL fingerprint (SwiftShader → Intel UHD 617, ANGLE/D3D11) ───────
+        // BrowserLeaks et les SDK fingerprinting calculent le WebGL Report Hash
+        // sur l'ensemble des valeurs retournées par getParameter().
+        // SwiftShader + Xvfb produit un profil qui diverge d'un Intel intégré réel
+        // sur une dizaine de paramètres — pas seulement vendor/renderer.
+        //
+        // Valeurs cibles : mesurées en mode attach sur Chrome headed Windows
+        // (Intel UHD Graphics 617, ANGLE Direct3D11 vs_5_0).
+        //
+        // Paramètres retournant un type typé (Int32Array / Float32Array) :
+        //   le proxy retourne le type natif pour ne pas rompre les checks
+        //   instanceof des outils de détection.
+        //
+        // SwiftShader vs cible (valeurs qui divergent) :
+        //   UNMASKED_VENDOR_WEBGL             : 'Intel Inc.'        → 'Google Inc. (Intel)'
+        //   UNMASKED_RENDERER_WEBGL           : 'Intel(R) Iris(R)'  → 'ANGLE (Intel, Intel(R) UHD Graphics 617 (0x000087C0) Direct3D11 vs_5_0 ps_5_0, D3D11)'
+        //   MAX_VIEWPORT_DIMS        (0x0D3A) : [8192,8192]         → [32767,32767]   (SwiftShader est plus petit ici)
+        //   ALIASED_POINT_SIZE_RANGE (0x846D) : [1,1023]            → [1,1024]
+        //   MAX_TEXTURE_IMAGE_UNITS  (0x8872) : 32                  → 16
+        //   MAX_VERTEX_TEXTURE_IMAGE_UNITS (0x8B4C) : 32            → 16
+        //   MAX_FRAGMENT_UNIFORM_VECTORS (0x8DFD) : 4096            → 1024
+        //   MAX_VARYING_VECTORS      (0x8DFC) : 31                  → 30
+        //   MAX_VERTEX_UNIFORM_BLOCKS (0x8A2B) : 14                 → 12
+        //   MAX_VERTEX_OUTPUT_COMPONENTS (0x9122) : 128             → 120
+        //   MAX_VARYING_COMPONENTS   (0x8B4B) : 124                 → 120
+        //   MAX_INTERLEAVED_COMPONENTS (WebGL2 0x8C8A) : 128        → 120
+        //   MAX_COMBINED_VERTEX_UNIFORM_COMPONENTS (0x8A31) : 245760 → 212992
+        //   MAX_COMBINED_FRAGMENT_UNIFORM_COMPONENTS (0x8A33) : 245760 → 200704
         try {
+            const _GL = {
+                // Identité GPU
+                UNMASKED_VENDOR_WEBGL:                    0x9245,
+                UNMASKED_RENDERER_WEBGL:                  0x9246,
+                // Vectoriels (retournent un type typé)
+                MAX_VIEWPORT_DIMS:                        0x0D3A,
+                ALIASED_POINT_SIZE_RANGE:                 0x846D,
+                // Scalaires WebGL1
+                MAX_TEXTURE_IMAGE_UNITS:                  0x8872,
+                MAX_VERTEX_TEXTURE_IMAGE_UNITS:           0x8B4C,
+                MAX_FRAGMENT_UNIFORM_VECTORS:             0x8DFD,
+                MAX_VARYING_VECTORS:                      0x8DFC,
+                // Scalaires WebGL2
+                MAX_VERTEX_UNIFORM_BLOCKS:                0x8A2B,
+                MAX_VERTEX_OUTPUT_COMPONENTS:             0x9122,
+                MAX_VARYING_COMPONENTS:                   0x8B4B,
+                MAX_TRANSFORM_FEEDBACK_INTERLEAVED_COMPONENTS: 0x8C8A,
+                MAX_COMBINED_VERTEX_UNIFORM_COMPONENTS:   0x8A31,
+                MAX_COMBINED_FRAGMENT_UNIFORM_COMPONENTS: 0x8A33,
+                // Paramètres WebGL2 supplémentaires (SwiftShader diverge)
+                MAX_RENDERBUFFER_SIZE:                    0x84E8,  // 8192  → 16384
+                MAX_TEXTURE_SIZE:                         0x0D33,  // 8192  → 16384
+                MAX_FRAGMENT_UNIFORM_BLOCKS:              0x8A2D,  // 14    → 12
+                MAX_FRAGMENT_INPUT_COMPONENTS:            0x9125,  // 128   → 120
+                MAX_TEXTURE_LOD_BIAS:                     0x84FD,  // 15.0  → 2.0
+                MAX_UNIFORM_BUFFER_BINDINGS:              0x8A2F,  // 72    → 24
+                MAX_COMBINED_UNIFORM_BLOCKS:              0x8A2E,  // 60    → 24
+            };
             const _glProxy = {
                 apply(target, ctx, args) {
                     const p = args[0];
-                    if (p === 37445) return 'Intel Inc.';                    // UNMASKED_VENDOR_WEBGL
-                    if (p === 37446) return 'Intel(R) Iris(R) Xe Graphics';  // UNMASKED_RENDERER_WEBGL
-                    return Reflect.apply(target, ctx, args);
+                    switch (p) {
+                        // ── Identité GPU ───────────────────────────────────────
+                        case _GL.UNMASKED_VENDOR_WEBGL:
+                            return 'Google Inc. (Intel)';
+                        case _GL.UNMASKED_RENDERER_WEBGL:
+                            return 'ANGLE (Intel, Intel(R) UHD Graphics 617 (0x000087C0) Direct3D11 vs_5_0 ps_5_0, D3D11)';
+                        // ── Vectoriels (type natif obligatoire) ────────────────
+                        case _GL.MAX_VIEWPORT_DIMS:
+                            return new Int32Array([32767, 32767]);
+                        case _GL.ALIASED_POINT_SIZE_RANGE:
+                            return new Float32Array([1, 1024]);
+                        // ── Scalaires WebGL1 ───────────────────────────────────
+                        case _GL.MAX_TEXTURE_IMAGE_UNITS:
+                            return 16;
+                        case _GL.MAX_VERTEX_TEXTURE_IMAGE_UNITS:
+                            return 16;
+                        case _GL.MAX_FRAGMENT_UNIFORM_VECTORS:
+                            return 1024;
+                        case _GL.MAX_VARYING_VECTORS:
+                            return 30;
+                        // ── Scalaires WebGL2 ───────────────────────────────────
+                        case _GL.MAX_VERTEX_UNIFORM_BLOCKS:
+                            return 12;
+                        case _GL.MAX_VERTEX_OUTPUT_COMPONENTS:
+                            return 120;
+                        case _GL.MAX_VARYING_COMPONENTS:
+                            return 120;
+                        case _GL.MAX_TRANSFORM_FEEDBACK_INTERLEAVED_COMPONENTS:
+                            return 120;
+                        case _GL.MAX_COMBINED_VERTEX_UNIFORM_COMPONENTS:
+                            return 212992;
+                        case _GL.MAX_COMBINED_FRAGMENT_UNIFORM_COMPONENTS:
+                            return 200704;
+                        // ── WebGL2 supplémentaires ─────────────────────────────
+                        case _GL.MAX_RENDERBUFFER_SIZE:
+                            return 16384;
+                        case _GL.MAX_TEXTURE_SIZE:
+                            return 16384;
+                        case _GL.MAX_FRAGMENT_UNIFORM_BLOCKS:
+                            return 12;
+                        case _GL.MAX_FRAGMENT_INPUT_COMPONENTS:
+                            return 120;
+                        case _GL.MAX_TEXTURE_LOD_BIAS:
+                            return 2;
+                        case _GL.MAX_UNIFORM_BUFFER_BINDINGS:
+                            return 24;
+                        case _GL.MAX_COMBINED_UNIFORM_BLOCKS:
+                            return 24;
+                        default:
+                            return Reflect.apply(target, ctx, args);
+                    }
                 }
             };
             WebGLRenderingContext.prototype.getParameter  = new Proxy(WebGLRenderingContext.prototype.getParameter,  _glProxy);
@@ -608,7 +709,7 @@ def launch_browser(config: dict | None = None):
         "--no-first-run",
         "--no-default-browser-check",
         "--disable-dev-shm-usage",
-        *( ["--no-sandbox"] if os.getuid() == 0 else [] ),
+        *( ["--no-sandbox"] if (not hasattr(os, "getuid") or os.getuid() == 0) else [] ),
         # ── Réseau interne Chrome — neutralisation complète ────────────────────
         # Ces connexions surviennent dès le lancement, avant le premier driver.get(),
         # et saturent/contournent le relay proxy, déclenchant la popup d'auth native.
