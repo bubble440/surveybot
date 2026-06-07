@@ -18,10 +18,10 @@ import sys
 import time
 
 FINGERPRINT_PAGES = [
-    ("canvas",     "https://browserleaks.com/canvas"),
+    # ("canvas",     "https://browserleaks.com/canvas"),
     ("webgl",      "https://browserleaks.com/webgl"),
-    ("javascript", "https://browserleaks.com/javascript"),
-    ("ip",         "https://browserleaks.com/ip"),
+    # ("javascript", "https://browserleaks.com/javascript"),
+    # ("ip",         "https://browserleaks.com/ip"),
 ]
 
 WAIT_AFTER_LOAD = 5
@@ -84,7 +84,7 @@ def _upload_or_save(png_bytes: bytes, label: str) -> None:
     """
     Sauvegarde en /tmp (toujours) + upload R2 si SNAP_ENABLED=1 et boto3 disponible.
     """
-    path = f"/tmp/fp_{label}.png"
+    path = f"/tmp/prod_{label}.png"
     with open(path, "wb") as f:
         f.write(png_bytes)
     print(f"[FP] Sauvegardé : {path} ({len(png_bytes)//1024} KB)")

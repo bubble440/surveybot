@@ -6,6 +6,71 @@ from selenium.common.exceptions import TimeoutException
 import time
 from selenium.common.exceptions import JavascriptException
 
+# ---------------------------------------------------------------------------
+# Sélecteurs selon la page de login (TopSurveys expose deux interfaces)
+#   - topsurveys.app       → check-email-*  (landing marketing)
+#   - app.topsurveys.app/app-login → app-page-* (app SPA)
+# Les sélecteurs password/submit sont identiques dans les deux cas.
+# ---------------------------------------------------------------------------
+_LOGIN_SELECTORS = {
+    "app_login": {
+        "email_input":    "input[data-test-id='app-page-email-field-input']",
+        "continue_btn":   "button[data-test-id='app-page-continue-button']",
+        # Sur app-login la page password est une sous-page distincte (data-test sans -id).
+        # Le champ <input> est imbriqué dans le wrapper data-test="auth-signin-password" ;
+        # son data-test-id vaut "undefined-input" (non fiable) — on cible l'input par type.
+        "password_input": "div[data-test='auth-signin-password'] input[type='password']",
+        "login_btn":      "button[data-test='auth-signin-submit']",
+    },
+    "topsurveys": {
+        "email_input":    "input[data-test-id='check-email-field-input']",
+        "continue_btn":   "button[data-test-id='check-email-continue-button']",
+        "password_input": "input[data-test-id='sign-in-password-field-input']",
+        "login_btn":      "button[data-test-id='sign-in-submit-button']",
+    },
+    # Fallback commun si aucun sélecteur spécifique ne matche
+    "_common": {
+        "password_input": "input[type='password']",
+        "login_btn":      "button[type='submit']",
+    },
+}
+
+# Sélecteurs utilisés par soft_restart_resume (launch.py) pour détecter
+# la page de login — doit couvrir les DEUX interfaces.
+LOGIN_PAGE_SELECTORS = (
+    "[data-test-id='check-email-field-input']",   # topsurveys.app
+    "[data-test-id='app-page-email-field-input']", # app.topsurveys.app/app-login
+)
+
+
+def _detect_login_page(driver) -> str:
+    """
+    Retourne 'app_login' si l'URL courante est app.topsurveys.app/app-login,
+    sinon 'topsurveys' (landing marketing).
+    """
+    try:
+        url = (driver.current_url or "").lower()
+        if "app-login" in url or (
+            "app.topsurveys.app" in url and "/surveys" not in url
+        ):
+            return "app_login"
+    except Exception:
+        pass
+    return "topsurveys"
+
+
+def _get_selectors(driver) -> dict:
+    """
+    Retourne le dict de sélecteurs adapté à la page courante.
+    Les clés de _common ne sont utilisées qu'en fallback si la page
+    ne définit pas elle-même password_input / login_btn.
+    """
+    page = _detect_login_page(driver)
+    sel = dict(_LOGIN_SELECTORS["_common"])   # fallback de base
+    sel.update(_LOGIN_SELECTORS[page])        # sélecteurs spécifiques à la page (priorité)
+    return sel
+
+
 def _is_prod_env() -> bool:
     """
     Retourne True si on tourne dans un environnement de production (Fly.io/Docker).
@@ -231,10 +296,15 @@ def login(driver, email, password):
         capture_and_upload(driver, "survey_account")
 
     # --- Étape 1 : Saisir l'email dans le champ inline (landing page, pas de modale)
+    # Les sélecteurs varient selon la page :
+    #   topsurveys.app      → check-email-field-input / check-email-continue-button
+    #   app.topsurveys.app  → app-page-email-field-input / app-page-continue-button
+    _sel = _get_selectors(driver)
+    print(f"[LOGIN] page détectée={_detect_login_page(driver)} | email_sel={_sel['email_input']}")
     try:
         email_input = wait.until(
             EC.element_to_be_clickable((
-                By.CSS_SELECTOR, "input[data-test-id='check-email-field-input']"
+                By.CSS_SELECTOR, _sel["email_input"]
             ))
         )
         driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", email_input)
@@ -256,7 +326,7 @@ def login(driver, email, password):
 
         continue_btn = wait.until(
             EC.element_to_be_clickable((
-                By.CSS_SELECTOR, "button[data-test-id='check-email-continue-button']"
+                By.CSS_SELECTOR, _sel["continue_btn"]
             ))
         )
         # Clic natif Selenium (isTrusted: true) — le clic JS synthétique
@@ -271,19 +341,16 @@ def login(driver, email, password):
             f.write(driver.page_source)
         return
 
-    # Attente que le champ password soit présent dans le DOM (authStep == sign_in).
-    # On utilise presence_of_element_located : après un clic natif, Vue déclenche la
-    # transition asynchrone vers sign_in ; le champ peut apparaître dans le DOM avant
-    # que Selenium le considère "clickable" (enabled + visible), ce qui ferait expirer
-    # element_to_be_clickable sur des machines lentes. La présence DOM suffit comme
-    # signal que la modale est prête ; le scrollIntoView + sleep suivants absorbent
-    # le délai de rendu résiduel avant toute interaction.
+    # Attente que le champ password soit présent dans le DOM.
+    # Sur topsurveys.app : transition Vue asynchrone in-page (authStep == sign_in).
+    # Sur app.topsurveys.app/app-login : navigation vers une sous-page distincte —
+    # le champ password est dans un <form data-test="auth-signin-form"> différent.
+    # Dans les deux cas on attend la présence DOM du champ avant toute interaction.
     try:
         wait_pwd = WebDriverWait(driver, 60)
         pwd_input = wait_pwd.until(EC.presence_of_element_located(
-            (By.CSS_SELECTOR, 'input[data-test-id="sign-in-password-field-input"]')
+            (By.CSS_SELECTOR, _sel["password_input"])
         ))
-        # dom_probe(driver)
         driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", pwd_input)
 
         driver.execute_script("""
@@ -298,18 +365,15 @@ def login(driver, email, password):
             pwd_input.send_keys(password)
             print("🔁 Fallback : mot de passe injecté via send_keys()")
         else:
-            print(f"🔑 Mot de passe: {password}, injecté via JS.")
+            print(f"🔑 Mot de passe injecté via JS.")
             time.sleep(1)  # petit délai pour que Vue traite les événements et active le bouton
-            
-        # ✅ Corrigé ici : bouton Se connecter avec data-test-id
+
         login_btn = wait.until(EC.element_to_be_clickable(
-            (By.CSS_SELECTOR, 'button[data-test-id="sign-in-submit-button"]')
+            (By.CSS_SELECTOR, _sel["login_btn"])
         ))
         driver.execute_script("arguments[0].click();", login_btn)
         time.sleep(0.5)
         print("✅ Bouton « Se connecter » cliqué.")
-        # from Management.redirect_watcher import wait_for_page_load
-        # wait_for_page_load(driver, timeout=30)
 
     except Exception as e:
         time.sleep(2)

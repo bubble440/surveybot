@@ -1,0 +1,7 @@
+Pourquoi autant de disqualifications?
+
+1) A cause de l'ip qui est pafois affiché comme de type VPN dans browser  leaks?
+Non, car les meme ips sont utilisés en Local sans aucune disqualifications!
+
+2) A cause du Webgl divergent entre le mode attach et la prod?
+Non, la prod a été spoofé afin d'etre identique au mode attach, a l'exception du Hash toute les autres data sont identiques.
