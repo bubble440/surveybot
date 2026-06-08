@@ -260,7 +260,7 @@ def extract_options_js(driver):
                 span.className.includes("p-checkbox-text")
             )
             .map(span => span.innerText.trim())
-            .filter(text => text.length > 2);
+            .filter(text => text.length > 0);
         """
 
         options = driver.execute_script(js_code)

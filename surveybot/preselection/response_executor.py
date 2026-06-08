@@ -307,23 +307,30 @@ def execute_response(driver, answer_text, input_type=None):
                         driver.execute_script(
                             "arguments[0].scrollIntoView({block:'center'});", radio
                         )
-                        time.sleep(2)
+                        time.sleep(0.5)
                         driver.execute_script("arguments[0].click();", radio)
                     except Exception:
                         # 2) fallback clic humain
                         ActionChains(driver).move_to_element(label).click().perform()
-                        time.sleep(2)
+                        time.sleep(0.5)
                     print(
                         f"✅ Option radio sélectionnée : {span.text} source: reponse_executor.py"
                     )
-                    # 🔍 Vérification post-clic
+                    # 🔍 Attendre le changement visuel (p-checked) avant de déclencher le CTA.
+                    # Avec proxy lent, la confirmation backend arrive avant le re-render visuel ;
+                    # le CTA n'apparaît qu'une fois p-checked présent sur le label.
                     try:
-                        if not radio.is_selected():
-                            print("⚠️ Radio non sélectionné après clic JS — retry ActionChains")
-                            ActionChains(driver).move_to_element(radio).click().perform()
+                        WebDriverWait(driver, 5).until(
+                            lambda d: "p-checked" in (label.get_attribute("class") or "")
+                            or radio.is_selected()
+                        )
                     except Exception:
-                        pass
-                    time.sleep(2)
+                        try:
+                            if not radio.is_selected():
+                                print("⚠️ Radio non sélectionné après clic JS — retry ActionChains")
+                                ActionChains(driver).move_to_element(radio).click().perform()
+                        except Exception:
+                            pass
                     click_next_button(driver)
                     return True  # ✅ succès
         print("❌ Option radio non cochée.")
@@ -354,12 +361,19 @@ def click_next_button(driver):
     wait = WebDriverWait(driver, 10)
     CTA_SEL = 'button[data-test-id="ps-common-actions-button"]'
     try:
-        next_btn = driver.find_element(By.CSS_SELECTOR, CTA_SEL)
+        # Attendre que le CTA soit présent ET visible dans le DOM.
+        # Nécessaire car le bouton n'apparaît qu'après qu'au moins une option soit
+        # visuellement cochée (classe p-checked sur le label). En cas de proxy lent,
+        # le changement visuel peut prendre plusieurs secondes après la confirmation
+        # backend du clic — on attend donc jusqu'à 10 s que le bouton soit cliquable.
+        next_btn = WebDriverWait(driver, 10).until(
+            EC.element_to_be_clickable((By.CSS_SELECTOR, CTA_SEL))
+        )
         driver.execute_script(
             "arguments[0].scrollIntoView({block: 'center'});", next_btn
         )
-        time.sleep(2)
-        # Re-fetch après le délai : le DOM peut avoir été re-rendu (ex: async_radio)
+        time.sleep(0.5)
+        # Re-fetch après le scroll : le DOM peut avoir été re-rendu (ex: async_radio)
         # et la référence initiale serait stale.
         next_btn = driver.find_element(By.CSS_SELECTOR, CTA_SEL)
         _confirm_before_cta_click()
@@ -477,12 +491,33 @@ def select_checkbox_answers(driver, answers):
             "arguments[0].scrollIntoView({block:'center'}); arguments[0].click();",
             inner_cb,
         )
-        time.sleep(0.2)
-        if not inner_cb.is_selected():
-            ActionChains(driver).move_to_element(label).click().perform()
-            time.sleep(0.2)
 
-        if inner_cb.is_selected():
+        # Attendre le changement visuel (classe p-checked sur le label) plutôt que
+        # de se fier uniquement à is_selected() dont la confirmation backend peut
+        # arriver avant que le rendu visuel ne soit effectif (latence proxy).
+        # Le CTA n'apparaît que lorsque p-checked est présent dans le DOM.
+        _checked_visually = False
+        try:
+            WebDriverWait(driver, 5).until(
+                lambda d: "p-checked" in (label.get_attribute("class") or "")
+                or inner_cb.is_selected()
+            )
+            _checked_visually = True
+        except Exception:
+            pass
+
+        if not _checked_visually:
+            ActionChains(driver).move_to_element(label).click().perform()
+            try:
+                WebDriverWait(driver, 5).until(
+                    lambda d: "p-checked" in (label.get_attribute("class") or "")
+                    or inner_cb.is_selected()
+                )
+                _checked_visually = True
+            except Exception:
+                pass
+
+        if _checked_visually:
             print(f"✅ Checkbox cochée : {label_text} source: reponse_executor.py")
             found = True
         else:
