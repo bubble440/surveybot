@@ -43,7 +43,173 @@ def _is_checked_soft(el) -> bool:
     return False
 
 
+def _execute_async_radio(driver, answer_text) -> bool:
+    """
+    Handler pour le pattern 'async-answer' (Prime Opinion / PureSpectrum) :
+    - Saisit la réponse dans le champ de recherche texte (filtrage dynamique)
+    - Attend que les options radio filtrées apparaissent
+    - Clique sur le radio correspondant
+    - Clique sur le CTA de navigation
+
+    Ce flow est nécessaire car les options ne sont pas pré-rendues : elles apparaissent
+    dynamiquement après saisie, et un clic direct sur un radio absent échouerait.
+
+    Fallback "premier résultat disponible" :
+    Certains champs async_radio ne listent pas les entités exactes retournées par GPT
+    (ex : le champ "Région" peut en réalité lister des communes ou des sous-divisions).
+    Si la recherche exacte ne produit aucun résultat, on retente avec un préfixe court
+    (2 premières lettres, puis 1 seule) et on sélectionne le premier radio disponible.
+    Cela couvre les cas où la granularité des données du widget diverge du niveau
+    géographique ou catégoriel supposé par GPT.
+    """
+    norm_answer = normalize(answer_text)
+
+    # 1. Localiser le champ de recherche texte
+    search_input = None
+    for sel in [
+        "[data-test-id='ps-async-answer-input-input']",
+        "[data-test-id='ps-async-answer-input'] input",
+        ".async-answer input[type='text']",
+    ]:
+        try:
+            search_input = driver.find_element(By.CSS_SELECTOR, sel)
+            if search_input:
+                break
+        except Exception:
+            pass
+
+    if not search_input:
+        print("❌ [async_radio] Champ de recherche introuvable.")
+        return False
+
+    def _type_in_search(text: str) -> bool:
+        """Saisit `text` dans le champ de recherche et déclenche les events de filtrage."""
+        try:
+            driver.execute_script("arguments[0].scrollIntoView({block:'center'});", search_input)
+            search_input.clear()
+            search_input.send_keys(str(text))
+            driver.execute_script(
+                "arguments[0].dispatchEvent(new Event('input', {bubbles:true}));"
+                "arguments[0].dispatchEvent(new Event('change', {bubbles:true}));",
+                search_input,
+            )
+            return True
+        except Exception as e:
+            print(f"❌ [async_radio] Échec saisie champ recherche : {e}")
+            return False
+
+    def _collect_radio_labels() -> list:
+        """Retourne les labels radio visibles après filtrage (attente 1.5 s incluse)."""
+        time.sleep(1.5)
+        try:
+            return driver.find_elements(
+                By.CSS_SELECTOR,
+                'label[data-test-id^="ps-question-input-single_choice-label"]',
+            )
+        except Exception:
+            return []
+
+    def _click_radio_label(label) -> bool:
+        """Clique sur un label radio, avec fallback ActionChains. Retourne True si sélectionné.
+
+        Note : après le clic JS, le widget async_radio re-rend le DOM (la liste filtrée
+        disparaît et le champ de recherche est mis à jour). Les références aux éléments
+        radio/label deviennent stale immédiatement. On intercepte StaleElementReferenceException
+        sur is_selected() : si l'élément est stale, c'est que le clic a bien déclenché
+        le re-render — on considère le clic réussi et on passe au CTA.
+        """
+        try:
+            driver.execute_script("arguments[0].scrollIntoView({block:'center'});", label)
+            time.sleep(0.3)
+            radio = label.find_element(By.CSS_SELECTOR, "input[type='radio']")
+            driver.execute_script("arguments[0].click();", radio)
+            time.sleep(0.5)
+            # Vérification post-clic : si l'élément est stale (DOM re-rendu après clic),
+            # on considère le clic comme réussi — le re-render confirme l'interaction.
+            try:
+                if not radio.is_selected():
+                    ActionChains(driver).move_to_element(label).click().perform()
+                    time.sleep(0.5)
+            except Exception:
+                # StaleElementReferenceException attendu : le DOM a été re-rendu, clic OK.
+                pass
+            return True
+        except Exception as e:
+            print(f"❌ [async_radio] Échec clic radio : {e}")
+            return False
+
+    def _get_label_text(label) -> str:
+        """Extrait le texte visible d'un label radio (textContent prioritaire)."""
+        try:
+            spans = label.find_elements(By.CSS_SELECTOR, 'span[class*="p-radio-text"]')
+            for span in spans:
+                # get_attribute("textContent") nécessaire : certains spans ont display:none sur .text
+                t = span.get_attribute("textContent") or span.text or ""
+                if t.strip():
+                    return t.strip()
+        except Exception:
+            pass
+        try:
+            return label.text.strip()
+        except Exception:
+            return ""
+
+    # ── Étape 1 : recherche avec la valeur complète retournée par GPT ──────────
+    log_info("response_executor", f"[async_radio] Texte saisi dans champ recherche : {answer_text}")
+    if not _type_in_search(answer_text):
+        return False
+
+    labels = _collect_radio_labels()
+
+    for label in labels:
+        label_text = _get_label_text(label)
+        if norm_answer in normalize(label_text) or normalize(label_text) in norm_answer:
+            if _click_radio_label(label):
+                log_info("response_executor", f"[async_radio] Option sélectionnée (exact) : {label_text}")
+                click_next_button(driver)
+                return True
+            return False
+
+    # ── Étape 2 : fallback préfixe court (2 lettres) → premier résultat ────────
+    # Cas typique : le champ attend des communes alors que GPT a répondu une région.
+    # On prend les 2 premières lettres non-diacritiques pour déclencher le filtrage,
+    # puis on sélectionne simplement le premier radio disponible.
+    prefix_candidates = []
+    clean = re.sub(r"[^a-zA-Z]", "", answer_text)  # lettres seulement
+    if len(clean) >= 2:
+        prefix_candidates.append(clean[:2])
+    if len(clean) >= 1:
+        prefix_candidates.append(clean[:1])
+
+    for prefix in prefix_candidates:
+        log_info("response_executor", f"[async_radio] Fallback préfixe '{prefix}' → premier résultat")
+        if not _type_in_search(prefix):
+            continue
+
+        fallback_labels = _collect_radio_labels()
+        if not fallback_labels:
+            continue
+
+        # Ignorer les messages "Aucune réponse trouvée" qui s'affichent parfois comme pseudo-label
+        for fl in fallback_labels:
+            fl_text = _get_label_text(fl)
+            if not fl_text or "aucune" in fl_text.lower() or "modifie" in fl_text.lower():
+                continue
+            if _click_radio_label(fl):
+                log_info("response_executor", f"[async_radio] Option sélectionnée (fallback préfixe '{prefix}') : {fl_text}")
+                click_next_button(driver)
+                return True
+            return False
+
+    print(f"❌ [async_radio] Aucun radio trouvé pour : {answer_text} (ni en exact ni en préfixe)")
+    return False
+
+
 def execute_response(driver, answer_text, input_type=None):
+    # Délégation immédiate au handler async_radio si itype détecté
+    if input_type == "async_radio":
+        return _execute_async_radio(driver, answer_text)
+
     # Pas de choix → souvent page de blocage ou de consentement non mappée
     if not answer_text:
         print("⏭️ Aucun choix détecté — pas d'action sur cette page. source: reponse_executor.py")
@@ -186,14 +352,16 @@ def click_next_button(driver):
         return True
 
     wait = WebDriverWait(driver, 10)
+    CTA_SEL = 'button[data-test-id="ps-common-actions-button"]'
     try:
-        next_btn = driver.find_element(
-            By.CSS_SELECTOR, 'button[data-test-id="ps-common-actions-button"]'
-        )
+        next_btn = driver.find_element(By.CSS_SELECTOR, CTA_SEL)
         driver.execute_script(
             "arguments[0].scrollIntoView({block: 'center'});", next_btn
         )
         time.sleep(2)
+        # Re-fetch après le délai : le DOM peut avoir été re-rendu (ex: async_radio)
+        # et la référence initiale serait stale.
+        next_btn = driver.find_element(By.CSS_SELECTOR, CTA_SEL)
         _confirm_before_cta_click()
         driver.execute_script("arguments[0].click();", next_btn)
         print(

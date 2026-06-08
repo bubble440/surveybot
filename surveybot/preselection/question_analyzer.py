@@ -171,6 +171,19 @@ def extract_question_text(html):
 
 def detect_input_type(html):
     soup = BeautifulSoup(html, "html.parser")
+
+    # Pattern async-answer : champ texte de recherche + radios filtrés dynamiquement.
+    # Ce pattern est prioritaire sur le radio classique car le flow d'interaction est différent :
+    # (1) saisir dans le champ texte → (2) attendre les options filtrées → (3) cliquer le radio.
+    # Deux signaux DOM discriminants : conteneur .async-answer ET input texte de recherche.
+    async_container = soup.select_one(".async-answer, [data-v-12059ec2]")
+    async_search_input = soup.select_one(
+        "[data-test-id='ps-async-answer-input-input'], "
+        "[data-test-id='ps-async-answer-input'] input"
+    )
+    if async_container and async_search_input:
+        return "async_radio"
+
     # Priorité au DOM explicite multiple-choice/checkbox (inputs, rôles, data-test-id, classes)
     if soup.find("input", {"type": "checkbox"}) or soup.select("[role='checkbox']"):
         return "checkbox"
