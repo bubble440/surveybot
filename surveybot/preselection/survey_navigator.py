@@ -261,50 +261,111 @@ def _select_best_value_card(driver):
     return best_card
 
 
-def go_to_best_value_survey(driver):
-    wait_short = WebDriverWait(driver, 8)
-    wait = WebDriverWait(driver, 10)
-
-    def _click_enquetes():
-        # 1) XPATH texte
-        try:
-            tab = wait_short.until(EC.element_to_be_clickable((By.XPATH, "//span[normalize-space()='Enquêtes']")))
-            driver.execute_script("arguments[0].click();", tab)
-            time.sleep(0.5)  # laisser le temps à la transition Vue de démarrer et éviter les intercepteurs d'événements désynchronisés
-            print("🗂️  Onglet « Enquêtes » cliqué. [xpath texte]")
-            return True
-        except Exception:
-            pass
-        # 2) data-test-id si dispo
-        try:
-            tab = wait_short.until(EC.element_to_be_clickable((By.CSS_SELECTOR, "[data-test-id='ps-side-menu-surveys']")))
-            driver.execute_script("arguments[0].click();", tab)
-            print("🗂️  Onglet « Enquêtes » cliqué. [data-test-id]")
-            return True
-        except Exception:
-            pass
+def _wait_for_spa_ready(driver, timeout: int = 60) -> bool:
+    """
+    Attend que la SPA Vue soit réellement chargée après login:
+    - attend que document.readyState == 'complete'
+    - attend qu'au moins un élément de navigation principal soit présent dans le DOM
+    Retourne True si prêt, False si timeout.
+    """
+    # Sélecteurs acceptables indiquant que la SPA est montée
+    nav_selectors = [
+        "[data-test-id='surveys-nav']",       # nav desktop surveys
+        "[data-test-id='home-page-nav']",      # nav desktop home
+        "[data-test-id='mobile-nav-wrapper']", # nav mobile
+        ".p-nav-wrapper",                       # nav générique
+        ".app-sidebar",                         # sidebar desktop
+    ]
+    combined = ", ".join(nav_selectors)
+    try:
+        WebDriverWait(driver, timeout).until(
+            lambda d: d.execute_script("return document.readyState") == "complete"
+        )
+        WebDriverWait(driver, timeout).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, combined))
+        )
+        _debug("SPA prête: navigation détectée dans le DOM.")
+        return True
+    except Exception as e:
+        _debug(f"_wait_for_spa_ready timeout: {type(e).__name__}")
         return False
 
 
-    if not _click_enquetes():
-        # 3) fallback: navigation directe
+def go_to_best_value_survey(driver):
+    # Attendre que la SPA soit réellement montée avant toute interaction nav
+    if not _wait_for_spa_ready(driver, timeout=60):
+        log_info("[TOPSURVEYS][WARN]", "SPA non prête après 60s — on tente quand même la navigation")
+
+    wait = WebDriverWait(driver, 10)
+
+    def _click_surveys_tab():
+        """
+        Tente de cliquer l'onglet Sondages par plusieurs stratégies successives,
+        chacune avec son propre timeout court pour ne pas bloquer trop longtemps.
+        Labels observés: 'Sondages' (desktop/mobile), 'Enquêtes' (ancienne version).
+        """
+        # Stratégies: (By, locator, label_log, timeout)
+        strategies = [
+            # data-test-id desktop
+            (By.CSS_SELECTOR, "[data-test-id='surveys-nav']", "data-test-id surveys-nav", 10),
+            # Texte "Sondages" (label actuel observé dans le HTML)
+            (By.XPATH, "//span[normalize-space()='Sondages']", "xpath Sondages", 10),
+            # data-test-id mobile
+            (By.CSS_SELECTOR, "[data-test-id='surveys-nav'] .p-app-mobile-nav", "mobile surveys-nav", 5),
+            # Texte "Enquêtes" (ancienne version)
+            (By.XPATH, "//span[normalize-space()='Enquêtes']", "xpath Enquêtes", 5),
+            # data-test-id ancienne version
+            (By.CSS_SELECTOR, "[data-test-id='ps-side-menu-surveys']", "ps-side-menu-surveys", 5),
+        ]
+        for by, locator, label, timeout in strategies:
+            try:
+                tab = WebDriverWait(driver, timeout).until(
+                    EC.element_to_be_clickable((by, locator))
+                )
+                driver.execute_script("arguments[0].click();", tab)
+                # Laisser Vue démarrer la transition de route
+                time.sleep(1)
+                print(f"🗂️  Onglet Sondages cliqué. [{label}]")
+                return True
+            except Exception:
+                _debug(f"Stratégie [{label}] échouée.")
+        return False
+
+    if not _click_surveys_tab():
+        # Fallback: navigation directe vers /surveys
+        print("⚠️ Onglet Sondages introuvable via nav — navigation directe vers /surveys")
         try:
-            wait_pwd = WebDriverWait(driver, 3)
             driver.get("https://app.topsurveys.app/surveys")
+            handle_proxy_error_page_if_needed(driver)
             if os.getenv("SNAP_ENABLED", "").strip() == "1":
                 from Management.snap_uploader import capture_and_upload
                 capture_and_upload(driver, "nav_fallback")
-            handle_proxy_error_page_if_needed(driver)
             print("↪️  Navigation directe /surveys")
-            # vérifier qu'on est bien sur la page
-            wait_pwd.until(EC.presence_of_element_located((By.CSS_SELECTOR, "[data-test-id='ps-surveys-root']")))
+            # Attendre que la page surveys soit montée (timeout généreux)
+            WebDriverWait(driver, 30).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, "[data-test-id='ps-surveys-root']"))
+            )
         except Exception as e:
-            print("🛑 Exception navigation :", type(e).__name__, "-", e)
+            print("🛑 Exception navigation directe :", type(e).__name__, "-", e)
             return
 
-    time.sleep(2)  # laisser le temps au contenu de charger
+    # Attendre que les cartes surveys soient dans le DOM après la transition de route
+    try:
+        survey_card_selector = ", ".join([
+            "div.survey-tile",
+            "[class*='survey-tile']",
+            "[data-test-id*='survey-tile']",
+            "[data-test-id*='survey-card']",
+        ])
+        WebDriverWait(driver, 20).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, survey_card_selector))
+        )
+        _debug("Cartes surveys détectées dans le DOM.")
+    except Exception:
+        _debug("Timeout attente cartes surveys — on continue quand même.")
+
     _handle_mystery_box_popup(driver)
-    time.sleep(1)  # laisser le temps à la page de se stabiliser après popup éventuel
+    time.sleep(0.5)  # stabilisation post-popup
     
     if not _find_survey_cards(driver):
         time.sleep(3)  # délai pour que les éventuels logs/snapshots soient traités avant pause

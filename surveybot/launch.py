@@ -500,14 +500,34 @@ def init_session_and_enter_surveys(driver, config, account_id: str, notify_fn, p
             email = config.get("Email")
             password = config.get("Password")
             login(driver, email, password)
-        time.sleep(5)
+        # Après login, attendre que la page soit hydratée avant de continuer.
+        # On réutilise _SESSION_SELECTOR plutôt qu'un sleep arbitraire.
+        try:
+            WebDriverWait(driver, 30).until(
+                EC.presence_of_element_located(_SESSION_SELECTOR)
+            )
+            print("[LOGIN] surveys-nav détecté post-login — page prête.")
+        except TimeoutException:
+            print("[LOGIN][WARN] surveys-nav non détecté après 30 s — on continue quand même.")
 
     try:
         _payout_and_check_daily_stop(driver, account_id)  # retrait + DAILY STOP
     except Exception as e:
         print(f"[PAYOUT][WARN] Encaissement automatique: {e}")
 
-    time.sleep(3)
+    # Attente que la page soit pleinement chargée et hydratée avant de chercher un survey.
+    # On réutilise _SESSION_SELECTOR ([data-test-id='surveys-nav']) : il est présent dès
+    # que l'app Vue est loggée et rendue, sans dépendre de la disponibilité de surveys.
+    # Timeout généreux (30 s) pour absorber les démarrages lents en prod headless.
+    # Si le sélecteur n'apparaît pas dans le délai, on continue quand même (best-effort).
+    try:
+        WebDriverWait(driver, 30).until(
+            EC.presence_of_element_located(_SESSION_SELECTOR)
+        )
+        print("[INIT] surveys-nav détecté — page prête, lancement select_survey.")
+    except TimeoutException:
+        print("[INIT][WARN] surveys-nav non détecté après 30 s — select_survey lancé quand même.")
+
     if platform:
         platform.select_survey(driver)
     else:
