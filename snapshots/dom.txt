@@ -90,9 +90,8 @@ Le spoofing WebGL est partiellement appliqué mais les hashes diffèrent encore.
 
 | Paramètre | Prod | Attach |
 |---|---|---|
-| Max Combined Texture Image Units | 64 | 70 |
-| Max Anisotropy | 18 | 16 |
-| Extensions manquantes en prod | — | `WEBGL_lose_context`, `WEBGL_debug_shaders`, `WEBGL_debug_renderer_info` |
+| Max Combined Texture Image Units | 70 | 32 |
+| Extensions manquantes en prod | — | `WEBGL_provoking_vertex` |
 | Chrome version UA | 149 | 148 |
 
 **Fix :** harmoniser ces valeurs dans le script de spoof WebGL existant, et aligner la version Chrome (149→148) dans l'UA.
