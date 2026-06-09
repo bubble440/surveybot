@@ -13,16 +13,35 @@ from Survey.log_utils import log_debug, log_info
 _excluded_survey_uuids: set = set()
 _last_selected_uuid: str | None = None
 
+# Cache de la première question visible au moment du flagging d'un UUID.
+# Clé : UUID — Valeur : première question (str, normalisée).
+# Même durée de vie que _excluded_survey_uuids : réinitialisé après qualification réussie.
+_excluded_survey_first_questions: dict = {}
 
-def mark_last_selected_survey_as_blocked() -> None:
+
+def mark_last_selected_survey_as_blocked(first_question: "str | None" = None) -> None:
     """
     Ajoute l'UUID du dernier survey sélectionné au set d'exclusion runtime.
+    Mémorise également la première question visible au moment du flag pour permettre
+    la détection d'un renouvellement de contenu (même UUID, questions différentes).
     Appelé lors d'un soft restart déclenché par un survey irrésolvable.
     """
     global _last_selected_uuid
     if _last_selected_uuid:
         _excluded_survey_uuids.add(_last_selected_uuid)
+        if first_question is not None:
+            _excluded_survey_first_questions[_last_selected_uuid] = first_question.strip().lower()
         log_info("[TOPSURVEYS][EXCLUSION]", f"Survey exclu pour ce processus: uuid={_last_selected_uuid!r}")
+
+
+def clear_exclusion_cache() -> None:
+    """
+    Réinitialise l'intégralité des flags UUID et du cache de première question.
+    À appeler dès qu'un survey est qualifié avec succès.
+    """
+    _excluded_survey_uuids.clear()
+    _excluded_survey_first_questions.clear()
+    log_info("[TOPSURVEYS][EXCLUSION]", "Cache exclusion réinitialisé après qualification réussie.")
 
 
 def _local_pause(reason: str = "") -> None:
@@ -207,11 +226,108 @@ def _extract_survey_uuid(driver, card) -> "str | None":
         return None
 
 
+def _read_first_question_from_card(driver, card) -> "str | None":
+    """
+    Ouvre le popup de présélection d'une carte et lit la première question via
+    les fonctions canoniques de question_analyzer (extract_popup_html + extract_question_text).
+    Ces fonctions connaissent le vrai DOM TopSurveys ([data-test-id='ps-popup-content-wrapper'],
+    priorité h1>h2>p>div>span, filtres longueur/mots clés).
+    Ferme/annule le popup proprement après lecture pour revenir à la liste.
+    Retourne la question normalisée (strip+lower) ou None si non détectable.
+    """
+    try:
+        from preselection.question_analyzer import extract_popup_html, extract_question_text
+
+        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", card)
+        driver.execute_script("arguments[0].click();", card)
+        time.sleep(1.5)  # laisser le popup s'ouvrir
+
+        html = extract_popup_html(driver)
+        raw_question = extract_question_text(html)
+
+        # extract_question_text retourne "Question non trouvée" quand rien n'est détecté
+        first_q = None
+        if raw_question and raw_question != "Question non trouvée":
+            first_q = raw_question.strip().lower()
+
+        # Fermer le popup : tenter ESC puis bouton fermeture
+        try:
+            from selenium.webdriver.common.keys import Keys
+            driver.find_element(By.TAG_NAME, "body").send_keys(Keys.ESCAPE)
+            time.sleep(0.8)
+        except Exception:
+            pass
+
+        # Fallback fermeture via bouton close si le popup est encore présent
+        for close_sel in [
+            "button[data-test-id='ps-close-button']",
+            "button[aria-label='Close']",
+            "button[aria-label='Fermer']",
+        ]:
+            try:
+                btn = driver.find_element(By.CSS_SELECTOR, close_sel)
+                driver.execute_script("arguments[0].click();", btn)
+                time.sleep(0.8)
+                break
+            except Exception:
+                continue
+
+        return first_q
+    except Exception as e:
+        _debug(f"_read_first_question_from_card: exception {type(e).__name__} - {e}")
+        return None
+
+
+def _retry_flagged_cards_by_question(driver, flagged_candidates) -> "tuple | None":
+    """
+    Stratégie de secours quand toutes les cartes candidates sont flaggées.
+    Pour chaque carte (triée par score décroissant) :
+      - ouvre son popup et lit la première question visible
+      - compare à la question mémorisée au moment du flagging
+      - si question identique → flag confirmé, on passe à la suivante
+      - si question différente (ou absente du cache) → contenu renouvelé :
+          on lève le flag UUID + cache pour cette carte et on la retourne comme candidate
+    Retourne le tuple candidat (score, reward, duration, idx, card, uuid) si une carte
+    est débloquée, ou None si toutes sont confirmées bloquantes.
+    """
+    log_info("[TOPSURVEYS][CARD_RETRY]", f"Carte bloquée (disqualification_or_retry), essai 1/{len(flagged_candidates)} → carte suivante")
+    for candidate in flagged_candidates:
+        score, reward, duration, idx, card, uuid = candidate
+        cached_q = _excluded_survey_first_questions.get(uuid)  # None si pas en cache
+
+        current_q = _read_first_question_from_card(driver, card)
+
+        if cached_q is None:
+            # Pas de question en cache pour cet UUID : impossible de comparer → on débloque par prudence
+            log_info("[TOPSURVEYS][CARD_RETRY]", f"UUID {uuid!r} flaggé sans cache question → déblocage par défaut")
+            _excluded_survey_uuids.discard(uuid)
+            _excluded_survey_first_questions.pop(uuid, None)
+            return candidate
+
+        if current_q is None or current_q != cached_q:
+            # Question absente ou différente → le contenu a changé, on débloque
+            log_info("[TOPSURVEYS][CARD_RETRY]", f"UUID {uuid!r} contenu renouvelé (question changée) → déblocage")
+            _excluded_survey_uuids.discard(uuid)
+            _excluded_survey_first_questions.pop(uuid, None)
+            return candidate
+
+        # Question identique → flag confirmé, on logue et on passe
+        _debug(f"UUID {uuid!r} flag confirmé (question identique) → carte ignorée")
+
+    return None
+
+
 def _select_best_value_card(driver):
     """
     Score chaque carte via reward_eur / duration_min et renvoie la meilleure exploitable.
     Les cartes non parsables/non cliquables sont ignorées pour garder une sélection stable.
-    Les cartes dont l'UUID figure dans _excluded_survey_uuids sont filtrées après scoring.
+
+    Logique d'exclusion en deux temps :
+    1. Filtrage normal : exclut les UUIDs flaggés → retourne la meilleure carte non flaggée.
+    2. Si toutes les cartes sont flaggées : retry conditionnel carte par carte (par score
+       décroissant) en comparant la première question visible à celle mémorisée au moment
+       du flagging. Une carte dont le contenu a changé est débloquée et retournée.
+       Si toutes sont confirmées bloquantes : fallback sans exclusion (comportement précédent).
     """
     global _last_selected_uuid
     candidates = []
@@ -246,11 +362,26 @@ def _select_best_value_card(driver):
 
     candidates.sort(key=lambda item: item[0], reverse=True)
 
-    # Filtrage des surveys bloquants connus (uniquement si UUID résolu)
+    # --- Étape 1 : filtrage normal des UUIDs bloquants ---
     filtered = [c for c in candidates if c[5] is None or c[5] not in _excluded_survey_uuids]
+
     if not filtered:
-        log_info("[TOPSURVEYS][EXCLUSION]", "Toutes les cartes candidates sont des surveys bloquants connus — aucune alternative disponible, fallback sans exclusion")
-        filtered = candidates
+        # --- Étape 2 : toutes les cartes sont flaggées → retry conditionnel par question ---
+        log_info("[TOPSURVEYS][EXCLUSION]", "Toutes les cartes candidates sont flaggées → tentative retry conditionnel par question")
+        # On ne tente le retry que sur les cartes avec UUID résolu (les autres passent directement)
+        flagged_with_uuid = [c for c in candidates if c[5] is not None]
+        unresolved = [c for c in candidates if c[5] is None]
+
+        unlocked = None
+        if flagged_with_uuid:
+            unlocked = _retry_flagged_cards_by_question(driver, flagged_with_uuid)
+
+        if unlocked is not None:
+            filtered = [unlocked] + unresolved
+        else:
+            # Aucune carte débloquée : fallback sans exclusion (comportement préservé)
+            log_info("[TOPSURVEYS][EXCLUSION]", "Aucune carte débloquée après retry conditionnel — fallback sans exclusion")
+            filtered = candidates
 
     best_score, best_reward, best_duration, best_idx, best_card, best_uuid = filtered[0]
     _last_selected_uuid = best_uuid
