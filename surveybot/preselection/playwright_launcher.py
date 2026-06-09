@@ -181,6 +181,43 @@ def _fingerprint_js() -> str:
             });
         } catch(e) {}
 
+        // ── Suppression des propriétés cdc_* de ChromeDriver ─────────────────
+        // ChromeDriver injecte des propriétés cdc_* dans window à chaque attach.
+        // Ces clés sont détectées par tous les SDK anti-bot modernes comme signal
+        // d'automation primaire — plus fiable que navigator.webdriver lui-même.
+        // On supprime toutes les clés cdc_* présentes ET on pose un getter
+        // indéfini via defineProperty pour résister à la ré-injection.
+        try {
+            for (const key of Object.getOwnPropertyNames(window)) {
+                if (key.startsWith('cdc_')) {
+                    try { delete window[key]; } catch(e) {}
+                    try {
+                        Object.defineProperty(window, key, {
+                            get: () => undefined,
+                            configurable: true,
+                        });
+                    } catch(e) {}
+                }
+            }
+        } catch(e) {}
+
+        // Variantes legacy (versions antérieures de ChromeDriver)
+        try {
+            const _legacyKeys = [
+                '$chrome_asyncScriptInfo',
+                '$cdc_asdjflasutopfhvcZLmcfl_',
+            ];
+            for (const k of _legacyKeys) {
+                try { delete window[k]; } catch(e) {}
+                try {
+                    Object.defineProperty(window, k, {
+                        get: () => undefined,
+                        configurable: true,
+                    });
+                } catch(e) {}
+            }
+        } catch(e) {}
+
         // ── Platform ─────────────────────────────────────────────────────────
         Object.defineProperty(navigator, 'platform', { get: () => 'Win32' });
 
@@ -1021,6 +1058,51 @@ def launch_browser(config: dict | None = None):
     # toutes les navigations futures du processus Chrome.
     apply_fingerprint_overrides_cdp(driver)
     print("[LAUNCH][OVERRIDE] Fingerprint overrides enregistrés via CDP Selenium.")
+
+    # ── Suppression immédiate du flag d'automation sur la page COURANTE ────────
+    # Page.addScriptToEvaluateOnNewDocument ne couvre PAS la page déjà chargée
+    # au moment de l'attach Selenium. On applique les patches critiques de façon
+    # synchrone via execute_script pour éliminer les signaux visibles immédiatement.
+    #
+    # 1) navigator.webdriver → undefined  (sur Navigator.prototype pour couvrir
+    #    les checks via Object.getOwnPropertyDescriptor)
+    # 2) Suppression des propriétés cdc_* injectées par ChromeDriver dans window
+    #    (cdc_adoQpoasnfa76pfcZLmcfl_Array, cdc_adoQpoasnfa76pfcZLmcfl_Promise…)
+    try:
+        driver.execute_script("""
+            // Patch navigator.webdriver sur le prototype (robuste)
+            try {
+                Object.defineProperty(Navigator.prototype, 'webdriver', {
+                    get: () => undefined,
+                    configurable: true,
+                    enumerable: true,
+                });
+            } catch(e) {}
+
+            // Supprimer les propriétés cdc_* de ChromeDriver dans window
+            try {
+                for (const key of Object.getOwnPropertyNames(window)) {
+                    if (key.startsWith('cdc_')) {
+                        try { delete window[key]; } catch(e) {}
+                        try { Object.defineProperty(window, key, { get: () => undefined, configurable: true }); } catch(e) {}
+                    }
+                }
+            } catch(e) {}
+
+            // Supprimer $chrome_asyncScriptInfo et $cdc_asdjflasutopfhvcZLmcfl_
+            // (variantes selon version ChromeDriver)
+            const _legacyKeys = [
+                '$chrome_asyncScriptInfo',
+                '$cdc_asdjflasutopfhvcZLmcfl_',
+            ];
+            for (const k of _legacyKeys) {
+                try { delete window[k]; } catch(e) {}
+                try { Object.defineProperty(window, k, { get: () => undefined, configurable: true }); } catch(e) {}
+            }
+        """)
+        log.info("[FP][IMMEDIATE] Flag automation supprimé sur la page courante.")
+    except Exception as e:
+        log.warning("[FP][IMMEDIATE][WARN] Échec suppression flag automation : %s", e)
 
     try:
         fingerprint = driver.execute_script("""
