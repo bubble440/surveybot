@@ -149,6 +149,7 @@ def _fingerprint_js() -> str:
       - Langue / Timezone
       - navigator.webdriver  (patch robuste sur Navigator.prototype)
       - navigator.platform
+      - navigator.userAgentData (vide en prod → spoofer Chrome 148 Windows complet)
       - navigator.plugins    (vide en headless → simuler 3 plugins Chrome réels)
       - navigator.mimeTypes  (lié aux plugins)
       - window.chrome        (absent en headless → injecter l'objet complet)
@@ -182,6 +183,52 @@ def _fingerprint_js() -> str:
 
         // ── Platform ─────────────────────────────────────────────────────────
         Object.defineProperty(navigator, 'platform', { get: () => 'Win32' });
+
+        // ── navigator.userAgentData ───────────────────────────────────────────
+        // En prod (Chromium/Linux headless), userAgentData est vide ou absent.
+        // En attach (Chrome/Windows), il expose platform, brands, architecture…
+        // Cette contradiction est détectée immédiatement par les anti-bots modernes.
+        // On spoofé l'objet complet pour correspondre à un Chrome 148 Windows réel.
+        try {
+            const _uaData = {
+                brands: [
+                    { brand: 'Chromium',        version: '148' },
+                    { brand: 'Google Chrome',   version: '148' },
+                    { brand: 'Not-A.Brand',     version: '99'  },
+                ],
+                mobile: false,
+                platform: 'Windows',
+                // getHighEntropyValues : appelé par certains SDK fingerprinting
+                // pour récupérer architecture, bitness, uaFullVersion, etc.
+                getHighEntropyValues: function(hints) {
+                    const _full = {
+                        architecture:    'x86',
+                        bitness:         '64',
+                        model:           '',
+                        platform:        'Windows',
+                        platformVersion: '10.0.0',
+                        uaFullVersion:   '148.0.0.0',
+                        fullVersionList: [
+                            { brand: 'Chromium',      version: '148.0.0.0' },
+                            { brand: 'Google Chrome', version: '148.0.0.0' },
+                            { brand: 'Not-A.Brand',   version: '99.0.0.0'  },
+                        ],
+                        wow64: false,
+                    };
+                    const result = {};
+                    (hints || []).forEach(h => { if (h in _full) result[h] = _full[h]; });
+                    return Promise.resolve(result);
+                },
+                toJSON: function() {
+                    return { brands: this.brands, mobile: this.mobile, platform: this.platform };
+                },
+            };
+            Object.defineProperty(navigator, 'userAgentData', {
+                get: () => _uaData,
+                configurable: true,
+                enumerable: true,
+            });
+        } catch(e) {}
 
         // ── navigator.plugins (vide = signal bot primaire) ───────────────────
         // Chrome réel expose 3 plugins PDF/NaCl. On les simule.
@@ -317,6 +364,9 @@ def _fingerprint_js() -> str:
                 MAX_TEXTURE_LOD_BIAS:                     0x84FD,  // 15.0  → 2.0
                 MAX_UNIFORM_BUFFER_BINDINGS:              0x8A2F,  // 72    → 24
                 MAX_COMBINED_UNIFORM_BLOCKS:              0x8A2E,  // 60    → 24
+                // Paramètres résiduels non harmonisés (fix 3)
+                MAX_COMBINED_TEXTURE_IMAGE_UNITS:         0x8B4D,  // 64    → 70
+                MAX_TEXTURE_MAX_ANISOTROPY_EXT:           0x84FF,  // 18    → 16
             };
             const _glProxy = {
                 apply(target, ctx, args) {
@@ -369,6 +419,11 @@ def _fingerprint_js() -> str:
                             return 24;
                         case _GL.MAX_COMBINED_UNIFORM_BLOCKS:
                             return 24;
+                        // ── Résiduels fix 3 ───────────────────────────────────
+                        case _GL.MAX_COMBINED_TEXTURE_IMAGE_UNITS:
+                            return 70;
+                        case _GL.MAX_TEXTURE_MAX_ANISOTROPY_EXT:
+                            return 16;
                         default:
                             return Reflect.apply(target, ctx, args);
                     }
@@ -376,6 +431,36 @@ def _fingerprint_js() -> str:
             };
             WebGLRenderingContext.prototype.getParameter  = new Proxy(WebGLRenderingContext.prototype.getParameter,  _glProxy);
             WebGL2RenderingContext.prototype.getParameter = new Proxy(WebGL2RenderingContext.prototype.getParameter, _glProxy);
+
+            // ── Extensions WebGL manquantes en prod (fix 3) ────────────────────
+            // En attach Windows, WEBGL_lose_context, WEBGL_debug_shaders et
+            // WEBGL_debug_renderer_info sont présentes. En prod Linux/SwiftShader
+            // elles sont absentes — signal de détection pour les anti-bots.
+            // On les injecte dans getSupportedExtensions() et getExtension().
+            const _EXT_INJECT = [
+                'WEBGL_lose_context',
+                'WEBGL_debug_shaders',
+                'WEBGL_debug_renderer_info',
+            ];
+            const _patchExtensions = (proto) => {
+                const _origGetSupported = proto.getSupportedExtensions;
+                proto.getSupportedExtensions = function() {
+                    const list = _origGetSupported.apply(this, arguments) || [];
+                    _EXT_INJECT.forEach(e => { if (!list.includes(e)) list.push(e); });
+                    return list;
+                };
+                const _origGetExt = proto.getExtension;
+                proto.getExtension = function(name) {
+                    const real = _origGetExt.apply(this, arguments);
+                    if (real) return real;
+                    // Retourner un objet vide pour les extensions injectées :
+                    // présence détectable, comportement neutre.
+                    if (_EXT_INJECT.includes(name)) return {};
+                    return null;
+                };
+            };
+            _patchExtensions(WebGLRenderingContext.prototype);
+            _patchExtensions(WebGL2RenderingContext.prototype);
         } catch(e) {}
 
         // ── screen dimensions (cohérent avec --window-size=1920,1080) ────────
@@ -393,6 +478,75 @@ def _fingerprint_js() -> str:
             Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 4 });
             Object.defineProperty(navigator, 'deviceMemory',        { get: () => 8 });
         } catch(e) {}
+
+        // ── Canvas Fingerprint (Linux → Windows) ─────────────────────────────
+        // En prod (Linux/Xvfb), le rendu GPU produit un canvas hash différent
+        // de Windows (anti-aliasing, pipeline couleur). BrowserLeaks détecte
+        // "GNU/Linux" via la signature canvas alors que l'UA annonce Windows —
+        // contradiction immédiate pour tout système anti-bot.
+        //
+        // Fix : hooker toDataURL, toBlob et getImageData sur le canvas 220×30
+        // utilisé par les outils de fingerprinting (dimensions BrowserLeaks).
+        // La dataURL de référence doit être extraite depuis le mode attach :
+        //   F12 → Console → document.querySelector('canvas').toDataURL()
+        // puis collée dans CANVAS_DATA_URL_WINDOWS ci-dessous.
+        //
+        // Tous les autres canvas (taille ≠ 220×30) passent sans interférence.
+        (function() {
+            // ⚠️ REMPLACER cette valeur par la dataURL extraite du canvas attach Windows
+            // (220×30, 8 bits/sample, truecolor+alpha, hash C8FBD3F8…)
+            const CANVAS_DATA_URL_WINDOWS = "data:image/png;base64,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";
+
+            // Retourne true si le canvas correspond aux dimensions du test fingerprinting
+            function _isFingerprint(canvas) {
+                return canvas.width === 220 && canvas.height === 30;
+            }
+
+            // Hook toDataURL : retourne la référence Windows pour le canvas 220×30
+            const _origToDataURL = HTMLCanvasElement.prototype.toDataURL;
+            HTMLCanvasElement.prototype.toDataURL = function(type, quality) {
+                if (_isFingerprint(this) && CANVAS_DATA_URL_WINDOWS !== "REPLACE_WITH_ATTACH_CANVAS_DATAURL") {
+                    return CANVAS_DATA_URL_WINDOWS;
+                }
+                return _origToDataURL.apply(this, arguments);
+            };
+
+            // Hook toBlob : convertit la dataURL de référence en Blob
+            const _origToBlob = HTMLCanvasElement.prototype.toBlob;
+            HTMLCanvasElement.prototype.toBlob = function(callback, type, quality) {
+                if (_isFingerprint(this) && CANVAS_DATA_URL_WINDOWS !== "REPLACE_WITH_ATTACH_CANVAS_DATAURL") {
+                    // Décoder la dataURL base64 → Uint8Array → Blob
+                    const parts = CANVAS_DATA_URL_WINDOWS.split(",");
+                    const mime  = (parts[0].match(/:(.*?);/) || [])[1] || "image/png";
+                    const bin   = atob(parts[1] || "");
+                    const buf   = new Uint8Array(bin.length);
+                    for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+                    callback(new Blob([buf], { type: mime }));
+                    return;
+                }
+                return _origToBlob.apply(this, arguments);
+            };
+
+            // Hook getImageData : retourner des pixels cohérents avec le rendu Windows
+            // Seuls les appels sur le canvas 220×30 sont interceptés ; on retourne
+            // un ImageData plat (RGBA=0) de même dimension pour ne pas déclencher
+            // d'erreur tout en cassant l'entropie du hash Linux.
+            const _origGetContext = HTMLCanvasElement.prototype.getContext;
+            HTMLCanvasElement.prototype.getContext = function(contextType, contextAttributes) {
+                const ctx = _origGetContext.apply(this, arguments);
+                if (!ctx || contextType !== "2d" || !_isFingerprint(this)) return ctx;
+
+                const _origGetImageData = ctx.getImageData.bind(ctx);
+                ctx.getImageData = function(sx, sy, sw, sh) {
+                    if (CANVAS_DATA_URL_WINDOWS === "REPLACE_WITH_ATTACH_CANVAS_DATAURL") {
+                        return _origGetImageData(sx, sy, sw, sh);
+                    }
+                    // Retourner un ImageData vide de même dimension : hash neutre
+                    return new ImageData(sw, sh);
+                };
+                return ctx;
+            };
+        })();
     """
 
 
@@ -853,6 +1007,7 @@ def launch_browser(config: dict | None = None):
 
     try:
         fingerprint = driver.execute_script("""
+            const uad = navigator.userAgentData;
             return {
                 language: navigator.language,
                 languages: navigator.languages,
@@ -860,7 +1015,12 @@ def launch_browser(config: dict | None = None):
                 platform: navigator.platform,
                 webdriver: navigator.webdriver,
                 userAgent: navigator.userAgent,
-                geolocation: !!navigator.geolocation
+                geolocation: !!navigator.geolocation,
+                userAgentData: uad ? {
+                    platform: uad.platform,
+                    mobile:   uad.mobile,
+                    brands:   uad.brands
+                } : null
             };
         """)
         print("[FP][BROWSER]", json.dumps(fingerprint, indent=2))
