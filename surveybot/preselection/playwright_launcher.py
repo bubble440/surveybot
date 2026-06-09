@@ -939,21 +939,18 @@ def launch_browser(config: dict | None = None):
         "--disable-extensions",
         "--disable-notifications",
         # ── Anti-fingerprint / automation ────────────────────────────────────
-        # --disable-blink-features=AutomationControlled supprime navigator.webdriver=true
-        # mais Chrome affiche une infobar "unsupported command-line flag" qui est
-        # elle-meme un signal bot (visible en screenshot, capture par certains SDK).
+        # NOTE IMPORTANTE : --disable-blink-features=AutomationControlled est
+        # intentionnellement ABSENT de la ligne de commande.
         #
-        # --test-type : flag interne Chrome qui desactive la verification "unsupported
-        #   flag" -> supprime la banniere jaune sans modifier le comportement de Chrome.
-        # --disable-infobars : desactive les infobars generiques (automation,
-        #   profil gere...) -> couvre "Chrome is being controlled by automated test".
+        # Ce flag est contre-productif : il supprime navigator.webdriver=true
+        # mais Chrome >= 112 affiche une banniere "You are using an unsupported
+        # command-line flag" qui est elle-meme un signal d'automation primaire
+        # (visible en screenshot, detecte par les SDK anti-bot).
         #
-        # Les deux flags ensemble eliminent la banniere visible. L'effet anti-bot
-        # reel (navigator.webdriver=undefined, suppression cdc_*) reste assure
-        # par le JS injecte via CDP (apply_fingerprint_overrides_cdp).
-        "--disable-blink-features=AutomationControlled",
-        "--test-type",
-        "--disable-infobars",
+        # La suppression de navigator.webdriver est assuree exclusivement par
+        # apply_fingerprint_overrides_cdp() via Page.addScriptToEvaluateOnNewDocument
+        # (patch sur Navigator.prototype avant tout JS de la page).
+        # Idem pour les proprietes cdc_* de ChromeDriver.
         "--window-size=1920,1080",
         f"--lang={locale}",
     ]
