@@ -421,7 +421,7 @@ def _fingerprint_js() -> str:
                             return 24;
                         // ── Résiduels fix 3 ───────────────────────────────────
                         case _GL.MAX_COMBINED_TEXTURE_IMAGE_UNITS:
-                            return 70;
+                            return 32;   // attach=32, prod était 70
                         case _GL.MAX_TEXTURE_MAX_ANISOTROPY_EXT:
                             return 16;
                         default:
@@ -433,14 +433,12 @@ def _fingerprint_js() -> str:
             WebGL2RenderingContext.prototype.getParameter = new Proxy(WebGL2RenderingContext.prototype.getParameter, _glProxy);
 
             // ── Extensions WebGL manquantes en prod (fix 3) ────────────────────
-            // En attach Windows, WEBGL_lose_context, WEBGL_debug_shaders et
-            // WEBGL_debug_renderer_info sont présentes. En prod Linux/SwiftShader
-            // elles sont absentes — signal de détection pour les anti-bots.
-            // On les injecte dans getSupportedExtensions() et getExtension().
+            // Comparaison prod vs attach (browserleaks) :
+            // WEBGL_lose_context, WEBGL_debug_shaders, WEBGL_debug_renderer_info
+            // sont présentes dans les DEUX modes → ne pas les réinjecter.
+            // WEBGL_provoking_vertex est présente en attach, absente en prod → à injecter.
             const _EXT_INJECT = [
-                'WEBGL_lose_context',
-                'WEBGL_debug_shaders',
-                'WEBGL_debug_renderer_info',
+                'WEBGL_provoking_vertex',
             ];
             const _patchExtensions = (proto) => {
                 const _origGetSupported = proto.getSupportedExtensions;
