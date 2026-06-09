@@ -547,6 +547,25 @@ def _fingerprint_js() -> str:
                 return ctx;
             };
         })();
+
+        // ── Audio Sample Rate (fix 4) ─────────────────────────────────────────
+        // En prod (Linux), AudioContext.sampleRate retourne 44100.
+        // En attach (Windows), il retourne 48000.
+        // Ce signal est détectable via AudioContext fingerprinting.
+        // On surcharge le constructeur AudioContext pour forcer 48000.
+        try {
+            const _OrigAudioContext = window.AudioContext || window.webkitAudioContext;
+            if (_OrigAudioContext) {
+                const _PatchedAudioContext = function(...args) {
+                    const ctx = new _OrigAudioContext(...args);
+                    Object.defineProperty(ctx, 'sampleRate', { get: () => 48000 });
+                    return ctx;
+                };
+                // Préserver la chaîne prototype pour les instanceof checks
+                _PatchedAudioContext.prototype = _OrigAudioContext.prototype;
+                window.AudioContext = window.webkitAudioContext = _PatchedAudioContext;
+            }
+        } catch(e) {}
     """
 
 
