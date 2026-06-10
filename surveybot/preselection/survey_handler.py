@@ -180,7 +180,7 @@ def run_attach_preselection_takeover(
     return False, "max_rounds_reached"
 
 
-def run_survey(driver, api_key, *, account_id: str, ctx=None, payout_name: str = "", payout_revolut_tag: str = ""):
+def run_survey(driver, api_key, *, account_id: str, ctx=None, payout_name: str = "", payout_revolut_tag: str = "", platform=None):
     # FIX-B3: compteur thread-local (voir _restart_tl ci-dessus)
     current_depth = _get_restart_depth() + 1
     _set_restart_depth(current_depth)
@@ -188,12 +188,12 @@ def run_survey(driver, api_key, *, account_id: str, ctx=None, payout_name: str =
         if current_depth > _MAX_RESTART_DEPTH:
             print(f"[SURVEY][FATAL] Profondeur de redémarrage max atteinte ({_MAX_RESTART_DEPTH}) → arrêt forcé")
             raise SystemExit("max_restart_depth_reached")
-        _run_survey_impl(driver, api_key, account_id=account_id, ctx=ctx, payout_name=payout_name, payout_revolut_tag=payout_revolut_tag)
+        _run_survey_impl(driver, api_key, account_id=account_id, ctx=ctx, payout_name=payout_name, payout_revolut_tag=payout_revolut_tag, platform=platform)
     finally:
         _set_restart_depth(current_depth - 1)
 
 
-def _run_survey_impl(driver, api_key, *, account_id: str, ctx=None, payout_name: str = "", payout_revolut_tag: str = ""):
+def _run_survey_impl(driver, api_key, *, account_id: str, ctx=None, payout_name: str = "", payout_revolut_tag: str = "", platform=None):
     import preselection.question_analyzer
     import preselection.response_executor
     import Survey.survey_solver
@@ -229,6 +229,7 @@ def _run_survey_impl(driver, api_key, *, account_id: str, ctx=None, payout_name:
                 "api_key": api_key,
                 "payout_name": "",
                 "payout_revolut_tag": "",
+                "platform": platform
             }
             launch.soft_restart(ctx, driver, reason)
         except Exception as e:
@@ -440,6 +441,7 @@ def _run_survey_impl(driver, api_key, *, account_id: str, ctx=None, payout_name:
                                 api_key=api_key,
                                 account_id=account_id,
                                 survey_context=ctx,
+                                platform=platform,
                             )
                         except TopSurveysReturn:
                             continue
