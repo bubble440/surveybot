@@ -70,16 +70,20 @@
       "EXT_disjoint_timer_query_webgl2",
       "EXT_float_blend",
       "EXT_polygon_offset_clamp",
+      "EXT_render_snorm",
       "EXT_texture_compression_bptc",
       "EXT_texture_compression_rgtc",
       "EXT_texture_filter_anisotropic",
       "EXT_texture_mirror_clamp_to_edge",
+      "EXT_texture_norm16",
+      "KHR_parallel_shader_compile",
       "NV_shader_noperspective_interpolation",
       "OES_draw_buffers_indexed",
       "OES_sample_variables",
       "OES_shader_multisample_interpolation",
       "OES_texture_float_linear",
       "OVR_multiview2",
+      "WEBGL_blend_func_extended",
       "WEBGL_clip_cull_distance",
       "WEBGL_compressed_texture_s3tc",
       "WEBGL_compressed_texture_s3tc_srgb",
@@ -88,12 +92,8 @@
       "WEBGL_lose_context",
       "WEBGL_multi_draw",
       "WEBGL_polygon_mode",
-      "WEBGL_stencil_texturing",
       "WEBGL_provoking_vertex",
-      "EXT_render_snorm",
-      "EXT_texture_norm16",
-      "KHR_parallel_shader_compile",
-      "WEBGL_blend_func_extended"
+      "WEBGL_stencil_texturing"
     ],
     "UNIFORM_BUFFER_OFFSET_ALIGNMENT": 256,
     "UNMASKED_RENDERER_WEBGL": "ANGLE (Intel, Intel(R) UHD Graphics 617 (0x000087C0) Direct3D11 vs_5_0 ps_5_0, D3D11)",
@@ -168,7 +168,7 @@
   },
   "meta": {
     "mode": "prod",
-    "timestamp": "2026-06-10T14:37:38Z",
+    "timestamp": "2026-06-10T15:01:19Z",
     "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
     "url": "https://browserleaks.com/webgl"
   }

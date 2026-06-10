@@ -205,6 +205,7 @@ def soft_restart_resume(ctx, driver, platform=None):
         ctx=survey_ctx,
         payout_name=ctx.get("payout_name", ""),
         payout_revolut_tag=ctx.get("payout_revolut_tag", ""),
+        platform=platform,
     )
 
 def soft_restart(ctx, driver, reason, platform=None):
@@ -611,6 +612,7 @@ def run_main_loop(driver, api_key: str, account_id: str, payout_name: str = "", 
         ctx=survey_ctx,
         payout_name=payout_name,
         payout_revolut_tag=payout_revolut_tag,
+        platform=platform,
     )
     # H1: en prod le bot doit quitter proprement (pas bloquer Chrome indéfiniment)
     if IS_LOCAL:

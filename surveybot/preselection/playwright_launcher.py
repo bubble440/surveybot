@@ -483,6 +483,82 @@ def _fingerprint_js() -> str:
             WebGLRenderingContext.prototype.getParameter  = new Proxy(WebGLRenderingContext.prototype.getParameter,  _glProxy);
             WebGL2RenderingContext.prototype.getParameter = new Proxy(WebGL2RenderingContext.prototype.getParameter, _glProxy);
 
+            // ── getContextAttributes() ────────────────────────────────────────
+            // BrowserLeaks appelle gl.getContextAttributes() et intègre alpha,
+            // antialias, depth, desynchronized… dans le calcul du Report Hash.
+            // SwiftShader/Xvfb retourne antialias=false (pas de MSAA hardware).
+            // La référence attach (Windows, GPU réel) a antialias=true.
+            // On force les attributs exacts de la référence attach.
+            const _CTX_ATTRS_TARGET = {
+                alpha:                      true,
+                antialias:                  true,
+                depth:                      true,
+                desynchronized:             false,
+                failIfMajorPerformanceCaveat: false,
+                powerPreference:            'default',
+                premultipliedAlpha:         true,
+                preserveDrawingBuffer:      false,
+                stencil:                    false,
+                xrCompatible:              false,
+                drawingBufferColorSpace:    'srgb',
+                unpackColorSpace:           'srgb',
+            };
+            const _patchCtxAttrs = (proto) => {
+                const _orig = proto.getContextAttributes;
+                if (!_orig) return;
+                proto.getContextAttributes = function() {
+                    const real = _orig.apply(this, arguments);
+                    if (!real) return real;
+                    return Object.assign({}, real, _CTX_ATTRS_TARGET);
+                };
+            };
+            _patchCtxAttrs(WebGLRenderingContext.prototype);
+            _patchCtxAttrs(WebGL2RenderingContext.prototype);
+
+            // ── getShaderPrecisionFormat() ────────────────────────────────────
+            // BrowserLeaks condense les valeurs sous "[-2^127,2^127](23)" (VERTEX/FRAGMENT).
+            // En SwiftShader, HIGH_FLOAT retourne rangeMin=127, rangeMax=127, precision=23
+            // — identique à la référence attach. Pas de divergence connue ici.
+            // Le hook ci-dessous garantit la cohérence si SwiftShader divergeait.
+            const _PRECISION_TARGET = {
+                HIGH_FLOAT:   { rangeMin: 127, rangeMax: 127, precision: 23 },
+                MEDIUM_FLOAT: { rangeMin: 15,  rangeMax: 15,  precision: 10 },
+                LOW_FLOAT:    { rangeMin: 15,  rangeMax: 15,  precision: 10 },
+                HIGH_INT:     { rangeMin: 31,  rangeMax: 30,  precision: 0  },
+                MEDIUM_INT:   { rangeMin: 15,  rangeMax: 14,  precision: 0  },
+                LOW_INT:      { rangeMin: 15,  rangeMax: 14,  precision: 0  },
+            };
+            const _patchShaderPrecision = (proto, glConst) => {
+                const _origGSPF = proto.getShaderPrecisionFormat;
+                if (!_origGSPF) return;
+                proto.getShaderPrecisionFormat = function(shaderType, precisionType) {
+                    const real = _origGSPF.apply(this, arguments);
+                    // Mapper les constantes GL vers les clés du tableau cible
+                    const _PT_MAP = {
+                        [glConst.HIGH_FLOAT]:   'HIGH_FLOAT',
+                        [glConst.MEDIUM_FLOAT]: 'MEDIUM_FLOAT',
+                        [glConst.LOW_FLOAT]:    'LOW_FLOAT',
+                        [glConst.HIGH_INT]:     'HIGH_INT',
+                        [glConst.MEDIUM_INT]:   'MEDIUM_INT',
+                        [glConst.LOW_INT]:      'LOW_INT',
+                    };
+                    const key = _PT_MAP[precisionType];
+                    if (!key || !_PRECISION_TARGET[key]) return real;
+                    const t = _PRECISION_TARGET[key];
+                    // Retourner un objet calqué sur WebGLShaderPrecisionFormat
+                    return { rangeMin: t.rangeMin, rangeMax: t.rangeMax, precision: t.precision };
+                };
+            };
+            try {
+                // Accéder aux constantes GL via une instance temporaire
+                const _tmpCanvas = document.createElement('canvas');
+                const _glTmp = _tmpCanvas.getContext('webgl2') || _tmpCanvas.getContext('webgl');
+                if (_glTmp) {
+                    _patchShaderPrecision(WebGLRenderingContext.prototype,  _glTmp);
+                    _patchShaderPrecision(WebGL2RenderingContext.prototype, _glTmp);
+                }
+            } catch(e) {}
+
             // ── Extensions WebGL manquantes en prod (fix 3) ────────────────────
             // Comparaison prod vs attach (browserleaks) :
             // WEBGL_lose_context, WEBGL_debug_shaders, WEBGL_debug_renderer_info
@@ -501,12 +577,39 @@ def _fingerprint_js() -> str:
                 'WEBGL_compressed_texture_etc',
                 'WEBGL_compressed_texture_etc1',
             ];
+            // Ordre exact de la liste attach (référence WebGL Report Hash)
+            const _EXT_ORDER = [
+                'EXT_clip_control','EXT_color_buffer_float','EXT_color_buffer_half_float',
+                'EXT_conservative_depth','EXT_depth_clamp','EXT_disjoint_timer_query_webgl2',
+                'EXT_float_blend','EXT_polygon_offset_clamp','EXT_render_snorm',
+                'EXT_texture_compression_bptc','EXT_texture_compression_rgtc',
+                'EXT_texture_filter_anisotropic','EXT_texture_mirror_clamp_to_edge',
+                'EXT_texture_norm16','KHR_parallel_shader_compile',
+                'NV_shader_noperspective_interpolation','OES_draw_buffers_indexed',
+                'OES_sample_variables','OES_shader_multisample_interpolation',
+                'OES_texture_float_linear','OVR_multiview2','WEBGL_blend_func_extended',
+                'WEBGL_clip_cull_distance','WEBGL_compressed_texture_s3tc',
+                'WEBGL_compressed_texture_s3tc_srgb','WEBGL_debug_renderer_info',
+                'WEBGL_debug_shaders','WEBGL_lose_context','WEBGL_multi_draw',
+                'WEBGL_polygon_mode','WEBGL_provoking_vertex','WEBGL_stencil_texturing',
+            ];
             const _patchExtensions = (proto) => {
                 const _origGetSupported = proto.getSupportedExtensions;
                 proto.getSupportedExtensions = function() {
                     let list = _origGetSupported.apply(this, arguments) || [];
+                    // Supprimer les extensions SwiftShader absentes en attach
                     list = list.filter(e => !_EXT_REMOVE.includes(e));
+                    // Injecter les extensions manquantes
                     _EXT_INJECT.forEach(e => { if (!list.includes(e)) list.push(e); });
+                    // Trier selon l'ordre exact de la référence attach
+                    list.sort((a, b) => {
+                        const ia = _EXT_ORDER.indexOf(a);
+                        const ib = _EXT_ORDER.indexOf(b);
+                        if (ia === -1 && ib === -1) return 0;
+                        if (ia === -1) return 1;
+                        if (ib === -1) return -1;
+                        return ia - ib;
+                    });
                     return list;
                 };
                 const _origGetExt = proto.getExtension;
