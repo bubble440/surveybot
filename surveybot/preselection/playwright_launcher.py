@@ -504,14 +504,14 @@ def _fingerprint_js() -> str:
             Object.defineProperty(screen, 'height',      { get: () => 1080 });
             Object.defineProperty(screen, 'availWidth',  { get: () => 1920 });
             Object.defineProperty(screen, 'availHeight', { get: () => 1040 });
-            Object.defineProperty(screen, 'colorDepth',  { get: () => 24 });
-            Object.defineProperty(screen, 'pixelDepth',  { get: () => 24 });
+            Object.defineProperty(screen, 'colorDepth',  { get: () => 32 });
+            Object.defineProperty(screen, 'pixelDepth',  { get: () => 32 });
         } catch(e) {}
 
         // ── Hardware hints (cohérents avec un laptop standard) ───────────────
         try {
             Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 4 });
-            Object.defineProperty(navigator, 'deviceMemory',        { get: () => 8 });
+            Object.defineProperty(navigator, 'deviceMemory',        { get: () => 16 });
         } catch(e) {}
 
         // ── Canvas Fingerprint (Linux → Windows) ─────────────────────────────
@@ -1110,6 +1110,13 @@ def launch_browser(config: dict | None = None):
                 try { delete window[k]; } catch(e) {}
                 try { Object.defineProperty(window, k, { get: () => undefined, configurable: true }); } catch(e) {}
             }
+
+            // Patch deviceMemory et hardwareConcurrency sur la page courante
+            // (Page.addScriptToEvaluateOnNewDocument ne couvre pas la page déjà chargée)
+            try {
+                Object.defineProperty(navigator, 'deviceMemory',        { get: () => 16 });
+                Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 4  });
+            } catch(e) {}
         """)
         log.info("[FP][IMMEDIATE] Flag automation supprimé sur la page courante.")
     except Exception as e:
