@@ -61,6 +61,25 @@ def _local_pause(reason: str = "") -> None:
         return
     
     
+def _wait_for_survey_popup(driver, timeout: int = 20) -> None:
+    """
+    Attend que le popup de qualification (ou la première question du preselect)
+    soit visuellement présent dans le DOM avant de continuer le traitement.
+    Évite une extraction DOM prématurée juste après le clic sur une carte survey.
+    """
+    try:
+        WebDriverWait(driver, timeout).until(
+            EC.visibility_of_element_located((By.CSS_SELECTOR,
+                "[data-test-id='ps-popup-content-wrapper'], "
+                "[data-test-id='ps-user-qualified-notice'], "
+                "[data-test-id='ps-question-answers-wrapper']"
+            ))
+        )
+        print("✅ Popup survey chargé et visible.")
+    except Exception:
+        print("⚠️ Timeout attente popup survey — on continue quand même.")
+
+
 def _is_debug_enabled() -> bool:
     return os.getenv("LOG_LEVEL", "INFO").strip().upper() == "DEBUG"
 
@@ -514,6 +533,7 @@ def go_to_best_value_survey(driver):
             print("📝 Survey le plus rentable cliqué.")
             from Management.redirect_watcher import wait_for_page_load
             wait_for_page_load(driver, timeout=30)
+            _wait_for_survey_popup(driver)
             return
         except Exception as e:
             print("⚠️ Échec clic survey le plus rentable:", type(e).__name__, "-", e)
@@ -527,6 +547,7 @@ def go_to_best_value_survey(driver):
         print("📝 Fallback: premier survey cliqué.")
         from Management.redirect_watcher import wait_for_page_load
         wait_for_page_load(driver, timeout=30)
+        _wait_for_survey_popup(driver)
     except Exception as e:
         print("🛑 Exception sélection du survey :", type(e).__name__, "-", e)
 
