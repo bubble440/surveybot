@@ -626,6 +626,8 @@ def apply_fingerprint_overrides_cdp(driver) -> None:
         spoofed_ua = _re.sub(r"HeadlessChrome", "Chrome", raw_ua)
         spoofed_ua = _re.sub(r"X11;\s*", "", spoofed_ua)
         spoofed_ua = _re.sub(r"Linux x86_64", "Windows NT 10.0; Win64; x64", spoofed_ua)
+        # Forcer la version Chrome à 148 pour cohérence avec uaFullVersion/fullVersionList
+        spoofed_ua = _re.sub(r"Chrome/\d+\.", "Chrome/148.", spoofed_ua)
         driver.execute_cdp_cmd("Network.setUserAgentOverride", {
             "userAgent": spoofed_ua,
             "platform": "Win32",
