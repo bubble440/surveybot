@@ -404,6 +404,11 @@ def _fingerprint_js() -> str:
                 // Paramètres résiduels non harmonisés (fix 3)
                 MAX_COMBINED_TEXTURE_IMAGE_UNITS:         0x8B4D,  // 64    → 70
                 MAX_TEXTURE_MAX_ANISOTROPY_EXT:           0x84FF,  // 18    → 16
+                // Paramètres divergents (fix 3.4)
+                MAX_FRAGMENT_UNIFORM_COMPONENTS:          0x8B49,  // prod=16384 → attach=4096
+                MAX_DRAW_BUFFERS:                         0x8824,  // prod=6     → attach=8
+                MAX_COLOR_ATTACHMENTS:                    0x8CDF,  // prod=6     → attach=8
+                MAX_SAMPLES:                              0x8D57,  // prod=4     → attach=16
             };
             const _glProxy = {
                 apply(target, ctx, args) {
@@ -461,6 +466,15 @@ def _fingerprint_js() -> str:
                             return 32;   // attach=32, prod était 70
                         case _GL.MAX_TEXTURE_MAX_ANISOTROPY_EXT:
                             return 16;
+                        // ── Fix 3.4 ───────────────────────────────────────────
+                        case _GL.MAX_FRAGMENT_UNIFORM_COMPONENTS:
+                            return 4096;
+                        case _GL.MAX_DRAW_BUFFERS:
+                            return 8;
+                        case _GL.MAX_COLOR_ATTACHMENTS:
+                            return 8;
+                        case _GL.MAX_SAMPLES:
+                            return 16;
                         default:
                             return Reflect.apply(target, ctx, args);
                     }
@@ -473,19 +487,31 @@ def _fingerprint_js() -> str:
             // Comparaison prod vs attach (browserleaks) :
             // WEBGL_lose_context, WEBGL_debug_shaders, WEBGL_debug_renderer_info
             // sont présentes dans les DEUX modes → ne pas les réinjecter.
-            // WEBGL_provoking_vertex est présente en attach, absente en prod → à injecter.
+            // Fix 3.4 : ajout des extensions présentes en attach, absentes en prod.
             const _EXT_INJECT = [
                 'WEBGL_provoking_vertex',
+                'EXT_render_snorm',
+                'EXT_texture_norm16',
+                'KHR_parallel_shader_compile',
+                'WEBGL_blend_func_extended',
+            ];
+            // Extensions présentes en prod (SwiftShader) mais absentes en attach → à masquer
+            const _EXT_REMOVE = [
+                'WEBGL_compressed_texture_astc',
+                'WEBGL_compressed_texture_etc',
+                'WEBGL_compressed_texture_etc1',
             ];
             const _patchExtensions = (proto) => {
                 const _origGetSupported = proto.getSupportedExtensions;
                 proto.getSupportedExtensions = function() {
-                    const list = _origGetSupported.apply(this, arguments) || [];
+                    let list = _origGetSupported.apply(this, arguments) || [];
+                    list = list.filter(e => !_EXT_REMOVE.includes(e));
                     _EXT_INJECT.forEach(e => { if (!list.includes(e)) list.push(e); });
                     return list;
                 };
                 const _origGetExt = proto.getExtension;
                 proto.getExtension = function(name) {
+                    if (_EXT_REMOVE.includes(name)) return null;
                     const real = _origGetExt.apply(this, arguments);
                     if (real) return real;
                     // Retourner un objet vide pour les extensions injectées :
