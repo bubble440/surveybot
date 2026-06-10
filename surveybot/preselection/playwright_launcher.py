@@ -244,11 +244,11 @@ def _fingerprint_js() -> str:
                         model:           '',
                         platform:        'Windows',
                         platformVersion: '10.0.0',
-                        uaFullVersion:   '148.0.0.0',
+                        uaFullVersion:   '148.0.7776.219',
                         fullVersionList: [
-                            { brand: 'Chromium',      version: '148.0.0.0' },
-                            { brand: 'Google Chrome', version: '148.0.0.0' },
-                            { brand: 'Not-A.Brand',   version: '99.0.0.0'  },
+                            { brand: 'Chromium',      version: '148.0.7776.219' },
+                            { brand: 'Google Chrome', version: '148.0.7776.219' },
+                            { brand: 'Not-A.Brand',   version: '99.0.0.0'       },
                         ],
                         wow64: false,
                     };
