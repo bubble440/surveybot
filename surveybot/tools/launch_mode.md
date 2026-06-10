@@ -73,6 +73,9 @@ flyctl ssh console -a surveybot-bot -s
 ## Étape 3 — Dans le shell Linux (une commande à la fois)
 pip install boto3 pillow selenium --quiet
 DISPLAY=:99 PROXY_URL="http://14acfbee9aeeb:34d65cf2d8@72.9.174.121:12323" PROXY_USER="14acfbee9aeeb" PROXY_PASS="34d65cf2d8" ACCOUNT_ID=topsurveys_bot_001 python tools/fingerprint_check.py
+
+DISPLAY=:99 PROXY_URL="http://14acfbee9aeeb:34d65cf2d8@72.9.174.121:12323" PROXY_USER="14acfbee9aeeb" PROXY_PASS="34d65cf2d8" ACCOUNT_ID=topsurveys_bot_001 python tools/webgl_json_dump.py
+
 # Les PNG sont sauvegardés dans /tmp/fp_*.png
 # L'upload R2 échouera si SNAP_R2_ACCOUNT_ID n'est pas défini — c'est normal, les PNG locaux suffisent
 
@@ -82,39 +85,11 @@ flyctl ssh sftp get /tmp/prod_webgl.png -a surveybot-bot
 flyctl ssh sftp get /tmp/prod_javascript.png -a surveybot-bot
 flyctl ssh sftp get /tmp/prod_ip.png -a surveybot-bot
 # Les fichiers atterrissent dans le répertoire courant PowerShell
+# Récupérer le résultat :
+
+## Etape 4.2: download le JSON Dump de Webgl si tel etait le but
+flyctl ssh sftp get /tmp/prod_webgl_dump.json -a surveybot-bot
 
 ## Étape 5 — Détruire la machine idle après les tests (PowerShell)
 flyctl machine destroy <ID-DE-LA-MACHINE> -a surveybot-bot --force
 # Remplacer <ID-DE-LA-MACHINE> par l'ID noté à l'étape 1
-
-
-# ------------------------------------------------------------------------------------------------------------------------------------------
-# Signaux fingerprint identifiés — comparaison attach vs prod (22 avril 2026)
-# ------------------------------------------------------------------------------------------------------------------------------------------
-# Signal                  | Attach (Windows)        | Prod (Fly.io)                        | Statut
-# ----------------------- | ----------------------- | ------------------------------------ | -------
-# Canvas OS détecté       | Windows                 | GNU/Linux                            | ❌ KO
-# User-Agent HTTP headers | Windows NT 10.0; Win64  | X11; Windows NT 10.0; Win64          | ❌ KO (X11; présent)
-# WebGL                   | Intel UHD 617 actif     | Désactivé (disabled or unavailable)  | ❌ KO
-# Timezone JS             | Europe/Paris            | Europe/Paris                         | ✅ OK
-# navigator.platform      | Win32                   | Win32                                | ✅ OK
-# navigator.webdriver     | absent                  | false                                | ✅ OK
-# Plugins                 | 3 plugins Chrome        | 3 plugins Chrome                     | ✅ OK
-# IP / géolocalisation    | —                       | France / Paris                       | ✅ OK
-#
-# Corrections à apporter (dans playwright_launcher.py) :
-#   1. User-Agent HTTP : utiliser CDP Network.setUserAgentOverride (en plus du patch JS)
-#   2. WebGL : ajouter --use-gl=angle --use-angle=swiftshader aux args Chrome
-
-
-
-
-
-
-
-
-
-$env:ACCOUNT_ID="test-account"
-$env:PLATFORM="ysense"
-$env:EMAIL="qatar.chimp729@8shield.net"
-$env:PASSWORD="p@ssw0rD!123"
