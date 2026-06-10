@@ -18,10 +18,10 @@ import sys
 import time
 
 FINGERPRINT_PAGES = [
-    ("canvas",     "https://browserleaks.com/canvas"),
-    ("webgl",      "https://browserleaks.com/webgl"),
+    # ("canvas",     "https://browserleaks.com/canvas"),
     ("javascript", "https://browserleaks.com/javascript"),
-    ("ip",         "https://browserleaks.com/ip"),
+    ("webgl",      "https://browserleaks.com/webgl"),
+    # ("ip",         "https://browserleaks.com/ip"),
 ]
 
 WAIT_AFTER_LOAD = 5
