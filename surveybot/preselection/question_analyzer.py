@@ -491,9 +491,17 @@ def click_participer_if_qualified(driver):
                 .join(" ")
         """
         )
-        if re.search(r"tu\s+t.es\s+qualifi", page_text.lower()):            
-            wait = WebDriverWait(driver, 5)
+        if re.search(r"tu\s+t.es\s+qualifi", page_text.lower()):
+            # 1b. Attendre que le bouton Participer soit réellement visible dans le DOM
+            # (le message de qualification peut apparaître avant que le bouton soit rendu)
+            wait = WebDriverWait(driver, 30)
             btn = wait.until(
+                EC.visibility_of_element_located(
+                    (By.CSS_SELECTOR, 'button[data-test-id="ps-common-actions-button"]')
+                )
+            )
+            # S'assurer également que le bouton est cliquable (pas disabled)
+            wait.until(
                 EC.element_to_be_clickable(
                     (By.CSS_SELECTOR, 'button[data-test-id="ps-common-actions-button"]')
                 )
