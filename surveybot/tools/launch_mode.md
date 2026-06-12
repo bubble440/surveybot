@@ -1,20 +1,4 @@
 # ------------------------------------------------------------------------------------------------------------------------------------------
-#  3 Modes de lancement
-# ------------------------------------------------------------------------------------------------------------------------------------------
-![Cartographie des mode de lancement](image-1.png)
-
-## 1 Mode Attach
- Sa fais via les fichiers ps1 - rien a configurer ### Dans ce mode, le navigateur Chrome ouvert n'a aucun flag.
-
-## 2 Mode prod
-Lancement Fly.io, les variables sont stockées dans Fly Secrets ### Flag et navigateur inconnu car les screenshots ne capture que la page et non le bureau complet.
-
-## 3 Mode Local ()
-
-Se fais dans un terminal WSL, injecte toutes les variables ci dessous et lance le programme. ### Le navigateur est Chromium et le flag est --no-sandbox
-
-
-# ------------------------------------------------------------------------------------------------------------------------------------------
 # Deploiement en mode Local (terminal WSL)
 # ------------------------------------------------------------------------------------------------------------------------------------------
 # Activate the terminal
@@ -50,10 +34,6 @@ python3 surveybot/main.py
 # ------------------------------------------------------------------------------------------------------------------------------------------
 # Procédure : Capture fingerprint prod (browserleaks)
 # ------------------------------------------------------------------------------------------------------------------------------------------
-# But : capturer les pages browserleaks.com en pleine page depuis une machine Fly.io
-# pour comparer le fingerprint prod vs attach et détecter les signaux de détection bot.
-# Script utilisé : tools/fingerprint_check.py
-# Résultats : /tmp/fp_canvas.png, fp_webgl.png, fp_javascript.png, fp_ip.png
 
 ## Étape 1 — Lancer une machine idle (PowerShell)
 # Lance l'image bot avec Xvfb démarré mais sans le bot (sleep 3600 = 1h disponible)
@@ -72,9 +52,11 @@ flyctl ssh console -a surveybot-bot -s
 
 ## Étape 3 — Dans le shell Linux (une commande à la fois)
 pip install boto3 pillow selenium --quiet
-DISPLAY=:99 PROXY_URL="http://14abf236340a1:bb82a9e63b@185.134.194.152:12323" PROXY_USER="14abf236340a1" PROXY_PASS="bb82a9e63b" ACCOUNT_ID=topsurveys_bot_001 python tools/fingerprint_check.py
+DISPLAY=:99 PROXY_URL="http://14a4b3f88b892:9a42e8da8a@81.181.236.36:12323" PROXY_USER="14a4b3f88b892" PROXY_PASS="9a42e8da8a" ACCOUNT_ID=topsurveys_bot_001 python tools/fingerprint_check.py
 
-DISPLAY=:99 PROXY_URL="http://14abf236340a1:bb82a9e63b@185.134.194.152:12323" PROXY_USER="14abf236340a1" PROXY_PASS="bb82a9e63b" ACCOUNT_ID=topsurveys_bot_001 python tools/webgl_json_dump.py
+DISPLAY=:99 PROXY_URL="http://14a4b3f88b892:9a42e8da8a@81.181.236.36:12323" PROXY_USER="14a4b3f88b892" PROXY_PASS="9a42e8da8a" ACCOUNT_ID=topsurveys_bot_001 python tools/webgl_json_dump.py
+
+DISPLAY=:99 PROXY_URL="http://14a4b3f88b892:9a42e8da8a@81.181.236.36:12323" PROXY_USER="14a4b3f88b892" PROXY_PASS="9a42e8da8a" ACCOUNT_ID=topsurveys_bot_001 python tools/multi_access_check.py
 
 # Les PNG sont sauvegardés dans /tmp/fp_*.png
 # L'upload R2 échouera si SNAP_R2_ACCOUNT_ID n'est pas défini — c'est normal, les PNG locaux suffisent
