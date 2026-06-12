@@ -2141,3 +2141,71 @@ def click_cta_strong_any_context(driver, text=None, label_hint=None, depth: int 
                     continue
 
     return False
+
+
+# Guard DOM strict : page de prequalification Cint/QPS
+# Déclenché uniquement sur qps.cint.com quand le lien "abort" est présent
+_QPS_SKIP_SELECTOR = "a.btn.btn-small.pull-right[href*='/abort']"
+_QPS_SKIP_HOST = "qps.cint.com"
+
+def try_click_qps_skip_to_survey(driver, *, max_wait_s: float = 8.0, poll_s: float = 0.5) -> bool:
+    """
+    Sur qps.cint.com, clique sur le lien 'Passez directement à l'enquête'
+    dès qu'il est visuellement présent (viewport réel, pas seulement DOM).
+
+    Guard strict : déclenché uniquement si l'hôte courant est qps.cint.com
+    ET que le sélecteur a.btn.btn-small.pull-right[href*='/abort'] est trouvé.
+
+    Stratégie : clic Selenium natif (pas JS, pas CDP) pour éviter les signaux bot.
+    """
+    import os, time
+    from selenium.webdriver.common.by import By
+    from selenium.common.exceptions import ElementNotInteractableException, StaleElementReferenceException
+
+    try:
+        current_url = driver.current_url or ""
+    except Exception:
+        return False
+
+    if _QPS_SKIP_HOST not in current_url:
+        return False
+
+    cta_intercept = (os.environ.get("CTA_INTERCEPT_ONLY", "0") or "0").strip() == "1"
+
+    deadline = time.time() + max_wait_s
+    while time.time() < deadline:
+        try:
+            els = driver.find_elements(By.CSS_SELECTOR, _QPS_SKIP_SELECTOR)
+            if not els:
+                time.sleep(poll_s)
+                continue
+
+            el = els[0]
+
+            # Vérification viewport réel : is_displayed() + rect non-nul
+            if not el.is_displayed():
+                time.sleep(poll_s)
+                continue
+
+            rect = el.rect or {}
+            if rect.get("width", 0) < 5 or rect.get("height", 0) < 5:
+                time.sleep(poll_s)
+                continue
+
+            # Élément visuellement présent et cliquable
+            if cta_intercept:
+                log_info("QPS_SKIP", "CTA_INTERCEPT_ONLY — lien 'Passez directement à l'enquête' trouvé, clic intercepté")
+                return True
+
+            el.click()
+            log_info("QPS_SKIP", "Clic sur 'Passez directement à l'enquête' (qps.cint.com)")
+            return True
+
+        except (StaleElementReferenceException, ElementNotInteractableException):
+            time.sleep(poll_s)
+            continue
+        except Exception:
+            return False
+
+    log_info("QPS_SKIP", f"Lien 'Passez directement à l'enquête' introuvable après {max_wait_s}s")
+    return False
