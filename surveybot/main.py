@@ -404,7 +404,13 @@ def run_attach_takeover(driver, *, api_key: str, account_id: str) -> None:
     print(f"[ATTACH] takeover loop start (max_steps={max_steps}) url={_attach_display_url(getattr(driver,'current_url',''))}")
     for i in range(1, max_steps + 1):
         try:
-            # === RETOUR TOPSURVEYS ? ===
+            # Préqualification Cint/QPS : passer directement au sondage si disponible
+            from Survey.cta_handler import try_click_qps_skip_to_survey
+            if try_click_qps_skip_to_survey(driver):
+                time.sleep(2.0)
+                continue
+
+            # === RETOUR TOPSURVEYS ? ===            
             try:
                 _cur_url = (driver.current_url or "").lower()
                 if "topsurveys.app" in _cur_url:

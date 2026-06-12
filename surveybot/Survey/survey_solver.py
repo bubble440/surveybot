@@ -465,6 +465,14 @@ def solve_full_survey(driver, api_key, *, account_id: str, survey_context=None, 
             from Management.snap_uploader import capture_and_upload
             capture_and_upload(driver, "survey_loop")
 
+        # Préqualification Cint/QPS : passer directement au sondage si disponible
+        from Survey.cta_handler import try_click_qps_skip_to_survey
+        if try_click_qps_skip_to_survey(driver):
+            time.sleep(PAUSE_POST_CTA_NAV)
+            last_url = driver.current_url
+            continue
+
+        # Réinitialise le drapeau de succès côté handlers
         # Réinitialise le drapeau de succès côté handlers
         try:
             setattr(driver, "last_action_success", False)
