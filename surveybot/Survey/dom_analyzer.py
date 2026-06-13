@@ -59,6 +59,7 @@ try:
         _extract_decipher_answers_list_fallback,
         _extract_qarts_hidden_answers_groups,
         _extract_decipher_ranksort_dropdown_blocks,
+        _extract_decipher_atmrating_blocks,
     )
 
     from Survey.dom_extractors_areyounet import (
@@ -172,6 +173,7 @@ except ImportError:
         _extract_decipher_answers_list_fallback,
         _extract_qarts_hidden_answers_groups,
         _extract_decipher_ranksort_dropdown_blocks,
+        _extract_decipher_atmrating_blocks,
     )
     from Survey.dom_extractors_areyounet import (
         _extract_areyounet_matrix_blocks,
@@ -1822,6 +1824,16 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         ranksort_blocks = _extract_decipher_ranksort_dropdown_blocks(driver, frame_chain)
         if ranksort_blocks:
             return ranksort_blocks
+    except Exception:
+        pass
+
+    # --- 0i-septies-bis) Decipher sq-atmrating (rating par affirmations, boutons span) ---
+    # Guard DOM strict : div.question.sq-atmrating + div.sq-atmrating-container + span.atmrating-btn
+    # Les inputs type=text sont non-visibles → skippés par le pipeline générique.
+    try:
+        atmrating_blocks = _extract_decipher_atmrating_blocks(driver, frame_chain)
+        if atmrating_blocks:
+            return atmrating_blocks
     except Exception:
         pass
 
