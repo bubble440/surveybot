@@ -1657,6 +1657,183 @@ def _extract_decipher_answers_list_fallback(driver, frame_chain: List[Any]) -> L
 
 
 # ================================================================================
+# DECIPHER — ATMRATING (sq-atmrating, boutons 1..N sur inputs text cachés)
+# ================================================================================
+
+def _extract_decipher_atmrating_blocks(driver, frame_chain: List[Any]) -> List[Dict[str, Any]]:
+    """
+    Extrait les blocs d'une question Decipher sq-atmrating (rating par affirmations).
+
+    Guard DOM strict (double) :
+    1. div.question.sq-atmrating présent dans le DOM
+    2. contient au moins un div.sq-atmrating-container avec span.atmrating-btn
+
+    Produit N blocs radio (un par sous-question / sq-atmrating-container) :
+    - itype='radio', options = valeurs des boutons (ex: ["1","2","3","4","5"])
+    - question = texte global h1.question-text + " - " + texte div.sq-atmrating-row-legend
+    - target_id ancré sur input[@name] (discriminant par container)
+    - XPath cible : span.atmrating-btn dans le container (clic JS)
+    - Flag payload : decipher_atmrating=True
+    Log discriminant : [DOM_DECIPHER_ATMRATING] blocks_extracted=N
+    """
+    blocks: List[Dict[str, Any]] = []
+
+    # Guard 1 : question container sq-atmrating
+    try:
+        q_containers = driver.find_elements(By.CSS_SELECTOR, "div.question.sq-atmrating")
+    except Exception:
+        return blocks
+    if not q_containers:
+        return blocks
+
+    for q_el in q_containers:
+        try:
+            # Guard 2 : au moins un container avec boutons atmrating
+            try:
+                probe = q_el.find_elements(By.CSS_SELECTOR, "div.sq-atmrating-container span.atmrating-btn")
+            except Exception:
+                probe = []
+            if not probe:
+                continue
+
+            # Question globale
+            global_q = ""
+            try:
+                global_q = (q_el.find_element(By.CSS_SELECTOR, "h1.question-text").text or "").strip()
+            except Exception:
+                pass
+
+            # Instruction optionnelle (fusionnée)
+            instruction = ""
+            try:
+                instruction = (q_el.find_element(By.CSS_SELECTOR, "h2.instruction-text").text or "").strip()
+            except Exception:
+                pass
+            q_prefix = f"{global_q} {instruction}".strip() if instruction else global_q
+
+            # Valeurs des boutons (identiques pour tous les containers — lire une fois)
+            btn_values: List[str] = []
+            try:
+                first_btns = q_el.find_elements(
+                    By.CSS_SELECTOR,
+                    "div.sq-atmrating-container:first-child span.atmrating-btn"
+                )
+                for b in first_btns:
+                    # Les boutons portent des zero-width spaces — strip agressif
+                    raw = (b.get_attribute("textContent") or b.text or "").strip()
+                    raw = raw.replace("\u200b", "").strip()
+                    if raw:
+                        btn_values.append(raw)
+            except Exception:
+                pass
+            if not btn_values:
+                continue
+
+            # Un bloc par sous-question (div.sq-atmrating-container)
+            try:
+                row_containers = q_el.find_elements(By.CSS_SELECTOR, "div.sq-atmrating-container")
+            except Exception:
+                continue
+
+            for row_el in row_containers:
+                # Texte de la sous-question
+                row_legend = ""
+                try:
+                    row_legend = (row_el.find_element(
+                        By.CSS_SELECTOR, "div.sq-atmrating-row-legend"
+                    ).get_attribute("textContent") or "").strip()
+                except Exception:
+                    pass
+                if not row_legend:
+                    continue
+
+                # Input caché portant le name discriminant
+                inp_name = ""
+                inp_id = ""
+                try:
+                    inp = row_el.find_element(By.CSS_SELECTOR, "input[type='text']")
+                    inp_name = (inp.get_attribute("name") or "").strip()
+                    inp_id = (inp.get_attribute("id") or "").strip()
+                except Exception:
+                    pass
+                if not inp_name and not inp_id:
+                    continue
+
+                question_text = f"{q_prefix} - {row_legend}" if q_prefix else row_legend
+
+                # XPath par bouton : ancré sur le container via l'input discriminant,
+                # puis span.atmrating-btn correspondant à la valeur (position 1-based).
+                option_xpath_map: Dict[str, str] = {}
+                for btn_idx, val in enumerate(btn_values, start=1):
+                    val_norm = _norm_lc(val)
+                    if not val_norm:
+                        continue
+                    # Scope strict : container qui contient l'input discriminant
+                    if inp_id:
+                        xp = (
+                            f"(//div[contains(concat(' ',normalize-space(@class),' '),' sq-atmrating-container ')"
+                            f" and .//input[@id={_xpath_literal(inp_id)}]]"
+                            f"//span[contains(concat(' ',normalize-space(@class),' '),' atmrating-btn ')])[{btn_idx}]"
+                        )
+                    else:
+                        xp = (
+                            f"(//div[contains(concat(' ',normalize-space(@class),' '),' sq-atmrating-container ')"
+                            f" and .//input[@name={_xpath_literal(inp_name)}]]"
+                            f"//span[contains(concat(' ',normalize-space(@class),' '),' atmrating-btn ')])[{btn_idx}]"
+                        )
+                    option_xpath_map[val_norm] = xp
+
+                if len(option_xpath_map) < 2:
+                    continue
+
+                group_key = f"radio:atmrating:{inp_name or inp_id}"
+                target_id = make_target_id("group", group_key, question_text)
+
+                register_target(
+                    target_id,
+                    {
+                        "kind": "group",
+                        "frame_chain": list(frame_chain or []),
+                        "itype": "radio",
+                        "group_key": group_key,
+                        "question": question_text,
+                        "input_name": inp_name,
+                        "max_select": 1,
+                        "options": btn_values,
+                        "option_xpath_map": option_xpath_map,
+                        "decipher_atmrating": True,
+                    },
+                )
+
+                blocks.append(
+                    {
+                        "target_id": target_id,
+                        "kind": "group",
+                        "itype": "radio",
+                        "question": question_text,
+                        "options": list(btn_values),
+                        "max_select": 1,
+                        "min_select": 1,
+                        "context": {
+                            "kind": "group",
+                            "group_key": group_key,
+                            "decipher_atmrating": True,
+                        },
+                    }
+                )
+
+        except Exception as exc:
+            if is_debug():
+                log_debug("[DOM_DECIPHER_ATMRATING]", f"error: {type(exc).__name__}: {exc}")
+            continue
+
+    if blocks:
+        log_debug("[DOM_DECIPHER_ATMRATING]", f"blocks_extracted={len(blocks)}")
+
+    return blocks
+
+
+# ================================================================================
 # DECIPHER / NORSTAT — RANKSORT DROPDOWN (sq-ranksort, table.grid display:none)
 # ================================================================================
 
