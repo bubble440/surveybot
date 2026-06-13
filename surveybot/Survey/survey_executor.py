@@ -889,6 +889,48 @@ def _handle_forcewatch_video_gate(driver) -> str:
     except Exception:
         has_forcewatch_video = False
 
+    if has_forcewatch_video:
+        # ── Étape 1 : déclencher la lecture vidéo via JS pour activer les handlers Kantar ──
+        # Le script mrIWeb surveille 'timeupdate' et 'ended' pour retirer disabled du bouton.
+        # En headless, on simule la fin de la vidéo sans attendre la lecture réelle.
+        try:
+            driver.execute_script("""
+                var vids = Array.from(document.querySelectorAll('video[data-forcewatch]'));
+                vids.forEach(function(v) {
+                    try {
+                        // Positionner à 95% de la durée (déclenche timeupdate)
+                        if (v.duration && isFinite(v.duration) && v.duration > 0) {
+                            v.currentTime = v.duration * 0.95;
+                        }
+                        v.dispatchEvent(new Event('timeupdate', {bubbles: true}));
+                        v.dispatchEvent(new Event('ended', {bubbles: true}));
+                    } catch(e) {}
+                });
+            """)
+            log_debug("[VIDEO_GATE]", "forcewatch JS trigger: timeupdate + ended dispatched")
+        except Exception as _vt_exc:
+            log_debug("[VIDEO_GATE]", f"forcewatch JS trigger failed (non-fatal): {_vt_exc}")
+
+        # ── Étape 2 : polling court — attendre que le bouton submit soit enabled ──
+        # Budget : 10 itérations × 0,5 s = 5 s max
+        _submit_enabled = False
+        for _poll_i in range(10):
+            try:
+                _is_disabled = driver.execute_script(
+                    "var b = document.querySelector('#submit-button'); "
+                    "return b ? b.hasAttribute('disabled') : true;"
+                )
+                if not _is_disabled:
+                    _submit_enabled = True
+                    log_debug("[VIDEO_GATE]", f"submit-button enabled après {_poll_i + 1} itération(s)")
+                    break
+            except Exception:
+                pass
+            time.sleep(0.5)
+
+        if not _submit_enabled:
+            log_debug("[VIDEO_GATE]", "submit-button toujours disabled après 5s (non-fatal, on tente quand même)")
+
     if not has_forcewatch_video:
         # Détection complémentaire : player ISD (div#ISD présent dans le DOM)
         # + .cf-navigation__button masqué via CSS (computed style) — pattern Forsta/Confirmit.
@@ -1869,6 +1911,24 @@ def execute_survey_page(driver, account_id, api_key, ctx=None):
 
     video_gate_state = _handle_forcewatch_video_gate(driver)
     if video_gate_state == "soft_restart":
+        return True
+    if video_gate_state == "resolved":
+        # Radios répondues, CTA direct sans OpenAI (respect CTA_INTERCEPT_ONLY)
+        intercept_only = _env_truthy("CTA_INTERCEPT_ONLY")
+        try:
+            before_url = driver.current_url
+            before_sig = redirect_watcher._dom_signature(driver)
+            time.sleep(PAUSE_BEFORE_CTA)
+            _local_pause_before_cta("video_gate_resolved")
+            clicked = input_handler.try_click_navigation_cta_any_context(driver)
+            if intercept_only:
+                log_info("[VIDEO_GATE]", f"CTA_INTERCEPT_ONLY — clic={'OK' if clicked else 'NOT FOUND'}, pas de navigation")
+            elif clicked:
+                redirect_watcher.wait_for_navigation_or_dom_change(
+                    driver, before_url=before_url, before_sig=before_sig, timeout=10
+                )
+        except Exception as _vg_cta_e:
+            log_debug("[VIDEO_GATE]", f"CTA error (non-bloquant): {_vg_cta_e}")
         return True
 
     extracted_question_blocks = dom_analyzer.analyze_dom(driver) or []
