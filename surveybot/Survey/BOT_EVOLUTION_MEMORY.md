@@ -924,6 +924,31 @@ Patterns exclus :
 - Éléments div[data-testid^="option-"] non visibles ou < 2 visibles
 ---
 
+## PLATEFORME : DECIPHER — ATMRATING (sq-atmrating, boutons 1..N sur inputs text cachés)
+Signature DOM : `div.question.sq-atmrating.hasRows` > N `div.sq-atmrating-container`
+Chaque container : `div.sq-atmrating-row-legend` (texte sous-question) + `input[type="text" name="ans{Q}.0.{N}"]` (caché) + `div.atmrating_input > span.atmrating-btn` (1..5, cliquables).
+Domaine observé : survey.researchresults.com (Decipher hébergé).
+Les inputs `type=text` sont CSS-masqués → rejetés systématiquement par `[SINGLES_SKIP] not_actionable_visible` du pipeline générique.
+
+### _extract_decipher_atmrating_blocks
+Fichier : Survey/dom_extractors_decipher.py
+Enregistré dans : dom_analyzer.py (step 0i-septies-bis), après `_extract_decipher_ranksort_dropdown_blocks`, retour immédiat si match.
+Guard (double) :
+  1. `div.question.sq-atmrating` présent dans le DOM
+  2. contient au moins un `div.sq-atmrating-container span.atmrating-btn`
+Patterns couverts :
+- N blocs `itype=radio`, un par `div.sq-atmrating-container`
+- Question = `h1.question-text` + `h2.instruction-text` + `" - "` + `div.sq-atmrating-row-legend`
+- Options = valeurs des `span.atmrating-btn` (ex: ["1","2","3","4","5"]) — nettoyées des zero-width spaces (`\u200b`)
+- XPath ancré sur `input[@id]` du container → `span.atmrating-btn` à la position N (1-based)
+- `group_key = radio:atmrating:{inp_name}` ; flag payload : `decipher_atmrating=True`
+- Log discriminant : `[DOM_DECIPHER_ATMRATING] blocks_extracted=N`
+Patterns exclus :
+- `div.question.sq-ranksort` → `_extract_decipher_ranksort_dropdown_blocks`
+- Autres questions Decipher answers-list → `_extract_focusvision_answers_list_groups`
+
+---
+
 ## FRONTIÈRES INTER-EXTRACTEURS
 
 | Plateforme | Extracteur A | Extracteur B | Signal de discrimination |
@@ -940,4 +965,4 @@ Patterns exclus :
 | Qualtrics TE | _extract_qualtrics_te_matrix_multi_text_blocks | _extract_qualtrics_form_multi_text_blocks | `div.QuestionOuter.Matrix.mf` + `div.Inner.TE` (sans `div.Inner.FORM`) vs `div.Inner.FORM` seul |
 | ResearchNow | _extract_researchnow_autoscreener_radio_blocks | extracteur générique radio | `[ng-controller*="autoScreenerController"]` + `div.parameter-rendered.single_select.tooBigForDropdown` (step 0i-octies, retour immédiat si match) |
 | Qualtrics BankedSA | _extract_table_matrix_radio_rows (patch caption/legend) | chemin _find_question_text_near_element | `table.ChoiceStructure` avec `display:none` + `caption.QuestionText` ou `fieldset > legend > .QuestionText` |
-| Qualtrics BankedSA | _extract_qualtrics_bankedsa_single_row_radio_blocks | _extract_qualtrics_choice_structure_radio_blocks | `div.customChoice` présent + exactement 1 tr.ChoiceRow (single-row) vs ≥2 ChoiceRow même name (multi-lignes Likert) |
+| Qualtrics BankedSA | _extract_qualtrics_bankedsa_single_row_radio_blocks | _extract_qualtrics_choice_structure_radio_blocks | `div.customChoice` présent + exactement 1 tr.ChoiceRow (single-row) vs ≥2 ChoiceRow même name (multi-lignes Likert) || Decipher | _extract_decipher_atmrating_blocks | extracteur générique singles/text | `div.question.sq-atmrating` + `div.sq-atmrating-container span.atmrating-btn` — inputs text cachés rejetés par pipeline générique |
