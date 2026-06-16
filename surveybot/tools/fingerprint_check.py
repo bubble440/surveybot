@@ -18,13 +18,22 @@ import sys
 import time
 
 FINGERPRINT_PAGES = [
-    # ("canvas",     "https://browserleaks.com/canvas"),
-    ("javascript", "https://browserleaks.com/javascript"),
-    ("webgl",      "https://browserleaks.com/webgl"),
+    ("tcp",  "https://browserleaks.com/tcp"),
+    ("http2",  "https://browserleaks.com/http2"),
+    ("webrtc",  "https://browserleaks.com/webrtc"),
+    ("dns",  "https://browserleaks.com/dns"),
+    ("tls",  "https://browserleaks.com/tls"),
+    ("fonts",  "https://browserleaks.com/fonts"),
+    ("features",  "https://browserleaks.com/features"),
+    ("geo",  "https://browserleaks.com/geo"),
+    ("proxy",  "https://browserleaks.com/proxy"),
+    # ("canvas",  "https://browserleaks.com/canvas"),
+    # ("javascript", "https://browserleaks.com/javascript"),
+    # ("webgl",      "https://browserleaks.com/webgl"),
     # ("ip",         "https://browserleaks.com/ip"),
 ]
 
-WAIT_AFTER_LOAD = 5
+WAIT_AFTER_LOAD = 8   # WebRTC nécessite du temps pour le handshake ICE
 SCROLL_PAUSE    = 0.4
 
 
@@ -78,6 +87,58 @@ def _capture_full_page(driver) -> bytes:
     buf = io.BytesIO()
     canvas.save(buf, format="PNG", optimize=True)
     return buf.getvalue()
+
+
+def _extract_page_data(driver, label: str) -> dict:
+    """
+    Extrait les données textuelles clés selon la page visitée.
+    Complète le screenshot par des valeurs directement comparables.
+    """
+    data = {}
+    try:
+        if label == "webrtc":
+            # ⚠️ Vérifier si l'IP Fly.io fuite à travers le proxy
+            data = driver.execute_script("""
+                const rows = Array.from(document.querySelectorAll('table tr'));
+                const out = {};
+                for (const row of rows) {
+                    const cells = row.querySelectorAll('td');
+                    if (cells.length >= 2) {
+                        const k = cells[0].innerText.trim();
+                        const v = cells[1].innerText.trim();
+                        if (k) out[k] = v;
+                    }
+                }
+                return out;
+            """)
+
+        elif label == "features":
+            data["features_hash"] = driver.execute_script("""
+                // Hash MD5 affiché en haut de la page Features Detection
+                const el = document.querySelector('td, .hash, [class*=hash]');
+                // Chercher le pattern MD5 dans tout le texte de la page
+                const text = document.body.innerText || '';
+                const m = text.match(/[0-9A-F]{32}/i);
+                return m ? m[0] : null;
+            """)
+
+        elif label == "canvas":
+            data = driver.execute_script("""
+                const rows = Array.from(document.querySelectorAll('table tr'));
+                const out = {};
+                for (const row of rows) {
+                    const cells = row.querySelectorAll('td');
+                    if (cells.length >= 2) {
+                        out[cells[0].innerText.trim()] = cells[1].innerText.trim();
+                    }
+                }
+                return out;
+            """)
+
+    except Exception as e:
+        data["_error"] = str(e)
+
+    return data
 
 
 def _upload_or_save(png_bytes: bytes, label: str) -> None:
@@ -140,7 +201,17 @@ def main():
         for label, url in FINGERPRINT_PAGES:
             print(f"[FP] Navigation vers {url} ...")
             driver.get(url)
+            print(f"[FP] Attente {WAIT_AFTER_LOAD}s ...")
             time.sleep(WAIT_AFTER_LOAD)
+
+            # Extraction données textuelles
+            page_data = _extract_page_data(driver, label)
+            if page_data:
+                print(f"[FP][{label.upper()}] Données extraites :")
+                for k, v in page_data.items():
+                    print(f"      {k}: {v}")
+
+            # Screenshot pleine page
             print(f"[FP] Capture pleine page : {label} ...")
             try:
                 png = _capture_full_page(driver)
