@@ -159,8 +159,10 @@ def _fingerprint_js() -> str:
     """
     return """
         // ── Langue ──────────────────────────────────────────────────────────
-        Object.defineProperty(navigator, 'language',  { get: () => 'fr-FR' });
-        Object.defineProperty(navigator, 'languages', { get: () => ['fr-FR', 'fr'] });
+        // Attach (Windows) retourne ['en-US', 'en'] — prod retournait ['fr-FR', 'fr'].
+        // On aligne sur attach pour éviter la contradiction avec Accept-Language HTTP.
+        Object.defineProperty(navigator, 'language',  { get: () => 'en-US' });
+        Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
 
         // ── Timezone ─────────────────────────────────────────────────────────
         const _origResolvedOptions = Intl.DateTimeFormat.prototype.resolvedOptions;
@@ -268,12 +270,17 @@ def _fingerprint_js() -> str:
         } catch(e) {}
 
         // ── navigator.plugins (vide = signal bot primaire) ───────────────────
-        // Chrome réel expose 3 plugins PDF/NaCl. On les simule.
+        // Attach (Chrome Windows) expose 5 plugins réels.
+        // Prod ne retournait que 2 plugins dont mhjfbmdgcfjbbpaeojofohoefgiehjai
+        // (hash cryptique Chrome PDF Viewer) sans les autres — divergence détectable.
+        // On simule les 5 plugins exacts visibles en mode attach.
         try {
             const _pluginData = [
-                { name: 'Chrome PDF Plugin',  filename: 'internal-pdf-viewer',             description: 'Portable Document Format' },
-                { name: 'Chrome PDF Viewer',  filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai', description: '' },
-                { name: 'Native Client',      filename: 'internal-nacl-plugin',             description: '' },
+                { name: 'PDF Viewer',                filename: 'internal-pdf-viewer',             description: 'Portable Document Format' },
+                { name: 'Chrome PDF Viewer',         filename: 'internal-pdf-viewer',             description: 'Portable Document Format' },
+                { name: 'Chromium PDF Viewer',       filename: 'internal-pdf-viewer',             description: 'Portable Document Format' },
+                { name: 'Microsoft Edge PDF Viewer', filename: 'internal-pdf-viewer',             description: 'Portable Document Format' },
+                { name: 'WebKit built-in PDF',       filename: 'internal-pdf-viewer',             description: 'Portable Document Format' },
             ];
             const _makePlugin = (d) => {
                 const mt = { type: 'application/x-google-chrome-pdf', suffixes: 'pdf', description: d.description };
@@ -638,9 +645,14 @@ def _fingerprint_js() -> str:
         } catch(e) {}
 
         // ── Hardware hints (cohérents avec un laptop standard) ───────────────
+        // deviceMemory DOIT être une puissance de 2 entre 0.25 et 8 (spec W3C).
+        // La valeur 1.6 retournée en prod est impossible sur un vrai appareil
+        // et constitue un signal bot primaire détectable immédiatement.
+        // Attach retourne 16 (non-standard aussi, Chrome le clampe à 8 en lecture).
+        // On utilise 8 qui est la valeur max légale et cohérente avec un desktop.
         try {
             Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 4 });
-            Object.defineProperty(navigator, 'deviceMemory',        { get: () => 16 });
+            Object.defineProperty(navigator, 'deviceMemory',        { get: () => 8 });
         } catch(e) {}
 
         // ── Canvas Fingerprint (Linux → Windows) ─────────────────────────────
@@ -1083,7 +1095,7 @@ def launch_browser(config: dict | None = None):
         # (patch sur Navigator.prototype avant tout JS de la page).
         # Idem pour les proprietes cdc_* de ChromeDriver.
         "--window-size=1920,1080",
-        f"--lang={locale}",
+        "--lang=en-US",  # aligné sur navigator.language = 'en-US' (cohérence JS ↔ HTTP headers)
     ]
 
     relay_proc = None
@@ -1245,7 +1257,7 @@ def launch_browser(config: dict | None = None):
             // Patch deviceMemory et hardwareConcurrency sur la page courante
             // (Page.addScriptToEvaluateOnNewDocument ne couvre pas la page déjà chargée)
             try {
-                Object.defineProperty(navigator, 'deviceMemory',        { get: () => 16 });
+                Object.defineProperty(navigator, 'deviceMemory',        { get: () => 8 });
                 Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 4  });
             } catch(e) {}
         """)
@@ -1253,7 +1265,14 @@ def launch_browser(config: dict | None = None):
     except Exception as e:
         log.warning("[FP][IMMEDIATE][WARN] Échec suppression flag automation : %s", e)
 
+    # ── Dump fingerprint POST-spoofing ───────────────────────────────────────
+    # Page.addScriptToEvaluateOnNewDocument ne s'applique qu'aux navigations
+    # futures, pas à la page déjà chargée au moment de l'attach Selenium.
+    # On force une navigation about:blank pour que tous les overrides (userAgentData,
+    # platform, plugins, WebGL…) soient actifs avant de lire les valeurs.
+    # Ce dump reflète exactement ce que les sites tiers verront.
     try:
+        driver.get("about:blank")
         fingerprint = driver.execute_script("""
             const uad = navigator.userAgentData;
             return {
