@@ -183,8 +183,11 @@ def _extract_webgl_json(driver) -> dict:
                 const vHF = sp['VERTEX']  && sp['VERTEX']['HIGH_FLOAT'];
                 const fHI = sp['FRAGMENT']&& sp['FRAGMENT']['HIGH_INT'];
                 if (!vHF || !fHI) return null;
-                const toLabel = (p) => p.rangeMax >= 127 ? 'highp' : (p.rangeMax >= 15 ? 'mediump' : 'lowp');
-                return toLabel(vHF) + '/' + toLabel(fHI);
+                // FLOAT : seuil highp = rangeMax >= 127
+                const toLabelFloat = (p) => p.rangeMax >= 127 ? 'highp' : (p.rangeMax >= 15 ? 'mediump' : 'lowp');
+                // INT   : seuil highp = rangeMin >= 31 (spec WebGL — BrowserLeaks suit cette logique)
+                const toLabel_INT  = (p) => p.rangeMin >= 31 ? 'highp' : (p.rangeMin >= 15 ? 'mediump' : 'lowp');
+                return toLabelFloat(vHF) + '/' + toLabel_INT(fHI);
             })();
 
             // Anisotropie

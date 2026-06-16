@@ -12,13 +12,13 @@ flyctl ssh console -a surveybot-bot -s
 # Sélectionner la machine avec "sleep" dans la liste si plusieurs machines
 
 ## Étape 3 — Dans le shell Linux (une commande à la fois)
-su - botuser -c 'cd /app && DISPLAY=:99 PYTHONPATH=/app RUN_ENV=prod LOCAL_UNATTENDED=1 SNAP_ENABLED=1 SNAP_R2_ACCOUNT_ID='"$SNAP_R2_ACCOUNT_ID"' SNAP_R2_ACCESS_KEY_ID='"$SNAP_R2_ACCESS_KEY_ID"' SNAP_R2_SECRET_ACCESS_KEY='"$SNAP_R2_SECRET_ACCESS_KEY"' SNAP_R2_BUCKET='"$SNAP_R2_BUCKET"' PROXY_URL='"'http://sp99gu549k:hgGbd4M_5MxpM2afl2@isp.smartproxy.com:10001'"' PROXY_USER=sp99gu549k PROXY_PASS='"'hgGbd4M_5MxpM2afl2'"' ACCOUNT_ID=topsurveys_bot_001 python tools/multi_access_check.py'
+su - botuser -c 'cd /app && DISPLAY=:99 PYTHONPATH=/app RUN_ENV=prod LOCAL_UNATTENDED=1 SNAP_ENABLED=1 SNAP_R2_ACCOUNT_ID='"$SNAP_R2_ACCOUNT_ID"' SNAP_R2_ACCESS_KEY_ID='"$SNAP_R2_ACCESS_KEY_ID"' SNAP_R2_SECRET_ACCESS_KEY='"$SNAP_R2_SECRET_ACCESS_KEY"' SNAP_R2_BUCKET='"$SNAP_R2_BUCKET"' PROXY_URL='"'http://14a8a0e86cfe3:9281da5b6e@178.210.254.157:12323'"' PROXY_USER=14a8a0e86cfe3 PROXY_PASS='"'9281da5b6e'"' ACCOUNT_ID=topsurveys_bot_001 python tools/multi_access_check.py'
 
 
-su - botuser -c 'cd /app && DISPLAY=:99 PYTHONPATH=/app RUN_ENV=prod LOCAL_UNATTENDED=1 SNAP_ENABLED=1 SNAP_R2_ACCOUNT_ID='"$SNAP_R2_ACCOUNT_ID"' SNAP_R2_ACCESS_KEY_ID='"$SNAP_R2_ACCESS_KEY_ID"' SNAP_R2_SECRET_ACCESS_KEY='"$SNAP_R2_SECRET_ACCESS_KEY"' SNAP_R2_BUCKET='"$SNAP_R2_BUCKET"' PROXY_URL='"'http://sp99gu549k:hgGbd4M_5MxpM2afl2@isp.smartproxy.com:10001'"' PROXY_USER=sp99gu549k PROXY_PASS='"'hgGbd4M_5MxpM2afl2'"' ACCOUNT_ID=topsurveys_bot_001 python tools/fingerprint_check.py'
+su - botuser -c 'cd /app && DISPLAY=:99 PYTHONPATH=/app RUN_ENV=prod LOCAL_UNATTENDED=1 SNAP_ENABLED=1 SNAP_R2_ACCOUNT_ID='"$SNAP_R2_ACCOUNT_ID"' SNAP_R2_ACCESS_KEY_ID='"$SNAP_R2_ACCESS_KEY_ID"' SNAP_R2_SECRET_ACCESS_KEY='"$SNAP_R2_SECRET_ACCESS_KEY"' SNAP_R2_BUCKET='"$SNAP_R2_BUCKET"' PROXY_URL='"'http://14a8a0e86cfe3:9281da5b6e@178.210.254.157:12323'"' PROXY_USER=14a8a0e86cfe3 PROXY_PASS='"'9281da5b6e'"' ACCOUNT_ID=topsurveys_bot_001 python tools/fingerprint_check.py'
 
 
-su - botuser -c 'cd /app && DISPLAY=:99 PYTHONPATH=/app RUN_ENV=prod LOCAL_UNATTENDED=1 SNAP_ENABLED=1 SNAP_R2_ACCOUNT_ID='"$SNAP_R2_ACCOUNT_ID"' SNAP_R2_ACCESS_KEY_ID='"$SNAP_R2_ACCESS_KEY_ID"' SNAP_R2_SECRET_ACCESS_KEY='"$SNAP_R2_SECRET_ACCESS_KEY"' SNAP_R2_BUCKET='"$SNAP_R2_BUCKET"' PROXY_URL='"'http://sp99gu549k:hgGbd4M_5MxpM2afl2@isp.smartproxy.com:10001'"' PROXY_USER=sp99gu549k PROXY_PASS='"'hgGbd4M_5MxpM2afl2'"' ACCOUNT_ID=topsurveys_bot_001 python tools/webgl_json_dump.py'
+su - botuser -c 'cd /app && DISPLAY=:99 PYTHONPATH=/app RUN_ENV=prod LOCAL_UNATTENDED=1 SNAP_ENABLED=1 SNAP_R2_ACCOUNT_ID='"$SNAP_R2_ACCOUNT_ID"' SNAP_R2_ACCESS_KEY_ID='"$SNAP_R2_ACCESS_KEY_ID"' SNAP_R2_SECRET_ACCESS_KEY='"$SNAP_R2_SECRET_ACCESS_KEY"' SNAP_R2_BUCKET='"$SNAP_R2_BUCKET"' PROXY_URL='"'http://14a8a0e86cfe3:9281da5b6e@178.210.254.157:12323'"' PROXY_USER=14a8a0e86cfe3 PROXY_PASS='"'9281da5b6e'"' ACCOUNT_ID=topsurveys_bot_001 python tools/webgl_json_dump.py'
 
 
 # Les PNG sont sauvegardés dans /tmp/fp_*.png

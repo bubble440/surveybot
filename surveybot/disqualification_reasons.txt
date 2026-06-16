@@ -1,10 +1,250 @@
-Pourquoi autant de disqualifications?
+# Historique des pistes de disqualification — SurveyBot
+# Mis à jour : 2026-06-17
+# Usage : référence pour toute IA ou développeur reprenant l'investigation.
+# Format : piste → verdict → justification
 
-1) A cause de l'ip qui est pafois affiché comme de type VPN dans browser  leaks?
-Non, car les meme ips sont utilisés en Local sans aucune disqualifications!
+================================================================================
+PISTES EXPLORÉES ET CLÔTURÉES
+================================================================================
 
-2) A cause du Webgl divergent entre le mode attach et la prod?
-Non, la prod a été spoofé afin d'etre identique au mode attach, a l'exception du Hash toute les autres data sont identiques.
+[1] IP signalée comme "VPN" sur BrowserLeaks
+    Verdict : NON — piste écartée
+    Justification : les mêmes IPs IPRoyal ISP utilisées en mode local (attach)
+    ne produisent aucune disqualification. La classification VPN n'est donc pas
+    le facteur déclenchant.
+    IP concernée documentée : 185.134.194.152
 
+[2] Divergence fingerprint WebGL prod vs attach
+    Verdict : NON — piste écartée
+    Justification : le spoofing WebGL a été audité en profondeur (dump JSON
+    complet prod vs attach, comparaison paramètre par paramètre).
+    Résultat de l'audit :
+      - Paramètres numériques WebGL1 : identiques (0 divergence)
+      - Paramètres numériques WebGL2 : identiques sauf 4 params absents du
+        dump attach car l'ancien script ne les mesurait pas
+        (MAX_ELEMENTS_INDICES, MAX_ELEMENTS_VERTICES, MAX_ELEMENT_INDEX,
+        MAX_SERVER_WAIT_TIMEOUT) — valeurs standard, non suspectes
+      - Extensions WebGL2 : identiques
+      - Extensions WebGL1 : 3 extensions supplémentaires en prod
+        (EXT_render_snorm, EXT_texture_norm16, WEBGL_provoking_vertex) —
+        présentes en prod car Chrome 148 / ANGLE plus récent que l'attach de
+        référence ; avoir plus d'extensions n'est pas un signal de détection
+      - HIGH_FLOAT_HIGH_INT : highp/highp dans les deux modes ✅
+      - UNMASKED_VENDOR/RENDERER : "Google Inc. (Intel)" /
+        "ANGLE (Intel, Intel(R) UHD Graphics 617 ...)" identiques ✅
+      - Hash BrowserLeaks différent : artefact dû aux 4 params supplémentaires
+        intégrés dans le calcul de hash côté BrowserLeaks — non significatif
+    Note technique : le dump [FP][BROWSER] loggé au démarrage affichait
+    userAgentData vide (brands=[], platform="") — c'était un artefact de
+    lecture avant navigation (Page.addScriptToEvaluateOnNewDocument non encore
+    actif sur la page courante). Corrigé en déplaçant le dump après une
+    navigation about:blank. Le spoofing est bien actif sur toutes les pages
+    réelles visitées.
 
-Ip problematique: 185.134.194.152
+[3] Fingerprint JavaScript (navigator.*)
+    Verdict : NON — piste écartée
+    Justification : comparaison BrowserLeaks prod vs attach :
+      - userAgent : Chrome/148 Win64 ✅
+      - userAgentData.brands : Chromium/148, Google Chrome/148, Not-A.Brand/99 ✅
+      - userAgentData.platform : Windows ✅
+      - platform : Win32 ✅
+      - language : en-US ✅
+      - hardwareConcurrency : 4 ✅
+      - deviceMemory : 8 ✅
+      - webdriver : null/undefined ✅
+      - plugins : 5 plugins PDF (identiques) ✅
+
+[✅] Canvas fingerprint — CLÔTURÉ
+    Signature prod = attach : C8FBD3F804CF350E1C19F12D2D3EF770 (identique).
+    File size : 5592 bytes (identique). PNG headers : identiques.
+    Divergence "Number of Colors" (941 vs 222) : artefact de compression PNG,
+    sans impact sur la signature. Piste close.
+
+[N/A] Audio fingerprint — ABANDONNÉ
+    browserleaks.com/audio retourne 404. Pas de source de mesure disponible.
+    Piste non vérifiable via BrowserLeaks.
+
+================================================================================
+PISTES À VÉRIFIER EN PROD — CLASSÉES PAR PRIORITÉ
+================================================================================
+
+[P1 — CRITIQUE] TCP/IP Stack fingerprint (TTL, Window Size, JA4T)
+    Statut : NON VÉRIFIÉ EN PROD — à corriger en priorité absolue
+    Hypothèse : le TCP/IP stack de Linux (Fly.io) trahit l'OS réel indépendamment
+    de tout spoofing Chrome/CDP. Ces valeurs sont fixées par le kernel.
+    Valeurs attach (référence Windows) :
+      - JA4T         : 65535_2-1-3-1-1-4_1460_8
+      - Satori       : 65535:128:1:52:M1460,N,W8,N,N,S:.
+      - Satori Sig   : Windows 8
+      - Initial TTL  : 128 (Windows default)
+      - Window Size  : 65535
+      - MSS Value    : 1460
+      - Window Scale : 8 (×256)
+      - TCP Options  : MSS, NOP, WINDOW, NOP, NOP, SACK_PERM
+      - Zardaxt      : Windows 54%
+    Valeurs attendues en prod Linux non patchée :
+      - Initial TTL  : 64 → trahit Linux immédiatement
+      - Window Size  : 14600 ou 29200 → divergence forte
+      - Satori Sig   : Linux
+      - Zardaxt      : Linux >80%
+    Correction envisagée :
+      - TTL : sysctl net.ipv4.ip_default_ttl=128 (faisable sur Fly.io)
+      - Window Size : tuning kernel TCP (net.ipv4.tcp_rmem / tcp_wmem)
+      - MSS : lié au MTU, probablement déjà 1460 ✅
+    Note : impossible à spoofer via CDP ou JavaScript — niveau kernel uniquement.
+
+[P2 — CRITIQUE] Client Hints HTTP (sec-ch-ua-platform, platformVersion)
+    Statut : NON VÉRIFIÉ EN PROD — divergence quasi-certaine
+    Hypothèse : Chrome envoie sec-ch-ua-platform="Linux" dans chaque requête HTTP
+    en prod, alors que le UA spoofé indique Windows. Cette incohérence est triviale
+    à détecter pour tout anti-bot.
+    Valeurs attach (référence) :
+      - sec-ch-ua-platform : "Windows"
+      - platformVersion    : 19.0.0
+      - architecture       : x86
+      - bitness            : 64
+      - wow64              : false
+      - mobile             : false
+      - formFactors        : ["Desktop"]
+      - uaFullVersion      : 149.0.7827.103
+      - fullVersionList    : Google Chrome 149.0.7827.103, Chromium 149.0.7827.103,
+                             Not)A;Brand 24.0.0.0
+      - brands             : Google Chrome 149, Chromium 149, Not)A;Brand 24
+    Distinction Low Entropy (envoyés automatiquement sur chaque requête) :
+      - sec-ch-ua, sec-ch-ua-mobile, sec-ch-ua-platform → toujours envoyés
+    Distinction High Entropy (envoyés sur demande serveur via Accept-CH) :
+      - platformVersion, architecture, bitness, wow64, uaFullVersion, fullVersionList
+    Correction envisagée :
+      - Emulation.setUserAgentOverride avec userAgentMetadata complet incluant
+        platformVersion, architecture, bitness, wow64, model, platform.
+      - Vérifier que sec-ch-ua-platform est bien "Windows" dans HTTP/2 frames.
+
+[P3 — HAUTE] WebRTC IP leak
+    Statut : NON VÉRIFIÉ EN PROD
+    Hypothèse : WebRTC expose l'IP réelle de la machine Fly.io en plus de l'IP proxy.
+    Valeurs attach (référence — propre) :
+      - WebRTC Leak Test  : No Leak
+      - Local IP Address  : - (aucune IP locale exposée)
+      - Public IP (WebRTC): 176.186.86.39 (= IP proxy, cohérent)
+      - SDP Log           : IN IP4 127.0.0.1 uniquement
+    En prod, risque que le SDP expose l'IP interne Fly.io (fdaa::/7 ou 172.x.x.x)
+    ou l'IP publique CDG Fly.io à côté de l'IP proxy.
+    Correction envisagée : désactiver WebRTC via CDP ou flag Chrome.
+
+[P4 — HAUTE] DNS leak
+    Statut : NON VÉRIFIÉ EN PROD
+    Hypothèse : Chrome résout les DNS via les resolvers Fly.io/Cloudflare au lieu
+    des DNS du proxy IPRoyal, créant une incohérence IP/DNS détectable.
+    Valeurs attach (référence — propre) :
+      - IP visible    : 176.186.86.39 (proxy IPRoyal)
+      - ISP visible   : BOUYGUES Telecom, France Paris
+      - DNS Server 1  : 89.85.114.32 — Bouygues Telecom ISP — France, Paris
+      - DNS Server 2  : 2001:860:de02::4 — Bouygues Telecom ISP Wireline — France, Paris
+    En prod, risque que les DNS resolvent via Fly.io (fdaa::3) ou Cloudflare (1.1.1.1)
+    pendant que l'IP de sortie reste IPRoyal → discordance ISP/DNS flagrante.
+    Correction envisagée : forcer les DNS via le proxy dans la config Chrome/réseau.
+
+[P5 — HAUTE] TLS fingerprint (JA3/JA4) — impact proxy
+    Statut : NON VÉRIFIÉ EN PROD
+    Hypothèse : si le proxy IPRoyal intercepte et re-wrap la connexion TLS,
+    le ClientHello vu par le serveur sera celui du proxy, pas de Chrome.
+    Valeurs attach (référence) :
+      - JA4    : t13d1516h2_d8aaf6152771_d8a2da3f94cd
+      - JA4_o  : t13d1516h2_ac8d58a92679_73abcacf8021
+      - JA3    : 458acd1b3217e8519e33bff22a9975b8d
+      - JA3_n  : 8e19337e7524d2573be54ef820784c9
+      - Cipher : TLS_AES_128_GCM_SHA256
+      - Key Ex : X25519MLKEM768 (post-quantique hybride)
+      - ECH    : True
+      - Compress: brotli
+    Akamai HTTP/2 fingerprint (référence) :
+      - Fingerprint : 1:65536;2:0;4:6291456;6:262144|15663105|0|m,a,s,p
+      - Hash        : 52d84b11737d980aef856699f885ca86
+    Note : X25519MLKEM768 est un algo PQC Chrome 124+. Si le proxy ne le supporte
+    pas, Chrome peut downgrader le handshake, modifiant le JA4.
+
+[P6 — MOYENNE] Font fingerprint
+    Statut : NON VÉRIFIÉ EN PROD
+    Hypothèse : les fonts système Linux (prod) sont radicalement différentes
+    des fonts Windows (attach), produisant un fingerprint distinct.
+    Valeurs attach (référence) :
+      - Font Metrics Hash  : 0837BB3621C61348A431BF30700830CE
+      - Fonts détectées    : 213 fonts, 171 métriques uniques
+      - Fonts Windows clés : Segoe UI, Segoe UI Variable Text, Arial, Helvetica,
+                             Consolas, Comic Sans MS, Impact
+      - Unicode Glyphs Hash: 1C9F7677
+    En prod : absence totale de fonts Windows (Segoe UI notamment) → hash
+    radicalement différent. Signal Linux fort si le panel fait du font fingerprinting.
+    Priorité modérée : les panels d'enquête font rarement du font fingerprinting actif.
+
+[P7 — BASSE] Features browser hardware-dependent
+    Statut : NON VÉRIFIÉ EN PROD — impact probable faible
+    Features susceptibles de diverger entre Windows (attach) et Linux/VM (prod) :
+      - Battery API          : true en attach → probablement false en prod (pas de batterie VM)
+      - Device Motion Event  : true en attach → probablement false en prod
+      - Device Orientation   : true en attach → probablement false en prod
+      - Speech Recognition   : true en attach → peut différer sans audio hardware
+      - Speech Synthesis     : true en attach → peut différer sans audio hardware
+      - GamePad API          : true en attach → peut différer sans hardware
+      - Vibration API        : true en attach → probablement false sur Linux desktop
+    Note : ces APIs sont rarement exploitées par les panels pour la détection bot.
+    La Battery API est la plus connue comme signal headless/VM.
+
+[P8 — BASSE] Geolocation API
+    Statut : À VÉRIFIER RAPIDEMENT — correction probable non nécessaire
+    Valeurs attach (référence) :
+      - Origin Permissions : denied
+      - Global Permissions : denied
+      - getCurrentPosition : PERMISSION_DENIED
+    En prod : Chrome sans interaction utilisateur refuse la géo par défaut.
+    Risque mineur : le statut pourrait être "prompt" au lieu de "denied" si le
+    profil Chrome est vierge en prod. À confirmer.
+
+[P9 — BASSE] Content Filters / HTTP Proxy Headers
+    Statut : À VÉRIFIER RAPIDEMENT — correction probable non nécessaire
+    Valeurs attach (référence — tout propre) :
+      - HTTP Proxy Headers : not detected
+      - Tor IP Address     : not detected
+      - Adblock            : not detected
+      - AdGuard            : not detected
+    En prod : si le relay TCP CONNECT injecte des headers proxy (X-Forwarded-For,
+    Via, Proxy-Connection), la ligne HTTP Proxy Headers passera à "detected".
+
+================================================================================
+PISTES NON EXPLORÉES / EN COURS
+================================================================================
+
+[ ] Comportement de navigation (timing, scroll, mouse events)
+    Hypothèse : les panels détectent l'absence d'interactions humaines
+    (clics trop rapides, pas de mouvement souris, scroll linéaire).
+
+[ ] Détection applicative côté panel (screener questions)
+    Hypothèse : le bot sélectionne des combinaisons de réponses incohérentes
+    ou statistiquement improbables qui déclenchent une disqualification métier
+    (pas une détection bot).
+
+[ ] Cookies / session persistence
+    Vérifier si les cookies de session TopSurveys / panels sont correctement
+    persistés et réutilisés entre les runs.
+
+================================================================================
+NOTES INFRASTRUCTURE
+================================================================================
+- Mode prod : Fly.io CDG, Xvfb :99, Chrome headed, proxy IPRoyal ISP statique
+- Mode attach : Windows local, GPU Intel UHD 617 physique, même proxy IPRoyal
+- Spoofing actif : CDP Page.addScriptToEvaluateOnNewDocument (WebGL, UA,
+  userAgentData, platform, deviceMemory, hardwareConcurrency, plugins,
+  getContextAttributes, getShaderPrecisionFormat)
+- Référence attach Chrome : version 149.0.7827.103, Windows NT 10.0, Win64/x64
+- Pages BrowserLeaks auditées en attach (2026-06-17) :
+    browserleaks.com/webrtc      → propre, référence établie
+    browserleaks.com/fonts       → référence établie
+    browserleaks.com/geo         → propre, référence établie
+    browserleaks.com/features    → référence établie
+    browserleaks.com/tls         → référence établie
+    browserleaks.com/proxy       → propre, référence établie
+    browserleaks.com/ip (TCP/IP) → référence établie — divergence kernel attendue
+    browserleaks.com/http2       → référence établie — sec-ch-ua-platform à risque
+    browserleaks.com/hints       → référence établie — platformVersion à risque
+    browserleaks.com/dns         → propre, référence établie
+    browserleaks.com/quic        → référence établie
