@@ -4,6 +4,21 @@
 # Format : piste → verdict → justification
 
 ================================================================================
+PRINCIPE FONDAMENTAL — À LIRE AVANT TOUTE INVESTIGATION
+================================================================================
+
+Le mode local (attach, Windows, Chrome headed, GPU physique) ne sert QUE de
+référence de spoofing. Les SDK anti-bot (DataDome, PerimeterX, etc.) n'ont
+AUCUN accès au mode local et ne peuvent donc PAS comparer prod vs local.
+
+Toute piste formulée comme "le fingerprint diffère entre prod et local"
+est invalide comme explication du blocage. La question correcte est toujours :
+"Est-ce que le fingerprint PROD correspond à un profil légitime connu ?"
+
+Le local sert uniquement à établir une cible de spoofing crédible (Chrome 149
+Windows NT 10.0). C'est tout.
+
+================================================================================
 PISTES EXPLORÉES ET CLÔTURÉES
 ================================================================================
 
@@ -16,142 +31,123 @@ PISTES EXPLORÉES ET CLÔTURÉES
 
 [2] Divergence fingerprint WebGL prod vs attach
     Verdict : NON — piste écartée
-    Justification : le spoofing WebGL a été audité en profondeur.
-    Tous les paramètres numériques, extensions et hash sont identiques ou
-    explicables (version Chrome plus récente en prod). Piste close.
+    Justification : spoofing WebGL audité en profondeur. Paramètres numériques,
+    extensions et hash identiques ou explicables. Piste close.
 
 [3] Fingerprint JavaScript (navigator.*)
     Verdict : NON — piste écartée
-    Justification : comparaison BrowserLeaks prod vs attach — tous identiques :
-    userAgent, userAgentData, platform, language, hardwareConcurrency,
-    deviceMemory, webdriver, plugins ✅
+    Justification : userAgent, userAgentData, platform, language,
+    hardwareConcurrency, deviceMemory, webdriver, plugins — tous identiques ✅
 
 [4] TCP/IP Stack fingerprint
     Verdict : NON — piste écartée
-    Justification : profil TCP prod avec proxy = profil attach avec proxy.
-    Le fingerprint est celui du tunnel IPRoyal (OpenVPN TCP bs128 SHA1 lzo),
-    identique dans les deux modes. Pas un vecteur différentiel.
+    Justification : profil TCP prod = attach avec proxy IPRoyal. Non différentiel.
 
 [5] DNS leak
     Verdict : NON — piste écartée — validé en prod le 2026-06-17
-    Justification : DNS prod et attach identiques — tous Cloudflare France Paris.
-    Le proxy IPRoyal route les DNS via Cloudflare dans les deux modes.
-    Pas de fuite vers Fly.io, pas de discordance ISP/DNS.
-      - IP visible prod : 178.210.254.157 (proxy IPRoyal) ✅
-      - ISP : Orange S.A., France Paris ✅
-      - DNS : Cloudflare France Paris (43–45 serveurs) ✅
+    IP visible prod : 178.210.254.157 (IPRoyal) ✅ — DNS Cloudflare FR ✅
 
-[6] TLS fingerprint / Akamai HTTP/2
-    Verdict : PARTIEL — JA4 identique, JA3 diverge, ECH absent en prod
-    Justification :
-      - JA4  : t13d1516h2_d8aaf6152771_d8a2da3f94cd ✅ IDENTIQUE
-      - JA4_o: attach ac858a92679_1e49fde2599b /
-               prod   ac858a92679_f34fad98123f 🟡 delta mineur
-      - JA3  : attach 458acd1b3217e8519e33bff22a9975b8d /
-               prod   1429a2e3d95d08a8d5adcad4a2d8c25 🔴 diverge
-      - ECH  : attach True / prod False 🔴 (proxy ne supporte pas ECH)
-      - Akamai HTTP/2 : 1:65536;2:0;4:6291456;6:262144|15663105|0|m,a,s,p ✅
-      - Akamai Hash   : 52d84b11737d980aef856699f885ca86 ✅
-    Impact : JA3 est moins utilisé que JA4 par les anti-bots modernes.
-    ECH False est un signal mineur — le proxy IPRoyal ne supporte pas ECH,
-    identique en attach et prod avec proxy actif. Non actionnable.
-    Piste considérée acceptable — pas de correction envisagée.
+[6] TLS fingerprint / Akamai HTTP/2 / peetprint
+    Verdict : CLÔTURÉ ✅ — tous identiques prod vs attach
+      - JA4            : t13d1516h2_d8aaf6152771_d8a2da3f94cd ✅
+      - Akamai Hash    : 52d84b11737d980aef856699f885ca86 ✅
+      - peetprint_hash : 1d4ffe9b0e34acac0bd883fa7f79d7b5 ✅
 
-[7] Client Hints HTTP (sec-ch-ua-platform, sec-ch-ua, sec-ch-ua-mobile)
-    Verdict : CORRIGÉ ✅ — validé en prod le 2026-06-17
-    Cause racine : Emulation.setUserAgentOverride échouait avec
-    "invalid argument: Invalid parameters" (Chrome 149) — type incorrect
-    sur le champ "wow64". Après correction :
-      - sec-ch-ua-platform : "Windows" ✅
-      - sec-ch-ua          : "Google Chrome";v="149", "Chromium";v="149",
-                             "Not)A;Brand";v="24" ✅
-      - sec-ch-ua-mobile   : ?0 ✅
-      - userAgentData.brands (JS) : Chrome/149 ✅
-    Résidu mineur : accept-language "en-US,en;q=0.9;q=0.9" (doublon q=0.9).
+[7] Client Hints HTTP
+    Verdict : CORRIGÉ ✅ — sec-ch-ua-platform, sec-ch-ua, sec-ch-ua-mobile OK
 
 [8] WebRTC IP leak
-    Verdict : CORRIGÉ ✅ — validé en prod le 2026-06-17
-    Cause racine : WebRTC exposait l'IP datacenter Fly.io (167.88.159.89 NL).
-    Solution : désactivation complète WebRTC via flags Chrome (IS_LOCAL==False).
-      - RTCPeerConnection : False ✅
-      - WebRTC Leak Test  : No Leak ✅
-      - Local/Public IP   : - ✅
+    Verdict : CORRIGÉ ✅ — WebRTC désactivé, No Leak confirmé
 
-[✅] Canvas fingerprint — CLÔTURÉ
-    Signature prod = attach : C8FBD3F804CF350E1C19F12D2D3EF770 (identique).
+[9] Canvas fingerprint
+    Verdict : CLÔTURÉ ✅
+    Signature : C8FBD3F804CF350E1C19F12D2D3EF770 (identique prod/attach)
 
-[N/A] Audio fingerprint — ABANDONNÉ
-    browserleaks.com/audio retourne 404.
+[10] CDP overrides détectables
+    Verdict : NON — piste écartée
+    Seuls CDP émis : Network.setUserAgentOverride, Emulation.setUserAgentOverride,
+    Page.addScriptToEvaluateOnNewDocument. Aucun CDP dangereux.
 
-================================================================================
-PISTES À VÉRIFIER / CORRIGER — CLASSÉES PAR PRIORITÉ
-================================================================================
+[11] Profil Chrome persistant (cookies poisonnés)
+    Verdict : NON — piste écartée
+    Profils persistants désactivés en prod. Chrome vierge à chaque lancement.
 
-[P1 — MOYENNE] Font fingerprint — divergence Linux vs Windows
-    Statut : CONFIRMÉ EN PROD — correction complexe, priorité modérée
-    Comparaison prod vs attach :
-      - Font Metrics Hash  : prod E8DA2E84A858041F9C75F9F4C5062494
-                             attach 0837BB3621C61348A431BF30700830CE 🔴
-      - Fonts détectées    : prod 27 fonts, 14 métriques
-                             attach 213 fonts, 171 métriques 🔴
-      - Fonts prod         : Nimbus Mono PS, Liberation Sans, Nimbus Sans,
-                             C059, Courier/Liberation Mono, D050000L
-      - Fonts attach       : Segoe UI, Arial, Helvetica, Consolas, Impact...
-      - Unicode Glyphs Hash: prod 38380E4F / attach 1C9F7677 🔴
-    Impact : signal Linux fort si le panel fait du font fingerprinting actif.
-    Correction envisagée : installer les fonts Microsoft (ttf-mscorefonts-installer
-    ou paquet fonts-windows) dans le Dockerfile Fly.io.
-    Priorité modérée : les panels d'enquête font rarement du font fingerprinting.
+[12] Timing / délai avant navigation Cint
+    Verdict : NON — piste écartée
+    Pause 10s ajoutée — aucun changement. Blocage immédiat indépendant du délai.
 
-[P2 — BASSE] Features browser hardware-dependent
-    Statut : NON VÉRIFIÉ EN PROD — impact probable faible
-    Features susceptibles de diverger :
-      - Battery API, Device Motion, Device Orientation, Speech Recognition,
-        Speech Synthesis, GamePad API, Vibration API
-    Rarement exploitées par les panels pour la détection bot.
+[13] Referrer HTTP (topsurveys → Cint)
+    Verdict : NON — piste écartée
+    Blocage identique en ouvrant l'URL Cint directement sans passer par TopSurveys.
 
-[P3 — BASSE] Geolocation API
-    Statut : À VÉRIFIER — correction probable non nécessaire
-    Valeurs attach : Origin/Global Permissions denied, getCurrentPosition DENIED.
-    Risque mineur : statut "prompt" au lieu de "denied" si profil vierge.
+[14] Font fingerprint
+    Verdict : NON — piste écartée — testé le 2026-06-17
+    Fonts Microsoft installées dans le Dockerfile (217 fonts en prod vs 213 attach).
+    Le blocage Cint persiste après le fix. Font fingerprint n'est pas la cause.
 
-[P4 — BASSE] Content Filters / HTTP Proxy Headers
-    Statut : À VÉRIFIER — correction probable non nécessaire
-    Valeurs attach : HTTP Proxy Headers not detected, Tor not detected.
+[15] --remote-debugging-port (flag debug port Selenium)
+    Verdict : CAUSE CONFIRMÉE ✅
+    Justification : test Playwright natif (pipe mode, même IP, même fingerprint JS,
+    même proxy IPRoyal) → page Cint chargée sans blocage DataDome.
+    Avec --remote-debugging-port (Selenium attach) → blocage systématique.
+    Le flag marque Chrome comme session debuggée, signal détecté par DataDome.
+    
+[N/A] Audio fingerprint
+    Verdict : ABANDONNÉ — browserleaks.com/audio retourne 404.
 
 ================================================================================
-PISTES NON EXPLORÉES / EN COURS
+BILAN — SITUATION AU 2026-06-17
 ================================================================================
 
-[ ] Comportement de navigation (timing, scroll, mouse events)
-    Hypothèse : les panels détectent l'absence d'interactions humaines.
+Tous les vecteurs mesurables ont été testés et éliminés :
+  - Réseau      : IP, DNS, TLS, HTTP/2, peetprint → identiques ou non causaux
+  - Browser JS  : navigator.*, WebGL, Canvas, fonts, WebRTC → identiques ou corrigés
+  - Infrastructure : CDP, profil Chrome, cookies, timing, referrer → éliminés
 
-[ ] Détection applicative côté panel (screener questions)
-    Hypothèse : réponses incohérentes déclenchant une disqualification métier.
+Le blocage Cint ("Verification Required — bot activity on IP X.X.X.X") persiste.
 
-[ ] Cookies / session persistence
-    Vérifier persistance des cookies de session TopSurveys / panels entre runs.
+HYPOTHÈSE RESTANTE LA PLUS PROBABLE :
+Le signal de détection n'est pas dans le fingerprint statique mais dans le
+comportement dynamique de Chrome au moment de la connexion. Candidats :
+
+  a) Absence d'historique de navigation dans le profil vierge
+     Chrome réel accumule des cookies tiers, cache, historique — un profil
+     100% vierge est statistiquement anormal et potentiellement détecté
+     comme tel par DataDome via les headers Cache-Control / ETag / cookies
+     tiers attendus.
+
+  b) Comportement scroll/mouse inexistant avant le premier driver.get()
+     DataDome peut scorer l'absence totale d'événements souris/scroll
+     avant la première requête comme signal bot fort.
+
+  c) Ordre ou contenu des headers HTTP non standard
+     Accept, Accept-Encoding, Accept-Language, Cache-Control — à vérifier
+     via un proxy d'interception (mitmproxy) entre Chrome prod et Cint.
+
+================================================================================
+PROCHAINE ACTION RECOMMANDÉE
+================================================================================
+
+Capturer les headers HTTP exacts envoyés par Chrome prod vers s.cint.com
+via mitmproxy ou un endpoint de debug, et les comparer avec ceux d'un
+Chrome local manuel sur la même URL.
+
+C'est le seul vecteur non encore mesuré directement.
 
 ================================================================================
 NOTES INFRASTRUCTURE
 ================================================================================
 - Mode prod : Fly.io CDG, Xvfb :99, Chrome headed, proxy IPRoyal ISP statique
 - Mode attach : Windows local, GPU Intel UHD 617 physique, même proxy IPRoyal
-- Spoofing actif : CDP Page.addScriptToEvaluateOnNewDocument +
-  Emulation.setUserAgentOverride (WebGL, UA, userAgentData, platform,
-  deviceMemory, hardwareConcurrency, plugins, Client Hints)
-  + WebRTC désactivé via flags Chrome (IS_LOCAL == False)
 - Référence attach Chrome : version 149.0.7827.103, Windows NT 10.0, Win64/x64
 - Pages BrowserLeaks auditées (2026-06-17) :
-    browserleaks.com/webrtc  → CORRIGÉ ✅ (WebRTC désactivé, No Leak)
-    browserleaks.com/dns     → CLÔTURÉ ✅ (Cloudflare FR identique prod/attach)
-    browserleaks.com/fonts   → DIVERGENCE CONFIRMÉE 🔴 (27 vs 213 fonts) [P1]
-    browserleaks.com/http2   → CORRIGÉ ✅ (Client Hints validés prod/attach)
-    browserleaks.com/tls     → PARTIEL (JA4 ✅, JA3 🔴, ECH False — acceptable)
-    browserleaks.com/ip      → CLÔTURÉ ✅ (fingerprint = proxy, identique)
+    browserleaks.com/webrtc  → CORRIGÉ ✅
+    browserleaks.com/dns     → CLÔTURÉ ✅
+    browserleaks.com/fonts   → ÉLIMINÉ ✅ (fix sans effet sur blocage)
+    browserleaks.com/http2   → CORRIGÉ ✅
+    browserleaks.com/tls     → CLÔTURÉ ✅
+    browserleaks.com/ip      → CLÔTURÉ ✅
     browserleaks.com/canvas  → CLÔTURÉ ✅
-    browserleaks.com/hints   → à vérifier en prod
-    browserleaks.com/features→ référence établie
-    browserleaks.com/geo     → propre, à confirmer rapidement en prod
-    browserleaks.com/proxy   → propre, à confirmer rapidement en prod
-    browserleaks.com/quic    → référence établie
+    browserleaks.com/features→ non mesuré en prod
+    browserleaks.com/geo     → non mesuré en prod
+    browserleaks.com/proxy   → non mesuré en prod
