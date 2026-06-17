@@ -20,6 +20,9 @@ RUN apt-get update && apt-get install -y \
     scrot \
     ca-certificates \
     fonts-liberation \
+    fonts-freefont-ttf \
+    fonts-noto \
+    fonts-noto-color-emoji \
     libnss3 \
     libatk-bridge2.0-0 \
     libgtk-3-0 \
@@ -38,8 +41,25 @@ RUN apt-get update && apt-get install -y \
     libdbus-1-3 \
     socat \
     xvfb \
+    cabextract \
     --no-install-recommends \
  && rm -rf /var/lib/apt/lists/*
+
+# ── Fonts Microsoft core (téléchargement direct SourceForge) ─────────────────
+# ttf-mscorefonts-installer est dans contrib (non dispo sur python:3.11-slim).
+# On télécharge les .cab directement depuis SourceForge et on extrait les .ttf.
+# Installe : Arial, Verdana, Georgia, Times New Roman, Courier New, Impact,
+# Comic Sans MS, Trebuchet MS, Webdings.
+RUN mkdir -p /usr/share/fonts/truetype/msttcorefonts \
+ && FONTS_URL="https://sourceforge.net/projects/corefonts/files/the%20fonts/final" \
+ && for cab in andale32.exe arial32.exe arialb32.exe comic32.exe courie32.exe \
+               georgi32.exe impact32.exe times32.exe trebuc32.exe verdana32.exe \
+               webdin32.exe; do \
+      wget -q "${FONTS_URL}/${cab}" -O /tmp/${cab} \
+      && cabextract -q -d /usr/share/fonts/truetype/msttcorefonts /tmp/${cab} \
+      && rm /tmp/${cab}; \
+    done \
+ && fc-cache -f -v
 
 # =========================
 # GOOGLE CHROME (STABLE)

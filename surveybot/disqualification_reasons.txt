@@ -16,73 +16,66 @@ PISTES EXPLORÉES ET CLÔTURÉES
 
 [2] Divergence fingerprint WebGL prod vs attach
     Verdict : NON — piste écartée
-    Justification : le spoofing WebGL a été audité en profondeur (dump JSON
-    complet prod vs attach, comparaison paramètre par paramètre).
-    Résultat de l'audit :
-      - Paramètres numériques WebGL1 : identiques (0 divergence)
-      - Paramètres numériques WebGL2 : identiques sauf 4 params absents du
-        dump attach car l'ancien script ne les mesurait pas
-        (MAX_ELEMENTS_INDICES, MAX_ELEMENTS_VERTICES, MAX_ELEMENT_INDEX,
-        MAX_SERVER_WAIT_TIMEOUT) — valeurs standard, non suspectes
-      - Extensions WebGL2 : identiques
-      - Extensions WebGL1 : 3 extensions supplémentaires en prod
-        (EXT_render_snorm, EXT_texture_norm16, WEBGL_provoking_vertex) —
-        présentes en prod car Chrome 148 / ANGLE plus récent que l'attach de
-        référence ; avoir plus d'extensions n'est pas un signal de détection
-      - HIGH_FLOAT_HIGH_INT : highp/highp dans les deux modes ✅
-      - UNMASKED_VENDOR/RENDERER : "Google Inc. (Intel)" /
-        "ANGLE (Intel, Intel(R) UHD Graphics 617 ...)" identiques ✅
-      - Hash BrowserLeaks différent : artefact dû aux 4 params supplémentaires
-        intégrés dans le calcul de hash côté BrowserLeaks — non significatif
-    Note technique : le dump [FP][BROWSER] loggé au démarrage affichait
-    userAgentData vide (brands=[], platform="") — c'était un artefact de
-    lecture avant navigation (Page.addScriptToEvaluateOnNewDocument non encore
-    actif sur la page courante). Corrigé en déplaçant le dump après une
-    navigation about:blank. Le spoofing est bien actif sur toutes les pages
-    réelles visitées.
+    Justification : le spoofing WebGL a été audité en profondeur.
+    Tous les paramètres numériques, extensions et hash sont identiques ou
+    explicables (version Chrome plus récente en prod). Piste close.
 
 [3] Fingerprint JavaScript (navigator.*)
     Verdict : NON — piste écartée
-    Justification : comparaison BrowserLeaks prod vs attach :
-      - userAgent : Chrome/148 Win64 ✅
-      - userAgentData.brands : Chromium/148, Google Chrome/148, Not-A.Brand/99 ✅
-      - userAgentData.platform : Windows ✅
-      - platform : Win32 ✅
-      - language : en-US ✅
-      - hardwareConcurrency : 4 ✅
-      - deviceMemory : 8 ✅
-      - webdriver : null/undefined ✅
-      - plugins : 5 plugins PDF (identiques) ✅
+    Justification : comparaison BrowserLeaks prod vs attach — tous identiques :
+    userAgent, userAgentData, platform, language, hardwareConcurrency,
+    deviceMemory, webdriver, plugins ✅
 
 [4] TCP/IP Stack fingerprint
     Verdict : NON — piste écartée
-    Justification : le profil TCP/IP prod avec proxy actif est quasi-identique
-    à l'attach avec proxy actif. Le fingerprint observé est celui du tunnel
-    proxy IPRoyal (OpenVPN TCP bs128 SHA1 lzo), identique dans les deux modes.
-    Valeurs attach + proxy (référence correcte) :
-      - JA4T : 43080_2-4-8-1-3_1300_12, Satori "no matches", TTL 64, MTU 1340
-    Conclusion : pas un vecteur de détection différentielle.
+    Justification : profil TCP prod avec proxy = profil attach avec proxy.
+    Le fingerprint est celui du tunnel IPRoyal (OpenVPN TCP bs128 SHA1 lzo),
+    identique dans les deux modes. Pas un vecteur différentiel.
 
-[5] TLS fingerprint / Akamai HTTP/2
-    Verdict : NON — piste écartée
-    Justification : Akamai Fingerprint et Hash identiques prod vs attach.
-    Le proxy IPRoyal ne modifie pas le ClientHello TLS ni les frames HTTP/2.
-      - Akamai Fingerprint : 1:65536;2:0;4:6291456;6:262144|15663105|0|m,a,s,p ✅
-      - Akamai Hash        : 52d84b11737d980aef856699f885ca86 ✅
+[5] DNS leak
+    Verdict : NON — piste écartée — validé en prod le 2026-06-17
+    Justification : DNS prod et attach identiques — tous Cloudflare France Paris.
+    Le proxy IPRoyal route les DNS via Cloudflare dans les deux modes.
+    Pas de fuite vers Fly.io, pas de discordance ISP/DNS.
+      - IP visible prod : 178.210.254.157 (proxy IPRoyal) ✅
+      - ISP : Orange S.A., France Paris ✅
+      - DNS : Cloudflare France Paris (43–45 serveurs) ✅
 
-[6] Client Hints HTTP (sec-ch-ua-platform, sec-ch-ua, sec-ch-ua-mobile)
+[6] TLS fingerprint / Akamai HTTP/2
+    Verdict : PARTIEL — JA4 identique, JA3 diverge, ECH absent en prod
+    Justification :
+      - JA4  : t13d1516h2_d8aaf6152771_d8a2da3f94cd ✅ IDENTIQUE
+      - JA4_o: attach ac858a92679_1e49fde2599b /
+               prod   ac858a92679_f34fad98123f 🟡 delta mineur
+      - JA3  : attach 458acd1b3217e8519e33bff22a9975b8d /
+               prod   1429a2e3d95d08a8d5adcad4a2d8c25 🔴 diverge
+      - ECH  : attach True / prod False 🔴 (proxy ne supporte pas ECH)
+      - Akamai HTTP/2 : 1:65536;2:0;4:6291456;6:262144|15663105|0|m,a,s,p ✅
+      - Akamai Hash   : 52d84b11737d980aef856699f885ca86 ✅
+    Impact : JA3 est moins utilisé que JA4 par les anti-bots modernes.
+    ECH False est un signal mineur — le proxy IPRoyal ne supporte pas ECH,
+    identique en attach et prod avec proxy actif. Non actionnable.
+    Piste considérée acceptable — pas de correction envisagée.
+
+[7] Client Hints HTTP (sec-ch-ua-platform, sec-ch-ua, sec-ch-ua-mobile)
     Verdict : CORRIGÉ ✅ — validé en prod le 2026-06-17
-    Cause racine : Emulation.setUserAgentOverride échouait avec "invalid argument:
-    Invalid parameters" (Chrome 149) à cause d'un type incorrect sur le champ
-    "wow64" (booléen Python au lieu du type attendu par le schéma CDP).
-    Après correction du patch dans apply_fingerprint_overrides_cdp() :
+    Cause racine : Emulation.setUserAgentOverride échouait avec
+    "invalid argument: Invalid parameters" (Chrome 149) — type incorrect
+    sur le champ "wow64". Après correction :
       - sec-ch-ua-platform : "Windows" ✅
       - sec-ch-ua          : "Google Chrome";v="149", "Chromium";v="149",
                              "Not)A;Brand";v="24" ✅
       - sec-ch-ua-mobile   : ?0 ✅
       - userAgentData.brands (JS) : Chrome/149 ✅
-    Résidu mineur : accept-language affiche "en-US,en;q=0.9;q=0.9" (doublon
-    q=0.9) — à corriger dans le paramètre acceptLanguage de l'appel CDP.
+    Résidu mineur : accept-language "en-US,en;q=0.9;q=0.9" (doublon q=0.9).
+
+[8] WebRTC IP leak
+    Verdict : CORRIGÉ ✅ — validé en prod le 2026-06-17
+    Cause racine : WebRTC exposait l'IP datacenter Fly.io (167.88.159.89 NL).
+    Solution : désactivation complète WebRTC via flags Chrome (IS_LOCAL==False).
+      - RTCPeerConnection : False ✅
+      - WebRTC Leak Test  : No Leak ✅
+      - Local/Public IP   : - ✅
 
 [✅] Canvas fingerprint — CLÔTURÉ
     Signature prod = attach : C8FBD3F804CF350E1C19F12D2D3EF770 (identique).
@@ -91,57 +84,38 @@ PISTES EXPLORÉES ET CLÔTURÉES
     browserleaks.com/audio retourne 404.
 
 ================================================================================
-PISTES À VÉRIFIER EN PROD — CLASSÉES PAR PRIORITÉ
+PISTES À VÉRIFIER / CORRIGER — CLASSÉES PAR PRIORITÉ
 ================================================================================
 
-[P1 — HAUTE] WebRTC IP leak
-    Statut : NON VÉRIFIÉ EN PROD
-    Hypothèse : WebRTC expose l'IP réelle de la machine Fly.io en plus de l'IP proxy.
-    Valeurs attach (référence — propre) :
-      - WebRTC Leak Test  : No Leak
-      - Local IP Address  : - (aucune IP locale exposée)
-      - Public IP (WebRTC): 176.186.86.39 (= IP proxy, cohérent)
-      - SDP Log           : IN IP4 127.0.0.1 uniquement
-    En prod, risque que le SDP expose l'IP interne Fly.io (fdaa::/7 ou 172.x.x.x)
-    ou l'IP publique CDG Fly.io à côté de l'IP proxy.
-    Correction envisagée : désactiver WebRTC via CDP ou flag Chrome.
+[P1 — MOYENNE] Font fingerprint — divergence Linux vs Windows
+    Statut : CONFIRMÉ EN PROD — correction complexe, priorité modérée
+    Comparaison prod vs attach :
+      - Font Metrics Hash  : prod E8DA2E84A858041F9C75F9F4C5062494
+                             attach 0837BB3621C61348A431BF30700830CE 🔴
+      - Fonts détectées    : prod 27 fonts, 14 métriques
+                             attach 213 fonts, 171 métriques 🔴
+      - Fonts prod         : Nimbus Mono PS, Liberation Sans, Nimbus Sans,
+                             C059, Courier/Liberation Mono, D050000L
+      - Fonts attach       : Segoe UI, Arial, Helvetica, Consolas, Impact...
+      - Unicode Glyphs Hash: prod 38380E4F / attach 1C9F7677 🔴
+    Impact : signal Linux fort si le panel fait du font fingerprinting actif.
+    Correction envisagée : installer les fonts Microsoft (ttf-mscorefonts-installer
+    ou paquet fonts-windows) dans le Dockerfile Fly.io.
+    Priorité modérée : les panels d'enquête font rarement du font fingerprinting.
 
-[P2 — HAUTE] DNS leak
-    Statut : NON VÉRIFIÉ EN PROD
-    Hypothèse : Chrome résout les DNS via les resolvers Fly.io/Cloudflare au lieu
-    des DNS du proxy IPRoyal, créant une incohérence IP/DNS détectable.
-    Valeurs attach (référence — propre) :
-      - IP visible    : 176.186.86.39 (proxy IPRoyal)
-      - ISP visible   : BOUYGUES Telecom, France Paris
-      - DNS Server 1  : 89.85.114.32 — Bouygues Telecom ISP — France, Paris
-      - DNS Server 2  : 2001:860:de02::4 — Bouygues Telecom ISP Wireline
-    En prod, risque que les DNS resolvent via Fly.io (fdaa::3) ou Cloudflare
-    pendant que l'IP de sortie reste IPRoyal → discordance ISP/DNS flagrante.
-
-[P3 — MOYENNE] Font fingerprint
-    Statut : NON VÉRIFIÉ EN PROD
-    Valeurs attach (référence) :
-      - Font Metrics Hash  : 0837BB3621C61348A431BF30700830CE
-      - Fonts détectées    : 213 fonts, 171 métriques uniques
-      - Fonts Windows clés : Segoe UI, Segoe UI Variable Text, Arial, Helvetica,
-                             Consolas, Comic Sans MS, Impact
-      - Unicode Glyphs Hash: 1C9F7677
-    En prod : absence totale de fonts Windows → hash radicalement différent.
-    Priorité modérée : les panels font rarement du font fingerprinting actif.
-
-[P4 — BASSE] Features browser hardware-dependent
+[P2 — BASSE] Features browser hardware-dependent
     Statut : NON VÉRIFIÉ EN PROD — impact probable faible
     Features susceptibles de diverger :
       - Battery API, Device Motion, Device Orientation, Speech Recognition,
         Speech Synthesis, GamePad API, Vibration API
     Rarement exploitées par les panels pour la détection bot.
 
-[P5 — BASSE] Geolocation API
+[P3 — BASSE] Geolocation API
     Statut : À VÉRIFIER — correction probable non nécessaire
     Valeurs attach : Origin/Global Permissions denied, getCurrentPosition DENIED.
     Risque mineur : statut "prompt" au lieu de "denied" si profil vierge.
 
-[P6 — BASSE] Content Filters / HTTP Proxy Headers
+[P4 — BASSE] Content Filters / HTTP Proxy Headers
     Statut : À VÉRIFIER — correction probable non nécessaire
     Valeurs attach : HTTP Proxy Headers not detected, Tor not detected.
 
@@ -163,19 +137,20 @@ NOTES INFRASTRUCTURE
 ================================================================================
 - Mode prod : Fly.io CDG, Xvfb :99, Chrome headed, proxy IPRoyal ISP statique
 - Mode attach : Windows local, GPU Intel UHD 617 physique, même proxy IPRoyal
-- Spoofing actif : CDP Page.addScriptToEvaluateOnNewDocument + 
+- Spoofing actif : CDP Page.addScriptToEvaluateOnNewDocument +
   Emulation.setUserAgentOverride (WebGL, UA, userAgentData, platform,
   deviceMemory, hardwareConcurrency, plugins, Client Hints)
+  + WebRTC désactivé via flags Chrome (IS_LOCAL == False)
 - Référence attach Chrome : version 149.0.7827.103, Windows NT 10.0, Win64/x64
 - Pages BrowserLeaks auditées (2026-06-17) :
-    browserleaks.com/webrtc  → propre en attach, à vérifier en prod [P1]
-    browserleaks.com/dns     → propre en attach, à vérifier en prod [P2]
-    browserleaks.com/fonts   → référence établie, à vérifier en prod [P3]
+    browserleaks.com/webrtc  → CORRIGÉ ✅ (WebRTC désactivé, No Leak)
+    browserleaks.com/dns     → CLÔTURÉ ✅ (Cloudflare FR identique prod/attach)
+    browserleaks.com/fonts   → DIVERGENCE CONFIRMÉE 🔴 (27 vs 213 fonts) [P1]
     browserleaks.com/http2   → CORRIGÉ ✅ (Client Hints validés prod/attach)
+    browserleaks.com/tls     → PARTIEL (JA4 ✅, JA3 🔴, ECH False — acceptable)
+    browserleaks.com/ip      → CLÔTURÉ ✅ (fingerprint = proxy, identique)
+    browserleaks.com/canvas  → CLÔTURÉ ✅
     browserleaks.com/hints   → à vérifier en prod
-    browserleaks.com/tls     → clôturé ✅ (JA3/JA4 identiques)
-    browserleaks.com/ip      → clôturé ✅ (fingerprint = proxy, identique)
-    browserleaks.com/canvas  → clôturé ✅
     browserleaks.com/features→ référence établie
     browserleaks.com/geo     → propre, à confirmer rapidement en prod
     browserleaks.com/proxy   → propre, à confirmer rapidement en prod
