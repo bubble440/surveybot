@@ -234,7 +234,7 @@ def _check_one(driver, url: str, label: str) -> dict:
 def main():
     sys.path.insert(0, os.getcwd())
 
-    from preselection.playwright_launcher import launch_browser
+    from preselection.playwright_launcher import launch_browser_playwright
 
     account_id = os.getenv("ACCOUNT_ID", "access_probe")
     print(f"[MA] Lancement Chrome prod — account_id={account_id}")
@@ -251,7 +251,7 @@ def main():
             check=True,
         )
 
-    driver = launch_browser()
+    driver = launch_browser_playwright()
     results = []
 
     try:
