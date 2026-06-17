@@ -801,6 +801,7 @@ def apply_fingerprint_overrides_cdp(driver) -> None:
         "platform":        "Windows",
         "platformVersion": "19.0.0",
         "architecture":    "x86",
+        "model":           "",
         "bitness":         "64",
         "wow64":           False,
         "mobile":          False,
@@ -814,6 +815,7 @@ def apply_fingerprint_overrides_cdp(driver) -> None:
         })
         log.info("[FP][CDP] Emulation.setUserAgentOverride OK — Client Hints low-entropy restaures.")
     except Exception as e:
+        print(f"[FP][CDP][ERROR] Emulation.setUserAgentOverride echoue : {e!r}")
         log.warning("[FP][CDP][WARN] Emulation.setUserAgentOverride echoue (non bloquant) : %s", e)
     # ── FIN PATCH Client Hints ────────────────────────────────────────────────
 
