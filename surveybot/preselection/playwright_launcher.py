@@ -767,8 +767,8 @@ def apply_fingerprint_overrides_cdp(driver) -> None:
         spoofed_ua = _re.sub(r"HeadlessChrome", "Chrome", raw_ua)
         spoofed_ua = _re.sub(r"X11;\s*", "", spoofed_ua)
         spoofed_ua = _re.sub(r"Linux x86_64", "Windows NT 10.0; Win64; x64", spoofed_ua)
-        # Forcer la version Chrome à 148 pour cohérence avec uaFullVersion/fullVersionList
-        spoofed_ua = _re.sub(r"Chrome/\d+\.", "Chrome/148.", spoofed_ua)
+        # Forcer la version Chrome à 149 pour cohérence avec uaFullVersion/fullVersionList
+        spoofed_ua = _re.sub(r"Chrome/\d+\.", "Chrome/149.", spoofed_ua)
         driver.execute_cdp_cmd("Network.setUserAgentOverride", {
             "userAgent": spoofed_ua,
             "platform": "Win32",
@@ -777,14 +777,54 @@ def apply_fingerprint_overrides_cdp(driver) -> None:
     except Exception as e:
         log.warning("[FP][CDP][WARN] Échec User-Agent override : %s", e)
 
+    # ── PATCH Client Hints : Emulation.setUserAgentOverride + userAgentMetadata ──
+    # Network.setUserAgentOverride ne transmet pas userAgentMetadata → Chrome
+    # cesse d'émettre automatiquement les low-entropy Client Hints (sec-ch-ua,
+    # sec-ch-ua-mobile, sec-ch-ua-platform). Emulation.setUserAgentOverride
+    # avec userAgentMetadata complet restaure leur émission automatique.
+    _UA_CH_STRING = (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/149.0.0.0 Safari/537.36"
+    )
+    _UA_CH_METADATA = {
+        "brands": [
+            {"brand": "Google Chrome",  "version": "149"},
+            {"brand": "Chromium",       "version": "149"},
+            {"brand": "Not)A;Brand",    "version": "24"},
+        ],
+        "fullVersionList": [
+            {"brand": "Google Chrome",  "version": "149.0.7827.103"},
+            {"brand": "Chromium",       "version": "149.0.7827.103"},
+            {"brand": "Not)A;Brand",    "version": "24.0.0.0"},
+        ],
+        "platform":        "Windows",
+        "platformVersion": "19.0.0",
+        "architecture":    "x86",
+        "bitness":         "64",
+        "wow64":           False,
+        "mobile":          False,
+    }
+    try:
+        driver.execute_cdp_cmd("Emulation.setUserAgentOverride", {
+            "userAgent":         _UA_CH_STRING,
+            "acceptLanguage":    "en-US,en;q=0.9",
+            "platform":          "Win32",
+            "userAgentMetadata": _UA_CH_METADATA,
+        })
+        log.info("[FP][CDP] Emulation.setUserAgentOverride OK — Client Hints low-entropy restaures.")
+    except Exception as e:
+        log.warning("[FP][CDP][WARN] Emulation.setUserAgentOverride echoue (non bloquant) : %s", e)
+    # ── FIN PATCH Client Hints ────────────────────────────────────────────────
+
     try:
         driver.execute_cdp_cmd(
             "Page.addScriptToEvaluateOnNewDocument",
             {"source": _fingerprint_js()}
         )
-        log.info("[FP][CDP] Fingerprint overrides enregistrés via CDP.")
+        log.info("[FP][CDP] Fingerprint overrides enregistres via CDP.")
     except Exception as e:
-        log.warning("[FP][CDP][WARN] Échec enregistrement fingerprint CDP : %s", e)
+        log.warning("[FP][CDP][WARN] Echec enregistrement fingerprint CDP : %s", e)
 
 
 def _detect_chrome_major_version(chrome_bin: str) -> int | None:

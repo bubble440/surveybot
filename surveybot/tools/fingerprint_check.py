@@ -18,15 +18,15 @@ import sys
 import time
 
 FINGERPRINT_PAGES = [
-    ("tcp",  "https://browserleaks.com/tcp"),
+    # ("tcp",  "https://browserleaks.com/tcp"),
     ("http2",  "https://browserleaks.com/http2"),
-    ("webrtc",  "https://browserleaks.com/webrtc"),
-    ("dns",  "https://browserleaks.com/dns"),
-    ("tls",  "https://browserleaks.com/tls"),
-    ("fonts",  "https://browserleaks.com/fonts"),
-    ("features",  "https://browserleaks.com/features"),
-    ("geo",  "https://browserleaks.com/geo"),
-    ("proxy",  "https://browserleaks.com/proxy"),
+    # ("webrtc",  "https://browserleaks.com/webrtc"),
+    # ("dns",  "https://browserleaks.com/dns"),
+    # ("tls",  "https://browserleaks.com/tls"),
+    # ("fonts",  "https://browserleaks.com/fonts"),
+    # ("features",  "https://browserleaks.com/features"),
+    # ("geo",  "https://browserleaks.com/geo"),
+    # ("proxy",  "https://browserleaks.com/proxy"),
     # ("canvas",  "https://browserleaks.com/canvas"),
     # ("javascript", "https://browserleaks.com/javascript"),
     # ("webgl",      "https://browserleaks.com/webgl"),
