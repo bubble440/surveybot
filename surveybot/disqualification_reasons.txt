@@ -56,82 +56,45 @@ PISTES EXPLORÉES ET CLÔTURÉES
 
 [4] TCP/IP Stack fingerprint
     Verdict : NON — piste écartée
-    Justification : le profil TCP/IP prod observé initialement sans proxy était
-    trompeur. Avec le proxy IPRoyal actif (identique attach et prod), les deux
-    profils sont quasi-identiques — le fingerprint observé est celui du tunnel
-    proxy IPRoyal, pas de la machine Fly.io.
+    Justification : le profil TCP/IP prod avec proxy actif est quasi-identique
+    à l'attach avec proxy actif. Le fingerprint observé est celui du tunnel
+    proxy IPRoyal (OpenVPN TCP bs128 SHA1 lzo), identique dans les deux modes.
     Valeurs attach + proxy (référence correcte) :
-      - JA4T        : 43080_2-4-8-1-3_1300_12
-      - Satori Sig  : no matches
-      - Link Type   : OpenVPN TCP bs128 SHA1 lzo
-      - MTU         : 1340
-      - Initial TTL : 64
-      - Window Size : 43080 (~42340 en prod — delta non significatif)
-      - MSS         : 1300
-      - TIMESTAMP   : présent
-    Conclusion : profil TCP identique en attach et prod → pas un vecteur de
-    détection différentielle.
+      - JA4T : 43080_2-4-8-1-3_1300_12, Satori "no matches", TTL 64, MTU 1340
+    Conclusion : pas un vecteur de détection différentielle.
 
-[5] TLS fingerprint / Akamai HTTP/2 (JA3/JA4)
+[5] TLS fingerprint / Akamai HTTP/2
     Verdict : NON — piste écartée
-    Justification : comparaison prod vs attach :
-      - Akamai Fingerprint : 1:65536;2:0;4:6291456;6:262144|15663105|0|m,a,s,p ✅ IDENTIQUE
-      - Akamai Hash        : 52d84b11737d980aef856699f885ca86 ✅ IDENTIQUE
-      - SETTINGS frames    : identiques ✅
-      - WINDOW_UPDATE      : 15663105 ✅
+    Justification : Akamai Fingerprint et Hash identiques prod vs attach.
     Le proxy IPRoyal ne modifie pas le ClientHello TLS ni les frames HTTP/2.
-    Piste close.
+      - Akamai Fingerprint : 1:65536;2:0;4:6291456;6:262144|15663105|0|m,a,s,p ✅
+      - Akamai Hash        : 52d84b11737d980aef856699f885ca86 ✅
+
+[6] Client Hints HTTP (sec-ch-ua-platform, sec-ch-ua, sec-ch-ua-mobile)
+    Verdict : CORRIGÉ ✅ — validé en prod le 2026-06-17
+    Cause racine : Emulation.setUserAgentOverride échouait avec "invalid argument:
+    Invalid parameters" (Chrome 149) à cause d'un type incorrect sur le champ
+    "wow64" (booléen Python au lieu du type attendu par le schéma CDP).
+    Après correction du patch dans apply_fingerprint_overrides_cdp() :
+      - sec-ch-ua-platform : "Windows" ✅
+      - sec-ch-ua          : "Google Chrome";v="149", "Chromium";v="149",
+                             "Not)A;Brand";v="24" ✅
+      - sec-ch-ua-mobile   : ?0 ✅
+      - userAgentData.brands (JS) : Chrome/149 ✅
+    Résidu mineur : accept-language affiche "en-US,en;q=0.9;q=0.9" (doublon
+    q=0.9) — à corriger dans le paramètre acceptLanguage de l'appel CDP.
 
 [✅] Canvas fingerprint — CLÔTURÉ
     Signature prod = attach : C8FBD3F804CF350E1C19F12D2D3EF770 (identique).
-    File size : 5592 bytes (identique). PNG headers : identiques.
-    Divergence "Number of Colors" (941 vs 222) : artefact de compression PNG,
-    sans impact sur la signature. Piste close.
 
 [N/A] Audio fingerprint — ABANDONNÉ
-    browserleaks.com/audio retourne 404. Pas de source de mesure disponible.
-    Piste non vérifiable via BrowserLeaks.
-
-================================================================================
-PISTES À CORRIGER — CLASSÉES PAR PRIORITÉ
-================================================================================
-
-[P1 — CRITIQUE] Client Hints HTTP absents en prod
-    Statut : CONFIRMÉ EN PROD — à corriger en priorité absolue
-    Symptôme : les trois headers Client Hints low-entropy sont totalement absents
-    des requêtes HTTP en prod, alors qu'ils sont présents en attach.
-    Comparaison HTTP/2 headers prod vs attach :
-      - sec-ch-ua-platform : ABSENT en prod | "Windows" en attach 🔴
-      - sec-ch-ua          : ABSENT en prod | "Google Chrome";v="149"... en attach 🔴
-      - sec-ch-ua-mobile   : ABSENT en prod | ?0 en attach 🔴
-    Ces trois headers sont Low Entropy — Chrome les envoie automatiquement sur
-    chaque requête sans opt-in serveur. Leur absence totale indique que
-    Emulation.setUserAgentOverride est appelé en prod SANS le paramètre
-    userAgentMetadata, ce qui supprime l'émission automatique des Client Hints.
-    Impact : tout anti-bot vérifiant la cohérence UA / Client Hints détecte
-    immédiatement l'anomalie — un Chrome réel envoie toujours ces headers.
-    Valeurs attendues (référence attach Chrome 149) :
-      - sec-ch-ua          : "Google Chrome";v="149", "Chromium";v="149",
-                             "Not)A;Brand";v="24"
-      - sec-ch-ua-mobile   : ?0
-      - sec-ch-ua-platform : "Windows"
-    High Entropy (sur demande serveur via Accept-CH) — aussi à aligner :
-      - platformVersion    : 19.0.0
-      - architecture       : x86
-      - bitness            : 64
-      - wow64              : false
-      - uaFullVersion      : 149.0.7827.103
-      - fullVersionList    : Google Chrome 149.0.7827.103, Chromium 149.0.7827.103,
-                             Not)A;Brand 24.0.0.0
-      - formFactors        : ["Desktop"]
-    Correction : appeler Emulation.setUserAgentOverride avec userAgentMetadata
-    complet dans apply_fingerprint_overrides_cdp() (playwright_launcher.py).
+    browserleaks.com/audio retourne 404.
 
 ================================================================================
 PISTES À VÉRIFIER EN PROD — CLASSÉES PAR PRIORITÉ
 ================================================================================
 
-[P2 — HAUTE] WebRTC IP leak
+[P1 — HAUTE] WebRTC IP leak
     Statut : NON VÉRIFIÉ EN PROD
     Hypothèse : WebRTC expose l'IP réelle de la machine Fly.io en plus de l'IP proxy.
     Valeurs attach (référence — propre) :
@@ -143,7 +106,7 @@ PISTES À VÉRIFIER EN PROD — CLASSÉES PAR PRIORITÉ
     ou l'IP publique CDG Fly.io à côté de l'IP proxy.
     Correction envisagée : désactiver WebRTC via CDP ou flag Chrome.
 
-[P3 — HAUTE] DNS leak
+[P2 — HAUTE] DNS leak
     Statut : NON VÉRIFIÉ EN PROD
     Hypothèse : Chrome résout les DNS via les resolvers Fly.io/Cloudflare au lieu
     des DNS du proxy IPRoyal, créant une incohérence IP/DNS détectable.
@@ -151,15 +114,12 @@ PISTES À VÉRIFIER EN PROD — CLASSÉES PAR PRIORITÉ
       - IP visible    : 176.186.86.39 (proxy IPRoyal)
       - ISP visible   : BOUYGUES Telecom, France Paris
       - DNS Server 1  : 89.85.114.32 — Bouygues Telecom ISP — France, Paris
-      - DNS Server 2  : 2001:860:de02::4 — Bouygues Telecom ISP Wireline — France, Paris
-    En prod, risque que les DNS resolvent via Fly.io (fdaa::3) ou Cloudflare (1.1.1.1)
+      - DNS Server 2  : 2001:860:de02::4 — Bouygues Telecom ISP Wireline
+    En prod, risque que les DNS resolvent via Fly.io (fdaa::3) ou Cloudflare
     pendant que l'IP de sortie reste IPRoyal → discordance ISP/DNS flagrante.
-    Correction envisagée : forcer les DNS via le proxy dans la config Chrome/réseau.
 
-[P4 — MOYENNE] Font fingerprint
+[P3 — MOYENNE] Font fingerprint
     Statut : NON VÉRIFIÉ EN PROD
-    Hypothèse : les fonts système Linux (prod) sont radicalement différentes
-    des fonts Windows (attach), produisant un fingerprint distinct.
     Valeurs attach (référence) :
       - Font Metrics Hash  : 0837BB3621C61348A431BF30700830CE
       - Fonts détectées    : 213 fonts, 171 métriques uniques
@@ -169,58 +129,54 @@ PISTES À VÉRIFIER EN PROD — CLASSÉES PAR PRIORITÉ
     En prod : absence totale de fonts Windows → hash radicalement différent.
     Priorité modérée : les panels font rarement du font fingerprinting actif.
 
-[P5 — BASSE] Features browser hardware-dependent
+[P4 — BASSE] Features browser hardware-dependent
     Statut : NON VÉRIFIÉ EN PROD — impact probable faible
     Features susceptibles de diverger :
       - Battery API, Device Motion, Device Orientation, Speech Recognition,
         Speech Synthesis, GamePad API, Vibration API
-    Note : rarement exploitées par les panels pour la détection bot.
+    Rarement exploitées par les panels pour la détection bot.
 
-[P6 — BASSE] Geolocation API
-    Statut : À VÉRIFIER RAPIDEMENT — correction probable non nécessaire
+[P5 — BASSE] Geolocation API
+    Statut : À VÉRIFIER — correction probable non nécessaire
     Valeurs attach : Origin/Global Permissions denied, getCurrentPosition DENIED.
-    Risque mineur : statut "prompt" au lieu de "denied" si profil Chrome vierge.
+    Risque mineur : statut "prompt" au lieu de "denied" si profil vierge.
 
-[P7 — BASSE] Content Filters / HTTP Proxy Headers
-    Statut : À VÉRIFIER RAPIDEMENT — correction probable non nécessaire
+[P6 — BASSE] Content Filters / HTTP Proxy Headers
+    Statut : À VÉRIFIER — correction probable non nécessaire
     Valeurs attach : HTTP Proxy Headers not detected, Tor not detected.
-    Risque : relay TCP CONNECT injectant des headers proxy visibles.
 
 ================================================================================
 PISTES NON EXPLORÉES / EN COURS
 ================================================================================
 
 [ ] Comportement de navigation (timing, scroll, mouse events)
-    Hypothèse : les panels détectent l'absence d'interactions humaines
-    (clics trop rapides, pas de mouvement souris, scroll linéaire).
+    Hypothèse : les panels détectent l'absence d'interactions humaines.
 
 [ ] Détection applicative côté panel (screener questions)
-    Hypothèse : le bot sélectionne des combinaisons de réponses incohérentes
-    ou statistiquement improbables qui déclenchent une disqualification métier
-    (pas une détection bot).
+    Hypothèse : réponses incohérentes déclenchant une disqualification métier.
 
 [ ] Cookies / session persistence
-    Vérifier si les cookies de session TopSurveys / panels sont correctement
-    persistés et réutilisés entre les runs.
+    Vérifier persistance des cookies de session TopSurveys / panels entre runs.
 
 ================================================================================
 NOTES INFRASTRUCTURE
 ================================================================================
 - Mode prod : Fly.io CDG, Xvfb :99, Chrome headed, proxy IPRoyal ISP statique
 - Mode attach : Windows local, GPU Intel UHD 617 physique, même proxy IPRoyal
-- Spoofing actif : CDP Page.addScriptToEvaluateOnNewDocument (WebGL, UA,
-  userAgentData, platform, deviceMemory, hardwareConcurrency, plugins,
-  getContextAttributes, getShaderPrecisionFormat)
+- Spoofing actif : CDP Page.addScriptToEvaluateOnNewDocument + 
+  Emulation.setUserAgentOverride (WebGL, UA, userAgentData, platform,
+  deviceMemory, hardwareConcurrency, plugins, Client Hints)
 - Référence attach Chrome : version 149.0.7827.103, Windows NT 10.0, Win64/x64
 - Pages BrowserLeaks auditées (2026-06-17) :
-    browserleaks.com/webrtc  → propre, référence établie
-    browserleaks.com/fonts   → référence établie
-    browserleaks.com/geo     → propre, référence établie
-    browserleaks.com/features→ référence établie
-    browserleaks.com/tls     → référence établie (JA3/JA4 identiques prod/attach)
-    browserleaks.com/proxy   → propre, référence établie
-    browserleaks.com/ip      → clôturé (fingerprint = proxy, identique prod/attach)
-    browserleaks.com/http2   → DIVERGENCE CONFIRMÉE (Client Hints absents en prod)
+    browserleaks.com/webrtc  → propre en attach, à vérifier en prod [P1]
+    browserleaks.com/dns     → propre en attach, à vérifier en prod [P2]
+    browserleaks.com/fonts   → référence établie, à vérifier en prod [P3]
+    browserleaks.com/http2   → CORRIGÉ ✅ (Client Hints validés prod/attach)
     browserleaks.com/hints   → à vérifier en prod
-    browserleaks.com/dns     → propre en attach, à vérifier en prod
+    browserleaks.com/tls     → clôturé ✅ (JA3/JA4 identiques)
+    browserleaks.com/ip      → clôturé ✅ (fingerprint = proxy, identique)
+    browserleaks.com/canvas  → clôturé ✅
+    browserleaks.com/features→ référence établie
+    browserleaks.com/geo     → propre, à confirmer rapidement en prod
+    browserleaks.com/proxy   → propre, à confirmer rapidement en prod
     browserleaks.com/quic    → référence établie

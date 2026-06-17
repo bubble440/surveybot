@@ -19,8 +19,8 @@ import time
 
 FINGERPRINT_PAGES = [
     # ("tcp",  "https://browserleaks.com/tcp"),
-    ("http2",  "https://browserleaks.com/http2"),
-    # ("webrtc",  "https://browserleaks.com/webrtc"),
+    # ("http2",  "https://browserleaks.com/http2"),
+    ("webrtc",  "https://browserleaks.com/webrtc"),
     # ("dns",  "https://browserleaks.com/dns"),
     # ("tls",  "https://browserleaks.com/tls"),
     # ("fonts",  "https://browserleaks.com/fonts"),
@@ -28,7 +28,7 @@ FINGERPRINT_PAGES = [
     # ("geo",  "https://browserleaks.com/geo"),
     # ("proxy",  "https://browserleaks.com/proxy"),
     # ("canvas",  "https://browserleaks.com/canvas"),
-    ("javascript", "https://browserleaks.com/javascript"),
+    # ("javascript", "https://sbrowserleaks.com/javascript"),
     # ("webgl",      "https://browserleaks.com/webgl"),
     # ("ip",         "https://browserleaks.com/ip"),
 ]
