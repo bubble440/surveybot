@@ -1372,3 +1372,100 @@ def launch_browser(config: dict | None = None):
         input("[LAUNCH] Appuie sur Entrée pour continuer... ")
 
     return driver
+
+
+def launch_browser_playwright(config: dict | None = None):
+    """
+    Lance Chrome via Playwright (mode pipe, sans --remote-debugging-port).
+
+    Identique à launch_browser() côté arguments Chrome, sauf :
+      - pas de --remote-debugging-port / --remote-debugging-address / --remote-debugging-allow-origins
+      - proxy passé directement à Playwright (pas de relay local)
+      - fingerprint JS injecté via context.add_init_script()
+
+    Retourne un PlaywrightDriverShim prêt à l'emploi.
+    """
+    from playwright.sync_api import sync_playwright
+    from preselection.playwright_shim import PlaywrightDriverShim
+
+    chrome_bin            = _detect_chrome_binary()
+    proxy_server, proxy_user, proxy_pass = _parse_proxy_env(config)
+    locale, tz            = _parse_locale_tz_env()
+    headless              = _want_headless()
+    user_data_dir         = tempfile.mkdtemp(prefix="chrome_profile_pw_")
+
+    log.info("[LAUNCH][PW] chrome_bin=%s headless=%s locale=%s tz=%s proxy=%s",
+             chrome_bin, headless, locale, tz, proxy_server or "none")
+
+    # ── Arguments Chrome (identiques à launch_browser, hors remote-debugging-*) ──
+    chrome_args = [
+        f"--user-data-dir={user_data_dir}",
+        "--no-first-run",
+        "--no-default-browser-check",
+        "--disable-dev-shm-usage",
+        *( ["--no-sandbox"] if (not hasattr(os, "getuid") or os.getuid() == 0) else [] ),
+        "--disable-background-networking",
+        "--disable-component-update",
+        "--disable-sync",
+        "--no-pings",
+        "--disable-domain-reliability",
+        "--disable-client-side-phishing-detection",
+        "--safebrowsing-disable-auto-update",
+        "--disable-features=Translate,OptimizationHints,SafeBrowsingProtections,"
+            "SafeBrowsingRealTimeUrlLookupEnabled,ChromeWhatsNewUI,"
+            "NetworkService,MediaRouter,DialMediaRouteProvider",
+        "--ash-no-nudges",
+        "--disable-ntp-most-likely-favicons-from-server",
+        "--disable-search-engine-choice-screen",
+        "--disable-extensions",
+        "--disable-notifications",
+        "--window-size=1920,1080",
+        "--lang=en-US",
+    ]
+
+    if not IS_LOCAL:
+        chrome_args += [
+            "--disable-features=WebRTC",
+            "--enforce-webrtc-ip-permission-check",
+            "--webrtc-ip-handling-policy=disable_non_proxied_udp",
+        ]
+
+    if not headless and os.environ.get("DISPLAY") and ".exe" not in chrome_bin.lower():
+        chrome_args.extend(["--use-gl=angle", "--use-angle=swiftshader"])
+
+    # ── Proxy Playwright natif (pas de relay local) ───────────────────────────
+    pw_proxy = None
+    if proxy_server:
+        pw_proxy = {"server": proxy_server}
+        if proxy_user and proxy_pass:
+            pw_proxy["username"] = proxy_user
+            pw_proxy["password"] = proxy_pass
+
+    _UA = (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/149.0.0.0 Safari/537.36"
+    )
+
+    pw = sync_playwright().start()
+    browser = pw.chromium.launch(
+        executable_path=chrome_bin,
+        args=chrome_args,
+        env={**os.environ, "TZ": tz},
+        headless=headless,
+    )
+    context = browser.new_context(
+        locale=locale,
+        timezone_id=tz,
+        user_agent=_UA,
+        viewport={"width": 1920, "height": 1080},
+        proxy=pw_proxy,
+    )
+    context.add_init_script(_fingerprint_js())
+    page = context.new_page()
+
+    shim = PlaywrightDriverShim(browser, context, page)
+    shim._pw                  = pw
+    shim._chrome_user_data_dir = user_data_dir
+    log.info("[LAUNCH][PW] Browser Playwright lancé, fingerprint injecté via add_init_script.")
+    return shim
