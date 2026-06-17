@@ -1140,6 +1140,16 @@ def launch_browser(config: dict | None = None):
         "--lang=en-US",  # aligné sur navigator.language = 'en-US' (cohérence JS ↔ HTTP headers)
     ]
 
+    # En prod (Fly.io), bloquer le STUN UDP hors proxy pour empêcher WebRTC
+    # d'exposer l'IP datacenter réelle via le handshake ICE.
+    # Non appliqué en local : l'IP box WiFi est inoffensive et on évite tout écart
+    # de comportement Chrome entre local et prod.
+    if not IS_LOCAL:
+        cmd += [
+            "--force-webrtc-ip-handling-policy=disable_non_proxied_udp",
+            "--disable-features=WebRtcHideLocalIpsWithMdns",
+        ]
+
     relay_proc = None
     if proxy_server and proxy_user and proxy_pass:
         # Relay local pproxy : Chrome reçoit un proxy sans credentials 
