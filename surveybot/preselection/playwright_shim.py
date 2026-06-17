@@ -526,6 +526,7 @@ class PlaywrightDriverShim:
         self._chrome_proc          = None
         self._chrome_user_data_dir = None
         self._proxy_relay_proc     = None
+        self._pw                   = None
 
     # ── Navigation ───────────────────────────────────────────────────────────
 
@@ -703,3 +704,9 @@ class PlaywrightDriverShim:
             self._browser.close()
         except Exception:
             pass
+        if self._pw is not None:
+            try:
+                self._pw.stop()
+            except Exception:
+                pass
+            self._pw = None
