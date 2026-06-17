@@ -28,7 +28,7 @@ FINGERPRINT_PAGES = [
     # ("geo",  "https://browserleaks.com/geo"),
     # ("proxy",  "https://browserleaks.com/proxy"),
     # ("canvas",  "https://browserleaks.com/canvas"),
-    # ("javascript", "https://browserleaks.com/javascript"),
+    ("javascript", "https://browserleaks.com/javascript"),
     # ("webgl",      "https://browserleaks.com/webgl"),
     # ("ip",         "https://browserleaks.com/ip"),
 ]
