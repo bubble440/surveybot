@@ -742,7 +742,15 @@ def _fingerprint_js() -> str:
                 window.AudioContext = window.webkitAudioContext = _PatchedAudioContext;
             }
         } catch(e) {}
-    """
+    """ + ("""
+        // ── WebRTC suppression (prod uniquement) ────────────────────────────
+        // Fallback JS : supprime RTCPeerConnection si les flags Chrome ne
+        // suffisent pas à bloquer le STUN/ICE sur ce build.
+        try {
+            Object.defineProperty(window, 'RTCPeerConnection',       { value: undefined, writable: false });
+            Object.defineProperty(window, 'webkitRTCPeerConnection', { value: undefined, writable: false });
+        } catch(e) {}
+    """ if not IS_LOCAL else "")
 
 
 def apply_fingerprint_overrides_cdp(driver) -> None:
@@ -1140,14 +1148,15 @@ def launch_browser(config: dict | None = None):
         "--lang=en-US",  # aligné sur navigator.language = 'en-US' (cohérence JS ↔ HTTP headers)
     ]
 
-    # En prod (Fly.io), bloquer le STUN UDP hors proxy pour empêcher WebRTC
-    # d'exposer l'IP datacenter réelle via le handshake ICE.
-    # Non appliqué en local : l'IP box WiFi est inoffensive et on évite tout écart
-    # de comportement Chrome entre local et prod.
+    # En prod (Fly.io), désactiver WebRTC au niveau Chrome pour éliminer toute
+    # fuite d'IP datacenter ou locale via le handshake ICE/STUN.
+    # Non appliqué en local : comportement natif conservé pour éviter toute
+    # divergence de profil Chrome entre local et prod.
     if not IS_LOCAL:
         cmd += [
-            "--force-webrtc-ip-handling-policy=disable_non_proxied_udp",
-            "--disable-features=WebRtcHideLocalIpsWithMdns",
+            "--disable-features=WebRTC",
+            "--enforce-webrtc-ip-permission-check",
+            "--webrtc-ip-handling-policy=disable_non_proxied_udp",
         ]
 
     relay_proc = None
