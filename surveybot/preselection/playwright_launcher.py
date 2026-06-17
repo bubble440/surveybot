@@ -1392,14 +1392,24 @@ def launch_browser_playwright(config: dict | None = None):
     proxy_server, proxy_user, proxy_pass = _parse_proxy_env(config)
     locale, tz            = _parse_locale_tz_env()
     headless              = _want_headless()
-    user_data_dir         = tempfile.mkdtemp(prefix="chrome_profile_pw_")
+
+    # ── user_data_dir : même logique que launch_browser() ────────────────────
+    _persist_account_id = os.getenv("ACCOUNT_ID", "").strip()
+    _persist_db_url     = os.getenv("DATABASE_URL", "").strip()
+    if _persist_account_id and _persist_db_url:
+        user_data_dir = f"/tmp/chrome_profile_{_persist_account_id}"
+        os.makedirs(user_data_dir, exist_ok=True)
+        from preselection.chrome_profile_store import load_profile
+        load_profile(_persist_account_id, user_data_dir)
+    else:
+        user_data_dir = tempfile.mkdtemp(prefix="chrome_profile_pw_")
 
     log.info("[LAUNCH][PW] chrome_bin=%s headless=%s locale=%s tz=%s proxy=%s",
              chrome_bin, headless, locale, tz, proxy_server or "none")
 
     # ── Arguments Chrome (identiques à launch_browser, hors remote-debugging-*) ──
+    # --user-data-dir est passé directement à launch_persistent_context(), pas ici.
     chrome_args = [
-        f"--user-data-dir={user_data_dir}",
         "--no-first-run",
         "--no-default-browser-check",
         "--disable-dev-shm-usage",
@@ -1448,13 +1458,15 @@ def launch_browser_playwright(config: dict | None = None):
     )
 
     pw = sync_playwright().start()
-    browser = pw.chromium.launch(
+    # launch_persistent_context reçoit user_data_dir en premier argument positionnel
+    # et interdit --user-data-dir dans args (erreur Playwright explicite).
+    # Il retourne un BrowserContext (pas un Browser) : context.close() ferme tout.
+    context = pw.chromium.launch_persistent_context(
+        user_data_dir,
         executable_path=chrome_bin,
         args=chrome_args,
         env={**os.environ, "TZ": tz},
         headless=headless,
-    )
-    context = browser.new_context(
         locale=locale,
         timezone_id=tz,
         user_agent=_UA,
@@ -1464,8 +1476,10 @@ def launch_browser_playwright(config: dict | None = None):
     context.add_init_script(_fingerprint_js())
     page = context.new_page()
 
-    shim = PlaywrightDriverShim(browser, context, page)
-    shim._pw                  = pw
+    # Pas d'objet Browser séparé : on passe context aux deux premiers slots du shim.
+    # shim._browser.close() appellera context.close(), ce qui ferme aussi le browser.
+    shim = PlaywrightDriverShim(context, context, page)
+    shim._pw                   = pw
     shim._chrome_user_data_dir = user_data_dir
     log.info("[LAUNCH][PW] Browser Playwright lancé, fingerprint injecté via add_init_script.")
     return shim
