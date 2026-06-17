@@ -149,7 +149,7 @@ def _fingerprint_js() -> str:
       - Langue / Timezone
       - navigator.webdriver  (patch robuste sur Navigator.prototype)
       - navigator.platform
-      - navigator.userAgentData (vide en prod → spoofer Chrome 148 Windows complet)
+      - navigator.userAgentData (vide en prod → spoofer Chrome 149 Windows complet)
       - navigator.plugins    (vide en headless → simuler 3 plugins Chrome réels)
       - navigator.mimeTypes  (lié aux plugins)
       - window.chrome        (absent en headless → injecter l'objet complet)
@@ -227,13 +227,13 @@ def _fingerprint_js() -> str:
         // En prod (Chromium/Linux headless), userAgentData est vide ou absent.
         // En attach (Chrome/Windows), il expose platform, brands, architecture…
         // Cette contradiction est détectée immédiatement par les anti-bots modernes.
-        // On spoofé l'objet complet pour correspondre à un Chrome 148 Windows réel.
+        // On spoofé l'objet complet pour correspondre à un Chrome 149 Windows réel.
         try {
             const _uaData = {
                 brands: [
-                    { brand: 'Chromium',        version: '148' },
-                    { brand: 'Google Chrome',   version: '148' },
-                    { brand: 'Not-A.Brand',     version: '99'  },
+                    { brand: 'Chromium',        version: '149' },
+                    { brand: 'Google Chrome',   version: '149' },
+                    { brand: 'Not-A.Brand',     version: '24'  },
                 ],
                 mobile: false,
                 platform: 'Windows',
@@ -246,11 +246,11 @@ def _fingerprint_js() -> str:
                         model:           '',
                         platform:        'Windows',
                         platformVersion: '10.0.0',
-                        uaFullVersion:   '148.0.7776.219',
+                        uaFullVersion:   '149.0.7827.103',
                         fullVersionList: [
-                            { brand: 'Chromium',      version: '148.0.7776.219' },
-                            { brand: 'Google Chrome', version: '148.0.7776.219' },
-                            { brand: 'Not-A.Brand',   version: '99.0.0.0'       },
+                            { brand: 'Chromium',      version: '149.0.7827.103' },
+                            { brand: 'Google Chrome', version: '149.0.7827.103' },
+                            { brand: 'Not-A.Brand',   version: '24.0.0.0'       },
                         ],
                         wow64: false,
                     };
