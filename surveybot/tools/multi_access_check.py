@@ -29,6 +29,11 @@ TARGETS = [
         "url":   "https://s.cint.com/Survey/Start/48212b3e-91d3-d1c0-066f-1e0a3ad47180?sq=1",
         "label": "s.cint",
     },
+    {
+        "url":   "https://s.cint.com/Survey/Complete",
+        "label": "s.cint2",
+    },
+
 ]
 
 # Temps d'attente après le chargement initial de chaque URL (secondes)

@@ -18,19 +18,18 @@ import sys
 import time
 
 FINGERPRINT_PAGES = [
-    # ("tcp",  "https://browserleaks.com/tcp"),
-    # ("http2",  "https://browserleaks.com/http2"),
-    ("webrtc",  "https://browserleaks.com/webrtc"),
-    # ("dns",  "https://browserleaks.com/dns"),
-    # ("tls",  "https://browserleaks.com/tls"),
-    # ("fonts",  "https://browserleaks.com/fonts"),
-    # ("features",  "https://browserleaks.com/features"),
-    # ("geo",  "https://browserleaks.com/geo"),
-    # ("proxy",  "https://browserleaks.com/proxy"),
-    # ("canvas",  "https://browserleaks.com/canvas"),
-    # ("javascript", "https://sbrowserleaks.com/javascript"),
-    # ("webgl",      "https://browserleaks.com/webgl"),
-    # ("ip",         "https://browserleaks.com/ip"),
+    # ("tcp",           "https://browserleaks.com/tcp"),
+    # ("http2",         "https://browserleaks.com/http2"),
+    # ("webrtc",        "https://browserleaks.com/webrtc"),
+    # ("dns",           "https://browserleaks.com/dns"),
+    # ("tls",           "https://browserleaks.com/tls"),
+    # ("fonts",         "https://browserleaks.com/fonts"),
+    # ("features",      "https://browserleaks.com/features"),
+    # ("geo",           "https://browserleaks.com/geo"),
+    # ("canvas",        "https://browserleaks.com/canvas"),
+    ("webgl",         "https://browserleaks.com/webgl"),
+    ("javascript",    "https://browserleaks.com/javascript"),
+    ("ip",            "https://browserleaks.com/ip"),
 ]
 
 WAIT_AFTER_LOAD = 8   # WebRTC nécessite du temps pour le handshake ICE
