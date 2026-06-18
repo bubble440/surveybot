@@ -205,6 +205,7 @@ def _run_survey_impl(driver, api_key, *, account_id: str, ctx=None, payout_name:
     import Management.guards.survey_difficulty_guard
     import Management.redirect_watcher
     import launch
+    from State.survey_memory import SurveySession, flush_disqualified, flush_qualified
     
     def _restart(reason: str) -> None:
         """
@@ -242,6 +243,7 @@ def _run_survey_impl(driver, api_key, *, account_id: str, ctx=None, payout_name:
     _card_retry_count = 0
     _MAX_CARD_RETRIES = 20
     _cashout_done = False          # ← ajout
+    session = SurveySession()      # Session mémoire inter-bots (locale jusqu'au flush)
 
     def _skip_card_and_retry(reason: str) -> bool:
         """
@@ -278,7 +280,7 @@ def _run_survey_impl(driver, api_key, *, account_id: str, ctx=None, payout_name:
             except Exception as _cap_exc:
                 print(f"[CAPTCHA][WARN] {_cap_exc}")
 
-            question, answer, input_type = preselection.question_analyzer.get_response_for_question(driver, api_key)
+            question, answer, input_type = preselection.question_analyzer.get_response_for_question(driver, api_key, session=session)
 
             # =================================================================
             # STUCK DETECTION: même page scannée N fois → soft-restart
@@ -355,6 +357,11 @@ def _run_survey_impl(driver, api_key, *, account_id: str, ctx=None, payout_name:
                 # ❌ Cas : disqualification détectée par la validation
                 if action == "DISQUALIFIED":
                     print(f"⚠️ Disqualification détectée (validator) | reason={answer.get('reason')}")
+                    try:
+                        flush_disqualified(session)
+                    except Exception:
+                        pass
+                    session = SurveySession()
                     preselection.question_analyzer.handle_disqualification_and_retry(driver)
                     time.sleep(1.5)
                     from preselection.survey_navigator import go_to_best_value_survey
@@ -378,6 +385,11 @@ def _run_survey_impl(driver, api_key, *, account_id: str, ctx=None, payout_name:
             dq_reason = detect_disqualification_reason(question, _safe_page_text(driver))
             if dq_reason:
                 print(f"⚠️ Disqualification détectée (reason={dq_reason}).")
+                try:
+                    flush_disqualified(session)
+                except Exception:
+                    pass
+                session = SurveySession()
                 # best-effort: fermer popup si présent
                 try:
                     preselection.question_analyzer.handle_disqualification_and_retry(driver)
@@ -401,7 +413,7 @@ def _run_survey_impl(driver, api_key, *, account_id: str, ctx=None, payout_name:
                     print("⚠️ Réponse non appliquée correctement, relance du survey...")
                     if not _cashout_done:
                         try:
-                            _payout_and_check_daily_stop(driver, account_id)  # retrait + DAILY STOP
+                            _payout_and_check_daily_stop(driver, account_id, email="")  # retrait + DAILY STOP
                             Management.guards.runtime_guard.get_guard().record_success()
                         except Exception as e:
                             Management.guards.runtime_guard.get_guard().record_error(e)
@@ -436,6 +448,10 @@ def _run_survey_impl(driver, api_key, *, account_id: str, ctx=None, payout_name:
 
                         # feu vert → on entre en résolution complète
                         try:
+                            flush_qualified(session)
+                        except Exception:
+                            pass
+                        try:
                             Survey.survey_solver.solve_full_survey(
                                 driver,
                                 api_key=api_key,
@@ -450,6 +466,11 @@ def _run_survey_impl(driver, api_key, *, account_id: str, ctx=None, payout_name:
                     # Cas : on est disqualifié → cliquer sur OK puis relancer
                     if preselection.question_analyzer.handle_disqualification_and_retry(driver):
                         print("⚠️ Disqualification détectée après question finale.")
+                        try:
+                            flush_disqualified(session)
+                        except Exception:
+                            pass
+                        session = SurveySession()
                         time.sleep(2)
                         Management.guards.runtime_guard.get_guard().record_success()
                         # if _skip_card_and_retry("disqualification_or_retry"):

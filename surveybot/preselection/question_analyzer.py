@@ -119,6 +119,31 @@ def _is_negative_exclusive_option(option_text):
     return any(sub in norm for sub in _NEGATIVE_EXCLUSIVE_SUBSTRINGS)
 
 
+# Contextes sémantiques où une option exclusive négative peut être la réponse correcte
+# selon le persona du bot (ex : sans enfants, sans voiture de fonction).
+# Chaque tuple regroupe les tokens d'une même catégorie.
+# À étendre si de nouveaux contextes "persona-négatif" sont identifiés.
+_EXCLUSIVE_ALLOWED_CONTEXTS = (
+    # Questions sur les enfants / situation parentale
+    ("enfant", "enfants", "children", "child", "kids", "naissance", "fils", "fille"),
+    # Questions sur les véhicules de fonction
+    ("véhicule de fonction", "voiture de société", "company car", "fleet"),
+)
+
+
+def _question_allows_exclusive(question_text: str) -> bool:
+    """
+    Retourne True si la question appartient à un contexte où l'option exclusive
+    négative est la réponse correcte selon le persona (ex : 'Je n'ai pas d'enfants').
+    Dans ce cas, le pré-filtrage est désactivé pour laisser le prompt GPT décider.
+    """
+    norm = _normalize_text(question_text)
+    for tokens in _EXCLUSIVE_ALLOWED_CONTEXTS:
+        if any(t in norm for t in tokens):
+            return True
+    return False
+
+
 def _should_force_non_for_hardware_question(question_text, options):
     normalized_question = _normalize_text(question_text)
     has_hardware_token = any(token in normalized_question for token in _HARDWARE_TOKENS)
@@ -264,7 +289,6 @@ def extract_options_js(driver):
         """
 
         options = driver.execute_script(js_code)
-        print(f"extract_options_js : {options}")
         # Pas de choix → souvent page de blocage ou de consentement non mappée
         if not options:
             print("⏭️ Aucun choix détecté — pas d'action sur cette page. source: reponse_executor.py")
@@ -295,14 +319,22 @@ def extract_select_options_js(driver):
         return []
 
 
-def reformulate_prompt_for_gpt(question_text, options, itype="radio"):
-    # Pré-filtrage : retirer les options exclusives négatives avant envoi à GPT
+def reformulate_prompt_for_gpt(question_text, options, itype="radio", *, avoid_options=None):
+    # Pré-filtrage conditionnel : on retire les options exclusives négatives sauf si
+    # la question appartient à un contexte où elles sont la bonne réponse selon le
+    # persona (ex : "Je n'ai pas d'enfants"). Dans ce cas, on laisse passer toutes
+    # les options et le prompt GPT spécialisé prend la décision.
     filtered_options = options
     if options:
-        filtered_options = [o for o in options if not _is_negative_exclusive_option(o)]
-        removed = [o for o in options if _is_negative_exclusive_option(o)]
-        if removed:
-            log_debug("preselection", f"[PRE-FILTRAGE GPT] Options exclusives négatives retirées : {removed}")
+        if _question_allows_exclusive(question_text):
+            # Contexte whitelist : toutes les options conservées, GPT décide
+            filtered_options = options
+            log_debug("preselection", "[PRE-FILTRAGE GPT] Contexte exclusif autorisé — options conservées telles quelles.")
+        else:
+            filtered_options = [o for o in options if not _is_negative_exclusive_option(o)]
+            removed = [o for o in options if _is_negative_exclusive_option(o)]
+            if removed:
+                log_debug("preselection", f"[PRE-FILTRAGE GPT] Options exclusives négatives retirées : {removed}")
 
     base_rules = (
         "Ne renvoie jamais la question ni d'explications. "
@@ -336,10 +368,20 @@ def reformulate_prompt_for_gpt(question_text, options, itype="radio"):
 
     )
 
+    avoid_section = ""
+    if avoid_options:
+        avoid_section = (
+            "ATTENTION — OPTIONS À ÉVITER IMPÉRATIVEMENT : les options suivantes ont déjà été choisies "
+            "lors de tentatives précédentes et ont conduit à une disqualification. "
+            f"Ne les choisis SOUS AUCUN PRÉTEXTE : {', '.join(repr(o) for o in avoid_options)}\n"
+            "Choisis obligatoirement une option différente parmi celles disponibles.\n\n"
+        )
+
     if filtered_options and itype == "checkbox":
         return (
             f"Question: {question_text}\n"
             f"{base_rules}"
+            f"{avoid_section}"
             f"Options: {', '.join(filtered_options)}\n"
             "Réponds UNIQUEMENT avec le ou les libellés exacts, séparés par ‘ | ‘. "
             "Pour une checkbox non exclusive, préfère plusieurs choix plutôt qu’un seul."
@@ -357,6 +399,7 @@ def reformulate_prompt_for_gpt(question_text, options, itype="radio"):
         return (
             f"Question: {question_text}\n"
             f"{base_rules}"
+            f"{avoid_section}"
             f"Options: {', '.join(filtered_options)}\n"
             "Choisis exactement une des options ci-dessus. "
             "Réponds UNIQUEMENT par le libellé de l'option."
@@ -366,6 +409,7 @@ def reformulate_prompt_for_gpt(question_text, options, itype="radio"):
         return (
             f"Question: {question_text}\n"
             f"{base_rules}"
+            f"{avoid_section}"
             "Réponds UNIQUEMENT par un entier brut (chiffres seuls, sans symbole monétaire, "
             "sans espace, sans texte). Exemple de format attendu : 150000"
         )
@@ -373,6 +417,7 @@ def reformulate_prompt_for_gpt(question_text, options, itype="radio"):
     return (
         f"Question: {question_text}\n"
         f"{base_rules}"
+        f"{avoid_section}"
         "Réponds par une valeur courte et réaliste. Une seule valeur."
     )
 
@@ -396,7 +441,7 @@ def ask_assistant(prompt_text, api_key, *, question=None, options=None):
 
     return cleaned
 
-def get_response_for_question(driver, api_key):
+def get_response_for_question(driver, api_key, *, session=None):
     import preselection.question_validation
 
     try:
@@ -431,19 +476,62 @@ def get_response_for_question(driver, api_key):
             extract_select_options_js(driver) or []
         )
 
+        # Dérive la clé question + initialise survey_key sur la première question
+        _mem_qk = None
+        if session is not None and options:
+            try:
+                from State.survey_memory import make_key
+                _mem_qk = make_key(question, options)
+                session.set_survey_key_if_first(_mem_qk)
+            except Exception as _ke:
+                log_debug("preselection", f"[SURVEY_MEMORY] key error: {_ke}")
+
         if _should_force_non_for_hardware_question(question, options):
             log_debug(
                 "preselection",
                 "Interception hardware détectée avant OpenAI: réponse forcée sur 'Non'.",
             )
+            if _mem_qk is not None:
+                try:
+                    session.record_choice(_mem_qk, ["Non"])
+                except Exception:
+                    pass
             return question, "Non", input_type
 
-        prompt = reformulate_prompt_for_gpt(question, options, input_type)
+        # Lecture mémoire : bypass GPT ou injection d'options à éviter
+        avoid_options = []
+        if _mem_qk is not None and session.survey_key:
+            try:
+                from State.survey_memory import read_guidance
+                guidance = read_guidance(session.survey_key, _mem_qk, session.current_page_index)
+                if guidance.use_options:
+                    if input_type == "checkbox":
+                        response = " | ".join(guidance.use_options)
+                    else:
+                        response = guidance.use_options[0] if guidance.use_options else None
+                    if response:
+                        session.record_choice(_mem_qk, guidance.use_options)
+                        log_info("[PRESELECTION]", f"[MEM] Bypass GPT → {response}")
+                        print(f"🧠 Réponse mémoire : {response}")
+                        return question, response, input_type
+                avoid_options = guidance.avoid_options
+            except Exception as _ge:
+                log_debug("preselection", f"[SURVEY_MEMORY] guidance error: {_ge}")
+
+        prompt = reformulate_prompt_for_gpt(question, options, input_type, avoid_options=avoid_options)
         log_debug("preselection", f"[ITYPE DÉTECTÉ] {input_type}")
         log_debug("preselection", f"[PROMPT→GPT]\n{prompt}")
 
         response = ask_assistant(prompt, api_key, question=question, options=options)
         print(f"🤖 Réponse proposée : {response}")
+
+        # Enregistre le choix dans la session locale
+        if _mem_qk is not None:
+            try:
+                chosen = [r.strip() for r in response.split(" | ")] if " | " in response else [response]
+                session.record_choice(_mem_qk, chosen)
+            except Exception:
+                pass
 
         return question, response, input_type
 

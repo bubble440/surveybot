@@ -495,7 +495,7 @@ def init_session_and_enter_surveys(driver, config, account_id: str, notify_fn, p
             print("[LOGIN][WARN] surveys-nav non détecté après 30 s — on continue quand même.")
 
     try:
-        _payout_and_check_daily_stop(driver, account_id)  # retrait + DAILY STOP
+        _payout_and_check_daily_stop(driver, account_id, email=config.get("Email", ""))  # retrait + DAILY STOP
     except Exception as e:
         print(f"[PAYOUT][WARN] Encaissement automatique: {e}")
 

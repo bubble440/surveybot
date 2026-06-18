@@ -25,13 +25,14 @@ if not IS_LOCAL:
     from selenium.webdriver.common.action_chains import ActionChains
 # ---------- Helpers ----------
 
-def _notify_cashout_failure(account_id: str, amount: float) -> None:
+def _notify_cashout_failure(account_id: str, amount: float, email: str = "") -> None:
     """Envoie une notification Telegram si les credentials sont configurés."""
     tg_token = os.getenv("telegram_bot_token", "").strip()
     tg_chat  = os.getenv("telegram_chat_id", "").strip()
     if not tg_token or not tg_chat:
         return
-    msg = f"[PAYOUT][ÉCHEC] Retrait échoué — compte: {account_id} | montant: {amount:.2f} €"
+    email_part = f" | email : {email}" if email else ""
+    msg = f"[PAYOUT][ÉCHEC] Retrait échoué — compte : {account_id}{email_part} | montant : {amount:.2f} €"
     try:
         send_telegram(msg, tg_token, tg_chat)
     except Exception:
@@ -43,22 +44,24 @@ def _notify_cashout_result(
     *,
     failed_methods: list,
     succeeded_method,
+    email: str = "",
 ) -> None:
     """Notification unique après un cycle avec au moins une méthode échouée."""
     tg_token = os.getenv("telegram_bot_token", "").strip()
     tg_chat  = os.getenv("telegram_chat_id", "").strip()
     if not tg_token or not tg_chat:
         return
+    email_part = f" | email : {email}" if email else ""
     if succeeded_method:
         msg = (
             f"[PAYOUT][INFO] Méthode(s) échouée(s) : {', '.join(failed_methods)} → "
             f"retrait effectué via {succeeded_method} — "
-            f"compte : {account_id} | montant : {amount:.2f} €"
+            f"compte : {account_id}{email_part} | montant : {amount:.2f} €"
         )
     else:
         msg = (
             f"[PAYOUT][ÉCHEC] Toutes méthodes échouées ({', '.join(failed_methods)}) — "
-            f"compte : {account_id} | montant : {amount:.2f} €"
+            f"compte : {account_id}{email_part} | montant : {amount:.2f} €"
         )
     try:
         send_telegram(msg, tg_token, tg_chat)
@@ -360,15 +363,17 @@ def check_and_cashout_if_needed(
     min_amount_eur: float = MIN_CASHOUT_EUR,
     cashout_order: Tuple[str, str] = ("revolut", "paypal"),
     revolut_fullname: str = "",
-    revolut_tag: str = ""
-) -> bool:
+    revolut_tag: str = "",
+    email: str = "",
+):
     """
     - Lit le solde,
     - Si >= min_amount_eur (défaut 5 €, seuil minimum du modal TopSurveys),
       ouvre le modal,
     - Tente encaissement dans l'ordre `cashout_order` ('revolut' puis 'paypal' par défaut),
     - Confirme la réclamation sur la page suivante.
-    Renvoie True si un encaissement a été tenté (et soumis), False sinon.
+    Renvoie True si un retrait réel est confirmé, False si solde insuffisant (aucune tentative),
+    None si un cashout a été tenté mais n'a pas abouti à une baisse réelle du solde.
     """
 
     # Retry: l'UI peut ne pas être prête juste après le login/redirection
@@ -395,8 +400,8 @@ def check_and_cashout_if_needed(
     print(f"[PAYOUT] Solde détecté: {amount:.2f} €. Ouverture du modal d'encaissement…")
     if not _open_cashout_modal(driver):
         print("[PAYOUT] Impossible d'ouvrir le modal d'encaissement.")
-        _notify_cashout_failure(account_id, amount)
-        return False
+        _notify_cashout_failure(account_id, amount, email)
+        return None  # tentative effectuée, échec
 
     # Boucle par méthode : sélection → confirm → vérification réelle du solde
     failed_methods = []
@@ -447,13 +452,13 @@ def check_and_cashout_if_needed(
 
     if succeeded_method is None:
         print("[PAYOUT] Aucune méthode n'a abouti à un retrait réel.")
-        _notify_cashout_result(account_id, amount, failed_methods=failed_methods, succeeded_method=None)
-        return False
+        _notify_cashout_result(account_id, amount, failed_methods=failed_methods, succeeded_method=None, email=email)
+        return None  # tentative effectuée, échec
 
     print("[PAYOUT] Récompense réclamée.")
 
     if failed_methods:
-        _notify_cashout_result(account_id, amount, failed_methods=failed_methods, succeeded_method=succeeded_method)
+        _notify_cashout_result(account_id, amount, failed_methods=failed_methods, succeeded_method=succeeded_method, email=email)
 
     # 🔐 Mise à jour de l'état — uniquement après confirmation d'un retrait réel
     _cashout_result = {"daily_stop": False}
@@ -498,7 +503,7 @@ def check_and_cashout_if_needed(
 
     return True
 
-def _payout_and_check_daily_stop(driver, account_id: str) -> bool:
+def _payout_and_check_daily_stop(driver, account_id: str, email: str = "") -> bool:
     """
     À appeler à chaque retour sur TopSurveys. Vérifie dans l'ordre :
       1) Solde >= 5€  → retrait automatique (best-effort)
@@ -512,17 +517,25 @@ def _payout_and_check_daily_stop(driver, account_id: str) -> bool:
     # 1) Retrait uniquement si solde >= 5 € (MIN_CASHOUT_EUR) :
     #    le modal TopSurveys ne propose que des options >= 5 €,
     #    donc l'ouverture en dessous de ce seuil est inutile.
+    cashout_result = False
     try:
-        check_and_cashout_if_needed(
+        cashout_result = check_and_cashout_if_needed(
             driver,
             account_id=account_id,
             min_amount_eur=MIN_CASHOUT_EUR,
             cashout_order=("revolut", "paypal"),
             revolut_fullname="",
             revolut_tag="",
+            email=email,
         )
     except Exception as e:
         print(f"[PAYOUT][WARN] retour TopSurveys: {e}")
+
+    # Si un cashout a été tenté mais a échoué (solde inchangé), on ne fait pas
+    # de vérification daily stop ce cycle : la target en base peut être corrompue
+    # et le solde n'a pas évolué → pas de motif d'arrêt.
+    if cashout_result is None:
+        return False
 
     # 2) DAILY STOP basé sur le solde courant vs objectif journalier
     guard = get_guard()
@@ -537,13 +550,16 @@ def _payout_and_check_daily_stop(driver, account_id: str) -> bool:
     update_state(account_id, lambda st: init_daily_balance_target(st, balance, _today))
 
     state = load_state(account_id)
-    target_map = state.get("daily_balance_target", {})
 
-    if _today in target_map:
-        target = float(target_map[_today])
-        if balance >= target:
-            print(f"[DAILY_STOP] solde {balance:.2f}€ >= objectif {target:.2f}€ → arrêt journalier")
-            guard.pause(PausePolicy.DAILY_RESET, StopReason.DAILY_TARGET_REACHED)
-            return True  # jamais atteint (pause lève SystemExit)
+    # Recalcul défensif de la target depuis les champs source de vérité.
+    # Évite les faux DAILY_STOP causés par une valeur daily_balance_target corrompue.
+    start = float(state.get("daily_balance_start", {}).get(_today, balance))
+    gained = float(state.get("daily_balance_gained", {}).get(_today, 0.0))
+    target = (start - gained) + DAILY_TARGET_EUR
+
+    if balance >= target:
+        print(f"[DAILY_STOP] solde {balance:.2f}€ >= objectif {target:.2f}€ → arrêt journalier")
+        guard.pause(PausePolicy.DAILY_RESET, StopReason.DAILY_TARGET_REACHED)
+        return True  # jamais atteint (pause lève SystemExit)
 
     return False
