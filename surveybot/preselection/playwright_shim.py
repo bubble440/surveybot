@@ -367,7 +367,10 @@ class ActionChains:
             kind = action[0]
             try:
                 if kind == "hover":
-                    action[1]._h.hover()
+                    try:
+                        action[1]._h.scroll_into_view_if_needed(timeout=3000)
+                    except Exception:
+                        pass
                 elif kind == "click":
                     if action[1]:
                         action[1]._h.click()
@@ -593,17 +596,24 @@ class PlaywrightDriverShim:
 
     # ── Exécution JavaScript ──────────────────────────────────────────────────
 
+    @staticmethod
+    def _convert_arg(a: Any) -> Any:
+        """Convertit récursivement PlaywrightElementShim → _playwright_handle dans les listes."""
+        if isinstance(a, PlaywrightElementShim):
+            return a._playwright_handle
+        if isinstance(a, list):
+            return [PlaywrightDriverShim._convert_arg(item) for item in a]
+        return a
+
     def execute_script(self, script: str, *args) -> Any:
         """
         Exécute du JavaScript synchrone.
 
         Imite Selenium : les arguments sont accessibles via arguments[0], arguments[1]…
-        Les PlaywrightElementShim sont automatiquement déballés en ElementHandle.
+        Les PlaywrightElementShim sont automatiquement déballés en ElementHandle,
+        y compris lorsqu'ils sont passés dans une liste.
         """
-        pw_args = [
-            a._playwright_handle if isinstance(a, PlaywrightElementShim) else a
-            for a in args
-        ]
+        pw_args = [self._convert_arg(a) for a in args]
         if not pw_args:
             return self._page.evaluate(f"() => {{ {script} }}")
         # Enveloppe dans une IIFE pour que arguments[N] soit disponible
