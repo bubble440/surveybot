@@ -24,6 +24,8 @@ import re
 from contextlib import contextmanager
 from typing import Any, List, Optional
 
+from selenium.webdriver.remote.webelement import WebElement
+
 log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -105,10 +107,14 @@ def _split_keys(value: str) -> List[str]:
 # Shim élément (WebElement)
 # ---------------------------------------------------------------------------
 
-class PlaywrightElementShim:
+class PlaywrightElementShim(WebElement):
     """
     Imite selenium.webdriver.remote.webelement.WebElement.
     Délègue à un Playwright ElementHandle (_h).
+
+    Hérite de WebElement pour que isinstance(el, WebElement) soit True
+    (ActionChains.move_to_element, Select, expected_conditions…).
+    super().__init__() n'est PAS appelé car il requiert parent/id_.
     """
 
     def __init__(self, handle, frame=None):
@@ -116,6 +122,10 @@ class PlaywrightElementShim:
         # frame  : playwright Frame ou Page dont provient cet élément
         self._h = handle
         self._frame = frame
+        # Attributs minimaux attendus par certains chemins Selenium internes
+        self._w3c = True
+        self._parent = None
+        self._id = None
 
     # ── Propriétés lues ──────────────────────────────────────────────────────
 
