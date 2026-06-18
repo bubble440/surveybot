@@ -86,7 +86,7 @@ def _handle_topsurveys_exclusion_popup(driver, account_id) -> bool: #survey_exec
         try:
             survey_navigator._handle_mystery_box_popup(driver)
             time.sleep(1.0)
-            _payout_and_check_daily_stop(driver, account_id)  # retrait + DAILY STOP
+            _payout_and_check_daily_stop(driver, account_id, email="")  # retrait + DAILY STOP
         except Exception as e:
             print(f"[TOPSURVEYS_POPUP] Erreur mystery box: {e}")
         # Navigation vers le prochain survey
@@ -191,7 +191,7 @@ def _handle_topsurveys_exclusion_popup(driver, account_id) -> bool: #survey_exec
                 print("⚠ Popup disqualification détecté mais fermeture 'Ok' a échoué:", e)
 
             _close_other_tabs_in_current_session(driver)
-            _payout_and_check_daily_stop(driver, account_id)  # retrait + DAILY STOP
+            _payout_and_check_daily_stop(driver, account_id, email="")  # retrait + DAILY STOP
             import preselection.survey_navigator
             time.sleep(0.7)
             preselection.survey_navigator.go_to_best_value_survey(driver)

@@ -354,9 +354,10 @@ class RuntimeGuard:
         """
         pause_sec = resolve_pause_seconds(policy)
 
-        self._notify(
-            f"⏸️ Pause bot ({policy.name}) | raison={reason.value} | pause={pause_sec}s"
-        )
+        if reason not in {StopReason.NO_SURVEY_AVAILABLE, StopReason.DAILY_TARGET_REACHED}:
+            self._notify(
+                f"⏸️ Pause bot ({policy.name}) | raison={reason.value}"
+            )
 
         def _apply_pause(st):
             st["last_stop_reason"] = reason.value
