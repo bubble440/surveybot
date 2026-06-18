@@ -37,6 +37,34 @@ def _notify_cashout_failure(account_id: str, amount: float) -> None:
     except Exception:
         pass
 
+def _notify_cashout_result(
+    account_id: str,
+    amount: float,
+    *,
+    failed_methods: list,
+    succeeded_method,
+) -> None:
+    """Notification unique après un cycle avec au moins une méthode échouée."""
+    tg_token = os.getenv("telegram_bot_token", "").strip()
+    tg_chat  = os.getenv("telegram_chat_id", "").strip()
+    if not tg_token or not tg_chat:
+        return
+    if succeeded_method:
+        msg = (
+            f"[PAYOUT][INFO] Méthode(s) échouée(s) : {', '.join(failed_methods)} → "
+            f"retrait effectué via {succeeded_method} — "
+            f"compte : {account_id} | montant : {amount:.2f} €"
+        )
+    else:
+        msg = (
+            f"[PAYOUT][ÉCHEC] Toutes méthodes échouées ({', '.join(failed_methods)}) — "
+            f"compte : {account_id} | montant : {amount:.2f} €"
+        )
+    try:
+        send_telegram(msg, tg_token, tg_chat)
+    except Exception:
+        pass
+
 def _wait(driver, timeout=10):
     return WebDriverWait(driver, timeout)
 
@@ -370,76 +398,105 @@ def check_and_cashout_if_needed(
         _notify_cashout_failure(account_id, amount)
         return False
 
-    # Essaye dans l'ordre demandé
-    success_select = False
-    for method in cashout_order:
-        if method == "revolut":
-            if _select_revolut_5_eur(driver):
-                success_select = True
-                print("[PAYOUT] Option Revolut 5 € sélectionnée (fallback).")
-                break
-        elif method == "paypal":
-            if _select_paypal_5_eur(driver):
-                success_select = True
-                print("[PAYOUT] Option PayPal 5 € sélectionnée.")
+    # Boucle par méthode : sélection → confirm → vérification réelle du solde
+    failed_methods = []
+    succeeded_method = None
+
+    for idx, method in enumerate(cashout_order):
+        # Pour les tentatives suivantes, le modal doit être rouvert
+        if idx > 0:
+            time.sleep(2)
+            if not _open_cashout_modal(driver):
+                failed_methods.append(method)
                 break
 
-    if not success_select:
-        print("[PAYOUT] Aucune option d'encaissement sélectionnée (PayPal/Revolut indisponibles ?).")
-        _notify_cashout_failure(account_id, amount)
+        if method == "revolut":
+            selected = _select_revolut_5_eur(driver)
+            if selected:
+                print("[PAYOUT] Option Revolut 5 € sélectionnée.")
+        elif method == "paypal":
+            selected = _select_paypal_5_eur(driver)
+            if selected:
+                print("[PAYOUT] Option PayPal 5 € sélectionnée.")
+        else:
+            selected = False
+
+        if not selected:
+            failed_methods.append(method)
+            continue
+
+        time.sleep(0.4)
+        if not _confirm_claim(driver, revolut_fullname, revolut_tag):
+            failed_methods.append(method)
+            continue
+
+        # Source de vérité : le solde doit avoir effectivement baissé d'environ 5 €
+        time.sleep(5)
+        try:
+            new_balance = _read_balance(driver)
+        except Exception:
+            failed_methods.append(method)
+            continue
+
+        if new_balance < amount - MIN_CASHOUT_EUR * 0.5:
+            succeeded_method = method
+            break
+
+        print(f"[PAYOUT] [{method}] Solde inchangé après confirm ({new_balance:.2f}€ vs {amount:.2f}€) — retrait silencieusement échoué.")
+        failed_methods.append(method)
+
+    if succeeded_method is None:
+        print("[PAYOUT] Aucune méthode n'a abouti à un retrait réel.")
+        _notify_cashout_result(account_id, amount, failed_methods=failed_methods, succeeded_method=None)
         return False
 
-    # On est maintenant sur /confirm-claim
-    time.sleep(0.4)
-    if _confirm_claim(driver, revolut_fullname, revolut_tag):
-        print("[PAYOUT] Récompense réclamée.")
+    print("[PAYOUT] Récompense réclamée.")
 
-        # 🔐 Source de vérité : mise à jour par compte
-        _cashout_result = {"daily_stop": False}
+    if failed_methods:
+        _notify_cashout_result(account_id, amount, failed_methods=failed_methods, succeeded_method=succeeded_method)
 
-        def _apply_gain(st):
-            _today = today_str()
-            init_daily_balance_target(st, amount, _today)
+    # 🔐 Mise à jour de l'état — uniquement après confirmation d'un retrait réel
+    _cashout_result = {"daily_stop": False}
 
-            start = float(st.get("daily_balance_start", {}).get(_today, amount))
-            gained_prev = float(st.get("daily_balance_gained", {}).get(_today, 0.0))
-            gain_avant_retrait = max(0.0, amount - start)
-            gain_total = gained_prev + gain_avant_retrait
+    def _apply_gain(st):
+        _today = today_str()
+        init_daily_balance_target(st, amount, _today)
 
-            st.setdefault("daily_balance_gained", {})[_today] = gain_total
+        start = float(st.get("daily_balance_start", {}).get(_today, amount))
+        gained_prev = float(st.get("daily_balance_gained", {}).get(_today, 0.0))
+        gain_avant_retrait = max(0.0, amount - start)
+        gain_total = gained_prev + gain_avant_retrait
 
-            if gain_total >= DAILY_TARGET_EUR:
-                _cashout_result["daily_stop"] = True
-            else:
-                solde_post_retrait = amount - MIN_CASHOUT_EUR
-                st.setdefault("daily_balance_target", {})[_today] = (
-                    solde_post_retrait + (DAILY_TARGET_EUR - gain_total)
-                )
+        st.setdefault("daily_balance_gained", {})[_today] = gain_total
 
-            record_daily_earning_and_target(
-                st,
-                amount_eur=5.0,
-                daily_target_eur=DAILY_TARGET_EUR,
-                now_ts=int(time.time()),
+        if gain_total >= DAILY_TARGET_EUR:
+            _cashout_result["daily_stop"] = True
+        else:
+            solde_post_retrait = amount - MIN_CASHOUT_EUR
+            st.setdefault("daily_balance_target", {})[_today] = (
+                solde_post_retrait + (DAILY_TARGET_EUR - gain_total)
             )
 
-        update_state(account_id, _apply_gain)
+        record_daily_earning_and_target(
+            st,
+            amount_eur=5.0,
+            daily_target_eur=DAILY_TARGET_EUR,
+            now_ts=int(time.time()),
+        )
 
-        # 🧠 Mémoire runtime (cache)
-        get_guard().record_earning(5.0)
+    update_state(account_id, _apply_gain)
 
-        if _cashout_result["daily_stop"]:
-            from Management.pause_policy import PausePolicy
-            from Management.guards.runtime_guard import StopReason
-            print(f"[DAILY_STOP] gain journalier >= {DAILY_TARGET_EUR}€ après retrait → arrêt journalier")
-            get_guard().pause(PausePolicy.DAILY_RESET, StopReason.DAILY_TARGET_REACHED)
-            return True  # jamais atteint (pause lève SystemExit)
+    # 🧠 Mémoire runtime (cache)
+    get_guard().record_earning(5.0)
 
-        return True
+    if _cashout_result["daily_stop"]:
+        from Management.pause_policy import PausePolicy
+        from Management.guards.runtime_guard import StopReason
+        print(f"[DAILY_STOP] gain journalier >= {DAILY_TARGET_EUR}€ après retrait → arrêt journalier")
+        get_guard().pause(PausePolicy.DAILY_RESET, StopReason.DAILY_TARGET_REACHED)
+        return True  # jamais atteint (pause lève SystemExit)
 
-    print("[PAYOUT] Impossible de confirmer la réclamation.")
-    _notify_cashout_failure(account_id, amount)
-    return False
+    return True
 
 def _payout_and_check_daily_stop(driver, account_id: str) -> bool:
     """
