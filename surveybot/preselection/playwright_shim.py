@@ -300,6 +300,9 @@ class _SwitchToShim:
         else:
             self._d._current_frame = self._d._page
 
+    def window(self, handle: str) -> None:
+        """Bascule vers un onglet par handle (index string)."""
+        self._d.switch_to_window(handle)
 
 # ---------------------------------------------------------------------------
 # Shim ActionChains
