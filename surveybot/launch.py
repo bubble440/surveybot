@@ -6,7 +6,7 @@ from Management.guards.runtime_guard import RuntimeGuard, StopReason, set_guard,
 from State.daily_target import DAILY_TARGET_EUR, ensure_daily_timer_started
 from Cash.payout import MIN_CASHOUT_EUR
 import time, sys, logging, threading, traceback, signal, Cash.payout as payout
-from preselection.playwright_launcher import launch_browser
+from preselection.playwright_launcher import launch_browser_playwright
 from preselection.auth_handler import login
 from preselection.survey_navigator import go_to_best_value_survey
 from preselection.survey_handler import run_survey
@@ -401,9 +401,9 @@ def restore_datadome_cookies(driver, account_id: str) -> None:
 
 def launch_driver_or_fail(config, account_id: str):
     try:
-        driver = launch_browser(config)
+        driver = launch_browser_playwright(config)
         if driver is None:
-            raise RuntimeError("launch_browser() a retourné None")
+            raise RuntimeError("launch_browser_playwright() a retourné None")
         if should_run_guard_monitor():
             get_guard().attach_driver(driver)
         return driver
