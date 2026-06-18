@@ -723,3 +723,45 @@ class PlaywrightDriverShim:
             except Exception:
                 pass
             self._pw = None
+
+
+# ---------------------------------------------------------------------------
+# Monkey-patches Selenium : ActionChains et Select → shim quand Playwright
+# ---------------------------------------------------------------------------
+# Cibler __new__ sur l'objet classe garantit que le patch est actif même
+# quand le code appelant a déjà exécuté
+#   "from selenium.webdriver.common.action_chains import ActionChains"
+# car c'est le même objet classe qui est référencé dans les deux modules.
+# Quand __new__ retourne un objet dont le type n'est pas une sous-classe
+# de cls, Python n'appelle pas __init__ automatiquement — on doit donc
+# l'appeler explicitement dans le patch.
+
+try:
+    import selenium.webdriver.common.action_chains as _ac_mod
+    _SeleniumActionChains = _ac_mod.ActionChains
+
+    def _patched_ac_new(cls, driver, *args, **kwargs):
+        if isinstance(driver, PlaywrightDriverShim):
+            inst = object.__new__(ActionChains)
+            ActionChains.__init__(inst, driver)
+            return inst
+        return object.__new__(cls)
+
+    _SeleniumActionChains.__new__ = _patched_ac_new
+except Exception:
+    pass
+
+try:
+    import selenium.webdriver.support.select as _select_mod
+    _SeleniumSelect = _select_mod.Select
+
+    def _patched_select_new(cls, element, *args, **kwargs):
+        if isinstance(element, PlaywrightElementShim):
+            inst = object.__new__(Select)
+            Select.__init__(inst, element)
+            return inst
+        return object.__new__(cls)
+
+    _SeleniumSelect.__new__ = _patched_select_new
+except Exception:
+    pass
