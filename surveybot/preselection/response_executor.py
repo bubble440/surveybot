@@ -695,6 +695,11 @@ def select_checkbox_answers(driver, answers):
             By.CSS_SELECTOR, f'[data-test-id="{label_dtid}"]'
         )
         inner_cb = label.find_element(By.CSS_SELECTOR, "input[type='checkbox']")
+        # behavior:'instant' évite l'animation de scroll qui perturbait la vérification
+        # de stabilité de Playwright lors du clic natif suivant.
+        driver.execute_script(
+            "arguments[0].scrollIntoView({block:'nearest', behavior:'instant'});", label
+        )
         _diag_sample_stability(driver, label, label_text)
         _diag_attach(driver, label, "select_checkbox_answers")
         try:
