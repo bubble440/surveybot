@@ -6,7 +6,7 @@ primary_region = "cdg"
 
 [env]
   RUN_ENV = "prod"
-  LOOP_INTERVAL_SEC = "120"
+  LOOP_INTERVAL_SEC = "5"
 
 [deploy]
   strategy = "immediate"

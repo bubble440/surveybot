@@ -494,10 +494,10 @@ def init_session_and_enter_surveys(driver, config, account_id: str, notify_fn, p
         except TimeoutException:
             print("[LOGIN][WARN] surveys-nav non détecté après 30 s — on continue quand même.")
 
-    try:
-        _payout_and_check_daily_stop(driver, account_id, email=config.get("Email", ""))  # retrait + DAILY STOP
-    except Exception as e:
-        print(f"[PAYOUT][WARN] Encaissement automatique: {e}")
+    # try:
+    #     _payout_and_check_daily_stop(driver, account_id, email=config.get("Email", ""))  # retrait + DAILY STOP
+    # except Exception as e:
+    #     print(f"[PAYOUT][WARN] Encaissement automatique: {e}")
 
     # Attente que la page soit pleinement chargée et hydratée avant de chercher un survey.
     # On réutilise _SESSION_SELECTOR ([data-test-id='surveys-nav']) : il est présent dès

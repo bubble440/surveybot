@@ -117,6 +117,37 @@ def _diag_checkbox_failure(driver, label, label_text: str, exc: Exception) -> No
             f"[DIAG_CHECKBOX_CLICK] label={label_text!r} exc={type(exc).__name__} "
             f"handle={handle_ok} script_exc={type(diag_exc).__name__}: {diag_exc}",
         )
+    # Call log Playwright complet depuis l'exception (détail de la boucle d'actionabilité)
+    pw_log = str(exc).replace("\n", " | ")
+    log_info("diag_checkbox_click", f"[DIAG_CHECKBOX_CLICK] pw_calllog={pw_log!r}")
+
+def _diag_pw_actionability(label, label_text: str) -> None:
+    """Vérifie les critères d'actionabilité Playwright natifs avant le clic — DIAG_CHECKBOX_CLICK=1.
+    Accède à label._h (PlaywrightElementShim → ElementHandle) pour reproduire exactement
+    les mêmes vérifications que click() effectue en interne."""
+    if not _DIAG_CHECKBOX_CLICK:
+        return
+    try:
+        h = label._h  # ElementHandle Playwright sous-jacent (shim interne)
+        pw_visible = h.is_visible()
+        pw_enabled = h.is_enabled()
+        pw_stable = "unknown"
+        try:
+            h.wait_for_element_state("stable", timeout=500)
+            pw_stable = "ok"
+        except Exception as se:
+            pw_stable = f"TIMEOUT({type(se).__name__})"
+        log_info(
+            "diag_checkbox_click",
+            f"[DIAG_CHECKBOX_CLICK_PRE] label={label_text!r} "
+            f"pw_visible={pw_visible} pw_enabled={pw_enabled} pw_stable={pw_stable}",
+        )
+    except Exception as pre_exc:
+        log_info(
+            "diag_checkbox_click",
+            f"[DIAG_CHECKBOX_CLICK_PRE] label={label_text!r} "
+            f"pre_exc={type(pre_exc).__name__}: {pre_exc}",
+        )
 
 # ---------------------------------------------------------------------------
 # DIAGNOSTIC TEMPORAIRE — stabilité géométrique avant clic label (retirer après confirmation)
@@ -695,13 +726,15 @@ def select_checkbox_answers(driver, answers):
             By.CSS_SELECTOR, f'[data-test-id="{label_dtid}"]'
         )
         inner_cb = label.find_element(By.CSS_SELECTOR, "input[type='checkbox']")
-        # behavior:'instant' évite l'animation de scroll qui perturbait la vérification
-        # de stabilité de Playwright lors du clic natif suivant.
+        # block:'center' centre l'élément dans la zone scrollable, éloigné du bord inférieur
+        # où le bouton CTA fixe (ps-common-actions-button) intercepte les clics si l'élément
+        # s'y retrouve avec block:'nearest'. behavior:'instant' évite l'animation de scroll.
         driver.execute_script(
-            "arguments[0].scrollIntoView({block:'nearest', behavior:'instant'});", label
+            "arguments[0].scrollIntoView({block:'center', behavior:'instant'});", label
         )
         _diag_sample_stability(driver, label, label_text)
         _diag_attach(driver, label, "select_checkbox_answers")
+        _diag_pw_actionability(label, label_text)
         try:
             label.click()
         except Exception as _ck_exc:
