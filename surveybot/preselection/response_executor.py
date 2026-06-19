@@ -1,3 +1,4 @@
+import os
 import re
 import time
 import unicodedata
@@ -8,6 +9,54 @@ from selenium.webdriver.common.action_chains import ActionChains
 
 from config import should_pause_before_cta, is_cta_intercept_only
 from Survey.log_utils import log_info, log_debug
+
+# ---------------------------------------------------------------------------
+# DIAGNOSTIC TEMPORAIRE — isTrusted (retirer après confirmation)
+# Activer avec : DIAG_ISTRUSTED=1
+# ---------------------------------------------------------------------------
+_DIAG_ISTRUSTED = os.environ.get("DIAG_ISTRUSTED", "").strip() not in ("", "0")
+
+_JS_ATTACH_DIAG_LISTENER = """
+(function(el) {
+    window.__diag_istrusted__ = null;
+    el.__diagListener__ = function(e) {
+        window.__diag_istrusted__ = {
+            isTrusted: e.isTrusted,
+            type: e.type,
+            timestamp: e.timeStamp
+        };
+        el.removeEventListener('click', el.__diagListener__, true);
+    };
+    el.addEventListener('click', el.__diagListener__, true);
+})(arguments[0]);
+"""
+
+def _diag_attach(driver, element, tag: str) -> None:
+    """Injecte un listener capture-phase sur element avant le clic JS."""
+    if not _DIAG_ISTRUSTED:
+        return
+    try:
+        driver.execute_script(_JS_ATTACH_DIAG_LISTENER, element)
+    except Exception as exc:
+        log_debug("diag_istrusted", f"[DIAG_ISTRUSTED] attach failed tag={tag}: {exc}")
+
+def _diag_read(driver, tag: str) -> None:
+    """Lit et logue window.__diag_istrusted__ après le clic JS."""
+    if not _DIAG_ISTRUSTED:
+        return
+    try:
+        result = driver.execute_script("return window.__diag_istrusted__ || null;")
+        if result:
+            log_info(
+                "diag_istrusted",
+                f"[DIAG_ISTRUSTED] tag={tag} isTrusted={result.get('isTrusted')} "
+                f"type={result.get('type')} timestamp={result.get('timestamp')}",
+            )
+        else:
+            log_info("diag_istrusted", f"[DIAG_ISTRUSTED] tag={tag} listener n'a pas capturé d'événement")
+    except Exception as exc:
+        log_debug("diag_istrusted", f"[DIAG_ISTRUSTED] read failed tag={tag}: {exc}")
+# ---------------------------------------------------------------------------
 
 
 def normalize(text):
@@ -122,7 +171,9 @@ def _execute_async_radio(driver, answer_text) -> bool:
             driver.execute_script("arguments[0].scrollIntoView({block:'center'});", label)
             time.sleep(0.3)
             radio = label.find_element(By.CSS_SELECTOR, "input[type='radio']")
+            _diag_attach(driver, radio, "_click_radio_label")
             driver.execute_script("arguments[0].click();", radio)
+            _diag_read(driver, "_click_radio_label")
             time.sleep(0.5)
             # Vérification post-clic : si l'élément est stale (DOM re-rendu après clic),
             # on considère le clic comme réussi — le re-render confirme l'interaction.
@@ -377,7 +428,9 @@ def click_next_button(driver):
         # et la référence initiale serait stale.
         next_btn = driver.find_element(By.CSS_SELECTOR, CTA_SEL)
         _confirm_before_cta_click()
+        _diag_attach(driver, next_btn, "click_next_button[primary]")
         driver.execute_script("arguments[0].click();", next_btn)
+        _diag_read(driver, "click_next_button[primary]")
         print(
             "➡️ Bouton (flèche ou navigation) cliqué via data-test-id. source: reponse_executor.py"
         )
@@ -416,7 +469,9 @@ def click_next_button(driver):
                 except Exception:
                     pass
 
+            _diag_attach(driver, next_btn, "click_next_button[fallback]")
             driver.execute_script("arguments[0].click();", next_btn)
+            _diag_read(driver, "click_next_button[fallback]")
             print("➡️ Bouton cliqué via fallback textuel (case-insensitive + enabled). source: reponse_executor.py")
             from Management.redirect_watcher import wait_for_page_load
             wait_for_page_load(driver, timeout=15)
@@ -487,10 +542,12 @@ def select_checkbox_answers(driver, answers):
 
         # Scroll + clic JS en un seul appel
         inner_cb = label.find_element(By.CSS_SELECTOR, "input[type='checkbox']")
+        _diag_attach(driver, inner_cb, "select_checkbox_answers")
         driver.execute_script(
             "arguments[0].scrollIntoView({block:'center'}); arguments[0].click();",
             inner_cb,
         )
+        _diag_read(driver, "select_checkbox_answers")
 
         # Attendre le changement visuel (classe p-checked sur le label) plutôt que
         # de se fier uniquement à is_selected() dont la confirmation backend peut
