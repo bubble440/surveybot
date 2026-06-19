@@ -352,20 +352,19 @@ def execute_response(driver, answer_text, input_type=None):
                     driver.execute_script(
                         "arguments[0].scrollIntoView({block:'center'});", label
                     )
-                    # 1) tenter clic direct sur l'input radio
+                    # L'input radio peut être CSS-masqué (widget personnalisé) et donc
+                    # non actionnable pour Playwright. On clique le label visible qui
+                    # déclenche nativement la sélection du radio associé (isTrusted=true).
+                    # radio est récupéré uniquement pour la vérification post-clic.
+                    radio = None
                     try:
                         radio = label.find_element(By.CSS_SELECTOR, "input[type='radio']")
-                        driver.execute_script(
-                            "arguments[0].scrollIntoView({block:'center'});", radio
-                        )
-                        time.sleep(0.5)
-                        _diag_attach(driver, radio, "execute_response_radio_main")
-                        driver.execute_script("arguments[0].click();", radio)
-                        _diag_read(driver, "execute_response_radio_main")
                     except Exception:
-                        # 2) fallback clic humain
-                        ActionChains(driver).move_to_element(label).click().perform()
-                        time.sleep(0.5)
+                        pass
+                    time.sleep(0.5)
+                    _diag_attach(driver, label, "execute_response_radio_main")
+                    label.click()
+                    _diag_read(driver, "execute_response_radio_main")
                     print(
                         f"✅ Option radio sélectionnée : {span.text} source: reponse_executor.py"
                     )
@@ -375,13 +374,13 @@ def execute_response(driver, answer_text, input_type=None):
                     try:
                         WebDriverWait(driver, 5).until(
                             lambda d: "p-checked" in (label.get_attribute("class") or "")
-                            or radio.is_selected()
+                            or (radio is not None and radio.is_selected())
                         )
                     except Exception:
                         try:
-                            if not radio.is_selected():
-                                print("⚠️ Radio non sélectionné après clic JS — retry ActionChains")
-                                ActionChains(driver).move_to_element(radio).click().perform()
+                            if radio is None or not radio.is_selected():
+                                print("⚠️ Radio non sélectionné après clic natif — retry ActionChains")
+                                ActionChains(driver).move_to_element(label).click().perform()
                         except Exception:
                             pass
                     click_next_button(driver)
@@ -431,7 +430,7 @@ def click_next_button(driver):
         next_btn = driver.find_element(By.CSS_SELECTOR, CTA_SEL)
         _confirm_before_cta_click()
         _diag_attach(driver, next_btn, "click_next_button[primary]")
-        driver.execute_script("arguments[0].click();", next_btn)
+        next_btn.click()
         _diag_read(driver, "click_next_button[primary]")
         print(
             "➡️ Bouton (flèche ou navigation) cliqué via data-test-id. source: reponse_executor.py"
@@ -472,7 +471,7 @@ def click_next_button(driver):
                     pass
 
             _diag_attach(driver, next_btn, "click_next_button[fallback]")
-            driver.execute_script("arguments[0].click();", next_btn)
+            next_btn.click()
             _diag_read(driver, "click_next_button[fallback]")
             print("➡️ Bouton cliqué via fallback textuel (case-insensitive + enabled). source: reponse_executor.py")
             from Management.redirect_watcher import wait_for_page_load
@@ -542,13 +541,10 @@ def select_checkbox_answers(driver, answers):
             found = True
             continue
 
-        # Scroll + clic JS en un seul appel
         inner_cb = label.find_element(By.CSS_SELECTOR, "input[type='checkbox']")
+        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", inner_cb)
         _diag_attach(driver, inner_cb, "select_checkbox_answers")
-        driver.execute_script(
-            "arguments[0].scrollIntoView({block:'center'}); arguments[0].click();",
-            inner_cb,
-        )
+        inner_cb.click()
         _diag_read(driver, "select_checkbox_answers")
 
         # Attendre le changement visuel (classe p-checked sur le label) plutôt que
