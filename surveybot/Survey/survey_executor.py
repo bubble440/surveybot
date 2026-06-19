@@ -2082,11 +2082,9 @@ def execute_survey_page(driver, account_id, api_key, ctx=None):
         user_prompt = prompt_builder.build_batch_prompt(question_blocks_for_batch, ctx=ctx)
 
         if (os.getenv("LOG_LEVEL") or "").strip().lower() == "debug":
-            print("🧠 [PROMPT_DEBUG] ===== SYSTEM PROMPT =====")
-            print(system_prompt[:5000])
-            print("🧠 [PROMPT_DEBUG] ===== USER PROMPT =====")
+            print("🧠 [PROMPT→GPT] ===== USER PROMPT =====")
             print(user_prompt[:200000])
-            print("[PROMPT_DEBUG] ===================================")
+            print("[PROMPT→GPT] ===================================")
 
         instruction_raw = client.chat.completions.create(
             model="gpt-4o-mini",
