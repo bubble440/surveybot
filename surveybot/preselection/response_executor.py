@@ -56,6 +56,51 @@ def _diag_read(driver, tag: str) -> None:
             log_info("diag_istrusted", f"[DIAG_ISTRUSTED] tag={tag} listener n'a pas capturé d'événement")
     except Exception as exc:
         log_debug("diag_istrusted", f"[DIAG_ISTRUSTED] read failed tag={tag}: {exc}")
+
+# ---------------------------------------------------------------------------
+# DIAGNOSTIC TEMPORAIRE — échec clic label checkbox (retirer après confirmation)
+# Activer avec : DIAG_CHECKBOX_CLICK=1
+# ---------------------------------------------------------------------------
+_DIAG_CHECKBOX_CLICK = os.environ.get("DIAG_CHECKBOX_CLICK", "").strip() not in ("", "0")
+
+_JS_DIAG_LABEL_STATE = """
+(function(el) {
+    if (!el.isConnected) return {connected: false};
+    var rect = el.getBoundingClientRect();
+    var cx = rect.left + rect.width / 2, cy = rect.top + rect.height / 2;
+    var st = window.getComputedStyle(el);
+    var top = document.elementFromPoint(cx, cy);
+    var topDesc = 'none';
+    if (top) {
+        var tid = top.getAttribute('data-test-id');
+        var cls = top.className ? top.className.trim().split(/\s+/).slice(0, 3).join('.') : '';
+        topDesc = top.tagName.toLowerCase() + (tid ? '[data-test-id=' + tid + ']' : (cls ? '.' + cls : ''));
+    }
+    return {
+        connected: true,
+        rect: {x: Math.round(rect.x), y: Math.round(rect.y), w: Math.round(rect.width), h: Math.round(rect.height)},
+        display: st.display,
+        visibility: st.visibility,
+        opacity: st.opacity,
+        pointerEvents: st.pointerEvents,
+        topElement: topDesc,
+        isSelf: top === el
+    };
+})(arguments[0]);
+"""
+
+def _diag_checkbox_failure(driver, label, label_text: str, exc: Exception) -> None:
+    """Capture l'état DOM du label au moment de l'échec du clic — DIAG_CHECKBOX_CLICK=1."""
+    if not _DIAG_CHECKBOX_CLICK:
+        return
+    try:
+        state = driver.execute_script(_JS_DIAG_LABEL_STATE, label)
+        log_info(
+            "diag_checkbox_click",
+            f"[DIAG_CHECKBOX_CLICK] label={label_text!r} exc={type(exc).__name__} state={state}",
+        )
+    except Exception as diag_exc:
+        log_debug("diag_checkbox_click", f"[DIAG_CHECKBOX_CLICK] diagnostic échoué: {diag_exc}")
 # ---------------------------------------------------------------------------
 
 
@@ -544,7 +589,11 @@ def select_checkbox_answers(driver, answers):
         inner_cb = label.find_element(By.CSS_SELECTOR, "input[type='checkbox']")
         driver.execute_script("arguments[0].scrollIntoView({block:'center'});", label)
         _diag_attach(driver, label, "select_checkbox_answers")
-        label.click()
+        try:
+            label.click()
+        except Exception as _ck_exc:
+            _diag_checkbox_failure(driver, label, label_text, _ck_exc)
+            raise
         _diag_read(driver, "select_checkbox_answers")
 
         # Attendre le changement visuel (classe p-checked sur le label) plutôt que
