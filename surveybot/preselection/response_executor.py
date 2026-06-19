@@ -542,9 +542,9 @@ def select_checkbox_answers(driver, answers):
             continue
 
         inner_cb = label.find_element(By.CSS_SELECTOR, "input[type='checkbox']")
-        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", inner_cb)
-        _diag_attach(driver, inner_cb, "select_checkbox_answers")
-        inner_cb.click()
+        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", label)
+        _diag_attach(driver, label, "select_checkbox_answers")
+        label.click()
         _diag_read(driver, "select_checkbox_answers")
 
         # Attendre le changement visuel (classe p-checked sur le label) plutôt que
