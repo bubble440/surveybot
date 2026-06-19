@@ -63,8 +63,11 @@ def _diag_read(driver, tag: str) -> None:
 # ---------------------------------------------------------------------------
 _DIAG_CHECKBOX_CLICK = os.environ.get("DIAG_CHECKBOX_CLICK", "").strip() not in ("", "0")
 
+# Note : préfixer la IIFE avec "return" pour que la valeur traverse l'enveloppe
+# (args) => (function() { <script> }).apply(null, args) du shim execute_script.
+# Sans "return", la IIFE interne retourne mais la fonction externe retourne undefined → None.
 _JS_DIAG_LABEL_STATE = """
-(function(el) {
+return (function(el) {
     if (!el.isConnected) return {connected: false};
     var rect = el.getBoundingClientRect();
     var cx = rect.left + rect.width / 2, cy = rect.top + rect.height / 2;
@@ -93,14 +96,27 @@ def _diag_checkbox_failure(driver, label, label_text: str, exc: Exception) -> No
     """Capture l'état DOM du label au moment de l'échec du clic — DIAG_CHECKBOX_CLICK=1."""
     if not _DIAG_CHECKBOX_CLICK:
         return
+    # Vérification Python du handle avant d'invoquer le script JS.
+    # tag_name appelle evaluate sur le handle Playwright — lève si le handle est disposé/stale.
+    handle_ok = "unknown"
+    try:
+        tag = label.tag_name
+        handle_ok = f"valid(tag={tag})"
+    except Exception as h_exc:
+        handle_ok = f"invalid({type(h_exc).__name__}: {h_exc})"
     try:
         state = driver.execute_script(_JS_DIAG_LABEL_STATE, label)
         log_info(
             "diag_checkbox_click",
-            f"[DIAG_CHECKBOX_CLICK] label={label_text!r} exc={type(exc).__name__} state={state}",
+            f"[DIAG_CHECKBOX_CLICK] label={label_text!r} exc={type(exc).__name__} "
+            f"handle={handle_ok} state={state}",
         )
     except Exception as diag_exc:
-        log_debug("diag_checkbox_click", f"[DIAG_CHECKBOX_CLICK] diagnostic échoué: {diag_exc}")
+        log_info(
+            "diag_checkbox_click",
+            f"[DIAG_CHECKBOX_CLICK] label={label_text!r} exc={type(exc).__name__} "
+            f"handle={handle_ok} script_exc={type(diag_exc).__name__}: {diag_exc}",
+        )
 # ---------------------------------------------------------------------------
 
 
