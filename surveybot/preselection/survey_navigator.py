@@ -518,6 +518,9 @@ def go_to_best_value_survey(driver):
     time.sleep(0.5)  # stabilisation post-popup
     
     if not _find_survey_cards(driver):
+        if os.getenv("SNAP_ENABLED", "").strip() == "1":
+            from Management.snap_uploader import capture_and_upload
+            capture_and_upload(driver, "no_surveys_available")
         time.sleep(3)  # délai pour que les éventuels logs/snapshots soient traités avant pause
         log_info("[TOPSURVEYS][COOLDOWN]", "Aucun survey disponible → cooldown 15 min (DB + stop task)")
         from Management.guards.runtime_guard import get_guard, StopReason

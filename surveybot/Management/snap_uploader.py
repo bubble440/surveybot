@@ -105,7 +105,6 @@ def _capture_png(driver) -> bytes:
             timeout=5,
             capture_output=True,
         )
-        log_info(_TAG, f"scrot returncode={result.returncode} stderr={result.stderr.decode(errors='replace')!r}")
         if result.returncode == 0:
             with open(path, "rb") as f:
                 return f.read()
@@ -143,6 +142,8 @@ def capture_and_upload(driver, label: str) -> None:
     Capture un screenshot depuis driver et l'uploade vers R2.
     No-op silencieux si SNAP_ENABLED != "1".
     """
+
+    time.sleep(10)
     if not _is_enabled():
         return
 
