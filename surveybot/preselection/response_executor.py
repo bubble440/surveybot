@@ -117,6 +117,92 @@ def _diag_checkbox_failure(driver, label, label_text: str, exc: Exception) -> No
             f"[DIAG_CHECKBOX_CLICK] label={label_text!r} exc={type(exc).__name__} "
             f"handle={handle_ok} script_exc={type(diag_exc).__name__}: {diag_exc}",
         )
+
+# ---------------------------------------------------------------------------
+# DIAGNOSTIC TEMPORAIRE — stabilité géométrique avant clic label (retirer après confirmation)
+# Activer avec : DIAG_STABILITY=1
+# ---------------------------------------------------------------------------
+_DIAG_STABILITY = os.environ.get("DIAG_STABILITY", "").strip() not in ("", "0")
+
+# Rect + scrollTop du premier ancêtre scrollable (overflowY scroll/auto)
+_JS_SAMPLE_RECT_EXT = """
+return (function(el) {
+    var r = el.getBoundingClientRect();
+    var scrollEl = null, p = el.parentElement;
+    while (p && p !== document.body) {
+        var ov = window.getComputedStyle(p).overflowY;
+        if (ov === 'scroll' || ov === 'auto') { scrollEl = p; break; }
+        p = p.parentElement;
+    }
+    return {
+        x: Math.round(r.x * 10) / 10, y: Math.round(r.y * 10) / 10,
+        w: Math.round(r.width * 10) / 10, h: Math.round(r.height * 10) / 10,
+        st: scrollEl ? Math.round(scrollEl.scrollTop * 10) / 10 : null
+    };
+})(arguments[0]);
+"""
+
+# Animations/transitions CSS actives sur le label et toute la chaîne d'ancêtres
+_JS_CHECK_ANIMATIONS = """
+return (function(el) {
+    var out = [];
+    var node = el;
+    while (node && node !== document.body) {
+        if (typeof node.getAnimations === 'function') {
+            var anims = node.getAnimations();
+            if (anims.length) {
+                out.push({
+                    el: node.tagName.toLowerCase() + (node.className ? '.' + node.className.trim().split(/\\s+/)[0] : ''),
+                    anims: anims.map(function(a) { return (a.animationName || 'transition') + ':' + a.playState; })
+                });
+            }
+        }
+        node = node.parentElement;
+    }
+    return out;
+})(arguments[0]);
+"""
+
+def _diag_sample_stability(driver, label, label_text: str) -> None:
+    """Échantillonne rect + scroll ancêtre + animations CSS du label N fois — DIAG_STABILITY=1."""
+    if not _DIAG_STABILITY:
+        return
+    _N = 15
+    _INTERVAL = 0.2  # 200 ms → fenêtre de 3 s
+    # Vérification one-shot des animations actives (avant la boucle)
+    anim_info = []
+    try:
+        anim_info = driver.execute_script(_JS_CHECK_ANIMATIONS, label) or []
+    except Exception as ae:
+        anim_info = [f"ERR_ANIM:{type(ae).__name__}"]
+    samples = []
+    for _ in range(_N):
+        try:
+            r = driver.execute_script(_JS_SAMPLE_RECT_EXT, label)
+            samples.append(
+                (r.get("x"), r.get("y"), r.get("w"), r.get("h"), r.get("st")) if r else None
+            )
+        except Exception as se:
+            samples.append(f"ERR:{type(se).__name__}")
+            break
+        time.sleep(_INTERVAL)
+    valid = [s for s in samples if isinstance(s, tuple)]
+    if valid:
+        xs, ys = [s[0] for s in valid], [s[1] for s in valid]
+        sts = [s[4] for s in valid if s[4] is not None]
+        dx, dy = max(xs) - min(xs), max(ys) - min(ys)
+        dscroll = (max(sts) - min(sts)) if sts else None
+        geo = f"MOVING(dx={dx:.1f} dy={dy:.1f})" if (dx > 0.5 or dy > 0.5) else "STABLE"
+        scroll = (f"SCROLLING(d={dscroll:.1f})" if dscroll and dscroll > 0.5
+                  else ("SCROLL_STABLE" if dscroll is not None else "NO_SCROLL_ANCESTOR"))
+        status = f"{geo} {scroll}"
+    else:
+        status = "NO_VALID_SAMPLES"
+    log_info(
+        "diag_stability",
+        f"[DIAG_STABILITY] label={label_text!r} status={status} n={len(valid)}/{_N} "
+        f"animations={anim_info} samples={samples}",
+    )
 # ---------------------------------------------------------------------------
 
 
@@ -571,7 +657,8 @@ def select_checkbox_answers(driver, answers):
             var cb = label.querySelector("input[type='checkbox']");
             results.push({
                 text: textElem ? textElem.textContent.trim() : "",
-                checked: cb ? cb.checked : false
+                checked: cb ? cb.checked : false,
+                dtid: label.getAttribute('data-test-id') || ""
             });
         }
         return results;
@@ -582,7 +669,7 @@ def select_checkbox_answers(driver, answers):
     for i, info in enumerate(js_result):
         key = normalize(info["text"])
         if key:
-            label_map[key] = (i, info["text"], info["checked"])
+            label_map[key] = (i, info["text"], info["checked"], info.get("dtid", ""))
 
     normalized_targets = [
         normalize(str(a)) for a in (answers if isinstance(answers, list) else [answers])
@@ -594,16 +681,21 @@ def select_checkbox_answers(driver, answers):
             print(f"⚠️ Cible non trouvée dans les labels : {target} source: reponse_executor.py")
             continue
 
-        idx, label_text, already_checked = label_map[target]
-        label = labels[idx]
+        idx, label_text, already_checked, label_dtid = label_map[target]
 
         if already_checked:
             print(f"✅ Checkbox déjà cochée : {label_text}")
             found = True
             continue
 
+        # Re-résolution fraîche : le framework re-rend toute la liste à chaque clic
+        # (tous les value= des inputs sont mis à jour), ce qui invalide les références
+        # capturées avant la boucle. On re-fetch par data-test-id UUID stable.
+        label = driver.find_element(
+            By.CSS_SELECTOR, f'[data-test-id="{label_dtid}"]'
+        )
         inner_cb = label.find_element(By.CSS_SELECTOR, "input[type='checkbox']")
-        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", label)
+        _diag_sample_stability(driver, label, label_text)
         _diag_attach(driver, label, "select_checkbox_answers")
         try:
             label.click()
