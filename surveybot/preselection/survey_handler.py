@@ -357,6 +357,9 @@ def _run_survey_impl(driver, api_key, *, account_id: str, ctx=None, payout_name:
                 # ❌ Cas : disqualification détectée par la validation
                 if action == "DISQUALIFIED":
                     print(f"⚠️ Disqualification détectée (validator) | reason={answer.get('reason')}")
+                    if os.getenv("SNAP_ENABLED", "").strip() == "1":
+                        from Management.snap_uploader import capture_and_upload
+                        capture_and_upload(driver, "disqualified")
                     try:
                         flush_disqualified(session)
                     except Exception:

@@ -310,8 +310,6 @@ def extract_select_options_js(driver):
             .map(o => (o.innerText || o.textContent).trim());
         """
         opts = driver.execute_script(js)
-        if opts is not None:
-            print(f"extract_select_options_js : {opts}")
         # dédoublonne en conservant l'ordre
         return list(dict.fromkeys(opts))
     except Exception as e:
@@ -520,7 +518,7 @@ def get_response_for_question(driver, api_key, *, session=None):
 
         prompt = reformulate_prompt_for_gpt(question, options, input_type, avoid_options=avoid_options)
         log_debug("preselection", f"[ITYPE DÉTECTÉ] {input_type}")
-        log_debug("preselection", f"[PROMPT→GPT]\n{prompt}")
+        log_debug("preselection", f"[PROMPT→GPT] Q: {question!r} | Options: {options}")
 
         response = ask_assistant(prompt, api_key, question=question, options=options)
         print(f"🤖 Réponse proposée : {response}")
