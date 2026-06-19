@@ -359,7 +359,9 @@ def execute_response(driver, answer_text, input_type=None):
                             "arguments[0].scrollIntoView({block:'center'});", radio
                         )
                         time.sleep(0.5)
+                        _diag_attach(driver, radio, "execute_response_radio_main")
                         driver.execute_script("arguments[0].click();", radio)
+                        _diag_read(driver, "execute_response_radio_main")
                     except Exception:
                         # 2) fallback clic humain
                         ActionChains(driver).move_to_element(label).click().perform()
