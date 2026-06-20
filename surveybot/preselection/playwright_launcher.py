@@ -842,3 +842,170 @@ def launch_browser_playwright(config: dict | None = None):
     shim._chrome_user_data_dir = user_data_dir
     log.info("[LAUNCH][PW] Browser Playwright lancé, fingerprint injecté via add_init_script.")
     return shim
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# MODE DÉBOGAGE LOCAL — fenêtre visible, navigation manuelle
+# Pas un mode de production : ne pas appeler depuis le bot en prod.
+# ─────────────────────────────────────────────────────────────────────────────
+
+def launch_browser_playwright_debug(config: dict | None = None) -> "PlaywrightDriverShim":
+    """
+    Lance Chrome via Playwright avec fenêtre visible (headless=False), fingerprint
+    et proxy identiques à launch_browser_playwright(), pour observation manuelle.
+
+    Usage : le bot rend la main après le lancement ; l'utilisateur navigue jusqu'à
+    la page problématique et appuie sur Entrée pour que le bot reprenne, ou ferme
+    la fenêtre pour terminer la session de débogage.
+
+    Ne modifie pas launch_browser() ni launch_browser_playwright().
+    """
+    from playwright.sync_api import sync_playwright
+    from preselection.playwright_shim import PlaywrightDriverShim
+
+    chrome_bin                   = _detect_chrome_binary()
+    proxy_server, proxy_user, proxy_pass = _parse_proxy_env(config)
+    locale, tz                   = _parse_locale_tz_env()
+
+    user_data_dir = tempfile.mkdtemp(prefix="chrome_profile_pw_dbg_")
+
+    log.info(
+        "[LAUNCH][PW][DBG] chrome_bin=%s locale=%s tz=%s proxy=%s user_data_dir=%s",
+        chrome_bin, locale, tz, proxy_server or "none", user_data_dir,
+    )
+
+    chrome_args = [
+        "--no-first-run",
+        "--no-default-browser-check",
+        "--disable-dev-shm-usage",
+        *( ["--no-sandbox"] if (not hasattr(os, "getuid") or os.getuid() == 0) else [] ),
+        "--disable-background-networking",
+        "--disable-component-update",
+        "--disable-sync",
+        "--no-pings",
+        "--disable-domain-reliability",
+        "--disable-client-side-phishing-detection",
+        "--safebrowsing-disable-auto-update",
+        "--disable-features=Translate,OptimizationHints,SafeBrowsingProtections,"
+            "SafeBrowsingRealTimeUrlLookupEnabled,ChromeWhatsNewUI,"
+            "NetworkService,MediaRouter,DialMediaRouteProvider",
+        "--ash-no-nudges",
+        "--disable-ntp-most-likely-favicons-from-server",
+        "--disable-search-engine-choice-screen",
+        "--disable-extensions",
+        "--disable-notifications",
+        "--start-maximized",
+        "--lang=en-US",
+        "--auto-open-devtools-for-tabs",  # DevTools ouverts d'emblée pour observation
+    ]
+
+    pw_proxy = None
+    if proxy_server:
+        pw_proxy = {"server": proxy_server}
+        if proxy_user and proxy_pass:
+            pw_proxy["username"] = proxy_user
+            pw_proxy["password"] = proxy_pass
+
+    _UA = (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/149.0.0.0 Safari/537.36"
+    )
+
+    pw = sync_playwright().start()
+    context = pw.chromium.launch_persistent_context(
+        user_data_dir,
+        executable_path=chrome_bin,
+        args=chrome_args,
+        env={**os.environ, "TZ": tz},
+        headless=False,          # toujours visible, indépendamment de SURVEY_HEADLESS
+        locale=locale,
+        timezone_id=tz,
+        user_agent=_UA,
+        no_viewport=True,        # viewport naturel = taille réelle de la fenêtre OS
+        proxy=pw_proxy,
+    )
+    context.add_init_script(_fingerprint_js())
+    page = context.new_page()
+
+    print(
+        "\n[DBG] Navigateur Playwright lancé en mode débogage (non-headless).\n"
+        "  → Navigue manuellement jusqu'à la page de présélection problématique.\n"
+        "  → Ouvre les DevTools (F12) si pas déjà ouverts, onglet Network ou Console.\n"
+        "  → Appuie sur Entrée ici pour rendre la main au bot (semi-auto),\n"
+        "    ou ferme la fenêtre Chrome pour terminer la session.\n"
+    )
+    input("[DBG] Appuie sur Entrée pour continuer... ")
+
+    shim = PlaywrightDriverShim(context, context, page)
+    shim._pw                   = pw
+    shim._chrome_user_data_dir = user_data_dir
+    log.info("[LAUNCH][PW][DBG] Shim prêt après navigation manuelle.")
+    return shim
+
+
+if __name__ == "__main__":
+    """
+    Point d'entrée de débogage local :
+        python -m preselection.playwright_launcher [option1] [option2] …
+
+    Exemples :
+        python -m preselection.playwright_launcher "Homme" "18-24 ans"
+        python -m preselection.playwright_launcher          # saisie interactive
+
+    Variables d'env utiles (optionnelles) :
+        PROXY_URL / PROXY_USER / PROXY_PASS  — proxy identique à la prod
+        SURVEY_LANG / SURVEY_TZ              — locale/timezone
+        SURVEY_BROWSER_BIN                   — chemin Chrome explicite
+
+    Workflow :
+      1. Chrome s'ouvre en fenêtre visible avec DevTools.
+      2. Navigue manuellement jusqu'à la question à cocher, puis appuie sur Entrée.
+      3. Le bot appelle select_checkbox_answers() sur la page en cours.
+      4. Observe le résultat dans Chrome/DevTools, puis appuie sur Entrée pour fermer.
+    """
+    import sys
+    from preselection.response_executor import select_checkbox_answers
+
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s %(message)s")
+
+    # Options CLI pré-lues avant le lancement pour un démarrage immédiat si fournies ;
+    # sinon None — la saisie interactive aura lieu après navigation (voir ci-dessous).
+    cli_answers = sys.argv[1:] if len(sys.argv) > 1 else None
+
+    print("[DBG] Lancement du navigateur Playwright en mode débogage local…")
+    shim = launch_browser_playwright_debug()
+    # launch_browser_playwright_debug() contient déjà un input() qui attend que
+    # l'utilisateur ait navigué jusqu'à la page cible et appuyé sur Entrée.
+
+    # Saisie des options après navigation : l'utilisateur voit la page dans Chrome
+    if cli_answers is not None:
+        answers = cli_answers
+    else:
+        raw = input("[DBG] Options à cocher (séparées par | ) : ")
+        answers = [a.strip() for a in raw.split("|") if a.strip()]
+
+    if not answers:
+        print("[DBG] Aucune option fournie — abandon.")
+        try:
+            shim._pw.stop()
+        except Exception:
+            pass
+        sys.exit(1)
+
+    print(f"[DBG] Options cibles : {answers}")
+    # Tentative de clic via la fonction existante (non modifiée)
+    print(f"[DBG] Appel select_checkbox_answers({answers})…")
+    try:
+        result = select_checkbox_answers(shim, answers)
+        print(f"[DBG] select_checkbox_answers → {result}")
+    except Exception as exc:
+        print(f"[DBG] Erreur lors de select_checkbox_answers : {exc}")
+
+    # Maintien de la session pour observation — fermeture explicite par l'utilisateur
+    input("[DBG] Observe le navigateur, puis appuie sur Entrée pour fermer la session… ")
+    try:
+        shim._pw.stop()
+    except Exception:
+        pass
+    sys.exit(0)
