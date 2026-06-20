@@ -749,6 +749,7 @@ def select_checkbox_answers(driver, answers):
         _diag_attach(driver, label, "select_checkbox_answers")
         _diag_pw_actionability(label, label_text)
         _CLICK_MAX_ATTEMPTS = 3  # 1 tentative initiale + 2 reprises max
+        _click_failed = False
         for _attempt in range(_CLICK_MAX_ATTEMPTS):
             if _attempt > 0:
                 log_info(
@@ -775,13 +776,23 @@ def select_checkbox_answers(driver, answers):
                 break  # succès → sortie de la boucle retry
             except Exception as _ck_exc:
                 _is_last = _attempt >= _CLICK_MAX_ATTEMPTS - 1
-                if _is_last or type(_ck_exc).__name__ != "TimeoutError":
+                if _is_last:
+                    _diag_checkbox_failure(driver, label, label_text, _ck_exc)
+                    log_info(
+                        "response_executor",
+                        f"[CHECKBOX_SKIP] label={label_text!r} ignoré après {_CLICK_MAX_ATTEMPTS} tentatives ({type(_ck_exc).__name__})",
+                    )
+                    _click_failed = True
+                    break
+                if type(_ck_exc).__name__ != "TimeoutError":
                     _diag_checkbox_failure(driver, label, label_text, _ck_exc)
                     raise
                 log_info(
                     "response_executor",
                     f"[CHECKBOX_RETRY] label={label_text!r} tentative {_attempt + 1} TimeoutError — reprise",
                 )
+        if _click_failed:
+            continue
         _diag_read(driver, "select_checkbox_answers")
 
         # Attendre le changement visuel (classe p-checked sur le label) plutôt que
