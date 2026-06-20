@@ -546,6 +546,10 @@ class PlaywrightDriverShim:
 
     # ── Navigation ───────────────────────────────────────────────────────────
 
+    def bring_to_front(self) -> None:
+        """Donne le focus OS à l'onglet Playwright actif (évite le throttle Chromium)."""
+        self._page.bring_to_front()
+
     def get(self, url: str) -> None:
         """Navigue vers url. Réinitialise le frame courant au contexte principal."""
         self._current_frame = self._page

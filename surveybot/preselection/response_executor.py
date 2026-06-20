@@ -706,6 +706,11 @@ def select_checkbox_answers(driver, answers):
         normalize(str(a)) for a in (answers if isinstance(answers, list) else [answers])
     ]
 
+    # Garantit le focus OS sur l'onglet avant tout clic (évite le throttle Chromium
+    # sur les fenêtres/onglets non focalisés, cause confirmée du blocage intermittent).
+    if hasattr(driver, "bring_to_front"):
+        driver.bring_to_front()
+
     found = False
     for target in normalized_targets:
         if target not in label_map:
@@ -726,6 +731,14 @@ def select_checkbox_answers(driver, answers):
             By.CSS_SELECTOR, f'[data-test-id="{label_dtid}"]'
         )
         inner_cb = label.find_element(By.CSS_SELECTOR, "input[type='checkbox']")
+        # Cibler le carré visuel (.p-checkbox-box) plutôt que le centre du label :
+        # sur les labels multi-lignes (h>42px), le centre géométrique du label tombe
+        # dans le span de texte enfant, ce qui empêche Playwright de valider la stabilité.
+        # .p-checkbox-box a une taille fixe indépendante de la longueur du texte.
+        try:
+            click_target = label.find_element(By.CSS_SELECTOR, ".p-checkbox-box")
+        except Exception:
+            click_target = label
         # block:'center' centre l'élément dans la zone scrollable, éloigné du bord inférieur
         # où le bouton CTA fixe (ps-common-actions-button) intercepte les clics si l'élément
         # s'y retrouve avec block:'nearest'. behavior:'instant' évite l'animation de scroll.
@@ -735,11 +748,40 @@ def select_checkbox_answers(driver, answers):
         _diag_sample_stability(driver, label, label_text)
         _diag_attach(driver, label, "select_checkbox_answers")
         _diag_pw_actionability(label, label_text)
-        try:
-            label.click()
-        except Exception as _ck_exc:
-            _diag_checkbox_failure(driver, label, label_text, _ck_exc)
-            raise
+        _CLICK_MAX_ATTEMPTS = 3  # 1 tentative initiale + 2 reprises max
+        for _attempt in range(_CLICK_MAX_ATTEMPTS):
+            if _attempt > 0:
+                log_info(
+                    "response_executor",
+                    f"[CHECKBOX_RETRY] label={label_text!r} tentative {_attempt + 1}/{_CLICK_MAX_ATTEMPTS}",
+                )
+                try:
+                    label = driver.find_element(
+                        By.CSS_SELECTOR, f'[data-test-id="{label_dtid}"]'
+                    )
+                    inner_cb = label.find_element(By.CSS_SELECTOR, "input[type='checkbox']")
+                    try:
+                        click_target = label.find_element(By.CSS_SELECTOR, ".p-checkbox-box")
+                    except Exception:
+                        click_target = label
+                except Exception:
+                    pass
+                driver.execute_script(
+                    "arguments[0].scrollIntoView({block:'center', behavior:'instant'});", label
+                )
+                _diag_attach(driver, label, "select_checkbox_answers")
+            try:
+                click_target.click()
+                break  # succès → sortie de la boucle retry
+            except Exception as _ck_exc:
+                _is_last = _attempt >= _CLICK_MAX_ATTEMPTS - 1
+                if _is_last or type(_ck_exc).__name__ != "TimeoutError":
+                    _diag_checkbox_failure(driver, label, label_text, _ck_exc)
+                    raise
+                log_info(
+                    "response_executor",
+                    f"[CHECKBOX_RETRY] label={label_text!r} tentative {_attempt + 1} TimeoutError — reprise",
+                )
         _diag_read(driver, "select_checkbox_answers")
 
         # Attendre le changement visuel (classe p-checked sur le label) plutôt que
