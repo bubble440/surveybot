@@ -590,6 +590,7 @@ def click_next_button(driver):
 
     wait = WebDriverWait(driver, 10)
     CTA_SEL = 'button[data-test-id="ps-common-actions-button"]'
+    _primary_exc = None
     try:
         # Attendre que le CTA soit présent ET visible dans le DOM.
         # Nécessaire car le bouton n'apparaît qu'après qu'au moins une option soit
@@ -607,17 +608,67 @@ def click_next_button(driver):
         # et la référence initiale serait stale.
         next_btn = driver.find_element(By.CSS_SELECTOR, CTA_SEL)
         _confirm_before_cta_click()
-        _diag_attach(driver, next_btn, "click_next_button[primary]")
-        next_btn.click()
-        _diag_read(driver, "click_next_button[primary]")
-        print(
-            "➡️ Bouton (flèche ou navigation) cliqué via data-test-id. source: reponse_executor.py"
-        )
-        from Management.redirect_watcher import wait_for_page_load
-        wait_for_page_load(driver, timeout=15)
-        return True
 
-    except:
+        # Boucle de reprise bornée sur le clic natif (même idiome que la reprise
+        # checkbox de select_checkbox_answers) : le clic natif Playwright applique
+        # son propre protocole d'actionabilité interne (stabilité, réception des
+        # événements pointeur) indépendamment du wait ci-dessus, et peut échouer
+        # une première fois sans que le bouton ne soit réellement problématique.
+        # On conserve volontairement le clic natif (et non un clic JS) pour ne pas
+        # produire un événement isTrusted=false détectable par l'anti-fraude du
+        # site — voir l'instrumentation DIAG_ISTRUSTED dans ce même fichier.
+        _CTA_MAX_ATTEMPTS = 3
+        for _attempt in range(_CTA_MAX_ATTEMPTS):
+            if _attempt > 0:
+                log_info(
+                    "response_executor",
+                    f"[CTA_RETRY] tentative {_attempt + 1}/{_CTA_MAX_ATTEMPTS}",
+                )
+                try:
+                    next_btn = driver.find_element(By.CSS_SELECTOR, CTA_SEL)
+                    driver.execute_script(
+                        "arguments[0].scrollIntoView({block: 'center'});", next_btn
+                    )
+                except Exception:
+                    pass
+                _diag_attach(driver, next_btn, "click_next_button[primary]")
+            try:
+                next_btn.click()
+                _diag_read(driver, "click_next_button[primary]")
+                print(
+                    "➡️ Bouton (flèche ou navigation) cliqué via data-test-id. source: reponse_executor.py"
+                )
+                from Management.redirect_watcher import wait_for_page_load
+                wait_for_page_load(driver, timeout=15)
+                return True
+            except Exception as _cta_exc:
+                _primary_exc = _cta_exc
+                _is_last = _attempt >= _CTA_MAX_ATTEMPTS - 1
+                if _is_last or type(_cta_exc).__name__ != "TimeoutError":
+                    # Log explicite de l'exception réelle — auparavant masquée par
+                    # un bare except qui faisait basculer silencieusement vers le
+                    # repli textuel, lequel ne peut jamais matcher un bouton CTA
+                    # icône-seule (sans texte visible), comme observé sur cette page.
+                    log_info(
+                        "response_executor",
+                        f"[CTA_PRIMARY_FAILED] {type(_cta_exc).__name__}: {_cta_exc}",
+                    )
+                    break
+                log_info(
+                    "response_executor",
+                    f"[CTA_RETRY] tentative {_attempt + 1} {type(_cta_exc).__name__} — reprise",
+                )
+
+    except Exception as _wait_exc:
+        _primary_exc = _wait_exc
+        log_info(
+            "response_executor",
+            f"[CTA_PRIMARY_FAILED] (attente initiale) {type(_wait_exc).__name__}: {_wait_exc}",
+        )
+
+    # Repli textuel : on n'arrive ici que si le clic natif primaire a échoué
+    # malgré les tentatives ci-dessus (TimeoutError persistant ou autre exception).
+    if _primary_exc is not None:
         try:
             xpath = (
                 "//button["
