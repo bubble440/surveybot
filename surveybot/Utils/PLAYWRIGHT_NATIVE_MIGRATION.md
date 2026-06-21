@@ -42,7 +42,8 @@ BLOC 1 — Login + sélection de survey
             relais vers BLOC 2
 
 BLOC 2 — Résolution pop-up de présélection
-  Statut : ⬜ non démarré
+  Statut : ✅ migré (validé en attach le 2026-06-22 — présélection complète OK,
+           pont vers BLOC 3 fonctionnel)
   Fichiers : preselection/survey_handler.py (run_attach_preselection_takeover,
                is_topsurveys_preselection_popup, et la boucle principale de
                présélection qui suit),
@@ -79,43 +80,80 @@ BLOC 3 — Résolution du survey externe
 FRONTIÈRES ACTIVES (à mettre à jour après chaque patch validé)
 ================================================================================
 
-FRONTIÈRE BLOC 1 → BLOC 2 (active depuis le 2026-06-21)
+FRONTIÈRE BLOC 1 → BLOC 2 (active depuis le 2026-06-21, inchangée après BLOC 2)
 
   Côté migré (Playwright natif) :
     - main.py : run_attach_login_takeover(page, pw, ...) reçoit une Page
       Playwright native dès l'attachement (connexion directe au port de debug,
       sans passer par webdriver.Chrome Selenium).
     - preselection/auth_handler.py : toutes les fonctions du périmètre BLOC 1
-      opèrent sur l'API Playwright native. Helper _pw_page(d) conservée comme
-      simple normalisation defensive (extrait ._page si jamais un shim est
-      passé par erreur, sinon retourne l'objet tel quel) — n'est plus un point
-      de bascule actif puisque BLOC 1 ne reçoit plus de shim en interne.
+      opèrent sur l'API Playwright native. Helper _pw_page(d) utilisée comme
+      adaptateur defensive (extrait ._page si shim, retourne d sinon).
     - preselection/survey_navigator.py : go_to_best_value_survey(page) et ses
       fonctions internes opèrent sur l'API Playwright native.
 
-  Pont (le pont lui-même) :
+  Pont (le pont lui-même, inchangé) :
     - main.py, fonction _page_to_shim(page, pw) : enveloppe la Page Playwright
       native dans une instance du shim PlaywrightDriverShim, juste après la
       sélection du survey (popup de présélection ouvert) et juste avant
-      l'appel à run_attach_preselection_takeover. C'est le seul endroit du
-      périmètre BLOC 1 qui instancie le shim.
-    - L'attribut shim._survey_account_id est positionné explicitement après
-      le wrap (account_id n'est pas porté par la Page native).
+      l'appel à run_attach_preselection_takeover.
+    - Ce pont reste nécessaire car les fonctions BLOC 2 appellent
+      redirect_watcher.switch_to_latest_window_and_close_others(driver, ...)
+      qui attend un objet shim (window_handles, switch_to, close). Ces appels
+      sont des appels à du code hors périmètre BLOC 2 — le shim joue le rôle
+      d'adaptateur uniquement pour ces appels ; tout le reste (DOM queries,
+      evaluate, wait_for_selector) passe par _pw_page(driver) → Page native.
 
-  Côté shim (pas encore migré) :
-    - preselection/survey_handler.py : run_attach_preselection_takeover(shim, ...)
-      attend un objet façon Selenium (le shim), pas une Page native.
-    - Survey/survey_executor.py : execute_survey_page(shim, ...) — même attente,
-      shim porté en continu depuis la sortie du pont jusqu'à la fin de la
-      résolution survey (BLOC 3 non migré).
+  Côté migré (BLOC 2, depuis le 2026-06-22) :
+    - preselection/survey_handler.py : run_attach_preselection_takeover,
+      is_topsurveys_preselection_popup, _safe_page_text — API Playwright native
+      via _pw_page(driver). redirect_watcher passé avec driver (shim) au lieu
+      d'un wrapper temporaire, ce qui est correct car driver = shim dans tous
+      les chemins d'appel actuels.
+    - preselection/question_analyzer.py : extract_popup_html, extract_popup_text_with_js,
+      extract_options_js, extract_select_options_js, get_response_for_question,
+      click_participer_if_present, click_participer_if_qualified,
+      handle_disqualification_and_retry — API Playwright native via _pw_page(d).
+    - preselection/response_executor.py : execute_response, select_checkbox_answers,
+      click_next_button, _execute_async_radio — API Playwright native via _pw_page(d).
+    - ElementHandle.click() remplace label.click() (shim) / ActionChains.
+    - page.wait_for_function("(el) => el.classList.contains('p-checked')", arg=label)
+      remplace WebDriverWait + lambda.
+    - page.wait_for_load_state("load") remplace wait_for_page_load(driver).
 
-  Point d'attention identifié au test du 2026-06-21 :
-    - is_topsurveys_preselection_popup (preselection/survey_handler.py, BLOC 2)
-      a retourné popup_not_detected juste après une sélection de survey
-      pourtant réussie ("Popup survey chargé et visible." loggé juste avant).
-      À investiguer lors du patch BLOC 2 — possible problème de timing ou de
-      sélecteur DOM côté détection du popup, indépendant du pont lui-même
-      (le shim est correctement formé à la sortie du BLOC 1).
+  Correction popup_not_detected (cause racine identifiée et corrigée) :
+    - Cause : _wait_for_survey_popup (BLOC 1) attendait ps-popup-content-wrapper
+      (visible dès l'ouverture du popup), mais is_topsurveys_preselection_popup
+      (BLOC 2) requiert hasActions = présence de ps-common-actions-button ou
+      ps-skip-question-button, rendu par Vue APRÈS le chargement de la première
+      question. Aucun lien avec le shim — timing pur.
+    - Correction : dans run_attach_preselection_takeover, ajout d'un
+      page.wait_for_selector("button[data-test-id='ps-common-actions-button'],
+      button[data-test-id='ps-skip-question-button']", state='attached',
+      timeout=10_000) avant le premier appel à is_topsurveys_preselection_popup.
+
+FRONTIÈRE BLOC 2 → BLOC 3 (active depuis le 2026-06-22)
+
+  Côté migré (BLOC 2, Playwright natif) :
+    - preselection/survey_handler.py : _run_survey_impl appelle
+      Survey.survey_solver.solve_full_survey(driver, ...) et
+      Survey.survey_executor._handle_topsurveys_exclusion_popup(driver, ...)
+      avec l'objet driver reçu en paramètre (shim dans tous les chemins).
+    - main.py : run_attach_login_takeover appelle
+      survey_executor.execute_survey_page(shim, ...) après la sortie du BLOC 2,
+      avec le shim créé par _page_to_shim.
+
+  Pont (où se fait l'adaptation) :
+    - Le shim créé par _page_to_shim dans run_attach_login_takeover (main.py)
+      traverse tout BLOC 2 et arrive intact en BLOC 3.
+    - Après click_participer_if_qualified → switch_to_latest_window_and_close_others,
+      le shim._page est mis à jour par le redirect_watcher (switch vers le nouvel
+      onglet survey externe). BLOC 3 reçoit donc le shim pointant vers le bon onglet.
+
+  Côté shim (BLOC 3, pas encore migré) :
+    - Survey/survey_solver.py : solve_full_survey(driver, ...) attend un objet
+      façon Selenium (le shim).
+    - Survey/survey_executor.py : execute_survey_page(driver, ...) — même attente.
 
 ================================================================================
 RÈGLES VALABLES POUR TOUS LES BLOCS
@@ -154,3 +192,12 @@ HISTORIQUE
             Pont vers BLOC 2 (_page_to_shim dans main.py) fonctionnel.
             Point d'attention noté : popup_not_detected immédiatement après
             sélection — à traiter dans le patch BLOC 2.
+
+2026-06-22  BLOC 2 migré : résolution popup présélection en Playwright natif.
+            Cause racine popup_not_detected identifiée (timing Vue : ps-common-
+            actions-button rendu après ps-popup-content-wrapper). Corrigé par
+            wait_for_selector ciblé avant is_topsurveys_preselection_popup.
+            ActionChains / WebDriverWait / By / EC supprimés des 3 fichiers BLOC 2.
+            Pont BLOC 2 → BLOC 3 documenté : shim traverse tout BLOC 2,
+            _page mis à jour par redirect_watcher après qualification,
+            solve_full_survey et execute_survey_page reçoivent le shim (BLOC 3).

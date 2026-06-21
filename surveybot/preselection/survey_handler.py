@@ -3,6 +3,13 @@ from Cash.payout import _payout_and_check_daily_stop
 
 IS_LOCAL = os.getenv("RUN_ENV", "local") == "local"
 
+
+def _pw_page(d):
+    """Extrait la Page Playwright native depuis un PlaywrightDriverShim ou retourne d tel quel."""
+    if hasattr(d, "_page"):
+        return d._page
+    return d
+
 # FIX-B3: _restart_depth était un global partagé entre threads.
 # Un soft_restart peut relancer run_survey() depuis n'importe quel thread
 # (ex : on_soft_restart déclenché par le RuntimeGuard en background).
@@ -34,10 +41,11 @@ from Cash.payout import MIN_CASHOUT_EUR
 def _safe_page_text(driver) -> str:
     """Récupère un texte exploitable pour les détecteurs (robuste)."""
     try:
-        return driver.find_element(By.TAG_NAME, "body").text or ""
+        page = _pw_page(driver)
+        return page.evaluate("() => document.body ? (document.body.innerText || '') : ''") or ""
     except Exception:
         try:
-            return driver.page_source or ""
+            return _pw_page(driver).content() or ""
         except Exception:
             return ""
 
@@ -45,10 +53,11 @@ def _safe_page_text(driver) -> str:
 def is_topsurveys_preselection_popup(driver) -> bool:
     """Détection DOM minimale d'un popup de présélection TopSurveys déjà affiché."""
     try:
-        return bool(driver.execute_script("""
+        page = _pw_page(driver)
+        return bool(page.evaluate("""() => {
             try {
-              const inTopSurveys = /(^|\.)topsurveys\.app$/i.test(location.hostname || '')
-                || /(^|\.)topsurveys\.com$/i.test(location.hostname || '');
+              const inTopSurveys = /(^|\.)topsurveys\\.app$/i.test(location.hostname || '')
+                || /(^|\.)topsurveys\\.com$/i.test(location.hostname || '');
               if (!inTopSurveys) return false;
 
               const hasActions = !!document.querySelector(
@@ -64,7 +73,7 @@ def is_topsurveys_preselection_popup(driver) -> bool:
             } catch(e) {
               return false;
             }
-        """))
+        }"""))
     except Exception:
         return False
 
@@ -83,6 +92,20 @@ def run_attach_preselection_takeover(
     """
     import preselection.question_analyzer
     import preselection.response_executor
+
+    page = _pw_page(driver)
+
+    # FIX popup_not_detected : _wait_for_survey_popup (BLOC 1) attend ps-popup-content-wrapper,
+    # mais is_topsurveys_preselection_popup requiert ps-common-actions-button (rendu plus tard
+    # par Vue après chargement de la première question). On attend explicitement ce bouton.
+    _ACTION_SEL = (
+        "button[data-test-id='ps-common-actions-button'], "
+        "button[data-test-id='ps-skip-question-button']"
+    )
+    try:
+        page.wait_for_selector(_ACTION_SEL, state="attached", timeout=10_000)
+    except Exception:
+        pass  # best-effort : on tente la détection quand même
 
     if not is_topsurveys_preselection_popup(driver):
         return False, "popup_not_detected"
@@ -116,9 +139,10 @@ def run_attach_preselection_takeover(
                         continue
                 if not skipped:
                     try:
-                        skip_btn = driver.find_element(By.CSS_SELECTOR, "button[data-test-id='ps-skip-question-button']")
-                        driver.execute_script("arguments[0].click();", skip_btn)
-                        skipped = True
+                        skip_btn = page.query_selector("button[data-test-id='ps-skip-question-button']")
+                        if skip_btn:
+                            page.evaluate("(el) => el.click()", skip_btn)
+                            skipped = True
                     except Exception:
                         pass
                 if not skipped:
