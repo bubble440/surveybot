@@ -5,7 +5,10 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 from selenium import webdriver
 from Survey.functions import _env_truthy
+from typing import TYPE_CHECKING
 
+if TYPE_CHECKING:
+    from preselection.playwright_shim import PlaywrightDriverShim
 # IS_LOCAL = os.getenv("RUN_ENV", "local") == "local"
 IS_LOCAL = os.getenv("RUN_ENV", "local") == "local"
 
@@ -849,7 +852,7 @@ def launch_browser_playwright(config: dict | None = None):
 # Pas un mode de production : ne pas appeler depuis le bot en prod.
 # ─────────────────────────────────────────────────────────────────────────────
 
-def launch_browser_playwright_debug(config: dict | None = None) -> "PlaywrightDriverShim":
+def launch_browser_playwright_debug(config: dict | None = None) -> PlaywrightDriverShim:
     """
     Lance Chrome via Playwright avec fenêtre visible (headless=False), fingerprint
     et proxy identiques à launch_browser_playwright(), pour observation manuelle.
@@ -962,10 +965,12 @@ if __name__ == "__main__":
       1. Chrome s'ouvre en fenêtre visible avec DevTools.
       2. Navigue manuellement jusqu'à la question à cocher, puis appuie sur Entrée.
       3. Le bot appelle select_checkbox_answers() sur la page en cours.
-      4. Observe le résultat dans Chrome/DevTools, puis appuie sur Entrée pour fermer.
+      4. Le bot appelle click_next_button() — pause de confirmation si
+         LOCAL_CTA_REQUIRE_ENTER=1 est positionnée, sinon clic immédiat.
+      5. Observe le résultat dans Chrome/DevTools, puis appuie sur Entrée pour fermer.
     """
     import sys
-    from preselection.response_executor import select_checkbox_answers
+    from preselection.response_executor import select_checkbox_answers, click_next_button
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s %(message)s")
 
@@ -1001,6 +1006,17 @@ if __name__ == "__main__":
         print(f"[DBG] select_checkbox_answers → {result}")
     except Exception as exc:
         print(f"[DBG] Erreur lors de select_checkbox_answers : {exc}")
+
+    # Clic CTA après la coche — réutilise click_next_button() tel qu'utilisé en prod,
+    # qui gère déjà lui-même la pause de confirmation (LOCAL_CTA_REQUIRE_ENTER) via
+    # should_pause_before_cta(). Rien à dupliquer ici : si la var env n'est pas set,
+    # le clic part directement sans confirmation, comme en mode normal.
+    print("[DBG] Appel click_next_button()…")
+    try:
+        cta_result = click_next_button(shim)
+        print(f"[DBG] click_next_button → {cta_result}")
+    except Exception as exc:
+        print(f"[DBG] Erreur lors de click_next_button : {exc}")
 
     # Maintien de la session pour observation — fermeture explicite par l'utilisateur
     input("[DBG] Observe le navigateur, puis appuie sur Entrée pour fermer la session… ")
