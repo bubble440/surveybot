@@ -2,12 +2,10 @@
 # Orchestration minimaliste et robuste pour enchaîner les actions de page
 # ➜ Laisse l’intelligence d’action à survey_executor.execute_survey_page()
 
-from selenium.webdriver.support.ui import WebDriverWait  # [AJOUT]
-from selenium.webdriver.support import expected_conditions as EC  # [AJOUT]
-from selenium.webdriver.common.action_chains import ActionChains  # [AJOUT]
-from selenium.webdriver.common.by import By
 import time, os
+from selenium.webdriver.common.by import By
 from Survey.log_utils import log_debug, log_info
+
 class TopSurveysReturn(BaseException):
     """Sentinelle levée quand handle_post_survey() signale un retour sur la plateforme.
     Hérite de BaseException pour traverser les blocs except Exception sans être avalée.
@@ -409,11 +407,11 @@ def get_current_survey_ctx():
 def solve_full_survey(driver, api_key, *, account_id: str, survey_context=None, platform):
     if platform is None:
         raise ValueError("solve_full_survey() exige un paramètre platform non None")
-    import Management.redirect_watcher as redirect_watcher
-    from Survey.survey_context import SurveyContext
     import Survey.survey_executor  
-    import Management.guards.survey_difficulty_guard
     import Management.guards.runtime_guard
+    import Management.guards.survey_difficulty_guard
+    from Survey.survey_context import SurveyContext
+    import Management.redirect_watcher as redirect_watcher
 
     """
     Boucle principale de résolution du survey.

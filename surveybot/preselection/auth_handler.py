@@ -1,10 +1,4 @@
 import time, os, requests, base64, re
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException
-import time
-from selenium.common.exceptions import JavascriptException
 
 # ---------------------------------------------------------------------------
 # Sélecteurs selon la page de login (TopSurveys expose deux interfaces)
@@ -43,13 +37,25 @@ LOGIN_PAGE_SELECTORS = (
 )
 
 
+def _pw_page(d):
+    """
+    Extrait la Playwright Page native depuis un PlaywrightDriverShim ou retourne d
+    tel quel si c'est déjà une Page native.
+    Point d'adaptation BLOC 1 : toutes les fonctions de ce fichier appellent cette
+    helper en premier pour travailler exclusivement avec l'API Playwright native.
+    """
+    if hasattr(d, "_page"):
+        return d._page
+    return d
+
+
 def _detect_login_page(driver) -> str:
     """
     Retourne 'app_login' si l'URL courante est app.topsurveys.app/app-login,
     sinon 'topsurveys' (landing marketing).
     """
     try:
-        url = (driver.current_url or "").lower()
+        url = (_pw_page(driver).url or "").lower()
         if "app-login" in url or (
             "app.topsurveys.app" in url and "/surveys" not in url
         ):
@@ -77,32 +83,37 @@ def _is_prod_env() -> bool:
     """
     return os.getenv("RUN_ENV", "local").lower() != "local"
 
+
 def dom_probe(driver):
     """
     Petit dump DOM pour debug.
-    ⚠️ Ne s'exécute que lorsque l'on tourne sur AWS (ECS, etc.).
-    En local, on retourne immédiatement pour éviter les erreurs XPath et le bruit.
+    ⚠️ Ne s'exécute que lorsque l'on tourne en prod.
+    En local, on retourne immédiatement pour éviter le bruit.
     """
     if not _is_prod_env():
         return
 
-    print("[DOM] url=", driver.current_url, "title=", driver.title)
+    page = _pw_page(driver)
+    print("[DOM] url=", page.url, "title=", page.title())
     sels = [
-        # XPath corrigé avec guillemets doubles pour gérer le ' de S'inscrire
-        (By.XPATH, '//a[normalize-space()="Se connecter / S\'inscrire"]'),
-        (By.XPATH, "//a[normalize-space()='Sign in']"),
-        (By.CSS_SELECTOR, "a[href*='/auth/login']"),
-        (By.CSS_SELECTOR, "button[type='submit']"),
+        "xpath=//a[normalize-space()=\"Se connecter / S'inscrire\"]",
+        "xpath=//a[normalize-space()='Sign in']",
+        "a[href*='/auth/login']",
+        "button[type='submit']",
     ]
-    for by, sel in sels:
-        els = driver.find_elements(by, sel)
-        print(f"[DOM] {sel} -> {len(els)}")
+    for sel in sels:
+        try:
+            els = page.query_selector_all(sel)
+            print(f"[DOM] {sel} -> {len(els)}")
+        except Exception:
+            print(f"[DOM] {sel} -> error")
 
-    # Cookie banner ?
-    cookies = driver.find_elements(
-        By.CSS_SELECTOR, "#onetrust-accept-btn-handler, .cookie-accept"
-    )
-    print("[DOM] cookies=", len(cookies))
+    try:
+        cookies = page.query_selector_all("#onetrust-accept-btn-handler, .cookie-accept")
+        print("[DOM] cookies=", len(cookies))
+    except Exception:
+        print("[DOM] cookies= error")
+
 
 def is_session_expired(driver) -> bool:
     """
@@ -110,8 +121,7 @@ def is_session_expired(driver) -> bool:
     Doit être appelée AVANT toute logique survey.
     """
     try:
-        txt = (driver.page_source or "").lower()
-
+        txt = (_pw_page(driver).content() or "").lower()
         signals = [
             "session expired",
             "your session has expired",
@@ -121,20 +131,21 @@ def is_session_expired(driver) -> bool:
             "password expired",
             "log in again",
         ]
-
         return any(s in txt for s in signals)
     except Exception:
         return False
+
 
 def is_proxy_error_page(driver) -> bool:
     """
     Détecte la page d'erreur Chrome ERR_TIMED_OUT indiquant un proxy expiré ou inaccessible.
     """
     try:
-        url = driver.current_url or ""
+        page = _pw_page(driver)
+        url = page.url or ""
         if "chrome-error://" in url:
             return True
-        src = (driver.page_source or "").lower()
+        src = (page.content() or "").lower()
         return "err_timed_out" in src
     except Exception:
         return False
@@ -200,29 +211,25 @@ def net_probe():
         http = f"ERR_http:{e}"
 
     print(f"[NET] ip_nat={ip_nat} ip_proxy={ip_proxy} topsurveys={http}")
-    
+
+
 def snap(driver, label: str = "state"):
     """
     Capture un screenshot et :
       1. Sauvegarde le PNG local dans /tmp/ (prod uniquement)
       2. Upload vers Cloudflare R2 si SNAP_ENABLED=1 (optionnel, par bot)
-
-    Le base64 n'est plus loggué — utiliser R2 pour inspecter les screenshots.
-    En local ou si SNAP_ENABLED est absent : silencieux.
     """
     if not _is_prod_env():
         return
 
     try:
-        png = driver.get_screenshot_as_png()
+        png = _pw_page(driver).screenshot()
 
-        # Sauvegarde locale (inchangée — utile pour fly ssh console si besoin)
         path = f"/tmp/{label}.png"
         with open(path, "wb") as f:
             f.write(png)
         print(f"[SNAP] saved {path}")
 
-        # Upload R2 optionnel — no-op silencieux si SNAP_ENABLED != "1"
         from Management.snap_uploader import upload_png
         upload_png(png, label)
 
@@ -231,15 +238,16 @@ def snap(driver, label: str = "state"):
 
 
 def wait_for_vue_hydration(driver, timeout=15):
+    page = _pw_page(driver)
     start = time.time()
     while time.time() - start < timeout:
         try:
-            ready = driver.execute_script(
-                "return !!(window.__nuxt && window.__nuxt.isHydrating === false)"
+            ready = page.evaluate(
+                "() => !!(window.__nuxt && window.__nuxt.isHydrating === false)"
             )
             if ready:
                 return True
-        except JavascriptException:
+        except Exception:
             pass
         time.sleep(0.5)
     print("[LOGIN][WARN] Vue hydration timeout — on continue quand même")
@@ -247,25 +255,15 @@ def wait_for_vue_hydration(driver, timeout=15):
 
 
 def login(driver, email, password):
-    wait = WebDriverWait(driver, 20)
+    page = _pw_page(driver)
 
     print("[DEBUG][DRIVER] type=", type(driver))
-    print("[DEBUG][DRIVER] has execute_script=", hasattr(driver, "execute_script"))
-    print("[DEBUG][DRIVER] url=", getattr(driver, "current_url", None))
-
-    def js_click(driver, el):
-        try:
-            driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
-            time.sleep(0.2)
-            driver.execute_script("arguments[0].click();", el)
-            return True
-        except :
-            print("[JS_CLICK][ERR]")
-            return False
+    print("[DEBUG][DRIVER] has _page=", hasattr(driver, "_page"))
+    print("[DEBUG][DRIVER] url=", page.url)
 
     # --- DEBUG: snapshot HTML complet + extraction éventuelle du code d'erreur ---
     try:
-        html = driver.page_source
+        html = page.content()
         path = "/tmp/topsurveys_initial.html"
         with open(path, "w", encoding="utf-8") as f:
             f.write(html)
@@ -274,7 +272,6 @@ def login(driver, email, password):
         print(f"[HTML_DEBUG] Saved initial HTML to {path}, len={len(html)}")
         print(f"[HTML_DEBUG] Snippet: {snippet}")
 
-        # Essayer d'extraire un code du type ERR_XXXX
         m = re.search(r"ERR_[A-Z0-9_]+", html)
         if m:
             print(f"[HTML_DEBUG] Chrome error code detected: {m.group(0)}")
@@ -289,89 +286,70 @@ def login(driver, email, password):
     dom_probe(driver)
     wait_for_vue_hydration(driver, timeout=15)
 
-
     if os.getenv("SNAP_ENABLED", "").strip() == "1":
         from Management.snap_uploader import new_survey, capture_and_upload
         new_survey()
         capture_and_upload(driver, "survey_account")
 
     # --- Étape 1 : Saisir l'email dans le champ inline (landing page, pas de modale)
-    # Les sélecteurs varient selon la page :
-    #   topsurveys.app      → check-email-field-input / check-email-continue-button
-    #   app.topsurveys.app  → app-page-email-field-input / app-page-continue-button
     _sel = _get_selectors(driver)
     print(f"[LOGIN] page détectée={_detect_login_page(driver)} | email_sel={_sel['email_input']}")
     try:
-        email_input = wait.until(
-            EC.element_to_be_clickable((
-                By.CSS_SELECTOR, _sel["email_input"]
-            ))
-        )
-        driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", email_input)
-
+        email_input = page.wait_for_selector(_sel["email_input"], state='visible', timeout=20_000)
+        email_input.evaluate("(el) => el.scrollIntoView({block: 'center'})")
         email_input.click()
         time.sleep(0.5)
-        email_input.clear()
-        email_input.send_keys(email)
-        # Le champ email est pré-rempli côté SSR (attribut value dans le HTML Nuxt).
-        # clear() + send_keys() met à jour la propriété DOM .value mais ne dispatche
-        # aucun événement — Vue ne notifie jamais son v-model et la validation échoue
-        # silencieusement. On force les événements réactifs attendus par Vue.
-        driver.execute_script("""
-            arguments[0].dispatchEvent(new Event('input',  { bubbles: true }));
-            arguments[0].dispatchEvent(new Event('change', { bubbles: true }));
-        """, email_input)
+        email_input.fill("")
+        email_input.type(email)
+        # Vue ne notifie jamais son v-model sans événements réactifs explicites.
+        page.evaluate("""(el) => {
+            el.dispatchEvent(new Event('input',  { bubbles: true }));
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+        }""", email_input)
         time.sleep(0.5)
         print(f"📧 [LOGIN] Email saisi : {email}")
 
-        continue_btn = wait.until(
-            EC.element_to_be_clickable((
-                By.CSS_SELECTOR, _sel["continue_btn"]
-            ))
-        )
-        # Clic natif Selenium (isTrusted: true) — le clic JS synthétique
-        # (isTrusted: false) ne déclenchait pas le handler @submit Vue en prod headless.
+        continue_btn = page.wait_for_selector(_sel["continue_btn"], state='visible', timeout=20_000)
+        # Clic natif Playwright (isTrusted: true)
         continue_btn.click()
         print("[LOGIN] Bouton Continue cliqué.")
         time.sleep(2)
 
     except Exception as e:
         print("[LOGIN] Echec injection e-mail :", type(e).__name__, "-", e)
-        with open("debug_email_page.html", "w", encoding="utf-8") as f:
-            f.write(driver.page_source)
+        try:
+            with open("debug_email_page.html", "w", encoding="utf-8") as f:
+                f.write(page.content())
+        except Exception:
+            pass
         return
 
     # Attente que le champ password soit présent dans le DOM.
-    # Sur topsurveys.app : transition Vue asynchrone in-page (authStep == sign_in).
-    # Sur app.topsurveys.app/app-login : navigation vers une sous-page distincte —
-    # le champ password est dans un <form data-test="auth-signin-form"> différent.
-    # Dans les deux cas on attend la présence DOM du champ avant toute interaction.
     try:
-        wait_pwd = WebDriverWait(driver, 60)
-        pwd_input = wait_pwd.until(EC.presence_of_element_located(
-            (By.CSS_SELECTOR, _sel["password_input"])
-        ))
-        driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", pwd_input)
+        pwd_input = page.wait_for_selector(_sel["password_input"], state='attached', timeout=60_000)
+        pwd_input.evaluate("(el) => el.scrollIntoView({block: 'center'})")
 
-        driver.execute_script("""
-            arguments[0].value = arguments[1];
-            arguments[0].dispatchEvent(new Event('input', { bubbles: true }));
-            arguments[0].dispatchEvent(new Event('change', { bubbles: true }));
-        """, pwd_input, password)
+        # Injection JS de la valeur + événements réactifs Vue
+        pwd_input.evaluate(
+            "(el, pw) => {"
+            "  el.value = pw;"
+            "  el.dispatchEvent(new Event('input', { bubbles: true }));"
+            "  el.dispatchEvent(new Event('change', { bubbles: true }));"
+            "}",
+            password
+        )
         time.sleep(0.5)
 
-        if pwd_input.get_attribute("value").strip() == "":
-            pwd_input.clear()
-            pwd_input.send_keys(password)
-            print("🔁 Fallback : mot de passe injecté via send_keys()")
+        if (pwd_input.input_value() or "").strip() == "":
+            pwd_input.fill(password)
+            print("🔁 Fallback : mot de passe injecté via fill()")
         else:
-            print(f"🔑 Mot de passe injecté via JS.")
-            time.sleep(1)  # petit délai pour que Vue traite les événements et active le bouton
+            print("🔑 Mot de passe injecté via JS.")
+            time.sleep(1)
 
-        login_btn = wait.until(EC.element_to_be_clickable(
-            (By.CSS_SELECTOR, _sel["login_btn"])
-        ))
-        driver.execute_script("arguments[0].click();", login_btn)
+        login_btn = page.wait_for_selector(_sel["login_btn"], state='visible', timeout=20_000)
+        # JS click pour contourner les éventuels overlays Vue qui bloquent le clic natif
+        page.evaluate("(el) => el.click()", login_btn)
         time.sleep(0.5)
         print("✅ Bouton « Se connecter » cliqué.")
 
