@@ -1803,17 +1803,15 @@ def execute_survey_page(driver, account_id, api_key, ctx=None):
     """
     Nouvelle version : capture , demande GPT-4o quoi faire, puis applique l'action.
     """
-    import Survey.action_dispatcher as action_dispatcher
     import selenium.webdriver.support.ui
     import Survey.dom_analyzer as dom_analyzer
+    import Survey.page_snapshot as page_snapshot
+    import Survey.input_handler as input_handler
     import Survey.prompt_builder as prompt_builder
-    import Survey.batch_response_parser as batch_response_parser
     import Survey.dom_classifier as dom_classifier
     import Survey.action_dispatcher as action_dispatcher
-    import Survey.batch_response_parser as batch_response_parser
-    import Survey.input_handler as input_handler
     import Management.redirect_watcher as redirect_watcher
-    import Survey.page_snapshot as page_snapshot
+    import Survey.batch_response_parser as batch_response_parser
 
     # =========================================================================
     # PATCH: Récupération erreur réseau Chrome (ERR_TUNNEL_CONNECTION_FAILED)

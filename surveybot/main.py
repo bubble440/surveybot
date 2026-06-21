@@ -595,16 +595,261 @@ def _get_attach_route() -> str:
         return "resolution"
 
     print("[ATTACH] Choisis la route de takeover :")
-    print("  1) preselection")
-    print("  2) resolution")
-    choice = (input("Choix [1/2, défaut=2]: ") or "").strip().lower()
+    print("  1) preselection  (popup déjà affiché)")
+    print("  2) resolution    (déjà sur la page survey)")
+    print("  3) login         (login + sélection survey complète — BLOC 1 natif Playwright)")
+    choice = (input("Choix [1/2/3, défaut=2]: ") or "").strip().lower()
 
     if choice in {"1", "preselection"}:
         return "preselection"
+    if choice in {"3", "login"}:
+        return "login"
 
     if choice not in {"", "2", "resolution"}:
         print(f"[ATTACH] choix invalide={choice!r} -> fallback resolution")
     return "resolution"
+
+
+def _page_to_shim(page, pw=None):
+    """
+    Crée un PlaywrightDriverShim wrappant une Page Playwright native.
+    Pont BLOC 1 → BLOC 2/3 : les fonctions hors périmètre (survey_handler,
+    survey_executor...) consomment encore l'API shim façon Selenium.
+    pw est stocké sur le shim pour maintenir l'instance Playwright en vie.
+    """
+    from preselection.playwright_shim import PlaywrightDriverShim
+    shim = PlaywrightDriverShim(page.context, page.context, page)
+    if pw is not None:
+        shim._pw = pw
+    return shim
+
+
+def _attach_select_tab_pw(context, *, exclude_url_pred=None):
+    """
+    Sélection d'onglet en mode attach Playwright natif.
+    Retourne la Page sélectionnée (Playwright native, pas un shim).
+    Même logique de priorité que _attach_select_tab mais sans API Selenium.
+    """
+    url_contains = (os.getenv("ATTACH_TAB_URL_CONTAINS") or "").strip()
+    if _attach__is_disabled_token(url_contains):
+        url_contains = ""
+
+    title_contains = (os.getenv("ATTACH_TAB_TITLE_CONTAINS") or "").strip()
+    if _attach__is_disabled_token(title_contains):
+        title_contains = ""
+
+    dom_contains = (os.getenv("ATTACH_TAB_DOM_CONTAINS") or "").strip()
+    if _attach__is_disabled_token(dom_contains):
+        dom_contains = ""
+
+    mode = (os.getenv("ATTACH_TAB_SELECTOR", "current") or "current").strip().lower()
+
+    pages = context.pages
+    if not pages:
+        return context.new_page()
+
+    def _is_candidate(p) -> bool:
+        u = (p.url or "").lower()
+        if not (u.startswith("http://") or u.startswith("https://")):
+            return False
+        return not (exclude_url_pred and exclude_url_pred(p.url))
+
+    def _safe_body_text(p, max_chars: int = 8000) -> str:
+        try:
+            return (
+                p.evaluate(
+                    f"() => (document.body && document.body.innerText || '').slice(0, {max_chars})"
+                ) or ""
+            )
+        except Exception:
+            return ""
+
+    def _score(p) -> tuple:
+        try:
+            actionable = p.evaluate(
+                "() => { try { return document.querySelectorAll("
+                "\"input,select,textarea,button,[role='button'],[role='radio'],[role='checkbox'],label[for]\""
+                ").length || 0; } catch(e) { return 0; } }"
+            ) or 0
+        except Exception:
+            actionable = 0
+        try:
+            text_len = p.evaluate(
+                "() => { try { return (document.body && (document.body.innerText||'').length) || 0; } catch(e) { return 0; } }"
+            ) or 0
+        except Exception:
+            text_len = 0
+        return int(actionable), int(text_len)
+
+    def _last_web():
+        for p in reversed(pages):
+            if _is_candidate(p):
+                print(f"[ATTACH_PW] Tab=last_web url={_attach_display_url(p.url)}")
+                return p
+        return None
+
+    # 1) URL contains
+    if url_contains:
+        for p in pages:
+            if _is_candidate(p) and url_contains in (p.url or ""):
+                print(f"[ATTACH_PW] Tab=url_contains url={_attach_display_url(p.url)}")
+                return p
+        print(f"[ATTACH_PW] Tab=url_contains NOT FOUND ({url_contains})")
+
+    # 2) Title contains
+    if title_contains:
+        needle = title_contains.lower()
+        for p in pages:
+            if _is_candidate(p) and needle in (p.title() or "").lower():
+                print(f"[ATTACH_PW] Tab=title_contains url={_attach_display_url(p.url)}")
+                return p
+        print(f"[ATTACH_PW] Tab=title_contains NOT FOUND ({title_contains})")
+
+    # 3) DOM contains
+    if dom_contains:
+        needle = dom_contains.lower()
+        for p in pages:
+            if not _is_candidate(p):
+                continue
+            if needle in _safe_body_text(p).lower():
+                print(f"[ATTACH_PW] Tab=dom_contains url={_attach_display_url(p.url)}")
+                return p
+        print(f"[ATTACH_PW] Tab=dom_contains NOT FOUND ({dom_contains})")
+
+    candidates = [p for p in pages if _is_candidate(p)]
+
+    # 4a) pick/prompt
+    if mode in ("pick", "prompt", "menu") and IS_LOCAL:
+        print("[ATTACH_PW] Tabs disponibles:")
+        for i, p in enumerate(candidates):
+            print(f"  {i:02d} | {p.url}")
+        choice = (input("[ATTACH_PW] Index: ") or "").strip()
+        if choice.isdigit():
+            idx = int(choice)
+            if 0 <= idx < len(candidates):
+                print(f"[ATTACH_PW] Tab=pick idx={idx} url={_attach_display_url(candidates[idx].url)}")
+                return candidates[idx]
+        lw = _last_web()
+        if lw:
+            return lw
+
+    # 4b) current / active
+    if mode in ("current", "active", "focused"):
+        if candidates:
+            print(f"[ATTACH_PW] Tab=current url={_attach_display_url(candidates[0].url)}")
+            return candidates[0]
+        lw = _last_web()
+        if lw:
+            return lw
+        return pages[0]
+
+    # 4c) last / newest
+    if mode in ("last", "newest"):
+        lw = _last_web()
+        if lw:
+            return lw
+        print(f"[ATTACH_PW] Tab=last idx={len(pages)-1} url={_attach_display_url(pages[-1].url)}")
+        return pages[-1]
+
+    # 4d) best (score)
+    if mode == "best":
+        best_page, best_score = None, (0, 0)
+        for p in pages:
+            if not _is_candidate(p):
+                continue
+            sc = _score(p)
+            if sc > best_score:
+                best_score, best_page = sc, p
+        if best_page:
+            print(f"[ATTACH_PW] Tab=best score={best_score} url={_attach_display_url(best_page.url)}")
+            return best_page
+
+    # 4e) index numérique
+    if mode.isdigit():
+        idx = max(0, min(int(mode), len(candidates) - 1))
+        if candidates:
+            print(f"[ATTACH_PW] Tab=index idx={idx} url={_attach_display_url(candidates[idx].url)}")
+            return candidates[idx]
+
+    # Fallback final
+    lw = _last_web()
+    if lw:
+        return lw
+    print("[ATTACH_PW] Tab=pages[0] (fallback absolu)")
+    return pages[0]
+
+
+def run_attach_login_takeover(page, pw, *, api_key: str, account_id: str, config: dict) -> None:
+    """
+    Route 'login' (BLOC 1 natif Playwright) :
+      1. Login si page de connexion détectée (auth_handler.login — natif Playwright)
+      2. Navigation + sélection du survey (survey_navigator — natif Playwright)
+      3. Pont BLOC 1 → BLOC 2 : wrap page native en shim
+      4. Résolution présélection + survey (BLOC 2/3 via shim)
+    """
+    import time as _time
+    import Survey.survey_executor as survey_executor
+    import Survey.survey_solver as survey_solver
+    from Survey.survey_context import SurveyContext
+    from preselection.auth_handler import LOGIN_PAGE_SELECTORS
+    from preselection.auth_handler import login as _do_login
+    from preselection.auth_handler import handle_proxy_error_page_if_needed
+    from preselection.survey_navigator import go_to_best_value_survey
+
+    handle_proxy_error_page_if_needed(page)
+
+    # Login si page de connexion détectée
+    try:
+        _on_login = any(page.query_selector(sel) for sel in LOGIN_PAGE_SELECTORS)
+    except Exception:
+        _on_login = False
+
+    if _on_login:
+        print("[ATTACH][LOGIN] Page de connexion détectée → login")
+        _do_login(page, config.get("Email", ""), config.get("Password", ""))
+        _time.sleep(2)
+
+    # Sélection du survey (navigue vers l'onglet Sondages, choisit la meilleure carte)
+    go_to_best_value_survey(page)
+
+    # ── Pont BLOC 1 → BLOC 2 ─────────────────────────────────────────────────
+    # Le popup de présélection est désormais ouvert. On enveloppe la Page native
+    # dans le shim pour que survey_handler (BLOC 2) puisse consommer l'API façon Selenium.
+    shim = _page_to_shim(page, pw)
+    shim._survey_account_id = account_id
+
+    _ctx = SurveyContext(session_id=account_id, openai_api_key=api_key)
+    survey_solver._current_survey_ctx = _ctx
+
+    max_rounds = int(os.getenv("ATTACH_PRESELECTION_MAX_ROUNDS", "15"))
+    transition_timeout_s = int(os.getenv("ATTACH_PRESELECTION_TRANSITION_TIMEOUT_S", "45"))
+
+    from preselection.survey_handler import run_attach_preselection_takeover as _run_presel
+    ok, reason = _run_presel(
+        shim,
+        api_key,
+        max_rounds=max_rounds,
+        transition_timeout_s=transition_timeout_s,
+        ctx=_ctx,
+    )
+
+    if not ok:
+        print(f"[ATTACH][LOGIN] abandon présélection: reason={reason}")
+        return
+
+    print("[ATTACH][LOGIN] présélection terminée → résolution survey")
+    max_steps = int(os.getenv("ATTACH_MAX_STEPS", "100"))
+    for i in range(1, max_steps + 1):
+        try:
+            done = survey_executor.execute_survey_page(shim, account_id, api_key, ctx=_ctx)
+            _ctx.maybe_update_summary()
+            print(f"[ATTACH][LOGIN→RES] step={i}/{max_steps} ok={done} url={_attach_display_url(shim.current_url)}")
+        except Exception as e:
+            print(f"[ATTACH][LOGIN→RES][ERROR] step={i} {type(e).__name__}: {e}")
+            break
+        _time.sleep(0.6)
+
+    print("[ATTACH][LOGIN] route terminée.")
 
 
 def run_attach_preselection_takeover(driver, *, api_key: str, account_id: str) -> None:
@@ -675,11 +920,22 @@ def main():
         raise RuntimeError("ACCOUNT_ID introuvable")
 
     if is_attach_mode():
-        # ⚠ ATTACH = LOCAL DEBUG TAKEOVER
+        # ⚠ ATTACH = LOCAL DEBUG TAKEOVER — Playwright natif (BLOC 1)
         # - pas de lock Postgres
-        # - pas de navigation TopSurveys
+        # - attachement CDP à Chrome déjà lancé (ATTACH_DEBUGGER_ADDRESS)
         # - pas de quit() (sinon tu fermes ton Chrome)
-        driver = launch_driver_or_fail(config, account_id)
+        attach_addr = os.getenv("ATTACH_DEBUGGER_ADDRESS", "").strip()
+        if not attach_addr:
+            raise RuntimeError("ATTACH_DEBUGGER_ADDRESS manquant en mode attach")
+
+        from preselection.playwright_launcher import attach_browser_playwright
+        _pw, _browser = attach_browser_playwright(attach_addr)
+        _context = _browser.contexts[0]
+
+        # Sélection de l'onglet actif (Playwright natif)
+        page = _attach_select_tab_pw(_context)
+        print(f"[ATTACH] Page sélectionnée url={_attach_display_url(page.url)}")
+
         from Survey.survey_solver import get_current_survey_ctx
         start_debug_http_server(get_current_survey_ctx)
 
@@ -698,10 +954,18 @@ def main():
 
         attach_route = _get_attach_route()
         print(f"[ATTACH] route={attach_route}")
-        if attach_route == "preselection":
-            run_attach_preselection_takeover(driver, api_key=api_key, account_id=account_id)
+
+        if attach_route == "login":
+            # Route BLOC 1 complète : login + sélection survey + présélection + résolution
+            run_attach_login_takeover(page, _pw, api_key=api_key, account_id=account_id, config=config)
         else:
-            run_attach_takeover(driver, api_key=api_key, account_id=account_id)
+            # Routes preselection / resolution : pont BLOC 1 → BLOC 2/3 immédiat via shim
+            shim = _page_to_shim(page, _pw)
+            shim._survey_account_id = account_id
+            if attach_route == "preselection":
+                run_attach_preselection_takeover(shim, api_key=api_key, account_id=account_id)
+            else:
+                run_attach_takeover(shim, api_key=api_key, account_id=account_id)
         return
 
     # FIX-A: install_sigterm_handler AVANT acquire_account_lock_or_exit.

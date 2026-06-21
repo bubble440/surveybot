@@ -2,10 +2,7 @@ import os
 import re
 import time
 
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from preselection.auth_handler import handle_proxy_error_page_if_needed
+from preselection.auth_handler import handle_proxy_error_page_if_needed, _pw_page
 from Survey.log_utils import log_debug, log_info
 
 # UUIDs de surveys bloquants (irrésolvables) accumulés sur la durée du processus.
@@ -59,21 +56,22 @@ def _local_pause(reason: str = "") -> None:
             raise
     except Exception:
         return
-    
-    
+
+
 def _wait_for_survey_popup(driver, timeout: int = 20) -> None:
     """
     Attend que le popup de qualification (ou la première question du preselect)
     soit visuellement présent dans le DOM avant de continuer le traitement.
     Évite une extraction DOM prématurée juste après le clic sur une carte survey.
     """
+    page = _pw_page(driver)
     try:
-        WebDriverWait(driver, timeout).until(
-            EC.visibility_of_element_located((By.CSS_SELECTOR,
-                "[data-test-id='ps-popup-content-wrapper'], "
-                "[data-test-id='ps-user-qualified-notice'], "
-                "[data-test-id='ps-question-answers-wrapper']"
-            ))
+        page.wait_for_selector(
+            "[data-test-id='ps-popup-content-wrapper'], "
+            "[data-test-id='ps-user-qualified-notice'], "
+            "[data-test-id='ps-question-answers-wrapper']",
+            state='visible',
+            timeout=timeout * 1000,
         )
         print("✅ Popup survey chargé et visible.")
     except Exception:
@@ -98,21 +96,22 @@ def _click_button_with_optional_intercept(driver, element) -> bool:
     Clique un bouton normalement, ou en mode CTA_INTERCEPT_ONLY déclenche
     un click non destructif (dispatch évènement + preventDefault) pour exécuter
     les handlers UI sans soumission réelle.
+    element : Playwright ElementHandle
     """
+    page = _pw_page(driver)
     if not _is_truthy_env(os.getenv("CTA_INTERCEPT_ONLY")):
-        driver.execute_script("arguments[0].click();", element)
+        page.evaluate("(el) => el.click()", element)
         return True
 
     return bool(
-        driver.execute_script(
-            """
-            const el = arguments[0];
-            if (!el) return false;
-            const blocker = (evt) => { evt.preventDefault(); };
-            el.addEventListener('click', blocker, { capture: true, once: true });
-            const evt = new MouseEvent('click', { bubbles: true, cancelable: true, view: window });
-            return el.dispatchEvent(evt);
-            """,
+        page.evaluate(
+            """(el) => {
+                if (!el) return false;
+                const blocker = (evt) => { evt.preventDefault(); };
+                el.addEventListener('click', blocker, { capture: true, once: true });
+                const evt = new MouseEvent('click', { bubbles: true, cancelable: true, view: window });
+                return el.dispatchEvent(evt);
+            }""",
             element,
         )
     )
@@ -129,10 +128,11 @@ def _handle_mystery_box_popup(driver) -> None:
     tag = "[TOPSURVEYS_MYSTERY_BOX]"
     box_selector = "[data-test-id='ps-mystery-box-item-button-2']"
     mystery_presence_selector = "[data-test-id^='ps-mystery-box-item-button']"
-    complete_xpath = "//button[normalize-space()='Complète' or .//span[normalize-space()='Complète']]"
+    complete_xpath = "xpath=//button[normalize-space()='Complète' or .//span[normalize-space()='Complète']]"
 
-    has_mystery_boxes = bool(driver.find_elements(By.CSS_SELECTOR, mystery_presence_selector))
-    has_complete_btn = bool(driver.find_elements(By.XPATH, complete_xpath))
+    page = _pw_page(driver)
+    has_mystery_boxes = bool(page.query_selector_all(mystery_presence_selector))
+    has_complete_btn = bool(page.query_selector_all(complete_xpath))
     if not (has_mystery_boxes and has_complete_btn):
         _debug("Popup mystery box non détecté avant sélection de survey.")
         return
@@ -141,10 +141,9 @@ def _handle_mystery_box_popup(driver) -> None:
     log_info(tag, reason)
     _local_pause(f"{tag} {reason}")
 
-    wait_short = WebDriverWait(driver, 5)
     try:
-        open_btn = wait_short.until(EC.presence_of_element_located((By.CSS_SELECTOR, box_selector)))
-        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", open_btn)
+        open_btn = page.wait_for_selector(box_selector, state='attached', timeout=5_000)
+        open_btn.evaluate("(el) => el.scrollIntoView({block:'center'})")
         open_ok = _click_button_with_optional_intercept(driver, open_btn)
         reason = f"box3_click={'OK' if open_ok else 'INTERCEPTION_IMPOSSIBLE'}"
         log_info(tag, reason)
@@ -158,7 +157,7 @@ def _handle_mystery_box_popup(driver) -> None:
     time.sleep(1)
 
     try:
-        complete_btn = wait_short.until(EC.element_to_be_clickable((By.XPATH, complete_xpath)))
+        complete_btn = page.wait_for_selector(complete_xpath, state='visible', timeout=5_000)
         complete_ok = _click_button_with_optional_intercept(driver, complete_btn)
         reason = f"complete_click={'OK' if complete_ok else 'INTERCEPTION_IMPOSSIBLE'}"
         log_info(tag, reason)
@@ -199,6 +198,7 @@ def _parse_duration_min(text: str):
 
 
 def _find_survey_cards(driver):
+    page = _pw_page(driver)
     selectors = [
         "div.survey-tile",
         "[class*='survey-tile']",
@@ -206,14 +206,16 @@ def _find_survey_cards(driver):
         "[data-test-id*='survey-card']",
     ]
     for selector in selectors:
-        cards = driver.find_elements(By.CSS_SELECTOR, selector)
+        cards = page.query_selector_all(selector)
         if cards:
             return cards
     return []
 
+
 def _is_card_clickable(card) -> bool:
+    """card : Playwright ElementHandle"""
     try:
-        return card.is_displayed() and card.is_enabled()
+        return card.is_visible() and card.is_enabled()
     except Exception:
         return False
 
@@ -222,21 +224,19 @@ def _extract_survey_uuid(driver, card) -> "str | None":
     """
     Remonte les ancêtres DOM de la carte pour trouver l'attribut
     data-test-id="ps-survey-<uuid>" et retourne l'UUID.
-    Retourne None si absent ou non parsable.
+    card : Playwright ElementHandle
     """
     try:
-        result = driver.execute_script(
-            """
-            const el = arguments[0];
-            let node = el.parentElement;
-            while (node) {
-                const tid = node.getAttribute('data-test-id') || '';
-                if (tid.startsWith('ps-survey-')) return tid.slice(10);
-                node = node.parentElement;
-            }
-            return null;
-            """,
-            card,
+        result = card.evaluate(
+            """(el) => {
+                let node = el.parentElement;
+                while (node) {
+                    const tid = node.getAttribute('data-test-id') || '';
+                    if (tid.startsWith('ps-survey-')) return tid.slice(10);
+                    node = node.parentElement;
+                }
+                return null;
+            }"""
         )
         if not result or not isinstance(result, str):
             return None
@@ -249,45 +249,47 @@ def _read_first_question_from_card(driver, card) -> "str | None":
     """
     Ouvre le popup de présélection d'une carte et lit la première question via
     les fonctions canoniques de question_analyzer (extract_popup_html + extract_question_text).
-    Ces fonctions connaissent le vrai DOM TopSurveys ([data-test-id='ps-popup-content-wrapper'],
-    priorité h1>h2>p>div>span, filtres longueur/mots clés).
     Ferme/annule le popup proprement après lecture pour revenir à la liste.
-    Retourne la question normalisée (strip+lower) ou None si non détectable.
+
+    FRONTIÈRE BLOC 1 → BLOC 2 interne : extract_popup_html attend un objet shim.
+    On crée un shim temporaire juste pour cet appel, sans dupliquer de logique.
     """
     try:
         from preselection.question_analyzer import extract_popup_html, extract_question_text
 
-        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", card)
-        driver.execute_script("arguments[0].click();", card)
+        page = _pw_page(driver)
+        card.evaluate("(el) => el.scrollIntoView({block:'center'})")
+        page.evaluate("(el) => el.click()", card)
         time.sleep(1.5)  # laisser le popup s'ouvrir
 
-        html = extract_popup_html(driver)
+        # Pont BLOC 1 → BLOC 2 : extract_popup_html utilise l'API shim (page_source, find_elements)
+        from preselection.playwright_shim import PlaywrightDriverShim as _PwShim
+        _shim_tmp = _PwShim(page.context, page.context, page)
+        html = extract_popup_html(_shim_tmp)
         raw_question = extract_question_text(html)
 
-        # extract_question_text retourne "Question non trouvée" quand rien n'est détecté
         first_q = None
         if raw_question and raw_question != "Question non trouvée":
             first_q = raw_question.strip().lower()
 
-        # Fermer le popup : tenter ESC puis bouton fermeture
+        # Fermer le popup : ESC puis bouton fermeture
         try:
-            from selenium.webdriver.common.keys import Keys
-            driver.find_element(By.TAG_NAME, "body").send_keys(Keys.ESCAPE)
+            page.keyboard.press("Escape")
             time.sleep(0.8)
         except Exception:
             pass
 
-        # Fallback fermeture via bouton close si le popup est encore présent
         for close_sel in [
             "button[data-test-id='ps-close-button']",
             "button[aria-label='Close']",
             "button[aria-label='Fermer']",
         ]:
             try:
-                btn = driver.find_element(By.CSS_SELECTOR, close_sel)
-                driver.execute_script("arguments[0].click();", btn)
-                time.sleep(0.8)
-                break
+                btn = page.query_selector(close_sel)
+                if btn:
+                    page.evaluate("(el) => el.click()", btn)
+                    time.sleep(0.8)
+                    break
             except Exception:
                 continue
 
@@ -312,25 +314,22 @@ def _retry_flagged_cards_by_question(driver, flagged_candidates) -> "tuple | Non
     log_info("[TOPSURVEYS][CARD_RETRY]", f"Carte bloquée (disqualification_or_retry), essai 1/{len(flagged_candidates)} → carte suivante")
     for candidate in flagged_candidates:
         score, reward, duration, idx, card, uuid = candidate
-        cached_q = _excluded_survey_first_questions.get(uuid)  # None si pas en cache
+        cached_q = _excluded_survey_first_questions.get(uuid)
 
         current_q = _read_first_question_from_card(driver, card)
 
         if cached_q is None:
-            # Pas de question en cache pour cet UUID : impossible de comparer → on débloque par prudence
             log_info("[TOPSURVEYS][CARD_RETRY]", f"UUID {uuid!r} flaggé sans cache question → déblocage par défaut")
             _excluded_survey_uuids.discard(uuid)
             _excluded_survey_first_questions.pop(uuid, None)
             return candidate
 
         if current_q is None or current_q != cached_q:
-            # Question absente ou différente → le contenu a changé, on débloque
             log_info("[TOPSURVEYS][CARD_RETRY]", f"UUID {uuid!r} contenu renouvelé (question changée) → déblocage")
             _excluded_survey_uuids.discard(uuid)
             _excluded_survey_first_questions.pop(uuid, None)
             return candidate
 
-        # Question identique → flag confirmé, on logue et on passe
         _debug(f"UUID {uuid!r} flag confirmé (question identique) → carte ignorée")
 
     return None
@@ -340,19 +339,12 @@ def _select_best_value_card(driver):
     """
     Score chaque carte via reward_eur / duration_min et renvoie la meilleure exploitable.
     Les cartes non parsables/non cliquables sont ignorées pour garder une sélection stable.
-
-    Logique d'exclusion en deux temps :
-    1. Filtrage normal : exclut les UUIDs flaggés → retourne la meilleure carte non flaggée.
-    2. Si toutes les cartes sont flaggées : retry conditionnel carte par carte (par score
-       décroissant) en comparant la première question visible à celle mémorisée au moment
-       du flagging. Une carte dont le contenu a changé est débloquée et retournée.
-       Si toutes sont confirmées bloquantes : fallback sans exclusion (comportement précédent).
     """
     global _last_selected_uuid
     candidates = []
     for idx, card in enumerate(_find_survey_cards(driver), start=1):
         try:
-            text = (card.text or "").strip()
+            text = (card.inner_text() or "").strip()
             reward = _parse_reward_eur(text)
             duration = _parse_duration_min(text)
             if reward is None:
@@ -387,7 +379,6 @@ def _select_best_value_card(driver):
     if not filtered:
         # --- Étape 2 : toutes les cartes sont flaggées → retry conditionnel par question ---
         log_info("[TOPSURVEYS][EXCLUSION]", "Toutes les cartes candidates sont flaggées → tentative retry conditionnel par question")
-        # On ne tente le retry que sur les cartes avec UUID résolu (les autres passent directement)
         flagged_with_uuid = [c for c in candidates if c[5] is not None]
         unresolved = [c for c in candidates if c[5] is None]
 
@@ -398,7 +389,6 @@ def _select_best_value_card(driver):
         if unlocked is not None:
             filtered = [unlocked] + unresolved
         else:
-            # Aucune carte débloquée : fallback sans exclusion (comportement préservé)
             log_info("[TOPSURVEYS][EXCLUSION]", "Aucune carte débloquée après retry conditionnel — fallback sans exclusion")
             filtered = candidates
 
@@ -418,22 +408,18 @@ def _wait_for_spa_ready(driver, timeout: int = 60) -> bool:
     - attend qu'au moins un élément de navigation principal soit présent dans le DOM
     Retourne True si prêt, False si timeout.
     """
-    # Sélecteurs acceptables indiquant que la SPA est montée
+    page = _pw_page(driver)
     nav_selectors = [
-        "[data-test-id='surveys-nav']",       # nav desktop surveys
-        "[data-test-id='home-page-nav']",      # nav desktop home
-        "[data-test-id='mobile-nav-wrapper']", # nav mobile
-        ".p-nav-wrapper",                       # nav générique
-        ".app-sidebar",                         # sidebar desktop
+        "[data-test-id='surveys-nav']",
+        "[data-test-id='home-page-nav']",
+        "[data-test-id='mobile-nav-wrapper']",
+        ".p-nav-wrapper",
+        ".app-sidebar",
     ]
     combined = ", ".join(nav_selectors)
     try:
-        WebDriverWait(driver, timeout).until(
-            lambda d: d.execute_script("return document.readyState") == "complete"
-        )
-        WebDriverWait(driver, timeout).until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, combined))
-        )
+        page.wait_for_load_state("load", timeout=timeout * 1000)
+        page.wait_for_selector(combined, state='attached', timeout=timeout * 1000)
         _debug("SPA prête: navigation détectée dans le DOM.")
         return True
     except Exception as e:
@@ -442,38 +428,29 @@ def _wait_for_spa_ready(driver, timeout: int = 60) -> bool:
 
 
 def go_to_best_value_survey(driver):
+    page = _pw_page(driver)
+
     # Attendre que la SPA soit réellement montée avant toute interaction nav
     if not _wait_for_spa_ready(driver, timeout=60):
         log_info("[TOPSURVEYS][WARN]", "SPA non prête après 60s — on tente quand même la navigation")
 
-    wait = WebDriverWait(driver, 10)
-
     def _click_surveys_tab():
         """
-        Tente de cliquer l'onglet Sondages par plusieurs stratégies successives,
-        chacune avec son propre timeout court pour ne pas bloquer trop longtemps.
+        Tente de cliquer l'onglet Sondages par plusieurs stratégies successives.
         Labels observés: 'Sondages' (desktop/mobile), 'Enquêtes' (ancienne version).
         """
-        # Stratégies: (By, locator, label_log, timeout)
+        # (selector, label_log, timeout_ms)
         strategies = [
-            # data-test-id desktop
-            (By.CSS_SELECTOR, "[data-test-id='surveys-nav']", "data-test-id surveys-nav", 10),
-            # Texte "Sondages" (label actuel observé dans le HTML)
-            (By.XPATH, "//span[normalize-space()='Sondages']", "xpath Sondages", 10),
-            # data-test-id mobile
-            (By.CSS_SELECTOR, "[data-test-id='surveys-nav'] .p-app-mobile-nav", "mobile surveys-nav", 5),
-            # Texte "Enquêtes" (ancienne version)
-            (By.XPATH, "//span[normalize-space()='Enquêtes']", "xpath Enquêtes", 5),
-            # data-test-id ancienne version
-            (By.CSS_SELECTOR, "[data-test-id='ps-side-menu-surveys']", "ps-side-menu-surveys", 5),
+            ("[data-test-id='surveys-nav']",                               "data-test-id surveys-nav",    10_000),
+            ("xpath=//span[normalize-space()='Sondages']",                 "xpath Sondages",              10_000),
+            ("[data-test-id='surveys-nav'] .p-app-mobile-nav",             "mobile surveys-nav",           5_000),
+            ("xpath=//span[normalize-space()='Enquêtes']",                 "xpath Enquêtes",               5_000),
+            ("[data-test-id='ps-side-menu-surveys']",                      "ps-side-menu-surveys",         5_000),
         ]
-        for by, locator, label, timeout in strategies:
+        for selector, label, timeout_ms in strategies:
             try:
-                tab = WebDriverWait(driver, timeout).until(
-                    EC.element_to_be_clickable((by, locator))
-                )
-                driver.execute_script("arguments[0].click();", tab)
-                # Laisser Vue démarrer la transition de route
+                tab = page.wait_for_selector(selector, state='visible', timeout=timeout_ms)
+                page.evaluate("(el) => el.click()", tab)
                 time.sleep(1)
                 print(f"🗂️  Onglet Sondages cliqué. [{label}]")
                 return True
@@ -485,16 +462,13 @@ def go_to_best_value_survey(driver):
         # Fallback: navigation directe vers /surveys
         print("⚠️ Onglet Sondages introuvable via nav — navigation directe vers /surveys")
         try:
-            driver.get("https://app.topsurveys.app/surveys")
+            page.goto("https://app.topsurveys.app/surveys", wait_until="domcontentloaded")
             handle_proxy_error_page_if_needed(driver)
             if os.getenv("SNAP_ENABLED", "").strip() == "1":
                 from Management.snap_uploader import capture_and_upload
                 capture_and_upload(driver, "nav_fallback")
             print("↪️  Navigation directe /surveys")
-            # Attendre que la page surveys soit montée (timeout généreux)
-            WebDriverWait(driver, 30).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, "[data-test-id='ps-surveys-root']"))
-            )
+            page.wait_for_selector("[data-test-id='ps-surveys-root']", state='attached', timeout=30_000)
         except Exception as e:
             print("🛑 Exception navigation directe :", type(e).__name__, "-", e)
             return
@@ -507,21 +481,19 @@ def go_to_best_value_survey(driver):
             "[data-test-id*='survey-tile']",
             "[data-test-id*='survey-card']",
         ])
-        WebDriverWait(driver, 20).until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, survey_card_selector))
-        )
+        page.wait_for_selector(survey_card_selector, state='attached', timeout=20_000)
         _debug("Cartes surveys détectées dans le DOM.")
     except Exception:
         _debug("Timeout attente cartes surveys — on continue quand même.")
 
     _handle_mystery_box_popup(driver)
     time.sleep(0.5)  # stabilisation post-popup
-    
+
     if not _find_survey_cards(driver):
         if os.getenv("SNAP_ENABLED", "").strip() == "1":
             from Management.snap_uploader import capture_and_upload
             capture_and_upload(driver, "no_surveys_available")
-        time.sleep(3)  # délai pour que les éventuels logs/snapshots soient traités avant pause
+        time.sleep(3)
         log_info("[TOPSURVEYS][COOLDOWN]", "Aucun survey disponible → cooldown 15 min (DB + stop task)")
         from Management.guards.runtime_guard import get_guard, StopReason
         from Management.pause_policy import PausePolicy
@@ -531,25 +503,28 @@ def go_to_best_value_survey(driver):
     best_card = _select_best_value_card(driver)
     if best_card is not None:
         try:
-            driver.execute_script("arguments[0].scrollIntoView({block:'center'});", best_card)
-            driver.execute_script("arguments[0].click();", best_card)
+            best_card.evaluate("(el) => el.scrollIntoView({block:'center'})")
+            page.evaluate("(el) => el.click()", best_card)
             print("📝 Survey le plus rentable cliqué.")
-            from Management.redirect_watcher import wait_for_page_load
-            wait_for_page_load(driver, timeout=30)
+            try:
+                page.wait_for_load_state("load", timeout=30_000)
+            except Exception:
+                pass
             _wait_for_survey_popup(driver)
             return
         except Exception as e:
             print("⚠️ Échec clic survey le plus rentable:", type(e).__name__, "-", e)
 
     print("⚠️ Aucune carte exploitable trouvée via score €/min — fallback premier survey cliquable.")
-    # Fallback simple et prévisible
     try:
-        first = wait.until(EC.element_to_be_clickable((By.XPATH, "(//div[contains(@class, 'survey-tile')])[1]")))
-        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", first)
-        driver.execute_script("arguments[0].click();", first)
+        first = page.wait_for_selector("div.survey-tile", state='visible', timeout=10_000)
+        first.evaluate("(el) => el.scrollIntoView({block:'center'})")
+        page.evaluate("(el) => el.click()", first)
         print("📝 Fallback: premier survey cliqué.")
-        from Management.redirect_watcher import wait_for_page_load
-        wait_for_page_load(driver, timeout=30)
+        try:
+            page.wait_for_load_state("load", timeout=30_000)
+        except Exception:
+            pass
         _wait_for_survey_popup(driver)
     except Exception as e:
         print("🛑 Exception sélection du survey :", type(e).__name__, "-", e)

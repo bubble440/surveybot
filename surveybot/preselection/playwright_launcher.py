@@ -947,6 +947,39 @@ def launch_browser_playwright_debug(config: dict | None = None) -> PlaywrightDri
     return shim
 
 
+def attach_browser_playwright(attach_addr: str):
+    """
+    Attache Playwright à une instance Chrome déjà lancée via CDP.
+
+    Paramètre attach_addr : adresse de débogage Chrome, ex. "127.0.0.1:9222"
+    (ATTACH_DEBUGGER_ADDRESS). Le préfixe http:// est ajouté si absent.
+
+    Retourne (pw, browser) :
+      - pw      : instance Playwright (à garder vivante tant que le browser est utilisé)
+      - browser : Browser Playwright connecté via CDP
+
+    L'appelant récupère les pages depuis browser.contexts[0].pages.
+    Ne modifie PAS le chemin de lancement prod (launch_browser_playwright).
+    """
+    from playwright.sync_api import sync_playwright
+
+    endpoint = attach_addr if "://" in attach_addr else f"http://{attach_addr}"
+    log.info("[ATTACH_PW] connect_over_cdp → %s", endpoint)
+
+    pw = sync_playwright().start()
+    browser = pw.chromium.connect_over_cdp(endpoint)
+
+    contexts = browser.contexts
+    if not contexts:
+        pw.stop()
+        raise RuntimeError(f"[ATTACH_PW] Aucun contexte CDP disponible sur {endpoint}")
+
+    total_pages = sum(len(c.pages) for c in contexts)
+    log.info("[ATTACH_PW] Connecté. contexts=%d pages_total=%d", len(contexts), total_pages)
+    print(f"[ATTACH_PW] Connecté à {endpoint} | contexts={len(contexts)} pages={total_pages}")
+    return pw, browser
+
+
 if __name__ == "__main__":
     """
     Point d'entrée de débogage local :
