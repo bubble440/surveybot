@@ -58,23 +58,35 @@ BLOC 2 — Résolution pop-up de présélection
             Survey.survey_solver.solve_full_survey(...) → relais vers BLOC 3
 
 BLOC 3 — Résolution du survey externe
-  Statut : ⬜ non démarré
-  Fichiers : Survey/survey_solver.py (solve_full_survey et toutes ses
-               fonctions internes),
-             Survey/survey_executor.py (execute_survey_page et toutes ses
-               fonctions internes),
-             + imports lazy d'execute_survey_page : Survey/dom_analyzer.py,
-               Survey/page_snapshot.py, Survey/input_handler.py,
-               Survey/prompt_builder.py, Survey/dom_classifier.py,
-               Survey/action_dispatcher.py, Management/redirect_watcher.py,
-               Survey/batch_response_parser.py
-  Entrée  : appel direct depuis BLOC 2 (driver/page déjà sur le survey externe)
-  Sortie  : fin du survey (soft-restart) ou retour TopSurveys (TopSurveysReturn)
+  BLOC 3a — Survey/survey_solver.py
+    Statut : ✅ migré (validé en attach le 2026-06-22 — résolution survey OK)
+    Fichiers : Survey/survey_solver.py (solve_full_survey et toutes ses
+                 fonctions internes : _switch_to_external_tab, count_actionable_elements,
+                 _has_actionable_elements, _get_multi_page_state, _looks_like_end_screen,
+                 _recover_from_network_error, _recover_from_yougov_app_error,
+                 get_current_survey_ctx, TopSurveysReturn)
+    Entrée  : Page Playwright native (externe, non-plateforme)
+    Sortie  : fin du survey (soft-restart) ou retour TopSurveys (TopSurveysReturn)
+
+  BLOC 3b1 — Survey/survey_executor.py
+    Statut : ✅ migré (validé en attach le 2026-06-22)
+
+  BLOC 3b2+ — imports lazy d'execute_survey_page
+    Statut : ⬜ non démarré
+    Fichiers : Survey/survey_executor.py (execute_survey_page et toutes ses
+                 fonctions internes),
+               + imports lazy d'execute_survey_page : Survey/dom_analyzer.py,
+                 Survey/page_snapshot.py, Survey/input_handler.py,
+                 Survey/prompt_builder.py, Survey/dom_classifier.py,
+                 Survey/action_dispatcher.py, Management/redirect_watcher.py,
+                 Survey/batch_response_parser.py
+    Entrée  : PlaywrightDriverShim (shim créé en interne dans solve_full_survey)
+    Sortie  : bool success
 
   Note : action_dispatcher.py (~6100 lignes) est le fichier le plus gros et
-  le plus critique de ce bloc. Cohérent avec PLAYWRIGHT_MIGRATION.md (Option A),
+  le plus critique de BLOC 3b. Cohérent avec PLAYWRIGHT_MIGRATION.md (Option A),
   il doit être traité en dernier, isolément, avec validation prod dédiée avant
-  bascule finale — pas dans le même patch que le reste du BLOC 3.
+  bascule finale — pas dans le même patch que le reste du BLOC 3b.
 
 ================================================================================
 FRONTIÈRES ACTIVES (à mettre à jour après chaque patch validé)
@@ -132,28 +144,93 @@ FRONTIÈRE BLOC 1 → BLOC 2 (active depuis le 2026-06-21, inchangée après BLO
       button[data-test-id='ps-skip-question-button']", state='attached',
       timeout=10_000) avant le premier appel à is_topsurveys_preselection_popup.
 
-FRONTIÈRE BLOC 2 → BLOC 3 (active depuis le 2026-06-22)
+FRONTIÈRE BLOC 2 → BLOC 3a (active depuis le 2026-06-22)
 
   Côté migré (BLOC 2, Playwright natif) :
-    - preselection/survey_handler.py : _run_survey_impl appelle
-      Survey.survey_solver.solve_full_survey(driver, ...) et
-      Survey.survey_executor._handle_topsurveys_exclusion_popup(driver, ...)
-      avec l'objet driver reçu en paramètre (shim dans tous les chemins).
-    - main.py : run_attach_login_takeover appelle
-      survey_executor.execute_survey_page(shim, ...) après la sortie du BLOC 2,
-      avec le shim créé par _page_to_shim.
+    - preselection/survey_handler.py (_run_survey_impl) : appelle désormais
+      Survey.survey_solver.solve_full_survey(_pw_page(driver), ...) en extrayant
+      la Page native depuis le shim. Le shim._page a été mis à jour vers l'onglet
+      externe par switch_to_latest_window_and_close_others après le clic Participer.
+      L'import de _pw_page se fait via : from preselection.auth_handler import _pw_page.
 
   Pont (où se fait l'adaptation) :
-    - Le shim créé par _page_to_shim dans run_attach_login_takeover (main.py)
-      traverse tout BLOC 2 et arrive intact en BLOC 3.
-    - Après click_participer_if_qualified → switch_to_latest_window_and_close_others,
-      le shim._page est mis à jour par le redirect_watcher (switch vers le nouvel
-      onglet survey externe). BLOC 3 reçoit donc le shim pointant vers le bon onglet.
+    - Dans _run_survey_impl (survey_handler.py), ligne d'appel :
+        Survey.survey_solver.solve_full_survey(_ss_pw_page(driver), ...)
+      C'est l'unique point de transition BLOC 2 → BLOC 3a.
 
-  Côté shim (BLOC 3, pas encore migré) :
-    - Survey/survey_solver.py : solve_full_survey(driver, ...) attend un objet
-      façon Selenium (le shim).
-    - Survey/survey_executor.py : execute_survey_page(driver, ...) — même attente.
+  Côté natif (BLOC 3a, depuis le 2026-06-22) :
+    - Survey/survey_solver.py : solve_full_survey(driver, ...) accepte maintenant
+      une Page Playwright native (ou un shim via _pw_page, rétrocompat prod path).
+      page = _pw_page(driver) en tête.
+
+FRONTIÈRE BLOC 3a → BLOC 3b1 (remplace BLOC 3a → BLOC 3b, active depuis le 2026-06-22)
+
+  Côté natif (BLOC 3a) :
+    - solve_full_survey() crée _shim = _make_shim(page) et appelle
+      Survey.survey_executor.execute_survey_page(_shim, account_id, api_key, ctx).
+
+  Pont (unique appel) :
+    - execute_survey_page reçoit _shim comme `driver`.
+    - page = _pw_page(driver) = shim._page (Page native) pour toutes les opérations DOM directes.
+    - `driver` (= shim) transmis sans changement à tous les sous-modules encore sur le shim.
+
+  Côté natif (BLOC 3b1, depuis le 2026-06-22) :
+    - Survey/survey_executor.py : toutes les ~25 fonctions migrent en Playwright natif.
+    - By, ActionChains supprimés. _pw_page(d) + _make_shim(page) ajoutés.
+    - execute_survey_page() : page = _pw_page(driver) pour DOM direct ;
+      driver (= shim) transmis aux sous-modules hors-périmètre.
+
+FRONTIÈRE INTERNE BLOC 3b1 → BLOC 3b2+ (active depuis le 2026-06-22)
+
+  Côté natif (BLOC 3a) :
+    - solve_full_survey() crée un shim interne en début de fonction :
+        _shim = _make_shim(page)
+        _shim._survey_account_id = account_id
+    - Ce shim est mis à jour (_shim._page = page) après tout changement d'onglet.
+
+  Pont (unique appel) :
+    - execute_survey_page reçoit _shim comme `driver`.
+    - Tous les 7 sous-modules (dom_analyzer, page_snapshot, input_handler,
+      prompt_builder, dom_classifier, action_dispatcher, batch_response_parser)
+      reçoivent `driver` (= shim) depuis execute_survey_page.
+    - redirect_watcher (_dom_signature, wait_for_navigation_or_dom_change)
+      reçoit aussi `driver` (= shim).
+
+  Côté shim (BLOC 3b2+, pas encore migré) :
+    - Survey/dom_analyzer.py, Survey/page_snapshot.py, Survey/input_handler.py,
+      Survey/prompt_builder.py, Survey/dom_classifier.py, Survey/action_dispatcher.py,
+      Survey/batch_response_parser.py : attendent un shim.
+    - Management/redirect_watcher.py : attend un shim.
+
+FRONTIÈRE BLOC 3a → Survey/functions.py (hors découpage en blocs)
+
+FRONTIÈRES SUPPLÉMENTAIRES CONFIRMÉES (hors découpage en blocs)
+
+  survey_solver._recover_from_network_error (migré BLOC 3a, utilise _pw_page en interne) :
+    - execute_survey_page passe `driver` (shim) → _pw_page(shim) extrait la Page. ✓
+    - Idem pour main.py (run_attach_takeover) qui passe directement le shim.
+
+  Survey/dom_registry.py : get_target(target_id) — aucun paramètre driver. Pas de frontière.
+  Survey/fivesim_client.py : buy_number, reuse_number, poll_sms_code, finish_order — aucun driver.
+  Survey/screenshot_analyzer.py : take_screenshot(driver) attend un shim (pour save_screenshot).
+    Pont : driver (= shim) transmis depuis execute_survey_page.
+
+FRONTIÈRE BLOC 3b1 → Survey/functions.py (hors découpage en blocs)
+
+  Survey/functions.py (_handle_topsurveys_exclusion_popup) n'a jamais été inclus
+  dans aucun bloc de migration. Il utilise encore l'API Selenium complète
+  (By, find_elements, execute_script, WebDriverWait, EC, etc.).
+
+  Pont :
+    - Dans solve_full_survey, tous les appels platform.is_on_platform() et
+      platform.handle_post_survey() passent _shim (pas page) :
+        platform.is_on_platform(_shim)
+        platform.handle_post_survey(_shim, account_id)
+    - is_on_platform() utilise driver.current_url → shim.current_url → page.url ✓
+    - handle_post_survey() → _handle_topsurveys_exclusion_popup(_shim, ...) → API shim ✓
+    - Les fonctions de survey_navigator appelées depuis _handle_topsurveys_exclusion_popup
+      (go_to_best_value_survey, _handle_mystery_box_popup) sont déjà BLOC 1-migrées
+      et utilisent _pw_page(d) en interne → compatibles shim et Page. ✓
 
 ================================================================================
 RÈGLES VALABLES POUR TOUS LES BLOCS
@@ -192,6 +269,24 @@ HISTORIQUE
             Pont vers BLOC 2 (_page_to_shim dans main.py) fonctionnel.
             Point d'attention noté : popup_not_detected immédiatement après
             sélection — à traiter dans le patch BLOC 2.
+
+2026-06-22  BLOC 3b1 migré (survey_executor.py) : toutes les ~25 fonctions migrent
+            en Playwright natif. By + ActionChains supprimés. _pw_page + _make_shim
+            ajoutés. Pattern : page = _pw_page(driver) pour DOM direct ; driver
+            (= shim) transmis aux 7 sous-modules (dom_analyzer, action_dispatcher,
+            input_handler, etc.) et à redirect_watcher — frontière BLOC 3b1 → 3b2+.
+            dom_registry + fivesim_client : pas de driver param, pas de frontière.
+            screenshot_analyzer.take_screenshot : reçoit driver (shim).
+            Frame switching (Walr/CF carousel) : content_frame() natif Playwright.
+
+2026-06-22  BLOC 3a migré (survey_solver.py) : solve_full_survey et toutes ses
+            fonctions internes passent en Playwright natif. Selenium supprimé.
+            Shim interne (_make_shim) créé pour les appels hors-périmètre :
+            execute_survey_page (BLOC 3b), platform.handle_post_survey
+            (Survey/functions.py, non migré), detect_strict_survey, etc.
+            _wait_for_url_stable remplace redirect_watcher.wait_for_final_redirection.
+            Frontières documentées : BLOC 2→3a, BLOC 3a→3b, BLOC 3a→Survey/functions.py.
+            Point d'appel survey_handler.py adapté (_pw_page(driver)).
 
 2026-06-22  BLOC 2 migré : résolution popup présélection en Playwright natif.
             Cause racine popup_not_detected identifiée (timing Vue : ps-common-
