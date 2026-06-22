@@ -12,11 +12,21 @@ Dépendances:
 - input_utils pour les fonctions utilitaires
 """
 
-from selenium.webdriver.common.by import By
-from selenium.webdriver.common.action_chains import ActionChains
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.common.keys import Keys
+def _pw_page(d):
+    """Extrait la Page Playwright native depuis un PlaywrightDriverShim ou retourne d tel quel."""
+    if hasattr(d, "_page"):
+        return d._page
+    return d
+
+
+def _handle(el):
+    """Extrait le ElementHandle natif depuis un PlaywrightElementShim (_h) ou retourne el."""
+    if hasattr(el, "_h"):
+        return el._h
+    return el
+
+
+
 import re
 import time
 
@@ -57,17 +67,12 @@ def react_set_value_and_fire(driver, el, value: str):
     les événements que ces frameworks attendent.
     """
     try:
-        driver.execute_script("""
-            const el = arguments[0], v = arguments[1];
-            const d = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')
-                   || Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value');
+        _pw_page(driver).evaluate("""([el, v]) => {
+            const d = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value") || Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value");
             if (d && d.set) { d.set.call(el, v); } else { el.value = v; }
-            // Séquence d'événements "humaine"
-            try { el.dispatchEvent(new Event('input',  {bubbles:true})); } catch(e){}
-            try { el.dispatchEvent(new KeyboardEvent('keyup', {bubbles:true, key:'0'})); } catch(e){}
-            try { el.dispatchEvent(new Event('change', {bubbles:true})); } catch(e){}
-            try { el.dispatchEvent(new Event('blur',   {bubbles:true})); } catch(e){}
-        """, el, value)
+            try { el.dispatchEvent(new Event("input", {bubbles:true})); } catch(e){}
+            try { el.dispatchEvent(new Event("change", {bubbles:true})); } catch(e){}
+        }""", [_handle(el), value])
         return True
     except Exception:
         return False
@@ -97,7 +102,7 @@ def swagbucks_zip_patch(driver, value: str) -> bool:
     - lève le 'disabled' sur le bouton Continue et clique
     """
     try:
-        el = driver.find_element(By.ID, "profilerNumericInput")
+        el = driver.find_element("id", "profilerNumericInput")
     except Exception:
         return False  # pas Swagbucks
 
@@ -107,16 +112,16 @@ def swagbucks_zip_patch(driver, value: str) -> bool:
         digits = value or "95000"
 
     try:
-        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
+        _pw_page(driver).evaluate("(el) => el.scrollIntoView({block:\'center\'})", _handle(el))
         time.sleep(0.05)
         try:
             el.click()
         except Exception:
-            ActionChains(driver).move_to_element(el).click().perform()
+            _handle(el).hover(); _handle(el).click()
         # clear
         try:
-            el.send_keys(Keys.CONTROL, "a")
-            el.send_keys(Keys.DELETE)
+            _pw_page(driver).keyboard.press("Control+a")
+            _pw_page(driver).keyboard.press("Delete")
         except Exception:
             pass
 
@@ -136,10 +141,7 @@ def swagbucks_zip_patch(driver, value: str) -> bool:
         react_set_value_and_fire(driver, el, digits or value or "95000")
 
         # 3) Tentative de lever 'disabled'
-        driver.execute_script("""
-            const btn = document.querySelector('button#profilerSubmit, button.profilerSubmit, button[id*="profilerSubmit"]');
-            if (btn) { try { btn.removeAttribute('disabled'); } catch(e){} }
-        """)
+        _pw_page(driver).evaluate("""() => { const btn = document.querySelector('button#profilerSubmit, button.profilerSubmit, button[id*="profilerSubmit"]'); if (btn) { try { btn.removeAttribute('disabled'); } catch(e){} } }""")
         time.sleep(0.15)
 
         # 4) Clique "Continue"
@@ -152,12 +154,12 @@ def swagbucks_zip_patch(driver, value: str) -> bool:
             pass
         
         try:
-            btn = driver.find_element(By.CSS_SELECTOR, "button#profilerSubmit, button.profilerSubmit, button[id*='profilerSubmit']")
-            driver.execute_script("arguments[0].scrollIntoView({block:'center'});", btn)
+            btn = driver.find_element("css selector", "button#profilerSubmit, button.profilerSubmit, button[id*='profilerSubmit']")
+            _pw_page(driver).evaluate("(el) => el.scrollIntoView({block:\'center\'})", _handle(btn))
             try:
                 btn.click()
             except Exception:
-                ActionChains(driver).move_to_element(btn).click().perform()
+                _handle(btn).hover(); _handle(btn).click()
             time.sleep(0.2)
         except Exception:
             pass
@@ -190,7 +192,6 @@ def fill_text_input(driver, text: str, context_hint: str | None = None, element_
     Returns:
         True si saisie réussie
     """
-    wait = WebDriverWait(driver, 10)
 
     # Champ texte générique
     selector = "input[type='text'], input[type='search'], input[type='number'], textarea, [contenteditable='true'], input[type='textarea']"
@@ -201,14 +202,14 @@ def fill_text_input(driver, text: str, context_hint: str | None = None, element_
     # --- Voie rapide captcha PureSpectrum ---------------------------------
     try:
         ctx_lc = (context_hint or "").lower()
-        has_pscaptcha = bool(driver.find_elements(By.ID, "pscaptcha"))
+        has_pscaptcha = bool(driver.find_elements("id", "pscaptcha"))
         if has_pscaptcha or ("captcha" in ctx_lc or "taper le code" in ctx_lc or "code ci-dessus" in ctx_lc or "recop" in ctx_lc):
             try:
-                scope = driver.find_element(By.XPATH, "//*[@id='pscaptcha']/ancestor::*[self::h5 or self::div or self::section][1]")
+                scope = driver.find_element("xpath", "//*[@id='pscaptcha']/ancestor::*[self::h5 or self::div or self::section][1]")
             except Exception:
                 try:
                     scope = driver.find_element(
-                        By.XPATH,
+                        "xpath",
                         "//h5[contains(@class,'covered-if')][contains(translate(normalize-space(.),"
                         " 'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'taper le code')]/ancestor::*[self::h5 or self::div or self::section][1]"
                     )
@@ -217,13 +218,13 @@ def fill_text_input(driver, text: str, context_hint: str | None = None, element_
 
             if scope is not None:
                 try:
-                    field = scope.find_element(By.XPATH,
+                    field = scope.find_element("xpath",
                         ".//input[contains(translate(@ng-change,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'handlepscaptcha') "
                         " or starts-with(translate(@id,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'ans')]"
                     )
                 except Exception:
                     try:
-                        field = scope.find_element(By.XPATH, ".//textarea | .//input[@type='textarea']")
+                        field = scope.find_element("xpath", ".//textarea | .//input[@type='textarea']")
                     except Exception:
                         pass
     except Exception:
@@ -231,7 +232,7 @@ def fill_text_input(driver, text: str, context_hint: str | None = None, element_
 
     if scope is not None:
         try:
-            cands = [e for e in scope.find_elements(By.CSS_SELECTOR, selector) if e.is_displayed()]
+            cands = [e for e in scope.find_elements("css selector", selector) if e.is_displayed()]
 
             def _score_input(el):
                 s = 0
@@ -316,15 +317,15 @@ def fill_text_input(driver, text: str, context_hint: str | None = None, element_
 
     if field is None and element_id:
         try:
-            field = driver.find_element(By.ID, element_id)
+            field = driver.find_element("id", element_id)
         except Exception:
             try:
-                field = driver.find_element(By.NAME, element_id)
+                field = driver.find_element("name", element_id)
             except Exception:
                 pass
 
     if field is None:
-        field = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, selector)))
+        field = _pw_page(driver).wait_for_selector(selector, state='attached', timeout=10_000)
 
     # Cas particulier "code postal" / ZIP
     try:
@@ -343,7 +344,7 @@ def fill_text_input(driver, text: str, context_hint: str | None = None, element_
 
         is_swagbucks = False
         try:
-            is_swagbucks = bool(driver.find_elements(By.ID, "profilerNumericInput"))
+            is_swagbucks = bool(driver.find_elements("id", "profilerNumericInput"))
         except Exception:
             pass
 
@@ -382,20 +383,20 @@ def fill_text_input(driver, text: str, context_hint: str | None = None, element_
     # Mise au centre + clic fiable
     try:
         print("Scroll to field")
-        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", field)
+        _pw_page(driver).evaluate("(el) => el.scrollIntoView({block:\'center\'})", _handle(field))
     except Exception:
         pass
     try:
         print("Click field")
         field.click()
     except Exception:
-        ActionChains(driver).move_to_element(field).click().perform()
+        _handle(field).hover(); _handle(field).click()
 
     # Nettoyage du champ
     try:
         print("Clear field")
-        field.send_keys(Keys.CONTROL, "a")
-        field.send_keys(Keys.DELETE)
+        _pw_page(driver).keyboard.press("Control+a")
+        _pw_page(driver).keyboard.press("Delete")
     except Exception:
         pass
 
@@ -419,11 +420,11 @@ def fill_text_input(driver, text: str, context_hint: str | None = None, element_
         # Tentative B : frappe char-par-char avec ActionChains
         try:
             print("Saisie via ActionChains")
-            ActionChains(driver).move_to_element(field).click().pause(0.05).perform()
-            field.send_keys(Keys.CONTROL, "a")
-            field.send_keys(Keys.DELETE)
+            _handle(field).hover(); _handle(field).click()
+            _pw_page(driver).keyboard.press("Control+a")
+            _pw_page(driver).keyboard.press("Delete")
             for ch in value:
-                ActionChains(driver).send_keys(ch).pause(0.06).perform()
+                _pw_page(driver).keyboard.type(ch)
         except Exception:
             pass
 
@@ -435,9 +436,9 @@ def fill_text_input(driver, text: str, context_hint: str | None = None, element_
         if only_digits and only_digits != current.strip():
             try:
                 print("[NUM] resaisie avec chiffres seulement")
-                ActionChains(driver).move_to_element(field).click().pause(0.05).perform()
-                field.send_keys(Keys.CONTROL, "a")
-                field.send_keys(Keys.DELETE)
+                _handle(field).hover(); _handle(field).click()
+                _pw_page(driver).keyboard.press("Control+a")
+                _pw_page(driver).keyboard.press("Delete")
                 field.send_keys(only_digits)
             except Exception:
                 pass
@@ -447,9 +448,9 @@ def fill_text_input(driver, text: str, context_hint: str | None = None, element_
         # Tentative C : frappe via CDP
         try:
             print("Saisie via CDP")
-            ActionChains(driver).move_to_element(field).click().pause(0.05).perform()
-            field.send_keys(Keys.CONTROL, "a")
-            field.send_keys(Keys.DELETE)
+            _handle(field).hover(); _handle(field).click()
+            _pw_page(driver).keyboard.press("Control+a")
+            _pw_page(driver).keyboard.press("Delete")
             type_via_cdp(driver, value)
         except Exception:
             pass
@@ -458,25 +459,12 @@ def fill_text_input(driver, text: str, context_hint: str | None = None, element_
 
     if current.strip() != value:
         # Fallback JS + events (React/Angular)
-        driver.execute_script(
-            """
-            const el = arguments[0], v = arguments[1];
-            if (el.isContentEditable) {
-              el.textContent = v;
-            } else {
-              el.value = v;
-            }
-            el.dispatchEvent(new Event('input', {bubbles:true}));
-            el.dispatchEvent(new Event('change', {bubbles:true}));
-            """,
-            field,
-            value,
-        )
+        _pw_page(driver).evaluate("""([el, v]) => { if (el.isContentEditable) { el.textContent = v; } else { el.value = v; } el.dispatchEvent(new Event("input",{bubbles:true})); el.dispatchEvent(new Event("change",{bubbles:true})); }""", [_handle(field), value])
         # Petit "nudge" pour forcer la MAJ contrôlée
         try:
             print("Petit nudge clavier")
             field.send_keys(" ")
-            field.send_keys(Keys.BACK_SPACE)
+            _pw_page(driver).keyboard.press("Backspace")
         except Exception:
             pass
 
@@ -485,16 +473,7 @@ def fill_text_input(driver, text: str, context_hint: str | None = None, element_
     if is_numeric_field(field) and current.strip() != re.sub(r"\D", "", value):
         print("[NUM] patch JS digits-only")
         digits = re.sub(r"\D", "", value)
-        driver.execute_script("""
-            const el = arguments[0], v = arguments[1];
-            if (el) {
-                el.value = v;
-                el.setAttribute("value", v);
-                el.dispatchEvent(new Event('input', {bubbles:true}));
-                el.dispatchEvent(new Event('change', {bubbles:true}));
-                el.dispatchEvent(new Event('blur', {bubbles:true}));
-            }
-        """, field, digits)
+        _pw_page(driver).evaluate("""([el, v]) => { if (el) { el.value = v; el.setAttribute("value", v); el.dispatchEvent(new Event("input",{bubbles:true})); el.dispatchEvent(new Event("change",{bubbles:true})); el.dispatchEvent(new Event("blur",{bubbles:true})); } }""", [_handle(field), digits])
         time.sleep(0.3)
 
     # Re-lecture finale
@@ -513,17 +492,8 @@ def fill_text_input(driver, text: str, context_hint: str | None = None, element_
     if current.strip() != value:
         try:
             print("[SWAG] tentative patch JS spécifique Swagbucks")
-            special = driver.find_element(By.ID, "profilerNumericInput")
-            driver.execute_script("""
-                const el = arguments[0], v = arguments[1];
-                if (el) {
-                    el.value = v;
-                    el.setAttribute("value", v);
-                    el.dispatchEvent(new Event('input', {bubbles:true}));
-                    el.dispatchEvent(new Event('change', {bubbles:true}));
-                    el.dispatchEvent(new Event('blur', {bubbles:true}));
-                }
-            """, special, value)
+            special = driver.find_element("id", "profilerNumericInput")
+            _pw_page(driver).evaluate("""([el, v]) => { if (el) { el.value = v; el.setAttribute("value", v); el.dispatchEvent(new Event("input",{bubbles:true})); el.dispatchEvent(new Event("change",{bubbles:true})); el.dispatchEvent(new Event("blur",{bubbles:true})); } }""", [_handle(special), value])
             time.sleep(0.3)
             current = special.get_attribute("value") or ""
             if current.strip() == value:

@@ -11,7 +11,21 @@ Dépendances:
 - frame_utils pour iter_frame_chains et switch_to_frame_chain
 """
 
-from selenium.webdriver.common.by import By
+def _pw_page(d):
+    """Extrait la Page Playwright native depuis un PlaywrightDriverShim ou retourne d tel quel."""
+    if hasattr(d, "_page"):
+        return d._page
+    return d
+
+
+def _handle(el):
+    """Extrait le ElementHandle natif depuis un PlaywrightElementShim (_h) ou retourne el."""
+    if hasattr(el, "_h"):
+        return el._h
+    return el
+
+
+
 import unicodedata
 import re
 
@@ -25,7 +39,7 @@ def iter_iframes_safe(driver):
     Filtre les iframes trop petites (< 20x20 pixels).
     """
     frames = []
-    for fr in driver.find_elements(By.TAG_NAME, "iframe"):
+    for fr in driver.find_elements("tag name", "iframe"):
         try:
             r = fr.rect
             if fr.is_displayed() and r.get("width", 0) > 20 and r.get("height", 0) > 20:
@@ -200,7 +214,7 @@ def click_cta_strong_any_context(driver, text=None, label_hint=None, depth: int 
                 continue
 
             try:
-                els = driver.find_elements(By.CSS_SELECTOR, css)
+                els = driver.find_elements("css selector", css)
             except Exception:
                 els = []
 
@@ -226,13 +240,13 @@ def click_cta_strong_any_context(driver, text=None, label_hint=None, depth: int 
                         pass
 
                     try:
-                        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
+                        _pw_page(driver).evaluate("(el) => el.scrollIntoView({block:\'center\'})", _handle(el))
                     except Exception:
                         pass
 
                     # click robuste (JS)
                     try:
-                        driver.execute_script("arguments[0].click();", el)
+                        _pw_page(driver).evaluate("(el) => el.click()", _handle(el))
                     except Exception:
                         try:
                             el.click()

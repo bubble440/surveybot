@@ -12,10 +12,21 @@ Dépendances:
 - input_utils pour les fonctions utilitaires
 """
 
-from selenium.webdriver.common.by import By
-from selenium.webdriver.common.action_chains import ActionChains
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
+def _pw_page(d):
+    """Extrait la Page Playwright native depuis un PlaywrightDriverShim ou retourne d tel quel."""
+    if hasattr(d, "_page"):
+        return d._page
+    return d
+
+
+def _handle(el):
+    """Extrait le ElementHandle natif depuis un PlaywrightElementShim (_h) ou retourne el."""
+    if hasattr(el, "_h"):
+        return el._h
+    return el
+
+
+
 import unicodedata
 import re
 import time
@@ -80,14 +91,14 @@ def click_decipher_grid_radio(driver, label: str, context_hint: str = "") -> boo
 
     # table .grid
     try:
-        table = scope.find_element(By.XPATH, ".//table[contains(@class,'grid')]")
+        table = scope.find_element("xpath", ".//table[contains(@class,'grid')]")
     except Exception:
         return False
 
     # index de colonne à partir des <th>
     col_idx = None
     col_head_id = None
-    heads = table.find_elements(By.XPATH, ".//tr[1]//th[normalize-space(.)!='']")
+    heads = table.find_elements("xpath", ".//tr[1]//th[normalize-space(.)!='']")
     for i, th in enumerate(heads):
         t = _n(th.text)
         if t and (t == colneedle or colneedle in t or t in colneedle):
@@ -96,7 +107,7 @@ def click_decipher_grid_radio(driver, label: str, context_hint: str = "") -> boo
             break
 
     # toutes les lignes de réponses
-    rows = table.find_elements(By.XPATH, ".//tr[contains(@class,'row-elements')]")
+    rows = table.find_elements("xpath", ".//tr[contains(@class,'row-elements')]")
     if len(rows) > 1 and not rowneedle:
         log_debug("[TARGET_DEBUG]", "decipher_grid_radio: row context missing on multi-row grid")
         return False
@@ -107,7 +118,7 @@ def click_decipher_grid_radio(driver, label: str, context_hint: str = "") -> boo
         row_id = None
         for xp in (".//th", "./td[1]", "./td[2]"):
             try:
-                node = tr.find_element(By.XPATH, xp)
+                node = tr.find_element("xpath", xp)
                 raw = node.text
                 if raw and raw.strip():
                     row_txt = _n(raw)
@@ -120,7 +131,7 @@ def click_decipher_grid_radio(driver, label: str, context_hint: str = "") -> boo
             continue
 
         # cellule cible
-        tds = tr.find_elements(By.XPATH, "./td")
+        tds = tr.find_elements("xpath", "./td")
         cell = None
         if col_idx is not None and len(tds) > col_idx:
             cell = tds[col_idx]
@@ -140,7 +151,7 @@ def click_decipher_grid_radio(driver, label: str, context_hint: str = "") -> boo
         inp, lab = None, None
         target_by = "cell"
         try:
-            row_inputs = tr.find_elements(By.XPATH, ".//input[@type='radio']")
+            row_inputs = tr.find_elements("xpath", ".//input[@type='radio']")
         except Exception:
             row_inputs = []
 
@@ -157,7 +168,7 @@ def click_decipher_grid_radio(driver, label: str, context_hint: str = "") -> boo
 
         if inp is None:
             try:
-                in_cell = cell.find_elements(By.XPATH, ".//input[@type='radio']")
+                in_cell = cell.find_elements("xpath", ".//input[@type='radio']")
                 if len(in_cell) == 1:
                     inp = in_cell[0]
             except Exception:
@@ -172,12 +183,12 @@ def click_decipher_grid_radio(driver, label: str, context_hint: str = "") -> boo
         try:
             inp_id = (inp.get_attribute("id") or "").strip()
             if inp_id:
-                lab = table.find_element(By.XPATH, f".//label[@for={xpath_literal(inp_id)}]")
+                lab = table.find_element("xpath", f".//label[@for={xpath_literal(inp_id)}]")
         except Exception:
             pass
         if lab is None:
             try:
-                lab = cell.find_element(By.XPATH, ".//label")
+                lab = cell.find_element("xpath", ".//label")
             except Exception:
                 pass
 
@@ -185,14 +196,14 @@ def click_decipher_grid_radio(driver, label: str, context_hint: str = "") -> boo
         log_debug("[TARGET_DEBUG]", f"decipher_grid_radio: target_found row={context_hint!r} col={label!r} by={target_by}")
         try:
             target = lab or inp or cell
-            driver.execute_script("arguments[0].scrollIntoView({block:'center'});", target)
+            _pw_page(driver).evaluate("(el) => el.scrollIntoView({block:\'center\'})", _handle(target))
             try:
                 target.click()
             except Exception:
-                ActionChains(driver).move_to_element(target).click().perform()
+                _handle(target).hover(); _handle(target).click()
         except Exception:
             try:
-                driver.execute_script("arguments[0].click();", target)
+                _pw_page(driver).evaluate("(el) => el.click()", _handle(target))
             except Exception:
                 log_debug("[TARGET_DEBUG]", f"decipher_grid_radio: click_failed row={context_hint!r} col={label!r}")
                 if rowneedle:
@@ -205,7 +216,7 @@ def click_decipher_grid_radio(driver, label: str, context_hint: str = "") -> boo
         # vérification stricte
         if inp is None:
             try:
-                inp = cell.find_element(By.XPATH, ".//input[@type='radio']")
+                inp = cell.find_element("xpath", ".//input[@type='radio']")
             except Exception:
                 inp = None
 
@@ -256,7 +267,7 @@ def click_decipher_grid_radio_strict(driver, label: str, context_hint: str = "")
         scope = None
     scope = scope or driver
 
-    rows = scope.find_elements(By.XPATH, ".//table[contains(@class,'grid')]//tr[contains(@class,'row-elements')]")
+    rows = scope.find_elements("xpath", ".//table[contains(@class,'grid')]//tr[contains(@class,'row-elements')]")
     if not rows:
         return False
     if len(rows) > 1 and not _n(context_hint or ""):
@@ -267,13 +278,13 @@ def click_decipher_grid_radio_strict(driver, label: str, context_hint: str = "")
         try:
             th_text = ""
             try:
-                th_text = tr.find_element(By.XPATH, ".//th").text
+                th_text = tr.find_element("xpath", ".//th").text
             except Exception:
                 pass
             thn = _n(th_text)
             if not (needle == thn or needle in thn or thn in needle):
                 try:
-                    ltxt = tr.find_element(By.XPATH, ".//td//label").text
+                    ltxt = tr.find_element("xpath", ".//td//label").text
                     if not (needle in _n(ltxt) or _n(ltxt) in needle):
                         continue
                 except Exception:
@@ -284,25 +295,25 @@ def click_decipher_grid_radio_strict(driver, label: str, context_hint: str = "")
             inp = None
             verified = False
             try:
-                lab = tr.find_element(By.XPATH, ".//td[contains(@class,'clickableCell')]//label")
+                lab = tr.find_element("xpath", ".//td[contains(@class,'clickableCell')]//label")
                 try:
                     fid = (lab.get_attribute("for") or "").strip()
                     if fid:
-                        inp = tr.find_element(By.XPATH, f".//input[@type='radio' and @id={xpath_literal(fid)}]")
+                        inp = tr.find_element("xpath", f".//input[@type='radio' and @id={xpath_literal(fid)}]")
                 except Exception:
                     inp = None
-                driver.execute_script("arguments[0].scrollIntoView({block:'center'});", lab)
+                _pw_page(driver).evaluate("(el) => el.scrollIntoView({block:\'center\'})", _handle(lab))
                 try:
                     lab.click()
                 except Exception:
-                    driver.execute_script("arguments[0].click();", lab)
+                    _pw_page(driver).evaluate("(el) => el.click()", _handle(lab))
                 time.sleep(0.08)
             except Exception:
                 pass
 
             # 2) vérification native stricte
             try:
-                chk = inp or tr.find_element(By.XPATH, ".//input[@type='radio']")
+                chk = inp or tr.find_element("xpath", ".//input[@type='radio']")
                 if chk.is_selected() or (chk.get_attribute("checked") or "").lower() in ("true", "checked"):
                     verified = True
             except Exception:
@@ -356,7 +367,7 @@ def click_decipher_mx_carousel_radio(driver, label: str, context_hint: str = "")
     stage = None
     try:
         stage = driver.find_element(
-            By.XPATH,
+            "xpath",
             ".//div[(contains(concat(' ',normalize-space(@class),' '),' mx-stage ') or starts-with(@id,'mx-stage-')) and .//*[contains(concat(' ',normalize-space(@class),' '),' mx-carouselapp-container ')]]",
         )
     except Exception:
@@ -443,7 +454,7 @@ def click_decipher_mx_carousel_radio(driver, label: str, context_hint: str = "")
     '''
 
     try:
-        click_result = driver.execute_script(js_click, stage, rowneedle, colneedle) or {}
+        click_result = _pw_page(driver).evaluate("(arg) => {" + js_click + "}", stage, rowneedle, colneedle) or {}
     except Exception:
         return False
 
@@ -464,26 +475,31 @@ def click_decipher_mx_carousel_radio(driver, label: str, context_hint: str = "")
     row_token = f"{q_label}_{row_code}_left"
     col_token = f"{q_label}_{col_code}"
 
+    # Verify carousel selection via polling (was WebDriverWait)
     try:
-        WebDriverWait(driver, 1.5).until(
-            lambda d: d.execute_script(
-                r"""
-                const rowToken = arguments[0];
-                const colToken = arguments[1];
-                const inputs = Array.from(document.querySelectorAll('input[type="radio"][aria-labelledby]'));
-                for (const inp of inputs) {
-                    const labelled = (inp.getAttribute('aria-labelledby') || '').split(/\s+/).filter(Boolean);
-                    if (!labelled.includes(rowToken) || !labelled.includes(colToken)) continue;
-                    if (inp.checked) return true;
-                    const checkedAttr = (inp.getAttribute('checked') || '').toLowerCase();
-                    if (checkedAttr === 'checked' || checkedAttr === 'true' || checkedAttr === '1') return true;
-                }
-                return false;
-                """,
-                row_token,
-                col_token,
-            )
-        )
+        deadline = __import__('time').time() + 1.5
+        verified = False
+        while __import__('time').time() < deadline:
+            try:
+                verified = _pw_page(driver).evaluate(
+                    """([rowToken, colToken]) => {
+                        const inputs = Array.from(document.querySelectorAll('input[type="radio"]'));
+                        for (const inp of inputs) {
+                            const labelled = (inp.getAttribute('aria-labelledby') || '').split(/\s+/).filter(Boolean);
+                            if (!labelled.includes(rowToken) || !labelled.includes(colToken)) continue;
+                            if (inp.checked) return true;
+                            const checkedAttr = (inp.getAttribute('checked') || '').toLowerCase();
+                            if (checkedAttr === 'checked' || checkedAttr === 'true' || checkedAttr === '1') return true;
+                        }
+                        return false;
+                    }""",
+                    [row_token, col_token]
+                )
+                if verified:
+                    break
+            except Exception:
+                pass
+            __import__('time').sleep(0.1)
     except Exception:
         log_debug(
             "[TARGET_DEBUG]",
@@ -509,7 +525,7 @@ def click_radio_label_in_scope(driver, scope, label_text: str) -> bool:
 
     labels = []
     try:
-        labels = scope.find_elements(By.XPATH, ".//label[@for and normalize-space()!='']")
+        labels = scope.find_elements("xpath", ".//label[@for and normalize-space()!='']")
     except Exception:
         labels = []
 
@@ -532,16 +548,16 @@ def click_radio_label_in_scope(driver, scope, label_text: str) -> bool:
     if not fid:
         return False
     try:
-        inp = scope.find_element(By.XPATH, f".//*[@id={repr(fid)} and @type='radio']")
+        inp = scope.find_element("xpath", f".//*[@id={repr(fid)} and @type='radio']")
     except Exception:
         return False
 
     try:
-        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", best)
+        _pw_page(driver).evaluate("(el) => el.scrollIntoView({block:\'center\'})", _handle(best))
         try:
             best.click()
         except Exception:
-            ActionChains(driver).move_to_element(best).click().perform()
+            _handle(best).hover(); _handle(best).click()
         time.sleep(0.05)
         if not getattr(inp, "is_selected", lambda: False)():
             driver.execute_script("""
@@ -636,7 +652,7 @@ def fallback_click_radio_js_generic(driver, target_text: str) -> bool:
     return false;
     """
     try:
-        return bool(driver.execute_script(js, target_text))
+        return bool(_pw_page(driver).evaluate("(arg) => {" + js + "}", target_text))
     except Exception:
         return False
 
@@ -718,7 +734,7 @@ def click_kantar_rowpicker_radio(driver, label: str) -> bool:
     """
 
     try:
-        overlay = driver.execute_script(_JS_FIND, label)
+        overlay = _pw_page(driver).evaluate("(arg) => {" + _JS_FIND + "}", label)
     except Exception:
         return False
 
@@ -729,7 +745,7 @@ def click_kantar_rowpicker_radio(driver, label: str) -> bool:
         overlay.click()
     except Exception:
         try:
-            ActionChains(driver).move_to_element(overlay).click().perform()
+            _handle(overlay).hover(); _handle(overlay).click()
         except Exception:
             log_debug("[TARGET_DEBUG]", f"kantar_rowpicker: overlay_click_failed label={label!r}")
             return False
@@ -737,7 +753,7 @@ def click_kantar_rowpicker_radio(driver, label: str) -> bool:
     time.sleep(0.15)
 
     try:
-        ok = bool(driver.execute_script(_JS_VERIFY, label))
+        ok = bool(_pw_page(driver).evaluate("(arg) => {" + _JS_VERIFY + "}", label))
     except Exception:
         ok = False
 
@@ -817,8 +833,7 @@ def click_radio_by_label(driver, label: str, context_hint: str | None = None) ->
     container = find_question_container_by_ctx(driver, context_hint)
     scope = container if container is not None else driver
 
-    wait = WebDriverWait(driver, 5)
-
+    
     # Cartes Confirmit/Dynata (pas d'<input> visible)
     try:
         from input_handler import click_radio_cardlike_js
@@ -840,13 +855,13 @@ def click_radio_by_label(driver, label: str, context_hint: str | None = None) ->
     # 1) Cas table (decipherinc)
     try:
         tr = scope.find_element(
-            By.XPATH,
+            "xpath",
             f".//tr[.//th[normalize-space()=\"{label.strip()}\"]]"
         )
-        lab = tr.find_element(By.XPATH, ".//td[contains(@class,'clickableCell')]//label")
-        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", lab)
-        wait.until(EC.element_to_be_clickable(lab))
-        driver.execute_script("arguments[0].click();", lab)
+        lab = tr.find_element("xpath", ".//td[contains(@class,'clickableCell')]//label")
+        _pw_page(driver).evaluate("(el) => el.scrollIntoView({block:\'center\'})", _handle(lab))
+        _pw_page(driver).wait_for_function("el => !el.disabled && el.getBoundingClientRect().width > 0", _handle(lab), timeout=5000)
+        _pw_page(driver).evaluate("(el) => el.click()", _handle(lab))
         return True
     except Exception:
         pass
@@ -854,12 +869,12 @@ def click_radio_by_label(driver, label: str, context_hint: str | None = None) ->
     # 2) Cas label direct
     try:
         lab = scope.find_element(
-            By.XPATH,
+            "xpath",
             f".//label[normalize-space()=\"{label.strip()}\"]"
         )
-        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", lab)
-        wait.until(EC.element_to_be_clickable(lab))
-        driver.execute_script("arguments[0].click();", lab)
+        _pw_page(driver).evaluate("(el) => el.scrollIntoView({block:\'center\'})", _handle(lab))
+        _pw_page(driver).wait_for_function("el => !el.disabled && el.getBoundingClientRect().width > 0", _handle(lab), timeout=5000)
+        _pw_page(driver).evaluate("(el) => el.click()", _handle(lab))
         return True
     except Exception:
         pass
@@ -867,11 +882,11 @@ def click_radio_by_label(driver, label: str, context_hint: str | None = None) ->
     # 3) Cas input radio voisin d'un texte
     try:
         inp = scope.find_element(
-            By.XPATH,
+            "xpath",
             f".//input[@type='radio' and not(contains(@class,'disabled'))][ancestor::div[contains(@class,'question')]][following::text()[normalize-space()=\"{label.strip()}\"]]"
         )
-        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", inp)
-        driver.execute_script("arguments[0].click();", inp)
+        _pw_page(driver).evaluate("(el) => el.scrollIntoView({block:\'center\'})", _handle(inp))
+        _pw_page(driver).evaluate("(el) => el.click()", _handle(inp))
         return True
     except Exception:
         pass
@@ -880,8 +895,7 @@ def click_radio_by_label(driver, label: str, context_hint: str | None = None) ->
     if not target:
         return False
 
-    wait = WebDriverWait(driver, 4)
-    label, _itype = split_typed_instruction(label)
+        label, _itype = split_typed_instruction(label)
     needle = _norm_radio(label)
     if not needle:
         return False
@@ -901,7 +915,7 @@ def click_radio_by_label(driver, label: str, context_hint: str | None = None) ->
     anchor_y = None
     if scope is not None:
         try:
-            hdr = scope.find_element(By.XPATH, ".//legend|.//h1|.//h2|.//h3|.//*[contains(@class,'question-text')][1]")
+            hdr = scope.find_element("xpath", ".//legend|.//h1|.//h2|.//h3|.//*[contains(@class,'question-text')][1]")
             anchor_y = hdr.rect.get("y", None)
         except Exception:
             try:
@@ -916,7 +930,7 @@ def click_radio_by_label(driver, label: str, context_hint: str | None = None) ->
         xp = ("(.//div[contains(@class,'fr-option') or contains(@class,'cc-radio') or contains(@class,'radio')])"
               f"//label[.//span[contains(@class,'cc-radio__label')] and contains(translate(normalize-space(string(.)),"
               f"'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'), {xpath_literal(needle)})]")
-        cands = root.find_elements(By.XPATH, xp)
+        cands = root.find_elements("xpath", xp)
         best = None
         best_dy = 1e9
         for lbl in cands:
@@ -927,15 +941,15 @@ def click_radio_by_label(driver, label: str, context_hint: str | None = None) ->
             if dy < best_dy:
                 best, best_dy = lbl, dy
         if best is not None:
-            driver.execute_script("arguments[0].scrollIntoView({block:'center'});", best)
+            _pw_page(driver).evaluate("(el) => el.scrollIntoView({block:\'center\'})", _handle(best))
             try:
-                wait.until(EC.element_to_be_clickable(best)).click()
+                _pw_page(driver).wait_for_function("el => !el.disabled && el.getBoundingClientRect().width > 0", _handle(best), timeout=5000).click()
             except Exception:
-                driver.execute_script("arguments[0].click();", best)
+                _pw_page(driver).evaluate("(el) => el.click()", _handle(best))
             try:
                 fid = best.get_attribute("for")
                 if fid:
-                    inp = driver.find_element(By.ID, fid)
+                    inp = driver.find_element("id", fid)
                     if not getattr(inp, "is_selected", lambda: False)():
                         driver.execute_script(
                             "arguments[0].checked=true;"
@@ -952,9 +966,9 @@ def click_radio_by_label(driver, label: str, context_hint: str | None = None) ->
     # Recherche générale ancrée dans le scope
     if scope is not None:
         cands = []
-        cands += root.find_elements(By.XPATH, ".//label[normalize-space()!='']")
-        cands += root.find_elements(By.XPATH, ".//*[@role='radio']")
-        cands += root.find_elements(By.XPATH, ".//*[contains(@class,'answer') or contains(@class,'option') or contains(@class,'choice') or self::li]")
+        cands += root.find_elements("xpath", ".//label[normalize-space()!='']")
+        cands += root.find_elements("xpath", ".//*[@role='radio']")
+        cands += root.find_elements("xpath", ".//*[contains(@class,'answer') or contains(@class,'option') or contains(@class,'choice') or self::li]")
         best, best_dy = None, 1e9
         for el in cands:
             try:
@@ -970,11 +984,11 @@ def click_radio_by_label(driver, label: str, context_hint: str | None = None) ->
             except Exception:
                 continue
         if best is not None:
-            driver.execute_script("arguments[0].scrollIntoView({block:'center'});", best)
+            _pw_page(driver).evaluate("(el) => el.scrollIntoView({block:\'center\'})", _handle(best))
             try:
                 best.click()
             except Exception:
-                ActionChains(driver).move_to_element(best).click().perform()
+                _handle(best).hover(); _handle(best).click()
             return True
 
         # si on avait un scope mais rien de valide dedans, on STOP
