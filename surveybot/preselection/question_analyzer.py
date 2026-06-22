@@ -581,8 +581,8 @@ def click_participer_if_qualified(driver):
             btn.evaluate("(el) => el.scrollIntoView({block: 'center'})")
             time.sleep(0.5)
 
-            # 3. Snapshot des handles AVANT le clic (via shim — redirect_watcher attend des strings)
-            base_handles = set(driver.window_handles)
+            # 3. Snapshot des pages AVANT le clic (objets Page Playwright — cohérent avec redirect_watcher migré)
+            base_handles = set(page.context.pages)
 
             # Clic natif Playwright (move_to + click)
             btn.hover()
@@ -640,7 +640,7 @@ def handle_disqualification_and_retry(driver):
             timeout=5_000,
         )
         ok_btn.evaluate("(el) => el.scrollIntoView({block:'center'})")
-        page.evaluate("(el) => el.click()", ok_btn)
+        ok_btn.click()
         return True
     except Exception as e:
         print(f"⚠️ Disqualification détectée mais clic 'Ok' impossible: {e}")

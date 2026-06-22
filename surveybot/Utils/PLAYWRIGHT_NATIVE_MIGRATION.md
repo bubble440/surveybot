@@ -19,15 +19,32 @@ c'est la partie la plus importante de ce fichier : elle dit quel type d'objet
 (Page Playwright natif vs PlaywrightDriverShim) chaque fonction attend en
 entrée et produit en sortie, tant que la migration n'est pas terminée.
 
-⚠️ PÉRIMÈTRE PARTIEL DES BLOCS ATTACH (1, 2, 3x) :
+⚠️ PÉRIMÈTRE PARTIEL DES BLOCS ATTACH (1, 2, 3x) — RÈGLE DE LECTURE CRITIQUE :
 Les blocs 1–3b ont été migrés dans le cadre du chantier attach. Chaque bloc
-couvrait uniquement les fonctions utilisées dans le chemin d'appel attach
-(run_attach_login_takeover, run_attach_preselection_takeover, run_attach_takeover).
-Plusieurs fichiers listés dans ces blocs contiennent des fonctions
-NON migrées, car hors du chemin attach (ex : run_survey dans survey_handler.py,
-fonctions Selenium dans launch.py, switch_to_latest_window_and_close_others dans
-redirect_watcher.py, _handle_topsurveys_exclusion_popup dans functions.py).
-Ces fonctions restantes constituent le périmètre de la migration PROD (blocs P1+).
+couvrait UNIQUEMENT les fonctions utilisées dans le chemin d'appel attach
+(run_attach_login_takeover → run_attach_preselection_takeover → run_attach_takeover).
+Plusieurs fichiers listés dans ces blocs contiennent des fonctions NON migrées,
+car hors du chemin attach. Ces fonctions sont dans les mêmes fichiers que des
+fonctions déjà migrées, mais elles n'ont PAS été touchées.
+
+Conséquence directe pour la lecture de ce fichier :
+  "BLOC N migré" signifie "les fonctions du chemin attach listées dans ce bloc
+  sont migrées". Cela ne signifie PAS que l'ensemble du fichier est migré.
+
+Liste des fonctions hors chemin attach connues comme NON migrées (résidus prod) :
+  - preselection/survey_handler.py : run_survey(), _run_survey_impl() → BLOC P2
+  - preselection/question_analyzer.py : click_participer_if_qualified() utilise
+    driver.window_handles (frontière P3 documentée — intentionnel tant que
+    switch_to_latest_window_and_close_others n'est pas migré)
+  - preselection/response_executor.py : run_attach_preselection_takeover appelle
+    page.evaluate("(el) => el.click()", skip_btn) sur le bouton skip — clic JS
+    non natif (isTrusted=false) ; à corriger dans le chemin prod
+  - Management/redirect_watcher.py : switch_to_latest_window_and_close_others → BLOC P3
+  - Survey/functions.py : _handle_topsurveys_exclusion_popup → BLOC P3
+  - launch.py : restore_session_cookies(), restore_datadome_cookies() → désactivées
+
+Avant de déclarer un fichier "entièrement migré", il faut lire le fichier réel
+et vérifier chaque fonction, pas seulement les blocs documentés ici.
 
 ================================================================================
 DÉCOUPAGE EN BLOCS
@@ -48,20 +65,32 @@ BLOC 1 — Login + sélection de survey
   Sortie  : un survey/popup TopSurveys est ouvert dans l'onglet piloté →
             relais vers BLOC 2
 
-BLOC 2 — Résolution pop-up de présélection
+BLOC 2 — Résolution pop-up de présélection (chemin ATTACH uniquement)
   Statut : ✅ migré (validé en attach le 2026-06-22 — présélection complète OK,
            pont vers BLOC 3 fonctionnel)
-  Fichiers : preselection/survey_handler.py (run_attach_preselection_takeover,
-               is_topsurveys_preselection_popup, et la boucle principale de
-               présélection qui suit),
-             preselection/question_analyzer.py (get_response_for_question,
-               click_participer_if_present, click_participer_if_qualified,
-               handle_disqualification_and_retry, extract_popup_html,
-               extract_question_text),
-             preselection/response_executor.py (execute_response,
-               select_checkbox_answers, click_next_button)
-  ⚠️  Fonctions hors périmètre attach dans survey_handler.py (non migrées) :
-       run_survey() — chemin prod uniquement ; reste sur shim jusqu'au BLOC P2.
+  ⚠️  "Migré" = fonctions du chemin attach ci-dessous seulement. Plusieurs
+      fonctions dans ces mêmes fichiers restent non migrées (chemin prod).
+      Lire le fichier source avant tout patch plutôt que de se fier à ce statut.
+  Fonctions migrées (chemin attach) :
+    preselection/survey_handler.py :
+      run_attach_preselection_takeover, is_topsurveys_preselection_popup,
+      _safe_page_text
+    preselection/question_analyzer.py :
+      get_response_for_question, click_participer_if_present,
+      click_participer_if_qualified (*), handle_disqualification_and_retry,
+      extract_popup_html, extract_question_text, extract_popup_text_with_js,
+      extract_options_js, extract_select_options_js
+    preselection/response_executor.py :
+      execute_response, select_checkbox_answers, click_next_button,
+      _execute_async_radio (**)
+  Fonctions NON migrées dans ces fichiers (chemin prod) :
+    survey_handler.py : run_survey(), _run_survey_impl() → BLOC P2
+    question_analyzer.py : click_participer_if_qualified (*) conserve
+      driver.window_handles (frontière P3 — intentionnel)
+    response_executor.py : run_attach_preselection_takeover appelle
+      page.evaluate("(el) => el.click()", skip_btn) → clic JS non natif ;
+      _click_radio_label (**) utilisait page.evaluate JS click → corrigé en
+      radio.click() natif dans le patch P2-fix
   Entrée  : popup de présélection TopSurveys détecté (objet produit par BLOC 1)
   Sortie  : soit retour à TopSurveys (boucle BLOC 1/2), soit appel à
             Survey.survey_solver.solve_full_survey(...) → relais vers BLOC 3
@@ -164,7 +193,7 @@ BLOC 3 — Résolution du survey externe
     - Frontière execute_action/execute_actions_plan : reçoivent encore un shim
       depuis survey_executor.py ; _pw_page(driver) extrait la Page native.
 
-  FIN DU CHANTIER BLOC 3b — Tous les modules migrés :
+  FIN DU CHANTIER BLOC 3b — Tous les modules migrés (chemin attach) :
     survey_executor.py (3b1), page_snapshot.py (3b2), dom_classifier.py (3b3),
     dom_analyzer.py (3b4), frame_utils.py (3b5a), input_utils.py + cta_handler.py (3b5b),
     7 × input_*.py (3b5c), input_handler.py (3b5d), input_matrix.py (3b5d-fix),
@@ -191,12 +220,31 @@ BLOC P1 — Orchestration prod : launch.py
        Ces fonctions sont commentées/désactivées en production — pas de risque d'appel actif.
        À migrer si réactivées (page.context.add_cookies() ou CDP via page.context.new_cdp_session()).
 
-BLOC P2 — Présélection prod : survey_handler.run_survey()
-  Statut : 🔲 à migrer
-  Fichiers : preselection/survey_handler.py (run_survey et sa boucle interne _run_survey_impl,
-               distincte de run_attach_preselection_takeover déjà migrée en BLOC 2)
-  Dépendances : redirect_watcher.switch_to_latest_window_and_close_others (multi-onglets,
-                hors périmètre BLOC 2) — à évaluer : migrer ici ou en BLOC P3.
+BLOC P2 — Présélection prod : survey_handler._run_survey_impl() + résidus attach
+  Statut : ✅ migré (2026-06-22) — patch P2 + P2-fix appliqués
+  Fichiers : preselection/survey_handler.py (_run_survey_impl, run_survey)
+             preselection/response_executor.py (_click_radio_label)
+  Migrations appliquées :
+  - survey_handler.py :
+    - Imports Selenium (WebDriverWait, EC, By) supprimés.
+    - driver.current_url → _pw_page(driver).url (stuck detection).
+    - find_element(By.CSS_SELECTOR, ...) + execute_script scrollIntoView + execute_script click
+      → _pw_page(driver).query_selector() + element.evaluate(scrollIntoView) + element.click()
+      (bloc SKIP fallback dans _run_survey_impl).
+    - base_handles dans run_attach_preselection_takeover : restauré à set(driver.window_handles)
+      (frontière P3 — switch_to_latest_window_and_close_others attend des strings Selenium,
+      pas des objets Page Playwright).
+  - response_executor.py :
+    - _click_radio_label : page.evaluate("(el) => el.click()", radio) → radio.click() natif
+      (isTrusted=true).
+  ⚠️  Résidu intentionnel dans run_attach_preselection_takeover (survey_handler.py) :
+       page.evaluate("(el) => el.click()", skip_btn) ligne ~140 — clic JS non natif sur le
+       bouton skip du chemin attach. Fonctionnellement acceptable (bouton natif TopSurveys,
+       pas un framework Vue/React réactif) mais à corriger si des problèmes de détection
+       apparaissent. Non bloquant pour P2.
+  ⚠️  Frontière maintenue : click_participer_if_qualified (question_analyzer.py) conserve
+       driver.window_handles — intentionnel tant que switch_to_latest_window_and_close_others
+       n'est pas migré (BLOC P3).
 
 BLOC P3 — Multi-onglets + fonctions Selenium résiduelles
   Statut : 🔲 à migrer
@@ -204,6 +252,8 @@ BLOC P3 — Multi-onglets + fonctions Selenium résiduelles
     Management/redirect_watcher.py (switch_to_latest_window_and_close_others —
       window_handles, switch_to.window, close → page.context.pages, page.bring_to_front(),
       page.close())
+    preselection/question_analyzer.py (click_participer_if_qualified —
+      driver.window_handles, transmis à switch_to_latest_window_and_close_others)
     Survey/functions.py (_handle_topsurveys_exclusion_popup — By, find_elements,
       execute_script, WebDriverWait, EC — jamais inclus dans aucun bloc précédent)
   Note : Survey/screenshot_analyzer.py (take_screenshot) attend encore un shim
@@ -240,6 +290,9 @@ RÈGLES VALABLES POUR TOUS LES BLOCS
   pour tout ce qui ne concerne pas directement ce chantier (extracteurs DOM,
   etc.) — ce fichier ne les remplace pas, il s'y ajoute pour le périmètre
   migration Playwright native.
+- ⚠️  RÈGLE DE LECTURE : "fichier X listé dans BLOC N" ne signifie pas
+  "fichier X entièrement migré". Lire le fichier source avant tout diagnostic.
+  Seules les fonctions explicitement listées dans le bloc sont migrées.
 
 ================================================================================
 FRONTIÈRES ACTIVES (à mettre à jour après chaque patch validé)
@@ -386,10 +439,26 @@ FRONTIÈRE BLOC P1 → BLOC P2 (active depuis le 2026-06-22)
 
   Pont actif (vers BLOC P2) :
     - run_main_loop() (launch.py) appelle run_survey(driver, ...) dans survey_handler.py.
-    - run_survey() est la fonction prod non encore migrée (BLOC P2). Elle reçoit le même
-      objet driver que safe_get / init_session_and_enter_surveys.
-    - Tant que run_survey() n'est pas migrée, elle doit recevoir un objet compatible
-      avec _pw_page() (shim ou Page native).
+    - run_survey() / _run_survey_impl() est migrée en BLOC P2.
+    - Le même objet driver est transmis : compatible _pw_page() dans tous les appelants.
+
+FRONTIÈRE BLOC P2 → BLOC P3 (active depuis le 2026-06-22)
+
+  Côté migré (BLOC P2) :
+    - _run_survey_impl() : driver.current_url → _pw_page(driver).url.
+      find_element/execute_script → query_selector/element.evaluate/element.click.
+    - _click_radio_label() : radio.click() natif (isTrusted=true).
+
+  Frontières maintenues intentionnellement (périmètre BLOC P3) :
+    - click_participer_if_qualified() (question_analyzer.py) :
+        base_handles = set(driver.window_handles)
+      Conservé car switch_to_latest_window_and_close_others attend des strings Selenium.
+      À migrer en même temps que switch_to_latest_window_and_close_others (BLOC P3).
+    - Management/redirect_watcher.switch_to_latest_window_and_close_others :
+      window_handles, switch_to.window, driver.close → page.context.pages,
+      page.bring_to_front(), page.close(). BLOC P3.
+    - Survey/functions.py._handle_topsurveys_exclusion_popup : API Selenium complète.
+      BLOC P3.
 
 FRONTIÈRE BLOC 3a → Survey/functions.py (hors découpage en blocs)
 
@@ -460,7 +529,7 @@ HISTORIQUE
             el.text → el.inner_text(). el.rect → el.bounding_box().
             Keys.ARROW → handle.press(). el.tag_name → el.evaluate(tagName).
             switch_to.default_content() supprimé. 92 execute_script restants via shim.
-            FIN DU CHANTIER BLOC 3b — tous les modules traités.
+            FIN DU CHANTIER BLOC 3b — tous les modules traités (chemin attach).
 
 2026-06-22  BLOC 3b5d-fix (input_matrix.py corrections post-3b5c) :
             BUG 1 : _pw_page(driver) dans select_cell_action() (driver hors scope)
@@ -517,32 +586,35 @@ HISTORIQUE
             Frontières documentées : BLOC 2→3a, BLOC 3a→3b, BLOC 3a→Survey/functions.py.
             Point d'appel survey_handler.py adapté (_pw_page(driver)).
 
-2026-06-22  BLOC 2 migré : résolution popup présélection en Playwright natif.
-            Cause racine popup_not_detected identifiée (timing Vue : ps-common-
-            actions-button rendu après ps-popup-content-wrapper). Corrigé par
-            wait_for_selector ciblé avant is_topsurveys_preselection_popup.
-            ActionChains / WebDriverWait / By / EC supprimés des 3 fichiers BLOC 2.
-            Pont BLOC 2 → BLOC 3 documenté : shim traverse tout BLOC 2,
-            _page mis à jour par redirect_watcher après qualification,
-            solve_full_survey et execute_survey_page reçoivent le shim (BLOC 3).
-            ⚠️  run_survey() (chemin prod) non migrée — périmètre BLOC P2.
+2026-06-22  BLOC 2 migré (chemin attach) : résolution popup présélection en
+            Playwright natif. Cause racine popup_not_detected identifiée (timing Vue).
+            ActionChains / WebDriverWait / By / EC supprimés des 3 fichiers BLOC 2
+            pour les fonctions du chemin attach uniquement.
+            ⚠️  Fonctions du chemin prod dans les mêmes fichiers (run_survey,
+            _run_survey_impl, _click_radio_label, window_handles dans
+            click_participer_if_qualified) : NON migrées à ce stade — BLOC P2.
 
 2026-06-22  Scope du fichier étendu : migration globale (attach + prod Fly.io).
             Blocs P1/P2/P3 introduits pour couvrir le chemin prod.
-            Note transversale ajoutée : les BLOCs 1–3b couvrent uniquement les
-            fonctions du chemin attach ; les fonctions prod dans les mêmes fichiers
-            (run_survey, switch_to_latest_window_and_close_others, etc.) restent
-            hors périmètre jusqu'aux blocs P correspondants.
+            Règle de lecture ajoutée en tête : "migré" = chemin attach seulement
+            pour les blocs 1–3b. Lire le fichier source avant tout diagnostic.
 
 2026-06-22  BLOC P1 migré (launch.py — orchestration prod) :
-            Imports Selenium supprimés (selenium.webdriver, WebDriverWait, By, EC,
-            TimeoutException). _pw_page(d) helper ajouté.
-            safe_get() : driver.get + TimeoutException → page.goto(timeout=70_000) +
-            détection type(e).__name__ == "TimeoutError" + page.evaluate("window.stop()").
-            init_session_and_enter_surveys() : WebDriverWait/EC → wait_for_selector().
-            soft_restart_resume() : find_elements → query_selector().
-            Fonctions restore_session_cookies / restore_datadome_cookies : non migrées
-            (désactivées en prod — exécute_cdp_cmd → à traiter si réactivées).
-            Frontière P1 → P2 documentée.
+            Imports Selenium supprimés. _pw_page(d) helper ajouté.
+            safe_get(), init_session_and_enter_surveys(), soft_restart_resume()
+            migrés en Playwright natif. Frontière P1 → P2 documentée.
+
+2026-06-22  BLOC P2 migré + P2-fix (survey_handler._run_survey_impl,
+            response_executor._click_radio_label) :
+            - survey_handler.py : imports Selenium supprimés, driver.current_url →
+              _pw_page(driver).url, find_element/execute_script → query_selector/
+              element.evaluate/element.click (bloc SKIP _run_survey_impl).
+              base_handles dans run_attach_preselection_takeover restauré à
+              set(driver.window_handles) (frontière P3 — intentionnel).
+            - response_executor.py : _click_radio_label : page.evaluate JS click →
+              radio.click() natif (isTrusted=true).
+            Frontière P2 → P3 documentée. question_analyzer.click_participer_if_qualified
+            et redirect_watcher.switch_to_latest_window_and_close_others restent
+            sur API shim (BLOC P3).
 
 .

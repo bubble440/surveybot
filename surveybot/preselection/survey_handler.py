@@ -166,7 +166,7 @@ def run_attach_preselection_takeover(
             pass
 
         try:
-            base_handles = set(_pw_page(driver).context.pages)
+            base_handles = set(driver.window_handles)
         except Exception:
             base_handles = set()
 
