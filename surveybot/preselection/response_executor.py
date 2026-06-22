@@ -405,7 +405,7 @@ def _execute_async_radio(driver, answer_text) -> bool:  # noqa: C901
             time.sleep(0.3)
             radio = label.query_selector("input[type='radio']")
             _diag_attach(driver, radio, "_click_radio_label")
-            page.evaluate("(el) => el.click()", radio)
+            radio.click()
             _diag_read(driver, "_click_radio_label")
             time.sleep(0.5)
             try:

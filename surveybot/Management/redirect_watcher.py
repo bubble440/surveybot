@@ -59,65 +59,63 @@ def switch_to_latest_window_and_close_others(driver, base_handles, timeout=10, p
     """
     _domains = platform_domains if platform_domains is not None else ["topsurveys.app"]
 
+    page = _pw_page(driver)
     start = time.time()
 
     while time.time() - start < timeout:
         time.sleep(0.25)
-        current_handles = driver.window_handles
-        new_handles = [h for h in current_handles if h not in base_handles]
+        current_pages = page.context.pages
+        new_pages = [p for p in current_pages if p not in base_handles]
 
         # 🪟 Cas 1 : nouvel onglet détecté
-        if new_handles:
-            new_handle = new_handles[-1]
-            driver.switch_to.window(new_handle)
+        if new_pages:
+            new_page = new_pages[-1]
+            new_page.bring_to_front()
 
             # 🔥 Fermer tous les anciens onglets
-            for h in list(base_handles):
+            for p in list(base_handles):
                 try:
-                    driver.switch_to.window(h)
-                    driver.close()
+                    p.close()
                 except Exception:
                     pass
 
-            # FIX-B4: new_handle peut avoir été fermé par Chrome pendant qu'on fermait
+            # FIX-B4: new_page peut avoir été fermé par Chrome pendant qu'on fermait
             # les anciens onglets (ex : le survey s'est lui-même redirigé et a détruit
-            # son propre onglet).  Un switch aveugle lèverait NoSuchWindowException.
-            live_handles = driver.window_handles
-            if new_handle in live_handles:
-                driver.switch_to.window(new_handle)
-            elif live_handles:
-                driver.switch_to.window(live_handles[-1])
+            # son propre onglet).  On vérifie que la page est encore vivante.
+            live_pages = page.context.pages
+            if new_page in live_pages:
+                new_page.bring_to_front()
+            elif live_pages:
+                live_pages[-1].bring_to_front()
             else:
                 raise RuntimeError("Aucun onglet restant après fermeture des anciens onglets")
-            print(f"🪟 Focus sur survey + anciens onglets fermés → {driver.current_url}")
+            print(f"🪟 Focus sur survey + anciens onglets fermés → {new_page.url}")
             return True
 
         # 🧭 Cas 2 : fallback (onglet externe déjà existant)
         if prefer_external:
-            for h in current_handles:
+            for p in current_pages:
                 try:
-                    driver.switch_to.window(h)
-                    url = driver.current_url or ""
+                    url = p.url or ""
                     if not any(d in url for d in _domains):
                         # fermer les autres
-                        for oh in current_handles:
-                            if oh != h:
+                        for op in current_pages:
+                            if op is not p:
                                 try:
-                                    driver.switch_to.window(oh)
-                                    driver.close()
+                                    op.close()
                                 except Exception:
                                     pass
-                        driver.switch_to.window(h)
+                        p.bring_to_front()
                         print(f"🧭 Fallback externe + nettoyage onglets → {url}")
                         return True
                 except Exception:
                     continue
 
     print("⚠️ Aucun onglet externe détecté.")
-    # 🛡️ Sécurité finale : s'assurer qu'on est sur un handle valide
-    handles = driver.window_handles
-    if handles:
-        driver.switch_to.window(handles[-1])
+    # 🛡️ Sécurité finale : s'assurer qu'on est sur une page valide
+    live_pages = page.context.pages
+    if live_pages:
+        live_pages[-1].bring_to_front()
     else:
         raise RuntimeError("Aucun onglet restant après nettoyage")
 
