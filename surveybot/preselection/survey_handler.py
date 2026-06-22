@@ -29,10 +29,6 @@ def _set_restart_depth(v: int) -> None:
     _restart_tl.depth = v
 
 import preselection.response_executor
-if not IS_LOCAL:
-    from selenium.webdriver.support.ui import WebDriverWait
-    from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.common.by import By
 from preselection.question_validation import detect_disqualification_reason
 from State.daily_target import DAILY_TARGET_EUR
 from Cash.payout import MIN_CASHOUT_EUR
@@ -170,7 +166,7 @@ def run_attach_preselection_takeover(
             pass
 
         try:
-            base_handles = set(driver.window_handles)
+            base_handles = set(_pw_page(driver).context.pages)
         except Exception:
             base_handles = set()
 
@@ -310,7 +306,7 @@ def _run_survey_impl(driver, api_key, *, account_id: str, ctx=None, payout_name:
             # STUCK DETECTION: même page scannée N fois → soft-restart
             # =================================================================
             try:
-                _cur_url = driver.current_url
+                _cur_url = _pw_page(driver).url
             except Exception:
                 _cur_url = ""
             _scan_key = (_cur_url, str(question)[:150] if question else "")
@@ -355,16 +351,14 @@ def _run_survey_impl(driver, api_key, *, account_id: str, ctx=None, payout_name:
                                 pass
                         else:
                             # 2) Sinon, fallback bouton skip TopSurveys (quand il existe)
-                            skip_btn = driver.find_element(
-                                By.CSS_SELECTOR,
+                            skip_btn = _pw_page(driver).query_selector(
                                 "button[data-test-id='ps-skip-question-button']"
                             )
-                            driver.execute_script("arguments[0].scrollIntoView({block:'center'});", skip_btn)
+                            if not skip_btn:
+                                raise Exception("ps-skip-question-button introuvable")
+                            skip_btn.evaluate("e => e.scrollIntoView({block:'center'})")
                             time.sleep(0.2)
-                            try:
-                                skip_btn.click()
-                            except Exception:
-                                driver.execute_script("arguments[0].click();", skip_btn)
+                            skip_btn.click()
 
                             Management.guards.runtime_guard.get_guard().record_success()
                             time.sleep(1.2)
