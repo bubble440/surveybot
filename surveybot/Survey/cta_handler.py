@@ -14,10 +14,18 @@ Dépendances:
 - frame_utils pour la navigation iframe
 """
 
-from selenium.webdriver.common.by import By
-from selenium.webdriver.common.action_chains import ActionChains
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.common.exceptions import TimeoutException, StaleElementReferenceException
+def _pw_page(d):
+    """Extrait la Page Playwright native depuis un PlaywrightDriverShim ou retourne d tel quel."""
+    if hasattr(d, "_page"):
+        return d._page
+    return d
+
+
+def _handle(el):
+    """Extrait le ElementHandle natif depuis un PlaywrightElementShim (_h) ou retourne el."""
+    if hasattr(el, "_h"):
+        return el._h
+    return el
 import unicodedata
 import re
 from urllib.parse import urlsplit
@@ -199,7 +207,7 @@ def _is_internal_task_carousel_arrow(driver, el) -> bool:
         return False
 
     try:
-        counters = driver.find_elements(By.CSS_SELECTOR, 'p[data-cy="task-counter"]')
+        counters = driver.find_elements("css selector", 'p[data-cy="task-counter"]')
     except Exception:
         counters = []
 
@@ -217,7 +225,7 @@ def _is_internal_task_carousel_arrow(driver, el) -> bool:
 def _read_arm_error(driver) -> str:
     """Retourne le dernier message d'erreur d'armement JS si présent."""
     try:
-        err = driver.execute_script("return window.__sbCtaInterceptLastError || null;")
+        err = _pw_page(driver).evaluate("() => window.__sbCtaInterceptLastError || null")
         if isinstance(err, str) and err.strip():
             return err.strip()
     except Exception:
@@ -239,7 +247,7 @@ def disarm_interceptor(driver) -> bool:
     })();
     """
     try:
-        return bool(driver.execute_script(js))
+        return bool(_pw_page(driver).evaluate("() => { " + js + " }"))
     except Exception:
         return False
 
@@ -429,7 +437,7 @@ def arm_interceptor(driver) -> bool:
     })();
     """
     try:
-        return bool(driver.execute_script(js))
+        return bool(_pw_page(driver).evaluate("() => { " + js + " }"))
     except Exception:
         return False
 
@@ -437,7 +445,7 @@ def arm_interceptor(driver) -> bool:
 def read_intercept_report(driver):
     """Retourne le rapport d'interception CTA depuis window.__sbCtaIntercept."""
     try:
-        return driver.execute_script("return window.__sbCtaIntercept || null;")
+        return _pw_page(driver).evaluate("() => window.__sbCtaIntercept || null")
     except Exception:
         return None
 
@@ -464,7 +472,7 @@ def _probe_interceptor_state(driver):
     })();
     """
     try:
-        v = driver.execute_script(js)
+        v = _pw_page(driver).evaluate("() => { " + js + " }")
         return v if isinstance(v, dict) else {"probeError": True, "msg": "non-dict"}
     except Exception as e:
         return {"probeError": True, "msg": str(e)}
@@ -511,7 +519,7 @@ def _recover_overlay_cta_text(driver, el) -> str:
 
     idx = m.group(1)
     try:
-        labels = driver.find_elements(By.CSS_SELECTOR, f"#oc_t{idx}")
+        labels = driver.find_elements("css selector", f"#oc_t{idx}")
     except Exception:
         labels = []
 
@@ -562,7 +570,7 @@ def _dom_progress_marker(driver):
     })();
     """
     try:
-        marker = driver.execute_script(js)
+        marker = _pw_page(driver).evaluate("() => { " + js + " }")
         return marker if isinstance(marker, dict) else {"url": "", "txt": "", "qNodes": -1, "notifSig": ""}
     except Exception:
         return {"url": "", "txt": "", "qNodes": -1, "notifSig": ""}
@@ -609,7 +617,7 @@ def _wait_post_click_stabilization(driver, el, before_marker, timeout_s=5.0):
     before_url = (before_marker or {}).get("url") or ""
     before_outer = ""
     try:
-        before_outer = driver.execute_script("return arguments[0] ? (arguments[0].outerHTML || '') : '';", el) or ""
+        before_outer = _pw_page(driver).evaluate("(el) => el ? (el.outerHTML || '') : ''", _handle(el)) or ""
     except Exception:
         before_outer = ""
 
@@ -629,7 +637,7 @@ def _wait_post_click_stabilization(driver, el, before_marker, timeout_s=5.0):
             return True
 
         try:
-            is_connected = driver.execute_script("return (arguments[0] && arguments[0].isConnected);", el)
+            is_connected = _pw_page(driver).evaluate("(el) => el && el.isConnected", _handle(el))
             if is_connected is False:
                 state["target_changed"] = True
                 if state["reason"] == "timeout":
@@ -641,12 +649,12 @@ def _wait_post_click_stabilization(driver, el, before_marker, timeout_s=5.0):
                     state["reason"] = "target_hidden"
 
             if before_outer:
-                after_outer = driver.execute_script("return arguments[0] ? (arguments[0].outerHTML || '') : '';", el) or ""
+                after_outer = _pw_page(driver).evaluate("(el) => el ? (el.outerHTML || '') : ''", _handle(el)) or ""
                 if after_outer and after_outer != before_outer:
                     state["target_changed"] = True
                     if state["reason"] == "timeout":
                         state["reason"] = "target_replaced"
-        except StaleElementReferenceException:
+        except Exception:  # StaleElement handled as generic exception in Playwright
             state["target_changed"] = True
             if state["reason"] == "timeout":
                 state["reason"] = "target_stale"
@@ -659,10 +667,11 @@ def _wait_post_click_stabilization(driver, el, before_marker, timeout_s=5.0):
 
         return False
 
-    try:
-        WebDriverWait(driver, timeout_s, poll_frequency=0.1).until(_condition)
-    except TimeoutException:
-        pass
+    deadline = time.time() + max(0.1, timeout_s)
+    while time.time() < deadline:
+        if _condition(None):
+            break
+        time.sleep(0.1)
 
     return state["after_marker"], bool(state["target_changed"]), state["reason"]
 
@@ -723,7 +732,7 @@ def _press_click_release(driver, el):
     if tag == "button":
         try:
             is_purespectrum_next_button = bool(
-                el.find_elements(By.XPATH, "ancestor::ps-next-button[1]")
+                el.find_elements("xpath", "ancestor::ps-next-button[1]")
             )
         except Exception:
             pass
@@ -736,15 +745,17 @@ def _press_click_release(driver, el):
             pass
 
     try:
-        ActionChains(driver).move_to_element(el).click_and_hold(el).pause(0.06).release(el).perform()
+        _handle(el).hover()
+        _pw_page(driver).mouse.down()
+        time.sleep(0.06)
+        _pw_page(driver).mouse.up()
         click_ok = True
     except Exception:
         click_ok = False
 
     try:
-        release_sent = bool(driver.execute_script(
-            """
-            const el = arguments[0];
+        release_sent = bool(_pw_page(driver).evaluate(
+            """(el) => {
             const mk = (Ctor, type) => {
               try { return new Ctor(type, { bubbles: true, cancelable: true, view: window }); }
               catch(e) { return null; }
@@ -758,9 +769,7 @@ def _press_click_release(driver, el):
             push(el, mk(MouseEvent, 'mouseup'));
             push(document, mk(MouseEvent, 'mouseup'));
             return true;
-            """,
-            el,
-        ))
+        }""", _handle(el)))
     except Exception:
         release_sent = False
 
@@ -838,11 +847,8 @@ def _click_with_intercept(driver, el) -> bool:
     token = f"{int(time.time()*1000)}_{os.getpid()}"
 
     try:
-        driver.execute_script(
-            r"""
-            const el = arguments[0];
-            const tok = arguments[1];
-            // Active le filtrage d'interception et marque UNIQUEMENT cet élément.
+        _pw_page(driver).evaluate(
+            r"""([el, tok]) => {
             window.__sbCtaInterceptToken = tok;
             try { el.setAttribute('data-sb-cta-token', tok); } catch(e) {}
             window.__sbCtaInterceptSelected = {
@@ -854,10 +860,7 @@ def _click_with_intercept(driver, el) -> bool:
             };
             const evt = new MouseEvent('click', { bubbles: true, cancelable: true, view: window });
             return el.dispatchEvent(evt);
-            """,
-            el,
-            token,
-        )
+        }""", [_handle(el), token])
     except Exception:
         # Désarmement garanti pour ne pas bloquer les clics utilisateur.
         disarm_interceptor(driver)
@@ -875,13 +878,13 @@ def _click_with_intercept(driver, el) -> bool:
     report = report if isinstance(report, dict) else {}
     # Si l'armement JS a eu une erreur interne, on la log (utile pour Ipsos).
     try:
-        if driver.execute_script("return window.__sbCtaInterceptArmedOk === false;"):
+        if _pw_page(driver).evaluate("() => window.__sbCtaInterceptArmedOk === false"):
             log_debug("[CTA_INTERCEPT]", f"arm_internal_error=true err={_read_arm_error(driver) or '<none>'}")
     except Exception:
         pass
     selected = None
     try:
-        selected = driver.execute_script("return window.__sbCtaInterceptSelected || null;")
+        selected = _pw_page(driver).evaluate("() => window.__sbCtaInterceptSelected || null")
     except Exception:
         selected = None
 
@@ -899,12 +902,9 @@ def _click_with_intercept(driver, el) -> bool:
 
     # Nettoyage + désarmement : CRITIQUE pour ne jamais bloquer les autres inputs.
     try:
-        driver.execute_script(
-            """
-            const el = arguments[0];
-            try { el.removeAttribute('data-sb-cta-token'); } catch(e) {}
-            """,
-            el,
+        _pw_page(driver).evaluate(
+            "(el) => { try { el.removeAttribute('data-sb-cta-token'); } catch(e) {} }",
+            _handle(el)
         )
     except Exception:
         pass
@@ -919,7 +919,7 @@ def _click_with_intercept(driver, el) -> bool:
 def _iter_iframes_safe(driver):
     """Retourne la liste des <iframe>/<frame> probablement interactifs."""
     frames = []
-    for fr in driver.find_elements(By.CSS_SELECTOR, "iframe, frame"):
+    for fr in driver.find_elements("css selector", "iframe, frame"):
         try:
             tag = (fr.tag_name or "").strip().lower()
             r = fr.rect
@@ -940,47 +940,32 @@ def _iter_iframes_safe(driver):
 
 def _in_each_frame_recursive(driver, fn_try, depth=2):
     """
-    Appelle fn_try(driver) dans le contexte courant.
-    Si échec, essaye récursivement dans chaque iframe (profondeur limitée).
-    Reviens toujours au default_content() après chaque descente.
+    Appelle fn_try(driver) dans le contexte courant et récursivement dans chaque iframe.
+    Utilise frame_utils (BLOC 3b5a) au lieu de switch_to.frame/default_content Selenium.
     """
-    if depth < 0:
+    from Survey.frame_utils import switch_to_frame_chain, _frame_elements
+
+    def _try_chains(prefix, remaining_depth):
+        n_children = 0
+        with switch_to_frame_chain(driver, prefix) as ok:
+            if not ok:
+                return False
+            try:
+                if fn_try(driver):
+                    return True
+            except Exception:
+                pass
+            if remaining_depth > 0:
+                n_children = len(_frame_elements(driver))
+
+        # After with: driver._current_frame resetté — chercher dans les sous-frames
+        for i in range(n_children):
+            if _try_chains(prefix + [i], remaining_depth - 1):
+                return True
+
         return False
 
-    # 1) Essai dans le contexte courant
-    try:
-        if fn_try(driver):
-            return True
-    except Exception:
-        pass
-
-    # 2) Descente dans les iframes si non trouvé
-    frames = _iter_iframes_safe(driver)
-    for idx, fr in enumerate(frames):
-        try:
-            tag = (fr.tag_name or "").strip().lower()
-            if tag == "frame":
-                frame_name = (fr.get_attribute("name") or "").strip()
-                frame_id = (fr.get_attribute("id") or "").strip()
-                target = frame_name or frame_id
-                if target:
-                    driver.switch_to.frame(target)
-                else:
-                    driver.switch_to.frame(idx)
-            else:
-                driver.switch_to.frame(fr)
-            if _in_each_frame_recursive(driver, fn_try, depth - 1):
-                driver.switch_to.default_content()
-                return True
-            driver.switch_to.default_content()
-        except Exception:
-            try:
-                driver.switch_to.default_content()
-            except:
-                pass
-            continue
-
-    return False
+    return _try_chains([], max(0, depth))
 
 
 # =============================================================================
@@ -1010,23 +995,23 @@ def click_button_by_text(driver, text) -> bool:
 
     # 1) Candidats "boutons" sûrs
     candidates = []
-    candidates += driver.find_elements(By.TAG_NAME, "button")
+    candidates += driver.find_elements("tag name", "button")
     candidates += driver.find_elements(
-        By.CSS_SELECTOR, "input[type='submit'], input[type='button']"
+        "css selector", "input[type='submit'], input[type='button']"
     )
     candidates += driver.find_elements(
-        By.CSS_SELECTOR, "div[role='button'], span[role='button']"
+        "css selector", "div[role='button'], span[role='button']"
     )
 
     # Inclure les <a> qui ressemblent à des boutons/CTA
     anchor_ctas = []
     anchor_ctas += driver.find_elements(
-        By.CSS_SELECTOR, "a.btn, a.button, a.btn-primary, a.primary, a.cta"
+        "css selector", "a.btn, a.button, a.btn-primary, a.primary, a.cta"
     )
     anchor_ctas += driver.find_elements(
-        By.CSS_SELECTOR, "a[class*='btn'], a[class*='button'], a[class*='cta']"
+        "css selector", "a[class*='btn'], a[class*='button'], a[class*='cta']"
     )
-    anchor_ctas += driver.find_elements(By.CSS_SELECTOR, "#btn a")
+    anchor_ctas += driver.find_elements("css selector", "#btn a")
 
     def _is_blacklisted_anchor(a):
         lbl = _normalize_lbl(
@@ -1046,7 +1031,7 @@ def click_button_by_text(driver, text) -> bool:
             continue
 
     # 2) Ajouter des <a> qui se comportent comme des boutons
-    for a in driver.find_elements(By.TAG_NAME, "a"):
+    for a in driver.find_elements("tag name", "a"):
         try:
             role = (a.get_attribute("role") or "").lower()
             href = (a.get_attribute("href") or "").strip().lower()
@@ -1063,7 +1048,7 @@ def click_button_by_text(driver, text) -> bool:
         try:
             lbl = el.get_attribute("value") or el.text
             if not lbl:
-                spans = el.find_elements(By.TAG_NAME, "span")
+                spans = el.find_elements("tag name", "span")
                 for sp in spans:
                     if sp.text and sp.text.strip():
                         lbl = sp.text
@@ -1075,9 +1060,7 @@ def click_button_by_text(driver, text) -> bool:
                 _normalize_lbl(lbl).find(target) != -1
                 or target.find(_normalize_lbl(lbl)) != -1
             ):
-                driver.execute_script(
-                    "arguments[0].scrollIntoView({block:'center'});", el
-                )
+                _pw_page(driver).evaluate("(el) => el.scrollIntoView({block:'center'})", _handle(el))
                 time.sleep(0.1)
                 if _click_with_intercept(driver, el):
                     time.sleep(PAUSE_AFTER_CTA_CLICK)
@@ -1095,12 +1078,10 @@ def click_button_by_text(driver, text) -> bool:
             " and contains(translate(normalize-space(.), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'), '{t}')]"
         ).format(t=target)
 
-        elems = driver.find_elements(By.XPATH, xpath)
+        elems = driver.find_elements("xpath", xpath)
         for el in elems:
             try:
-                driver.execute_script(
-                    "arguments[0].scrollIntoView({block:'center'});", el
-                )
+                _pw_page(driver).evaluate("(el) => el.scrollIntoView({block:'center'})", _handle(el))
                 time.sleep(0.1)
                 if _click_with_intercept(driver, el):
                     time.sleep(PAUSE_AFTER_CTA_CLICK)
@@ -1116,9 +1097,9 @@ def click_button_by_text(driver, text) -> bool:
         if _cta_intercept_enabled():
             # Mini-scan "type JS fallback" mais clic via _click_with_intercept => interception armée + pas de navigation.
             candidates2 = []
-            candidates2 += driver.find_elements(By.TAG_NAME, "button")
-            candidates2 += driver.find_elements(By.CSS_SELECTOR, "input[type='submit'], input[type='button']")
-            candidates2 += driver.find_elements(By.CSS_SELECTOR, "[role='button']")
+            candidates2 += driver.find_elements("tag name", "button")
+            candidates2 += driver.find_elements("css selector", "input[type='submit'], input[type='button']")
+            candidates2 += driver.find_elements("css selector", "[role='button']")
 
             for el in candidates2:
                 try:
@@ -1129,7 +1110,7 @@ def click_button_by_text(driver, text) -> bool:
                         continue
                     lbl_norm = _normalize_lbl(label)
                     if lbl_norm and (lbl_norm.find(target) != -1 or target.find(lbl_norm) != -1):
-                        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
+                        _pw_page(driver).evaluate("(el) => el.scrollIntoView({block:\'center\'})", _handle(el))
                         time.sleep(0.1)
                         if _click_with_intercept(driver, el):
                             time.sleep(PAUSE_AFTER_CTA_CLICK)
@@ -1161,7 +1142,7 @@ def click_button_by_text(driver, text) -> bool:
         }
         return false;
         """
-        ok = driver.execute_script(js, target)
+        ok = _pw_page(driver).evaluate("(target) => {\n" + js.replace("arguments[0]", "target") + "\n}", target)
         if ok:
             time.sleep(PAUSE_AFTER_CTA_CLICK)
             return True
@@ -1191,16 +1172,16 @@ def click_icon_like_button(driver, hints=None) -> bool:
     hints_norm = [_normalize_lbl(h) for h in hints if h]
 
     candidates = []
-    candidates += driver.find_elements(By.TAG_NAME, "button")
-    candidates += driver.find_elements(By.CSS_SELECTOR, "[role='button']")
-    candidates += driver.find_elements(By.TAG_NAME, "a")
+    candidates += driver.find_elements("tag name", "button")
+    candidates += driver.find_elements("css selector", "[role='button']")
+    candidates += driver.find_elements("tag name", "a")
 
     visibles = [el for el in candidates if _is_visible(driver, el)]
     if not visibles:
         return False
 
-    vw = driver.execute_script("return window.innerWidth") or 1200
-    vh = driver.execute_script("return window.innerHeight") or 800
+    vw = _pw_page(driver).evaluate("() => window.innerWidth") or 1200
+    vh = _pw_page(driver).evaluate("() => window.innerHeight") or 800
 
     def score(el):
         try:
@@ -1219,7 +1200,7 @@ def click_icon_like_button(driver, hints=None) -> bool:
 
             has_icon = False
             try:
-                if el.find_elements(By.TAG_NAME, "svg") or el.find_elements(By.TAG_NAME, "img") or el.find_elements(By.TAG_NAME, "i"):
+                if el.find_elements("tag name", "svg") or el.find_elements("tag name", "img") or el.find_elements("tag name", "i"):
                     has_icon = True
             except Exception:
                 pass
@@ -1244,7 +1225,7 @@ def click_icon_like_button(driver, hints=None) -> bool:
 
     for el in visibles[:6]:
         try:
-            driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
+            _pw_page(driver).evaluate("(el) => el.scrollIntoView({block:\'center\'})", _handle(el))
             time.sleep(0.1)
             if _click_with_intercept(driver, el):
                 time.sleep(PAUSE_AFTER_CTA_CLICK)
@@ -1280,13 +1261,13 @@ def click_primary_cta(driver) -> bool:
             return -1e9
 
     candidates = []
-    candidates += driver.find_elements(By.TAG_NAME, "button")
+    candidates += driver.find_elements("tag name", "button")
     candidates += driver.find_elements(
-        By.CSS_SELECTOR, "input[type='submit'], input[type='button']"
+        "css selector", "input[type='submit'], input[type='button']"
     )
-    candidates += driver.find_elements(By.CSS_SELECTOR, "[role='button']")
+    candidates += driver.find_elements("css selector", "[role='button']")
 
-    for a in driver.find_elements(By.TAG_NAME, "a"):
+    for a in driver.find_elements("tag name", "a"):
         try:
             if (a.get_attribute("role") or "").lower() == "button":
                 candidates.append(a)
@@ -1299,8 +1280,8 @@ def click_primary_cta(driver) -> bool:
         print("✗ Aucun CTA visible. source: cta_handler.py")
         return False
 
-    vw = driver.execute_script("return window.innerWidth") or 1200
-    vh = driver.execute_script("return window.innerHeight") or 800
+    vw = _pw_page(driver).evaluate("() => window.innerWidth") or 1200
+    vh = _pw_page(driver).evaluate("() => window.innerHeight") or 800
 
     def score(el):
         try:
@@ -1314,7 +1295,7 @@ def click_primary_cta(driver) -> bool:
 
     for el in visibles:
         try:
-            driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
+            _pw_page(driver).evaluate("(el) => el.scrollIntoView({block:\'center\'})", _handle(el))
             time.sleep(0.1)
             if _click_with_intercept(driver, el):
                 time.sleep(PAUSE_AFTER_CTA_CLICK)
@@ -1400,7 +1381,7 @@ def _dismiss_blocking_overlays(driver) -> int:
     })();
     """
     try:
-        buttons = driver.execute_script(JS_FIND_DISMISS_BUTTONS)
+        buttons = _pw_page(driver).evaluate("() => { " + JS_FIND_DISMISS_BUTTONS + " }")
     except Exception:
         return 0
 
@@ -1458,7 +1439,7 @@ def try_click_navigation_cta(driver) -> bool:
     # input[name="Next"][type="submit"] dans le DOM, plus un conteneur adc-statementList.
     try:
         next_stmt_els = driver.find_elements(
-            By.CSS_SELECTOR, "div.nextStatement.Btn"
+            "css selector", "div.nextStatement.Btn"
         )
         for el in next_stmt_els:
             try:
@@ -1467,17 +1448,17 @@ def try_click_navigation_cta(driver) -> bool:
                     continue
                 # Garde 2 : input[name="Next"][type="submit"] doit exister (signature Askia)
                 form_submit = driver.find_elements(
-                    By.CSS_SELECTOR,
+                    "css selector",
                     "input[type='submit'][name='Next'], input[type='submit'][id='Bnext']",
                 )
                 if not form_submit:
                     continue
                 # Garde 3 : conteneur adc-statementList présent (Askia widget)
                 if not driver.find_elements(
-                    By.CSS_SELECTOR, "[class*='adc-statementList'], [id^='adc_']"
+                    "css selector", "[class*='adc-statementList'], [id^='adc_']"
                 ):
                     continue
-                driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
+                _pw_page(driver).evaluate("(el) => el.scrollIntoView({block:\'center\'})", _handle(el))
                 log_debug("[CTA_NAV]", "CTA_FOUND pattern=askia_statement_list selector=div.nextStatement.Btn")
                 # el.click() natif : contourne onmousedown=false, déclenche le handler JS Askia
                 try:
@@ -1505,7 +1486,7 @@ def try_click_navigation_cta(driver) -> bool:
     #   <div class="next arrow_on" id="next" style="display:block !important"> ... </div>
     # CTA sans texte => doit être ciblé par signature DOM précise, pas par label.
     try:
-        next_nodes = driver.find_elements(By.CSS_SELECTOR, ".footer #next, #next.next")
+        next_nodes = driver.find_elements("css selector", ".footer #next, #next.next")
         for el in next_nodes:
             try:
                 if not el.is_displayed() or not el.is_enabled():
@@ -1516,7 +1497,7 @@ def try_click_navigation_cta(driver) -> bool:
                 rect = el.rect or {}
                 if rect.get("width", 0) < 24 or rect.get("height", 0) < 24:
                     continue
-                driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
+                _pw_page(driver).evaluate("(el) => el.scrollIntoView({block:\'center\'})", _handle(el))
                 _nav_log("[CTA_NAV]", "CTA_FOUND pattern=icon_div_next id=next", driver)
                 clicked = _click_with_intercept(driver, el)
                 _nav_log("[CTA_NAV]", f"CTA_CLICKED pattern=icon_div_next id=next PROGRESSED={str(bool(clicked)).lower()}", driver)
@@ -1538,7 +1519,7 @@ def try_click_navigation_cta(driver) -> bool:
     try:
         # 1) Clic direct du <a> "Next" dans la navbar
         nav_links = driver.find_elements(
-            By.CSS_SELECTOR,
+            "css selector",
             "#NAVBAR a[href^='javascript:Next'], #NAVBAR a[title*='suivante'], a[href^='javascript:Next'][title], a[title*='Page suivante']",
         )
         for a in nav_links:
@@ -1553,7 +1534,7 @@ def try_click_navigation_cta(driver) -> bool:
                 if title and ("précéd" in title or "preced" in title or "previous" in title):
                     continue
 
-                driver.execute_script("arguments[0].scrollIntoView({block:'center'});", a)
+                _pw_page(driver).evaluate("(el) => el.scrollIntoView({block:\'center\'})", _handle(a))
                 if _click_with_intercept(driver, a):
                     _nav_log("[CTA_NAV]", "clicked navbar Next link", driver)
                     log_info("[CTA_NAV]", "Survey: clicked navbar Next link")
@@ -1562,17 +1543,17 @@ def try_click_navigation_cta(driver) -> bool:
                 continue
 
         # 2) Fallback: cliquer l'image elle-même (moins fiable mais utile si le <a> est masqué)
-        imgs = driver.find_elements(By.CSS_SELECTOR, "#NAVBAR img#nextButton, img#nextButton, img.BtnDuBas")
+        imgs = driver.find_elements("css selector", "#NAVBAR img#nextButton, img#nextButton, img.BtnDuBas")
         for img in imgs:
             try:
                 if not img.is_displayed():
                     continue
                 try:
-                    a = img.find_element(By.XPATH, "ancestor::a[1]")
+                    a = img.find_element("xpath", "ancestor::a[1]")
                 except Exception:
                     a = None
                 el = a or img
-                driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
+                _pw_page(driver).evaluate("(el) => el.scrollIntoView({block:\'center\'})", _handle(el))
                 if _click_with_intercept(driver, el):
                     _nav_log("[CTA_NAV]", "clicked nextButton image", driver)
                     log_info("[CTA_NAV]", "B3netSurvey: clicked nextButton image")
@@ -1590,7 +1571,7 @@ def try_click_navigation_cta(driver) -> bool:
     # dans leur texte agrégé mais ne déclenchent pas la navigation réelle.
     try:
         forsta_next = driver.find_elements(
-            By.CSS_SELECTOR,
+            "css selector",
             "button.cf-navigation__button.cf-navigation-next, button.cf-navigation__button.cf-navigation-ok",
         )
         for btn in forsta_next:
@@ -1604,7 +1585,7 @@ def try_click_navigation_cta(driver) -> bool:
 "CTA_FOUND provider_hint=forsta button=cf-navigation",
                     driver,
                 )
-                driver.execute_script("arguments[0].scrollIntoView({block:'center'});", btn)
+                _pw_page(driver).evaluate("(el) => el.scrollIntoView({block:\'center\'})", _handle(btn))
                 clicked = _click_with_intercept(driver, btn)
                 _nav_log("[CTA_NAV]", f"CTA_CLICKED provider_hint=forsta PROGRESSED={str(bool(clicked)).lower()}", driver)
                 if _cta_intercept_enabled() and clicked:
@@ -1618,12 +1599,12 @@ def try_click_navigation_cta(driver) -> bool:
 
     # --- Consent modal (RGPD): bouton Confirmer explicite ---
     try:
-        consent_btns = driver.find_elements(By.CSS_SELECTOR, "#consent-button-confirm")
+        consent_btns = driver.find_elements("css selector", "#consent-button-confirm")
         for btn in consent_btns:
             try:
                 if not btn.is_displayed() or not btn.is_enabled():
                     continue
-                driver.execute_script("arguments[0].scrollIntoView({block:'center'});", btn)
+                _pw_page(driver).evaluate("(el) => el.scrollIntoView({block:\'center\'})", _handle(btn))
                 if _click_with_intercept(driver, btn):
                     _nav_log("[CTA_NAV]", "CTA_FOUND provider_hint=consent_modal button=consent-button-confirm", driver)
                     if _cta_intercept_enabled():
@@ -1640,7 +1621,7 @@ def try_click_navigation_cta(driver) -> bool:
     # Guard: activé uniquement si ce wrapper est présent dans le DOM.
     try:
         toluna_nav_btns = driver.find_elements(
-            By.CSS_SELECTOR,
+            "css selector",
             '[data-aut="Runtime_PreviousAndNextWrapper"] button[type="submit"]',
         )
         for btn in toluna_nav_btns:
@@ -1649,7 +1630,7 @@ def try_click_navigation_cta(driver) -> bool:
                     continue
                 if (btn.get_attribute("aria-disabled") or "").lower() == "true":
                     continue
-                driver.execute_script("arguments[0].scrollIntoView({block:'center'});", btn)
+                _pw_page(driver).evaluate("(el) => el.scrollIntoView({block:\'center\'})", _handle(btn))
                 _nav_log("[CTA_NAV]", "CTA_FOUND pattern=toluna_nav_wrapper", driver)
                 clicked = _click_with_intercept(driver, btn)
                 _nav_log("[CTA_NAV]", f"CTA_CLICKED pattern=toluna_nav_wrapper PROGRESSED={str(bool(clicked)).lower()}", driver)
@@ -1664,17 +1645,17 @@ def try_click_navigation_cta(driver) -> bool:
 
     # --- AreYouNet / runet : CTA image sans texte ---
     try:
-        btns = driver.find_elements(By.CSS_SELECTOR, "#btn_next")
+        btns = driver.find_elements("css selector", "#btn_next")
         if btns:
             el = btns[0]
             try:
-                a = el.find_element(By.XPATH, "ancestor::a[1]")
+                a = el.find_element("xpath", "ancestor::a[1]")
                 if a:
                     el = a
             except Exception:
                 pass
 
-            driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
+            _pw_page(driver).evaluate("(el) => el.scrollIntoView({block:\'center\'})", _handle(el))
             if _click_with_intercept(driver, el):
                 _nav_log("[CTA_NAV]", "clicked #btn_next", driver)
                 log_info("[CTA_NAV]", "AreYouNet: clicked #btn_next")
@@ -1684,10 +1665,10 @@ def try_click_navigation_cta(driver) -> bool:
 
     # Variante AreYouNet: lien direct vers EnqueteDef_submit()
     try:
-        links = driver.find_elements(By.CSS_SELECTOR, "a[href*='EnqueteDef_submit']")
+        links = driver.find_elements("css selector", "a[href*='EnqueteDef_submit']")
         if links:
             el = links[0]
-            driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
+            _pw_page(driver).evaluate("(el) => el.scrollIntoView({block:\'center\'})", _handle(el))
             if _click_with_intercept(driver, el):
                 _nav_log("[CTA_NAV]", "clicked EnqueteDef_submit link", driver)
                 log_info("[CTA_NAV]", "AreYouNet: clicked EnqueteDef_submit link")
@@ -1697,11 +1678,11 @@ def try_click_navigation_cta(driver) -> bool:
 
     # --- Decipher : CTA avec value symbolique (">>" etc.) ---
     try:
-        btns = driver.find_elements(By.CSS_SELECTOR, "#btn_continue")
+        btns = driver.find_elements("css selector", "#btn_continue")
         if btns:
             el = btns[0]
             if el.is_displayed():
-                driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
+                _pw_page(driver).evaluate("(el) => el.scrollIntoView({block:\'center\'})", _handle(el))
                 if _click_with_intercept(driver, el):
                     _nav_log("[CTA_NAV]", "clicked #btn_continue", driver)
                     log_info("[CTA_NAV]", "Decipher: clicked #btn_continue")
@@ -1714,11 +1695,11 @@ def try_click_navigation_cta(driver) -> bool:
     # 1) présence du widget `div.gridclick-container`
     # 2) `input#btn_continue` présent mais masqué
     try:
-        gridclick_widget = driver.find_elements(By.CSS_SELECTOR, "div.gridclick-container")
-        btn_continue_nodes = driver.find_elements(By.CSS_SELECTOR, "input#btn_continue")
+        gridclick_widget = driver.find_elements("css selector", "div.gridclick-container")
+        btn_continue_nodes = driver.find_elements("css selector", "input#btn_continue")
         if gridclick_widget and btn_continue_nodes and not btn_continue_nodes[0].is_displayed():
             widget_cta = driver.find_elements(
-                By.CSS_SELECTOR,
+                "css selector",
                 "div.next-nav.active > div.nav-container[class*='ion-android-arrow-forward']",
             )
             if not widget_cta:
@@ -1730,7 +1711,7 @@ def try_click_navigation_cta(driver) -> bool:
                 _nav_log("[CTA_NAV]", "CTA_FOUND gridclick_widget INTERCEPT_IMPOSSIBLE reason=widget_not_visible", driver)
                 return False
 
-            driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
+            _pw_page(driver).evaluate("(el) => el.scrollIntoView({block:\'center\'})", _handle(el))
             clicked = _click_with_intercept(driver, el)
             if clicked:
                 _nav_log("[CTA_NAV]", "CTA_FOUND gridclick_widget INTERCEPT_OK", driver)
@@ -1743,13 +1724,13 @@ def try_click_navigation_cta(driver) -> bool:
 
     # --- RSCH / Survey japonais ---
     try:
-        btns = driver.find_elements(By.CSS_SELECTOR, "#btnsmall")
+        btns = driver.find_elements("css selector", "#btnsmall")
         if not btns:
-            btns = driver.find_elements(By.CSS_SELECTOR, "input.enterButton.submitButton, button.enterButton.submitButton")
+            btns = driver.find_elements("css selector", "input.enterButton.submitButton, button.enterButton.submitButton")
         if btns:
             el = btns[0]
             if el.is_displayed():
-                driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
+                _pw_page(driver).evaluate("(el) => el.scrollIntoView({block:\'center\'})", _handle(el))
                 if _click_with_intercept(driver, el):
                     _nav_log("[CTA_NAV]", "clicked #btnsmall or .enterButton.submitButton", driver)
                     log_info("[CTA_NAV]", "RSCH: clicked #btnsmall or .enterButton.submitButton")
@@ -1766,8 +1747,8 @@ def try_click_navigation_cta(driver) -> bool:
     has_encuesta_done_button = False
     has_encuesta_footer_next = False
     try:
-        has_encuesta_done_button = bool(driver.find_elements(By.CSS_SELECTOR, "button.encuesta__done-button"))
-        has_encuesta_footer_next = bool(driver.find_elements(By.CSS_SELECTOR, "button.ee__button--next"))
+        has_encuesta_done_button = bool(driver.find_elements("css selector", "button.encuesta__done-button"))
+        has_encuesta_footer_next = bool(driver.find_elements("css selector", "button.ee__button--next"))
     except Exception:
         has_encuesta_done_button = False
         has_encuesta_footer_next = False
@@ -1786,7 +1767,7 @@ def try_click_navigation_cta(driver) -> bool:
         "|//*[@tabindex and not(self::input or self::textarea or self::select)]"
     )
 
-    for el in driver.find_elements(By.XPATH, nav_xpath):
+    for el in driver.find_elements("xpath", nav_xpath):
         try:
             if not el.is_displayed() or not el.is_enabled():
                 continue
@@ -1819,7 +1800,7 @@ def try_click_navigation_cta(driver) -> bool:
             if any(tok.startswith("cky-") for tok in cls_tokens):
                 continue
             try:
-                if el.find_elements(By.XPATH, "ancestor::*[@data-cky-tag][1]"):
+                if el.find_elements("xpath", "ancestor::*[@data-cky-tag][1]"):
                     continue
             except Exception:
                 pass
@@ -1827,7 +1808,7 @@ def try_click_navigation_cta(driver) -> bool:
             # Exclude buttons inside ps-footer Angular component (survey page footer:
             # privacy policy, legal links…). Triggered by structural ancestor presence.
             try:
-                if el.find_elements(By.XPATH, "ancestor::ps-footer[1]"):
+                if el.find_elements("xpath", "ancestor::ps-footer[1]"):
                     continue
             except Exception:
                 pass
@@ -1848,7 +1829,7 @@ def try_click_navigation_cta(driver) -> bool:
             )
             if not txt:
                 try:
-                    img = el.find_element(By.CSS_SELECTOR, "img")
+                    img = el.find_element("css selector", "img")
                     txt = img.get_attribute("alt") or img.get_attribute("title") or ""
                 except Exception:
                     txt = ""
@@ -1931,7 +1912,7 @@ def try_click_navigation_cta(driver) -> bool:
                 score += 40
 
             try:
-                if el.find_elements(By.XPATH, "ancestor::form[1]"):
+                if el.find_elements("xpath", "ancestor::form[1]"):
                     score += 10
             except Exception:
                 pass
@@ -1945,7 +1926,7 @@ def try_click_navigation_cta(driver) -> bool:
             # component. Structural guard — text/aria-label may be empty during Angular
             # render; this ensures the real nav CTA wins even with score=5 from class alone.
             try:
-                if el.find_elements(By.XPATH, "ancestor::ps-next-button[1]"):
+                if el.find_elements("xpath", "ancestor::ps-next-button[1]"):
                     score += 150
             except Exception:
                 pass
@@ -1970,7 +1951,7 @@ def try_click_navigation_cta(driver) -> bool:
 f"CTA_FOUND candidate score={score}",
                 driver,
             )
-            driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
+            _pw_page(driver).evaluate("(el) => el.scrollIntoView({block:\'center\'})", _handle(el))
             tried += 1
             clicked = _click_with_intercept(driver, el)
             _nav_log("[CTA_NAV]", f"CTA_CLICKED candidate score={score} PROGRESSED={str(bool(clicked)).lower()}", driver)
@@ -2099,7 +2080,7 @@ def click_cta_strong_any_context(driver, text=None, label_hint=None, depth: int 
                 continue
 
             try:
-                els = driver.find_elements(By.CSS_SELECTOR, css)
+                els = driver.find_elements("css selector", css)
             except Exception:
                 els = []
 
@@ -2124,7 +2105,7 @@ def click_cta_strong_any_context(driver, text=None, label_hint=None, depth: int 
                         pass
 
                     try:
-                        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
+                        _pw_page(driver).evaluate("(el) => el.scrollIntoView({block:\'center\'})", _handle(el))
                     except Exception:
                         pass
 
@@ -2159,8 +2140,6 @@ def try_click_qps_skip_to_survey(driver, *, max_wait_s: float = 8.0, poll_s: flo
     Stratégie : clic Selenium natif (pas JS, pas CDP) pour éviter les signaux bot.
     """
     import os, time
-    from selenium.webdriver.common.by import By
-    from selenium.common.exceptions import ElementNotInteractableException, StaleElementReferenceException
 
     try:
         current_url = driver.current_url or ""
@@ -2175,7 +2154,7 @@ def try_click_qps_skip_to_survey(driver, *, max_wait_s: float = 8.0, poll_s: flo
     deadline = time.time() + max_wait_s
     while time.time() < deadline:
         try:
-            els = driver.find_elements(By.CSS_SELECTOR, _QPS_SKIP_SELECTOR)
+            els = driver.find_elements("css selector", _QPS_SKIP_SELECTOR)
             if not els:
                 time.sleep(poll_s)
                 continue
@@ -2201,7 +2180,7 @@ def try_click_qps_skip_to_survey(driver, *, max_wait_s: float = 8.0, poll_s: flo
             log_info("QPS_SKIP", "Clic sur 'Passez directement à l'enquête' (qps.cint.com)")
             return True
 
-        except (StaleElementReferenceException, ElementNotInteractableException):
+        except Exception:
             time.sleep(poll_s)
             continue
         except Exception:
