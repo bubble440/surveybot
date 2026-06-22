@@ -15,14 +15,6 @@ from selenium.webdriver.common.by import By
 import unicodedata
 import re
 
-# Import depuis input_utils (fonctions partagées)
-from Survey.input_utils import (
-    norm_btn_text,
-    safe_click,
-    CTA_SYNONYMS,
-)
-
-
 # =============================================================================
 # HELPERS IFRAME BASIQUES
 # =============================================================================

@@ -18,14 +18,6 @@ import unicodedata
 import re
 import time
 
-# Import depuis input_utils
-from Survey.input_utils import (
-    norm_txt,
-    norm_soft,
-    find_context_container,
-)
-
-
 # =============================================================================
 # CONSTANTES MATRIX
 # =============================================================================

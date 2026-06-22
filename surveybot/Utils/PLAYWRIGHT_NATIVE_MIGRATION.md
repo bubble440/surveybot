@@ -92,10 +92,20 @@ BLOC 3 — Résolution du survey externe
     Statut : migre (valide en attach le 2026-06-22)
     Fichiers : Survey/dom_analyzer.py (~4600 lignes, ~20 fonctions top-level)
 
-  BLOC 3b5+ -- imports lazy restants
+  BLOC 3b5a -- Survey/frame_utils.py
+    Statut : migre (valide en attach le 2026-06-22)
+    Fichiers : Survey/frame_utils.py (_frame_elements, switch_to_frame_chain, iter_frame_chains)
+
+  BLOC 3b5b -- Survey/input_utils.py + Survey/cta_handler.py
+    Statut : migre (valide en attach le 2026-06-22)
+    Fichiers : Survey/input_utils.py, Survey/cta_handler.py
+
+  BLOC 3b5c+ -- imports lazy restants
     Statut : non demarre
-    Fichiers : Survey/dom_analyzer.py (retire),
-               Survey/input_handler.py, Survey/action_dispatcher.py
+    Fichiers : Survey/input_handler.py, Survey/input_frame.py,
+               Survey/input_text.py, Survey/input_checkbox.py,
+               Survey/input_radio.py, Survey/input_dropdown.py,
+               Survey/input_matrix.py, Survey/action_dispatcher.py
 
   Note : action_dispatcher.py (~6100 lignes) est le fichier le plus gros et
   le plus critique de BLOC 3b. Cohérent avec PLAYWRIGHT_MIGRATION.md (Option A),
@@ -310,6 +320,17 @@ HISTORIQUE
             Point d'attention noté : popup_not_detected immédiatement après
             sélection — à traiter dans le patch BLOC 2.
 
+2026-06-22  BLOC 3b5b migre (input_utils.py + cta_handler.py) :
+            By.* -> string literals, execute_script -> page.evaluate,
+            ActionChains -> hover+click/mouse.down/up,
+            WebDriverWait -> polling loop, _in_each_frame_recursive
+            -> frame_utils switch_to_frame_chain, StaleElement -> Exception.
+
+2026-06-22  BLOC 3b5a migre (frame_utils.py) : migration Playwright native.
+            switch_to_frame_chain met a jour driver._current_frame via
+            page.main_frame.child_frames[idx] (natif). _reset() en finally.
+            Selenium supprime. Interface getattr pattern preservee.
+
 2026-06-22  BLOC 3b4 migre (dom_analyzer.py) : 23 execute_script -> page.evaluate().
             _handle(el) helper pour passer PlaywrightElementShim._h aux evaluate().
             _find_fullscreen_iframe_idx : suppression switch_to.default_content().
@@ -349,4 +370,18 @@ HISTORIQUE
             ActionChains / WebDriverWait / By / EC supprimés des 3 fichiers BLOC 2.
             Pont BLOC 2 → BLOC 3 documenté : shim traverse tout BLOC 2,
             _page mis à jour par redirect_watcher après qualification,
-            solve_full_survey et execute_survey_page reçoivent le shim (BLOC 3).
+            solve_full_survey et execute_survey_page reçoivent le shim (BLOC 3)INTERFACE switch_to_frame_chain (nouvelle, depuis BLOC 3b5a)
+
+  Entree : driver = PlaywrightDriverShim OU Page Playwright native.
+  Yield  : True si navigation reussie, False si hors-borne ou erreur.
+  Effet  : met a jour driver._current_frame (si shim) :
+    - chain=[] : driver._current_frame = page (racine)
+    - chain=[i] : driver._current_frame = Frame Playwright de l'iframe i
+  Sortie : driver._current_frame remis a page (equivalent default_content).
+  Usage appelant :
+    current_frame = getattr(driver, '_current_frame', _pw_page(driver))
+    current_frame.evaluate(js)  # ou .content(), .query_selector_all() etc.
+  Appelants deja migres (dom_classifier, page_snapshot, dom_analyzer) :
+    Aucun changement necessaire. Ils utilisent deja le getattr pattern.
+
+.
