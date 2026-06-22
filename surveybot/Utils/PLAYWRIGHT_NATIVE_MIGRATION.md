@@ -2,7 +2,8 @@
 # Suivi de la migration franche (Option B) : suppression du shim Selenium,
 # bascule vers l'API Playwright native (Page, Locator, frame_locator...).
 # Démarré : 2026-06-21
-# Remplace/poursuit PLAYWRIGHT_MIGRATION.md (Option A — shim) pour le périmètre attach.
+# Scope initial : mode attach uniquement.
+# Scope étendu au 2026-06-22 : migration globale (attach + prod / Fly.io).
 
 ================================================================================
 PRINCIPE DU DÉCOUPAGE
@@ -18,9 +19,15 @@ c'est la partie la plus importante de ce fichier : elle dit quel type d'objet
 (Page Playwright natif vs PlaywrightDriverShim) chaque fonction attend en
 entrée et produit en sortie, tant que la migration n'est pas terminée.
 
-Mode attach uniquement pour l'instant (local, manuel). La prod (lancement
-natif headless/Xvfb via launch_browser_playwright()) n'est pas concernée par
-ce chantier et doit rester inchangée jusqu'à nouvel ordre.
+⚠️ PÉRIMÈTRE PARTIEL DES BLOCS ATTACH (1, 2, 3x) :
+Les blocs 1–3b ont été migrés dans le cadre du chantier attach. Chaque bloc
+couvrait uniquement les fonctions utilisées dans le chemin d'appel attach
+(run_attach_login_takeover, run_attach_preselection_takeover, run_attach_takeover).
+Plusieurs fichiers listés dans ces blocs contiennent des fonctions
+NON migrées, car hors du chemin attach (ex : run_survey dans survey_handler.py,
+fonctions Selenium dans launch.py, switch_to_latest_window_and_close_others dans
+redirect_watcher.py, _handle_topsurveys_exclusion_popup dans functions.py).
+Ces fonctions restantes constituent le périmètre de la migration PROD (blocs P1+).
 
 ================================================================================
 DÉCOUPAGE EN BLOCS
@@ -53,6 +60,8 @@ BLOC 2 — Résolution pop-up de présélection
                extract_question_text),
              preselection/response_executor.py (execute_response,
                select_checkbox_answers, click_next_button)
+  ⚠️  Fonctions hors périmètre attach dans survey_handler.py (non migrées) :
+       run_survey() — chemin prod uniquement ; reste sur shim jusqu'au BLOC P2.
   Entrée  : popup de présélection TopSurveys détecté (objet produit par BLOC 1)
   Sortie  : soit retour à TopSurveys (boucle BLOC 1/2), soit appel à
             Survey.survey_solver.solve_full_survey(...) → relais vers BLOC 3
@@ -76,8 +85,10 @@ BLOC 3 — Résolution du survey externe
     Fichiers : Survey/page_snapshot.py (_wait_dom_settle, _dump_frames_best_effort,
                  dump_page_snapshot, snapshot_if_enabled, _slug),
                Management/redirect_watcher.py (wait_for_final_redirection, _dom_signature,
-                 wait_for_navigation_or_dom_change, wait_for_page_load UNIQUEMENT —
-                 switch_to_latest_window_and_close_others reste sur shim)
+                 wait_for_navigation_or_dom_change, wait_for_page_load UNIQUEMENT)
+    ⚠️  Fonction hors périmètre dans redirect_watcher.py (non migrée) :
+         switch_to_latest_window_and_close_others — attend window_handles/switch_to.window/close
+         (API shim). Sera migrée en BLOC P3 (multi-onglets Playwright natif).
 
   BLOC 3b3 — Survey/dom_classifier.py + Survey/batch_response_parser.py
     Statut : ✅ migré (validé en attach le 2026-06-22)
@@ -97,7 +108,7 @@ BLOC 3 — Résolution du survey externe
     Fichiers : Survey/frame_utils.py (_frame_elements, switch_to_frame_chain, iter_frame_chains)
 
   BLOC 3b5b -- Survey/input_utils.py + Survey/cta_handler.py
-    Statut : mi✅ migrégre (valide en attach le 2026-06-22)
+    Statut : ✅ migré (valide en attach le 2026-06-22)
     Fichiers : Survey/input_utils.py, Survey/cta_handler.py
 
   BLOC 3b5c -- 7 modules input_*.py
@@ -159,20 +170,76 @@ BLOC 3 — Résolution du survey externe
     7 × input_*.py (3b5c), input_handler.py (3b5d), input_matrix.py (3b5d-fix),
     action_dispatcher.py (3b6).
 
-  POUR CLORE TOTALEMENT LE CHANTIER (étapes restantes) :
+--- BLOCS PROD (migration mode Fly.io / headless) ---
+
+BLOC P1 — Orchestration prod : launch.py
+  Statut : ✅ migré (2026-06-22)
+  Fichiers : launch.py (safe_get, init_session_and_enter_surveys, soft_restart_resume)
+  Migrations appliquées :
+  - Imports Selenium supprimés : selenium.webdriver, WebDriverWait, By, EC, TimeoutException,
+    webdriver.Chrome, Options, Service.
+  - _pw_page(d) helper ajouté en tête de fichier (pattern identique aux autres modules).
+  - safe_get() : driver.get(url) + set_page_load_timeout(70) + TimeoutException
+    → page.goto(url, timeout=70_000, wait_until="domcontentloaded") +
+      détection de timeout par type(e).__name__ == "TimeoutError" + page.evaluate("window.stop()").
+  - init_session_and_enter_surveys() : WebDriverWait(driver, N).until(EC.presence_of_element_located(...))
+    → _page.wait_for_selector(sel, state="attached", timeout=N_000).
+  - soft_restart_resume() : driver.find_elements("css selector", sel)
+    → _pw_page(driver).query_selector(sel).
+  ⚠️  Fonctions hors périmètre dans launch.py (non migrées, actuellement désactivées en prod) :
+       restore_session_cookies() et restore_datadome_cookies() utilisent driver.execute_cdp_cmd().
+       Ces fonctions sont commentées/désactivées en production — pas de risque d'appel actif.
+       À migrer si réactivées (page.context.add_cookies() ou CDP via page.context.new_cdp_session()).
+
+BLOC P2 — Présélection prod : survey_handler.run_survey()
+  Statut : 🔲 à migrer
+  Fichiers : preselection/survey_handler.py (run_survey et sa boucle interne _run_survey_impl,
+               distincte de run_attach_preselection_takeover déjà migrée en BLOC 2)
+  Dépendances : redirect_watcher.switch_to_latest_window_and_close_others (multi-onglets,
+                hors périmètre BLOC 2) — à évaluer : migrer ici ou en BLOC P3.
+
+BLOC P3 — Multi-onglets + fonctions Selenium résiduelles
+  Statut : 🔲 à migrer
+  Fichiers :
+    Management/redirect_watcher.py (switch_to_latest_window_and_close_others —
+      window_handles, switch_to.window, close → page.context.pages, page.bring_to_front(),
+      page.close())
+    Survey/functions.py (_handle_topsurveys_exclusion_popup — By, find_elements,
+      execute_script, WebDriverWait, EC — jamais inclus dans aucun bloc précédent)
+  Note : Survey/screenshot_analyzer.py (take_screenshot) attend encore un shim
+         pour save_screenshot — à évaluer si réactivé.
+
+  POUR CLORE TOTALEMENT LE CHANTIER (étapes restantes après P1/P2/P3) :
     1. Validation prod : test manuel d'une résolution complète de page survey
        passant par execute_action et execute_actions_plan (au moins un radio,
        un checkbox, un texte, une matrix). Confirmer aucune régression.
-    2. Suppression playwright_shim.py : une fois 3b6 validé prod, supprimer
+    2. Suppression playwright_shim.py : une fois P2/P3 validés prod, supprimer
        playwright_shim.py et PlaywrightDriverShim. Adapter le pont _page_to_shim
        dans main.py (plus de shim → passer la Page directement à execute_survey_page).
     3. Suppression shim interne survey_solver.py : _make_shim() dans
        solve_full_survey() à supprimer ; adapter execute_survey_page pour recevoir
        une Page native (pas un shim).
-    4. Migrer Survey/functions.py (_handle_topsurveys_exclusion_popup) si souhaité
-       (hors périmètre actuel — bloqué sur By, ActionChains, WebDriverWait, EC).
-    5. Migrer redirect_watcher.switch_to_latest_window_and_close_others
-       (window_handles, switch_to.window, close — API Playwright multi-onglets).
+
+================================================================================
+RÈGLES VALABLES POUR TOUS LES BLOCS
+================================================================================
+
+- Un bloc = un patch = une validation manuelle en attach (ou prod pour les blocs P)
+  avant de passer au bloc suivant.
+- Le patch ne touche QUE les fichiers du bloc en cours. Toute fonction encore
+  hors périmètre reste sur le shim — ne pas migrer "au passage" une fonction
+  d'un bloc ultérieur même si elle semble proche dans le code.
+- Toute frontière (point où un objet Playwright natif doit être compatible
+  avec du code consommant encore l'API shim, ou inversement) doit être
+  documentée dans la section FRONTIÈRES ACTIVES avant de clore le patch.
+- Pas de fallback Vision, pas de branches supplémentaires pour gérer les deux
+  API en parallèle au sein d'une même fonction migrée — une fonction migrée
+  parle Playwright natif uniquement ; l'adaptation se fait à la frontière, pas
+  à l'intérieur.
+- PROJECT_ARCHITECTURE.md et BOT_EVOLUTION_MEMORY.md restent les références
+  pour tout ce qui ne concerne pas directement ce chantier (extracteurs DOM,
+  etc.) — ce fichier ne les remplace pas, il s'y ajoute pour le périmètre
+  migration Playwright native.
 
 ================================================================================
 FRONTIÈRES ACTIVES (à mettre à jour après chaque patch validé)
@@ -282,7 +349,7 @@ FRONTIÈRE INTERNE BLOC 3b1 → BLOC 3b2 (active depuis le 2026-06-22, mise à j
     - redirect_watcher (_dom_signature, wait_for_navigation_or_dom_change)
       reçoit aussi `driver` (= shim).
 
-  Coté migré (BLOC 3b2, depuis le 2026-06-22) :
+  Côté migré (BLOC 3b2, depuis le 2026-06-22) :
     - Survey/page_snapshot.py : _pw_page(driver) + page.evaluate/content/screenshot.
       MHTML via page.context.new_cdp_session(page).send("Page.captureSnapshot").
     - Management/redirect_watcher.py (wait_for_final_redirection, _dom_signature,
@@ -295,8 +362,7 @@ FRONTIÈRE INTERNE BLOC 3b1 → BLOC 3b2 (active depuis le 2026-06-22, mise à j
 
   Frontière redirect_watcher.switch_to_latest_window_and_close_others :
     - Reste sur le shim (window_handles, switch_to.window, close).
-    - Sera migrée quand tous ses appelants (survey_handler BLOC 2,
-      survey_executor BLOC 3b1) seront eux-mêmes natifs Playwright.
+    - Sera migrée en BLOC P3.
 
   Convention _current_frame identique à BLOC 3b2 (page_snapshot.py) :
     - Dans les blocs with switch_to_frame_chain(driver, chain), on utilise
@@ -304,15 +370,26 @@ FRONTIÈRE INTERNE BLOC 3b1 → BLOC 3b2 (active depuis le 2026-06-22, mise à j
       la Frame Playwright courante (main frame ou iframe selon chain).
       Aucune divergence par rapport à page_snapshot.py.
 
-  Coté migré (BLOC 3b3, depuis le 2026-06-22) :
+  Côté migré (BLOC 3b3, depuis le 2026-06-22) :
     - Survey/dom_classifier.py : _pw_page(driver) + page.evaluate/query_selector_all.
       Frame iteration : current_frame.evaluate() après switch_to_frame_chain.
     - Survey/batch_response_parser.py : parsing pur, zéro driver, rien à migrer.
 
-  Côté shim (BLOC 3b4+, pas encore migré) :
-    - Survey/dom_analyzer.py, Survey/input_handler.py,
-      Survey/action_dispatcher.py : attendent un shim.
-    - Survey/prompt_builder.py : zéro driver — pas de frontière active.
+FRONTIÈRE BLOC P1 → BLOC P2 (active depuis le 2026-06-22)
+
+  Côté migré (BLOC P1, Playwright natif) :
+    - launch.py : safe_get(), init_session_and_enter_surveys(), soft_restart_resume()
+      opèrent sur l'API Playwright native via _pw_page(driver).
+    - Le driver transmis depuis launch_driver_or_fail() est l'objet retourné par
+      launch_browser_playwright() (playwright_launcher.py) — Page native ou shim selon
+      l'implémentation de launch_browser_playwright.
+
+  Pont actif (vers BLOC P2) :
+    - run_main_loop() (launch.py) appelle run_survey(driver, ...) dans survey_handler.py.
+    - run_survey() est la fonction prod non encore migrée (BLOC P2). Elle reçoit le même
+      objet driver que safe_get / init_session_and_enter_surveys.
+    - Tant que run_survey() n'est pas migrée, elle doit recevoir un objet compatible
+      avec _pw_page() (shim ou Page native).
 
 FRONTIÈRE BLOC 3a → Survey/functions.py (hors découpage en blocs)
 
@@ -324,7 +401,7 @@ FRONTIÈRES SUPPLÉMENTAIRES CONFIRMÉES (hors découpage en blocs)
 
   Survey/dom_registry.py : get_target(target_id) — aucun paramètre driver. Pas de frontière.
   Survey/fivesim_client.py : buy_number, reuse_number, poll_sms_code, finish_order — aucun driver.
-  Survey/screenshot_analyzer.py : take_screenshot(driver) attend un shim (pour save_screenshot).
+  Survey/screenshot_analyzer.py : take_screenshot(driver) attend encore un shim (save_screenshot).
     Pont : driver (= shim) transmis depuis execute_survey_page.
 
 FRONTIÈRE BLOC 3b1 → Survey/functions.py (hors découpage en blocs)
@@ -332,6 +409,7 @@ FRONTIÈRE BLOC 3b1 → Survey/functions.py (hors découpage en blocs)
   Survey/functions.py (_handle_topsurveys_exclusion_popup) n'a jamais été inclus
   dans aucun bloc de migration. Il utilise encore l'API Selenium complète
   (By, find_elements, execute_script, WebDriverWait, EC, etc.).
+  Périmètre BLOC P3.
 
   Pont :
     - Dans solve_full_survey, tous les appels platform.is_on_platform() et
@@ -344,26 +422,19 @@ FRONTIÈRE BLOC 3b1 → Survey/functions.py (hors découpage en blocs)
       (go_to_best_value_survey, _handle_mystery_box_popup) sont déjà BLOC 1-migrées
       et utilisent _pw_page(d) en interne → compatibles shim et Page. ✓
 
-================================================================================
-RÈGLES VALABLES POUR TOUS LES BLOCS
-================================================================================
+INTERFACE switch_to_frame_chain (nouvelle, depuis BLOC 3b5a)
 
-- Un bloc = un patch = une validation manuelle en attach avant de passer au
-  bloc suivant.
-- Le patch ne touche QUE les fichiers du bloc en cours. Toute fonction encore
-  hors périmètre reste sur le shim — ne pas migrer "au passage" une fonction
-  d'un bloc ultérieur même si elle semble proche dans le code.
-- Toute frontière (point où un objet Playwright natif doit être compatible
-  avec du code consommant encore l'API shim, ou inversement) doit être
-  documentée dans la section FRONTIÈRES ACTIVES avant de clore le patch.
-- Pas de fallback Vision, pas de branches supplémentaires pour gérer les deux
-  API en parallèle au sein d'une même fonction migrée — une fonction migrée
-  parle Playwright natif uniquement ; l'adaptation se fait à la frontière, pas
-  à l'intérieur.
-- PROJECT_ARCHITECTURE.md et BOT_EVOLUTION_MEMORY.md restent les références
-  pour tout ce qui ne concerne pas directement ce chantier (extracteurs DOM,
-  etc.) — ce fichier ne les remplace pas, il s'y ajoute pour le périmètre
-  migration Playwright native.
+  Entrée : driver = PlaywrightDriverShim OU Page Playwright native.
+  Yield  : True si navigation reussie, False si hors-borne ou erreur.
+  Effet  : met a jour driver._current_frame (si shim) :
+    - chain=[] : driver._current_frame = page (racine)
+    - chain=[i] : driver._current_frame = Frame Playwright de l'iframe i
+  Sortie : driver._current_frame remis a page (equivalent default_content).
+  Usage appelant :
+    current_frame = getattr(driver, '_current_frame', _pw_page(driver))
+    current_frame.evaluate(js)  # ou .content(), .query_selector_all() etc.
+  Appelants déjà migrés (dom_classifier, page_snapshot, dom_analyzer) :
+    Aucun changement nécessaire. Ils utilisent déjà le getattr pattern.
 
 ================================================================================
 HISTORIQUE
@@ -453,18 +524,25 @@ HISTORIQUE
             ActionChains / WebDriverWait / By / EC supprimés des 3 fichiers BLOC 2.
             Pont BLOC 2 → BLOC 3 documenté : shim traverse tout BLOC 2,
             _page mis à jour par redirect_watcher après qualification,
-            solve_full_survey et execute_survey_page reçoivent le shim (BLOC 3)INTERFACE switch_to_frame_chain (nouvelle, depuis BLOC 3b5a)
+            solve_full_survey et execute_survey_page reçoivent le shim (BLOC 3).
+            ⚠️  run_survey() (chemin prod) non migrée — périmètre BLOC P2.
 
-  Entree : driver = PlaywrightDriverShim OU Page Playwright native.
-  Yield  : True si navigation reussie, False si hors-borne ou erreur.
-  Effet  : met a jour driver._current_frame (si shim) :
-    - chain=[] : driver._current_frame = page (racine)
-    - chain=[i] : driver._current_frame = Frame Playwright de l'iframe i
-  Sortie : driver._current_frame remis a page (equivalent default_content).
-  Usage appelant :
-    current_frame = getattr(driver, '_current_frame', _pw_page(driver))
-    current_frame.evaluate(js)  # ou .content(), .query_selector_all() etc.
-  Appelants deja migres (dom_classifier, page_snapshot, dom_analyzer) :
-    Aucun changement necessaire. Ils utilisent deja le getattr pattern.
+2026-06-22  Scope du fichier étendu : migration globale (attach + prod Fly.io).
+            Blocs P1/P2/P3 introduits pour couvrir le chemin prod.
+            Note transversale ajoutée : les BLOCs 1–3b couvrent uniquement les
+            fonctions du chemin attach ; les fonctions prod dans les mêmes fichiers
+            (run_survey, switch_to_latest_window_and_close_others, etc.) restent
+            hors périmètre jusqu'aux blocs P correspondants.
+
+2026-06-22  BLOC P1 migré (launch.py — orchestration prod) :
+            Imports Selenium supprimés (selenium.webdriver, WebDriverWait, By, EC,
+            TimeoutException). _pw_page(d) helper ajouté.
+            safe_get() : driver.get + TimeoutException → page.goto(timeout=70_000) +
+            détection type(e).__name__ == "TimeoutError" + page.evaluate("window.stop()").
+            init_session_and_enter_surveys() : WebDriverWait/EC → wait_for_selector().
+            soft_restart_resume() : find_elements → query_selector().
+            Fonctions restore_session_cookies / restore_datadome_cookies : non migrées
+            (désactivées en prod — exécute_cdp_cmd → à traiter si réactivées).
+            Frontière P1 → P2 documentée.
 
 .

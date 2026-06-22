@@ -12,17 +12,15 @@ from preselection.survey_navigator import go_to_best_value_survey
 from preselection.survey_handler import run_survey
 from Management.notifier import send_telegram
 from State.account_state import update_state, load_state, try_acquire_cooldown_slot, _now, load_datadome_cookies, load_cookies
-from selenium.common.exceptions import TimeoutException
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.common.by import By
 from preselection.auth_handler import is_session_expired, handle_proxy_error_page_if_needed
 from Management.pause_policy import PausePolicy
 import subprocess
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
 from Cash.payout import _payout_and_check_daily_stop
+
+def _pw_page(d):
+    if hasattr(d, "_page"):
+        return d._page
+    return d
 
 def acquire_account_lock_or_exit(account_id: str, ttl_sec: int = 240):
     ok = try_acquire_cooldown_slot(account_id=account_id, ttl_sec=ttl_sec)
@@ -34,47 +32,44 @@ def safe_get(driver, url, base_delay=4):
     """
     Navigation sécurisée : s'assure qu'un driver valide existe.
     - Timeout 70s pour éviter les hangs infinis en ECS.
-    - Retry avec backoff exponentiel sur tout TimeoutException (latence proxy, tunnel lent…).
-    - Après épuisement des retries : chargement partiel accepté + vérification proxy.
+    - Sur PlaywrightTimeoutError : window.stop() + chargement partiel accepté.
+    - Sur toute autre exception : log + re-raise.
     """
     if driver is None:
         raise RuntimeError("SAFE_GET appelé avec driver=None")
 
+    page = _pw_page(driver)
     try:
-        if not hasattr(driver, "window_handles") or not driver.window_handles:
-            raise RuntimeError("Aucune fenêtre active")
-
-        driver.switch_to.window(driver.window_handles[-1])
-        driver.set_page_load_timeout(70)
-
-        effective_retries = 1
-        for attempt in range(effective_retries):
-            try:
-                driver.get(url)
-                handle_proxy_error_page_if_needed(driver)
-                if is_session_expired(driver):
-                    msg = "🔐 Session expirée — ré-authentification manuelle requise."
-                    print(msg)
-                    try:
-                        get_guard().notify_fn(msg)
-                    except Exception:
-                        pass
-                    get_guard().pause(
-                        PausePolicy.UNTIL_MANUAL,
-                        StopReason.SESSION_EXPIRED,
-                    )
-                    raise SystemExit("session_expired")
-
-                print(f"[SAFE_GET] done get: {url}")
-                return  # ✅ succès
-
-            except TimeoutException:
-                print(f"[SAFE_GET][WARN] Timeout page load vers {url} -> window.stop()")
+        try:
+            page.goto(url, timeout=70_000, wait_until="domcontentloaded")
+            handle_proxy_error_page_if_needed(driver)
+            if is_session_expired(driver):
+                msg = "🔐 Session expirée — ré-authentification manuelle requise."
+                print(msg)
                 try:
-                    driver.execute_script("window.stop();")
+                    get_guard().notify_fn(msg)
                 except Exception:
                     pass
-
+                get_guard().pause(
+                    PausePolicy.UNTIL_MANUAL,
+                    StopReason.SESSION_EXPIRED,
+                )
+                raise SystemExit("session_expired")
+            print(f"[SAFE_GET] done get: {url}")
+            return
+        except SystemExit:
+            raise
+        except Exception as e:
+            if type(e).__name__ == "TimeoutError":
+                print(f"[SAFE_GET][WARN] Timeout page load vers {url} -> window.stop()")
+                try:
+                    page.evaluate("window.stop()")
+                except Exception:
+                    pass
+            else:
+                raise
+    except SystemExit:
+        raise
     except Exception as e:
         print(f"[SAFE_GET] Navigation impossible vers {url}: {e}")
         raise
@@ -180,8 +175,9 @@ def soft_restart_resume(ctx, driver, platform=None):
     #   topsurveys.app     → check-email-field-input
     #   app.topsurveys.app → app-page-email-field-input
     from preselection.auth_handler import LOGIN_PAGE_SELECTORS
+    _page = _pw_page(driver)
     _on_login_page = any(
-        driver.find_elements("css selector", sel)
+        _page.query_selector(sel)
         for sel in LOGIN_PAGE_SELECTORS
     )
     if _on_login_page:
@@ -190,7 +186,7 @@ def soft_restart_resume(ctx, driver, platform=None):
             platform.login(driver, {"Email": ctx["email"], "Password": ctx["password"]})
         else:
             login(driver, ctx["email"], ctx["password"])
-        if any(driver.find_elements("css selector", sel) for sel in LOGIN_PAGE_SELECTORS):
+        if any(_page.query_selector(sel) for sel in LOGIN_PAGE_SELECTORS):
             raise RuntimeError("soft_restart_resume: re-login échoué, page de login toujours présente")
 
     survey_ctx = SurveyContext(session_id=ctx["account_id"], openai_api_key=ctx["api_key"])
@@ -468,16 +464,22 @@ def init_session_and_enter_surveys(driver, config, account_id: str, notify_fn, p
     safe_get(driver, _home_url)
     print("🚀 Brave lancé.")
 
-    _SESSION_SELECTOR = (By.CSS_SELECTOR, "[data-test-id='surveys-nav']")
+    _SESSION_SEL = "[data-test-id='surveys-nav']"
+    _page = _pw_page(driver)
+    _session_active = False
     try:
-        WebDriverWait(driver, 8).until(EC.presence_of_element_located(_SESSION_SELECTOR))
+        _page.wait_for_selector(_SESSION_SEL, state="attached", timeout=8_000)
+        _session_active = True
+    except Exception:
+        pass
+
+    if _session_active:
         print("[INIT] session active détectée — login ignoré")
         if os.getenv("SNAP_ENABLED", "").strip() == "1":
             from Management.snap_uploader import new_survey, capture_and_upload
             new_survey()
             capture_and_upload(driver, "survey_account")
-
-    except TimeoutException:
+    else:
         if platform:
             platform.login(driver, config)
         else:
@@ -485,13 +487,10 @@ def init_session_and_enter_surveys(driver, config, account_id: str, notify_fn, p
             password = config.get("Password")
             login(driver, email, password)
         # Après login, attendre que la page soit hydratée avant de continuer.
-        # On réutilise _SESSION_SELECTOR plutôt qu'un sleep arbitraire.
         try:
-            WebDriverWait(driver, 30).until(
-                EC.presence_of_element_located(_SESSION_SELECTOR)
-            )
+            _page.wait_for_selector(_SESSION_SEL, state="attached", timeout=30_000)
             print("[LOGIN] surveys-nav détecté post-login — page prête.")
-        except TimeoutException:
+        except Exception:
             print("[LOGIN][WARN] surveys-nav non détecté après 30 s — on continue quand même.")
 
     # try:
@@ -500,16 +499,14 @@ def init_session_and_enter_surveys(driver, config, account_id: str, notify_fn, p
     #     print(f"[PAYOUT][WARN] Encaissement automatique: {e}")
 
     # Attente que la page soit pleinement chargée et hydratée avant de chercher un survey.
-    # On réutilise _SESSION_SELECTOR ([data-test-id='surveys-nav']) : il est présent dès
+    # On réutilise _SESSION_SEL ([data-test-id='surveys-nav']) : il est présent dès
     # que l'app Vue est loggée et rendue, sans dépendre de la disponibilité de surveys.
     # Timeout généreux (30 s) pour absorber les démarrages lents en prod headless.
     # Si le sélecteur n'apparaît pas dans le délai, on continue quand même (best-effort).
     try:
-        WebDriverWait(driver, 30).until(
-            EC.presence_of_element_located(_SESSION_SELECTOR)
-        )
+        _page.wait_for_selector(_SESSION_SEL, state="attached", timeout=30_000)
         print("[INIT] surveys-nav détecté — page prête, lancement select_survey.")
-    except TimeoutException:
+    except Exception:
         print("[INIT][WARN] surveys-nav non détecté après 30 s — select_survey lancé quand même.")
 
     if platform:
