@@ -71,7 +71,20 @@ BLOC 3 — Résolution du survey externe
   BLOC 3b1 — Survey/survey_executor.py
     Statut : ✅ migré (validé en attach le 2026-06-22)
 
-  BLOC 3b2+ — imports lazy d'execute_survey_page
+  BLOC 3b2 — Survey/page_snapshot.py + Management/redirect_watcher.py (partiel)
+    Statut : ✅ migré (validé en attach le 2026-06-22)
+    Fichiers : Survey/page_snapshot.py (_wait_dom_settle, _dump_frames_best_effort,
+                 dump_page_snapshot, snapshot_if_enabled, _slug),
+               Management/redirect_watcher.py (wait_for_final_redirection, _dom_signature,
+                 wait_for_navigation_or_dom_change, wait_for_page_load UNIQUEMENT —
+                 switch_to_latest_window_and_close_others reste sur shim)
+
+  BLOC 3b3 — Survey/dom_classifier.py + Survey/batch_response_parser.py
+    Statut : ✅ migré (validé en attach le 2026-06-22)
+    Fichiers : Survey/dom_classifier.py (toutes les fonctions de classification DOM),
+               Survey/batch_response_parser.py (aucun driver — parsing pur, rien à migrer)
+
+  BLOC 3b4+ — imports lazy restants
     Statut : ⬜ non démarré
     Fichiers : Survey/survey_executor.py (execute_survey_page et toutes ses
                  fonctions internes),
@@ -180,7 +193,7 @@ FRONTIÈRE BLOC 3a → BLOC 3b1 (remplace BLOC 3a → BLOC 3b, active depuis le 
     - execute_survey_page() : page = _pw_page(driver) pour DOM direct ;
       driver (= shim) transmis aux sous-modules hors-périmètre.
 
-FRONTIÈRE INTERNE BLOC 3b1 → BLOC 3b2+ (active depuis le 2026-06-22)
+FRONTIÈRE INTERNE BLOC 3b1 → BLOC 3b2 (active depuis le 2026-06-22, mise à jour BLOC 3b2)
 
   Côté natif (BLOC 3a) :
     - solve_full_survey() crée un shim interne en début de fonction :
@@ -196,11 +209,36 @@ FRONTIÈRE INTERNE BLOC 3b1 → BLOC 3b2+ (active depuis le 2026-06-22)
     - redirect_watcher (_dom_signature, wait_for_navigation_or_dom_change)
       reçoit aussi `driver` (= shim).
 
-  Côté shim (BLOC 3b2+, pas encore migré) :
-    - Survey/dom_analyzer.py, Survey/page_snapshot.py, Survey/input_handler.py,
-      Survey/prompt_builder.py, Survey/dom_classifier.py, Survey/action_dispatcher.py,
-      Survey/batch_response_parser.py : attendent un shim.
-    - Management/redirect_watcher.py : attend un shim.
+  Coté migré (BLOC 3b2, depuis le 2026-06-22) :
+    - Survey/page_snapshot.py : _pw_page(driver) + page.evaluate/content/screenshot.
+      MHTML via page.context.new_cdp_session(page).send("Page.captureSnapshot").
+    - Management/redirect_watcher.py (wait_for_final_redirection, _dom_signature,
+      wait_for_navigation_or_dom_change, wait_for_page_load) : _pw_page(driver).
+
+  Frontière BLOC 3b2 → frame_utils.py :
+    - _dump_frames_best_effort passe driver (shim) à iter_frame_chains /
+      switch_to_frame_chain. Après switch, getattr(driver, "_current_frame", page)
+      donne la Frame Playwright pour les ops DOM dans l'iframe.
+
+  Frontière redirect_watcher.switch_to_latest_window_and_close_others :
+    - Reste sur le shim (window_handles, switch_to.window, close).
+    - Sera migrée quand tous ses appelants (survey_handler BLOC 2,
+      survey_executor BLOC 3b1) seront eux-mêmes natifs Playwright.
+
+  Convention _current_frame identique à BLOC 3b2 (page_snapshot.py) :
+    - Dans les blocs with switch_to_frame_chain(driver, chain), on utilise
+      getattr(driver, "_current_frame", _pw_page(driver)) pour obtenir
+      la Frame Playwright courante (main frame ou iframe selon chain).
+      Aucune divergence par rapport à page_snapshot.py.
+
+  Coté migré (BLOC 3b3, depuis le 2026-06-22) :
+    - Survey/dom_classifier.py : _pw_page(driver) + page.evaluate/query_selector_all.
+      Frame iteration : current_frame.evaluate() après switch_to_frame_chain.
+    - Survey/batch_response_parser.py : parsing pur, zéro driver, rien à migrer.
+
+  Coté shim (BLOC 3b4+, pas encore migré) :
+    - Survey/dom_analyzer.py, Survey/input_handler.py,
+      Survey/prompt_builder.py, Survey/action_dispatcher.py : attendent un shim.
 
 FRONTIÈRE BLOC 3a → Survey/functions.py (hors découpage en blocs)
 
@@ -269,6 +307,12 @@ HISTORIQUE
             Pont vers BLOC 2 (_page_to_shim dans main.py) fonctionnel.
             Point d'attention noté : popup_not_detected immédiatement après
             sélection — à traiter dans le patch BLOC 2.
+
+2026-06-22  BLOC 3b3 migré (dom_classifier.py + batch_response_parser.py) :
+            dom_classifier : _pw_page + page.evaluate/query_selector_all.
+            Frame iteration : current_frame.evaluate() (convention identique
+            à page_snapshot.py BLOC 3b2). batch_response_parser : aucun driver,
+            marqué directement migré.
 
 2026-06-22  BLOC 3b1 migré (survey_executor.py) : toutes les ~25 fonctions migrent
             en Playwright natif. By + ActionChains supprimés. _pw_page + _make_shim

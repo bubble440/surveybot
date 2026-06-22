@@ -2,6 +2,13 @@
 import time
 from dataclasses import dataclass
 
+
+def _pw_page(d):
+    """Extrait la Page Playwright native depuis un PlaywrightDriverShim ou retourne d tel quel."""
+    if hasattr(d, "_page"):
+        return d._page
+    return d
+
 @dataclass
 class NavResult:
     """Résultat structuré de wait_for_navigation_or_dom_change.
@@ -21,31 +28,28 @@ class NavResult:
 def wait_for_final_redirection(driver, max_wait=30):
     """
     Attend que l'URL du navigateur se stabilise (donc redirection finale atteinte).
-    
-    :param driver: instance du navigateur Selenium
-    :param max_wait: temps maximal (en secondes) pour observer les redirections
-    :return: URL finale (stable) ou URL actuelle après expiration du temps
     """
-    last_url = driver.current_url
+    page = _pw_page(driver)
+    last_url = page.url
     start_time = time.time()
     stable_count = 0
 
     while time.time() - start_time < max_wait:
-        time.sleep(5)  # on laisse le temps à la redirection de se faire
-        current_url = driver.current_url
+        time.sleep(5)
+        current_url = page.url
 
         if current_url != last_url:
             print(f"🔀 Redirection détectée : {last_url} -> {current_url}")
             last_url = current_url
-            stable_count = 0  # reset car une nouvelle redirection est apparue
+            stable_count = 0
         else:
             stable_count += 1
             if stable_count >= 3:
                 print(f"✅ URL stabilisée : {current_url}")
                 return current_url
 
-    print(f"⏱️ Temps d'attente dépassé ({max_wait}s), URL actuelle : {driver.current_url}")
-    return driver.current_url
+    print(f"⏱️ Temps d'attente dépassé ({max_wait}s), URL actuelle : {page.url}")
+    return page.url
 
 def switch_to_latest_window_and_close_others(driver, base_handles, timeout=10, prefer_external=True, platform_domains=None):
     """
@@ -123,16 +127,16 @@ def _dom_signature(driver) -> int:
     """
     Signature DOM cheap: basée sur innerText (moins lourd que page_source).
     """
+    page = _pw_page(driver)
     try:
-        txt = driver.execute_script("return document.body ? (document.body.innerText || '') : ''") or ""
+        txt = page.evaluate("() => document.body ? (document.body.innerText || '') : ''") or ""
         txt = txt.strip()
-        # signature stable & cheap
         head = txt[:800]
         tail = txt[-800:] if len(txt) > 800 else ""
         return hash((len(txt), head, tail))
     except Exception:
         try:
-            src = driver.page_source or ""
+            src = page.content() or ""
             return hash((len(src), src[:800], src[-800:]))
         except Exception:
             return 0
@@ -140,14 +144,10 @@ def _dom_signature(driver) -> int:
 
 def wait_for_navigation_or_dom_change(driver, *, before_url: str, before_sig: str | None = None, timeout: int = 10) -> NavResult:
     """
-    Attend un changement notable après un clic CTA :
-    - URL change  → NavResult(changed=True, url_changed=True,  dom_changed=False)
-    - DOM change  → NavResult(changed=True, url_changed=False, dom_changed=True)
-    - Timeout     → NavResult(changed=False, ...)
-
-    Retourne un NavResult utilisable comme bool (True si changement détecté).
+    Attend un changement notable après un clic CTA.
     Best-effort, jamais bloquant.
     """
+    page = _pw_page(driver)
     end = time.time() + max(1, int(timeout or 10))
 
     try:
@@ -158,7 +158,7 @@ def wait_for_navigation_or_dom_change(driver, *, before_url: str, before_sig: st
 
     while time.time() < end:
         try:
-            if driver.current_url != (before_url or ""):
+            if page.url != (before_url or ""):
                 return NavResult(changed=True, url_changed=True, dom_changed=False)
         except Exception:
             pass
@@ -181,10 +181,11 @@ def wait_for_page_load(driver, timeout=30):
     Retourne instantanément si la page est déjà chargée (cas radio/checkbox/SPA).
     Best-effort : ne lève jamais d'exception.
     """
+    page = _pw_page(driver)
     deadline = time.time() + timeout
     while time.time() < deadline:
         try:
-            if driver.execute_script("return document.readyState") == "complete":
+            if page.evaluate("() => document.readyState") == "complete":
                 return True
         except Exception:
             pass

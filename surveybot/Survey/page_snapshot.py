@@ -8,6 +8,14 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+
+def _pw_page(d):
+    """Extrait la Page Playwright native depuis un PlaywrightDriverShim ou retourne d tel quel."""
+    if hasattr(d, "_page"):
+        return d._page
+    return d
+
+
 def _wait_dom_settle(
     driver,
     *,
@@ -21,19 +29,21 @@ def _wait_dom_settle(
       - attend document.readyState == 'complete'
       - puis attends que (len(outerHTML), len(innerText), count(inputs)) soit stable N fois
     """
-    js_sig = """
-      try {
-        const html = document.documentElement ? document.documentElement.outerHTML : '';
-        const txt = document.body ? (document.body.innerText || '') : '';
-        const inputs = document.querySelectorAll(
-          "input:not([type='hidden']), select, textarea, [role='radio'], [role='checkbox'], [contenteditable='true']"
-        ).length;
-        const rs = document.readyState || '';
-        return [rs, html.length, txt.length, inputs].join('|');
-      } catch(e) {
-        return 'err';
-      }
-    """
+    page = _pw_page(driver)
+
+    _JS_SIG = """() => {
+        try {
+            const html = document.documentElement ? document.documentElement.outerHTML : '';
+            const txt = document.body ? (document.body.innerText || '') : '';
+            const inputs = document.querySelectorAll(
+                "input:not([type='hidden']), select, textarea, [role='radio'], [role='checkbox'], [contenteditable='true']"
+            ).length;
+            const rs = document.readyState || '';
+            return [rs, html.length, txt.length, inputs].join('|');
+        } catch(e) {
+            return 'err';
+        }
+    }"""
 
     deadline = time.time() + max_wait_s
     stable = 0
@@ -41,7 +51,7 @@ def _wait_dom_settle(
 
     while time.time() < deadline:
         try:
-            rs = driver.execute_script("return document.readyState")
+            rs = page.evaluate("() => document.readyState")
         except Exception:
             rs = ""
 
@@ -50,7 +60,7 @@ def _wait_dom_settle(
             continue
 
         try:
-            cur = driver.execute_script(js_sig)
+            cur = page.evaluate(_JS_SIG)
         except Exception:
             cur = None
 
@@ -64,8 +74,15 @@ def _wait_dom_settle(
 
         time.sleep(poll_s)
 
+
 def _dump_frames_best_effort(driver, folder: Path) -> List[Dict[str, Any]]:
-    """Dump les DOM des iframes dans ./frames (best-effort)."""
+    """Dump les DOM des iframes dans ./frames (best-effort).
+
+    Frontière BLOC 3b2 → frame_utils.py : iter_frame_chains et switch_to_frame_chain
+    attendent un objet shim (driver.find_elements, driver.switch_to.*). On leur passe
+    driver tel quel. Après le switch, shim._current_frame pointe vers la Frame courante ;
+    on l'utilise directement pour les opérations DOM natives dans l'iframe.
+    """
     try:
         from Survey.frame_utils import iter_frame_chains, switch_to_frame_chain  # type: ignore
     except Exception:
@@ -84,45 +101,51 @@ def _dump_frames_best_effort(driver, folder: Path) -> List[Dict[str, Any]]:
             if not ok:
                 continue
 
+            # Récupère la Frame courante que le shim vient de sélectionner.
+            # Pour chain==[] (main): _current_frame == _page (Page Playwright).
+            # Pour chain==[i]: _current_frame == Frame Playwright de l'iframe.
+            current_frame = getattr(driver, "_current_frame", _pw_page(driver))
+
             try:
-                url = driver.execute_script("return location.href") or ""
+                url = current_frame.evaluate("() => location.href") or ""
             except Exception:
                 url = ""
 
             try:
-                title = driver.execute_script("return document.title") or ""
+                title = current_frame.evaluate("() => document.title") or ""
             except Exception:
                 title = ""
 
             try:
                 text_len = int(
-                    driver.execute_script(
-                        "return (document.body && (document.body.innerText||'').length) || 0"
-                    )
+                    current_frame.evaluate(
+                        "() => (document.body && (document.body.innerText||'').length) || 0"
+                    ) or 0
                 )
             except Exception:
                 text_len = 0
 
             try:
                 inputs_count = int(
-                    driver.execute_script(
-                        "return document.querySelectorAll(\"input:not([type='hidden']),select,textarea,[role='radio'],[role='checkbox'],[contenteditable='true']\").length"
-                    )
+                    current_frame.evaluate(
+                        """() => document.querySelectorAll(
+                            "input:not([type='hidden']),select,textarea,[role='radio'],[role='checkbox'],[contenteditable='true']"
+                        ).length"""
+                    ) or 0
                 )
             except Exception:
                 inputs_count = 0
 
-            # évite d'exploser la taille des snapshots
             if inputs_count <= 0 and text_len < 200:
                 continue
 
             try:
-                outer = driver.execute_script("return document.documentElement.outerHTML") or ""
+                outer = current_frame.evaluate("() => document.documentElement.outerHTML") or ""
             except Exception:
                 outer = ""
 
             try:
-                src = driver.page_source or ""
+                src = current_frame.content() or ""
             except Exception:
                 src = ""
 
@@ -150,11 +173,13 @@ def _dump_frames_best_effort(driver, folder: Path) -> List[Dict[str, Any]]:
 
     return out
 
+
 def _slug(s: str) -> str:
     s = (s or "").strip().lower()
     s = re.sub(r"[^a-z0-9_-]+", "_", s)
     s = re.sub(r"_+", "_", s).strip("_")
     return (s[:60] or "snapshot")
+
 
 def dump_page_snapshot(
     driver,
@@ -168,37 +193,28 @@ def dump_page_snapshot(
     Sauvegarde un snapshot de page "debug" :
     - meta.json (url, title, timestamp, reason)
     - dom_outer.html (documentElement.outerHTML)
-    - page_source.html (driver.page_source)
+    - page_source.html (page.content())
     - viewport.png (screenshot viewport)
-    - page.mhtml (si Chrome/Chromium via CDP)
+    - page.mhtml (si Chrome/Chromium via CDP natif Playwright)
     - question_blocks.json (si fourni)
-
-    Conçu pour être:
-    - opt-in (activé par env)
-    - budget friendly (pas d'appel réseau, pas d'OCR)
-    - robuste (try/except partout)
     """
+    page = _pw_page(driver)
 
     ts = time.strftime("%Y%m%d_%H%M%S")
 
-    # Nom forcé (ex: case.json["name"]) :
-    # priorité: param snapshot_name -> ENV SURVEY_SNAPSHOT_NAME -> fallback ts+reason
     forced = (snapshot_name or os.getenv("SURVEY_SNAPSHOT_NAME", "") or "").strip()
     if forced:
         folder_name = _slug(forced)
     else:
         folder_name = f"{ts}_{_slug(reason)}"
 
-    # Dossier par défaut:
-    # - local: ./snapshots
-    # - prod/docker: /tmp/snapshots (évite d’écrire dans l’image)
     is_local = os.getenv("RUN_ENV", "local") == "local"
     default_root = "./snapshots" if is_local else "/tmp/snapshots"
 
     root = Path(out_root or os.getenv("SURVEY_SNAPSHOT_DIR", default_root))
     folder = root / folder_name
     folder.mkdir(parents=True, exist_ok=True)
-    # IMPORTANT: stabilise le DOM avant de capturer (évite de figer un loader/état transitoire)
+
     try:
         _wait_dom_settle(driver)
     except Exception:
@@ -206,21 +222,29 @@ def dump_page_snapshot(
 
     # Meta
     try:
-        url = driver.current_url
+        url = page.url
     except Exception:
         url = ""
 
+    ready_state = ""
+    dom_sig = ""
+    title = ""
     try:
-        title = driver.execute_script("return document.title") or ""
+        title = page.evaluate("() => document.title") or ""
         try:
-            ready_state = driver.execute_script("return document.readyState") or ""
+            ready_state = page.evaluate("() => document.readyState") or ""
         except Exception:
             ready_state = ""
 
         try:
-            dom_sig = driver.execute_script(
-                "return [document.readyState,(document.documentElement&&document.documentElement.outerHTML||'').length,(document.body&&(document.body.innerText||'').length)||0,document.querySelectorAll(\"input:not([type='hidden']),select,textarea,[role='radio'],[role='checkbox'],[contenteditable='true']\").length].join('|')"
-            ) or ""
+            dom_sig = page.evaluate("""() =>
+                [document.readyState,
+                 (document.documentElement && document.documentElement.outerHTML || '').length,
+                 (document.body && (document.body.innerText || '').length) || 0,
+                 document.querySelectorAll(
+                     "input:not([type='hidden']),select,textarea,[role='radio'],[role='checkbox'],[contenteditable='true']"
+                 ).length].join('|')
+            """) or ""
         except Exception:
             dom_sig = ""
 
@@ -239,36 +263,36 @@ def dump_page_snapshot(
         json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8"
     )
 
-    # DOM outerHTML (le plus utile pour tes tests DOM)
+    # DOM outerHTML
     try:
-        outer = driver.execute_script("return document.documentElement.outerHTML") or ""
+        outer = page.evaluate("() => document.documentElement.outerHTML") or ""
     except Exception:
         outer = ""
     (folder / "dom_outer.html").write_text(outer, encoding="utf-8", errors="ignore")
 
-    # DOM body uniquement (demandé pour tes snapshots/cases)
+    # DOM body
     try:
-        body_outer = driver.execute_script("return document.body ? document.body.outerHTML : ''") or ""
+        body_outer = page.evaluate("() => document.body ? document.body.outerHTML : ''") or ""
     except Exception:
         body_outer = ""
     (folder / "dom_body.html").write_text(body_outer, encoding="utf-8", errors="ignore")
 
-    # Si on a un nom de case, on écrit aussi un fichier nommé comme le case.json["name"]
     if forced:
         try:
             (folder / f"{_slug(forced)}.dom_body.html").write_text(body_outer, encoding="utf-8", errors="ignore")
         except Exception:
             pass
 
-    # page_source (parfois différent du DOM live, mais utile)
+    # page_source
     try:
-        src = driver.page_source or ""
+        src = page.content() or ""
     except Exception:
         src = ""
     (folder / "page_source.html").write_text(src, encoding="utf-8", errors="ignore")
-    # Texte visible (audit rapide sans navigateur)
+
+    # Texte visible
     try:
-        body_text = driver.execute_script("return (document.body && (document.body.innerText || '')) || ''") or ""
+        body_text = page.evaluate("() => (document.body && (document.body.innerText || '')) || ''") or ""
     except Exception:
         body_text = ""
     try:
@@ -278,30 +302,28 @@ def dump_page_snapshot(
 
     # Screenshot viewport
     try:
-        driver.save_screenshot(str(folder / "viewport.png"))
+        page.screenshot(path=str(folder / "viewport.png"))
     except Exception:
         pass
 
-    # MHTML (Chrome/Chromium uniquement)
+    # MHTML via CDP natif Playwright
     try:
-        if hasattr(driver, "execute_cdp_cmd"):
-            res = driver.execute_cdp_cmd("Page.captureSnapshot", {"format": "mhtml"})
-            data = (res or {}).get("data")
-            if data:
-                (folder / "page.mhtml").write_text(
-                    data, encoding="utf-8", errors="ignore"
-                )
+        cdp_session = page.context.new_cdp_session(page)
+        res = cdp_session.send("Page.captureSnapshot", {"format": "mhtml"})
+        cdp_session.detach()
+        data = (res or {}).get("data")
+        if data:
+            (folder / "page.mhtml").write_text(data, encoding="utf-8", errors="ignore")
     except Exception as e:
         (folder / "mhtml_error.txt").write_text(repr(e), encoding="utf-8")
 
-    # Dump frames (utile quand le contenu est dans un iframe)
+    # Dump frames (passe driver = shim pour frame_utils)
     try:
         frames = _dump_frames_best_effort(driver, folder)
     except Exception:
         frames = []
 
     if frames:
-        # meilleur frame = plus d'inputs, puis plus de texte
         try:
             best = sorted(
                 frames,
@@ -319,7 +341,6 @@ def dump_page_snapshot(
         except Exception:
             pass
 
-    # Question blocks (super important pour valider dom_analyzer/prompt_builder)
     if question_blocks is not None:
         try:
             qb_path = folder / "question_blocks.json"
@@ -338,31 +359,21 @@ def dump_page_snapshot(
 
     return str(folder)
 
+
 def snapshot_if_enabled(driver, *, reason: str, question_blocks: Any = None) -> Optional[str]:
     """
-    Hot-toggle snapshot via:
-      1) ENV SURVEY_SNAPSHOT (prioritaire):
-         - unset => on regarde le flag-file
-         - "1"/"true"/"all"/"on" => ON
-         - "0"/"false"/"off"/"no" => OFF
-      2) Flag-file (modifiable pendant l'exécution):
-         - chemin: SURVEY_SNAPSHOT_FLAG_FILE (sinon défaut)
-         - contenu: "on"/"1"/"true" => ON, "off"/"0"/"false" => OFF
-         - si le fichier n'existe pas => OFF
-
+    Hot-toggle snapshot via ENV SURVEY_SNAPSHOT ou flag-file.
     Retourne le chemin du snapshot si créé.
     """
     import os
     from pathlib import Path
 
-    # 1) ENV prioritaire
     v = (os.getenv("SURVEY_SNAPSHOT", "") or "").strip().lower()
     if v in ("1", "true", "all", "on", "yes"):
         return dump_page_snapshot(driver, reason=reason, question_blocks=question_blocks)
     if v in ("0", "false", "off", "no"):
         return None
 
-    # 2) Flag-file hot-toggle
     is_local = os.getenv("RUN_ENV", "local") == "local"
     default_flag = "./snapshots/.snapshot_flag" if is_local else "/tmp/survey_snapshot.flag"
     flag_path = Path(os.getenv("SURVEY_SNAPSHOT_FLAG_FILE", default_flag))
@@ -377,8 +388,6 @@ def snapshot_if_enabled(driver, *, reason: str, question_blocks: Any = None) -> 
         if content in ("0", "false", "off", "no", ""):
             return None
 
-        # Si contenu inconnu => OFF (safe)
         return None
     except Exception:
-        # Si on ne peut pas lire le fichier => OFF (safe)
         return None
