@@ -216,7 +216,7 @@ def select_cell_action(cell, preferred_col_norm):
                 return True
             except:
                 try:
-                    _pw_page(driver).evaluate("(el) => el.click()", _handle(r))
+                    _handle(r).click()
                     return True
                 except:
                     pass
@@ -245,7 +245,7 @@ def select_cell_action(cell, preferred_col_norm):
                 return True
             except:
                 try:
-                    _pw_page(driver).evaluate("(el) => el.click()", _handle(cb))
+                    _handle(cb).click()
                     return True
                 except:
                     pass
@@ -468,10 +468,11 @@ def click_matrix_cell_by_row_and_col(driver, row_label: str, col_label: str) -> 
                 rows = g.find_elements("xpath", ".//*[self::div or self::li][.//input[@type='radio' or @type='checkbox'] or .//select]")
                 row = None
                 for r in rows:
-                    try:
-                    txt = _norm(r.inner_text()).strip()
-                except Exception:
                     txt = ""
+                    try:
+                        txt = _norm(r.inner_text()).strip()
+                    except Exception:
+                        txt = ""
                     if txt and (rneedle == txt or rneedle in txt or txt in rneedle):
                         row = r
                         break

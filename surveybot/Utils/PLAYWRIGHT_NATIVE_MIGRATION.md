@@ -110,13 +110,69 @@ BLOC 3 — Résolution du survey externe
   BLOC 3b5d -- Survey/input_handler.py
     Statut : ✅ migré
 
-  BLOC 3b6 -- Survey/action_dispatcher.py
-    Statut : non demarre (traite en dernier, isole)
+  BLOC 3b5d-fix -- Survey/input_matrix.py (corrections post-BLOC 3b5c)
+    Statut : ✅ corrigé (2026-06-22)
+    Corrections :
+    - BUG 1 (lignes 219, 248) : _pw_page(driver).evaluate(...) remplacé par
+      _handle(r).click() / _handle(cb).click() dans select_cell_action()
+      (driver hors scope → NameError à l'exécution).
+    - BUG 2 (lignes 471-474) : txt = "" initialisé avant le try, affecté dans
+      le try, except réaffecte "". if txt ... déplacé après le bloc try/except
+      (évite txt indéfini en cas d'exception avant affectation).
 
-  Note : action_dispatcher.py (~6100 lignes) est le fichier le plus gros et
-  le plus critique de BLOC 3b. Cohérent avec PLAYWRIGHT_MIGRATION.md (Option A),
-  il doit être traité en dernier, isolément, avec validation prod dédiée avant
-  bascule finale — pas dans le même patch que le reste du BLOC 3b.
+  BLOC 3b6 -- Survey/action_dispatcher.py
+    Statut : ✅ migré (2026-06-22) — EN ATTENTE de validation prod
+    Périmètre : 7481 lignes, ~50 fonctions top-level
+    Migrations appliquées :
+    - Imports supprimés : selenium.webdriver.common.by.By,
+      selenium.webdriver.common.action_chains.ActionChains,
+      selenium.webdriver.common.keys.Keys
+    - Helpers ajoutés : _pw_page(d), _handle(el) (identiques aux autres modules)
+    - find_elements(By.CSS_SELECTOR/XPATH, sel) → query_selector_all(sel)
+    - find_element(By.CSS_SELECTOR/XPATH, sel) → query_selector(sel) + None guard
+    - driver.query_selector_all/query_selector → _pw_page(driver).query_selector_all/query_selector
+    - By.ID → [id='...'], By.NAME → [name='...'], By.TAG_NAME → tag CSS direct
+    - ActionChains.move_to_element(el).click() → el.hover(); el.click()
+    - ActionChains.move_to_element_with_offset(track, x, y).click() → page.mouse.click(abs_x, abs_y)
+    - ActionChains.click_and_hold(src).move_to_element(dst).release() → source.drag_to(drop_zone)
+    - execute_cdp_cmd("Input.dispatchMouseEvent") → page.mouse.move/down/up
+    - driver.execute_script("arguments[0].scrollIntoView(...)") → page.evaluate("(e) => e.scrollIntoView(...)", el)
+    - driver.execute_script("arguments[0].click()") → page.evaluate("(e) => e.click()", el)
+    - el.is_displayed() → el.is_visible()
+    - el.rect → el.bounding_box()
+    - el.send_keys(text) → el.type(text)
+    - el.tag_name → el.evaluate("e => (e.tagName || '').toLowerCase()")
+    - el.text → el.inner_text()
+    - Keys.ARROW_RIGHT/LEFT → "ArrowRight"/"ArrowLeft" + handle_el.press(key)
+    - Keys.ESCAPE → combobox.press("Escape")
+    - Keys.CONTROL + "a" → element.press("Control+a")
+    - driver.switch_to.default_content() → supprimé (no-op en Playwright)
+    - driver.execute_script(...) restants (92 occurrences) : passent par le shim
+      (shim.execute_script → page.evaluate) — OK pendant coexistence shim
+    - XPath axes (ancestor-or-self, ancestor) : préfixés "xpath=" sur query_selector()
+    - Frontière execute_action/execute_actions_plan : reçoivent encore un shim
+      depuis survey_executor.py ; _pw_page(driver) extrait la Page native.
+
+  FIN DU CHANTIER BLOC 3b — Tous les modules migrés :
+    survey_executor.py (3b1), page_snapshot.py (3b2), dom_classifier.py (3b3),
+    dom_analyzer.py (3b4), frame_utils.py (3b5a), input_utils.py + cta_handler.py (3b5b),
+    7 × input_*.py (3b5c), input_handler.py (3b5d), input_matrix.py (3b5d-fix),
+    action_dispatcher.py (3b6).
+
+  POUR CLORE TOTALEMENT LE CHANTIER (étapes restantes) :
+    1. Validation prod : test manuel d'une résolution complète de page survey
+       passant par execute_action et execute_actions_plan (au moins un radio,
+       un checkbox, un texte, une matrix). Confirmer aucune régression.
+    2. Suppression playwright_shim.py : une fois 3b6 validé prod, supprimer
+       playwright_shim.py et PlaywrightDriverShim. Adapter le pont _page_to_shim
+       dans main.py (plus de shim → passer la Page directement à execute_survey_page).
+    3. Suppression shim interne survey_solver.py : _make_shim() dans
+       solve_full_survey() à supprimer ; adapter execute_survey_page pour recevoir
+       une Page native (pas un shim).
+    4. Migrer Survey/functions.py (_handle_topsurveys_exclusion_popup) si souhaité
+       (hors périmètre actuel — bloqué sur By, ActionChains, WebDriverWait, EC).
+    5. Migrer redirect_watcher.switch_to_latest_window_and_close_others
+       (window_handles, switch_to.window, close — API Playwright multi-onglets).
 
 ================================================================================
 FRONTIÈRES ACTIVES (à mettre à jour après chaque patch validé)
@@ -325,6 +381,20 @@ HISTORIQUE
             Pont vers BLOC 2 (_page_to_shim dans main.py) fonctionnel.
             Point d'attention noté : popup_not_detected immédiatement après
             sélection — à traiter dans le patch BLOC 2.
+
+2026-06-22  BLOC 3b6 migré (action_dispatcher.py, 7481 lignes) :
+            By/ActionChains/Keys Selenium supprimés. _pw_page + _handle ajoutés.
+            find_elements/find_element → query_selector_all/query_selector.
+            ActionChains → hover+click / page.mouse. execute_cdp_cmd → page.mouse.
+            el.text → el.inner_text(). el.rect → el.bounding_box().
+            Keys.ARROW → handle.press(). el.tag_name → el.evaluate(tagName).
+            switch_to.default_content() supprimé. 92 execute_script restants via shim.
+            FIN DU CHANTIER BLOC 3b — tous les modules traités.
+
+2026-06-22  BLOC 3b5d-fix (input_matrix.py corrections post-3b5c) :
+            BUG 1 : _pw_page(driver) dans select_cell_action() (driver hors scope)
+            → _handle(r).click() / _handle(cb).click().
+            BUG 2 : txt non défini avant try → initialisé à "" avant le bloc.
 
 2026-06-22  BLOC 3b5c migre (7 modules input_*.py) :
             By.* -> string literals, ActionChains -> hover+click,

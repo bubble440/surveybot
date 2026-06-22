@@ -1,11 +1,23 @@
 ﻿from __future__ import annotations
 import re, unicodedata, os, time, zlib
-from selenium.webdriver.common.by import By
 import Survey.input_handler
 from Survey.dom_registry import get_target
 from typing import Optional
-from selenium.webdriver.common.action_chains import ActionChains
 from Survey.log_utils import is_debug, log_debug, log_info
+
+
+def _pw_page(d):
+    """Extrait la Page Playwright native depuis un PlaywrightDriverShim ou retourne d tel quel."""
+    if hasattr(d, "_page"):
+        return d._page
+    return d
+
+
+def _handle(el):
+    """Extrait le ElementHandle natif depuis un PlaywrightElementShim ou retourne el."""
+    if hasattr(el, "_h"):
+        return el._h
+    return el
 
 PAUSE_INTER_DISPATCH = 0.5  # pause entre deux applications de réponse consécutives (laisser le DOM re-rendre)
 
@@ -80,7 +92,7 @@ def solve_decipher_cardrating_rows(driver, preferred_label: Optional[str] = None
         ) or 0)
 
     def _pick_option_button(widget_el):
-        btns = widget_el.find_elements(By.CSS_SELECTOR, ".sq-cardrating-buttons .sq-cardrating-button[data-clickable='true']")
+        btns = widget_el.query_selector_all(".sq-cardrating-buttons .sq-cardrating-button[data-clickable='true']")
         if not btns:
             return None
 
@@ -89,9 +101,9 @@ def solve_decipher_cardrating_rows(driver, preferred_label: Optional[str] = None
         if wanted:
             for b in btns:
                 try:
-                    t = b.text or ""
+                    t = b.inner_text() or ""
                     if not t:
-                        t = b.find_element(By.CSS_SELECTOR, ".sq-cardrating-content").text
+                        t = (b.query_selector(".sq-cardrating-content") or b).inner_text()
                     if _norm(t) == wanted:
                         return b
                 except Exception:
@@ -103,9 +115,9 @@ def solve_decipher_cardrating_rows(driver, preferred_label: Optional[str] = None
         norm_to_btn = {}
         for b in btns:
             try:
-                t = b.text or ""
+                t = b.inner_text() or ""
                 if not t:
-                    t = b.find_element(By.CSS_SELECTOR, ".sq-cardrating-content").text
+                    t = (b.query_selector(".sq-cardrating-content") or b).inner_text()
                 nt = _norm(t)
                 if nt and "jamais" not in nt:
                     norm_to_btn[nt] = b
@@ -119,16 +131,16 @@ def solve_decipher_cardrating_rows(driver, preferred_label: Optional[str] = None
         # dernier recours: premier bouton non-'Jamais'
         for b in btns:
             try:
-                t = b.text or ""
+                t = b.inner_text() or ""
                 if not t:
-                    t = b.find_element(By.CSS_SELECTOR, ".sq-cardrating-content").text
+                    t = (b.query_selector(".sq-cardrating-content") or b).inner_text()
                 if "jamais" not in _norm(t):
                     return b
             except Exception:
                 continue
         return None
 
-    widgets = driver.find_elements(By.CSS_SELECTOR, ".sq-cardrating-widget[data-uid]")
+    widgets = _pw_page(driver).query_selector_all(".sq-cardrating-widget[data-uid]")
     if not widgets:
         return False
 
@@ -154,11 +166,11 @@ def solve_decipher_cardrating_rows(driver, preferred_label: Optional[str] = None
 
             # cocher toutes les rows pour cette colonne (ans<uid>.<col>.<row>)
             # Les inputs sont dans le meme bloc question (souvent dans une QA-view cachée)
-            qroot = widget.find_element(By.XPATH, "ancestor::*[contains(@class,'question')][1]")
-            inputs = qroot.find_elements(By.CSS_SELECTOR, f"input[type='radio'][id^='ans{uid}.{col}.']")
+            qroot = widget.query_selector("ancestor::*[contains(@class,'question')][1]")
+            inputs = qroot.query_selector_all(f"input[type='radio'][id^='ans{uid}.{col}.']")
             if not inputs:
                 # fallback global (au cas où la structure varie)
-                inputs = driver.find_elements(By.CSS_SELECTOR, f"input[type='radio'][id^='ans{uid}.{col}.']")
+                inputs = _pw_page(driver).query_selector_all(f"input[type='radio'][id^='ans{uid}.{col}.']")
 
             if not inputs:
                 continue
@@ -199,14 +211,14 @@ def solve_focusvision_cardsort(
 
     def _pick_cardsort_root():
         try:
-            css = driver.find_elements(By.CSS_SELECTOR, ".sq-cardsort")
+            css = _pw_page(driver).query_selector_all(".sq-cardsort")
             return css[0] if css else None
         except Exception:
             return None
 
     def _active_card(cs):
         try:
-            cards = cs.find_elements(By.CSS_SELECTOR, ".sq-cardsort-cards li")
+            cards = cs.query_selector_all(".sq-cardsort-cards li")
         except Exception:
             cards = []
         for c in cards:
@@ -219,7 +231,7 @@ def solve_focusvision_cardsort(
                     continue
                 # fallback selenium visibility
                 try:
-                    if c.is_displayed():
+                    if c.is_visible():
                         return c
                 except Exception:
                     return c
@@ -229,11 +241,11 @@ def solve_focusvision_cardsort(
 
     def _completion_visible(cs) -> bool:
         try:
-            el = cs.find_elements(By.CSS_SELECTOR, ".sq-cardsort-completion")
+            el = cs.query_selector_all(".sq-cardsort-completion")
             if not el:
                 return False
             try:
-                return bool(el[0].is_displayed())
+                return bool(el[0].is_visible())
             except Exception:
                 return True
         except Exception:
@@ -241,13 +253,13 @@ def solve_focusvision_cardsort(
 
     def _read_bucket_label(b) -> str:
         try:
-            ps = b.find_elements(By.CSS_SELECTOR, ".sq-cardsort-bucket-legend")
+            ps = b.query_selector_all(".sq-cardsort-bucket-legend")
             if ps:
-                return _norm(ps[0].text or ps[0].get_attribute("innerText") or "")
+                return _norm(ps[0].inner_text() or "")
         except Exception:
             pass
         try:
-            raw = _norm(b.text or b.get_attribute("innerText") or "")
+            raw = _norm(b.inner_text() or "")
             return _norm((raw.splitlines()[0] if raw else ""))
         except Exception:
             return ""
@@ -256,15 +268,15 @@ def solve_focusvision_cardsort(
         parts = []
         # Question globale
         try:
-            qels = driver.find_elements(By.CSS_SELECTOR, ".question-text")
+            qels = _pw_page(driver).query_selector_all(".question-text")
             if qels:
-                parts.append(_norm(qels[0].text or qels[0].get_attribute("innerText") or ""))
+                parts.append(_norm(qels[0].inner_text() or ""))
         except Exception:
             pass
 
         # Texte carte active
         try:
-            parts.append(_norm(card.text or card.get_attribute("innerText") or ""))
+            parts.append(_norm(card.inner_text() or ""))
         except Exception:
             pass
 
@@ -272,7 +284,7 @@ def solve_focusvision_cardsort(
 
     def _pick_bucket(cs, question_text: str, card_text: str):
         try:
-            buckets = cs.find_elements(By.CSS_SELECTOR, "li.sq-cardsort-bucket")
+            buckets = cs.query_selector_all("li.sq-cardsort-bucket")
         except Exception:
             buckets = []
 
@@ -339,7 +351,7 @@ def solve_focusvision_cardsort(
 
     def _click(el) -> bool:
         try:
-            driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
+            _pw_page(driver).evaluate("(e) => e.scrollIntoView({block:'center'})",el)
             time.sleep(0.05)
         except Exception:
             pass
@@ -348,11 +360,11 @@ def solve_focusvision_cardsort(
             return True
         except Exception:
             try:
-                ActionChains(driver).move_to_element(el).click().perform()
+                el.hover(); el.click()
                 return True
             except Exception:
                 try:
-                    driver.execute_script("arguments[0].click();", el)
+                    _pw_page(driver).evaluate("(e) => e.click()",el)
                     return True
                 except Exception:
                     return False
@@ -378,7 +390,7 @@ def solve_focusvision_cardsort(
             before_idx = ""
 
         qtxt = _get_question_text(cs, card)
-        card_text = _norm(card.text or card.get_attribute("innerText") or "")
+        card_text = _norm(card.inner_text() or "")
         bucket = _pick_bucket(cs, qtxt, card_text)
         if not bucket:
             break
@@ -399,7 +411,7 @@ def solve_focusvision_cardsort(
 
         if before_idx and after_idx and before_idx == after_idx:
             try:
-                inner = bucket.find_element(By.CSS_SELECTOR, ".sq-cardsort-bucket-item")
+                inner = bucket.query_selector(".sq-cardsort-bucket-item")
                 _click(inner)
                 time.sleep(0.12)
             except Exception:
@@ -475,8 +487,8 @@ def _click_xpath(driver, xpath: str) -> bool:
     if not xpath:
         return False
     try:
-        el = driver.find_element(By.XPATH, xpath)
-        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
+        el = _pw_page(driver).query_selector(xpath)
+        _pw_page(driver).evaluate("(e) => e.scrollIntoView({block:'center'})",el)
         el.click()
         return True
     except Exception:
@@ -486,14 +498,14 @@ def _set_text_xpath(driver, xpath: str, text: str) -> bool:
     if not xpath:
         return False
     try:
-        el = driver.find_element(By.XPATH, xpath)
-        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
+        el = _pw_page(driver).query_selector(xpath)
+        _pw_page(driver).evaluate("(e) => e.scrollIntoView({block:'center'})",el)
         el.click()
         try:
             el.clear()
         except Exception:
             pass
-        el.send_keys(text)
+        el.type(text)
         return True
     except Exception:
         return False
@@ -534,7 +546,7 @@ def _try_gridclick_matrix_set(driver, row_label: str, col_label: str) -> bool:
 
     def _read_text(el) -> str:
         try:
-            txt = el.find_element(By.CSS_SELECTOR, ".text-content").get_attribute("innerText") or ""
+            txt = el.query_selector(".text-content").get_attribute("innerText") or ""
         except Exception:
             txt = ""
         if not txt:
@@ -546,7 +558,7 @@ def _try_gridclick_matrix_set(driver, row_label: str, col_label: str) -> bool:
 
     def _click_trusted(el) -> bool:
         try:
-            driver.execute_script("arguments[0].scrollIntoView({block:'center', inline:'center'});", el)
+            _pw_page(driver).evaluate("(e) => e.scrollIntoView({block:'center', inline:'center'})",el)
         except Exception:
             pass
         try:
@@ -555,20 +567,20 @@ def _try_gridclick_matrix_set(driver, row_label: str, col_label: str) -> bool:
         except Exception:
             pass
         try:
-            ActionChains(driver).move_to_element(el).pause(0.05).click().perform()
+            el.hover(); el.click()
             return True
         except Exception:
             pass
         try:
-            driver.execute_script("arguments[0].click();", el)
+            _pw_page(driver).evaluate("(e) => e.click()",el)
             return True
         except Exception:
             return False
 
     def _current_row_text(root_el) -> str:
         try:
-            cur = root_el.find_element(By.CSS_SELECTOR, ".item.current .text-content")
-            return _norm(cur.get_attribute("innerText") or cur.text or "")
+            cur = root_el.query_selector(".item.current .text-content")
+            return _norm(cur.inner_text() or "")
         except Exception:
             return ""
 
@@ -580,11 +592,11 @@ def _try_gridclick_matrix_set(driver, row_label: str, col_label: str) -> bool:
         return a == b or a in b or b in a
 
     try:
-        root = driver.find_element(By.CSS_SELECTOR, ".gridclick.horizontal.text-version")
+        root = _pw_page(driver).query_selector(".gridclick.horizontal.text-version")
     except Exception:
         return False
 
-    buttons = root.find_elements(By.CSS_SELECTOR, ".scale-button")
+    buttons = root.query_selector_all(".scale-button")
     if len(buttons) < 2:
         return False
 
@@ -592,7 +604,7 @@ def _try_gridclick_matrix_set(driver, row_label: str, col_label: str) -> bool:
     row_after = row_before
     if row_label:
         row_target = None
-        for item in root.find_elements(By.CSS_SELECTOR, ".item.item-text"):
+        for item in root.query_selector_all(".item.item-text"):
             if _match_fold(_read_text(item), row_label):
                 row_target = item
                 break
@@ -645,11 +657,11 @@ def _try_gridclick_matrix_set(driver, row_label: str, col_label: str) -> bool:
         except Exception:
             btn_selected = False
         try:
-            item_answered = "answered" in (root.find_element(By.CSS_SELECTOR, ".item.current").get_attribute("class") or "")
+            item_answered = "answered" in (root.query_selector(".item.current").get_attribute("class") or "")
         except Exception:
             item_answered = False
         try:
-            progress_answered = "answeredNode" in (root.find_element(By.CSS_SELECTOR, ".node-container.currentNode").get_attribute("class") or "")
+            progress_answered = "answeredNode" in (root.query_selector(".node-container.currentNode").get_attribute("class") or "")
         except Exception:
             progress_answered = False
         if btn_selected or item_answered or progress_answered:
@@ -694,10 +706,7 @@ def _try_table_matrix_sge_set(driver, target_payload: dict, row_label: str, col_
         return cand == needle or cand in needle or needle in cand
 
     try:
-        rows = driver.find_elements(
-            By.XPATH,
-            "//tr[.//input[@type='radio'][@name]]",
-        )
+        rows = _pw_page(driver).query_selector_all("//tr[.//input[@type='radio'][@name]]")
     except Exception:
         rows = []
 
@@ -821,15 +830,15 @@ def _try_encuesta_matrix_set(driver, row_label: str, col_label: str) -> bool:
 
     target_row_fold = _fold_norm_lc(row_label)
     try:
-        rows = driver.find_elements(By.CSS_SELECTOR, ".layout.ee__matrix--row:not(.hidden-sm-and-down)")
+        rows = _pw_page(driver).query_selector_all(".layout.ee__matrix--row:not(.hidden-sm-and-down)")
     except Exception:
         rows = []
 
     matched_row = None
     for row in rows:
         try:
-            row_title = row.find_element(By.CSS_SELECTOR, ".ee__matrix--first-column span")
-            row_text = _norm(row_title.text or row_title.get_attribute("innerText") or "")
+            row_title = row.query_selector(".ee__matrix--first-column span")
+            row_text = _norm(row_title.inner_text() or "")
         except Exception:
             continue
         row_fold = _fold_norm_lc(row_text)
@@ -845,16 +854,13 @@ def _try_encuesta_matrix_set(driver, row_label: str, col_label: str) -> bool:
     target_col_name = None
     if target_col_fold:
         try:
-            header_cells = driver.find_elements(
-                By.CSS_SELECTOR,
-                ".layout.ee__matrix--row.hidden-sm-and-down .ee__matrix--header-cells span",
-            )
+            header_cells = _pw_page(driver).query_selector_all(".layout.ee__matrix--row.hidden-sm-and-down .ee__matrix--header-cells span")
         except Exception:
             header_cells = []
 
         for idx, header in enumerate(header_cells, start=1):
             try:
-                header_text = _norm(header.text or header.get_attribute("innerText") or "")
+                header_text = _norm(header.inner_text() or "")
             except Exception:
                 continue
             if _fold_norm_lc(header_text) == target_col_fold:
@@ -866,16 +872,15 @@ def _try_encuesta_matrix_set(driver, row_label: str, col_label: str) -> bool:
         return False
 
     try:
-        target_input = matched_row.find_element(
-            By.CSS_SELECTOR,
-            f".ee__matrix--column input[type='radio'][name='{target_col_name}']",
-        )
+        target_input = matched_row.query_selector(f".ee__matrix--column input[type='radio'][name='{target_col_name}']")
+        if target_input is None:
+            raise Exception("not found")
     except Exception:
         log_info("[TARGET]", f"apply ok=false strategy=encuesta_matrix reason=input_not_found row={row_label!r} col={col_label!r}")
         return False
 
     try:
-        click_target = target_input.find_element(By.XPATH, "./ancestor::*[contains(@class,'v-input--selection-controls__input')][1]")
+        click_target = target_input.query_selector("./ancestor::*[contains(@class,'v-input--selection-controls__input')][1]")
     except Exception:
         click_target = target_input
 
@@ -933,7 +938,7 @@ def _apply_by_target_id(
         # NEW: si le registry dit "pas d'iframe", on s'assure de revenir au default_content
         if not frame_chain:
             try:
-                driver.switch_to.default_content()
+                pass  # Playwright: page is always main frame
             except Exception:
                 pass
 
@@ -1050,11 +1055,11 @@ def _apply_by_target_id(
                     return False
 
                 try:
-                    driver.execute_script("arguments[0].scrollIntoView({block:'center'});", row_el)
+                    _pw_page(driver).evaluate("(e) => e.scrollIntoView({block:'center'})",row_el)
                     try:
                         row_el.click()
                     except Exception:
-                        ActionChains(driver).move_to_element(row_el).click().perform()
+                        row_el.hover(); row_el.click()
                     time.sleep(0.15)
                     cls_after = driver.execute_script("return arguments[0].className || '';", inner_el)
                 except Exception as e:
@@ -1071,7 +1076,7 @@ def _apply_by_target_id(
 
             def _find_best_visible(xpath: str):
                 try:
-                    cands = driver.find_elements(By.XPATH, xpath)
+                    cands = _pw_page(driver).query_selector_all(xpath)
                 except Exception:
                     cands = []
 
@@ -1080,7 +1085,7 @@ def _apply_by_target_id(
 
                 def _rect_ok(el) -> bool:
                     try:
-                        r = el.rect or {}
+                        r = el.bounding_box() or {}
                         return (r.get("width", 0) or 0) > 2 and (r.get("height", 0) or 0) > 2
                     except Exception:
                         return False
@@ -1088,7 +1093,7 @@ def _apply_by_target_id(
                 def _click_priority(el) -> int:
                     """Priorise les nœuds réellement cliquables pour radios/checkbox matrix."""
                     try:
-                        tag = (el.tag_name or "").lower()
+                        tag = (el.evaluate("e => (e.tagName || '').toLowerCase()") or "")
                     except Exception:
                         tag = ""
                     try:
@@ -1116,7 +1121,7 @@ def _apply_by_target_id(
                 visible_rect = []
                 for c in cands:
                     try:
-                        if c.is_displayed() and _rect_ok(c):
+                        if c.is_visible() and _rect_ok(c):
                             visible_rect.append((_click_priority(c), c))
                     except Exception:
                         continue
@@ -1128,7 +1133,7 @@ def _apply_by_target_id(
                 visible_any = []
                 for c in cands:
                     try:
-                        if c.is_displayed():
+                        if c.is_visible():
                             visible_any.append((_click_priority(c), c))
                     except Exception:
                         continue
@@ -1209,7 +1214,7 @@ def _apply_by_target_id(
                     if node is None:
                         return False
                     try:
-                        driver.execute_script("arguments[0].scrollIntoView({block:'center', inline:'center'});", node)
+                        _pw_page(driver).evaluate("(e) => e.scrollIntoView({block:'center', inline:'center'})",node)
                     except Exception:
                         pass
                     try:
@@ -1217,7 +1222,7 @@ def _apply_by_target_id(
                         return True
                     except Exception:
                         try:
-                            driver.execute_script("arguments[0].click();", node)
+                            _pw_page(driver).evaluate("(e) => e.click()",node)
                             return True
                         except Exception:
                             return False
@@ -1315,14 +1320,14 @@ def _apply_by_target_id(
                     node = _find_best_visible(xpath)
                     if node is None:
                         try:
-                            cands = driver.find_elements(By.XPATH, xpath)
+                            cands = _pw_page(driver).query_selector_all(xpath)
                             node = cands[0] if cands else None
                         except Exception:
                             node = None
                     if node is None:
                         return False
                     try:
-                        driver.execute_script("arguments[0].scrollIntoView({block:'center', inline:'center'});", node)
+                        _pw_page(driver).evaluate("(e) => e.scrollIntoView({block:'center', inline:'center'})",node)
                     except Exception:
                         pass
                     try:
@@ -1330,7 +1335,7 @@ def _apply_by_target_id(
                         return True
                     except Exception:
                         try:
-                            driver.execute_script("arguments[0].click();", node)
+                            _pw_page(driver).evaluate("(e) => e.click()",node)
                             return True
                         except Exception:
                             return False
@@ -1384,14 +1389,14 @@ def _apply_by_target_id(
                     node = _find_best_visible(xpath)
                     if node is None:
                         try:
-                            cands = driver.find_elements(By.XPATH, xpath)
+                            cands = _pw_page(driver).query_selector_all(xpath)
                             node = cands[0] if cands else None
                         except Exception:
                             node = None
                     if node is None:
                         return False
                     try:
-                        driver.execute_script("arguments[0].scrollIntoView({block:'center', inline:'center'});", node)
+                        _pw_page(driver).evaluate("(e) => e.scrollIntoView({block:'center', inline:'center'})",node)
                     except Exception:
                         pass
                     try:
@@ -1399,7 +1404,7 @@ def _apply_by_target_id(
                         return True
                     except Exception:
                         try:
-                            driver.execute_script("arguments[0].click();", node)
+                            _pw_page(driver).evaluate("(e) => e.click()",node)
                             return True
                         except Exception:
                             return False
@@ -1416,14 +1421,14 @@ def _apply_by_target_id(
                     if not xpath:
                         return False
                     try:
-                        cands = driver.find_elements(By.XPATH, xpath)
+                        cands = _pw_page(driver).query_selector_all(xpath)
                         node = cands[0] if cands else None
                     except Exception:
                         node = None
                     if node is None:
                         return False
                     try:
-                        driver.execute_script("arguments[0].scrollIntoView({block:'center', inline:'center'});", node)
+                        _pw_page(driver).evaluate("(e) => e.scrollIntoView({block:'center', inline:'center'})",node)
                     except Exception:
                         pass
                     # Tenter mousedown puis click comme fallback
@@ -1442,7 +1447,7 @@ def _apply_by_target_id(
                             dispatched = True
                         except Exception:
                             try:
-                                driver.execute_script("arguments[0].click();", node)
+                                _pw_page(driver).evaluate("(e) => e.click()",node)
                                 dispatched = True
                             except Exception:
                                 pass
@@ -1480,9 +1485,9 @@ def _apply_by_target_id(
                     _deadline = time.time() + 1.5
                     while time.time() < _deadline:
                         try:
-                            cands = driver.find_elements(By.XPATH, xp)
+                            cands = _pw_page(driver).query_selector_all(xp)
                             if cands:
-                                r = cands[0].rect or {}
+                                r = cands[0].bounding_box() or {}
                                 if (r.get("width") or 0) > 2 and (r.get("height") or 0) > 2:
                                     break
                         except Exception:
@@ -1560,13 +1565,10 @@ def _apply_by_target_id(
                     return False
 
                 try:
-                    from selenium.webdriver.common.keys import Keys
-                    row_el = driver.find_element(By.CSS_SELECTOR, f"[id='{row_id}']")
-                    handle_el = row_el.find_element(By.CSS_SELECTOR, ".cf-slider__handle[role='slider']")
+                    row_el = _pw_page(driver).query_selector(f"[id='{row_id}']")
+                    handle_el = row_el.query_selector(".cf-slider__handle[role='slider']")
 
-                    driver.execute_script(
-                        "arguments[0].scrollIntoView({block:'center',inline:'center'});", handle_el
-                    )
+                    _pw_page(driver).evaluate("(e) => e.scrollIntoView({block:'center',inline:'center'})", handle_el)
                     time.sleep(0.05)
 
                     min_v = int(handle_el.get_attribute("aria-valuemin") or 0)
@@ -1587,23 +1589,23 @@ def _apply_by_target_id(
 
                     # .cf-slider__no-value n'a PAS de tabindex en état initial → pas de listeners actifs.
                     # Il ne gagne tabindex="0" qu'APRÈS activation, pour permettre de revenir à no-value.
-                    # Seul le handle est interactif : focus JS + send_keys arrow keys directement.
+                    # Seul le handle est interactif : focus JS + press arrow keys directement.
                     # La 1ère pression depuis -1 active le composant (→0), les suivantes naviguent.
                     # delta = desired - (-1) = desired+1 pressions pour atteindre desired depuis -1.
-                    driver.execute_script("arguments[0].focus();", handle_el)
+                    handle_el.evaluate("(e) => e.focus()")
                     time.sleep(0.05)
 
                     delta = desired - current
                     if delta != 0:
-                        key = Keys.ARROW_RIGHT if delta > 0 else Keys.ARROW_LEFT
+                        key = "ArrowRight" if delta > 0 else "ArrowLeft"
                         # budget : crans normaux + 1 cran d'activation depuis -1
                         max_steps = (max_v - min_v) + 2
                         for _ in range(min(abs(delta), max_steps)):
-                            handle_el.send_keys(key)
+                            handle_el.press(key)
                             time.sleep(0.05)  # laisser le composant Confirmit traiter le keydown
 
                     # Relire depuis le DOM : sécurité stale reference si re-render à l'activation
-                    handle_el = row_el.find_element(By.CSS_SELECTOR, ".cf-slider__handle[role='slider']")
+                    handle_el = row_el.query_selector(".cf-slider__handle[role='slider']")
                     now_val = driver.execute_script(
                         "return arguments[0].getAttribute('aria-valuenow');", handle_el
                     )
@@ -1677,7 +1679,7 @@ def _apply_by_target_id(
                             pass
                         if not _mx_clicked:
                             try:
-                                ActionChains(driver).move_to_element(_mx_card_el).click().perform()
+                                _mx_card_el.hover(); _mx_card_el.click()
                                 _mx_clicked = True
                             except Exception:
                                 pass
@@ -1777,7 +1779,7 @@ def _apply_by_target_id(
                             log_debug("[TARGET_DEBUG]", f"nfield_dragndrop_hidden: option not found value={value!r} opt_map={list(_dnd_opt_map)}")
                         return False
                 try:
-                    _dnd_cands = driver.find_elements(By.XPATH, _dnd_xp)
+                    _dnd_cands = _pw_page(driver).query_selector_all(_dnd_xp)
                     _dnd_radio = _dnd_cands[0] if _dnd_cands else None
                 except Exception:
                     _dnd_radio = None
@@ -1810,7 +1812,7 @@ def _apply_by_target_id(
             opt_map = payload.get("option_xpath_map") or {}
             if payload.get("kantar_rowrank") and opt_map and resolved_itype == "checkbox":
                 try:
-                    _rr_has_grid = bool(driver.find_elements(By.CSS_SELECTOR, ".__flexgrid_row"))
+                    _rr_has_grid = bool(_pw_page(driver).query_selector_all(".__flexgrid_row"))
                 except Exception:
                     _rr_has_grid = False
 
@@ -1843,7 +1845,7 @@ def _apply_by_target_id(
 
                     # 3) Résoudre l'input.mrEdit → lire rowid (0-based index de la carte)
                     try:
-                        mr_input = driver.find_element(By.XPATH, xp_rr)
+                        mr_input = _pw_page(driver).query_selector(xp_rr)
                         rowid_str = (mr_input.get_attribute("rowid") or "").strip()
                         rowid = int(rowid_str) if rowid_str.isdigit() else None
                     except Exception as _rr_fe:
@@ -1895,7 +1897,7 @@ def _apply_by_target_id(
                     _time_rr.sleep(0.1)  # laisse le scroll se stabiliser
                     clicked_rr = False
                     try:
-                        ActionChains(driver).move_to_element(overlay).click().perform()
+                        overlay.hover(); overlay.click()
                         clicked_rr = True
                     except Exception as _rr_ce:
                         if debug_target:
@@ -2097,12 +2099,12 @@ def _apply_by_target_id(
 
                 def _first_input_under(node):
                     try:
-                        if (node.tag_name or "").lower() == "input":
+                        if (node.evaluate("e => (e.tagName || '').toLowerCase()") or "") == "input":
                             return node
                     except Exception:
                         pass
                     try:
-                        return node.find_element(By.XPATH, ".//input[@type='radio' or @type='checkbox']")
+                        return node.query_selector(".//input[@type='radio' or @type='checkbox']")
                     except Exception:
                         return None
 
@@ -2153,38 +2155,26 @@ def _apply_by_target_id(
                         pass
 
                 def _cdp_click(el) -> bool:
-                    # Click "réel" via CDP (plus proche d'un user click)
+                    # Click via Playwright mouse (simule un user click réel)
                     try:
                         # IMPORTANT: certaines grilles (mat-table) scrollent horizontalement.
                         # On force le scroll dans les 2 axes pour éviter les éléments 0x0 / hors viewport.
                         try:
-                            driver.execute_script(
-                                "arguments[0].scrollIntoView({block:'center', inline:'center'});",
-                                el,
-                            )
+                            _pw_page(driver).evaluate("(e) => e.scrollIntoView({block:'center', inline:'center'})", el)
                         except Exception:
                             pass
 
-                        if not hasattr(driver, "execute_cdp_cmd"):
-                            if debug_target:
-                                log_debug("[TARGET_DEBUG]", "CDP click unavailable: driver has no execute_cdp_cmd()")
-                            return False
+                        bb = el.bounding_box() or {}
+                        x = int((bb.get("x") or 0) + (bb.get("width") or 0) / 2)
+                        y = int((bb.get("y") or 0) + (bb.get("height") or 0) / 2)
 
-                        rect = driver.execute_script(
-                            "const r = arguments[0].getBoundingClientRect();"
-                            "return {x:r.left + r.width/2, y:r.top + r.height/2, w:r.width, h:r.height};",
-                            el,
-                        )
-                        x = int(rect.get("x", 0))
-                        y = int(rect.get("y", 0))
-
-                        driver.execute_cdp_cmd("Input.dispatchMouseEvent", {"type": "mouseMoved", "x": x, "y": y, "button": "none"})
-                        driver.execute_cdp_cmd("Input.dispatchMouseEvent", {"type": "mousePressed", "x": x, "y": y, "button": "left", "clickCount": 1})
-                        driver.execute_cdp_cmd("Input.dispatchMouseEvent", {"type": "mouseReleased", "x": x, "y": y, "button": "left", "clickCount": 1})
+                        _pw_page(driver).mouse.move(x, y)
+                        _pw_page(driver).mouse.down()
+                        _pw_page(driver).mouse.up()
                         return True
                     except Exception as e:
                         if debug_target:
-                            log_debug("[TARGET_DEBUG]", f"CDP click failed: {_short_exc(e)}")
+                            log_debug("[TARGET_DEBUG]", f"mouse click failed: {_short_exc(e)}")
                         return False
 
                 def _ensure_pre_clicks_ready(target_xpath: str) -> None:
@@ -2202,7 +2192,7 @@ def _apply_by_target_id(
                         cur = _find_best_visible(target_xpath)
                         if cur:
                             try:
-                                if cur.is_displayed():
+                                if cur.is_visible():
                                     return
                             except Exception:
                                 return
@@ -2224,7 +2214,7 @@ def _apply_by_target_id(
                                 pass
 
                             try:
-                                driver.execute_script("arguments[0].scrollIntoView({block:'center'});", pre_el)
+                                _pw_page(driver).evaluate("(e) => e.scrollIntoView({block:'center'})",pre_el)
                             except Exception:
                                 pass
 
@@ -2232,7 +2222,7 @@ def _apply_by_target_id(
                                 pre_el.click()
                             except Exception:
                                 try:
-                                    driver.execute_script("arguments[0].click();", pre_el)
+                                    _pw_page(driver).evaluate("(e) => e.click()",pre_el)
                                 except Exception:
                                     continue
                             break
@@ -2246,7 +2236,7 @@ def _apply_by_target_id(
                             cur = _find_best_visible(target_xpath)
                             if cur:
                                 try:
-                                    if cur.is_displayed():
+                                    if cur.is_visible():
                                         return
                                 except Exception:
                                     return
@@ -2277,7 +2267,7 @@ def _apply_by_target_id(
                     # 2) ActionChains (souvent plus robuste quand le DOM est "capricieux")
                     if _first <= 2:
                         try:
-                            ActionChains(driver).move_to_element(node).pause(0.05).click().perform()
+                            node.hover(); node.click()
                             _cm_cache[_cm_key] = 2
                             return True
                         except Exception as e:
@@ -2292,7 +2282,7 @@ def _apply_by_target_id(
 
                     # 4) JS click (dernier recours, parfois ignoré si anti-bot)
                     try:
-                        driver.execute_script("arguments[0].click();", node)
+                        _pw_page(driver).evaluate("(e) => e.click()",node)
                         _cm_cache[_cm_key] = 4
                         return True
                     except Exception as e:
@@ -2323,7 +2313,7 @@ def _apply_by_target_id(
                                 pre_el.click()
                             except Exception:
                                 try:
-                                    driver.execute_script("arguments[0].click();", pre_el)
+                                    _pw_page(driver).evaluate("(e) => e.click()",pre_el)
                                 except Exception:
                                     pass
                             time.sleep(0.12)
@@ -2336,7 +2326,7 @@ def _apply_by_target_id(
                         el = _find_best_visible(xp)
                         if el is None:
                             try:
-                                cands = driver.find_elements(By.XPATH, xp)
+                                cands = _pw_page(driver).query_selector_all(xp)
                                 el = cands[0] if cands else None
                             except Exception:
                                 el = None
@@ -2410,13 +2400,13 @@ def _apply_by_target_id(
                         paging_xps = payload.get("pre_click_xpaths") or []
                         for pxp in paging_xps[:1]:
                             try:
-                                paging_cands = driver.find_elements(By.XPATH, pxp)
+                                paging_cands = _pw_page(driver).query_selector_all(pxp)
                                 if paging_cands:
                                     pel = paging_cands[0]
                                     aria_pressed = (pel.get_attribute("aria-pressed") or "").strip().lower()
                                     if aria_pressed != "true":
                                         try:
-                                            driver.execute_script("arguments[0].click();", pel)
+                                            _pw_page(driver).evaluate("(e) => e.click()",pel)
                                         except Exception:
                                             pass
                                         time.sleep(0.25)
@@ -2426,7 +2416,7 @@ def _apply_by_target_id(
                         # Trouver le bouton cible sans contrainte is_displayed
                         btn_el = None
                         try:
-                            cands = driver.find_elements(By.XPATH, xp)
+                            cands = _pw_page(driver).query_selector_all(xp)
                             btn_el = cands[0] if cands else None
                         except Exception:
                             pass
@@ -2443,7 +2433,7 @@ def _apply_by_target_id(
                         except Exception:
                             pass
                         try:
-                            driver.execute_script("arguments[0].click();", btn_el)
+                            _pw_page(driver).evaluate("(e) => e.click()",btn_el)
                         except Exception:
                             if debug_target:
                                 log_debug("[TARGET_DEBUG]", f"cf_carousel_item: JS click failed xpath={xp}")
@@ -2460,7 +2450,7 @@ def _apply_by_target_id(
                         if not ok:
                             # Tentative 2 : ActionChains (animation Confirmit parfois async)
                             try:
-                                ActionChains(driver).move_to_element(btn_el).pause(0.05).click().perform()
+                                btn_el.hover(); btn_el.click()
                                 time.sleep(0.15)
                                 ok = (btn_el.get_attribute("aria-checked") or "").strip().lower() == "true"
                             except Exception:
@@ -2485,7 +2475,7 @@ def _apply_by_target_id(
                 # via aria-checked="true" sur le div[role='radio'].
                 if payload.get("confirmit_cf_hrs_single"):
                     try:
-                        _hrs_cands = driver.find_elements(By.XPATH, xp)
+                        _hrs_cands = _pw_page(driver).query_selector_all(xp)
                         _hrs_el = _hrs_cands[0] if _hrs_cands else None
                     except Exception:
                         _hrs_el = None
@@ -2501,7 +2491,7 @@ def _apply_by_target_id(
                         pass
                     _hrs_ok = False
                     try:
-                        driver.execute_script("arguments[0].click();", _hrs_el)
+                        _pw_page(driver).evaluate("(e) => e.click()",_hrs_el)
                         time.sleep(0.15)
                         try:
                             _hrs_ok = ((_hrs_el.get_attribute("aria-checked") or "").strip().lower() == "true")
@@ -2512,7 +2502,7 @@ def _apply_by_target_id(
                             log_debug("[TARGET_DEBUG]", f"confirmit_cf_hrs_single: JS click failed: {_short_exc(exc)}")
                     if not _hrs_ok:
                         try:
-                            ActionChains(driver).move_to_element(_hrs_el).pause(0.05).click().perform()
+                            _hrs_el.hover(); _hrs_el.click()
                             time.sleep(0.15)
                             _hrs_ok = ((_hrs_el.get_attribute("aria-checked") or "").strip().lower() == "true")
                         except Exception:
@@ -2887,18 +2877,16 @@ def _apply_by_target_id(
                         except Exception:
                             pass
                         try:
-                            node.find_element(By.XPATH, "ancestor-or-self::*[contains(@class,'mat-radio-checked')][1]")
+                            node.query_selector("ancestor-or-self::*[contains(@class,'mat-radio-checked')][1]")
                             return True
                         except Exception:
                             pass
 
                         # parfois l'état est porté par un parent (li -> span, etc.)
                         try:
-                            node.find_element(
-                                By.XPATH,
-                                "ancestor-or-self::*[@data-selected='true' or @aria-selected='true' or @aria-checked='true'][1]"
-                            )
-                            return True
+                            el_sel = node.query_selector("xpath=ancestor-or-self::*[@data-selected='true' or @aria-selected='true' or @aria-checked='true'][1]")
+                            if el_sel is not None:
+                                return True
                         except Exception:
                             pass
                         time.sleep(0.05)
@@ -3125,7 +3113,7 @@ def _apply_by_target_id(
                     # Resoudre l'element td
                     _cwroc_el = None
                     try:
-                        _cwroc_el = driver.find_element(By.XPATH, _cwroc_xp)
+                        _cwroc_el = _pw_page(driver).query_selector(_cwroc_xp)
                     except Exception:
                         pass
 
@@ -3329,10 +3317,10 @@ def _apply_by_target_id(
                         return True
 
                     try:
-                        if (el.tag_name or "").lower() == "label":
+                        if (el.evaluate("e => (e.tagName || '').toLowerCase()") or "") == "label":
                             fid = (el.get_attribute("for") or "").strip()
                             if fid:
-                                inp_for = driver.find_element(By.ID, fid)
+                                inp_for = _pw_page(driver).query_selector(f"[id='{fid}']")
                                 if _is_selected(inp_for):
                                     return True
                     except Exception:
@@ -3506,9 +3494,8 @@ def _apply_by_target_id(
                 if resolved_itype == "checkbox":
                     label_anchor_guard_active = False
                     try:
-                        label_anchor_guard_active = (el.tag_name or "").lower() == "label" and bool(
-                            el.find_elements(By.TAG_NAME, "a")
-                        )
+                        tag = el.evaluate("(e) => (e.tagName || '').toLowerCase()")
+                        label_anchor_guard_active = tag == "label" and bool(el.query_selector_all("a"))
                     except Exception:
                         label_anchor_guard_active = False
 
@@ -3523,7 +3510,7 @@ def _apply_by_target_id(
                         try:
                             fid = (el.get_attribute("for") or "").strip()
                             if fid:
-                                inp_guard = driver.find_element(By.ID, fid)
+                                inp_guard = _pw_page(driver).query_selector(f"[id='{fid}']")
                         except Exception:
                             inp_guard = None
 
@@ -3551,7 +3538,7 @@ def _apply_by_target_id(
                                     inp_guard.click()
                                 except Exception:
                                     try:
-                                        driver.execute_script("arguments[0].click();", inp_guard)
+                                        _pw_page(driver).evaluate("(e) => e.click()",inp_guard)
                                     except Exception:
                                         pass
                             else:
@@ -3704,10 +3691,10 @@ def _apply_by_target_id(
 
                 # NEW: si la cible est un <label for="...">, forcer l'input associé
                 try:
-                    if (el.tag_name or "").lower() == "label":
+                    if (el.evaluate("e => (e.tagName || '').toLowerCase()") or "") == "label":
                         fid = (el.get_attribute("for") or "").strip()
                         if fid:
-                            inp_for = driver.find_element(By.ID, fid)
+                            inp_for = _pw_page(driver).query_selector(f"[id='{fid}']")
                             if not _is_selected(inp_for):
                                 _dispatch_check_events(inp_for)
                 except Exception:
@@ -3721,15 +3708,14 @@ def _apply_by_target_id(
                 # Le <label> peut etre 0x0 / non-interactif. On clique le conteneur mat-radio-button,
                 # puis on valide via mat-radio-checked (plus fiable que input.checked après re-render).
                 try:
-                    mr = el.find_element(
-                        By.XPATH,
-                        "ancestor-or-self::*[self::mat-radio-button or contains(@class,'mat-radio-button')][1]",
-                    )
+                    mr = el.query_selector("xpath=ancestor-or-self::*[self::mat-radio-button or contains(@class,'mat-radio-button')][1]")
+                    if mr is None:
+                        raise Exception("not found")
                     _click_candidate(mr, "mat-radio-button")
                     if _wait_selected_like(mr, timeout_s=0.8):
                         return True
                     try:
-                        mc = mr.find_element(By.XPATH, ".//span[contains(@class,'mat-radio-container')][1]")
+                        mc = mr.query_selector(".//span[contains(@class,'mat-radio-container')][1]")
                         _click_candidate(mc, "mat-radio-container")
                         if _wait_selected_like(mr, timeout_s=0.8):
                             return True
@@ -3740,7 +3726,7 @@ def _apply_by_target_id(
 
                 # 3) si on a cliqué un label non interactif (pointer-events, overlay), tenter le span
                 try:
-                    sp = el.find_element(By.XPATH, ".//span[1]")
+                    sp = el.query_selector(".//span[1]")
                     _click_candidate(sp, "span")
                 except Exception:
                     pass
@@ -3767,7 +3753,7 @@ def _apply_by_target_id(
 
                 try:
                     # si label[for] => input id
-                    if (el.tag_name or "").lower() == "label":
+                    if (el.evaluate("e => (e.tagName || '').toLowerCase()") or "") == "label":
                         _for = (el.get_attribute("for") or "").strip()
                         if _for:
                             inp_id = _for
@@ -3776,7 +3762,7 @@ def _apply_by_target_id(
 
                 try:
                     if not inp_id:
-                        if (el.tag_name or "").lower() == "input":
+                        if (el.evaluate("e => (e.tagName || '').toLowerCase()") or "") == "input":
                             inp_id = (el.get_attribute("id") or "").strip() or None
                             inp_name = (el.get_attribute("name") or "").strip() or None
                 except Exception:
@@ -3801,7 +3787,7 @@ def _apply_by_target_id(
                 # inp_id reste None. Vérifier via src de l'<img> (check_up → check_down).
                 if (payload.get("confirmit_wix_fieldset_radio") or payload.get("confirmit_wix_checkbox_grid")) and resolved_itype == "checkbox":
                     try:
-                        img = el.find_element(By.XPATH, ".//img[1]")
+                        img = el.query_selector(".//img[1]")
                         src = (img.get_attribute("src") or "").lower()
                         if "check_down" in src:
                             return True
@@ -3831,9 +3817,9 @@ def _apply_by_target_id(
                     nm = (fld.get("name") or "").strip()
                     if nm:
                         try:
-                            for c in driver.find_elements(By.NAME, nm):
+                            for c in _pw_page(driver).query_selector_all(f"[name='{nm}']"):
                                 try:
-                                    if c.is_displayed():
+                                    if c.is_visible():
                                         return c
                                 except Exception:
                                     continue
@@ -3843,9 +3829,9 @@ def _apply_by_target_id(
                     fid = (fld.get("id") or "").strip()
                     if fid:
                         try:
-                            for c in driver.find_elements(By.ID, fid):
+                            for c in _pw_page(driver).query_selector_all(f"[id='{fid}']"):
                                 try:
-                                    if c.is_displayed():
+                                    if c.is_visible():
                                         return c
                                 except Exception:
                                     continue
@@ -3870,12 +3856,12 @@ def _apply_by_target_id(
                         if cur:
                             continue
 
-                        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", elx)
+                        _pw_page(driver).evaluate("(e) => e.scrollIntoView({block:'center'})",elx)
                         try:
                             elx.clear()
                         except Exception:
                             pass
-                        elx.send_keys(value or "")
+                        elx.type(value or "")
                         return True
                     except Exception:
                         continue
@@ -3891,13 +3877,13 @@ def _apply_by_target_id(
 
                 if resolved_itype in ("text", "textarea", "number"):
                     try:
-                        el = driver.find_element(By.XPATH, xp)
-                        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
+                        el = _pw_page(driver).query_selector(xp)
+                        _pw_page(driver).evaluate("(e) => e.scrollIntoView({block:'center'})",el)
                         try:
                             el.clear()
                         except Exception:
                             pass
-                        el.send_keys(value or "")
+                        el.type(value or "")
                         return True
                     except Exception:
                         return False
@@ -3913,7 +3899,7 @@ def _apply_by_target_id(
                         def _add(elems):
                             for e in elems or []:
                                 try:
-                                    if (e.tag_name or "").lower() == "select":
+                                    if (e.evaluate("el => (el.tagName || '').toLowerCase()") or "") == "select":
                                         cands.append(e)
                                 except Exception:
                                     continue
@@ -3921,29 +3907,29 @@ def _apply_by_target_id(
                         # 1) xpath principal
                         if xp:
                             try:
-                                _add(driver.find_elements(By.XPATH, xp))
+                                _add(_pw_page(driver).query_selector_all(xp))
                             except Exception:
                                 pass
 
                         # 2) alt_xpaths (ex: //select[@name='...'])
                         for ax in (payload.get("alt_xpaths") or []):
                             try:
-                                _add(driver.find_elements(By.XPATH, ax))
+                                _add(_pw_page(driver).query_selector_all(ax))
                             except Exception:
                                 pass
 
-                        # 3) By.NAME / By.ID (au cas où)
+                        # 3) name / id (au cas où)
                         nm = (payload.get("name") or "").strip()
                         if nm:
                             try:
-                                _add(driver.find_elements(By.NAME, nm))
+                                _add(_pw_page(driver).query_selector_all(f"[name='{nm}']"))
                             except Exception:
                                 pass
 
                         eid = (payload.get("id") or "").strip()
                         if eid:
                             try:
-                                _add(driver.find_elements(By.ID, eid))
+                                _add(_pw_page(driver).query_selector_all(f"[id='{eid}']"))
                             except Exception:
                                 pass
 
@@ -3951,7 +3937,7 @@ def _apply_by_target_id(
                         #    Le filtrage se fera plus bas via la présence de l'option demandée.
                         if not cands:
                             try:
-                                _add(driver.find_elements(By.CSS_SELECTOR, "select"))
+                                _add(_pw_page(driver).query_selector_all("select"))
                             except Exception:
                                 pass
 
@@ -4003,13 +3989,13 @@ def _apply_by_target_id(
                     for sel in _iter_dropdown_candidates():
                         # Best-effort: amener le select dans le viewport (meme s'il est masqué)
                         try:
-                            driver.execute_script("arguments[0].scrollIntoView({block:'center'});", sel)
+                            _pw_page(driver).evaluate("(e) => e.scrollIntoView({block:'center'})",sel)
                         except Exception:
                             pass
 
                         # options exploitables (hors placeholder)
                         try:
-                            raw_opts = sel.find_elements(By.TAG_NAME, "option")
+                            raw_opts = sel.query_selector_all("option")
                         except Exception:
                             raw_opts = []
 
@@ -4018,7 +4004,7 @@ def _apply_by_target_id(
                             try:
                                 if (o.get_attribute("disabled") or "").strip():
                                     continue
-                                t = _key(o.text or "")
+                                t = _key(o.inner_text() or "")
                                 if not t:
                                     continue
                                 ov = (o.get_attribute("value") or "").strip()
@@ -4086,23 +4072,20 @@ def _apply_by_target_id(
                                 track = None
                                 if sel_id:
                                     try:
-                                        track = driver.find_element(By.ID, f"sliderpoints_{sel_id}")
+                                        track = _pw_page(driver).query_selector(f"[id='sliderpoints_{sel_id}']")
                                     except Exception:
                                         track = None
 
                                 if track is None:
                                     try:
-                                        container = sel.find_element(
-                                            By.XPATH,
-                                            "ancestor::*[contains(@class,'sq-sliderpoints-container') or contains(@class,'sq-sliderpoints-element')][1]",
-                                        )
-                                        track = container.find_element(By.CSS_SELECTOR, ".ui-slider-horizontal")
+                                        container = sel.query_selector("xpath=ancestor::*[contains(@class,'sq-sliderpoints-container') or contains(@class,'sq-sliderpoints-element')][1]")
+                                        track = container.query_selector(".ui-slider-horizontal") if container else None
                                     except Exception:
                                         track = None
 
                                 if track is not None:
-                                    driver.execute_script("arguments[0].scrollIntoView({block:'center'});", track)
-                                    r = track.rect or {}
+                                    _pw_page(driver).evaluate("(e) => e.scrollIntoView({block:'center'})",track)
+                                    r = track.bounding_box() or {}
                                     w = int(r.get("width", 0) or 0)
                                     h = int(r.get("height", 0) or 0)
 
@@ -4111,13 +4094,17 @@ def _apply_by_target_id(
                                     y = max(1, h // 2)
 
                                     try:
-                                        ActionChains(driver).move_to_element_with_offset(track, x, y).click().perform()
+                                        bb = track.bounding_box() or {}
+                                        abs_x = int((bb.get("x") or 0) + x)
+                                        abs_y = int((bb.get("y") or 0) + y)
+                                        page = _pw_page(driver)
+                                        page.mouse.click(abs_x, abs_y)
                                     except Exception:
                                         pass
 
                                     def _handle_offscale() -> bool:
                                         try:
-                                            hnd = track.find_element(By.CSS_SELECTOR, ".ui-slider-handle")
+                                            hnd = track.query_selector(".ui-slider-handle")
                                             st = (hnd.get_attribute("style") or "")
                                             return ("-40" in st) or ("offscale" in st.lower())
                                         except Exception:
@@ -4125,8 +4112,15 @@ def _apply_by_target_id(
 
                                     if _handle_offscale():
                                         try:
-                                            hnd = track.find_element(By.CSS_SELECTOR, ".ui-slider-handle")
-                                            ActionChains(driver).click_and_hold(hnd).move_to_element_with_offset(track, x, y).release().perform()
+                                            hnd = track.query_selector(".ui-slider-handle")
+                                            bb_t = track.bounding_box() or {}
+                                            abs_x = int((bb_t.get("x") or 0) + x)
+                                            abs_y = int((bb_t.get("y") or 0) + y)
+                                            page = _pw_page(driver)
+                                            page.mouse.move(*[(hnd.bounding_box() or {}).get(k, 0) for k in ["x", "y"]])
+                                            page.mouse.down()
+                                            page.mouse.move(abs_x, abs_y)
+                                            page.mouse.up()
                                         except Exception:
                                             pass
 
@@ -4148,8 +4142,8 @@ def _apply_by_target_id(
 
                 if resolved_itype == "button":
                     try:
-                        el = driver.find_element(By.XPATH, xp)
-                        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
+                        el = _pw_page(driver).query_selector(xp)
+                        _pw_page(driver).evaluate("(e) => e.scrollIntoView({block:'center'})",el)
                         el.click()
                         return True
                     except Exception:
@@ -4163,12 +4157,12 @@ def _apply_by_target_id(
                 if not container_id:
                     return False
                 try:
-                    container = driver.find_element(By.ID, container_id)
+                    container = _pw_page(driver).query_selector(f"[id='{container_id}']")
                 except Exception:
                     log_debug("[TARGET_DEBUG]", f"runtime_dropdown container '{container_id}' introuvable")
                     return False
                 try:
-                    wrappers = container.find_elements(By.CSS_SELECTOR, "[data-testid='MultiValueSelectWrapper']")
+                    wrappers = container.query_selector_all("[data-testid='MultiValueSelectWrapper']")
                 except Exception:
                     return False
                 if not wrappers:
@@ -4197,15 +4191,15 @@ def _apply_by_target_id(
                     if part_hint == "month":
                         v_norm = _MONTH_FR.get(v, v_norm)
                     try:
-                        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", wrapper)
+                        _pw_page(driver).evaluate("(e) => e.scrollIntoView({block:'center'})",wrapper)
                         wrapper.click()
                     except Exception:
                         return False
                     menu = None
                     for _ in range(8):
                         try:
-                            menus = driver.find_elements(By.CSS_SELECTOR, "[class*='-menu']")
-                            visible = [m for m in menus if m.is_displayed()]
+                            menus = _pw_page(driver).query_selector_all("[class*='-menu']")
+                            visible = [m for m in menus if m.is_visible()]
                             if visible:
                                 menu = visible[-1]
                                 break
@@ -4216,12 +4210,12 @@ def _apply_by_target_id(
                         log_debug("[TARGET_DEBUG]", f"runtime_dropdown: menu non ouvert pour '{v}'")
                         return False
                     try:
-                        opts = menu.find_elements(By.CSS_SELECTOR, "[class*='-option']")
+                        opts = menu.query_selector_all("[class*='-option']")
                     except Exception:
                         opts = []
                     for opt in opts:
                         try:
-                            t = _nopt(opt.text or "")
+                            t = _nopt(opt.inner_text() or "")
                             if t and (t == v_norm or v_norm in t or t in v_norm):
                                 opt.click()
                                 return True
@@ -4232,8 +4226,8 @@ def _apply_by_target_id(
                         num = int(v)
                         real = [
                             o for o in opts
-                            if _nopt(o.text or "") and not any(
-                                tok in _nopt(o.text or "")
+                            if _nopt(o.inner_text() or "") and not any(
+                                tok in _nopt(o.inner_text() or "")
                                 for tok in ("selectionn", "choisir", "select", "veuillez")
                             )
                         ]
@@ -4244,10 +4238,9 @@ def _apply_by_target_id(
                             except Exception:
                                 pass
                     try:
-                        from selenium.webdriver.common.keys import Keys as _Keys
-                        comboboxes = driver.find_elements(By.CSS_SELECTOR, "input[role='combobox']")
+                        comboboxes = _pw_page(driver).query_selector_all("input[role='combobox']")
                         if comboboxes:
-                            comboboxes[-1].send_keys(_Keys.ESCAPE)
+                            comboboxes[-1].press("Escape")
                     except Exception:
                         pass
                     log_debug("[TARGET_DEBUG]", f"runtime_dropdown: option '{v}' introuvable dans le menu")
@@ -4298,16 +4291,16 @@ def _apply_by_target_id(
                 if not container_id:
                     return False
                 try:
-                    container = driver.find_element(By.ID, container_id)
+                    container = _pw_page(driver).query_selector(f"[id='{container_id}']")
                 except Exception:
                     log_debug("[TARGET_DEBUG]", f"runtime_text container '{container_id}' introuvable")
                     return False
                 try:
-                    ta = container.find_element(By.CSS_SELECTOR, "textarea")
+                    ta = container.query_selector("textarea")
                 except Exception:
                     log_debug("[TARGET_DEBUG]", f"runtime_text: textarea introuvable dans '{container_id}'")
                     return False
-                driver.execute_script("arguments[0].scrollIntoView({block:'center'});", ta)
+                _pw_page(driver).evaluate("(e) => e.scrollIntoView({block:'center'})",ta)
                 # React contrôle la valeur via son état interne : ta.clear() n'a aucun effet.
                 # On vide via le setter natif + event 'input' pour notifier React, puis on saisit.
                 try:
@@ -4324,13 +4317,12 @@ def _apply_by_target_id(
                     )
                 except Exception:
                     try:
-                        from selenium.webdriver.common.keys import Keys as _Keys
-                        ta.send_keys(_Keys.CONTROL + "a")
-                        ta.send_keys(_Keys.DELETE)
+                        ta.press("Control+a")
+                        ta.press("Delete")
                     except Exception:
                         pass
                 try:
-                    ta.send_keys(value or "")
+                    ta.type(value or "")
                     return True
                 except Exception:
                     return False
@@ -4408,8 +4400,8 @@ def _get_visible_options(driver):
     ]
     for css in sels:
         try:
-            for el in driver.find_elements(By.CSS_SELECTOR, css):
-                t = (el.text or el.get_attribute("innerText") or "").strip()
+            for el in _pw_page(driver).query_selector_all(css):
+                t = (el.inner_text() or "").strip()
                 if t and len(t) >= 2:
                     opts.add(_norm(t))
         except Exception:
@@ -4591,8 +4583,8 @@ def _wait_for_button_effect(driver, *, timeout=6):
 
         # 2⃣ Bouton disparu ou disabled
         try:
-            btn = driver.find_element(By.ID, "acceptAndTakeSurveyLink2")
-            if not btn.is_displayed():
+            btn = _pw_page(driver).query_selector("[id='acceptAndTakeSurveyLink2']")
+            if not btn.is_visible():
                 return True
             if btn.get_attribute("aria-disabled") == "true":
                 return True
@@ -4603,13 +4595,13 @@ def _wait_for_button_effect(driver, *, timeout=6):
             return True
 
         # 3⃣ Overlay / spinner
-        overlays = driver.find_elements(By.CSS_SELECTOR, ".loading, .spinner, .overlay")
+        overlays = _pw_page(driver).query_selector_all(".loading, .spinner, .overlay")
         if overlays:
             return True
 
         try:
-            spin = driver.find_element(By.ID, "loadingSpin3")
-            if spin.is_displayed():
+            spin = _pw_page(driver).query_selector("[id='loadingSpin3']")
+            if spin.is_visible():
                 return True
         except Exception:
             pass
@@ -4628,16 +4620,13 @@ def handle_datadiggers_icontrol_final_screen(driver):
     intercept_only = (os.getenv("CTA_INTERCEPT_ONLY", "") or "").strip().lower() in {"1", "true", "yes", "on"}
 
     try:
-        btn = driver.find_element(
-            By.CSS_SELECTOR,
-            "div.wrap.infrmtion button.next_btn[translate='srvyFinal.btnLtsDo']",
-        )
+        btn = _pw_page(driver).query_selector("div.wrap.infrmtion button.next_btn[translate='srvyFinal.btnLtsDo']")
     except Exception:
         log_info("[DD_FINAL]", "CTA introuvable")
         return False
 
     if intercept_only:
-        label = (btn.text or "début").strip() or "début"
+        label = (btn.inner_text() or "début").strip() or "début"
         log_info("[DD_FINAL]", f"CTA_INTERCEPT_ONLY: interception DataDiggers final-screen CTA '{label}'")
         try:
             import Survey.input_handler
@@ -4654,7 +4643,7 @@ def handle_datadiggers_icontrol_final_screen(driver):
         before_url = ""
 
     try:
-        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", btn)
+        _pw_page(driver).evaluate("(e) => e.scrollIntoView({block:'center'})",btn)
         time.sleep(0.1)
         btn.click()
     except Exception:
@@ -4755,7 +4744,7 @@ def handle_prodege_data_privacy_screen(driver):
 
     # Récupération du bouton de soumission
     try:
-        btn = driver.find_element(By.CSS_SELECTOR, "button#dataPrivacySubmitBtn")
+        btn = _pw_page(driver).query_selector("button#dataPrivacySubmitBtn")
     except Exception:
         log_info("[PRODEGE_CONSENT]", "button#dataPrivacySubmitBtn introuvable")
         return False
@@ -4777,7 +4766,7 @@ def handle_prodege_data_privacy_screen(driver):
         before_url = ""
 
     try:
-        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", btn)
+        _pw_page(driver).evaluate("(e) => e.scrollIntoView({block:'center'})",btn)
         time.sleep(0.1)
         btn.click()
     except Exception:
@@ -4813,7 +4802,6 @@ def handle_consent_screen(driver):
     - Ne pas confondre un simple widget cookies non bloquant (ex: Evidon) avec un overlay.
     """
     import time
-    from selenium.webdriver.common.by import By
 
     def _norm_lc(s: str) -> str:
         return " ".join((s or "").lower().split()).strip()
@@ -4880,11 +4868,11 @@ def handle_consent_screen(driver):
                     clicked = False
             else:
                 try:
-                    btn = driver.find_element(By.CSS_SELECTOR, "#consent-button-confirm")
+                    btn = _pw_page(driver).query_selector("#consent-button-confirm")
                     try:
                         btn.click()
                     except Exception:
-                        driver.execute_script("arguments[0].click();", btn)
+                        _pw_page(driver).evaluate("(e) => e.click()",btn)
                     clicked = True
                 except Exception:
                     clicked = False
@@ -4918,7 +4906,7 @@ def handle_consent_screen(driver):
     #    Ex: input#privacyPolicyCheckbox1 + a#acceptAndTakeSurveyLink2
     def _scroll_center(el) -> None:
         try:
-            driver.execute_script("arguments[0].scrollIntoView({block:'center', inline:'center'});", el)
+            _pw_page(driver).evaluate("(e) => e.scrollIntoView({block:'center', inline:'center'})",el)
         except Exception:
             pass
 
@@ -4932,11 +4920,11 @@ def handle_consent_screen(driver):
             return True
         except Exception:
             try:
-                ActionChains(driver).move_to_element(el).click().perform()
+                el.hover(); el.click()
                 return True
             except Exception:
                 try:
-                    driver.execute_script("arguments[0].click();", el)
+                    _pw_page(driver).evaluate("(e) => e.click()",el)
                     return True
                 except Exception:
                     return False
@@ -4999,7 +4987,7 @@ def handle_consent_screen(driver):
         except Exception:
             txt_len = 0
         try:
-            n_btn = len(driver.find_elements(By.CSS_SELECTOR, "button, a, [role='button'], input[type='submit'], input[type='button']"))
+            n_btn = len(_pw_page(driver).query_selector_all("button, a, [role='button'], input[type='submit'], input[type='button']"))
         except Exception:
             n_btn = 0
         return f"{url}||{txt_len}||{n_btn}||{int(_cmp_overlay_present())}"
@@ -5115,12 +5103,8 @@ def handle_consent_screen(driver):
                 print("[CTA_INTERCEPT] cint_collect cta_found intercept_impossible")
                 return False
 
-        try:
-            cta = driver.find_element(
-                By.CSS_SELECTOR,
-                "form[action*='/Consent/Collect/'] input[type='submit'], form[action*='/Consent/Collect/'] button[type='submit']",
-            )
-        except Exception:
+        cta = _pw_page(driver).query_selector("form[action*='/Consent/Collect/'] input[type='submit'], form[action*='/Consent/Collect/'] button[type='submit']")
+        if cta is None:
             print("[CONSENT][CINT] cta_not_found")
             return False
 
@@ -5198,12 +5182,8 @@ def handle_consent_screen(driver):
     def _handle_ipsos_privacy_policy_page() -> bool:
         # Détection volontairement stricte (évite les faux positifs sur d'autres consent screens)
         intercept_only = (os.getenv("CTA_INTERCEPT_ONLY", "") or "").strip().lower() in {"1", "true", "yes", "on"}
-        try:
-            cta = driver.find_element(
-                By.CSS_SELECTOR,
-                "a.btn.btn-primary[id^='acceptAndTakeSurveyLink']",
-            )
-        except Exception:
+        cta = _pw_page(driver).query_selector("a.btn.btn-primary[id^='acceptAndTakeSurveyLink']")
+        if cta is None:
             if intercept_only:
                 print("[CTA_INTERCEPT] ipsos_privacy_policy cta_not_found")
             return False
@@ -5212,8 +5192,7 @@ def handle_consent_screen(driver):
             # Patterns IPSOS observés:
             # - privacyPolicyCheckbox* (ancien pattern, conservé pour rétrocompatibilité)
             # - consentCheckbox* / consentContainer:* (pattern actuel 2025+)
-            cbs = driver.find_elements(
-                By.CSS_SELECTOR,
+            cbs = _pw_page(driver).query_selector_all(
                 "input[type='checkbox']#privacyPolicyCheckbox1, "
                 "input[type='checkbox'][name*='privacyPolicyCheckbox'], "
                 "input[type='checkbox'][id*='privacyPolicyCheckbox'], "
@@ -5244,7 +5223,7 @@ def handle_consent_screen(driver):
             clicked = False
             if cb_id:
                 try:
-                    lab = driver.find_element(By.CSS_SELECTOR, f"label[for='{cb_id}']")
+                    lab = _pw_page(driver).query_selector(f"label[for='{cb_id}']")
                     clicked = _click_best_effort(lab)
                 except Exception:
                     clicked = False
@@ -5299,12 +5278,12 @@ def handle_consent_screen(driver):
     # 0bis) Affinnova / NIQ launch gate: CTA "LANCER L'ÉTUDE" (popup + switch main/secondary)
     def _handle_affinnova_launch_gate() -> bool:
         try:
-            launch = driver.find_element(By.CSS_SELECTOR, "a.launchButton[onclick*='showSurvey'], a.launchButton")
+            launch = _pw_page(driver).query_selector("a.launchButton[onclick*='showSurvey'], a.launchButton")
         except Exception:
             return False
 
         try:
-            if not launch.is_displayed():
+            if not launch.is_visible():
                 return False
         except Exception:
             return False
@@ -5364,18 +5343,18 @@ def handle_consent_screen(driver):
             return False
 
         try:
-            btn = driver.find_element(By.CSS_SELECTOR, "#btnNext")
+            btn = _pw_page(driver).query_selector("#btnNext")
         except Exception:
             return False
         try:
-            if not btn.is_displayed():
+            if not btn.is_visible():
                 return False
         except Exception:
             return False
 
         intercept_only = (os.getenv("CTA_INTERCEPT_ONLY", "") or "").strip().lower() in {"1", "true", "yes", "on"}
         if intercept_only:
-            label = _norm_lc(btn.get_attribute("value") or btn.text or "suivant")
+            label = _norm_lc(btn.get_attribute("value") or btn.inner_text() or "suivant")
             try:
                 import Survey.input_handler
                 Survey.input_handler.click_cta_strong_any_context(driver, label)
@@ -5413,13 +5392,13 @@ def handle_consent_screen(driver):
             return False
 
         try:
-            btn = driver.find_element(By.CSS_SELECTOR, "#btnNext")
+            btn = _pw_page(driver).query_selector("#btnNext")
         except Exception:
             return False
 
         intercept_only = (os.getenv("CTA_INTERCEPT_ONLY", "") or "").strip().lower() in {"1", "true", "yes", "on"}
         if intercept_only:
-            label = _norm_lc(btn.get_attribute("value") or btn.text or "suivant")
+            label = _norm_lc(btn.get_attribute("value") or btn.inner_text() or "suivant")
             try:
                 import Survey.input_handler
                 Survey.input_handler.click_cta_strong_any_context(driver, label)
@@ -5467,15 +5446,15 @@ def handle_consent_screen(driver):
 
         try:
             try:
-                btn = driver.find_element(By.CSS_SELECTOR, "button.next_btn")
+                btn = _pw_page(driver).query_selector("button.next_btn")
             except Exception:
-                btn = driver.find_element(By.CSS_SELECTOR, "button[type='submit']")
+                btn = _pw_page(driver).query_selector("button[type='submit']")
         except Exception:
             return False
 
         intercept_only = (os.getenv("CTA_INTERCEPT_ONLY", "") or "").strip().lower() in {"1", "true", "yes", "on"}
         if intercept_only:
-            label = _norm_lc(btn.text or "allons-y")
+            label = _norm_lc(btn.inner_text() or "allons-y")
             log_info("CONSENT", f"CTA_INTERCEPT_ONLY: interception angular survey-final CTA '{label}'")
             try:
                 import Survey.input_handler
@@ -5506,14 +5485,14 @@ def handle_consent_screen(driver):
     best = None
     for sel in CMP_CONTAINER_SELECTORS:
         try:
-            for el in driver.find_elements(By.CSS_SELECTOR, sel):
+            for el in _pw_page(driver).query_selector_all(sel):
                 try:
-                    if not el.is_displayed():
+                    if not el.is_visible():
                         continue
                     # NOUVEAU: vérifier si l'élément est dans un container caché
                     if _has_hidden_ancestor(el):
                         continue
-                    r = el.rect or {}
+                    r = el.bounding_box() or {}
                     area = float(r.get('width', 0) or 0) * float(r.get('height', 0) or 0)
                     if area <= 0:
                         continue
@@ -5528,13 +5507,13 @@ def handle_consent_screen(driver):
     if best is not None:
         _, container = best
         try:
-            cands = container.find_elements(By.CSS_SELECTOR, "button, a, [role='button'], input[type='submit'], input[type='button']")
+            cands = container.query_selector_all("button, a, [role='button'], input[type='submit'], input[type='button']")
         except Exception:
             cands = []
 
         def _score(el) -> int:
             try:
-                t = _norm_lc(el.text or el.get_attribute('value') or el.get_attribute('innerText') or "")
+                t = _norm_lc(el.inner_text() or el.get_attribute('value') or "")
             except Exception:
                 t = ""
             if not t:
@@ -5554,7 +5533,7 @@ def handle_consent_screen(driver):
             intercept_only = (os.getenv("CTA_INTERCEPT_ONLY", "") or "").strip().lower() in {"1", "true", "yes", "on"}
             try:
                 if intercept_only:
-                    label = _norm_lc(btn.text or btn.get_attribute('value') or btn.get_attribute('innerText') or "")
+                    label = _norm_lc(btn.inner_text() or btn.get_attribute('value') or "")
                     if label:
                         Survey.input_handler.click_cta_strong_any_context(driver, label)
                     else:
@@ -5564,13 +5543,13 @@ def handle_consent_screen(driver):
             except Exception:
                 try:
                     if intercept_only:
-                        label = _norm_lc(btn.text or btn.get_attribute('value') or btn.get_attribute('innerText') or "")
+                        label = _norm_lc(btn.inner_text() or btn.get_attribute('value') or "")
                         if label:
                             Survey.input_handler.click_cta_strong_any_context(driver, label)
                         else:
-                            driver.execute_script("arguments[0].click();", btn)
+                            _pw_page(driver).evaluate("(e) => e.click()",btn)
                     else:
-                        driver.execute_script("arguments[0].click();", btn)
+                        _pw_page(driver).evaluate("(e) => e.click()",btn)
                 except Exception:
                     pass
 
@@ -5593,13 +5572,10 @@ def handle_consent_screen(driver):
     # 4) Confirmit/Forsta : bouton "Suivant" souvent SANS texte (icône) -> .cf-navigation-next
     # Exemple DOM: <button class="cf-navigation__button cf-navigation-next"><img title="Suivant"></button>
     try:
-        next_buttons = driver.find_elements(
-        By.CSS_SELECTOR,
-        "#navButtons button.cf-navigation-next, button.cf-navigation-next, .cf-navigation__button.cf-navigation-next",
-        )
+        next_buttons = _pw_page(driver).query_selector_all("#navButtons button.cf-navigation-next, button.cf-navigation-next, .cf-navigation__button.cf-navigation-next")
         for nb in next_buttons:
             try:
-                if not nb.is_displayed():
+                if not nb.is_visible():
                     continue
                 if _click_best_effort(nb):
                     if _wait_change(before_sig, before_url, timeout_s=8.0):
@@ -5628,7 +5604,7 @@ def _extract_drag_drop_target_value(instruction_text: str) -> Optional[str]:
 def handle_drag_drop_logic(driver):
     def _el_text(el) -> str:
         for getter in (
-            lambda: el.text,
+            lambda: el.inner_text(),
             lambda: el.get_attribute("innerText"),
             lambda: el.get_attribute("textContent"),
         ):
@@ -5644,7 +5620,7 @@ def handle_drag_drop_logic(driver):
         if not btn:
             return False
         try:
-            if not btn.is_displayed():
+            if not btn.is_visible():
                 return False
         except Exception:
             pass
@@ -5667,7 +5643,7 @@ def handle_drag_drop_logic(driver):
         intercept_only = (os.getenv("CTA_INTERCEPT_ONLY", "") or "").strip().lower() in {"1", "true", "yes", "on"}
         cta_found = False
         try:
-            candidates = driver.find_elements(By.CSS_SELECTOR, "button[aria-label='Go to next question']")
+            candidates = _pw_page(driver).query_selector_all("button[aria-label='Go to next question']")
             cta_found = any(_is_enabled(btn) for btn in candidates)
         except Exception:
             cta_found = False
@@ -5727,12 +5703,9 @@ def handle_drag_drop_logic(driver):
         exécute le drag (CDP ou ActionChains) et valide le résultat.
         Retourne True si le drag a abouti (drop_zone remplie ou bouton Next activé).
         """
-        draggables = driver.find_elements(By.CSS_SELECTOR, "[cdkdrag], .cdk-drag, [draggable='true']")
+        draggables = _pw_page(driver).query_selector_all("[cdkdrag], .cdk-drag, [draggable='true']")
         try:
-            drop_zone = driver.find_element(
-                By.CSS_SELECTOR,
-                "#dropZoneList.cdk-drop-list.drop-zone, #dropZoneList.drop-zone, #dropZoneList",
-            )
+            drop_zone = _pw_page(driver).query_selector("#dropZoneList.cdk-drop-list.drop-zone, #dropZoneList.drop-zone, #dropZoneList")
             print("[DRAGDROP] drop_zone_selected id=dropZoneList ok=true")
         except Exception:
             print("[DRAGDROP] drop_zone_selected id=dropZoneList ok=false")
@@ -5744,7 +5717,7 @@ def handle_drag_drop_logic(driver):
         source_selector = ""
         for drag in draggables:
             try:
-                imgs = drag.find_elements(By.CSS_SELECTOR, f'img[alt="{target_value}"]')
+                imgs = drag.query_selector_all(f'img[alt="{target_value}"]')
                 if imgs:
                     source = drag
                     source_selector = f'img[alt="{target_value}"]'
@@ -5755,7 +5728,7 @@ def handle_drag_drop_logic(driver):
         if source is None:
             for drag in draggables:
                 try:
-                    imgs = drag.find_elements(By.CSS_SELECTOR, "img")
+                    imgs = drag.query_selector_all("img")
                 except Exception:
                     imgs = []
                 for img in imgs:
@@ -5783,7 +5756,7 @@ def handle_drag_drop_logic(driver):
 
         print(f"[DRAGDROP] source_found selector={source_selector}")
 
-        next_buttons = driver.find_elements(By.CSS_SELECTOR, "button[aria-label='Go to next question']")
+        next_buttons = _pw_page(driver).query_selector_all("button[aria-label='Go to next question']")
         next_button = next_buttons[0] if next_buttons else None
 
         offsets = [(0, 0), (15, 0)]
@@ -5792,8 +5765,8 @@ def handle_drag_drop_logic(driver):
         for idx, (ox, oy) in enumerate(offsets, start=1):
             print(f"[DRAGDROP] attempt={idx} start")
             try:
-                driver.execute_script("arguments[0].scrollIntoView({block:'center'});", source)
-                driver.execute_script("arguments[0].scrollIntoView({block:'center'});", drop_zone)
+                _pw_page(driver).evaluate("(e) => e.scrollIntoView({block:'center'})",source)
+                _pw_page(driver).evaluate("(e) => e.scrollIntoView({block:'center'})",drop_zone)
                 points = driver.execute_script(
                     """
                     const src = arguments[0];
@@ -5834,44 +5807,29 @@ def handle_drag_drop_logic(driver):
                     continue
 
                 drag_done = False
-                if can_use_cdp:
-                    start_x = int(points.get("startX", 0))
-                    start_y = int(points.get("startY", 0))
-                    end_x = int(points.get("endX", 0))
-                    end_y = int(points.get("endY", 0))
+                _page = _pw_page(driver)
+                start_x = int(points.get("startX", 0))
+                start_y = int(points.get("startY", 0))
+                end_x = int(points.get("endX", 0))
+                end_y = int(points.get("endY", 0))
 
-                    driver.execute_cdp_cmd(
-                        "Input.dispatchMouseEvent",
-                        {"type": "mouseMoved", "x": start_x, "y": start_y, "button": "none"},
-                    )
-                    driver.execute_cdp_cmd(
-                        "Input.dispatchMouseEvent",
-                        {"type": "mousePressed", "x": start_x, "y": start_y, "button": "left", "clickCount": 1},
-                    )
-
+                try:
+                    _page.mouse.move(start_x, start_y)
+                    _page.mouse.down()
                     steps = 8
                     for step in range(1, steps + 1):
-                        x = int(start_x + ((end_x - start_x) * step) / steps)
-                        y = int(start_y + ((end_y - start_y) * step) / steps)
-                        driver.execute_cdp_cmd(
-                            "Input.dispatchMouseEvent",
-                            {"type": "mouseMoved", "x": x, "y": y, "button": "left", "buttons": 1},
-                        )
+                        ix = int(start_x + ((end_x - start_x) * step) / steps)
+                        iy = int(start_y + ((end_y - start_y) * step) / steps)
+                        _page.mouse.move(ix, iy)
                         time.sleep(0.02)
-
-                    driver.execute_cdp_cmd(
-                        "Input.dispatchMouseEvent",
-                        {"type": "mouseReleased", "x": end_x, "y": end_y, "button": "left", "clickCount": 1},
-                    )
+                    _page.mouse.up()
                     drag_done = True
-                elif is_local_env:
-                    chain = ActionChains(driver).click_and_hold(source).move_to_element(drop_zone)
-                    if ox or oy:
-                        chain = chain.move_by_offset(ox, oy)
-                    chain.release().perform()
-                    drag_done = True
-                else:
-                    raise RuntimeError("cdp_unavailable_non_local")
+                except Exception:
+                    try:
+                        source.drag_to(drop_zone)
+                        drag_done = True
+                    except Exception:
+                        raise RuntimeError("playwright_drag_failed")
 
                 if not drag_done:
                     raise RuntimeError("pointer_drag_failed")
@@ -5912,10 +5870,7 @@ def handle_drag_drop_logic(driver):
         return False
 
     # --- Extraction de la valeur cible depuis le titre de la question ---
-    title_candidates = driver.find_elements(
-        By.CSS_SELECTOR,
-        "p.question-title[psquestiontitle], p.question-title, [psquestiontitle]",
-    )
+    title_candidates = _pw_page(driver).query_selector_all("p.question-title[psquestiontitle], p.question-title, [psquestiontitle]")
     instruction = ""
     for title in title_candidates:
         txt = _el_text(title)
@@ -5934,7 +5889,7 @@ def handle_drag_drop_logic(driver):
     # pas encore initialisé), on rafraîchit la page une seule fois et on attend le rendu
     # avant de tenter le drag. Signal discriminant : au moins un [cdkdrag] dans le DOM
     # mais aucun avec getBoundingClientRect().width > 0. ---
-    cards_in_dom = bool(driver.find_elements(By.CSS_SELECTOR, "[cdkdrag], .cdk-drag"))
+    cards_in_dom = bool(_pw_page(driver).query_selector_all("[cdkdrag], .cdk-drag"))
     if cards_in_dom and not _cdkdrag_cards_ready():
         print("[DRAGDROP] cards_not_ready=true → refresh + wait (max 8s)")
         try:
@@ -6007,7 +5962,7 @@ def handle_error_recovery_screen(driver):
         except Exception as exc:
             log_debug(TAG, f"click() échoué, fallback JS : {exc}")
             try:
-                driver.execute_script("arguments[0].click();", btn)
+                _pw_page(driver).evaluate("(e) => e.click()",btn)
             except Exception:
                 return False
 
@@ -6269,14 +6224,14 @@ def _aa__safe_click(driver, el) -> bool:
         pass
 
     try:
-        from selenium.webdriver.common.action_chains import ActionChains
-        ActionChains(driver).move_to_element(el).click().perform()
+        el.hover()
+        el.click()
         return True
     except Exception:
         pass
 
     try:
-        driver.execute_script("arguments[0].click();", el)
+        _pw_page(driver).evaluate("(e) => e.click()",el)
         return True
     except Exception:
         return False
@@ -6293,11 +6248,6 @@ def _aa__try_answer_matrix(driver, full_question: str, choice_text: str) -> bool
     Résout le cas Ask&Answer MATRIX Angular Material, en évitant les éléments cachés.
     Retourne True si l'action a bien été appliquée.
     """
-    try:
-        from selenium.webdriver.common.by import By
-    except Exception:
-        return False
-
     q = full_question or ""
     choice = _aa__norm_ws(choice_text)
     if not choice:
@@ -6305,7 +6255,7 @@ def _aa__try_answer_matrix(driver, full_question: str, choice_text: str) -> bool
 
     # Garde-fou : on n'active ce helper que si on détecte app-matrix-question (Ask&Answer)
     try:
-        if not driver.find_elements(By.XPATH, "//app-matrix-question"):
+        if not _pw_page(driver).query_selector_all("//app-matrix-question"):
             return False
     except Exception:
         return False
@@ -6321,14 +6271,14 @@ def _aa__try_answer_matrix(driver, full_question: str, choice_text: str) -> bool
 
     # ========== 1) Desktop table visible ==========
     try:
-        tables = driver.find_elements(By.XPATH, "//app-matrix-question//table[contains(@class,'mat-table')]")
+        tables = _pw_page(driver).query_selector_all("//app-matrix-question//table[contains(@class,'mat-table')]")
     except Exception:
         tables = []
 
     table = None
     for t in tables:
         try:
-            if t.is_displayed():
+            if t.is_visible():
                 table = t
                 break
         except Exception:
@@ -6338,15 +6288,15 @@ def _aa__try_answer_matrix(driver, full_question: str, choice_text: str) -> bool
         # Trouver la matrixId via le header (texte == choix)
         mid = None
         try:
-            headers = table.find_elements(By.XPATH, ".//thead//th[contains(@class,'matrixId-')]")
+            headers = table.query_selector_all(".//thead//th[contains(@class,'matrixId-')]")
         except Exception:
             headers = []
 
         for th in headers:
             try:
-                if not th.is_displayed():
+                if not th.is_visible():
                     continue
-                txt = _aa__norm_ws(th.text)
+                txt = _aa__norm_ws(th.inner_text())
                 if txt and _aa__contains(txt, choice):
                     cls = th.get_attribute("class") or ""
                     m = re.search(r"matrixId-(\d+)", cls)
@@ -6359,34 +6309,31 @@ def _aa__try_answer_matrix(driver, full_question: str, choice_text: str) -> bool
         if mid:
             # Trouver la ligne correspondant au statement (colonne "statement")
             try:
-                rows = table.find_elements(By.XPATH, ".//tbody//tr")
+                rows = table.query_selector_all(".//tbody//tr")
             except Exception:
                 rows = []
 
             for row in rows:
                 try:
-                    if not row.is_displayed():
+                    if not row.is_visible():
                         continue
-                    st_cell = row.find_element(By.XPATH, ".//td[contains(@class,'mat-column-statement')]")
-                    st_txt = _aa__norm_ws(st_cell.text)
+                    st_cell = row.query_selector(".//td[contains(@class,'mat-column-statement')]")
+                    st_txt = _aa__norm_ws(st_cell.inner_text())
                     if not _aa__contains(st_txt, statement_key):
                         continue
 
                     # Cellule de la colonne mid
-                    cell = row.find_element(By.XPATH, f".//td[contains(@class,'matrixId-{mid}')]")
+                    cell = row.query_selector(f".//td[contains(@class,'matrixId-{mid}')]")
                     # Cliquer la radio dans cette cellule (uniquement éléments visibles)
                     candidates = []
                     try:
-                        candidates = cell.find_elements(
-                            By.XPATH,
-                            ".//mat-radio-button | .//label[contains(@class,'mat-radio-label')] | .//span[contains(@class,'mat-radio-container')] | .//input[@type='radio']"
-                        )
+                        candidates = cell.query_selector_all(".//mat-radio-button | .//label[contains(@class,'mat-radio-label')] | .//span[contains(@class,'mat-radio-container')] | .//input[@type='radio']")
                     except Exception:
                         candidates = []
 
                     for cand in candidates:
                         try:
-                            if not cand.is_displayed():
+                            if not cand.is_visible():
                                 continue
                         except Exception:
                             continue
@@ -6395,7 +6342,7 @@ def _aa__try_answer_matrix(driver, full_question: str, choice_text: str) -> bool
 
                         # Vérif: mat-radio-button checked dans la cellule
                         try:
-                            mr = cell.find_element(By.XPATH, ".//mat-radio-button[1]")
+                            mr = cell.query_selector(".//mat-radio-button[1]")
                             if _aa__is_mat_checked(mr):
                                 return True
                         except Exception:
@@ -6409,18 +6356,18 @@ def _aa__try_answer_matrix(driver, full_question: str, choice_text: str) -> bool
     # (utile si la table est cachée par responsive)
     if statement_key:
         try:
-            panels = driver.find_elements(By.XPATH, "//app-matrix-question//mat-expansion-panel")
+            panels = _pw_page(driver).query_selector_all("//app-matrix-question//mat-expansion-panel")
         except Exception:
             panels = []
 
         for p in panels:
             try:
-                if not p.is_displayed():
+                if not p.is_visible():
                     continue
 
                 # header contient le statement
-                hdr = p.find_element(By.XPATH, ".//mat-expansion-panel-header")
-                hdr_txt = _aa__norm_ws(hdr.text)
+                hdr = p.query_selector(".//mat-expansion-panel-header")
+                hdr_txt = _aa__norm_ws(hdr.inner_text())
                 if not _aa__contains(hdr_txt, statement_key):
                     continue
 
@@ -6433,20 +6380,17 @@ def _aa__try_answer_matrix(driver, full_question: str, choice_text: str) -> bool
                     _aa__safe_click(driver, hdr)
 
                 # choisir l'option par texte (labels visibles)
-                opts = p.find_elements(
-                    By.XPATH,
-                    ".//mat-radio-button//label[contains(@class,'mat-radio-label')][.//span[contains(@class,'mat-radio-label-content')]]"
-                )
+                opts = p.query_selector_all(".//mat-radio-button//label[contains(@class,'mat-radio-label')][.//span[contains(@class,'mat-radio-label-content')]]")
                 for lab in opts:
                     try:
-                        if not lab.is_displayed():
+                        if not lab.is_visible():
                             continue
-                        txt = _aa__norm_ws(lab.text)
+                        txt = _aa__norm_ws(lab.inner_text())
                         if txt and _aa__contains(txt, choice):
                             _aa__safe_click(driver, lab)
                             # vérifier checked sur mat-radio-button parent
                             try:
-                                mr = lab.find_element(By.XPATH, "ancestor::mat-radio-button[1]")
+                                mr = lab.query_selector("ancestor::mat-radio-button[1]")
                                 if _aa__is_mat_checked(mr):
                                     return True
                             except Exception:
@@ -6656,9 +6600,9 @@ def execute_action(
                             )
                             if _adc_dk_xpath:
                                 try:
-                                    _dk_el = driver.find_element(By.XPATH, _adc_dk_xpath)
-                                    driver.execute_script("arguments[0].scrollIntoView({block:'center'});", _dk_el)
-                                    driver.execute_script("arguments[0].click();", _dk_el)
+                                    _dk_el = _pw_page(driver).query_selector(_adc_dk_xpath)
+                                    _pw_page(driver).evaluate("(e) => e.scrollIntoView({block:'center'})",_dk_el)
+                                    _pw_page(driver).evaluate("(e) => e.click()",_dk_el)
                                     log_info("[TARGET]", "apply ok=true strategy=askia_adc_slider_dk reason=applied")
                                     # Cache
                                     _radio_cache_adc = _get_block_strategy_memory(driver).get("radio", {})
@@ -6732,7 +6676,7 @@ def execute_action(
                     frame_chain = _p.get("frame_chain") or []
                     if not frame_chain:
                         try:
-                            driver.switch_to.default_content()
+                            pass  # Playwright: page is always main frame
                         except Exception:
                             pass
                     else:
