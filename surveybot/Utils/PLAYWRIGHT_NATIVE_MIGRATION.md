@@ -84,17 +84,18 @@ BLOC 3 — Résolution du survey externe
     Fichiers : Survey/dom_classifier.py (toutes les fonctions de classification DOM),
                Survey/batch_response_parser.py (aucun driver — parsing pur, rien à migrer)
 
-  BLOC 3b4+ — imports lazy restants
-    Statut : ⬜ non démarré
-    Fichiers : Survey/survey_executor.py (execute_survey_page et toutes ses
-                 fonctions internes),
-               + imports lazy d'execute_survey_page : Survey/dom_analyzer.py,
-                 Survey/page_snapshot.py, Survey/input_handler.py,
-                 Survey/prompt_builder.py, Survey/dom_classifier.py,
-                 Survey/action_dispatcher.py, Management/redirect_watcher.py,
-                 Survey/batch_response_parser.py
-    Entrée  : PlaywrightDriverShim (shim créé en interne dans solve_full_survey)
-    Sortie  : bool success
+  Survey/prompt_builder.py
+    Statut : ✅ aucune migration nécessaire — zéro driver, construction de prompts GPT pure
+             (vérifié le 2026-06-22)
+
+  BLOC 3b4 -- Survey/dom_analyzer.py
+    Statut : migre (valide en attach le 2026-06-22)
+    Fichiers : Survey/dom_analyzer.py (~4600 lignes, ~20 fonctions top-level)
+
+  BLOC 3b5+ -- imports lazy restants
+    Statut : non demarre
+    Fichiers : Survey/dom_analyzer.py (retire),
+               Survey/input_handler.py, Survey/action_dispatcher.py
 
   Note : action_dispatcher.py (~6100 lignes) est le fichier le plus gros et
   le plus critique de BLOC 3b. Cohérent avec PLAYWRIGHT_MIGRATION.md (Option A),
@@ -236,9 +237,10 @@ FRONTIÈRE INTERNE BLOC 3b1 → BLOC 3b2 (active depuis le 2026-06-22, mise à j
       Frame iteration : current_frame.evaluate() après switch_to_frame_chain.
     - Survey/batch_response_parser.py : parsing pur, zéro driver, rien à migrer.
 
-  Coté shim (BLOC 3b4+, pas encore migré) :
+  Côté shim (BLOC 3b4+, pas encore migré) :
     - Survey/dom_analyzer.py, Survey/input_handler.py,
-      Survey/prompt_builder.py, Survey/action_dispatcher.py : attendent un shim.
+      Survey/action_dispatcher.py : attendent un shim.
+    - Survey/prompt_builder.py : zéro driver — pas de frontière active.
 
 FRONTIÈRE BLOC 3a → Survey/functions.py (hors découpage en blocs)
 
@@ -308,11 +310,19 @@ HISTORIQUE
             Point d'attention noté : popup_not_detected immédiatement après
             sélection — à traiter dans le patch BLOC 2.
 
+2026-06-22  BLOC 3b4 migre (dom_analyzer.py) : 23 execute_script -> page.evaluate().
+            _handle(el) helper pour passer PlaywrightElementShim._h aux evaluate().
+            _find_fullscreen_iframe_idx : suppression switch_to.default_content().
+            find_elements/find_element gardes shim pour compat helpers non migres.
+
 2026-06-22  BLOC 3b3 migré (dom_classifier.py + batch_response_parser.py) :
             dom_classifier : _pw_page + page.evaluate/query_selector_all.
             Frame iteration : current_frame.evaluate() (convention identique
             à page_snapshot.py BLOC 3b2). batch_response_parser : aucun driver,
             marqué directement migré.
+
+2026-06-22  Survey/prompt_builder.py vérifié : zéro driver, zéro Selenium.
+            Construction de prompts GPT pure. Aucune migration nécessaire. ✅
 
 2026-06-22  BLOC 3b1 migré (survey_executor.py) : toutes les ~25 fonctions migrent
             en Playwright natif. By + ActionChains supprimés. _pw_page + _make_shim

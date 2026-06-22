@@ -21,7 +21,6 @@ from __future__ import annotations
 from typing import List, Dict, Any, Tuple, Set
 import os, re, json
 
-from selenium.webdriver.common.by import By
 from Survey.log_utils import is_debug, log_debug, log_info
 
 # Imports des modules DOM
@@ -253,6 +252,21 @@ except ImportError:
     )
 
 
+
+
+def _pw_page(d):
+    """Extrait la Page Playwright native depuis un PlaywrightDriverShim ou retourne d tel quel."""
+    if hasattr(d, '_page'):
+        return d._page
+    return d
+
+
+def _handle(el):
+    """Extrait le ElementHandle Playwright natif depuis un PlaywrightElementShim, ou retourne el."""
+    if hasattr(el, '_h'):
+        return el._h
+    return el
+
 def _is_auxiliary_text_for_choice_group(driver, el, container, question: str) -> bool:
     """
     Détecte les champs texte auxiliaires affichés dans le même bloc qu'une question
@@ -267,7 +281,7 @@ def _is_auxiliary_text_for_choice_group(driver, el, container, question: str) ->
 
     try:
         choice_nodes = container.find_elements(
-            By.CSS_SELECTOR,
+            "css selector",
             "input[type='radio'], input[type='checkbox'], [role='radio'], [role='checkbox'], button, a[role='button']",
         )
     except Exception:
@@ -299,7 +313,7 @@ def _is_auxiliary_text_for_choice_group(driver, el, container, question: str) ->
     # Détection DOM-first via ancêtres/wrappers d'option observables.
     try:
         option_roots = el.find_elements(
-            By.XPATH,
+            "xpath",
             "ancestor::*[self::label or self::li or contains(concat(' ', normalize-space(@class), ' '), ' answer_options ') or contains(concat(' ', normalize-space(@class), ' '), ' option ') or contains(concat(' ', normalize-space(@class), ' '), ' form-check ') ]",
         )
     except Exception:
@@ -310,7 +324,7 @@ def _is_auxiliary_text_for_choice_group(driver, el, container, question: str) ->
             if container and root == container:
                 continue
             has_choice_in_root = bool(root.find_elements(
-                By.CSS_SELECTOR,
+                "css selector",
                 "input[type='radio'], input[type='checkbox'], [role='radio'], [role='checkbox']",
             ))
             if has_choice_in_root:
@@ -320,25 +334,13 @@ def _is_auxiliary_text_for_choice_group(driver, el, container, question: str) ->
 
     # Garde-fou JS pour les structures qui n'exposent pas bien les ancêtres.
     try:
-        inline_with_choice = bool(driver.execute_script(
-            """
-            const el = arguments[0];
-            const container = arguments[1];
+        inline_with_choice = bool(_pw_page(driver).evaluate(
+            """([el, container]) => {
             if (!el || !container || !el.closest || !container.contains) return false;
-
-            const optionRoot = el.closest(
-              '.answer_options, label, li, .option, .form-check, '\
-              '[role="radio"], [role="checkbox"], .cf-radio-answer, .cf-checkbox-answer'
-            );
+            const optionRoot = el.closest('.answer_options, label, li, .option, .form-check, [role="radio"], [role="checkbox"], .cf-radio-answer, .cf-checkbox-answer');
             if (!optionRoot || !container.contains(optionRoot)) return false;
-
-            return !!optionRoot.querySelector(
-              'input[type="radio"], input[type="checkbox"], [role="radio"], [role="checkbox"]'
-            );
-            """,
-            el,
-            container,
-        ))
+            return !!optionRoot.querySelector('input[type="radio"], input[type="checkbox"], [role="radio"], [role="checkbox"]');
+        }""", [_handle(el), _handle(container)]))
         if inline_with_choice:
             return True
     except Exception:
@@ -423,10 +425,10 @@ def _is_checkbox_optout_companion_for_text(driver, els: List[Any], options: List
         el_classes = _norm_lc(el.get_attribute("class") or "")
         if "askia-exclusive" in el_classes:
             try:
-                ancestor_tables = el.find_elements(By.XPATH, "ancestor::table[1]")
+                ancestor_tables = el.find_elements("xpath", "ancestor::table[1]")
                 if ancestor_tables:
                     has_textarea = bool(
-                        ancestor_tables[0].find_elements(By.CSS_SELECTOR, "textarea")
+                        ancestor_tables[0].find_elements("css selector", "textarea")
                     )
                     if has_textarea:
                         log_debug(
@@ -471,7 +473,7 @@ def _is_checkbox_optout_companion_for_text(driver, els: List[Any], options: List
         return False
 
     try:
-        ref_txt = driver.find_elements(By.CSS_SELECTOR, f"input#{openendid}, textarea#{openendid}")
+        ref_txt = driver.find_elements("css selector", f"input#{openendid}, textarea#{openendid}")
     except Exception:
         ref_txt = []
 
@@ -488,7 +490,7 @@ def _is_checkbox_optout_companion_for_text(driver, els: List[Any], options: List
 
     try:
         return bool(
-            container.find_elements(By.CSS_SELECTOR, f"input#{openendid}, textarea#{openendid}")
+            container.find_elements("css selector", f"input#{openendid}, textarea#{openendid}")
         )
     except Exception:
         return False
@@ -520,7 +522,7 @@ def _is_open_ended_choice_companion(el, container) -> bool:
 
     stem = match.group(1)
     try:
-        choice_inputs = container.find_elements(By.CSS_SELECTOR, "input[type='radio'][name], input[type='checkbox'][name]")
+        choice_inputs = container.find_elements("css selector", "input[type='radio'][name], input[type='checkbox'][name]")
     except Exception:
         return False
 
@@ -581,7 +583,7 @@ def _is_angular_material_image_only_textarea_question(
         survey_scope = None
         try:
             survey_scope = el.find_element(
-                By.XPATH,
+                "xpath",
                 "ancestor::*[self::app-survey or contains(@class,'survey-window') or contains(@class,'survey-section')][1]",
             )
         except Exception:
@@ -592,7 +594,7 @@ def _is_angular_material_image_only_textarea_question(
         # Garde-fou Angular Material textarea
         has_mat_form_field = False
         try:
-            has_mat_form_field = bool(el.find_elements(By.XPATH, "ancestor::mat-form-field[1]"))
+            has_mat_form_field = bool(el.find_elements("xpath", "ancestor::mat-form-field[1]"))
         except Exception:
             has_mat_form_field = False
         if not has_mat_form_field:
@@ -600,7 +602,7 @@ def _is_angular_material_image_only_textarea_question(
 
         # Question rendue via image
         try:
-            ta_images = survey_scope.find_elements(By.CSS_SELECTOR, "img.taImage, img[class*='taImage']")
+            ta_images = survey_scope.find_elements("css selector", "img.taImage, img[class*='taImage']")
         except Exception:
             ta_images = []
         if not ta_images:
@@ -613,7 +615,7 @@ def _is_angular_material_image_only_textarea_question(
         heading = ""
         try:
             heading_nodes = survey_scope.find_elements(
-                By.CSS_SELECTOR,
+                "css selector",
                 ".header-window h1, .header-window h2, h1[translate], h1, h2",
             )
             for hn in heading_nodes:
@@ -661,45 +663,30 @@ def _is_other_specify_choice_companion(driver, el, container, question: str) -> 
         return False
 
     try:
-        choice_inputs = container.find_elements(By.CSS_SELECTOR, "input[type='radio'], input[type='checkbox']")
+        choice_inputs = container.find_elements("css selector", "input[type='radio'], input[type='checkbox']")
     except Exception:
         return False
     if len(choice_inputs or []) < 2:
         return False
 
     try:
-        is_other_context = bool(driver.execute_script(
-            r"""
-            const el = arguments[0];
-            const container = arguments[1];
+        is_other_context = bool(_pw_page(driver).evaluate(
+            r"""([el, container]) => {
             if (!el || !container || !container.contains(el)) return false;
-
             const norm = (v) => (v || '').toLowerCase().replace(/\s+/g, ' ').trim();
             const kw = ['other', 'autre', 'précisez', 'precisez', 'specify', 'please specify'];
-
-            const wrappers = [
-              el.closest('label'),
-              el.closest('.answer-container'),
-              el.closest('li'),
-              el.parentElement,
-            ].filter(Boolean);
-
+            const wrappers = [el.closest('label'), el.closest('.answer-container'), el.closest('li'), el.parentElement].filter(Boolean);
             for (const node of wrappers) {
               const hasChoice = !!node.querySelector('input[type="radio"], input[type="checkbox"], [role="radio"], [role="checkbox"]');
               if (!hasChoice) continue;
               const txt = norm(node.textContent || node.innerText || '');
               if (kw.some(k => txt.includes(k))) return true;
             }
-
             const prev = el.previousElementSibling;
             const prevTxt = norm(prev ? (prev.textContent || prev.innerText || '') : '');
             if (kw.some(k => prevTxt.includes(k))) return true;
-
             return false;
-            """,
-            el,
-            container,
-        ))
+        }""", [_handle(el), _handle(container)]))
     except Exception:
         is_other_context = False
 
@@ -760,11 +747,9 @@ def _selection_signal_text(driver, el, question_text: str | None = None) -> str:
         parts.append(q)
 
     try:
-        instruction = _norm(driver.execute_script(
-            r"""
-            const el = arguments[0];
+        instruction = _norm(_pw_page(driver).evaluate(
+            r"""(el) => {
             if (!el) return '';
-
             const norm = (v) => (v || '').replace(/\s+/g, ' ').trim();
             const isVisible = (node) => {
               if (!node || !(node instanceof Element)) return false;
@@ -773,14 +758,9 @@ def _selection_signal_text(driver, el, question_text: str | None = None) -> str:
               const r = node.getBoundingClientRect();
               return r.width > 0 && r.height > 0;
             };
-
             const roots = [
-              el.closest('[id^="question_"]'),
-              el.closest('.question'),
-              el.closest('fieldset'),
-              el.closest('form'),
+              el.closest('[id^="question_"]'), el.closest('.question'), el.closest('fieldset'), el.closest('form'),
             ].filter(Boolean);
-
             const selectors = ['.instruction-text', '.instruction', '[class*="instruction"]'];
             for (const root of roots) {
               for (const sel of selectors) {
@@ -792,9 +772,7 @@ def _selection_signal_text(driver, el, question_text: str | None = None) -> str:
               }
             }
             return '';
-            """,
-            el,
-        ))
+        }""", _handle(el)))
     except Exception:
         instruction = ""
 
@@ -811,11 +789,9 @@ def _choice_option_has_inline_open_text(driver, choice_el) -> bool:
     comme choix fermé.
     """
     try:
-        return bool(driver.execute_script(
-            r"""
-            const el = arguments[0];
+        return bool(_pw_page(driver).evaluate(
+            r"""(el) => {
             if (!el) return false;
-
             const isVisible = (node) => {
               if (!node || !(node instanceof Element)) return false;
               const st = window.getComputedStyle(node);
@@ -824,42 +800,32 @@ def _choice_option_has_inline_open_text(driver, choice_el) -> bool:
               const r = node.getBoundingClientRect();
               return r.width > 0 && r.height > 0;
             };
-
             const roots = [];
             const directLabel = el.closest('label');
             if (directLabel) roots.push(directLabel);
-
             const id = el.id || '';
             if (id) {
               try {
-                const esc = (window.CSS && CSS.escape)
-                  ? CSS.escape(id)
-                  : id.replace(/([ #;?%&,.+*~\\':\"!^$\[\]()=>|\\/@])/g, '\\\\$1');
+                const esc = (window.CSS && CSS.escape) ? CSS.escape(id) : id.replace(/([ #;?%&,.+*~\':\"!^$\[\]()=>|\/@])/g, '\\$1');
                 const linked = document.querySelector(`label[for="${esc}"]`);
                 if (linked) roots.push(linked);
               } catch (_) {}
             }
-
             const wrapper = el.closest('.element, .option, li, .choice, .cell-sub-wrapper, .form-check, [role="radio"], [role="checkbox"]');
             if (wrapper) roots.push(wrapper);
-
             const seen = new Set();
             for (const root of roots) {
               if (!root) continue;
               if (seen.has(root)) continue;
               seen.add(root);
-
               const fields = root.querySelectorAll('input[type="text"], textarea');
               for (const f of fields) {
                 if (f === el) continue;
                 if (isVisible(f)) return true;
               }
             }
-
             return false;
-            """,
-            choice_el,
-        ))
+        }""", _handle(choice_el)))
     except Exception:
         return False
 
@@ -873,9 +839,8 @@ def _get_choice_trailing_open_info(driver, choice_el) -> dict | None:
     à supprimer.
     """
     try:
-        result = driver.execute_script(
-            r"""
-            const el = arguments[0];
+        result = _pw_page(driver).evaluate(
+            r"""(el) => {
             if (!el) return null;
             const label = el.closest('label')
                 || (el.id ? document.querySelector('label[for="' + el.id + '"]') : null);
@@ -889,9 +854,7 @@ def _get_choice_trailing_open_info(driver, choice_el) -> dict | None:
             const r = inp.getBoundingClientRect();
             if (r.width === 0 && r.height === 0) return null;
             return { name: inp.name || '', id: inp.id || '' };
-            """,
-            choice_el,
-        )
+        }""", _handle(choice_el))
         if result and (result.get("name") or result.get("id")):
             return result
         return None
@@ -905,18 +868,11 @@ def _is_modal_related_control(driver, el) -> bool:
     pour éviter de les interpréter comme des questions.
     """
     try:
-        in_modal = driver.execute_script(
-            """
-            const el = arguments[0];
+        in_modal = _pw_page(driver).evaluate(
+            """(el) => {
             if (!el || !el.closest) return false;
-            return !!el.closest(
-              '.modal, [role="dialog"], [role="alertdialog"], [aria-modal="true"], '\
-              '[id*="modal" i], [id*="dialog" i], [id*="overlay" i], '\
-              '[id*="refuse" i], [id*="confirm" i]'
-            );
-            """,
-            el,
-        )
+            return !!el.closest('.modal, [role="dialog"], [role="alertdialog"], [aria-modal="true"], [id*="modal" i], [id*="dialog" i], [id*="overlay" i], [id*="refuse" i], [id*="confirm" i]');
+        }""", _handle(el))
         if bool(in_modal):
             return True
     except Exception:
@@ -950,14 +906,14 @@ def _find_bootstrap_selectpicker_question_label(el) -> str:
             return ""
 
         wrappers = el.find_elements(
-            By.XPATH,
+            "xpath",
             "ancestor::*[contains(concat(' ', normalize-space(@class), ' '), ' bootstrap-select ')][1]",
         )
         if not wrappers:
             return ""
 
         labels = el.find_elements(
-            By.XPATH,
+            "xpath",
             (
                 "ancestor::*[.//span[contains(concat(' ', normalize-space(@class), ' '), ' z-label ')]]"
                 "[1]//span[contains(concat(' ', normalize-space(@class), ' '), ' z-label ')]"
@@ -980,19 +936,19 @@ def _extract_nfield_dragndrop_blocks(driver, frame_chain=None) -> List[Dict[str,
     Returns a single matrix block; dispatch via hidden radio JS click per (row, col).
     """
     try:
-        if not driver.find_elements(By.CSS_SELECTOR, "div._dragndrop"):
+        if not driver.find_elements("css selector", "div._dragndrop"):
             return []
     except Exception:
         return []
 
     try:
-        table = driver.find_element(By.CSS_SELECTOR, "table.mrQuestionTable")
+        table = driver.find_element("css selector", "table.mrQuestionTable")
     except Exception:
         return []
 
     col_headers: dict = {}
     try:
-        for idx, cell in enumerate(table.find_elements(By.CSS_SELECTOR, "td.mrGridQuestionText")):
+        for idx, cell in enumerate(table.find_elements("css selector", "td.mrGridQuestionText")):
             txt = re.sub(r"\s+", " ", (cell.get_attribute("innerText") or cell.text or "")).strip()
             if txt:
                 col_headers[idx] = txt
@@ -1007,9 +963,9 @@ def _extract_nfield_dragndrop_blocks(driver, frame_chain=None) -> List[Dict[str,
     question_label = ""
     qname = ""
     try:
-        fieldset = driver.find_element(By.CSS_SELECTOR, "fieldset[questionname]")
+        fieldset = driver.find_element("css selector", "fieldset[questionname]")
         qname = (fieldset.get_attribute("questionname") or "").strip()
-        legend = fieldset.find_element(By.CSS_SELECTOR, "legend.mrQuestionText")
+        legend = fieldset.find_element("css selector", "legend.mrQuestionText")
         question_label = re.sub(r"\s+", " ", (legend.get_attribute("innerText") or legend.text or "")).strip()
     except Exception:
         pass
@@ -1026,20 +982,20 @@ def _extract_nfield_dragndrop_blocks(driver, frame_chain=None) -> List[Dict[str,
     nested_xpath_map: Dict[str, Any] = {}  # {row_label: {col_label: xpath}}
 
     try:
-        rows = table.find_elements(By.CSS_SELECTOR, "tr")
+        rows = table.find_elements("css selector", "tr")
     except Exception:
         return []
 
     for tr in rows:
         try:
-            cat_tds = tr.find_elements(By.CSS_SELECTOR, "td.mrGridCategoryText")
+            cat_tds = tr.find_elements("css selector", "td.mrGridCategoryText")
             if not cat_tds:
                 continue
             row_label = re.sub(r"\s+", " ", (cat_tds[0].get_attribute("innerText") or cat_tds[0].text or "")).strip()
             if not row_label:
                 continue
 
-            radios = tr.find_elements(By.CSS_SELECTOR, "input[type='radio']")
+            radios = tr.find_elements("css selector", "input[type='radio']")
             if not radios:
                 continue
 
@@ -1851,7 +1807,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
     # Pattern spécifique
     try:
         choice_els = driver.find_elements(
-            By.CSS_SELECTOR,
+            "css selector",
             "input[type='radio'], input[type='checkbox'], [role='radio']:not(svg), [role='checkbox']:not(svg)"
         )
     except Exception:
@@ -1883,7 +1839,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         try:
             return bool(
                 el.find_elements(
-                    By.XPATH,
+                    "xpath",
                     "ancestor::ul[contains(concat(' ', normalize-space(@class), ' '), ' sq-atm1d-buttons ')]",
                 )
             )
@@ -1911,7 +1867,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         try:
             return bool(
                 el.find_elements(
-                    By.XPATH,
+                    "xpath",
                     "ancestor::table[contains(concat(' ', normalize-space(@class), ' '), ' grid ') and "
                     "contains(@data-settings, 'table-mode')][1]",
                 )
@@ -1932,11 +1888,9 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             pass
 
         try:
-            return bool(driver.execute_script(
-                r"""
-                const el = arguments[0];
+            return bool(_pw_page(driver).evaluate(
+                r"""(el) => {
                 if (!el) return false;
-
                 const isVisible = (node) => {
                   if (!node || !(node instanceof Element)) return false;
                   const st = window.getComputedStyle(node);
@@ -1945,22 +1899,14 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                   const r = node.getBoundingClientRect();
                   return r.width > 0 && r.height > 0;
                 };
-
                 if (isVisible(el)) return true;
-
-                // 1) Label englobant
                 const parentLabel = el.closest('label');
                 if (isVisible(parentLabel)) return true;
-
-                // 2) Label lié via for=id
                 const id = el.id;
                 if (id) {
-                  const cssEscape = (window.CSS && CSS.escape) ? CSS.escape(id) : id.replace(/([ #;?%&,.+*~\\':\"!^$\[\]()=>|\\/@])/g, '\\\\$1');
+                  const cssEscape = (window.CSS && CSS.escape) ? CSS.escape(id) : id.replace(/([ #;?%&,.+*~\':\"!^$\[\]()=>|\/@])/g, '\\$1');
                   const linked = document.querySelector(`label[for="${cssEscape}"]`);
                   if (isVisible(linked)) return true;
-                  // Cas float-collapsed (Bootstrap 2 / Cint QPS): le label existe mais
-                  // a une hauteur nulle car son seul enfant est float:left (.span12).
-                  // On l'accepte s'il n'est pas explicitement masqué et porte du texte.
                   if (linked) {
                     const ls = window.getComputedStyle(linked);
                     if (ls && ls.display !== 'none' && ls.visibility !== 'hidden' && ls.opacity !== '0') {
@@ -1969,17 +1915,10 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                     }
                   }
                 }
-
-                // 3) Wrapper option visible (cas UI custom)
-                const optionWrapper = el.closest(
-                  '[role="radio"], [role="checkbox"], .form-check, .option, li, .choice, .answer_options, [class*="answer_options"], div.answer'
-                );
+                const optionWrapper = el.closest('[role="radio"], [role="checkbox"], .form-check, .option, li, .choice, .answer_options, [class*="answer_options"], div.answer');
                 if (isVisible(optionWrapper)) return true;
-
                 return false;
-                """,
-                el,
-            ))
+            }""", _handle(el)))
         except Exception:
             return False
 
@@ -2021,9 +1960,8 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                 has_visible_radiolayout = False
                 if container:
                     try:
-                        has_visible_radiolayout = bool(driver.execute_script(
-                            """
-                            const container = arguments[0];
+                        has_visible_radiolayout = bool(_pw_page(driver).evaluate(
+                            """(container) => {
                             if (!container) return false;
                             const rows = container.querySelectorAll('.radioLayout');
                             if (!rows || !rows.length) return false;
@@ -2035,9 +1973,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                               if (r.width > 0 && r.height > 0) return true;
                             }
                             return false;
-                            """,
-                            container,
-                        ))
+                        }""", _handle(container)))
                     except Exception:
                         has_visible_radiolayout = False
                 if not (
@@ -2095,11 +2031,9 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                 container = _nearest_question_container(els[0])
                 if container is None:
                     continue
-                uid = driver.execute_script(
-                    "if (!arguments[0].__sq_uid__) {"
-                    "  arguments[0].__sq_uid__ = ++((window.__sq_uid__ = window.__sq_uid__ || 0));"
-                    "} return arguments[0].__sq_uid__;",
-                    container,
+                uid = _pw_page(driver).evaluate(
+                    "(el) => { if (!el.__sq_uid__) { el.__sq_uid__ = ++((window.__sq_uid__ = window.__sq_uid__ || 0)); } return el.__sq_uid__; }",
+                    _handle(container),
                 )
                 if uid is None:
                     continue
@@ -2165,7 +2099,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                     container = _nearest_question_container(els[0])
                     if container:
                         label_nodes = container.find_elements(
-                            By.CSS_SELECTOR,
+                            "css selector",
                             ".answers.answers-table .row-legend, "
                             ".answers.answers-table label[for], "
                             ".sq-atm1d-legend"
@@ -2188,7 +2122,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             if not question and group_key.startswith("checkbox:fieldset:"):
                 try:
                     legends = els[0].find_elements(
-                        By.XPATH,
+                        "xpath",
                         "ancestor::fieldset[contains(@class,'question-wrapper')][1]//legend",
                     )
                     if legends:
@@ -2204,7 +2138,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                 # et concatène les textes de plusieurs questions sur la même page.
                 try:
                     rg_nodes = els[0].find_elements(
-                        By.XPATH,
+                        "xpath",
                         "ancestor::*[@role='radiogroup' or @role='group'][1]"
                     )
                     if rg_nodes:
@@ -2215,7 +2149,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                                 if not ref_id:
                                     continue
                                 try:
-                                    node = driver.find_element(By.ID, ref_id)
+                                    node = driver.find_element("id", ref_id)
                                     txt = _norm(node.text or node.get_attribute("innerText") or "")
                                     if txt and txt not in texts:
                                         texts.append(txt)
@@ -2232,7 +2166,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             if not question:
                 try:
                     q_nodes = els[0].find_elements(
-                        By.XPATH,
+                        "xpath",
                         "ancestor::div[contains(@class,'js-question-options')][1]"
                         "/parent::div[contains(@class,'answer')]"
                         "/preceding-sibling::*[contains(@class,'question')][1]"
@@ -2257,12 +2191,12 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                 try:
                     _el_cls = _norm_lc(els[0].get_attribute("class") or "")
                     if "mrsingle" in _el_cls or "mrmultiple" in _el_cls:
-                        scope_nodes = els[0].find_elements(By.XPATH, "ancestor::form[1]")
+                        scope_nodes = els[0].find_elements("xpath", "ancestor::form[1]")
                         scope = scope_nodes[0] if scope_nodes else None
                         q_spans = (
-                            scope.find_elements(By.CSS_SELECTOR, "span.mrQuestionText")
+                            scope.find_elements("css selector", "span.mrQuestionText")
                             if scope else
-                            driver.find_elements(By.CSS_SELECTOR, "span.mrQuestionText")
+                            driver.find_elements("css selector", "span.mrQuestionText")
                         )
                         opt_lc = {_norm_lc(o) for o in options if o}
                         for q_span in q_spans:
@@ -2279,7 +2213,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                 # Pattern spécifique
                 try:
                     if not question:
-                        el_label = driver.find_elements(By.CSS_SELECTOR, "#label")
+                        el_label = driver.find_elements("css selector", "#label")
                         if el_label:
                             t = _norm(el_label[0].text)
                             if t:
@@ -2316,8 +2250,8 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             # le DOM, élément .muted visible avec texte non déjà inclus.
             if question:
                 try:
-                    muted_instruction = _norm(driver.execute_script(
-                        """
+                    muted_instruction = _norm(_pw_page(driver).evaluate(
+                        """() => {
                         const labelEl = document.querySelector('#label');
                         if (!labelEl || !labelEl.parentElement) return '';
                         const candidates = labelEl.parentElement.querySelectorAll(
@@ -2328,11 +2262,11 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                             if (!st || st.display === 'none' || st.visibility === 'hidden') continue;
                             const r = c.getBoundingClientRect();
                             if (r.width === 0 && r.height === 0) continue;
-                            const txt = (c.innerText || c.textContent || '').replace(/\\s+/g, ' ').trim();
+                            const txt = (c.innerText || c.textContent || '').replace(/\s+/g, ' ').trim();
                             if (txt.length >= 4) return txt;
                         }
                         return '';
-                        """
+                    }"""
                     ) or "")
                     if muted_instruction and _norm_lc(muted_instruction) not in _norm_lc(question):
                         question = question + " " + muted_instruction
@@ -2430,7 +2364,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                             try:
                                 has_answer_options = bool(
                                     e.find_elements(
-                                        By.XPATH,
+                                        "xpath",
                                         "ancestor::*[contains(concat(' ', normalize-space(@class), ' '), ' answer_options ')][1]",
                                     )
                                 )
@@ -2439,7 +2373,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                             try:
                                 has_option_radio = bool(
                                     e.find_elements(
-                                        By.XPATH,
+                                        "xpath",
                                         "ancestor::*[contains(concat(' ', normalize-space(@class), ' '), ' answer_options ')][1]//*[contains(concat(' ', normalize-space(@class), ' '), ' option_radio ')]",
                                     )
                                 )
@@ -2458,7 +2392,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                         # Pattern spécifique
                             in_grid = False
                             try:
-                                in_grid = bool(e.find_elements(By.XPATH, "ancestor::table[contains(@class,'grid')][1]"))
+                                in_grid = bool(e.find_elements("xpath", "ancestor::table[contains(@class,'grid')][1]"))
                             except Exception:
                                 in_grid = False
 
@@ -2472,7 +2406,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                                 )
                             else:
                                 try:
-                                    has_label = bool(driver.find_elements(By.XPATH, f"//label[@for={id_lit}]"))
+                                    has_label = bool(driver.find_elements("xpath", f"//label[@for={id_lit}]"))
                                 except Exception:
                                     has_label = False
 
@@ -2492,7 +2426,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                     else:
                         click_el = e
                         try:
-                            lab = e.find_element(By.XPATH, "ancestor::label[1]")
+                            lab = e.find_element("xpath", "ancestor::label[1]")
                             if lab:
                                 click_el = lab
                         except Exception:
@@ -2611,11 +2545,9 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         vu isolément et le fallback texte prend la main.
         """
         try:
-            host = driver.execute_script(
-                r"""
-                const el = arguments[0];
+            host = _pw_page(driver).evaluate(
+                r"""(el) => {
                 if (!el || !el.parentElement) return null;
-
                 const navTokens = ['next','suivant','continue','continuer','submit','start','back','retour','previous'];
                 const norm = (s) => (s || '').replace(/\s+/g, ' ').trim().toLowerCase();
                 const isVisible = (node) => {
@@ -2626,13 +2558,11 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                   const r = node.getBoundingClientRect();
                   return r.width > 0 && r.height > 0;
                 };
-
                 let cur = el.parentElement;
                 for (let depth = 0; cur && depth < 7; depth++, cur = cur.parentElement) {
                   if (!isVisible(cur)) continue;
                   const btns = Array.from(cur.querySelectorAll('button, [role="button"], a[role="button"]'));
                   if (btns.length < 2 || btns.length > 12) continue;
-
                   let nonNav = 0;
                   for (const b of btns) {
                     if (!isVisible(b)) continue;
@@ -2641,14 +2571,10 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                     if (navTokens.some(tok => txt.includes(tok))) continue;
                     nonNav += 1;
                   }
-
                   if (nonNav >= 2) return cur;
                 }
-
                 return null;
-                """,
-                el,
-            )
+            }""", _handle(el))
             if host:
                 return host
         except Exception:
@@ -2679,7 +2605,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
 
     try:
         btn_like = driver.find_elements(
-            By.CSS_SELECTOR,
+            "css selector",
             "button, a[role='button'], [role='button'], .sq-cardrating-button"
         )
     except Exception:
@@ -2706,18 +2632,17 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                 return True
 
             return bool(
-                driver.execute_script(
-                    """
-                    const el = arguments[0];
+                _pw_page(driver).evaluate(
+                    """(el) => {
                     if (!el || !(el instanceof Element)) return false;
                     if (el.closest('div.bootstrap-select')) return true;
                     const dt = (el.getAttribute('data-toggle') || '').trim().toLowerCase();
                     if (dt === 'dropdown' && el.classList.contains('dropdown-toggle')) return true;
                     return false;
-                    """,
-                    el,
-                )
+                }""", _handle(el))
             )
+        except Exception:
+            return False
         except Exception:
             return False
 
@@ -2735,9 +2660,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             try:
                 if b.get_attribute("data-cky-tag") is not None:
                     continue
-                _in_cky = driver.execute_script(
-                    "return arguments[0].closest('.cky-consent-container') !== null;", b
-                )
+                _in_cky = _pw_page(driver).evaluate("(el) => el.closest('.cky-consent-container') !== null", _handle(b))
                 if _in_cky:
                     continue
             except Exception:
@@ -2747,9 +2670,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             # dans .interview-footer__options-container sont des options de navigation
             # de page, pas des choix de réponse. Guard DOM strict : ancêtre direct.
             try:
-                _in_footer = driver.execute_script(
-                    "return arguments[0].closest('.interview-footer__options-container') !== null;", b
-                )
+                _in_footer = _pw_page(driver).evaluate("(el) => el.closest('.interview-footer__options-container') !== null", _handle(b))
                 if _in_footer:
                     continue
             except Exception:
@@ -2780,9 +2701,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                 continue
             if _b_tag == "tr":
                 try:
-                    _in_thead = driver.execute_script(
-                        "return arguments[0].closest('thead') !== null;", b
-                    )
+                    _in_thead = _pw_page(driver).evaluate("(el) => el.closest('thead') !== null", _handle(b))
                     if _in_thead:
                         continue
                 except Exception:
@@ -2793,7 +2712,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             if _b_tag == "tr":
                 # Voxco lookup table: build label from <td> cells (not raw row text)
                 try:
-                    _tds = b.find_elements(By.CSS_SELECTOR, "td")
+                    _tds = b.find_elements("css selector", "td")
                     _td_texts = [_norm(td.text or td.get_attribute("innerText") or "") for td in _tds]
                     _td_texts = [x for x in _td_texts if x]
                     if _td_texts:
@@ -2803,7 +2722,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             if (not t or len(t) < 2) and "sq-cardrating-button" in cls:
                 # Pattern spécifique
                 try:
-                    t = _norm(b.find_element(By.CSS_SELECTOR, ".sq-cardrating-content").text)
+                    t = _norm(b.find_element("css selector", ".sq-cardrating-content").text)
                 except Exception:
                     pass
 
@@ -2815,7 +2734,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             cont = _nearest_question_container(b)
             if not cont:
                 try:
-                    cont = b.find_element(By.XPATH, "ancestor::*[self::div or self::section or self::form][1]")
+                    cont = b.find_element("xpath", "ancestor::*[self::div or self::section or self::form][1]")
                 except Exception:
                     cont = None
             if not cont:
@@ -2847,7 +2766,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             for b in btns:
                 if _btns_are_tr:
                     try:
-                        _tds = b.find_elements(By.CSS_SELECTOR, "td")
+                        _tds = b.find_elements("css selector", "td")
                         _td_texts = [_norm(td.text or td.get_attribute("innerText") or "") for td in _tds]
                         tt = " | ".join(x for x in _td_texts if x)
                     except Exception:
@@ -2861,11 +2780,9 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             if _btns_are_tr:
                 # Extract lookup table columns and row metadata from the enclosing <table>
                 try:
-                    _table_el = driver.execute_script(
-                        "return arguments[0].closest('table');", btns[0]
-                    )
+                    _table_el = _pw_page(driver).evaluate("(el) => el.closest('table')", _handle(btns[0]))
                     if _table_el:
-                        _th_els = _table_el.find_elements(By.CSS_SELECTOR, "thead th")
+                        _th_els = _table_el.find_elements("css selector", "thead th")
                         _lookup_columns = [
                             _norm(th.text or th.get_attribute("innerText") or "") for th in _th_els
                         ]
@@ -2874,7 +2791,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                             _is_lookup_table = True
                             for b in btns:
                                 _row_id = (b.get_attribute("id") or "").strip()
-                                _tds = b.find_elements(By.CSS_SELECTOR, "td")
+                                _tds = b.find_elements("css selector", "td")
                                 _row_vals: Dict[str, str] = {}
                                 for i, td in enumerate(_tds):
                                     if i < len(_lookup_columns):
@@ -2897,9 +2814,8 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             # Scopé strictement : déclenché uniquement si cf-question__text non vide trouvé.
             if cont:
                 try:
-                    _cf_q_text = driver.execute_script(
-                        """
-                        const el = arguments[0];
+                    _cf_q_text = _pw_page(driver).evaluate(
+                        """(el) => {
                         const cfq = el.closest('[class*="cf-question"]');
                         if (!cfq) return null;
                         const txt = cfq.querySelector('.cf-question__text');
@@ -2908,9 +2824,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                         const parts = [txt.innerText.trim()];
                         if (instr && instr.innerText.trim()) parts.push(instr.innerText.trim());
                         return parts.join(' ');
-                        """,
-                        cont,
-                    )
+                    }""", _handle(cont))
                     if _cf_q_text:
                         question = _norm(_cf_q_text)
                 except Exception:
@@ -2928,11 +2842,9 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             # la préfixe au hint déjà extrait (ex : "CHOISISSEZ UNE OU PLUSIEURS RÉPONSES").
             # Guard DOM strict : les deux sélecteurs doivent exister simultanément.
             try:
-                _in_interview_q = driver.execute_script(
-                    "return arguments[0].closest('.interview-question') !== null;", cont
-                ) if cont else False
+                _in_interview_q = _pw_page(driver).evaluate("(el) => el.closest('.interview-question') !== null", _handle(cont)) if cont else False
                 if _in_interview_q:
-                    _h1_els = driver.find_elements(By.CSS_SELECTOR, "h1.interview-header__title")
+                    _h1_els = driver.find_elements("css selector", "h1.interview-header__title")
                     if _h1_els:
                         _h1_txt = _norm(_h1_els[0].text or _h1_els[0].get_attribute("innerText") or "")
                         if _h1_txt:
@@ -2953,15 +2865,13 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             # l'instruction dans div.itemRulesWrapper — tous deux hors scope du
             # conteneur div.css-gos33m. Guard DOM strict : .pollItemWrap + h2.pollItemTitle.
             try:
-                _poll_wrap = driver.execute_script(
-                    "return arguments[0].closest('.pollItemWrap');", cont
-                ) if cont else None
+                _poll_wrap = _pw_page(driver).evaluate("(el) => el.closest('.pollItemWrap')", _handle(cont)) if cont else None
                 if _poll_wrap:
-                    _h2_els = _poll_wrap.find_elements(By.CSS_SELECTOR, "h2.pollItemTitle")
+                    _h2_els = _poll_wrap.find_elements("css selector", "h2.pollItemTitle")
                     if _h2_els:
                         _poll_q = _norm(_h2_els[0].text or _h2_els[0].get_attribute("innerText") or "")
                         if _poll_q:
-                            _rules_els = _poll_wrap.find_elements(By.CSS_SELECTOR, "div.itemRulesWrapper")
+                            _rules_els = _poll_wrap.find_elements("css selector", "div.itemRulesWrapper")
                             _rules_txt = ""
                             if _rules_els:
                                 _rules_txt = _norm(_rules_els[0].text or _rules_els[0].get_attribute("innerText") or "")
@@ -2996,9 +2906,8 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             # Sinon → comportement par défaut radio/1.
             _is_choice_multiple = False
             try:
-                _is_choice_multiple = driver.execute_script(
-                    """
-                    const btn = arguments[0];
+                _is_choice_multiple = _pw_page(driver).evaluate(
+                    """(btn) => {
                     const ul = btn.closest('ul[data-test-id="ChoiceMultiple_ChoiceFields"]');
                     if (ul !== null) return true;
                     const lb = btn.closest('div[role="listbox"]');
@@ -3007,9 +2916,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                         return cls.includes('image-select') || cls.includes('image-choice-question__answers');
                     }
                     return false;
-                    """,
-                    btns[0],
-                )
+                }""", _handle(btns[0]))
             except Exception:
                 _is_choice_multiple = False
 
@@ -3033,7 +2940,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             for b in btns:
                 if _btns_are_tr:
                     try:
-                        _tds = b.find_elements(By.CSS_SELECTOR, "td")
+                        _tds = b.find_elements("css selector", "td")
                         _td_texts = [_norm(td.text or td.get_attribute("innerText") or "") for td in _tds]
                         lbl = " | ".join(x for x in _td_texts if x)
                     except Exception:
@@ -3098,7 +3005,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
     # --- 2) Autres inputs (dropdown / text / textarea / button) ---
     try:
         other_inputs = driver.find_elements(
-            By.CSS_SELECTOR,
+            "css selector",
             "input:not([type='radio']):not([type='checkbox']):not([type='hidden']), textarea, select, button, a[role='button']",
         )
     except Exception:
@@ -3155,7 +3062,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                 try:
                     # conteneurs nav typiques (YouGov & autres)
                     if el.find_elements(
-                        By.XPATH,
+                        "xpath",
                         "ancestor::*[@role='navigation' or @id='mainNav' or contains(@class,'nav-buttons')][1]"
                     ):
                         continue
@@ -3177,7 +3084,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             dropdown_options_for_question: List[str] = []
             if itype == "dropdown":
                 try:
-                    for o in el.find_elements(By.TAG_NAME, "option"):
+                    for o in el.find_elements("tag name", "option"):
                         if o.get_attribute("disabled"):
                             continue
                         t = _norm(o.text or o.get_attribute("innerText") or "")
@@ -3194,7 +3101,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             # les légendes CSS-invisibles (width/height=0 mais texte présent dans le DOM).
             try:
                 ql_nodes = el.find_elements(
-                    By.XPATH,
+                    "xpath",
                     "ancestor::fieldset[1]//legend[contains(@class,'qualification-text')]",
                 )
                 if ql_nodes:
@@ -3212,7 +3119,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                 try:
                     _el_id = (el.get_attribute("id") or "").strip()
                     if _el_id:
-                        _lbl = driver.find_element(By.CSS_SELECTOR, f'label[for="{_el_id}"]')
+                        _lbl = driver.find_element("css selector", f'label[for="{_el_id}"]')
                         _lbl_txt = _norm(_lbl.text or _lbl.get_attribute("textContent") or "")
                         if _lbl_txt and _is_question_text(_lbl_txt):
                             question = _lbl_txt
@@ -3233,7 +3140,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             hint = None
             try:
                 if itype == "dropdown" and container:
-                    sels = container.find_elements(By.TAG_NAME, "select")
+                    sels = container.find_elements("tag name", "select")
                     multi = bool(sels and len(sels) >= 2)
                     if multi:
                         hint = _dropdown_field_hint(driver, el)
@@ -3289,12 +3196,12 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                 try:
                     el_classes = (el.get_attribute("class") or "").lower()
                     if "mrdropdown" in el_classes:
-                        scope_nodes = el.find_elements(By.XPATH, "ancestor::form[1]")
+                        scope_nodes = el.find_elements("xpath", "ancestor::form[1]")
                         scope = scope_nodes[0] if scope_nodes else None
                         q_spans = (
-                            scope.find_elements(By.CSS_SELECTOR, "span.mrQuestionText")
+                            scope.find_elements("css selector", "span.mrQuestionText")
                             if scope else
-                            driver.find_elements(By.CSS_SELECTOR, "span.mrQuestionText")
+                            driver.find_elements("css selector", "span.mrQuestionText")
                         )
                         opt_lc = {_norm_lc(o) for o in dropdown_options_for_question if o}
                         for q_span in q_spans:
@@ -3329,7 +3236,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                 try:
                     # Remonter au td qui porte à la fois "askia-caption" et "askia-question-label"
                     parent_label_tds = el.find_elements(
-                        By.XPATH,
+                        "xpath",
                         "ancestor::td["
                         "contains(@class,'askia-caption') and "
                         "contains(@class,'askia-question-label')"
@@ -3340,19 +3247,15 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                         # Extraire le textContent complet du td en excluant le contenu
                         # du span#indic (sous-titre instructionnel) et les inputs/selects.
                         parent_full_txt = _norm(
-                            el.parent.execute_script(
-                                """
-                                const td = arguments[0];
+                            _pw_page(driver).evaluate(
+                                """(td) => {
                                 if (!td) return '';
                                 const clone = td.cloneNode(true);
-                                // Supprimer les éléments non textuels (inputs, selects, spans d'instruction)
                                 clone.querySelectorAll('input, select, textarea, script, style').forEach(n => n.remove());
-                                // Supprimer span#indic (sous-titre Askia)
                                 const indic = clone.querySelector('#indic, span[id="indic"]');
                                 if (indic) indic.remove();
-                                return (clone.innerText || clone.textContent || '').replace(/\\s+/g, ' ').trim();
-                                """,
-                                parent_td,
+                                return (clone.innerText || clone.textContent || '').replace(/\s+/g, ' ').trim();
+                            }""", _handle(parent_td)
                             ) or ""
                         )
                         # Le titre global est valide s'il est substantiellement plus long
@@ -3430,9 +3333,9 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                 try:
                     _role_opt = _norm_lc(el.get_attribute("role") or "")
                     if _role_opt == "option":
-                        _in_custom = driver.execute_script(
-                            "return arguments[0].closest('.choice-question__custom-field-container') !== null;",
-                            el,
+                        _in_custom = _pw_page(driver).evaluate(
+                            "(el) => el.closest('.choice-question__custom-field-container') !== null",
+                            _handle(el),
                         )
                         if _in_custom:
                             log_debug("[DOM_DEBUG]", "skip_interview_layout_custom_text_field role=option")
@@ -3455,27 +3358,15 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                         or "answer__other" in cls_lc
                     )
                     if looks_like_other:
-                        linked_to_choice = bool(driver.execute_script(
-                            """
-                            const el = arguments[0];
+                        linked_to_choice = bool(_pw_page(driver).evaluate(
+                            """(el) => {
                             if (!el) return false;
-
-                            const wrappers = [
-                              '.cf-radio-answer', '.cf-checkbox-answer',
-                              '[role="radio"]', '[role="checkbox"]',
-                              '.cf-ranking-answer'
-                            ];
-
-                            for (const sel of wrappers) {
-                              if (el.closest(sel)) return true;
-                            }
-
+                            const wrappers = ['.cf-radio-answer', '.cf-checkbox-answer', '[role="radio"]', '[role="checkbox"]', '.cf-ranking-answer'];
+                            for (const sel of wrappers) { if (el.closest(sel)) return true; }
                             const parent = el.parentElement;
                             if (!parent) return false;
                             return !!parent.querySelector('[role="radio"], [role="checkbox"], .cf-radio, .cf-checkbox');
-                            """,
-                            el,
-                        ))
+                        }""", _handle(el)))
                         if linked_to_choice:
                             continue
                 except Exception:
@@ -3487,7 +3378,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                     # Material/mrIWeb: grille texte (table.mrGridTable) avec names
                     # de type `<var>_Q__N_QAnswer` => un seul bloc multi_text.
                     try:
-                        mriweb_grids = el.find_elements(By.XPATH, "ancestor::table[contains(@class,'mrGridTable')][1]")
+                        mriweb_grids = el.find_elements("xpath", "ancestor::table[contains(@class,'mrGridTable')][1]")
                     except Exception:
                         mriweb_grids = []
 
@@ -3501,7 +3392,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                                 grid_id = ""
 
                         try:
-                            grid_inputs = grid.find_elements(By.CSS_SELECTOR, "input.mrEdit[type='text'][name]")
+                            grid_inputs = grid.find_elements("css selector", "input.mrEdit[type='text'][name]")
                         except Exception:
                             grid_inputs = []
 
@@ -3623,7 +3514,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                     # Pattern spécifique
                     try:
                         peers = container.find_elements(
-                            By.CSS_SELECTOR,
+                            "css selector",
                             "input:not([type='radio']):not([type='checkbox']):not([type='hidden']):not([type='button']):not([type='submit']):not([type='reset']):not([type='file']):not([type='image']), textarea",
                         )
                     except Exception:
@@ -3834,7 +3725,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             if itype == "dropdown":
                 try:
                     if not multi and container:
-                        sels = container.find_elements(By.TAG_NAME, "select")
+                        sels = container.find_elements("tag name", "select")
                         if len(sels) >= 2:
                             multi = True
                     if multi:
@@ -3857,7 +3748,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                     sig = (question, itype)
             elif itype in ("text", "textarea"):
                 try:
-                    in_mriweb_grid = bool(el.find_elements(By.XPATH, "ancestor::table[contains(@class,'mrGridTable')][1]"))
+                    in_mriweb_grid = bool(el.find_elements("xpath", "ancestor::table[contains(@class,'mrGridTable')][1]"))
                 except Exception:
                     in_mriweb_grid = False
                 if in_mriweb_grid:
@@ -3978,7 +3869,7 @@ def _detect_sejson_unsupported_metatype(driver) -> str:
     _SEJSON_UNSUPPORTED_METATYPES. Aucun effet sur les pages sans ce script.
     """
     try:
-        scripts = driver.find_elements(By.CSS_SELECTOR, 'script.SEJson[type="application/json"]')
+        scripts = driver.find_elements("css selector", 'script.SEJson[type="application/json"]')
         for script in (scripts or []):
             raw = script.get_attribute("textContent") or script.get_attribute("innerHTML") or ""
             # Strip HTML comment wrapper: <!-- ... //-->
@@ -4006,9 +3897,9 @@ def _find_fullscreen_iframe_idx(driver) -> "int | None":
     Garde-fou DOM strict: style doit contenir position:fixed ET width:100% ET height:100%.
     Ne détecte pas les iframes partielles.
     """
+    page = _pw_page(driver)
     try:
-        driver.switch_to.default_content()
-        frames = driver.find_elements(By.CSS_SELECTOR, "iframe, frame")
+        frames = page.query_selector_all("iframe, frame")
     except Exception:
         return None
     for idx, frame in enumerate(frames):
@@ -4073,7 +3964,7 @@ def analyze_dom(driver) -> List[Dict[str, Any]]:
             return False
 
         try:
-            cards = driver.find_elements(By.CSS_SELECTOR, "li.sq-cardsort-card[atmost]")
+            cards = _pw_page(driver).query_selector_all("li.sq-cardsort-card[atmost]")
         except Exception:
             return False
 
