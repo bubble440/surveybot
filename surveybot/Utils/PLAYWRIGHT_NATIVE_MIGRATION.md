@@ -100,12 +100,18 @@ BLOC 3 — Résolution du survey externe
     Statut : migre (valide en attach le 2026-06-22)
     Fichiers : Survey/input_utils.py, Survey/cta_handler.py
 
-  BLOC 3b5c+ -- imports lazy restants
+  BLOC 3b5c -- 7 modules input_*.py
+    Statut : migre (valide en attach le 2026-06-22)
+    Fichiers : Survey/input_frame.py, Survey/input_text.py,
+               Survey/input_checkbox.py, Survey/input_dropdown.py,
+               Survey/input_matrix.py, Survey/input_radio.py,
+               Survey/input_slider.py
+
+  BLOC 3b5d -- Survey/input_handler.py
     Statut : non demarre
-    Fichiers : Survey/input_handler.py, Survey/input_frame.py,
-               Survey/input_text.py, Survey/input_checkbox.py,
-               Survey/input_radio.py, Survey/input_dropdown.py,
-               Survey/input_matrix.py, Survey/action_dispatcher.py
+
+  BLOC 3b6 -- Survey/action_dispatcher.py
+    Statut : non demarre (traite en dernier, isole)
 
   Note : action_dispatcher.py (~6100 lignes) est le fichier le plus gros et
   le plus critique de BLOC 3b. Cohérent avec PLAYWRIGHT_MIGRATION.md (Option A),
@@ -319,6 +325,13 @@ HISTORIQUE
             Pont vers BLOC 2 (_page_to_shim dans main.py) fonctionnel.
             Point d'attention noté : popup_not_detected immédiatement après
             sélection — à traiter dans le patch BLOC 2.
+
+2026-06-22  BLOC 3b5c migre (7 modules input_*.py) :
+            By.* -> string literals, ActionChains -> hover+click,
+            Select() -> .select_option(), WebDriverWait -> polling,
+            execute_script -> page.evaluate ou shim via execute_script,
+            in_each_frame_recursive -> frame_utils switch_to_frame_chain,
+            cell.parent -> page = _pw_page(driver).
 
 2026-06-22  BLOC 3b5b migre (input_utils.py + cta_handler.py) :
             By.* -> string literals, execute_script -> page.evaluate,
