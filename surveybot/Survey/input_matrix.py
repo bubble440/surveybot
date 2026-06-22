@@ -116,11 +116,14 @@ def iter_matrix_rows(driver):
             for css in ["th", "td[1]", "td[1]//label", "td[1]//div"]:
                 try:
                     lbl_el = tr.find_element("xpath", f".//{css}")
-                    if lbl_el.text.strip():
+                    if lbl_el.inner_text().strip():
                         break
                 except:
                     continue
-            lbl = (lbl_el.text if lbl_el else "").strip()
+            try:
+                lbl = (lbl_el.inner_text() if lbl_el else "").strip()
+            except Exception:
+                lbl = ""
             # ignorer header row
             if tr.find_elements(
                 "xpath", ".//input[@type='radio' or @type='checkbox'] | .//select"
@@ -148,7 +151,7 @@ def iter_matrix_rows(driver):
                     lbl = row.find_element(
                         "xpath",
                         ".//label | .//*[self::div or self::span][normalize-space(.)!='']",
-                    ).text.strip()
+                    ).inner_text().strip()
                 except:
                     pass
                 rows.append((row, lbl))
@@ -165,7 +168,7 @@ def get_matrix_columns(driver):
     # head <th>
     for th in driver.find_elements("xpath", "//table//th[normalize-space(.)!='']"):
         try:
-            headers.append(_norm(th.text))
+            headers.append(_norm(th.inner_text()))
         except:
             continue
     if headers:
@@ -174,7 +177,10 @@ def get_matrix_columns(driver):
     try:
         first_row = driver.find_element("xpath", "(//table//tr)[1]")
         for td in first_row.find_elements("xpath", ".//td[normalize-space(.)!='']"):
-            headers.append(_norm(td.text))
+            try:
+                headers.append(_norm(td.inner_text()))
+            except Exception:
+                pass
     except:
         pass
     # div-based header
@@ -182,7 +188,10 @@ def get_matrix_columns(driver):
         "css selector", ".matrix thead, .q-matrix thead, .Matrix thead"
     ):
         for th in h.find_elements("xpath", ".//*[normalize-space(.)!='']"):
-            headers.append(_norm(th.text))
+            try:
+                headers.append(_norm(th.inner_text()))
+            except Exception:
+                pass
     return headers
 
 
@@ -247,17 +256,16 @@ def select_cell_action(cell, preferred_col_norm):
     try:
         sel = cell.find_element("tag name", "select")
         _sel_el_mx = _handle(sel)
-        # essai par texte proche du nom de colonne
-        for opt in S.options:
-            if _norm(opt.text) == preferred_col_norm or preferred_col_norm in _norm(
-                opt.text
-            ):
-                _sel_el_mx.select_option(label=opt.text)
+        options = _sel_el_mx.evaluate(
+            "el => [...el.options].map(o => ({text: o.text, value: o.value}))"
+        )
+        for opt in options:
+            if _norm(opt["text"]) == preferred_col_norm or preferred_col_norm in _norm(opt["text"]):
+                _sel_el_mx.select_option(label=opt["text"])
                 return True
-        # essai par value
-        for opt in S.options:
-            if _norm(opt.get_attribute("value") or "") == preferred_col_norm:
-                S.select_by_value(opt.get_attribute("value"))
+        for opt in options:
+            if _norm(opt["value"] or "") == preferred_col_norm:
+                _sel_el_mx.select_option(value=opt["value"])
                 return True
     except:
         pass
@@ -329,7 +337,10 @@ def click_matrix_cell_by_row_and_col(driver, row_label: str, col_label: str) -> 
                                 "xpath",
                                 ".//input[@type='radio' or @type='checkbox'] | .//*[@role='radio' or @role='checkbox']"
                             ))
-                            raw = (td.text or td.get_attribute("innerText") or "").strip()
+                            try:
+                                raw = td.inner_text().strip()
+                            except Exception:
+                                raw = (td.get_attribute("innerText") or "").strip()
                             if raw and not has_input:
                                 lbl = _norm(raw)
                                 break
@@ -339,7 +350,7 @@ def click_matrix_cell_by_row_and_col(driver, row_label: str, col_label: str) -> 
                 if not lbl:
                     for xp in ["./th", "./td[1]", "./td[2]", "./td[1]//label", "./td[2]//label", "./td[1]//div", "./td[2]//div"]:
                         try:
-                            t = tr.find_element("xpath", xp).text.strip()
+                            t = tr.find_element("xpath", xp).inner_text().strip()
                             if t:
                                 lbl = _norm(t)
                                 break
@@ -457,7 +468,10 @@ def click_matrix_cell_by_row_and_col(driver, row_label: str, col_label: str) -> 
                 rows = g.find_elements("xpath", ".//*[self::div or self::li][.//input[@type='radio' or @type='checkbox'] or .//select]")
                 row = None
                 for r in rows:
-                    txt = (_norm(r.text) if r.text else "").strip()
+                    try:
+                    txt = _norm(r.inner_text()).strip()
+                except Exception:
+                    txt = ""
                     if txt and (rneedle == txt or rneedle in txt or txt in rneedle):
                         row = r
                         break
@@ -469,7 +483,10 @@ def click_matrix_cell_by_row_and_col(driver, row_label: str, col_label: str) -> 
                 best_score = -1
                 for cell in cells:
                     try:
-                        sig = _norm(cell.text or cell.get_attribute("innerText") or "")
+                        try:
+                            sig = _norm(cell.inner_text())
+                        except Exception:
+                            sig = _norm(cell.get_attribute("innerText") or "")
                         sc = 1.0 if (cneedle and (cneedle == sig or cneedle in sig or sig in cneedle)) else 0.0
                         if sc > best_score and cell.find_elements("xpath", ".//input[@type='radio' or @type='checkbox'] | .//*[@role='radio' or @role='checkbox']"):
                             best = cell
@@ -552,7 +569,11 @@ def apply_matrix_column_to_all_rows(driver, column_label: str) -> bool:
     success_any = False
     for row_el, _lbl in rows:
         try:
-            if col_idx is not None and row_el.tag_name.lower() == "tr":
+            try:
+                _row_tag = row_el.evaluate("el => el.tagName.toLowerCase()")
+            except Exception:
+                _row_tag = ""
+            if col_idx is not None and _row_tag == "tr":
                 tds = row_el.find_elements("xpath", ".//td")
                 cell_candidates = []
                 if len(tds) > col_idx:

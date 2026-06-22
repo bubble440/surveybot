@@ -89,26 +89,26 @@ BLOC 3 — Résolution du survey externe
              (vérifié le 2026-06-22)
 
   BLOC 3b4 -- Survey/dom_analyzer.py
-    Statut : migre (valide en attach le 2026-06-22)
+    Statut : ✅ migré (valide en attach le 2026-06-22)
     Fichiers : Survey/dom_analyzer.py (~4600 lignes, ~20 fonctions top-level)
 
   BLOC 3b5a -- Survey/frame_utils.py
-    Statut : migre (valide en attach le 2026-06-22)
+    Statut : ✅ migré (valide en attach le 2026-06-22)
     Fichiers : Survey/frame_utils.py (_frame_elements, switch_to_frame_chain, iter_frame_chains)
 
   BLOC 3b5b -- Survey/input_utils.py + Survey/cta_handler.py
-    Statut : migre (valide en attach le 2026-06-22)
+    Statut : mi✅ migrégre (valide en attach le 2026-06-22)
     Fichiers : Survey/input_utils.py, Survey/cta_handler.py
 
   BLOC 3b5c -- 7 modules input_*.py
-    Statut : migre (valide en attach le 2026-06-22)
+    Statut : ✅ migré (valide en attach le 2026-06-22)
     Fichiers : Survey/input_frame.py, Survey/input_text.py,
                Survey/input_checkbox.py, Survey/input_dropdown.py,
                Survey/input_matrix.py, Survey/input_radio.py,
                Survey/input_slider.py
 
   BLOC 3b5d -- Survey/input_handler.py
-    Statut : non demarre
+    Statut : ✅ migré
 
   BLOC 3b6 -- Survey/action_dispatcher.py
     Statut : non demarre (traite en dernier, isole)
