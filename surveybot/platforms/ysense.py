@@ -2,16 +2,17 @@ from __future__ import annotations
 
 from typing import List
 
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException
-
 from platforms.base import Platform
 from Survey.log_utils import log_info, log_debug
 
 _TAG = "[YSENSE]"
 _LOGIN_URL = "https://www.ysense.com/login"
+
+
+def _pw_page(d):
+    if hasattr(d, '_page'):
+        return d._page
+    return d
 
 
 class YSensePlatform(Platform):
@@ -21,52 +22,49 @@ class YSensePlatform(Platform):
         password = config["Password"]
         log_info(_TAG, f"login() — navigation vers {_LOGIN_URL}")
 
-        driver.get(_LOGIN_URL)
+        page = _pw_page(driver)
+        page.goto(_LOGIN_URL)
 
         # Attendre la présence du champ email (server-rendered, pas de SPA hydration)
         try:
-            email_input = WebDriverWait(driver, 20).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, "input#username"))
+            email_input = page.wait_for_selector(
+                "input#username", state="attached", timeout=20000
             )
-        except TimeoutException:
+        except Exception:
             log_info(_TAG, "login() — timeout : input#username introuvable")
             return False
 
         log_debug(_TAG, "login() — champ email présent dans le DOM")
 
-        email_input.clear()
-        email_input.send_keys(email)
-        driver.execute_script(
-            "arguments[0].dispatchEvent(new Event('input',  { bubbles: true }));"
-            "arguments[0].dispatchEvent(new Event('change', { bubbles: true }));",
-            email_input,
-        )
+        email_input.fill(email)
         log_debug(_TAG, "login() — email saisi")
 
         try:
-            pwd_input = driver.find_element(By.CSS_SELECTOR, "input[type='password']")
+            pwd_input = page.query_selector("input[type='password']")
+            if pwd_input is None:
+                raise RuntimeError("introuvable")
         except Exception as e:
             log_info(_TAG, f"login() — champ password introuvable : {e}")
             return False
 
-        driver.execute_script(
-            "arguments[0].value = arguments[1];"
-            "arguments[0].dispatchEvent(new Event('input',  { bubbles: true }));"
-            "arguments[0].dispatchEvent(new Event('change', { bubbles: true }));",
-            pwd_input,
+        pwd_input.evaluate(
+            "(e, v) => {"
+            " e.value = v;"
+            " e.dispatchEvent(new Event('input',  { bubbles: true }));"
+            " e.dispatchEvent(new Event('change', { bubbles: true }));"
+            "}",
             password,
         )
-        if not (pwd_input.get_attribute("value") or "").strip():
-            pwd_input.clear()
-            pwd_input.send_keys(password)
-            log_debug(_TAG, "login() — mot de passe injecté via fallback send_keys()")
+        if not (pwd_input.input_value() or "").strip():
+            pwd_input.fill(password)
+            log_debug(_TAG, "login() — mot de passe injecté via fallback fill()")
         else:
             log_debug(_TAG, "login() — mot de passe injecté via JS")
 
         # Recaptcha si présent et visible
         try:
-            rc = driver.find_element(By.CSS_SELECTOR, "div#recaptcha-login")
-            if rc.is_displayed():
+            rc = page.query_selector("div#recaptcha-login")
+            if rc is not None and rc.is_visible():
                 log_info(_TAG, "login() — recaptcha détecté, résolution en cours…")
                 from captcha import recaptcha_handler
                 recaptcha_handler.solve_recaptcha_v2_auto(driver)
@@ -74,10 +72,12 @@ class YSensePlatform(Platform):
         except Exception:
             pass
 
-        # Soumettre via JS click
+        # Soumettre via click
         try:
-            submit_btn = driver.find_element(By.CSS_SELECTOR, "button.sbutton.large")
-            driver.execute_script("arguments[0].click();", submit_btn)
+            submit_btn = page.query_selector("button.sbutton.large")
+            if submit_btn is None:
+                raise RuntimeError("introuvable")
+            submit_btn.click()
             log_info(_TAG, "login() — bouton de soumission cliqué")
         except Exception as e:
             log_info(_TAG, f"login() — bouton de soumission introuvable : {e}")
@@ -85,18 +85,18 @@ class YSensePlatform(Platform):
 
         # Vérifier le succès : URL sans /login dans les 15s
         try:
-            WebDriverWait(driver, 15).until(
-                lambda d: "/login" not in d.current_url
+            page.wait_for_function(
+                "() => !window.location.href.includes('/login')", timeout=15000
             )
             log_info(_TAG, "login() — succès (URL sans /login)")
             return True
-        except TimeoutException:
+        except Exception:
             pass
 
         # Fallback : div#errors vide
         try:
-            errors_div = driver.find_element(By.CSS_SELECTOR, "div#errors")
-            if not (errors_div.text or "").strip():
+            errors_div = page.query_selector("div#errors")
+            if errors_div is not None and not (errors_div.inner_text() or "").strip():
                 log_info(_TAG, "login() — succès (div#errors vide)")
                 return True
         except Exception:
@@ -135,10 +135,10 @@ class YSensePlatform(Platform):
 
     def is_session_expired(self, driver) -> bool:
         try:
-            url = driver.current_url or ""
+            url = _pw_page(driver).url or ""
             if "/login" in url:
                 return True
-            src = (driver.page_source or "").lower()
+            src = (_pw_page(driver).content() or "").lower()
             signals = ["sign in", "session expired", "please log in", "your session"]
             return any(s in src for s in signals)
         except Exception:
