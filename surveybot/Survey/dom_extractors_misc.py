@@ -15,7 +15,6 @@ Ces extracteurs utilisent des patterns DOM spécifiques à chaque plateforme.
 from __future__ import annotations
 from typing import List, Dict, Any, Set, Tuple
 import json, os, re, time, zlib
-from selenium.webdriver.common.by import By
 from Survey.log_utils import log_debug, log_info, is_debug
 
 # Import des utilitaires
@@ -29,6 +28,15 @@ except ImportError:
     from Survey.dom_question_extractor import _find_question_text_near_element, _compute_max_select
     from Survey.dom_registry import register_target, make_target_id
     # dom_registry devra être disponible
+
+
+# ---------------------------------------------------------------------------
+# Playwright page helper
+# ---------------------------------------------------------------------------
+def _pw_page(d):
+    if hasattr(d, '_page'):
+        return d._page
+    return d
 
 
 # ================================================================================
@@ -52,7 +60,7 @@ def _extract_angular_material_radio_groups(driver, frame_chain: list[int] | None
     blocks: list[dict] = []
     
     try:
-        radio_groups = driver.find_elements(By.CSS_SELECTOR, "mat-radio-group")
+        radio_groups = _pw_page(driver).query_selector_all("mat-radio-group")
     except Exception:
         return blocks
     
@@ -64,7 +72,7 @@ def _extract_angular_material_radio_groups(driver, frame_chain: list[int] | None
                 continue
             
             # Trouver tous les mat-radio-button visibles
-            buttons = group.find_elements(By.CSS_SELECTOR, "mat-radio-button")
+            buttons = group.query_selector_all("mat-radio-button")
             if len(buttons) < 2:
                 continue
             
@@ -89,21 +97,21 @@ def _extract_angular_material_radio_groups(driver, frame_chain: list[int] | None
                     
                     # 1) label.mdc-label (Angular Material standard)
                     try:
-                        label_el = btn.find_element(By.CSS_SELECTOR, "label.mdc-label")
-                        label_txt = (label_el.text or label_el.get_attribute("innerText") or "").strip()
+                        label_el = btn.query_selector("label.mdc-label")
+                        label_txt = (label_el.inner_text() or "").strip()
                     except Exception:
                         pass
                     
                     # 2) Fallback: texte complet du bouton
                     if not label_txt:
-                        label_txt = (btn.text or btn.get_attribute("innerText") or "").strip()
+                        label_txt = (btn.inner_text() or "").strip()
                     
                     if not label_txt:
                         continue
                     
                     # Trouver l'input radio sous-jacent
                     try:
-                        inp = btn.find_element(By.CSS_SELECTOR, "input[type='radio']")
+                        inp = btn.query_selector("input[type='radio']")
                         inp_id = (inp.get_attribute("id") or "").strip()
                         if not inp_id:
                             continue
@@ -126,19 +134,19 @@ def _extract_angular_material_radio_groups(driver, frame_chain: list[int] | None
                 # Conteneur parent (souvent un form ou div.survey-window)
                 container = None
                 try:
-                    container = group.find_element(By.XPATH, "ancestor::form[1]")
+                    container = group.query_selector("xpath=" + "ancestor::form[1]")
                 except Exception:
                     try:
-                        container = group.find_element(By.XPATH, "ancestor::div[contains(@class,'survey')][1]")
+                        container = group.query_selector("xpath=" + "ancestor::div[contains(@class,'survey')][1]")
                     except Exception:
-                        container = group.find_element(By.XPATH, "ancestor::div[1]")
+                        container = group.query_selector("xpath=" + "ancestor::div[1]")
                 
                 if container:
                     # Chercher le texte de question (h5, h3, mat-card-title, etc.)
                     for sel in ["h5.question-text", "h3.question-text", "h5", "h3", "mat-card-title", "div.question-text"]:
                         try:
-                            q_el = container.find_element(By.CSS_SELECTOR, sel)
-                            question = (q_el.text or q_el.get_attribute("innerText") or "").strip()
+                            q_el = container.query_selector(sel)
+                            question = (q_el.inner_text() or "").strip()
                             if question:
                                 break
                         except Exception:
@@ -236,7 +244,7 @@ def _extract_walr_cardsort_block(driver, frame_chain: list[int] | None) -> dict 
     frame_chain = list(frame_chain or [])
     
     try:
-        container = driver.find_elements(By.CSS_SELECTOR, "#cardSortContainer")
+        container = _pw_page(driver).query_selector_all("#cardSortContainer")
     except Exception:
         container = []
     
@@ -259,10 +267,10 @@ def _extract_walr_cardsort_block(driver, frame_chain: list[int] | None) -> dict 
     # Extraire la question depuis .statement-box
     question = ""
     try:
-        stmt = container.find_elements(By.CSS_SELECTOR, ".statement-box")
+        stmt = container.query_selector_all(".statement-box")
         log_debug("[WALR_CS]", f".statement-box count={len(stmt)}")
         if stmt:
-            raw_text = stmt[0].text
+            raw_text = stmt[0].inner_text()
             inner_text = stmt[0].get_attribute("innerText")
             text_content = stmt[0].get_attribute("textContent")
             log_debug("[WALR_CS]", f".text='{raw_text}' innerText='{inner_text}' textContent='{text_content}'")
@@ -281,9 +289,9 @@ def _extract_walr_cardsort_block(driver, frame_chain: list[int] | None) -> dict 
             "div.cQuestionText",
         ]
         for sel in title_selectors:
-            titles = driver.find_elements(By.CSS_SELECTOR, sel)
+            titles = _pw_page(driver).query_selector_all(sel)
             for t in titles:
-                txt = _norm(t.text or t.get_attribute("innerText") or "")
+                txt = _norm(t.inner_text() or "")
                 if txt and len(txt) > 5 and txt != question:
                     main_title = txt
                     log_debug("[WALR_CS]", f"main_title trouvé via '{sel}': '{main_title}'")
@@ -306,7 +314,7 @@ def _extract_walr_cardsort_block(driver, frame_chain: list[int] | None) -> dict 
     
     # Extraire les options depuis button.answer-button
     try:
-        buttons = container.find_elements(By.CSS_SELECTOR, "button.answer-button")
+        buttons = container.query_selector_all("button.answer-button")
     except Exception:
         buttons = []
     
@@ -321,7 +329,7 @@ def _extract_walr_cardsort_block(driver, frame_chain: list[int] | None) -> dict 
     
     for idx, btn in enumerate(buttons):
         try:
-            raw = btn.text
+            raw = btn.inner_text()
             inner = btn.get_attribute("innerText")
             txt = _norm(raw or inner or "")
             log_debug("[WALR_CS]", f"btn[{idx}] raw='{raw}' inner='{inner}' norm='{txt}'")
@@ -424,7 +432,7 @@ def _extract_askandanswer_mobile_matrix_rows(driver, frame_chain: list[int] | No
     frame_chain = list(frame_chain or [])
 
     try:
-        panels = driver.find_elements(By.CSS_SELECTOR, "mat-expansion-panel.mobile-matrix-question")
+        panels = _pw_page(driver).query_selector_all("mat-expansion-panel.mobile-matrix-question")
     except Exception:
         panels = []
 
@@ -434,9 +442,9 @@ def _extract_askandanswer_mobile_matrix_rows(driver, frame_chain: list[int] | No
     # Question globale (titre de la carte)
     global_q = ""
     try:
-        titles = driver.find_elements(By.CSS_SELECTOR, "mat-card-title div")
+        titles = _pw_page(driver).query_selector_all("mat-card-title div")
         if titles:
-            global_q = _norm(titles[0].text or titles[0].get_attribute("innerText") or "")
+            global_q = _norm(titles[0].inner_text() or "")
     except Exception:
         global_q = ""
 
@@ -456,7 +464,7 @@ def _extract_askandanswer_mobile_matrix_rows(driver, frame_chain: list[int] | No
         On ouvre le panel (1 fois) puis on attend brièvement que les radios apparaissent.
         """
         try:
-            hdr = panel.find_element(By.CSS_SELECTOR, "mat-expansion-panel-header")
+            hdr = panel.query_selector("mat-expansion-panel-header")
         except Exception:
             return
 
@@ -467,14 +475,14 @@ def _extract_askandanswer_mobile_matrix_rows(driver, frame_chain: list[int] | No
             pass
 
         try:
-            driver.execute_script("arguments[0].scrollIntoView({block:'center'});", hdr)
+            hdr.evaluate("(el) => el.scrollIntoView({block:'center'})")
         except Exception:
             pass
         time.sleep(0.05)
 
         pre_count = 0
         try:
-            pre_count = len(panel.find_elements(By.CSS_SELECTOR, "mat-radio-button"))
+            pre_count = len(panel.query_selector_all("mat-radio-button"))
         except Exception:
             pre_count = 0
 
@@ -482,7 +490,7 @@ def _extract_askandanswer_mobile_matrix_rows(driver, frame_chain: list[int] | No
             hdr.click()
         except Exception:
             try:
-                driver.execute_script("arguments[0].click();", hdr)
+                hdr.evaluate("(el) => el.click()")
             except Exception:
                 return
 
@@ -498,7 +506,7 @@ def _extract_askandanswer_mobile_matrix_rows(driver, frame_chain: list[int] | No
             # 2) fallback: si le contenu est lazy-rendered, attendre l'apparition des radios.
             if pre_count == 0:
                 try:
-                    if panel.find_elements(By.CSS_SELECTOR, "mat-radio-button"):
+                    if panel.query_selector_all("mat-radio-button"):
                         break
                 except Exception:
                     pass
@@ -514,18 +522,18 @@ def _extract_askandanswer_mobile_matrix_rows(driver, frame_chain: list[int] | No
             # Pattern spécifique
             row_label = ""
             try:
-                htxt = panel.find_elements(By.CSS_SELECTOR, "mat-expansion-panel-header .matrix-text-color")
+                htxt = panel.query_selector_all("mat-expansion-panel-header .matrix-text-color")
                 if htxt:
-                    row_label = _norm(htxt[0].text or htxt[0].get_attribute("innerText") or "")
+                    row_label = _norm(htxt[0].inner_text() or "")
             except Exception:
                 row_label = ""
 
             if not row_label:
                 # Pattern spécifique
                 try:
-                    hdrs = panel.find_elements(By.CSS_SELECTOR, "mat-expansion-panel-header")
+                    hdrs = panel.query_selector_all("mat-expansion-panel-header")
                     if hdrs:
-                        raw = hdrs[0].text or hdrs[0].get_attribute("innerText") or ""
+                        raw = hdrs[0].inner_text() or ""
                         raw = (raw.splitlines()[0] if raw else "")
                         row_label = _norm(raw)
                 except Exception:
@@ -539,7 +547,7 @@ def _extract_askandanswer_mobile_matrix_rows(driver, frame_chain: list[int] | No
 
             def _collect_opt_nodes():
                 try:
-                    return panel.find_elements(By.CSS_SELECTOR, "mat-radio-button .mat-radio-label-content")
+                    return panel.query_selector_all("mat-radio-button .mat-radio-label-content")
                 except Exception:
                     return []
 
@@ -547,7 +555,7 @@ def _extract_askandanswer_mobile_matrix_rows(driver, frame_chain: list[int] | No
                 opts: list[str] = []
                 for n in nodes:
                     try:
-                        t = _norm(n.text or n.get_attribute("innerText") or "")
+                        t = _norm(n.inner_text() or "")
                         if t and t not in opts:
                             opts.append(t)
                     except Exception:
@@ -571,7 +579,7 @@ def _extract_askandanswer_mobile_matrix_rows(driver, frame_chain: list[int] | No
             def _build_option_xpath_map() -> dict[str, str]:
                 m: dict[str, str] = {}
                 try:
-                    rbs = panel.find_elements(By.CSS_SELECTOR, "mat-radio-button")
+                    rbs = panel.query_selector_all("mat-radio-button")
                 except Exception:
                     rbs = []
 
@@ -580,15 +588,15 @@ def _extract_askandanswer_mobile_matrix_rows(driver, frame_chain: list[int] | No
                     try:
                         lab_txt = ""
                         try:
-                            lc = rb.find_elements(By.CSS_SELECTOR, ".mat-radio-label-content")
+                            lc = rb.query_selector_all(".mat-radio-label-content")
                             if lc:
-                                lab_txt = _norm(lc[0].text or lc[0].get_attribute("innerText") or "")
+                                lab_txt = _norm(lc[0].inner_text() or "")
                         except Exception:
                             lab_txt = ""
 
                         if not lab_txt:
                             try:
-                                lab_txt = _norm(rb.text or rb.get_attribute("innerText") or "")
+                                lab_txt = _norm(rb.inner_text() or "")
                             except Exception:
                                 lab_txt = ""
 
@@ -599,7 +607,7 @@ def _extract_askandanswer_mobile_matrix_rows(driver, frame_chain: list[int] | No
                         # Si on peut, on construit un XPath sur @value (stable)
                         val = ""
                         try:
-                            inp = rb.find_element(By.CSS_SELECTOR, "input.mat-radio-input")
+                            inp = rb.query_selector("input.mat-radio-input")
                             val = (inp.get_attribute("value") or "").strip()
                         except Exception:
                             val = ""
@@ -718,16 +726,13 @@ def _extract_askandanswer_selection_list_questions(driver, frame_chain: list[int
 
     # Gate strict : pages Ask&Answer (Angular) uniquement
     try:
-        if not driver.find_elements(By.CSS_SELECTOR, "app-survey-page"):
+        if not _pw_page(driver).query_selector_all("app-survey-page"):
             return []
     except Exception:
         return []
 
     try:
-        lists = driver.find_elements(
-            By.CSS_SELECTOR,
-            "div[id^='appQuestionContainer-'] mat-selection-list[role='listbox']",
-        )
+        lists = _pw_page(driver).query_selector_all("div[id^='appQuestionContainer-'] mat-selection-list[role='listbox']")
     except Exception:
         lists = []
 
@@ -749,7 +754,7 @@ def _extract_askandanswer_selection_list_questions(driver, frame_chain: list[int
         try:
             # options candidates
             try:
-                opt_els = sl.find_elements(By.CSS_SELECTOR, "mat-list-option[role='option']")
+                opt_els = sl.query_selector_all("mat-list-option[role='option']")
             except Exception:
                 opt_els = []
 
@@ -760,10 +765,7 @@ def _extract_askandanswer_selection_list_questions(driver, frame_chain: list[int
             # remonter au conteneur de question
             q_container = None
             try:
-                q_container = sl.find_element(
-                    By.XPATH,
-                    "ancestor::div[starts-with(@id,'appQuestionContainer-')][1]",
-                )
+                q_container = sl.query_selector("xpath=" + "ancestor::div[starts-with(@id,'appQuestionContainer-')][1]")
             except Exception:
                 q_container = None
 
@@ -771,9 +773,9 @@ def _extract_askandanswer_selection_list_questions(driver, frame_chain: list[int
             question = ""
             try:
                 scope = q_container or sl
-                titles = scope.find_elements(By.CSS_SELECTOR, "mat-card-title div")
+                titles = scope.query_selector_all("mat-card-title div")
                 if titles:
-                    question = _norm(titles[0].text or titles[0].get_attribute("innerText") or "")
+                    question = _norm(titles[0].inner_text() or "")
             except Exception:
                 question = ""
 
@@ -795,7 +797,7 @@ def _extract_askandanswer_selection_list_questions(driver, frame_chain: list[int
 
             for opt in opt_els:
                 try:
-                    label = _norm(opt.text or opt.get_attribute("innerText") or "")
+                    label = _norm(opt.inner_text() or "")
                     # nettoie les multi-lignes (l'option "Autre" peut inclure du bruit)
                     if label:
                         label = _norm(label.splitlines()[0])
@@ -803,9 +805,9 @@ def _extract_askandanswer_selection_list_questions(driver, frame_chain: list[int
                     # Pattern spécifique
                     if not label:
                         try:
-                            labs = opt.find_elements(By.CSS_SELECTOR, "mat-label")
+                            labs = opt.query_selector_all("mat-label")
                             if labs:
-                                label = _norm(labs[0].text or labs[0].get_attribute("innerText") or "")
+                                label = _norm(labs[0].inner_text() or "")
                         except Exception:
                             label = ""
 
@@ -885,10 +887,7 @@ def _extract_askandanswer_selection_list_questions(driver, frame_chain: list[int
     # Même survey Angular Material: certaines questions sont rendues en mat-radio-group
     # (data-question-type=PULLDOWN) sous le même pattern appQuestionContainer-*.
     try:
-        rg_containers = driver.find_elements(
-            By.CSS_SELECTOR,
-            "div[id^='appQuestionContainer-'] mat-radio-group[role='radiogroup']",
-        )
+        rg_containers = _pw_page(driver).query_selector_all("div[id^='appQuestionContainer-'] mat-radio-group[role='radiogroup']")
     except Exception:
         rg_containers = []
 
@@ -896,10 +895,7 @@ def _extract_askandanswer_selection_list_questions(driver, frame_chain: list[int
         try:
             q_container = None
             try:
-                q_container = rg.find_element(
-                    By.XPATH,
-                    "ancestor::div[starts-with(@id,'appQuestionContainer-')][1]",
-                )
+                q_container = rg.query_selector("xpath=" + "ancestor::div[starts-with(@id,'appQuestionContainer-')][1]")
             except Exception:
                 q_container = None
 
@@ -915,9 +911,9 @@ def _extract_askandanswer_selection_list_questions(driver, frame_chain: list[int
             question = ""
             try:
                 scope = q_container or rg
-                titles = scope.find_elements(By.CSS_SELECTOR, "mat-card-title div")
+                titles = scope.query_selector_all("mat-card-title div")
                 if titles:
-                    question = _norm(titles[0].text or titles[0].get_attribute("innerText") or "")
+                    question = _norm(titles[0].inner_text() or "")
             except Exception:
                 question = ""
 
@@ -927,13 +923,13 @@ def _extract_askandanswer_selection_list_questions(driver, frame_chain: list[int
             options: list[str] = []
             option_xpath_map: dict[str, str] = {}
             try:
-                rb_els = rg.find_elements(By.CSS_SELECTOR, "mat-radio-button")
+                rb_els = rg.query_selector_all("mat-radio-button")
             except Exception:
                 rb_els = []
 
             for rb in rb_els:
                 try:
-                    label = _norm(rb.text or rb.get_attribute("innerText") or "")
+                    label = _norm(rb.inner_text() or "")
                     if label:
                         label = _norm(label.splitlines()[-1])
                     if not label:
@@ -1022,7 +1018,7 @@ def _extract_rnw_ionicon_multi_choice_blocks(driver, frame_chain: list[int] | No
     frame_chain = list(frame_chain or [])
 
     try:
-        option_nodes = driver.find_elements(By.CSS_SELECTOR, "div[tabindex='0'].r-rnv2vh.r-rs99b7")
+        option_nodes = _pw_page(driver).query_selector_all("div[tabindex='0'].r-rnv2vh.r-rs99b7")
     except Exception:
         return []
 
@@ -1034,7 +1030,7 @@ def _extract_rnw_ionicon_multi_choice_blocks(driver, frame_chain: list[int] | No
 
     for opt in option_nodes[:80]:
         try:
-            container = opt.find_element(By.XPATH, "ancestor::div[.//div[@tabindex='0' and contains(@class,'r-rnv2vh') and contains(@class,'r-rs99b7')]][1]")
+            container = opt.query_selector("xpath=" + "ancestor::div[.//div[@tabindex='0' and contains(@class,'r-rnv2vh') and contains(@class,'r-rs99b7')]][1]")
         except Exception:
             container = None
 
@@ -1042,7 +1038,7 @@ def _extract_rnw_ionicon_multi_choice_blocks(driver, frame_chain: list[int] | No
             continue
 
         try:
-            rows = container.find_elements(By.CSS_SELECTOR, "div[tabindex='0'].r-rnv2vh.r-rs99b7")
+            rows = container.query_selector_all("div[tabindex='0'].r-rnv2vh.r-rs99b7")
         except Exception:
             rows = []
 
@@ -1055,20 +1051,20 @@ def _extract_rnw_ionicon_multi_choice_blocks(driver, frame_chain: list[int] | No
         for row in rows[:50]:
             try:
                 # garde-fou DOM: ce pattern doit afficher une icône ionicons par option
-                if not row.find_elements(By.XPATH, ".//*[contains(translate(@style, 'IONICS', 'ionics'),'font-family: ionicons')]"):
+                if not row.query_selector_all("xpath=" + ".//*[contains(translate(@style, 'IONICS', 'ionics'),'font-family: ionicons')]"):
                     continue
             except Exception:
                 continue
 
             label = ""
             try:
-                txt_nodes = row.find_elements(By.XPATH, ".//div[normalize-space()] | .//span[normalize-space()]")
+                txt_nodes = row.query_selector_all("xpath=" + ".//div[normalize-space()] | .//span[normalize-space()]")
             except Exception:
                 txt_nodes = []
 
             for node in txt_nodes:
                 try:
-                    candidate = _norm(node.text or node.get_attribute("innerText") or "")
+                    candidate = _norm(node.inner_text() or "")
                 except Exception:
                     candidate = ""
                 if not candidate:
@@ -1103,12 +1099,12 @@ def _extract_rnw_ionicon_multi_choice_blocks(driver, frame_chain: list[int] | No
 
         question = ""
         try:
-            q_nodes = container.find_elements(By.XPATH, ".//div[contains(normalize-space(), '?')]")
+            q_nodes = container.query_selector_all("xpath=" + ".//div[contains(normalize-space(), '?')]")
         except Exception:
             q_nodes = []
 
         for qn in q_nodes:
-            qtxt = _norm(qn.text or qn.get_attribute("innerText") or "")
+            qtxt = _norm(qn.inner_text() or "")
             if qtxt and len(qtxt) >= 12:
                 question = qtxt
                 break
@@ -1124,9 +1120,9 @@ def _extract_rnw_ionicon_multi_choice_blocks(driver, frame_chain: list[int] | No
 
         hint_text = ""
         try:
-            hint_nodes = container.find_elements(By.XPATH, ".//div[contains(translate(normalize-space(.), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'réponses possibles') or contains(translate(normalize-space(.), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'multiple') or contains(translate(normalize-space(.), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'plusieurs')]")
+            hint_nodes = container.query_selector_all("xpath=" + ".//div[contains(translate(normalize-space(.), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'réponses possibles') or contains(translate(normalize-space(.), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'multiple') or contains(translate(normalize-space(.), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'plusieurs')]")
             if hint_nodes:
-                hint_text = _norm(hint_nodes[0].text or hint_nodes[0].get_attribute("innerText") or "")
+                hint_text = _norm(hint_nodes[0].inner_text() or "")
         except Exception:
             hint_text = ""
 
@@ -1184,13 +1180,13 @@ def _extract_askia_responsive_table_checkbox_rows(driver, frame_chain: list[int]
     frame_chain = list(frame_chain or [])
 
     try:
-        if not driver.find_elements(By.CSS_SELECTOR, "form[name='FormAskia']"):
+        if not _pw_page(driver).query_selector_all("form[name='FormAskia']"):
             return []
     except Exception:
         return []
 
     try:
-        containers = driver.find_elements(By.CSS_SELECTOR, "div.adc-responsiveTable")
+        containers = _pw_page(driver).query_selector_all("div.adc-responsiveTable")
     except Exception:
         return []
 
@@ -1202,19 +1198,19 @@ def _extract_askia_responsive_table_checkbox_rows(driver, frame_chain: list[int]
     for cidx, container in enumerate(containers[:10], start=1):
         try:
             try:
-                table = container.find_element(By.CSS_SELECTOR, "table")
+                table = container.query_selector("table")
             except Exception:
                 continue
 
             try:
-                header_nodes = table.find_elements(By.CSS_SELECTOR, "thead th.responsesitems")
+                header_nodes = table.query_selector_all("thead th.responsesitems")
             except Exception:
                 header_nodes = []
 
             col_headers: list[str] = []
             for h in header_nodes:
                 try:
-                    txt = _norm(h.text or h.get_attribute("innerText") or h.get_attribute("textContent") or "")
+                    txt = _norm(h.inner_text() or h.get_attribute("textContent") or "")
                 except Exception:
                     txt = ""
                 if txt and txt not in col_headers:
@@ -1224,7 +1220,7 @@ def _extract_askia_responsive_table_checkbox_rows(driver, frame_chain: list[int]
                 continue
 
             try:
-                rows = table.find_elements(By.CSS_SELECTOR, "tbody tr.askiarow[data-id]")
+                rows = table.query_selector_all("tbody tr.askiarow[data-id]")
             except Exception:
                 rows = []
 
@@ -1233,12 +1229,9 @@ def _extract_askia_responsive_table_checkbox_rows(driver, frame_chain: list[int]
 
             matrix_question = ""
             try:
-                q_nodes = driver.find_elements(
-                    By.CSS_SELECTOR,
-                    "td.askia-question-label, td[class*='askia-caption'], td[class*='askia-question-label']",
-                )
+                q_nodes = _pw_page(driver).query_selector_all("td.askia-question-label, td[class*='askia-caption'], td[class*='askia-question-label']")
                 for qn in q_nodes:
-                    txt = _norm(qn.text or qn.get_attribute("innerText") or "")
+                    txt = _norm(qn.inner_text() or "")
                     if txt:
                         # Le span d'instruction (#indic) est dans le même td : garder le titre seul.
                         matrix_question = _norm(txt.splitlines()[0])
@@ -1252,11 +1245,11 @@ def _extract_askia_responsive_table_checkbox_rows(driver, frame_chain: list[int]
 
                     row_label = ""
                     try:
-                        label_nodes = row.find_elements(By.CSS_SELECTOR, "td.respLabel span.items, td.respLabel")
+                        label_nodes = row.query_selector_all("td.respLabel span.items, td.respLabel")
                     except Exception:
                         label_nodes = []
                     for node in label_nodes:
-                        txt = _norm(node.text or node.get_attribute("innerText") or "")
+                        txt = _norm(node.inner_text() or "")
                         if txt:
                             row_label = txt
                             break
@@ -1264,7 +1257,7 @@ def _extract_askia_responsive_table_checkbox_rows(driver, frame_chain: list[int]
                         continue
 
                     try:
-                        boxes = row.find_elements(By.CSS_SELECTOR, "td.response input[type='checkbox'][name]")
+                        boxes = row.query_selector_all("td.response input[type='checkbox'][name]")
                     except Exception:
                         boxes = []
                     if len(boxes) < 2:
@@ -1370,7 +1363,7 @@ def _extract_table_matrix_radio_rows(driver, frame_chain: list[int] | None) -> l
     frame_chain = list(frame_chain or [])
 
     try:
-        tables = driver.find_elements(By.CSS_SELECTOR, "table")
+        tables = _pw_page(driver).query_selector_all("table")
     except Exception:
         return []
 
@@ -1385,7 +1378,7 @@ def _extract_table_matrix_radio_rows(driver, frame_chain: list[int] | None) -> l
 
             col_headers: list[str] = []
             try:
-                ths = table.find_elements(By.CSS_SELECTOR, "thead tr th")
+                ths = table.query_selector_all("thead tr th")
             except Exception:
                 ths = []
 
@@ -1393,7 +1386,7 @@ def _extract_table_matrix_radio_rows(driver, frame_chain: list[int] | None) -> l
                 continue
 
             for th in ths:
-                txt = _norm(th.text or th.get_attribute("innerText") or "")
+                txt = _norm(th.inner_text() or "")
                 if txt:
                     col_headers.append(txt)
 
@@ -1401,7 +1394,7 @@ def _extract_table_matrix_radio_rows(driver, frame_chain: list[int] | None) -> l
                 continue
 
             try:
-                rows = table.find_elements(By.CSS_SELECTOR, "tbody tr")
+                rows = table.query_selector_all("tbody tr")
             except Exception:
                 rows = []
 
@@ -1413,15 +1406,15 @@ def _extract_table_matrix_radio_rows(driver, frame_chain: list[int] | None) -> l
 
             for row in rows[:30]:
                 try:
-                    row_cells = row.find_elements(By.CSS_SELECTOR, "td, th")
+                    row_cells = row.query_selector_all("td, th")
                     if len(row_cells) < 2:
                         continue
 
-                    row_label = _norm(row_cells[0].text or row_cells[0].get_attribute("innerText") or "")
+                    row_label = _norm(row_cells[0].inner_text() or "")
                     if not row_label:
                         continue
 
-                    radios = row.find_elements(By.CSS_SELECTOR, "input[type='radio']")
+                    radios = row.query_selector_all("input[type='radio']")
                     if len(radios) < 2:
                         continue
 
@@ -1481,11 +1474,8 @@ def _extract_table_matrix_radio_rows(driver, frame_chain: list[int] | None) -> l
                 matrix_question = _norm(table.get_attribute("aria-label") or "")
             if not matrix_question:
                 try:
-                    lbl = driver.find_element(
-                        By.CSS_SELECTOR,
-                        "td[class*='askia-question-label'], td[class*='askia-caption']",
-                    )
-                    matrix_question = _norm(lbl.text or lbl.get_attribute("innerText") or "")
+                    lbl = _pw_page(driver).query_selector("td[class*='askia-question-label'], td[class*='askia-caption']")
+                    matrix_question = _norm(lbl.inner_text() or "")
                 except Exception:
                     pass
             # Qualtrics BankedSA: table.ChoiceStructure est display:none → getBoundingClientRect
@@ -1493,20 +1483,16 @@ def _extract_table_matrix_radio_rows(driver, frame_chain: list[int] | None) -> l
             # caption.QuestionText (enfant direct de la table) ou fieldset > legend > .QuestionText.
             if not matrix_question:
                 try:
-                    cap = table.find_element(
-                        By.CSS_SELECTOR,
-                        "caption.QuestionText, caption[class*='QuestionText']",
-                    )
-                    matrix_question = _norm(cap.text or cap.get_attribute("innerText") or "")
+                    cap = table.query_selector("caption.QuestionText, caption[class*='QuestionText']")
+                    matrix_question = _norm(cap.inner_text() or "")
                     if matrix_question:
                         log_debug("TABLE_MATRIX", f"bankedsa_caption matrix_question={matrix_question[:60]!r}")
                 except Exception:
                     pass
             if not matrix_question:
                 try:
-                    matrix_question = _norm(driver.execute_script(
-                        """
-                        var el = arguments[0], max = 8;
+                    matrix_question = _norm(_pw_page(driver).evaluate("""(_el) => {
+                        var el = _el, max = 8;
                         while (el && max-- > 0) {
                             el = el.parentElement;
                             if (el && el.tagName === 'FIELDSET') {
@@ -1517,9 +1503,7 @@ def _extract_table_matrix_radio_rows(driver, frame_chain: list[int] | None) -> l
                             }
                         }
                         return '';
-                        """,
-                        table,
-                    ) or "")
+}""", table) or "")
                     if matrix_question:
                         log_debug("TABLE_MATRIX", f"bankedsa_fieldset_legend matrix_question={matrix_question[:60]!r}")
                 except Exception:
@@ -1528,14 +1512,14 @@ def _extract_table_matrix_radio_rows(driver, frame_chain: list[int] | None) -> l
             _is_confirmit = "confirmit-grid" in table_cls
             if not _is_confirmit:
                 try:
-                    _is_confirmit = bool(table.find_elements(By.CSS_SELECTOR, "table.confirmit-grid"))
+                    _is_confirmit = bool(table.query_selector_all("table.confirmit-grid"))
                 except Exception:
                     pass
             if _is_confirmit:
                 try:
-                    els = driver.find_elements(By.CSS_SELECTOR, "div.question_text_ng")
+                    els = _pw_page(driver).query_selector_all("div.question_text_ng")
                     for el in els:
-                        txt = _norm(el.text or el.get_attribute("innerText") or "")
+                        txt = _norm(el.inner_text() or "")
                         if txt:
                             matrix_question = txt[:500]
                             log_debug("TABLE_MATRIX", f"confirmit_text_ng matrix_question={matrix_question[:60]!r}")
@@ -1682,7 +1666,7 @@ def _extract_intellisurvey_table_matrix_blocks(driver, frame_chain: list[int] | 
     frame_chain = list(frame_chain or [])
 
     try:
-        tables = driver.find_elements(By.CSS_SELECTOR, "table.i-question-table.i-dynamic")
+        tables = _pw_page(driver).query_selector_all("table.i-question-table.i-dynamic")
     except Exception:
         return []
 
@@ -1691,13 +1675,13 @@ def _extract_intellisurvey_table_matrix_blocks(driver, frame_chain: list[int] | 
     for table in tables[:10]:  # budget anti-boucle
         try:
             try:
-                col_nodes = table.find_elements(By.CSS_SELECTOR, "thead td.i-header-option")
+                col_nodes = table.query_selector_all("thead td.i-header-option")
             except Exception:
                 col_nodes = []
 
             col_headers: list[str] = []
             for node in col_nodes:
-                txt = _norm(node.text or node.get_attribute("innerText") or "")
+                txt = _norm(node.inner_text() or "")
                 if txt:
                     col_headers.append(txt)
 
@@ -1705,7 +1689,7 @@ def _extract_intellisurvey_table_matrix_blocks(driver, frame_chain: list[int] | 
                 continue
 
             try:
-                rows = table.find_elements(By.CSS_SELECTOR, "tbody tr[data-row-id]")
+                rows = table.query_selector_all("tbody tr[data-row-id]")
             except Exception:
                 rows = []
 
@@ -1716,7 +1700,7 @@ def _extract_intellisurvey_table_matrix_blocks(driver, frame_chain: list[int] | 
             row_names: list[str] = []
             for row in rows:
                 try:
-                    radios = row.find_elements(By.CSS_SELECTOR, "input.i-rbcb-opt[type='radio'][name]")
+                    radios = row.query_selector_all("input.i-rbcb-opt[type='radio'][name]")
                 except Exception:
                     radios = []
                 if len(radios) < 2:
@@ -1724,17 +1708,14 @@ def _extract_intellisurvey_table_matrix_blocks(driver, frame_chain: list[int] | 
 
                 row_label = ""
                 try:
-                    qcell = row.find_element(By.CSS_SELECTOR, "td.i-questext")
-                    row_label = _norm(driver.execute_script(
-                        """
-                        const td = arguments[0];
+                    qcell = row.query_selector("td.i-questext")
+                    row_label = _norm(_pw_page(driver).evaluate("""(_el) => {
+                        const td = _el;
                         if (!td) return '';
                         const clone = td.cloneNode(true);
                         clone.querySelectorAll('input[type="hidden"], script, style').forEach(n => n.remove());
                         return (clone.innerText || clone.textContent || '').trim();
-                        """,
-                        qcell,
-                    ) or "")
+}""", qcell) or "")
                 except Exception:
                     row_label = ""
 
@@ -1814,9 +1795,9 @@ def _extract_encuesta_matrix_blocks(driver, frame_chain: list[int] | None) -> li
     frame_chain = list(frame_chain or [])
 
     try:
-        rows = driver.find_elements(By.CSS_SELECTOR, ".ee__matrix--row")
-        first_cols = driver.find_elements(By.CSS_SELECTOR, ".ee__matrix--first-column")
-        header_cells = driver.find_elements(By.CSS_SELECTOR, ".ee__matrix--header-cells")
+        rows = _pw_page(driver).query_selector_all(".ee__matrix--row")
+        first_cols = _pw_page(driver).query_selector_all(".ee__matrix--first-column")
+        header_cells = _pw_page(driver).query_selector_all(".ee__matrix--header-cells")
     except Exception:
         return []
 
@@ -1825,7 +1806,7 @@ def _extract_encuesta_matrix_blocks(driver, frame_chain: list[int] | None) -> li
 
     matrix_row_containers: list[Any] = []
     try:
-        matrix_row_containers = driver.find_elements(By.CSS_SELECTOR, ".layout.ee__matrix--row")
+        matrix_row_containers = _pw_page(driver).query_selector_all(".layout.ee__matrix--row")
     except Exception:
         matrix_row_containers = []
 
@@ -1838,8 +1819,8 @@ def _extract_encuesta_matrix_blocks(driver, frame_chain: list[int] | None) -> li
             cls = _norm_lc(row.get_attribute("class") or "")
             if "hidden-sm-and-down" not in cls:
                 continue
-            for cell in row.find_elements(By.CSS_SELECTOR, ".ee__matrix--header-cells"):
-                txt = _norm(cell.text or cell.get_attribute("innerText") or "")
+            for cell in row.query_selector_all(".ee__matrix--header-cells"):
+                txt = _norm(cell.inner_text() or "")
                 if txt:
                     col_headers.append(txt)
             if col_headers:
@@ -1859,21 +1840,21 @@ def _extract_encuesta_matrix_blocks(driver, frame_chain: list[int] | None) -> li
             if "hidden-sm-and-down" in cls:
                 continue
 
-            first_col_nodes = row.find_elements(By.CSS_SELECTOR, ".ee__matrix--first-column")
+            first_col_nodes = row.query_selector_all(".ee__matrix--first-column")
             if not first_col_nodes:
                 continue
 
-            row_label = _norm(first_col_nodes[0].text or first_col_nodes[0].get_attribute("innerText") or "")
+            row_label = _norm(first_col_nodes[0].inner_text() or "")
             if not row_label:
                 continue
 
-            row_columns = row.find_elements(By.CSS_SELECTOR, ".ee__matrix--column")
+            row_columns = row.query_selector_all(".ee__matrix--column")
             if len(row_columns) < len(col_headers):
                 continue
 
             radio_count = 0
             for col in row_columns[: len(col_headers)]:
-                radios = col.find_elements(By.CSS_SELECTOR, "input[type='radio']")
+                radios = col.query_selector_all("input[type='radio']")
                 if radios:
                     radio_count += 1
             if radio_count < len(col_headers):
@@ -1897,9 +1878,9 @@ def _extract_encuesta_matrix_blocks(driver, frame_chain: list[int] | None) -> li
 
     question = ""
     try:
-        q_nodes = driver.find_elements(By.CSS_SELECTOR, ".ee__question_title")
+        q_nodes = _pw_page(driver).query_selector_all(".ee__question_title")
         for q in q_nodes:
-            qtxt = _norm(q.text or q.get_attribute("innerText") or "")
+            qtxt = _norm(q.inner_text() or "")
             if qtxt:
                 question = qtxt
                 break
@@ -1970,10 +1951,7 @@ def _extract_yougov_grid_text_question_blocks(driver, frame_chain: list[int] | N
     frame_chain = list(frame_chain or [])
 
     try:
-        fieldsets = driver.find_elements(
-            By.CSS_SELECTOR,
-            "fieldset.question.question-grid.question-grid-text",
-        )
+        fieldsets = _pw_page(driver).query_selector_all("fieldset.question.question-grid.question-grid-text")
     except Exception:
         return []
 
@@ -1986,8 +1964,8 @@ def _extract_yougov_grid_text_question_blocks(driver, frame_chain: list[int] | N
         try:
             legend = ""
             try:
-                legend_el = fs.find_element(By.CSS_SELECTOR, "legend.question-text")
-                legend = _norm(legend_el.text or legend_el.get_attribute("innerText") or "")
+                legend_el = fs.query_selector("legend.question-text")
+                legend = _norm(legend_el.inner_text() or "")
             except Exception:
                 legend = ""
 
@@ -1995,16 +1973,13 @@ def _extract_yougov_grid_text_question_blocks(driver, frame_chain: list[int] | N
                 continue
 
             try:
-                rows = fs.find_elements(By.CSS_SELECTOR, "tbody tr")
+                rows = fs.query_selector_all("tbody tr")
             except Exception:
                 rows = []
 
             for row in rows[:40]:  # budget anti-explosion
                 try:
-                    inputs = row.find_elements(
-                        By.CSS_SELECTOR,
-                        "td.grid-cell.open-cell input[type='text']",
-                    )
+                    inputs = row.query_selector_all("td.grid-cell.open-cell input[type='text']")
                 except Exception:
                     inputs = []
 
@@ -2015,8 +1990,8 @@ def _extract_yougov_grid_text_question_blocks(driver, frame_chain: list[int] | N
 
                 row_label = ""
                 try:
-                    row_label_el = row.find_element(By.CSS_SELECTOR, "th.grid-item-text-left")
-                    row_label = _norm(row_label_el.text or row_label_el.get_attribute("innerText") or "")
+                    row_label_el = row.query_selector("th.grid-item-text-left")
+                    row_label = _norm(row_label_el.inner_text() or "")
                 except Exception:
                     row_label = ""
 
@@ -2095,7 +2070,7 @@ def _extract_cmix_simple_grid_question_blocks(driver, frame_chain: list[int] | N
 
     # Gate strict: table CMIX SIMPLE_GRID
     try:
-        tables = driver.find_elements(By.CSS_SELECTOR, "table.cm-simple-grid__table")
+        tables = _pw_page(driver).query_selector_all("table.cm-simple-grid__table")
         if not tables:
             return []
     except Exception:
@@ -2108,9 +2083,9 @@ def _extract_cmix_simple_grid_question_blocks(driver, frame_chain: list[int] | N
             # 1) Extraire les headers de colonnes (= options communes à toutes les lignes)
             col_headers = []
             try:
-                ths = table.find_elements(By.CSS_SELECTOR, "thead th.cm-simple-grid__column-header")
+                ths = table.query_selector_all("thead th.cm-simple-grid__column-header")
                 for th in ths:
-                    txt = _norm(th.text or th.get_attribute("innerText") or "")
+                    txt = _norm(th.inner_text() or "")
                     if txt:
                         col_headers.append(txt)
             except Exception:
@@ -2122,7 +2097,7 @@ def _extract_cmix_simple_grid_question_blocks(driver, frame_chain: list[int] | N
 
             # 2) Parcourir chaque ligne du tbody
             try:
-                rows = table.find_elements(By.CSS_SELECTOR, "tbody tr")
+                rows = table.query_selector_all("tbody tr")
             except Exception:
                 rows = []
 
@@ -2132,7 +2107,7 @@ def _extract_cmix_simple_grid_question_blocks(driver, frame_chain: list[int] | N
                     has_other_specify_input = False
                     try:
                         has_other_specify_input = bool(
-                            row.find_elements(By.CSS_SELECTOR, "input[type='text'].cm-other-specify")
+                            row.query_selector_all("input[type='text'].cm-other-specify")
                         )
                     except Exception:
                         has_other_specify_input = False
@@ -2140,8 +2115,8 @@ def _extract_cmix_simple_grid_question_blocks(driver, frame_chain: list[int] | N
                     # 2a) Extraire le texte de la question (row-header)
                     question = ""
                     try:
-                        row_hdr = row.find_element(By.CSS_SELECTOR, "td.cm-simple-grid__row-header")
-                        question = _norm(row_hdr.text or row_hdr.get_attribute("innerText") or "")
+                        row_hdr = row.query_selector("td.cm-simple-grid__row-header")
+                        question = _norm(row_hdr.inner_text() or "")
                     except Exception:
                         pass
 
@@ -2150,7 +2125,7 @@ def _extract_cmix_simple_grid_question_blocks(driver, frame_chain: list[int] | N
 
                     # 2b) Extraire les radios de cette ligne
                     try:
-                        radios = row.find_elements(By.CSS_SELECTOR, "input[type='radio']")
+                        radios = row.query_selector_all("input[type='radio']")
                     except Exception:
                         radios = []
 
@@ -2260,10 +2235,7 @@ def _extract_cmix_grid_question_blocks(driver, frame_chain: list[int] | None) ->
     frame_chain = list(frame_chain or [])
 
     try:
-        tables = driver.find_elements(
-            By.CSS_SELECTOR,
-            "div.cm-element[data-type='GRID'] table.cm-grid-response-set",
-        )
+        tables = _pw_page(driver).query_selector_all("div.cm-element[data-type='GRID'] table.cm-grid-response-set")
         if not tables:
             return []
     except Exception:
@@ -2287,21 +2259,21 @@ def _extract_cmix_grid_question_blocks(driver, frame_chain: list[int] | None) ->
         try:
             parent_q = ""
             try:
-                container = table.find_element(By.XPATH, "ancestor::div[contains(@class,'cm-element')][1]")
-                parent_q = _norm(container.find_element(By.CSS_SELECTOR, "div.cm-qtext").text or "")
+                container = table.query_selector("xpath=" + "ancestor::div[contains(@class,'cm-element')][1]")
+                parent_q = _norm(container.query_selector("div.cm-qtext").text or "")
             except Exception:
                 parent_q = ""
 
             col_headers: list[str] = []
             try:
-                header_cells = table.find_elements(By.CSS_SELECTOR, "tr.cm-grid-row-header td, tr.cm-grid-row-header th")
+                header_cells = table.query_selector_all("tr.cm-grid-row-header td, tr.cm-grid-row-header th")
                 if not header_cells:
                     # Variante DOM CMIX: première ligne = entêtes colonnes, sans classes header dédiées.
-                    header_cells = table.find_elements(By.CSS_SELECTOR, "tr:first-child td, tr:first-child th")
+                    header_cells = table.query_selector_all("tr:first-child td, tr:first-child th")
                 for cell in header_cells:
                     if not _is_data_option_header_cell(cell):
                         continue
-                    txt = _norm(cell.text or cell.get_attribute("innerText") or "")
+                    txt = _norm(cell.inner_text() or "")
                     if txt:
                         col_headers.append(txt)
             except Exception:
@@ -2311,9 +2283,9 @@ def _extract_cmix_grid_question_blocks(driver, frame_chain: list[int] | None) ->
                 continue
 
             try:
-                rows = table.find_elements(By.CSS_SELECTOR, "tr[data-response-batch]")
+                rows = table.query_selector_all("tr[data-response-batch]")
                 if not rows:
-                    rows = table.find_elements(By.CSS_SELECTOR, "tr.cm-grid-row")
+                    rows = table.query_selector_all("tr.cm-grid-row")
             except Exception:
                 rows = []
 
@@ -2321,12 +2293,9 @@ def _extract_cmix_grid_question_blocks(driver, frame_chain: list[int] | None) ->
                 try:
                     row_label = ""
                     try:
-                        row_hdr = row.find_element(
-                            By.CSS_SELECTOR,
-                            "td.cm-grid-column-header-1, th.cm-grid-column-header-1, "
-                            "td.cm-grid-column-header, th.cm-grid-column-header",
-                        )
-                        row_label = _norm(row_hdr.text or row_hdr.get_attribute("innerText") or "")
+                        row_hdr = row.query_selector("td.cm-grid-column-header-1, th.cm-grid-column-header-1, "
+                            "td.cm-grid-column-header, th.cm-grid-column-header")
+                        row_label = _norm(row_hdr.inner_text() or "")
                     except Exception:
                         pass
 
@@ -2334,7 +2303,7 @@ def _extract_cmix_grid_question_blocks(driver, frame_chain: list[int] | None) ->
                         continue
 
                     try:
-                        radios = row.find_elements(By.CSS_SELECTOR, "input[type='radio'][name][value]")
+                        radios = row.query_selector_all("input[type='radio'][name][value]")
                     except Exception:
                         radios = []
 
@@ -2441,13 +2410,13 @@ def _extract_cmix_radio_question_blocks(driver, frame_chain: list[int] | None) -
 
     # Gate strict: CMIX wrappers avec labels radio/checkbox
     try:
-        if not driver.find_elements(By.CSS_SELECTOR, ".cm-question-wrapper .cm-radio-label, .cm-question-wrapper .cm-checkbox-label"):
+        if not _pw_page(driver).query_selector_all(".cm-question-wrapper .cm-radio-label, .cm-question-wrapper .cm-checkbox-label"):
             return []
     except Exception:
         return []
 
     try:
-        wrappers = driver.find_elements(By.CSS_SELECTOR, ".cm-question-wrapper")
+        wrappers = _pw_page(driver).query_selector_all(".cm-question-wrapper")
     except Exception:
         wrappers = []
 
@@ -2468,15 +2437,15 @@ def _extract_cmix_radio_question_blocks(driver, frame_chain: list[int] | None) -
             # question text (CMIX)
             question = ""
             try:
-                qels = w.find_elements(By.CSS_SELECTOR, ".cm-question-text, .cm-qtext")
+                qels = w.query_selector_all(".cm-question-text, .cm-qtext")
                 if qels:
-                    question = _norm(qels[0].text or qels[0].get_attribute("innerText") or "")
+                    question = _norm(qels[0].inner_text() or "")
             except Exception:
                 question = ""
 
             if not question:
                 # Pattern spécifique
-                raw = _norm(w.text or w.get_attribute("innerText") or "")
+                raw = _norm(w.inner_text() or "")
                 if raw:
                     question = _norm(raw.splitlines()[0])
 
@@ -2485,7 +2454,7 @@ def _extract_cmix_radio_question_blocks(driver, frame_chain: list[int] | None) -
 
             # inputs radio/checkbox dans le wrapper
             try:
-                inputs = w.find_elements(By.CSS_SELECTOR, "input[type='radio'][id][name], input[type='checkbox'][id][name]")
+                inputs = w.query_selector_all("input[type='radio'][id][name], input[type='checkbox'][id][name]")
             except Exception:
                 inputs = []
 
@@ -2507,10 +2476,10 @@ def _extract_cmix_radio_question_blocks(driver, frame_chain: list[int] | None) -
                         continue
                     label_sel = "cm-radio-label" if rtype == "radio" else "cm-checkbox-label"
                     # label texte (pas le label "cercle")
-                    lbls = w.find_elements(By.CSS_SELECTOR, f"label.{label_sel}[for='{rid}']")
+                    lbls = w.query_selector_all(f"label.{label_sel}[for='{rid}']")
                     if not lbls:
                         continue
-                    t = _norm(lbls[0].text or lbls[0].get_attribute("innerText") or "")
+                    t = _norm(lbls[0].inner_text() or "")
                     if not t or len(t) < 2:
                         continue
                     by_group.setdefault((rtype, rname), []).append(r)
@@ -2530,10 +2499,10 @@ def _extract_cmix_radio_question_blocks(driver, frame_chain: list[int] | None) -
                         rid = (r.get_attribute("id") or "").strip()
                         if not rid:
                             continue
-                        lbls = w.find_elements(By.CSS_SELECTOR, f"label.{label_sel}[for='{rid}']")
+                        lbls = w.query_selector_all(f"label.{label_sel}[for='{rid}']")
                         if not lbls:
                             continue
-                        label = _norm(lbls[0].text or lbls[0].get_attribute("innerText") or "")
+                        label = _norm(lbls[0].inner_text() or "")
                         if not label:
                             continue
 
@@ -2583,13 +2552,13 @@ def _extract_cmix_radio_question_blocks(driver, frame_chain: list[int] | None) -
 
             # CMIX NUMERIC : 1 bloc single par input[type=number] visible dans un wrapper NUMERIC.
             try:
-                numeric_root = w.find_elements(By.CSS_SELECTOR, ".cm-element[data-type='NUMERIC']")
+                numeric_root = w.query_selector_all(".cm-element[data-type='NUMERIC']")
             except Exception:
                 numeric_root = []
 
             if numeric_root:
                 try:
-                    numeric_inputs = w.find_elements(By.CSS_SELECTOR, ".cm-element[data-type='NUMERIC'] input[type='number']")
+                    numeric_inputs = w.query_selector_all(".cm-element[data-type='NUMERIC'] input[type='number']")
                 except Exception:
                     numeric_inputs = []
 
@@ -2684,15 +2653,12 @@ def _extract_single_consent_checkbox_block(driver, frame_chain: list[int] | None
 
     # Pattern historique (Wicket consentContainer) conservé tel quel.
     try:
-        explicit_consent_checkboxes = driver.find_elements(
-            By.CSS_SELECTOR,
-            "#consentContainer25 input[type='checkbox'], "
+        explicit_consent_checkboxes = _pw_page(driver).query_selector_all("#consentContainer25 input[type='checkbox'], "
             "[id*='consentContainer'] input[type='checkbox'], "
             ".river-sampling-privacy-policy input[type='checkbox'], "
             "input[type='checkbox'][id*='consentCheckbox'], "
             "input[type='checkbox'][name*='consentCheckbox'], "
-            "input[type='checkbox'][name*='consentContainer']",
-        )
+            "input[type='checkbox'][name*='consentContainer']")
     except Exception:
         explicit_consent_checkboxes = []
 
@@ -2705,30 +2671,27 @@ def _extract_single_consent_checkbox_block(driver, frame_chain: list[int] | None
     # - pas de structure radio/groupe classique autour
     if cb is None:
         try:
-            disabled_ctas = driver.find_elements(
-                By.CSS_SELECTOR,
-                "form button[disabled], "
+            disabled_ctas = _pw_page(driver).query_selector_all("form button[disabled], "
                 "form input[type='submit'][disabled], "
-                "form input[type='button'][disabled]",
-            )
+                "form input[type='button'][disabled]")
         except Exception:
             disabled_ctas = []
 
         for cta in disabled_ctas:
             try:
-                form = cta.find_element(By.XPATH, "ancestor::form[1]")
+                form = cta.query_selector("xpath=" + "ancestor::form[1]")
             except Exception:
                 continue
 
             try:
-                radios_in_form = form.find_elements(By.CSS_SELECTOR, "input[type='radio']")
+                radios_in_form = form.query_selector_all("input[type='radio']")
             except Exception:
                 radios_in_form = []
             if radios_in_form:
                 continue
 
             try:
-                form_checkboxes = form.find_elements(By.CSS_SELECTOR, "input[type='checkbox']")
+                form_checkboxes = form.query_selector_all("input[type='checkbox']")
             except Exception:
                 form_checkboxes = []
             if len(form_checkboxes) != 1:
@@ -2741,9 +2704,7 @@ def _extract_single_consent_checkbox_block(driver, frame_chain: list[int] | None
     # Garde-fou: div.privacy-policy-wrap unique + checkbox unique, sans form requis.
     if cb is None:
         try:
-            ppw_checkboxes = driver.find_elements(
-                By.CSS_SELECTOR, "div.privacy-policy-wrap input[type='checkbox']"
-            )
+            ppw_checkboxes = _pw_page(driver).query_selector_all("div.privacy-policy-wrap input[type='checkbox']")
         except Exception:
             ppw_checkboxes = []
         if len(ppw_checkboxes) == 1:
@@ -2753,18 +2714,15 @@ def _extract_single_consent_checkbox_block(driver, frame_chain: list[int] | None
         return []
 
     try:
-        ctas = driver.find_elements(
-            By.CSS_SELECTOR,
-            "a[id*='acceptAndTakeSurveyLink'], button[id*='acceptAndTakeSurveyLink'], "
-            "a.btn-primary, button.btn-primary",
-        )
+        ctas = _pw_page(driver).query_selector_all("a[id*='acceptAndTakeSurveyLink'], button[id*='acceptAndTakeSurveyLink'], "
+            "a.btn-primary, button.btn-primary")
     except Exception:
         ctas = []
 
     has_accept_cta = False
     for cta in ctas:
         try:
-            txt = _norm_lc(cta.text or cta.get_attribute("innerText") or "")
+            txt = _norm_lc(cta.inner_text() or "")
             cta_id = _norm_lc(cta.get_attribute("id") or "")
             if (
                 "acceptandtakesurveylink" in cta_id
@@ -2779,10 +2737,7 @@ def _extract_single_consent_checkbox_block(driver, frame_chain: list[int] | None
 
     if not has_accept_cta:
         try:
-            ctas = driver.find_elements(
-                By.CSS_SELECTOR,
-                "form button[disabled], form input[type='submit'][disabled], form input[type='button'][disabled]",
-            )
+            ctas = _pw_page(driver).query_selector_all("form button[disabled], form input[type='submit'][disabled], form input[type='button'][disabled]")
         except Exception:
             ctas = []
 
@@ -2791,12 +2746,9 @@ def _extract_single_consent_checkbox_block(driver, frame_chain: list[int] | None
     # Pattern privacy-policy-wrap: bouton disabled sans <form> requis.
     if not has_accept_cta:
         try:
-            ppw = driver.find_elements(By.CSS_SELECTOR, "div.privacy-policy-wrap")
+            ppw = _pw_page(driver).query_selector_all("div.privacy-policy-wrap")
             if ppw:
-                disabled_btns = driver.find_elements(
-                    By.CSS_SELECTOR,
-                    "button[disabled], input[type='submit'][disabled], input[type='button'][disabled]",
-                )
+                disabled_btns = _pw_page(driver).query_selector_all("button[disabled], input[type='submit'][disabled], input[type='button'][disabled]")
                 has_accept_cta = len(disabled_btns) > 0
         except Exception:
             pass
@@ -2814,28 +2766,28 @@ def _extract_single_consent_checkbox_block(driver, frame_chain: list[int] | None
     label_txt = ""
     if cb_id:
         try:
-            lbl = driver.find_element(By.CSS_SELECTOR, f"label[for='{cb_id}']")
-            label_txt = _norm(lbl.text or lbl.get_attribute("innerText") or "")
+            lbl = _pw_page(driver).query_selector(f"label[for='{cb_id}']")
+            label_txt = _norm(lbl.inner_text() or "")
         except Exception:
             label_txt = ""
 
     if not label_txt:
         try:
-            parent_labels = cb.find_elements(By.XPATH, "ancestor::label[1]")
+            parent_labels = cb.query_selector_all("xpath=" + "ancestor::label[1]")
             if parent_labels:
-                label_txt = _norm(parent_labels[0].text or parent_labels[0].get_attribute("innerText") or "")
+                label_txt = _norm(parent_labels[0].inner_text() or "")
         except Exception:
             label_txt = ""
 
     # Fallback label pour privacy-policy-wrap: texte adjacent (SPA sans label[for]).
     if not label_txt:
         try:
-            ppw = driver.find_elements(By.CSS_SELECTOR, "div.privacy-policy-wrap")
+            ppw = _pw_page(driver).query_selector_all("div.privacy-policy-wrap")
             if ppw:
                 for xpath in ("following-sibling::*[1]", "parent::*/following-sibling::*[1]"):
                     try:
-                        el = cb.find_element(By.XPATH, xpath)
-                        txt = _norm(el.text or el.get_attribute("innerText") or "")
+                        el = cb.query_selector("xpath=" + xpath)
+                        txt = _norm(el.inner_text() or "")
                         if txt:
                             label_txt = txt
                             break
@@ -2849,8 +2801,8 @@ def _extract_single_consent_checkbox_block(driver, frame_chain: list[int] | None
 
     question = ""
     try:
-        container = cb.find_element(By.XPATH, "ancestor::*[@id='consentContainer25' or contains(@id,'consentContainer') or contains(@class,'privacy-policy')][1]")
-        raw = _norm(container.text or container.get_attribute("innerText") or "")
+        container = cb.query_selector("xpath=" + "ancestor::*[@id='consentContainer25' or contains(@id,'consentContainer') or contains(@class,'privacy-policy')][1]")
+        raw = _norm(container.inner_text() or "")
         if raw:
             question = "Politique de confidentialité / consentement" if "politique de confidentialité" in _norm_lc(raw) else raw
     except Exception:
@@ -2954,20 +2906,20 @@ def _extract_consent_modal_radio_block(driver, frame_chain: list[int] | None) ->
         return True
 
     try:
-        modal_nodes = driver.find_elements(By.CSS_SELECTOR, "#modal-container")
+        modal_nodes = _pw_page(driver).query_selector_all("#modal-container")
         if not modal_nodes:
             return []
         visible_modals = [el for el in modal_nodes if _is_dom_visible(el)]
         if not visible_modals:
             return []
 
-        radiogroups = driver.find_elements(By.CSS_SELECTOR, ".consent-form-radiogroup")
+        radiogroups = _pw_page(driver).query_selector_all(".consent-form-radiogroup")
         if not radiogroups:
             return []
         if not any(_is_dom_visible(el) for el in radiogroups):
             return []
 
-        confirm_buttons = driver.find_elements(By.CSS_SELECTOR, "#consent-button-confirm")
+        confirm_buttons = _pw_page(driver).query_selector_all("#consent-button-confirm")
         if not confirm_buttons:
             return []
         if not any(_is_dom_visible(el) for el in confirm_buttons):
@@ -2976,10 +2928,7 @@ def _extract_consent_modal_radio_block(driver, frame_chain: list[int] | None) ->
         return []
 
     try:
-        radio_inputs = driver.find_elements(
-            By.CSS_SELECTOR,
-            ".consent-form-radiogroup input[type='radio'][name]",
-        )
+        radio_inputs = _pw_page(driver).query_selector_all(".consent-form-radiogroup input[type='radio'][name]")
     except Exception:
         return []
 
@@ -3014,16 +2963,16 @@ def _extract_consent_modal_radio_block(driver, frame_chain: list[int] | None) ->
 
             label = ""
             try:
-                lbl = driver.find_element(By.CSS_SELECTOR, f"label[for='{rid}'] .consent-option-text")
-                label = _norm(lbl.text or lbl.get_attribute("innerText") or "")
+                lbl = _pw_page(driver).query_selector(f"label[for='{rid}'] .consent-option-text")
+                label = _norm(lbl.inner_text() or "")
             except Exception:
                 try:
-                    lbl = driver.find_element(By.CSS_SELECTOR, f"label[for='{rid}']")
-                    label = _norm(lbl.text or lbl.get_attribute("innerText") or "")
+                    lbl = _pw_page(driver).query_selector(f"label[for='{rid}']")
+                    label = _norm(lbl.inner_text() or "")
                 except Exception:
                     try:
-                        lbl = radio.find_element(By.XPATH, "ancestor::label[contains(@class,'consent-option-label')][1]")
-                        label = _norm(lbl.text or lbl.get_attribute("innerText") or "")
+                        lbl = radio.query_selector("xpath=" + "ancestor::label[contains(@class,'consent-option-label')][1]")
+                        label = _norm(lbl.inner_text() or "")
                     except Exception:
                         label = ""
 
@@ -3055,9 +3004,9 @@ def _extract_consent_modal_radio_block(driver, frame_chain: list[int] | None) ->
 
     question = "Consentement RGPD"
     try:
-        error_msg = driver.find_elements(By.CSS_SELECTOR, "#consent-error-message-container")
+        error_msg = _pw_page(driver).query_selector_all("#consent-error-message-container")
         if error_msg:
-            txt = _norm(error_msg[0].text or error_msg[0].get_attribute("innerText") or "")
+            txt = _norm(error_msg[0].inner_text() or "")
             if txt:
                 question = txt
     except Exception:
@@ -3120,7 +3069,7 @@ def _extract_confirmit_wix_fieldset_radio_block(driver, frame_chain: list[int] |
     frame_chain = list(frame_chain or [])
 
     try:
-        fieldsets = driver.find_elements(By.CSS_SELECTOR, "fieldset[id^='fieldset_']")
+        fieldsets = _pw_page(driver).query_selector_all("fieldset[id^='fieldset_']")
     except Exception:
         return []
     if not fieldsets:
@@ -3133,32 +3082,32 @@ def _extract_confirmit_wix_fieldset_radio_block(driver, frame_chain: list[int] |
             _fs_cls = fieldset.get_attribute("class") or ""
             if "confirmit-rankedorderclick-default" in _fs_cls:
                 continue
-            if not fieldset.find_elements(By.CSS_SELECTOR, "table.confirmit-table"):
+            if not fieldset.query_selector_all("table.confirmit-table"):
                 continue
-            radios = fieldset.find_elements(By.CSS_SELECTOR, "input[type='radio']")
+            radios = fieldset.query_selector_all("input[type='radio']")
             if len(radios) < 2:
                 # Fieldset mixte : 1 radio[issinglepunch="true"] + ≥2 checkboxes
                 # → un seul bloc itype=checkbox regroupant toutes les options.
                 # Pure checkbox (0 radios) : même mécanique, guard issinglepunch absent.
                 if len(radios) == 0:
                     try:
-                        _cbs = fieldset.find_elements(By.CSS_SELECTOR, "input[type='checkbox']")
+                        _cbs = fieldset.query_selector_all("input[type='checkbox']")
                         if len(_cbs) >= 2:
                             _fs_id = fieldset.get_attribute("id") or ""
                             _gname = _fs_id[len("fieldset_"):] if _fs_id.startswith("fieldset_") else ""
                             if _gname:
                                 _q = ""
                                 try:
-                                    _qels = driver.find_elements(By.CSS_SELECTOR, f"div[id='{_gname}_text']")
+                                    _qels = _pw_page(driver).query_selector_all(f"div[id='{_gname}_text']")
                                     if _qels:
-                                        _q = _norm(_qels[0].text or _qels[0].get_attribute("innerText") or "")
+                                        _q = _norm(_qels[0].inner_text() or "")
                                 except Exception:
                                     pass
                                 if not _q:
                                     try:
-                                        _qels = driver.find_elements(By.CSS_SELECTOR, "div[id$='_text'].question_text_ng")
+                                        _qels = _pw_page(driver).query_selector_all("div[id$='_text'].question_text_ng")
                                         if _qels:
-                                            _q = _norm(_qels[0].text or _qels[0].get_attribute("innerText") or "")
+                                            _q = _norm(_qels[0].inner_text() or "")
                                     except Exception:
                                         pass
                                 if not _q:
@@ -3172,8 +3121,8 @@ def _extract_confirmit_wix_fieldset_radio_block(driver, frame_chain: list[int] |
                                             continue
                                         _lbl = ""
                                         try:
-                                            _le = driver.find_element(By.CSS_SELECTOR, f"label[for='{_iid}']")
-                                            _lbl = _norm(_le.text or _le.get_attribute("innerText") or "")
+                                            _le = _pw_page(driver).query_selector(f"label[for='{_iid}']")
+                                            _lbl = _norm(_le.inner_text() or "")
                                         except Exception:
                                             pass
                                         if not _lbl:
@@ -3222,23 +3171,23 @@ def _extract_confirmit_wix_fieldset_radio_block(driver, frame_chain: list[int] |
                 elif len(radios) == 1:
                     try:
                         _issp = (radios[0].get_attribute("issinglepunch") or "").lower() == "true"
-                        _cbs = fieldset.find_elements(By.CSS_SELECTOR, "input[type='checkbox']") if _issp else []
+                        _cbs = fieldset.query_selector_all("input[type='checkbox']") if _issp else []
                         if _issp and len(_cbs) >= 2:
                             _fs_id = fieldset.get_attribute("id") or ""
                             _gname = _fs_id[len("fieldset_"):] if _fs_id.startswith("fieldset_") else ""
                             if _gname:
                                 _q = ""
                                 try:
-                                    _qels = driver.find_elements(By.CSS_SELECTOR, f"div[id='{_gname}_text']")
+                                    _qels = _pw_page(driver).query_selector_all(f"div[id='{_gname}_text']")
                                     if _qels:
-                                        _q = _norm(_qels[0].text or _qels[0].get_attribute("innerText") or "")
+                                        _q = _norm(_qels[0].inner_text() or "")
                                 except Exception:
                                     pass
                                 if not _q:
                                     try:
-                                        _qels = driver.find_elements(By.CSS_SELECTOR, "div[id$='_text'].question_text_ng")
+                                        _qels = _pw_page(driver).query_selector_all("div[id$='_text'].question_text_ng")
                                         if _qels:
-                                            _q = _norm(_qels[0].text or _qels[0].get_attribute("innerText") or "")
+                                            _q = _norm(_qels[0].inner_text() or "")
                                     except Exception:
                                         pass
                                 if not _q:
@@ -3252,8 +3201,8 @@ def _extract_confirmit_wix_fieldset_radio_block(driver, frame_chain: list[int] |
                                             continue
                                         _lbl = ""
                                         try:
-                                            _le = driver.find_element(By.CSS_SELECTOR, f"label[for='{_iid}']")
-                                            _lbl = _norm(_le.text or _le.get_attribute("innerText") or "")
+                                            _le = _pw_page(driver).query_selector(f"label[for='{_iid}']")
+                                            _lbl = _norm(_le.inner_text() or "")
                                         except Exception:
                                             pass
                                         if not _lbl:
@@ -3319,16 +3268,16 @@ def _extract_confirmit_wix_fieldset_radio_block(driver, frame_chain: list[int] |
         # Question depuis div[id="{group_name}_text"]
         question = ""
         try:
-            q_els = driver.find_elements(By.CSS_SELECTOR, f"div[id='{group_name}_text']")
+            q_els = _pw_page(driver).query_selector_all(f"div[id='{group_name}_text']")
             if q_els:
-                question = _norm(q_els[0].text or q_els[0].get_attribute("innerText") or "")
+                question = _norm(q_els[0].inner_text() or "")
         except Exception:
             pass
         if not question:
             try:
-                q_els = driver.find_elements(By.CSS_SELECTOR, "div[id$='_text'].question_text_ng")
+                q_els = _pw_page(driver).query_selector_all("div[id$='_text'].question_text_ng")
                 if q_els:
-                    question = _norm(q_els[0].text or q_els[0].get_attribute("innerText") or "")
+                    question = _norm(q_els[0].inner_text() or "")
             except Exception:
                 pass
         if not question:
@@ -3349,8 +3298,8 @@ def _extract_confirmit_wix_fieldset_radio_block(driver, frame_chain: list[int] |
                     continue
                 label = ""
                 try:
-                    lbl = driver.find_element(By.CSS_SELECTOR, f"label[for='{rid}']")
-                    label = _norm(lbl.text or lbl.get_attribute("innerText") or "")
+                    lbl = _pw_page(driver).query_selector(f"label[for='{rid}']")
+                    label = _norm(lbl.inner_text() or "")
                 except Exception:
                     pass
                 if not label:
@@ -3422,7 +3371,7 @@ def _extract_confirmit_wix_checkbox_grid_blocks(driver, frame_chain: list[int] |
     frame_chain = list(frame_chain or [])
 
     try:
-        fieldsets = driver.find_elements(By.CSS_SELECTOR, "fieldset[id^='fieldset_']")
+        fieldsets = _pw_page(driver).query_selector_all("fieldset[id^='fieldset_']")
     except Exception:
         return []
     if not fieldsets:
@@ -3430,23 +3379,23 @@ def _extract_confirmit_wix_checkbox_grid_blocks(driver, frame_chain: list[int] |
 
     # JS : récupère uniquement les nœuds texte directs (exclut les div hidden)
     _JS_DIRECT_TEXT = (
-        "var n=arguments[0],t='';"
-        "for(var i=0;i<n.childNodes.length;i++){"
-        "if(n.childNodes[i].nodeType===3)t+=n.childNodes[i].textContent;"
-        "}return t;"
+        "(n) => { var t='';"
+        " for(var i=0;i<n.childNodes.length;i++){"
+        " if(n.childNodes[i].nodeType===3)t+=n.childNodes[i].textContent;"
+        " } return t; }"
     )
 
     blocks: list[dict] = []
 
     for fieldset in fieldsets:
         try:
-            grid_tables = fieldset.find_elements(By.CSS_SELECTOR, "table.confirmit-grid")
+            grid_tables = fieldset.query_selector_all("table.confirmit-grid")
             if not grid_tables:
                 continue
             grid_table = grid_tables[0]
 
             # ── Colonnes ──────────────────────────────────────────────────────
-            col_ths = grid_table.find_elements(By.CSS_SELECTOR, "th.grid_scale_ng")
+            col_ths = grid_table.query_selector_all("th.grid_scale_ng")
             if len(col_ths) < 2:
                 continue
 
@@ -3454,14 +3403,14 @@ def _extract_confirmit_wix_checkbox_grid_blocks(driver, frame_chain: list[int] |
             for th in col_ths:
                 lbl = ""
                 try:
-                    lbl = _norm(driver.execute_script(_JS_DIRECT_TEXT, th) or "")
+                    lbl = _norm(th.evaluate(_JS_DIRECT_TEXT) or "")
                 except Exception:
                     pass
                 if not lbl:
                     try:
-                        lbl = _norm(driver.execute_script("return arguments[0].innerText;", th) or "")
+                        lbl = _norm(th.inner_text() or "")
                     except Exception:
-                        lbl = _norm(th.text or "")
+                        lbl = _norm(th.inner_text() or "")
                 if lbl:
                     col_labels.append(lbl)
 
@@ -3475,25 +3424,25 @@ def _extract_confirmit_wix_checkbox_grid_blocks(driver, frame_chain: list[int] |
             question_text = ""
             if group_name:
                 try:
-                    q_els = driver.find_elements(By.CSS_SELECTOR, f"div[id='{group_name}_text']")
+                    q_els = _pw_page(driver).query_selector_all(f"div[id='{group_name}_text']")
                     if q_els:
-                        question_text = _norm(q_els[0].text or q_els[0].get_attribute("innerText") or "")
+                        question_text = _norm(q_els[0].inner_text() or "")
                 except Exception:
                     pass
             if not question_text:
                 try:
-                    q_els = driver.find_elements(By.CSS_SELECTOR, "div[id$='_text'].question_text_ng")
+                    q_els = _pw_page(driver).query_selector_all("div[id$='_text'].question_text_ng")
                     if q_els:
-                        question_text = _norm(q_els[0].text or q_els[0].get_attribute("innerText") or "")
+                        question_text = _norm(q_els[0].inner_text() or "")
                 except Exception:
                     pass
 
             instruction = ""
             if group_name:
                 try:
-                    ins_els = driver.find_elements(By.CSS_SELECTOR, f"div[id='{group_name}_comment']")
+                    ins_els = _pw_page(driver).query_selector_all(f"div[id='{group_name}_comment']")
                     if ins_els:
-                        instruction = _norm(ins_els[0].text or ins_els[0].get_attribute("innerText") or "")
+                        instruction = _norm(ins_els[0].inner_text() or "")
                 except Exception:
                     pass
 
@@ -3503,16 +3452,13 @@ def _extract_confirmit_wix_checkbox_grid_blocks(driver, frame_chain: list[int] |
 
             # ── Lignes ─────────────────────────────────────────────────────────
             try:
-                rows = grid_table.find_elements(By.CSS_SELECTOR, "tbody tr")
+                rows = grid_table.query_selector_all("tbody tr")
             except Exception:
                 continue
 
             for row in rows:
                 try:
-                    cells = row.find_elements(
-                        By.CSS_SELECTOR,
-                        "td.grid_answer_input, td.grid_alternating_answer_input",
-                    )
+                    cells = row.query_selector_all("td.grid_answer_input, td.grid_alternating_answer_input")
                     if not cells:
                         continue
 
@@ -3520,7 +3466,7 @@ def _extract_confirmit_wix_checkbox_grid_blocks(driver, frame_chain: list[int] |
                     row_idx: str | None = None
                     for cell in cells:
                         try:
-                            cbs = cell.find_elements(By.CSS_SELECTOR, "input[type='checkbox']")
+                            cbs = cell.query_selector_all("input[type='checkbox']")
                             if cbs:
                                 m = re.search(r"_(\d+)$", cbs[0].get_attribute("name") or "")
                                 if m:
@@ -3538,16 +3484,13 @@ def _extract_confirmit_wix_checkbox_grid_blocks(driver, frame_chain: list[int] |
                     # Texte du facteur depuis le th de la ligne
                     factor_text = ""
                     try:
-                        row_th_els = row.find_elements(
-                            By.CSS_SELECTOR,
-                            "th.grid_answer_label_ng, th.grid_alternating_answer_label_ng",
-                        )
+                        row_th_els = row.query_selector_all("th.grid_answer_label_ng, th.grid_alternating_answer_label_ng")
                         if row_th_els:
                             factor_text = _norm(
-                                driver.execute_script(_JS_DIRECT_TEXT, row_th_els[0]) or ""
+                                row_th_els[0].evaluate(_JS_DIRECT_TEXT) or ""
                             )
                             if not factor_text:
-                                factor_text = _norm(row_th_els[0].text or "")
+                                factor_text = _norm(row_th_els[0].inner_text() or "")
                     except Exception:
                         pass
                     if not factor_text:
@@ -3560,7 +3503,7 @@ def _extract_confirmit_wix_checkbox_grid_blocks(driver, frame_chain: list[int] |
                     option_xpath_map: dict[str, str] = {}
                     for cell, col_lbl in zip(cells[: len(col_labels)], col_labels):
                         try:
-                            cbs = cell.find_elements(By.CSS_SELECTOR, "input[type='checkbox']")
+                            cbs = cell.query_selector_all("input[type='checkbox']")
                             if not cbs:
                                 continue
                             cb_id = (cbs[0].get_attribute("id") or "").strip()
@@ -3642,9 +3585,7 @@ def _extract_confirmit_wix_rankedorderclick_block(driver, frame_chain: list[int]
     frame_chain = list(frame_chain or [])
 
     try:
-        fieldsets = driver.find_elements(
-            By.CSS_SELECTOR, "fieldset[id^='fieldset_'].confirmit-rankedorderclick-default"
-        )
+        fieldsets = _pw_page(driver).query_selector_all("fieldset[id^='fieldset_'].confirmit-rankedorderclick-default")
     except Exception:
         return []
     if not fieldsets:
@@ -3655,7 +3596,7 @@ def _extract_confirmit_wix_rankedorderclick_block(driver, frame_chain: list[int]
 
     for fieldset in fieldsets:
         try:
-            tds = fieldset.find_elements(By.CSS_SELECTOR, "td.confirmit-rankedorderclick")
+            tds = fieldset.query_selector_all("td.confirmit-rankedorderclick")
             if len(tds) < 2:
                 continue
 
@@ -3666,16 +3607,16 @@ def _extract_confirmit_wix_rankedorderclick_block(driver, frame_chain: list[int]
             question = ""
             if group_name:
                 try:
-                    q_els = driver.find_elements(By.CSS_SELECTOR, f"div[id='{group_name}_text']")
+                    q_els = _pw_page(driver).query_selector_all(f"div[id='{group_name}_text']")
                     if q_els:
-                        question = _norm(q_els[0].text or q_els[0].get_attribute("innerText") or "")
+                        question = _norm(q_els[0].inner_text() or "")
                 except Exception:
                     pass
             if not question:
                 try:
-                    q_els = driver.find_elements(By.CSS_SELECTOR, "div[id$='_text'].question_text_ng")
+                    q_els = _pw_page(driver).query_selector_all("div[id$='_text'].question_text_ng")
                     if q_els:
-                        question = _norm(q_els[0].text or q_els[0].get_attribute("innerText") or "")
+                        question = _norm(q_els[0].inner_text() or "")
                 except Exception:
                     pass
             if not question:
@@ -3685,16 +3626,16 @@ def _extract_confirmit_wix_rankedorderclick_block(driver, frame_chain: list[int]
             instruction = ""
             if group_name:
                 try:
-                    ins_els = driver.find_elements(By.CSS_SELECTOR, f"div[id='{group_name}_comment']")
+                    ins_els = _pw_page(driver).query_selector_all(f"div[id='{group_name}_comment']")
                     if ins_els:
-                        instruction = _norm(ins_els[0].text or ins_els[0].get_attribute("innerText") or "")
+                        instruction = _norm(ins_els[0].inner_text() or "")
                 except Exception:
                     pass
             if not instruction:
                 try:
-                    ins_els = driver.find_elements(By.CSS_SELECTOR, "div.instruction_text")
+                    ins_els = _pw_page(driver).query_selector_all("div.instruction_text")
                     if ins_els:
-                        instruction = _norm(ins_els[0].text or ins_els[0].get_attribute("innerText") or "")
+                        instruction = _norm(ins_els[0].inner_text() or "")
                 except Exception:
                     pass
 
@@ -3706,7 +3647,7 @@ def _extract_confirmit_wix_rankedorderclick_block(driver, frame_chain: list[int]
 
             for td in tds:
                 try:
-                    inp = td.find_elements(By.CSS_SELECTOR, "input[type='checkbox']")
+                    inp = td.query_selector_all("input[type='checkbox']")
                     if not inp:
                         continue
                     cid = (inp[0].get_attribute("id") or "").strip()
@@ -3714,8 +3655,8 @@ def _extract_confirmit_wix_rankedorderclick_block(driver, frame_chain: list[int]
                         continue
                     lbl = ""
                     try:
-                        lbl_el = td.find_element(By.CSS_SELECTOR, f"label[for='{cid}']")
-                        lbl = _norm(lbl_el.text or lbl_el.get_attribute("innerText") or "")
+                        lbl_el = td.query_selector(f"label[for='{cid}']")
+                        lbl = _norm(lbl_el.inner_text() or "")
                     except Exception:
                         pass
                     if not lbl:
@@ -3789,9 +3730,9 @@ def _extract_ipsos_slider_question_blocks(driver, frame_chain: list[int] | None)
     frame_chain = list(frame_chain or [])
 
     try:
-        if not driver.find_elements(By.CSS_SELECTOR, "h3.question-title-frontend"):
+        if not _pw_page(driver).query_selector_all("h3.question-title-frontend"):
             return []
-        if not driver.find_elements(By.CSS_SELECTOR, "input.slider-form-field.bs-slider"):
+        if not _pw_page(driver).query_selector_all("input.slider-form-field.bs-slider"):
             return []
     except Exception:
         return []
@@ -3800,25 +3741,25 @@ def _extract_ipsos_slider_question_blocks(driver, frame_chain: list[int] | None)
     seen_group_keys: set[str] = set()
 
     try:
-        question_titles = driver.find_elements(By.CSS_SELECTOR, "h3.question-title-frontend")
+        question_titles = _pw_page(driver).query_selector_all("h3.question-title-frontend")
     except Exception:
         question_titles = []
 
     for qh in question_titles[:20]:
         try:
-            question = _norm(qh.text or qh.get_attribute("innerText") or "")
+            question = _norm(qh.inner_text() or "")
             if not question:
                 continue
 
             try:
-                wrapper = qh.find_element(By.XPATH, "ancestor::div[1]")
+                wrapper = qh.query_selector("xpath=" + "ancestor::div[1]")
             except Exception:
                 wrapper = None
             if not wrapper:
                 continue
 
             try:
-                sliders = wrapper.find_elements(By.CSS_SELECTOR, "input.slider-form-field.bs-slider[name]")
+                sliders = wrapper.query_selector_all("input.slider-form-field.bs-slider[name]")
             except Exception:
                 sliders = []
             if not sliders:
@@ -3898,7 +3839,7 @@ def _extract_confirmit_slider_grid_blocks(driver, frame_chain: list[int] | None)
     frame_chain = list(frame_chain or [])
 
     try:
-        questions = driver.find_elements(By.CSS_SELECTOR, ".cf-question.cf-question--slider-grid")
+        questions = _pw_page(driver).query_selector_all(".cf-question.cf-question--slider-grid")
     except Exception:
         return []
 
@@ -3910,7 +3851,7 @@ def _extract_confirmit_slider_grid_blocks(driver, frame_chain: list[int] | None)
     for q in questions:
         try:
             try:
-                handles = q.find_elements(By.CSS_SELECTOR, ".cf-slider__handle[role='slider']")
+                handles = q.query_selector_all(".cf-slider__handle[role='slider']")
             except Exception:
                 handles = []
             if not handles:
@@ -3919,8 +3860,8 @@ def _extract_confirmit_slider_grid_blocks(driver, frame_chain: list[int] | None)
             question = ""
             for sel in (".cf-question__text", ".cf-question__title"):
                 try:
-                    q_el = q.find_element(By.CSS_SELECTOR, sel)
-                    txt = _norm(q_el.text or q_el.get_attribute("innerText") or "")
+                    q_el = q.query_selector(sel)
+                    txt = _norm(q_el.inner_text() or "")
                     if txt:
                         question = txt
                         break
@@ -3935,11 +3876,11 @@ def _extract_confirmit_slider_grid_blocks(driver, frame_chain: list[int] | None)
                 ".cf-slider-grid-answer__scale-label",
             ):
                 try:
-                    labels = q.find_elements(By.CSS_SELECTOR, sel)
+                    labels = q.query_selector_all(sel)
                 except Exception:
                     labels = []
                 for label in labels:
-                    txt = _norm(label.text or label.get_attribute("innerText") or "")
+                    txt = _norm(label.inner_text() or "")
                     key = _norm_key(txt)
                     if not txt or not key or key in seen_scale:
                         continue
@@ -3960,10 +3901,7 @@ def _extract_confirmit_slider_grid_blocks(driver, frame_chain: list[int] | None)
                 continue
 
             try:
-                rows = q.find_elements(
-                    By.CSS_SELECTOR,
-                    ".cf-grid-layout__row.cf-slider-grid-answer[id]:not(.cf-slider-grid-answer--fake-for-panel)",
-                )
+                rows = q.query_selector_all(".cf-grid-layout__row.cf-slider-grid-answer[id]:not(.cf-slider-grid-answer--fake-for-panel)")
             except Exception:
                 rows = []
 
@@ -3974,7 +3912,7 @@ def _extract_confirmit_slider_grid_blocks(driver, frame_chain: list[int] | None)
                         continue
 
                     try:
-                        row_handles = row.find_elements(By.CSS_SELECTOR, ".cf-slider__handle[role='slider']")
+                        row_handles = row.query_selector_all(".cf-slider__handle[role='slider']")
                     except Exception:
                         row_handles = []
                     if not row_handles:
@@ -3983,8 +3921,8 @@ def _extract_confirmit_slider_grid_blocks(driver, frame_chain: list[int] | None)
                     row_text = ""
                     for sel in (".cf-slider-grid-answer__text", ".cf-grid-layout__row-text"):
                         try:
-                            row_el = row.find_element(By.CSS_SELECTOR, sel)
-                            txt = _norm(row_el.text or row_el.get_attribute("innerText") or "")
+                            row_el = row.query_selector(sel)
+                            txt = _norm(row_el.inner_text() or "")
                             if txt:
                                 row_text = txt
                                 break
@@ -4056,7 +3994,7 @@ def _extract_custom_testid_single_select_radio_blocks(driver, frame_chain: list[
     frame_chain = list(frame_chain or [])
 
     try:
-        containers = driver.find_elements(By.CSS_SELECTOR, "div[data-testid='common-question-div-container']")
+        containers = _pw_page(driver).query_selector_all("div[data-testid='common-question-div-container']")
     except Exception:
         return []
 
@@ -4073,11 +4011,11 @@ def _extract_custom_testid_single_select_radio_blocks(driver, frame_chain: list[
                 "[data-testid='common-question-div-text'] label",
             ):
                 try:
-                    q_els = container.find_elements(By.CSS_SELECTOR, qsel)
+                    q_els = container.query_selector_all(qsel)
                 except Exception:
                     q_els = []
                 for q_el in q_els:
-                    txt = _norm(q_el.text or q_el.get_attribute("innerText") or "")
+                    txt = _norm(q_el.inner_text() or "")
                     if txt and len(txt) >= 5:
                         question = txt
                         break
@@ -4088,7 +4026,7 @@ def _extract_custom_testid_single_select_radio_blocks(driver, frame_chain: list[
                 continue
 
             try:
-                option_nodes = container.find_elements(By.CSS_SELECTOR, "div[data-testid='answer-radio-div-container']")
+                option_nodes = container.query_selector_all("div[data-testid='answer-radio-div-container']")
             except Exception:
                 option_nodes = []
             if len(option_nodes) < 2:
@@ -4105,11 +4043,11 @@ def _extract_custom_testid_single_select_radio_blocks(driver, frame_chain: list[
                         "label",
                     ):
                         try:
-                            labels = opt.find_elements(By.CSS_SELECTOR, lsel)
+                            labels = opt.query_selector_all(lsel)
                         except Exception:
                             labels = []
                         for lab in labels:
-                            cand = _norm(lab.text or lab.get_attribute("innerText") or "")
+                            cand = _norm(lab.inner_text() or "")
                             if cand:
                                 label_text = cand
                                 break
@@ -4137,7 +4075,7 @@ def _extract_custom_testid_single_select_radio_blocks(driver, frame_chain: list[
 
             container_id = ""
             try:
-                q_containers = container.find_elements(By.CSS_SELECTOR, "[id][data-testid*='question-singleselect']")
+                q_containers = container.query_selector_all("[id][data-testid*='question-singleselect']")
                 if q_containers:
                     container_id = (q_containers[0].get_attribute("id") or "").strip()
             except Exception:
@@ -4194,7 +4132,7 @@ def _extract_button_choice_radio_blocks(driver, frame_chain: list[int] | None) -
     frame_chain = list(frame_chain or [])
 
     try:
-        option_roots = driver.find_elements(By.CSS_SELECTOR, "div.question-body-options__inner")
+        option_roots = _pw_page(driver).query_selector_all("div.question-body-options__inner")
     except Exception:
         return []
 
@@ -4203,13 +4141,13 @@ def _extract_button_choice_radio_blocks(driver, frame_chain: list[int] | None) -
 
     question = ""
     try:
-        question_nodes = driver.find_elements(By.CSS_SELECTOR, ".question-title__title")
+        question_nodes = _pw_page(driver).query_selector_all(".question-title__title")
     except Exception:
         question_nodes = []
 
     for qn in question_nodes:
         try:
-            qtxt = _norm(qn.text or qn.get_attribute("innerText") or "")
+            qtxt = _norm(qn.inner_text() or "")
             if qtxt:
                 question = qtxt
                 break
@@ -4223,7 +4161,7 @@ def _extract_button_choice_radio_blocks(driver, frame_chain: list[int] | None) -
 
     for root_idx, root in enumerate(option_roots, start=1):
         try:
-            choice_wrappers = root.find_elements(By.CSS_SELECTOR, "div.question-body-options__choice")
+            choice_wrappers = root.query_selector_all("div.question-body-options__choice")
         except Exception:
             continue
 
@@ -4236,7 +4174,7 @@ def _extract_button_choice_radio_blocks(driver, frame_chain: list[int] | None) -
 
         for choice in choice_wrappers:
             try:
-                btn = choice.find_element(By.CSS_SELECTOR, "button.choice")
+                btn = choice.query_selector("button.choice")
                 btn_id = (btn.get_attribute("id") or "").strip()
                 if not btn_id:
                     options = []
@@ -4245,12 +4183,12 @@ def _extract_button_choice_radio_blocks(driver, frame_chain: list[int] | None) -
 
                 label_txt = ""
                 try:
-                    labels = btn.find_elements(By.CSS_SELECTOR, ".choice__label")
+                    labels = btn.query_selector_all(".choice__label")
                 except Exception:
                     labels = []
 
                 for lb in labels:
-                    cand = _norm(lb.text or lb.get_attribute("innerText") or "")
+                    cand = _norm(lb.inner_text() or "")
                     if cand:
                         label_txt = cand
                         break
@@ -4325,11 +4263,8 @@ def _extract_runtime_answerrow_radio_blocks(driver, frame_chain: list[int] | Non
     debug = (os.getenv("DOM_CONTEXT_DEBUG", "") or "").strip().lower() in {"1", "true", "yes", "on"}
 
     try:
-        question_nodes = driver.find_elements(
-            By.CSS_SELECTOR,
-            "[data-aut='Runtime_QuestionTitleAndDescriptionWrapper'] [data-aut='Runtime-TextComponent']",
-        )
-        answer_rows = driver.find_elements(By.CSS_SELECTOR, ".answer[data-aut='Runtime_AnswerRow']")
+        question_nodes = _pw_page(driver).query_selector_all("[data-aut='Runtime_QuestionTitleAndDescriptionWrapper'] [data-aut='Runtime-TextComponent']")
+        answer_rows = _pw_page(driver).query_selector_all(".answer[data-aut='Runtime_AnswerRow']")
     except Exception as e:
         if debug:
             print(f"[DOM_CONTEXT_DEBUG] runtime_answerrow extractor_exception={type(e).__name__}: {e}")
@@ -4352,30 +4287,24 @@ def _extract_runtime_answerrow_radio_blocks(driver, frame_chain: list[int] | Non
         try:
             # Scope guard: la row doit être dans un div.choice_question
             try:
-                row.find_element(By.XPATH, "ancestor::div[contains(@class,'choice_question')][1]")
+                row.query_selector("xpath=" + "ancestor::div[contains(@class,'choice_question')][1]")
             except Exception:
                 continue
 
-            has_radio = bool(row.find_elements(By.CSS_SELECTOR, ".radio_button[data-aut='Runtime_Wrapper']"))
-            has_checkbox = bool(row.find_elements(By.CSS_SELECTOR, ".check_box[data-aut='Runtime_Wrapper']"))
+            has_radio = bool(row.query_selector_all(".radio_button[data-aut='Runtime_Wrapper']"))
+            has_checkbox = bool(row.query_selector_all(".check_box[data-aut='Runtime_Wrapper']"))
             if not has_radio and not has_checkbox:
                 continue
 
             question_container = None
             try:
-                question_container = row.find_element(
-                    By.XPATH,
-                    "ancestor::*[@id][starts-with(@id, 'question_') and not(starts-with(@id, 'question_container_'))][1]",
-                )
+                question_container = row.query_selector("xpath=" + "ancestor::*[@id][starts-with(@id, 'question_') and not(starts-with(@id, 'question_container_'))][1]")
             except Exception:
                 question_container = None
 
             if question_container is None:
                 try:
-                    question_container = row.find_element(
-                        By.XPATH,
-                        "ancestor::*[@data-aut='Runtime_QuestionWrapper'][1]",
-                    )
+                    question_container = row.query_selector("xpath=" + "ancestor::*[@data-aut='Runtime_QuestionWrapper'][1]")
                 except Exception:
                     question_container = None
 
@@ -4404,29 +4333,20 @@ def _extract_runtime_answerrow_radio_blocks(driver, frame_chain: list[int] | Non
 
             question = ""
             try:
-                question_container = rows[0].find_element(
-                    By.XPATH,
-                    "ancestor::*[@id][starts-with(@id, 'question_') and not(starts-with(@id, 'question_container_'))][1]",
-                )
+                question_container = rows[0].query_selector("xpath=" + "ancestor::*[@id][starts-with(@id, 'question_') and not(starts-with(@id, 'question_container_'))][1]")
             except Exception:
                 question_container = None
 
             if question_container is None:
                 try:
-                    question_container = rows[0].find_element(
-                        By.XPATH,
-                        "ancestor::*[@data-aut='Runtime_QuestionWrapper'][1]",
-                    )
+                    question_container = rows[0].query_selector("xpath=" + "ancestor::*[@data-aut='Runtime_QuestionWrapper'][1]")
                 except Exception:
                     question_container = None
 
             if question_container is not None:
-                q_nodes = question_container.find_elements(
-                    By.CSS_SELECTOR,
-                    "[data-aut='Runtime_QuestionTitleAndDescriptionWrapper'] [data-aut='Runtime-TextComponent']",
-                )
+                q_nodes = question_container.query_selector_all("[data-aut='Runtime_QuestionTitleAndDescriptionWrapper'] [data-aut='Runtime-TextComponent']")
                 for qn in q_nodes:
-                    txt = _norm(qn.text or qn.get_attribute("innerText") or "")
+                    txt = _norm(qn.inner_text() or "")
                     if txt and len(txt) >= 5:
                         question = txt
                         break
@@ -4436,13 +4356,10 @@ def _extract_runtime_answerrow_radio_blocks(driver, frame_chain: list[int] | Non
 
             for row in rows:
                 try:
-                    text_nodes = row.find_elements(
-                        By.CSS_SELECTOR,
-                        "[data-aut='Runtime_AnswerText'] [data-aut='Runtime-TextComponent']",
-                    )
+                    text_nodes = row.query_selector_all("[data-aut='Runtime_AnswerText'] [data-aut='Runtime-TextComponent']")
                     label_text = ""
                     for tn in text_nodes:
-                        txt = _norm(tn.text or tn.get_attribute("innerText") or "")
+                        txt = _norm(tn.inner_text() or "")
                         if txt:
                             label_text = txt
                             break
@@ -4534,9 +4451,7 @@ def _extract_runtime_dropdown_blocks(driver, frame_chain: list[int] | None) -> l
 
     # Gate : au moins un display_drop_down avec combobox React Select dans son container
     try:
-        dropdown_questions = driver.find_elements(
-            By.CSS_SELECTOR, "div.choice_question.display_drop_down"
-        )
+        dropdown_questions = _pw_page(driver).query_selector_all("div.choice_question.display_drop_down")
     except Exception:
         return []
 
@@ -4550,10 +4465,8 @@ def _extract_runtime_dropdown_blocks(driver, frame_chain: list[int] | None) -> l
             if not qid_raw or not qid_raw.startswith("question_"):
                 continue
             qnum = qid_raw[len("question_"):]
-            container = driver.find_element(By.ID, f"question_container_{qnum}")
-            if container.find_elements(
-                By.CSS_SELECTOR, "[data-testid='MultiValueSelectWrapper']"
-            ):
+            container = _pw_page(driver).query_selector(f"#question_container_{qnum}")
+            if container.query_selector_all("[data-testid='MultiValueSelectWrapper']"):
                 has_combobox = True
                 break
         except Exception:
@@ -4577,8 +4490,8 @@ def _extract_runtime_dropdown_blocks(driver, frame_chain: list[int] | None) -> l
             qnum = qid_raw[len("question_"):]
 
             question = ""
-            for qn in dq.find_elements(By.CSS_SELECTOR, _TITLE_SEL):
-                txt = _norm(qn.text or qn.get_attribute("innerText") or "")
+            for qn in dq.query_selector_all(_TITLE_SEL):
+                txt = _norm(qn.inner_text() or "")
                 if txt and len(txt) >= 2:
                     question = txt
                     break
@@ -4586,29 +4499,24 @@ def _extract_runtime_dropdown_blocks(driver, frame_chain: list[int] | None) -> l
                 continue
 
             try:
-                container = driver.find_element(By.ID, f"question_container_{qnum}")
+                container = _pw_page(driver).query_selector(f"#question_container_{qnum}")
             except Exception:
                 continue
 
-            wrappers_dd = container.find_elements(
-                By.CSS_SELECTOR,
-                "[data-testid='MultiValueSelectWrapper']",
-            )
-            if not wrappers_dd or not wrappers_dd[0].find_elements(
-                By.CSS_SELECTOR, "input[role='combobox']"
-            ):
+            wrappers_dd = container.query_selector_all("[data-testid='MultiValueSelectWrapper']")
+            if not wrappers_dd or not wrappers_dd[0].query_selector_all("input[role='combobox']"):
                 continue
 
             # Ouvrir le menu React Select pour lire les options (portail dynamique).
             options_list: list[str] = []
             try:
                 wrapper_dd = wrappers_dd[0]
-                driver.execute_script("arguments[0].scrollIntoView({block:'center'});", wrapper_dd)
+                wrapper_dd.evaluate("(el) => el.scrollIntoView({block:'center'})")
                 wrapper_dd.click()
                 menu_el = None
                 for _ in range(8):
                     try:
-                        menus = driver.find_elements(By.CSS_SELECTOR, "[class*='-menu']")
+                        menus = _pw_page(driver).query_selector_all("[class*='-menu']")
                         visible = [m for m in menus if m.is_displayed()]
                         if visible:
                             menu_el = visible[-1]
@@ -4617,9 +4525,9 @@ def _extract_runtime_dropdown_blocks(driver, frame_chain: list[int] | None) -> l
                         pass
                     time.sleep(0.1)
                 if menu_el:
-                    for opt_el in menu_el.find_elements(By.CSS_SELECTOR, "[class*='-option']"):
+                    for opt_el in menu_el.query_selector_all("[class*='-option']"):
                         try:
-                            t = _norm(opt_el.text or opt_el.get_attribute("innerText") or "")
+                            t = _norm(opt_el.inner_text() or "")
                             if t:
                                 options_list.append(t)
                         except Exception:
@@ -4629,9 +4537,8 @@ def _extract_runtime_dropdown_blocks(driver, frame_chain: list[int] | None) -> l
                     log_debug("[DOM_CONTEXT_DEBUG]", f"runtime_dropdown qid={qid_raw} menu non ouvert")
                 # Fermer le menu
                 try:
-                    combobox = wrapper_dd.find_element(By.CSS_SELECTOR, "input[role='combobox']")
-                    from selenium.webdriver.common.keys import Keys as _Keys
-                    combobox.send_keys(_Keys.ESCAPE)
+                    combobox = wrapper_dd.query_selector("input[role='combobox']")
+                    combobox.press("Escape")
                 except Exception:
                     try:
                         wrapper_dd.click()
@@ -4676,9 +4583,7 @@ def _extract_runtime_dropdown_blocks(driver, frame_chain: list[int] | None) -> l
 
     # --- 2. Date questions (display_date + date_selector + MultiValueSelectWrapper) ---
     try:
-        date_questions = driver.find_elements(
-            By.CSS_SELECTOR, "div.open_ended_question.display_date"
-        )
+        date_questions = _pw_page(driver).query_selector_all("div.open_ended_question.display_date")
         for dq in date_questions:
             try:
                 qid_raw = (dq.get_attribute("id") or "").strip()
@@ -4687,8 +4592,8 @@ def _extract_runtime_dropdown_blocks(driver, frame_chain: list[int] | None) -> l
                 qnum = qid_raw[len("question_"):]
 
                 question = ""
-                for qn in dq.find_elements(By.CSS_SELECTOR, _TITLE_SEL):
-                    txt = _norm(qn.text or qn.get_attribute("innerText") or "")
+                for qn in dq.query_selector_all(_TITLE_SEL):
+                    txt = _norm(qn.inner_text() or "")
                     if txt and len(txt) >= 2:
                         question = txt
                         break
@@ -4696,14 +4601,11 @@ def _extract_runtime_dropdown_blocks(driver, frame_chain: list[int] | None) -> l
                     continue
 
                 try:
-                    container = driver.find_element(By.ID, f"question_container_{qnum}")
+                    container = _pw_page(driver).query_selector(f"#question_container_{qnum}")
                 except Exception:
                     continue
 
-                wrappers = container.find_elements(
-                    By.CSS_SELECTOR,
-                    ".date_selector [data-testid='MultiValueSelectWrapper']",
-                )
+                wrappers = container.query_selector_all(".date_selector [data-testid='MultiValueSelectWrapper']")
                 if len(wrappers) < 2:
                     continue
 
@@ -4747,9 +4649,7 @@ def _extract_runtime_dropdown_blocks(driver, frame_chain: list[int] | None) -> l
 
     # --- 3. Texte libre (open_ended_question + textarea dans container) ---
     try:
-        oe_questions = driver.find_elements(
-            By.CSS_SELECTOR, "div.open_ended_question:not(.display_date)"
-        )
+        oe_questions = _pw_page(driver).query_selector_all("div.open_ended_question:not(.display_date)")
         for dq in oe_questions:
             try:
                 qid_raw = (dq.get_attribute("id") or "").strip()
@@ -4758,8 +4658,8 @@ def _extract_runtime_dropdown_blocks(driver, frame_chain: list[int] | None) -> l
                 qnum = qid_raw[len("question_"):]
 
                 question = ""
-                for qn in dq.find_elements(By.CSS_SELECTOR, _TITLE_SEL):
-                    txt = _norm(qn.text or qn.get_attribute("innerText") or "")
+                for qn in dq.query_selector_all(_TITLE_SEL):
+                    txt = _norm(qn.inner_text() or "")
                     if txt and len(txt) >= 2:
                         question = txt
                         break
@@ -4767,11 +4667,11 @@ def _extract_runtime_dropdown_blocks(driver, frame_chain: list[int] | None) -> l
                     continue
 
                 try:
-                    container = driver.find_element(By.ID, f"question_container_{qnum}")
+                    container = _pw_page(driver).query_selector(f"#question_container_{qnum}")
                 except Exception:
                     continue
 
-                if not container.find_elements(By.CSS_SELECTOR, "textarea"):
+                if not container.query_selector_all("textarea"):
                     continue
 
                 field_key = f"runtime_text:{qid_raw}"
@@ -4825,10 +4725,7 @@ def _extract_kantar_rowpicker_radio_blocks(driver, frame_chain: list[int] | None
     frame_chain = list(frame_chain or [])
 
     try:
-        pickers = driver.find_elements(
-            By.CSS_SELECTOR,
-            "div[id^='container_'] [data-test='main-contain']._rowpicker",
-        )
+        pickers = _pw_page(driver).query_selector_all("div[id^='container_'] [data-test='main-contain']._rowpicker")
     except Exception:
         return []
 
@@ -4839,7 +4736,7 @@ def _extract_kantar_rowpicker_radio_blocks(driver, frame_chain: list[int] | None
 
     for picker in pickers:
         try:
-            container = picker.find_element(By.XPATH, "ancestor::div[starts-with(@id,'container_')][1]")
+            container = picker.query_selector("xpath=" + "ancestor::div[starts-with(@id,'container_')][1]")
             container_id = (container.get_attribute("id") or "").strip()
         except Exception:
             continue
@@ -4853,7 +4750,7 @@ def _extract_kantar_rowpicker_radio_blocks(driver, frame_chain: list[int] | None
 
         question = ""
         try:
-            q_nodes = driver.find_elements(By.CSS_SELECTOR, f"#qc_{q_suffix} span.mrQuestionText")
+            q_nodes = _pw_page(driver).query_selector_all(f"#qc_{q_suffix} span.mrQuestionText")
         except Exception:
             q_nodes = []
 
@@ -4863,15 +4760,12 @@ def _extract_kantar_rowpicker_radio_blocks(driver, frame_chain: list[int] | None
         # On complète donc la recherche via l'attribut `questionname` du wrapper.
         if not q_nodes:
             try:
-                q_nodes = driver.find_elements(
-                    By.CSS_SELECTOR,
-                    f".questionContainer[questionname$='.{q_suffix}'] span.mrQuestionText",
-                )
+                q_nodes = _pw_page(driver).query_selector_all(f".questionContainer[questionname$='.{q_suffix}'] span.mrQuestionText")
             except Exception:
                 q_nodes = []
 
         for qn in q_nodes:
-            q_txt = _norm(qn.text or qn.get_attribute("innerText") or "")
+            q_txt = _norm(qn.inner_text() or "")
             if q_txt and len(q_txt) >= 8:
                 question = q_txt
                 break
@@ -4880,7 +4774,7 @@ def _extract_kantar_rowpicker_radio_blocks(driver, frame_chain: list[int] | None
             continue
 
         try:
-            overlays = picker.find_elements(By.CSS_SELECTOR, "div[dir='ltr'][tabindex='0']")
+            overlays = picker.query_selector_all("div[dir='ltr'][tabindex='0']")
         except Exception:
             overlays = []
 
@@ -4890,14 +4784,14 @@ def _extract_kantar_rowpicker_radio_blocks(driver, frame_chain: list[int] | None
         for overlay in overlays:
             try:
                 # Remonter au conteneur de carte : plus proche ancêtre div[dir="ltr"] sans tabindex.
-                card = overlay.find_element(By.XPATH, "ancestor::div[@dir='ltr'][not(@tabindex)][1]")
-                label_nodes = card.find_elements(By.CSS_SELECTOR, "label span")
+                card = overlay.query_selector("xpath=" + "ancestor::div[@dir='ltr'][not(@tabindex)][1]")
+                label_nodes = card.query_selector_all("label span")
             except Exception:
                 continue
 
             label_text = ""
             for ln in label_nodes:
-                txt = _norm(ln.text or ln.get_attribute("innerText") or "")
+                txt = _norm(ln.inner_text() or "")
                 if txt:
                     label_text = txt
                     break
@@ -4966,10 +4860,7 @@ def _extract_kantar_rowrank_blocks(driver, frame_chain: list[int] | None) -> lis
     frame_chain = list(frame_chain or [])
 
     try:
-        rankers = driver.find_elements(
-            By.CSS_SELECTOR,
-            "div[id^='container_'] [data-test='main-contain']._rowrank",
-        )
+        rankers = _pw_page(driver).query_selector_all("div[id^='container_'] [data-test='main-contain']._rowrank")
     except Exception:
         return []
 
@@ -4980,7 +4871,7 @@ def _extract_kantar_rowrank_blocks(driver, frame_chain: list[int] | None) -> lis
 
     for ranker in rankers:
         try:
-            container = ranker.find_element(By.XPATH, "ancestor::div[starts-with(@id,'container_')][1]")
+            container = ranker.query_selector("xpath=" + "ancestor::div[starts-with(@id,'container_')][1]")
             container_id = (container.get_attribute("id") or "").strip()
         except Exception:
             continue
@@ -4994,10 +4885,7 @@ def _extract_kantar_rowrank_blocks(driver, frame_chain: list[int] | None) -> lis
 
         # Guard: Qslice text inputs must be present in the hidden questionContainer
         try:
-            qslice_inputs = driver.find_elements(
-                By.CSS_SELECTOR,
-                f".questionContainer[questionname^='{q_suffix}'] input[type='text'].mrEdit[name*='Qslice']",
-            )
+            qslice_inputs = _pw_page(driver).query_selector_all(f".questionContainer[questionname^='{q_suffix}'] input[type='text'].mrEdit[name*='Qslice']")
         except Exception:
             qslice_inputs = []
 
@@ -5007,21 +4895,18 @@ def _extract_kantar_rowrank_blocks(driver, frame_chain: list[int] | None) -> lis
         # Extract question text from qcContainer
         question = ""
         try:
-            q_nodes = driver.find_elements(By.CSS_SELECTOR, f"#qc_{q_suffix} span.mrQuestionText")
+            q_nodes = _pw_page(driver).query_selector_all(f"#qc_{q_suffix} span.mrQuestionText")
         except Exception:
             q_nodes = []
 
         if not q_nodes:
             try:
-                q_nodes = driver.find_elements(
-                    By.CSS_SELECTOR,
-                    f".questionContainer[questionname$='.{q_suffix}'] span.mrQuestionText",
-                )
+                q_nodes = _pw_page(driver).query_selector_all(f".questionContainer[questionname$='.{q_suffix}'] span.mrQuestionText")
             except Exception:
                 q_nodes = []
 
         for qn in q_nodes:
-            q_txt = _norm(qn.text or qn.get_attribute("innerText") or "")
+            q_txt = _norm(qn.inner_text() or "")
             if q_txt and len(q_txt) >= 8:
                 question = q_txt
                 break
@@ -5035,17 +4920,14 @@ def _extract_kantar_rowrank_blocks(driver, frame_chain: list[int] | None) -> lis
         # This is the authoritative mapping — order-independent.
         label_to_mrinput: dict[str, object] = {}
         try:
-            rows = driver.find_elements(
-                By.CSS_SELECTOR,
-                f".questionContainer[questionname^='{q_suffix}'] table.mrQuestionTable tr",
-            )
+            rows = _pw_page(driver).query_selector_all(f".questionContainer[questionname^='{q_suffix}'] table.mrQuestionTable tr")
             for row in rows:
                 try:
-                    lbl_node = row.find_element(By.CSS_SELECTOR, "td.mrGridCategoryText span.mrQuestionText")
-                    mr_inp = row.find_element(By.CSS_SELECTOR, "input[type='text'].mrEdit[name*='Qslice']")
+                    lbl_node = row.query_selector("td.mrGridCategoryText span.mrQuestionText")
+                    mr_inp = row.query_selector("input[type='text'].mrEdit[name*='Qslice']")
                 except Exception:
                     continue
-                lbl = _norm(lbl_node.text or lbl_node.get_attribute("innerText") or "")
+                lbl = _norm(lbl_node.inner_text() or "")
                 if lbl:
                     label_to_mrinput[_norm_key(lbl)] = mr_inp
         except Exception:
@@ -5053,7 +4935,7 @@ def _extract_kantar_rowrank_blocks(driver, frame_chain: list[int] | None) -> lis
 
         # Extract options from visual flex cards
         try:
-            cards = ranker.find_elements(By.CSS_SELECTOR, "div.__flexgrid_row > div")
+            cards = ranker.query_selector_all("div.__flexgrid_row > div")
         except Exception:
             cards = []
 
@@ -5062,13 +4944,13 @@ def _extract_kantar_rowrank_blocks(driver, frame_chain: list[int] | None) -> lis
 
         for card in cards:
             try:
-                label_nodes = card.find_elements(By.CSS_SELECTOR, "label span")
+                label_nodes = card.query_selector_all("label span")
             except Exception:
                 continue
 
             label_text = ""
             for ln in label_nodes:
-                txt = _norm(ln.text or ln.get_attribute("innerText") or "")
+                txt = _norm(ln.inner_text() or "")
                 if txt:
                     label_text = txt
                     break
@@ -5098,7 +4980,7 @@ def _extract_kantar_rowrank_blocks(driver, frame_chain: list[int] | None) -> lis
         max_select = 3
         cap_hard = False
         try:
-            scripts = driver.find_elements(By.CSS_SELECTOR, 'script.SEJson[type="application/json"]')
+            scripts = _pw_page(driver).query_selector_all('script.SEJson[type="application/json"]')
             for script in (scripts or []):
                 raw = script.get_attribute("textContent") or script.get_attribute("innerHTML") or ""
                 raw = re.sub(r"<!--\s*", "", raw)
@@ -5173,7 +5055,7 @@ def _extract_label_radio_list_blocks(driver, frame_chain: list[int] | None) -> l
     frame_chain = list(frame_chain or [])
 
     try:
-        step_nodes = driver.find_elements(By.CSS_SELECTOR, "div.step1")
+        step_nodes = _pw_page(driver).query_selector_all("div.step1")
     except Exception:
         return []
 
@@ -5185,13 +5067,13 @@ def _extract_label_radio_list_blocks(driver, frame_chain: list[int] | None) -> l
 
     for idx, step in enumerate(step_nodes, start=1):
         try:
-            q_nodes = step.find_elements(By.CSS_SELECTOR, "h3.title")
+            q_nodes = step.query_selector_all("h3.title")
         except Exception:
             q_nodes = []
 
         question = ""
         for qn in q_nodes:
-            txt = _norm(qn.text or qn.get_attribute("innerText") or "")
+            txt = _norm(qn.inner_text() or "")
             if txt and len(txt) >= 5:
                 question = txt
                 break
@@ -5199,17 +5081,14 @@ def _extract_label_radio_list_blocks(driver, frame_chain: list[int] | None) -> l
             continue
 
         try:
-            native_choices = step.find_elements(
-                By.CSS_SELECTOR,
-                "input[type='radio'], input[type='checkbox'], [role='radio'], [role='checkbox']",
-            )
+            native_choices = step.query_selector_all("input[type='radio'], input[type='checkbox'], [role='radio'], [role='checkbox']")
         except Exception:
             native_choices = []
         if native_choices:
             continue
 
         try:
-            labels = step.find_elements(By.CSS_SELECTOR, "ul.option_container label.radio")
+            labels = step.query_selector_all("ul.option_container label.radio")
         except Exception:
             labels = []
         if len(labels) < 2:
@@ -5220,7 +5099,7 @@ def _extract_label_radio_list_blocks(driver, frame_chain: list[int] | None) -> l
 
         for lbl in labels:
             try:
-                label_text = _norm(lbl.text or lbl.get_attribute("innerText") or "")
+                label_text = _norm(lbl.inner_text() or "")
                 if not label_text:
                     continue
                 if _norm_lc(label_text) in nav_tokens:
@@ -5291,18 +5170,15 @@ def _extract_qualtrics_choice_structure_radio_blocks(driver, frame_chain: list[i
     blocks: list[dict] = []
 
     try:
-        containers = driver.find_elements(By.CSS_SELECTOR, "div.QuestionOuter")
+        containers = _pw_page(driver).query_selector_all("div.QuestionOuter")
     except Exception:
         return blocks
 
     for idx, container in enumerate(containers):
         try:
-            radios = container.find_elements(
-                By.CSS_SELECTOR,
-                (
+            radios = container.query_selector_all((
                     "ul.ChoiceStructure li.Selection input[type='radio'][name^='QR~'], "
-                    "table.ChoiceStructure input[type='radio'][name^='QR~']"
-                ),
+                    "table.ChoiceStructure input[type='radio'][name^='QR~']"),
             )
         except Exception:
             radios = []
@@ -5319,11 +5195,11 @@ def _extract_qualtrics_choice_structure_radio_blocks(driver, frame_chain: list[i
             "div.QuestionText",
         ):
             try:
-                q_nodes = container.find_elements(By.CSS_SELECTOR, q_sel)
+                q_nodes = container.query_selector_all(q_sel)
             except Exception:
                 q_nodes = []
             for qn in q_nodes:
-                txt = _norm(qn.text or qn.get_attribute("innerText") or "")
+                txt = _norm(qn.inner_text() or "")
                 if txt:
                     question = txt
                     break
@@ -5336,29 +5212,23 @@ def _extract_qualtrics_choice_structure_radio_blocks(driver, frame_chain: list[i
         # Layout Qualtrics Bipolar: 1 bloc radio par ligne ChoiceRow, avec pôles gauche/droite.
         # Gate DOM strict pour rester additif et ne pas impacter les autres layouts ChoiceStructure.
         try:
-            bipolar_nodes = container.find_elements(By.CSS_SELECTOR, "div.Inner.Bipolar")
+            bipolar_nodes = container.query_selector_all("div.Inner.Bipolar")
         except Exception:
             bipolar_nodes = []
         try:
-            bipolar_left_headers = container.find_elements(
-                By.CSS_SELECTOR,
-                "table.ChoiceStructure th[id^='header~left~']",
-            )
+            bipolar_left_headers = container.query_selector_all("table.ChoiceStructure th[id^='header~left~']")
         except Exception:
             bipolar_left_headers = []
 
         if bipolar_nodes and bipolar_left_headers:
             try:
-                bipolar_rows = container.find_elements(
-                    By.CSS_SELECTOR,
-                    "table.ChoiceStructure > tbody > tr.ChoiceRow",
-                )
+                bipolar_rows = container.query_selector_all("table.ChoiceStructure > tbody > tr.ChoiceRow")
             except Exception:
                 bipolar_rows = []
 
             for row_idx, row in enumerate(bipolar_rows):
                 try:
-                    row_radios = row.find_elements(By.CSS_SELECTOR, "input[type='radio'][name^='QR~']")
+                    row_radios = row.query_selector_all("input[type='radio'][name^='QR~']")
                 except Exception:
                     row_radios = []
                 if len(row_radios) < 2:
@@ -5375,21 +5245,21 @@ def _extract_qualtrics_choice_structure_radio_blocks(driver, frame_chain: list[i
                 left_txt = ""
                 right_txt = ""
                 try:
-                    left_nodes = row.find_elements(By.CSS_SELECTOR, "th[id^='header~left~']")
+                    left_nodes = row.query_selector_all("th[id^='header~left~']")
                 except Exception:
                     left_nodes = []
                 for left_node in left_nodes:
-                    cand = _norm(left_node.text or left_node.get_attribute("innerText") or "")
+                    cand = _norm(left_node.inner_text() or "")
                     if cand:
                         left_txt = cand
                         break
 
                 try:
-                    right_nodes = row.find_elements(By.CSS_SELECTOR, "th[id^='header~right~']")
+                    right_nodes = row.query_selector_all("th[id^='header~right~']")
                 except Exception:
                     right_nodes = []
                 for right_node in right_nodes:
-                    cand = _norm(right_node.text or right_node.get_attribute("innerText") or "")
+                    cand = _norm(right_node.inner_text() or "")
                     if cand:
                         right_txt = cand
                         break
@@ -5478,17 +5348,13 @@ def _extract_qualtrics_choice_structure_radio_blocks(driver, frame_chain: list[i
         # où chaque tr.ChoiceRow porte un name distinct (ex: QR~QID3615~27).
         # Gate DOM strict: div.Inner avec classe Likert ou SingleAnswer + tr.ChoiceRow multi-name.
         try:
-            likert_nodes = container.find_elements(
-                By.CSS_SELECTOR, "div.Inner.Likert, div.Inner.SingleAnswer"
-            )
+            likert_nodes = container.query_selector_all("div.Inner.Likert, div.Inner.SingleAnswer")
         except Exception:
             likert_nodes = []
 
         if likert_nodes:
             try:
-                choice_rows = container.find_elements(
-                    By.CSS_SELECTOR, "table.ChoiceStructure > tbody > tr.ChoiceRow"
-                )
+                choice_rows = container.query_selector_all("table.ChoiceStructure > tbody > tr.ChoiceRow")
             except Exception:
                 choice_rows = []
 
@@ -5496,7 +5362,7 @@ def _extract_qualtrics_choice_structure_radio_blocks(driver, frame_chain: list[i
             row_names = []
             for _cr in choice_rows:
                 try:
-                    _rr = _cr.find_elements(By.CSS_SELECTOR, "input[type='radio'][name^='QR~']")
+                    _rr = _cr.query_selector_all("input[type='radio'][name^='QR~']")
                     if _rr:
                         _n = (_rr[0].get_attribute("name") or "").strip()
                         if _n:
@@ -5508,22 +5374,17 @@ def _extract_qualtrics_choice_structure_radio_blocks(driver, frame_chain: list[i
                 # Read column headers (Yes / No) from thead
                 col_headers: list[str] = []
                 try:
-                    thead_ths = container.find_elements(
-                        By.CSS_SELECTOR,
-                        "table.ChoiceStructure thead tr.Answers th.Selection span.LabelWrapper span",
-                    )
+                    thead_ths = container.query_selector_all("table.ChoiceStructure thead tr.Answers th.Selection span.LabelWrapper span")
                 except Exception:
                     thead_ths = []
                 for th_node in thead_ths:
-                    hdr = _norm(th_node.text or th_node.get_attribute("innerText") or "")
+                    hdr = _norm(th_node.inner_text() or "")
                     if hdr:
                         col_headers.append(hdr)
 
                 for row_idx, row in enumerate(choice_rows):
                     try:
-                        row_radios = row.find_elements(
-                            By.CSS_SELECTOR, "input[type='radio'][name^='QR~']"
-                        )
+                        row_radios = row.query_selector_all("input[type='radio'][name^='QR~']")
                     except Exception:
                         row_radios = []
                     if len(row_radios) < 2:
@@ -5544,11 +5405,11 @@ def _extract_qualtrics_choice_structure_radio_blocks(driver, frame_chain: list[i
                         "th.c1 span",
                     ):
                         try:
-                            stmt_nodes = row.find_elements(By.CSS_SELECTOR, stmt_sel)
+                            stmt_nodes = row.query_selector_all(stmt_sel)
                         except Exception:
                             stmt_nodes = []
                         for sn in stmt_nodes:
-                            cand = _norm(sn.text or sn.get_attribute("innerText") or "")
+                            cand = _norm(sn.inner_text() or "")
                             if cand:
                                 statement = cand
                                 break
@@ -5645,11 +5506,11 @@ def _extract_qualtrics_choice_structure_radio_blocks(driver, frame_chain: list[i
                         f"label[for='{radio_id}'].SingleAnswer span",
                     ):
                         try:
-                            lbl_nodes = container.find_elements(By.CSS_SELECTOR, lsel)
+                            lbl_nodes = container.query_selector_all(lsel)
                         except Exception:
                             lbl_nodes = []
                         for lbl in lbl_nodes:
-                            cand = _norm(lbl.text or lbl.get_attribute("innerText") or "")
+                            cand = _norm(lbl.inner_text() or "")
                             if cand:
                                 label_text = cand
                                 break
@@ -5658,12 +5519,12 @@ def _extract_qualtrics_choice_structure_radio_blocks(driver, frame_chain: list[i
 
                 if not label_text:
                     try:
-                        parent_li = radio.find_element(By.XPATH, "ancestor::li[contains(@class,'Selection')][1]")
-                        text_nodes = parent_li.find_elements(By.CSS_SELECTOR, "label.SingleAnswer span")
+                        parent_li = radio.query_selector("xpath=" + "ancestor::li[contains(@class,'Selection')][1]")
+                        text_nodes = parent_li.query_selector_all("label.SingleAnswer span")
                     except Exception:
                         text_nodes = []
                     for tn in text_nodes:
-                        cand = _norm(tn.text or tn.get_attribute("innerText") or "")
+                        cand = _norm(tn.inner_text() or "")
                         if cand:
                             label_text = cand
                             break
@@ -5739,14 +5600,14 @@ def _extract_qualtrics_dl_select_blocks(driver, frame_chain: list[int] | None) -
     blocks: list[dict] = []
 
     try:
-        containers = driver.find_elements(By.CSS_SELECTOR, "div.QuestionOuter")
+        containers = _pw_page(driver).query_selector_all("div.QuestionOuter")
     except Exception:
         return blocks
 
     for idx, container in enumerate(containers):
         # Gate strict : div.Inner.DL doit être présent dans ce conteneur
         try:
-            dl_inner = container.find_elements(By.CSS_SELECTOR, "div.Inner.DL")
+            dl_inner = container.query_selector_all("div.Inner.DL")
         except Exception:
             dl_inner = []
         if not dl_inner:
@@ -5754,10 +5615,7 @@ def _extract_qualtrics_dl_select_blocks(driver, frame_chain: list[int] | None) -
 
         # Un seul <select> Qualtrics attendu (sinon c'est une matrix → autre extracteur)
         try:
-            selects = container.find_elements(
-                By.CSS_SELECTOR,
-                "select.ChoiceStructure[name^='QR~']",
-            )
+            selects = container.query_selector_all("select.ChoiceStructure[name^='QR~']")
         except Exception:
             selects = []
         if len(selects) != 1:
@@ -5778,11 +5636,11 @@ def _extract_qualtrics_dl_select_blocks(driver, frame_chain: list[int] | None) -
             "div.QuestionText",
         ):
             try:
-                q_nodes = container.find_elements(By.CSS_SELECTOR, q_sel)
+                q_nodes = container.query_selector_all(q_sel)
             except Exception:
                 q_nodes = []
             for qn in q_nodes:
-                txt = _norm(qn.text or qn.get_attribute("innerText") or "")
+                txt = _norm(qn.inner_text() or "")
                 if txt:
                     question = txt
                     break
@@ -5795,7 +5653,7 @@ def _extract_qualtrics_dl_select_blocks(driver, frame_chain: list[int] | None) -
         # Options (on ignore la première option vierge aria-label="Vierge")
         options: list[str] = []
         try:
-            option_nodes = sel.find_elements(By.TAG_NAME, "option")
+            option_nodes = sel.query_selector_all("option")
         except Exception:
             option_nodes = []
 
@@ -5808,7 +5666,7 @@ def _extract_qualtrics_dl_select_blocks(driver, frame_chain: list[int] | None) -
                     val = (opt.get_attribute("value") or "").strip()
                     if not val or "null" in val.lower():
                         continue
-                txt = _norm(opt.text or opt.get_attribute("innerText") or "")
+                txt = _norm(opt.inner_text() or "")
                 if txt:
                     options.append(txt)
             except Exception:
@@ -5883,7 +5741,7 @@ def _extract_qualtrics_choice_structure_checkbox_blocks(driver, frame_chain: lis
     blocks: list[dict] = []
 
     try:
-        containers = driver.find_elements(By.CSS_SELECTOR, "div.QuestionOuter")
+        containers = _pw_page(driver).query_selector_all("div.QuestionOuter")
     except Exception:
         return blocks
 
@@ -5891,18 +5749,12 @@ def _extract_qualtrics_choice_structure_checkbox_blocks(driver, frame_chain: lis
         # Cas matrice checkbox Qualtrics: 1 bloc par ligne `tr.ChoiceRow`.
         # Gate DOM strict pour éviter d'impacter les autres layouts ChoiceStructure.
         try:
-            header_cells = container.find_elements(
-                By.CSS_SELECTOR,
-                "table.ChoiceStructure > thead > tr.Answers > th",
-            )
+            header_cells = container.query_selector_all("table.ChoiceStructure > thead > tr.Answers > th")
         except Exception:
             header_cells = []
 
         try:
-            matrix_rows = container.find_elements(
-                By.CSS_SELECTOR,
-                "table.ChoiceStructure > tbody > tr.ChoiceRow",
-            )
+            matrix_rows = container.query_selector_all("table.ChoiceStructure > tbody > tr.ChoiceRow")
         except Exception:
             matrix_rows = []
 
@@ -5915,7 +5767,7 @@ def _extract_qualtrics_choice_structure_checkbox_blocks(driver, frame_chain: lis
                     h_cls = ""
                 if "c1" in h_cls:
                     continue
-                h_txt = _norm(h.text or h.get_attribute("innerText") or "")
+                h_txt = _norm(h.inner_text() or "")
                 if h_txt:
                     column_labels.append(h_txt)
 
@@ -5923,7 +5775,7 @@ def _extract_qualtrics_choice_structure_checkbox_blocks(driver, frame_chain: lis
         if column_labels and matrix_rows:
             for row in matrix_rows:
                 try:
-                    row_checks = row.find_elements(By.CSS_SELECTOR, "input[type='checkbox'][name^='QR~']")
+                    row_checks = row.query_selector_all("input[type='checkbox'][name^='QR~']")
                 except Exception:
                     row_checks = []
                 row_checkbox_counts.append(len(row_checks))
@@ -5935,11 +5787,8 @@ def _extract_qualtrics_choice_structure_checkbox_blocks(driver, frame_chain: lis
         )
 
         try:
-            checkboxes = container.find_elements(
-                By.CSS_SELECTOR,
-                "ul.ChoiceStructure li.Selection input[type='checkbox'][name^='QR~'], "
-                "table.ChoiceStructure input[type='checkbox'][name^='QR~']",
-            )
+            checkboxes = container.query_selector_all("ul.ChoiceStructure li.Selection input[type='checkbox'][name^='QR~'], "
+                "table.ChoiceStructure input[type='checkbox'][name^='QR~']")
         except Exception:
             checkboxes = []
 
@@ -5956,11 +5805,11 @@ def _extract_qualtrics_choice_structure_checkbox_blocks(driver, frame_chain: lis
             "label.QuestionText",
         ):
             try:
-                q_nodes = container.find_elements(By.CSS_SELECTOR, q_sel)
+                q_nodes = container.query_selector_all(q_sel)
             except Exception:
                 q_nodes = []
             for qn in q_nodes:
-                txt = _norm(qn.text or qn.get_attribute("innerText") or "")
+                txt = _norm(qn.inner_text() or "")
                 if txt:
                     question = txt
                     break
@@ -5973,7 +5822,7 @@ def _extract_qualtrics_choice_structure_checkbox_blocks(driver, frame_chain: lis
         if is_table_matrix:
             for row_idx, row in enumerate(matrix_rows):
                 try:
-                    row_checkboxes = row.find_elements(By.CSS_SELECTOR, "input[type='checkbox'][name^='QR~']")
+                    row_checkboxes = row.query_selector_all("input[type='checkbox'][name^='QR~']")
                 except Exception:
                     row_checkboxes = []
 
@@ -5988,11 +5837,11 @@ def _extract_qualtrics_choice_structure_checkbox_blocks(driver, frame_chain: lis
                     "th[scope='row'] label span",
                 ):
                     try:
-                        row_nodes = row.find_elements(By.CSS_SELECTOR, rsel)
+                        row_nodes = row.query_selector_all(rsel)
                     except Exception:
                         row_nodes = []
                     for rn in row_nodes:
-                        cand = _norm(rn.text or rn.get_attribute("innerText") or "")
+                        cand = _norm(rn.inner_text() or "")
                         if cand:
                             row_label = cand
                             break
@@ -6090,11 +5939,11 @@ def _extract_qualtrics_choice_structure_checkbox_blocks(driver, frame_chain: lis
                     f"label[for='{checkbox_id}'] span",
                 ):
                     try:
-                        lbl_nodes = container.find_elements(By.CSS_SELECTOR, lsel)
+                        lbl_nodes = container.query_selector_all(lsel)
                     except Exception:
                         lbl_nodes = []
                     for lbl in lbl_nodes:
-                        cand = _norm(lbl.text or lbl.get_attribute("innerText") or "")
+                        cand = _norm(lbl.inner_text() or "")
                         if cand:
                             label_text = cand
                             break
@@ -6172,13 +6021,13 @@ def _extract_qualtrics_matrix_dropdown_row_blocks(
     handled_select_names: Set[str] = set()
 
     try:
-        containers = driver.find_elements(By.CSS_SELECTOR, "div.QuestionOuter")
+        containers = _pw_page(driver).query_selector_all("div.QuestionOuter")
     except Exception:
         return blocks, handled_select_ids, handled_select_names
 
     for cidx, container in enumerate(containers):
         try:
-            rows = container.find_elements(By.CSS_SELECTOR, "table.ChoiceStructure > tbody > tr.ChoiceRow")
+            rows = container.query_selector_all("table.ChoiceStructure > tbody > tr.ChoiceRow")
         except Exception:
             rows = []
 
@@ -6186,7 +6035,7 @@ def _extract_qualtrics_matrix_dropdown_row_blocks(
             continue
 
         try:
-            container_selects = container.find_elements(By.CSS_SELECTOR, "table.ChoiceStructure tr.ChoiceRow select")
+            container_selects = container.query_selector_all("table.ChoiceStructure tr.ChoiceRow select")
         except Exception:
             container_selects = []
 
@@ -6195,7 +6044,7 @@ def _extract_qualtrics_matrix_dropdown_row_blocks(
 
         for ridx, row in enumerate(rows, start=1):
             try:
-                row_selects = row.find_elements(By.CSS_SELECTOR, "select")
+                row_selects = row.query_selector_all("select")
             except Exception:
                 row_selects = []
 
@@ -6211,22 +6060,22 @@ def _extract_qualtrics_matrix_dropdown_row_blocks(
             row_question = ""
             if sel_id:
                 try:
-                    q_nodes = row.find_elements(By.CSS_SELECTOR, f"th label[for='{sel_id}']")
+                    q_nodes = row.query_selector_all(f"th label[for='{sel_id}']")
                 except Exception:
                     q_nodes = []
                 for qn in q_nodes:
-                    cand = _norm(qn.text or qn.get_attribute("innerText") or "")
+                    cand = _norm(qn.inner_text() or "")
                     if cand:
                         row_question = cand
                         break
 
             if not row_question:
                 try:
-                    th_nodes = row.find_elements(By.CSS_SELECTOR, "th")
+                    th_nodes = row.query_selector_all("th")
                 except Exception:
                     th_nodes = []
                 for th in th_nodes:
-                    cand = _norm(th.text or th.get_attribute("innerText") or "")
+                    cand = _norm(th.inner_text() or "")
                     if cand:
                         row_question = cand
                         break
@@ -6236,7 +6085,7 @@ def _extract_qualtrics_matrix_dropdown_row_blocks(
 
             options: list[str] = []
             try:
-                option_nodes = sel.find_elements(By.TAG_NAME, "option")
+                option_nodes = sel.query_selector_all("option")
             except Exception:
                 option_nodes = []
 
@@ -6244,7 +6093,7 @@ def _extract_qualtrics_matrix_dropdown_row_blocks(
                 try:
                     if opt.get_attribute("disabled"):
                         continue
-                    txt = _norm(opt.text or opt.get_attribute("innerText") or "")
+                    txt = _norm(opt.inner_text() or "")
                     if txt:
                         options.append(txt)
                 except Exception:
@@ -6324,7 +6173,7 @@ def _extract_custom_testid_multi_select_checkbox_blocks(driver, frame_chain: lis
     frame_chain = list(frame_chain or [])
 
     try:
-        containers = driver.find_elements(By.CSS_SELECTOR, "div[data-testid='common-question-div-container']")
+        containers = _pw_page(driver).query_selector_all("div[data-testid='common-question-div-container']")
     except Exception:
         return []
 
@@ -6341,11 +6190,11 @@ def _extract_custom_testid_multi_select_checkbox_blocks(driver, frame_chain: lis
                 "[data-testid='common-question-div-text'] label",
             ):
                 try:
-                    q_els = container.find_elements(By.CSS_SELECTOR, qsel)
+                    q_els = container.query_selector_all(qsel)
                 except Exception:
                     q_els = []
                 for q_el in q_els:
-                    txt = _norm(q_el.text or q_el.get_attribute("innerText") or "")
+                    txt = _norm(q_el.inner_text() or "")
                     if txt and len(txt) >= 5:
                         question = txt
                         break
@@ -6356,7 +6205,7 @@ def _extract_custom_testid_multi_select_checkbox_blocks(driver, frame_chain: lis
                 continue
 
             try:
-                option_nodes = container.find_elements(By.CSS_SELECTOR, "div[data-testid='answer-checkbox-div-container']")
+                option_nodes = container.query_selector_all("div[data-testid='answer-checkbox-div-container']")
             except Exception:
                 option_nodes = []
             if len(option_nodes) < 2:
@@ -6373,11 +6222,11 @@ def _extract_custom_testid_multi_select_checkbox_blocks(driver, frame_chain: lis
                         "label",
                     ):
                         try:
-                            labels = opt.find_elements(By.CSS_SELECTOR, lsel)
+                            labels = opt.query_selector_all(lsel)
                         except Exception:
                             labels = []
                         for lab in labels:
-                            cand = _norm(lab.text or lab.get_attribute("innerText") or "")
+                            cand = _norm(lab.inner_text() or "")
                             if cand:
                                 label_text = cand
                                 break
@@ -6405,7 +6254,7 @@ def _extract_custom_testid_multi_select_checkbox_blocks(driver, frame_chain: lis
 
             container_id = ""
             try:
-                q_containers = container.find_elements(By.CSS_SELECTOR, ".multi-select-container[id]")
+                q_containers = container.query_selector_all(".multi-select-container[id]")
                 if q_containers:
                     container_id = (q_containers[0].get_attribute("id") or "").strip()
             except Exception:
@@ -6473,8 +6322,8 @@ def _extract_cloudresearch_sentry_blocks(driver, frame_chain: list[int] | None) 
     # Gate strict: CloudResearch/Sentry pattern
     try:
         # Pattern spécifique
-        sentry_marker = driver.find_elements(By.CSS_SELECTOR, "#sentry, .cr-question-card")
-        choice_btns = driver.find_elements(By.CSS_SELECTOR, ".choice-option[role='button']")
+        sentry_marker = _pw_page(driver).query_selector_all("#sentry, .cr-question-card")
+        choice_btns = _pw_page(driver).query_selector_all(".choice-option[role='button']")
         if not sentry_marker or not choice_btns:
             return []
     except Exception:
@@ -6497,12 +6346,12 @@ def _extract_cloudresearch_sentry_blocks(driver, frame_chain: list[int] | None) 
         ]
         for sel in question_selectors:
             try:
-                q_els = driver.find_elements(By.CSS_SELECTOR, sel)
+                q_els = _pw_page(driver).query_selector_all(sel)
                 for q_el in q_els:
                     try:
                         if not q_el.is_displayed():
                             continue
-                        t = _norm(q_el.text or q_el.get_attribute("innerText") or "")
+                        t = _norm(q_el.inner_text() or "")
                         if t and len(t) >= 5:
                             question = t
                             break
@@ -6535,9 +6384,9 @@ def _extract_cloudresearch_sentry_blocks(driver, frame_chain: list[int] | None) 
 
                 # 1) Chercher dans .cr-ct (CloudResearch content)
                 try:
-                    cr_ct = btn.find_elements(By.CSS_SELECTOR, ".cr-ct, [class*='answer-choice']")
+                    cr_ct = btn.query_selector_all(".cr-ct, [class*='answer-choice']")
                     if cr_ct:
-                        opt_text = _norm(cr_ct[0].text or cr_ct[0].get_attribute("innerText") or "")
+                        opt_text = _norm(cr_ct[0].inner_text() or "")
                 except Exception:
                     pass
 
@@ -6545,9 +6394,9 @@ def _extract_cloudresearch_sentry_blocks(driver, frame_chain: list[int] | None) 
                 if not opt_text:
                     try:
                         # Pattern spécifique
-                        text_divs = btn.find_elements(By.CSS_SELECTOR, "div:not(:has(svg))")
+                        text_divs = btn.query_selector_all("div:not(:has(svg))")
                         for td in text_divs:
-                            t = _norm(td.text or "")
+                            t = _norm(td.inner_text() or "")
                             if t and len(t) >= 1:
                                 opt_text = t
                                 break
@@ -6556,7 +6405,7 @@ def _extract_cloudresearch_sentry_blocks(driver, frame_chain: list[int] | None) 
 
                 # 3) Dernier recours: texte direct du bouton
                 if not opt_text:
-                    raw = _norm(btn.text or btn.get_attribute("innerText") or "")
+                    raw = _norm(btn.inner_text() or "")
                     if raw:
                         opt_text = raw
 
@@ -6641,7 +6490,7 @@ def _extract_purespectrum_mobile_date_blocks(driver, frame_chain: list[int] | No
     frame_chain = list(frame_chain or [])
 
     try:
-        date_questions = driver.find_elements(By.CSS_SELECTOR, "ps-date-question")
+        date_questions = _pw_page(driver).query_selector_all("ps-date-question")
     except Exception:
         return []
 
@@ -6653,16 +6502,16 @@ def _extract_purespectrum_mobile_date_blocks(driver, frame_chain: list[int] | No
     for date_q in date_questions:
         try:
             # Gate strict: uniquement la version mobile avec roues.
-            columns = date_q.find_elements(By.CSS_SELECTOR, "ps-date-picker-mobile ps-select-scroll")
+            columns = date_q.query_selector_all("ps-date-picker-mobile ps-select-scroll")
             if len(columns) < 2:
                 continue
 
             question = ""
             for sel in [".question-title", "[psquestiontitle]", "header [role='heading']"]:
                 try:
-                    q_els = date_q.find_elements(By.CSS_SELECTOR, sel)
+                    q_els = date_q.query_selector_all(sel)
                     for q_el in q_els:
-                        txt = _norm(q_el.text or q_el.get_attribute("innerText") or "")
+                        txt = _norm(q_el.inner_text() or "")
                         if txt and len(txt) >= 3:
                             question = txt
                             break
@@ -6679,13 +6528,13 @@ def _extract_purespectrum_mobile_date_blocks(driver, frame_chain: list[int] | No
                 option_xpath_map: dict[str, str] = {}
 
                 try:
-                    slides = col.find_elements(By.CSS_SELECTOR, ".select-scroll-slide")
+                    slides = col.query_selector_all(".select-scroll-slide")
                 except Exception:
                     slides = []
 
                 for s in slides:
                     try:
-                        txt = _norm(s.text or s.get_attribute("innerText") or "")
+                        txt = _norm(s.inner_text() or "")
                         if not txt:
                             continue
                         nk = _norm_key(txt)
@@ -6755,7 +6604,7 @@ def _extract_purespectrum_date_dropdown_blocks(driver, frame_chain: list[int] | 
     frame_chain = list(frame_chain or [])
 
     try:
-        date_questions = driver.find_elements(By.CSS_SELECTOR, "ps-date-question[qualificationid]")
+        date_questions = _pw_page(driver).query_selector_all("ps-date-question[qualificationid]")
     except Exception:
         return []
 
@@ -6766,7 +6615,7 @@ def _extract_purespectrum_date_dropdown_blocks(driver, frame_chain: list[int] | 
 
     for date_q in date_questions:
         try:
-            dropdowns = date_q.find_elements(By.CSS_SELECTOR, "ps-select-dropdown[data-e2e='month'], ps-select-dropdown[data-e2e='year']")
+            dropdowns = date_q.query_selector_all("ps-select-dropdown[data-e2e='month'], ps-select-dropdown[data-e2e='year']")
         except Exception:
             dropdowns = []
 
@@ -6776,12 +6625,12 @@ def _extract_purespectrum_date_dropdown_blocks(driver, frame_chain: list[int] | 
         question = ""
         for sel in [".question-title", "[psquestiontitle]", "header [role='heading']"]:
             try:
-                q_els = date_q.find_elements(By.CSS_SELECTOR, sel)
+                q_els = date_q.query_selector_all(sel)
             except Exception:
                 q_els = []
             for q_el in q_els:
                 try:
-                    txt = _norm(q_el.text or q_el.get_attribute("innerText") or "")
+                    txt = _norm(q_el.inner_text() or "")
                 except Exception:
                     txt = ""
                 if txt and len(txt) >= 3:
@@ -6802,7 +6651,7 @@ def _extract_purespectrum_date_dropdown_blocks(driver, frame_chain: list[int] | 
                 continue
 
             try:
-                toggle = dd.find_element(By.CSS_SELECTOR, "button.dropdown-toggle")
+                toggle = dd.query_selector("button.dropdown-toggle")
                 dropdown_toggle_xpath = _best_xpath_for_element(driver, toggle)
             except Exception:
                 continue
@@ -6811,14 +6660,14 @@ def _extract_purespectrum_date_dropdown_blocks(driver, frame_chain: list[int] | 
             options: list[str] = []
 
             try:
-                option_btns = dd.find_elements(By.CSS_SELECTOR, "button[ngbdropdownitem][data-e2e]")
+                option_btns = dd.query_selector_all("button[ngbdropdownitem][data-e2e]")
             except Exception:
                 option_btns = []
 
             for opt in option_btns:
                 try:
                     opt_code = (opt.get_attribute("data-e2e") or "").strip()
-                    opt_label = _norm(opt.text or opt.get_attribute("innerText") or "")
+                    opt_label = _norm(opt.inner_text() or "")
                     if not opt_code and not opt_label:
                         continue
                     xp = _best_xpath_for_element(driver, opt)
@@ -6890,7 +6739,7 @@ def _extract_ps_select_dropdown_blocks(driver, frame_chain: list[int] | None) ->
     frame_chain = list(frame_chain or [])
 
     try:
-        date_questions = driver.find_elements(By.CSS_SELECTOR, "ps-date-question")
+        date_questions = _pw_page(driver).query_selector_all("ps-date-question")
     except Exception:
         return []
 
@@ -6901,10 +6750,7 @@ def _extract_ps_select_dropdown_blocks(driver, frame_chain: list[int] | None) ->
 
     for date_q in date_questions:
         try:
-            dropdowns = date_q.find_elements(
-                By.CSS_SELECTOR,
-                "ps-select-dropdown[data-e2e='month'], ps-select-dropdown[data-e2e='year']",
-            )
+            dropdowns = date_q.query_selector_all("ps-select-dropdown[data-e2e='month'], ps-select-dropdown[data-e2e='year']")
         except Exception:
             dropdowns = []
 
@@ -6914,11 +6760,11 @@ def _extract_ps_select_dropdown_blocks(driver, frame_chain: list[int] | None) ->
         question = ""
         for sel in [".question-title", "[psquestiontitle]", "header [role='heading']"]:
             try:
-                q_els = date_q.find_elements(By.CSS_SELECTOR, sel)
+                q_els = date_q.query_selector_all(sel)
             except Exception:
                 q_els = []
             for q_el in q_els:
-                txt = _norm(q_el.text or q_el.get_attribute("innerText") or "")
+                txt = _norm(q_el.inner_text() or "")
                 if txt and len(txt) >= 3:
                     question = txt
                     break
@@ -6934,13 +6780,13 @@ def _extract_ps_select_dropdown_blocks(driver, frame_chain: list[int] | None) ->
                 continue
 
             try:
-                toggle = dd.find_element(By.CSS_SELECTOR, "button[ngbdropdowntoggle]")
+                toggle = dd.query_selector("button[ngbdropdowntoggle]")
                 dropdown_toggle_xpath = _best_xpath_for_element(driver, toggle)
             except Exception:
                 continue
 
             try:
-                option_btns = dd.find_elements(By.CSS_SELECTOR, "button[ngbdropdownitem][role='option']")
+                option_btns = dd.query_selector_all("button[ngbdropdownitem][role='option']")
             except Exception:
                 option_btns = []
 
@@ -6949,7 +6795,7 @@ def _extract_ps_select_dropdown_blocks(driver, frame_chain: list[int] | None) ->
 
             for opt in option_btns:
                 try:
-                    opt_label = _norm(opt.text or opt.get_attribute("innerText") or "")
+                    opt_label = _norm(opt.inner_text() or "")
                     if not opt_label:
                         continue
 
@@ -7026,28 +6872,25 @@ def _extract_collapsed_section_radio_rows(driver, frame_chain: list[int] | None)
     blocks: list[dict] = []
 
     try:
-        containers = driver.find_elements(By.CSS_SELECTOR, "div.section-container")
+        containers = _pw_page(driver).query_selector_all("div.section-container")
     except Exception:
         return blocks
 
     for container in containers:
         try:
-            headers = container.find_elements(By.CSS_SELECTOR, "div[data-ref-id='section-header'][role='button'][data-id]")
+            headers = container.query_selector_all("div[data-ref-id='section-header'][role='button'][data-id]")
             if len(headers) < 3:
                 continue
 
-            contents = container.find_elements(By.CSS_SELECTOR, "div[data-ref-id='section-content']")
+            contents = container.query_selector_all("div[data-ref-id='section-content']")
             if len(contents) != len(headers):
                 continue
 
             question = ""
             try:
-                q_nodes = container.find_elements(
-                    By.XPATH,
-                    "ancestor::*[@data-ref-id][1]//*[contains(@class,'question-caption')][1]",
-                )
+                q_nodes = container.query_selector_all("xpath=" + "ancestor::*[@data-ref-id][1]//*[contains(@class,'question-caption')][1]")
                 if q_nodes:
-                    question = _norm(q_nodes[0].text or q_nodes[0].get_attribute("innerText") or "")
+                    question = _norm(q_nodes[0].inner_text() or "")
             except Exception:
                 question = ""
 
@@ -7055,12 +6898,12 @@ def _extract_collapsed_section_radio_rows(driver, frame_chain: list[int] | None)
             named_group_hits = 0
 
             for idx, header in enumerate(headers):
-                row_label = _norm(header.text or header.get_attribute("innerText") or "")
+                row_label = _norm(header.inner_text() or "")
                 if not row_label:
                     continue
 
                 panel = contents[idx]
-                radios = panel.find_elements(By.CSS_SELECTOR, "input[type='radio'][name]")
+                radios = panel.query_selector_all("input[type='radio'][name]")
                 if len(radios) < 2:
                     continue
 
@@ -7080,8 +6923,8 @@ def _extract_collapsed_section_radio_rows(driver, frame_chain: list[int] | None)
 
                         label_txt = ""
                         try:
-                            label = radio.find_element(By.XPATH, "ancestor::label[1]")
-                            label_txt = _norm(label.text or label.get_attribute("innerText") or "")
+                            label = radio.query_selector("xpath=" + "ancestor::label[1]")
+                            label_txt = _norm(label.inner_text() or "")
                         except Exception:
                             label_txt = ""
                         if not label_txt:
@@ -7162,13 +7005,13 @@ def _extract_jqm_lrw_collapsible_radio_rows(driver, frame_chain: list[int] | Non
     blocks: list[dict] = []
 
     try:
-        containers = driver.find_elements(By.CSS_SELECTOR, "div.collapsible-container.ui-collapsible-set")
+        containers = _pw_page(driver).query_selector_all("div.collapsible-container.ui-collapsible-set")
     except Exception:
         return blocks
 
     for container in containers:
         try:
-            rows = container.find_elements(By.XPATH, "./div[contains(@class,'collapsible-button-group')]")
+            rows = container.query_selector_all("xpath=" + "./div[contains(@class,'collapsible-button-group')]")
         except Exception:
             rows = []
         if len(rows) < 2:
@@ -7176,14 +7019,11 @@ def _extract_jqm_lrw_collapsible_radio_rows(driver, frame_chain: list[int] | Non
 
         main_question = ""
         try:
-            wrappers = container.find_elements(By.XPATH, "ancestor::*[contains(@class,'content-wrapper')][1]")
+            wrappers = container.query_selector_all("xpath=" + "ancestor::*[contains(@class,'content-wrapper')][1]")
             if wrappers:
-                q_nodes = wrappers[0].find_elements(
-                    By.XPATH,
-                    ".//span[contains(@class,'mrQuestionText')][not(ancestor::div[contains(@class,'collapsible-container')])]",
-                )
+                q_nodes = wrappers[0].query_selector_all("xpath=" + ".//span[contains(@class,'mrQuestionText')][not(ancestor::div[contains(@class,'collapsible-container')])]")
                 for node in q_nodes:
-                    txt = _norm(node.text or node.get_attribute("innerText") or "")
+                    txt = _norm(node.inner_text() or "")
                     if txt and len(txt) >= 8:
                         main_question = txt
                         break
@@ -7195,18 +7035,15 @@ def _extract_jqm_lrw_collapsible_radio_rows(driver, frame_chain: list[int] | Non
             try:
                 header = ""
                 try:
-                    h = row.find_element(
-                        By.CSS_SELECTOR,
-                        "div.ui-collapsible-heading button.ui-collapsible-heading-toggle span.mrQuestionText",
-                    )
-                    header = _norm(h.text or h.get_attribute("innerText") or "")
+                    h = row.query_selector("div.ui-collapsible-heading button.ui-collapsible-heading-toggle span.mrQuestionText")
+                    header = _norm(h.inner_text() or "")
                 except Exception:
                     header = ""
                 if not header:
                     continue
 
                 try:
-                    radios = row.find_elements(By.CSS_SELECTOR, "div.ui-collapsible-content input[type='radio'][name]")
+                    radios = row.query_selector_all("div.ui-collapsible-content input[type='radio'][name]")
                 except Exception:
                     radios = []
                 if len(radios) < 2:
@@ -7229,8 +7066,8 @@ def _extract_jqm_lrw_collapsible_radio_rows(driver, frame_chain: list[int] | Non
                         label_txt = ""
                         if radio_id:
                             try:
-                                label = row.find_element(By.CSS_SELECTOR, f"label[for='{radio_id}']")
-                                label_txt = _norm(label.text or label.get_attribute("innerText") or "")
+                                label = row.query_selector(f"label[for='{radio_id}']")
+                                label_txt = _norm(label.inner_text() or "")
                             except Exception:
                                 label_txt = ""
                         if not label_txt:
@@ -7308,13 +7145,13 @@ def _extract_jqm_lrw_collapsible_checkbox_rows(driver, frame_chain: list[int] | 
     blocks: list[dict] = []
 
     try:
-        containers = driver.find_elements(By.CSS_SELECTOR, "div.collapsible-container.ui-collapsible-set")
+        containers = _pw_page(driver).query_selector_all("div.collapsible-container.ui-collapsible-set")
     except Exception:
         return blocks
 
     for container in containers:
         try:
-            rows = container.find_elements(By.XPATH, "./div[contains(@class,'collapsible-button-group')]")
+            rows = container.query_selector_all("xpath=" + "./div[contains(@class,'collapsible-button-group')]")
         except Exception:
             rows = []
         if len(rows) < 2:
@@ -7324,11 +7161,8 @@ def _extract_jqm_lrw_collapsible_checkbox_rows(driver, frame_chain: list[int] | 
         for row in rows:
             try:
                 try:
-                    heading_span = row.find_element(
-                        By.CSS_SELECTOR,
-                        "div.ui-collapsible-heading button.ui-collapsible-heading-toggle span.mrQuestionText",
-                    )
-                    header = _norm(heading_span.text or heading_span.get_attribute("innerText") or "")
+                    heading_span = row.query_selector("div.ui-collapsible-heading button.ui-collapsible-heading-toggle span.mrQuestionText")
+                    header = _norm(heading_span.inner_text() or "")
                 except Exception:
                     header = ""
 
@@ -7339,7 +7173,7 @@ def _extract_jqm_lrw_collapsible_checkbox_rows(driver, frame_chain: list[int] | 
                     continue
 
                 try:
-                    checkboxes = row.find_elements(By.CSS_SELECTOR, "div.ui-collapsible-content input[type='checkbox'][name]")
+                    checkboxes = row.query_selector_all("div.ui-collapsible-content input[type='checkbox'][name]")
                 except Exception:
                     checkboxes = []
                 if len(checkboxes) < 2:
@@ -7357,8 +7191,8 @@ def _extract_jqm_lrw_collapsible_checkbox_rows(driver, frame_chain: list[int] | 
                             continue
 
                         try:
-                            label = row.find_element(By.CSS_SELECTOR, f"label[for='{c_id}']")
-                            label_txt = _norm(label.text or label.get_attribute("innerText") or "")
+                            label = row.query_selector(f"label[for='{c_id}']")
+                            label_txt = _norm(label.inner_text() or "")
                         except Exception:
                             label_txt = ""
                         if not label_txt:
@@ -7434,7 +7268,7 @@ def _extract_decipher_clickable_ranking_blocks(driver, frame_chain: list[int] | 
     frame_chain = list(frame_chain or [])
 
     try:
-        item_area = driver.find_elements(By.CSS_SELECTOR, "#customToolArea #itemArea")
+        item_area = _pw_page(driver).query_selector_all("#customToolArea #itemArea")
     except Exception:
         item_area = []
     if not item_area:
@@ -7443,14 +7277,14 @@ def _extract_decipher_clickable_ranking_blocks(driver, frame_chain: list[int] | 
     container = item_area[0]
 
     try:
-        rank_nodes = container.find_elements(By.CSS_SELECTOR, ".customItem .customRank")
+        rank_nodes = container.query_selector_all(".customItem .customRank")
     except Exception:
         rank_nodes = []
     if not rank_nodes:
         return []
 
     try:
-        items = container.find_elements(By.CSS_SELECTOR, ".customItem")
+        items = container.query_selector_all(".customItem")
     except Exception:
         items = []
     if len(items) < 2:
@@ -7459,11 +7293,11 @@ def _extract_decipher_clickable_ranking_blocks(driver, frame_chain: list[int] | 
     question = ""
     for sel in ("#question_text_Q4", "h1.question-text", "h1", "h2"):
         try:
-            q_candidates = driver.find_elements(By.CSS_SELECTOR, sel)
+            q_candidates = _pw_page(driver).query_selector_all(sel)
         except Exception:
             q_candidates = []
         for q in q_candidates:
-            txt = _norm(q.text or q.get_attribute("innerText") or "")
+            txt = _norm(q.inner_text() or "")
             if txt and len(txt) >= 8:
                 question = txt
                 break
@@ -7479,9 +7313,9 @@ def _extract_decipher_clickable_ranking_blocks(driver, frame_chain: list[int] | 
             label_text = ""
             statement_id = ""
             try:
-                statement = item.find_element(By.CSS_SELECTOR, ".customStatement")
+                statement = item.query_selector(".customStatement")
                 statement_id = (statement.get_attribute("id") or "").strip()
-                label_text = _norm(statement.text or statement.get_attribute("innerText") or "")
+                label_text = _norm(statement.inner_text() or "")
             except Exception:
                 pass
 
@@ -7518,16 +7352,14 @@ def _extract_decipher_clickable_ranking_blocks(driver, frame_chain: list[int] | 
 
     max_select = 3
     try:
-        script_text = driver.execute_script(
-            r"""
+        script_text = _pw_page(driver).evaluate("""() => {
             const scripts = Array.from(document.querySelectorAll('script'));
             for (const s of scripts) {
               const t = (s.textContent || '');
               if (/maxNrAnswer\s*:\s*\d+/i.test(t)) return t;
             }
             return '';
-            """
-        )
+}""")
         m = re.search(r"maxNrAnswer\s*:\s*(\d+)", str(script_text or ""), flags=re.IGNORECASE)
         if m:
             max_select = max(1, int(m.group(1)))
@@ -7577,10 +7409,7 @@ def _extract_toluna_runtime_ranking_blocks(driver, frame_chain: list[int] | None
     frame_chain = list(frame_chain or [])
 
     try:
-        ranking_containers = driver.find_elements(
-            By.CSS_SELECTOR,
-            "div[id^='question_'].ranking_question.display_clicking_order",
-        )
+        ranking_containers = _pw_page(driver).query_selector_all("div[id^='question_'].ranking_question.display_clicking_order")
     except Exception:
         return []
 
@@ -7589,7 +7418,7 @@ def _extract_toluna_runtime_ranking_blocks(driver, frame_chain: list[int] | None
 
     # Guard: si des AnswerRow sont présents, l'extracteur radio/checkbox couvre déjà la page.
     try:
-        if driver.find_elements(By.CSS_SELECTOR, ".answer[data-aut='Runtime_AnswerRow']"):
+        if _pw_page(driver).query_selector_all(".answer[data-aut='Runtime_AnswerRow']"):
             return []
     except Exception:
         pass
@@ -7600,13 +7429,10 @@ def _extract_toluna_runtime_ranking_blocks(driver, frame_chain: list[int] | None
         try:
             qid = (container.get_attribute("id") or "").strip()
 
-            q_nodes = container.find_elements(
-                By.CSS_SELECTOR,
-                "[data-aut='Runtime_QuestionTitleAndDescriptionWrapper'] [data-aut='Runtime-TextComponent']",
-            )
+            q_nodes = container.query_selector_all("[data-aut='Runtime_QuestionTitleAndDescriptionWrapper'] [data-aut='Runtime-TextComponent']")
             question = ""
             for qn in q_nodes:
-                txt = _norm(qn.text or qn.get_attribute("innerText") or "")
+                txt = _norm(qn.inner_text() or "")
                 if txt and len(txt) >= 5:
                     question = txt
                     break
@@ -7614,10 +7440,7 @@ def _extract_toluna_runtime_ranking_blocks(driver, frame_chain: list[int] | None
             if not question:
                 continue
 
-            option_nodes = container.find_elements(
-                By.CSS_SELECTOR,
-                "div.answer[data-aut='Runtime_RankingItemWrapper']",
-            )
+            option_nodes = container.query_selector_all("div.answer[data-aut='Runtime_RankingItemWrapper']")
             if len(option_nodes) < 2:
                 continue
 
@@ -7626,13 +7449,10 @@ def _extract_toluna_runtime_ranking_blocks(driver, frame_chain: list[int] | None
 
             for node in option_nodes:
                 try:
-                    text_nodes = node.find_elements(
-                        By.CSS_SELECTOR,
-                        "[data-aut='Runtime_AnswerText'] [data-aut='Runtime-TextComponent']",
-                    )
+                    text_nodes = node.query_selector_all("[data-aut='Runtime_AnswerText'] [data-aut='Runtime-TextComponent']")
                     label_text = ""
                     for tn in text_nodes:
-                        txt = _norm(tn.text or tn.get_attribute("innerText") or "")
+                        txt = _norm(tn.inner_text() or "")
                         if txt:
                             label_text = txt
                             break
@@ -7714,9 +7534,7 @@ def _extract_savanta_jqm_carousel_block(driver, frame_chain: list[int] | None) -
 
     # --- Gate 1 : fieldset.carousel avec slick-slider interne ---
     try:
-        carousel_fieldsets = driver.find_elements(
-            By.CSS_SELECTOR, "fieldset.carousel"
-        )
+        carousel_fieldsets = _pw_page(driver).query_selector_all("fieldset.carousel")
     except Exception:
         return blocks
 
@@ -7726,7 +7544,7 @@ def _extract_savanta_jqm_carousel_block(driver, frame_chain: list[int] | None) -
     carousel_fs = None
     for fs in carousel_fieldsets:
         try:
-            if fs.find_elements(By.CSS_SELECTOR, ".slick-initialized.slick-slider"):
+            if fs.query_selector_all(".slick-initialized.slick-slider"):
                 carousel_fs = fs
                 break
         except Exception:
@@ -7737,14 +7555,12 @@ def _extract_savanta_jqm_carousel_block(driver, frame_chain: list[int] | None) -
 
     # --- Gate 2 : fieldset.carousel-buttons avec boutons ---
     try:
-        btn_fieldset = driver.find_element(By.CSS_SELECTOR, "fieldset.carousel-buttons")
+        btn_fieldset = _pw_page(driver).query_selector("fieldset.carousel-buttons")
     except Exception:
         return blocks
 
     try:
-        hidden_btns = btn_fieldset.find_elements(
-            By.CSS_SELECTOR, "button.ui-btn-hidden"
-        )
+        hidden_btns = btn_fieldset.query_selector_all("button.ui-btn-hidden")
     except Exception:
         hidden_btns = []
 
@@ -7755,19 +7571,16 @@ def _extract_savanta_jqm_carousel_block(driver, frame_chain: list[int] | None) -
     # 1) Légende du fieldset.carousel (texte direct, sans le span.inst)
     legend_text = ""
     try:
-        legend = carousel_fs.find_element(By.CSS_SELECTOR, "legend")
-        legend_text = driver.execute_script(
-            """
-            const legend = arguments[0];
+        legend = carousel_fs.query_selector("legend")
+        legend_text = _pw_page(driver).evaluate("""(_el) => {
+            const legend = _el;
             if (!legend) return '';
             const clone = legend.cloneNode(true);
             for (const s of clone.querySelectorAll('span.inst, span.instruction, .instruction')) {
                 s.remove();
             }
             return clone.textContent.replace(/\\s+/g, ' ').trim();
-            """,
-            legend,
-        )
+}""", legend)
     except Exception:
         legend_text = ""
 
@@ -7776,9 +7589,9 @@ def _extract_savanta_jqm_carousel_block(driver, frame_chain: list[int] | None) -
     # 2) Label de l'item courant (.slick-current)
     current_label = ""
     try:
-        current_slide = carousel_fs.find_element(By.CSS_SELECTOR, ".slick-current")
+        current_slide = carousel_fs.query_selector(".slick-current")
         try:
-            ce = current_slide.find_element(By.CSS_SELECTOR, ".carousel-element")
+            ce = current_slide.query_selector(".carousel-element")
             tit = (ce.get_attribute("title") or "").strip()
             if tit:
                 current_label = tit
@@ -7786,12 +7599,12 @@ def _extract_savanta_jqm_carousel_block(driver, frame_chain: list[int] | None) -
             pass
         if not current_label:
             try:
-                iw = current_slide.find_element(By.CSS_SELECTOR, ".image-wrapper")
-                current_label = _norm(iw.text or iw.get_attribute("innerText") or "")
+                iw = current_slide.query_selector(".image-wrapper")
+                current_label = _norm(iw.inner_text() or "")
             except Exception:
                 pass
         if not current_label:
-            current_label = _norm(current_slide.text or "")
+            current_label = _norm(current_slide.inner_text() or "")
     except Exception:
         current_label = ""
 
@@ -7809,7 +7622,7 @@ def _extract_savanta_jqm_carousel_block(driver, frame_chain: list[int] | None) -
     # --- data-index du slide courant (pour validation post-clic) ---
     jqm_current_data_index: int | None = None
     try:
-        current_slide = carousel_fs.find_element(By.CSS_SELECTOR, ".slick-current")
+        current_slide = carousel_fs.query_selector(".slick-current")
         di = (current_slide.get_attribute("data-index") or "").strip()
         if di.lstrip("-").isdigit():
             jqm_current_data_index = int(di)
@@ -7822,24 +7635,21 @@ def _extract_savanta_jqm_carousel_block(driver, frame_chain: list[int] | None) -
 
     for btn in hidden_btns:
         try:
-            lbl = _norm(btn.text or btn.get_attribute("innerText") or btn.get_attribute("value") or "")
+            lbl = _norm(btn.inner_text() or btn.get_attribute("value") or "")
             if not lbl or len(lbl) < 2:
                 continue
 
             # Remonter au div.ui-btn parent (wrapper cliquable JQM)
             try:
-                ui_btn_div = driver.execute_script(
-                    """
-                    let el = arguments[0];
+                ui_btn_div = _pw_page(driver).evaluate("""(_el) => {
+                    let el = _el;
                     for (let i = 0; i < 5 && el; i++, el = el.parentElement) {
                         if (el.tagName && el.tagName.toLowerCase() !== 'button') {
                             if ((el.className || '').includes('ui-btn')) return el;
                         }
                     }
                     return null;
-                    """,
-                    btn,
-                )
+}""", btn)
             except Exception:
                 ui_btn_div = None
 
@@ -7917,9 +7727,7 @@ def _extract_questmindshare_chatbot_blocks(driver, frame_chain: list[int] | None
 
     # --- Gate strict ---
     try:
-        gate_els = driver.find_elements(
-            By.CSS_SELECTOR, "div[data-testid^='option-'][tabindex='0']"
-        )
+        gate_els = _pw_page(driver).query_selector_all("div[data-testid^='option-'][tabindex='0']")
     except Exception:
         return []
 
@@ -7934,14 +7742,14 @@ def _extract_questmindshare_chatbot_blocks(driver, frame_chain: list[int] | None
     while idx < 50:  # budget max 50 options
         sel = f"div[data-testid='option-{idx}'][tabindex='0']"
         try:
-            els = driver.find_elements(By.CSS_SELECTOR, sel)
+            els = _pw_page(driver).query_selector_all(sel)
         except Exception:
             break
         if not els:
             break
         el = els[0]
         try:
-            label = _norm(el.text or el.get_attribute("innerText") or "")
+            label = _norm(el.inner_text() or "")
         except Exception:
             label = ""
         if label:
@@ -7960,10 +7768,10 @@ def _extract_questmindshare_chatbot_blocks(driver, frame_chain: list[int] | None
     # --- Question text : dernier message-text visible ---
     question = ""
     try:
-        msg_els = driver.find_elements(By.CSS_SELECTOR, "div[data-testid='message-text']")
+        msg_els = _pw_page(driver).query_selector_all("div[data-testid='message-text']")
         for el in reversed(msg_els):
             try:
-                txt = _norm(el.text or el.get_attribute("innerText") or "")
+                txt = _norm(el.inner_text() or "")
             except Exception:
                 txt = ""
             if txt:
@@ -7977,10 +7785,10 @@ def _extract_questmindshare_chatbot_blocks(driver, frame_chain: list[int] | None
 
     # --- Instructions (si présentes, les ajouter à la question) ---
     try:
-        instr_els = driver.find_elements(By.CSS_SELECTOR, "div[data-testid='instructions']")
+        instr_els = _pw_page(driver).query_selector_all("div[data-testid='instructions']")
         for el in instr_els:
             try:
-                instr = _norm(el.text or el.get_attribute("innerText") or "")
+                instr = _norm(el.inner_text() or "")
             except Exception:
                 instr = ""
             if instr:
@@ -7992,7 +7800,7 @@ def _extract_questmindshare_chatbot_blocks(driver, frame_chain: list[int] | None
     # --- CTA xpath (référence pour l'input_handler) ---
     cta_xpath = ""
     try:
-        cta_els = driver.find_elements(By.CSS_SELECTOR, "button[data-testid='confirm-selection']")
+        cta_els = _pw_page(driver).query_selector_all("button[data-testid='confirm-selection']")
         if cta_els:
             cta_xpath = _best_xpath_for_element(driver, cta_els[0])
             if not cta_xpath:
@@ -8053,7 +7861,7 @@ def _extract_confirmit_cf_desktop_grid_blocks(driver, frame_chain: list[int] | N
     frame_chain = list(frame_chain or [])
 
     try:
-        tables = driver.find_elements(By.CSS_SELECTOR, "table.cf-table-layout")
+        tables = _pw_page(driver).query_selector_all("table.cf-table-layout")
     except Exception:
         return []
     if not tables:
@@ -8063,7 +7871,7 @@ def _extract_confirmit_cf_desktop_grid_blocks(driver, frame_chain: list[int] | N
     gate_ok = False
     for t in tables:
         try:
-            if t.find_elements(By.CSS_SELECTOR, "tbody div.cf-radio[role='radio']"):
+            if t.query_selector_all("tbody div.cf-radio[role='radio']"):
                 gate_ok = True
                 break
         except Exception:
@@ -8078,14 +7886,12 @@ def _extract_confirmit_cf_desktop_grid_blocks(driver, frame_chain: list[int] | N
             # Colonnes: libellés dans thead div.cf-desktop-grid__scale-text
             scale_labels: list[str] = []
             try:
-                scale_divs = table.find_elements(
-                    By.CSS_SELECTOR, "thead div.cf-desktop-grid__scale-text"
-                )
+                scale_divs = table.query_selector_all("thead div.cf-desktop-grid__scale-text")
             except Exception:
                 scale_divs = []
 
             for div in scale_divs:
-                txt = _norm(div.text or div.get_attribute("innerText") or "")
+                txt = _norm(div.inner_text() or "")
                 if txt and txt not in scale_labels:
                     scale_labels.append(txt)
 
@@ -8095,19 +7901,15 @@ def _extract_confirmit_cf_desktop_grid_blocks(driver, frame_chain: list[int] | N
             # Titre global de la grille: remonter au div.cf-question ancêtre
             grid_title = ""
             try:
-                q_container = table.find_element(
-                    By.XPATH, "ancestor::div[contains(@class,'cf-question')]"
-                )
-                q_text_el = q_container.find_element(
-                    By.CSS_SELECTOR, "div.cf-question__text"
-                )
+                q_container = table.query_selector("xpath=" + "ancestor::div[contains(@class,'cf-question')]")
+                q_text_el = q_container.query_selector("div.cf-question__text")
                 grid_title = _norm(q_text_el.get_attribute("textContent") or "")
             except Exception:
                 pass
 
             # Lignes: tr[role='radiogroup'] dans tbody
             try:
-                rows = table.find_elements(By.CSS_SELECTOR, "tbody tr[role='radiogroup']")
+                rows = table.query_selector_all("tbody tr[role='radiogroup']")
             except Exception:
                 rows = []
             if not rows:
@@ -8125,8 +7927,8 @@ def _extract_confirmit_cf_desktop_grid_blocks(driver, frame_chain: list[int] | N
                     if labelledby:
                         for ref_id in labelledby.split():
                             try:
-                                node = driver.find_element(By.ID, ref_id)
-                                txt = _norm(node.get_attribute("textContent") or node.text or "")
+                                node = _pw_page(driver).query_selector(f"#{ref_id}")
+                                txt = _norm(node.get_attribute("textContent") or node.inner_text() or "")
                                 if txt:
                                     row_label = txt
                                     break
@@ -8138,7 +7940,7 @@ def _extract_confirmit_cf_desktop_grid_blocks(driver, frame_chain: list[int] | N
 
                     # Radios dans la ligne
                     try:
-                        radio_divs = row.find_elements(By.CSS_SELECTOR, "div.cf-radio[role='radio']")
+                        radio_divs = row.query_selector_all("div.cf-radio[role='radio']")
                     except Exception:
                         radio_divs = []
                     if len(radio_divs) != len(scale_labels):
@@ -8224,7 +8026,7 @@ def _extract_confirmit_cf_bipolar_button_grid_blocks(driver, frame_chain: list[i
     frame_chain = list(frame_chain or [])
 
     try:
-        tables = driver.find_elements(By.CSS_SELECTOR, "table.cf-table-layout")
+        tables = _pw_page(driver).query_selector_all("table.cf-table-layout")
     except Exception:
         return []
     if not tables:
@@ -8234,7 +8036,7 @@ def _extract_confirmit_cf_bipolar_button_grid_blocks(driver, frame_chain: list[i
     gate_ok = False
     for t in tables:
         try:
-            if t.find_elements(By.CSS_SELECTOR, "tbody div.cf-button-answer__button[role='radio']"):
+            if t.query_selector_all("tbody div.cf-button-answer__button[role='radio']"):
                 gate_ok = True
                 break
         except Exception:
@@ -8246,9 +8048,7 @@ def _extract_confirmit_cf_bipolar_button_grid_blocks(driver, frame_chain: list[i
     last_title = ""
 
     try:
-        cf_questions = driver.find_elements(
-            By.CSS_SELECTOR, "div.cf-question--answer-buttons-grid"
-        )
+        cf_questions = _pw_page(driver).query_selector_all("div.cf-question--answer-buttons-grid")
     except Exception:
         return []
 
@@ -8256,7 +8056,7 @@ def _extract_confirmit_cf_bipolar_button_grid_blocks(driver, frame_chain: list[i
         try:
             # Question avec carry-forward du dernier titre non-vide
             try:
-                q_text_el = q_div.find_element(By.CSS_SELECTOR, "div.cf-question__text")
+                q_text_el = q_div.query_selector("div.cf-question__text")
                 title = _norm(q_text_el.get_attribute("textContent") or "")
             except Exception:
                 title = ""
@@ -8266,10 +8066,7 @@ def _extract_confirmit_cf_bipolar_button_grid_blocks(driver, frame_chain: list[i
 
             # Lignes desktop uniquement (le mobile est exclu)
             try:
-                rows = q_div.find_elements(
-                    By.CSS_SELECTOR,
-                    "div.cf-question__content--desktop tr[role='radiogroup']",
-                )
+                rows = q_div.query_selector_all("div.cf-question__content--desktop tr[role='radiogroup']")
             except Exception:
                 rows = []
 
@@ -8286,8 +8083,8 @@ def _extract_confirmit_cf_bipolar_button_grid_blocks(driver, frame_chain: list[i
                     left_pole = ""
                     if label_ids:
                         try:
-                            el = driver.find_element(By.ID, label_ids[0])
-                            left_pole = _norm(el.get_attribute("textContent") or el.text or "")
+                            el = _pw_page(driver).query_selector(f"#{label_ids[0]}")
+                            left_pole = _norm(el.get_attribute("textContent") or el.inner_text() or "")
                         except Exception:
                             pass
 
@@ -8295,16 +8092,14 @@ def _extract_confirmit_cf_bipolar_button_grid_blocks(driver, frame_chain: list[i
                     right_pole = ""
                     if len(label_ids) >= 2:
                         try:
-                            el = driver.find_element(By.ID, label_ids[1])
-                            right_pole = _norm(el.get_attribute("textContent") or el.text or "")
+                            el = _pw_page(driver).query_selector(f"#{label_ids[1]}")
+                            right_pole = _norm(el.get_attribute("textContent") or el.inner_text() or "")
                         except Exception:
                             pass
 
                     # Boutons radio (cf-button-answer__button), labels via innerText (exclut spans display:none)
                     try:
-                        btn_divs = row.find_elements(
-                            By.CSS_SELECTOR, "div.cf-button-answer__button[role='radio']"
-                        )
+                        btn_divs = row.query_selector_all("div.cf-button-answer__button[role='radio']")
                     except Exception:
                         btn_divs = []
                     if not btn_divs:
@@ -8313,7 +8108,7 @@ def _extract_confirmit_cf_bipolar_button_grid_blocks(driver, frame_chain: list[i
                     numeric_labels: list[str] = []
                     for btn in btn_divs:
                         try:
-                            txt_el = btn.find_element(By.CSS_SELECTOR, "div.cf-button-answer__text")
+                            txt_el = btn.query_selector("div.cf-button-answer__text")
                             label = _norm(txt_el.get_attribute("innerText") or "")
                             if label:
                                 numeric_labels.append(label)
@@ -8407,9 +8202,7 @@ def _extract_confirmit_cf_hrs_single_blocks(driver, frame_chain: list[int] | Non
     frame_chain = list(frame_chain or [])
 
     try:
-        radiogroups = driver.find_elements(
-            By.CSS_SELECTOR, "div.cf-hrs-single[role='radiogroup']"
-        )
+        radiogroups = _pw_page(driver).query_selector_all("div.cf-hrs-single[role='radiogroup']")
     except Exception:
         return []
     if not radiogroups:
@@ -8419,7 +8212,7 @@ def _extract_confirmit_cf_hrs_single_blocks(driver, frame_chain: list[int] | Non
     gate_ok = False
     for rg in radiogroups:
         try:
-            if rg.find_elements(By.CSS_SELECTOR, "div.cf-horizontal-rating-item[role='radio']"):
+            if rg.query_selector_all("div.cf-horizontal-rating-item[role='radio']"):
                 gate_ok = True
                 break
         except Exception:
@@ -8436,11 +8229,8 @@ def _extract_confirmit_cf_hrs_single_blocks(driver, frame_chain: list[int] | Non
             # --- Gate carousel : cf-hrs-single enfant de cf-carousel__content-item ---
             carousel_item_id = None
             try:
-                carousel_content_item = rg.find_element(
-                    By.XPATH,
-                    "ancestor::div[contains(concat(' ',normalize-space(@class),' '),"
-                    "' cf-carousel__content-item ')][1]"
-                )
+                carousel_content_item = rg.query_selector("xpath=" + "ancestor::div[contains(concat(' ',normalize-space(@class),' '),"
+                    "' cf-carousel__content-item ')][1]")
                 carousel_item_id = (carousel_content_item.get_attribute("id") or "").strip()
             except Exception:
                 pass
@@ -8455,12 +8245,8 @@ def _extract_confirmit_cf_hrs_single_blocks(driver, frame_chain: list[int] | Non
                 carousel_index = 0
                 carousel_total = 1
                 try:
-                    carousel_content_root = carousel_content_item.find_element(
-                        By.XPATH, "parent::div"
-                    )
-                    all_items = carousel_content_root.find_elements(
-                        By.CSS_SELECTOR, "div.cf-carousel__content-item"
-                    )
+                    carousel_content_root = carousel_content_item.query_selector("xpath=" + "parent::div")
+                    all_items = carousel_content_root.query_selector_all("div.cf-carousel__content-item")
                     carousel_total = len(all_items) if all_items else 1
                     for idx, ci in enumerate(all_items):
                         if (ci.get_attribute("id") or "").strip() == carousel_item_id:
@@ -8474,8 +8260,8 @@ def _extract_confirmit_cf_hrs_single_blocks(driver, frame_chain: list[int] | Non
                 item_id = carousel_item_id.replace("_carousel_content", "")
                 question = ""
                 try:
-                    span = driver.find_element(By.ID, f"{item_id}_text")
-                    question = _norm(span.text or span.get_attribute("innerText") or "")
+                    span = _pw_page(driver).query_selector(f"#{item_id}_text")
+                    question = _norm(span.inner_text() or "")
                 except Exception:
                     pass
                 if not question:
@@ -8483,13 +8269,10 @@ def _extract_confirmit_cf_hrs_single_blocks(driver, frame_chain: list[int] | Non
 
                 # Préfixe : texte de la question globale (div.cf-question__text)
                 try:
-                    ancestor = rg.find_element(
-                        By.XPATH,
-                        "ancestor::div[contains(concat(' ',normalize-space(@class),' '),"
-                        "' cf-question ')][1]"
-                    )
-                    q_text_el = ancestor.find_element(By.CSS_SELECTOR, "div.cf-question__text")
-                    parent_q = _norm(q_text_el.get_attribute("textContent") or q_text_el.text or "")
+                    ancestor = rg.query_selector("xpath=" + "ancestor::div[contains(concat(' ',normalize-space(@class),' '),"
+                        "' cf-question ')][1]")
+                    q_text_el = ancestor.query_selector("div.cf-question__text")
+                    parent_q = _norm(q_text_el.get_attribute("textContent") or q_text_el.inner_text() or "")
                     if parent_q:
                         question = f"{parent_q} – {question}"
                 except Exception:
@@ -8497,9 +8280,7 @@ def _extract_confirmit_cf_hrs_single_blocks(driver, frame_chain: list[int] | Non
 
                 # Options : innerText uniquement (aria-label contient le texte de ligne en préfixe)
                 try:
-                    item_divs = rg.find_elements(
-                        By.CSS_SELECTOR, "div.cf-horizontal-rating-item[role='radio']"
-                    )
+                    item_divs = rg.query_selector_all("div.cf-horizontal-rating-item[role='radio']")
                 except Exception:
                     item_divs = []
                 if not item_divs:
@@ -8509,7 +8290,7 @@ def _extract_confirmit_cf_hrs_single_blocks(driver, frame_chain: list[int] | Non
                 option_xpath_map: dict[str, str] = {}
                 for item in item_divs[:30]:
                     try:
-                        text = _norm(item.text or item.get_attribute("innerText") or "")
+                        text = _norm(item.inner_text() or "")
                         if not text:
                             continue
                         if text not in options:
@@ -8541,8 +8322,8 @@ def _extract_confirmit_cf_hrs_single_blocks(driver, frame_chain: list[int] | Non
                 if labelledby:
                     for ref_id in labelledby.split():
                         try:
-                            node = driver.find_element(By.ID, ref_id)
-                            txt = _norm(node.text or node.get_attribute("innerText") or "")
+                            node = _pw_page(driver).query_selector(f"#{ref_id}")
+                            txt = _norm(node.inner_text() or "")
                             if txt:
                                 question = txt
                                 break
@@ -8553,21 +8334,16 @@ def _extract_confirmit_cf_hrs_single_blocks(driver, frame_chain: list[int] | Non
 
                 # Prepend matrix/grid parent question text from ancestor div.cf-question__text
                 try:
-                    ancestor = rg.find_element(
-                        By.XPATH,
-                        "ancestor::div[contains(concat(' ',normalize-space(@class),' '),' cf-question ')][1]"
-                    )
-                    q_text_el = ancestor.find_element(By.CSS_SELECTOR, "div.cf-question__text")
-                    parent_q = _norm(q_text_el.get_attribute("textContent") or q_text_el.text or "")
+                    ancestor = rg.query_selector("xpath=" + "ancestor::div[contains(concat(' ',normalize-space(@class),' '),' cf-question ')][1]")
+                    q_text_el = ancestor.query_selector("div.cf-question__text")
+                    parent_q = _norm(q_text_el.get_attribute("textContent") or q_text_el.inner_text() or "")
                     if parent_q:
                         question = f"{parent_q} – {question}"
                 except Exception:
                     pass
 
                 try:
-                    item_divs = rg.find_elements(
-                        By.CSS_SELECTOR, "div.cf-horizontal-rating-item[role='radio']"
-                    )
+                    item_divs = rg.query_selector_all("div.cf-horizontal-rating-item[role='radio']")
                 except Exception:
                     item_divs = []
                 if not item_divs:
@@ -8578,7 +8354,7 @@ def _extract_confirmit_cf_hrs_single_blocks(driver, frame_chain: list[int] | Non
                 for item in item_divs[:30]:  # budget anti-explosion
                     try:
                         aria_label = _norm(item.get_attribute("aria-label") or "")
-                        text = aria_label or _norm(item.text or item.get_attribute("innerText") or "")
+                        text = aria_label or _norm(item.inner_text() or "")
                         if not text:
                             continue
                         if text not in options:
@@ -8661,7 +8437,7 @@ def _extract_groupcaliber_rating_row_blocks(driver, frame_chain: list[int] | Non
 
     # Gate 1: h6[data-question_type="5"] must be present
     try:
-        headers = driver.find_elements(By.CSS_SELECTOR, "h6[data-question_type='5']")
+        headers = _pw_page(driver).query_selector_all("h6[data-question_type='5']")
     except Exception:
         return []
     if not headers:
@@ -8669,7 +8445,7 @@ def _extract_groupcaliber_rating_row_blocks(driver, frame_chain: list[int] | Non
 
     # Gate 2: at least one div.row.bg-light must be present
     try:
-        rows = driver.find_elements(By.CSS_SELECTOR, "div.row.bg-light")
+        rows = _pw_page(driver).query_selector_all("div.row.bg-light")
     except Exception:
         return []
     if not rows:
@@ -8682,9 +8458,9 @@ def _extract_groupcaliber_rating_row_blocks(driver, frame_chain: list[int] | Non
             # Brand name from div.col-md-3 > b
             brand_name = ""
             try:
-                b_els = row.find_elements(By.CSS_SELECTOR, "div.col-md-3 b")
+                b_els = row.query_selector_all("div.col-md-3 b")
                 if b_els:
-                    brand_name = _norm(b_els[0].text or b_els[0].get_attribute("innerText") or "")
+                    brand_name = _norm(b_els[0].inner_text() or "")
             except Exception:
                 pass
 
@@ -8693,7 +8469,7 @@ def _extract_groupcaliber_rating_row_blocks(driver, frame_chain: list[int] | Non
 
             # Find all radios in this row
             try:
-                radios = row.find_elements(By.CSS_SELECTOR, "input[type='radio']")
+                radios = row.query_selector_all("input[type='radio']")
             except Exception:
                 radios = []
 
@@ -8729,8 +8505,8 @@ def _extract_groupcaliber_rating_row_blocks(driver, frame_chain: list[int] | Non
                     label_txt = ""
                     label_raw = ""  # NFC form for XPath literal (DOM-compatible)
                     try:
-                        label_el = radio.find_element(By.XPATH, "ancestor::label[1]")
-                        raw = (label_el.text or label_el.get_attribute("innerText") or "")
+                        label_el = radio.query_selector("xpath=" + "ancestor::label[1]")
+                        raw = (label_el.inner_text() or "")
                         # Preserve NFC form for XPath (NFKD form breaks contains() on accented chars)
                         label_raw = re.sub(r"\s+", " ", raw).strip()
                         label_txt = _norm(label_raw)  # NFKD for dict key (matches v_norm in apply)
@@ -8818,7 +8594,7 @@ def _extract_confirmit_cf_carousel_blocks(driver, frame_chain: list[int] | None)
 
     # Gate 1: div.cf-carousel présent
     try:
-        carousels = driver.find_elements(By.CSS_SELECTOR, "div.cf-carousel")
+        carousels = _pw_page(driver).query_selector_all("div.cf-carousel")
     except Exception:
         return []
     if not carousels:
@@ -8829,8 +8605,8 @@ def _extract_confirmit_cf_carousel_blocks(driver, frame_chain: list[int] | None)
     gate_ok = False
     for c in carousels:
         try:
-            has_old = bool(c.find_elements(By.CSS_SELECTOR, "div.cf-carousel__content-item div.cf-answer-button"))
-            has_new = bool(c.find_elements(By.CSS_SELECTOR, "div.cf-carousel__content-item div.cf-button-answer"))
+            has_old = bool(c.query_selector_all("div.cf-carousel__content-item div.cf-answer-button"))
+            has_new = bool(c.query_selector_all("div.cf-carousel__content-item div.cf-button-answer"))
             if has_old or has_new:
                 gate_ok = True
                 break
@@ -8842,9 +8618,9 @@ def _extract_confirmit_cf_carousel_blocks(driver, frame_chain: list[int] | None)
     # Texte de question principal (div.cf-question__text)
     main_question = ""
     try:
-        q_els = driver.find_elements(By.CSS_SELECTOR, "div.cf-question__text")
+        q_els = _pw_page(driver).query_selector_all("div.cf-question__text")
         for q_el in q_els[:3]:
-            txt = _norm(q_el.text or q_el.get_attribute("innerText") or "")
+            txt = _norm(q_el.inner_text() or "")
             if txt:
                 main_question = txt
                 break
@@ -8854,7 +8630,7 @@ def _extract_confirmit_cf_carousel_blocks(driver, frame_chain: list[int] | None)
     # Image partagée par tous les items (div.cf-question__text > img)
     carousel_image_url = ""
     try:
-        img_els = driver.find_elements(By.CSS_SELECTOR, "div.cf-question__text img")
+        img_els = _pw_page(driver).query_selector_all("div.cf-question__text img")
         for img_el in img_els[:3]:
             src = (img_el.get_attribute("src") or "").strip()
             if src and src.startswith("http"):
@@ -8867,9 +8643,7 @@ def _extract_confirmit_cf_carousel_blocks(driver, frame_chain: list[int] | None)
 
     for carousel in carousels[:5]:  # budget anti-explosion
         try:
-            items = carousel.find_elements(
-                By.CSS_SELECTOR, "div.cf-carousel__content-item"
-            )
+            items = carousel.query_selector_all("div.cf-carousel__content-item")
         except Exception:
             continue
 
@@ -8884,7 +8658,7 @@ def _extract_confirmit_cf_carousel_blocks(driver, frame_chain: list[int] | None)
                 # Texte d'affirmation propre à l'item (span#{item_id}_text)
                 affirmation = ""
                 try:
-                    span = driver.find_element(By.ID, f"{item_id}_text")
+                    span = _pw_page(driver).query_selector(f"#{item_id}_text")
                     affirmation = _norm(span.get_attribute("textContent") or "")
                 except Exception:
                     pass
@@ -8898,10 +8672,10 @@ def _extract_confirmit_cf_carousel_blocks(driver, frame_chain: list[int] | None)
                 # nouvelle : div.cf-button-answer > div.cf-button.cf-button-answer__button[role="radio"]
                 #            > div.cf-button-answer__text  (cliquable : id = btn_id + "_control")
                 try:
-                    btn_divs = item.find_elements(By.CSS_SELECTOR, "div.cf-answer-button")
+                    btn_divs = item.query_selector_all("div.cf-answer-button")
                     use_new_variant = False
                     if not btn_divs:
-                        btn_divs = item.find_elements(By.CSS_SELECTOR, "div.cf-button-answer")
+                        btn_divs = item.query_selector_all("div.cf-button-answer")
                         use_new_variant = True
                 except Exception:
                     btn_divs = []
@@ -8920,7 +8694,7 @@ def _extract_confirmit_cf_carousel_blocks(driver, frame_chain: list[int] | None)
                         if use_new_variant:
                             # Texte depuis div.cf-button-answer__text
                             try:
-                                txt_el = btn.find_element(By.CSS_SELECTOR, "div.cf-button-answer__text")
+                                txt_el = btn.query_selector("div.cf-button-answer__text")
                                 opt_text = _norm(txt_el.get_attribute("textContent") or "")
                             except Exception:
                                 pass
@@ -8929,7 +8703,7 @@ def _extract_confirmit_cf_carousel_blocks(driver, frame_chain: list[int] | None)
                         else:
                             # Texte depuis div.cf-answer-button__text (variante ancienne)
                             try:
-                                txt_el = btn.find_element(By.CSS_SELECTOR, "div.cf-answer-button__text")
+                                txt_el = btn.query_selector("div.cf-answer-button__text")
                                 opt_text = _norm(txt_el.get_attribute("textContent") or "")
                             except Exception:
                                 pass
@@ -9030,7 +8804,7 @@ def _extract_rps_select_blocks(driver, frame_chain: list[int] | None) -> list[di
 
     # Gate rapide : présence du tag personnalisé
     try:
-        rps_selects = driver.find_elements(By.CSS_SELECTOR, "rps-select")
+        rps_selects = _pw_page(driver).query_selector_all("rps-select")
     except Exception:
         return []
 
@@ -9039,14 +8813,14 @@ def _extract_rps_select_blocks(driver, frame_chain: list[int] | None) -> list[di
 
     # Gate strict : au moins un wrapper interne porte data-selector + option-items
     try:
-        gate_wrappers = driver.find_elements(By.CSS_SELECTOR, "div.rps-select[data-selector]")
+        gate_wrappers = _pw_page(driver).query_selector_all("div.rps-select[data-selector]")
     except Exception:
         gate_wrappers = []
 
     has_gate = False
     for w in gate_wrappers:
         try:
-            items = w.find_elements(By.CSS_SELECTOR, "div.option-item")
+            items = w.query_selector_all("div.option-item")
             if len(items) >= 2:
                 has_gate = True
                 break
@@ -9068,7 +8842,7 @@ def _extract_rps_select_blocks(driver, frame_chain: list[int] | None) -> list[di
 
             # Trouver le wrapper interne portant data-selector
             try:
-                wrapper = outer.find_element(By.CSS_SELECTOR, "div.rps-select[data-selector]")
+                wrapper = outer.query_selector("div.rps-select[data-selector]")
             except Exception:
                 continue
 
@@ -9082,13 +8856,13 @@ def _extract_rps_select_blocks(driver, frame_chain: list[int] | None) -> list[di
 
             # Gate : div.selection présent
             try:
-                wrapper.find_element(By.CSS_SELECTOR, "div.selection")
+                wrapper.query_selector("div.selection")
             except Exception:
                 continue
 
             # Lire les options (dans div.options, potentiellement ng-hide) via JS innerText
             try:
-                option_items = wrapper.find_elements(By.CSS_SELECTOR, "div.option-item")
+                option_items = wrapper.query_selector_all("div.option-item")
             except Exception:
                 option_items = []
 
@@ -9096,7 +8870,7 @@ def _extract_rps_select_blocks(driver, frame_chain: list[int] | None) -> list[di
             for item in option_items:
                 try:
                     txt = _norm(
-                        driver.execute_script("return arguments[0].innerText || '';", item)
+                        item.inner_text()
                         or item.get_attribute("innerText")
                         or ""
                     )
@@ -9111,9 +8885,9 @@ def _extract_rps_select_blocks(driver, frame_chain: list[int] | None) -> list[di
             # Question : label.select-label
             question = ""
             try:
-                lbl = wrapper.find_element(By.CSS_SELECTOR, "label.select-label")
+                lbl = wrapper.query_selector("label.select-label")
                 question = _norm(
-                    driver.execute_script("return arguments[0].innerText || '';", lbl)
+                    lbl.inner_text()
                     or lbl.get_attribute("innerText")
                     or ""
                 )
@@ -9211,7 +8985,7 @@ def _extract_ssi_confirmit_native_grid_blocks(driver, frame_chain: list[int] | N
     frame_chain = list(frame_chain or [])
 
     try:
-        grids = driver.find_elements(By.CSS_SELECTOR, "div.question.grid")
+        grids = _pw_page(driver).query_selector_all("div.question.grid")
         if not grids:
             return []
     except Exception:
@@ -9221,16 +8995,13 @@ def _extract_ssi_confirmit_native_grid_blocks(driver, frame_chain: list[int] | N
 
     for grid_div in grids[:5]:
         try:
-            col_header_cells = grid_div.find_elements(
-                By.CSS_SELECTOR,
-                "table.inner_table tr.column_header_row td[role='columnheader']",
-            )
+            col_header_cells = grid_div.query_selector_all("table.inner_table tr.column_header_row td[role='columnheader']")
             if len(col_header_cells) < 2:
                 continue
 
             col_headers: list[str] = []
             for th in col_header_cells:
-                txt = _norm(th.text or "")
+                txt = _norm(th.inner_text() or "")
                 if txt:
                     col_headers.append(txt)
             if len(col_headers) < 2:
@@ -9239,9 +9010,9 @@ def _extract_ssi_confirmit_native_grid_blocks(driver, frame_chain: list[int] | N
             global_q = ""
             try:
                 for sel in (".header2 h3", ".header2 p", "h3"):
-                    nodes = grid_div.find_elements(By.CSS_SELECTOR, sel)
+                    nodes = grid_div.query_selector_all(sel)
                     for node in nodes:
-                        t = _norm(node.text or "")
+                        t = _norm(node.inner_text() or "")
                         if t and len(t) > 5:
                             global_q = t
                             break
@@ -9250,9 +9021,7 @@ def _extract_ssi_confirmit_native_grid_blocks(driver, frame_chain: list[int] | N
             except Exception:
                 pass
 
-            rows = grid_div.find_elements(
-                By.CSS_SELECTOR, "table.inner_table tr[role='radiogroup']"
-            )
+            rows = grid_div.query_selector_all("table.inner_table tr[role='radiogroup']")
             if not rows:
                 continue
 
@@ -9260,8 +9029,8 @@ def _extract_ssi_confirmit_native_grid_blocks(driver, frame_chain: list[int] | N
                 try:
                     row_label = ""
                     try:
-                        rh = row.find_element(By.CSS_SELECTOR, "td[role='rowheader']")
-                        row_label = _norm(rh.text or "")
+                        rh = row.query_selector("td[role='rowheader']")
+                        row_label = _norm(rh.inner_text() or "")
                     except Exception:
                         pass
                     if not row_label:
@@ -9269,15 +9038,13 @@ def _extract_ssi_confirmit_native_grid_blocks(driver, frame_chain: list[int] | N
 
                     question = f"{global_q} — {row_label}" if global_q else row_label
 
-                    input_cells = row.find_elements(By.CSS_SELECTOR, "td.input_cell.clickable")
+                    input_cells = row.query_selector_all("td.input_cell.clickable")
                     if len(input_cells) < 2:
                         continue
 
                     radio_name = ""
                     try:
-                        first_input = input_cells[0].find_element(
-                            By.CSS_SELECTOR, "input[type='radio']"
-                        )
+                        first_input = input_cells[0].query_selector("input[type='radio']")
                         radio_name = _norm_lc(first_input.get_attribute("name") or "")
                     except Exception:
                         pass
@@ -9295,9 +9062,7 @@ def _extract_ssi_confirmit_native_grid_blocks(driver, frame_chain: list[int] | N
 
                             click_el = None
                             try:
-                                click_el = cell.find_element(
-                                    By.CSS_SELECTOR, "div.graphical_select[role='radio']"
-                                )
+                                click_el = cell.query_selector("div.graphical_select[role='radio']")
                             except Exception:
                                 click_el = cell
 
@@ -9372,7 +9137,7 @@ def _extract_gfk_accordion_radio_rows(driver, frame_chain: list[int] | None) -> 
     blocks: list[dict] = []
 
     try:
-        containers = driver.find_elements(By.CSS_SELECTOR, "div.acc_ct")
+        containers = _pw_page(driver).query_selector_all("div.acc_ct")
     except Exception:
         return blocks
 
@@ -9381,29 +9146,22 @@ def _extract_gfk_accordion_radio_rows(driver, frame_chain: list[int] | None) -> 
 
     for container in containers:
         try:
-            acc_elements = container.find_elements(
-                By.CSS_SELECTOR,
-                "div.acc-element[question-number][statement-number]",
-            )
+            acc_elements = container.query_selector_all("div.acc-element[question-number][statement-number]")
             if len(acc_elements) < 2:
                 continue
 
             # Gate: at least one mrSingle radio must exist inside
-            gate = container.find_elements(
-                By.CSS_SELECTOR, "div.acc-element input.mrSingle[type='radio']"
-            )
+            gate = container.query_selector_all("div.acc-element input.mrSingle[type='radio']")
             if not gate:
                 continue
 
             # Main question text (span.mrQuestionText with id starting "qt")
             main_question = ""
             try:
-                q_nodes = driver.find_elements(
-                    By.CSS_SELECTOR, "span.mrQuestionText[id^='qt']"
-                )
+                q_nodes = _pw_page(driver).query_selector_all("span.mrQuestionText[id^='qt']")
                 if q_nodes:
                     main_question = _norm(
-                        q_nodes[0].text or q_nodes[0].get_attribute("innerText") or ""
+                        q_nodes[0].inner_text() or ""
                     )
             except Exception:
                 main_question = ""
@@ -9412,13 +9170,11 @@ def _extract_gfk_accordion_radio_rows(driver, frame_chain: list[int] | None) -> 
 
             for acc_el in acc_elements:
                 try:
-                    stmt_nodes = acc_el.find_elements(
-                        By.CSS_SELECTOR, "div.statement-text span.mrQuestionText"
-                    )
+                    stmt_nodes = acc_el.query_selector_all("div.statement-text span.mrQuestionText")
                     if not stmt_nodes:
                         continue
                     row_label = _norm(
-                        stmt_nodes[0].text or stmt_nodes[0].get_attribute("innerText") or ""
+                        stmt_nodes[0].inner_text() or ""
                     )
                     if not row_label:
                         continue
@@ -9426,9 +9182,7 @@ def _extract_gfk_accordion_radio_rows(driver, frame_chain: list[int] | None) -> 
                     q_num = acc_el.get_attribute("question-number") or "0"
                     s_num = acc_el.get_attribute("statement-number") or "0"
 
-                    ans_items = acc_el.find_elements(
-                        By.CSS_SELECTOR, "div.acc-answers div.acc-ans-item"
-                    )
+                    ans_items = acc_el.query_selector_all("div.acc-answers div.acc-ans-item")
                     if len(ans_items) < 2:
                         continue
 
@@ -9437,18 +9191,16 @@ def _extract_gfk_accordion_radio_rows(driver, frame_chain: list[int] | None) -> 
 
                     for item_idx, item in enumerate(ans_items):
                         try:
-                            label_nodes = item.find_elements(
-                                By.CSS_SELECTOR, "span.mrQuestionText"
-                            )
+                            label_nodes = item.query_selector_all("span.mrQuestionText")
                             if label_nodes:
                                 label_txt = _norm(
-                                    label_nodes[0].text
+                                    label_nodes[0].inner_text()
                                     or label_nodes[0].get_attribute("innerText")
                                     or ""
                                 )
                             else:
                                 label_txt = _norm(
-                                    item.text or item.get_attribute("innerText") or ""
+                                    item.inner_text() or ""
                                 )
                             if not label_txt:
                                 continue
@@ -9459,9 +9211,7 @@ def _extract_gfk_accordion_radio_rows(driver, frame_chain: list[int] | None) -> 
 
                             # Click the acc-ans-item div (Angular ng-click handler).
                             # Anchor via radio input id inside the item for maximum stability.
-                            radio_in_item = item.find_elements(
-                                By.CSS_SELECTOR, "input.mrSingle[type='radio']"
-                            )
+                            radio_in_item = item.query_selector_all("input.mrSingle[type='radio']")
                             if radio_in_item:
                                 rid = (radio_in_item[0].get_attribute("id") or "").strip()
                                 if rid:
@@ -9495,16 +9245,14 @@ def _extract_gfk_accordion_radio_rows(driver, frame_chain: list[int] | None) -> 
                     is_expanded = "border_blue" in acc_classes
                     if not is_expanded:
                         try:
-                            btn = acc_el.find_element(By.CSS_SELECTOR, "button.acc_top_button")
+                            btn = acc_el.query_selector("button.acc_top_button")
                             expand_xp = _best_xpath_for_element(driver, btn)
                         except Exception:
                             expand_xp = None
 
                     radio_name = ""
                     try:
-                        first_radio = acc_el.find_element(
-                            By.CSS_SELECTOR, "input.mrSingle[type='radio']"
-                        )
+                        first_radio = acc_el.query_selector("input.mrSingle[type='radio']")
                         radio_name = (first_radio.get_attribute("name") or "").strip()
                     except Exception:
                         pass
@@ -9584,9 +9332,7 @@ def _extract_askia_statement_list_blocks(driver, frame_chain: list[int] | None) 
 
     # Gate 1 : conteneur adc-statementList présent
     try:
-        containers = driver.find_elements(
-            By.CSS_SELECTOR, "div[class*='adc-statementList']"
-        )
+        containers = _pw_page(driver).query_selector_all("div[class*='adc-statementList']")
     except Exception:
         return blocks
 
@@ -9596,16 +9342,12 @@ def _extract_askia_statement_list_blocks(driver, frame_chain: list[int] | None) 
     for container in containers:
         try:
             # Gate 2 : au moins un responseItem[data-value]
-            response_items = container.find_elements(
-                By.CSS_SELECTOR, "div.responseItem[data-value]"
-            )
+            response_items = container.query_selector_all("div.responseItem[data-value]")
             if not response_items:
                 continue
 
             # Gate 3 : au moins un statement_text[data-id]
-            all_statements = container.find_elements(
-                By.CSS_SELECTOR, "span.statement_text[data-id]"
-            )
+            all_statements = container.query_selector_all("span.statement_text[data-id]")
             if not all_statements:
                 continue
 
@@ -9625,7 +9367,7 @@ def _extract_askia_statement_list_blocks(driver, frame_chain: list[int] | None) 
                 visible_statement = all_statements[0]
 
             current_stmt_text = _norm(
-                visible_statement.text
+                visible_statement.inner_text()
                 or visible_statement.get_attribute("innerText")
                 or ""
             )
@@ -9635,12 +9377,9 @@ def _extract_askia_statement_list_blocks(driver, frame_chain: list[int] | None) 
             # Texte de la question globale : td[class*='askia-caption'] ou td.askia-question-label
             global_question = ""
             try:
-                q_nodes = driver.find_elements(
-                    By.CSS_SELECTOR,
-                    "td.askia-question-label, td[class*='askia-caption']",
-                )
+                q_nodes = _pw_page(driver).query_selector_all("td.askia-question-label, td[class*='askia-caption']")
                 for qn in q_nodes:
-                    raw = _norm(qn.text or qn.get_attribute("innerText") or "")
+                    raw = _norm(qn.inner_text() or "")
                     if raw:
                         global_question = raw
                         break
@@ -9661,16 +9400,16 @@ def _extract_askia_statement_list_blocks(driver, frame_chain: list[int] | None) 
             for item in response_items:
                 try:
                     data_id = (item.get_attribute("data-id") or "").strip()
-                    span_nodes = item.find_elements(By.CSS_SELECTOR, "span.response_text")
+                    span_nodes = item.query_selector_all("span.response_text")
                     label_txt = ""
                     if span_nodes:
                         label_txt = _norm(
-                            span_nodes[0].text
+                            span_nodes[0].inner_text()
                             or span_nodes[0].get_attribute("innerText")
                             or ""
                         )
                     if not label_txt:
-                        label_txt = _norm(item.text or item.get_attribute("innerText") or "")
+                        label_txt = _norm(item.inner_text() or "")
                     if not label_txt:
                         continue
 
@@ -9769,14 +9508,14 @@ def _extract_qualtrics_sl_text_blocks(driver, frame_chain: list[int] | None) -> 
     blocks: list[dict] = []
 
     try:
-        containers = driver.find_elements(By.CSS_SELECTOR, "div.QuestionOuter")
+        containers = _pw_page(driver).query_selector_all("div.QuestionOuter")
     except Exception:
         return blocks
 
     for idx, container in enumerate(containers):
         # Gate strict : div.Inner.SL doit être présent
         try:
-            sl_inner = container.find_elements(By.CSS_SELECTOR, "div.Inner.SL")
+            sl_inner = container.query_selector_all("div.Inner.SL")
         except Exception:
             sl_inner = []
         if not sl_inner:
@@ -9784,10 +9523,7 @@ def _extract_qualtrics_sl_text_blocks(driver, frame_chain: list[int] | None) -> 
 
         # Un seul input[type="TEXT"][name^="QR~"] attendu
         try:
-            inputs = container.find_elements(
-                By.CSS_SELECTOR,
-                "input[type='TEXT'][name^='QR~']",
-            )
+            inputs = container.query_selector_all("input[type='TEXT'][name^='QR~']")
         except Exception:
             inputs = []
         if len(inputs) != 1:
@@ -9808,11 +9544,11 @@ def _extract_qualtrics_sl_text_blocks(driver, frame_chain: list[int] | None) -> 
             "div.QuestionText",
         ):
             try:
-                q_nodes = container.find_elements(By.CSS_SELECTOR, q_sel)
+                q_nodes = container.query_selector_all(q_sel)
             except Exception:
                 q_nodes = []
             for qn in q_nodes:
-                txt = _norm(qn.text or qn.get_attribute("innerText") or "")
+                txt = _norm(qn.inner_text() or "")
                 if txt:
                     question = txt
                     break
@@ -9892,14 +9628,14 @@ def _extract_qualtrics_form_multi_text_blocks(driver, frame_chain: list[int] | N
     blocks: list[dict] = []
 
     try:
-        containers = driver.find_elements(By.CSS_SELECTOR, "div.QuestionOuter.TE")
+        containers = _pw_page(driver).query_selector_all("div.QuestionOuter.TE")
     except Exception:
         return blocks
 
     for idx, container in enumerate(containers):
         # Gate strict : div.Inner.FORM doit être présent
         try:
-            form_inner = container.find_elements(By.CSS_SELECTOR, "div.Inner.FORM")
+            form_inner = container.query_selector_all("div.Inner.FORM")
         except Exception:
             form_inner = []
         if not form_inner:
@@ -9907,10 +9643,7 @@ def _extract_qualtrics_form_multi_text_blocks(driver, frame_chain: list[int] | N
 
         # ≥2 inputs[type="TEXT"][name^="QR~"] attendus
         try:
-            inputs = container.find_elements(
-                By.CSS_SELECTOR,
-                "input[type='TEXT'][name^='QR~']",
-            )
+            inputs = container.query_selector_all("input[type='TEXT'][name^='QR~']")
         except Exception:
             inputs = []
         if len(inputs) < 2:
@@ -9925,11 +9658,11 @@ def _extract_qualtrics_form_multi_text_blocks(driver, frame_chain: list[int] | N
             "div.QuestionText",
         ):
             try:
-                q_nodes = container.find_elements(By.CSS_SELECTOR, q_sel)
+                q_nodes = container.query_selector_all(q_sel)
             except Exception:
                 q_nodes = []
             for qn in q_nodes:
-                txt = _norm(qn.text or qn.get_attribute("innerText") or "")
+                txt = _norm(qn.inner_text() or "")
                 if txt:
                     question = txt
                     break
@@ -10023,21 +9756,21 @@ def _extract_qualtrics_te_matrix_multi_text_blocks(driver, frame_chain: list[int
     blocks: list[dict] = []
 
     try:
-        containers = driver.find_elements(By.CSS_SELECTOR, "div.QuestionOuter.Matrix.mf")
+        containers = _pw_page(driver).query_selector_all("div.QuestionOuter.Matrix.mf")
     except Exception:
         return blocks
 
     for idx, container in enumerate(containers):
         # Gate strict : div.Inner.TE doit être présent, div.Inner.FORM absent
         try:
-            te_inner = container.find_elements(By.CSS_SELECTOR, "div.Inner.TE")
+            te_inner = container.query_selector_all("div.Inner.TE")
         except Exception:
             te_inner = []
         if not te_inner:
             continue
 
         try:
-            form_inner = container.find_elements(By.CSS_SELECTOR, "div.Inner.FORM")
+            form_inner = container.query_selector_all("div.Inner.FORM")
         except Exception:
             form_inner = []
         if form_inner:
@@ -10045,10 +9778,7 @@ def _extract_qualtrics_te_matrix_multi_text_blocks(driver, frame_chain: list[int
 
         # ≥2 inputs text dans tr.ChoiceRow de table.ChoiceStructure
         try:
-            inputs = container.find_elements(
-                By.CSS_SELECTOR,
-                "table.ChoiceStructure tbody tr.ChoiceRow td input[type='text'][name^='QR~']",
-            )
+            inputs = container.query_selector_all("table.ChoiceStructure tbody tr.ChoiceRow td input[type='text'][name^='QR~']")
         except Exception:
             inputs = []
         if len(inputs) < 2:
@@ -10063,11 +9793,11 @@ def _extract_qualtrics_te_matrix_multi_text_blocks(driver, frame_chain: list[int
             "div.QuestionText",
         ):
             try:
-                q_nodes = container.find_elements(By.CSS_SELECTOR, q_sel)
+                q_nodes = container.query_selector_all(q_sel)
             except Exception:
                 q_nodes = []
             for qn in q_nodes:
-                txt = _norm(qn.text or qn.get_attribute("innerText") or "")
+                txt = _norm(qn.inner_text() or "")
                 if txt:
                     question = txt
                     break
@@ -10168,7 +9898,7 @@ def _extract_confirmit_cf_single_choice_blocks(driver, frame_chain: list[int] | 
 
     # Gate 1: au moins un div.cf-question--single présent
     try:
-        q_containers = driver.find_elements(By.CSS_SELECTOR, "div.cf-question--single")
+        q_containers = _pw_page(driver).query_selector_all("div.cf-question--single")
     except Exception:
         return []
     if not q_containers:
@@ -10178,7 +9908,7 @@ def _extract_confirmit_cf_single_choice_blocks(driver, frame_chain: list[int] | 
     gate_ok = False
     for qc in q_containers:
         try:
-            if qc.find_elements(By.CSS_SELECTOR, "div.cf-list div.cf-radio[role='radio']"):
+            if qc.query_selector_all("div.cf-list div.cf-radio[role='radio']"):
                 gate_ok = True
                 break
         except Exception:
@@ -10192,10 +9922,7 @@ def _extract_confirmit_cf_single_choice_blocks(driver, frame_chain: list[int] | 
         try:
             # Exclure les containers imbriqués dans une table.cf-table-layout (grids)
             try:
-                in_table = qc.find_elements(
-                    By.XPATH,
-                    "ancestor::table[contains(concat(' ',normalize-space(@class),' '),' cf-table-layout ')]"
-                )
+                in_table = qc.query_selector_all("xpath=" + "ancestor::table[contains(concat(' ',normalize-space(@class),' '),' cf-table-layout ')]")
                 if in_table:
                     continue
             except Exception:
@@ -10204,9 +9931,9 @@ def _extract_confirmit_cf_single_choice_blocks(driver, frame_chain: list[int] | 
             # Texte de la question depuis div.cf-question__text
             question = ""
             try:
-                q_text_el = qc.find_element(By.CSS_SELECTOR, "div.cf-question__text")
+                q_text_el = qc.query_selector("div.cf-question__text")
                 question = _norm(
-                    q_text_el.get_attribute("textContent") or q_text_el.text or ""
+                    q_text_el.get_attribute("textContent") or q_text_el.inner_text() or ""
                 )
             except Exception:
                 pass
@@ -10215,9 +9942,7 @@ def _extract_confirmit_cf_single_choice_blocks(driver, frame_chain: list[int] | 
 
             # Options depuis les items de la liste verticale
             try:
-                list_items = qc.find_elements(
-                    By.CSS_SELECTOR, "div.cf-list div.cf-list__item"
-                )
+                list_items = qc.query_selector_all("div.cf-list div.cf-list__item")
             except Exception:
                 list_items = []
             if not list_items:
@@ -10231,17 +9956,17 @@ def _extract_confirmit_cf_single_choice_blocks(driver, frame_chain: list[int] | 
                     # Texte de l'option depuis div.cf-radio-answer__text
                     opt_text = ""
                     try:
-                        txt_el = item.find_element(By.CSS_SELECTOR, "div.cf-radio-answer__text")
+                        txt_el = item.query_selector("div.cf-radio-answer__text")
                         opt_text = _norm(
-                            txt_el.get_attribute("textContent") or txt_el.text or ""
+                            txt_el.get_attribute("textContent") or txt_el.inner_text() or ""
                         )
                     except Exception:
                         pass
                     if not opt_text:
                         # Fallback : texte brut du cf-radio-answer
                         try:
-                            ra = item.find_element(By.CSS_SELECTOR, "div.cf-radio-answer")
-                            opt_text = _norm(ra.get_attribute("textContent") or ra.text or "")
+                            ra = item.query_selector("div.cf-radio-answer")
+                            opt_text = _norm(ra.get_attribute("textContent") or ra.inner_text() or "")
                         except Exception:
                             pass
                     if not opt_text:
@@ -10250,7 +9975,7 @@ def _extract_confirmit_cf_single_choice_blocks(driver, frame_chain: list[int] | 
                     # Cible du clic : div.cf-radio[role='radio']
                     ctrl_id = ""
                     try:
-                        ctrl = item.find_element(By.CSS_SELECTOR, "div.cf-radio[role='radio']")
+                        ctrl = item.query_selector("div.cf-radio[role='radio']")
                         ctrl_id = (ctrl.get_attribute("id") or "").strip()
                     except Exception:
                         pass
@@ -10337,7 +10062,7 @@ def _extract_confirmit_cf_numeric_list_blocks(driver, frame_chain: list[int] | N
     blocks: list[dict] = []
 
     try:
-        containers = driver.find_elements(By.CSS_SELECTOR, "div.cf-question--numeric-list")
+        containers = _pw_page(driver).query_selector_all("div.cf-question--numeric-list")
     except Exception:
         return blocks
     if not containers:
@@ -10347,8 +10072,8 @@ def _extract_confirmit_cf_numeric_list_blocks(driver, frame_chain: list[int] | N
         try:
             question = ""
             try:
-                q_el = qc.find_element(By.CSS_SELECTOR, "div.cf-question__text")
-                question = _norm(q_el.get_attribute("textContent") or q_el.text or "")
+                q_el = qc.query_selector("div.cf-question__text")
+                question = _norm(q_el.get_attribute("textContent") or q_el.inner_text() or "")
             except Exception:
                 pass
             if not question:
@@ -10359,7 +10084,7 @@ def _extract_confirmit_cf_numeric_list_blocks(driver, frame_chain: list[int] | N
             # Detect multi-sum constraint: auto-sum row present ⟹ répartition totale=100
             multi_sum_total: int | None = None
             try:
-                if qc.find_elements(By.CSS_SELECTOR, "div.cf-numeric-list-auto-sum"):
+                if qc.query_selector_all("div.cf-numeric-list-auto-sum"):
                     multi_sum_total = 100
             except Exception:
                 pass
@@ -10368,7 +10093,7 @@ def _extract_confirmit_cf_numeric_list_blocks(driver, frame_chain: list[int] | N
             # Fallback to a single entry using inputs[0] when no cf-numeric-list-answer wrappers exist.
             row_pairs: list[tuple[str, object]] = []
             try:
-                answer_rows = qc.find_elements(By.CSS_SELECTOR, "div.cf-numeric-list-answer")
+                answer_rows = qc.query_selector_all("div.cf-numeric-list-answer")
             except Exception:
                 answer_rows = []
 
@@ -10377,18 +10102,18 @@ def _extract_confirmit_cf_numeric_list_blocks(driver, frame_chain: list[int] | N
                     try:
                         row_label = ""
                         try:
-                            label_el = row.find_element(By.CSS_SELECTOR, "div.cf-numeric-list-answer__text")
-                            row_label = _norm(label_el.get_attribute("textContent") or label_el.text or "")
+                            label_el = row.query_selector("div.cf-numeric-list-answer__text")
+                            row_label = _norm(label_el.get_attribute("textContent") or label_el.inner_text() or "")
                         except Exception:
                             pass
-                        inp = row.find_element(By.CSS_SELECTOR, "input[type='number']")
+                        inp = row.query_selector("input[type='number']")
                         row_pairs.append((row_label, inp))
                     except Exception:
                         continue
             else:
                 # Fallback: single input without row wrapper (e.g. age question variant)
                 try:
-                    raw_inputs = qc.find_elements(By.CSS_SELECTOR, "input[type='number']")
+                    raw_inputs = qc.query_selector_all("input[type='number']")
                     if raw_inputs:
                         row_pairs.append(("", raw_inputs[0]))
                 except Exception:
@@ -10503,7 +10228,7 @@ def _extract_confirmit_cf_open_list_blocks(driver, frame_chain: list[int] | None
     blocks: list[dict] = []
 
     try:
-        containers = driver.find_elements(By.CSS_SELECTOR, "div.cf-question--open-list")
+        containers = _pw_page(driver).query_selector_all("div.cf-question--open-list")
     except Exception:
         return blocks
     if not containers:
@@ -10511,7 +10236,7 @@ def _extract_confirmit_cf_open_list_blocks(driver, frame_chain: list[int] | None
 
     for qc in containers[:20]:
         try:
-            inputs = qc.find_elements(By.CSS_SELECTOR, "input[type='text']")
+            inputs = qc.query_selector_all("input[type='text']")
             if not inputs:
                 continue
             inp = inputs[0]
@@ -10523,17 +10248,16 @@ def _extract_confirmit_cf_open_list_blocks(driver, frame_chain: list[int] | None
             # Texte de la question : priorité au cf-question__text interne
             question = ""
             try:
-                q_el = qc.find_element(By.CSS_SELECTOR, "div.cf-question__text")
-                question = _norm(q_el.get_attribute("textContent") or q_el.text or "")
+                q_el = qc.query_selector("div.cf-question__text")
+                question = _norm(q_el.get_attribute("textContent") or q_el.inner_text() or "")
             except Exception:
                 pass
 
             # Fallback : libellé dans le frère cf-question--info précédent
             if not question:
                 try:
-                    question = driver.execute_script(
-                        """
-                        var el = arguments[0];
+                    question = _pw_page(driver).evaluate("""(_el) => {
+                        var el = _el;
                         var prev = el.previousElementSibling;
                         while (prev) {
                             if (prev.classList.contains('cf-question--info')) {
@@ -10543,9 +10267,7 @@ def _extract_confirmit_cf_open_list_blocks(driver, frame_chain: list[int] | None
                             prev = prev.previousElementSibling;
                         }
                         return '';
-                        """,
-                        qc,
-                    ) or ""
+}""", qc) or ""
                     question = _norm(question)
                 except Exception:
                     pass
@@ -10642,7 +10364,7 @@ def _extract_confirmit_cf_single_image_choice_blocks(driver, frame_chain: list[i
 
     # Gate 1 : au moins un div.cf-question--single présent
     try:
-        q_containers = driver.find_elements(By.CSS_SELECTOR, "div.cf-question--single")
+        q_containers = _pw_page(driver).query_selector_all("div.cf-question--single")
     except Exception:
         return []
     if not q_containers:
@@ -10652,8 +10374,8 @@ def _extract_confirmit_cf_single_image_choice_blocks(driver, frame_chain: list[i
     gate_ok = False
     for qc in q_containers:
         try:
-            if (qc.find_elements(By.CSS_SELECTOR, "div.cf-image-answer")
-                    and qc.find_elements(By.CSS_SELECTOR, "div.cf-image[role='radio']")):
+            if (qc.query_selector_all("div.cf-image-answer")
+                    and qc.query_selector_all("div.cf-image[role='radio']")):
                 gate_ok = True
                 break
         except Exception:
@@ -10667,7 +10389,7 @@ def _extract_confirmit_cf_single_image_choice_blocks(driver, frame_chain: list[i
         try:
             # Ignorer les conteneurs sans image-answer
             try:
-                img_answers = qc.find_elements(By.CSS_SELECTOR, "div.cf-image-answer")
+                img_answers = qc.query_selector_all("div.cf-image-answer")
             except Exception:
                 img_answers = []
             if not img_answers:
@@ -10675,7 +10397,7 @@ def _extract_confirmit_cf_single_image_choice_blocks(driver, frame_chain: list[i
 
             # Vérifier présence de div.cf-image[role='radio'] (gate discriminante)
             try:
-                ctrl_els = qc.find_elements(By.CSS_SELECTOR, "div.cf-image[role='radio']")
+                ctrl_els = qc.query_selector_all("div.cf-image[role='radio']")
             except Exception:
                 ctrl_els = []
             if not ctrl_els:
@@ -10684,8 +10406,8 @@ def _extract_confirmit_cf_single_image_choice_blocks(driver, frame_chain: list[i
             # Texte de la question
             question = ""
             try:
-                q_text_el = qc.find_element(By.CSS_SELECTOR, "div.cf-question__text")
-                question = _norm(q_text_el.get_attribute("textContent") or q_text_el.text or "")
+                q_text_el = qc.query_selector("div.cf-question__text")
+                question = _norm(q_text_el.get_attribute("textContent") or q_text_el.inner_text() or "")
             except Exception:
                 pass
             if not question:
@@ -10699,20 +10421,20 @@ def _extract_confirmit_cf_single_image_choice_blocks(driver, frame_chain: list[i
                     # Texte : priorité div.cf-image-answer__text, fallback aria-label du contrôle
                     opt_text = ""
                     try:
-                        txt_el = item.find_element(By.CSS_SELECTOR, "div.cf-image-answer__text")
-                        opt_text = _norm(txt_el.get_attribute("textContent") or txt_el.text or "")
+                        txt_el = item.query_selector("div.cf-image-answer__text")
+                        opt_text = _norm(txt_el.get_attribute("textContent") or txt_el.inner_text() or "")
                     except Exception:
                         pass
                     if not opt_text:
                         try:
-                            ctrl = item.find_element(By.CSS_SELECTOR, "div.cf-image[role='radio']")
+                            ctrl = item.query_selector("div.cf-image[role='radio']")
                             opt_text = _norm(ctrl.get_attribute("aria-label") or "")
                         except Exception:
                             pass
                     if not opt_text:
                         # Fallback : alt de l'image
                         try:
-                            img_el = item.find_element(By.CSS_SELECTOR, "img")
+                            img_el = item.query_selector("img")
                             opt_text = _norm(img_el.get_attribute("alt") or "")
                         except Exception:
                             pass
@@ -10722,7 +10444,7 @@ def _extract_confirmit_cf_single_image_choice_blocks(driver, frame_chain: list[i
                     # Cible du clic : div.cf-image[role='radio']
                     ctrl_id = ""
                     try:
-                        ctrl = item.find_element(By.CSS_SELECTOR, "div.cf-image[role='radio']")
+                        ctrl = item.query_selector("div.cf-image[role='radio']")
                         ctrl_id = (ctrl.get_attribute("id") or "").strip()
                     except Exception:
                         pass
@@ -10817,7 +10539,7 @@ def _extract_confirmit_cf_multi_choice_blocks(driver, frame_chain: list[int] | N
 
     # Gate 1 : au moins un div.cf-question--multi présent
     try:
-        q_containers = driver.find_elements(By.CSS_SELECTOR, "div.cf-question--multi")
+        q_containers = _pw_page(driver).query_selector_all("div.cf-question--multi")
     except Exception:
         return []
     if not q_containers:
@@ -10827,7 +10549,7 @@ def _extract_confirmit_cf_multi_choice_blocks(driver, frame_chain: list[int] | N
     gate_ok = False
     for qc in q_containers:
         try:
-            if qc.find_elements(By.CSS_SELECTOR, "div.cf-checkbox[role='checkbox']"):
+            if qc.query_selector_all("div.cf-checkbox[role='checkbox']"):
                 gate_ok = True
                 break
         except Exception:
@@ -10841,7 +10563,7 @@ def _extract_confirmit_cf_multi_choice_blocks(driver, frame_chain: list[int] | N
         try:
             # Vérifier présence du gate discriminant dans ce conteneur
             try:
-                checkboxes = qc.find_elements(By.CSS_SELECTOR, "div.cf-checkbox[role='checkbox']")
+                checkboxes = qc.query_selector_all("div.cf-checkbox[role='checkbox']")
             except Exception:
                 checkboxes = []
             if not checkboxes:
@@ -10850,8 +10572,8 @@ def _extract_confirmit_cf_multi_choice_blocks(driver, frame_chain: list[int] | N
             # Texte de la question
             question = ""
             try:
-                q_text_el = qc.find_element(By.CSS_SELECTOR, "div.cf-question__text")
-                question = _norm(q_text_el.get_attribute("textContent") or q_text_el.text or "")
+                q_text_el = qc.query_selector("div.cf-question__text")
+                question = _norm(q_text_el.get_attribute("textContent") or q_text_el.inner_text() or "")
             except Exception:
                 pass
             if not question:
@@ -10859,7 +10581,7 @@ def _extract_confirmit_cf_multi_choice_blocks(driver, frame_chain: list[int] | N
 
             # Items de la liste : cf-checkbox-answer ET cf-radio-answer (option exclusive)
             try:
-                list_items = qc.find_elements(By.CSS_SELECTOR, "div.cf-list div.cf-list__item")
+                list_items = qc.query_selector_all("div.cf-list div.cf-list__item")
             except Exception:
                 list_items = []
             if not list_items:
@@ -10875,13 +10597,13 @@ def _extract_confirmit_cf_multi_choice_blocks(driver, frame_chain: list[int] | N
 
                     # Priorité : cf-checkbox-answer
                     try:
-                        txt_el = item.find_element(By.CSS_SELECTOR, "div.cf-checkbox-answer__text")
-                        opt_text = _norm(txt_el.get_attribute("textContent") or txt_el.text or "")
+                        txt_el = item.query_selector("div.cf-checkbox-answer__text")
+                        opt_text = _norm(txt_el.get_attribute("textContent") or txt_el.inner_text() or "")
                     except Exception:
                         pass
                     if opt_text:
                         try:
-                            ctrl = item.find_element(By.CSS_SELECTOR, "div.cf-checkbox[role='checkbox']")
+                            ctrl = item.query_selector("div.cf-checkbox[role='checkbox']")
                             ctrl_id = (ctrl.get_attribute("id") or "").strip()
                         except Exception:
                             pass
@@ -10889,18 +10611,18 @@ def _extract_confirmit_cf_multi_choice_blocks(driver, frame_chain: list[int] | N
                     # Fallback : cf-radio-answer avec role='checkbox' (option exclusive)
                     if not opt_text:
                         try:
-                            txt_el = item.find_element(By.CSS_SELECTOR, "div.cf-radio-answer__text")
-                            opt_text = _norm(txt_el.get_attribute("textContent") or txt_el.text or "")
+                            txt_el = item.query_selector("div.cf-radio-answer__text")
+                            opt_text = _norm(txt_el.get_attribute("textContent") or txt_el.inner_text() or "")
                         except Exception:
                             pass
                         if opt_text:
                             try:
-                                ctrl = item.find_element(By.CSS_SELECTOR, "div.cf-radio[role='checkbox']")
+                                ctrl = item.query_selector("div.cf-radio[role='checkbox']")
                                 ctrl_id = (ctrl.get_attribute("id") or "").strip()
                             except Exception:
                                 # Fallback : tout élément avec role='checkbox' dans l'item
                                 try:
-                                    ctrl = item.find_element(By.CSS_SELECTOR, "[role='checkbox']")
+                                    ctrl = item.query_selector("[role='checkbox']")
                                     ctrl_id = (ctrl.get_attribute("id") or "").strip()
                                 except Exception:
                                     pass
@@ -11000,17 +10722,14 @@ def _extract_askia_myresponse_radio_blocks(driver, frame_chain: list[int] | None
  
     # Gate 1 : form Askia présent
     try:
-        if not driver.find_elements(By.CSS_SELECTOR, "form[name='FormAskia']"):
+        if not _pw_page(driver).query_selector_all("form[name='FormAskia']"):
             return []
     except Exception:
         return []
  
     # Gate 2 : au moins 2 td myresponse avec input radio
     try:
-        sample = driver.find_elements(
-            By.CSS_SELECTOR,
-            "td[class*='myresponse'] input[type='radio']",
-        )
+        sample = _pw_page(driver).query_selector_all("td[class*='myresponse'] input[type='radio']")
     except Exception:
         return []
  
@@ -11019,10 +10738,7 @@ def _extract_askia_myresponse_radio_blocks(driver, frame_chain: list[int] | None
  
     # Récupérer tous les td cliquables (myresponse*) portant un input radio
     try:
-        response_tds = driver.find_elements(
-            By.CSS_SELECTOR,
-            "td[class*='myresponse']",
-        )
+        response_tds = _pw_page(driver).query_selector_all("td[class*='myresponse']")
     except Exception:
         return []
  
@@ -11030,7 +10746,7 @@ def _extract_askia_myresponse_radio_blocks(driver, frame_chain: list[int] | None
     grouped: dict[str, list] = {}  # name -> list of td elements
     for td in response_tds:
         try:
-            radios = td.find_elements(By.CSS_SELECTOR, "input[type='radio'][name]")
+            radios = td.query_selector_all("input[type='radio'][name]")
             if not radios:
                 continue
             name = (radios[0].get_attribute("name") or "").strip()
@@ -11046,12 +10762,9 @@ def _extract_askia_myresponse_radio_blocks(driver, frame_chain: list[int] | None
     # Texte de question global : td askia-question-label ou askia-caption
     question = ""
     try:
-        q_nodes = driver.find_elements(
-            By.CSS_SELECTOR,
-            "td.askia-question-label, td[class*='askia-caption'], td[class*='askia-question-label']",
-        )
+        q_nodes = _pw_page(driver).query_selector_all("td.askia-question-label, td[class*='askia-caption'], td[class*='askia-question-label']")
         for qn in q_nodes:
-            txt = _norm(qn.text or qn.get_attribute("innerText") or "")
+            txt = _norm(qn.inner_text() or "")
             if txt and len(txt) >= 3:
                 question = txt
                 break
@@ -11070,7 +10783,7 @@ def _extract_askia_myresponse_radio_blocks(driver, frame_chain: list[int] | None
         for td in tds:
             try:
                 # Extraire la valeur et le libellé de l'option
-                radios = td.find_elements(By.CSS_SELECTOR, "input[type='radio']")
+                radios = td.query_selector_all("input[type='radio']")
                 if not radios:
                     continue
                 radio = radios[0]
@@ -11080,16 +10793,16 @@ def _extract_askia_myresponse_radio_blocks(driver, frame_chain: list[int] | None
                 # Texte de l'option : span[id*="cpt"] en priorité, sinon innerText du td
                 label_txt = ""
                 try:
-                    spans = td.find_elements(By.CSS_SELECTOR, "span[id*='cpt']")
+                    spans = td.query_selector_all("span[id*='cpt']")
                     if spans:
                         label_txt = _norm(
-                            spans[0].text or spans[0].get_attribute("innerText") or ""
+                            spans[0].inner_text() or ""
                         )
                 except Exception:
                     pass
  
                 if not label_txt:
-                    label_txt = _norm(td.text or td.get_attribute("innerText") or "")
+                    label_txt = _norm(td.inner_text() or "")
  
                 if not label_txt:
                     continue
@@ -11205,17 +10918,14 @@ def _extract_askia_myresponse_checkbox_blocks(driver, frame_chain: list[int] | N
 
     # Gate 1 : form Askia présent
     try:
-        if not driver.find_elements(By.CSS_SELECTOR, "form[name='FormAskia']"):
+        if not _pw_page(driver).query_selector_all("form[name='FormAskia']"):
             return []
     except Exception:
         return []
 
     # Gate 2 : au moins 2 td myresponse avec input checkbox name^="chk"
     try:
-        sample = driver.find_elements(
-            By.CSS_SELECTOR,
-            "td[class*='myresponse'] input[type='checkbox'][name]",
-        )
+        sample = _pw_page(driver).query_selector_all("td[class*='myresponse'] input[type='checkbox'][name]")
     except Exception:
         return []
 
@@ -11228,10 +10938,7 @@ def _extract_askia_myresponse_checkbox_blocks(driver, frame_chain: list[int] | N
 
     # Récupérer tous les td myresponse* portant un input checkbox name^="chk"
     try:
-        response_tds = driver.find_elements(
-            By.CSS_SELECTOR,
-            "td[class*='myresponse']",
-        )
+        response_tds = _pw_page(driver).query_selector_all("td[class*='myresponse']")
     except Exception:
         return []
 
@@ -11240,9 +10947,7 @@ def _extract_askia_myresponse_checkbox_blocks(driver, frame_chain: list[int] | N
     grouped: dict[str, list] = {}  # prefix -> list of td elements
     for td in response_tds:
         try:
-            boxes = td.find_elements(
-                By.CSS_SELECTOR, "input[type='checkbox'][name]"
-            )
+            boxes = td.query_selector_all("input[type='checkbox'][name]")
             if not boxes:
                 continue
             raw_name = (boxes[0].get_attribute("name") or "").strip()
@@ -11262,12 +10967,9 @@ def _extract_askia_myresponse_checkbox_blocks(driver, frame_chain: list[int] | N
     # Texte de question global : td askia-question-label ou askia-caption
     question = ""
     try:
-        q_nodes = driver.find_elements(
-            By.CSS_SELECTOR,
-            "td.askia-question-label, td[class*='askia-caption'], td[class*='askia-question-label']",
-        )
+        q_nodes = _pw_page(driver).query_selector_all("td.askia-question-label, td[class*='askia-caption'], td[class*='askia-question-label']")
         for qn in q_nodes:
-            txt = _norm(qn.text or qn.get_attribute("innerText") or "")
+            txt = _norm(qn.inner_text() or "")
             if txt and len(txt) >= 3:
                 question = txt
                 break
@@ -11285,7 +10987,7 @@ def _extract_askia_myresponse_checkbox_blocks(driver, frame_chain: list[int] | N
 
         for td in tds:
             try:
-                boxes = td.find_elements(By.CSS_SELECTOR, "input[type='checkbox']")
+                boxes = td.query_selector_all("input[type='checkbox']")
                 if not boxes:
                     continue
                 box = boxes[0]
@@ -11295,16 +10997,16 @@ def _extract_askia_myresponse_checkbox_blocks(driver, frame_chain: list[int] | N
                 # Texte de l'option : span[id*="cpt"] en priorité, sinon innerText du td
                 label_txt = ""
                 try:
-                    spans = td.find_elements(By.CSS_SELECTOR, "span[id*='cpt']")
+                    spans = td.query_selector_all("span[id*='cpt']")
                     if spans:
                         label_txt = _norm(
-                            spans[0].text or spans[0].get_attribute("innerText") or ""
+                            spans[0].inner_text() or ""
                         )
                 except Exception:
                     pass
 
                 if not label_txt:
-                    label_txt = _norm(td.text or td.get_attribute("innerText") or "")
+                    label_txt = _norm(td.inner_text() or "")
 
                 if not label_txt:
                     continue
@@ -11425,16 +11127,14 @@ def _extract_askia_ranking_isotope_blocks(driver, frame_chain: list[int] | None)
 
     # Gate 1 : form Askia présent
     try:
-        if not driver.find_elements(By.CSS_SELECTOR, "form[name='FormAskia']"):
+        if not _pw_page(driver).query_selector_all("form[name='FormAskia']"):
             return []
     except Exception:
         return []
 
     # Gate 2 : conteneur adc-ranking-isotope présent
     try:
-        containers = driver.find_elements(
-            By.CSS_SELECTOR, "div[class*='adc-ranking-isotope']"
-        )
+        containers = _pw_page(driver).query_selector_all("div[class*='adc-ranking-isotope']")
     except Exception:
         return []
 
@@ -11449,9 +11149,7 @@ def _extract_askia_ranking_isotope_blocks(driver, frame_chain: list[int] | None)
 
             # Gate 3 : au moins 2 div.statement[data-value] avec span.statement_text
             try:
-                statement_divs = container.find_elements(
-                    By.CSS_SELECTOR, "div.statement[data-value]"
-                )
+                statement_divs = container.query_selector_all("div.statement[data-value]")
             except Exception:
                 continue
 
@@ -11471,16 +11169,16 @@ def _extract_askia_ranking_isotope_blocks(driver, frame_chain: list[int] | None)
                     # Texte depuis span.statement_text en priorité
                     label_txt = ""
                     try:
-                        spans = div.find_elements(By.CSS_SELECTOR, "span.statement_text")
+                        spans = div.query_selector_all("span.statement_text")
                         if spans:
                             label_txt = _norm(
-                                spans[0].text or spans[0].get_attribute("innerText") or ""
+                                spans[0].inner_text() or ""
                             )
                     except Exception:
                         pass
 
                     if not label_txt:
-                        label_txt = _norm(div.text or div.get_attribute("innerText") or "")
+                        label_txt = _norm(div.inner_text() or "")
 
                     if not label_txt:
                         continue
@@ -11515,24 +11213,18 @@ def _extract_askia_ranking_isotope_blocks(driver, frame_chain: list[int] | None)
             # Question depuis td.askia-question-label / td[class*='askia-caption']
             question = ""
             try:
-                q_nodes = driver.find_elements(
-                    By.CSS_SELECTOR,
-                    "td.askia-question-label, td[class*='askia-caption'], "
-                    "td[class*='askia-question-label']",
-                )
+                q_nodes = _pw_page(driver).query_selector_all("td.askia-question-label, td[class*='askia-caption'], "
+                    "td[class*='askia-question-label']")
                 for qn in q_nodes:
                     # Exclure le contenu du span#indic (instruction de cardinalité)
-                    txt = _norm(driver.execute_script(
-                        """
-                        const td = arguments[0];
+                    txt = _norm(_pw_page(driver).evaluate("""(_el) => {
+                        const td = _el;
                         if (!td) return '';
                         const clone = td.cloneNode(true);
                         const indic = clone.querySelector('#indic, span[id="indic"]');
                         if (indic) indic.remove();
                         return (clone.innerText || clone.textContent || '').replace(/\\s+/g, ' ').trim();
-                        """,
-                        qn,
-                    ) or "")
+}""", qn) or "")
                     if txt and len(txt) >= 3:
                         question = txt
                         break
@@ -11545,9 +11237,8 @@ def _extract_askia_ranking_isotope_blocks(driver, frame_chain: list[int] | None)
             # max_select : lire setMax dans le script inline, fallback len(options)
             max_select = len(options)
             try:
-                set_max_raw = driver.execute_script(
-                    """
-                    const cid = arguments[0];
+                set_max_raw = _pw_page(driver).evaluate("""(_el) => {
+                    const cid = _el;
                     if (!cid) return null;
                     // Chercher setMax dans le texte des scripts inline
                     const scripts = document.querySelectorAll('script');
@@ -11557,9 +11248,7 @@ def _extract_askia_ranking_isotope_blocks(driver, frame_chain: list[int] | None)
                         if (m) return parseInt(m[1], 10);
                     }
                     return null;
-                    """,
-                    container_id,
-                )
+}""", container_id)
                 if set_max_raw and isinstance(set_max_raw, (int, float)) and int(set_max_raw) >= 1:
                     max_select = int(set_max_raw)
             except Exception:
@@ -11657,14 +11346,14 @@ def _extract_askia_adc_slider_blocks(driver, frame_chain: list[int] | None) -> l
 
     # Gate 1 : form Askia
     try:
-        if not driver.find_elements(By.CSS_SELECTOR, "form[name='FormAskia']"):
+        if not _pw_page(driver).query_selector_all("form[name='FormAskia']"):
             return blocks
     except Exception:
         return blocks
 
     # Gate 2 : au moins un adc-slider avec handle
     try:
-        containers = driver.find_elements(By.CSS_SELECTOR, "div.adc-slider")
+        containers = _pw_page(driver).query_selector_all("div.adc-slider")
     except Exception:
         return blocks
 
@@ -11676,9 +11365,7 @@ def _extract_askia_adc_slider_blocks(driver, frame_chain: list[int] | None) -> l
     for container in containers:
         try:
             # input hidden portant la valeur de réponse
-            hidden_inputs = container.find_elements(
-                By.CSS_SELECTOR, "input[type='hidden'][name]"
-            )
+            hidden_inputs = container.query_selector_all("input[type='hidden'][name]")
             if not hidden_inputs:
                 continue
             hidden_input = hidden_inputs[0]
@@ -11688,7 +11375,7 @@ def _extract_askia_adc_slider_blocks(driver, frame_chain: list[int] | None) -> l
                 continue
 
             # Gate : handle noUiSlider présent (confirme que c'est bien un slider actif)
-            if not container.find_elements(By.CSS_SELECTOR, "div.noUi-handle"):
+            if not container.query_selector_all("div.noUi-handle"):
                 continue
 
             container_id = (container.get_attribute("id") or "").strip()
@@ -11697,15 +11384,11 @@ def _extract_askia_adc_slider_blocks(driver, frame_chain: list[int] | None) -> l
             sub_question = ""
             try:
                 # Cherche le td.askia-control qui contient ce container
-                control_td = driver.execute_script(
-                    "return arguments[0].closest('td[class*=\"askia-control\"]');",
-                    container,
-                )
+                control_td = container.evaluate("(el) => el.closest('td[class*=\"askia-control\"]')")
                 if control_td:
                     # Remonte au tr, puis cherche le tr précédent avec td.askia-question-label
-                    sub_question = driver.execute_script(
-                        """
-                        var td = arguments[0];
+                    sub_question = _pw_page(driver).evaluate("""(_el) => {
+                        var td = _el;
                         var tr = td.closest('tr');
                         if (!tr) return '';
                         var prev = tr.previousElementSibling;
@@ -11719,9 +11402,7 @@ def _extract_askia_adc_slider_blocks(driver, frame_chain: list[int] | None) -> l
                             prev = prev.previousElementSibling;
                         }
                         return '';
-                        """,
-                        control_td,
-                    ) or ""
+}""", control_td) or ""
                     sub_question = _norm(sub_question)
             except Exception:
                 sub_question = ""
@@ -11729,12 +11410,9 @@ def _extract_askia_adc_slider_blocks(driver, frame_chain: list[int] | None) -> l
             # ── Question globale (instruction commune en tête de page) ──
             global_question = ""
             try:
-                q_nodes = driver.find_elements(
-                    By.CSS_SELECTOR,
-                    "td.askia-question-label, td[class*='askia-caption']",
-                )
+                q_nodes = _pw_page(driver).query_selector_all("td.askia-question-label, td[class*='askia-caption']")
                 for qn in q_nodes:
-                    raw = _norm(qn.text or qn.get_attribute("innerText") or "")
+                    raw = _norm(qn.inner_text() or "")
                     if raw and raw != sub_question:
                         global_question = raw
                         break
@@ -11752,15 +11430,15 @@ def _extract_askia_adc_slider_blocks(driver, frame_chain: list[int] | None) -> l
             left_label = ""
             right_label = ""
             try:
-                ll_els = container.find_elements(By.CSS_SELECTOR, "div.leftLabel")
+                ll_els = container.query_selector_all("div.leftLabel")
                 if ll_els:
-                    left_label = _norm(ll_els[0].text or ll_els[0].get_attribute("innerText") or "")
+                    left_label = _norm(ll_els[0].inner_text() or "")
             except Exception:
                 pass
             try:
-                rl_els = container.find_elements(By.CSS_SELECTOR, "div.rightLabel")
+                rl_els = container.query_selector_all("div.rightLabel")
                 if rl_els:
-                    right_label = _norm(rl_els[0].text or rl_els[0].get_attribute("innerText") or "")
+                    right_label = _norm(rl_els[0].inner_text() or "")
             except Exception:
                 pass
 
@@ -11768,9 +11446,9 @@ def _extract_askia_adc_slider_blocks(driver, frame_chain: list[int] | None) -> l
             dk_text = ""
             dk_data_value = ""
             try:
-                dk_els = container.find_elements(By.CSS_SELECTOR, "div.dk[data-value]")
+                dk_els = container.query_selector_all("div.dk[data-value]")
                 if dk_els:
-                    dk_text = _norm(dk_els[0].text or dk_els[0].get_attribute("innerText") or "")
+                    dk_text = _norm(dk_els[0].inner_text() or "")
                     dk_data_value = (dk_els[0].get_attribute("data-value") or "").strip()
             except Exception:
                 pass
@@ -11923,7 +11601,7 @@ def _extract_confirmit_cf_ranking_blocks(driver, frame_chain: list[int] | None) 
     blocks: list[dict] = []
 
     try:
-        containers = driver.find_elements(By.CSS_SELECTOR, "div.cf-question--ranking")
+        containers = _pw_page(driver).query_selector_all("div.cf-question--ranking")
     except Exception:
         return blocks
     if not containers:
@@ -11932,18 +11610,15 @@ def _extract_confirmit_cf_ranking_blocks(driver, frame_chain: list[int] | None) 
     for qc in containers[:10]:
         try:
             # --- Gate : présence d'au moins 2 items ranking cliquables ---
-            items = qc.find_elements(
-                By.CSS_SELECTOR,
-                "div.cf-list__item.cf-ranking-answer[role='button']",
-            )
+            items = qc.query_selector_all("div.cf-list__item.cf-ranking-answer[role='button']")
             if len(items) < 2:
                 continue
 
             # --- Texte de la question ---
             question = ""
             try:
-                q_el = qc.find_element(By.CSS_SELECTOR, "div.cf-question__text")
-                question = _norm(q_el.get_attribute("textContent") or q_el.text or "")
+                q_el = qc.query_selector("div.cf-question__text")
+                question = _norm(q_el.get_attribute("textContent") or q_el.inner_text() or "")
             except Exception:
                 pass
             if not question:
@@ -11952,8 +11627,8 @@ def _extract_confirmit_cf_ranking_blocks(driver, frame_chain: list[int] | None) 
             # --- Instruction de classement ---
             instruction = ""
             try:
-                ins_el = qc.find_element(By.CSS_SELECTOR, "div.cf-question__instruction")
-                instruction = _norm(ins_el.get_attribute("textContent") or ins_el.text or "")
+                ins_el = qc.query_selector("div.cf-question__instruction")
+                instruction = _norm(ins_el.get_attribute("textContent") or ins_el.inner_text() or "")
             except Exception:
                 pass
 
@@ -11971,15 +11646,13 @@ def _extract_confirmit_cf_ranking_blocks(driver, frame_chain: list[int] | None) 
                     item_id = (item.get_attribute("id") or "").strip()
 
                     # Exclure les items qui ne contiennent qu'un input texte libre (Autres)
-                    has_text_div = bool(item.find_elements(
-                        By.CSS_SELECTOR, "div.cf-ranking-answer__text"
-                    ))
+                    has_text_div = bool(item.query_selector_all("div.cf-ranking-answer__text"))
                     if not has_text_div:
                         # Item "Autres" sans texte structuré → on l'ignore
                         continue
 
-                    txt_el = item.find_element(By.CSS_SELECTOR, "div.cf-ranking-answer__text")
-                    txt = _norm(txt_el.get_attribute("textContent") or txt_el.text or "")
+                    txt_el = item.query_selector("div.cf-ranking-answer__text")
+                    txt = _norm(txt_el.get_attribute("textContent") or txt_el.inner_text() or "")
                     if not txt:
                         continue
 
@@ -12082,14 +11755,11 @@ def _extract_datadiggers_icontrol_radio_block(driver, frame_chain=None) -> list[
     blocks: list[dict] = []
     try:
         # Guard 1 : div.main_survey_page présent
-        if not driver.find_elements(By.CSS_SELECTOR, "div.main_survey_page"):
+        if not _pw_page(driver).query_selector_all("div.main_survey_page"):
             return blocks
 
         # Guard 2 : form[id^="attention_questions_"] dans cette page
-        forms = driver.find_elements(
-            By.CSS_SELECTOR,
-            "div.main_survey_page form[id^='attention_questions_']",
-        )
+        forms = _pw_page(driver).query_selector_all("div.main_survey_page form[id^='attention_questions_']")
         if not forms:
             return blocks
         form = forms[0]
@@ -12097,9 +11767,9 @@ def _extract_datadiggers_icontrol_radio_block(driver, frame_chain=None) -> list[
         # Question : span.main_crd_heding dans h5.questions
         question = ""
         try:
-            q_els = form.find_elements(By.CSS_SELECTOR, "h5.questions span.main_crd_heding")
+            q_els = form.query_selector_all("h5.questions span.main_crd_heding")
             if q_els:
-                question = (q_els[0].get_attribute("textContent") or q_els[0].text or "").strip()
+                question = (q_els[0].get_attribute("textContent") or q_els[0].inner_text() or "").strip()
         except Exception:
             pass
 
@@ -12110,17 +11780,15 @@ def _extract_datadiggers_icontrol_radio_block(driver, frame_chain=None) -> list[
         options: list[str] = []
         option_xpath_map: dict[str, str] = {}
         try:
-            radio_btns = form.find_elements(By.CSS_SELECTOR, "div.survey_radioBtn")
+            radio_btns = form.query_selector_all("div.survey_radioBtn")
             for btn in radio_btns:
                 try:
-                    inp_els = btn.find_elements(
-                        By.CSS_SELECTOR, "div.opt_color input[type='radio']"
-                    )
-                    label_els = btn.find_elements(By.CSS_SELECTOR, "div.opt_color label")
+                    inp_els = btn.query_selector_all("div.opt_color input[type='radio']")
+                    label_els = btn.query_selector_all("div.opt_color label")
                     if not label_els:
                         continue
                     label_text = (
-                        label_els[0].get_attribute("textContent") or label_els[0].text or ""
+                        label_els[0].get_attribute("textContent") or label_els[0].inner_text() or ""
                     ).strip()
                     if not label_text:
                         continue
@@ -12214,16 +11882,16 @@ def _extract_prodege_prescreener_radio_block(driver, frame_chain=None) -> list[d
     blocks: list[dict] = []
     try:
         # Guard 1 : div.profilerContainer présent
-        containers = driver.find_elements(By.CSS_SELECTOR, "div.profilerContainer")
+        containers = _pw_page(driver).query_selector_all("div.profilerContainer")
         if not containers:
             return blocks
 
         # Guard 2 : p.profilerQuestionText présent (discriminant Prodege strict)
-        q_els = driver.find_elements(By.CSS_SELECTOR, "div.profilerContainer p.profilerQuestionText")
+        q_els = _pw_page(driver).query_selector_all("div.profilerContainer p.profilerQuestionText")
         if not q_els:
             return blocks
 
-        question = (q_els[0].get_attribute("textContent") or q_els[0].text or "").strip()
+        question = (q_els[0].get_attribute("textContent") or q_els[0].inner_text() or "").strip()
         if not question:
             return blocks
 
@@ -12231,18 +11899,15 @@ def _extract_prodege_prescreener_radio_block(driver, frame_chain=None) -> list[d
         options: list[str] = []
         option_xpath_map: dict[str, str] = {}
 
-        li_els = driver.find_elements(
-            By.CSS_SELECTOR,
-            "div.profilerContainer li.profilerAnswerRadio",
-        )
+        li_els = _pw_page(driver).query_selector_all("div.profilerContainer li.profilerAnswerRadio")
         for li in li_els:
             try:
-                label_els = li.find_elements(By.CSS_SELECTOR, "label.profilerRadioLabel")
-                inp_els = li.find_elements(By.CSS_SELECTOR, "input.profilerRadioInput[type='radio']")
+                label_els = li.query_selector_all("label.profilerRadioLabel")
+                inp_els = li.query_selector_all("input.profilerRadioInput[type='radio']")
                 if not label_els:
                     continue
                 label_text = (
-                    label_els[0].get_attribute("textContent") or label_els[0].text or ""
+                    label_els[0].get_attribute("textContent") or label_els[0].inner_text() or ""
                 ).strip()
                 if not label_text:
                     continue
@@ -12271,10 +11936,7 @@ def _extract_prodege_prescreener_radio_block(driver, frame_chain=None) -> list[d
         # group_key basé sur le name commun des inputs (ex: question_3)
         inp_name = ""
         try:
-            all_inputs = driver.find_elements(
-                By.CSS_SELECTOR,
-                "div.profilerContainer input.profilerRadioInput[type='radio']",
-            )
+            all_inputs = _pw_page(driver).query_selector_all("div.profilerContainer input.profilerRadioInput[type='radio']")
             if all_inputs:
                 inp_name = (all_inputs[0].get_attribute("name") or "").strip()
         except Exception:
@@ -12345,34 +12007,27 @@ def _extract_researchnow_autoscreener_radio_blocks(driver, frame_chain=None) -> 
     blocks: list[dict] = []
     try:
         # Guard 1 : autoScreenerController
-        if not driver.find_elements(
-            By.CSS_SELECTOR, "[ng-controller*='autoScreenerController']"
-        ):
+        if not _pw_page(driver).query_selector_all("[ng-controller*='autoScreenerController']"):
             return blocks
 
         # Guard 2 : parameter-rendered.single_select.tooBigForDropdown
-        params = driver.find_elements(
-            By.CSS_SELECTOR,
-            "div.parameter-rendered.single_select.tooBigForDropdown",
-        )
+        params = _pw_page(driver).query_selector_all("div.parameter-rendered.single_select.tooBigForDropdown")
         if not params:
             return blocks
 
         for param in params:
             try:
-                wrap_els = param.find_elements(
-                    By.CSS_SELECTOR, "div.questionAndAnswerWrap"
-                )
+                wrap_els = param.query_selector_all("div.questionAndAnswerWrap")
                 if not wrap_els:
                     continue
                 wrap = wrap_els[0]
 
                 question = ""
                 try:
-                    q_els = wrap.find_elements(By.CSS_SELECTOR, "div.questionText")
+                    q_els = wrap.query_selector_all("div.questionText")
                     if q_els:
                         question = (
-                            q_els[0].get_attribute("textContent") or q_els[0].text or ""
+                            q_els[0].get_attribute("textContent") or q_els[0].inner_text() or ""
                         ).strip()
                 except Exception:
                     pass
@@ -12382,18 +12037,16 @@ def _extract_researchnow_autoscreener_radio_blocks(driver, frame_chain=None) -> 
                 options: list[str] = []
                 option_xpath_map: dict[str, str] = {}
 
-                answer_wrappers = wrap.find_elements(By.CSS_SELECTOR, "div.answer-wrapper")
+                answer_wrappers = wrap.query_selector_all("div.answer-wrapper")
                 for ans in answer_wrappers:
                     try:
-                        inp_els = ans.find_elements(
-                            By.CSS_SELECTOR, "label input[type='radio']"
-                        )
-                        span_els = ans.find_elements(By.CSS_SELECTOR, "label span")
+                        inp_els = ans.query_selector_all("label input[type='radio']")
+                        span_els = ans.query_selector_all("label span")
                         if not span_els:
                             continue
                         label_text = (
                             span_els[0].get_attribute("textContent")
-                            or span_els[0].text
+                            or span_els[0].inner_text()
                             or ""
                         ).strip()
                         if not label_text:
@@ -12487,22 +12140,20 @@ def _extract_qualtrics_bankedsa_single_row_radio_blocks(
     blocks: list[dict] = []
 
     try:
-        containers = driver.find_elements(By.CSS_SELECTOR, "div.QuestionOuter.Matrix.mf")
+        containers = _pw_page(driver).query_selector_all("div.QuestionOuter.Matrix.mf")
     except Exception:
         return blocks
 
     for idx, container in enumerate(containers):
         try:
-            custom_choice_els = container.find_elements(By.CSS_SELECTOR, "div.customChoice")
+            custom_choice_els = container.query_selector_all("div.customChoice")
         except Exception:
             custom_choice_els = []
         if not custom_choice_els:
             continue
 
         try:
-            choice_rows = container.find_elements(
-                By.CSS_SELECTOR, "table.ChoiceStructure > tbody > tr.ChoiceRow"
-            )
+            choice_rows = container.query_selector_all("table.ChoiceStructure > tbody > tr.ChoiceRow")
         except Exception:
             choice_rows = []
         if len(choice_rows) != 1:
@@ -12510,9 +12161,7 @@ def _extract_qualtrics_bankedsa_single_row_radio_blocks(
 
         row = choice_rows[0]
         try:
-            row_radios = row.find_elements(
-                By.CSS_SELECTOR, "input[type='radio'][name^='QR~']"
-            )
+            row_radios = row.query_selector_all("input[type='radio'][name^='QR~']")
         except Exception:
             row_radios = []
         if len(row_radios) < 2:
@@ -12536,11 +12185,11 @@ def _extract_qualtrics_bankedsa_single_row_radio_blocks(
             "div.QuestionText",
         ):
             try:
-                q_nodes = container.find_elements(By.CSS_SELECTOR, q_sel)
+                q_nodes = container.query_selector_all(q_sel)
             except Exception:
                 q_nodes = []
             for qn in q_nodes:
-                txt = _norm(qn.text or qn.get_attribute("innerText") or "")
+                txt = _norm(qn.inner_text() or "")
                 if txt:
                     question = txt
                     break
@@ -12551,14 +12200,11 @@ def _extract_qualtrics_bankedsa_single_row_radio_blocks(
 
         col_headers: list[str] = []
         try:
-            thead_ths = container.find_elements(
-                By.CSS_SELECTOR,
-                "table.ChoiceStructure thead tr.Answers th.Selection span.LabelWrapper span",
-            )
+            thead_ths = container.query_selector_all("table.ChoiceStructure thead tr.Answers th.Selection span.LabelWrapper span")
         except Exception:
             thead_ths = []
         for th_node in thead_ths:
-            hdr = _norm(th_node.text or th_node.get_attribute("innerText") or "")
+            hdr = _norm(th_node.inner_text() or "")
             if hdr:
                 col_headers.append(hdr)
 
