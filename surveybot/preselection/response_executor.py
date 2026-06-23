@@ -832,6 +832,27 @@ def select_checkbox_answers(driver, answers):
             except Exception:
                 pass
 
+        # Vérification de la propriété DOM réelle (.checked), indépendante du
+        # rendu CSS (.p-checked). p-checked confirme que Vue a bien re-rendu le
+        # label après le clic ; .checked confirme que l'input natif sous-jacent
+        # reflète bien l'état coché. Les deux peuvent diverger si le state du
+        # framework se désynchronise de l'attribut DOM natif — ce check ne fait
+        # que loguer l'écart, il ne déclenche aucun nouveau clic (pas de
+        # fallback ici : un mismatch silencieux est un signal de diagnostic,
+        # pas une raison suffisante pour relancer une boucle de clic).
+        _checked_dom_prop = None
+        if inner_cb is not None:
+            try:
+                _checked_dom_prop = inner_cb.is_checked()
+            except Exception:
+                pass
+        if _checked_dom_prop is False:
+            log_info(
+                "response_executor",
+                f"[CHECKBOX_STATE_MISMATCH] label={label_text!r} "
+                f"p_checked={_checked_visually} dom_checked=False",
+            )
+
         if _checked_visually:
             print(f"✅ Checkbox cochée : {label_text} source: reponse_executor.py")
             found = True
