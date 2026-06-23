@@ -95,9 +95,9 @@ def looks_like_nav_label(s: str) -> bool:
 def _is_visible(driver, el) -> bool:
     """Vérifie si un élément est visible et a une taille suffisante."""
     try:
-        if not el.is_displayed():
+        if not el.is_visible():
             return False
-        box = el.rect
+        box = el.bounding_box() or {}
         return box and box.get("width", 0) > 5 and box.get("height", 0) > 5
     except Exception:
         return False
@@ -112,7 +112,7 @@ def _cta_intercept_enabled() -> bool:
 def _is_intellisurvey_structural_submit_cta(el) -> bool:
     """Détecte un CTA submit IntelliSurvey identifiable uniquement par sa structure DOM."""
     try:
-        tag = (el.tag_name or "").strip().lower()
+        tag = (el.evaluate("e => e.tagName.toLowerCase()") or "").strip().lower()
     except Exception:
         return False
 
@@ -137,7 +137,7 @@ def _is_intellisurvey_structural_submit_cta(el) -> bool:
 def _is_mriweb_structural_submit_cta(el) -> bool:
     """Détecte le vrai CTA submit mrIWeb (`input[type=submit][name=_NNext].mrNext`)."""
     try:
-        tag = (el.tag_name or "").strip().lower()
+        tag = (el.evaluate("e => e.tagName.toLowerCase()") or "").strip().lower()
     except Exception:
         return False
 
@@ -157,7 +157,7 @@ def _is_mriweb_structural_submit_cta(el) -> bool:
 def _is_mriweb_vue_next_cta(el) -> bool:
     """Détecte le CTA Vue mrIWeb visible (`span#NextBtn.NavBtn.btn_visible`)."""
     try:
-        tag = (el.tag_name or "").strip().lower()
+        tag = (el.evaluate("e => e.tagName.toLowerCase()") or "").strip().lower()
     except Exception:
         return False
 
@@ -207,13 +207,13 @@ def _is_internal_task_carousel_arrow(driver, el) -> bool:
         return False
 
     try:
-        counters = driver.find_elements("css selector", 'p[data-cy="task-counter"]')
+        counters = driver.query_selector_all('p[data-cy="task-counter"]')
     except Exception:
         counters = []
 
     for counter in counters:
         try:
-            txt = _norm_btn_text(counter.text or "")
+            txt = _norm_btn_text(counter.inner_text() or "")
             m = re.search(r"\b(\d{1,3})\s*/\s*(\d{1,3})\b", txt)
             if m and int(m.group(2)) >= 2:
                 return True
@@ -491,7 +491,7 @@ def _format_intercept_target(target) -> str:
 
 def _safe_url(driver) -> str:
     try:
-        u = driver.current_url
+        u = _pw_page(driver).url
         if not u:
             return "<unknown>"
         p = urlsplit(u)
@@ -519,7 +519,7 @@ def _recover_overlay_cta_text(driver, el) -> str:
 
     idx = m.group(1)
     try:
-        labels = driver.find_elements("css selector", f"#oc_t{idx}")
+        labels = driver.query_selector_all(f"#oc_t{idx}")
     except Exception:
         labels = []
 
@@ -527,7 +527,7 @@ def _recover_overlay_cta_text(driver, el) -> str:
         return ""
 
     try:
-        return (labels[0].text or labels[0].get_attribute("innerText") or "").strip()
+        return (labels[0].inner_text() or labels[0].get_attribute("innerText") or "").strip()
     except Exception:
         return ""
 
@@ -686,7 +686,7 @@ def _press_click_release(driver, el):
     # Le cycle press/release Selenium peut ne pas déclencher le handler attendu,
     # alors qu'un click natif WebElement fonctionne.
     try:
-        tag = (el.tag_name or "").lower()
+        tag = (el.evaluate("e => e.tagName.toLowerCase()") or "").lower()
     except Exception:
         tag = ""
     try:
@@ -732,7 +732,7 @@ def _press_click_release(driver, el):
     if tag == "button":
         try:
             is_purespectrum_next_button = bool(
-                el.find_elements("xpath", "ancestor::ps-next-button[1]")
+                el.query_selector_all("xpath=" + "ancestor::ps-next-button[1]")
             )
         except Exception:
             pass
@@ -919,11 +919,11 @@ def _click_with_intercept(driver, el) -> bool:
 def _iter_iframes_safe(driver):
     """Retourne la liste des <iframe>/<frame> probablement interactifs."""
     frames = []
-    for fr in driver.find_elements("css selector", "iframe, frame"):
+    for fr in driver.query_selector_all("iframe, frame"):
         try:
-            tag = (fr.tag_name or "").strip().lower()
-            r = fr.rect
-            if fr.is_displayed() and r.get("width", 0) > 20 and r.get("height", 0) > 20:
+            tag = (fr.evaluate("e => e.tagName.toLowerCase()") or "").strip().lower()
+            r = fr.bounding_box() or {}
+            if fr.is_visible() and r.get("width", 0) > 20 and r.get("height", 0) > 20:
                 frames.append(fr)
                 continue
 
@@ -995,27 +995,19 @@ def click_button_by_text(driver, text) -> bool:
 
     # 1) Candidats "boutons" sûrs
     candidates = []
-    candidates += driver.find_elements("tag name", "button")
-    candidates += driver.find_elements(
-        "css selector", "input[type='submit'], input[type='button']"
-    )
-    candidates += driver.find_elements(
-        "css selector", "div[role='button'], span[role='button']"
-    )
+    candidates += driver.query_selector_all("button")
+    candidates += driver.query_selector_all("input[type='submit'], input[type='button']")
+    candidates += driver.query_selector_all("div[role='button'], span[role='button']")
 
     # Inclure les <a> qui ressemblent à des boutons/CTA
     anchor_ctas = []
-    anchor_ctas += driver.find_elements(
-        "css selector", "a.btn, a.button, a.btn-primary, a.primary, a.cta"
-    )
-    anchor_ctas += driver.find_elements(
-        "css selector", "a[class*='btn'], a[class*='button'], a[class*='cta']"
-    )
-    anchor_ctas += driver.find_elements("css selector", "#btn a")
+    anchor_ctas += driver.query_selector_all("a.btn, a.button, a.btn-primary, a.primary, a.cta")
+    anchor_ctas += driver.query_selector_all("a[class*='btn'], a[class*='button'], a[class*='cta']")
+    anchor_ctas += driver.query_selector_all("#btn a")
 
     def _is_blacklisted_anchor(a):
         lbl = _normalize_lbl(
-            (a.get_attribute("innerText") or a.text or a.get_attribute("aria-label") or "")
+            (a.get_attribute("innerText") or a.inner_text() or a.get_attribute("aria-label") or "")
         )
         href = (a.get_attribute("href") or "").lower()
         bad = ("privacy", "policy", "confidentialit", "cookies", "terms", "conditions", "vie privée", "legal")
@@ -1031,7 +1023,7 @@ def click_button_by_text(driver, text) -> bool:
             continue
 
     # 2) Ajouter des <a> qui se comportent comme des boutons
-    for a in driver.find_elements("tag name", "a"):
+    for a in driver.query_selector_all("a"):
         try:
             role = (a.get_attribute("role") or "").lower()
             href = (a.get_attribute("href") or "").strip().lower()
@@ -1046,12 +1038,12 @@ def click_button_by_text(driver, text) -> bool:
 
     for el in candidates:
         try:
-            lbl = el.get_attribute("value") or el.text
+            lbl = el.get_attribute("value") or el.inner_text()
             if not lbl:
-                spans = el.find_elements("tag name", "span")
+                spans = el.query_selector_all("span")
                 for sp in spans:
-                    if sp.text and sp.text.strip():
-                        lbl = sp.text
+                    if sp.inner_text() and sp.inner_text().strip():
+                        lbl = sp.inner_text()
                         break
             if not lbl:
                 continue
@@ -1071,14 +1063,10 @@ def click_button_by_text(driver, text) -> bool:
     # Fallback 1: XPath large
     try:
         xpath = (
-            "//button[contains(translate(normalize-space(.), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'), '{t}')] | "
-            "//*[self::div or self::span][@role='button'][contains(translate(normalize-space(.), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'), '{t}')] | "
-            "//input[(translate(@value,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz')='{t}') and (@type='submit' or @type='button')] | "
-            "//a[(contains(@class,'btn') or contains(@class,'button') or contains(@class,'cta')) "
-            " and contains(translate(normalize-space(.), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'), '{t}')]"
+            "//button[contains(translate(normalize-space(.), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'), '{t}')] | //*[self::div or self::span][@role='button'][contains(translate(normalize-space(.), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'), '{t}')] | //input[(translate(@value,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz')='{t}') and (@type='submit' or @type='button')] | //a[(contains(@class,'btn') or contains(@class,'button') or contains(@class,'cta'))  and contains(translate(normalize-space(.), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'), '{t}')]"
         ).format(t=target)
 
-        elems = driver.find_elements("xpath", xpath)
+        elems = driver.query_selector_all("xpath=" + xpath)
         for el in elems:
             try:
                 _pw_page(driver).evaluate("(el) => el.scrollIntoView({block:'center'})", _handle(el))
@@ -1097,15 +1085,15 @@ def click_button_by_text(driver, text) -> bool:
         if _cta_intercept_enabled():
             # Mini-scan "type JS fallback" mais clic via _click_with_intercept => interception armée + pas de navigation.
             candidates2 = []
-            candidates2 += driver.find_elements("tag name", "button")
-            candidates2 += driver.find_elements("css selector", "input[type='submit'], input[type='button']")
-            candidates2 += driver.find_elements("css selector", "[role='button']")
+            candidates2 += driver.query_selector_all("button")
+            candidates2 += driver.query_selector_all("input[type='submit'], input[type='button']")
+            candidates2 += driver.query_selector_all("[role='button']")
 
             for el in candidates2:
                 try:
-                    if not el.is_displayed() or not el.is_enabled():
+                    if not el.is_visible() or not el.is_enabled():
                         continue
-                    label = (el.get_attribute("value") or el.text or el.get_attribute("aria-label") or "").strip()
+                    label = (el.get_attribute("value") or el.inner_text() or el.get_attribute("aria-label") or "").strip()
                     if not label:
                         continue
                     lbl_norm = _normalize_lbl(label)
@@ -1172,9 +1160,9 @@ def click_icon_like_button(driver, hints=None) -> bool:
     hints_norm = [_normalize_lbl(h) for h in hints if h]
 
     candidates = []
-    candidates += driver.find_elements("tag name", "button")
-    candidates += driver.find_elements("css selector", "[role='button']")
-    candidates += driver.find_elements("tag name", "a")
+    candidates += driver.query_selector_all("button")
+    candidates += driver.query_selector_all("[role='button']")
+    candidates += driver.query_selector_all("a")
 
     visibles = [el for el in candidates if _is_visible(driver, el)]
     if not visibles:
@@ -1185,7 +1173,7 @@ def click_icon_like_button(driver, hints=None) -> bool:
 
     def score(el):
         try:
-            r = el.rect
+            r = el.bounding_box() or {}
             area = r["width"] * r["height"]
             cx = r["x"] + r["width"] / 2
             cy = r["y"] + r["height"] / 2
@@ -1200,7 +1188,7 @@ def click_icon_like_button(driver, hints=None) -> bool:
 
             has_icon = False
             try:
-                if el.find_elements("tag name", "svg") or el.find_elements("tag name", "img") or el.find_elements("tag name", "i"):
+                if el.query_selector_all("svg") or el.query_selector_all("img") or el.query_selector_all("i"):
                     has_icon = True
             except Exception:
                 pass
@@ -1251,7 +1239,7 @@ def click_primary_cta(driver) -> bool:
     """
     def center_score(el, vw, vh):
         try:
-            r = el.rect
+            r = el.bounding_box() or {}
             cx = r["x"] + r["width"] / 2
             cy = r["y"] + r["height"] / 2
             dx = abs(cx - vw / 2)
@@ -1261,13 +1249,11 @@ def click_primary_cta(driver) -> bool:
             return -1e9
 
     candidates = []
-    candidates += driver.find_elements("tag name", "button")
-    candidates += driver.find_elements(
-        "css selector", "input[type='submit'], input[type='button']"
-    )
-    candidates += driver.find_elements("css selector", "[role='button']")
+    candidates += driver.query_selector_all("button")
+    candidates += driver.query_selector_all("input[type='submit'], input[type='button']")
+    candidates += driver.query_selector_all("[role='button']")
 
-    for a in driver.find_elements("tag name", "a"):
+    for a in driver.query_selector_all("a"):
         try:
             if (a.get_attribute("role") or "").lower() == "button":
                 candidates.append(a)
@@ -1285,7 +1271,7 @@ def click_primary_cta(driver) -> bool:
 
     def score(el):
         try:
-            r = el.rect
+            r = el.bounding_box() or {}
             area = r["width"] * r["height"]
             return area + 2000 + center_score(el, vw, vh)
         except Exception:
@@ -1438,25 +1424,18 @@ def try_click_navigation_cta(driver) -> bool:
     # Garde-fous DOM stricts : présence simultanée de .nextStatement.Btn ET d'un
     # input[name="Next"][type="submit"] dans le DOM, plus un conteneur adc-statementList.
     try:
-        next_stmt_els = driver.find_elements(
-            "css selector", "div.nextStatement.Btn"
-        )
+        next_stmt_els = driver.query_selector_all("div.nextStatement.Btn")
         for el in next_stmt_els:
             try:
                 # Garde 1 : visible (visibility:visible suffit)
                 if not _is_visible(driver, el):
                     continue
                 # Garde 2 : input[name="Next"][type="submit"] doit exister (signature Askia)
-                form_submit = driver.find_elements(
-                    "css selector",
-                    "input[type='submit'][name='Next'], input[type='submit'][id='Bnext']",
-                )
+                form_submit = driver.query_selector_all("input[type='submit'][name='Next'], input[type='submit'][id='Bnext']")
                 if not form_submit:
                     continue
                 # Garde 3 : conteneur adc-statementList présent (Askia widget)
-                if not driver.find_elements(
-                    "css selector", "[class*='adc-statementList'], [id^='adc_']"
-                ):
+                if not driver.query_selector_all("[class*='adc-statementList'], [id^='adc_']"):
                     continue
                 _pw_page(driver).evaluate("(el) => el.scrollIntoView({block:\'center\'})", _handle(el))
                 log_debug("[CTA_NAV]", "CTA_FOUND pattern=askia_statement_list selector=div.nextStatement.Btn")
@@ -1486,15 +1465,15 @@ def try_click_navigation_cta(driver) -> bool:
     #   <div class="next arrow_on" id="next" style="display:block !important"> ... </div>
     # CTA sans texte => doit être ciblé par signature DOM précise, pas par label.
     try:
-        next_nodes = driver.find_elements("css selector", ".footer #next, #next.next")
+        next_nodes = driver.query_selector_all(".footer #next, #next.next")
         for el in next_nodes:
             try:
-                if not el.is_displayed() or not el.is_enabled():
+                if not el.is_visible() or not el.is_enabled():
                     continue
                 cls = (el.get_attribute("class") or "").lower()
                 if "next" not in cls:
                     continue
-                rect = el.rect or {}
+                rect = el.bounding_box() or {}
                 if rect.get("width", 0) < 24 or rect.get("height", 0) < 24:
                     continue
                 _pw_page(driver).evaluate("(el) => el.scrollIntoView({block:\'center\'})", _handle(el))
@@ -1518,13 +1497,10 @@ def try_click_navigation_cta(driver) -> bool:
     # Ici, le CTA n'a souvent AUCUN texte; on doit utiliser href/title/img.
     try:
         # 1) Clic direct du <a> "Next" dans la navbar
-        nav_links = driver.find_elements(
-            "css selector",
-            "#NAVBAR a[href^='javascript:Next'], #NAVBAR a[title*='suivante'], a[href^='javascript:Next'][title], a[title*='Page suivante']",
-        )
+        nav_links = driver.query_selector_all("#NAVBAR a[href^='javascript:Next'], #NAVBAR a[title*='suivante'], a[href^='javascript:Next'][title], a[title*='Page suivante']")
         for a in nav_links:
             try:
-                if not a.is_displayed():
+                if not a.is_visible():
                     continue
                 # éviter un éventuel Prev() si la page contient les 2
                 href = (a.get_attribute("href") or "").lower()
@@ -1543,13 +1519,13 @@ def try_click_navigation_cta(driver) -> bool:
                 continue
 
         # 2) Fallback: cliquer l'image elle-même (moins fiable mais utile si le <a> est masqué)
-        imgs = driver.find_elements("css selector", "#NAVBAR img#nextButton, img#nextButton, img.BtnDuBas")
+        imgs = driver.query_selector_all("#NAVBAR img#nextButton, img#nextButton, img.BtnDuBas")
         for img in imgs:
             try:
-                if not img.is_displayed():
+                if not img.is_visible():
                     continue
                 try:
-                    a = img.find_element("xpath", "ancestor::a[1]")
+                    a = img.query_selector("xpath=" + "ancestor::a[1]")
                 except Exception:
                     a = None
                 el = a or img
@@ -1570,13 +1546,10 @@ def try_click_navigation_cta(driver) -> bool:
     # Objectif: éviter les wrappers tabindex/focusables qui captent "Suivant"
     # dans leur texte agrégé mais ne déclenchent pas la navigation réelle.
     try:
-        forsta_next = driver.find_elements(
-            "css selector",
-            "button.cf-navigation__button.cf-navigation-next, button.cf-navigation__button.cf-navigation-ok",
-        )
+        forsta_next = driver.query_selector_all("button.cf-navigation__button.cf-navigation-next, button.cf-navigation__button.cf-navigation-ok")
         for btn in forsta_next:
             try:
-                if not btn.is_displayed() or not btn.is_enabled():
+                if not btn.is_visible() or not btn.is_enabled():
                     continue
                 if (btn.get_attribute("aria-disabled") or "").lower() == "true":
                     continue
@@ -1599,10 +1572,10 @@ def try_click_navigation_cta(driver) -> bool:
 
     # --- Consent modal (RGPD): bouton Confirmer explicite ---
     try:
-        consent_btns = driver.find_elements("css selector", "#consent-button-confirm")
+        consent_btns = driver.query_selector_all("#consent-button-confirm")
         for btn in consent_btns:
             try:
-                if not btn.is_displayed() or not btn.is_enabled():
+                if not btn.is_visible() or not btn.is_enabled():
                     continue
                 _pw_page(driver).evaluate("(el) => el.scrollIntoView({block:\'center\'})", _handle(btn))
                 if _click_with_intercept(driver, btn):
@@ -1620,13 +1593,10 @@ def try_click_navigation_cta(driver) -> bool:
     # Le label ("En voir plus", etc.) peut ne pas figurer dans CTA_SYNONYMS.
     # Guard: activé uniquement si ce wrapper est présent dans le DOM.
     try:
-        toluna_nav_btns = driver.find_elements(
-            "css selector",
-            '[data-aut="Runtime_PreviousAndNextWrapper"] button[type="submit"]',
-        )
+        toluna_nav_btns = driver.query_selector_all('[data-aut="Runtime_PreviousAndNextWrapper"] button[type="submit"]')
         for btn in toluna_nav_btns:
             try:
-                if not btn.is_displayed() or not btn.is_enabled():
+                if not btn.is_visible() or not btn.is_enabled():
                     continue
                 if (btn.get_attribute("aria-disabled") or "").lower() == "true":
                     continue
@@ -1645,11 +1615,11 @@ def try_click_navigation_cta(driver) -> bool:
 
     # --- AreYouNet / runet : CTA image sans texte ---
     try:
-        btns = driver.find_elements("css selector", "#btn_next")
+        btns = driver.query_selector_all("#btn_next")
         if btns:
             el = btns[0]
             try:
-                a = el.find_element("xpath", "ancestor::a[1]")
+                a = el.query_selector("xpath=" + "ancestor::a[1]")
                 if a:
                     el = a
             except Exception:
@@ -1665,7 +1635,7 @@ def try_click_navigation_cta(driver) -> bool:
 
     # Variante AreYouNet: lien direct vers EnqueteDef_submit()
     try:
-        links = driver.find_elements("css selector", "a[href*='EnqueteDef_submit']")
+        links = driver.query_selector_all("a[href*='EnqueteDef_submit']")
         if links:
             el = links[0]
             _pw_page(driver).evaluate("(el) => el.scrollIntoView({block:\'center\'})", _handle(el))
@@ -1678,10 +1648,10 @@ def try_click_navigation_cta(driver) -> bool:
 
     # --- Decipher : CTA avec value symbolique (">>" etc.) ---
     try:
-        btns = driver.find_elements("css selector", "#btn_continue")
+        btns = driver.query_selector_all("#btn_continue")
         if btns:
             el = btns[0]
-            if el.is_displayed():
+            if el.is_visible():
                 _pw_page(driver).evaluate("(el) => el.scrollIntoView({block:\'center\'})", _handle(el))
                 if _click_with_intercept(driver, el):
                     _nav_log("[CTA_NAV]", "clicked #btn_continue", driver)
@@ -1695,19 +1665,16 @@ def try_click_navigation_cta(driver) -> bool:
     # 1) présence du widget `div.gridclick-container`
     # 2) `input#btn_continue` présent mais masqué
     try:
-        gridclick_widget = driver.find_elements("css selector", "div.gridclick-container")
-        btn_continue_nodes = driver.find_elements("css selector", "input#btn_continue")
-        if gridclick_widget and btn_continue_nodes and not btn_continue_nodes[0].is_displayed():
-            widget_cta = driver.find_elements(
-                "css selector",
-                "div.next-nav.active > div.nav-container[class*='ion-android-arrow-forward']",
-            )
+        gridclick_widget = driver.query_selector_all("div.gridclick-container")
+        btn_continue_nodes = driver.query_selector_all("input#btn_continue")
+        if gridclick_widget and btn_continue_nodes and not btn_continue_nodes[0].is_visible():
+            widget_cta = driver.query_selector_all("div.next-nav.active > div.nav-container[class*='ion-android-arrow-forward']")
             if not widget_cta:
                 _nav_log("[CTA_NAV]", "CTA_FOUND gridclick_widget INTERCEPT_IMPOSSIBLE reason=widget_not_ready", driver)
                 return False
 
             el = widget_cta[0]
-            if not el.is_displayed() or not el.is_enabled():
+            if not el.is_visible() or not el.is_enabled():
                 _nav_log("[CTA_NAV]", "CTA_FOUND gridclick_widget INTERCEPT_IMPOSSIBLE reason=widget_not_visible", driver)
                 return False
 
@@ -1724,12 +1691,12 @@ def try_click_navigation_cta(driver) -> bool:
 
     # --- RSCH / Survey japonais ---
     try:
-        btns = driver.find_elements("css selector", "#btnsmall")
+        btns = driver.query_selector_all("#btnsmall")
         if not btns:
-            btns = driver.find_elements("css selector", "input.enterButton.submitButton, button.enterButton.submitButton")
+            btns = driver.query_selector_all("input.enterButton.submitButton, button.enterButton.submitButton")
         if btns:
             el = btns[0]
-            if el.is_displayed():
+            if el.is_visible():
                 _pw_page(driver).evaluate("(el) => el.scrollIntoView({block:\'center\'})", _handle(el))
                 if _click_with_intercept(driver, el):
                     _nav_log("[CTA_NAV]", "clicked #btnsmall or .enterButton.submitButton", driver)
@@ -1747,8 +1714,8 @@ def try_click_navigation_cta(driver) -> bool:
     has_encuesta_done_button = False
     has_encuesta_footer_next = False
     try:
-        has_encuesta_done_button = bool(driver.find_elements("css selector", "button.encuesta__done-button"))
-        has_encuesta_footer_next = bool(driver.find_elements("css selector", "button.ee__button--next"))
+        has_encuesta_done_button = bool(driver.query_selector_all("button.encuesta__done-button"))
+        has_encuesta_footer_next = bool(driver.query_selector_all("button.ee__button--next"))
     except Exception:
         has_encuesta_done_button = False
         has_encuesta_footer_next = False
@@ -1756,25 +1723,17 @@ def try_click_navigation_cta(driver) -> bool:
     should_filter_encuesta_inline_done = has_encuesta_done_button and has_encuesta_footer_next
 
     nav_xpath = (
-        "//button"
-        "|//input[@type='submit' or @type='button' or @type='image']"
-        "|//span[contains(concat(' ', normalize-space(@class), ' '), ' fakeNextButton ')]"
-        "|//span[@id='NextBtn' and contains(concat(' ', normalize-space(@class), ' '), ' NavBtn ')]"
-        "|//a[@role='button']"
-        "|//a[contains(concat(' ', normalize-space(@class), ' '), ' btn ')]"
-        "|//li[@id='next' or contains(concat(' ', normalize-space(@class), ' '), ' next-button ') or contains(@onclick, 'submitForm')]"
-        "|//*[contains(@onmousedown, 'ToggSel')]"
-        "|//*[@tabindex and not(self::input or self::textarea or self::select)]"
+        "//button|//input[@type='submit' or @type='button' or @type='image']|//span[contains(concat(' ', normalize-space(@class), ' '), ' fakeNextButton ')]|//span[@id='NextBtn' and contains(concat(' ', normalize-space(@class), ' '), ' NavBtn ')]|//a[@role='button']|//a[contains(concat(' ', normalize-space(@class), ' '), ' btn ')]|//li[@id='next' or contains(concat(' ', normalize-space(@class), ' '), ' next-button ') or contains(@onclick, 'submitForm')]|//*[contains(@onmousedown, 'ToggSel')]|//*[@tabindex and not(self::input or self::textarea or self::select)]"
     )
 
-    for el in driver.find_elements("xpath", nav_xpath):
+    for el in driver.query_selector_all("xpath=" + nav_xpath):
         try:
-            if not el.is_displayed() or not el.is_enabled():
+            if not el.is_visible() or not el.is_enabled():
                 continue
 
             tag = ""
             try:
-                tag = (el.tag_name or "").lower()
+                tag = (el.evaluate("e => e.tagName.toLowerCase()") or "").lower()
             except Exception:
                 tag = ""
 
@@ -1800,7 +1759,7 @@ def try_click_navigation_cta(driver) -> bool:
             if any(tok.startswith("cky-") for tok in cls_tokens):
                 continue
             try:
-                if el.find_elements("xpath", "ancestor::*[@data-cky-tag][1]"):
+                if el.query_selector_all("xpath=" + "ancestor::*[@data-cky-tag][1]"):
                     continue
             except Exception:
                 pass
@@ -1808,7 +1767,7 @@ def try_click_navigation_cta(driver) -> bool:
             # Exclude buttons inside ps-footer Angular component (survey page footer:
             # privacy policy, legal links…). Triggered by structural ancestor presence.
             try:
-                if el.find_elements("xpath", "ancestor::ps-footer[1]"):
+                if el.query_selector_all("xpath=" + "ancestor::ps-footer[1]"):
                     continue
             except Exception:
                 pass
@@ -1820,7 +1779,7 @@ def try_click_navigation_cta(driver) -> bool:
             # Les CTA "image-only" (Play/Next) ont souvent txt vide.
             # On élargit la lecture aux attributs title/alt et au premier <img> enfant.
             txt = (
-                el.text
+                el.inner_text()
                 or el.get_attribute("value")
                 or el.get_attribute("alt")
                 or el.get_attribute("aria-label")
@@ -1829,7 +1788,7 @@ def try_click_navigation_cta(driver) -> bool:
             )
             if not txt:
                 try:
-                    img = el.find_element("css selector", "img")
+                    img = el.query_selector("img")
                     txt = img.get_attribute("alt") or img.get_attribute("title") or ""
                 except Exception:
                     txt = ""
@@ -1912,7 +1871,7 @@ def try_click_navigation_cta(driver) -> bool:
                 score += 40
 
             try:
-                if el.find_elements("xpath", "ancestor::form[1]"):
+                if el.query_selector_all("xpath=" + "ancestor::form[1]"):
                     score += 10
             except Exception:
                 pass
@@ -1926,7 +1885,7 @@ def try_click_navigation_cta(driver) -> bool:
             # component. Structural guard — text/aria-label may be empty during Angular
             # render; this ensures the real nav CTA wins even with score=5 from class alone.
             try:
-                if el.find_elements("xpath", "ancestor::ps-next-button[1]"):
+                if el.query_selector_all("xpath=" + "ancestor::ps-next-button[1]"):
                     score += 150
             except Exception:
                 pass
@@ -2080,16 +2039,16 @@ def click_cta_strong_any_context(driver, text=None, label_hint=None, depth: int 
                 continue
 
             try:
-                els = driver.find_elements("css selector", css)
+                els = driver.query_selector_all(css)
             except Exception:
                 els = []
 
             for el in els:
                 try:
-                    if not el.is_displayed():
+                    if not el.is_visible():
                         continue
 
-                    raw_val = (el.text or "") or (el.get_attribute("value") or "")
+                    raw_val = (el.inner_text() or "") or (el.get_attribute("value") or "")
                     t = norm(raw_val)
                     if not t or not any(c.isalpha() for c in t):
                         t = norm(el.get_attribute("aria-label") or "")
@@ -2142,7 +2101,7 @@ def try_click_qps_skip_to_survey(driver, *, max_wait_s: float = 8.0, poll_s: flo
     import os, time
 
     try:
-        current_url = driver.current_url or ""
+        current_url = _pw_page(driver).url or ""
     except Exception:
         return False
 
@@ -2154,7 +2113,7 @@ def try_click_qps_skip_to_survey(driver, *, max_wait_s: float = 8.0, poll_s: flo
     deadline = time.time() + max_wait_s
     while time.time() < deadline:
         try:
-            els = driver.find_elements("css selector", _QPS_SKIP_SELECTOR)
+            els = driver.query_selector_all(_QPS_SKIP_SELECTOR)
             if not els:
                 time.sleep(poll_s)
                 continue
@@ -2162,11 +2121,11 @@ def try_click_qps_skip_to_survey(driver, *, max_wait_s: float = 8.0, poll_s: flo
             el = els[0]
 
             # Vérification viewport réel : is_displayed() + rect non-nul
-            if not el.is_displayed():
+            if not el.is_visible():
                 time.sleep(poll_s)
                 continue
 
-            rect = el.rect or {}
+            rect = el.bounding_box() or {}
             if rect.get("width", 0) < 5 or rect.get("height", 0) < 5:
                 time.sleep(poll_s)
                 continue
