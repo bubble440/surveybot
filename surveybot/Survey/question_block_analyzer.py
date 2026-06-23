@@ -23,10 +23,16 @@ from __future__ import annotations
 import re
 import unicodedata
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import Any, List, Optional
 
-from selenium.webdriver.common.by import By
-from selenium.webdriver.remote.webelement import WebElement
+
+# ---------------------------------------------------------------------------
+# Playwright page helper
+# ---------------------------------------------------------------------------
+def _pw_page(d):
+    if hasattr(d, '_page'):
+        return d._page
+    return d
 
 
 # ------------------------------------------------------------
@@ -123,11 +129,11 @@ def _norm(s: str) -> str:
     return s
 
 
-def _visible(el: WebElement) -> bool:
+def _visible(el: Any) -> bool:
     try:
-        if not el.is_displayed():
+        if not el.is_visible():
             return False
-        r = el.rect or {}
+        r = el.bounding_box() or {}
         return r.get("width", 0) > 10 and r.get("height", 0) > 10
     except Exception:
         return False
@@ -141,8 +147,8 @@ def _visible(el: WebElement) -> bool:
 class QuestionBlock:
     itype: str                  # dropdown, radio, checkbox, text, button
     label: str                  # texte humain ("Année", "Oui", etc.)
-    dom_el: WebElement          # élément principal
-    container: Optional[WebElement]
+    dom_el: Any                 # élément principal
+    container: Optional[Any]
     options: Optional[List[str]] = None
 
 
@@ -150,7 +156,7 @@ class QuestionBlock:
 # Extraction du scope question
 # ------------------------------------------------------------
 
-def _find_question_container(driver) -> WebElement:
+def _find_question_container(driver) -> Any:
     """
     Trouve le conteneur DOM principal de la question courante.
     Heuristiques empilées, robustes.
@@ -164,7 +170,7 @@ def _find_question_container(driver) -> WebElement:
 
     for sel in selectors:
         try:
-            els = driver.find_elements(By.CSS_SELECTOR, sel)
+            els = _pw_page(driver).query_selector_all(sel)
             for el in els:
                 if _visible(el):
                     return el
@@ -172,14 +178,14 @@ def _find_question_container(driver) -> WebElement:
             continue
 
     # fallback ultime
-    return driver.find_element(By.TAG_NAME, "body")
+    return _pw_page(driver).query_selector("body")
 
 
 # ------------------------------------------------------------
 # Label detection (clé du mapping)
 # ------------------------------------------------------------
 
-def _extract_label(el: WebElement) -> str:
+def _extract_label(el: Any) -> str:
     """
     Essaie d'associer un texte humain à un input.
     """
@@ -187,12 +193,11 @@ def _extract_label(el: WebElement) -> str:
         # 1) label[for=id]
         el_id = el.get_attribute("id")
         if el_id:
-            labels = el.find_elements(
-                By.XPATH,
-                f"//label[@for='{el_id}']"
+            labels = el.query_selector_all(
+                f"xpath=//label[@for='{el_id}']"
             )
             if labels:
-                return labels[0].text.strip()
+                return labels[0].inner_text().strip()
     except Exception:
         pass
 
@@ -207,10 +212,11 @@ def _extract_label(el: WebElement) -> str:
 
     # 3) texte proche (parents)
     try:
-        parent = el.find_element(By.XPATH, "ancestor::*[self::div or self::td or self::li][1]")
-        txt = parent.text.strip()
-        if txt and len(txt) >= 2:
-            return txt
+        parent = el.query_selector("xpath=ancestor::*[self::div or self::td or self::li][1]")
+        if parent is not None:
+            txt = parent.inner_text().strip()
+            if txt and len(txt) >= 2:
+                return txt
     except Exception:
         pass
 
@@ -221,9 +227,9 @@ def _extract_label(el: WebElement) -> str:
 # Détecteurs par type
 # ------------------------------------------------------------
 
-def _detect_dropdowns(scope: WebElement) -> List[QuestionBlock]:
+def _detect_dropdowns(scope: Any) -> List[QuestionBlock]:
     blocks = []
-    selects = scope.find_elements(By.TAG_NAME, "select")
+    selects = scope.query_selector_all("select")
 
     for sel in selects:
         if not _visible(sel):
@@ -231,10 +237,10 @@ def _detect_dropdowns(scope: WebElement) -> List[QuestionBlock]:
 
         opts = []
         try:
-            for o in sel.find_elements(By.TAG_NAME, "option"):
+            for o in sel.query_selector_all("option"):
                 if o.get_attribute("disabled"):
                     continue
-                t = (o.text or "").strip()
+                t = (o.inner_text() or "").strip()
                 if t:
                     opts.append(t)
         except Exception:
@@ -254,7 +260,7 @@ def _detect_dropdowns(scope: WebElement) -> List[QuestionBlock]:
     return blocks
 
 
-def _extract_matrix_grid_block(group: List[WebElement]) -> Optional[QuestionBlock]:
+def _extract_matrix_grid_block(group: List[Any]) -> Optional[QuestionBlock]:
     """
     Nfield mrQuestionTable: radios have rowid/colid attrs; labels are in header
     td.mrGridQuestionText cells, not in label[for] elements (which are empty spans).
@@ -267,21 +273,21 @@ def _extract_matrix_grid_block(group: List[WebElement]) -> Optional[QuestionBloc
     # Row label from td.mrGridCategoryText in the same <tr>
     row_label = ""
     try:
-        tr = first.find_element(By.XPATH, "ancestor::tr[1]")
-        cat_td = tr.find_element(By.CSS_SELECTOR, "td.mrGridCategoryText")
-        row_label = re.sub(r"\s+", " ", (cat_td.get_attribute("innerText") or cat_td.text or "")).strip()
+        tr = first.query_selector("xpath=ancestor::tr[1]")
+        cat_td = tr.query_selector("td.mrGridCategoryText")
+        row_label = re.sub(r"\s+", " ", (cat_td.get_attribute("innerText") or cat_td.inner_text() or "")).strip()
     except Exception:
         pass
 
     # Column headers from the header row of the enclosing mrQuestionTable
     col_headers: dict = {}
     try:
-        table = first.find_element(
-            By.XPATH, "ancestor::table[contains(@class,'mrQuestionTable')][1]"
+        table = first.query_selector(
+            "xpath=ancestor::table[contains(@class,'mrQuestionTable')][1]"
         )
-        header_cells = table.find_elements(By.CSS_SELECTOR, "td.mrGridQuestionText")
+        header_cells = table.query_selector_all("td.mrGridQuestionText")
         for idx, cell in enumerate(header_cells):
-            txt = re.sub(r"\s+", " ", (cell.get_attribute("innerText") or cell.text or "")).strip()
+            txt = re.sub(r"\s+", " ", (cell.get_attribute("innerText") or cell.inner_text() or "")).strip()
             col_headers[idx] = txt
     except Exception:
         pass
@@ -306,9 +312,9 @@ def _extract_matrix_grid_block(group: List[WebElement]) -> Optional[QuestionBloc
     )
 
 
-def _detect_radios(scope: WebElement) -> List[QuestionBlock]:
+def _detect_radios(scope: Any) -> List[QuestionBlock]:
     blocks = []
-    radios = scope.find_elements(By.CSS_SELECTOR, "input[type='radio']")
+    radios = scope.query_selector_all("input[type='radio']")
 
     groups = {}
     for r in radios:
@@ -342,21 +348,21 @@ def _detect_radios(scope: WebElement) -> List[QuestionBlock]:
             )
     return blocks
 
-def _detect_aria_radios(scope: WebElement) -> List[QuestionBlock]:
+def _detect_aria_radios(scope: Any) -> List[QuestionBlock]:
     """
     Détecte les boutons radio implémentés via role="button" (CloudResearch, Vue.js, React, etc.).
-    
+
     Ces frameworks modernes n'utilisent pas <input type="radio"> mais des divs avec:
     - role="button" (ARIA)
     - Classes spécifiques: .choice-option, .random-choice, etc.
     - Tabindex pour la navigation clavier
-    
+
     Exemples:
     - CloudResearch/Sentry: div[role="button"].choice-option.random-choice
     - Autres Vue.js/React: div[role="button"][tabindex]
     """
     blocks = []
-    
+
     # Sélecteurs pour différents patterns de boutons radio ARIA
     selectors = [
         '[role="button"].choice-option',
@@ -364,15 +370,15 @@ def _detect_aria_radios(scope: WebElement) -> List[QuestionBlock]:
         # Fallback: div avec role="button" et tabindex dans un contexte de choix multiples
         'div[tabindex][role="button"]',
     ]
-    
+
     all_buttons = []
     for selector in selectors:
         try:
-            buttons = scope.find_elements(By.CSS_SELECTOR, selector)
+            buttons = scope.query_selector_all(selector)
             all_buttons.extend(buttons)
         except Exception:
             continue
-    
+
     # Dédupliquer (un bouton peut matcher plusieurs sélecteurs)
     seen = set()
     unique_buttons = []
@@ -384,27 +390,27 @@ def _detect_aria_radios(scope: WebElement) -> List[QuestionBlock]:
                 unique_buttons.append(btn)
         except Exception:
             continue
-    
+
     # Filtrer les boutons visibles avec texte
     visible_buttons = []
     for btn in unique_buttons:
         try:
             if not _visible(btn):
                 continue
-            
+
             # CORRECTION: Extraction robuste du texte
             # Les frameworks modernes ont souvent le texte dans des divs imbriqués,
-            # et btn.text peut retourner une chaîne vide. On essaie plusieurs méthodes:
+            # et btn.inner_text() peut retourner une chaîne vide. On essaie plusieurs méthodes:
             text = None
-            
-            # Méthode 1: .text (propriété Selenium standard)
+
+            # Méthode 1: inner_text() (propriété Playwright)
             try:
-                text = btn.text
+                text = btn.inner_text()
                 if text:
                     text = text.strip()
             except Exception:
                 pass
-            
+
             # Méthode 2: innerText (recommandé pour les éléments avec du texte visible)
             if not text or len(text) < 1:
                 try:
@@ -413,7 +419,7 @@ def _detect_aria_radios(scope: WebElement) -> List[QuestionBlock]:
                         text = text.strip()
                 except Exception:
                     pass
-            
+
             # Méthode 3: textContent (fallback, inclut aussi le texte masqué)
             if not text or len(text) < 1:
                 try:
@@ -422,20 +428,20 @@ def _detect_aria_radios(scope: WebElement) -> List[QuestionBlock]:
                         text = text.strip()
                 except Exception:
                     pass
-            
+
             # Si toujours pas de texte, ignorer ce bouton
             if not text or len(text) < 1:
                 continue
-            
+
             visible_buttons.append((btn, text))
-            
+
         except Exception:
             continue
-    
+
     # Si on trouve au moins 2 boutons visibles, c'est probablement un groupe de radios
     if len(visible_buttons) >= 2:
         options = [text for btn, text in visible_buttons]
-        
+
         blocks.append(
             QuestionBlock(
                 itype="radio",
@@ -445,13 +451,13 @@ def _detect_aria_radios(scope: WebElement) -> List[QuestionBlock]:
                 options=options,
             )
         )
-    
+
     return blocks
 
 
-def _detect_checkboxes(scope: WebElement) -> List[QuestionBlock]:
+def _detect_checkboxes(scope: Any) -> List[QuestionBlock]:
     blocks = []
-    boxes = scope.find_elements(By.CSS_SELECTOR, "input[type='checkbox']")
+    boxes = scope.query_selector_all("input[type='checkbox']")
 
     for cb in boxes:
         if not _visible(cb):
@@ -472,9 +478,9 @@ def _detect_checkboxes(scope: WebElement) -> List[QuestionBlock]:
     return blocks
 
 
-def _detect_text_inputs(scope: WebElement) -> List[QuestionBlock]:
+def _detect_text_inputs(scope: Any) -> List[QuestionBlock]:
     blocks = []
-    inputs = scope.find_elements(By.CSS_SELECTOR, "input[type='text'], textarea")
+    inputs = scope.query_selector_all("input[type='text'], textarea")
 
     for inp in inputs:
         if not _visible(inp):
@@ -494,10 +500,9 @@ def _detect_text_inputs(scope: WebElement) -> List[QuestionBlock]:
     return blocks
 
 
-def _detect_buttons(scope: WebElement) -> List[QuestionBlock]:
+def _detect_buttons(scope: Any) -> List[QuestionBlock]:
     blocks = []
-    buttons = scope.find_elements(
-        By.CSS_SELECTOR,
+    buttons = scope.query_selector_all(
         "button, a[role='button'], input[type='button'], input[type='submit']"
     )
 
@@ -505,7 +510,7 @@ def _detect_buttons(scope: WebElement) -> List[QuestionBlock]:
         if not _visible(btn):
             continue
 
-        txt = (btn.text or "").strip()
+        txt = (btn.inner_text() or "").strip()
         if not txt:
             continue
 
