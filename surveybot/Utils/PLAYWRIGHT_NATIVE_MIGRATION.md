@@ -109,12 +109,15 @@ NON MIGRÉS — À traiter dans les blocs S :
   captcha/tencent_handler.py           ✅ migré BLOC S6 (2026-06-23)
   Cash/payout.py                       ✅ migré BLOC S6 (2026-06-23)
   Survey/functions.py                  ✅ migré BLOC S6 (2026-06-23)
-  platforms/topsurveys.py              🔲 résidu mineur driver.current_url dans is_on_platform — BLOC S7
-  platforms/ysense.py                  🔲 entièrement Selenium (select_survey = NotImplementedError) — BLOC S7
+  platforms/topsurveys.py              ✅ migré BLOC S7a (2026-06-23)
+  platforms/ysense.py                  ✅ migré BLOC S7a (2026-06-23)
+  Survey/input_frame.py                ✅ migré BLOC S7a (2026-06-23)
+    (iter_iframes_safe + in_each_frame_recursive — switch_to.frame supprimé)
 
-RÉSIDUS SHIM DANS FICHIERS "MIGRÉS" — À nettoyer dans BLOC S7 :
-  Survey/dom_analyzer.py, cta_handler.py, input_utils.py, input_frame.py,
+RÉSIDUS SHIM STRING-LITERAL — À nettoyer dans BLOC S7b :
+  Survey/dom_analyzer.py, cta_handler.py, input_utils.py,
   input_checkbox.py, input_radio.py, input_matrix.py, action_dispatcher.py
+  (find_elements/execute_script via string literals — absorbés par le shim)
 
 ================================================================================
 DÉCOUPAGE EN BLOCS
@@ -390,14 +393,46 @@ BLOC S6 — captcha/* + Cash/payout.py + Survey/functions.py
   - _click_modal_choose : double WebDriverWait → wait_for_selector(state="visible").
   - Résultat : 0 By., 0 selenium, 0 execute_script dans les 7 fichiers. py_compile OK.
 
-BLOC S7 — Résidus mineurs + nettoyage shim dans fichiers "migrés"
+BLOC S7a — platforms/topsurveys.py + platforms/ysense.py + Survey/input_frame.py
+  Statut : ✅ migré (2026-06-23)
+  Périmètre : résidus Selenium explicites (By/WebDriverWait/EC/switch_to.frame) dans 3 fichiers.
+  Migrations appliquées :
+  - _pw_page(d) helper ajouté dans les 3 fichiers.
+  topsurveys.py :
+  - driver.current_url → _pw_page(driver).url dans is_on_platform().
+  ysense.py (fonctions actives uniquement — NotImplementedError non touchées) :
+  - Imports By / WebDriverWait / EC / TimeoutException supprimés.
+  - driver.get(url) → page.goto(url).
+  - WebDriverWait(20).until(EC.presence_of_element_located(...))
+    → page.wait_for_selector(sel, state="attached", timeout=20000).
+  - email_input.clear() + send_keys(email) → email_input.fill(email).
+  - execute_script(value + events, pwd_input, password) → pwd_input.evaluate("(e,v) => {...}", password).
+  - get_attribute("value") → input_value().
+  - fallback pwd send_keys → fill().
+  - find_element(By.CSS_SELECTOR) × 3 → page.query_selector(...) + None guard.
+  - rc.is_displayed() → rc.is_visible().
+  - execute_script("arguments[0].click()", btn) → btn.click().
+  - WebDriverWait(15).until(lambda d: "/login" not in d.current_url)
+    → page.wait_for_function("() => !window.location.href.includes('/login')", timeout=15000).
+  - errors_div.text → errors_div.inner_text().
+  - is_session_expired : driver.current_url → page.url ; driver.page_source → page.content().
+  input_frame.py — iter_iframes_safe :
+  - find_elements("tag name", "iframe") → _pw_page(driver).query_selector_all("iframe").
+  - fr.rect → fr.bounding_box() or {}.
+  - fr.is_displayed() → fr.is_visible().
+  input_frame.py — in_each_frame_recursive (réécriture complète) :
+  - Boucle switch_to.frame / switch_to.default_content / récursion supprimée.
+  - Remplacée par iter_frame_chains(driver, max_depth=depth) + switch_to_frame_chain
+    (même pattern que click_cta_strong_any_context déjà présent dans le fichier).
+  - Signature et comportement observable inchangés.
+  - Résultat : 0 By., 0 switch_to.frame, 0 WebDriverWait dans les 3 fichiers. py_compile OK.
+
+BLOC S7b — Résidus string-literal shim dans fichiers "migrés"
   Statut : 🔲 à migrer
-  Périmètre :
-  - platforms/topsurveys.py (driver.current_url → _pw_page(driver).url)
-  - platforms/ysense.py (faible priorité — NotImplementedError)
-  - Résidus string-literal shim dans dom_analyzer, cta_handler, input_utils,
-    input_frame (in_each_frame_recursive), input_checkbox, input_radio,
-    input_matrix, action_dispatcher (92 execute_script)
+  Périmètre : find_elements/execute_script via string literals (sans By.*) absorbés par le shim :
+  - Survey/dom_analyzer.py, Survey/cta_handler.py, Survey/input_utils.py,
+    Survey/input_checkbox.py, Survey/input_radio.py, Survey/input_matrix.py,
+    Survey/action_dispatcher.py (~92 execute_script via shim)
 
 BLOC S8 — Suppression du shim
   Statut : 🔲 à faire (après S1→S7 tous validés)
@@ -434,9 +469,9 @@ FRONTIÈRE BLOC 3a → BLOC 3b1
   - driver (= shim) transmis aux sous-modules.
 
 FRONTIÈRE BLOC 3b/S → fichiers encore non migrés
-  - Seuls les résidus du bloc S7 (platforms + shim string-literal) reçoivent encore le shim.
+  - Seuls les résidus du bloc S7b (shim string-literal) reçoivent encore le shim.
   - API Selenium absorbée par le shim — pas de crash tant que le shim existe.
-  - Cette frontière se résorbe avec S7 puis S8.
+  - Cette frontière se résorbe avec S7b puis S8.
 
 INTERFACE switch_to_frame_chain
   - Entrée : driver = shim OU Page native.
@@ -457,6 +492,12 @@ HISTORIQUE
             BLOC S1 migré : survey_difficulty_guard.py — By supprimé, _pw_page ajouté,
             toutes les API Selenium remplacées par Playwright natif.
             Blocs S2→S8 définis et documentés.
+2026-06-23  BLOC S7a migré : topsurveys.py + ysense.py + input_frame.py.
+            topsurveys : current_url → page.url. ysense : By/WebDriverWait/EC supprimés ;
+            get/wait_for_selector/fill/evaluate/query_selector/wait_for_function/content().
+            input_frame iter_iframes_safe : find_elements/rect/is_displayed → Playwright natif.
+            input_frame in_each_frame_recursive : switch_to.frame/default_content supprimés →
+            iter_frame_chains + switch_to_frame_chain. py_compile OK sur les 3 fichiers.
 2026-06-23  BLOC S3a migré : dom_extractors_areyounet.py + dom_extractors_decipher.py.
             By supprimé dans les 2 fichiers. _pw_page ajouté.
             find_elements/find_element(By.*) → query_selector_all/query_selector + None guards.
