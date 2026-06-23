@@ -11,10 +11,13 @@ from typing import Optional, Callable
 from enum import Enum
 from State.account_state import load_state, update_state, touch_heartbeat, _ts_add, _ts_to_unix
 from State.daily_target import DAILY_TARGET_EUR
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
 from Management.pause_policy import PausePolicy, resolve_pause_seconds
+
+
+def _pw_page(d):
+    if hasattr(d, '_page'):
+        return d._page
+    return d
 
 def _is_prod_env() -> bool:
     """
@@ -117,23 +120,35 @@ class RuntimeGuard:
         """
 
         try:
-            wait = WebDriverWait(driver, 6)
+            # Playwright ne supporte pas XPath | dans un seul sélecteur :
+            # on tente les deux XPath séquentiellement (3 s chacun = 6 s au total)
+            cta = None
+            for xpath in [
+                "//button[contains(., 'Ouvrir')]",
+                "//a[contains(., 'Ouvrir')]",
+            ]:
+                try:
+                    el = _pw_page(driver).wait_for_selector(
+                        f"xpath={xpath}", state="visible", timeout=3000
+                    )
+                    if el is not None:
+                        cta = el
+                        break
+                except Exception:
+                    continue
 
-            # Sélecteurs volontairement larges pour anticiper les variations UI
-            cta = wait.until(
-                EC.element_to_be_clickable((
-                    By.XPATH,
-                    "//button[contains(., 'Ouvrir')] | //a[contains(., 'Ouvrir')]"
-                ))
-            )
+            if cta is None:
+                raise Exception("CTA 'Ouvrir' non trouvé")
 
-            driver.execute_script(
-                "arguments[0].scrollIntoView({block:'center'});",
-                cta
-            )
+            cta.scroll_into_view_if_needed()
             time.sleep(5)  # laisser le temps à l'UI de réagir après scroll
-            driver.execute_script("arguments[0].click();", cta)
 
+            if os.getenv("CTA_INTERCEPT_ONLY", "0") == "1":
+                print("✅ CTA 'Ouvrir l'application' trouvé — interception OK (CTA_INTERCEPT_ONLY actif)")
+                self.record_success()
+                return True
+
+            cta.click()
             print("✅ CTA 'Ouvrir l'application' cliqué avec succès")
             self.record_success()
             return True

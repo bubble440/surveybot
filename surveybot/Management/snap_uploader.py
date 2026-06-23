@@ -28,6 +28,12 @@ Compteurs :
 import os
 import time
 
+
+def _pw_page(d):
+    if hasattr(d, '_page'):
+        return d._page
+    return d
+
 _TAG = "SNAP_R2"
 
 # Identifiant de session fixé une seule fois à l'import du module
@@ -81,9 +87,9 @@ def _capture_png(driver) -> bytes:
     Cela inclut la barre d'adresse, les flags/icônes du navigateur, les notifications OS, etc.
 
     Stratégie :
-      1. scrot via $DISPLAY  → capture bureau complet (préféré)
-      2. driver.get_screenshot_as_png() → fallback viewport Selenium
-      3. driver.save_screenshot()       → fallback fichier Selenium
+      1. scrot via $DISPLAY              → capture bureau complet (préféré)
+      2. _pw_page(driver).screenshot()   → fallback viewport Playwright (bytes)
+      3. _pw_page(driver).screenshot(path) → fallback fichier Playwright
     """
     import subprocess
     import tempfile
@@ -116,19 +122,19 @@ def _capture_png(driver) -> bytes:
         except Exception:
             pass
         
-    # 2. Fallback Selenium — viewport uniquement
+    # 2. Fallback Playwright — viewport uniquement (retourne bytes directement)
     try:
-        png = driver.get_screenshot_as_png()
+        png = _pw_page(driver).screenshot()
         if png and len(png) > 0:
             return png
     except Exception:
         pass
 
-    # 3. Fallback Selenium — via fichier
+    # 3. Fallback Playwright — via fichier
     with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
         path = tmp.name
     try:
-        driver.save_screenshot(path)
+        _pw_page(driver).screenshot(path=path)
         with open(path, "rb") as f:
             return f.read()
     finally:
