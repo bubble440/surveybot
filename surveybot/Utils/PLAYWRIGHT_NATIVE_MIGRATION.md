@@ -94,7 +94,7 @@ NON MIGRÉS — À traiter dans les blocs S :
   Survey/dom_utils.py                  🔲 By, find_elements(By.XPATH) (×8+), execute_script — BLOC S2
   Survey/dom_extractors_areyounet.py   🔲 By, find_elements/find_element (×20+) — BLOC S3
   Survey/dom_extractors_decipher.py    🔲 By, find_elements — BLOC S3
-  Survey/dom_extractors_misc.py        🔲 By, find_elements/find_element (×20+), execute_script — BLOC S3
+  Survey/dom_extractors_misc.py        ✅ migré BLOC S3b (2026-06-23)
   Survey/dropdown_block_resolver.py    🔲 By, WebElement, Select, find_elements/find_element,
                                           execute_script (×2) — BLOC S4
   Survey/question_block_analyzer.py    🔲 By, WebElement, find_elements/find_element (×15+) — BLOC S4
@@ -200,9 +200,57 @@ BLOC S2 — Survey/dom_context_mapper.py + dom_question_extractor.py + dom_utils
     driver.execute_script(js, el[, option_keys]) → page.evaluate(fn, el) / page.evaluate(fn, [el, option_keys])
   - Logique métier de toutes les fonctions conservée à l'identique (aucun extracteur modifié).
 
-BLOC S3 — Survey/dom_extractors_areyounet.py + dom_extractors_decipher.py + dom_extractors_misc.py
-  Statut : 🔲 à migrer
-  Périmètre : extracteurs DOM par provider, appelés depuis dom_analyzer.
+BLOC S3a — Survey/dom_extractors_areyounet.py + dom_extractors_decipher.py
+  Statut : ✅ migré (2026-06-23)
+  Migrations appliquées (commun aux 2 fichiers) :
+  - Import By supprimé. _pw_page(d) helper ajouté en tête.
+  - driver.find_elements(By.CSS_SELECTOR/ID, ...) → _pw_page(driver).query_selector_all(...)
+  - driver.find_element(By.CSS_SELECTOR/ID, ...) → _pw_page(driver).query_selector(...) + None guard
+  - el.find_elements(By.CSS_SELECTOR/TAG_NAME, ...) → el.query_selector_all(...)
+  - el.find_element(By.CSS_SELECTOR, ...) → el.query_selector(...) + None guard
+  - el.find_element(By.XPATH, "following-sibling::X[1]") → el.query_selector("xpath=following-sibling::X[1]") + None guard
+  - el.find_element(By.XPATH, "ancestor::X[1]") → el.query_selector("xpath=ancestor::X[1]") + None guard
+  - el.find_element(By.XPATH, "ancestor::*[...][1]//Y") → el.query_selector("xpath=ancestor::*[...][1]//Y") + None guard
+  - el.find_element(By.XPATH, "..") → el.query_selector("xpath=..") + None guard
+  - el.find_element(By.XPATH, "ancestor::label[1]") → el.query_selector("xpath=ancestor::label[1]") + None guard
+  - el.find_element(By.XPATH, "following-sibling::label[1]") → el.query_selector("xpath=following-sibling::label[1]") + None guard
+  - el.text → el.inner_text() ; el.get_attribute("textContent") → el.text_content()
+  - el.text or el.get_attribute("innerText") → el.inner_text()
+  - driver.execute_script(js, arg) → _pw_page(driver).evaluate(fn, arg) [QARTS autosubmit]
+  - field.tag_name → field.evaluate("e => e.tagName.toLowerCase()") [×2 dans decipher]
+  - Helpers internes _visible_text, _extract_label_text, _label_text migrés (.text → .inner_text())
+  - Logique métier de tous les extracteurs conservée à l'identique.
+
+BLOC S3b — Survey/dom_extractors_misc.py
+  Statut : ✅ migré (2026-06-23)
+  Périmètre : extracteurs DOM provider divers (~12 600 lignes, ~76 fonctions publiques),
+              appelés depuis dom_analyzer.
+  Migrations appliquées :
+  - Import By supprimé. _pw_page(d) helper ajouté en tête.
+  - driver.find_elements(By.CSS_SELECTOR, ...) → _pw_page(driver).query_selector_all(...)
+  - driver.find_element(By.CSS_SELECTOR, ...) → _pw_page(driver).query_selector(...)
+  - driver.find_element(By.ID, expr) → _pw_page(driver).query_selector("#id") (littéral)
+    ou _pw_page(driver).query_selector(f"#id_var") / f"#f-string_merged"
+  - el.find_elements(By.CSS_SELECTOR/TAG_NAME, ...) → el.query_selector_all(...)
+  - el.find_elements(By.XPATH, expr) → el.query_selector_all("xpath=" + expr)
+  - el.find_element(By.CSS_SELECTOR, ...) → el.query_selector(...)
+  - el.find_element(By.XPATH, expr) → el.query_selector("xpath=" + expr)
+  - Appels multi-lignes find_elements(/find_element)(\n    By.TYPE, sel\n) normalisés
+    en une ligne avant transformation.
+  - Appels sur éléments indexés (var[0].find_element...) couverts.
+  - execute_script("return arguments[0].innerText || '';", el) → el.inner_text()
+  - execute_script("arguments[0].scrollIntoView(...);", el) → el.evaluate("(el) => el.scrollIntoView(...)")
+  - execute_script("arguments[0].click();", el) → el.evaluate("(el) => el.click()")
+  - execute_script(multiline_js_with_args, el) → _pw_page(driver).evaluate("""(_el) => { js }""", el)
+  - execute_script(no_arg_js) → _pw_page(driver).evaluate("""() => { js }""")
+  - _JS_DIRECT_TEXT (local) réécrit en arrow function ; appels → el.evaluate(_JS_DIRECT_TEXT)
+  - el.text / var.text (Selenium) → el.inner_text() (tous les noms de variables couverts,
+    y compris accès indexés var[0].text)
+  - el.text or el.get_attribute("innerText") or "" → el.inner_text() or ""
+  - from selenium.webdriver.common.keys import Keys as _Keys (inline dans corps) supprimé ;
+    combobox.send_keys(Keys.ESCAPE) → combobox.press("Escape")
+  - Signatures et logique métier des 76 fonctions publiques conservées à l'identique.
+  - Résultat : 0 By., 0 from selenium, 0 execute_script. Syntaxe Python vérifiée (py_compile).
 
 BLOC S4 — Survey/dropdown_block_resolver.py + question_block_analyzer.py
           + question_block_resolver.py + sliderpoints_extractor.py
@@ -262,7 +310,7 @@ FRONTIÈRE BLOC 3a → BLOC 3b1
   - driver (= shim) transmis aux sous-modules.
 
 FRONTIÈRE BLOC 3b/S → fichiers encore non migrés
-  - Les fichiers des blocs S2→S6 reçoivent encore driver (= shim).
+  - Les fichiers des blocs S3b→S6 reçoivent encore driver (= shim).
   - API Selenium absorbée par le shim — pas de crash tant que le shim existe.
   - Cette frontière se résorbe bloc par bloc jusqu'à S8.
 
@@ -285,6 +333,19 @@ HISTORIQUE
             BLOC S1 migré : survey_difficulty_guard.py — By supprimé, _pw_page ajouté,
             toutes les API Selenium remplacées par Playwright natif.
             Blocs S2→S8 définis et documentés.
+2026-06-23  BLOC S3a migré : dom_extractors_areyounet.py + dom_extractors_decipher.py.
+            By supprimé dans les 2 fichiers. _pw_page ajouté.
+            find_elements/find_element(By.*) → query_selector_all/query_selector + None guards.
+            XPath ancestor/following-sibling : el.query_selector("xpath=...") + None guard.
+            .text → .inner_text(). execute_script → evaluate (QARTS autosubmit).
+            field.tag_name → evaluate(tagName). Helpers internes migrés.
+            BLOC S3 découpé en S3a (fait) + S3b (dom_extractors_misc.py, à migrer).
+2026-06-23  BLOC S3b migré : dom_extractors_misc.py (~12 600 lignes, ~76 fonctions, ~500+ By.*).
+            By supprimé, _pw_page ajouté. query_selector_all/query_selector pour tous les
+            find_elements/find_element (CSS, XPATH via "xpath="+expr, TAG_NAME, ID).
+            execute_script → evaluate (multiline JS → arrow function triple-quote).
+            _JS_DIRECT_TEXT réécrit en arrow function. .text → .inner_text() (tous vars).
+            Inline Keys import supprimé → press("Escape"). Syntaxe Python validée (py_compile).
 2026-06-23  BLOC S2 migré : dom_context_mapper.py + dom_question_extractor.py + dom_utils.py.
             By/ActionChains supprimés. _pw_page ajouté dans les 3 fichiers.
             find_elements(By.*) → query_selector_all("xpath=..." ou css).
