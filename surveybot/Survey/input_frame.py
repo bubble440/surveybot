@@ -39,10 +39,10 @@ def iter_iframes_safe(driver):
     Filtre les iframes trop petites (< 20x20 pixels).
     """
     frames = []
-    for fr in driver.find_elements("tag name", "iframe"):
+    for fr in _pw_page(driver).query_selector_all("iframe"):
         try:
-            r = fr.rect
-            if fr.is_displayed() and r.get("width", 0) > 20 and r.get("height", 0) > 20:
+            r = fr.bounding_box() or {}
+            if fr.is_visible() and r.get("width", 0) > 20 and r.get("height", 0) > 20:
                 frames.append(fr)
         except Exception:
             continue
@@ -51,43 +51,29 @@ def iter_iframes_safe(driver):
 
 def in_each_frame_recursive(driver, fn_try, depth=2):
     """
-    Appelle fn_try(driver) dans le contexte courant.
-    Si échec, essaye récursivement dans chaque iframe (profondeur limitée).
-    Revient toujours au default_content() après chaque descente.
-    
+    Appelle fn_try(driver) dans le contexte courant puis dans chaque iframe
+    (profondeur limitée). Utilise iter_frame_chains + switch_to_frame_chain
+    pour naviguer inter-frames sans API Selenium.
+
     Args:
-        driver: WebDriver instance
+        driver: Page Playwright ou shim
         fn_try: fonction callback(driver) -> bool
-        depth: profondeur maximale de récursion
-    
+        depth: profondeur maximale de frames à explorer
+
     Returns:
         True si fn_try a réussi dans n'importe quel contexte
     """
-    if depth < 0:
-        return False
+    from frame_utils import iter_frame_chains, switch_to_frame_chain
 
-    # 1) Essai dans le contexte courant
-    try:
-        if fn_try(driver):
-            return True
-    except Exception:
-        pass
-
-    # 2) Descente dans les iframes si non trouvé
-    frames = iter_iframes_safe(driver)
-    for fr in frames:
-        try:
-            driver.switch_to.frame(fr)
-            if in_each_frame_recursive(driver, fn_try, depth - 1):
-                driver.switch_to.default_content()
-                return True
-            driver.switch_to.default_content()
-        except Exception:
+    for chain in iter_frame_chains(driver, max_depth=depth):
+        with switch_to_frame_chain(driver, chain) as ok:
+            if not ok:
+                continue
             try:
-                driver.switch_to.default_content()
-            except:
-                pass
-            continue
+                if fn_try(driver):
+                    return True
+            except Exception:
+                continue
 
     return False
 
