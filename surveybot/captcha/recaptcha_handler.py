@@ -4,6 +4,12 @@ import time
 import json
 
 from captcha.recaptcha_utils import extract_recaptcha_v2_sitekey, inject_recaptcha_token
+
+
+def _pw_page(d):
+    if hasattr(d, '_page'):
+        return d._page
+    return d
 from captcha.captcha_solver import TwoCaptchaClient, CapSolverClient
 import Management.guards.survey_difficulty_guard
 from Survey.log_utils import log_debug
@@ -64,7 +70,7 @@ def _fire_recaptcha_callbacks(driver, token: str) -> dict:
     Retourne un rapport dict Python (pas console.log, invisible depuis Python).
     """
     js = """
-    return (function(tok) {
+    (tok) => {
         var report = {
             clients_found: 0,
             callbacks_found: 0,
@@ -174,11 +180,11 @@ def _fire_recaptcha_callbacks(driver, token: str) -> dict:
         }
 
         return JSON.stringify(report);
-    })(arguments[0]);
+    }
     """
     # Diagnostic : snapshot de ___grecaptcha_cfg.clients avant d'appeler les callbacks
     _cfg_js = """
-    return (function() {
+    () => {
         var out = {
             present: !!window.___grecaptcha_cfg,
             clients_count: 0,
@@ -193,25 +199,25 @@ def _fire_recaptcha_callbacks(driver, token: str) -> dict:
             }
         }
         return JSON.stringify(out);
-    })();
+    }
     """
     try:
-        _cfg_raw = driver.execute_script(_cfg_js)
+        _cfg_raw = _pw_page(driver).evaluate(_cfg_js)
         log_debug("RECAPTCHA_HANDLER][CFG_DUMP", _cfg_raw or "(empty)")
     except Exception as _cfg_e:
-        log_debug("RECAPTCHA_HANDLER][CFG_DUMP", f"execute_script failed: {_cfg_e}")
+        log_debug("RECAPTCHA_HANDLER][CFG_DUMP", f"evaluate failed: {_cfg_e}")
 
     try:
-        raw = driver.execute_script(js, token)
+        raw = _pw_page(driver).evaluate(js, token)
         return json.loads(raw) if raw else {"error": "script returned None"}
     except Exception as e:
-        return {"error": f"execute_script failed: {e}"}
+        return {"error": f"evaluate failed: {e}"}
 
 
 def _log_callback_report(report: dict):
     """Affiche le rapport callback JS de façon lisible en Python."""
     if "error" in report:
-        print(f"[RECAPTCHA_HANDLER] ❌ execute_script error: {report['error']}")
+        print(f"[RECAPTCHA_HANDLER] ❌ evaluate error: {report['error']}")
         return
 
     clients = report.get("clients_found", "?")
@@ -247,9 +253,9 @@ def _verify_recaptcha_resolved(driver, callback_report: dict) -> bool:
 
     # Fallback token
     try:
-        token_len = int(driver.execute_script(
-            "return (function(){ var el = document.getElementById('g-recaptcha-response');"
-            " return el ? (el.value||'').length : 0; })();"
+        token_len = int(_pw_page(driver).evaluate(
+            "() => { var el = document.getElementById('g-recaptcha-response');"
+            " return el ? (el.value||'').length : 0; }"
         ) or 0)
         if token_len > 20:
             print(f"[RECAPTCHA_HANDLER] ⚠️  Callback non déclenché MAIS token présent "
@@ -290,7 +296,7 @@ def solve_recaptcha_v2_auto(driver) -> bool:
     # être généré depuis la même IP que la soumission du formulaire.
     # Si PROXY_HOST est défini → RecaptchaV2Task (proxy) ; sinon → Proxyless (CMIX, etc.)
     # Si is_enterprise → RecaptchaV2EnterpriseTask / RecaptchaV2EnterpriseTaskProxyless
-    current_url = driver.current_url
+    current_url = _pw_page(driver).url
     proxy_cfg = _get_proxy_config()
     mode = "proxy" if proxy_cfg else "proxyless"
     provider = os.getenv("CAPTCHA_PROVIDER", "2captcha").strip().lower()

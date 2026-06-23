@@ -16,6 +16,12 @@ import time
 from urllib.parse import urlparse, parse_qs
 
 from Survey.log_utils import log_info, log_debug
+
+
+def _pw_page(d):
+    if hasattr(d, '_page'):
+        return d._page
+    return d
 from captcha.captcha_solver import CapSolverClient
 from captcha.recaptcha_handler import _get_proxy_config
 
@@ -38,8 +44,9 @@ def _detect_datadome(driver) -> dict | None:
     Le paramètre t (lb = IP bannie) est vérifié dans solve_datadome_auto.
     """
     try:
-        iframe_src = driver.execute_script(
+        iframe_src = _pw_page(driver).evaluate(
             """
+            () => {
             var frames = document.querySelectorAll(
                 'iframe[src*="captcha-delivery.com"], iframe[title*="DataDome"]'
             );
@@ -48,6 +55,7 @@ def _detect_datadome(driver) -> dict | None:
                 if (src) return src;
             }
             return null;
+            }
             """
         )
     except Exception as e:
@@ -99,12 +107,12 @@ def solve_datadome_auto(driver) -> bool:
 
     # 4. Extraire userAgent courant du navigateur
     try:
-        user_agent = driver.execute_script("return navigator.userAgent") or ""
+        user_agent = _pw_page(driver).evaluate("() => navigator.userAgent") or ""
     except Exception as e:
         log_info(_TAG, f"Impossible d'extraire userAgent : {e}")
         return False
 
-    website_url = driver.current_url
+    website_url = _pw_page(driver).url
     log_info(_TAG, f"Envoi à CapSolver (url={website_url})")
 
     # 5. Résoudre via CapSolver (DataDomeSolverTask)
@@ -152,12 +160,12 @@ def solve_datadome_auto(driver) -> bool:
     # 7. Injecter le cookie datadome sur le domaine courant
     try:
         domain = urlparse(website_url).hostname or ""
-        driver.add_cookie({
+        _pw_page(driver).context.add_cookies([{
             "name": "datadome",
             "value": cookie_value,
             "domain": domain,
             "path": "/",
-        })
+        }])
         log_info(_TAG, f"Cookie datadome injecté sur domaine={domain}")
     except Exception as e:
         log_info(_TAG, f"Erreur injection cookie : {e}")
@@ -165,7 +173,7 @@ def solve_datadome_auto(driver) -> bool:
 
     # 8. Recharger la page pour que le cookie soit pris en compte
     try:
-        driver.refresh()
+        _pw_page(driver).reload()
         time.sleep(2.0)
     except Exception as e:
         log_info(_TAG, f"Erreur refresh : {e}")

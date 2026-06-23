@@ -1,10 +1,17 @@
-import time, os
+import time, os, unicodedata
 from preselection.question_validation import detect_disqualification_reason
 from Cash.payout import _payout_and_check_daily_stop
 
+
+def _pw_page(d):
+    if hasattr(d, '_page'):
+        return d._page
+    return d
+
+
 def _page_text_lc(driver) -> str:
     try:
-        return (driver.execute_script("return document.body.innerText || ''") or "").lower()
+        return (_pw_page(driver).evaluate("() => document.body.innerText || ''") or "").lower()
     except Exception:
         return ""
 
@@ -14,20 +21,19 @@ def _env_truthy(name: str, default: str = "0") -> bool:
 
 def _close_other_tabs_in_current_session(driver):
     """Ferme tous les autres onglets de ce driver, garde l'onglet courant."""
-    current = driver.current_window_handle
-    handles = list(driver.window_handles)
-    for h in handles:
-        if h != current:
+    page = _pw_page(driver)
+    current = page
+    try:
+        pages = page.context.pages
+    except Exception:
+        return
+    for p in pages:
+        if p is not current:
             try:
-                driver.switch_to.window(h)
-                driver.close()
+                p.close()
                 time.sleep(3)
             except Exception:
                 pass
-    try:
-        driver.switch_to.window(current)
-    except Exception:
-        pass
 
 
 def _local_pause_before_cta(reason: str = "") -> None:
@@ -45,7 +51,7 @@ def _local_pause_before_cta(reason: str = "") -> None:
             raise
     except Exception:
         return
-    
+
 
 def _handle_topsurveys_exclusion_popup(driver, account_id) -> bool: #survey_executor
     """
@@ -60,22 +66,18 @@ def _handle_topsurveys_exclusion_popup(driver, account_id) -> bool: #survey_exec
 
     Retourne False si aucun des deux cas n'est detecte.
     """
-    import unicodedata
-    import time
-    from selenium.webdriver.common.by import By
-
     try:
-        url = (driver.current_url or "").lower()
+        url = (_pw_page(driver).url or "").lower()
         if "topsurveys.app" not in url:
             return False
-    except:
+    except Exception:
         return False
 
     import preselection.survey_navigator as survey_navigator
 
     # === PRIORITE 1 : Mystery boxes ===
     try:
-        has_boxes = bool(driver.find_elements(By.CSS_SELECTOR, "[data-test-id^='ps-mystery-box-item-button']"))
+        has_boxes = bool(_pw_page(driver).query_selector_all("[data-test-id^='ps-mystery-box-item-button']"))
     except Exception:
         has_boxes = False
 
@@ -100,12 +102,12 @@ def _handle_topsurveys_exclusion_popup(driver, account_id) -> bool: #survey_exec
 
     # === PRIORITE 2 : Popup 'Bon travail !' sans mystery boxes ===
     try:
-        txt = (driver.execute_script("return document.body.innerText || ''") or "").lower()
-    except:
+        txt = (_pw_page(driver).evaluate("() => document.body.innerText || ''") or "").lower()
+    except Exception:
         return False
 
     def _norm(s):
-        s = s.replace("\u2018", "'").replace("\u2019", "'")
+        s = s.replace("‘", "'").replace("’", "'")
         s = unicodedata.normalize('NFD', s)
         s = ''.join(c for c in s if unicodedata.category(c) != 'Mn')
         return s.lower()
@@ -123,29 +125,37 @@ def _handle_topsurveys_exclusion_popup(driver, account_id) -> bool: #survey_exec
     # Fermer le popup via le bouton 'Complete'
     btn = None
     try:
-        from selenium.webdriver.support.ui import WebDriverWait
-        from selenium.webdriver.support import expected_conditions as EC
-        btn = WebDriverWait(driver, 2).until(
-            EC.element_to_be_clickable((By.CSS_SELECTOR, "button[data-test-id='ps-common-actions-button']"))
+        btn = _pw_page(driver).wait_for_selector(
+            "button[data-test-id='ps-common-actions-button']",
+            state="visible",
+            timeout=2000,
         )
-    except:
+    except Exception:
         pass
 
     if not btn:
         try:
-            for b in driver.find_elements(By.CSS_SELECTOR, "button"):
-                if b.is_displayed() and "compl" in _norm(b.text or ""):
-                    btn = b
-                    break
-        except:
+            for b in _pw_page(driver).query_selector_all("button"):
+                try:
+                    if b.is_visible() and "compl" in _norm(b.inner_text() or ""):
+                        btn = b
+                        break
+                except Exception:
+                    continue
+        except Exception:
             pass
 
     if btn:
         try:
-            driver.execute_script("arguments[0].click();", btn)
-            reason = "[TOPSURVEYS_POPUP] Bouton 'Complete' clique."
-            print(reason)
-            _local_pause_before_cta(reason)
+            if os.getenv("CTA_INTERCEPT_ONLY", "0") == "1":
+                reason = "[TOPSURVEYS_POPUP] Bouton 'Complete' trouvé — interception OK (CTA_INTERCEPT_ONLY actif)"
+                print(reason)
+                _local_pause_before_cta(reason)
+            else:
+                btn.click()
+                reason = "[TOPSURVEYS_POPUP] Bouton 'Complete' clique."
+                print(reason)
+                _local_pause_before_cta(reason)
             time.sleep(1.0)
         except Exception as e:
             reason = f"[TOPSURVEYS_POPUP] Erreur clic: {e}"
@@ -173,8 +183,8 @@ def _handle_topsurveys_exclusion_popup(driver, account_id) -> bool: #survey_exec
         print(reason)
         _local_pause_before_cta(reason)
         return False
-    
-    
+
+
     # === PRIORITE 3 : check disqualification puis relance si besoin ===
     try:
         # ✅ Détection disqualification centralisée (robuste)
