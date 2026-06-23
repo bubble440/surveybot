@@ -7,22 +7,17 @@ from State.account_state import update_state, load_state
 from State.daily_target import DAILY_TARGET_EUR, record_daily_earning_and_target, init_daily_balance_target, today_str
 from Management.guards.runtime_guard import get_guard
 from Management.notifier import send_telegram
-from selenium.webdriver.common.by import By
-
 # Seuil minimal réel pour déclencher un encaissement sur TopSurveys.
 # Le modal ne propose que des options >= 5 €, donc ouvrir en dessous est inutile.
 MIN_CASHOUT_EUR = 5.0
 
 IS_LOCAL = os.getenv("RUN_ENV", "local") == "local"
 
-if not IS_LOCAL:
-    from selenium.webdriver.support.ui import WebDriverWait
-    from selenium.webdriver.support import expected_conditions as EC
-    from selenium.common.exceptions import (
-        StaleElementReferenceException,
-        ElementClickInterceptedException,
-    )
-    from selenium.webdriver.common.action_chains import ActionChains
+
+def _pw_page(d):
+    if hasattr(d, '_page'):
+        return d._page
+    return d
 # ---------- Helpers ----------
 
 def _notify_cashout_failure(account_id: str, amount: float, email: str = "") -> None:
@@ -68,16 +63,19 @@ def _notify_cashout_result(
     except Exception:
         pass
 
-def _wait(driver, timeout=10):
-    return WebDriverWait(driver, timeout)
-
 def _js_click(driver, el):
-    driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
-    driver.execute_script("arguments[0].click();", el)
+    el.scroll_into_view_if_needed()
+    if os.getenv("CTA_INTERCEPT_ONLY", "0") == "1":
+        print("[PAYOUT] CTA trouvé — interception OK (CTA_INTERCEPT_ONLY actif)")
+        time.sleep(3)
+        return
+    el.click()
     time.sleep(3)  # laisser le temps à l'UI de réagir (ex: activer le bouton 'Choisis' après sélection)
 
 def _find(driver, by, sel, timeout=10):
-    return _wait(driver, timeout).until(EC.presence_of_element_located((by, sel)))
+    # by ignoré : CSS si pas de // sinon xpath=
+    pw_sel = f"xpath={sel}" if sel.startswith("//") or sel.startswith("./") else sel
+    return _pw_page(driver).wait_for_selector(pw_sel, state="attached", timeout=timeout * 1000)
 
 # ---------- Lecture du solde & ouverture du modal ----------
 
@@ -88,11 +86,11 @@ def _open_cashout_modal(driver) -> bool:
     <button data-test-id="balance-card-cashout">Encaissement</button>
     """
     try:
-        btn = _find(driver, By.CSS_SELECTOR, "button[data-test-id='balance-card-cashout']")
+        btn = _find(driver, None, "button[data-test-id='balance-card-cashout']")
         _js_click(driver, btn)
         time.sleep(3)  # laisser le temps au modal de s'ouvrir
         # attend l'apparition du conteneur modal
-        _find(driver, By.CSS_SELECTOR, ".rewards-modal-container")
+        _find(driver, None, ".rewards-modal-container")
         return True
     except Exception:
         return False
@@ -105,21 +103,28 @@ def _is_enabled(el) -> bool:
 
 def _get_select_btn(driver):
     try:
-        return driver.find_element(By.CSS_SELECTOR, "button[data-test-id='reward-select-button']")
+        return _pw_page(driver).query_selector("button[data-test-id='reward-select-button']")
     except Exception:
         return None
 
 def _wait_select_btn_enabled(driver, timeout=5):
-    _wait(driver, timeout).until(lambda d: (_b := _get_select_btn(d)) and _is_enabled(_b))
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        b = _get_select_btn(driver)
+        if b and _is_enabled(b):
+            return
+        time.sleep(0.2)
+    raise RuntimeError("reward-select-button never became enabled")
 
 def _dispatch_mouse_sequence(driver, el) -> None:
-    driver.execute_script("""
-        const el = arguments[0];
-        el.scrollIntoView({block:'center'});
-        for (const type of ['mouseover','mousemove','mousedown','mouseup','click']) {
-            el.dispatchEvent(new MouseEvent(type, {bubbles:true,cancelable:true,view:window}));
-        }
-    """, el)
+    el.evaluate(
+        "(el) => {"
+        " el.scrollIntoView({block:'center'});"
+        " for (const type of ['mouseover','mousemove','mousedown','mouseup','click']) {"
+        "  el.dispatchEvent(new MouseEvent(type, {bubbles:true,cancelable:true,view:window}));"
+        " }"
+        "}"
+    )
 
 def _select_money_option_in_open_tab(driver, tab_el, amount="5") -> bool:
     """
@@ -127,28 +132,33 @@ def _select_money_option_in_open_tab(driver, tab_el, amount="5") -> bool:
     en cliquant le wrapper [data-test-id="reward-option"].
     """
     # Cible les spans '5 €' puis remonte au wrapper cliquable
-    candidates = tab_el.find_elements(
-        By.XPATH,
-        f".//span[contains(@class,'option-money')][contains(normalize-space(.), '{amount}') and contains(normalize-space(.),'€')]"
+    candidates = tab_el.query_selector_all(
+        f"xpath=.//span[contains(@class,'option-money')][contains(normalize-space(.), '{amount}') and contains(normalize-space(.),'€')]"
     )
     for span in candidates:
         try:
-            wrapper = span.find_element(
-                By.XPATH, "./ancestor::*[@data-test-id='reward-option'][1]"
+            wrapper = span.query_selector(
+                "xpath=./ancestor::*[@data-test-id='reward-option'][1]"
             )
+            if wrapper is None:
+                continue
             if "blocked" in (wrapper.get_attribute("class") or ""):
                 continue
 
-            # 1) click() direct
-            driver.execute_script("arguments[0].scrollIntoView({block:'center'});", wrapper)
+            # 1) scroll + click (conditionné CTA_INTERCEPT_ONLY)
+            wrapper.scroll_into_view_if_needed()
             time.sleep(5)
+            if os.getenv("CTA_INTERCEPT_ONLY", "0") == "1":
+                print("[PAYOUT] CTA reward-option trouvé — interception OK (CTA_INTERCEPT_ONLY actif)")
+                return True
             try:
                 wrapper.click()
                 time.sleep(3)
             except Exception:
-                # 2) ActionChains
+                # 2) hover + click
                 try:
-                    ActionChains(driver).move_to_element(wrapper).pause(3).click().perform()
+                    wrapper.hover()
+                    wrapper.click()
                 except Exception:
                     # 3) séquence d'événements souris JS (certains frameworks attendent ça)
                     _dispatch_mouse_sequence(driver, wrapper)
@@ -166,8 +176,6 @@ def _select_money_option_in_open_tab(driver, tab_el, amount="5") -> bool:
                 except Exception:
                     continue
 
-        except StaleElementReferenceException:
-            continue
         except Exception:
             continue
     return False
@@ -177,16 +185,22 @@ def _accordion_open(driver, label_substr: str) -> bool:
     try:
         btn = _find(
             driver,
-            By.XPATH,
+            None,
             "//button[contains(@class,'p-accordion-button')][.//span[contains(normalize-space(.), %s)]]" %
             repr(label_substr)
         )
-        tab = btn.find_element(By.XPATH, "./ancestor::div[contains(@class,'p-accordion-tab')]")
+        tab = btn.query_selector("xpath=./ancestor::div[contains(@class,’p-accordion-tab’)]")
+        if tab is None:
+            return False
         if "p-active" not in (tab.get_attribute("class") or ""):
             _js_click(driver, btn)
             time.sleep(3)
         # s’assure que le contenu est présent
-        _wait(driver, 5).until(lambda d: len(tab.find_elements(By.CSS_SELECTOR, ".p-accordion-content")) > 0)
+        deadline = time.time() + 5
+        while time.time() < deadline:
+            if tab.query_selector(".p-accordion-content"):
+                break
+            time.sleep(0.2)
         return True
     except Exception:
         return False
@@ -203,22 +217,24 @@ def _select_money_option_5_eur_in_open_tab(tab_el) -> bool:
          </div>
     """
     try:
-        opt = tab_el.find_element(
-            By.XPATH,
-            ".//div[contains(@class,'reward-options')]"
+        opt = tab_el.query_selector(
+            "xpath=.//div[contains(@class,'reward-options')]"
             "//div[@data-test-id='reward-option' and not(contains(@class,'blocked'))]"
             "[.//span[contains(normalize-space(.),'5') and contains(normalize-space(.),'€')]]"
         )
-        _js_click(tab_el.parent, opt)  # JS click via driver du parent (hack simple)
+        if opt is None:
+            raise RuntimeError("opt not found")
+        _js_click(None, opt)
         return True
     except Exception:
         try:
             # variation: cliquer directement sur le <span> '5 €'
-            span = tab_el.find_element(
-                By.XPATH,
-                ".//span[contains(@class,'option-money')][contains(normalize-space(.),'5') and contains(normalize-space(.),'€')]"
+            span = tab_el.query_selector(
+                "xpath=.//span[contains(@class,'option-money')][contains(normalize-space(.),'5') and contains(normalize-space(.),'€')]"
             )
-            _js_click(tab_el.parent, span)
+            if span is None:
+                raise RuntimeError("span not found")
+            _js_click(None, span)
             return True
         except Exception:
             return False
@@ -230,9 +246,9 @@ def _click_modal_choose(driver) -> bool:
       <button data-test-id="reward-select-button" ...>Choisis</button>
     """
     try:
-        btn = _find(driver, By.CSS_SELECTOR, "button[data-test-id='reward-select-button']")
-        # il peut être 'disabled' avant sélection -> on attend qu'il soit cliquable
-        _wait(driver, 10).until(EC.element_to_be_clickable((By.CSS_SELECTOR, "button[data-test-id='reward-select-button']")))
+        btn = _pw_page(driver).wait_for_selector(
+            "button[data-test-id='reward-select-button']", state="visible", timeout=10000
+        )
         _js_click(driver, btn)
         return True
     except Exception:
@@ -244,7 +260,7 @@ def _select_paypal_5_eur(driver) -> bool:
         return False
     tab = _find(
         driver,
-        By.XPATH,
+        None,
         "//div[contains(@class,'p-accordion-tab') and contains(@class,'p-active')][.//span[contains(normalize-space(.),'PayPal International')]]"
     )
     if not _select_money_option_in_open_tab(driver, tab, amount="5"):
@@ -262,10 +278,12 @@ def _fill_revolut_claim_if_needed(driver, fullname: str, tag: str) -> None:
       input[data-test-id="claim-reward-revolut-tag-field-input"]
     """
     try:
-        name_inp = driver.find_element(By.CSS_SELECTOR, "input[data-test-id='claim-reward-revolut-name-field-input']")
-        tag_inp  = driver.find_element(By.CSS_SELECTOR, "input[data-test-id='claim-reward-revolut-tag-field-input']")
-        name_inp.clear(); name_inp.send_keys(fullname)
-        tag_inp.clear(); tag_inp.send_keys(tag)
+        name_inp = _pw_page(driver).query_selector("input[data-test-id='claim-reward-revolut-name-field-input']")
+        tag_inp  = _pw_page(driver).query_selector("input[data-test-id='claim-reward-revolut-tag-field-input']")
+        if name_inp:
+            name_inp.fill(fullname)
+        if tag_inp:
+            tag_inp.fill(tag)
     except Exception:
         # champs non présents (pas Revolut) -> OK
         pass
@@ -275,7 +293,7 @@ def _select_revolut_5_eur(driver) -> bool:
         return False
     tab = _find(
         driver,
-        By.XPATH,
+        None,
         "//div[contains(@class,'p-accordion-tab') and contains(@class,'p-active')][.//span[contains(normalize-space(.),'Revolut')]]"
     )
     if not _select_money_option_5_eur_in_open_tab(tab):
@@ -296,7 +314,7 @@ def _confirm_claim(driver, maybe_revolut_fullname: str = "", maybe_revolut_tag: 
     _fill_revolut_claim_if_needed(driver, maybe_revolut_fullname, maybe_revolut_tag)
 
     try:
-        btn = _find(driver, By.CSS_SELECTOR, "button[data-test-id='confirm-claim-button']")
+        btn = _find(driver, None, "button[data-test-id='confirm-claim-button']")
         _js_click(driver, btn)
         return True
     except Exception:
@@ -312,19 +330,17 @@ def _read_balance(driver) -> float:
     candidates = []
     # 1️⃣ Méthode historique (si jamais ils réintroduisent le test-id)
     try:
-        el = driver.find_element(By.CSS_SELECTOR, "[data-test-id='balance-card-amount']")
-        candidates.append(el.text)
+        el = _pw_page(driver).query_selector("[data-test-id='balance-card-amount']")
+        if el:
+            candidates.append(el.inner_text())
     except Exception:
         pass
 
     # 2️⃣ DOM actuel : span contenant "€" dans balance-card-progress
     try:
-        spans = driver.find_elements(
-            By.CSS_SELECTOR,
-            ".balance-card-progress span"
-        )
+        spans = _pw_page(driver).query_selector_all(".balance-card-progress span")
         for s in spans:
-            txt = (s.text or "").strip()
+            txt = (s.inner_text() or "").strip()
             if "€" in txt and "/" not in txt:
                 candidates.append(txt)
     except Exception:
@@ -333,9 +349,9 @@ def _read_balance(driver) -> float:
     # 3️⃣ Fallback ultime : scan global (safe mais coûteux)
     if not candidates:
         try:
-            spans = driver.find_elements(By.XPATH, "//span[contains(text(),'€')]")
+            spans = _pw_page(driver).query_selector_all("xpath=//span[contains(text(),'€')]")
             for s in spans:
-                txt = (s.text or "").strip()
+                txt = (s.inner_text() or "").strip()
                 if "€" in txt and "/" not in txt:
                     candidates.append(txt)
         except Exception:

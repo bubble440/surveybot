@@ -17,6 +17,12 @@ import json
 import time
 
 from Survey.log_utils import log_info, log_debug
+
+
+def _pw_page(d):
+    if hasattr(d, '_page'):
+        return d._page
+    return d
 from captcha.captcha_solver import TwoCaptchaClient
 from captcha.recaptcha_handler import _get_proxy_config
 
@@ -38,7 +44,7 @@ def _extract_app_id(driver) -> str | None:
       3. Variable JS globale TencentCaptcha._appId ou __tcaptcha_appid.
     """
     js = r"""
-    return (function() {
+    () => {
         // --- Stratégie 1 : attribut data-appid ---
         var candidates = [
             document.querySelector('[data-appid]'),
@@ -85,10 +91,10 @@ def _extract_app_id(driver) -> str | None:
         if (window.TencentCaptcha && window.TencentCaptcha._appId) return String(window.TencentCaptcha._appId);
 
         return null;
-    })();
+    }
     """
     try:
-        result = driver.execute_script(js)
+        result = _pw_page(driver).evaluate(js)
         return result if result else None
     except Exception as e:
         log_debug(_TAG, f"_extract_app_id exception: {e}")
@@ -113,7 +119,7 @@ def _inject_tencent_token(driver, ticket: str, randstr: str) -> dict:
     Retourne un dict rapport (callbacks_called, errors, ...).
     """
     js = r"""
-    return (function(ticket, randstr) {
+    ([ticket, randstr]) => {
         var result = {ret: 0, ticket: ticket, randstr: randstr};
         var report = {callbacks_called: 0, errors: [], strategies: []};
 
@@ -180,13 +186,13 @@ def _inject_tencent_token(driver, ticket: str, randstr: str) -> dict:
         } catch(e) { report.errors.push('s4_fields: ' + String(e)); }
 
         return JSON.stringify(report);
-    })(arguments[0], arguments[1]);
+    }
     """
     try:
-        raw = driver.execute_script(js, ticket, randstr)
+        raw = _pw_page(driver).evaluate(js, [ticket, randstr])
         return json.loads(raw) if raw else {"error": "script returned None"}
     except Exception as e:
-        return {"error": f"execute_script failed: {e}"}
+        return {"error": f"evaluate failed: {e}"}
 
 
 def _log_injection_report(report: dict) -> None:
@@ -203,32 +209,31 @@ def _log_injection_report(report: dict) -> None:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Résolution NielsenIQ slider (drag ActionChains)
+# Résolution NielsenIQ slider (drag souris Playwright)
 # ──────────────────────────────────────────────────────────────────────────────
 
 def solve_nielseniq_slider_auto(driver) -> bool:
     """
-    Résolution du slider puzzle NielsenIQ (web70.gfk.com) via drag ActionChains.
+    Résolution du slider puzzle NielsenIQ (web70.gfk.com) via mouse.move/down/up Playwright.
     Widget : .verify-move-block (poignée) → position left du .verify-gap.
     1 tentative max. Aucun clic CTA.
     """
-    from selenium.webdriver.common.action_chains import ActionChains
-
     try:
-        has_widget = bool(driver.execute_script(
-            "return !!(document.querySelector('.verify-move-block') && "
+        page = _pw_page(driver)
+        has_widget = bool(page.evaluate(
+            "() => !!(document.querySelector('.verify-move-block') && "
             "document.querySelector('.verify-gap') && "
-            "document.querySelector('.verify-bar-area'));"
+            "document.querySelector('.verify-bar-area'))"
         ))
         if not has_widget:
             log_debug(_TAG, "solve_nielseniq_slider_auto: widget .verify-move-block introuvable")
             return False
 
-        gap_left = driver.execute_script(
-            "var gap = document.querySelector('.verify-gap');"
-            "if (!gap) return null;"
-            "var m = (gap.style.left || '').match(/([\\d.]+)px/);"
-            "return m ? parseFloat(m[1]) : null;"
+        gap_left = page.evaluate(
+            "() => { var gap = document.querySelector('.verify-gap');"
+            " if (!gap) return null;"
+            " var m = (gap.style.left || '').match(/([\\d.]+)px/);"
+            " return m ? parseFloat(m[1]) : null; }"
         )
         if gap_left is None:
             log_info(_TAG, "solve_nielseniq_slider_auto: impossible d'extraire left du .verify-gap")
@@ -236,24 +241,30 @@ def solve_nielseniq_slider_auto(driver) -> bool:
 
         log_info(_TAG, f"solve_nielseniq_slider_auto: gap_left={gap_left}px — drag en cours")
 
-        handle = driver.find_element("css selector", ".verify-move-block")
-        actions = ActionChains(driver)
-        actions.click_and_hold(handle)
-        steps = 8
-        step_x = gap_left / steps
-        for _ in range(steps):
-            actions.move_by_offset(int(step_x), 0)
-            actions.pause(0.05)
-        actions.release()
-        actions.perform()
+        handle = page.query_selector(".verify-move-block")
+        if handle is None:
+            log_info(_TAG, "solve_nielseniq_slider_auto: .verify-move-block introuvable via query_selector")
+            return False
+
+        box = handle.bounding_box()
+        if not box:
+            log_info(_TAG, "solve_nielseniq_slider_auto: bounding_box() None sur handle")
+            return False
+
+        cx = box["x"] + box["width"] / 2
+        cy = box["y"] + box["height"] / 2
+        page.mouse.move(cx, cy)
+        page.mouse.down()
+        page.mouse.move(cx + gap_left, cy, steps=10)
+        page.mouse.up()
 
         time.sleep(1.0)
 
-        widget_gone = bool(driver.execute_script(
-            "var panel = document.querySelector('.verify-img-panel');"
-            "if (!panel) return true;"
-            "var cs = getComputedStyle(panel);"
-            "return cs.display === 'none' || cs.visibility === 'hidden';"
+        widget_gone = bool(page.evaluate(
+            "() => { var panel = document.querySelector('.verify-img-panel');"
+            " if (!panel) return true;"
+            " var cs = getComputedStyle(panel);"
+            " return cs.display === 'none' || cs.visibility === 'hidden'; }"
         ))
 
         if widget_gone:
@@ -289,9 +300,9 @@ def solve_tencent_auto(driver) -> bool:
         # Condition stricte : #sliderpanel ET #btn_continue présents,
         # ce qui exclut tout vrai widget Tencent.
         try:
-            has_slide_verify = bool(driver.execute_script(
-                "return !!(document.querySelector('#sliderpanel') && "
-                "document.querySelector('#btn_continue'));"
+            has_slide_verify = bool(_pw_page(driver).evaluate(
+                "() => !!(document.querySelector('#sliderpanel') && "
+                "document.querySelector('#btn_continue'))"
             ))
         except Exception:
             has_slide_verify = False
@@ -299,11 +310,9 @@ def solve_tencent_auto(driver) -> bool:
         if has_slide_verify:
             log_info(_TAG, "appId introuvable — détection jQuery slideVerify (btn_continue présent)")
             try:
-                clicked = driver.execute_script(
-                    "var btn = document.querySelector('#btn_continue');"
-                    "if (!btn) return false;"
-                    "btn.click();"
-                    "return true;"
+                clicked = _pw_page(driver).evaluate(
+                    "() => { var btn = document.querySelector('#btn_continue');"
+                    " if (!btn) return false; btn.click(); return true; }"
                 )
             except Exception as _click_err:
                 log_info(_TAG, f"❌ jQuery slideVerify bypass — clic JS échoué : {_click_err}")
@@ -323,7 +332,7 @@ def solve_tencent_auto(driver) -> bool:
         return False
     log_info(_TAG, f"appId extrait : {app_id}")
 
-    current_url = driver.current_url
+    current_url = _pw_page(driver).url
     proxy_cfg = _get_proxy_config()
     mode = "proxy" if proxy_cfg else "proxyless"
     log_info(_TAG, f"Envoi à 2Captcha (mode={mode}, url={current_url})")
@@ -379,11 +388,11 @@ def solve_tencent_auto(driver) -> bool:
 
     # Fallback: vérifier si le widget a disparu du DOM
     try:
-        still_there = bool(driver.execute_script(
-            "var p = document.querySelector('#sliderpanel');"
-            "if (!p) return false;"
-            "var cs = getComputedStyle(p);"
-            "return cs.display !== 'none' && cs.visibility !== 'hidden';"
+        still_there = bool(_pw_page(driver).evaluate(
+            "() => { var p = document.querySelector('#sliderpanel');"
+            " if (!p) return false;"
+            " var cs = getComputedStyle(p);"
+            " return cs.display !== 'none' && cs.visibility !== 'hidden'; }"
         ))
     except Exception:
         still_there = True
