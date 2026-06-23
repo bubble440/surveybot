@@ -95,12 +95,10 @@ NON MIGRÉS — À traiter dans les blocs S :
   Survey/dom_extractors_areyounet.py   🔲 By, find_elements/find_element (×20+) — BLOC S3
   Survey/dom_extractors_decipher.py    🔲 By, find_elements — BLOC S3
   Survey/dom_extractors_misc.py        ✅ migré BLOC S3b (2026-06-23)
-  Survey/dropdown_block_resolver.py    🔲 By, WebElement, Select, find_elements/find_element,
-                                          execute_script (×2) — BLOC S4
-  Survey/question_block_analyzer.py    🔲 By, WebElement, find_elements/find_element (×15+) — BLOC S4
-  Survey/question_block_resolver.py    🔲 By, Keys, find_elements/find_element,
-                                          execute_script (15 occur.) — BLOC S4
-  Survey/sliderpoints_extractor.py     🔲 By, find_elements/find_element, get_attribute — BLOC S4
+  Survey/dropdown_block_resolver.py    ✅ migré BLOC S4 (2026-06-23)
+  Survey/question_block_analyzer.py    ✅ migré BLOC S4 (2026-06-23)
+  Survey/question_block_resolver.py    ✅ migré BLOC S4 (2026-06-23)
+  Survey/sliderpoints_extractor.py     ✅ migré BLOC S4 (2026-06-23)
   Survey/screenshot_analyzer.py        🔲 save_screenshot (×3), execute_cdp_cmd (×4),
                                           execute_script (×5) — BLOC S5
   Management/runtime_guard.py          🔲 By, WebDriverWait, EC, execute_script — BLOC S5
@@ -254,8 +252,53 @@ BLOC S3b — Survey/dom_extractors_misc.py
 
 BLOC S4 — Survey/dropdown_block_resolver.py + question_block_analyzer.py
           + question_block_resolver.py + sliderpoints_extractor.py
-  Statut : 🔲 à migrer
+  Statut : ✅ migré (2026-06-23)
   Périmètre : résolveurs de blocs questions, appelés depuis survey_executor.
+  Migrations appliquées (commun aux 4 fichiers) :
+  - Imports By / WebElement / Keys / ActionChains / Select supprimés.
+  - _pw_page(d) helper ajouté en tête de chaque fichier.
+  - WebElement (annotations de type) → Any (typing).
+  - el.is_displayed() → el.is_visible().
+  - el.rect → el.bounding_box() or {}.
+  - el.tag_name → el.evaluate("e => e.tagName.toLowerCase()").
+  - el.text → el.inner_text().
+  - driver.find_elements(By.CSS_SELECTOR/TAG_NAME, ...) → _pw_page(driver).query_selector_all(...)
+  - driver.find_element(By.CSS_SELECTOR/TAG_NAME, ...) → _pw_page(driver).query_selector(...) + None guard
+  - el.find_elements(By.CSS_SELECTOR/TAG_NAME, ...) → el.query_selector_all(...)
+  - el.find_element(By.CSS_SELECTOR, ...) → el.query_selector(...) + None guard
+  - el.find_element(By.XPATH, "ancestor::...") → el.query_selector("xpath=ancestor::...") + None guard
+  - el.find_elements(By.XPATH, xp) → el.query_selector_all("xpath=" + xp)
+  - el.find_elements(By.XPATH, "//label[@for=...]") → el.query_selector_all("xpath=//label[@for=...]")
+    (XPath absolu → recherche depuis racine, comportement identique via ElementHandle)
+  question_block_resolver.py spécifique :
+  - _is_numeric_input : el.tag_name → el.evaluate("e => e.tagName.toLowerCase()")
+  - _nearest_container : find_element(By.XPATH, xp) → query_selector("xpath=" + xp) + None guard
+  - _extract_label_from_dom : driver.find_element(By.XPATH/ID) → _pw_page(driver).query_selector(...)
+    + None guard ; container.find_elements(By.XPATH, HEAD_XPATH) → query_selector_all("xpath=...")
+  - _dispatch_events : execute_script(js, el) → el.evaluate("(e) => { ... }")
+  - _safe_focus : execute_script(scrollIntoView) → el.scroll_into_view_if_needed() ;
+    ActionChains(...).move_to_element(el).click() → el.hover(); el.click() ;
+    execute_script(focus) → el.focus()
+  - _safe_clear : send_keys(Keys.CONTROL, "a") → el.press("Control+a") ;
+    send_keys(Keys.BACKSPACE) → el.press("Backspace") ;
+    execute_script("arguments[0].value = '';", el) → el.evaluate("(e) => { e.value=''; ... }")
+  - fill_number_input : send_keys(v) → input_el.type(v) ;
+    execute_script("arguments[0].value = arguments[1];", el, v) → el.evaluate("(e,v) => {...}", v) ;
+    send_keys(Keys.TAB) → input_el.press("Tab") ;
+    el.rect.get("y") → el.bounding_box().get("y")
+  dropdown_block_resolver.py spécifique :
+  - _visible : is_displayed() + el.rect[...] → is_visible() + (bounding_box() or {}).get(...)
+  - Select(trigger).first_selected_option.text → trigger.evaluate("e => e.options[e.selectedIndex]?.text || ''")
+  - execute_script(scrollIntoView) → best.trigger.scroll_into_view_if_needed()
+  - execute_script("arguments[0].click()", el) → el.click()
+  - Import inline Select (ligne 210 origine) supprimé.
+  sliderpoints_extractor.py spécifique :
+  - _extract_continue_button : find_element → query_selector + None guard explicite (if el is None: continue)
+  - extract_sliderpoints_question_blocks : find_element(".sq-question-text") → query_selector(...) + None guard ;
+    find_element("select") → query_selector("select") + None guard (if sel is None: continue) ;
+    find_element(".sq-sliderpoints-row-legend") → query_selector(...) + None guard.
+  - Signatures et logique métier de toutes les fonctions publiques conservées à l'identique.
+  - Résultat : 0 By., 0 selenium, 0 execute_script dans les 4 fichiers. Syntaxe Python validée.
 
 BLOC S5 — Survey/screenshot_analyzer.py + Management/runtime_guard.py
           + Management/snap_uploader.py
@@ -310,7 +353,7 @@ FRONTIÈRE BLOC 3a → BLOC 3b1
   - driver (= shim) transmis aux sous-modules.
 
 FRONTIÈRE BLOC 3b/S → fichiers encore non migrés
-  - Les fichiers des blocs S3b→S6 reçoivent encore driver (= shim).
+  - Les fichiers des blocs S5→S6 reçoivent encore driver (= shim).
   - API Selenium absorbée par le shim — pas de crash tant que le shim existe.
   - Cette frontière se résorbe bloc par bloc jusqu'à S8.
 
@@ -346,6 +389,14 @@ HISTORIQUE
             execute_script → evaluate (multiline JS → arrow function triple-quote).
             _JS_DIRECT_TEXT réécrit en arrow function. .text → .inner_text() (tous vars).
             Inline Keys import supprimé → press("Escape"). Syntaxe Python validée (py_compile).
+2026-06-23  BLOC S4 migré : dropdown_block_resolver.py + question_block_analyzer.py
+            + question_block_resolver.py + sliderpoints_extractor.py.
+            By/WebElement/Keys/ActionChains/Select supprimés dans les 4 fichiers. _pw_page ajouté.
+            is_displayed() → is_visible(). el.rect → bounding_box() or {}. tag_name → evaluate(tagName).
+            find_elements/find_element(By.*) → query_selector_all/query_selector + None guards.
+            ActionChains → hover()+click(). send_keys(Keys.*) → press("..."). execute_script → evaluate.
+            Select(trigger).first_selected_option.text → evaluate("e => e.options[e.selectedIndex]?.text").
+            Import inline Select dans dropdown_block_resolver supprimé. py_compile OK sur les 4 fichiers.
 2026-06-23  BLOC S2 migré : dom_context_mapper.py + dom_question_extractor.py + dom_utils.py.
             By/ActionChains supprimés. _pw_page ajouté dans les 3 fichiers.
             find_elements(By.*) → query_selector_all("xpath=..." ou css).
