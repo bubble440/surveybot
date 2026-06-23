@@ -99,10 +99,9 @@ NON MIGRÉS — À traiter dans les blocs S :
   Survey/question_block_analyzer.py    ✅ migré BLOC S4 (2026-06-23)
   Survey/question_block_resolver.py    ✅ migré BLOC S4 (2026-06-23)
   Survey/sliderpoints_extractor.py     ✅ migré BLOC S4 (2026-06-23)
-  Survey/screenshot_analyzer.py        🔲 save_screenshot (×3), execute_cdp_cmd (×4),
-                                          execute_script (×5) — BLOC S5
-  Management/runtime_guard.py          🔲 By, WebDriverWait, EC, execute_script — BLOC S5
-  Management/snap_uploader.py          ⚠️ fallbacks mineurs get_screenshot_as_png/save_screenshot — BLOC S5
+  Survey/screenshot_analyzer.py        ✅ migré BLOC S5 (2026-06-23)
+  Management/guards/runtime_guard.py   ✅ migré BLOC S5 (2026-06-23)
+  Management/snap_uploader.py          ✅ migré BLOC S5 (2026-06-23)
   captcha/datadome_handler.py          🔲 execute_script (×2), current_url, add_cookie,
                                           refresh — BLOC S6
   captcha/normal_captcha.py            🔲 By, find_elements, execute_script, is_displayed,
@@ -300,10 +299,34 @@ BLOC S4 — Survey/dropdown_block_resolver.py + question_block_analyzer.py
   - Signatures et logique métier de toutes les fonctions publiques conservées à l'identique.
   - Résultat : 0 By., 0 selenium, 0 execute_script dans les 4 fichiers. Syntaxe Python validée.
 
-BLOC S5 — Survey/screenshot_analyzer.py + Management/runtime_guard.py
+BLOC S5 — Survey/screenshot_analyzer.py + Management/guards/runtime_guard.py
           + Management/snap_uploader.py
-  Statut : 🔲 à migrer
+  Statut : ✅ migré (2026-06-23)
   Périmètre : monitoring, screenshot, guard.
+  Migrations appliquées :
+  - _pw_page(d) helper ajouté en tête des 3 fichiers.
+  runtime_guard.py spécifique :
+  - Imports By / WebDriverWait / EC supprimés.
+  - WebDriverWait(driver, 6).until(EC.element_to_be_clickable((By.XPATH, "//button[...] | //a[...]")))
+    → boucle sur 2 XPath séquentiels : wait_for_selector(f"xpath={xp}", state="visible", timeout=3000)
+    (Playwright ne supporte pas XPath | dans un seul sélecteur ; 3 s × 2 = 6 s total conservé)
+  - execute_script(scrollIntoView) → cta.scroll_into_view_if_needed()
+  - execute_script(click) → cta.click(), conditionné à CTA_INTERCEPT_ONLY :
+    si actif → log interception OK + return True sans clic réel.
+  screenshot_analyzer.py spécifique :
+  - Bloc CDP entier supprimé (Page.getLayoutMetrics, Emulation.setDeviceMetricsOverride,
+    Page.enable, Page.captureScreenshot, Emulation.clearDeviceMetricsOverride, 4 execute_cdp_cmd)
+    → remplacé par un seul appel page.screenshot(full_page=True, path=out_path).
+  - driver.save_screenshot(out_path) (viewport + fallbacks) → page.screenshot(path=out_path).
+  - _stitch_fullpage migré : execute_script(scrollTo/scrollHeight/innerHeight/innerWidth)
+    → page.evaluate(f"() => ...") ; save_screenshot(part) → page.screenshot(path=part).
+  - driver.get_screenshot_as_png() absent de ce fichier.
+  snap_uploader.py spécifique :
+  - Fallback 2 : driver.get_screenshot_as_png() → _pw_page(driver).screenshot() (bytes directs).
+  - Fallback 3 : driver.save_screenshot(path) → _pw_page(driver).screenshot(path=path)
+    + lecture fichier conservée (logique 3 niveaux préservée).
+  - Résultat : 0 By., 0 selenium, 0 execute_cdp_cmd, 0 execute_script dans les 3 fichiers.
+    Syntaxe Python validée (py_compile).
 
 BLOC S6 — captcha/* + Cash/payout.py + Survey/functions.py
   Statut : 🔲 à migrer
@@ -353,7 +376,7 @@ FRONTIÈRE BLOC 3a → BLOC 3b1
   - driver (= shim) transmis aux sous-modules.
 
 FRONTIÈRE BLOC 3b/S → fichiers encore non migrés
-  - Les fichiers des blocs S5→S6 reçoivent encore driver (= shim).
+  - Les fichiers du bloc S6 reçoivent encore driver (= shim).
   - API Selenium absorbée par le shim — pas de crash tant que le shim existe.
   - Cette frontière se résorbe bloc par bloc jusqu'à S8.
 
@@ -389,6 +412,15 @@ HISTORIQUE
             execute_script → evaluate (multiline JS → arrow function triple-quote).
             _JS_DIRECT_TEXT réécrit en arrow function. .text → .inner_text() (tous vars).
             Inline Keys import supprimé → press("Escape"). Syntaxe Python validée (py_compile).
+2026-06-23  BLOC S5 migré : screenshot_analyzer.py + runtime_guard.py + snap_uploader.py.
+            _pw_page ajouté dans les 3 fichiers. By/WebDriverWait/EC supprimés (runtime_guard).
+            runtime_guard : WebDriverWait+EC → wait_for_selector × 2 XPath séquentiels (3 s chacun) ;
+            execute_script(scrollIntoView/click) → scroll_into_view_if_needed()/click() ;
+            CTA conditionné à CTA_INTERCEPT_ONLY.
+            screenshot_analyzer : bloc CDP entier (4 execute_cdp_cmd) → page.screenshot(full_page=True) ;
+            save_screenshot → page.screenshot(path=...) ; _stitch_fullpage migré (evaluate+screenshot).
+            snap_uploader : get_screenshot_as_png() → _pw_page(driver).screenshot() ;
+            save_screenshot(path) → _pw_page(driver).screenshot(path=path). py_compile OK sur les 3 fichiers.
 2026-06-23  BLOC S4 migré : dropdown_block_resolver.py + question_block_analyzer.py
             + question_block_resolver.py + sliderpoints_extractor.py.
             By/WebElement/Keys/ActionChains/Select supprimés dans les 4 fichiers. _pw_page ajouté.
