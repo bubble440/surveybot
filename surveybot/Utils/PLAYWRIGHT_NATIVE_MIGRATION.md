@@ -102,17 +102,13 @@ NON MIGRÉS — À traiter dans les blocs S :
   Survey/screenshot_analyzer.py        ✅ migré BLOC S5 (2026-06-23)
   Management/guards/runtime_guard.py   ✅ migré BLOC S5 (2026-06-23)
   Management/snap_uploader.py          ✅ migré BLOC S5 (2026-06-23)
-  captcha/datadome_handler.py          🔲 execute_script (×2), current_url, add_cookie,
-                                          refresh — BLOC S6
-  captcha/normal_captcha.py            🔲 By, find_elements, execute_script, is_displayed,
-                                          get_attribute, screenshot_as_base64 — BLOC S6
-  captcha/recaptcha_handler.py         🔲 execute_script (×3), current_url — BLOC S6
-  captcha/recaptcha_utils.py           🔲 By, find_elements (×3), execute_script (×2) — BLOC S6
-  captcha/tencent_handler.py           🔲 execute_script (×6), find_element, ActionChains,
-                                          current_url — BLOC S6
-  Cash/payout.py                       🔲 By, WebDriverWait, EC, ActionChains — BLOC S6
-  Survey/functions.py                  🔲 By, WebDriverWait, EC, find_elements, execute_script,
-                                          window_handles, switch_to, current_url — BLOC S6
+  captcha/datadome_handler.py          ✅ migré BLOC S6 (2026-06-23)
+  captcha/normal_captcha.py            ✅ migré BLOC S6 (2026-06-23)
+  captcha/recaptcha_handler.py         ✅ migré BLOC S6 (2026-06-23)
+  captcha/recaptcha_utils.py           ✅ migré BLOC S6 (2026-06-23)
+  captcha/tencent_handler.py           ✅ migré BLOC S6 (2026-06-23)
+  Cash/payout.py                       ✅ migré BLOC S6 (2026-06-23)
+  Survey/functions.py                  ✅ migré BLOC S6 (2026-06-23)
   platforms/topsurveys.py              🔲 résidu mineur driver.current_url dans is_on_platform — BLOC S7
   platforms/ysense.py                  🔲 entièrement Selenium (select_survey = NotImplementedError) — BLOC S7
 
@@ -329,8 +325,70 @@ BLOC S5 — Survey/screenshot_analyzer.py + Management/guards/runtime_guard.py
     Syntaxe Python validée (py_compile).
 
 BLOC S6 — captcha/* + Cash/payout.py + Survey/functions.py
-  Statut : 🔲 à migrer
-  Périmètre : chemins captcha, encaissement, popup post-survey.
+  Statut : ✅ migré (2026-06-23)
+  Périmètre : chemins captcha, encaissement, popup post-survey. 7 fichiers.
+  Migrations appliquées (commun) :
+  - _pw_page(d) helper ajouté en tête des 7 fichiers.
+  - Tous les imports Selenium (By, WebDriverWait, EC, ActionChains, exceptions) supprimés,
+    y compris les imports inline dans les corps de fonctions.
+  recaptcha_utils.py :
+  - find_elements(By.CSS_SELECTOR) × 3 → query_selector_all.
+  - execute_script(js) → page.evaluate("() => {" + js + "}").
+  - execute_script(js, token) → IIFE (function(tok){...})(arguments[0]) converti en
+    arrow function (tok) => {...} ; page.evaluate(fn, token).
+  recaptcha_handler.py :
+  - JS _fire_recaptcha_callbacks et _cfg_js : IIFE → arrow function ; execute_script → evaluate.
+  - execute_script verify token → page.evaluate("() => { ... }").
+  - driver.current_url → page.url.
+  datadome_handler.py :
+  - execute_script(iframe detect) → page.evaluate("() => { ... }").
+  - execute_script("return navigator.userAgent") → page.evaluate("() => navigator.userAgent").
+  - driver.current_url → page.url.
+  - driver.add_cookie({...}) → page.context.add_cookies([{...}]).
+  - driver.refresh() → page.reload().
+  normal_captcha.py :
+  - find_elements(By.CSS_SELECTOR) × 2 → query_selector_all.
+  - el.is_displayed() → el.is_visible().
+  - execute_script(parent traversal, img_el) → img_el.evaluate_handle("(e) => {...}")
+    + handle.as_element() (retourne ElementHandle exploitable).
+  - img_el.screenshot_as_base64 → base64.b64encode(img_el.screenshot()).decode().
+  tencent_handler.py :
+  - _extract_app_id JS IIFE → () => {...} ; execute_script → page.evaluate(js).
+  - _inject_tencent_token JS 2 args → ([ticket, randstr]) => {...} ;
+    execute_script(js, ticket, randstr) → page.evaluate(js, [ticket, randstr]).
+  - solve_nielseniq_slider_auto : import inline ActionChains supprimé ;
+    ActionChains drag → page.mouse.move/down/move(steps=10)/up.
+  - find_element("css selector", ...) → page.query_selector(...) + None guard.
+  - execute_script × 3 dans solve_tencent_auto → page.evaluate("() => { ... }").
+  - driver.current_url → page.url.
+  Survey/functions.py :
+  - Imports inline By/WebDriverWait/EC supprimés.
+  - execute_script("return document.body.innerText") → page.evaluate("() => ...").
+  - driver.current_url → page.url.
+  - find_elements(By.CSS_SELECTOR) → query_selector_all.
+  - is_displayed() → is_visible(). b.text → b.inner_text().
+  - WebDriverWait(driver, 2).until(EC.element_to_be_clickable(...))
+    → page.wait_for_selector(sel, state="visible", timeout=2000).
+  - execute_script(click, btn) → btn.click(), conditionné CTA_INTERCEPT_ONLY.
+  - _close_other_tabs_in_current_session : window_handles/switch_to/close
+    → page.context.pages + p.close() (pas de switch_to nécessaire).
+  Cash/payout.py :
+  - Bloc if not IS_LOCAL: (WebDriverWait/EC/ActionChains/exceptions) entièrement supprimé.
+  - _wait() supprimé. _find(driver, by, sel) → page.wait_for_selector(pw_sel, state="attached")
+    (XPath auto-préfixé via sel.startswith("//")).
+  - _js_click(driver, el) → el.scroll_into_view_if_needed() + el.click(),
+    conditionné CTA_INTERCEPT_ONLY ; driver ignoré.
+  - _wait_select_btn_enabled → polling loop time.sleep(0.2).
+  - _dispatch_mouse_sequence → el.evaluate("(el) => { ... }").
+  - find_elements(By.XPATH/CSS_SELECTOR) → query_selector_all("xpath=..." / css).
+  - find_element(By.*) → query_selector(...) + None guard.
+  - span.find_element(By.XPATH, "ancestor::...") → span.query_selector("xpath=ancestor::...").
+  - ActionChains.move_to_element(wrapper).pause(3).click() → wrapper.hover(); wrapper.click(),
+    conditionné CTA_INTERCEPT_ONLY.
+  - el.text → el.inner_text(). name_inp.clear()+send_keys(v) → name_inp.fill(v).
+  - tab_el.parent (hack driver Selenium) → None (driver non requis via ElementHandle).
+  - _click_modal_choose : double WebDriverWait → wait_for_selector(state="visible").
+  - Résultat : 0 By., 0 selenium, 0 execute_script dans les 7 fichiers. py_compile OK.
 
 BLOC S7 — Résidus mineurs + nettoyage shim dans fichiers "migrés"
   Statut : 🔲 à migrer
@@ -376,9 +434,9 @@ FRONTIÈRE BLOC 3a → BLOC 3b1
   - driver (= shim) transmis aux sous-modules.
 
 FRONTIÈRE BLOC 3b/S → fichiers encore non migrés
-  - Les fichiers du bloc S6 reçoivent encore driver (= shim).
+  - Seuls les résidus du bloc S7 (platforms + shim string-literal) reçoivent encore le shim.
   - API Selenium absorbée par le shim — pas de crash tant que le shim existe.
-  - Cette frontière se résorbe bloc par bloc jusqu'à S8.
+  - Cette frontière se résorbe avec S7 puis S8.
 
 INTERFACE switch_to_frame_chain
   - Entrée : driver = shim OU Page native.
@@ -412,6 +470,16 @@ HISTORIQUE
             execute_script → evaluate (multiline JS → arrow function triple-quote).
             _JS_DIRECT_TEXT réécrit en arrow function. .text → .inner_text() (tous vars).
             Inline Keys import supprimé → press("Escape"). Syntaxe Python validée (py_compile).
+2026-06-23  BLOC S6 migré : captcha/* (5 fichiers) + Cash/payout.py + Survey/functions.py (7 fichiers).
+            By/WebDriverWait/EC/ActionChains/exceptions supprimés dans tous. _pw_page ajouté.
+            execute_script → evaluate (arrow function) ; IIFE → (tok) => {...} / ([t,r]) => {...}.
+            add_cookie → context.add_cookies. refresh() → reload(). current_url → page.url.
+            ActionChains drag → page.mouse.move/down/move/up. evaluate_handle + as_element() (normal_captcha).
+            screenshot_as_base64 → base64.b64encode(el.screenshot()).decode().
+            payout: _wait/_find → wait_for_selector ; _js_click → scroll_into_view_if_needed+click ;
+            tous CTAs conditionnés CTA_INTERCEPT_ONLY. tab_el.parent supprimé.
+            functions: window_handles/switch_to/close → page.context.pages + p.close().
+            py_compile OK sur les 7 fichiers.
 2026-06-23  BLOC S5 migré : screenshot_analyzer.py + runtime_guard.py + snap_uploader.py.
             _pw_page ajouté dans les 3 fichiers. By/WebDriverWait/EC supprimés (runtime_guard).
             runtime_guard : WebDriverWait+EC → wait_for_selector × 2 XPath séquentiels (3 s chacun) ;
