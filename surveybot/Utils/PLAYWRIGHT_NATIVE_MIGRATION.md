@@ -169,8 +169,36 @@ BLOC S1 — Management/guards/survey_difficulty_guard.py
   - Logique métier de toutes les fonctions conservée à l'identique.
 
 BLOC S2 — Survey/dom_context_mapper.py + dom_question_extractor.py + dom_utils.py
-  Statut : 🔲 à migrer
-  Périmètre : extracteurs DOM appelés depuis survey_executor / dom_analyzer.
+  Statut : ✅ migré (2026-06-23)
+  Migrations appliquées (commun aux 3 fichiers) :
+  - Import By (et ActionChains pour dom_context_mapper) supprimés.
+  - _pw_page(d) helper ajouté en tête de chaque fichier.
+  - find_elements(By.CSS_SELECTOR/XPATH/TAG_NAME, ...) → query_selector_all("xpath=..." ou css)
+  - find_element(By.CSS_SELECTOR/ID, ...) → query_selector(...) + None guard (pas d'exception)
+  - execute_script(js, el) → page.evaluate(fn_form, el) ; JS converti en (el) => { ... }
+  - execute_script(js, el, arg) → page.evaluate(fn_form, [el, arg]) ; ([el, arg]) => { ... }
+  - el.is_displayed() → el.is_visible() ; wrapper.is_displayed() → wrapper.is_visible()
+  - el.rect → el.bounding_box() or {}
+  - el.tag_name → el.evaluate("e => e.tagName.toLowerCase()")
+  - el.text (Selenium) → el.inner_text() ; el.get_attribute("textContent") → el.text_content()
+  - el.find_elements(By.XPATH, "ancestor::...") → el.query_selector_all("xpath=ancestor::...")
+  - el.find_elements(By.XPATH, "following-sibling::...") → el.query_selector_all("xpath=following-sibling::...")
+  - el.find_elements(By.XPATH, "preceding-sibling::...") → el.query_selector_all("xpath=preceding-sibling::...")
+  - el.find_elements(By.TAG_NAME, "option") → el.query_selector_all("option")
+  dom_context_mapper spécifique :
+  - ActionChains + modes js/ac dans try_click_matrix_by_visual_mapping supprimés.
+  - Boucle 3 modes réduite à un clic natif unique (el.click()).
+  - el.is_selected() → el.is_checked().
+  - driver.execute_script("arguments[0].scrollIntoView(...)") → el.scroll_into_view_if_needed()
+  - driver.current_url → _pw_page(driver).url (dans _build_visual_matrix_map)
+  dom_utils spécifique :
+  - _best_xpath_for_element : driver.execute_script(script, el) → _pw_page(driver).evaluate(fn, el)
+  - _dropdown_field_hint : find_elements(By.TAG_NAME, "option") → el.query_selector_all("option")
+  - _is_actionable_visible : is_displayed() → is_visible() ; find_elements(By.XPATH) → query_selector_all("xpath=...")
+  dom_question_extractor spécifique :
+  - _find_question_text_near_element, _find_associated_label, _find_group_heading_text_near_element :
+    driver.execute_script(js, el[, option_keys]) → page.evaluate(fn, el) / page.evaluate(fn, [el, option_keys])
+  - Logique métier de toutes les fonctions conservée à l'identique (aucun extracteur modifié).
 
 BLOC S3 — Survey/dom_extractors_areyounet.py + dom_extractors_decipher.py + dom_extractors_misc.py
   Statut : 🔲 à migrer
@@ -257,5 +285,14 @@ HISTORIQUE
             BLOC S1 migré : survey_difficulty_guard.py — By supprimé, _pw_page ajouté,
             toutes les API Selenium remplacées par Playwright natif.
             Blocs S2→S8 définis et documentés.
+2026-06-23  BLOC S2 migré : dom_context_mapper.py + dom_question_extractor.py + dom_utils.py.
+            By/ActionChains supprimés. _pw_page ajouté dans les 3 fichiers.
+            find_elements(By.*) → query_selector_all("xpath=..." ou css).
+            find_element(By.*) → query_selector() + None guard.
+            execute_script(js, el[, arg]) → page.evaluate(fn, el) / page.evaluate(fn, [el, arg]).
+            el.is_displayed() → el.is_visible(). el.rect → bounding_box() or {}.
+            el.tag_name → el.evaluate(tagName). .text → .inner_text().
+            dom_context_mapper : boucle 3 modes js/ac/native → el.click() natif unique.
+            Logique métier de toutes les fonctions conservée à l'identique.
 
 .
