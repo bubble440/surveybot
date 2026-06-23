@@ -20,10 +20,16 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from typing import List, Optional
+from typing import Any, List, Optional
 
-from selenium.webdriver.common.by import By
-from selenium.webdriver.remote.webelement import WebElement
+
+# ---------------------------------------------------------------------------
+# Playwright page helper
+# ---------------------------------------------------------------------------
+def _pw_page(d):
+    if hasattr(d, '_page'):
+        return d._page
+    return d
 
 
 # ------------------------------------------------------------
@@ -34,7 +40,7 @@ def _norm(s: str) -> str:
     if not s:
         return ""
     s = unicodedata.normalize("NFKC", s)
-    s = s.replace("\u00a0", " ")
+    s = s.replace(" ", " ")
     s = s.lower().strip()
     s = re.sub(r"\s+", " ", s)
     return s
@@ -60,8 +66,8 @@ class DropdownBlock:
     def __init__(
         self,
         label: str,
-        trigger: WebElement,
-        container: Optional[WebElement],
+        trigger: Any,
+        container: Optional[Any],
         options: Optional[List[str]],
     ):
         self.label = label
@@ -71,24 +77,25 @@ class DropdownBlock:
         self.used = False
 
 
-def _visible(el: WebElement) -> bool:
+def _visible(el: Any) -> bool:
     try:
-        return el.is_displayed() and el.rect["width"] > 10 and el.rect["height"] > 10
+        bb = el.bounding_box() or {}
+        return el.is_visible() and bb.get("width", 0) > 10 and bb.get("height", 0) > 10
     except Exception:
         return False
 
 
-def _extract_label(el: WebElement) -> str:
+def _extract_label(el: Any) -> str:
     """
-    Récupère le label humain d’un dropdown
+    Récupère le label humain d'un dropdown
     """
     # label[for=id]
     try:
         el_id = el.get_attribute("id")
         if el_id:
-            labs = el.find_elements(By.XPATH, f"//label[@for='{el_id}']")
+            labs = el.query_selector_all(f"xpath=//label[@for='{el_id}']")
             if labs:
-                return labs[0].text.strip()
+                return labs[0].inner_text().strip()
     except Exception:
         pass
 
@@ -103,9 +110,11 @@ def _extract_label(el: WebElement) -> str:
 
     # texte parent proche
     try:
-        parent = el.find_element(By.XPATH, "ancestor::*[self::div or self::td or self::li][1]")
-        if parent.text and len(parent.text.strip()) > 1:
-            return parent.text.strip()
+        parent = el.query_selector("xpath=ancestor::*[self::div or self::td or self::li][1]")
+        if parent is not None:
+            txt = parent.inner_text().strip()
+            if txt and len(txt) > 1:
+                return txt
     except Exception:
         pass
 
@@ -116,16 +125,16 @@ def _collect_dropdown_blocks(driver) -> List[DropdownBlock]:
     blocks: List[DropdownBlock] = []
 
     # 1) vrais <select>
-    for sel in driver.find_elements(By.TAG_NAME, "select"):
+    for sel in _pw_page(driver).query_selector_all("select"):
         if not _visible(sel):
             continue
 
         options = []
         try:
-            for o in sel.find_elements(By.TAG_NAME, "option"):
+            for o in sel.query_selector_all("option"):
                 if o.get_attribute("disabled"):
                     continue
-                t = (o.text or "").strip()
+                t = (o.inner_text() or "").strip()
                 if t:
                     options.append(t)
         except Exception:
@@ -141,8 +150,7 @@ def _collect_dropdown_blocks(driver) -> List[DropdownBlock]:
         )
 
     # 2) dropdowns custom (combobox / role=listbox / button)
-    customs = driver.find_elements(
-        By.CSS_SELECTOR,
+    customs = _pw_page(driver).query_selector_all(
         "[role='combobox'], [aria-haspopup='listbox'], .dropdown, .select"
     )
 
@@ -175,7 +183,7 @@ def try_resolve_dropdown_block(
 ) -> bool:
     """
     1) Trouve le dropdown correspondant au contexte
-    2) L’ouvre
+    2) L'ouvre
     3) Sélectionne la valeur
     """
     ctx = _norm(context_question)
@@ -204,16 +212,15 @@ def try_resolve_dropdown_block(
     # ---- 1️⃣5️⃣ Idempotence: si la valeur est déjà sélectionnée, NE RIEN FAIRE (évite reload)
     try:
         cur_txt = ""
-        tag = (best.trigger.tag_name or "").strip().lower()
+        tag = best.trigger.evaluate("e => e.tagName.toLowerCase()")
         if tag == "select":
             try:
-                from selenium.webdriver.support.ui import Select
-                cur_txt = (Select(best.trigger).first_selected_option.text or "").strip()
+                cur_txt = (best.trigger.evaluate("e => e.options[e.selectedIndex]?.text || ''") or "").strip()
             except Exception:
                 cur_txt = (best.trigger.get_attribute("value") or "").strip()
         else:
             # dropdown custom: texte affiché dans le trigger
-            cur_txt = (best.trigger.text or "").strip()
+            cur_txt = (best.trigger.inner_text() or "").strip()
 
         if cur_txt and _jaccard(_norm(value), cur_txt) >= 0.9:
             if debug:
@@ -224,25 +231,24 @@ def try_resolve_dropdown_block(
 
     # ---- 2️⃣ Ouvrir dropdown
     try:
-        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", best.trigger)
+        best.trigger.scroll_into_view_if_needed()
         best.trigger.click()
     except Exception:
         try:
-            driver.execute_script("arguments[0].click();", best.trigger)
+            best.trigger.click()
         except Exception:
             return False
 
     # ---- 3️⃣ Récupérer options visibles
     opts = []
     try:
-        items = driver.find_elements(
-            By.CSS_SELECTOR,
+        items = _pw_page(driver).query_selector_all(
             "option, [role='option'], li, .dropdown-item"
         )
         for it in items:
             if not _visible(it):
                 continue
-            t = (it.text or "").strip()
+            t = (it.inner_text() or "").strip()
             if t:
                 opts.append((t, it))
     except Exception:
@@ -272,7 +278,7 @@ def try_resolve_dropdown_block(
         best_opt.click()
     except Exception:
         try:
-            driver.execute_script("arguments[0].click();", best_opt)
+            best_opt.click()
         except Exception:
             return False
 
