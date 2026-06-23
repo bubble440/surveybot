@@ -384,7 +384,7 @@ def set_input_value_with_events(driver, el, value: str):
     try:
         _pw_page(driver).keyboard.press("Control+a")
         _pw_page(driver).keyboard.press("Backspace")
-        el.send_keys(value)
+        el.type(value)
     except Exception:
         _pw_page(driver).evaluate("([e,v]) => { e.value = v; }", [_handle(el), value])
     # Events attendus par les frameworks JS (Vue/React/Angular)
@@ -427,7 +427,7 @@ def find_inputs_by_hint(driver, kind: str):
     iid = f"contains(translate(@id,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'{kind}')"
     xp = f"//input[({phs}) or {als} or {nm} or {iid}]"
     try:
-        return driver.find_elements("xpath", xp)
+        return driver.query_selector_all("xpath=" + xp)
     except Exception:
         return []
 
@@ -448,12 +448,12 @@ def find_question_container_by_ctx(driver, context_hint: str):
     if not tokens:
         return None
 
-    candidates = driver.find_elements("css selector", "div.question")
+    candidates = driver.query_selector_all("div.question")
     best, best_score = None, 0
     for c in candidates:
         try:
-            h1 = c.find_element("css selector", "h1.question-text")
-            q = norms_txt(h1.get_attribute("innerText") or h1.text)
+            h1 = c.query_selector("h1.question-text")
+            q = norms_txt(h1.get_attribute("innerText") or h1.inner_text())
         except Exception:
             continue
         score = sum(1 for t in tokens if t in q)
@@ -470,19 +470,16 @@ def find_questions_container(driver, context_hint: str):
     ctx = (context_hint or "").strip()
     if not ctx:
         return None
-    candidates = driver.find_elements(
-        "xpath",
-        "//div[contains(@class,'question')][.//h1 or .//h2]"
-    )
+    candidates = driver.query_selector_all("xpath=" + "//div[contains(@class,'question')][.//h1 or .//h2]")
     norm_ctx = normt_txt(ctx)
     for q in candidates:
         try:
             title = ""
             try:
-                title = q.find_element("xpath", ".//h1").text
+                title = q.query_selector("xpath=" + ".//h1").text
             except Exception:
                 try:
-                    title = q.find_element("xpath", ".//h2").text
+                    title = q.query_selector("xpath=" + ".//h2").text
                 except Exception:
                     title = ""
             if normt_txt(title).find(norm_ctx) != -1:
@@ -510,23 +507,20 @@ def has_visible_open_ended_field(container):
     """Vérifie s'il y a déjà un champ 'réponse libre' visible sous cette question."""
     try:
         # 1) textarea visible
-        areas = container.find_elements("xpath", ".//textarea[not(@disabled) and not(@readonly)]")
+        areas = container.query_selector_all("xpath=" + ".//textarea[not(@disabled) and not(@readonly)]")
         for a in areas:
             try:
-                if a.is_displayed() and a.rect.get("height", 0) > 5 and a.rect.get("width", 0) > 20:
+                if a.is_visible() and a.bounding_box() or {}.get("height", 0) > 5 and a.bounding_box() or {}.get("width", 0) > 20:
                     return True
             except Exception:
                 continue
         # 2) input texte 'open-ended' (plus rare)
-        inputs = container.find_elements(
-            "xpath",
-            ".//input[(@type='text' or @type='search' or not(@type)) and not(@disabled) and not(@readonly)]"
-        )
+        inputs = container.query_selector_all("xpath=" + ".//input[(@type='text' or @type='search' or not(@type)) and not(@disabled) and not(@readonly)]")
         for i in inputs:
             try:
                 ph = (i.get_attribute("placeholder") or "").lower()
                 nm = (i.get_attribute("name") or "").lower() + " " + (i.get_attribute("id") or "").lower()
-                if i.is_displayed() and (len(ph) > 0 or "open" in nm or "free" in nm or "ended" in nm):
+                if i.is_visible() and (len(ph) > 0 or "open" in nm or "free" in nm or "ended" in nm):
                     return True
             except Exception:
                 continue
@@ -582,7 +576,7 @@ def ensure_open_ended_open(
     candidates = []
     for xp in selectors:
         try:
-            candidates.extend(container.find_elements("xpath", xp))
+            candidates.extend(container.query_selector_all("xpath=" + xp))
         except Exception:
             continue
 
@@ -590,8 +584,8 @@ def ensure_open_ended_open(
     visible = []
     for el in candidates:
         try:
-            if el.is_displayed():
-                box = el.rect or {}
+            if el.is_visible():
+                box = el.bounding_box() or {}
                 if box.get("width", 0) >= 6 and box.get("height", 0) >= 6:
                     visible.append(el)
         except Exception:
@@ -601,12 +595,12 @@ def ensure_open_ended_open(
     def _score(el):
         sc = 0
         try:
-            if el.find_elements("tag name", "i") or el.find_elements("tag name", "svg"):
+            if el.query_selector_all("i") or el.query_selector_all("svg"):
                 sc += 2
         except Exception:
             pass
         try:
-            r = el.rect
+            r = el.bounding_box() or {}
             sc += min(int((r.get("width", 0) * r.get("height", 0)) / 400), 3)
         except Exception:
             pass
@@ -626,7 +620,7 @@ def ensure_open_ended_open(
                             print("✓ Open-ended: champ affiché (postcheck=field). source: input_utils.py")
                             return True
                     else:
-                        if container.find_elements("xpath", ".//i[contains(@class,'fa-chevron-up')]"):
+                        if container.query_selector_all("xpath=" + ".//i[contains(@class,'fa-chevron-up')]"):
                             print("✓ Open-ended: icône passée en 'up' (postcheck=icon). source: input_utils.py")
                             return True
             except Exception:
@@ -665,7 +659,7 @@ def viewport_penalty(driver, el) -> float:
     Utile pour prioriser les éléments visibles dans le viewport.
     """
     try:
-        r = el.rect
+        r = el.bounding_box() or {}
         if not r:
             return 999.0
         page = _pw_page(driver)
