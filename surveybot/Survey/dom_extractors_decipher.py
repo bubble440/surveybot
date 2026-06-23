@@ -14,7 +14,6 @@ from __future__ import annotations
 from typing import List, Dict, Any, Set
 import os
 import re
-from selenium.webdriver.common.by import By
 
 # Import des utilitaires
 try:
@@ -27,6 +26,13 @@ except ImportError:
     # dom_registry devra être disponible
     def is_debug(): return False
     def log_debug(tag, msg): pass
+
+
+def _pw_page(d):
+    """Extrait la Page Playwright native depuis un PlaywrightDriverShim ou retourne d tel quel."""
+    if hasattr(d, "_page"):
+        return d._page
+    return d
 
 
 # ================================================================================
@@ -82,71 +88,60 @@ def _logical_answers_list_group_name(raw_name: str, all_raw_names: Set[str]) -> 
 def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | None) -> list[dict]:
     """
     Extrait les groupes radio/checkbox FocusVision avec structure .answers.answers-list.
-    
+
     Pattern DOM FocusVision:
     - Conteneurs: div.question[role='radiogroup'] / div.question.radio / div.question.checkbox
     - Liste d'options: .answers.answers-list OU .answers.answers-table
     - Inputs masqués avec wrappers cliquables (.clickableCell ou .element)
     - Labels: label[for=id] ou dans .clickableCell
-    
+
     Stratégie:
     - Chercher les conteneurs .question avec .answers.answers-list
     - Grouper les inputs par attribut name
     - Extraire question text depuis .question-text
     - Construire XPath vers wrapper cliquable (pas l'input masqué)
-    
+
     Args:
-        driver: WebDriver Selenium
+        driver: WebDriver Playwright (Page native ou shim)
         frame_chain: Chaîne de frames ou None
-    
+
     Returns:
         Liste de dicts avec métadonnées pour dom_registry
     """
     blocks: list[dict] = []
+    page = _pw_page(driver)
 
     def _visible_text(el) -> str:
-        txt = (el.text or "").strip()
+        txt = (el.inner_text() or "").strip()
         if txt:
             return txt
-        for attr in ("innerText", "textContent"):
-            try:
-                raw = (el.get_attribute(attr) or "").strip()
-            except Exception:
-                raw = ""
-            if raw:
-                return raw
-        return ""
+        raw = (el.text_content() or "").strip()
+        return raw
 
     def _extract_label_text(label_el) -> str:
         """Lit le texte d'un label même quand son conteneur est masqué (display:none)."""
-        txt = (label_el.text or "").strip()
+        txt = (label_el.inner_text() or "").strip()
         if txt:
             return _clean_decipher_template_markers(txt)
-        for attr in ("innerText", "textContent"):
-            try:
-                raw = (label_el.get_attribute(attr) or "").strip()
-            except Exception:
-                raw = ""
-            if raw:
-                return _clean_decipher_template_markers(raw)
+        raw = (label_el.text_content() or "").strip()
+        if raw:
+            return _clean_decipher_template_markers(raw)
         return ""
 
     # Question containers FocusVision
-    q_containers = driver.find_elements(By.CSS_SELECTOR, "div.question[role='radiogroup'], div.question.radio, div.question.checkbox")
+    q_containers = page.query_selector_all("div.question[role='radiogroup'], div.question.radio, div.question.checkbox")
     for q in q_containers:
         if _has_inline_display_none(q):
             continue
 
-        try:
-            answers = q.find_element(By.CSS_SELECTOR, ".answers.answers-list, .answers.answers-table")
-        except Exception:
+        answers = q.query_selector(".answers.answers-list, .answers.answers-table")
+        if answers is None:
             continue
 
         # Inputs masqués (hidden). Variante avec clickableCell
         # Inputs masqués (hidden), variante avec clickableCell
         # => on élargit un peu, mais toujours sous .answers.answers-list (scope strict).
-        inputs = answers.find_elements(
-            By.CSS_SELECTOR,
+        inputs = answers.query_selector_all(
             "input[type='radio'], input[type='checkbox']"
         )
         if len(inputs) < 2:
@@ -154,15 +149,15 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
 
         # Question texte
         question = ""
-        try:
-            question = (q.find_element(By.CSS_SELECTOR, ".question-text").text or "").strip()
-        except Exception:
-            question = (q.text or "").strip().split("\n")[0].strip()
+        _qt = q.query_selector(".question-text")
+        if _qt is not None:
+            question = (_qt.inner_text() or "").strip()
+        else:
+            question = (q.inner_text() or "").strip().split("\n")[0].strip()
 
         group_by_row_table = None
         try:
-            candidate_tables = answers.find_elements(
-                By.CSS_SELECTOR,
+            candidate_tables = answers.query_selector_all(
                 "table.grid[data-settings*='group-by-row'][data-settings*='table-mode']",
             )
             group_by_row_table = candidate_tables[0] if candidate_tables else None
@@ -175,11 +170,11 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
             question_id = (q.get_attribute("id") or "").strip()
             if question_id.startswith("question_"):
                 expected_mx_stage_id = f"mx-stage-{question_id[len('question_'):]}"
-                if driver.find_elements(By.ID, expected_mx_stage_id):
+                if page.query_selector_all(f"#{expected_mx_stage_id}"):
                     mx_stage_id = expected_mx_stage_id
 
             try:
-                col_header_nodes = group_by_row_table.find_elements(By.CSS_SELECTOR, "th[scope='col']")
+                col_header_nodes = group_by_row_table.query_selector_all("th[scope='col']")
             except Exception:
                 col_header_nodes = []
             col_labels: list[str] = []
@@ -203,34 +198,28 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
 
             if len(col_labels) >= 2:
                 try:
-                    row_nodes = group_by_row_table.find_elements(By.CSS_SELECTOR, "tr.row-elements")
+                    row_nodes = group_by_row_table.query_selector_all("tr.row-elements")
                 except Exception:
                     row_nodes = []
 
                 for row in row_nodes:
                     row_label = ""
                     row_header_id = ""
-                    try:
-                        row_header = row.find_element(By.CSS_SELECTOR, "th[scope='row']")
+                    row_header = row.query_selector("th[scope='row']")
+                    if row_header is not None:
                         row_label = _visible_text(row_header)
                         row_header_id = (row_header.get_attribute("id") or "").strip()
-                    except Exception:
-                        row_label = ""
-                        row_header_id = ""
                     if not row_label:
                         continue
                     # Skip open-ended rows (e.g. "Autre, préciser"): selecting a radio
                     # on such a row would fail the CTA because the inline OE field is empty.
-                    try:
-                        if row_header is not None and row_header.find_elements(
-                            By.CSS_SELECTOR, "input[type='text'].oe"
-                        ):
-                            continue
-                    except Exception:
-                        pass
+                    if row_header is not None and row_header.query_selector_all(
+                        "input[type='text'].oe"
+                    ):
+                        continue
 
                     try:
-                        row_inputs = row.find_elements(By.CSS_SELECTOR, "input[type='radio'], input[type='checkbox']")
+                        row_inputs = row.query_selector_all("input[type='radio'], input[type='checkbox']")
                     except Exception:
                         row_inputs = []
                     if len(row_inputs) < 2:
@@ -257,11 +246,8 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
                             continue
 
                         col_label = ""
-                        try:
-                            cell = inp.find_element(By.XPATH, "ancestor::td[1]")
-                            headers_attr = (cell.get_attribute("headers") or "").strip()
-                        except Exception:
-                            headers_attr = ""
+                        cell = inp.query_selector("xpath=ancestor::td[1]")
+                        headers_attr = (cell.get_attribute("headers") or "").strip() if cell is not None else ""
                         if headers_attr:
                             for header_id in headers_attr.split():
                                 candidate = col_labels_by_header_id.get(header_id)
@@ -408,8 +394,7 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
         # + inputs name=ans{Q}.{col_idx}.{N} avec col_idx discriminant (middle group)
         group_by_col_table: Any = None
         try:
-            cand_gc = answers.find_elements(
-                By.CSS_SELECTOR,
+            cand_gc = answers.query_selector_all(
                 "table.grid[data-settings*='group-by-col'][data-settings*='table-mode']",
             )
             group_by_col_table = cand_gc[0] if cand_gc else None
@@ -418,13 +403,13 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
 
         if group_by_col_table is not None:
             try:
-                col_hdr_nodes_gc = group_by_col_table.find_elements(By.CSS_SELECTOR, "th[scope='col']")
+                col_hdr_nodes_gc = group_by_col_table.query_selector_all("th[scope='col']")
             except Exception:
                 col_hdr_nodes_gc = []
             col_hdr_texts_gc: list[str] = [_visible_text(h) for h in col_hdr_nodes_gc if _visible_text(h)]
 
             try:
-                row_nodes_gc = group_by_col_table.find_elements(By.CSS_SELECTOR, "tr.row-elements")
+                row_nodes_gc = group_by_col_table.query_selector_all("tr.row-elements")
             except Exception:
                 row_nodes_gc = []
 
@@ -432,18 +417,18 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
             col_inputs_gc: dict[int, list[tuple[str, Any]]] = {}
             for row_gc in row_nodes_gc:
                 row_lbl_gc = ""
-                try:
-                    rh_gc = row_gc.find_element(By.CSS_SELECTOR, "th[scope='row']")
-                    if rh_gc.find_elements(By.CSS_SELECTOR, "input[type='text'].oe"):
+                rh_gc = row_gc.query_selector("th[scope='row']")
+                if rh_gc is None:
+                    pass
+                else:
+                    if rh_gc.query_selector_all("input[type='text'].oe"):
                         continue
                     row_lbl_gc = _visible_text(rh_gc)
-                except Exception:
-                    pass
                 if not row_lbl_gc:
                     continue
                 try:
-                    row_inps_gc = row_gc.find_elements(
-                        By.CSS_SELECTOR, "input[type='radio'], input[type='checkbox']"
+                    row_inps_gc = row_gc.query_selector_all(
+                        "input[type='radio'], input[type='checkbox']"
                     )
                 except Exception:
                     row_inps_gc = []
@@ -529,8 +514,7 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
         # Regrouper par name logique
         atm1d_buttons = []
         try:
-            atm1d_buttons = q.find_elements(
-                By.CSS_SELECTOR,
+            atm1d_buttons = q.query_selector_all(
                 ".sq-atm1d-widget .sq-atm1d-buttons .sq-atm1d-button[data-label]",
             )
         except Exception:
@@ -539,15 +523,13 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
         if len(atm1d_buttons) >= 2:
             # Deduce itype from role="radiogroup" on the ul, or role="radio" on the li.
             itype_atm1d = "checkbox"
-            try:
-                ul_buttons = q.find_element(By.CSS_SELECTOR, ".sq-atm1d-widget .sq-atm1d-buttons")
+            ul_buttons = q.query_selector(".sq-atm1d-widget .sq-atm1d-buttons")
+            if ul_buttons is not None:
                 ul_role = (ul_buttons.get_attribute("role") or "").strip().lower()
                 if ul_role == "radiogroup":
                     itype_atm1d = "radio"
                 elif (atm1d_buttons[0].get_attribute("role") or "").strip().lower() == "radio":
                     itype_atm1d = "radio"
-            except Exception:
-                pass
 
             options: list[str] = []
             option_xpath_map: dict[str, str] = {}
@@ -560,10 +542,9 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
                     continue
 
                 legend = ""
-                try:
-                    legend = (btn.find_element(By.CSS_SELECTOR, ".sq-atm1d-legend").text or "").strip()
-                except Exception:
-                    legend = ""
+                _le = btn.query_selector(".sq-atm1d-legend")
+                if _le is not None:
+                    legend = (_le.inner_text() or "").strip()
                 if not legend:
                     continue
 
@@ -635,7 +616,7 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
         matrix_col_labels: dict[str, str] = {}
         matrix_table = None
         try:
-            candidate_tables = answers.find_elements(By.CSS_SELECTOR, "table.grid")
+            candidate_tables = answers.query_selector_all("table.grid")
             matrix_table = candidate_tables[0] if candidate_tables else None
         except Exception:
             matrix_table = None
@@ -659,11 +640,11 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
             # the name pattern ans{Q}.{VALUE}.{ROW} encodes a value, not a column index,
             # so len(col_idx) would always be 1 even on a multi-column grid.
             try:
-                dom_col_count = len(matrix_table.find_elements(By.CSS_SELECTOR, "th[scope='col']"))
+                dom_col_count = len(matrix_table.query_selector_all("th[scope='col']"))
             except Exception:
                 dom_col_count = 0
             try:
-                dom_row_count = len(matrix_table.find_elements(By.CSS_SELECTOR, "th[scope='row']"))
+                dom_row_count = len(matrix_table.query_selector_all("th[scope='row']"))
             except Exception:
                 dom_row_count = 0
             if len(stems) == 1 and dom_col_count >= 2 and dom_row_count >= 2:
@@ -672,7 +653,7 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
 
                 # Headers de colonnes observables dans les grilles FocusVision/Decipher.
                 try:
-                    col_headers = matrix_table.find_elements(By.CSS_SELECTOR, "th[id*='_c']")
+                    col_headers = matrix_table.query_selector_all("th[id*='_c']")
                 except Exception:
                     col_headers = []
                 for h in col_headers:
@@ -680,12 +661,12 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
                     m = re.search(r"_c(\d+)$", hid)
                     if not m:
                         continue
-                    txt = (h.text or h.get_attribute("innerText") or h.get_attribute("textContent") or "").strip()
+                    txt = (h.inner_text() or h.text_content() or "").strip()
                     if txt:
                         matrix_col_labels[m.group(1)] = txt
 
                 try:
-                    row_headers = matrix_table.find_elements(By.CSS_SELECTOR, "th[id$='_left']")
+                    row_headers = matrix_table.query_selector_all("th[id$='_left']")
                 except Exception:
                     row_headers = []
                 for h in row_headers:
@@ -696,9 +677,9 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
                     # Exclude open-ended "Autre (préciser)" rows: their row-header
                     # contains an inline text input, so selecting a radio option would
                     # trigger a CTA failure due to the empty OE field.
-                    if h.find_elements(By.CSS_SELECTOR, "input[type='text'].oe"):
+                    if h.query_selector_all("input[type='text'].oe"):
                         continue
-                    txt = (h.text or h.get_attribute("innerText") or h.get_attribute("textContent") or "").strip()
+                    txt = (h.inner_text() or h.text_content() or "").strip()
                     if txt:
                         matrix_row_labels[m.group(1)] = txt
 
@@ -741,8 +722,7 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
             has_gridclick_widget = False
             try:
                 has_gridclick_widget = bool(
-                    q.find_elements(
-                        By.CSS_SELECTOR,
+                    q.query_selector_all(
                         ".gridclick .scale-container .scale-button[data-index]",
                     )
                 )
@@ -760,62 +740,53 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
             if m_qid:
                 qid_suffix = m_qid.group(1)
                 try:
-                    mx_stage = driver.find_element(By.CSS_SELECTOR, f"#mx-stage-{qid_suffix}")
-                    mx_rows = mx_stage.find_elements(
-                        By.CSS_SELECTOR,
-                        ".mx-collapsible-groupholder .mx-collapsible-row-item[precode]",
-                    )
-                    if mx_rows:
-                        for row in mx_rows:
-                            precode = (row.get_attribute("precode") or "").strip()
-                            if not precode:
-                                continue
-                            try:
-                                row_label = _extract_label_text(
-                                    row.find_element(By.CSS_SELECTOR, ".label")
-                                )
-                            except Exception:
-                                row_label = ""
-                            row_norm = _norm_lc(row_label)
-                            if not row_norm:
-                                continue
-                            mx_option_xpath_map[row_norm] = (
-                                f"//div[@id={_xpath_literal(f'mx-stage-{qid_suffix}')}][1]"
-                                f"//div[contains(concat(' ',normalize-space(@class),' '),' mx-collapsible-groupholder ')]"
-                                f"//div[contains(concat(' ',normalize-space(@class),' '),' mx-collapsible-row-item ')"
-                                f" and @precode={_xpath_literal(precode)}][1]"
-                            )
-
-                        mx_exclusive = mx_stage.find_elements(
-                            By.CSS_SELECTOR,
-                            ".mx-collapsible-exclusive-holder .mx-collapsible-exclusive[class*='mx-button-r']",
+                    mx_stage = page.query_selector(f"#mx-stage-{qid_suffix}")
+                    if mx_stage is not None:
+                        mx_rows = mx_stage.query_selector_all(
+                            ".mx-collapsible-groupholder .mx-collapsible-row-item[precode]",
                         )
-                        for ex in mx_exclusive:
-                            classes = (ex.get_attribute("class") or "").strip().split()
-                            precode = ""
-                            for cls in classes:
-                                if cls.startswith("mx-button-r"):
-                                    precode = cls.replace("mx-button-", "", 1)
-                                    break
-                            if not precode:
-                                continue
-                            try:
-                                ex_label = _extract_label_text(
-                                    ex.find_element(By.CSS_SELECTOR, ".mx-btn-label")
+                        if mx_rows:
+                            for row in mx_rows:
+                                precode = (row.get_attribute("precode") or "").strip()
+                                if not precode:
+                                    continue
+                                _rl = row.query_selector(".label")
+                                row_label = _extract_label_text(_rl) if _rl is not None else ""
+                                row_norm = _norm_lc(row_label)
+                                if not row_norm:
+                                    continue
+                                mx_option_xpath_map[row_norm] = (
+                                    f"//div[@id={_xpath_literal(f'mx-stage-{qid_suffix}')}][1]"
+                                    f"//div[contains(concat(' ',normalize-space(@class),' '),' mx-collapsible-groupholder ')]"
+                                    f"//div[contains(concat(' ',normalize-space(@class),' '),' mx-collapsible-row-item ')"
+                                    f" and @precode={_xpath_literal(precode)}][1]"
                                 )
-                            except Exception:
-                                ex_label = ""
-                            ex_norm = _norm_lc(ex_label)
-                            if not ex_norm:
-                                continue
-                            mx_option_xpath_map[ex_norm] = (
-                                f"//div[@id={_xpath_literal(f'mx-stage-{qid_suffix}')}][1]"
-                                f"//div[contains(concat(' ',normalize-space(@class),' '),' mx-collapsible-exclusive-holder ')]"
-                                f"//div[contains(concat(' ',normalize-space(@class),' '),' mx-collapsible-exclusive ')"
-                                f" and contains(concat(' ',normalize-space(@class),' '),{_xpath_literal(f' {precode} ')})][1]"
-                            )
 
-                        has_mx_collapsible = bool(mx_option_xpath_map)
+                            mx_exclusive = mx_stage.query_selector_all(
+                                ".mx-collapsible-exclusive-holder .mx-collapsible-exclusive[class*='mx-button-r']",
+                            )
+                            for ex in mx_exclusive:
+                                classes = (ex.get_attribute("class") or "").strip().split()
+                                precode = ""
+                                for cls in classes:
+                                    if cls.startswith("mx-button-r"):
+                                        precode = cls.replace("mx-button-", "", 1)
+                                        break
+                                if not precode:
+                                    continue
+                                _exl = ex.query_selector(".mx-btn-label")
+                                ex_label = _extract_label_text(_exl) if _exl is not None else ""
+                                ex_norm = _norm_lc(ex_label)
+                                if not ex_norm:
+                                    continue
+                                mx_option_xpath_map[ex_norm] = (
+                                    f"//div[@id={_xpath_literal(f'mx-stage-{qid_suffix}')}][1]"
+                                    f"//div[contains(concat(' ',normalize-space(@class),' '),' mx-collapsible-exclusive-holder ')]"
+                                    f"//div[contains(concat(' ',normalize-space(@class),' '),' mx-collapsible-exclusive ')"
+                                    f" and contains(concat(' ',normalize-space(@class),' '),{_xpath_literal(f' {precode} ')})][1]"
+                                )
+
+                            has_mx_collapsible = bool(mx_option_xpath_map)
                 except Exception:
                     has_mx_collapsible = False
 
@@ -824,13 +795,9 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
             # On préfixe la question uniquement quand ce libellé est observable dans le DOM,
             # pour éviter toute heuristique globale par provider.
             if has_gridclick_widget:
-                try:
-                    segment_txt = (
-                        q.find_element(By.CSS_SELECTOR, ".gridclick .item.current .text-content").text
-                        or ""
-                    ).strip()
-                except Exception:
-                    segment_txt = ""
+                _se = q.query_selector(".gridclick .item.current .text-content")
+                segment_txt = (_se.inner_text() if _se is not None else "") or ""
+                segment_txt = segment_txt.strip()
                 if segment_txt:
                     q_norm = _norm_lc(question)
                     s_norm = _norm_lc(segment_txt)
@@ -844,30 +811,25 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
 
                 # Label visible
                 label_txt = ""
-                try:
-                    lab = answers.find_element(By.CSS_SELECTOR, f"label[for='{inp_id}']")
+                lab = None
+                lab = answers.query_selector(f"label[for='{inp_id}']")
+                if lab is not None:
                     label_txt = _extract_label_text(lab)
-                    try:
-                        for oe in lab.find_elements(By.CSS_SELECTOR, "input[type='text'], textarea"):
+                    for oe in lab.query_selector_all("input[type='text'], textarea"):
+                        oe_name = (oe.get_attribute("name") or "").strip()
+                        if oe_name:
+                            aux_openended_input_names.add(oe_name)
+                else:
+                    lab = inp.query_selector("xpath=ancestor::*[contains(@class,'clickableCell')][1]//label")
+                    if lab is not None:
+                        label_txt = _extract_label_text(lab)
+                        for oe in lab.query_selector_all("input[type='text'], textarea"):
                             oe_name = (oe.get_attribute("name") or "").strip()
                             if oe_name:
                                 aux_openended_input_names.add(oe_name)
-                    except Exception:
-                        pass
-                except Exception:
-                    try:
-                        lab = inp.find_element(By.XPATH, "ancestor::*[contains(@class,'clickableCell')][1]//label")
-                        label_txt = _extract_label_text(lab)
-                        try:
-                            for oe in lab.find_elements(By.CSS_SELECTOR, "input[type='text'], textarea"):
-                                oe_name = (oe.get_attribute("name") or "").strip()
-                                if oe_name:
-                                    aux_openended_input_names.add(oe_name)
-                        except Exception:
-                            pass
-                    except Exception as e:
+                    else:
                         if os.getenv("RUN_ENV", "local") == "local":
-                            print(f"[DOM_ANALYZER][WARN] focusvision extract: {type(e).__name__}: {e}")
+                            pass
                         continue
 
                 if not label_txt:
@@ -876,11 +838,8 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
                 # Option "Autre ... préciser" avec champ open-ended dans le même label:
                 # on exclut cette option du bloc group principal (non gérée en action group ici).
                 if lab is not None:
-                    try:
-                        if lab.find_elements(By.CSS_SELECTOR, "input[type='text'], textarea"):
-                            continue
-                    except Exception:
-                        pass
+                    if lab.query_selector_all("input[type='text'], textarea"):
+                        continue
 
                 cell_col_label = label_txt
                 cell_row_label = ""
@@ -982,23 +941,23 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
 def _extract_focusvision_cardsort_block(driver, frame_chain: list[int] | None) -> dict | None:
     """
     Extrait un bloc cardsort FocusVision (drag & drop de cartes).
-    
+
     Pattern DOM (2 variantes observables):
     - Legacy: div.question.cardsort + .cardsort__card/.cardsort__bucket
     - Decipher sq-cardsort: div.question .sq-cardsort +
       .sq-cardsort-card/.sq-cardsort-bucket
     - Question: .question-text
-    
+
     Stratégie:
     - Identifier le container .cardsort
     - Extraire liste des cartes disponibles
     - Extraire liste des buckets (destinations)
     - Retourner metadata pour traitement ultérieur
-    
+
     Args:
-        driver: WebDriver Selenium
+        driver: WebDriver Playwright (Page native ou shim)
         frame_chain: Chaîne de frames ou None
-    
+
     Returns:
         Dict avec metadata ou None si pas trouvé
     """
@@ -1018,15 +977,14 @@ def _extract_focusvision_cardsort_block(driver, frame_chain: list[int] | None) -
         },
     )
 
+    page = _pw_page(driver)
     container = None
     profile = None
     for candidate in selector_profiles:
-        try:
-            container = driver.find_element(By.CSS_SELECTOR, candidate["container"])
+        container = page.query_selector(candidate["container"])
+        if container is not None:
             profile = candidate
             break
-        except Exception:
-            continue
 
     if container is None or profile is None:
         return None
@@ -1035,29 +993,26 @@ def _extract_focusvision_cardsort_block(driver, frame_chain: list[int] | None) -
     question = ""
     question_root = container
     if profile["container"] == ".sq-cardsort":
-        try:
-            question_root = container.find_element(By.XPATH, "ancestor::div[contains(concat(' ',normalize-space(@class),' '),' question ')][1]")
-        except Exception:
-            question_root = container
-    try:
-        question = (question_root.find_element(By.CSS_SELECTOR, ".question-text").text or "").strip()
-    except Exception:
-        question = (question_root.text or "").strip().split("\n")[0].strip()
+        _qr = container.query_selector("xpath=ancestor::div[contains(concat(' ',normalize-space(@class),' '),' question ')][1]")
+        question_root = _qr if _qr is not None else container
+    _qt = question_root.query_selector(".question-text")
+    if _qt is not None:
+        question = (_qt.inner_text() or "").strip()
+    else:
+        question = (question_root.inner_text() or "").strip().split("\n")[0].strip()
 
     # Cartes
     cards = []
     try:
-        card_elements = container.find_elements(By.CSS_SELECTOR, profile["cards"])
+        card_elements = container.query_selector_all(profile["cards"])
         for card in card_elements:
             if profile["container"] == ".sq-cardsort":
-                try:
-                    card_root = card.find_element(By.XPATH, "ancestor::li[contains(concat(' ',normalize-space(@class),' '),' sq-cardsort-card ')][1]")
+                card_root = card.query_selector("xpath=ancestor::li[contains(concat(' ',normalize-space(@class),' '),' sq-cardsort-card ')][1]")
+                if card_root is not None:
                     card_class = (card_root.get_attribute("class") or "").lower()
                     if "sq-cardsort-completion" in card_class:
                         continue
-                except Exception:
-                    pass
-            card_text = (card.text or card.get_attribute("innerText") or "").strip()
+            card_text = (card.inner_text() or "").strip()
             if card_text:
                 cards.append(card_text)
     except Exception:
@@ -1066,10 +1021,9 @@ def _extract_focusvision_cardsort_block(driver, frame_chain: list[int] | None) -
     # Buckets (catégories de destination)
     buckets = []
     try:
-        bucket_elements = container.find_elements(By.CSS_SELECTOR, profile["buckets"])
+        bucket_elements = container.query_selector_all(profile["buckets"])
         for bucket in bucket_elements:
-            bucket_text = (bucket.text or bucket.get_attribute("innerText") or "").strip()
-
+            bucket_text = (bucket.inner_text() or "").strip()
             if bucket_text:
                 buckets.append(bucket_text)
     except Exception:
@@ -1121,40 +1075,35 @@ def _extract_decipher_table_text_rows_blocks(driver, frame_chain: List[Any]) -> 
         Liste de blocks `single` (itype="text") avec question parent + contexte de ligne.
     """
     blocks: List[Dict[str, Any]] = []
+    page = _pw_page(driver)
 
-    wrappers = driver.find_elements(By.CSS_SELECTOR, "div.i-table-wrapper[data-widget-id]")
+    wrappers = page.query_selector_all("div.i-table-wrapper[data-widget-id]")
     for wrapper in wrappers:
-        try:
-            grid = wrapper.find_element(By.CSS_SELECTOR, "table.i-question-table")
-        except Exception:
+        grid = wrapper.query_selector("table.i-question-table")
+        if grid is None:
             continue
 
         try:
-            rows = grid.find_elements(By.CSS_SELECTOR, "tr[data-widget-id]")
+            rows = grid.query_selector_all("tr[data-widget-id]")
         except Exception:
             rows = []
         if not rows:
             continue
 
-        try:
-            question = (
-                wrapper.find_element(By.CSS_SELECTOR, "table.i-question td.i-questext").text or ""
-            ).strip()
-        except Exception:
-            question = ""
+        _qt = wrapper.query_selector("table.i-question td.i-questext")
+        question = (_qt.inner_text() if _qt is not None else "") or ""
+        question = question.strip()
 
         if not question:
             continue
 
         for row in rows:
-            try:
-                row_label = (row.find_element(By.CSS_SELECTOR, "td.i-questext").text or "").strip()
-            except Exception:
-                row_label = ""
+            _rl = row.query_selector("td.i-questext")
+            row_label = (_rl.inner_text() if _rl is not None else "") or ""
+            row_label = row_label.strip()
 
-            try:
-                field = row.find_element(By.CSS_SELECTOR, "input[type='text'], input[type='number'], textarea")
-            except Exception:
+            field = row.query_selector("input[type='text'], input[type='number'], textarea")
+            if field is None:
                 continue
 
             # Ne pas soumettre les lignes auto-calculées (ex: Total readonly)
@@ -1166,7 +1115,7 @@ def _extract_decipher_table_text_rows_blocks(driver, frame_chain: List[Any]) -> 
             if not field_id and not field_name:
                 continue
 
-            field_tag = (field.tag_name or "input").strip().lower()
+            field_tag = (field.evaluate("e => e.tagName.toLowerCase()") or "input").strip()
             if field_id:
                 xpath = f"//*[@id={_xpath_literal(field_id)}]"
             else:
@@ -1230,20 +1179,18 @@ def _extract_decipher_grid_single_col_text_rows(driver, frame_chain: List[Any]) 
         Liste de blocks `single` (itype="text"), un par ligne de grille.
     """
     blocks: List[Dict[str, Any]] = []
+    page = _pw_page(driver)
 
-    questions = driver.find_elements(By.CSS_SELECTOR, "div.question")
+    questions = page.query_selector_all("div.question")
     for q_el in questions:
-        try:
-            grid = q_el.find_element(
-                By.CSS_SELECTOR,
-                "table.grid.grid-table-mode[data-settings*='single-col']"
-            )
-        except Exception:
+        grid = q_el.query_selector(
+            "table.grid.grid-table-mode[data-settings*='single-col']"
+        )
+        if grid is None:
             continue
 
         try:
-            candidate_inputs = grid.find_elements(
-                By.CSS_SELECTOR,
+            candidate_inputs = grid.query_selector_all(
                 "tr.row-elements:not(.row-no-answer) td.element input[type='text']"
             )
         except Exception:
@@ -1257,44 +1204,37 @@ def _extract_decipher_grid_single_col_text_rows(driver, frame_chain: List[Any]) 
         if not candidate_inputs:
             continue
 
-        try:
-            question = (q_el.find_element(By.CSS_SELECTOR, ".question-text").text or "").strip()
-        except Exception:
-            question = ""
+        _qt = q_el.query_selector(".question-text")
+        question = (_qt.inner_text() if _qt is not None else "") or ""
+        question = question.strip()
         if not question:
             continue
 
         try:
-            rows = grid.find_elements(
-                By.CSS_SELECTOR,
+            rows = grid.query_selector_all(
                 "tr.row-elements:not(.row-no-answer)"
             )
         except Exception:
             continue
 
         for row in rows:
-            try:
-                field = row.find_element(
-                    By.CSS_SELECTOR,
-                    "td.element input[type='text']"
-                )
-            except Exception:
+            field = row.query_selector("td.element input[type='text']")
+            if field is None:
                 continue
 
             if "no-answer" in (field.get_attribute("class") or "").split():
                 continue
 
-            try:
-                row_label = (row.find_element(By.CSS_SELECTOR, "th.row-legend").text or "").strip()
-            except Exception:
-                row_label = ""
+            _rl = row.query_selector("th.row-legend")
+            row_label = (_rl.inner_text() if _rl is not None else "") or ""
+            row_label = row_label.strip()
 
             field_id = (field.get_attribute("id") or "").strip()
             field_name = (field.get_attribute("name") or "").strip()
             if not field_id and not field_name:
                 continue
 
-            field_tag = (field.tag_name or "input").strip().lower()
+            field_tag = (field.evaluate("e => e.tagName.toLowerCase()") or "input").strip()
             if field_id:
                 xpath = f"//*[@id={_xpath_literal(field_id)}]"
             else:
@@ -1361,9 +1301,10 @@ def _extract_decipher_grid_select_blocks(driver, frame_chain: List[Any]) -> List
     Les options vides (value="-1") sont exclues.
     """
     blocks: List[Dict[str, Any]] = []
+    page = _pw_page(driver)
 
     try:
-        q_containers = driver.find_elements(By.CSS_SELECTOR, "div.question.select")
+        q_containers = page.query_selector_all("div.question.select")
     except Exception:
         return blocks
 
@@ -1373,17 +1314,15 @@ def _extract_decipher_grid_select_blocks(driver, frame_chain: List[Any]) -> List
                 continue
 
             # Garde-fou: grille group-by-col table-mode uniquement
-            try:
-                grid = q_el.find_element(
-                    By.CSS_SELECTOR,
-                    "table.grid.grid-table-mode[data-settings*='group-by-col'][data-settings*='table-mode']",
-                )
-            except Exception:
+            grid = q_el.query_selector(
+                "table.grid.grid-table-mode[data-settings*='group-by-col'][data-settings*='table-mode']",
+            )
+            if grid is None:
                 continue
 
             # Garde-fou: au moins un select dans la grille
             try:
-                probe = grid.find_elements(By.CSS_SELECTOR, "div.fir-select > select.input.dropdown")
+                probe = grid.query_selector_all("div.fir-select > select.input.dropdown")
             except Exception:
                 probe = []
             if not probe:
@@ -1391,18 +1330,17 @@ def _extract_decipher_grid_select_blocks(driver, frame_chain: List[Any]) -> List
 
             # Question text
             question = ""
-            try:
-                question = (q_el.find_element(By.CSS_SELECTOR, ".question-text").text or "").strip()
-            except Exception:
-                pass
+            _qt = q_el.query_selector(".question-text")
+            if _qt is not None:
+                question = (_qt.inner_text() or "").strip()
             if not question:
                 continue
 
             # En-têtes de colonnes (dans l'ordre DOM)
             col_labels: List[str] = []
             try:
-                for h in grid.find_elements(By.CSS_SELECTOR, "th[scope='col']"):
-                    txt = (h.text or h.get_attribute("textContent") or "").strip()
+                for h in grid.query_selector_all("th[scope='col']"):
+                    txt = (h.inner_text() or h.text_content() or "").strip()
                     if txt:
                         col_labels.append(txt)
             except Exception:
@@ -1410,22 +1348,20 @@ def _extract_decipher_grid_select_blocks(driver, frame_chain: List[Any]) -> List
 
             # Lignes de données
             try:
-                rows = grid.find_elements(By.CSS_SELECTOR, "tr.row.row-elements")
+                rows = grid.query_selector_all("tr.row.row-elements")
             except Exception:
                 continue
 
             for row in rows:
                 # Label de ligne
                 row_label = ""
-                try:
-                    rh = row.find_element(By.CSS_SELECTOR, "th[scope='row']")
-                    row_label = (rh.text or rh.get_attribute("textContent") or "").strip()
-                except Exception:
-                    pass
+                rh = row.query_selector("th[scope='row']")
+                if rh is not None:
+                    row_label = (rh.inner_text() or rh.text_content() or "").strip()
 
                 # Select de la ligne (dans l'ordre DOM = colonnes)
                 try:
-                    row_selects = row.find_elements(By.CSS_SELECTOR, "div.fir-select > select.input.dropdown")
+                    row_selects = row.query_selector_all("div.fir-select > select.input.dropdown")
                 except Exception:
                     row_selects = []
 
@@ -1438,10 +1374,10 @@ def _extract_decipher_grid_select_blocks(driver, frame_chain: List[Any]) -> List
                     # Options (valeur "-1" = placeholder vide → exclue)
                     options: List[str] = []
                     try:
-                        for opt in sel.find_elements(By.CSS_SELECTOR, "option"):
+                        for opt in sel.query_selector_all("option"):
                             if (opt.get_attribute("value") or "").strip() == "-1":
                                 continue
-                            txt = (opt.text or opt.get_attribute("textContent") or "").strip()
+                            txt = (opt.inner_text() or opt.text_content() or "").strip()
                             txt = txt.replace("\xa0", " ").strip()
                             if txt:
                                 options.append(txt)
@@ -1519,39 +1455,39 @@ def _extract_decipher_grid_select_blocks(driver, frame_chain: List[Any]) -> List
 def _extract_decipher_answers_list_fallback(driver, frame_chain: List[Any]) -> List[Dict[str, Any]]:
     """
     Extracteur fallback pour Decipher answers-list (radio/checkbox groups).
-    
+
     Utilisé quand les extracteurs standards échouent. Pattern alternatif:
     - Container: .answer-list
     - Inputs: input[type=radio] / input[type=checkbox]
     - Labels: via for= ou structure parent
-    
+
     Stratégie:
     - Chercher tous les .answer-list containers
     - Pour chaque container, extraire inputs et labels
     - Grouper par name attribute
     - Construire option_xpath_map
-    
+
     Args:
-        driver: WebDriver Selenium
+        driver: WebDriver Playwright (Page native ou shim)
         frame_chain: Chaîne de frames
-    
+
     Returns:
         Liste de dicts avec metadata pour dom_registry
     """
     blocks: List[Dict[str, Any]] = []
+    page = _pw_page(driver)
 
     try:
         # Chercher tous les containers .answer-list
-        containers = driver.find_elements(By.CSS_SELECTOR, ".answer-list")
-        
+        containers = page.query_selector_all(".answer-list")
+
         for container in containers:
             try:
                 # Trouver tous les inputs dans ce container
-                inputs = container.find_elements(
-                    By.CSS_SELECTOR,
+                inputs = container.query_selector_all(
                     "input[type='radio'], input[type='checkbox']"
                 )
-                
+
                 if len(inputs) < 2:
                     continue
 
@@ -1569,14 +1505,14 @@ def _extract_decipher_answers_list_fallback(driver, frame_chain: List[Any]) -> L
 
                 # Extraire question text (chercher dans parent ou siblings)
                 question = ""
-                try:
-                    # Essayer de trouver .question-text dans le parent
-                    parent = container.find_element(By.XPATH, "..")
-                    question_elem = parent.find_element(By.CSS_SELECTOR, ".question-text, .qtext")
-                    question = (question_elem.text or "").strip()
-                except Exception:
+                parent = container.query_selector("xpath=..")
+                if parent is not None:
+                    question_elem = parent.query_selector(".question-text, .qtext")
+                    if question_elem is not None:
+                        question = (question_elem.inner_text() or "").strip()
+                if not question:
                     # Fallback: prendre le texte du container
-                    question = (container.text or "").strip().split("\n")[0].strip()
+                    question = (container.inner_text() or "").strip().split("\n")[0].strip()
 
                 # Pour chaque groupe de name
                 for name, group_inputs in by_name.items():
@@ -1590,22 +1526,17 @@ def _extract_decipher_answers_list_fallback(driver, frame_chain: List[Any]) -> L
 
                         # Chercher le label associé
                         label_txt = ""
-                        try:
-                            # Méthode 1: label[for=id]
-                            label = driver.find_element(By.CSS_SELECTOR, f"label[for='{inp_id}']")
-                            label_txt = _clean_decipher_template_markers((label.text or "").strip())
-                        except Exception:
-                            try:
-                                # Méthode 2: label parent
-                                label = inp.find_element(By.XPATH, "ancestor::label[1]")
-                                label_txt = _clean_decipher_template_markers((label.text or "").strip())
-                            except Exception:
-                                # Méthode 3: sibling label
-                                try:
-                                    label = inp.find_element(By.XPATH, "following-sibling::label[1]")
-                                    label_txt = _clean_decipher_template_markers((label.text or "").strip())
-                                except Exception:
-                                    pass
+                        label = page.query_selector(f"label[for='{inp_id}']")
+                        if label is not None:
+                            label_txt = _clean_decipher_template_markers((label.inner_text() or "").strip())
+                        else:
+                            label = inp.query_selector("xpath=ancestor::label[1]")
+                            if label is not None:
+                                label_txt = _clean_decipher_template_markers((label.inner_text() or "").strip())
+                            else:
+                                label = inp.query_selector("xpath=following-sibling::label[1]")
+                                if label is not None:
+                                    label_txt = _clean_decipher_template_markers((label.inner_text() or "").strip())
 
                         if not label_txt:
                             continue
@@ -1677,10 +1608,11 @@ def _extract_decipher_atmrating_blocks(driver, frame_chain: List[Any]) -> List[D
     Log discriminant : [DOM_DECIPHER_ATMRATING] blocks_extracted=N
     """
     blocks: List[Dict[str, Any]] = []
+    page = _pw_page(driver)
 
     # Guard 1 : question container sq-atmrating
     try:
-        q_containers = driver.find_elements(By.CSS_SELECTOR, "div.question.sq-atmrating")
+        q_containers = page.query_selector_all("div.question.sq-atmrating")
     except Exception:
         return blocks
     if not q_containers:
@@ -1690,7 +1622,7 @@ def _extract_decipher_atmrating_blocks(driver, frame_chain: List[Any]) -> List[D
         try:
             # Guard 2 : au moins un container avec boutons atmrating
             try:
-                probe = q_el.find_elements(By.CSS_SELECTOR, "div.sq-atmrating-container span.atmrating-btn")
+                probe = q_el.query_selector_all("div.sq-atmrating-container span.atmrating-btn")
             except Exception:
                 probe = []
             if not probe:
@@ -1698,30 +1630,27 @@ def _extract_decipher_atmrating_blocks(driver, frame_chain: List[Any]) -> List[D
 
             # Question globale
             global_q = ""
-            try:
-                global_q = (q_el.find_element(By.CSS_SELECTOR, "h1.question-text").text or "").strip()
-            except Exception:
-                pass
+            _qte = q_el.query_selector("h1.question-text")
+            if _qte is not None:
+                global_q = (_qte.inner_text() or "").strip()
 
             # Instruction optionnelle (fusionnée)
             instruction = ""
-            try:
-                instruction = (q_el.find_element(By.CSS_SELECTOR, "h2.instruction-text").text or "").strip()
-            except Exception:
-                pass
+            _ins = q_el.query_selector("h2.instruction-text")
+            if _ins is not None:
+                instruction = (_ins.inner_text() or "").strip()
             q_prefix = f"{global_q} {instruction}".strip() if instruction else global_q
 
             # Valeurs des boutons (identiques pour tous les containers — lire une fois)
             btn_values: List[str] = []
             try:
-                first_btns = q_el.find_elements(
-                    By.CSS_SELECTOR,
+                first_btns = q_el.query_selector_all(
                     "div.sq-atmrating-container:first-child span.atmrating-btn"
                 )
                 for b in first_btns:
                     # Les boutons portent des zero-width spaces — strip agressif
-                    raw = (b.get_attribute("textContent") or b.text or "").strip()
-                    raw = raw.replace("\u200b", "").strip()
+                    raw = (b.text_content() or b.inner_text() or "").strip()
+                    raw = raw.replace("​", "").strip()
                     if raw:
                         btn_values.append(raw)
             except Exception:
@@ -1731,31 +1660,26 @@ def _extract_decipher_atmrating_blocks(driver, frame_chain: List[Any]) -> List[D
 
             # Un bloc par sous-question (div.sq-atmrating-container)
             try:
-                row_containers = q_el.find_elements(By.CSS_SELECTOR, "div.sq-atmrating-container")
+                row_containers = q_el.query_selector_all("div.sq-atmrating-container")
             except Exception:
                 continue
 
             for row_el in row_containers:
                 # Texte de la sous-question
                 row_legend = ""
-                try:
-                    row_legend = (row_el.find_element(
-                        By.CSS_SELECTOR, "div.sq-atmrating-row-legend"
-                    ).get_attribute("textContent") or "").strip()
-                except Exception:
-                    pass
+                _rle = row_el.query_selector("div.sq-atmrating-row-legend")
+                if _rle is not None:
+                    row_legend = (_rle.text_content() or "").strip()
                 if not row_legend:
                     continue
 
                 # Input caché portant le name discriminant
                 inp_name = ""
                 inp_id = ""
-                try:
-                    inp = row_el.find_element(By.CSS_SELECTOR, "input[type='text']")
+                inp = row_el.query_selector("input[type='text']")
+                if inp is not None:
                     inp_name = (inp.get_attribute("name") or "").strip()
                     inp_id = (inp.get_attribute("id") or "").strip()
-                except Exception:
-                    pass
                 if not inp_name and not inp_id:
                     continue
 
@@ -1855,9 +1779,10 @@ def _extract_decipher_ranksort_dropdown_blocks(driver, frame_chain: List[Any]) -
     - Le dispatcher assigne "Rang N" au Nième item retourné par GPT.
     """
     blocks: List[Dict[str, Any]] = []
+    page = _pw_page(driver)
 
     try:
-        containers = driver.find_elements(By.CSS_SELECTOR, "div.question.sq-ranksort")
+        containers = page.query_selector_all("div.question.sq-ranksort")
     except Exception:
         return blocks
 
@@ -1868,30 +1793,27 @@ def _extract_decipher_ranksort_dropdown_blocks(driver, frame_chain: List[Any]) -
         try:
             # Question globale
             global_q = ""
-            try:
-                global_q = (q_el.find_element(By.CSS_SELECTOR, "h1.question-text").text or "").strip()
-            except Exception:
-                pass
+            _qte = q_el.query_selector("h1.question-text")
+            if _qte is not None:
+                global_q = (_qte.inner_text() or "").strip()
             if not global_q:
                 continue
 
             # Instruction optionnelle fusionnée dans la question
             instruction = ""
-            try:
-                instruction = (q_el.find_element(By.CSS_SELECTOR, "h2.instruction-text").text or "").strip()
-            except Exception:
-                pass
+            _ins = q_el.query_selector("h2.instruction-text")
+            if _ins is not None:
+                instruction = (_ins.inner_text() or "").strip()
             question_text = f"{global_q} {instruction}".strip() if instruction else global_q
 
             # Table grid (display:none — accès DOM direct sans vérification visibilité)
-            try:
-                grid = q_el.find_element(By.CSS_SELECTOR, "table.grid")
-            except Exception:
+            grid = q_el.query_selector("table.grid")
+            if grid is None:
                 continue
 
             # Lignes de données
             try:
-                rows = grid.find_elements(By.CSS_SELECTOR, "tr.row.row-elements")
+                rows = grid.query_selector_all("tr.row.row-elements")
             except Exception:
                 rows = []
 
@@ -1906,18 +1828,15 @@ def _extract_decipher_ranksort_dropdown_blocks(driver, frame_chain: List[Any]) -
             for row in rows:
                 # Texte de l'item (th)
                 item_text = ""
-                try:
-                    th = row.find_element(By.CSS_SELECTOR, "th")
-                    item_text = (th.text or th.get_attribute("textContent") or "").strip()
-                except Exception:
-                    pass
+                th = row.query_selector("th")
+                if th is not None:
+                    item_text = (th.inner_text() or th.text_content() or "").strip()
                 if not item_text:
                     continue
 
                 # Select dropdown de cet item
-                try:
-                    sel = row.find_element(By.CSS_SELECTOR, "select.input.dropdown")
-                except Exception:
+                sel = row.query_selector("select.input.dropdown")
+                if sel is None:
                     continue
 
                 sel_id = (sel.get_attribute("id") or "").strip()
@@ -1928,10 +1847,10 @@ def _extract_decipher_ranksort_dropdown_blocks(driver, frame_chain: List[Any]) -
                 # Rang labels (identiques pour tous les selects — lire une fois)
                 if not rank_labels:
                     try:
-                        for opt in sel.find_elements(By.CSS_SELECTOR, "option"):
+                        for opt in sel.query_selector_all("option"):
                             if (opt.get_attribute("value") or "").strip() == "-1":
                                 continue
-                            txt = (opt.text or opt.get_attribute("textContent") or "").replace("\xa0", " ").strip()
+                            txt = (opt.inner_text() or opt.text_content() or "").replace("\xa0", " ").strip()
                             if txt:
                                 rank_labels.append(txt)
                     except Exception:
@@ -2009,13 +1928,14 @@ def _extract_qarts_hidden_answers_groups(driver, frame_chain: List[Any]) -> List
     On cible l'ancêtre td.clickableCell via JS-click (bypass visibilité).
     """
     blocks: List[Dict[str, Any]] = []
+    page = _pw_page(driver)
 
     # Guard 1 : interface visuelle QARTS active
     #   div[id^="sq-QARTS-container-"] contenant div._rowpicker
     try:
         qarts_containers = [
-            c for c in driver.find_elements(By.CSS_SELECTOR, "div[id^='sq-QARTS-container-']")
-            if c.find_elements(By.CSS_SELECTOR, "div._rowpicker")
+            c for c in page.query_selector_all("div[id^='sq-QARTS-container-']")
+            if c.query_selector_all("div._rowpicker")
         ]
         if not qarts_containers:
             return blocks
@@ -2024,14 +1944,14 @@ def _extract_qarts_hidden_answers_groups(driver, frame_chain: List[Any]) -> List
 
     # Guard 2 : grille cachée avec inputs portant l'attribut qartsqname
     try:
-        hidden_containers = driver.find_elements(By.CSS_SELECTOR, "div.hidden.answers")
+        hidden_containers = page.query_selector_all("div.hidden.answers")
     except Exception:
         return blocks
     if not hidden_containers:
         return blocks
     try:
         has_qartsqname = any(
-            hc.find_elements(By.CSS_SELECTOR, "input[qartsqname]")
+            hc.query_selector_all("input[qartsqname]")
             for hc in hidden_containers
         )
     except Exception:
@@ -2040,22 +1960,18 @@ def _extract_qarts_hidden_answers_groups(driver, frame_chain: List[Any]) -> List
         return blocks
 
     def _label_text(el) -> str:
-        txt = (el.text or "").strip()
+        txt = (el.inner_text() or "").strip()
         if txt:
             return _clean_decipher_template_markers(txt)
-        for attr in ("innerText", "textContent"):
-            try:
-                raw = (el.get_attribute(attr) or "").strip()
-            except Exception:
-                raw = ""
-            if raw:
-                return _clean_decipher_template_markers(raw)
+        raw = (el.text_content() or "").strip()
+        if raw:
+            return _clean_decipher_template_markers(raw)
         return ""
 
     for hidden_div in hidden_containers:
         try:
-            inputs = hidden_div.find_elements(
-                By.CSS_SELECTOR, "input[type='radio'], input[type='checkbox']"
+            inputs = hidden_div.query_selector_all(
+                "input[type='radio'], input[type='checkbox']"
             )
         except Exception:
             continue
@@ -2064,11 +1980,9 @@ def _extract_qarts_hidden_answers_groups(driver, frame_chain: List[Any]) -> List
 
         # Question text — chercher globalement le .question-text le plus proche
         question = ""
-        try:
-            qt_el = driver.find_element(By.CSS_SELECTOR, ".question-text, h1.question-text")
+        qt_el = page.query_selector(".question-text, h1.question-text")
+        if qt_el is not None:
             question = _label_text(qt_el)
-        except Exception:
-            question = ""
 
         itype = "radio"
         try:
@@ -2101,11 +2015,9 @@ def _extract_qarts_hidden_answers_groups(driver, frame_chain: List[Any]) -> List
                     continue
 
                 label_txt = ""
-                try:
-                    lab = hidden_div.find_element(By.CSS_SELECTOR, f"label[for='{inp_id}']")
+                lab = hidden_div.query_selector(f"label[for='{inp_id}']")
+                if lab is not None:
                     label_txt = _label_text(lab)
-                except Exception:
-                    pass
 
                 if not label_txt:
                     continue
@@ -2135,10 +2047,10 @@ def _extract_qarts_hidden_answers_groups(driver, frame_chain: List[Any]) -> List
                 try:
                     qname = (inps[0].get_attribute("qartsqname") or "").strip()
                     if qname:
-                        qarts_autosubmit = bool(driver.execute_script(
-                            "var q=arguments[0];"
-                            "try{return !!(window.DQ&&DQ.questions&&DQ.questions[q]"
-                            "&&DQ.questions[q].q&&DQ.questions[q].q['qa:autosubmit']);}catch(e){return false;}",
+                        qarts_autosubmit = bool(page.evaluate(
+                            "(q) => { try { return !!(window.DQ&&DQ.questions&&DQ.questions[q]"
+                            "&&DQ.questions[q].q&&DQ.questions[q].q['qa:autosubmit']); }"
+                            " catch(e) { return false; } }",
                             qname
                         ))
                         log_debug("[QARTS_HIDDEN]", f"autosubmit={qarts_autosubmit} qname={qname}")
