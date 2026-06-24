@@ -93,6 +93,9 @@ def _capture_png(driver) -> bytes:
 
     display = os.getenv("DISPLAY", ":99")
 
+    if not os.getenv("DISPLAY"):
+        raise RuntimeError("DISPLAY non défini, scrot impossible")
+
     # 1. Tentative capture bureau complet via scrot
     with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
         path = tmp.name
