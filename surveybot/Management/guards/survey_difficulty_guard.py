@@ -12,11 +12,6 @@ from typing import Tuple, Optional
 from urllib.parse import parse_qs, urlparse
 
 
-def _pw_page(d):
-    """Extrait la Page Playwright native depuis un PlaywrightDriverShim ou retourne d tel quel."""
-    if hasattr(d, "_page"):
-        return d._page
-    return d
 
 
 # ✅ Selectors "forts" (si présents → très probable que ce soit strict)
@@ -77,7 +72,7 @@ STRICT_KEYWORDS = {
 def _has_datadome_iframe(driver) -> bool:
     """True si un iframe DataDome (captcha-delivery.com) est présent dans la page."""
     try:
-        iframes = _pw_page(driver).query_selector_all(
+        iframes = driver.query_selector_all(
             'iframe[src*="captcha-delivery.com"], iframe[title*="DataDome"]',
         )
         return bool(iframes)
@@ -88,7 +83,7 @@ def _has_datadome_iframe(driver) -> bool:
 def _page_text_lc(driver) -> str:
     """Récupère le texte de la page en minuscules, de façon safe."""
     try:
-        return (_pw_page(driver).evaluate("() => document.body.innerText || ''") or "").lower()
+        return (driver.evaluate("() => document.body.innerText || ''") or "").lower()
     except Exception:
         return ""
 
@@ -104,7 +99,7 @@ def _detect_image_evaluation(driver) -> bool:
     Ces pages ne sont pas supportées en V1 prod → on les abandonne.
     """
     try:
-        page = _pw_page(driver)
+        page = driver
         # 1) Vérifier la présence de rsScrollGridWrappper ou similaire
         scroll_els = page.query_selector_all(
             "div.rsScrollGridWrappper, div[class*='rsScrollGridW']")
@@ -164,7 +159,7 @@ def _detect_ta_image_only_question(driver) -> bool:
     Ce pattern indique une question dépendante de l'image (DOM-only insuffisant).
     """
     try:
-        page = _pw_page(driver)
+        page = driver
         ta_images = page.query_selector_all("img.taImage")
         has_large_ta_image = any(_is_large_visible_image(img) for img in ta_images)
         if not has_large_ta_image:
@@ -258,7 +253,7 @@ def detect_strict_survey(driver) -> Tuple[bool, Optional[str]]:
     - 1) Check selectors (rapide)
     - 2) Fallback keywords (texte)
     """
-    page = _pw_page(driver)
+    page = driver
 
     # === 0) IMAGE EVALUATION (Walr) - Non supporté en V1 prod ===
     if _detect_image_evaluation(driver) or _detect_ta_image_only_question(driver):

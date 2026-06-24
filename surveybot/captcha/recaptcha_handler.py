@@ -6,10 +6,6 @@ import json
 from captcha.recaptcha_utils import extract_recaptcha_v2_sitekey, inject_recaptcha_token
 
 
-def _pw_page(d):
-    if hasattr(d, '_page'):
-        return d._page
-    return d
 from captcha.captcha_solver import TwoCaptchaClient, CapSolverClient
 import Management.guards.survey_difficulty_guard
 from Survey.log_utils import log_debug
@@ -202,13 +198,13 @@ def _fire_recaptcha_callbacks(driver, token: str) -> dict:
     }
     """
     try:
-        _cfg_raw = _pw_page(driver).evaluate(_cfg_js)
+        _cfg_raw = driver.evaluate(_cfg_js)
         log_debug("RECAPTCHA_HANDLER][CFG_DUMP", _cfg_raw or "(empty)")
     except Exception as _cfg_e:
         log_debug("RECAPTCHA_HANDLER][CFG_DUMP", f"evaluate failed: {_cfg_e}")
 
     try:
-        raw = _pw_page(driver).evaluate(js, token)
+        raw = driver.evaluate(js, token)
         return json.loads(raw) if raw else {"error": "script returned None"}
     except Exception as e:
         return {"error": f"evaluate failed: {e}"}
@@ -253,7 +249,7 @@ def _verify_recaptcha_resolved(driver, callback_report: dict) -> bool:
 
     # Fallback token
     try:
-        token_len = int(_pw_page(driver).evaluate(
+        token_len = int(driver.evaluate(
             "() => { var el = document.getElementById('g-recaptcha-response');"
             " return el ? (el.value||'').length : 0; }"
         ) or 0)
@@ -296,7 +292,7 @@ def solve_recaptcha_v2_auto(driver) -> bool:
     # être généré depuis la même IP que la soumission du formulaire.
     # Si PROXY_HOST est défini → RecaptchaV2Task (proxy) ; sinon → Proxyless (CMIX, etc.)
     # Si is_enterprise → RecaptchaV2EnterpriseTask / RecaptchaV2EnterpriseTaskProxyless
-    current_url = _pw_page(driver).url
+    current_url = driver.url
     proxy_cfg = _get_proxy_config()
     mode = "proxy" if proxy_cfg else "proxyless"
     provider = os.getenv("CAPTCHA_PROVIDER", "2captcha").strip().lower()

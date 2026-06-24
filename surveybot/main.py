@@ -26,52 +26,7 @@ if hasattr(sys.stdout, "reconfigure"):
     except Exception:
         pass
 
-def _attach_tab_score(driver) -> tuple[int, int]:
-    """Score simple: nb d'éléments actionnables + taille texte."""
-    try:
-        actionable = driver.execute_script("""
-            try {
-              const sel = "input,select,textarea,button,[role='button'],[role='radio'],[role='checkbox'],label[for]";
-              return document.querySelectorAll(sel).length || 0;
-            } catch(e) { return 0; }
-        """)
-    except Exception:
-        actionable = 0
 
-    try:
-        text_len = driver.execute_script("""
-            try { return (document.body && (document.body.innerText||'').length) || 0; }
-            catch(e) { return 0; }
-        """)
-    except Exception:
-        text_len = 0
-
-    return int(actionable), int(text_len)
-
-def _attach_select_best_tab(driver) -> None:
-    """
-    Selenium ne sait pas 'prendre l'onglet actif' de Chrome de façon fiable.
-    Donc: on parcourt tous les onglets et on choisit celui qui ressemble le plus
-    à une page testable (beaucoup d'inputs/texte).
-    """
-    best = None  # (score_tuple, handle, url)
-    for h in list(getattr(driver, "window_handles", []) or []):
-        try:
-            driver.switch_to.window(h)
-            url = driver.current_url or ""
-            score = _attach_tab_score(driver)
-            if (best is None) or (score > best[0]):
-                best = (score, h, url)
-        except Exception:
-            continue
-
-    if best:
-        score, h, url = best
-        try:
-            driver.switch_to.window(h)
-        except Exception:
-            pass
-        print(f"[ATTACH] Tab sélectionné score={score} url={_attach_display_url(url)}")
 
 def _attach_is_user_web_url(url: str) -> bool:
     u = (url or "").strip().lower()
@@ -176,209 +131,6 @@ def _attach_pick_ui_active_tab(driver, handles):
 
     return None
 
-def _attach_select_tab(driver, *, exclude_url_pred=None) -> None:
-    """
-    Sélection d'onglet en mode attach (LOCAL).
-
-    Objectif: comportement prédictible (pas de pseudo "focus" Selenium).
-
-    Priorités (dans l'ordre):
-    1) ATTACH_TAB_URL_CONTAINS           => 1er onglet dont l'URL contient le substring
-    2) ATTACH_TAB_TITLE_CONTAINS         => 1er onglet dont document.title contient le substring (case-insensitive)
-    3) ATTACH_TAB_DOM_CONTAINS           => 1er onglet dont body.innerText contient le substring (case-insensitive, tronqué)
-    4) ATTACH_TAB_SELECTOR:
-        - "pick" / "prompt": affiche la liste + demande un index (LOCAL only)
-        - "current": no-op (on garde l'onglet courant du driver, si http(s))
-        - "last"/"newest": dernier onglet http(s)
-        - "best": ancien scoring (inputs + texte)
-        - "<index>": index numérique dans window_handles
-    Fallback final: last_web (dernier http(s)).
-    """
-    url_contains = (os.getenv("ATTACH_TAB_URL_CONTAINS") or "").strip()
-    if _attach__is_disabled_token(url_contains):
-        url_contains = ""
-
-    title_contains = (os.getenv("ATTACH_TAB_TITLE_CONTAINS") or "").strip()
-    if _attach__is_disabled_token(title_contains):
-        title_contains = ""
-
-    dom_contains = (os.getenv("ATTACH_TAB_DOM_CONTAINS") or "").strip()
-    if _attach__is_disabled_token(dom_contains):
-        dom_contains = ""
-
-    mode = (os.getenv("ATTACH_TAB_SELECTOR", "current") or "current").strip().lower()
-
-    handles = list(getattr(driver, "window_handles", []) or [])
-    if not handles:
-        return
-
-    def _is_candidate(u: str) -> bool:
-        return _attach_is_user_web_url(u) and not (exclude_url_pred and exclude_url_pred(u))
-
-    def _switch(i: int) -> bool:
-        try:
-            h = handles[i]
-            driver.switch_to.window(h)
-            return True
-        except Exception:
-            return False
-
-    def _safe_url() -> str:
-        try:
-            return driver.current_url or ""
-        except Exception:
-            return ""
-
-    def _safe_title() -> str:
-        try:
-            return driver.title or ""
-        except Exception:
-            return ""
-
-    def _safe_body_text_prefix(max_chars: int = 8000) -> str:
-        try:
-            return (
-                driver.execute_script(
-                    "return (document.body && (document.body.innerText||'')) ? "
-                    "(document.body.innerText||'').slice(0, arguments[0]) : '';",
-                    int(max_chars),
-                )
-                or ""
-            )
-        except Exception:
-            return ""
-
-    def _pick_last_web() -> bool:
-        last_web = None  # (idx, url)
-        for i in range(len(handles)):
-            if not _switch(i):
-                continue
-            u = _safe_url()
-            if _is_candidate(u):
-                last_web = (i, u)
-        if last_web is not None:
-            i, _ = last_web
-            _switch(i)
-            print(f"[ATTACH] Tab=last_web idx={i} url={_attach_display_url(_safe_url())}")
-            return True
-        return False
-
-    # 1) URL contains (prioritaire)
-    if url_contains:
-        for i in range(len(handles)):
-            if not _switch(i):
-                continue
-            u = _safe_url()
-            if _is_candidate(u) and (url_contains in u):
-                print(f"[ATTACH] Tab=url_contains idx={i} url={_attach_display_url(u)}")
-                return
-        print(f"[ATTACH] Tab=url_contains NOT FOUND ({url_contains})")
-
-    # 2) Title contains (utile quand plusieurs onglets ont la même URL mais titres différents)
-    if title_contains:
-        needle = title_contains.lower()
-        for i in range(len(handles)):
-            if not _switch(i):
-                continue
-            u = _safe_url()
-            if not _is_candidate(u):
-                continue
-            t = _safe_title().strip().lower()
-            if needle and (needle in t):
-                print(f"[ATTACH] Tab=title_contains idx={i} title={_safe_title()!r} url={_attach_display_url(u)}")
-                return
-        print(f"[ATTACH] Tab=title_contains NOT FOUND ({title_contains})")
-
-    # 3) DOM contains (solution robuste pour 3 onglets avec EXACTEMENT la même URL)
-    if dom_contains:
-        needle = dom_contains.lower()
-        for i in range(len(handles)):
-            if not _switch(i):
-                continue
-            u = _safe_url()
-            if not _is_candidate(u):
-                continue
-            txt = _safe_body_text_prefix(8000).lower()
-            if needle and (needle in txt):
-                print(f"[ATTACH] Tab=dom_contains idx={i} url={_attach_display_url(u)}")
-                return
-        print(f"[ATTACH] Tab=dom_contains NOT FOUND ({dom_contains})")
-
-    # 4) Mode selector
-    if mode in ("pick", "prompt", "menu"):
-        if not IS_LOCAL:
-            # attach est déja interdit en prod, mais on garde une safety net
-            print("[ATTACH] Tab=pick ignored (non-local)")
-        else:
-            web_handles = []  # mapping: display_index -> real handles[] index
-            for i in range(len(handles)):
-                if not _switch(i):
-                    continue
-                u = _safe_url()
-                if _is_candidate(u):
-                    web_handles.append((i, u, _safe_title().strip().replace("\n", " "), _attach_tab_score(driver)))
-            print("[ATTACH] Tabs disponibles (idx | score=(actionables,text) | title | url):")
-            for d, (i, u, t, sc) in enumerate(web_handles):
-                print(f"[ATTACH]  {d:02d} | score={sc} | title={t[:80]!r} | url={_attach_display_url(u)}")
-
-            choice = (input("[ATTACH] Choisis l'index d'onglet à utiliser: ") or "").strip()
-            if choice.isdigit():
-                didx = int(choice)
-                if 0 <= didx < len(web_handles):
-                    idx = web_handles[didx][0]
-                    _switch(idx)
-                    u = _safe_url()
-                    if _is_candidate(u):
-                        print(f"[ATTACH] Tab=pick didx={didx} idx={idx} url={_attach_display_url(u)}")
-                        return
-                    print(f"[ATTACH] Tab=pick didx={didx} idx={idx} non-web url={_attach_display_url(u)} -> fallback last_web")
-                else:
-                    print(f"[ATTACH] Tab=pick out-of-range={didx!r} -> fallback last_web")
-            else:
-                print(f"[ATTACH] Tab=pick invalid={choice!r} -> fallback last_web")
-
-            if _pick_last_web():
-                return
-
-    if mode in ("current", "active", "focused"):
-        # No-op prédictible: on ne tente PAS de deviner le focus UI.
-        u = _safe_url()
-        if _is_candidate(u):
-            print(f"[ATTACH] Tab=current(no-op) url={_attach_display_url(u)}")
-            return
-        # si on est tombé sur chrome://tab-search etc., on fallback
-        if _pick_last_web():
-            return
-        return
-
-    if mode in ("last", "newest"):
-        if _pick_last_web():
-            return
-        # fallback brut
-        _switch(len(handles) - 1)
-        print(f"[ATTACH] Tab=last idx={len(handles)-1} url={_attach_display_url(_safe_url())}")
-        return
-
-    if mode == "best":
-        _attach_select_best_tab(driver)
-        return
-
-    if mode.isdigit():
-        idx = int(mode)
-        idx = max(0, min(idx, len(handles) - 1))
-        _switch(idx)
-        u = _safe_url()
-        if _is_candidate(u):
-            print(f"[ATTACH] Tab=index idx={idx} url={_attach_display_url(u)}")
-            return
-        print(f"[ATTACH] Tab=index idx={idx} non-web url={_attach_display_url(u)} -> fallback last_web")
-        if _pick_last_web():
-            return
-        return
-
-    # Fallback final
-    if _pick_last_web():
-        return
 
 def run_attach_takeover(driver, *, api_key: str, account_id: str) -> None:
     """
@@ -395,7 +147,6 @@ def run_attach_takeover(driver, *, api_key: str, account_id: str) -> None:
     _ctx = SurveyContext(session_id=account_id, openai_api_key=api_key)
     survey_solver._current_survey_ctx = _ctx
 
-    _attach_select_tab(driver, exclude_url_pred=lambda u: "topsurveys.app" in (u or "").lower())
     driver._survey_account_id = account_id
 
     from Survey.functions import _handle_topsurveys_exclusion_popup
@@ -412,13 +163,11 @@ def run_attach_takeover(driver, *, api_key: str, account_id: str) -> None:
 
             # === RETOUR TOPSURVEYS ? ===            
             try:
-                _cur_url = (driver.current_url or "").lower()
+                _cur_url = (driver.url or "").lower()
                 if "topsurveys.app" in _cur_url:
                     # Écran "Courte pause" (vérification téléphone/PIN) : laisser
                     # execute_survey_page() le traiter via ses handlers dédiés.
-                    _has_phone_screen = bool(driver.execute_script(
-                        "return !!document.querySelector('div.phone-verification-container');"
-                    ))
+                    _has_phone_screen = bool(driver.evaluate("() => !!document.querySelector(\'div.phone-verification-container\')"))
                     if not _has_phone_screen:
                         _handle_topsurveys_exclusion_popup(driver, account_id)
                         print(f"[ATTACH] Retour TopSurveys détecté step={i} → sortie boucle.")
@@ -466,16 +215,11 @@ def run_attach_takeover(driver, *, api_key: str, account_id: str) -> None:
                                     # Sleep fixe insuffisant — Decipher peut prendre 3-8s
                                     # pour soumettre le formulaire et charger la page suivante.
                                     # On attend le changement d'URL plutôt qu'un délai arbitraire.
-                                    _url_before = driver.current_url
-                                    from selenium.webdriver.support.ui import WebDriverWait
+                                    _url_before = driver.url
                                     try:
-                                        WebDriverWait(driver, 10).until(
-                                            lambda d: d.current_url != _url_before
-                                        )
-                                        print(f"[ATTACH][CAPTCHA] ✅ URL changée → {driver.current_url[:60]}")
+                                        driver.wait_for_url(lambda url: url != _url_before, timeout=10000)
+                                        print(f"[ATTACH][CAPTCHA] ✅ URL changée → {driver.url[:60]}")
                                     except Exception:
-                                        # Pas de changement d'URL dans les 10s — on continue quand même
-                                        # (certaines plateformes rechargent la même URL sans captcha)
                                         print("[ATTACH][CAPTCHA] ⚠️ URL inchangée après 10s — on continue")
                                     time.sleep(0.5)  # micro-pause DOM post-navigation
                                 else:
@@ -489,7 +233,7 @@ def run_attach_takeover(driver, *, api_key: str, account_id: str) -> None:
 
                     elif captcha_behavior == "pause":
                         # LOCAL interactif : pause manuelle (anti-boucle sur même URL)
-                        captcha_url = driver.current_url or ""
+                        captcha_url = driver.url or ""
                         last_captcha_url = getattr(driver, "_last_captcha_pause_url", None)
                         if last_captcha_url == captcha_url:
                             print("[ATTACH][CAPTCHA] Déjà traité sur cette URL → continue")
@@ -524,16 +268,14 @@ def run_attach_takeover(driver, *, api_key: str, account_id: str) -> None:
 
             # --- Détection page d'erreur applicative (Toluna: div.errorPage, Confirmit: div.errorpage-wrapper) ---
             try:
-                from selenium.webdriver.common.by import By
-                _error_els = driver.find_elements(
-                    By.XPATH,
-                    "//*["
+                _error_els = driver.query_selector_all(
+                    "xpath=//*["
                     "contains(concat(' ', normalize-space(@class), ' '), ' errorPage ') or "
                     "contains(concat(' ', normalize-space(@class), ' '), ' errorpage-wrapper ')"
-                    "]",
+                    "]"
                 )
                 if _error_els:
-                    print(f"[PLATFORM-ERR] Page d'erreur applicative détectée (class~='errorpage') step={i} url={_attach_display_url(driver.current_url)} → sortie boucle.")
+                    print(f"[PLATFORM-ERR] Page d'erreur applicative détectée (class~='errorpage') step={i} url={_attach_display_url(driver.url)} → sortie boucle.")
                     break
             except Exception:
                 pass
@@ -541,27 +283,27 @@ def run_attach_takeover(driver, *, api_key: str, account_id: str) -> None:
             # --- Détection page d'erreur applicative Decipher/YourSurveyNow (div.survey-error visible) ---
             try:
                 _decipher_err_els = [
-                    el for el in driver.find_elements(By.CSS_SELECTOR, "div.survey-error")
-                    if el.is_displayed()
+                    el for el in driver.query_selector_all("div.survey-error")
+                    if el.is_visible()
                 ]
                 if _decipher_err_els:
                     try:
-                        _derr_txt = (_decipher_err_els[0].text or "").strip()[:200]
+                        _derr_txt = (_decipher_err_els[0].inner_text() or "").strip()[:200]
                     except Exception:
                         _derr_txt = ""
-                    print(f"[PLATFORM-ERR] Page d'erreur Decipher (div.survey-error) step={i} url={_attach_display_url(driver.current_url)} texte={_derr_txt!r} → sortie boucle.")
+                    print(f"[PLATFORM-ERR] Page d'erreur Decipher (div.survey-error) step={i} url={_attach_display_url(driver.url)} texte={_derr_txt!r} → sortie boucle.")
                     break
             except Exception:
                 pass
 
             ok = survey_executor.execute_survey_page(driver, account_id, api_key, ctx=_ctx)
             _ctx.maybe_update_summary()                                           # ← ajouter cette ligne
-            print(f"[ATTACH] step={i}/{max_steps} ok={ok} url={_attach_display_url(driver.current_url)}")
+            print(f"[ATTACH] step={i}/{max_steps} ok={ok} url={_attach_display_url(driver.url)}")
 
             if not ok:
                 try:
-                    _is_isd_gate = bool(driver.execute_script(
-                        """
+                    _is_isd_gate = bool(driver.evaluate(
+                        """() => {
                         const isVisible = (el) => {
                           if (!el) return false;
                           const s = window.getComputedStyle(el);
@@ -573,7 +315,7 @@ def run_attach_takeover(driver, *, api_key: str, account_id: str) -> None:
                         if (!isdRoot) return false;
                         const video = isdRoot.querySelector('video');
                         return !!(video && isVisible(video));
-                        """
+                        }"""
                     ))
                 except Exception:
                     _is_isd_gate = False
@@ -609,19 +351,6 @@ def _get_attach_route() -> str:
         print(f"[ATTACH] choix invalide={choice!r} -> fallback resolution")
     return "resolution"
 
-
-def _page_to_shim(page, pw=None):
-    """
-    Crée un PlaywrightDriverShim wrappant une Page Playwright native.
-    Pont BLOC 1 → BLOC 2/3 : les fonctions hors périmètre (survey_handler,
-    survey_executor...) consomment encore l'API shim façon Selenium.
-    pw est stocké sur le shim pour maintenir l'instance Playwright en vie.
-    """
-    from preselection.playwright_shim import PlaywrightDriverShim
-    shim = PlaywrightDriverShim(page.context, page.context, page)
-    if pw is not None:
-        shim._pw = pw
-    return shim
 
 
 def _attach_select_tab_pw(context, *, exclude_url_pred=None):
@@ -815,8 +544,7 @@ def run_attach_login_takeover(page, pw, *, api_key: str, account_id: str, config
     # ── Pont BLOC 1 → BLOC 2 ─────────────────────────────────────────────────
     # Le popup de présélection est désormais ouvert. On enveloppe la Page native
     # dans le shim pour que survey_handler (BLOC 2) puisse consommer l'API façon Selenium.
-    shim = _page_to_shim(page, pw)
-    shim._survey_account_id = account_id
+    page._survey_account_id = account_id
 
     _ctx = SurveyContext(session_id=account_id, openai_api_key=api_key)
     survey_solver._current_survey_ctx = _ctx
@@ -826,7 +554,7 @@ def run_attach_login_takeover(page, pw, *, api_key: str, account_id: str, config
 
     from preselection.survey_handler import run_attach_preselection_takeover as _run_presel
     ok, reason = _run_presel(
-        shim,
+        page,
         api_key,
         max_rounds=max_rounds,
         transition_timeout_s=transition_timeout_s,
@@ -841,9 +569,9 @@ def run_attach_login_takeover(page, pw, *, api_key: str, account_id: str, config
     max_steps = int(os.getenv("ATTACH_MAX_STEPS", "100"))
     for i in range(1, max_steps + 1):
         try:
-            done = survey_executor.execute_survey_page(shim, account_id, api_key, ctx=_ctx)
+            done = survey_executor.execute_survey_page(page, account_id, api_key, ctx=_ctx)
             _ctx.maybe_update_summary()
-            print(f"[ATTACH][LOGIN→RES] step={i}/{max_steps} ok={done} url={_attach_display_url(shim.current_url)}")
+            print(f"[ATTACH][LOGIN→RES] step={i}/{max_steps} ok={done} url={_attach_display_url(page.url)}")
         except Exception as e:
             print(f"[ATTACH][LOGIN→RES][ERROR] step={i} {type(e).__name__}: {e}")
             break
@@ -862,7 +590,6 @@ def run_attach_preselection_takeover(driver, *, api_key: str, account_id: str) -
     _ctx = SurveyContext(session_id=account_id, openai_api_key=api_key)
     survey_solver._current_survey_ctx = _ctx
 
-    _attach_select_tab(driver)
     driver._survey_account_id = account_id
 
     max_rounds = int(os.getenv("ATTACH_PRESELECTION_MAX_ROUNDS", "15"))
@@ -960,12 +687,11 @@ def main():
             run_attach_login_takeover(page, _pw, api_key=api_key, account_id=account_id, config=config)
         else:
             # Routes preselection / resolution : pont BLOC 1 → BLOC 2/3 immédiat via shim
-            shim = _page_to_shim(page, _pw)
-            shim._survey_account_id = account_id
+            page._survey_account_id = account_id
             if attach_route == "preselection":
-                run_attach_preselection_takeover(shim, api_key=api_key, account_id=account_id)
+                run_attach_preselection_takeover(page, api_key=api_key, account_id=account_id)
             else:
-                run_attach_takeover(shim, api_key=api_key, account_id=account_id)
+                run_attach_takeover(page, api_key=api_key, account_id=account_id)
         return
 
     # FIX-A: install_sigterm_handler AVANT acquire_account_lock_or_exit.

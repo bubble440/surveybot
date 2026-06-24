@@ -31,10 +31,6 @@ from typing import Any, Dict, List, Optional, Tuple
 # ---------------------------------------------------------------------------
 # Playwright page helper
 # ---------------------------------------------------------------------------
-def _pw_page(d):
-    if hasattr(d, '_page'):
-        return d._page
-    return d
 
 
 # -------------------------
@@ -236,7 +232,7 @@ def _extract_label_from_dom(driver, el, container) -> Tuple[str, str]:
         eid = (el.get_attribute("id") or "").strip()
         if eid:
             try:
-                lbl = _pw_page(driver).query_selector(f"xpath=//label[@for={_xpath_literal(eid)}]")
+                lbl = driver.query_selector(f"xpath=//label[@for={_xpath_literal(eid)}]")
                 if lbl is not None:
                     txt = (lbl.inner_text() or "").strip()
                     if txt:
@@ -262,7 +258,7 @@ def _extract_label_from_dom(driver, el, container) -> Tuple[str, str]:
         if labby:
             for ref in labby.split():
                 try:
-                    n = _pw_page(driver).query_selector(f"#{ref}")
+                    n = driver.query_selector(f"#{ref}")
                     txt = (n.inner_text() or "").strip()  # AttributeError if n is None → caught
                     if txt:
                         lines.append(txt)
@@ -361,7 +357,7 @@ def extract_number_blocks(driver) -> List[NumberBlock]:
     blocks: List[NumberBlock] = []
 
     try:
-        inputs = _pw_page(driver).query_selector_all("input")
+        inputs = driver.query_selector_all("input")
     except Exception:
         return blocks
 

@@ -17,10 +17,6 @@ from Management.pause_policy import PausePolicy
 import subprocess
 from Cash.payout import _payout_and_check_daily_stop
 
-def _pw_page(d):
-    if hasattr(d, "_page"):
-        return d._page
-    return d
 
 def acquire_account_lock_or_exit(account_id: str, ttl_sec: int = 240):
     ok = try_acquire_cooldown_slot(account_id=account_id, ttl_sec=ttl_sec)
@@ -38,7 +34,7 @@ def safe_get(driver, url, base_delay=4):
     if driver is None:
         raise RuntimeError("SAFE_GET appelé avec driver=None")
 
-    page = _pw_page(driver)
+    page = driver
     try:
         try:
             page.goto(url, timeout=70_000, wait_until="domcontentloaded")
@@ -175,7 +171,7 @@ def soft_restart_resume(ctx, driver, platform=None):
     #   topsurveys.app     → check-email-field-input
     #   app.topsurveys.app → app-page-email-field-input
     from preselection.auth_handler import LOGIN_PAGE_SELECTORS
-    _page = _pw_page(driver)
+    _page = driver
     _on_login_page = any(
         _page.query_selector(sel)
         for sel in LOGIN_PAGE_SELECTORS
@@ -465,7 +461,7 @@ def init_session_and_enter_surveys(driver, config, account_id: str, notify_fn, p
     print("🚀 Brave lancé.")
 
     _SESSION_SEL = "[data-test-id='surveys-nav']"
-    _page = _pw_page(driver)
+    _page = driver
     _session_active = False
     try:
         _page.wait_for_selector(_SESSION_SEL, state="attached", timeout=8_000)

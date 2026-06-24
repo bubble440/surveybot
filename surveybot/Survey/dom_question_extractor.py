@@ -43,11 +43,6 @@ except ImportError:
     )
 
 
-def _pw_page(d):
-    """Extrait la Page Playwright native depuis un PlaywrightDriverShim ou retourne d tel quel."""
-    if hasattr(d, "_page"):
-        return d._page
-    return d
 
 
 # ================================================================================
@@ -74,7 +69,7 @@ def _find_question_text_near_element(driver, el) -> str:
     - Retourne le texte du plus proche (gap minimal)
     """
     try:
-        txt = _pw_page(driver).evaluate(
+        txt = driver.evaluate(
             """(el) => {
             if (!el) return "";
             const r = el.getBoundingClientRect();
@@ -151,7 +146,7 @@ def _find_associated_label(driver, el) -> str:
         return True
 
     try:
-        page = _pw_page(driver)
+        page = driver
 
         # 0) Widgets ARIA custom: label via aria-labelledby (Forsta/Confirmit, etc.)
         aria_labelledby = (el.get_attribute("aria-labelledby") or "").strip()
@@ -512,7 +507,7 @@ def _find_group_heading_text_near_element(driver, el, options: List[str]) -> str
                 return legend_text
 
         option_keys = [_norm_lc(opt) for opt in (options or []) if _norm(opt)]
-        txt = _pw_page(driver).evaluate(
+        txt = driver.evaluate(
             r"""([el, optionKeys]) => {
             optionKeys = Array.isArray(optionKeys) ? optionKeys : [];
             if (!el) return "";

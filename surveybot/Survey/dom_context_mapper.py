@@ -8,11 +8,6 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
 
-def _pw_page(d):
-    """Extrait la Page Playwright native depuis un PlaywrightDriverShim ou retourne d tel quel."""
-    if hasattr(d, "_page"):
-        return d._page
-    return d
 
 
 # =========================
@@ -168,7 +163,7 @@ _JS_COLLECT = r"""
 def _collect(driver) -> Tuple[List[_InputNode], List[_Node], Dict[str, Any]]:
     """Collecte via JS (zéro OCR, cheap)."""
     try:
-        data = _pw_page(driver).evaluate(_JS_COLLECT)
+        data = driver.evaluate(_JS_COLLECT)
     except Exception:
         return [], [], {}
 
@@ -322,7 +317,7 @@ def _build_visual_matrix_map(driver, *, force: bool = False, max_age_s: float = 
     now = time.time()
     cur_url = ""
     try:
-        cur_url = _pw_page(driver).url
+        cur_url = driver.url
     except Exception:
         pass
 
@@ -443,7 +438,7 @@ def try_click_matrix_by_visual_mapping(
         return False
 
     # récupérer l'élément par uid
-    page = _pw_page(driver)
+    page = driver
     el = page.query_selector(f"[data-survey-uid='{uid}']")
     if el is None:
         if debug:

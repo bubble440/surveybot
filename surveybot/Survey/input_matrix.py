@@ -11,18 +11,8 @@ Dépendances:
 - input_utils pour les fonctions utilitaires
 """
 
-def _pw_page(d):
-    """Extrait la Page Playwright native depuis un PlaywrightDriverShim ou retourne d tel quel."""
-    if hasattr(d, "_page"):
-        return d._page
-    return d
 
 
-def _handle(el):
-    """Extrait le ElementHandle natif depuis un PlaywrightElementShim (_h) ou retourne el."""
-    if hasattr(el, "_h"):
-        return el._h
-    return el
 
 
 
@@ -191,11 +181,11 @@ def select_cell_action(cell, preferred_col_norm):
             return True
         except:
             try:
-                _handle(r).hover(); _handle(r).click()
+                r.hover(); r.click()
                 return True
             except:
                 try:
-                    _handle(r).click()
+                    r.click()
                     return True
                 except:
                     pass
@@ -218,11 +208,11 @@ def select_cell_action(cell, preferred_col_norm):
             return True
         except:
             try:
-                _handle(cb).hover(); _handle(cb).click()
+                cb.hover(); cb.click()
                 return True
             except:
                 try:
-                    _handle(cb).click()
+                    cb.click()
                     return True
                 except:
                     pass
@@ -232,7 +222,7 @@ def select_cell_action(cell, preferred_col_norm):
     # select
     try:
         sel = cell.query_selector("select")
-        _sel_el_mx = _handle(sel)
+        _sel_el_mx = sel
         options = _sel_el_mx.evaluate(
             "el => [...el.options].map(o => ({text: o.inner_text(), value: o.value}))"
         )
@@ -412,12 +402,12 @@ def click_matrix_cell_by_row_and_col(driver, row_label: str, col_label: str) -> 
                                 continue
                         if tgt is not None:
                             click_target = _resolve_click_target(best_cell, tgt)
-                            _pw_page(driver).evaluate("(el) => el.scrollIntoView({block:\'center\'})", _handle(click_target))
+                            driver.evaluate("(el) => el.scrollIntoView({block:\'center\'})", click_target)
                             time.sleep(0.05)
                             try:
                                 click_target.click()
                             except Exception:
-                                _handle(click_target).hover(); _handle(click_target).click()
+                                click_target.hover(); click_target.click()
                             try:
                                 setattr(driver, "last_action_success", True)
                                 setattr(driver, "_post_action_t0", time.time())
@@ -482,12 +472,12 @@ def click_matrix_cell_by_row_and_col(driver, row_label: str, col_label: str) -> 
                     if not tgt:
                         continue
                     click_target = _resolve_click_target(best, tgt)
-                    _pw_page(driver).evaluate("(el) => el.scrollIntoView({block:\'center\'})", _handle(click_target))
+                    driver.evaluate("(el) => el.scrollIntoView({block:\'center\'})", click_target)
                     time.sleep(0.05)
                     try:
                         click_target.click()
                     except Exception:
-                        _handle(click_target).hover(); _handle(click_target).click()
+                        click_target.hover(); click_target.click()
                     try:
                         setattr(driver, "last_action_success", True)
                         setattr(driver, "_post_action_t0", time.time())

@@ -11,18 +11,8 @@ Dépendances:
 - frame_utils pour iter_frame_chains et switch_to_frame_chain
 """
 
-def _pw_page(d):
-    """Extrait la Page Playwright native depuis un PlaywrightDriverShim ou retourne d tel quel."""
-    if hasattr(d, "_page"):
-        return d._page
-    return d
 
 
-def _handle(el):
-    """Extrait le ElementHandle natif depuis un PlaywrightElementShim (_h) ou retourne el."""
-    if hasattr(el, "_h"):
-        return el._h
-    return el
 
 
 
@@ -39,7 +29,7 @@ def iter_iframes_safe(driver):
     Filtre les iframes trop petites (< 20x20 pixels).
     """
     frames = []
-    for fr in _pw_page(driver).query_selector_all("iframe"):
+    for fr in driver.query_selector_all("iframe"):
         try:
             r = fr.bounding_box() or {}
             if fr.is_visible() and r.get("width", 0) > 20 and r.get("height", 0) > 20:
@@ -200,16 +190,16 @@ def click_cta_strong_any_context(driver, text=None, label_hint=None, depth: int 
                 continue
 
             try:
-                els = driver.find_elements("css selector", css)
+                els = driver.query_selector_all(css)
             except Exception:
                 els = []
 
             for el in els:
                 try:
-                    if not el.is_displayed():
+                    if not el.is_visible():
                         continue
                     # Extraction texte : value peut être symbolique (">>" etc.), fallback sur aria-label
-                    raw_val = (el.text or "") or (el.get_attribute("value") or "")
+                    raw_val = (el.inner_text() or "") or (el.get_attribute("value") or "")
                     t = _norm(raw_val)
                     if not t or not any(c.isalpha() for c in t):
                         t = _norm(el.get_attribute("aria-label") or "")
@@ -226,13 +216,13 @@ def click_cta_strong_any_context(driver, text=None, label_hint=None, depth: int 
                         pass
 
                     try:
-                        _pw_page(driver).evaluate("(el) => el.scrollIntoView({block:\'center\'})", _handle(el))
+                        driver.evaluate("(el) => el.scrollIntoView({block:\'center\'})", el)
                     except Exception:
                         pass
 
                     # click robuste (JS)
                     try:
-                        _pw_page(driver).evaluate("(el) => el.click()", _handle(el))
+                        driver.evaluate("(el) => el.click()", el)
                     except Exception:
                         try:
                             el.click()

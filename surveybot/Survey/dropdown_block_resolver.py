@@ -26,10 +26,6 @@ from typing import Any, List, Optional
 # ---------------------------------------------------------------------------
 # Playwright page helper
 # ---------------------------------------------------------------------------
-def _pw_page(d):
-    if hasattr(d, '_page'):
-        return d._page
-    return d
 
 
 # ------------------------------------------------------------
@@ -125,7 +121,7 @@ def _collect_dropdown_blocks(driver) -> List[DropdownBlock]:
     blocks: List[DropdownBlock] = []
 
     # 1) vrais <select>
-    for sel in _pw_page(driver).query_selector_all("select"):
+    for sel in driver.query_selector_all("select"):
         if not _visible(sel):
             continue
 
@@ -150,7 +146,7 @@ def _collect_dropdown_blocks(driver) -> List[DropdownBlock]:
         )
 
     # 2) dropdowns custom (combobox / role=listbox / button)
-    customs = _pw_page(driver).query_selector_all(
+    customs = driver.query_selector_all(
         "[role='combobox'], [aria-haspopup='listbox'], .dropdown, .select"
     )
 
@@ -242,7 +238,7 @@ def try_resolve_dropdown_block(
     # ---- 3️⃣ Récupérer options visibles
     opts = []
     try:
-        items = _pw_page(driver).query_selector_all(
+        items = driver.query_selector_all(
             "option, [role='option'], li, .dropdown-item"
         )
         for it in items:

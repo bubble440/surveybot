@@ -19,11 +19,6 @@ import os
 import unicodedata
 
 
-def _pw_page(d):
-    """Extrait la Page Playwright native depuis un PlaywrightDriverShim ou retourne d tel quel."""
-    if hasattr(d, "_page"):
-        return d._page
-    return d
 
 
 # ================================================================================
@@ -234,7 +229,7 @@ def _best_xpath_for_element(driver, el) -> str:
     Stratégie: construit un chemin absolu en remontant dans la hiérarchie.
     """
     try:
-        xpath = _pw_page(driver).evaluate(
+        xpath = driver.evaluate(
             """(element) => {
             function getAbsoluteXPath(element) {
                 if (!element || element.nodeType !== 1) return '';

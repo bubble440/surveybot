@@ -4,17 +4,7 @@ from Survey.log_utils import log_debug, log_info
 from Survey.functions import _handle_topsurveys_exclusion_popup
 
 
-def _pw_page(d):
-    """Extrait la Page Playwright native depuis un PlaywrightDriverShim ou retourne d tel quel."""
-    if hasattr(d, "_page"):
-        return d._page
-    return d
 
-
-def _make_shim(page):
-    """Crée un PlaywrightDriverShim pour les appels hors-périmètre (dom_analyzer, action_dispatcher, etc.)."""
-    from preselection.playwright_shim import PlaywrightDriverShim
-    return PlaywrightDriverShim(page.context, page.context, page)
 
 
 def _short_url(url: str) -> str:
@@ -55,7 +45,7 @@ def _is_visible_js(driver, el) -> bool:
     Fallback JavaScript pour la visibilité d'un élément.
     Utilisé quand is_visible() retourne False sur des structures DOM complexes.
     """
-    page = _pw_page(driver)
+    page = driver
     try:
         return bool(page.evaluate("""(el) => {
             if (!el) return false;
@@ -72,7 +62,7 @@ def _has_unfilled_required_inputs(driver) -> bool:
     """
     Retourne True si la page courante contient des inputs required visibles et non remplis.
     """
-    page = _pw_page(driver)
+    page = driver
     try:
         return bool(page.evaluate("""() => {
             var isVisible = function(el) {
@@ -116,7 +106,7 @@ def _detect_rate_rank_image_eval_dom(driver) -> tuple[bool, str]:
     """
     Détecte un pattern DOM de type "image/product evaluation" (rate & rank).
     """
-    page = _pw_page(driver)
+    page = driver
     try:
         dom = page.evaluate(r"""() => {
             const txt = (el) => ((el && (el.innerText || el.textContent)) || '').trim();
@@ -182,7 +172,7 @@ def _detect_image_only_unresolvable_dom(driver, question_blocks: list[dict]) -> 
     if has_exploitable_choice_block:
         return False, "", ""
 
-    page = _pw_page(driver)
+    page = driver
     try:
         dom = page.evaluate(
             r"""(qHints) => {
@@ -498,7 +488,7 @@ _DISQ_CALLBACK_PATTERNS = ["samplicio.us", "clientcallback", "client_callback"]
 
 def _detect_disqualification_page(driver) -> tuple:
     """Retourne (True, signal) si la page est une page de disqualification/fin, (False, '') sinon."""
-    page = _pw_page(driver)
+    page = driver
     try:
         cb_src = page.evaluate("""() => {
             var iframes = document.querySelectorAll('iframe[src]');
@@ -538,7 +528,7 @@ def _budgeted_disqualification_restart(driver) -> str:
     if not is_disq:
         return "no_match"
 
-    page = _pw_page(driver)
+    page = driver
     try:
         current_url = page.url or ""
     except Exception:
@@ -581,7 +571,7 @@ def _budgeted_dom_only_abort_for_image_eval(driver) -> str:
     if not is_match:
         return "no_match"
 
-    page = _pw_page(driver)
+    page = driver
     try:
         current_url = page.url or ""
     except Exception:
@@ -631,7 +621,7 @@ def _budgeted_soft_restart_for_image_only_inputs(driver, question_blocks: list[d
     if not is_match:
         return "no_match"
 
-    page = _pw_page(driver)
+    page = driver
     try:
         current_url = page.url or ""
     except Exception:
@@ -725,7 +715,7 @@ def _detect_open_text_embedded_image_unresolvable_dom(
     if len(open_text_blocks) != 1:
         return False, "", ""
 
-    page = _pw_page(driver)
+    page = driver
     try:
         dom = page.evaluate("""() => {
             const isVisible = (el) => {
@@ -814,7 +804,7 @@ def _budgeted_soft_restart_for_open_text_embedded_image(driver, question_blocks:
     if not is_match:
         return "no_match"
 
-    page = _pw_page(driver)
+    page = driver
     try:
         current_url = page.url or ""
     except Exception:
@@ -856,7 +846,7 @@ def _handle_forcewatch_video_gate(driver) -> str:
     """
     Détection/traitement DOM-only d'un écran vidéo avec gate forcewatch.
     """
-    page = _pw_page(driver)
+    page = driver
     try:
         has_forcewatch_video = bool(page.evaluate("""() => {
             const isVisible = (el) => {
@@ -1059,7 +1049,7 @@ def _handle_walr_image_eval_blocks(driver, question_blocks: list, api_key: str) 
     import requests
     from Survey.dom_registry import get_target
 
-    page = _pw_page(driver)
+    page = driver
 
     vision_blocks = [
         b for b in question_blocks
@@ -1234,7 +1224,7 @@ def _handle_cf_carousel_image_blocks(driver, question_blocks: list, api_key: str
     import base64
     from Survey.dom_registry import get_target
 
-    page = _pw_page(driver)
+    page = driver
 
     carousel_blocks = [
         b for b in question_blocks
@@ -1400,7 +1390,7 @@ def _handle_phone_verification(driver):
     """
     Détecte et traite l'écran interstitiel "Courte pause – Vérifie ton profil" sur topsurveys.app.
     """
-    page = _pw_page(driver)
+    page = driver
     try:
         current_url = page.url or ""
     except Exception:
@@ -1492,7 +1482,7 @@ def _handle_pin_verification(driver):
     """
     Détecte et traite l'écran de saisie du code PIN à 6 chiffres sur topsurveys.app.
     """
-    page = _pw_page(driver)
+    page = driver
     try:
         current_url = page.url or ""
     except Exception:
@@ -1606,7 +1596,7 @@ def _should_skip_post_actions_navigation(
     """
     Garde-fou minimal: certains blocs avancent automatiquement après le clic réponse.
     """
-    page = _pw_page(driver)
+    page = driver
 
     if before_url is not None:
         try:
@@ -1705,7 +1695,7 @@ def execute_survey_page(driver, account_id, api_key, ctx=None):
     Orchestration d'une page de survey : DOM analysis → GPT → dispatch actions.
 
     driver reçu depuis solve_full_survey (BLOC 3a) est un PlaywrightDriverShim.
-    page = _pw_page(driver) extrait la Page Playwright native pour les opérations DOM directes.
+    page = driver extrait la Page Playwright native pour les opérations DOM directes.
     Les 7 sous-modules lazy-importés (dom_analyzer, page_snapshot, input_handler,
     prompt_builder, dom_classifier, action_dispatcher, batch_response_parser) et
     redirect_watcher reçoivent `driver` (= shim) — frontière BLOC 3b1 → BLOC 3b2+.
@@ -1719,7 +1709,7 @@ def execute_survey_page(driver, account_id, api_key, ctx=None):
     import Management.redirect_watcher as redirect_watcher
     import Survey.batch_response_parser as batch_response_parser
 
-    page = _pw_page(driver)
+    page = driver
 
     # =========================================================================
     # PATCH: Récupération erreur réseau Chrome (ERR_TUNNEL_CONNECTION_FAILED)
@@ -2332,7 +2322,7 @@ def extract_full_visible_text(driver):
     """
     Extrait tout le texte visible de la page.
     """
-    page = _pw_page(driver)
+    page = driver
     try:
         result = page.evaluate("""() =>
             Array.from(document.querySelectorAll('body *'))
@@ -2358,7 +2348,7 @@ def perform_action_based_on_text(driver, action):
     """
     Essaie de cliquer sur un bouton ou un label qui correspond à l'action textuelle de l'IA.
     """
-    page = _pw_page(driver)
+    page = driver
     buttons = page.query_selector_all("button, input, a")
 
     for elem in buttons:
@@ -2387,7 +2377,7 @@ def perform_action_based_on_text(driver, action):
     return False
 
 def _page_fingerprint(driver) -> str:
-    page = _pw_page(driver)
+    page = driver
     url = page.url or ""
     title = page.title() or ""
     body = ""

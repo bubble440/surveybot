@@ -9,10 +9,6 @@ FINETUNED_MODEL = os.getenv(
 )
 
 
-def _pw_page(d):
-    if hasattr(d, '_page'):
-        return d._page
-    return d
 
 
 def _compress_image(src_path, max_w=768, quality=70):
@@ -79,7 +75,7 @@ def take_screenshot(
 
 
     try:
-        page = _pw_page(driver)
+        page = driver
 
         if not full_page:
             page.screenshot(path=out_path)
@@ -99,7 +95,7 @@ def take_screenshot(
     except Exception as e:
         print(f"❌ Erreur capture écran : {e}")
         # dernier filet : viewport simple
-        _pw_page(driver).screenshot(path=out_path)
+        driver.screenshot(path=out_path)
         print(f"💾 Capture enregistrée (fallback) → {os.path.abspath(out_path)}")
         return out_path
 
@@ -109,7 +105,7 @@ def _stitch_fullpage(driver, out_path: str) -> str:
     Fallback : scroller par "tuiles" et assembler verticalement.
     Gère les sticky headers en overlap.
     """
-    page = _pw_page(driver)
+    page = driver
 
     # Se mettre tout en haut
     page.evaluate("() => window.scrollTo(0, 0)")

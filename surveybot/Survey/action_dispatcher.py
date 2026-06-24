@@ -6,18 +6,8 @@ from typing import Optional
 from Survey.log_utils import is_debug, log_debug, log_info
 
 
-def _pw_page(d):
-    """Extrait la Page Playwright native depuis un PlaywrightDriverShim ou retourne d tel quel."""
-    if hasattr(d, "_page"):
-        return d._page
-    return d
 
 
-def _handle(el):
-    """Extrait le ElementHandle natif depuis un PlaywrightElementShim ou retourne el."""
-    if hasattr(el, "_h"):
-        return el._h
-    return el
 
 PAUSE_INTER_DISPATCH = 0.5  # pause entre deux applications de réponse consécutives (laisser le DOM re-rendre)
 
@@ -48,7 +38,7 @@ def solve_decipher_cardrating_rows(driver, preferred_label: Optional[str] = None
 
     def _dispatch_check(el) -> None:
         # radios souvent non-interactables (hidden) ; JS events
-        _pw_page(driver).evaluate("""([_el, _arg1]) => {
+        driver.evaluate("""([_el, _arg1]) => {
             const el = _el;
             if (!el) return;
             try { el.checked = true; } catch(e) {}
@@ -60,7 +50,7 @@ def solve_decipher_cardrating_rows(driver, preferred_label: Optional[str] = None
         )
 
     def _all_rows_answered(widget_el) -> bool:
-        return bool(_handle(widget_el).evaluate("""(_el) => {
+        return bool(widget_el.evaluate("""(_el) => {
             const widget = _el;
             if (!widget) return false;
             const uid = widget.getAttribute('data-uid');
@@ -73,7 +63,7 @@ def solve_decipher_cardrating_rows(driver, preferred_label: Optional[str] = None
 }"""))
 
     def _row_group_count(widget_el) -> int:
-        return int(_handle(widget_el).evaluate("""(_el) => {
+        return int(widget_el.evaluate("""(_el) => {
             const widget = _el;
             if (!widget) return 0;
             const uid = widget.getAttribute('data-uid');
@@ -133,7 +123,7 @@ def solve_decipher_cardrating_rows(driver, preferred_label: Optional[str] = None
                 continue
         return None
 
-    widgets = _pw_page(driver).query_selector_all(".sq-cardrating-widget[data-uid]")
+    widgets = driver.query_selector_all(".sq-cardrating-widget[data-uid]")
     if not widgets:
         return False
 
@@ -163,7 +153,7 @@ def solve_decipher_cardrating_rows(driver, preferred_label: Optional[str] = None
             inputs = qroot.query_selector_all(f"input[type='radio'][id^='ans{uid}.{col}.']")
             if not inputs:
                 # fallback global (au cas où la structure varie)
-                inputs = _pw_page(driver).query_selector_all(f"input[type='radio'][id^='ans{uid}.{col}.']")
+                inputs = driver.query_selector_all(f"input[type='radio'][id^='ans{uid}.{col}.']")
 
             if not inputs:
                 continue
@@ -204,7 +194,7 @@ def solve_focusvision_cardsort(
 
     def _pick_cardsort_root():
         try:
-            css = _pw_page(driver).query_selector_all(".sq-cardsort")
+            css = driver.query_selector_all(".sq-cardsort")
             return css[0] if css else None
         except Exception:
             return None
@@ -261,7 +251,7 @@ def solve_focusvision_cardsort(
         parts = []
         # Question globale
         try:
-            qels = _pw_page(driver).query_selector_all(".question-text")
+            qels = driver.query_selector_all(".question-text")
             if qels:
                 parts.append(_norm(qels[0].inner_text() or ""))
         except Exception:
@@ -344,7 +334,7 @@ def solve_focusvision_cardsort(
 
     def _click(el) -> bool:
         try:
-            _pw_page(driver).evaluate("(e) => e.scrollIntoView({block:'center'})",el)
+            driver.evaluate("(e) => e.scrollIntoView({block:'center'})",el)
             time.sleep(0.05)
         except Exception:
             pass
@@ -357,7 +347,7 @@ def solve_focusvision_cardsort(
                 return True
             except Exception:
                 try:
-                    _pw_page(driver).evaluate("(e) => e.click()",el)
+                    driver.evaluate("(e) => e.click()",el)
                     return True
                 except Exception:
                     return False
@@ -480,8 +470,8 @@ def _click_xpath(driver, xpath: str) -> bool:
     if not xpath:
         return False
     try:
-        el = _pw_page(driver).query_selector(xpath)
-        _pw_page(driver).evaluate("(e) => e.scrollIntoView({block:'center'})",el)
+        el = driver.query_selector(xpath)
+        driver.evaluate("(e) => e.scrollIntoView({block:'center'})",el)
         el.click()
         return True
     except Exception:
@@ -491,8 +481,8 @@ def _set_text_xpath(driver, xpath: str, text: str) -> bool:
     if not xpath:
         return False
     try:
-        el = _pw_page(driver).query_selector(xpath)
-        _pw_page(driver).evaluate("(e) => e.scrollIntoView({block:'center'})",el)
+        el = driver.query_selector(xpath)
+        driver.evaluate("(e) => e.scrollIntoView({block:'center'})",el)
         el.click()
         try:
             el.clear()
@@ -551,7 +541,7 @@ def _try_gridclick_matrix_set(driver, row_label: str, col_label: str) -> bool:
 
     def _click_trusted(el) -> bool:
         try:
-            _pw_page(driver).evaluate("(e) => e.scrollIntoView({block:'center', inline:'center'})",el)
+            driver.evaluate("(e) => e.scrollIntoView({block:'center', inline:'center'})",el)
         except Exception:
             pass
         try:
@@ -565,7 +555,7 @@ def _try_gridclick_matrix_set(driver, row_label: str, col_label: str) -> bool:
         except Exception:
             pass
         try:
-            _pw_page(driver).evaluate("(e) => e.click()",el)
+            driver.evaluate("(e) => e.click()",el)
             return True
         except Exception:
             return False
@@ -585,7 +575,7 @@ def _try_gridclick_matrix_set(driver, row_label: str, col_label: str) -> bool:
         return a == b or a in b or b in a
 
     try:
-        root = _pw_page(driver).query_selector(".gridclick.horizontal.inner_text()-version")
+        root = driver.query_selector(".gridclick.horizontal.inner_text()-version")
     except Exception:
         return False
 
@@ -699,7 +689,7 @@ def _try_table_matrix_sge_set(driver, target_payload: dict, row_label: str, col_
         return cand == needle or cand in needle or needle in cand
 
     try:
-        rows = _pw_page(driver).query_selector_all("//tr[.//input[@type='radio'][@name]]")
+        rows = driver.query_selector_all("//tr[.//input[@type='radio'][@name]]")
     except Exception:
         rows = []
 
@@ -710,7 +700,7 @@ def _try_table_matrix_sge_set(driver, target_payload: dict, row_label: str, col_
     matched_row = False
     for row in rows:
         try:
-            row_text = _handle(row).evaluate("""(_el) => {
+            row_text = row.evaluate("""(_el) => {
                 const tr = _el;
                 if (!tr) return '';
                 const labelCell = tr.querySelector('th, td');
@@ -725,7 +715,7 @@ def _try_table_matrix_sge_set(driver, target_payload: dict, row_label: str, col_
         matched_row = True
 
         try:
-            radio = _handle(radio).evaluate("""(_el) => {
+            radio = radio.evaluate("""(_el) => {
                 const tr = _el;
                 const need = _arg1;
                 if (!tr) return null;
@@ -751,7 +741,7 @@ def _try_table_matrix_sge_set(driver, target_payload: dict, row_label: str, col_
                   return !!optNorm && !!needNorm && (optNorm === needNorm || optNorm.includes(needNorm) || needNorm.includes(optNorm));
                 });
                 return pick || null;
-}""", [_handle(row), col_need])
+}""", [row, col_need])
         except Exception:
             radio = None
 
@@ -760,7 +750,7 @@ def _try_table_matrix_sge_set(driver, target_payload: dict, row_label: str, col_
             continue
 
         try:
-            ok = bool(_pw_page(driver).evaluate("""([_el, _arg1]) => {
+            ok = bool(driver.evaluate("""([_el, _arg1]) => {
                 const input = _el;
                 if (!input) return false;
                 try { input.scrollIntoView({block:'center', inline:'center'}); } catch(e) {}
@@ -813,7 +803,7 @@ def _try_encuesta_matrix_set(driver, row_label: str, col_label: str) -> bool:
 
     target_row_fold = _fold_norm_lc(row_label)
     try:
-        rows = _pw_page(driver).query_selector_all(".layout.ee__matrix--row:not(.hidden-sm-and-down)")
+        rows = driver.query_selector_all(".layout.ee__matrix--row:not(.hidden-sm-and-down)")
     except Exception:
         rows = []
 
@@ -837,7 +827,7 @@ def _try_encuesta_matrix_set(driver, row_label: str, col_label: str) -> bool:
     target_col_name = None
     if target_col_fold:
         try:
-            header_cells = _pw_page(driver).query_selector_all(".layout.ee__matrix--row.hidden-sm-and-down .ee__matrix--header-cells span")
+            header_cells = driver.query_selector_all(".layout.ee__matrix--row.hidden-sm-and-down .ee__matrix--header-cells span")
         except Exception:
             header_cells = []
 
@@ -873,7 +863,7 @@ def _try_encuesta_matrix_set(driver, row_label: str, col_label: str) -> bool:
         return False
 
     try:
-        checked = bool(_handle(target_input).evaluate("""(_el) => {
+        checked = bool(target_input.evaluate("""(_el) => {
             const input = _el;
             if (!input) return false;
             if (input.checked) return true;
@@ -957,7 +947,7 @@ def _apply_by_target_id(
                     log_debug("[TARGET_DEBUG]", f"toluna_runtime_answerrow cache hit target_id={target_id}")
 
                 try:
-                    data = _handle(value).evaluate("""(_el) => {
+                    data = value.evaluate("""(_el) => {
                         const norm = s => (s || '').toLowerCase().normalize('NFKC')
                           .replace(/\u00A0/g, ' ')
                           .replace(/[»«\u201c\u201d"'›→·•:]/g, '')
@@ -1032,7 +1022,7 @@ def _apply_by_target_id(
                     return False
 
                 try:
-                    _pw_page(driver).evaluate("(e) => e.scrollIntoView({block:'center'})",row_el)
+                    driver.evaluate("(e) => e.scrollIntoView({block:'center'})",row_el)
                     try:
                         row_el.click()
                     except Exception:
@@ -1053,7 +1043,7 @@ def _apply_by_target_id(
 
             def _find_best_visible(xpath: str):
                 try:
-                    cands = _pw_page(driver).query_selector_all(xpath)
+                    cands = driver.query_selector_all(xpath)
                 except Exception:
                     cands = []
 
@@ -1128,12 +1118,12 @@ def _apply_by_target_id(
                 while time.time() < end:
                     try:
                         if input_id:
-                            ok = _handle(input_id).evaluate("(_el) => { var e=document.getElementById(_el); return !!(e && e.checked); }")
+                            ok = input_id.evaluate("(_el) => { var e=document.getElementById(_el); return !!(e && e.checked); }")
                             if ok:
                                 return True
 
                         if input_name:
-                            ok = _pw_page(driver).evaluate(
+                            ok = driver.evaluate(
                                 "(n) => !!document.querySelector("
                                 "  `input[type='radio'][name='${n}']:checked,`"
                                 "  +` input[type='checkbox'][name='${n}']:checked`)",
@@ -1187,7 +1177,7 @@ def _apply_by_target_id(
                     if node is None:
                         return False
                     try:
-                        _pw_page(driver).evaluate("(e) => e.scrollIntoView({block:'center', inline:'center'})",node)
+                        driver.evaluate("(e) => e.scrollIntoView({block:'center', inline:'center'})",node)
                     except Exception:
                         pass
                     try:
@@ -1195,7 +1185,7 @@ def _apply_by_target_id(
                         return True
                     except Exception:
                         try:
-                            _pw_page(driver).evaluate("(e) => e.click()",node)
+                            driver.evaluate("(e) => e.click()",node)
                             return True
                         except Exception:
                             return False
@@ -1209,7 +1199,7 @@ def _apply_by_target_id(
                 initial_checked_id = None
                 if input_name:
                     try:
-                        initial_checked_id = _handle(input_name).evaluate("""(_el) => {
+                        initial_checked_id = input_name.evaluate("""(_el) => {
                             const n = _el;
                             if (!n) return null;
                             const sel = document.querySelector("input[type='radio'][name='" + n + "']:checked");
@@ -1231,7 +1221,7 @@ def _apply_by_target_id(
                 end = time.time() + 1.2
                 while time.time() < end:
                     try:
-                        checked_id = _handle(input_name).evaluate("""(_el) => {
+                        checked_id = input_name.evaluate("""(_el) => {
                             const n = _el;
                             if (!n) return null;
                             const sel = document.querySelector("input[type='radio'][name='" + n + "']:checked");
@@ -1287,14 +1277,14 @@ def _apply_by_target_id(
                     node = _find_best_visible(xpath)
                     if node is None:
                         try:
-                            cands = _pw_page(driver).query_selector_all(xpath)
+                            cands = driver.query_selector_all(xpath)
                             node = cands[0] if cands else None
                         except Exception:
                             node = None
                     if node is None:
                         return False
                     try:
-                        _pw_page(driver).evaluate("(e) => e.scrollIntoView({block:'center', inline:'center'})",node)
+                        driver.evaluate("(e) => e.scrollIntoView({block:'center', inline:'center'})",node)
                     except Exception:
                         pass
                     try:
@@ -1302,7 +1292,7 @@ def _apply_by_target_id(
                         return True
                     except Exception:
                         try:
-                            _pw_page(driver).evaluate("(e) => e.click()",node)
+                            driver.evaluate("(e) => e.click()",node)
                             return True
                         except Exception:
                             return False
@@ -1356,14 +1346,14 @@ def _apply_by_target_id(
                     node = _find_best_visible(xpath)
                     if node is None:
                         try:
-                            cands = _pw_page(driver).query_selector_all(xpath)
+                            cands = driver.query_selector_all(xpath)
                             node = cands[0] if cands else None
                         except Exception:
                             node = None
                     if node is None:
                         return False
                     try:
-                        _pw_page(driver).evaluate("(e) => e.scrollIntoView({block:'center', inline:'center'})",node)
+                        driver.evaluate("(e) => e.scrollIntoView({block:'center', inline:'center'})",node)
                     except Exception:
                         pass
                     try:
@@ -1371,7 +1361,7 @@ def _apply_by_target_id(
                         return True
                     except Exception:
                         try:
-                            _pw_page(driver).evaluate("(e) => e.click()",node)
+                            driver.evaluate("(e) => e.click()",node)
                             return True
                         except Exception:
                             return False
@@ -1388,20 +1378,20 @@ def _apply_by_target_id(
                     if not xpath:
                         return False
                     try:
-                        cands = _pw_page(driver).query_selector_all(xpath)
+                        cands = driver.query_selector_all(xpath)
                         node = cands[0] if cands else None
                     except Exception:
                         node = None
                     if node is None:
                         return False
                     try:
-                        _pw_page(driver).evaluate("(e) => e.scrollIntoView({block:'center', inline:'center'})",node)
+                        driver.evaluate("(e) => e.scrollIntoView({block:'center', inline:'center'})",node)
                     except Exception:
                         pass
                     # Tenter mousedown puis click comme fallback
                     dispatched = False
                     try:
-                        _handle(node).evaluate("(_el) => { _el.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,cancelable:true,view:window})); }")
+                        node.evaluate("(_el) => { _el.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,cancelable:true,view:window})); }")
                         dispatched = True
                     except Exception:
                         pass
@@ -1411,7 +1401,7 @@ def _apply_by_target_id(
                             dispatched = True
                         except Exception:
                             try:
-                                _pw_page(driver).evaluate("(e) => e.click()",node)
+                                driver.evaluate("(e) => e.click()",node)
                                 dispatched = True
                             except Exception:
                                 pass
@@ -1422,7 +1412,7 @@ def _apply_by_target_id(
                         _dl = time.time() + 0.6
                         while time.time() < _dl:
                             try:
-                                confirmed = _handle(_rps_ds).evaluate("""(_el) => {
+                                confirmed = _rps_ds.evaluate("""(_el) => {
                                     var ds = _el;
                                     var inp = document.querySelector(
                                         "div[data-selector='" + ds + "'] input.hold-model"
@@ -1446,7 +1436,7 @@ def _apply_by_target_id(
                     _deadline = time.time() + 1.5
                     while time.time() < _deadline:
                         try:
-                            cands = _pw_page(driver).query_selector_all(xp)
+                            cands = driver.query_selector_all(xp)
                             if cands:
                                 r = cands[0].bounding_box() or {}
                                 if (r.get("width") or 0) > 2 and (r.get("height") or 0) > 2:
@@ -1526,10 +1516,10 @@ def _apply_by_target_id(
                     return False
 
                 try:
-                    row_el = _pw_page(driver).query_selector(f"[id='{row_id}']")
+                    row_el = driver.query_selector(f"[id='{row_id}']")
                     handle_el = row_el.query_selector(".cf-slider__handle[role='slider']")
 
-                    _pw_page(driver).evaluate("(e) => e.scrollIntoView({block:'center',inline:'center'})", handle_el)
+                    driver.evaluate("(e) => e.scrollIntoView({block:'center',inline:'center'})", handle_el)
                     time.sleep(0.05)
 
                     min_v = int(handle_el.get_attribute("aria-valuemin") or 0)
@@ -1567,7 +1557,7 @@ def _apply_by_target_id(
 
                     # Relire depuis le DOM : sécurité stale reference si re-render à l'activation
                     handle_el = row_el.query_selector(".cf-slider__handle[role='slider']")
-                    now_val = _handle(handle_el).evaluate("(_el) => { return _el.getAttribute('aria-valuenow'); }")
+                    now_val = handle_el.evaluate("(_el) => { return _el.getAttribute('aria-valuenow'); }")
                 except Exception as e:
                     log_debug("[TARGET_DEBUG]", f"slider-grid row skipped row_id={row_id} value='{value}' reason='exception:{_short_exc(e)}'")
                     return False
@@ -1591,7 +1581,7 @@ def _apply_by_target_id(
                 if _input_name_mx:
                     _mx_card_el = None
                     try:
-                        _mx_card_el = _handle(value).evaluate("""(_el) => {
+                        _mx_card_el = value.evaluate("""(_el) => {
                             const rawValue = _el;
                             if (!rawValue) return null;
                             const normVal = rawValue.replace(/\s+/g, ' ').trim().toLowerCase();
@@ -1620,7 +1610,7 @@ def _apply_by_target_id(
 
                     if _mx_card_el is not None:
                         try:
-                            _handle(_mx_card_el).evaluate("(_el) => { _el.scrollIntoView({block:'center', inline:'center'}); }")
+                            _mx_card_el.evaluate("(_el) => { _el.scrollIntoView({block:'center', inline:'center'}); }")
                         except Exception:
                             pass
 
@@ -1642,7 +1632,7 @@ def _apply_by_target_id(
                             _mx_selected = False
                             while time.time() - _t0_mx < 1.2:
                                 try:
-                                    _mx_selected = bool(_handle(_mx_card_el).evaluate(
+                                    _mx_selected = bool(_mx_card_el.evaluate(
                                         "(_el) => _el.classList && _el.classList.contains('mx-card-selected')"
                                     ))
                                     if _mx_selected:
@@ -1730,7 +1720,7 @@ def _apply_by_target_id(
                             log_debug("[TARGET_DEBUG]", f"nfield_dragndrop_hidden: option not found value={value!r} opt_map={list(_dnd_opt_map)}")
                         return False
                 try:
-                    _dnd_cands = _pw_page(driver).query_selector_all(_dnd_xp)
+                    _dnd_cands = driver.query_selector_all(_dnd_xp)
                     _dnd_radio = _dnd_cands[0] if _dnd_cands else None
                 except Exception:
                     _dnd_radio = None
@@ -1739,7 +1729,7 @@ def _apply_by_target_id(
                         log_debug("[TARGET_DEBUG]", f"nfield_dragndrop_hidden: element not found xpath={_dnd_xp}")
                     return False
                 try:
-                    _handle(_dnd_radio).evaluate("""(_el) => {
+                    _dnd_radio.evaluate("""(_el) => {
                         const inp = _el;
                         try { inp.checked = true; } catch(e) {}
                         inp.dispatchEvent(new Event('input',  {bubbles:true}));
@@ -1760,7 +1750,7 @@ def _apply_by_target_id(
             opt_map = payload.get("option_xpath_map") or {}
             if payload.get("kantar_rowrank") and opt_map and resolved_itype == "checkbox":
                 try:
-                    _rr_has_grid = bool(_pw_page(driver).query_selector_all(".__flexgrid_row"))
+                    _rr_has_grid = bool(driver.query_selector_all(".__flexgrid_row"))
                 except Exception:
                     _rr_has_grid = False
 
@@ -1793,7 +1783,7 @@ def _apply_by_target_id(
 
                     # 3) Résoudre l'input.mrEdit → lire rowid (0-based index de la carte)
                     try:
-                        mr_input = _pw_page(driver).query_selector(xp_rr)
+                        mr_input = driver.query_selector(xp_rr)
                         rowid_str = (mr_input.get_attribute("rowid") or "").strip()
                         rowid = int(rowid_str) if rowid_str.isdigit() else None
                     except Exception as _rr_fe:
@@ -1810,7 +1800,7 @@ def _apply_by_target_id(
                     #    scrollIntoView inclus pour garantir que l'élément est dans le viewport
                     #    avant que ActionChains tente le clic (évite les faux-positifs silencieux).
                     try:
-                        overlay = _handle(rowid).evaluate("""(_el) => {
+                        overlay = rowid.evaluate("""(_el) => {
                             var rowid = _el;
                             var grids = document.querySelectorAll('.__flexgrid_row');
                             for (var g = 0; g < grids.length; g++) {
@@ -1854,7 +1844,7 @@ def _apply_by_target_id(
                     # 5b) Vérification DOM : badge bleu (rgb(64,81,188)) sur le div de transition interne.
                     _time_rr.sleep(0.35)  # CSS transition 250 ms
                     try:
-                        _rr_verified = bool(_handle(rowid).evaluate("""(_el) => {
+                        _rr_verified = bool(rowid.evaluate("""(_el) => {
                             var rowid = _el;
                             var grids = document.querySelectorAll('.__flexgrid_row');
                             for (var g = 0; g < grids.length; g++) {
@@ -1873,7 +1863,7 @@ def _apply_by_target_id(
 
                     # 6) Filet de sécurité : si le widget n'a pas écrit la valeur, écrire ordinal
                     try:
-                        _handle(inp).evaluate("""(_el) => {
+                        inp.evaluate("""(_el) => {
                             var inp = _el, rank = _arg1;
                             if (!inp.value) {
                                 inp.value = rank;
@@ -1962,7 +1952,7 @@ def _apply_by_target_id(
                     _rs_sel_name = (_rs_sel_info.get("sel_name") or "").strip()
 
                     # Sélection via JS (fiable sur select display:none)
-                    _rs_ok = bool(_pw_page(driver).evaluate("""() => {
+                    _rs_ok = bool(driver.evaluate("""() => {
                         var sel_id = _el, sel_name = _arg1, rank_text = arguments[2];
                         var sel = sel_id ? document.getElementById(sel_id)
                                         : document.querySelector('select[name="' + sel_name + '"]');
@@ -2076,7 +2066,7 @@ def _apply_by_target_id(
                         except Exception:
                             pass
 
-                        _handle(inp).evaluate("""(_el) => {
+                        inp.evaluate("""(_el) => {
                             const inp = _el;
                             if (!inp) return;
                             const type = (inp.type || '').toLowerCase();
@@ -2096,7 +2086,7 @@ def _apply_by_target_id(
                         # IMPORTANT: certaines grilles (mat-table) scrollent horizontalement.
                         # On force le scroll dans les 2 axes pour éviter les éléments 0x0 / hors viewport.
                         try:
-                            _pw_page(driver).evaluate("(e) => e.scrollIntoView({block:'center', inline:'center'})", el)
+                            driver.evaluate("(e) => e.scrollIntoView({block:'center', inline:'center'})", el)
                         except Exception:
                             pass
 
@@ -2104,9 +2094,9 @@ def _apply_by_target_id(
                         x = int((bb.get("x") or 0) + (bb.get("width") or 0) / 2)
                         y = int((bb.get("y") or 0) + (bb.get("height") or 0) / 2)
 
-                        _pw_page(driver).mouse.move(x, y)
-                        _pw_page(driver).mouse.down()
-                        _pw_page(driver).mouse.up()
+                        driver.mouse.move(x, y)
+                        driver.mouse.down()
+                        driver.mouse.up()
                         return True
                     except Exception as e:
                         if debug_target:
@@ -2150,7 +2140,7 @@ def _apply_by_target_id(
                                 pass
 
                             try:
-                                _pw_page(driver).evaluate("(e) => e.scrollIntoView({block:'center'})",pre_el)
+                                driver.evaluate("(e) => e.scrollIntoView({block:'center'})",pre_el)
                             except Exception:
                                 pass
 
@@ -2158,7 +2148,7 @@ def _apply_by_target_id(
                                 pre_el.click()
                             except Exception:
                                 try:
-                                    _pw_page(driver).evaluate("(e) => e.click()",pre_el)
+                                    driver.evaluate("(e) => e.click()",pre_el)
                                 except Exception:
                                     continue
                             break
@@ -2218,7 +2208,7 @@ def _apply_by_target_id(
 
                     # 4) JS click (dernier recours, parfois ignoré si anti-bot)
                     try:
-                        _pw_page(driver).evaluate("(e) => e.click()",node)
+                        driver.evaluate("(e) => e.click()",node)
                         _cm_cache[_cm_key] = 4
                         return True
                     except Exception as e:
@@ -2249,7 +2239,7 @@ def _apply_by_target_id(
                                 pre_el.click()
                             except Exception:
                                 try:
-                                    _pw_page(driver).evaluate("(e) => e.click()",pre_el)
+                                    driver.evaluate("(e) => e.click()",pre_el)
                                 except Exception:
                                     pass
                             time.sleep(0.12)
@@ -2262,7 +2252,7 @@ def _apply_by_target_id(
                         el = _find_best_visible(xp)
                         if el is None:
                             try:
-                                cands = _pw_page(driver).query_selector_all(xp)
+                                cands = driver.query_selector_all(xp)
                                 el = cands[0] if cands else None
                             except Exception:
                                 el = None
@@ -2271,7 +2261,7 @@ def _apply_by_target_id(
                                 log_debug("[TARGET_DEBUG]", f"savanta_jqm_carousel: element not found xpath={xp}")
                             return False
                         try:
-                            _handle(el).evaluate("(_el) => { _el.scrollIntoView({block:'center', inline:'center'}); }")
+                            el.evaluate("(_el) => { _el.scrollIntoView({block:'center', inline:'center'}); }")
                         except Exception:
                             pass
                         clicked = _click_candidate(el, "savanta_jqm_carousel_btn")
@@ -2282,7 +2272,7 @@ def _apply_by_target_id(
                         # Validation : l'input hidden carousel-values[data-index=N] doit avoir reçu une valeur
                         current_idx = payload.get("jqm_carousel_current_data_index")
                         if current_idx is not None:
-                            ok = _handle(current_idx).evaluate("""(_el) => {
+                            ok = current_idx.evaluate("""(_el) => {
                                 const idx = _el;
                                 const inp = document.querySelector(
                                     '.carousel-values input[data-index="' + idx + '"]'
@@ -2295,7 +2285,7 @@ def _apply_by_target_id(
                                 return True
                             # Attente courte (JQM peut être async)
                             time.sleep(0.3)
-                            ok = _handle(current_idx).evaluate("""(_el) => {
+                            ok = current_idx.evaluate("""(_el) => {
                                 const idx = _el;
                                 const inp = document.querySelector(
                                     '.carousel-values input[data-index="' + idx + '"]'
@@ -2328,13 +2318,13 @@ def _apply_by_target_id(
                         paging_xps = payload.get("pre_click_xpaths") or []
                         for pxp in paging_xps[:1]:
                             try:
-                                paging_cands = _pw_page(driver).query_selector_all(pxp)
+                                paging_cands = driver.query_selector_all(pxp)
                                 if paging_cands:
                                     pel = paging_cands[0]
                                     aria_pressed = (pel.get_attribute("aria-pressed") or "").strip().lower()
                                     if aria_pressed != "true":
                                         try:
-                                            _pw_page(driver).evaluate("(e) => e.click()",pel)
+                                            driver.evaluate("(e) => e.click()",pel)
                                         except Exception:
                                             pass
                                         time.sleep(0.25)
@@ -2344,7 +2334,7 @@ def _apply_by_target_id(
                         # Trouver le bouton cible sans contrainte is_displayed
                         btn_el = None
                         try:
-                            cands = _pw_page(driver).query_selector_all(xp)
+                            cands = driver.query_selector_all(xp)
                             btn_el = cands[0] if cands else None
                         except Exception:
                             pass
@@ -2355,11 +2345,11 @@ def _apply_by_target_id(
 
                         # Scroll + clic JS
                         try:
-                            _handle(btn_el).evaluate("(_el) => { _el.scrollIntoView({block:'center', inline:'center'}); }")
+                            btn_el.evaluate("(_el) => { _el.scrollIntoView({block:'center', inline:'center'}); }")
                         except Exception:
                             pass
                         try:
-                            _pw_page(driver).evaluate("(e) => e.click()",btn_el)
+                            driver.evaluate("(e) => e.click()",btn_el)
                         except Exception:
                             if debug_target:
                                 log_debug("[TARGET_DEBUG]", f"cf_carousel_item: JS click failed xpath={xp}")
@@ -2401,7 +2391,7 @@ def _apply_by_target_id(
                 # via aria-checked="true" sur le div[role='radio'].
                 if payload.get("confirmit_cf_hrs_single"):
                     try:
-                        _hrs_cands = _pw_page(driver).query_selector_all(xp)
+                        _hrs_cands = driver.query_selector_all(xp)
                         _hrs_el = _hrs_cands[0] if _hrs_cands else None
                     except Exception:
                         _hrs_el = None
@@ -2410,12 +2400,12 @@ def _apply_by_target_id(
                             log_debug("[TARGET_DEBUG]", f"confirmit_cf_hrs_single: element not found xpath={xp}")
                         return False
                     try:
-                        _handle(_hrs_el).evaluate("(_el) => { _el.scrollIntoView({block:'center', inline:'center'}); }")
+                        _hrs_el.evaluate("(_el) => { _el.scrollIntoView({block:'center', inline:'center'}); }")
                     except Exception:
                         pass
                     _hrs_ok = False
                     try:
-                        _pw_page(driver).evaluate("(e) => e.click()",_hrs_el)
+                        driver.evaluate("(e) => e.click()",_hrs_el)
                         time.sleep(0.15)
                         try:
                             _hrs_ok = ((_hrs_el.get_attribute("aria-checked") or "").strip().lower() == "true")
@@ -2448,7 +2438,7 @@ def _apply_by_target_id(
                         # ET div#container_{qname}[data-test="main-contain"]._rowpicker présent.
                         if resolved_itype == "radio":
                             try:
-                                _kantar_rp_qname_doc = _handle(el).evaluate("""(_el) => {
+                                _kantar_rp_qname_doc = el.evaluate("""(_el) => {
                                     for (const inp of Array.from(document.querySelectorAll('input[class*="mrSingle"][questionname]'))) {
                                         const cont = inp.closest('[questionname]') || inp.closest('div.questionContainer');
                                         if (!cont) continue;
@@ -2490,7 +2480,7 @@ def _apply_by_target_id(
                 # suivi d'une vérification sur l'input hidden associé (id="R{qid}_{data-value}").
                 # data-value est extrait depuis l'élément cible (div[data-value]).
                 if payload.get("askia_ranking_isotope") and resolved_itype == "checkbox":
-                    _adc_ok = bool(_pw_page(driver).evaluate("""() => {
+                    _adc_ok = bool(driver.evaluate("""() => {
                         var el = _el;
                         if (!el) return false;
 
@@ -2526,7 +2516,7 @@ def _apply_by_target_id(
                         # Vérification asynchrone : l'input hidden doit avoir une valeur dans les 600 ms
                         _data_value = None
                         try:
-                            _data_value = _handle(el).evaluate("""(_el) => {
+                            _data_value = el.evaluate("""(_el) => {
                                 var el = _el;
                                 if (!el) return null;
                                 var dv = el.getAttribute('data-value');
@@ -2544,7 +2534,7 @@ def _apply_by_target_id(
                             _deadline = time.time() + 0.6
                             while time.time() < _deadline:
                                 try:
-                                    _adc_confirmed = bool(_handle(_data_value).evaluate("""(_el) => {
+                                    _adc_confirmed = bool(_data_value.evaluate("""(_el) => {
                                         var dv = _el;
                                         var inputs = document.querySelectorAll('input[type="hidden"][id$="_' + dv + '"]');
                                         for (var i = 0; i < inputs.length; i++) {
@@ -2578,7 +2568,7 @@ def _apply_by_target_id(
                 # ElementNotInteractableException. On redirige vers click_nfield_swatches_by_label.
                 if resolved_itype == "checkbox":
                     try:
-                        _nfield_qname = _handle(el).evaluate("""(_el) => {
+                        _nfield_qname = el.evaluate("""(_el) => {
                             const el = _el;
                             if (!el || !el.closest) return null;
                             const fs = el.closest('fieldset[questionname]');
@@ -2611,7 +2601,7 @@ def _apply_by_target_id(
                 # ET div#container_{questionname} [data-test="main-contain"]._rowpicker présent.
                 if resolved_itype == "radio":
                     try:
-                        _kantar_rp_qname = _handle(el).evaluate("""(_el) => {
+                        _kantar_rp_qname = el.evaluate("""(_el) => {
                             const el = _el;
                             if (!el || !el.closest) return null;
                             const cont = el.closest('[questionname]') || el.closest('div.questionContainer');
@@ -2646,7 +2636,7 @@ def _apply_by_target_id(
                 # puis vérifier strictement via input.checked.
                 if resolved_itype == "radio":
                     try:
-                        shelf_result = _handle(el).evaluate("""(_el) => {
+                        shelf_result = el.evaluate("""(_el) => {
                             const node = _el;
                             if (!node) return { matched: false, ok: false, reason: 'no_node' };
 
@@ -2729,7 +2719,7 @@ def _apply_by_target_id(
                     and v_norm in set((payload.get("meta") or {}).get("exclusive_options_norm") or [])
                 ):
                     try:
-                        _handle(el).evaluate("""(_el) => {
+                        el.evaluate("""(_el) => {
                             const target = _el;
                             if (!target) return;
                             const targetLi = target.closest ? target.closest('li.sq-atm1d-button') : null;
@@ -2801,7 +2791,7 @@ def _apply_by_target_id(
                     end = time.time() + timeout_s
                     while time.time() < end:
                         try:
-                            ok = _handle(node).evaluate("""(_el) => {
+                            ok = node.evaluate("""(_el) => {
                                 const node = _el;
                                 if (!node) return false;
                                 const item = node.closest ? node.closest('.customItem') : null;
@@ -2848,7 +2838,7 @@ def _apply_by_target_id(
                     _value_js = value  # capture locale (pas de fermeture sur `value` qui peut muter)
                     while time.time() < _rank_deadline:
                         try:
-                            _rank_confirmed = _handle(_value_js).evaluate("""(_el) => {
+                            _rank_confirmed = _value_js.evaluate("""(_el) => {
                                 const needle = (_el || '').trim().toLowerCase();
                                 const wrappers = document.querySelectorAll(
                                     "div.answer[data-aut='Runtime_RankingItemWrapper']"
@@ -2881,7 +2871,7 @@ def _apply_by_target_id(
                 if payload.get("confirmit_cf_ranking") and resolved_itype == "checkbox":
                     # Recherche de la div cible par texte normalisé, directement dans le DOM vivant.
                     # On ne réutilise pas `el` (xpath du groupe) mais on cherche l'item par son texte.
-                    _cfr_clicked = bool(_handle(value).evaluate("""(_el) => {
+                    _cfr_clicked = bool(value.evaluate("""(_el) => {
                         const norm = s => (s || '').toLowerCase()
                             .normalize('NFKC')
                             .replace(/\u00A0/g, ' ')
@@ -2907,7 +2897,7 @@ def _apply_by_target_id(
 }"""))
                     if not _cfr_clicked:
                         # Vérifier si l'item est déjà sélectionné (action déjà appliquée) ou quota atteint
-                        _cfr_already = bool(_handle(value).evaluate("""(_el) => {
+                        _cfr_already = bool(value.evaluate("""(_el) => {
                             const norm = s => (s || '').toLowerCase()
                                 .normalize('NFKC')
                                 .replace(/\u00A0/g, ' ')
@@ -2940,7 +2930,7 @@ def _apply_by_target_id(
                     _cfr_deadline = time.time() + 1.0
                     while time.time() < _cfr_deadline:
                         try:
-                            _cfr_confirmed = bool(_handle(value).evaluate("""(_el) => {
+                            _cfr_confirmed = bool(value.evaluate("""(_el) => {
                                 const norm = s => (s || '').toLowerCase()
                                     .normalize('NFKC')
                                     .replace(/\u00A0/g, ' ')
@@ -3001,7 +2991,7 @@ def _apply_by_target_id(
                     # Resoudre l'element td
                     _cwroc_el = None
                     try:
-                        _cwroc_el = _pw_page(driver).query_selector(_cwroc_xp)
+                        _cwroc_el = driver.query_selector(_cwroc_xp)
                     except Exception:
                         pass
 
@@ -3029,7 +3019,7 @@ def _apply_by_target_id(
                     # Strategie 2 (fallback) : dispatchEvent mousedown+mouseup+click avec bubbles:true
                     if not _cwroc_clicked:
                         try:
-                            _handle(_cwroc_el).evaluate("""(_el) => {
+                            _cwroc_el.evaluate("""(_el) => {
                                 const el = _el;
                                 ['mousedown', 'mouseup', 'click'].forEach(type => {
                                     el.dispatchEvent(new MouseEvent(type, {bubbles: true, cancelable: true, view: window}));
@@ -3050,7 +3040,7 @@ def _apply_by_target_id(
                     _cwroc_deadline = time.time() + 1.0
                     while time.time() < _cwroc_deadline:
                         try:
-                            _cwroc_confirmed = bool(_handle(_cwroc_el).evaluate("""(_el) => {
+                            _cwroc_confirmed = bool(_cwroc_el.evaluate("""(_el) => {
                                 const el = _el;
                                 if (!el || !el.classList.contains('confirmit-rankedorderclick-selected')) return false;
                                 const span = el.querySelector('span.confirmit-ranked-order-value');
@@ -3078,7 +3068,7 @@ def _apply_by_target_id(
                     Signal de succès : la carte correspondante porte `.mx-card-selected`.
                     """
                     try:
-                        ok = _handle(cell_node).evaluate("""(_el) => {
+                        ok = cell_node.evaluate("""(_el) => {
                             const cell = _el;
                             if (!cell || !cell.closest) return false;
                             const question = cell.closest('div.question');
@@ -3162,7 +3152,7 @@ def _apply_by_target_id(
 
                     try:
                         mx_collapsible_scope = bool(
-                            _handle(el).evaluate("""(_el) => {
+                            el.evaluate("""(_el) => {
                                 const node = _el;
                                 if (!node || !node.closest) return false;
                                 const cell = node.closest('.clickableCell');
@@ -3178,7 +3168,7 @@ def _apply_by_target_id(
 
                     if mx_collapsible_scope:
                         try:
-                            cell_pre = _handle(el).evaluate("""(_el) => {
+                            cell_pre = el.evaluate("""(_el) => {
                                 const node = _el;
                                 return (node && node.closest) ? node.closest('.clickableCell') : null;
 }""")
@@ -3193,7 +3183,7 @@ def _apply_by_target_id(
                         if (el.evaluate("e => (e.tagName || '').toLowerCase()") or "") == "label":
                             fid = (el.get_attribute("for") or "").strip()
                             if fid:
-                                inp_for = _pw_page(driver).query_selector(f"[id='{fid}']")
+                                inp_for = driver.query_selector(f"[id='{fid}']")
                                 if _is_selected(inp_for):
                                     return True
                     except Exception:
@@ -3205,7 +3195,7 @@ def _apply_by_target_id(
                 # On applique une stratégie unique et DOM-gardée pour éviter les faux positifs.
                 if resolved_itype == "checkbox":
                     try:
-                        decipher_cell = _handle(el).evaluate("""(_el) => {
+                        decipher_cell = el.evaluate("""(_el) => {
                             const node = _el;
                             if (!node || !node.closest) return null;
                             const cell = node.closest('.clickableCell');
@@ -3227,7 +3217,7 @@ def _apply_by_target_id(
                         try:
                             ok_decipher = _is_decipher_mx_collapsible_checkbox_selected(decipher_cell)
                             if not ok_decipher:
-                                ok_decipher = _handle(decipher_cell).evaluate("""(_el) => {
+                                ok_decipher = decipher_cell.evaluate("""(_el) => {
                                     const cell = _el;
                                     if (!cell) return false;
                                     const inp = cell.querySelector("input[type='checkbox'].fir-hidden");
@@ -3264,7 +3254,7 @@ def _apply_by_target_id(
                 # Court-circuit avant toluna_runtime_answerrow pour éviter faux négatif.
                 _is_interview_layout_btn = False
                 try:
-                    _is_interview_layout_btn = _handle(el).evaluate("""(_el) => {
+                    _is_interview_layout_btn = el.evaluate("""(_el) => {
                         const el = _el;
                         if (!el || !el.closest) return false;
                         if ((el.tagName || '').toLowerCase() !== 'button') return false;
@@ -3296,7 +3286,7 @@ def _apply_by_target_id(
                 if not (_toluna_neg and _toluna_neg.get("kind") == "no_runtime_rows"):
                     log_info("[TARGET]", "toluna_runtime_answerrow: entering block")
                     try:
-                        _toluna_guard = _handle(el).evaluate("""(_el) => {
+                        _toluna_guard = el.evaluate("""(_el) => {
                             const el = _el;
                             if (!el || !el.closest) return null;
                             if (!el.closest("[data-aut='Runtime_AnswerRow']")) return null;
@@ -3330,7 +3320,7 @@ def _apply_by_target_id(
                     # Re-fetch par ID pour survivre au re-render React qui invalide el.
                     _toluna_clicked = False
                     try:
-                        _handle(_toluna_row_id).evaluate("""(_el) => {
+                        _toluna_row_id.evaluate("""(_el) => {
                             var row = document.getElementById(_el);
                             if (!row) throw new Error('row not found: ' + _el);
                             row.querySelector("[data-aut='Runtime_Wrapper']").click();
@@ -3368,7 +3358,7 @@ def _apply_by_target_id(
                         try:
                             fid = (el.get_attribute("for") or "").strip()
                             if fid:
-                                inp_guard = _pw_page(driver).query_selector(f"[id='{fid}']")
+                                inp_guard = driver.query_selector(f"[id='{fid}']")
                         except Exception:
                             inp_guard = None
 
@@ -3396,7 +3386,7 @@ def _apply_by_target_id(
                                     inp_guard.click()
                                 except Exception:
                                     try:
-                                        _pw_page(driver).evaluate("(e) => e.click()",inp_guard)
+                                        driver.evaluate("(e) => e.click()",inp_guard)
                                     except Exception:
                                         pass
                             else:
@@ -3423,7 +3413,7 @@ def _apply_by_target_id(
                 # Vérification stricte via input.checked après action.
                 # Ne pas modifier le chemin générique (fall-through si flag absent).
                 if payload.get("askia_responsive_table_checkbox") and resolved_itype == "checkbox":
-                    _artc_ok = bool(_handle(el).evaluate("""(_el) => {
+                    _artc_ok = bool(el.evaluate("""(_el) => {
                         var node = _el;
                         if (!node) return false;
 
@@ -3477,7 +3467,7 @@ def _apply_by_target_id(
                     if not exp:
                         return False
                     try:
-                        ok = _handle(ta).evaluate("""(_el) => {
+                        ok = ta.evaluate("""(_el) => {
                             const marker = _el;
                             const expected = String(_arg1 || '').trim();
                             if (!expected) return false;
@@ -3503,7 +3493,7 @@ def _apply_by_target_id(
                             const handle = scope.querySelector && scope.querySelector('.slider-handle[aria-valuenow]');
                             const ariaNow = handle ? String(handle.getAttribute('aria-valuenow') || '').trim() : '';
                             return ariaNow === expected;
-}""", [_handle(node), exp])
+}""", [node, exp])
                         return bool(ok)
                     except Exception:
                         return False
@@ -3521,7 +3511,7 @@ def _apply_by_target_id(
                     if ayn_name and ayn_map:
                         exp = ayn_map.get(v_norm) or (ayn_map.get(v_fold) if v_fold else None)
                         if exp is not None and exp != '':
-                            ok = _pw_page(driver).evaluate("""([_el, _arg1]) => {
+                            ok = driver.evaluate("""([_el, _arg1]) => {
                                 const name = _el;
                                 const exp  = _arg1;
                                 const els = document.getElementsByName(name);
@@ -3544,7 +3534,7 @@ def _apply_by_target_id(
                     if (el.evaluate("e => (e.tagName || '').toLowerCase()") or "") == "label":
                         fid = (el.get_attribute("for") or "").strip()
                         if fid:
-                            inp_for = _pw_page(driver).query_selector(f"[id='{fid}']")
+                            inp_for = driver.query_selector(f"[id='{fid}']")
                             if not _is_selected(inp_for):
                                 _dispatch_check_events(inp_for)
                 except Exception:
@@ -3667,7 +3657,7 @@ def _apply_by_target_id(
                     nm = (fld.get("name") or "").strip()
                     if nm:
                         try:
-                            for c in _pw_page(driver).query_selector_all(f"[name='{nm}']"):
+                            for c in driver.query_selector_all(f"[name='{nm}']"):
                                 try:
                                     if c.is_visible():
                                         return c
@@ -3679,7 +3669,7 @@ def _apply_by_target_id(
                     fid = (fld.get("id") or "").strip()
                     if fid:
                         try:
-                            for c in _pw_page(driver).query_selector_all(f"[id='{fid}']"):
+                            for c in driver.query_selector_all(f"[id='{fid}']"):
                                 try:
                                     if c.is_visible():
                                         return c
@@ -3706,7 +3696,7 @@ def _apply_by_target_id(
                         if cur:
                             continue
 
-                        _pw_page(driver).evaluate("(e) => e.scrollIntoView({block:'center'})",elx)
+                        driver.evaluate("(e) => e.scrollIntoView({block:'center'})",elx)
                         try:
                             elx.clear()
                         except Exception:
@@ -3727,8 +3717,8 @@ def _apply_by_target_id(
 
                 if resolved_itype in ("text", "textarea", "number"):
                     try:
-                        el = _pw_page(driver).query_selector(xp)
-                        _pw_page(driver).evaluate("(e) => e.scrollIntoView({block:'center'})",el)
+                        el = driver.query_selector(xp)
+                        driver.evaluate("(e) => e.scrollIntoView({block:'center'})",el)
                         try:
                             el.clear()
                         except Exception:
@@ -3757,14 +3747,14 @@ def _apply_by_target_id(
                         # 1) xpath principal
                         if xp:
                             try:
-                                _add(_pw_page(driver).query_selector_all(xp))
+                                _add(driver.query_selector_all(xp))
                             except Exception:
                                 pass
 
                         # 2) alt_xpaths (ex: //select[@name='...'])
                         for ax in (payload.get("alt_xpaths") or []):
                             try:
-                                _add(_pw_page(driver).query_selector_all(ax))
+                                _add(driver.query_selector_all(ax))
                             except Exception:
                                 pass
 
@@ -3772,14 +3762,14 @@ def _apply_by_target_id(
                         nm = (payload.get("name") or "").strip()
                         if nm:
                             try:
-                                _add(_pw_page(driver).query_selector_all(f"[name='{nm}']"))
+                                _add(driver.query_selector_all(f"[name='{nm}']"))
                             except Exception:
                                 pass
 
                         eid = (payload.get("id") or "").strip()
                         if eid:
                             try:
-                                _add(_pw_page(driver).query_selector_all(f"[id='{eid}']"))
+                                _add(driver.query_selector_all(f"[id='{eid}']"))
                             except Exception:
                                 pass
 
@@ -3787,7 +3777,7 @@ def _apply_by_target_id(
                         #    Le filtrage se fera plus bas via la présence de l'option demandée.
                         if not cands:
                             try:
-                                _add(_pw_page(driver).query_selector_all("select"))
+                                _add(driver.query_selector_all("select"))
                             except Exception:
                                 pass
 
@@ -3839,7 +3829,7 @@ def _apply_by_target_id(
                     for sel in _iter_dropdown_candidates():
                         # Best-effort: amener le select dans le viewport (meme s'il est masqué)
                         try:
-                            _pw_page(driver).evaluate("(e) => e.scrollIntoView({block:'center'})",sel)
+                            driver.evaluate("(e) => e.scrollIntoView({block:'center'})",sel)
                         except Exception:
                             pass
 
@@ -3892,7 +3882,7 @@ def _apply_by_target_id(
 
                         # 1) source de vérité: <select>
                         try:
-                            _pw_page(driver).evaluate("""() => {
+                            driver.evaluate("""() => {
                                 const sel = _el;
                                 const val = _arg1;
                                 sel.value = val;
@@ -3903,7 +3893,7 @@ def _apply_by_target_id(
                                     window.jQuery(sel).selectpicker('refresh');
                                   }
                                 } catch(e) {}
-}""", [_handle(sel), best_val])
+}""", [sel, best_val])
                         except Exception:
                             continue
 
@@ -3918,7 +3908,7 @@ def _apply_by_target_id(
                                 track = None
                                 if sel_id:
                                     try:
-                                        track = _pw_page(driver).query_selector(f"[id='sliderpoints_{sel_id}']")
+                                        track = driver.query_selector(f"[id='sliderpoints_{sel_id}']")
                                     except Exception:
                                         track = None
 
@@ -3930,7 +3920,7 @@ def _apply_by_target_id(
                                         track = None
 
                                 if track is not None:
-                                    _pw_page(driver).evaluate("(e) => e.scrollIntoView({block:'center'})",track)
+                                    driver.evaluate("(e) => e.scrollIntoView({block:'center'})",track)
                                     r = track.bounding_box() or {}
                                     w = int(r.get("width", 0) or 0)
                                     h = int(r.get("height", 0) or 0)
@@ -3943,7 +3933,7 @@ def _apply_by_target_id(
                                         bb = track.bounding_box() or {}
                                         abs_x = int((bb.get("x") or 0) + x)
                                         abs_y = int((bb.get("y") or 0) + y)
-                                        page = _pw_page(driver)
+                                        page = driver
                                         page.mouse.click(abs_x, abs_y)
                                     except Exception:
                                         pass
@@ -3962,7 +3952,7 @@ def _apply_by_target_id(
                                             bb_t = track.bounding_box() or {}
                                             abs_x = int((bb_t.get("x") or 0) + x)
                                             abs_y = int((bb_t.get("y") or 0) + y)
-                                            page = _pw_page(driver)
+                                            page = driver
                                             page.mouse.move(*[(hnd.bounding_box() or {}).get(k, 0) for k in ["x", "y"]])
                                             page.mouse.down()
                                             page.mouse.move(abs_x, abs_y)
@@ -3988,8 +3978,8 @@ def _apply_by_target_id(
 
                 if resolved_itype == "button":
                     try:
-                        el = _pw_page(driver).query_selector(xp)
-                        _pw_page(driver).evaluate("(e) => e.scrollIntoView({block:'center'})",el)
+                        el = driver.query_selector(xp)
+                        driver.evaluate("(e) => e.scrollIntoView({block:'center'})",el)
                         el.click()
                         return True
                     except Exception:
@@ -4003,7 +3993,7 @@ def _apply_by_target_id(
                 if not container_id:
                     return False
                 try:
-                    container = _pw_page(driver).query_selector(f"[id='{container_id}']")
+                    container = driver.query_selector(f"[id='{container_id}']")
                 except Exception:
                     log_debug("[TARGET_DEBUG]", f"runtime_dropdown container '{container_id}' introuvable")
                     return False
@@ -4037,14 +4027,14 @@ def _apply_by_target_id(
                     if part_hint == "month":
                         v_norm = _MONTH_FR.get(v, v_norm)
                     try:
-                        _pw_page(driver).evaluate("(e) => e.scrollIntoView({block:'center'})",wrapper)
+                        driver.evaluate("(e) => e.scrollIntoView({block:'center'})",wrapper)
                         wrapper.click()
                     except Exception:
                         return False
                     menu = None
                     for _ in range(8):
                         try:
-                            menus = _pw_page(driver).query_selector_all("[class*='-menu']")
+                            menus = driver.query_selector_all("[class*='-menu']")
                             visible = [m for m in menus if m.is_visible()]
                             if visible:
                                 menu = visible[-1]
@@ -4084,7 +4074,7 @@ def _apply_by_target_id(
                             except Exception:
                                 pass
                     try:
-                        comboboxes = _pw_page(driver).query_selector_all("input[role='combobox']")
+                        comboboxes = driver.query_selector_all("input[role='combobox']")
                         if comboboxes:
                             comboboxes[-1].press("Escape")
                     except Exception:
@@ -4137,7 +4127,7 @@ def _apply_by_target_id(
                 if not container_id:
                     return False
                 try:
-                    container = _pw_page(driver).query_selector(f"[id='{container_id}']")
+                    container = driver.query_selector(f"[id='{container_id}']")
                 except Exception:
                     log_debug("[TARGET_DEBUG]", f"runtime_text container '{container_id}' introuvable")
                     return False
@@ -4146,11 +4136,11 @@ def _apply_by_target_id(
                 except Exception:
                     log_debug("[TARGET_DEBUG]", f"runtime_text: textarea introuvable dans '{container_id}'")
                     return False
-                _pw_page(driver).evaluate("(e) => e.scrollIntoView({block:'center'})",ta)
+                driver.evaluate("(e) => e.scrollIntoView({block:'center'})",ta)
                 # React contrôle la valeur via son état interne : ta.clear() n'a aucun effet.
                 # On vide via le setter natif + event 'input' pour notifier React, puis on saisit.
                 try:
-                    _pw_page(driver).evaluate("""([_el, _arg1]) => {
+                    driver.evaluate("""([_el, _arg1]) => {
                         var el = _el;
                         var setter = Object.getOwnPropertyDescriptor(
                             window.HTMLTextAreaElement.prototype, 'value'
@@ -4244,7 +4234,7 @@ def _get_visible_options(driver):
     ]
     for css in sels:
         try:
-            for el in _pw_page(driver).query_selector_all(css):
+            for el in driver.query_selector_all(css):
                 t = (el.inner_text() or "").strip()
                 if t and len(t) >= 2:
                     opts.add(_norm(t))
@@ -4255,7 +4245,7 @@ def _get_visible_options(driver):
 def _get_page_text_lc(driver):
     try:
         return " ".join(
-            _pw_page(driver).evaluate(
+            driver.evaluate(
                 "() => Array.from(document.querySelectorAll('body *')).filter(e=>getComputedStyle(e).display!=='none' && e.offsetParent!==null).map(e=>(e.innerText||'').trim()).filter(t=>t.length>4)"
             )
         ).lower()
@@ -4413,19 +4403,19 @@ def _wait_for_button_effect(driver, *, timeout=6):
     """
     import time
 
-    start_url = _pw_page(driver).url
+    start_url = driver.url
     start_ts = time.time()
 
     while time.time() - start_ts < timeout:
         time.sleep(0.3)
 
         # 1⃣ URL change
-        if _pw_page(driver).url != start_url:
+        if driver.url != start_url:
             return True
 
         # 2⃣ Bouton disparu ou disabled
         try:
-            btn = _pw_page(driver).query_selector("[id='acceptAndTakeSurveyLink2']")
+            btn = driver.query_selector("[id='acceptAndTakeSurveyLink2']")
             if not btn.is_visible():
                 return True
             if btn.get_attribute("aria-disabled") == "true":
@@ -4437,12 +4427,12 @@ def _wait_for_button_effect(driver, *, timeout=6):
             return True
 
         # 3⃣ Overlay / spinner
-        overlays = _pw_page(driver).query_selector_all(".loading, .spinner, .overlay")
+        overlays = driver.query_selector_all(".loading, .spinner, .overlay")
         if overlays:
             return True
 
         try:
-            spin = _pw_page(driver).query_selector("[id='loadingSpin3']")
+            spin = driver.query_selector("[id='loadingSpin3']")
             if spin.is_visible():
                 return True
         except Exception:
@@ -4462,7 +4452,7 @@ def handle_datadiggers_icontrol_final_screen(driver):
     intercept_only = (os.getenv("CTA_INTERCEPT_ONLY", "") or "").strip().lower() in {"1", "true", "yes", "on"}
 
     try:
-        btn = _pw_page(driver).query_selector("div.wrap.infrmtion button.next_btn[translate='srvyFinal.btnLtsDo']")
+        btn = driver.query_selector("div.wrap.infrmtion button.next_btn[translate='srvyFinal.btnLtsDo']")
     except Exception:
         log_info("[DD_FINAL]", "CTA introuvable")
         return False
@@ -4480,17 +4470,17 @@ def handle_datadiggers_icontrol_final_screen(driver):
 
     log_info("[DD_FINAL]", "CTA trouvé — clic button.next_btn (ng-submit DataDiggers)")
     try:
-        before_url = _pw_page(driver).url or ""
+        before_url = driver.url or ""
     except Exception:
         before_url = ""
 
     try:
-        _pw_page(driver).evaluate("(e) => e.scrollIntoView({block:'center'})",btn)
+        driver.evaluate("(e) => e.scrollIntoView({block:'center'})",btn)
         time.sleep(0.1)
         btn.click()
     except Exception:
         try:
-            _handle(btn).evaluate("(_el) => { _el.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true})); }")
+            btn.evaluate("(_el) => { _el.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true})); }")
         except Exception:
             log_info("[DD_FINAL]", "clic échoué — bouton inaccessible")
             return False
@@ -4499,7 +4489,7 @@ def handle_datadiggers_icontrol_final_screen(driver):
     while time.time() < end:
         time.sleep(0.3)
         try:
-            if _pw_page(driver).url != before_url:
+            if driver.url != before_url:
                 log_info("[DD_FINAL]", "navigation détectée — redirection OK")
                 return True
         except Exception:
@@ -4524,7 +4514,7 @@ def handle_prodege_data_privacy_screen(driver):
 
     # Vérification guard strict
     try:
-        guard_ok = bool(_handle(CMP_CONTAINER_SELECTORS).evaluate("""(_el) => {
+        guard_ok = bool(CMP_CONTAINER_SELECTORS.evaluate("""(_el) => {
             return !!(
                 document.querySelector('form#dataPrivacyAgreeForm') &&
                 document.querySelector('input.dataPrivacyCheckboxRequired') &&
@@ -4542,7 +4532,7 @@ def handle_prodege_data_privacy_screen(driver):
 
     # Clic sur chaque label[for] des cases .dataPrivacyCheckboxRequired
     try:
-        checked_count = int(_pw_page(driver).evaluate("""() => {
+        checked_count = int(driver.evaluate("""() => {
             const inputs = Array.from(document.querySelectorAll(
                 'form#dataPrivacyAgreeForm input.dataPrivacyCheckboxRequired'
             ));
@@ -4568,7 +4558,7 @@ def handle_prodege_data_privacy_screen(driver):
 
     # Vérifier que toutes les cases requises sont cochées
     try:
-        all_checked = bool(_pw_page(driver).evaluate("""() => {
+        all_checked = bool(driver.evaluate("""() => {
             const inputs = Array.from(document.querySelectorAll(
                 'form#dataPrivacyAgreeForm input.dataPrivacyCheckboxRequired'
             ));
@@ -4583,7 +4573,7 @@ def handle_prodege_data_privacy_screen(driver):
 
     # Récupération du bouton de soumission
     try:
-        btn = _pw_page(driver).query_selector("button#dataPrivacySubmitBtn")
+        btn = driver.query_selector("button#dataPrivacySubmitBtn")
     except Exception:
         log_info("[PRODEGE_CONSENT]", "button#dataPrivacySubmitBtn introuvable")
         return False
@@ -4600,17 +4590,17 @@ def handle_prodege_data_privacy_screen(driver):
 
     log_info("[PRODEGE_CONSENT]", "clic button#dataPrivacySubmitBtn")
     try:
-        before_url = _pw_page(driver).url or ""
+        before_url = driver.url or ""
     except Exception:
         before_url = ""
 
     try:
-        _pw_page(driver).evaluate("(e) => e.scrollIntoView({block:'center'})",btn)
+        driver.evaluate("(e) => e.scrollIntoView({block:'center'})",btn)
         time.sleep(0.1)
         btn.click()
     except Exception:
         try:
-            _handle(btn).evaluate("(_el) => { _el.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true})); }")
+            btn.evaluate("(_el) => { _el.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true})); }")
         except Exception:
             log_info("[PRODEGE_CONSENT]", "clic bouton échoué")
             return False
@@ -4619,7 +4609,7 @@ def handle_prodege_data_privacy_screen(driver):
     while time.time() < end:
         time.sleep(0.3)
         try:
-            if _pw_page(driver).url != before_url:
+            if driver.url != before_url:
                 log_info("[PRODEGE_CONSENT]", "navigation détectée — consentement accepté")
                 return True
         except Exception:
@@ -4646,7 +4636,7 @@ def handle_consent_screen(driver):
     #    IMPORTANT: radios potentiellement cachés (display:none), cliquer le label puis fallback JS.
     def _handle_toluna_consent_modal() -> bool:
         try:
-            detected = bool(_pw_page(driver).evaluate("""() => {
+            detected = bool(driver.evaluate("""() => {
                 const confirm = document.querySelector('#consent-button-confirm');
                 const hasRadio = !!document.querySelector("input[name='consent']") || !!document.querySelector('.consent-form-radiogroup');
                 const hasLabel = !!document.querySelector('.consent-option-label');
@@ -4663,7 +4653,7 @@ def handle_consent_screen(driver):
 
         for _ in range(2):
             try:
-                checked_ok = bool(_pw_page(driver).evaluate("""() => {
+                checked_ok = bool(driver.evaluate("""() => {
                     const norm = (s) => (s || '').toLowerCase().replace(/\s+/g, ' ').trim();
                     const confirm = document.querySelector('#consent-button-confirm');
                     const accept = document.querySelector('#consent-radio-accept') || document.querySelector("input[type='radio'][name='consent'][value='accept']");
@@ -4704,11 +4694,11 @@ def handle_consent_screen(driver):
                     clicked = False
             else:
                 try:
-                    btn = _pw_page(driver).query_selector("#consent-button-confirm")
+                    btn = driver.query_selector("#consent-button-confirm")
                     try:
                         btn.click()
                     except Exception:
-                        _pw_page(driver).evaluate("(e) => e.click()",btn)
+                        driver.evaluate("(e) => e.click()",btn)
                     clicked = True
                 except Exception:
                     clicked = False
@@ -4716,7 +4706,7 @@ def handle_consent_screen(driver):
             print(f"[CONSENT][TOLUNA] confirm clicked intercept_only={str(intercept_only).lower()}")
 
             try:
-                err_visible = bool(_pw_page(driver).evaluate("""() => {
+                err_visible = bool(driver.evaluate("""() => {
                     const err = document.querySelector('#consent-error-message-container');
                     if (!err) return false;
                     const s = window.getComputedStyle(err);
@@ -4742,7 +4732,7 @@ def handle_consent_screen(driver):
     #    Ex: input#privacyPolicyCheckbox1 + a#acceptAndTakeSurveyLink2
     def _scroll_center(el) -> None:
         try:
-            _pw_page(driver).evaluate("(e) => e.scrollIntoView({block:'center', inline:'center'})",el)
+            driver.evaluate("(e) => e.scrollIntoView({block:'center', inline:'center'})",el)
         except Exception:
             pass
 
@@ -4760,7 +4750,7 @@ def handle_consent_screen(driver):
                 return True
             except Exception:
                 try:
-                    _pw_page(driver).evaluate("(e) => e.click()",el)
+                    driver.evaluate("(e) => e.click()",el)
                     return True
                 except Exception:
                     return False
@@ -4768,7 +4758,7 @@ def handle_consent_screen(driver):
     def _cmp_overlay_present() -> bool:
         """True si un container CMP *bloquant* (grand et visible) est présent."""
         try:
-            return bool(_pw_page(driver).evaluate("""() => {
+            return bool(driver.evaluate("""() => {
                 const vw = Math.max(320, window.innerWidth || 0);
                 const vh = Math.max(240, window.innerHeight || 0);
                 const minArea = vw * vh * 0.12;
@@ -4813,21 +4803,21 @@ def handle_consent_screen(driver):
 
     def _sig() -> str:
         try:
-            url = _pw_page(driver).url or ""
+            url = driver.url or ""
         except Exception:
             url = ""
         try:
-            txt_len = int(_pw_page(driver).evaluate("() => { return (document.body && (document.body.innerText||'').length) || 0; }") or 0)
+            txt_len = int(driver.evaluate("() => { return (document.body && (document.body.innerText||'').length) || 0; }") or 0)
         except Exception:
             txt_len = 0
         try:
-            n_btn = len(_pw_page(driver).query_selector_all("button, a, [role='button'], input[type='submit'], input[type='button']"))
+            n_btn = len(driver.query_selector_all("button, a, [role='button'], input[type='submit'], input[type='button']"))
         except Exception:
             n_btn = 0
         return f"{url}||{txt_len}||{n_btn}||{int(_cmp_overlay_present())}"
 
     try:
-        before_url = _pw_page(driver).url or ""
+        before_url = driver.url or ""
     except Exception:
         before_url = ""
     before_sig = _sig()
@@ -4839,7 +4829,7 @@ def handle_consent_screen(driver):
 
             # 1) URL changée
             try:
-                if _pw_page(driver).url != before_url:
+                if driver.url != before_url:
                     return True
             except Exception:
                 pass
@@ -4855,7 +4845,7 @@ def handle_consent_screen(driver):
     # Trigger strictement DOM-first pour éviter tout impact sur les autres providers/pages.
     def _handle_cint_collect_consent_page() -> bool:
         try:
-            detected = bool(_handle(drop_zone).evaluate("""(_el) => {
+            detected = bool(drop_zone.evaluate("""(_el) => {
                 const mandatory = Array.from(document.querySelectorAll("input.mandatory[type='checkbox'][name='consents']"));
                 if (!mandatory.length) return false;
 
@@ -4879,7 +4869,7 @@ def handle_consent_screen(driver):
         # Budget anti-boucle: max 2 passes pour forcer l'état checked + événements DOM.
         for _ in range(2):
             try:
-                state = _pw_page(driver).evaluate("""() => {
+                state = driver.evaluate("""() => {
                     const mandatory = Array.from(document.querySelectorAll("input.mandatory[type='checkbox'][name='consents']"));
                     let checkedCount = 0;
 
@@ -4937,7 +4927,7 @@ def handle_consent_screen(driver):
                 print("[CTA_INTERCEPT] cint_collect cta_found intercept_impossible")
                 return False
 
-        cta = _pw_page(driver).query_selector("form[action*='/Consent/Collect/'] input[type='submit'], form[action*='/Consent/Collect/'] button[type='submit']")
+        cta = driver.query_selector("form[action*='/Consent/Collect/'] input[type='submit'], form[action*='/Consent/Collect/'] button[type='submit']")
         if cta is None:
             print("[CONSENT][CINT] cta_not_found")
             return False
@@ -4950,7 +4940,7 @@ def handle_consent_screen(driver):
 
         # Si pas de navigation, vérifier qu'il n'y a plus d'erreurs de validation obligatoires visibles.
         try:
-            validation_visible = bool(_pw_page(driver).evaluate("""() => {
+            validation_visible = bool(driver.evaluate("""() => {
                 const box = document.querySelector('.validation-messages.alert-danger, .alert-danger.validation-messages');
                 if (!box) return false;
                 const style = window.getComputedStyle(box);
@@ -5016,7 +5006,7 @@ def handle_consent_screen(driver):
     def _handle_ipsos_privacy_policy_page() -> bool:
         # Détection volontairement stricte (évite les faux positifs sur d'autres consent screens)
         intercept_only = (os.getenv("CTA_INTERCEPT_ONLY", "") or "").strip().lower() in {"1", "true", "yes", "on"}
-        cta = _pw_page(driver).query_selector("a.btn.btn-primary[id^='acceptAndTakeSurveyLink']")
+        cta = driver.query_selector("a.btn.btn-primary[id^='acceptAndTakeSurveyLink']")
         if cta is None:
             if intercept_only:
                 print("[CTA_INTERCEPT] ipsos_privacy_policy cta_not_found")
@@ -5026,7 +5016,7 @@ def handle_consent_screen(driver):
             # Patterns IPSOS observés:
             # - privacyPolicyCheckbox* (ancien pattern, conservé pour rétrocompatibilité)
             # - consentCheckbox* / consentContainer:* (pattern actuel 2025+)
-            cbs = _pw_page(driver).query_selector_all(
+            cbs = driver.query_selector_all(
                 "input[type='checkbox']#privacyPolicyCheckbox1, input[type='checkbox'][name*='privacyPolicyCheckbox'], input[type='checkbox'][id*='privacyPolicyCheckbox'], input[type='checkbox'][id*='consentCheckbox'], input[type='checkbox'][name*='consentCheckbox'], input[type='checkbox'][name*='consentContainer']"
             )
         except Exception:
@@ -5052,7 +5042,7 @@ def handle_consent_screen(driver):
             clicked = False
             if cb_id:
                 try:
-                    lab = _pw_page(driver).query_selector(f"label[for='{cb_id}']")
+                    lab = driver.query_selector(f"label[for='{cb_id}']")
                     clicked = _click_best_effort(lab)
                 except Exception:
                     clicked = False
@@ -5107,7 +5097,7 @@ def handle_consent_screen(driver):
     # 0bis) Affinnova / NIQ launch gate: CTA "LANCER L'ÉTUDE" (popup + switch main/secondary)
     def _handle_affinnova_launch_gate() -> bool:
         try:
-            launch = _pw_page(driver).query_selector("a.launchButton[onclick*='showSurvey'], a.launchButton")
+            launch = driver.query_selector("a.launchButton[onclick*='showSurvey'], a.launchButton")
         except Exception:
             return False
 
@@ -5138,7 +5128,7 @@ def handle_consent_screen(driver):
                 pass
 
             try:
-                transitioned = bool(_pw_page(driver).evaluate("""() => {
+                transitioned = bool(driver.evaluate("""() => {
                     const main = document.querySelector('#main');
                     const secondary = document.querySelector('#secondary');
                     if (!main || !secondary) return false;
@@ -5163,14 +5153,14 @@ def handle_consent_screen(driver):
     def _handle_walr_country_routing_gate() -> bool:
         # Vérifier le signal Walr distinctif (.cRadio + .cRef) avant de chercher #btnNext
         try:
-            has_walr_signal = bool(_pw_page(driver).evaluate("() => { return document.querySelectorAll('.cRadio').length >= 10 && !!document.querySelector('.cRef'); }"))
+            has_walr_signal = bool(driver.evaluate("() => { return document.querySelectorAll('.cRadio').length >= 10 && !!document.querySelector('.cRef'); }"))
         except Exception:
             has_walr_signal = False
         if not has_walr_signal:
             return False
 
         try:
-            btn = _pw_page(driver).query_selector("#btnNext")
+            btn = driver.query_selector("#btnNext")
         except Exception:
             return False
         try:
@@ -5200,7 +5190,7 @@ def handle_consent_screen(driver):
     #          Exemple: page "Veuillez cliquer sur Suivant" avant entrée dans l'enquête.
     def _handle_walr_intro_final_gate() -> bool:
         try:
-            has_signal = bool(_pw_page(driver).evaluate("""() => {
+            has_signal = bool(driver.evaluate("""() => {
                 const hasWalrFooter = !!document.querySelector('a.logo2link[href*="walr.com"]');
                 const q = document.querySelector('input[type="hidden"]#Q');
                 const btn = document.querySelector('#btnNext');
@@ -5219,7 +5209,7 @@ def handle_consent_screen(driver):
             return False
 
         try:
-            btn = _pw_page(driver).query_selector("#btnNext")
+            btn = driver.query_selector("#btnNext")
         except Exception:
             return False
 
@@ -5244,7 +5234,7 @@ def handle_consent_screen(driver):
     #             DOM: <app-survey-final> + button.next_btn visible + aucun input répondable.
     def _handle_angular_survey_final_gate() -> bool:
         try:
-            btn_sel = _pw_page(driver).evaluate("""() => {
+            btn_sel = driver.evaluate("""() => {
                 const isVisible = (el) => {
                     if (!el) return false;
                     const s = window.getComputedStyle(el);
@@ -5273,9 +5263,9 @@ def handle_consent_screen(driver):
 
         try:
             try:
-                btn = _pw_page(driver).query_selector("button.next_btn")
+                btn = driver.query_selector("button.next_btn")
             except Exception:
-                btn = _pw_page(driver).query_selector("button[type='submit']")
+                btn = driver.query_selector("button[type='submit']")
         except Exception:
             return False
 
@@ -5303,13 +5293,13 @@ def handle_consent_screen(driver):
     def _has_hidden_ancestor(el) -> bool:
         """Vérifie si un élément est dans un container caché (CookieYes, etc.)."""
         try:
-            return bool(_handle(el).evaluate("(_el) => { return !!_el.closest('.cky-hide, .ng-hide, [hidden], .hidden') }"))
+            return bool(el.evaluate("(_el) => { return !!_el.closest('.cky-hide, .ng-hide, [hidden], .hidden') }"))
         except Exception:
             return False
     best = None
     for sel in CMP_CONTAINER_SELECTORS:
         try:
-            for el in _pw_page(driver).query_selector_all(sel):
+            for el in driver.query_selector_all(sel):
                 try:
                     if not el.is_visible():
                         continue
@@ -5371,9 +5361,9 @@ def handle_consent_screen(driver):
                         if label:
                             Survey.input_handler.click_cta_strong_any_context(driver, label)
                         else:
-                            _pw_page(driver).evaluate("(e) => e.click()",btn)
+                            driver.evaluate("(e) => e.click()",btn)
                     else:
-                        _pw_page(driver).evaluate("(e) => e.click()",btn)
+                        driver.evaluate("(e) => e.click()",btn)
                 except Exception:
                     pass
 
@@ -5396,7 +5386,7 @@ def handle_consent_screen(driver):
     # 4) Confirmit/Forsta : bouton "Suivant" souvent SANS texte (icône) -> .cf-navigation-next
     # Exemple DOM: <button class="cf-navigation__button cf-navigation-next"><img title="Suivant"></button>
     try:
-        next_buttons = _pw_page(driver).query_selector_all("#navButtons button.cf-navigation-next, button.cf-navigation-next, .cf-navigation__button.cf-navigation-next")
+        next_buttons = driver.query_selector_all("#navButtons button.cf-navigation-next, button.cf-navigation-next, .cf-navigation__button.cf-navigation-next")
         for nb in next_buttons:
             try:
                 if not nb.is_visible():
@@ -5467,7 +5457,7 @@ def handle_drag_drop_logic(driver):
         intercept_only = (os.getenv("CTA_INTERCEPT_ONLY", "") or "").strip().lower() in {"1", "true", "yes", "on"}
         cta_found = False
         try:
-            candidates = _pw_page(driver).query_selector_all("button[aria-label='Go to next question']")
+            candidates = driver.query_selector_all("button[aria-label='Go to next question']")
             cta_found = any(_is_enabled(btn) for btn in candidates)
         except Exception:
             cta_found = False
@@ -5501,7 +5491,7 @@ def handle_drag_drop_logic(driver):
         (cas typique d'un chargement incomplet côté Angular CDK).
         """
         try:
-            return bool(_pw_page(driver).evaluate("""() => {
+            return bool(driver.evaluate("""() => {
                 const drags = Array.from(document.querySelectorAll('[cdkdrag], .cdk-drag'));
                 if (!drags.length) return false;
                 return drags.some(function(el) {
@@ -5527,9 +5517,9 @@ def handle_drag_drop_logic(driver):
         exécute le drag (CDP ou ActionChains) et valide le résultat.
         Retourne True si le drag a abouti (drop_zone remplie ou bouton Next activé).
         """
-        draggables = _pw_page(driver).query_selector_all("[cdkdrag], .cdk-drag, [draggable='true']")
+        draggables = driver.query_selector_all("[cdkdrag], .cdk-drag, [draggable='true']")
         try:
-            drop_zone = _pw_page(driver).query_selector("#dropZoneList.cdk-drop-list.drop-zone, #dropZoneList.drop-zone, #dropZoneList")
+            drop_zone = driver.query_selector("#dropZoneList.cdk-drop-list.drop-zone, #dropZoneList.drop-zone, #dropZoneList")
             print("[DRAGDROP] drop_zone_selected id=dropZoneList ok=true")
         except Exception:
             print("[DRAGDROP] drop_zone_selected id=dropZoneList ok=false")
@@ -5580,7 +5570,7 @@ def handle_drag_drop_logic(driver):
 
         print(f"[DRAGDROP] source_found selector={source_selector}")
 
-        next_buttons = _pw_page(driver).query_selector_all("button[aria-label='Go to next question']")
+        next_buttons = driver.query_selector_all("button[aria-label='Go to next question']")
         next_button = next_buttons[0] if next_buttons else None
 
         offsets = [(0, 0), (15, 0)]
@@ -5589,9 +5579,9 @@ def handle_drag_drop_logic(driver):
         for idx, (ox, oy) in enumerate(offsets, start=1):
             print(f"[DRAGDROP] attempt={idx} start")
             try:
-                _pw_page(driver).evaluate("(e) => e.scrollIntoView({block:'center'})",source)
-                _pw_page(driver).evaluate("(e) => e.scrollIntoView({block:'center'})",drop_zone)
-                points = _pw_page(driver).evaluate("""() => {
+                driver.evaluate("(e) => e.scrollIntoView({block:'center'})",source)
+                driver.evaluate("(e) => e.scrollIntoView({block:'center'})",drop_zone)
+                points = driver.evaluate("""() => {
                     const src = _el;
                     const dst = _arg1;
                     const ox = arguments[2] || 0;
@@ -5630,7 +5620,7 @@ def handle_drag_drop_logic(driver):
                     continue
 
                 drag_done = False
-                _page = _pw_page(driver)
+                _page = driver
                 start_x = int(points.get("startX", 0))
                 start_y = int(points.get("startY", 0))
                 end_x = int(points.get("endX", 0))
@@ -5667,7 +5657,7 @@ def handle_drag_drop_logic(driver):
             while time.time() < deadline:
                 try:
                     in_drop_zone = bool(
-                        _pw_page(driver).evaluate("""() => {
+                        driver.evaluate("""() => {
                             const dst = _el;
                             if (!dst) return false;
                             const draggableInZone = dst.querySelector('[cdkdrag], .cdk-drag, [draggable="true"]');
@@ -5690,7 +5680,7 @@ def handle_drag_drop_logic(driver):
         return False
 
     # --- Extraction de la valeur cible depuis le titre de la question ---
-    title_candidates = _pw_page(driver).query_selector_all("p.question-title[psquestiontitle], p.question-title, [psquestiontitle]")
+    title_candidates = driver.query_selector_all("p.question-title[psquestiontitle], p.question-title, [psquestiontitle]")
     instruction = ""
     for title in title_candidates:
         txt = _el_text(title)
@@ -5709,7 +5699,7 @@ def handle_drag_drop_logic(driver):
     # pas encore initialisé), on rafraîchit la page une seule fois et on attend le rendu
     # avant de tenter le drag. Signal discriminant : au moins un [cdkdrag] dans le DOM
     # mais aucun avec getBoundingClientRect().width > 0. ---
-    cards_in_dom = bool(_pw_page(driver).query_selector_all("[cdkdrag], .cdk-drag"))
+    cards_in_dom = bool(driver.query_selector_all("[cdkdrag], .cdk-drag"))
     if cards_in_dom and not _cdkdrag_cards_ready():
         print("[DRAGDROP] cards_not_ready=true → refresh + wait (max 8s)")
         try:
@@ -5770,7 +5760,7 @@ def handle_error_recovery_screen(driver):
 
     if intercept_only:
         try:
-            _handle(btn).evaluate("(_el) => { _el.dispatchEvent(new MouseEvent('click', {bubbles:true, cancelable:true})); }")
+            btn.evaluate("(_el) => { _el.dispatchEvent(new MouseEvent('click', {bubbles:true, cancelable:true})); }")
             log_info(TAG, "CTA trouvé + interception OK (CTA_INTERCEPT_ONLY)")
         except Exception as exc:
             log_info(TAG, f"CTA trouvé + interception impossible : {exc}")
@@ -5782,7 +5772,7 @@ def handle_error_recovery_screen(driver):
         except Exception as exc:
             log_debug(TAG, f"click() échoué, fallback JS : {exc}")
             try:
-                _pw_page(driver).evaluate("(e) => e.click()",btn)
+                driver.evaluate("(e) => e.click()",btn)
             except Exception:
                 return False
 
@@ -5820,7 +5810,7 @@ def handle_captcha_guard(driver):
 
     # ── Tencent CAPTCHA (slider puzzle) ── résolution automatique via 2Captcha
     try:
-        is_tencent = bool(_pw_page(driver).evaluate(
+        is_tencent = bool(driver.evaluate(
             "() => { var r = document.querySelector('#sliderpanel');if (!r) return false;return !!(r.querySelector('.verify-img-panel') || r.querySelector('.verify-gap') || r.querySelector('.verify-bar-area')); }"
         ))
     except Exception:
@@ -5885,7 +5875,7 @@ def handle_captcha_guard(driver):
 
     # Après rsolution: attendre que (1) l'URL change OU (2) le widget disparaisse
     try:
-        before_url = _pw_page(driver).url
+        before_url = driver.url
     except Exception:
         before_url = ""
 
@@ -5893,7 +5883,7 @@ def handle_captcha_guard(driver):
 
     while time.time() < deadline:
         try:
-            cur_url = _pw_page(driver).url
+            cur_url = driver.url
         except Exception:
             cur_url = ""
 
@@ -5902,7 +5892,7 @@ def handle_captcha_guard(driver):
             return True
 
         try:
-            still_there = bool(_handle(target_id).evaluate("""(_el) => {
+            still_there = bool(target_id.evaluate("""(_el) => {
                 const isVisible = (e) => {
                   try{
                     const cs = getComputedStyle(e);
@@ -6015,7 +6005,7 @@ def _aa__contains(hay: str, needle: str) -> bool:
 
 def _aa__safe_scroll_center(driver, el) -> None:
     try:
-        _handle(el).evaluate("(_el) => { _el.scrollIntoView({block:'center', inline:'center'}); }")
+        el.evaluate("(_el) => { _el.scrollIntoView({block:'center', inline:'center'}); }")
     except Exception:
         pass
 
@@ -6046,7 +6036,7 @@ def _aa__safe_click(driver, el) -> bool:
         pass
 
     try:
-        _pw_page(driver).evaluate("(e) => e.click()",el)
+        driver.evaluate("(e) => e.click()",el)
         return True
     except Exception:
         return False
@@ -6070,7 +6060,7 @@ def _aa__try_answer_matrix(driver, full_question: str, choice_text: str) -> bool
 
     # Garde-fou : on n'active ce helper que si on détecte app-matrix-question (Ask&Answer)
     try:
-        if not _pw_page(driver).query_selector_all("//app-matrix-question"):
+        if not driver.query_selector_all("//app-matrix-question"):
             return False
     except Exception:
         return False
@@ -6086,7 +6076,7 @@ def _aa__try_answer_matrix(driver, full_question: str, choice_text: str) -> bool
 
     # ========== 1) Desktop table visible ==========
     try:
-        tables = _pw_page(driver).query_selector_all("//app-matrix-question//table[contains(@class,'mat-table')]")
+        tables = driver.query_selector_all("//app-matrix-question//table[contains(@class,'mat-table')]")
     except Exception:
         tables = []
 
@@ -6171,7 +6161,7 @@ def _aa__try_answer_matrix(driver, full_question: str, choice_text: str) -> bool
     # (utile si la table est cachée par responsive)
     if statement_key:
         try:
-            panels = _pw_page(driver).query_selector_all("//app-matrix-question//mat-expansion-panel")
+            panels = driver.query_selector_all("//app-matrix-question//mat-expansion-panel")
         except Exception:
             panels = []
 
@@ -6415,9 +6405,9 @@ def execute_action(
                             )
                             if _adc_dk_xpath:
                                 try:
-                                    _dk_el = _pw_page(driver).query_selector(_adc_dk_xpath)
-                                    _pw_page(driver).evaluate("(e) => e.scrollIntoView({block:'center'})",_dk_el)
-                                    _pw_page(driver).evaluate("(e) => e.click()",_dk_el)
+                                    _dk_el = driver.query_selector(_adc_dk_xpath)
+                                    driver.evaluate("(e) => e.scrollIntoView({block:'center'})",_dk_el)
+                                    driver.evaluate("(e) => e.click()",_dk_el)
                                     log_info("[TARGET]", "apply ok=true strategy=askia_adc_slider_dk reason=applied")
                                     # Cache
                                     _radio_cache_adc = _get_block_strategy_memory(driver).get("radio", {})
@@ -6431,7 +6421,7 @@ def execute_action(
                             _adc_pos = int(_adc_numeric)   # 0–10
                             _adc_ok = False
                             try:
-                                _adc_ok = bool(_pw_page(driver).evaluate("""() => {
+                                _adc_ok = bool(driver.evaluate("""() => {
                                     var name = _el, pos = _arg1;
                                     var inp = document.querySelector("input[type='hidden'][name='" + name + "']");
                                     if (!inp) return false;
@@ -6463,7 +6453,7 @@ def execute_action(
                                     var sc = container.querySelector('.sliderContainer');
                                     if (sc) { sc.classList.add('selected'); }
                                     return true;
-}""", [_handle(_adc_input_name), _adc_pos]))
+}""", [_adc_input_name, _adc_pos]))
                             except Exception as _adc_e:
                                 log_debug("[TARGET_DEBUG]", f"askia_adc_slider JS inject failed: {_short_exc(_adc_e)}")
 
@@ -6526,7 +6516,7 @@ def execute_action(
                         #   - .option_checkbox.input_on
                         #   - .option_label.input_label_on
                         try:
-                            verified = _pw_page(driver).evaluate(r"""() => {
+                            verified = driver.evaluate(r"""() => {
                                 const tid = _el;
                                 if (!tid) return true;
 
@@ -6950,7 +6940,7 @@ def execute_actions_plan(
     driver._decipher_ranksort_ordinal = 1
 
     try:
-        url_before = _pw_page(driver).url
+        url_before = driver.url
     except Exception:
         url_before = ""
 
@@ -7076,14 +7066,14 @@ def execute_actions_plan(
                 if (itype or "").strip().lower() == "dropdown":
                     rs = ""
                     try:
-                        rs = _pw_page(driver).evaluate("() => { return document.readyState }") or ""
+                        rs = driver.evaluate("() => { return document.readyState }") or ""
                     except Exception:
                         rs = ""
                     try:
-                        html_len = int(_pw_page(driver).evaluate("() => { return document.documentElement.outerHTML.length }") or 0)
+                        html_len = int(driver.evaluate("() => { return document.documentElement.outerHTML.length }") or 0)
                     except Exception:
                         html_len = 0
-                    before_sig = f"{_pw_page(driver).url}|{rs}|{html_len}"
+                    before_sig = f"{driver.url}|{rs}|{html_len}"
             except Exception:
                 before_sig = None
 
@@ -7094,7 +7084,7 @@ def execute_actions_plan(
                 try:
                     if (itype or "").strip().lower() in ("radio", "checkbox"):
                         _body_len_before = int(
-                            _pw_page(driver).evaluate("() => { return document.body.innerHTML.length }") or 0
+                            driver.evaluate("() => { return document.body.innerHTML.length }") or 0
                         )
                 except Exception:
                     _body_len_before = None
@@ -7125,14 +7115,14 @@ def execute_actions_plan(
                     stable_hits = 0
                     while time.time() - t0 < 10.0:
                         try:
-                            rs = _pw_page(driver).evaluate("() => { return document.readyState }") or ""
+                            rs = driver.evaluate("() => { return document.readyState }") or ""
                         except Exception:
                             rs = ""
                         try:
-                            html_len = int(_pw_page(driver).evaluate("() => { return document.documentElement.outerHTML.length }") or 0)
+                            html_len = int(driver.evaluate("() => { return document.documentElement.outerHTML.length }") or 0)
                         except Exception:
                             html_len = 0
-                        sig = f"{_pw_page(driver).url}|{rs}|{html_len}"
+                        sig = f"{driver.url}|{rs}|{html_len}"
 
                         # on veut au minimum: readyState complete ET un DOM non trivial
                         if rs == "complete" and html_len > 500:
@@ -7149,7 +7139,7 @@ def execute_actions_plan(
 
             if stop_on_navigation:
                 try:
-                    if _pw_page(driver).url != url_before:
+                    if driver.url != url_before:
                         break
                 except Exception:
                     pass
@@ -7200,7 +7190,7 @@ def execute_actions_plan(
                         if not same_question_block and _body_len_before is not None:
                             try:
                                 _body_len_after = int(
-                                    _pw_page(driver).evaluate("() => { return document.body.innerHTML.length }") or 0
+                                    driver.evaluate("() => { return document.body.innerHTML.length }") or 0
                                 )
                                 if _body_len_after == _body_len_before and _body_len_before > 0:
                                     same_question_block = True

@@ -2,7 +2,7 @@ import os
 import re
 import time
 
-from preselection.auth_handler import handle_proxy_error_page_if_needed, _pw_page
+from preselection.auth_handler import handle_proxy_error_page_if_needed
 from Survey.log_utils import log_debug, log_info
 
 # UUIDs de surveys bloquants (irrésolvables) accumulés sur la durée du processus.
@@ -64,7 +64,7 @@ def _wait_for_survey_popup(driver, timeout: int = 20) -> None:
     soit visuellement présent dans le DOM avant de continuer le traitement.
     Évite une extraction DOM prématurée juste après le clic sur une carte survey.
     """
-    page = _pw_page(driver)
+    page = driver
     try:
         page.wait_for_selector(
             "[data-test-id='ps-popup-content-wrapper'], "
@@ -98,7 +98,7 @@ def _click_button_with_optional_intercept(driver, element) -> bool:
     les handlers UI sans soumission réelle.
     element : Playwright ElementHandle
     """
-    page = _pw_page(driver)
+    page = driver
     if not _is_truthy_env(os.getenv("CTA_INTERCEPT_ONLY")):
         page.evaluate("(el) => el.click()", element)
         return True
@@ -130,7 +130,7 @@ def _handle_mystery_box_popup(driver) -> None:
     mystery_presence_selector = "[data-test-id^='ps-mystery-box-item-button']"
     complete_xpath = "xpath=//button[normalize-space()='Complète' or .//span[normalize-space()='Complète']]"
 
-    page = _pw_page(driver)
+    page = driver
     has_mystery_boxes = bool(page.query_selector_all(mystery_presence_selector))
     has_complete_btn = bool(page.query_selector_all(complete_xpath))
     if not (has_mystery_boxes and has_complete_btn):
@@ -198,7 +198,7 @@ def _parse_duration_min(text: str):
 
 
 def _find_survey_cards(driver):
-    page = _pw_page(driver)
+    page = driver
     selectors = [
         "div.survey-tile",
         "[class*='survey-tile']",
@@ -257,15 +257,12 @@ def _read_first_question_from_card(driver, card) -> "str | None":
     try:
         from preselection.question_analyzer import extract_popup_html, extract_question_text
 
-        page = _pw_page(driver)
+        page = driver
         card.evaluate("(el) => el.scrollIntoView({block:'center'})")
         page.evaluate("(el) => el.click()", card)
         time.sleep(1.5)  # laisser le popup s'ouvrir
 
-        # Pont BLOC 1 → BLOC 2 : extract_popup_html utilise l'API shim (page_source, find_elements)
-        from preselection.playwright_shim import PlaywrightDriverShim as _PwShim
-        _shim_tmp = _PwShim(page.context, page.context, page)
-        html = extract_popup_html(_shim_tmp)
+        html = extract_popup_html(page)
         raw_question = extract_question_text(html)
 
         first_q = None
@@ -408,7 +405,7 @@ def _wait_for_spa_ready(driver, timeout: int = 60) -> bool:
     - attend qu'au moins un élément de navigation principal soit présent dans le DOM
     Retourne True si prêt, False si timeout.
     """
-    page = _pw_page(driver)
+    page = driver
     nav_selectors = [
         "[data-test-id='surveys-nav']",
         "[data-test-id='home-page-nav']",
@@ -428,7 +425,7 @@ def _wait_for_spa_ready(driver, timeout: int = 60) -> bool:
 
 
 def go_to_best_value_survey(driver):
-    page = _pw_page(driver)
+    page = driver
 
     # Attendre que la SPA soit réellement montée avant toute interaction nav
     if not _wait_for_spa_ready(driver, timeout=60):

@@ -254,18 +254,8 @@ except ImportError:
 
 
 
-def _pw_page(d):
-    """Extrait la Page Playwright native depuis un PlaywrightDriverShim ou retourne d tel quel."""
-    if hasattr(d, '_page'):
-        return d._page
-    return d
 
 
-def _handle(el):
-    """Extrait le ElementHandle Playwright natif depuis un PlaywrightElementShim, ou retourne el."""
-    if hasattr(el, '_h'):
-        return el._h
-    return el
 
 def _is_auxiliary_text_for_choice_group(driver, el, container, question: str) -> bool:
     """
@@ -325,13 +315,13 @@ def _is_auxiliary_text_for_choice_group(driver, el, container, question: str) ->
 
     # Garde-fou JS pour les structures qui n'exposent pas bien les ancêtres.
     try:
-        inline_with_choice = bool(_pw_page(driver).evaluate(
+        inline_with_choice = bool(driver.evaluate(
             """([el, container]) => {
             if (!el || !container || !el.closest || !container.contains) return false;
             const optionRoot = el.closest('.answer_options, label, li, .option, .form-check, [role="radio"], [role="checkbox"], .cf-radio-answer, .cf-checkbox-answer');
             if (!optionRoot || !container.contains(optionRoot)) return false;
             return !!optionRoot.querySelector('input[type="radio"], input[type="checkbox"], [role="radio"], [role="checkbox"]');
-        }""", [_handle(el), _handle(container)]))
+        }""", [el, container]))
         if inline_with_choice:
             return True
     except Exception:
@@ -655,7 +645,7 @@ def _is_other_specify_choice_companion(driver, el, container, question: str) -> 
         return False
 
     try:
-        is_other_context = bool(_pw_page(driver).evaluate(
+        is_other_context = bool(driver.evaluate(
             r"""([el, container]) => {
             if (!el || !container || !container.contains(el)) return false;
             const norm = (v) => (v || '').toLowerCase().replace(/\s+/g, ' ').trim();
@@ -671,7 +661,7 @@ def _is_other_specify_choice_companion(driver, el, container, question: str) -> 
             const prevTxt = norm(prev ? (prev.textContent || prev.innerText || '') : '');
             if (kw.some(k => prevTxt.includes(k))) return true;
             return false;
-        }""", [_handle(el), _handle(container)]))
+        }""", [el, container]))
     except Exception:
         is_other_context = False
 
@@ -732,7 +722,7 @@ def _selection_signal_text(driver, el, question_text: str | None = None) -> str:
         parts.append(q)
 
     try:
-        instruction = _norm(_pw_page(driver).evaluate(
+        instruction = _norm(driver.evaluate(
             r"""(el) => {
             if (!el) return '';
             const norm = (v) => (v || '').replace(/\s+/g, ' ').trim();
@@ -757,7 +747,7 @@ def _selection_signal_text(driver, el, question_text: str | None = None) -> str:
               }
             }
             return '';
-        }""", _handle(el)))
+        }""", el))
     except Exception:
         instruction = ""
 
@@ -774,7 +764,7 @@ def _choice_option_has_inline_open_text(driver, choice_el) -> bool:
     comme choix fermé.
     """
     try:
-        return bool(_pw_page(driver).evaluate(
+        return bool(driver.evaluate(
             r"""(el) => {
             if (!el) return false;
             const isVisible = (node) => {
@@ -810,7 +800,7 @@ def _choice_option_has_inline_open_text(driver, choice_el) -> bool:
               }
             }
             return false;
-        }""", _handle(choice_el)))
+        }""", choice_el))
     except Exception:
         return False
 
@@ -824,7 +814,7 @@ def _get_choice_trailing_open_info(driver, choice_el) -> dict | None:
     à supprimer.
     """
     try:
-        result = _pw_page(driver).evaluate(
+        result = driver.evaluate(
             r"""(el) => {
             if (!el) return null;
             const label = el.closest('label')
@@ -839,7 +829,7 @@ def _get_choice_trailing_open_info(driver, choice_el) -> dict | None:
             const r = inp.getBoundingClientRect();
             if (r.width === 0 && r.height === 0) return null;
             return { name: inp.name || '', id: inp.id || '' };
-        }""", _handle(choice_el))
+        }""", choice_el)
         if result and (result.get("name") or result.get("id")):
             return result
         return None
@@ -853,11 +843,11 @@ def _is_modal_related_control(driver, el) -> bool:
     pour éviter de les interpréter comme des questions.
     """
     try:
-        in_modal = _pw_page(driver).evaluate(
+        in_modal = driver.evaluate(
             """(el) => {
             if (!el || !el.closest) return false;
             return !!el.closest('.modal, [role="dialog"], [role="alertdialog"], [aria-modal="true"], [id*="modal" i], [id*="dialog" i], [id*="overlay" i], [id*="refuse" i], [id*="confirm" i]');
-        }""", _handle(el))
+        }""", el)
         if bool(in_modal):
             return True
     except Exception:
@@ -1854,7 +1844,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             pass
 
         try:
-            return bool(_pw_page(driver).evaluate(
+            return bool(driver.evaluate(
                 r"""(el) => {
                 if (!el) return false;
                 const isVisible = (node) => {
@@ -1884,7 +1874,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                 const optionWrapper = el.closest('[role="radio"], [role="checkbox"], .form-check, .option, li, .choice, .answer_options, [class*="answer_options"], div.answer');
                 if (isVisible(optionWrapper)) return true;
                 return false;
-            }""", _handle(el)))
+            }""", el))
         except Exception:
             return False
 
@@ -1926,7 +1916,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                 has_visible_radiolayout = False
                 if container:
                     try:
-                        has_visible_radiolayout = bool(_pw_page(driver).evaluate(
+                        has_visible_radiolayout = bool(driver.evaluate(
                             """(container) => {
                             if (!container) return false;
                             const rows = container.querySelectorAll('.radioLayout');
@@ -1939,7 +1929,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                               if (r.width > 0 && r.height > 0) return true;
                             }
                             return false;
-                        }""", _handle(container)))
+                        }""", container))
                     except Exception:
                         has_visible_radiolayout = False
                 if not (
@@ -1997,9 +1987,9 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                 container = _nearest_question_container(els[0])
                 if container is None:
                     continue
-                uid = _pw_page(driver).evaluate(
+                uid = driver.evaluate(
                     "(el) => { if (!el.__sq_uid__) { el.__sq_uid__ = ++((window.__sq_uid__ = window.__sq_uid__ || 0)); } return el.__sq_uid__; }",
-                    _handle(container),
+                    container,
                 )
                 if uid is None:
                     continue
@@ -2200,7 +2190,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             # le DOM, élément .muted visible avec texte non déjà inclus.
             if question:
                 try:
-                    muted_instruction = _norm(_pw_page(driver).evaluate(
+                    muted_instruction = _norm(driver.evaluate(
                         """() => {
                         const labelEl = document.querySelector('#label');
                         if (!labelEl || !labelEl.parentElement) return '';
@@ -2489,7 +2479,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         vu isolément et le fallback texte prend la main.
         """
         try:
-            host = _pw_page(driver).evaluate(
+            host = driver.evaluate(
                 r"""(el) => {
                 if (!el || !el.parentElement) return null;
                 const navTokens = ['next','suivant','continue','continuer','submit','start','back','retour','previous'];
@@ -2518,7 +2508,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                   if (nonNav >= 2) return cur;
                 }
                 return null;
-            }""", _handle(el))
+            }""", el)
             if host:
                 return host
         except Exception:
@@ -2573,14 +2563,14 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                 return True
 
             return bool(
-                _pw_page(driver).evaluate(
+                driver.evaluate(
                     """(el) => {
                     if (!el || !(el instanceof Element)) return false;
                     if (el.closest('div.bootstrap-select')) return true;
                     const dt = (el.getAttribute('data-toggle') || '').trim().toLowerCase();
                     if (dt === 'dropdown' && el.classList.contains('dropdown-toggle')) return true;
                     return false;
-                }""", _handle(el))
+                }""", el)
             )
         except Exception:
             return False
@@ -2601,7 +2591,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             try:
                 if b.get_attribute("data-cky-tag") is not None:
                     continue
-                _in_cky = _pw_page(driver).evaluate("(el) => el.closest('.cky-consent-container') !== null", _handle(b))
+                _in_cky = driver.evaluate("(el) => el.closest('.cky-consent-container') !== null", b)
                 if _in_cky:
                     continue
             except Exception:
@@ -2611,7 +2601,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             # dans .interview-footer__options-container sont des options de navigation
             # de page, pas des choix de réponse. Guard DOM strict : ancêtre direct.
             try:
-                _in_footer = _pw_page(driver).evaluate("(el) => el.closest('.interview-footer__options-container') !== null", _handle(b))
+                _in_footer = driver.evaluate("(el) => el.closest('.interview-footer__options-container') !== null", b)
                 if _in_footer:
                     continue
             except Exception:
@@ -2642,7 +2632,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                 continue
             if _b_tag == "tr":
                 try:
-                    _in_thead = _pw_page(driver).evaluate("(el) => el.closest('thead') !== null", _handle(b))
+                    _in_thead = driver.evaluate("(el) => el.closest('thead') !== null", b)
                     if _in_thead:
                         continue
                 except Exception:
@@ -2721,7 +2711,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             if _btns_are_tr:
                 # Extract lookup table columns and row metadata from the enclosing <table>
                 try:
-                    _table_el = _pw_page(driver).evaluate("(el) => el.closest('table')", _handle(btns[0]))
+                    _table_el = driver.evaluate("(el) => el.closest('table')", btns[0])
                     if _table_el:
                         _th_els = _table_el.query_selector_all("thead th")
                         _lookup_columns = [
@@ -2755,7 +2745,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             # Scopé strictement : déclenché uniquement si cf-question__text non vide trouvé.
             if cont:
                 try:
-                    _cf_q_text = _pw_page(driver).evaluate(
+                    _cf_q_text = driver.evaluate(
                         """(el) => {
                         const cfq = el.closest('[class*="cf-question"]');
                         if (!cfq) return null;
@@ -2765,7 +2755,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                         const parts = [txt.innerText.trim()];
                         if (instr && instr.innerText.trim()) parts.push(instr.innerText.trim());
                         return parts.join(' ');
-                    }""", _handle(cont))
+                    }""", cont)
                     if _cf_q_text:
                         question = _norm(_cf_q_text)
                 except Exception:
@@ -2783,7 +2773,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             # la préfixe au hint déjà extrait (ex : "CHOISISSEZ UNE OU PLUSIEURS RÉPONSES").
             # Guard DOM strict : les deux sélecteurs doivent exister simultanément.
             try:
-                _in_interview_q = _pw_page(driver).evaluate("(el) => el.closest('.interview-question') !== null", _handle(cont)) if cont else False
+                _in_interview_q = driver.evaluate("(el) => el.closest('.interview-question') !== null", cont) if cont else False
                 if _in_interview_q:
                     _h1_els = driver.query_selector_all("h1.interview-header__title")
                     if _h1_els:
@@ -2806,7 +2796,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             # l'instruction dans div.itemRulesWrapper — tous deux hors scope du
             # conteneur div.css-gos33m. Guard DOM strict : .pollItemWrap + h2.pollItemTitle.
             try:
-                _poll_wrap = _pw_page(driver).evaluate("(el) => el.closest('.pollItemWrap')", _handle(cont)) if cont else None
+                _poll_wrap = driver.evaluate("(el) => el.closest('.pollItemWrap')", cont) if cont else None
                 if _poll_wrap:
                     _h2_els = _poll_wrap.query_selector_all("h2.pollItemTitle")
                     if _h2_els:
@@ -2847,7 +2837,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             # Sinon → comportement par défaut radio/1.
             _is_choice_multiple = False
             try:
-                _is_choice_multiple = _pw_page(driver).evaluate(
+                _is_choice_multiple = driver.evaluate(
                     """(btn) => {
                     const ul = btn.closest('ul[data-test-id="ChoiceMultiple_ChoiceFields"]');
                     if (ul !== null) return true;
@@ -2857,7 +2847,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                         return cls.includes('image-select') || cls.includes('image-choice-question__answers');
                     }
                     return false;
-                }""", _handle(btns[0]))
+                }""", btns[0])
             except Exception:
                 _is_choice_multiple = False
 
@@ -3173,7 +3163,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                         # Extraire le textContent complet du td en excluant le contenu
                         # du span#indic (sous-titre instructionnel) et les inputs/selects.
                         parent_full_txt = _norm(
-                            _pw_page(driver).evaluate(
+                            driver.evaluate(
                                 """(td) => {
                                 if (!td) return '';
                                 const clone = td.cloneNode(true);
@@ -3181,7 +3171,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                                 const indic = clone.querySelector('#indic, span[id="indic"]');
                                 if (indic) indic.remove();
                                 return (clone.innerText || clone.textContent || '').replace(/\s+/g, ' ').trim();
-                            }""", _handle(parent_td)
+                            }""", parent_td
                             ) or ""
                         )
                         # Le titre global est valide s'il est substantiellement plus long
@@ -3259,9 +3249,9 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                 try:
                     _role_opt = _norm_lc(el.get_attribute("role") or "")
                     if _role_opt == "option":
-                        _in_custom = _pw_page(driver).evaluate(
+                        _in_custom = driver.evaluate(
                             "(el) => el.closest('.choice-question__custom-field-container') !== null",
-                            _handle(el),
+                            el,
                         )
                         if _in_custom:
                             log_debug("[DOM_DEBUG]", "skip_interview_layout_custom_text_field role=option")
@@ -3284,7 +3274,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                         or "answer__other" in cls_lc
                     )
                     if looks_like_other:
-                        linked_to_choice = bool(_pw_page(driver).evaluate(
+                        linked_to_choice = bool(driver.evaluate(
                             """(el) => {
                             if (!el) return false;
                             const wrappers = ['.cf-radio-answer', '.cf-checkbox-answer', '[role="radio"]', '[role="checkbox"]', '.cf-ranking-answer'];
@@ -3292,7 +3282,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                             const parent = el.parentElement;
                             if (!parent) return false;
                             return !!parent.querySelector('[role="radio"], [role="checkbox"], .cf-radio, .cf-checkbox');
-                        }""", _handle(el)))
+                        }""", el))
                         if linked_to_choice:
                             continue
                 except Exception:
@@ -3820,7 +3810,7 @@ def _find_fullscreen_iframe_idx(driver) -> "int | None":
     Garde-fou DOM strict: style doit contenir position:fixed ET width:100% ET height:100%.
     Ne détecte pas les iframes partielles.
     """
-    page = _pw_page(driver)
+    page = driver
     try:
         frames = page.query_selector_all("iframe, frame")
     except Exception:
@@ -3887,7 +3877,7 @@ def analyze_dom(driver) -> List[Dict[str, Any]]:
             return False
 
         try:
-            cards = _pw_page(driver).query_selector_all("li.sq-cardsort-card[atmost]")
+            cards = driver.query_selector_all("li.sq-cardsort-card[atmost]")
         except Exception:
             return False
 

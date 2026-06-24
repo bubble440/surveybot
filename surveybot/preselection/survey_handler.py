@@ -4,11 +4,6 @@ from Cash.payout import _payout_and_check_daily_stop
 IS_LOCAL = os.getenv("RUN_ENV", "local") == "local"
 
 
-def _pw_page(d):
-    """Extrait la Page Playwright native depuis un PlaywrightDriverShim ou retourne d tel quel."""
-    if hasattr(d, "_page"):
-        return d._page
-    return d
 
 # FIX-B3: _restart_depth était un global partagé entre threads.
 # Un soft_restart peut relancer run_survey() depuis n'importe quel thread
@@ -37,11 +32,11 @@ from Cash.payout import MIN_CASHOUT_EUR
 def _safe_page_text(driver) -> str:
     """Récupère un texte exploitable pour les détecteurs (robuste)."""
     try:
-        page = _pw_page(driver)
+        page = driver
         return page.evaluate("() => document.body ? (document.body.innerText || '') : ''") or ""
     except Exception:
         try:
-            return _pw_page(driver).content() or ""
+            return driver.content() or ""
         except Exception:
             return ""
 
@@ -49,7 +44,7 @@ def _safe_page_text(driver) -> str:
 def is_topsurveys_preselection_popup(driver) -> bool:
     """Détection DOM minimale d'un popup de présélection TopSurveys déjà affiché."""
     try:
-        page = _pw_page(driver)
+        page = driver
         return bool(page.evaluate("""() => {
             try {
               const inTopSurveys = /(^|\.)topsurveys\\.app$/i.test(location.hostname || '')
@@ -89,7 +84,7 @@ def run_attach_preselection_takeover(
     import preselection.question_analyzer
     import preselection.response_executor
 
-    page = _pw_page(driver)
+    page = driver
 
     # FIX popup_not_detected : _wait_for_survey_popup (BLOC 1) attend ps-popup-content-wrapper,
     # mais is_topsurveys_preselection_popup requiert ps-common-actions-button (rendu plus tard
@@ -166,7 +161,7 @@ def run_attach_preselection_takeover(
             pass
 
         try:
-            base_handles = set(driver.window_handles)
+            base_handles = set(driver.context.pages)
         except Exception:
             base_handles = set()
 
@@ -306,7 +301,7 @@ def _run_survey_impl(driver, api_key, *, account_id: str, ctx=None, payout_name:
             # STUCK DETECTION: même page scannée N fois → soft-restart
             # =================================================================
             try:
-                _cur_url = _pw_page(driver).url
+                _cur_url = driver.url
             except Exception:
                 _cur_url = ""
             _scan_key = (_cur_url, str(question)[:150] if question else "")
@@ -351,7 +346,7 @@ def _run_survey_impl(driver, api_key, *, account_id: str, ctx=None, payout_name:
                                 pass
                         else:
                             # 2) Sinon, fallback bouton skip TopSurveys (quand il existe)
-                            skip_btn = _pw_page(driver).query_selector(
+                            skip_btn = driver.query_selector(
                                 "button[data-test-id='ps-skip-question-button']"
                             )
                             if not skip_btn:
@@ -474,11 +469,10 @@ def _run_survey_impl(driver, api_key, *, account_id: str, ctx=None, payout_name:
                             pass
                         try:
                             # Pont BLOC 2 → BLOC 3a : solve_full_survey attend une Page
-                            # native depuis BLOC 3a. _pw_page(driver) extrait driver._page
+                            # native depuis BLOC 3a. driver extrait driver._page
                             # (shim mis à jour vers l'onglet externe par switch_to_latest_window).
-                            from preselection.auth_handler import _pw_page as _ss_pw_page
                             Survey.survey_solver.solve_full_survey(
-                                _ss_pw_page(driver),
+                                _ssdriver,
                                 api_key=api_key,
                                 account_id=account_id,
                                 survey_context=ctx,

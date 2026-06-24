@@ -10,18 +10,8 @@ Ce module contient:
 Toutes ces fonctions sont utilisées par les autres modules input_*.py
 """
 
-def _pw_page(d):
-    """Extrait la Page Playwright native depuis un PlaywrightDriverShim ou retourne d tel quel."""
-    if hasattr(d, "_page"):
-        return d._page
-    return d
 
 
-def _handle(el):
-    """Extrait le ElementHandle natif depuis un PlaywrightElementShim (_h) ou retourne el."""
-    if hasattr(el, "_h"):
-        return el._h
-    return el
 import unicodedata
 import re
 import time
@@ -260,16 +250,16 @@ def pause_here(msg="Appuie sur Entrée pour continuer…"):
 
 def scroll_into_view(driver, el):
     """Scroll l'élément au centre du viewport."""
-    _pw_page(driver).evaluate(
-        "(el) => el.scrollIntoView({block:'center', inline:'center'})", _handle(el)
+    driver.evaluate(
+        "(el) => el.scrollIntoView({block:'center', inline:'center'})", el
     )
 
 
 def js_click(driver, el):
     """Scroll + click via JavaScript."""
-    page = _pw_page(driver)
-    page.evaluate("(el) => el.scrollIntoView({block:'center',inline:'center'})", _handle(el))
-    page.evaluate("(el) => el.click()", _handle(el))
+    page = driver
+    page.evaluate("(el) => el.scrollIntoView({block:'center',inline:'center'})", el)
+    page.evaluate("(el) => el.click()", el)
 
 
 def safe_click(driver, el, *, trace: str = "") -> bool:
@@ -318,8 +308,8 @@ def safe_click(driver, el, *, trace: str = "") -> bool:
 
     # 2) ActionChains
     try:
-        _handle(el).hover()
-        _handle(el).click()
+        el.hover()
+        el.click()
         _bump("actionchains")
         return True
     except Exception:
@@ -382,13 +372,13 @@ def set_input_value_with_events(driver, el, value: str):
     except Exception:
         pass
     try:
-        _pw_page(driver).keyboard.press("Control+a")
-        _pw_page(driver).keyboard.press("Backspace")
+        driver.keyboard.press("Control+a")
+        driver.keyboard.press("Backspace")
         el.type(value)
     except Exception:
-        _pw_page(driver).evaluate("([e,v]) => { e.value = v; }", [_handle(el), value])
+        driver.evaluate("([e,v]) => { e.value = v; }", [el, value])
     # Events attendus par les frameworks JS (Vue/React/Angular)
-    _pw_page(driver).evaluate("""([e, v]) => {
+    driver.evaluate("""([e, v]) => {
         if (!e) return;
         try {
           const proto = (e.tagName || '').toLowerCase() === 'textarea'
@@ -404,7 +394,7 @@ def set_input_value_with_events(driver, el, value: str):
         for (const t of ["input","change","blur","focusout"]) {
           try { e.dispatchEvent(new Event(t, {bubbles:true})); } catch(_){}
         }
-    }""", [_handle(el), value])
+    }""", [el, value])
 
 
 def find_inputs_by_hint(driver, kind: str):
@@ -625,8 +615,8 @@ def ensure_open_ended_open(
                             return True
             except Exception:
                 try:
-                    _handle(el).hover()
-                    _handle(el).click()
+                    el.hover()
+                    el.click()
                 except Exception:
                     pass
 
@@ -662,7 +652,7 @@ def viewport_penalty(driver, el) -> float:
         r = el.bounding_box() or {}
         if not r:
             return 999.0
-        page = _pw_page(driver)
+        page = driver
         vp_height = page.evaluate("() => window.innerHeight") or 800
         vp_width = page.evaluate("() => window.innerWidth") or 1200
         

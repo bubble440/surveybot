@@ -5,10 +5,6 @@ from typing import List
 from platforms.base import Platform
 
 
-def _pw_page(d):
-    if hasattr(d, '_page'):
-        return d._page
-    return d
 
 
 class TopSurveysPlatform(Platform):
@@ -33,7 +29,7 @@ class TopSurveysPlatform(Platform):
 
     def is_on_platform(self, driver) -> bool:
         try:
-            url = (_pw_page(driver).url or "").lower()
+            url = (driver.url or "").lower()
             return any(d in url for d in self.get_domains())
         except Exception:
             return False

@@ -12,18 +12,8 @@ Dépendances:
 - input_utils pour les fonctions utilitaires
 """
 
-def _pw_page(d):
-    """Extrait la Page Playwright native depuis un PlaywrightDriverShim ou retourne d tel quel."""
-    if hasattr(d, "_page"):
-        return d._page
-    return d
 
 
-def _handle(el):
-    """Extrait le ElementHandle natif depuis un PlaywrightElementShim (_h) ou retourne el."""
-    if hasattr(el, "_h"):
-        return el._h
-    return el
 
 
 
@@ -196,14 +186,14 @@ def click_decipher_grid_radio(driver, label: str, context_hint: str = "") -> boo
         log_debug("[TARGET_DEBUG]", f"decipher_grid_radio: target_found row={context_hint!r} col={label!r} by={target_by}")
         try:
             target = lab or inp or cell
-            _pw_page(driver).evaluate("(el) => el.scrollIntoView({block:\'center\'})", _handle(target))
+            driver.evaluate("(el) => el.scrollIntoView({block:\'center\'})", target)
             try:
                 target.click()
             except Exception:
-                _handle(target).hover(); _handle(target).click()
+                target.hover(); target.click()
         except Exception:
             try:
-                _pw_page(driver).evaluate("(el) => el.click()", _handle(target))
+                driver.evaluate("(el) => el.click()", target)
             except Exception:
                 log_debug("[TARGET_DEBUG]", f"decipher_grid_radio: click_failed row={context_hint!r} col={label!r}")
                 if rowneedle:
@@ -302,11 +292,11 @@ def click_decipher_grid_radio_strict(driver, label: str, context_hint: str = "")
                         inp = tr.query_selector("xpath=" + f".//input[@type='radio' and @id={xpath_literal(fid)}]")
                 except Exception:
                     inp = None
-                _pw_page(driver).evaluate("(el) => el.scrollIntoView({block:\'center\'})", _handle(lab))
+                driver.evaluate("(el) => el.scrollIntoView({block:\'center\'})", lab)
                 try:
                     lab.click()
                 except Exception:
-                    _pw_page(driver).evaluate("(el) => el.click()", _handle(lab))
+                    driver.evaluate("(el) => el.click()", lab)
                 time.sleep(0.08)
             except Exception:
                 pass
@@ -451,7 +441,7 @@ def click_decipher_mx_carousel_radio(driver, label: str, context_hint: str = "")
     '''
 
     try:
-        click_result = _pw_page(driver).evaluate("(arg) => {" + js_click + "}", stage, rowneedle, colneedle) or {}
+        click_result = driver.evaluate("(arg) => {" + js_click + "}", stage, rowneedle, colneedle) or {}
     except Exception:
         return False
 
@@ -478,7 +468,7 @@ def click_decipher_mx_carousel_radio(driver, label: str, context_hint: str = "")
         verified = False
         while __import__('time').time() < deadline:
             try:
-                verified = _pw_page(driver).evaluate(
+                verified = driver.evaluate(
                     """([rowToken, colToken]) => {
                         const inputs = Array.from(document.querySelectorAll('input[type="radio"]'));
                         for (const inp of inputs) {
@@ -550,14 +540,14 @@ def click_radio_label_in_scope(driver, scope, label_text: str) -> bool:
         return False
 
     try:
-        _pw_page(driver).evaluate("(el) => el.scrollIntoView({block:\'center\'})", _handle(best))
+        driver.evaluate("(el) => el.scrollIntoView({block:\'center\'})", best)
         try:
             best.click()
         except Exception:
-            _handle(best).hover(); _handle(best).click()
+            best.hover(); best.click()
         time.sleep(0.05)
         if not getattr(inp, "is_selected", lambda: False)():
-            _handle(inp).evaluate("""(_el) => {
+            inp.evaluate("""(_el) => {
                 const r=_el;
                 try{ r.click(); }catch(e){}
                 try{ r.checked=true; }catch(e){}
@@ -649,7 +639,7 @@ def fallback_click_radio_js_generic(driver, target_text: str) -> bool:
     return false;
     """
     try:
-        return bool(_pw_page(driver).evaluate("(arg) => {" + js + "}", target_text))
+        return bool(driver.evaluate("(arg) => {" + js + "}", target_text))
     except Exception:
         return False
 
@@ -731,7 +721,7 @@ def click_kantar_rowpicker_radio(driver, label: str) -> bool:
     """
 
     try:
-        overlay = _pw_page(driver).evaluate("(arg) => {" + _JS_FIND + "}", label)
+        overlay = driver.evaluate("(arg) => {" + _JS_FIND + "}", label)
     except Exception:
         return False
 
@@ -742,7 +732,7 @@ def click_kantar_rowpicker_radio(driver, label: str) -> bool:
         overlay.click()
     except Exception:
         try:
-            _handle(overlay).hover(); _handle(overlay).click()
+            overlay.hover(); overlay.click()
         except Exception:
             log_debug("[TARGET_DEBUG]", f"kantar_rowpicker: overlay_click_failed label={label!r}")
             return False
@@ -750,7 +740,7 @@ def click_kantar_rowpicker_radio(driver, label: str) -> bool:
     time.sleep(0.15)
 
     try:
-        ok = bool(_pw_page(driver).evaluate("(arg) => {" + _JS_VERIFY + "}", label))
+        ok = bool(driver.evaluate("(arg) => {" + _JS_VERIFY + "}", label))
     except Exception:
         ok = False
 
@@ -853,9 +843,9 @@ def click_radio_by_label(driver, label: str, context_hint: str | None = None) ->
     try:
         tr = scope.query_selector("xpath=" + f".//tr[.//th[normalize-space()=\"{label.strip()}\"]]")
         lab = tr.query_selector("xpath=" + ".//td[contains(@class,'clickableCell')]//label")
-        _pw_page(driver).evaluate("(el) => el.scrollIntoView({block:\'center\'})", _handle(lab))
-        _pw_page(driver).wait_for_function("el => !el.disabled && el.getBoundingClientRect().width > 0", _handle(lab), timeout=5000)
-        _pw_page(driver).evaluate("(el) => el.click()", _handle(lab))
+        driver.evaluate("(el) => el.scrollIntoView({block:\'center\'})", lab)
+        driver.wait_for_function("el => !el.disabled && el.getBoundingClientRect().width > 0", lab, timeout=5000)
+        driver.evaluate("(el) => el.click()", lab)
         return True
     except Exception:
         pass
@@ -863,9 +853,9 @@ def click_radio_by_label(driver, label: str, context_hint: str | None = None) ->
     # 2) Cas label direct
     try:
         lab = scope.query_selector("xpath=" + f".//label[normalize-space()=\"{label.strip()}\"]")
-        _pw_page(driver).evaluate("(el) => el.scrollIntoView({block:\'center\'})", _handle(lab))
-        _pw_page(driver).wait_for_function("el => !el.disabled && el.getBoundingClientRect().width > 0", _handle(lab), timeout=5000)
-        _pw_page(driver).evaluate("(el) => el.click()", _handle(lab))
+        driver.evaluate("(el) => el.scrollIntoView({block:\'center\'})", lab)
+        driver.wait_for_function("el => !el.disabled && el.getBoundingClientRect().width > 0", lab, timeout=5000)
+        driver.evaluate("(el) => el.click()", lab)
         return True
     except Exception:
         pass
@@ -873,8 +863,8 @@ def click_radio_by_label(driver, label: str, context_hint: str | None = None) ->
     # 3) Cas input radio voisin d'un texte
     try:
         inp = scope.query_selector("xpath=" + f".//input[@type='radio' and not(contains(@class,'disabled'))][ancestor::div[contains(@class,'question')]][following::text()[normalize-space()=\"{label.strip()}\"]]")
-        _pw_page(driver).evaluate("(el) => el.scrollIntoView({block:\'center\'})", _handle(inp))
-        _pw_page(driver).evaluate("(el) => el.click()", _handle(inp))
+        driver.evaluate("(el) => el.scrollIntoView({block:\'center\'})", inp)
+        driver.evaluate("(el) => el.click()", inp)
         return True
     except Exception:
         pass
@@ -929,17 +919,17 @@ def click_radio_by_label(driver, label: str, context_hint: str | None = None) ->
             if dy < best_dy:
                 best, best_dy = lbl, dy
         if best is not None:
-            _pw_page(driver).evaluate("(el) => el.scrollIntoView({block:\'center\'})", _handle(best))
+            driver.evaluate("(el) => el.scrollIntoView({block:\'center\'})", best)
             try:
-                _pw_page(driver).wait_for_function("el => !el.disabled && el.getBoundingClientRect().width > 0", _handle(best), timeout=5000).click()
+                driver.wait_for_function("el => !el.disabled && el.getBoundingClientRect().width > 0", best, timeout=5000).click()
             except Exception:
-                _pw_page(driver).evaluate("(el) => el.click()", _handle(best))
+                driver.evaluate("(el) => el.click()", best)
             try:
                 fid = best.get_attribute("for")
                 if fid:
                     inp = driver.query_selector(f"#{fid}")
                     if not getattr(inp, "is_selected", lambda: False)():
-                        _handle(inp).evaluate(
+                        inp.evaluate(
                             "(_el) => { _el.checked=true;"
                             "try{_el.dispatchEvent(new Event('input',{bubbles:true}));}catch(e){}"
                             "try{_el.dispatchEvent(new Event('change',{bubbles:true}));}catch(e){} }"
@@ -971,11 +961,11 @@ def click_radio_by_label(driver, label: str, context_hint: str | None = None) ->
             except Exception:
                 continue
         if best is not None:
-            _pw_page(driver).evaluate("(el) => el.scrollIntoView({block:\'center\'})", _handle(best))
+            driver.evaluate("(el) => el.scrollIntoView({block:\'center\'})", best)
             try:
                 best.click()
             except Exception:
-                _handle(best).hover(); _handle(best).click()
+                best.hover(); best.click()
             return True
 
         # si on avait un scope mais rien de valide dedans, on STOP

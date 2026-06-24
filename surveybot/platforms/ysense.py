@@ -9,10 +9,6 @@ _TAG = "[YSENSE]"
 _LOGIN_URL = "https://www.ysense.com/login"
 
 
-def _pw_page(d):
-    if hasattr(d, '_page'):
-        return d._page
-    return d
 
 
 class YSensePlatform(Platform):
@@ -22,7 +18,7 @@ class YSensePlatform(Platform):
         password = config["Password"]
         log_info(_TAG, f"login() — navigation vers {_LOGIN_URL}")
 
-        page = _pw_page(driver)
+        page = driver
         page.goto(_LOGIN_URL)
 
         # Attendre la présence du champ email (server-rendered, pas de SPA hydration)
@@ -135,10 +131,10 @@ class YSensePlatform(Platform):
 
     def is_session_expired(self, driver) -> bool:
         try:
-            url = _pw_page(driver).url or ""
+            url = driver.url or ""
             if "/login" in url:
                 return True
-            src = (_pw_page(driver).content() or "").lower()
+            src = (driver.content() or "").lower()
             signals = ["sign in", "session expired", "please log in", "your session"]
             return any(s in src for s in signals)
         except Exception:

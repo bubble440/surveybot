@@ -12,18 +12,8 @@ Dépendances:
 - input_utils pour les fonctions utilitaires
 """
 
-def _pw_page(d):
-    """Extrait la Page Playwright native depuis un PlaywrightDriverShim ou retourne d tel quel."""
-    if hasattr(d, "_page"):
-        return d._page
-    return d
 
 
-def _handle(el):
-    """Extrait le ElementHandle natif depuis un PlaywrightElementShim (_h) ou retourne el."""
-    if hasattr(el, "_h"):
-        return el._h
-    return el
 
 
 
@@ -55,7 +45,7 @@ def force_checkbox_events(driver, checkbox_el):
     Force les events JS sur un checkbox pour s'assurer que les frameworks
     (React, Angular, Vue, jQuery) détectent le changement.
     """
-    _pw_page(driver).evaluate("""([_el, _arg1]) => {
+    driver.evaluate("""([_el, _arg1]) => {
         const cb = _el;
         cb.checked = true;
         cb.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
@@ -124,7 +114,7 @@ def force_label_for_checkbox_js(driver, label_text: str) -> bool:
     return false;
     """
     try:
-        return bool(_pw_page(driver).evaluate("(arg) => {" + js + "}", label_text))
+        return bool(driver.evaluate("(arg) => {" + js + "}", label_text))
     except Exception:
         return False
 
@@ -184,7 +174,7 @@ def fallback_click_checkbox_js_alchemer(driver, target_text: str) -> bool:
     return !!(inp.checked || (inp.getAttribute('aria-checked')||'').toLowerCase()==='true');
     """
     try:
-        return bool(_pw_page(driver).evaluate("(arg) => {" + js + "}", target_text))
+        return bool(driver.evaluate("(arg) => {" + js + "}", target_text))
     except Exception:
         return False
 
@@ -243,7 +233,7 @@ def fallback_click_checkbox_js_generic(driver, target_text: str) -> bool:
     return false;
     """
     try:
-        return bool(_pw_page(driver).evaluate("(arg) => {" + js + "}", target_text))
+        return bool(driver.evaluate("(arg) => {" + js + "}", target_text))
     except Exception:
         return False
 
@@ -308,7 +298,7 @@ def click_checkbox_buttonish_by_label(driver, label: str, context_hint: str | No
 
     # 1) scroll + clicks sur le label
     try:
-        _pw_page(driver).evaluate("(el) => el.scrollIntoView({block:\'center\'})", _handle(best))
+        driver.evaluate("(el) => el.scrollIntoView({block:\'center\'})", best)
     except Exception:
         pass
 
@@ -317,9 +307,9 @@ def click_checkbox_buttonish_by_label(driver, label: str, context_hint: str | No
             if how == "native":
                 best.click()
             elif how == "ac":
-                _handle(best).hover(); _handle(best).click()
+                best.hover(); best.click()
             else:
-                _pw_page(driver).evaluate("(el) => el.click()", _handle(best))
+                driver.evaluate("(el) => el.click()", best)
             time.sleep(0.15)
             if linked is not None:
                 try:
@@ -336,11 +326,11 @@ def click_checkbox_buttonish_by_label(driver, label: str, context_hint: str | No
     # 2) clic JS direct sur l'input lié + events
     if linked is not None:
         try:
-            _pw_page(driver).evaluate("(el) => el.click()", _handle(linked))
+            driver.evaluate("(el) => el.click()", linked)
             time.sleep(0.1)
             if linked.is_selected():
                 return True
-            _handle(linked).evaluate("""(_el) => {
+            linked.evaluate("""(_el) => {
                 const el = _el;
                 if (!el.checked) el.checked = true;
                 el.dispatchEvent(new Event('input',{bubbles:true}));
@@ -425,11 +415,11 @@ def click_confirmit_checktable(driver, label: str, context_hint: str | None = No
             # Clic
             for attempt in range(max_retries):
                 try:
-                    _pw_page(driver).evaluate("(el) => el.scrollIntoView({block:\'center\'})", _handle(inp))
+                    driver.evaluate("(el) => el.scrollIntoView({block:\'center\'})", inp)
                     try:
                         inp.click()
                     except Exception:
-                        _pw_page(driver).evaluate("(el) => el.click()", _handle(inp))
+                        driver.evaluate("(el) => el.click()", inp)
                     time.sleep(0.1)
                     if inp.is_selected():
                         if return_element:
@@ -440,7 +430,7 @@ def click_confirmit_checktable(driver, label: str, context_hint: str | None = No
 
             # Force events
             try:
-                _handle(inp).evaluate("""(_el) => {
+                inp.evaluate("""(_el) => {
                     const el = _el;
                     el.checked = true;
                     el.dispatchEvent(new Event('input', {bubbles:true}));
@@ -555,7 +545,7 @@ def click_qarts_widget_by_label(driver, target_text: str) -> bool:
     """
 
     try:
-        clickable_el = _pw_page(driver).evaluate("(arg) => {" + _JS_FIND + "}", target_text)
+        clickable_el = driver.evaluate("(arg) => {" + _JS_FIND + "}", target_text)
     except Exception:
         return False
 
@@ -570,7 +560,7 @@ def click_qarts_widget_by_label(driver, target_text: str) -> bool:
 
     # Clic natif via ActionChains : produit isTrusted=true, reconnu par React.
     try:
-        _handle(clickable_el).hover(); _handle(clickable_el).click()
+        clickable_el.hover(); clickable_el.click()
     except Exception as _ce:
         log_debug("[TARGET_DEBUG]", f"qarts_widget: ActionChains failed label={target_text!r} err={_ce}")
         return False
@@ -578,7 +568,7 @@ def click_qarts_widget_by_label(driver, target_text: str) -> bool:
     log_debug("[TARGET_DEBUG]", f"qarts_widget: click sent label={target_text!r}")
     try:
         time.sleep(0.15)
-        verified = bool(_pw_page(driver).evaluate("(arg) => {" + _JS_VERIFY + "}", target_text))
+        verified = bool(driver.evaluate("(arg) => {" + _JS_VERIFY + "}", target_text))
         log_debug("[TARGET_DEBUG]", f"qarts_widget: svg_verify={'ok' if verified else 'ko'} label={target_text!r}")
     except Exception:
         pass
@@ -676,7 +666,7 @@ def click_nfield_swatches_by_label(driver, target_text: str, scope=None) -> bool
     """
 
     try:
-        clickable_el = _pw_page(driver).evaluate("([a,b]) => {" + _JS_FIND + "}", [scope, target_text])
+        clickable_el = driver.evaluate("([a,b]) => {" + _JS_FIND + "}", [scope, target_text])
     except Exception:
         return False
 
@@ -689,7 +679,7 @@ def click_nfield_swatches_by_label(driver, target_text: str, scope=None) -> bool
         return False
 
     try:
-        _handle(clickable_el).hover(); _handle(clickable_el).click()
+        clickable_el.hover(); clickable_el.click()
     except Exception as _ce:
         log_debug("[TARGET_DEBUG]", f"nfield_swatches: ActionChains failed label={target_text!r} err={_ce}")
         return False
@@ -697,7 +687,7 @@ def click_nfield_swatches_by_label(driver, target_text: str, scope=None) -> bool
     log_debug("[TARGET_DEBUG]", f"nfield_swatches: click sent label={target_text!r}")
     try:
         time.sleep(0.3)  # CSS transition 250ms
-        verified = bool(_pw_page(driver).evaluate("([a,b]) => {" + _JS_VERIFY + "}", [scope, target_text]))
+        verified = bool(driver.evaluate("([a,b]) => {" + _JS_VERIFY + "}", [scope, target_text]))
         log_debug("[TARGET_DEBUG]", f"nfield_swatches: verify={'ok' if verified else 'ko'} label={target_text!r}")
     except Exception:
         pass
@@ -728,7 +718,7 @@ def click_checkbox_by_label(driver, target_text: str, context_hint: str | None =
     # Guard Toluna Runtime : si l'option est déjà cochée, ne pas cliquer (évite de la décocher).
     # Activé uniquement si la structure Runtime_AnswerRow est détectée dans le DOM.
     try:
-        _toluna_checked = _handle(target_text).evaluate("""(_el) => {
+        _toluna_checked = target_text.evaluate("""(_el) => {
             const norm = s => (s || '').toLowerCase().normalize('NFKC')
                 .replace(/\u00A0/g,' ').replace(/[»«\u201c\u201d"'›→·•:]/g,'')
                 .replace(/\s+/g,' ').trim();
@@ -766,7 +756,7 @@ def click_checkbox_by_label(driver, target_text: str, context_hint: str | None =
     # Vérification post-clic après time.sleep : React re-rend de façon asynchrone, la vérification
     # JS synchrone (clsBefore vs clsAfter dans le même tick) retourne toujours false avant ce patch.
     try:
-        _toluna_row = _handle(target_text).evaluate("""(_el) => {
+        _toluna_row = target_text.evaluate("""(_el) => {
             const norm = s => (s || '').toLowerCase().normalize('NFKC')
                 .replace(/\u00A0/g,' ').replace(/[»«\u201c\u201d"'›→·•:]/g,'')
                 .replace(/\s+/g,' ').trim();
@@ -792,10 +782,10 @@ def click_checkbox_by_label(driver, target_text: str, context_hint: str | None =
                 try:
                     _row_el.click()
                 except Exception:
-                    _handle(_row_el).hover(); _handle(_row_el).click()
+                    _row_el.hover(); _row_el.click()
                 # Laisser React re-rendre avant la vérification
                 time.sleep(0.15)
-                _cls_after = _pw_page(driver).evaluate("(el) => el.className || \'\'", _handle(_inner_el))
+                _cls_after = driver.evaluate("(el) => el.className || \'\'", _inner_el)
                 if _cls_after != _cls_before:
                     log_debug("[TARGET_DEBUG]", f"click_checkbox_by_label: toluna_runtime click ok label={target_text!r}")
                     return True
@@ -826,7 +816,7 @@ def click_checkbox_by_label(driver, target_text: str, context_hint: str | None =
     #    Guard DOM strict: même question contient à la fois la grille .answers-table/.clickableCell
     #    et un stage #mx-stage-{qid}. Le clic doit cibler le <td.clickableCell> natif.
     try:
-        mx_targets = _handle(cb).evaluate("""(_el) => {
+        mx_targets = cb.evaluate("""(_el) => {
             const scope = _el;
             const norm = s => (s || '')
               .toLowerCase()
@@ -888,7 +878,7 @@ def click_checkbox_by_label(driver, target_text: str, context_hint: str | None =
 
             best.td.scrollIntoView({ block: 'center', inline: 'center' });
             return [best.td, best.input];
-}""", [_handle(scope), target_text])
+}""", [scope, target_text])
         if isinstance(mx_targets, list) and len(mx_targets) == 2 and mx_targets[0] is not None:
             td_clickable, matched_input = mx_targets
 
@@ -896,10 +886,10 @@ def click_checkbox_by_label(driver, target_text: str, context_hint: str | None =
             try:
                 td_clickable.click()
             except Exception:
-                _handle(td_clickable).hover(); _handle(td_clickable).click()
+                td_clickable.hover(); td_clickable.click()
 
             # Vérification post-clic: l'input natif lié doit être checked.
-            mx_checked = _pw_page(driver).evaluate("""([_el, _arg1]) => {
+            mx_checked = driver.evaluate("""([_el, _arg1]) => {
                 const scope = _el;
                 const norm = s => (s || '')
                   .toLowerCase()
@@ -944,7 +934,7 @@ def click_checkbox_by_label(driver, target_text: str, context_hint: str | None =
                 }
 
                 return false;
-}""", [_handle(scope), target_text])
+}""", [scope, target_text])
             if mx_checked:
                 return matched_input
     except Exception:
@@ -960,7 +950,7 @@ def click_checkbox_by_label(driver, target_text: str, context_hint: str | None =
     #    - on trouve le meilleur wrapper en JS, puis on clique en Selenium natif / ActionChains.
     #    - la vérification est refaite via une nouvelle recherche DOM après un léger délai.
     try:
-        metrixlab_target = _pw_page(driver).evaluate("""([_el, _arg1]) => {
+        metrixlab_target = driver.evaluate("""([_el, _arg1]) => {
             const root = _el || document;
             const norm = s => (s || '')
               .toLowerCase()
@@ -1029,7 +1019,7 @@ def click_checkbox_by_label(driver, target_text: str, context_hint: str | None =
             const best = candidates[0];
             try { best.wrap.scrollIntoView({block: 'center', inline: 'center'}); } catch(e) {}
             return [best.wrap, best.inp, best.checkboxDiv, best.labelDiv];
-}""", [_handle(scope), target_text])
+}""", [scope, target_text])
         if isinstance(metrixlab_target, list) and len(metrixlab_target) >= 2 and metrixlab_target[0] is not None:
             clicked_wrap = metrixlab_target[0]
             clicked_input = metrixlab_target[1]
@@ -1051,7 +1041,7 @@ def click_checkbox_by_label(driver, target_text: str, context_hint: str | None =
                     break
                 except Exception:
                     try:
-                        _handle(candidate).hover(); _handle(candidate).click()
+                        candidate.hover(); candidate.click()
                         clicked = True
                         break
                     except Exception:
@@ -1059,7 +1049,7 @@ def click_checkbox_by_label(driver, target_text: str, context_hint: str | None =
 
             if clicked:
                 time.sleep(0.20)
-                verify_ok = _pw_page(driver).evaluate("""([_el, _arg1]) => {
+                verify_ok = driver.evaluate("""([_el, _arg1]) => {
                     const root = _el || document;
                     const norm = s => (s || '')
                       .toLowerCase()
@@ -1090,7 +1080,7 @@ def click_checkbox_by_label(driver, target_text: str, context_hint: str | None =
                       if (checkboxOn || labelOn) return true;
                     }
                     return false;
-}""", [_handle(scope), target_text])
+}""", [scope, target_text])
                 if verify_ok:
                     log_debug("[TARGET_DEBUG]", f"click_checkbox_by_label: metrixlab QT ok label={target_text!r}")
                     return clicked_input
@@ -1132,7 +1122,7 @@ def click_checkbox_by_label(driver, target_text: str, context_hint: str | None =
                         try:
                             _pretty[0].click()
                         except Exception:
-                            _handle(_pretty[0]).hover(); _handle(_pretty[0]).click()
+                            _pretty[0].hover(); _pretty[0].click()
                         _a_checked = bool(
                             _pretty[0].query_selector_all("xpath=" + ".//a[contains(@class,'checked')]")
                         )
@@ -1169,7 +1159,7 @@ def click_checkbox_by_label(driver, target_text: str, context_hint: str | None =
                     # fallthrough si le click n'a pas suffi
                 else:
                     try:
-                        _pw_page(driver).evaluate("""() => {
+                        driver.evaluate("""() => {
                             const cb = _el;
                             if (!cb.checked) cb.checked = true;
                             cb.dispatchEvent(new Event('input', { bubbles: true }));

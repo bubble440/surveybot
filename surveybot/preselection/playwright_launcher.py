@@ -1,14 +1,8 @@
 from __future__ import annotations
 import os, time
 import subprocess
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
-from selenium import webdriver
 from Survey.functions import _env_truthy
-from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    from preselection.playwright_shim import PlaywrightDriverShim
 # IS_LOCAL = os.getenv("RUN_ENV", "local") == "local"
 IS_LOCAL = os.getenv("RUN_ENV", "local") == "local"
 
@@ -611,129 +605,6 @@ def launch_browser(config: dict | None = None):
         )
         print(f"[LAUNCH] socat relay 0.0.0.0:{relay_port} → 127.0.0.1:{debug_port}")
 
-    # --- 2) Attacher Selenium au Chrome déjà lancé ---
-    # Attendre que Chrome expose son debug port (jusqu'à 60s).
-    # À chaque itération : vérifier que Chrome est toujours vivant avant de réessayer.
-    import urllib.request
-    for attempt in range(120):
-        ret = chrome_proc.poll()
-        if ret is not None:
-            stderr_tail = "\n".join(_stderr_lines[-30:])
-            print(f"[LAUNCH][FATAL] Chrome mort (code={ret}) après {attempt * 0.5:.1f}s.\nstderr:\n{stderr_tail}")
-            raise RuntimeError(f"Chrome a quitté avec code={ret}")
-        try:
-            urllib.request.urlopen(f"http://127.0.0.1:{debug_port}/json", timeout=1)
-            print(f"[LAUNCH] Debug port prêt après {attempt * 0.5:.1f}s")
-            break
-        except Exception:
-            time.sleep(0.5)
-    else:
-        stderr_tail = "\n".join(_stderr_lines[-30:])
-        print(f"[LAUNCH][WARN] Debug port toujours indisponible après 60s.\nstderr:\n{stderr_tail}")
-
-    opts = webdriver.ChromeOptions()
-    opts.add_experimental_option("debuggerAddress", f"127.0.0.1:{debug_port}")
-    opts.page_load_strategy = "eager"
-    driver = webdriver.Chrome(options=opts, service=Service(log_output=subprocess.DEVNULL))
-
-    # ── Suppression immédiate du flag d'automation sur la page COURANTE ────────
-    # Page.addScriptToEvaluateOnNewDocument ne couvre PAS la page déjà chargée
-    # au moment de l'attach Selenium. On applique les patches critiques de façon
-    # synchrone via execute_script pour éliminer les signaux visibles immédiatement.
-    #
-    # 1) navigator.webdriver → undefined  (sur Navigator.prototype pour couvrir
-    #    les checks via Object.getOwnPropertyDescriptor)
-    # 2) Suppression des propriétés cdc_* injectées par ChromeDriver dans window
-    #    (cdc_adoQpoasnfa76pfcZLmcfl_Array, cdc_adoQpoasnfa76pfcZLmcfl_Promise…)
-    try:
-        driver.execute_script("""
-            // Patch navigator.webdriver sur le prototype (robuste)
-            try {
-                Object.defineProperty(Navigator.prototype, 'webdriver', {
-                    get: () => undefined,
-                    configurable: true,
-                    enumerable: true,
-                });
-            } catch(e) {}
-
-            // Supprimer les propriétés cdc_* de ChromeDriver dans window
-            try {
-                for (const key of Object.getOwnPropertyNames(window)) {
-                    if (key.startsWith('cdc_')) {
-                        try { delete window[key]; } catch(e) {}
-                        try { Object.defineProperty(window, key, { get: () => undefined, configurable: true }); } catch(e) {}
-                    }
-                }
-            } catch(e) {}
-
-            // Supprimer $chrome_asyncScriptInfo et $cdc_asdjflasutopfhvcZLmcfl_
-            // (variantes selon version ChromeDriver)
-            const _legacyKeys = [
-                '$chrome_asyncScriptInfo',
-                '$cdc_asdjflasutopfhvcZLmcfl_',
-            ];
-            for (const k of _legacyKeys) {
-                try { delete window[k]; } catch(e) {}
-                try { Object.defineProperty(window, k, { get: () => undefined, configurable: true }); } catch(e) {}
-            }
-
-            // Patch deviceMemory et hardwareConcurrency sur la page courante
-            // (Page.addScriptToEvaluateOnNewDocument ne couvre pas la page déjà chargée)
-            try {
-                Object.defineProperty(navigator, 'deviceMemory',        { get: () => 8 });
-                Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 4  });
-            } catch(e) {}
-        """)
-        log.info("[FP][IMMEDIATE] Flag automation supprimé sur la page courante.")
-    except Exception as e:
-        log.warning("[FP][IMMEDIATE][WARN] Échec suppression flag automation : %s", e)
-
-    # ── Dump fingerprint POST-spoofing ───────────────────────────────────────
-    # Page.addScriptToEvaluateOnNewDocument ne s'applique qu'aux navigations
-    # futures, pas à la page déjà chargée au moment de l'attach Selenium.
-    # On force une navigation about:blank pour que tous les overrides (userAgentData,
-    # platform, plugins, WebGL…) soient actifs avant de lire les valeurs.
-    # Ce dump reflète exactement ce que les sites tiers verront.
-    try:
-        driver.get("about:blank")
-        fingerprint = driver.execute_script("""
-            const uad = navigator.userAgentData;
-            return {
-                language: navigator.language,
-                languages: navigator.languages,
-                timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-                platform: navigator.platform,
-                webdriver: navigator.webdriver,
-                userAgent: navigator.userAgent,
-                geolocation: !!navigator.geolocation,
-                userAgentData: uad ? {
-                    platform: uad.platform,
-                    mobile:   uad.mobile,
-                    brands:   uad.brands
-                } : null
-            };
-        """)
-        print("[FP][BROWSER]", json.dumps(fingerprint, indent=2))
-    except Exception as e:
-        print("[FP][ERROR]", e)
-
-    # Attacher le processus Chrome et le profil au driver pour nettoyage dans main.py
-    driver._chrome_proc = chrome_proc
-    driver._chrome_user_data_dir = user_data_dir
-    if relay_proc is not None:
-        driver._proxy_relay_proc = relay_proc
-
-    # Pause manuelle en local non-unattended : permet la navigation préalable avant
-    # que le bot prenne la main. Skippé si LOCAL_UNATTENDED=1 ou en prod (IS_LOCAL=False).
-    if IS_LOCAL and os.getenv("LOCAL_UNATTENDED", "") != "1":
-        print(
-            f"\n[LAUNCH] Chrome lancé sur port {debug_port}.\n"
-            f"  → Navigue manuellement vers la page cible dans Chrome.\n"
-            f"  → Appuie sur Entrée ici quand tu es prêt à continuer."
-        )
-        input("[LAUNCH] Appuie sur Entrée pour continuer... ")
-
-    return driver
 
 
 def launch_browser_playwright(config: dict | None = None):
@@ -748,7 +619,6 @@ def launch_browser_playwright(config: dict | None = None):
     Retourne un PlaywrightDriverShim prêt à l'emploi.
     """
     from playwright.sync_api import sync_playwright
-    from preselection.playwright_shim import PlaywrightDriverShim
 
     chrome_bin            = _detect_chrome_binary()
     proxy_server, proxy_user, proxy_pass = _parse_proxy_env(config)
@@ -864,7 +734,6 @@ def launch_browser_playwright_debug(config: dict | None = None) -> PlaywrightDri
     Ne modifie pas launch_browser() ni launch_browser_playwright().
     """
     from playwright.sync_api import sync_playwright
-    from preselection.playwright_shim import PlaywrightDriverShim
 
     chrome_bin                   = _detect_chrome_binary()
     proxy_server, proxy_user, proxy_pass = _parse_proxy_env(config)

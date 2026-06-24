@@ -25,18 +25,8 @@ import re
 import unicodedata
 
 
-def _pw_page(d):
-    """Extrait la Page Playwright native depuis un PlaywrightDriverShim ou retourne d tel quel."""
-    if hasattr(d, "_page"):
-        return d._page
-    return d
 
 
-def _handle(el):
-    """Extrait le ElementHandle natif depuis un PlaywrightElementShim ou retourne el."""
-    if hasattr(el, "_h"):
-        return el._h
-    return el
 
 
 # =============================================================================
@@ -256,7 +246,7 @@ def handle_generic_input(driver, gpt_answer: str):
     - Si des <select> existent et que 'gpt_answer' ressemble à une option → on tente de la sélectionner.
     - Si 'gpt_answer' ressemble à un CTA → on laisse la logique bouton.
     """
-    page = _pw_page(driver)
+    page = driver
     try:
         if looks_like_nav_label(gpt_answer):
             return False  # géré côté CTA
@@ -329,7 +319,7 @@ def apply_ai_response(driver, response):
     """
     print("run: apply_ai_response")
     
-    page = _pw_page(driver)
+    page = driver
 
     # 0) Si ça ressemble à un CTA, on laisse les stratégies bouton gérer.
     if looks_like_nav_label(response):
@@ -404,7 +394,7 @@ def _click_next_any(driver):
     Clique le bouton de navigation après sélection.
     Supporte data-test-id, <button> textuels et <input type=submit>.
     """
-    page = _pw_page(driver)
+    page = driver
     deadline = time.time() + 5
 
     # a) selectors spécifiques (quand dispo)
@@ -456,7 +446,7 @@ def _find_best_label_text(el):
     """
     Récupère un texte pertinent pour le label (prend le inner_text, sinon plus long des spans descendants).
     """
-    h = _handle(el)
+    h = el
     try:
         txt = h.inner_text().strip()
     except Exception:
@@ -506,8 +496,8 @@ def _find_linked_input_for_label(driver, label_el):
     - via l'attribut 'for'
     - sinon via un sibling/descendant
     """
-    page = _pw_page(driver)
-    el = _handle(label_el)
+    page = driver
+    el = label_el
     linked = None
     # 1) via for/id
     try:
@@ -538,7 +528,7 @@ def _find_linked_input_for_label(driver, label_el):
 def _is_visible(driver, el):
     """Vérifie si un élément est visible avec une taille minimum."""
     try:
-        h = _handle(el)
+        h = el
         if not h.is_visible():
             return False
         box = h.bounding_box()

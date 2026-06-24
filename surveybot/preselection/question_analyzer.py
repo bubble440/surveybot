@@ -6,11 +6,6 @@ from preselection.question_validation import detect_disqualification_reason
 from Survey.log_utils import log_debug, log_info
 
 
-def _pw_page(d):
-    """Extrait la Page Playwright native depuis un PlaywrightDriverShim ou retourne d tel quel."""
-    if hasattr(d, "_page"):
-        return d._page
-    return d
 
 ASSISTANT_SYSTEM_PROMPT = (
     # Identité de base
@@ -159,7 +154,7 @@ def _should_force_non_for_hardware_question(question_text, options):
 
 
 def extract_popup_html(driver):
-    page = _pw_page(driver)
+    page = driver
     try:
         popup = page.wait_for_selector(
             "[data-test-id='ps-popup-content-wrapper']",
@@ -250,7 +245,7 @@ def extract_popup_text_with_js(driver):
     Utilise JavaScript pour extraire le texte visible du popup.
     Plus robuste que BeautifulSoup.
     """
-    page = _pw_page(driver)
+    page = driver
     try:
         popup_element = page.wait_for_selector(
             "div[class*='common-container']",
@@ -277,7 +272,7 @@ def extract_options_js(driver):
     Cible les éléments contenant 'p-radio-text' dans leur class.
     """
     try:
-        options = _pw_page(driver).evaluate("""() =>
+        options = driver.evaluate("""() =>
             Array.from(document.querySelectorAll("label span"))
                 .filter(span =>
                     span.className.includes("p-radio-text") ||
@@ -300,7 +295,7 @@ def extract_select_options_js(driver):
     Retourne les textes visibles des <option> (on ignore les placeholders/disabled).
     """
     try:
-        opts = _pw_page(driver).evaluate("""() =>
+        opts = driver.evaluate("""() =>
             Array.from(document.querySelectorAll('select option'))
                 .filter(o => !o.disabled && (o.value || '').trim() !== '' && (o.innerText||'').trim().length > 0)
                 .map(o => (o.innerText || o.textContent).trim())
@@ -530,7 +525,7 @@ def get_response_for_question(driver, api_key, *, session=None):
 
 
 def click_participer_if_present(driver):
-    page = _pw_page(driver)
+    page = driver
     try:
         participer_btn = page.wait_for_selector(
             'button[data-test-id="ps-common-actions-button"]',
@@ -554,7 +549,7 @@ def click_participer_if_present(driver):
 def click_participer_if_qualified(driver):
     import Management.redirect_watcher
 
-    page = _pw_page(driver)
+    page = driver
     try:
         # 1. Vérifie le message de qualification
         page_text = page.evaluate("""() =>
@@ -616,7 +611,7 @@ def handle_disqualification_and_retry(driver):
     Retourne True si disqualification détectée (même si le clic 'Ok' échoue),
     pour forcer un restart cohérent.
     """
-    page = _pw_page(driver)
+    page = driver
     page_text = ""
     try:
         page_text = page.evaluate(

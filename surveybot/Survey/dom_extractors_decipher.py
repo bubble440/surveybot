@@ -28,11 +28,6 @@ except ImportError:
     def log_debug(tag, msg): pass
 
 
-def _pw_page(d):
-    """Extrait la Page Playwright native depuis un PlaywrightDriverShim ou retourne d tel quel."""
-    if hasattr(d, "_page"):
-        return d._page
-    return d
 
 
 # ================================================================================
@@ -109,7 +104,7 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
         Liste de dicts avec métadonnées pour dom_registry
     """
     blocks: list[dict] = []
-    page = _pw_page(driver)
+    page = driver
 
     def _visible_text(el) -> str:
         txt = (el.inner_text() or "").strip()
@@ -977,7 +972,7 @@ def _extract_focusvision_cardsort_block(driver, frame_chain: list[int] | None) -
         },
     )
 
-    page = _pw_page(driver)
+    page = driver
     container = None
     profile = None
     for candidate in selector_profiles:
@@ -1075,7 +1070,7 @@ def _extract_decipher_table_text_rows_blocks(driver, frame_chain: List[Any]) -> 
         Liste de blocks `single` (itype="text") avec question parent + contexte de ligne.
     """
     blocks: List[Dict[str, Any]] = []
-    page = _pw_page(driver)
+    page = driver
 
     wrappers = page.query_selector_all("div.i-table-wrapper[data-widget-id]")
     for wrapper in wrappers:
@@ -1179,7 +1174,7 @@ def _extract_decipher_grid_single_col_text_rows(driver, frame_chain: List[Any]) 
         Liste de blocks `single` (itype="text"), un par ligne de grille.
     """
     blocks: List[Dict[str, Any]] = []
-    page = _pw_page(driver)
+    page = driver
 
     questions = page.query_selector_all("div.question")
     for q_el in questions:
@@ -1301,7 +1296,7 @@ def _extract_decipher_grid_select_blocks(driver, frame_chain: List[Any]) -> List
     Les options vides (value="-1") sont exclues.
     """
     blocks: List[Dict[str, Any]] = []
-    page = _pw_page(driver)
+    page = driver
 
     try:
         q_containers = page.query_selector_all("div.question.select")
@@ -1475,7 +1470,7 @@ def _extract_decipher_answers_list_fallback(driver, frame_chain: List[Any]) -> L
         Liste de dicts avec metadata pour dom_registry
     """
     blocks: List[Dict[str, Any]] = []
-    page = _pw_page(driver)
+    page = driver
 
     try:
         # Chercher tous les containers .answer-list
@@ -1608,7 +1603,7 @@ def _extract_decipher_atmrating_blocks(driver, frame_chain: List[Any]) -> List[D
     Log discriminant : [DOM_DECIPHER_ATMRATING] blocks_extracted=N
     """
     blocks: List[Dict[str, Any]] = []
-    page = _pw_page(driver)
+    page = driver
 
     # Guard 1 : question container sq-atmrating
     try:
@@ -1779,7 +1774,7 @@ def _extract_decipher_ranksort_dropdown_blocks(driver, frame_chain: List[Any]) -
     - Le dispatcher assigne "Rang N" au Nième item retourné par GPT.
     """
     blocks: List[Dict[str, Any]] = []
-    page = _pw_page(driver)
+    page = driver
 
     try:
         containers = page.query_selector_all("div.question.sq-ranksort")
@@ -1928,7 +1923,7 @@ def _extract_qarts_hidden_answers_groups(driver, frame_chain: List[Any]) -> List
     On cible l'ancêtre td.clickableCell via JS-click (bypass visibilité).
     """
     blocks: List[Dict[str, Any]] = []
-    page = _pw_page(driver)
+    page = driver
 
     # Guard 1 : interface visuelle QARTS active
     #   div[id^="sq-QARTS-container-"] contenant div._rowpicker

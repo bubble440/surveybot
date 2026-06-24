@@ -7,11 +7,6 @@ from config import should_pause_before_cta, is_cta_intercept_only
 from Survey.log_utils import log_info, log_debug
 
 
-def _pw_page(d):
-    """Extrait la Page Playwright native depuis un PlaywrightDriverShim ou retourne d tel quel."""
-    if hasattr(d, "_page"):
-        return d._page
-    return d
 
 # ---------------------------------------------------------------------------
 # DIAGNOSTIC TEMPORAIRE — isTrusted (retirer après confirmation)
@@ -40,7 +35,7 @@ def _diag_attach(driver, element, tag: str) -> None:
         return
     try:
         # element est un ElementHandle Playwright natif
-        _pw_page(driver).evaluate("""(el) => {
+        driver.evaluate("""(el) => {
             window.__diag_istrusted__ = null;
             el.__diagListener__ = function(e) {
                 window.__diag_istrusted__ = {isTrusted: e.isTrusted, type: e.type, timestamp: e.timeStamp};
@@ -57,7 +52,7 @@ def _diag_read(driver, tag: str) -> None:
     if not _DIAG_ISTRUSTED:
         return
     try:
-        result = _pw_page(driver).evaluate("() => window.__diag_istrusted__ || null")
+        result = driver.evaluate("() => window.__diag_istrusted__ || null")
         if result:
             log_info(
                 "diag_istrusted",
@@ -156,7 +151,7 @@ def _diag_pw_actionability(label, label_text: str) -> None:
         return
     try:
         # Supporte les deux cas : ElementHandle natif ou PlaywrightElementShim (._h)
-        h = label._h if hasattr(label, "_h") else label
+        h = label
         pw_visible = h.is_visible()
         pw_enabled = h.is_enabled()
         pw_stable = "unknown"
@@ -348,7 +343,7 @@ def _execute_async_radio(driver, answer_text) -> bool:  # noqa: C901
     Cela couvre les cas où la granularité des données du widget diverge du niveau
     géographique ou catégoriel supposé par GPT.
     """
-    page = _pw_page(driver)
+    page = driver
     norm_answer = normalize(answer_text)
 
     # 1. Localiser le champ de recherche texte
@@ -495,7 +490,7 @@ def execute_response(driver, answer_text, input_type=None):
         print("⏭️ Aucun choix détecté — pas d'action sur cette page. source: reponse_executor.py")
         return False
 
-    page = _pw_page(driver)
+    page = driver
     print(f"🌟 Tentative de sélection : {answer_text} source: reponse_executor.py")
     norm_answer = normalize(answer_text)
     checkbox_answers = [
@@ -608,7 +603,7 @@ def click_next_button(driver):
         log_info("response_executor", "🛑 CTA_INTERCEPT_ONLY=1 — clic CTA intercepté, pas de navigation.")
         return True
 
-    page = _pw_page(driver)
+    page = driver
     CTA_SEL = 'button[data-test-id="ps-common-actions-button"]'
     _primary_exc = None
     try:
@@ -704,7 +699,7 @@ def select_checkbox_answers(driver, answers):
     Coche une ou plusieurs cases à cocher correspondant aux réponses proposées par l'IA.
     Scan DOM une seule fois → dict {texte_normalisé: (label, checkbox)} → lookup O(1) par cible.
     """
-    page = _pw_page(driver)
+    page = driver
     labels = page.query_selector_all('[data-test-id^="ps-question-input-multiple_choice-label"]')
     if not labels:
         return False

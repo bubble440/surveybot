@@ -19,10 +19,6 @@ import time
 from Survey.log_utils import log_info, log_debug
 
 
-def _pw_page(d):
-    if hasattr(d, '_page'):
-        return d._page
-    return d
 from captcha.captcha_solver import TwoCaptchaClient
 from captcha.recaptcha_handler import _get_proxy_config
 
@@ -94,7 +90,7 @@ def _extract_app_id(driver) -> str | None:
     }
     """
     try:
-        result = _pw_page(driver).evaluate(js)
+        result = driver.evaluate(js)
         return result if result else None
     except Exception as e:
         log_debug(_TAG, f"_extract_app_id exception: {e}")
@@ -189,7 +185,7 @@ def _inject_tencent_token(driver, ticket: str, randstr: str) -> dict:
     }
     """
     try:
-        raw = _pw_page(driver).evaluate(js, [ticket, randstr])
+        raw = driver.evaluate(js, [ticket, randstr])
         return json.loads(raw) if raw else {"error": "script returned None"}
     except Exception as e:
         return {"error": f"evaluate failed: {e}"}
@@ -219,7 +215,7 @@ def solve_nielseniq_slider_auto(driver) -> bool:
     1 tentative max. Aucun clic CTA.
     """
     try:
-        page = _pw_page(driver)
+        page = driver
         has_widget = bool(page.evaluate(
             "() => !!(document.querySelector('.verify-move-block') && "
             "document.querySelector('.verify-gap') && "
@@ -300,7 +296,7 @@ def solve_tencent_auto(driver) -> bool:
         # Condition stricte : #sliderpanel ET #btn_continue présents,
         # ce qui exclut tout vrai widget Tencent.
         try:
-            has_slide_verify = bool(_pw_page(driver).evaluate(
+            has_slide_verify = bool(driver.evaluate(
                 "() => !!(document.querySelector('#sliderpanel') && "
                 "document.querySelector('#btn_continue'))"
             ))
@@ -310,7 +306,7 @@ def solve_tencent_auto(driver) -> bool:
         if has_slide_verify:
             log_info(_TAG, "appId introuvable — détection jQuery slideVerify (btn_continue présent)")
             try:
-                clicked = _pw_page(driver).evaluate(
+                clicked = driver.evaluate(
                     "() => { var btn = document.querySelector('#btn_continue');"
                     " if (!btn) return false; btn.click(); return true; }"
                 )
@@ -332,7 +328,7 @@ def solve_tencent_auto(driver) -> bool:
         return False
     log_info(_TAG, f"appId extrait : {app_id}")
 
-    current_url = _pw_page(driver).url
+    current_url = driver.url
     proxy_cfg = _get_proxy_config()
     mode = "proxy" if proxy_cfg else "proxyless"
     log_info(_TAG, f"Envoi à 2Captcha (mode={mode}, url={current_url})")
@@ -388,7 +384,7 @@ def solve_tencent_auto(driver) -> bool:
 
     # Fallback: vérifier si le widget a disparu du DOM
     try:
-        still_there = bool(_pw_page(driver).evaluate(
+        still_there = bool(driver.evaluate(
             "() => { var p = document.querySelector('#sliderpanel');"
             " if (!p) return false;"
             " var cs = getComputedStyle(p);"

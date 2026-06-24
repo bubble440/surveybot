@@ -14,10 +14,6 @@ MIN_CASHOUT_EUR = 5.0
 IS_LOCAL = os.getenv("RUN_ENV", "local") == "local"
 
 
-def _pw_page(d):
-    if hasattr(d, '_page'):
-        return d._page
-    return d
 # ---------- Helpers ----------
 
 def _notify_cashout_failure(account_id: str, amount: float, email: str = "") -> None:
@@ -75,7 +71,7 @@ def _js_click(driver, el):
 def _find(driver, by, sel, timeout=10):
     # by ignoré : CSS si pas de // sinon xpath=
     pw_sel = f"xpath={sel}" if sel.startswith("//") or sel.startswith("./") else sel
-    return _pw_page(driver).wait_for_selector(pw_sel, state="attached", timeout=timeout * 1000)
+    return driver.wait_for_selector(pw_sel, state="attached", timeout=timeout * 1000)
 
 # ---------- Lecture du solde & ouverture du modal ----------
 
@@ -103,7 +99,7 @@ def _is_enabled(el) -> bool:
 
 def _get_select_btn(driver):
     try:
-        return _pw_page(driver).query_selector("button[data-test-id='reward-select-button']")
+        return driver.query_selector("button[data-test-id='reward-select-button']")
     except Exception:
         return None
 
@@ -246,7 +242,7 @@ def _click_modal_choose(driver) -> bool:
       <button data-test-id="reward-select-button" ...>Choisis</button>
     """
     try:
-        btn = _pw_page(driver).wait_for_selector(
+        btn = driver.wait_for_selector(
             "button[data-test-id='reward-select-button']", state="visible", timeout=10000
         )
         _js_click(driver, btn)
@@ -278,8 +274,8 @@ def _fill_revolut_claim_if_needed(driver, fullname: str, tag: str) -> None:
       input[data-test-id="claim-reward-revolut-tag-field-input"]
     """
     try:
-        name_inp = _pw_page(driver).query_selector("input[data-test-id='claim-reward-revolut-name-field-input']")
-        tag_inp  = _pw_page(driver).query_selector("input[data-test-id='claim-reward-revolut-tag-field-input']")
+        name_inp = driver.query_selector("input[data-test-id='claim-reward-revolut-name-field-input']")
+        tag_inp  = driver.query_selector("input[data-test-id='claim-reward-revolut-tag-field-input']")
         if name_inp:
             name_inp.fill(fullname)
         if tag_inp:
@@ -330,7 +326,7 @@ def _read_balance(driver) -> float:
     candidates = []
     # 1️⃣ Méthode historique (si jamais ils réintroduisent le test-id)
     try:
-        el = _pw_page(driver).query_selector("[data-test-id='balance-card-amount']")
+        el = driver.query_selector("[data-test-id='balance-card-amount']")
         if el:
             candidates.append(el.inner_text())
     except Exception:
@@ -338,7 +334,7 @@ def _read_balance(driver) -> float:
 
     # 2️⃣ DOM actuel : span contenant "€" dans balance-card-progress
     try:
-        spans = _pw_page(driver).query_selector_all(".balance-card-progress span")
+        spans = driver.query_selector_all(".balance-card-progress span")
         for s in spans:
             txt = (s.inner_text() or "").strip()
             if "€" in txt and "/" not in txt:
@@ -349,7 +345,7 @@ def _read_balance(driver) -> float:
     # 3️⃣ Fallback ultime : scan global (safe mais coûteux)
     if not candidates:
         try:
-            spans = _pw_page(driver).query_selector_all("xpath=//span[contains(text(),'€')]")
+            spans = driver.query_selector_all("xpath=//span[contains(text(),'€')]")
             for s in spans:
                 txt = (s.inner_text() or "").strip()
                 if "€" in txt and "/" not in txt:
