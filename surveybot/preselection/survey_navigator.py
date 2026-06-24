@@ -470,6 +470,12 @@ def go_to_best_value_survey(driver):
             print("🛑 Exception navigation directe :", type(e).__name__, "-", e)
             return
 
+    # Attendre que la vue /surveys soit montée (transition de route Vue.js via clic JS synthétique)
+    try:
+        page.wait_for_selector("[data-test-id='ps-surveys-root']", state='attached', timeout=15_000)
+    except Exception:
+        _debug("Timeout attente ps-surveys-root après clic onglet — on continue.")
+
     # Attendre que les cartes surveys soient dans le DOM après la transition de route
     try:
         survey_card_selector = ", ".join([
