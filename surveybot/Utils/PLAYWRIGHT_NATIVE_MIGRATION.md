@@ -454,14 +454,43 @@ BLOC S7b — Résidus string-literal shim dans fichiers "migrés"
   - Résultat : 0 find_elements, 0 execute_script, 0 .send_keys dans les 7 fichiers.
     py_compile OK sur tous les fichiers.
 
-BLOC S8 — Suppression du shim
-  Statut : 🔲 à faire (après S1→S7 tous validés)
-  Actions :
-  - Supprimer preselection/playwright_shim.py
-  - Supprimer _page_to_shim() dans main.py (chemin attach)
-  - Supprimer _make_shim() dans survey_solver.py
-  - Nettoyage fonctions legacy playwright_launcher.py (lignes 634–699)
-  - Nettoyage résidus attach dans main.py
+BLOC S8 — Suppression du shim et nettoyage résidus Selenium string-literal
+  Statut : ✅ migré (2026-06-24)
+  Périmètre : suppression complète du shim + résidus API Selenium dans 4 fichiers input_*.
+  Partie A — Suppression du shim et points d'injection :
+  - preselection/playwright_shim.py supprimé entièrement.
+  - main.py : _page_to_shim() supprimé. _attach_tab_score, _attach_select_best_tab,
+    _attach_select_tab (dépendants de l'API shim Selenium) supprimés. Branche attach
+    else utilise page directement. run_attach_takeover : Selenium API → Playwright natif
+    (execute_script→evaluate, find_elements→query_selector_all, is_displayed→is_visible,
+    current_url→url, WebDriverWait→wait_for_url). run_attach_login_takeover : shim
+    supprimé, page transmis directement.
+  - Survey/survey_solver.py : _make_shim() supprimé. Toutes les utilisations de _shim
+    dans solve_full_survey remplacées par page (variable locale native Playwright).
+    _survey_account_id positionné sur page directement.
+  - Survey/survey_executor.py : _make_shim() supprimé (définie mais jamais appelée).
+  - preselection/playwright_launcher.py : bloc Selenium legacy (webdriver.Chrome via
+    debuggerAddress, execute_script cdc_*, fingerprint dump) supprimé. Imports
+    selenium.webdriver.chrome.options/service + selenium.webdriver supprimés.
+  - preselection/survey_handler.py : driver.window_handles → driver.context.pages.
+  - preselection/response_executor.py : label._h guard → label directement.
+  - Survey/dom_frame_selector.py : import mort By supprimé.
+  - Survey/page_snapshot.py : docstring _dump_frames_best_effort mis à jour (API Playwright).
+  - 47 fichiers : _pw_page(d)→d, _handle(el)→el (741 call sites). Définitions supprimées.
+  Partie B — Résidus Selenium string-literal (4 fichiers non couverts par S7b) :
+  - Survey/input_dropdown.py : find_elements("tag name"/"css selector"/"xpath") →
+    query_selector_all ; find_element("xpath"/"id") → query_selector + None guard ;
+    el.find_element → el.query_selector ; is_displayed()→is_visible() ; el.rect→bounding_box() ;
+    execute_script dispatch events → el.evaluate ; execute_script scrollHeight → page.evaluate.
+  - Survey/input_frame.py click_cta_strong_any_context : find_elements("css selector") →
+    query_selector_all ; is_displayed()→is_visible() ; el.text→el.inner_text().
+  - Survey/input_slider.py : find_elements("css selector"/"tag name") → query_selector_all ;
+    find_element("css selector"/"tag name") → query_selector + None guard ; track.rect→
+    bounding_box() ; execute_script dispatch events → el.evaluate(arrow_fn) ; jQuery slider
+    execute_script → b.evaluate ; mouse click execute_script → track.evaluate.
+  - Survey/input_text.py swagbucks_zip_patch : find_element("id") → query_selector + None guard.
+  Résultat : python -c "import preselection.playwright_shim" → ModuleNotFoundError ✓
+  Aucun import selenium.webdriver hors tools/ ✓ py_compile OK sur 51 fichiers ✓
 
 ================================================================================
 RÈGLES VALABLES POUR TOUS LES BLOCS
@@ -476,32 +505,30 @@ RÈGLES VALABLES POUR TOUS LES BLOCS
 FRONTIÈRES ACTIVES
 ================================================================================
 
-FRONTIÈRE BLOC 1 → BLOC 2 (chemin attach)
-  - main.py crée un shim via _page_to_shim(page, pw) avant run_attach_preselection_takeover.
-  - En chemin prod : aucun shim créé, driver = Page Playwright native de bout en bout.
-
-FRONTIÈRE BLOC 2 → BLOC 3a
-  - _run_survey_impl appelle solve_full_survey(_pw_page(driver), ...).
-  - solve_full_survey crée _shim = _make_shim(page) pour les appels hors-périmètre.
-
-FRONTIÈRE BLOC 3a → BLOC 3b1
-  - execute_survey_page reçoit _shim ; page = _pw_page(driver) pour les ops DOM.
-  - driver (= shim) transmis aux sous-modules.
-
-FRONTIÈRE BLOC 3b/S → fichiers encore non migrés
-  - S1→S7b tous migrés. Plus aucun résidu shim API dans le code applicatif.
-  - Le shim lui-même (playwright_shim.py) sera supprimé en S8.
-  - Cette frontière disparaît avec S8.
+AUCUNE FRONTIÈRE ACTIVE — migration S8 complète (2026-06-24).
+  - playwright_shim.py supprimé. Plus aucun shim dans le code applicatif.
+  - Tous les chemins (attach + prod) opèrent sur des objets Page Playwright natifs.
+  - _pw_page() et _handle() supprimés de tous les fichiers (47 fichiers, 741 call sites).
 
 INTERFACE switch_to_frame_chain
-  - Entrée : driver = shim OU Page native.
-  - Effet : met à jour driver._current_frame (si shim).
-  - Usage : current_frame = getattr(driver, '_current_frame', _pw_page(driver))
+  - Entrée : driver = Page native (shim supprimé).
+  - Comportement inchangé côté frame_utils (opère sur Page/Frame Playwright natifs).
 
 ================================================================================
 HISTORIQUE
 ================================================================================
 
+2026-06-24  BLOC S8 migré : suppression complète du shim Playwright et nettoyage final.
+            playwright_shim.py supprimé. _page_to_shim/_make_shim supprimés (main.py,
+            survey_solver.py, survey_executor.py). Bloc Selenium legacy launcher supprimé.
+            _attach_tab_score/_attach_select_best_tab/_attach_select_tab supprimés.
+            run_attach_takeover converti aux API Playwright natives (evaluate/query_selector_all/
+            wait_for_url). solve_full_survey : _shim → page natif partout. survey_handler :
+            window_handles→context.pages. response_executor : label._h guard→label.
+            dom_frame_selector : import mort By supprimé. page_snapshot : docstring mis à jour.
+            47 fichiers : _pw_page()/​_handle() supprimés (741 call sites). Partie B :
+            input_dropdown/input_frame/input_slider/input_text — derniers find_elements/
+            execute_script/rect convertis. 51 fichiers, 0 erreur py_compile. Shim éliminé. ✅
 2026-06-21  Décision migration franche (Option B). BLOC 1 validé en attach.
 2026-06-22  BLOCs 3b6→3b1 migrés (attach). BLOC 3a migré. BLOC 2 migré (attach).
             Scope étendu prod. BLOC P1 migré. BLOC P2 migré. BLOC P3 migré.
