@@ -489,8 +489,21 @@ BLOC S8 — Suppression du shim et nettoyage résidus Selenium string-literal
     bounding_box() ; execute_script dispatch events → el.evaluate(arrow_fn) ; jQuery slider
     execute_script → b.evaluate ; mouse click execute_script → track.evaluate.
   - Survey/input_text.py swagbucks_zip_patch : find_element("id") → query_selector + None guard.
+  - Survey/input_slider.py : find_elements("css selector"/"tag name") → query_selector_all ;
+    find_element("css selector"/"tag name") → query_selector + None guard ; track.rect→
+    bounding_box() ; execute_script dispatch events → el.evaluate(arrow_fn) ; jQuery slider
+    execute_script → b.evaluate ; mouse click execute_script → track.evaluate.
+  - Survey/input_text.py swagbucks_zip_patch : find_element("id") → query_selector + None guard.
   Résultat : python -c "import preselection.playwright_shim" → ModuleNotFoundError ✓
   Aucun import selenium.webdriver hors tools/ ✓ py_compile OK sur 51 fichiers ✓
+  Correctif post-S8 (2026-06-24) — playwright_launcher.py résidus shim :
+  - launch_browser_playwright() : suppression du bloc shim = PlaywrightDriverShim(context,
+    context, page) + assignations → page._pw = pw, page._chrome_user_data_dir = user_data_dir,
+    return page. Import PlaywrightDriverShim local supprimé. Docstring mis à jour.
+  - launch_browser_playwright_debug() : même correction. Annotation -> PlaywrightDriverShim
+    retirée de la signature. Import local supprimé.
+  - attach_browser_playwright() et launch_browser() non touchés.
+  - import preselection.playwright_launcher → OK ✓
 
 ================================================================================
 RÈGLES VALABLES POUR TOUS LES BLOCS
@@ -518,6 +531,11 @@ INTERFACE switch_to_frame_chain
 HISTORIQUE
 ================================================================================
 
+2026-06-24  Correctif post-S8 : playwright_launcher.py — launch_browser_playwright() et
+            launch_browser_playwright_debug() instanciaient encore PlaywrightDriverShim
+            (import local dans le corps) après suppression du module. Corrigé : shim
+            remplacé par return page direct ; _pw et _chrome_user_data_dir attachés sur
+            page. Annotation -> PlaywrightDriverShim retirée. import OK ✓
 2026-06-24  BLOC S8 migré : suppression complète du shim Playwright et nettoyage final.
             playwright_shim.py supprimé. _page_to_shim/_make_shim supprimés (main.py,
             survey_solver.py, survey_executor.py). Bloc Selenium legacy launcher supprimé.
