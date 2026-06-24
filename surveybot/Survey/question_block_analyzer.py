@@ -29,10 +29,6 @@ from typing import Any, List, Optional
 # ---------------------------------------------------------------------------
 # Playwright page helper
 # ---------------------------------------------------------------------------
-def _pw_page(d):
-    if hasattr(d, '_page'):
-        return d._page
-    return d
 
 
 # ------------------------------------------------------------
@@ -170,7 +166,7 @@ def _find_question_container(driver) -> Any:
 
     for sel in selectors:
         try:
-            els = _pw_page(driver).query_selector_all(sel)
+            els = driver.query_selector_all(sel)
             for el in els:
                 if _visible(el):
                     return el
@@ -178,7 +174,7 @@ def _find_question_container(driver) -> Any:
             continue
 
     # fallback ultime
-    return _pw_page(driver).query_selector("body")
+    return driver.query_selector("body")
 
 
 # ------------------------------------------------------------

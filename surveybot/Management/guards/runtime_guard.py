@@ -14,10 +14,6 @@ from State.daily_target import DAILY_TARGET_EUR
 from Management.pause_policy import PausePolicy, resolve_pause_seconds
 
 
-def _pw_page(d):
-    if hasattr(d, '_page'):
-        return d._page
-    return d
 
 def _is_prod_env() -> bool:
     """
@@ -128,7 +124,7 @@ class RuntimeGuard:
                 "//a[contains(., 'Ouvrir')]",
             ]:
                 try:
-                    el = _pw_page(driver).wait_for_selector(
+                    el = driver.wait_for_selector(
                         f"xpath={xpath}", state="visible", timeout=3000
                     )
                     if el is not None:

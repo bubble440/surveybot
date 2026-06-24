@@ -11,7 +11,6 @@ Ce module contient les fonctions pour :
 from __future__ import annotations
 from typing import Dict, Any, Tuple, List
 import time
-from selenium.webdriver.common.by import By
 
 # Import des utilitaires
 try:

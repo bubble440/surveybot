@@ -20,11 +20,6 @@ from Survey.frame_utils import iter_frame_chains, switch_to_frame_chain
 logger = logging.getLogger("dom_classifier")
 
 
-def _pw_page(d):
-    """Extrait la Page Playwright native depuis un PlaywrightDriverShim ou retourne d tel quel."""
-    if hasattr(d, "_page"):
-        return d._page
-    return d
 
 
 # ============================================================
@@ -105,7 +100,7 @@ def _page_text_lc(driver) -> str:
     Texte visible "utile" pour les heuristiques.
     Ignore le footer (Privacy Policy / General Terms) pour éviter les faux positifs.
     """
-    page = _pw_page(driver)
+    page = driver
     try:
         txt = page.evaluate("""() => {
             const root = document.querySelector('#survey') || document.querySelector('main') || document.body;
@@ -135,7 +130,7 @@ def _is_formal_survey_question_page(driver) -> bool:
     Détecte une page de question de sondage formelle.
     Utilisé pour EXCLURE les pages de sondage du consent_screen.
     """
-    page = _pw_page(driver)
+    page = driver
     try:
         return bool(page.evaluate(r"""() => {
             // --- Decipher/FocusVision ---
@@ -242,7 +237,7 @@ def is_consent_screen(driver) -> bool:
     """
     Détecte un écran de consentement (cookies / RGPD) *bloquant*.
     """
-    page = _pw_page(driver)
+    page = driver
 
     # Hard negative: un écran "Start/Commencer" n'est pas un consent_screen.
     try:
@@ -600,7 +595,7 @@ def is_start_screen(driver) -> bool:
     """
     Détecte un écran de démarrage (bienvenue/start).
     """
-    page = _pw_page(driver)
+    page = driver
     txt = _page_text_lc(driver)
     if not any(k in txt for k in ["bienvenue", "welcome", "commencer", "démarrer", "start"]):
         return False
@@ -716,7 +711,7 @@ def _has_visible_answerables(driver) -> bool:
     True si la page contient des éléments de réponse visibles.
 
     Convention frame : iter_frame_chains / switch_to_frame_chain reçoivent driver (shim).
-    Après switch, on récupère current_frame via getattr(driver, "_current_frame", _pw_page(driver))
+    Après switch, on récupère current_frame via getattr(driver, "_current_frame", driver)
     pour évaluer le JS dans le contexte de l'iframe (même convention que page_snapshot.py BLOC 3b2).
     """
     _JS = """() => {
@@ -804,7 +799,7 @@ def _has_visible_answerables(driver) -> bool:
         with switch_to_frame_chain(driver, chain) as ok:
             if not ok:
                 continue
-            current_frame = getattr(driver, "_current_frame", _pw_page(driver))
+            current_frame = getattr(driver, "_current_frame", driver)
             try:
                 if current_frame.evaluate(_JS):
                     return True
@@ -845,7 +840,7 @@ def _has_visible_active_cardsort(driver) -> bool:
         with switch_to_frame_chain(driver, chain) as ok:
             if not ok:
                 continue
-            current_frame = getattr(driver, "_current_frame", _pw_page(driver))
+            current_frame = getattr(driver, "_current_frame", driver)
             try:
                 if current_frame.evaluate(_JS):
                     return True
@@ -891,7 +886,7 @@ def is_captcha_screen(driver) -> bool:
     """
     Détecte un CAPTCHA *réellement bloquant*.
     """
-    page = _pw_page(driver)
+    page = driver
 
     def _captcha_result(detected: bool, reason: str) -> bool:
         print(f"[DOM_CLASSIFIER][CAPTCHA] captcha_detected={'true' if detected else 'false'} reason={reason}")
@@ -943,7 +938,7 @@ def is_captcha_screen(driver) -> bool:
             with switch_to_frame_chain(driver, chain) as ok:
                 if not ok:
                     continue
-                current_frame = getattr(driver, "_current_frame", _pw_page(driver))
+                current_frame = getattr(driver, "_current_frame", driver)
                 try:
                     if current_frame.evaluate(_JS_PS):
                         return _captcha_result(True, "ps_captcha_widget_visible")
@@ -1166,7 +1161,7 @@ def is_captcha_screen(driver) -> bool:
     return _captcha_result(False, "no_visible_captcha_challenge")
 
 def is_drag_drop(driver) -> bool:
-    page = _pw_page(driver)
+    page = driver
 
     def _read_text(el) -> str:
         try:
@@ -1213,7 +1208,7 @@ def is_drag_drop(driver) -> bool:
         return False
 
 def is_matrix(driver) -> bool:
-    page = _pw_page(driver)
+    page = driver
     radios = page.query_selector_all("input[type='radio'], [role='radio']")
     if len(radios) < 6:
         return False
@@ -1221,7 +1216,7 @@ def is_matrix(driver) -> bool:
     return len(set(round(y / 30) for y in ys)) >= 2
 
 def is_date_multi_dropdown(driver) -> bool:
-    page = _pw_page(driver)
+    page = driver
     selects = page.query_selector_all("select")
     if len(selects) < 2:
         return False
@@ -1246,7 +1241,7 @@ def _is_decipher_aux_openend(ta, driver) -> bool:
 
 def is_open_textarea(driver) -> bool:
     """Vrai uniquement si un textarea principal est visible et exploitable."""
-    page = _pw_page(driver)
+    page = driver
     try:
         tas = page.query_selector_all("textarea")
     except Exception:
@@ -1271,7 +1266,7 @@ def is_error_recovery_screen(driver) -> bool:
     """
     Détecte la page d'erreur récupérable GreenXP / rx.samplicio.us.
     """
-    page = _pw_page(driver)
+    page = driver
     try:
         return bool(page.evaluate(
             """() => !!(document.querySelector('[data-testid="layout-card"]')"""
@@ -1285,7 +1280,7 @@ def is_prodege_data_privacy_screen(driver) -> bool:
     """
     Détecte la page de consentement Prodege (prsrvy.com /surveys/data-privacy).
     """
-    page = _pw_page(driver)
+    page = driver
     try:
         return bool(page.evaluate(r"""() => {
             if (!document.querySelector('form#dataPrivacyAgreeForm')) return false;
@@ -1301,7 +1296,7 @@ def is_datadiggers_icontrol_final_screen(driver) -> bool:
     """
     Détecte la page de transition DataDiggers iControl post-qualification.
     """
-    page = _pw_page(driver)
+    page = driver
     try:
         return bool(page.evaluate(r"""() => {
             const wrap = document.querySelector('div.wrap.infrmtion');

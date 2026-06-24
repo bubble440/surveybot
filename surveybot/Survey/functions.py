@@ -3,15 +3,11 @@ from preselection.question_validation import detect_disqualification_reason
 from Cash.payout import _payout_and_check_daily_stop
 
 
-def _pw_page(d):
-    if hasattr(d, '_page'):
-        return d._page
-    return d
 
 
 def _page_text_lc(driver) -> str:
     try:
-        return (_pw_page(driver).evaluate("() => document.body.innerText || ''") or "").lower()
+        return (driver.evaluate("() => document.body.innerText || ''") or "").lower()
     except Exception:
         return ""
 
@@ -21,7 +17,7 @@ def _env_truthy(name: str, default: str = "0") -> bool:
 
 def _close_other_tabs_in_current_session(driver):
     """Ferme tous les autres onglets de ce driver, garde l'onglet courant."""
-    page = _pw_page(driver)
+    page = driver
     current = page
     try:
         pages = page.context.pages
@@ -67,7 +63,7 @@ def _handle_topsurveys_exclusion_popup(driver, account_id) -> bool: #survey_exec
     Retourne False si aucun des deux cas n'est detecte.
     """
     try:
-        url = (_pw_page(driver).url or "").lower()
+        url = (driver.url or "").lower()
         if "topsurveys.app" not in url:
             return False
     except Exception:
@@ -77,7 +73,7 @@ def _handle_topsurveys_exclusion_popup(driver, account_id) -> bool: #survey_exec
 
     # === PRIORITE 1 : Mystery boxes ===
     try:
-        has_boxes = bool(_pw_page(driver).query_selector_all("[data-test-id^='ps-mystery-box-item-button']"))
+        has_boxes = bool(driver.query_selector_all("[data-test-id^='ps-mystery-box-item-button']"))
     except Exception:
         has_boxes = False
 
@@ -102,7 +98,7 @@ def _handle_topsurveys_exclusion_popup(driver, account_id) -> bool: #survey_exec
 
     # === PRIORITE 2 : Popup 'Bon travail !' sans mystery boxes ===
     try:
-        txt = (_pw_page(driver).evaluate("() => document.body.innerText || ''") or "").lower()
+        txt = (driver.evaluate("() => document.body.innerText || ''") or "").lower()
     except Exception:
         return False
 
@@ -125,7 +121,7 @@ def _handle_topsurveys_exclusion_popup(driver, account_id) -> bool: #survey_exec
     # Fermer le popup via le bouton 'Complete'
     btn = None
     try:
-        btn = _pw_page(driver).wait_for_selector(
+        btn = driver.wait_for_selector(
             "button[data-test-id='ps-common-actions-button']",
             state="visible",
             timeout=2000,
@@ -135,7 +131,7 @@ def _handle_topsurveys_exclusion_popup(driver, account_id) -> bool: #survey_exec
 
     if not btn:
         try:
-            for b in _pw_page(driver).query_selector_all("button"):
+            for b in driver.query_selector_all("button"):
                 try:
                     if b.is_visible() and "compl" in _norm(b.inner_text() or ""):
                         btn = b

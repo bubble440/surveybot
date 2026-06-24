@@ -15,10 +15,6 @@ _CAPTCHA_ATTRS = ("id", "class", "alt", "name", "aria-label")
 _CAPTCHA_KEYWORDS = frozenset({"captcha", "cap_img", "securecode", "security-code", "verif-img"})
 
 
-def _pw_page(d):
-    if hasattr(d, '_page'):
-        return d._page
-    return d
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -54,7 +50,7 @@ def detect_normal_captcha(driver) -> dict | None:
     Retourne un dict {"img_el": el, "input_el": el} ou None si rien trouvé.
     """
     try:
-        candidates = _pw_page(driver).query_selector_all("img, canvas")
+        candidates = driver.query_selector_all("img, canvas")
         captcha_img = None
         for el in candidates:
             try:
@@ -72,7 +68,7 @@ def detect_normal_captcha(driver) -> dict | None:
         # Cherche le champ de saisie de la réponse — d'abord dans le même conteneur
         # evaluate_handle retourne un JSHandle ; as_element() donne un ElementHandle utilisable
         input_handle = captcha_img.evaluate_handle(
-            "(e) => {"
+            "(e => {"
             " let n = e;"
             " for (let i = 0; i < 8; i++) {"
             "  n = n.parentElement;"
@@ -88,7 +84,7 @@ def detect_normal_captcha(driver) -> dict | None:
 
         if input_el is None:
             # Fallback : premier <input type="text"> visible sur la page
-            for inp in _pw_page(driver).query_selector_all(
+            for inp in driver.query_selector_all(
                 "input[type='text'], input[type='tel'], input:not([type])"
             ):
                 try:

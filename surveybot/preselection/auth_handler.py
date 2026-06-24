@@ -37,16 +37,6 @@ LOGIN_PAGE_SELECTORS = (
 )
 
 
-def _pw_page(d):
-    """
-    Extrait la Playwright Page native depuis un PlaywrightDriverShim ou retourne d
-    tel quel si c'est déjà une Page native.
-    Point d'adaptation BLOC 1 : toutes les fonctions de ce fichier appellent cette
-    helper en premier pour travailler exclusivement avec l'API Playwright native.
-    """
-    if hasattr(d, "_page"):
-        return d._page
-    return d
 
 
 def _detect_login_page(driver) -> str:
@@ -55,7 +45,7 @@ def _detect_login_page(driver) -> str:
     sinon 'topsurveys' (landing marketing).
     """
     try:
-        url = (_pw_page(driver).url or "").lower()
+        url = (driver.url or "").lower()
         if "app-login" in url or (
             "app.topsurveys.app" in url and "/surveys" not in url
         ):
@@ -93,7 +83,7 @@ def dom_probe(driver):
     if not _is_prod_env():
         return
 
-    page = _pw_page(driver)
+    page = driver
     print("[DOM] url=", page.url, "title=", page.title())
     sels = [
         "xpath=//a[normalize-space()=\"Se connecter / S'inscrire\"]",
@@ -121,7 +111,7 @@ def is_session_expired(driver) -> bool:
     Doit être appelée AVANT toute logique survey.
     """
     try:
-        txt = (_pw_page(driver).content() or "").lower()
+        txt = (driver.content() or "").lower()
         signals = [
             "session expired",
             "your session has expired",
@@ -141,7 +131,7 @@ def is_proxy_error_page(driver) -> bool:
     Détecte la page d'erreur Chrome ERR_TIMED_OUT indiquant un proxy expiré ou inaccessible.
     """
     try:
-        page = _pw_page(driver)
+        page = driver
         url = page.url or ""
         if "chrome-error://" in url:
             return True
@@ -223,7 +213,7 @@ def snap(driver, label: str = "state"):
         return
 
     try:
-        png = _pw_page(driver).screenshot()
+        png = driver.screenshot()
 
         path = f"/tmp/{label}.png"
         with open(path, "wb") as f:
@@ -238,7 +228,7 @@ def snap(driver, label: str = "state"):
 
 
 def wait_for_vue_hydration(driver, timeout=15):
-    page = _pw_page(driver)
+    page = driver
     start = time.time()
     while time.time() - start < timeout:
         try:
@@ -255,7 +245,7 @@ def wait_for_vue_hydration(driver, timeout=15):
 
 
 def login(driver, email, password):
-    page = _pw_page(driver)
+    page = driver
 
     print("[DEBUG][DRIVER] type=", type(driver))
     print("[DEBUG][DRIVER] has _page=", hasattr(driver, "_page"))

@@ -2,15 +2,11 @@
 import re, json
 
 
-def _pw_page(d):
-    if hasattr(d, '_page'):
-        return d._page
-    return d
 
 
 def extract_recaptcha_v2_sitekey(driver):
     """Retourne (sitekey, is_invisible, is_enterprise) ou (None, None, False) si introuvable."""
-    page = _pw_page(driver)
+    page = driver
     # Détection Enterprise : iframe src contenant /recaptcha/enterprise/
     is_enterprise = False
     try:
@@ -69,7 +65,7 @@ def extract_recaptcha_v2_sitekey(driver):
 
 def inject_recaptcha_token(driver, token: str):
     """Insère le token dans #g-recaptcha-response et déclenche des events."""
-    _pw_page(driver).evaluate("""
+    driver.evaluate("""
 (tok) => {
     var el = document.getElementById('g-recaptcha-response');
     if(!el){

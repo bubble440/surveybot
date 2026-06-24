@@ -8,11 +8,6 @@ from typing import Iterator, List
 FrameChain = List[int]
 
 
-def _pw_page(d):
-    """Extrait la Page Playwright native depuis un PlaywrightDriverShim ou retourne d tel quel."""
-    if hasattr(d, "_page"):
-        return d._page
-    return d
 
 
 def _frame_elements(driver):
@@ -25,7 +20,7 @@ def _frame_elements(driver):
     - Si driver._current_frame est une Page Playwright → retourne les child_frames du main_frame.
     """
     try:
-        page = _pw_page(driver)
+        page = driver
         current = getattr(driver, "_current_frame", page)
         if hasattr(current, "child_frames"):
             # current est une Frame Playwright
@@ -46,7 +41,7 @@ def switch_to_frame_chain(driver, chain: FrameChain):
     - Yield   : True si la navigation réussit, False si un index est hors-borne ou erreur.
     - Met à jour driver._current_frame (si driver est un shim) pour que les appelants
       puissent lire le contexte courant via :
-          current_frame = getattr(driver, "_current_frame", _pw_page(driver))
+          current_frame = getattr(driver, "_current_frame", driver)
       puis appeler current_frame.evaluate(...) / current_frame.content() etc.
     - Toujours retour au contexte racine (Page) en sortie du with (équivalent default_content()).
 
@@ -55,7 +50,7 @@ def switch_to_frame_chain(driver, chain: FrameChain):
         with switch_to_frame_chain(driver, [0]) as ok:   # première iframe
         with switch_to_frame_chain(driver, [0, 1]) as ok: # iframe imbriquée
     """
-    page = _pw_page(driver)
+    page = driver
 
     def _reset():
         """Retour au contexte racine : driver._current_frame = page."""

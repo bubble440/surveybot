@@ -29,10 +29,6 @@ import os
 import time
 
 
-def _pw_page(d):
-    if hasattr(d, '_page'):
-        return d._page
-    return d
 
 _TAG = "SNAP_R2"
 
@@ -88,8 +84,8 @@ def _capture_png(driver) -> bytes:
 
     Stratégie :
       1. scrot via $DISPLAY              → capture bureau complet (préféré)
-      2. _pw_page(driver).screenshot()   → fallback viewport Playwright (bytes)
-      3. _pw_page(driver).screenshot(path) → fallback fichier Playwright
+      2. driver.screenshot()   → fallback viewport Playwright (bytes)
+      3. driver.screenshot(path) → fallback fichier Playwright
     """
     import subprocess
     import tempfile
@@ -124,7 +120,7 @@ def _capture_png(driver) -> bytes:
         
     # 2. Fallback Playwright — viewport uniquement (retourne bytes directement)
     try:
-        png = _pw_page(driver).screenshot()
+        png = driver.screenshot()
         if png and len(png) > 0:
             return png
     except Exception:
@@ -134,7 +130,7 @@ def _capture_png(driver) -> bytes:
     with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
         path = tmp.name
     try:
-        _pw_page(driver).screenshot(path=path)
+        driver.screenshot(path=path)
         with open(path, "rb") as f:
             return f.read()
     finally:

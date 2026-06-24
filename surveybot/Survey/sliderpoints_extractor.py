@@ -10,10 +10,6 @@ from Survey.dom_registry import make_target_id, register_target
 # ---------------------------------------------------------------------------
 # Playwright page helper
 # ---------------------------------------------------------------------------
-def _pw_page(d):
-    if hasattr(d, '_page'):
-        return d._page
-    return d
 
 
 def _norm_space(s: str) -> str:
@@ -77,7 +73,7 @@ def _extract_continue_button(driver) -> List[Dict[str, Any]]:
     ]
     for css in selectors:
         try:
-            el = _pw_page(driver).query_selector(css)
+            el = driver.query_selector(css)
             if el is None:
                 continue
             dom_id = (el.get_attribute("id") or "").strip()
@@ -128,7 +124,7 @@ def extract_sliderpoints_question_blocks(driver) -> List[Dict[str, Any]]:
     - ignore sliderpoints_OO (checkboxes internes)
     """
     try:
-        roots = _pw_page(driver).query_selector_all(".sq-sliderpoints")
+        roots = driver.query_selector_all(".sq-sliderpoints")
     except Exception:
         roots = []
 

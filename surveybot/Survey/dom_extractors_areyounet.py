@@ -25,11 +25,6 @@ except ImportError:
     # dom_registry devra être disponible
 
 
-def _pw_page(d):
-    """Extrait la Page Playwright native depuis un PlaywrightDriverShim ou retourne d tel quel."""
-    if hasattr(d, "_page"):
-        return d._page
-    return d
 
 
 # ================================================================================
@@ -46,7 +41,7 @@ def _extract_areyounet_matrix_blocks(driver, frame_chain: list[int] | None) -> l
 
     # Pattern spécifique plateforme
     try:
-        matrices = _pw_page(driver).query_selector_all("div.MatriceViewElement")
+        matrices = driver.query_selector_all("div.MatriceViewElement")
     except Exception:
         return []
 
@@ -221,7 +216,7 @@ def _extract_areyounet_switch_radio_blocks(driver, frame_chain: list[int] | None
 
     # Pattern spécifique plateforme
     try:
-        containers = _pw_page(driver).query_selector_all("td[id^='QCB_'], div[id^='QCB_']")
+        containers = driver.query_selector_all("td[id^='QCB_'], div[id^='QCB_']")
     except Exception:
         return []
 
@@ -421,7 +416,7 @@ def _extract_areyounet_switch_checkbox_blocks(driver, frame_chain: list[int] | N
 
     # Pattern spécifique plateforme
     try:
-        containers = _pw_page(driver).query_selector_all("td[id^='QCB_'], div[id^='QCB_']")
+        containers = driver.query_selector_all("td[id^='QCB_'], div[id^='QCB_']")
     except Exception:
         return []
 

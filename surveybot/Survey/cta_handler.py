@@ -14,18 +14,8 @@ Dépendances:
 - frame_utils pour la navigation iframe
 """
 
-def _pw_page(d):
-    """Extrait la Page Playwright native depuis un PlaywrightDriverShim ou retourne d tel quel."""
-    if hasattr(d, "_page"):
-        return d._page
-    return d
 
 
-def _handle(el):
-    """Extrait le ElementHandle natif depuis un PlaywrightElementShim (_h) ou retourne el."""
-    if hasattr(el, "_h"):
-        return el._h
-    return el
 import unicodedata
 import re
 from urllib.parse import urlsplit
@@ -225,7 +215,7 @@ def _is_internal_task_carousel_arrow(driver, el) -> bool:
 def _read_arm_error(driver) -> str:
     """Retourne le dernier message d'erreur d'armement JS si présent."""
     try:
-        err = _pw_page(driver).evaluate("() => window.__sbCtaInterceptLastError || null")
+        err = driver.evaluate("() => window.__sbCtaInterceptLastError || null")
         if isinstance(err, str) and err.strip():
             return err.strip()
     except Exception:
@@ -247,7 +237,7 @@ def disarm_interceptor(driver) -> bool:
     })();
     """
     try:
-        return bool(_pw_page(driver).evaluate("() => { " + js + " }"))
+        return bool(driver.evaluate("() => { " + js + " }"))
     except Exception:
         return False
 
@@ -437,7 +427,7 @@ def arm_interceptor(driver) -> bool:
     })();
     """
     try:
-        return bool(_pw_page(driver).evaluate("() => { " + js + " }"))
+        return bool(driver.evaluate("() => { " + js + " }"))
     except Exception:
         return False
 
@@ -445,7 +435,7 @@ def arm_interceptor(driver) -> bool:
 def read_intercept_report(driver):
     """Retourne le rapport d'interception CTA depuis window.__sbCtaIntercept."""
     try:
-        return _pw_page(driver).evaluate("() => window.__sbCtaIntercept || null")
+        return driver.evaluate("() => window.__sbCtaIntercept || null")
     except Exception:
         return None
 
@@ -472,7 +462,7 @@ def _probe_interceptor_state(driver):
     })();
     """
     try:
-        v = _pw_page(driver).evaluate("() => { " + js + " }")
+        v = driver.evaluate("() => { " + js + " }")
         return v if isinstance(v, dict) else {"probeError": True, "msg": "non-dict"}
     except Exception as e:
         return {"probeError": True, "msg": str(e)}
@@ -491,7 +481,7 @@ def _format_intercept_target(target) -> str:
 
 def _safe_url(driver) -> str:
     try:
-        u = _pw_page(driver).url
+        u = driver.url
         if not u:
             return "<unknown>"
         p = urlsplit(u)
@@ -570,7 +560,7 @@ def _dom_progress_marker(driver):
     })();
     """
     try:
-        marker = _pw_page(driver).evaluate("() => { " + js + " }")
+        marker = driver.evaluate("() => { " + js + " }")
         return marker if isinstance(marker, dict) else {"url": "", "txt": "", "qNodes": -1, "notifSig": ""}
     except Exception:
         return {"url": "", "txt": "", "qNodes": -1, "notifSig": ""}
@@ -617,7 +607,7 @@ def _wait_post_click_stabilization(driver, el, before_marker, timeout_s=5.0):
     before_url = (before_marker or {}).get("url") or ""
     before_outer = ""
     try:
-        before_outer = _pw_page(driver).evaluate("(el) => el ? (el.outerHTML || '') : ''", _handle(el)) or ""
+        before_outer = driver.evaluate("(el) => el ? (el.outerHTML || '') : ''", el) or ""
     except Exception:
         before_outer = ""
 
@@ -637,7 +627,7 @@ def _wait_post_click_stabilization(driver, el, before_marker, timeout_s=5.0):
             return True
 
         try:
-            is_connected = _pw_page(driver).evaluate("(el) => el && el.isConnected", _handle(el))
+            is_connected = driver.evaluate("(el) => el && el.isConnected", el)
             if is_connected is False:
                 state["target_changed"] = True
                 if state["reason"] == "timeout":
@@ -649,7 +639,7 @@ def _wait_post_click_stabilization(driver, el, before_marker, timeout_s=5.0):
                     state["reason"] = "target_hidden"
 
             if before_outer:
-                after_outer = _pw_page(driver).evaluate("(el) => el ? (el.outerHTML || '') : ''", _handle(el)) or ""
+                after_outer = driver.evaluate("(el) => el ? (el.outerHTML || '') : ''", el) or ""
                 if after_outer and after_outer != before_outer:
                     state["target_changed"] = True
                     if state["reason"] == "timeout":
@@ -745,16 +735,16 @@ def _press_click_release(driver, el):
             pass
 
     try:
-        _handle(el).hover()
-        _pw_page(driver).mouse.down()
+        el.hover()
+        driver.mouse.down()
         time.sleep(0.06)
-        _pw_page(driver).mouse.up()
+        driver.mouse.up()
         click_ok = True
     except Exception:
         click_ok = False
 
     try:
-        release_sent = bool(_pw_page(driver).evaluate(
+        release_sent = bool(driver.evaluate(
             """(el) => {
             const mk = (Ctor, type) => {
               try { return new Ctor(type, { bubbles: true, cancelable: true, view: window }); }
@@ -769,7 +759,7 @@ def _press_click_release(driver, el):
             push(el, mk(MouseEvent, 'mouseup'));
             push(document, mk(MouseEvent, 'mouseup'));
             return true;
-        }""", _handle(el)))
+        }""", el))
     except Exception:
         release_sent = False
 
@@ -847,7 +837,7 @@ def _click_with_intercept(driver, el) -> bool:
     token = f"{int(time.time()*1000)}_{os.getpid()}"
 
     try:
-        _pw_page(driver).evaluate(
+        driver.evaluate(
             r"""([el, tok]) => {
             window.__sbCtaInterceptToken = tok;
             try { el.setAttribute('data-sb-cta-token', tok); } catch(e) {}
@@ -860,7 +850,7 @@ def _click_with_intercept(driver, el) -> bool:
             };
             const evt = new MouseEvent('click', { bubbles: true, cancelable: true, view: window });
             return el.dispatchEvent(evt);
-        }""", [_handle(el), token])
+        }""", [el, token])
     except Exception:
         # Désarmement garanti pour ne pas bloquer les clics utilisateur.
         disarm_interceptor(driver)
@@ -878,13 +868,13 @@ def _click_with_intercept(driver, el) -> bool:
     report = report if isinstance(report, dict) else {}
     # Si l'armement JS a eu une erreur interne, on la log (utile pour Ipsos).
     try:
-        if _pw_page(driver).evaluate("() => window.__sbCtaInterceptArmedOk === false"):
+        if driver.evaluate("() => window.__sbCtaInterceptArmedOk === false"):
             log_debug("[CTA_INTERCEPT]", f"arm_internal_error=true err={_read_arm_error(driver) or '<none>'}")
     except Exception:
         pass
     selected = None
     try:
-        selected = _pw_page(driver).evaluate("() => window.__sbCtaInterceptSelected || null")
+        selected = driver.evaluate("() => window.__sbCtaInterceptSelected || null")
     except Exception:
         selected = None
 
@@ -902,9 +892,9 @@ def _click_with_intercept(driver, el) -> bool:
 
     # Nettoyage + désarmement : CRITIQUE pour ne jamais bloquer les autres inputs.
     try:
-        _pw_page(driver).evaluate(
+        driver.evaluate(
             "(el) => { try { el.removeAttribute('data-sb-cta-token'); } catch(e) {} }",
-            _handle(el)
+            el
         )
     except Exception:
         pass
@@ -1052,7 +1042,7 @@ def click_button_by_text(driver, text) -> bool:
                 _normalize_lbl(lbl).find(target) != -1
                 or target.find(_normalize_lbl(lbl)) != -1
             ):
-                _pw_page(driver).evaluate("(el) => el.scrollIntoView({block:'center'})", _handle(el))
+                driver.evaluate("(el) => el.scrollIntoView({block:'center'})", el)
                 time.sleep(0.1)
                 if _click_with_intercept(driver, el):
                     time.sleep(PAUSE_AFTER_CTA_CLICK)
@@ -1069,7 +1059,7 @@ def click_button_by_text(driver, text) -> bool:
         elems = driver.query_selector_all("xpath=" + xpath)
         for el in elems:
             try:
-                _pw_page(driver).evaluate("(el) => el.scrollIntoView({block:'center'})", _handle(el))
+                driver.evaluate("(el) => el.scrollIntoView({block:'center'})", el)
                 time.sleep(0.1)
                 if _click_with_intercept(driver, el):
                     time.sleep(PAUSE_AFTER_CTA_CLICK)
@@ -1098,7 +1088,7 @@ def click_button_by_text(driver, text) -> bool:
                         continue
                     lbl_norm = _normalize_lbl(label)
                     if lbl_norm and (lbl_norm.find(target) != -1 or target.find(lbl_norm) != -1):
-                        _pw_page(driver).evaluate("(el) => el.scrollIntoView({block:\'center\'})", _handle(el))
+                        driver.evaluate("(el) => el.scrollIntoView({block:\'center\'})", el)
                         time.sleep(0.1)
                         if _click_with_intercept(driver, el):
                             time.sleep(PAUSE_AFTER_CTA_CLICK)
@@ -1130,7 +1120,7 @@ def click_button_by_text(driver, text) -> bool:
         }
         return false;
         """
-        ok = _pw_page(driver).evaluate("(target) => {\n" + js.replace("arguments[0]", "target") + "\n}", target)
+        ok = driver.evaluate("(target) => {\n" + js.replace("arguments[0]", "target") + "\n}", target)
         if ok:
             time.sleep(PAUSE_AFTER_CTA_CLICK)
             return True
@@ -1168,8 +1158,8 @@ def click_icon_like_button(driver, hints=None) -> bool:
     if not visibles:
         return False
 
-    vw = _pw_page(driver).evaluate("() => window.innerWidth") or 1200
-    vh = _pw_page(driver).evaluate("() => window.innerHeight") or 800
+    vw = driver.evaluate("() => window.innerWidth") or 1200
+    vh = driver.evaluate("() => window.innerHeight") or 800
 
     def score(el):
         try:
@@ -1213,7 +1203,7 @@ def click_icon_like_button(driver, hints=None) -> bool:
 
     for el in visibles[:6]:
         try:
-            _pw_page(driver).evaluate("(el) => el.scrollIntoView({block:\'center\'})", _handle(el))
+            driver.evaluate("(el) => el.scrollIntoView({block:\'center\'})", el)
             time.sleep(0.1)
             if _click_with_intercept(driver, el):
                 time.sleep(PAUSE_AFTER_CTA_CLICK)
@@ -1266,8 +1256,8 @@ def click_primary_cta(driver) -> bool:
         print("✗ Aucun CTA visible. source: cta_handler.py")
         return False
 
-    vw = _pw_page(driver).evaluate("() => window.innerWidth") or 1200
-    vh = _pw_page(driver).evaluate("() => window.innerHeight") or 800
+    vw = driver.evaluate("() => window.innerWidth") or 1200
+    vh = driver.evaluate("() => window.innerHeight") or 800
 
     def score(el):
         try:
@@ -1281,7 +1271,7 @@ def click_primary_cta(driver) -> bool:
 
     for el in visibles:
         try:
-            _pw_page(driver).evaluate("(el) => el.scrollIntoView({block:\'center\'})", _handle(el))
+            driver.evaluate("(el) => el.scrollIntoView({block:\'center\'})", el)
             time.sleep(0.1)
             if _click_with_intercept(driver, el):
                 time.sleep(PAUSE_AFTER_CTA_CLICK)
@@ -1367,7 +1357,7 @@ def _dismiss_blocking_overlays(driver) -> int:
     })();
     """
     try:
-        buttons = _pw_page(driver).evaluate("() => { " + JS_FIND_DISMISS_BUTTONS + " }")
+        buttons = driver.evaluate("() => { " + JS_FIND_DISMISS_BUTTONS + " }")
     except Exception:
         return 0
 
@@ -1437,7 +1427,7 @@ def try_click_navigation_cta(driver) -> bool:
                 # Garde 3 : conteneur adc-statementList présent (Askia widget)
                 if not driver.query_selector_all("[class*='adc-statementList'], [id^='adc_']"):
                     continue
-                _pw_page(driver).evaluate("(el) => el.scrollIntoView({block:\'center\'})", _handle(el))
+                driver.evaluate("(el) => el.scrollIntoView({block:\'center\'})", el)
                 log_debug("[CTA_NAV]", "CTA_FOUND pattern=askia_statement_list selector=div.nextStatement.Btn")
                 # el.click() natif : contourne onmousedown=false, déclenche le handler JS Askia
                 try:
@@ -1476,7 +1466,7 @@ def try_click_navigation_cta(driver) -> bool:
                 rect = el.bounding_box() or {}
                 if rect.get("width", 0) < 24 or rect.get("height", 0) < 24:
                     continue
-                _pw_page(driver).evaluate("(el) => el.scrollIntoView({block:\'center\'})", _handle(el))
+                driver.evaluate("(el) => el.scrollIntoView({block:\'center\'})", el)
                 _nav_log("[CTA_NAV]", "CTA_FOUND pattern=icon_div_next id=next", driver)
                 clicked = _click_with_intercept(driver, el)
                 _nav_log("[CTA_NAV]", f"CTA_CLICKED pattern=icon_div_next id=next PROGRESSED={str(bool(clicked)).lower()}", driver)
@@ -1510,7 +1500,7 @@ def try_click_navigation_cta(driver) -> bool:
                 if title and ("précéd" in title or "preced" in title or "previous" in title):
                     continue
 
-                _pw_page(driver).evaluate("(el) => el.scrollIntoView({block:\'center\'})", _handle(a))
+                driver.evaluate("(el) => el.scrollIntoView({block:\'center\'})", a)
                 if _click_with_intercept(driver, a):
                     _nav_log("[CTA_NAV]", "clicked navbar Next link", driver)
                     log_info("[CTA_NAV]", "Survey: clicked navbar Next link")
@@ -1529,7 +1519,7 @@ def try_click_navigation_cta(driver) -> bool:
                 except Exception:
                     a = None
                 el = a or img
-                _pw_page(driver).evaluate("(el) => el.scrollIntoView({block:\'center\'})", _handle(el))
+                driver.evaluate("(el) => el.scrollIntoView({block:\'center\'})", el)
                 if _click_with_intercept(driver, el):
                     _nav_log("[CTA_NAV]", "clicked nextButton image", driver)
                     log_info("[CTA_NAV]", "B3netSurvey: clicked nextButton image")
@@ -1558,7 +1548,7 @@ def try_click_navigation_cta(driver) -> bool:
 "CTA_FOUND provider_hint=forsta button=cf-navigation",
                     driver,
                 )
-                _pw_page(driver).evaluate("(el) => el.scrollIntoView({block:\'center\'})", _handle(btn))
+                driver.evaluate("(el) => el.scrollIntoView({block:\'center\'})", btn)
                 clicked = _click_with_intercept(driver, btn)
                 _nav_log("[CTA_NAV]", f"CTA_CLICKED provider_hint=forsta PROGRESSED={str(bool(clicked)).lower()}", driver)
                 if _cta_intercept_enabled() and clicked:
@@ -1577,7 +1567,7 @@ def try_click_navigation_cta(driver) -> bool:
             try:
                 if not btn.is_visible() or not btn.is_enabled():
                     continue
-                _pw_page(driver).evaluate("(el) => el.scrollIntoView({block:\'center\'})", _handle(btn))
+                driver.evaluate("(el) => el.scrollIntoView({block:\'center\'})", btn)
                 if _click_with_intercept(driver, btn):
                     _nav_log("[CTA_NAV]", "CTA_FOUND provider_hint=consent_modal button=consent-button-confirm", driver)
                     if _cta_intercept_enabled():
@@ -1600,7 +1590,7 @@ def try_click_navigation_cta(driver) -> bool:
                     continue
                 if (btn.get_attribute("aria-disabled") or "").lower() == "true":
                     continue
-                _pw_page(driver).evaluate("(el) => el.scrollIntoView({block:\'center\'})", _handle(btn))
+                driver.evaluate("(el) => el.scrollIntoView({block:\'center\'})", btn)
                 _nav_log("[CTA_NAV]", "CTA_FOUND pattern=toluna_nav_wrapper", driver)
                 clicked = _click_with_intercept(driver, btn)
                 _nav_log("[CTA_NAV]", f"CTA_CLICKED pattern=toluna_nav_wrapper PROGRESSED={str(bool(clicked)).lower()}", driver)
@@ -1625,7 +1615,7 @@ def try_click_navigation_cta(driver) -> bool:
             except Exception:
                 pass
 
-            _pw_page(driver).evaluate("(el) => el.scrollIntoView({block:\'center\'})", _handle(el))
+            driver.evaluate("(el) => el.scrollIntoView({block:\'center\'})", el)
             if _click_with_intercept(driver, el):
                 _nav_log("[CTA_NAV]", "clicked #btn_next", driver)
                 log_info("[CTA_NAV]", "AreYouNet: clicked #btn_next")
@@ -1638,7 +1628,7 @@ def try_click_navigation_cta(driver) -> bool:
         links = driver.query_selector_all("a[href*='EnqueteDef_submit']")
         if links:
             el = links[0]
-            _pw_page(driver).evaluate("(el) => el.scrollIntoView({block:\'center\'})", _handle(el))
+            driver.evaluate("(el) => el.scrollIntoView({block:\'center\'})", el)
             if _click_with_intercept(driver, el):
                 _nav_log("[CTA_NAV]", "clicked EnqueteDef_submit link", driver)
                 log_info("[CTA_NAV]", "AreYouNet: clicked EnqueteDef_submit link")
@@ -1652,7 +1642,7 @@ def try_click_navigation_cta(driver) -> bool:
         if btns:
             el = btns[0]
             if el.is_visible():
-                _pw_page(driver).evaluate("(el) => el.scrollIntoView({block:\'center\'})", _handle(el))
+                driver.evaluate("(el) => el.scrollIntoView({block:\'center\'})", el)
                 if _click_with_intercept(driver, el):
                     _nav_log("[CTA_NAV]", "clicked #btn_continue", driver)
                     log_info("[CTA_NAV]", "Decipher: clicked #btn_continue")
@@ -1678,7 +1668,7 @@ def try_click_navigation_cta(driver) -> bool:
                 _nav_log("[CTA_NAV]", "CTA_FOUND gridclick_widget INTERCEPT_IMPOSSIBLE reason=widget_not_visible", driver)
                 return False
 
-            _pw_page(driver).evaluate("(el) => el.scrollIntoView({block:\'center\'})", _handle(el))
+            driver.evaluate("(el) => el.scrollIntoView({block:\'center\'})", el)
             clicked = _click_with_intercept(driver, el)
             if clicked:
                 _nav_log("[CTA_NAV]", "CTA_FOUND gridclick_widget INTERCEPT_OK", driver)
@@ -1697,7 +1687,7 @@ def try_click_navigation_cta(driver) -> bool:
         if btns:
             el = btns[0]
             if el.is_visible():
-                _pw_page(driver).evaluate("(el) => el.scrollIntoView({block:\'center\'})", _handle(el))
+                driver.evaluate("(el) => el.scrollIntoView({block:\'center\'})", el)
                 if _click_with_intercept(driver, el):
                     _nav_log("[CTA_NAV]", "clicked #btnsmall or .enterButton.submitButton", driver)
                     log_info("[CTA_NAV]", "RSCH: clicked #btnsmall or .enterButton.submitButton")
@@ -1910,7 +1900,7 @@ def try_click_navigation_cta(driver) -> bool:
 f"CTA_FOUND candidate score={score}",
                 driver,
             )
-            _pw_page(driver).evaluate("(el) => el.scrollIntoView({block:\'center\'})", _handle(el))
+            driver.evaluate("(el) => el.scrollIntoView({block:\'center\'})", el)
             tried += 1
             clicked = _click_with_intercept(driver, el)
             _nav_log("[CTA_NAV]", f"CTA_CLICKED candidate score={score} PROGRESSED={str(bool(clicked)).lower()}", driver)
@@ -2064,7 +2054,7 @@ def click_cta_strong_any_context(driver, text=None, label_hint=None, depth: int 
                         pass
 
                     try:
-                        _pw_page(driver).evaluate("(el) => el.scrollIntoView({block:\'center\'})", _handle(el))
+                        driver.evaluate("(el) => el.scrollIntoView({block:\'center\'})", el)
                     except Exception:
                         pass
 
@@ -2101,7 +2091,7 @@ def try_click_qps_skip_to_survey(driver, *, max_wait_s: float = 8.0, poll_s: flo
     import os, time
 
     try:
-        current_url = _pw_page(driver).url or ""
+        current_url = driver.url or ""
     except Exception:
         return False
 

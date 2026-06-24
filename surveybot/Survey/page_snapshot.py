@@ -9,11 +9,6 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 
-def _pw_page(d):
-    """Extrait la Page Playwright native depuis un PlaywrightDriverShim ou retourne d tel quel."""
-    if hasattr(d, "_page"):
-        return d._page
-    return d
 
 
 def _wait_dom_settle(
@@ -29,7 +24,7 @@ def _wait_dom_settle(
       - attend document.readyState == 'complete'
       - puis attends que (len(outerHTML), len(innerText), count(inputs)) soit stable N fois
     """
-    page = _pw_page(driver)
+    page = driver
 
     _JS_SIG = """() => {
         try {
@@ -78,10 +73,9 @@ def _wait_dom_settle(
 def _dump_frames_best_effort(driver, folder: Path) -> List[Dict[str, Any]]:
     """Dump les DOM des iframes dans ./frames (best-effort).
 
-    Frontière BLOC 3b2 → frame_utils.py : iter_frame_chains et switch_to_frame_chain
-    attendent un objet shim (driver.find_elements, driver.switch_to.*). On leur passe
-    driver tel quel. Après le switch, shim._current_frame pointe vers la Frame courante ;
-    on l'utilise directement pour les opérations DOM natives dans l'iframe.
+    Utilise frame_utils.iter_frame_chains / switch_to_frame_chain sur un objet
+    Page Playwright natif. Après le switch, la Frame courante est utilisée
+    directement via les API Playwright natives (query_selector_all, inner_text, etc.).
     """
     try:
         from Survey.frame_utils import iter_frame_chains, switch_to_frame_chain  # type: ignore
@@ -104,7 +98,7 @@ def _dump_frames_best_effort(driver, folder: Path) -> List[Dict[str, Any]]:
             # Récupère la Frame courante que le shim vient de sélectionner.
             # Pour chain==[] (main): _current_frame == _page (Page Playwright).
             # Pour chain==[i]: _current_frame == Frame Playwright de l'iframe.
-            current_frame = getattr(driver, "_current_frame", _pw_page(driver))
+            current_frame = getattr(driver, "_current_frame", driver)
 
             try:
                 url = current_frame.evaluate("() => location.href") or ""
@@ -198,7 +192,7 @@ def dump_page_snapshot(
     - page.mhtml (si Chrome/Chromium via CDP natif Playwright)
     - question_blocks.json (si fourni)
     """
-    page = _pw_page(driver)
+    page = driver
 
     ts = time.strftime("%Y%m%d_%H%M%S")
 
@@ -317,7 +311,7 @@ def dump_page_snapshot(
     except Exception as e:
         (folder / "mhtml_error.txt").write_text(repr(e), encoding="utf-8")
 
-    # Dump frames (passe driver = shim pour frame_utils)
+    # Dump frames
     try:
         frames = _dump_frames_best_effort(driver, folder)
     except Exception:

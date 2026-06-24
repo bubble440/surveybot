@@ -6,21 +6,7 @@ import time, os
 from Survey.log_utils import log_debug, log_info
 
 
-def _pw_page(d):
-    """Extrait la Page Playwright native depuis un PlaywrightDriverShim ou retourne d tel quel."""
-    if hasattr(d, "_page"):
-        return d._page
-    return d
 
-
-def _make_shim(page):
-    """
-    Crée un PlaywrightDriverShim wrappant page.
-    Utilisé comme pont BLOC 3a → hors-périmètre (execute_survey_page, detect_strict_survey,
-    platform.handle_post_survey → Survey/functions.py, try_click_qps_skip_to_survey, etc.).
-    """
-    from preselection.playwright_shim import PlaywrightDriverShim
-    return PlaywrightDriverShim(page.context, page.context, page)
 
 
 def _wait_for_url_stable(page, max_wait: int = 30) -> str:
@@ -66,7 +52,7 @@ def _switch_to_external_tab(driver, platform):
     Met aussi à jour driver._page si driver est un shim (compat prod path).
     """
     time.sleep(3)
-    page = _pw_page(driver)
+    page = driver
     context = page.context
     domains = platform.get_domains()
     for pg in context.pages:
@@ -86,7 +72,7 @@ def count_actionable_elements(driver) -> int:
     Compte rapidement les éléments actionnables visibles sur la page.
     Sert à savoir s'il reste 'beaucoup' d'inputs (évite d'envoyer prev inutilement).
     """
-    page = _pw_page(driver)
+    page = driver
     total = 0
     try:
         sels = [
@@ -119,7 +105,7 @@ def _has_actionable_elements(driver):
     Heuristique : y a-t-il des éléments actionnables ?
     ➜ Vérifie le DOM courant ET les iframes (profondeur 2).
     """
-    page = _pw_page(driver)
+    page = driver
 
     def _is_actionable(el) -> bool:
         """Évite les faux positifs : caché / disabled / taille nulle."""
@@ -211,7 +197,7 @@ def _get_multi_page_state(driver) -> tuple:
       - inputs        : tuple trié des valeurs sélectionnées/cochées   (niveau 4)
     En cas d'erreur, retourne (0, (), ()) pour ne pas bloquer.
     """
-    page = _pw_page(driver)
+    page = driver
     try:
         q_texts = []
         for sel in [
@@ -252,7 +238,7 @@ def _looks_like_end_screen(driver):
     Détection très simple d'un écran de fin (messages de remerciement/soumission).
     Évite de tourner en rond une fois le questionnaire terminé.
     """
-    page = _pw_page(driver)
+    page = driver
     try:
         page_text = " ".join(
             [
@@ -303,7 +289,7 @@ def _recover_from_network_error(driver) -> str:
       _NET_ERR_RECOVERED — erreur récupérée → appelant doit faire `continue`
       _NET_ERR_EXHAUSTED — tentatives épuisées → appelant doit soft-restart
     """
-    page = _pw_page(driver)
+    page = driver
     # -- Détection via page.content() (seul signal fiable sur chrome-error://) --
     try:
         source_lc = (page.content() or "").lower()
@@ -356,7 +342,7 @@ def _recover_from_yougov_app_error(driver) -> str:
     Détecte la page d'erreur applicative YouGov (#notification.alert-error visible +
     #main_cont masqué) et tente jusqu'à _YG_MAX_ATTEMPTS page.goto() pour récupérer.
     """
-    page = _pw_page(driver)
+    page = driver
     try:
         notif = page.query_selector("#notification")
         if notif is None:
@@ -432,21 +418,20 @@ def solve_full_survey(driver, api_key, *, account_id: str, survey_context=None, 
       - plus rien d'actionnable détecté (survey terminé) → soft-restart
       - stuck : réponse acceptée mais page ne bouge pas (Option B) → soft-restart
     """
-    page = _pw_page(driver)
+    page = driver
 
     # ── Pont BLOC 3a → hors-périmètre ────────────────────────────────────────
     # Shim pour : execute_survey_page (BLOC 3b), detect_strict_survey,
     # platform.handle_post_survey → Survey/functions.py (non migré),
     # try_click_qps_skip_to_survey, solve_recaptcha_v2_auto, snap_uploader.
-    # _shim._page est maintenu en sync avec `page` à chaque changement d'onglet.
-    _shim = _make_shim(page)
-    _shim._survey_account_id = account_id  # lu par execute_survey_page
+    # page._page est maintenu en sync avec `page` à chaque changement d'onglet.
+    page._survey_account_id = account_id
 
     print("🧪 [solve_full_survey] Début de traitement du survey...")
     if os.getenv("SNAP_ENABLED", "").strip() == "1":
         from Management.snap_uploader import new_survey, capture_and_upload
         new_survey()
-        capture_and_upload(_shim, "survey_start")
+        capture_and_upload(page, "survey_start")
 
     _survey_ctx = survey_context or SurveyContext(session_id=account_id, openai_api_key=api_key)
     global _current_survey_ctx
@@ -457,8 +442,6 @@ def solve_full_survey(driver, api_key, *, account_id: str, survey_context=None, 
         all_pages = page.context.pages
         if len(all_pages) > 1:
             page = all_pages[-1]
-            _shim._page = page
-            _shim._current_frame = page
             print(f"🧭 Focus forcé sur l'onglet actif : {page.url}")
     except Exception as e:
         print("⚠ Impossible de forcer le focus onglet :", e)
@@ -467,8 +450,6 @@ def solve_full_survey(driver, api_key, *, account_id: str, survey_context=None, 
     ext_page = _switch_to_external_tab(page, platform=platform)
     if ext_page is not None and ext_page is not page:
         page = ext_page
-        _shim._page = page
-        _shim._current_frame = page
 
     # 1) Attendre que la redirection s'arrête sur une URL stable
     final_url = _wait_for_url_stable(page, max_wait=60)
@@ -488,31 +469,31 @@ def solve_full_survey(driver, api_key, *, account_id: str, survey_context=None, 
     while True:
         if os.getenv("SNAP_ENABLED", "").strip() == "1":
             from Management.snap_uploader import capture_and_upload
-            capture_and_upload(_shim, "survey_loop")
+            capture_and_upload(page, "survey_loop")
 
         # Préqualification Cint/QPS : passer directement au sondage si disponible
         from Survey.cta_handler import try_click_qps_skip_to_survey
-        if try_click_qps_skip_to_survey(_shim):
+        if try_click_qps_skip_to_survey(page):
             time.sleep(PAUSE_POST_CTA_NAV)
             last_url = page.url
             continue
 
         # Réinitialise le drapeau de succès côté handlers
         try:
-            setattr(_shim, "last_action_success", False)
+            setattr(page, "last_action_success", False)
         except Exception:
             pass
 
         # [PATCH] Purge d'un overlay trop ancien (>3s) pour éviter des états collants
         try:
-            ov = getattr(_shim, "_ui_overlay_opened", None)
+            ov = getattr(page, "_ui_overlay_opened", None)
             if ov and (time.time() - ov.get("ts", 0) > 3.0):
-                setattr(_shim, "_ui_overlay_opened", None)
+                setattr(page, "_ui_overlay_opened", None)
         except Exception:
             pass
 
         # --- STRICT GUARD ---
-        is_strict, reason = Management.guards.survey_difficulty_guard.detect_strict_survey(_shim)
+        is_strict, reason = Management.guards.survey_difficulty_guard.detect_strict_survey(page)
         if is_strict:
             if reason == "captcha":
                 from config import get_captcha_behavior
@@ -524,13 +505,13 @@ def solve_full_survey(driver, api_key, *, account_id: str, survey_context=None, 
                         _captcha_url_now = page.url or ""
                     except Exception:
                         _captcha_url_now = ""
-                    _last_captcha_url = getattr(_shim, "_auto2captcha_last_url", None)
-                    _captcha_attempts = getattr(_shim, "_auto2captcha_attempts", 0)
+                    _last_captcha_url = getattr(page, "_auto2captcha_last_url", None)
+                    _captcha_attempts = getattr(page, "_auto2captcha_attempts", 0)
                     if _last_captcha_url != _captcha_url_now:
                         _captcha_attempts = 0
                     _captcha_attempts += 1
-                    setattr(_shim, "_auto2captcha_last_url", _captcha_url_now)
-                    setattr(_shim, "_auto2captcha_attempts", _captcha_attempts)
+                    setattr(page, "_auto2captcha_last_url", _captcha_url_now)
+                    setattr(page, "_auto2captcha_attempts", _captcha_attempts)
                     if _captcha_attempts > 2:
                         log_info("CAPTCHA", f"Boucle captcha détectée ({_captcha_attempts} résolutions sans navigation) → soft-restart")
                         guard.record_success()
@@ -538,7 +519,7 @@ def solve_full_survey(driver, api_key, *, account_id: str, survey_context=None, 
                         return
                     try:
                         from captcha.recaptcha_handler import solve_recaptcha_v2_auto
-                        resolved = solve_recaptcha_v2_auto(_shim)
+                        resolved = solve_recaptcha_v2_auto(page)
                     except Exception as e:
                         print(f"[CAPTCHA] Erreur inattendue recaptcha_handler: {e}")
                         resolved = False
@@ -560,11 +541,11 @@ def solve_full_survey(driver, api_key, *, account_id: str, survey_context=None, 
                 print("[LOCAL][CAPTCHA] ⚠  CAPTCHA détecté → résolution MANUELLE requise")
                 try:
                     captcha_url = page.url or ""
-                    last_captcha_url = getattr(_shim, "_last_captcha_pause_url", None)
+                    last_captcha_url = getattr(page, "_last_captcha_pause_url", None)
                     if last_captcha_url == captcha_url:
                         print("[LOCAL][CAPTCHA]   Captcha déjà traité sur cette URL, on continue")
                     else:
-                        setattr(_shim, "_last_captcha_pause_url", captcha_url)
+                        setattr(page, "_last_captcha_pause_url", captcha_url)
                         from config import should_block_for_input
                         if should_block_for_input():
                             try:
@@ -584,7 +565,7 @@ def solve_full_survey(driver, api_key, *, account_id: str, survey_context=None, 
                         deadline = time.time() + 30.0
                         captcha_resolved = False
                         while time.time() < deadline:
-                            still_strict, still_reason = Management.guards.survey_difficulty_guard.detect_strict_survey(_shim)
+                            still_strict, still_reason = Management.guards.survey_difficulty_guard.detect_strict_survey(page)
                             if not still_strict or still_reason != "captcha":
                                 print("[LOCAL][CAPTCHA] ✅ Captcha résolu → continuation de l'exécution")
                                 captcha_resolved = True
@@ -610,12 +591,12 @@ def solve_full_survey(driver, api_key, *, account_id: str, survey_context=None, 
 
         # -------------------------------------------------------------------
         # CHECK RETOUR PLATEFORME AVANT execute_survey_page
-        # _shim passé à is_on_platform/handle_post_survey car Survey/functions.py
+        # page passé à is_on_platform/handle_post_survey car Survey/functions.py
         # utilise encore l'API Selenium (frontière BLOC 3a → Survey/functions.py).
         # -------------------------------------------------------------------
         try:
-            if platform.is_on_platform(_shim):
-                if platform.handle_post_survey(_shim, account_id):
+            if platform.is_on_platform(page):
+                if platform.handle_post_survey(page, account_id):
                     print("[PRE-EXEC] Retour plateforme traité -> arrêt solve_full_survey()")
                     raise TopSurveysReturn()
         except TopSurveysReturn:
@@ -677,9 +658,9 @@ def solve_full_survey(driver, api_key, *, account_id: str, survey_context=None, 
 
         # -------------------------------------------------------------------
         # a) Laisser GPT décider de l'action — BLOC 3b (execute_survey_page)
-        # Pont BLOC 3a → BLOC 3b : _shim transmis pour compatibilité Selenium.
+        # Pont BLOC 3a → BLOC 3b : page transmis pour compatibilité Selenium.
         # -------------------------------------------------------------------
-        success = Survey.survey_executor.execute_survey_page(_shim, account_id, api_key, ctx=_survey_ctx)
+        success = Survey.survey_executor.execute_survey_page(page, account_id, api_key, ctx=_survey_ctx)
 
         if success:
             guard.record_success()
@@ -699,7 +680,7 @@ def solve_full_survey(driver, api_key, *, account_id: str, survey_context=None, 
 
         # [PATCH] Mode "overlay ouvert" → recapture rapide
         try:
-            overlay = getattr(_shim, "_ui_overlay_opened", None)
+            overlay = getattr(page, "_ui_overlay_opened", None)
         except Exception:
             overlay = None
 
@@ -717,7 +698,7 @@ def solve_full_survey(driver, api_key, *, account_id: str, survey_context=None, 
 
         # c) Attente ADAPTATIVE après action
         try:
-            just_succeeded = bool(getattr(_shim, "last_action_success", False) or success)
+            just_succeeded = bool(getattr(page, "last_action_success", False) or success)
         except Exception:
             just_succeeded = bool(success)
 
@@ -787,10 +768,10 @@ def solve_full_survey(driver, api_key, *, account_id: str, survey_context=None, 
                 pass
             time.sleep(PAUSE_POST_CTA_NAV)
 
-            # Retour plateforme ? (_shim pour Survey/functions.py)
+            # Retour plateforme ? (page pour Survey/functions.py)
             try:
-                if platform.is_on_platform(_shim):
-                    if platform.handle_post_survey(_shim, account_id):
+                if platform.is_on_platform(page):
+                    if platform.handle_post_survey(page, account_id):
                         print("[solve_full_survey] Retour plateforme → arrêt.")
                         raise TopSurveysReturn()
             except TopSurveysReturn:
@@ -843,7 +824,7 @@ def solve_full_survey(driver, api_key, *, account_id: str, survey_context=None, 
         if not has_actionables:
             just_succeeded = False
             try:
-                just_succeeded = bool(getattr(_shim, "last_action_success", False) or success)
+                just_succeeded = bool(getattr(page, "last_action_success", False) or success)
             except Exception:
                 pass
 
