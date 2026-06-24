@@ -616,7 +616,7 @@ def launch_browser_playwright(config: dict | None = None):
       - proxy passé directement à Playwright (pas de relay local)
       - fingerprint JS injecté via context.add_init_script()
 
-    Retourne un PlaywrightDriverShim prêt à l'emploi.
+    Retourne une Page Playwright native prête à l'emploi.
     """
     from playwright.sync_api import sync_playwright
 
@@ -708,13 +708,10 @@ def launch_browser_playwright(config: dict | None = None):
     context.add_init_script(_fingerprint_js())
     page = context.new_page()
 
-    # Pas d'objet Browser séparé : on passe context aux deux premiers slots du shim.
-    # shim._browser.close() appellera context.close(), ce qui ferme aussi le browser.
-    shim = PlaywrightDriverShim(context, context, page)
-    shim._pw                   = pw
-    shim._chrome_user_data_dir = user_data_dir
+    page._pw                   = pw
+    page._chrome_user_data_dir = user_data_dir
     log.info("[LAUNCH][PW] Browser Playwright lancé, fingerprint injecté via add_init_script.")
-    return shim
+    return page
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -722,7 +719,7 @@ def launch_browser_playwright(config: dict | None = None):
 # Pas un mode de production : ne pas appeler depuis le bot en prod.
 # ─────────────────────────────────────────────────────────────────────────────
 
-def launch_browser_playwright_debug(config: dict | None = None) -> PlaywrightDriverShim:
+def launch_browser_playwright_debug(config: dict | None = None):
     """
     Lance Chrome via Playwright avec fenêtre visible (headless=False), fingerprint
     et proxy identiques à launch_browser_playwright(), pour observation manuelle.
@@ -809,11 +806,10 @@ def launch_browser_playwright_debug(config: dict | None = None) -> PlaywrightDri
     )
     input("[DBG] Appuie sur Entrée pour continuer... ")
 
-    shim = PlaywrightDriverShim(context, context, page)
-    shim._pw                   = pw
-    shim._chrome_user_data_dir = user_data_dir
-    log.info("[LAUNCH][PW][DBG] Shim prêt après navigation manuelle.")
-    return shim
+    page._pw                   = pw
+    page._chrome_user_data_dir = user_data_dir
+    log.info("[LAUNCH][PW][DBG] Page prête après navigation manuelle.")
+    return page
 
 
 def attach_browser_playwright(attach_addr: str):
