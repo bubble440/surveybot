@@ -114,10 +114,9 @@ NON MIGRÉS — À traiter dans les blocs S :
   Survey/input_frame.py                ✅ migré BLOC S7a (2026-06-23)
     (iter_iframes_safe + in_each_frame_recursive — switch_to.frame supprimé)
 
-RÉSIDUS SHIM STRING-LITERAL — À nettoyer dans BLOC S7b :
+RÉSIDUS SHIM STRING-LITERAL — ✅ nettoyés dans BLOC S7b (2026-06-24) :
   Survey/dom_analyzer.py, cta_handler.py, input_utils.py,
   input_checkbox.py, input_radio.py, input_matrix.py, action_dispatcher.py
-  (find_elements/execute_script via string literals — absorbés par le shim)
 
 ================================================================================
 DÉCOUPAGE EN BLOCS
@@ -428,11 +427,32 @@ BLOC S7a — platforms/topsurveys.py + platforms/ysense.py + Survey/input_frame.
   - Résultat : 0 By., 0 switch_to.frame, 0 WebDriverWait dans les 3 fichiers. py_compile OK.
 
 BLOC S7b — Résidus string-literal shim dans fichiers "migrés"
-  Statut : 🔲 à migrer
-  Périmètre : find_elements/execute_script via string literals (sans By.*) absorbés par le shim :
-  - Survey/dom_analyzer.py, Survey/cta_handler.py, Survey/input_utils.py,
-    Survey/input_checkbox.py, Survey/input_radio.py, Survey/input_matrix.py,
-    Survey/action_dispatcher.py (~92 execute_script via shim)
+  Statut : ✅ migré (2026-06-24)
+  Périmètre : find_elements/execute_script via string literals (sans By.*) dans 7 fichiers.
+  Migrations appliquées (commun aux 7 fichiers) :
+  - find_elements("css selector"/"tag name", sel) → .query_selector_all(sel)
+  - find_elements("xpath", xp) → .query_selector_all("xpath=" + xp)
+  - find_element("css selector"/"tag name", sel) → .query_selector(sel)
+  - find_element("xpath", xp) → .query_selector("xpath=" + xp)
+  - find_element("id", val) → .query_selector("#val") ou .query_selector(f"#{expr}")
+  - el.tag_name → el.evaluate("e => e.tagName.toLowerCase()")
+  - .is_displayed() → .is_visible()
+  - el.rect / el.rect or {} → el.bounding_box() or {}
+  - el.text → el.inner_text()
+  - .send_keys(v) → .type(v)   [input_utils]
+  - driver.current_url → _pw_page(driver).url
+  - execute_script("""js""", el) → _handle(el).evaluate("""(_el) => { js_arguments[0]→_el }""")
+  - execute_script("""js""", el0, el1) → page.evaluate("""([_el,_arg1]) => {...}""", [_handle(el0), el1])
+  - execute_script("""js""") → page.evaluate("""() => { js }""")
+  - execute_script("inline", el) → _handle(el).evaluate("(_el) => { ... }")
+  - execute_script("inline") → page.evaluate("() => { ... }")
+  Cas spéciaux (éditions ciblées) :
+  - dom_analyzer.py : XPath multi-ligne entre parenthèses
+  - input_radio.py : JS string-concaténation multi-ligne
+  - action_dispatcher.py (7 cas) : JS pré-migré avec _el sans arg Python, querySelector avec string,
+    JS no-arg single-line ; L2078 : _handle(inp).evaluate() — élément déduit du contexte
+  - Résultat : 0 find_elements, 0 execute_script, 0 .send_keys dans les 7 fichiers.
+    py_compile OK sur tous les fichiers.
 
 BLOC S8 — Suppression du shim
   Statut : 🔲 à faire (après S1→S7 tous validés)
@@ -469,9 +489,9 @@ FRONTIÈRE BLOC 3a → BLOC 3b1
   - driver (= shim) transmis aux sous-modules.
 
 FRONTIÈRE BLOC 3b/S → fichiers encore non migrés
-  - Seuls les résidus du bloc S7b (shim string-literal) reçoivent encore le shim.
-  - API Selenium absorbée par le shim — pas de crash tant que le shim existe.
-  - Cette frontière se résorbe avec S7b puis S8.
+  - S1→S7b tous migrés. Plus aucun résidu shim API dans le code applicatif.
+  - Le shim lui-même (playwright_shim.py) sera supprimé en S8.
+  - Cette frontière disparaît avec S8.
 
 INTERFACE switch_to_frame_chain
   - Entrée : driver = shim OU Page native.
@@ -492,6 +512,15 @@ HISTORIQUE
             BLOC S1 migré : survey_difficulty_guard.py — By supprimé, _pw_page ajouté,
             toutes les API Selenium remplacées par Playwright natif.
             Blocs S2→S8 définis et documentés.
+2026-06-24  BLOC S7b migré : dom_analyzer.py + cta_handler.py + input_utils.py +
+            input_checkbox.py + input_radio.py + input_matrix.py + action_dispatcher.py.
+            ~500 appels shim string-literal convertis. find_elements/find_element("css selector"/
+            "tag name"/"xpath"/"id") → query_selector_all/query_selector. execute_script(»js«, el)
+            → _handle(el).evaluate(arrow_fn) ; execute_script(»js«) → page.evaluate(arrow_fn).
+            tag_name → evaluate(tagName). is_displayed() → is_visible(). rect → bounding_box().
+            text → inner_text(). send_keys → type(). current_url → page.url.
+            7 cas spéciaux résolus par éditions ciblées (JS pré-migré _el, XPath multi-ligne…).
+            py_compile OK sur les 7 fichiers. ✅ 100% API Playwright natif dans le code applicatif.
 2026-06-23  BLOC S7a migré : topsurveys.py + ysense.py + input_frame.py.
             topsurveys : current_url → page.url. ysense : By/WebDriverWait/EC supprimés ;
             get/wait_for_selector/fill/evaluate/query_selector/wait_for_function/content().
