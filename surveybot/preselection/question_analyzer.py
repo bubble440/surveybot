@@ -1,7 +1,7 @@
 # question_analyzer.py
 from openai import OpenAI
 from bs4 import BeautifulSoup
-import time, re, unicodedata
+import os, time, re, unicodedata
 from preselection.question_validation import detect_disqualification_reason
 from Survey.log_utils import log_debug, log_info
 
@@ -579,10 +579,15 @@ def click_participer_if_qualified(driver):
             # 3. Snapshot des pages AVANT le clic (objets Page Playwright — cohérent avec redirect_watcher migré)
             base_handles = set(page.context.pages)
 
-            # Clic natif Playwright (move_to + click)
-            btn.hover()
-            btn.click()
-            print("🖱️ Clic natif Playwright sur 'Participer'.")
+            # CTA_INTERCEPT_ONLY : interception sans navigation (tests/non-régression)
+            if os.getenv("CTA_INTERCEPT_ONLY", "0") == "1":
+                print("🛑 CTA_INTERCEPT_ONLY=1 — bouton 'Participer' trouvé, interception OK sans clic.")
+                return False
+
+            # JS dispatch : contourne l'overlay (.popup-content / .popup-container)
+            # qui intercepte pointer-events et bloque le clic natif Playwright (TimeoutError 30 s).
+            btn.evaluate("(el) => el.click()")
+            print("🖱️ JS dispatch click sur 'Participer' (overlay bypass).")
 
             # Pont BLOC 2 → redirect_watcher (hors périmètre, attend un objet shim/driver)
             switched = Management.redirect_watcher.switch_to_latest_window_and_close_others(

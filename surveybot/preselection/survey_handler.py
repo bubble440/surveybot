@@ -468,11 +468,8 @@ def _run_survey_impl(driver, api_key, *, account_id: str, ctx=None, payout_name:
                         except Exception:
                             pass
                         try:
-                            # Pont BLOC 2 → BLOC 3a : solve_full_survey attend une Page
-                            # native depuis BLOC 3a. driver extrait driver._page
-                            # (shim mis à jour vers l'onglet externe par switch_to_latest_window).
                             Survey.survey_solver.solve_full_survey(
-                                _ssdriver,
+                                driver,
                                 api_key=api_key,
                                 account_id=account_id,
                                 survey_context=ctx,
