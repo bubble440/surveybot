@@ -608,7 +608,7 @@ def click_next_button(driver):
     _primary_exc = None
     try:
         # Attendre que le CTA soit visible (p-checked sur le label l'active)
-        next_btn = page.wait_for_selector(CTA_SEL, state="visible", timeout=10_000)
+        next_btn = page.wait_for_selector(CTA_SEL, state="visible", timeout=5_000)
         next_btn.evaluate("(el) => el.scrollIntoView({block: 'center'})")
         time.sleep(0.5)
         # Re-fetch après le scroll (DOM peut être re-rendu par async_radio)
@@ -617,7 +617,7 @@ def click_next_button(driver):
 
         # Boucle de reprise bornée — TimeoutError Playwright possible si le bouton
         # n'est pas encore actionnable (scroll en cours, animation, etc.)
-        _CTA_MAX_ATTEMPTS = 3
+        _CTA_MAX_ATTEMPTS = 2
         for _attempt in range(_CTA_MAX_ATTEMPTS):
             if _attempt > 0:
                 log_info("response_executor", f"[CTA_RETRY] tentative {_attempt + 1}/{_CTA_MAX_ATTEMPTS}")
@@ -632,7 +632,7 @@ def click_next_button(driver):
                 _diag_read(driver, "click_next_button[primary]")
                 print("➡️ Bouton (flèche ou navigation) cliqué via data-test-id. source: reponse_executor.py")
                 try:
-                    page.wait_for_load_state("load", timeout=15_000)
+                    page.wait_for_load_state("load", timeout=5_000)
                 except Exception:
                     pass
                 return True
@@ -659,7 +659,7 @@ def click_next_button(driver):
                 "contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'continue')"
                 "]"
             )
-            next_btn = page.wait_for_selector(xpath, state="attached", timeout=10_000)
+            next_btn = page.wait_for_selector(xpath, state="attached", timeout=5_000)
             next_btn.evaluate("(el) => el.scrollIntoView({block: 'center'})")
             time.sleep(2)
             _confirm_before_cta_click()
@@ -684,7 +684,7 @@ def click_next_button(driver):
             _diag_read(driver, "click_next_button[fallback]")
             print("➡️ Bouton cliqué via fallback textuel (case-insensitive + enabled). source: reponse_executor.py")
             try:
-                page.wait_for_load_state("load", timeout=15_000)
+                page.wait_for_load_state("load", timeout=5_000)
             except Exception:
                 pass
             return True

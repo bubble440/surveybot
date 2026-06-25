@@ -247,34 +247,34 @@ def wait_for_vue_hydration(driver, timeout=15):
 def login(driver, email, password):
     page = driver
 
-    print("[DEBUG][DRIVER] type=", type(driver))
-    print("[DEBUG][DRIVER] has _page=", hasattr(driver, "_page"))
-    print("[DEBUG][DRIVER] url=", page.url)
+    # print("[DEBUG][DRIVER] type=", type(driver))
+    # print("[DEBUG][DRIVER] has _page=", hasattr(driver, "_page"))
+    # print("[DEBUG][DRIVER] url=", page.url)
 
     # --- DEBUG: snapshot HTML complet + extraction éventuelle du code d'erreur ---
-    try:
-        html = page.content()
-        path = "/tmp/topsurveys_initial.html"
-        with open(path, "w", encoding="utf-8") as f:
-            f.write(html)
+    # try:
+    #     html = page.content()
+    #     path = "/tmp/topsurveys_initial.html"
+    #     with open(path, "w", encoding="utf-8") as f:
+    #         f.write(html)
 
-        snippet = html[:800].replace("\n", " ")
-        print(f"[HTML_DEBUG] Saved initial HTML to {path}, len={len(html)}")
-        print(f"[HTML_DEBUG] Snippet: {snippet}")
+    #     snippet = html[:800].replace("\n", " ")
+    #     print(f"[HTML_DEBUG] Saved initial HTML to {path}, len={len(html)}")
+    #     print(f"[HTML_DEBUG] Snippet: {snippet}")
 
-        m = re.search(r"ERR_[A-Z0-9_]+", html)
-        if m:
-            print(f"[HTML_DEBUG] Chrome error code detected: {m.group(0)}")
-        else:
-            print("[HTML_DEBUG] No ERR_* code found in HTML.")
+    #     m = re.search(r"ERR_[A-Z0-9_]+", html)
+    #     if m:
+    #         print(f"[HTML_DEBUG] Chrome error code detected: {m.group(0)}")
+    #     else:
+    #         print("[HTML_DEBUG] No ERR_* code found in HTML.")
 
-    except Exception as e:
-        print(f"[HTML_DEBUG][ERROR] {type(e).__name__}: {e}")
+    # except Exception as e:
+    #     print(f"[HTML_DEBUG][ERROR] {type(e).__name__}: {e}")
 
     # suite normale
     net_probe()
-    dom_probe(driver)
-    wait_for_vue_hydration(driver, timeout=15)
+    # dom_probe(driver)
+    # wait_for_vue_hydration(driver, timeout=15)
 
     if os.getenv("SNAP_ENABLED", "").strip() == "1":
         from Management.snap_uploader import new_survey, capture_and_upload
