@@ -495,7 +495,9 @@ def launch_browser_playwright(config: dict | None = None):
         proxy=pw_proxy,
     )
     context.add_init_script(_fingerprint_js())
-    page = context.new_page()
+    # launch_persistent_context ouvre toujours une page about:blank dans context.pages[0].
+    # On la réutilise pour éviter un second onglet parasite.
+    page = context.pages[0] if context.pages else context.new_page()
 
     page._pw                   = pw
     page._chrome_user_data_dir = user_data_dir
