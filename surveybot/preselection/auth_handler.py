@@ -272,9 +272,8 @@ def login(driver, email, password):
     #     print(f"[HTML_DEBUG][ERROR] {type(e).__name__}: {e}")
 
     # suite normale
-    net_probe()
     # dom_probe(driver)
-    # wait_for_vue_hydration(driver, timeout=15)
+    wait_for_vue_hydration(driver, timeout=15)
 
     if os.getenv("SNAP_ENABLED", "").strip() == "1":
         from Management.snap_uploader import new_survey, capture_and_upload
@@ -285,7 +284,7 @@ def login(driver, email, password):
     _sel = _get_selectors(driver)
     print(f"[LOGIN] page détectée={_detect_login_page(driver)} | email_sel={_sel['email_input']}")
     try:
-        email_input = page.wait_for_selector(_sel["email_input"], state='visible', timeout=20_000)
+        email_input = page.wait_for_selector(_sel["email_input"], state='visible', timeout=45_000)
         email_input.evaluate("(el) => el.scrollIntoView({block: 'center'})")
         email_input.click()
         time.sleep(0.5)
@@ -342,6 +341,7 @@ def login(driver, email, password):
         page.evaluate("(el) => el.click()", login_btn)
         time.sleep(0.5)
         print("✅ Bouton « Se connecter » cliqué.")
+        net_probe()
 
     except Exception as e:
         time.sleep(2)
