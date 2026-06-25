@@ -447,6 +447,11 @@ def _run_survey_impl(driver, api_key, *, account_id: str, ctx=None, payout_name:
                         # ici pour éviter la race condition du double switch.
                         final_url = Management.redirect_watcher.wait_for_final_redirection(driver, max_wait=60)
 
+                        if os.getenv("SNAP_ENABLED", "").strip() == "1":
+                            from Management.snap_uploader import new_survey, capture_and_upload
+                            new_survey()
+                            capture_and_upload(driver, "qualification")
+
                         if final_url and "app.topsurveys.app/surveys" in final_url:
                             Survey.log_utils.log_info("SURVEY_HANDLER", "Retour TopSurveys après clic Participer — popup/exclusion attendue")
                             Survey.survey_executor._handle_topsurveys_exclusion_popup(driver, account_id)
