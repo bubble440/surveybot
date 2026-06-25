@@ -109,8 +109,12 @@ def _capture_png(driver) -> bytes:
                 return f.read()
         raise RuntimeError(f"scrot returncode={result.returncode} stderr={result.stderr!r}")
     except Exception as e:
-        log_info(_TAG, f"scrot failed {type(e).__name__}: {e}")
-        raise
+        log_info(_TAG, f"scrot failed {type(e).__name__}: {e} — fallback driver.screenshot()")
+        try:
+            return driver.screenshot()
+        except Exception as fe:
+            log_info(_TAG, f"driver.screenshot() fallback failed: {type(fe).__name__}: {fe}")
+            raise e
     finally:
         try:
             os.remove(path)
