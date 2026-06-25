@@ -79,13 +79,8 @@ def _build_client():
 
 def _capture_png(driver) -> bytes:
     """
-    Capture l'intégralité du bureau virtuel Xvfb (pas seulement le viewport Chrome).
-    Cela inclut la barre d'adresse, les flags/icônes du navigateur, les notifications OS, etc.
-
-    Stratégie :
-      1. scrot via $DISPLAY              → capture bureau complet (préféré)
-      2. driver.screenshot()   → fallback viewport Playwright (bytes)
-      3. driver.screenshot(path) → fallback fichier Playwright
+    Capture l'intégralité du bureau virtuel Xvfb via scrot.
+    Lève une exception si scrot échoue — aucun fallback Playwright.
     """
     import subprocess
     import tempfile
@@ -96,7 +91,6 @@ def _capture_png(driver) -> bytes:
     if not os.getenv("DISPLAY"):
         raise RuntimeError("DISPLAY non défini, scrot impossible")
 
-    # 1. Tentative capture bureau complet via scrot
     with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
         path = tmp.name
     try:
@@ -113,29 +107,10 @@ def _capture_png(driver) -> bytes:
         if result.returncode == 0:
             with open(path, "rb") as f:
                 return f.read()
+        raise RuntimeError(f"scrot returncode={result.returncode} stderr={result.stderr!r}")
     except Exception as e:
-        log_info(_TAG, f"scrot EXCEPTION {type(e).__name__}: {e}")
-    finally:
-        try:
-            os.remove(path)
-        except Exception:
-            pass
-        
-    # 2. Fallback Playwright — viewport uniquement (retourne bytes directement)
-    try:
-        png = driver.screenshot()
-        if png and len(png) > 0:
-            return png
-    except Exception:
-        pass
-
-    # 3. Fallback Playwright — via fichier
-    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
-        path = tmp.name
-    try:
-        driver.screenshot(path=path)
-        with open(path, "rb") as f:
-            return f.read()
+        log_info(_TAG, f"scrot failed {type(e).__name__}: {e}")
+        raise
     finally:
         try:
             os.remove(path)
@@ -148,7 +123,6 @@ def capture_and_upload(driver, label: str) -> None:
     No-op silencieux si SNAP_ENABLED != "1".
     """
 
-    time.sleep(10)
     if not _is_enabled():
         return
 
