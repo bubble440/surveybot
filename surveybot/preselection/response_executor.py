@@ -781,7 +781,7 @@ def select_checkbox_answers(driver, answers):
                 label.evaluate("(el) => el.scrollIntoView({block:'center', behavior:'instant'})")
                 _diag_attach(driver, label, "select_checkbox_answers")
             try:
-                click_target.click()
+                click_target.evaluate("(el) => el.click()")
                 break
             except Exception as _ck_exc:
                 _is_last = _attempt >= _CLICK_MAX_ATTEMPTS - 1
