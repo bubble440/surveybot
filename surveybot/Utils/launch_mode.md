@@ -10,4 +10,4 @@ flyctl machine run registry.fly.io/surveybot-bot:latest `
 flyctl ssh console -a surveybot-bot -s
 # Sélectionner la machine avec "sleep" dans la liste si plusieurs machines
 
-su - botuser -c 'cd /app && DISPLAY=:99 PYTHONPATH=/app RUN_ENV=prod LOCAL_UNATTENDED=1 SNAP_ENABLED=1 SNAP_R2_ACCOUNT_ID='"$SNAP_R2_ACCOUNT_ID"' SNAP_R2_ACCESS_KEY_ID='"$SNAP_R2_ACCESS_KEY_ID"' SNAP_R2_SECRET_ACCESS_KEY='"$SNAP_R2_SECRET_ACCESS_KEY"' SNAP_R2_BUCKET='"$SNAP_R2_BUCKET"' PROXY_URL='"'http://14abf236340a1:bb82a9e63b@185.134.194.152:12323'"' PROXY_USER=14abf236340a1 PROXY_PASS='"'bb82a9e63b'"' ACCOUNT_ID=topsurveys_bot_001 python tools/multi_access_check.py'
+su - botuser -c 'cd /app && DISPLAY=:99 PYTHONPATH=/app RUN_ENV=prod LOCAL_UNATTENDED=1 SNAP_ENABLED=1 SNAP_R2_ACCOUNT_ID='"$SNAP_R2_ACCOUNT_ID"' SNAP_R2_ACCESS_KEY_ID='"$SNAP_R2_ACCESS_KEY_ID"' SNAP_R2_SECRET_ACCESS_KEY='"$SNAP_R2_SECRET_ACCESS_KEY"' SNAP_R2_BUCKET='"$SNAP_R2_BUCKET"' PROXY_URL='"'http://14abf236340a1:bb82a9e63b@185.134.194.152:12323'"' PROXY_USER=14abf236340a1 PROXY_PASS='"'bb82a9e63b'"' ACCOUNT_ID=topsurveys_bot_001 python tools/snap_diagnostic.py'
