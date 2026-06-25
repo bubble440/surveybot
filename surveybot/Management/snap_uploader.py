@@ -98,6 +98,8 @@ def _capture_png(driver) -> bytes:
     except Exception:
         pass
     try:
+        import time
+        time.sleep(0.3)  # laisse Chrome relâcher le lock X11 avant scrot
         result = subprocess.run(
             ["scrot", path],
             env={**os.environ, "DISPLAY": display},
@@ -111,7 +113,7 @@ def _capture_png(driver) -> bytes:
     except Exception as e:
         log_info(_TAG, f"scrot failed {type(e).__name__}: {e} — fallback driver.screenshot()")
         try:
-            return driver.screenshot()
+            return driver.screenshot(timeout=5000)
         except Exception as fe:
             log_info(_TAG, f"driver.screenshot() fallback failed: {type(fe).__name__}: {fe}")
             raise e

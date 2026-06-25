@@ -441,6 +441,11 @@ def _run_survey_impl(driver, api_key, *, account_id: str, ctx=None, payout_name:
             else:
                 try:
                     # Cas : on est qualifié → lancer solve_full_survey()
+                    if os.getenv("SNAP_ENABLED", "").strip() == "1":
+                        from Management.snap_uploader import new_survey, capture_and_upload
+                        new_survey()
+                        capture_and_upload(driver, "pre-qualification-click")
+
                     if preselection.question_analyzer.click_participer_if_qualified(driver):
                         # H3: click_participer_if_qualified fait déjà le switch de fenêtre
                         # en interne — ne pas rappeler switch_to_latest_window_and_close_others
