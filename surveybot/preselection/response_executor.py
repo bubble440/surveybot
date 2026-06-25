@@ -764,7 +764,7 @@ def select_checkbox_answers(driver, answers):
         _diag_sample_stability(driver, label, label_text)
         _diag_attach(driver, label, "select_checkbox_answers")
         _diag_pw_actionability(label, label_text)
-        _CLICK_MAX_ATTEMPTS = 3
+        _CLICK_MAX_ATTEMPTS = 1
         _click_failed = False
         for _attempt in range(_CLICK_MAX_ATTEMPTS):
             if _attempt > 0:
