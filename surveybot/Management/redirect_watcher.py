@@ -2,6 +2,8 @@
 import time
 from dataclasses import dataclass
 
+from Survey.log_utils import log_info
+
 
 
 @dataclass
@@ -29,22 +31,37 @@ def wait_for_final_redirection(driver, max_wait=30):
     start_time = time.time()
     stable_count = 0
 
-    while time.time() - start_time < max_wait:
-        time.sleep(5)
-        current_url = page.url
+    visited_urls = [last_url]
 
-        if current_url != last_url:
-            print(f"🔀 Redirection détectée : {last_url} -> {current_url}")
-            last_url = current_url
-            stable_count = 0
-        else:
-            stable_count += 1
-            if stable_count >= 3:
-                print(f"✅ URL stabilisée : {current_url}")
-                return current_url
+    def _on_nav(frame):
+        if frame == page.main_frame:
+            url = frame.url
+            if url and (not visited_urls or visited_urls[-1] != url):
+                visited_urls.append(url)
 
-    print(f"⏱️ Temps d'attente dépassé ({max_wait}s), URL actuelle : {page.url}")
-    return page.url
+    page.on("framenavigated", _on_nav)
+
+    try:
+        while time.time() - start_time < max_wait:
+            time.sleep(5)
+            current_url = page.url
+
+            if current_url != last_url:
+                print(f"🔀 Redirection détectée : {last_url} -> {current_url}")
+                last_url = current_url
+                stable_count = 0
+            else:
+                stable_count += 1
+                if stable_count >= 3:
+                    print(f"✅ URL stabilisée : {current_url}")
+                    log_info("REDIRECT_CHAIN", " -> ".join(visited_urls))
+                    return current_url
+
+        print(f"⏱️ Temps d'attente dépassé ({max_wait}s), URL actuelle : {page.url}")
+        log_info("REDIRECT_CHAIN", " -> ".join(visited_urls))
+        return page.url
+    finally:
+        page.remove_listener("framenavigated", _on_nav)
 
 def switch_to_latest_window_and_close_others(driver, base_handles, timeout=10, prefer_external=True, platform_domains=None):
     """
