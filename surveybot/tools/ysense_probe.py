@@ -208,9 +208,36 @@ def _snap_enabled() -> bool:
     return os.getenv("SNAP_ENABLED", "").strip() == "1"
 
 
-def _capture_png(page: Page) -> bytes:
-    """Capture via page.screenshot() avec timeout court (8s max)."""
-    return page.screenshot(full_page=False, timeout=8_000)
+def _capture_png_scrot() -> bytes:
+    """
+    Capture via scrot uniquement (sans CDP ni Playwright).
+    Independant du browser — pas de blocage fonts/proxy.
+    Leve une exception si scrot echoue.
+    """
+    display = os.getenv("DISPLAY", ":99")
+    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+        path = tmp.name
+    try:
+        os.remove(path)
+    except Exception:
+        pass
+    try:
+        result = subprocess.run(
+            ["scrot", path],
+            env={**os.environ, "DISPLAY": display},
+            timeout=4,
+            capture_output=True,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(f"scrot returncode={result.returncode} stderr={result.stderr!r}")
+        with open(path, "rb") as f:
+            return f.read()
+    finally:
+        try:
+            os.remove(path)
+        except Exception:
+            pass
+
 
 
 def snap_and_upload(page: Page, label: str) -> None:
@@ -222,7 +249,7 @@ def snap_and_upload(page: Page, label: str) -> None:
     _snap_step += 1
 
     try:
-        png = _capture_png(page)
+        png = _capture_png_scrot()
     except Exception as e:
         print(f"[SNAP][ERROR] capture failed label={label} : {e}")
         return
@@ -408,11 +435,21 @@ def do_login(page: Page):
     print("[LOGIN] Mot de passe saisi.")
     time.sleep(0.3)
 
-    page.click("button.sbutton.large")
-    print("[LOGIN] Bouton Sign In cliqué.")
+    # Snap pre-clic via scrot (independant CDP — pas de blocage fonts proxy)
+    try:
+        png = _capture_png_scrot()
+        snap_path = "/tmp/ysense_login_before_submit.png"
+        with open(snap_path, "wb") as f:
+            f.write(png)
+        print(f"[SNAP] login_before_submit -> {snap_path}")
+    except Exception as e:
+        print(f"[SNAP][WARN] scrot login_before_submit echoue : {e}")
 
-    # Attente validation serveur (iframe dummy, pas de navigation frame principal)
-    time.sleep(5)
+    page.click("button.sbutton.large")
+    print("[LOGIN] Bouton Sign In clique.")
+
+    # Attente généreuse : validation serveur via iframe dummy + latence proxy
+    time.sleep(8)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -425,6 +462,8 @@ def go_to_surveys(page: Page) -> bool:
     Recharge jusqu'à 3 fois si #survey-list-body est vide après chargement.
     Retourne True si des surveys sont détectés, False sinon.
     """
+    # Pause supplémentaire pour absorber la latence proxy post-login
+    time.sleep(3)
     print(f"[SURVEYS] Navigation vers {SURVEYS_URL}")
     page.goto(SURVEYS_URL, wait_until="domcontentloaded", timeout=NAV_TIMEOUT)
 
