@@ -444,7 +444,7 @@ def launch_browser_playwright(config: dict | None = None):
         "--safebrowsing-disable-auto-update",
         "--disable-features=Translate,OptimizationHints,SafeBrowsingProtections,"
             "SafeBrowsingRealTimeUrlLookupEnabled,ChromeWhatsNewUI,"
-            "NetworkService,MediaRouter,DialMediaRouteProvider",
+            "MediaRouter,DialMediaRouteProvider",
         "--ash-no-nudges",
         "--disable-ntp-most-likely-favicons-from-server",
         "--disable-search-engine-choice-screen",
@@ -548,7 +548,7 @@ def launch_browser_playwright_debug(config: dict | None = None):
         "--safebrowsing-disable-auto-update",
         "--disable-features=Translate,OptimizationHints,SafeBrowsingProtections,"
             "SafeBrowsingRealTimeUrlLookupEnabled,ChromeWhatsNewUI,"
-            "NetworkService,MediaRouter,DialMediaRouteProvider",
+            "MediaRouter,DialMediaRouteProvider",
         "--ash-no-nudges",
         "--disable-ntp-most-likely-favicons-from-server",
         "--disable-search-engine-choice-screen",
