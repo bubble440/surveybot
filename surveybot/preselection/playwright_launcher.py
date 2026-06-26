@@ -19,8 +19,7 @@ import random
 import logging
 import tempfile
 from urllib.parse import urlparse
-
-log = logging.getLogger(__name__)
+from Survey.log_utils import log_info, log_debug
 
 
 def _detect_chrome_binary() -> str:
@@ -390,8 +389,7 @@ def _start_proxy_relay(proxy_server: str, proxy_user: str, proxy_pass: str, bind
                 )
             time.sleep(0.05)
 
-    log.info("[LAUNCH][RELAY] relay HTTP CONNECT prêt sur port %d → %s:%d",
-             local_port, proxy_host, proxy_port)
+    log_info("[LAUNCH][RELAY]", f"relay HTTP CONNECT prêt sur port {local_port} → {proxy_host}:{proxy_port}")
     return _RelayHandle(), local_port
 
 
@@ -425,8 +423,7 @@ def launch_browser_playwright(config: dict | None = None):
     else:
         user_data_dir = tempfile.mkdtemp(prefix="chrome_profile_pw_")
 
-    log.info("[LAUNCH][PW] chrome_bin=%s headless=%s locale=%s tz=%s proxy=%s",
-             chrome_bin, headless, locale, tz, proxy_server or "none")
+    log_info("[LAUNCH][PW]", f"chrome_bin={chrome_bin} headless={headless} locale={locale} tz={tz} proxy={proxy_server or 'none'}")
 
     # ── Arguments Chrome (identiques à launch_browser, hors remote-debugging-*) ──
     # --user-data-dir est passé directement à launch_persistent_context(), pas ici.
@@ -501,7 +498,7 @@ def launch_browser_playwright(config: dict | None = None):
 
     page._pw                   = pw
     page._chrome_user_data_dir = user_data_dir
-    log.info("[LAUNCH][PW] Browser Playwright lancé, fingerprint injecté via add_init_script.")
+    log_info("[LAUNCH][PW]", "Browser Playwright lancé, fingerprint injecté via add_init_script.")
     return page
 
 
@@ -529,10 +526,7 @@ def launch_browser_playwright_debug(config: dict | None = None):
 
     user_data_dir = tempfile.mkdtemp(prefix="chrome_profile_pw_dbg_")
 
-    log.info(
-        "[LAUNCH][PW][DBG] chrome_bin=%s locale=%s tz=%s proxy=%s user_data_dir=%s",
-        chrome_bin, locale, tz, proxy_server or "none", user_data_dir,
-    )
+    log_info("[LAUNCH][PW][DBG]", f"chrome_bin={chrome_bin} locale={locale} tz={tz} proxy={proxy_server or 'none'} user_data_dir={user_data_dir}")
 
     chrome_args = [
         "--no-first-run",
@@ -599,7 +593,7 @@ def launch_browser_playwright_debug(config: dict | None = None):
 
     page._pw                   = pw
     page._chrome_user_data_dir = user_data_dir
-    log.info("[LAUNCH][PW][DBG] Page prête après navigation manuelle.")
+    log_info("[LAUNCH][PW][DBG]", "Page prête après navigation manuelle.")
     return page
 
 
@@ -620,7 +614,7 @@ def attach_browser_playwright(attach_addr: str):
     from playwright.sync_api import sync_playwright
 
     endpoint = attach_addr if "://" in attach_addr else f"http://{attach_addr}"
-    log.info("[ATTACH_PW] connect_over_cdp → %s", endpoint)
+    log_info("[ATTACH_PW]", f"connect_over_cdp → {endpoint}")
 
     pw = sync_playwright().start()
     browser = pw.chromium.connect_over_cdp(endpoint)
@@ -631,7 +625,7 @@ def attach_browser_playwright(attach_addr: str):
         raise RuntimeError(f"[ATTACH_PW] Aucun contexte CDP disponible sur {endpoint}")
 
     total_pages = sum(len(c.pages) for c in contexts)
-    log.info("[ATTACH_PW] Connecté. contexts=%d pages_total=%d", len(contexts), total_pages)
+    log_info("[ATTACH_PW]", f"Connecté. contexts={len(contexts)} pages_total={total_pages}")
     print(f"[ATTACH_PW] Connecté à {endpoint} | contexts={len(contexts)} pages={total_pages}")
     return pw, browser
 
