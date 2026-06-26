@@ -72,60 +72,73 @@ def switch_to_latest_window_and_close_others(driver, base_handles, timeout=10, p
     _domains = platform_domains if platform_domains is not None else ["topsurveys.app"]
 
     page = driver
-    start = time.time()
+    context = page.context
 
-    while time.time() - start < timeout:
-        time.sleep(0.25)
-        current_pages = page.context.pages
-        new_pages = [p for p in current_pages if p not in base_handles]
+    # ── Cas 1 : détection événementielle du nouvel onglet ───────────────────────
+    # Le clic a déjà été émis avant cet appel. Deux sous-cas :
+    #   a) L'onglet est déjà dans context.pages (ouverture instantanée).
+    #   b) L'onglet n'est pas encore visible → on attend l'événement CDP "page"
+    #      via context.wait_for_event, sans poll.
+    new_page = None
 
-        # 🪟 Cas 1 : nouvel onglet détecté
-        if new_pages:
-            new_page = new_pages[-1]
+    # Sous-cas a : onglet déjà présent
+    already_new = [p for p in context.pages if p not in base_handles]
+    if already_new:
+        new_page = already_new[-1]
+    else:
+        # Sous-cas b : attente événementielle (résolution dès la notification CDP)
+        try:
+            new_page = context.wait_for_event("page", timeout=timeout * 1000)
+            if new_page in base_handles:
+                new_page = None  # événement parasite, pas un nouvel onglet utile
+        except Exception:
+            new_page = None  # timeout — aucun onglet ouvert, on tombe sur Cas 2
+
+    if new_page is not None:
+        new_page.bring_to_front()
+
+        # 🔥 Fermer tous les anciens onglets
+        for p in list(base_handles):
+            try:
+                p.close()
+            except Exception:
+                pass
+
+        # FIX-B4: new_page peut avoir été fermé par Chrome pendant qu'on fermait
+        # les anciens onglets (ex : le survey s'est lui-même redirigé et a détruit
+        # son propre onglet).  On vérifie que la page est encore vivante.
+        live_pages = context.pages
+        if new_page in live_pages:
             new_page.bring_to_front()
+        elif live_pages:
+            live_pages[-1].bring_to_front()
+        else:
+            raise RuntimeError("Aucun onglet restant après fermeture des anciens onglets")
+        print(f"🪟 Focus sur survey + anciens onglets fermés → {new_page.url}")
+        return True
 
-            # 🔥 Fermer tous les anciens onglets
-            for p in list(base_handles):
-                try:
-                    p.close()
-                except Exception:
-                    pass
-
-            # FIX-B4: new_page peut avoir été fermé par Chrome pendant qu'on fermait
-            # les anciens onglets (ex : le survey s'est lui-même redirigé et a détruit
-            # son propre onglet).  On vérifie que la page est encore vivante.
-            live_pages = page.context.pages
-            if new_page in live_pages:
-                new_page.bring_to_front()
-            elif live_pages:
-                live_pages[-1].bring_to_front()
-            else:
-                raise RuntimeError("Aucun onglet restant après fermeture des anciens onglets")
-            print(f"🪟 Focus sur survey + anciens onglets fermés → {new_page.url}")
-            return True
-
-        # 🧭 Cas 2 : fallback (onglet externe déjà existant)
-        if prefer_external:
-            for p in current_pages:
-                try:
-                    url = p.url or ""
-                    if not any(d in url for d in _domains):
-                        # fermer les autres
-                        for op in current_pages:
-                            if op is not p:
-                                try:
-                                    op.close()
-                                except Exception:
-                                    pass
-                        p.bring_to_front()
-                        print(f"🧭 Fallback externe + nettoyage onglets → {url}")
-                        return True
-                except Exception:
-                    continue
+    # ── Cas 2 : fallback (onglet externe déjà existant avant le clic) ───────────
+    if prefer_external:
+        current_pages = context.pages
+        for p in current_pages:
+            try:
+                url = p.url or ""
+                if not any(d in url for d in _domains):
+                    for op in current_pages:
+                        if op is not p:
+                            try:
+                                op.close()
+                            except Exception:
+                                pass
+                    p.bring_to_front()
+                    print(f"🧭 Fallback externe + nettoyage onglets → {url}")
+                    return True
+            except Exception:
+                continue
 
     print("⚠️ Aucun onglet externe détecté.")
     # 🛡️ Sécurité finale : s'assurer qu'on est sur une page valide
-    live_pages = page.context.pages
+    live_pages = context.pages
     if live_pages:
         live_pages[-1].bring_to_front()
     else:
