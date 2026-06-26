@@ -22,6 +22,7 @@ Variables requises (identiques à multi_access_check.py) :
 import io
 import os
 import sys
+import tempfile
 import time
 
 # ---------------------------------------------------------------------------
@@ -238,18 +239,18 @@ def main():
     elif proxy_server:
         proxy_config = {"server": proxy_server}
 
-    with sync_playwright() as p:
-        # Lance Chrome en mode pipe (--remote-debugging-pipe interne à Playwright)
-        # Pas de port TCP exposé, pas de /json endpoint, pas de flag debug port.
-        browser = p.chromium.launch(
+    user_data_dir = tempfile.mkdtemp(prefix="chrome_profile_pac_")
+
+    pw = sync_playwright().start()
+    try:
+        # launch_persistent_context : mode pipe interne Playwright, pas de port TCP debug.
+        # Proxy, UA, locale, fingerprint et extra_http_headers en un seul appel.
+        context = pw.chromium.launch_persistent_context(
+            user_data_dir,
             executable_path=chrome_bin,
             headless=False,         # Xvfb fournit DISPLAY=:99
             args=chrome_args,
             env={**os.environ, "TZ": tz},
-        )
-
-        # Contexte : UA, locale, timezone, proxy — tout en un
-        context = browser.new_context(
             user_agent=_UA,
             locale=locale,
             timezone_id=tz,
@@ -259,11 +260,11 @@ def main():
         )
 
         # Injection du fingerprint JS AVANT toute navigation
-        # Équivalent de Page.addScriptToEvaluateOnNewDocument, sans CDP
         context.add_init_script(_fingerprint_js())
         print("[PAC] Fingerprint JS injecté via add_init_script ✓")
 
-        page = context.new_page()
+        # launch_persistent_context ouvre toujours une page about:blank dans pages[0].
+        page = context.pages[0] if context.pages else context.new_page()
         results = []
 
         try:
@@ -271,7 +272,9 @@ def main():
                 r = _check_one(page, target["url"], target["label"])
                 results.append(r)
         finally:
-            browser.close()
+            context.close()
+    finally:
+        pw.stop()
 
     # ── Récapitulatif ─────────────────────────────────────────────────────────
     print(f"\n{'═' * 60}")
