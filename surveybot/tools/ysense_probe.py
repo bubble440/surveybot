@@ -159,8 +159,13 @@ def launch_browser() -> Page:
             "--enforce-webrtc-ip-permission-check",
             "--webrtc-ip-handling-policy=disable_non_proxied_udp",
         ]
-    if not headless and os.environ.get("DISPLAY") and ".exe" not in chrome_bin.lower():
-        chrome_args += ["--use-gl=angle", "--use-angle=swiftshader"]
+    if ".exe" not in chrome_bin.lower():
+        # SwiftShader CPU rendering — angle echoue sur Fly.io Firecracker (pas de GPU)
+        chrome_args += [
+            "--disable-gpu",
+            "--use-gl=swiftshader-webgl",
+            "--disable-software-rasterizer",
+        ]
 
     pw_proxy = None
     if proxy_server:
