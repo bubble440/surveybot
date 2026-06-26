@@ -23,8 +23,8 @@ from playwright.sync_api import sync_playwright, Page, BrowserContext
 # CONFIG
 # ──────────────────────────────────────────────────────────────────────────────
 
-EMAIL    = os.getenv("YSENSE_EMAIL", "")
-PASSWORD = os.getenv("YSENSE_PASSWORD", "")
+EMAIL    = os.getenv("YSENSE_EMAIL", "wilsaah456@gmail.com")
+PASSWORD = os.getenv("YSENSE_PASSWORD", "p@ssw0rD!123")
 
 BASE_URL    = "https://www.ysense.com"
 LOGIN_URL   = f"{BASE_URL}/login"
@@ -434,7 +434,8 @@ def do_login(page: Page):
 
     page.fill("input#password", PASSWORD)
     print("[LOGIN] Mot de passe saisi.")
-    time.sleep(0.3)
+    snap_and_upload(page, "logged-in")
+    time.sleep(5)
 
     page.click("button.sbutton.large")
     print("[LOGIN] Bouton Sign In cliqué.")
