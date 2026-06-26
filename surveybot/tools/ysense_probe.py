@@ -209,36 +209,8 @@ def _snap_enabled() -> bool:
 
 
 def _capture_png(page: Page) -> bytes:
-    """Capture via scrot (Linux/Xvfb) avec fallback page.screenshot()."""
-    display = os.getenv("DISPLAY", "")
-    if display:
-        path = None
-        try:
-            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
-                path = tmp.name
-            try:
-                os.remove(path)
-            except Exception:
-                pass
-            time.sleep(0.3)
-            result = subprocess.run(
-                ["scrot", path],
-                env={**os.environ, "DISPLAY": display},
-                timeout=5,
-                capture_output=True,
-            )
-            if result.returncode == 0:
-                with open(path, "rb") as f:
-                    return f.read()
-        except Exception as e:
-            print(f"[SNAP] scrot failed ({e}) — fallback screenshot()")
-        finally:
-            if path:
-                try:
-                    os.remove(path)
-                except Exception:
-                    pass
-    return page.screenshot(full_page=False)
+    """Capture via page.screenshot() avec timeout court (8s max)."""
+    return page.screenshot(full_page=False, timeout=8_000)
 
 
 def snap_and_upload(page: Page, label: str) -> None:
@@ -434,8 +406,7 @@ def do_login(page: Page):
 
     page.fill("input#password", PASSWORD)
     print("[LOGIN] Mot de passe saisi.")
-    snap_and_upload(page, "logged-in")
-    time.sleep(5)
+    time.sleep(0.3)
 
     page.click("button.sbutton.large")
     print("[LOGIN] Bouton Sign In cliqué.")
