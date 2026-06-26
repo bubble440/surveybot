@@ -1123,7 +1123,7 @@ def launch_browser(config: dict | None = None):
         "--safebrowsing-disable-auto-update",    # stoppe le téléchargement des listes Safe Browsing
         "--disable-features=Translate,OptimizationHints,SafeBrowsingProtections,"
             "SafeBrowsingRealTimeUrlLookupEnabled,ChromeWhatsNewUI,"
-            "NetworkService,MediaRouter,DialMediaRouteProvider",
+            "MediaRouter,DialMediaRouteProvider",
         # ── NTP / background fetch ────────────────────────────────────────────
         "--ash-no-nudges",                       # supprime les popups Ash (ChromeOS no-op sur Linux)
         "--disable-ntp-most-likely-favicons-from-server",  # NTP : pas de fetch favicon
@@ -1423,7 +1423,7 @@ def launch_browser_playwright(config: dict | None = None):
         "--safebrowsing-disable-auto-update",
         "--disable-features=Translate,OptimizationHints,SafeBrowsingProtections,"
             "SafeBrowsingRealTimeUrlLookupEnabled,ChromeWhatsNewUI,"
-            "NetworkService,MediaRouter,DialMediaRouteProvider",
+            "MediaRouter,DialMediaRouteProvider",
         "--ash-no-nudges",
         "--disable-ntp-most-likely-favicons-from-server",
         "--disable-search-engine-choice-screen",
