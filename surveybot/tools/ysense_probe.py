@@ -99,7 +99,9 @@ def pick_best_survey(page) -> dict | None:
 def do_login(page):
     """
     Navigue vers /login, saisit email + mot de passe, clique Sign In.
-    Ne vérifie pas la session — la vérification est faite après navigation.
+    Le formulaire ySense a target="dummy" : la soumission se fait dans un iframe
+    caché, le frame principal ne navigue jamais. On attend la validation serveur
+    via un sleep, puis on navigue explicitement vers la home pour vérifier la session.
     """
     print(f"[LOGIN] Navigation vers {LOGIN_URL}")
     page.goto(LOGIN_URL, wait_until="domcontentloaded", timeout=NAV_TIMEOUT)
@@ -122,9 +124,13 @@ def do_login(page):
     btn.click()
     print("[LOGIN] Bouton Sign In cliqué.")
 
-    # Attente de la navigation post-login
-    wait_for_network_idle(page, idle_ms=2000)
-    print(f"[LOGIN] URL après login : {page.url}")
+    # Le formulaire soumet dans un iframe target="dummy" — le frame principal
+    # ne navigue pas. On laisse le temps au serveur de valider le login,
+    # puis on navigue explicitement vers la home pour vérifier la session.
+    time.sleep(4)
+    page.goto(BASE_URL, wait_until="domcontentloaded", timeout=NAV_TIMEOUT)
+    wait_for_network_idle(page, idle_ms=1500)
+    print(f"[LOGIN] URL après goto home : {page.url}")
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -171,7 +177,6 @@ def click_best_survey(page, context) -> str | None:
         print("[SURVEYS][ERROR] Aucun survey disponible.")
         return None
 
-    base_handles = set(p.url for p in context.pages)
     pages_before = set(id(p) for p in context.pages)
 
     print(f"[CLICK] Clic natif sur survey id={best['sid']}")
@@ -235,21 +240,12 @@ def main():
             # ── Étape 1 : Login
             do_login(page)
 
-            # Vérification session : après login, ySense redirige vers / ou /surveys
-            # Si on est toujours sur /login, le login a échoué (ex: recaptcha)
-            if "/login" in page.url:
-                print(f"[LOGIN][WARN] Toujours sur /login après soumission — URL : {page.url}")
-                print("[LOGIN][WARN] Possible reCAPTCHA ou credentials invalides.")
-                # On attend une intervention manuelle max 60s
-                print("[LOGIN] En attente d'intervention manuelle (60s max)...")
-                deadline = time.time() + 60
-                while time.time() < deadline and "/login" in page.url:
-                    print(f"[DEBUG] url courante = {page.url}")
-                    time.sleep(1)
-                if "/login" in page.url:
-                    print("[LOGIN][ERROR] Login échoué. Arrêt.")
-                    return
-                print(f"[LOGIN] Session établie. URL : {page.url}")
+            # Vérification session par présence de la navbar logged-in (#ysnNavbarRight).
+            # Plus fiable que l'URL car le formulaire soumet dans un iframe target="dummy".
+            if page.query_selector("#ysnNavbarRight") is None:
+                print("[LOGIN][ERROR] Session non établie après login (navbar absente). Arrêt.")
+                return
+            print("[LOGIN] Session établie ✓")
 
             # ── Étape 2 : Aller sur /surveys
             go_to_surveys(page)
@@ -258,8 +254,8 @@ def main():
             final_url = click_best_survey(page, context)
             if final_url:
                 print(f"\n✅ Résultat final : {final_url}")
-                print("\n[PROBE] Pause 30s pour observation visuelle...")
-                time.sleep(30)
+                print("\n[PROBE] Pause 3600s pour observation visuelle...")
+                time.sleep(3600)
             else:
                 print("[PROBE][ERROR] Aucun survey cliqué.")
 
