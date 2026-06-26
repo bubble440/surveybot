@@ -4,15 +4,18 @@ Objectif : login → /surveys → sélection meilleur ratio → clic → observe
 
 Usage : python ysense_probe.py
 Creds via env : YSENSE_EMAIL, YSENSE_PASSWORD
+Proxy via env : PROXY_URL, PROXY_USER, PROXY_PASS
 Snap R2 (prod uniquement) : SNAP_ENABLED=1 + SNAP_R2_ACCOUNT_ID,
                              SNAP_R2_ACCESS_KEY_ID, SNAP_R2_SECRET_ACCESS_KEY,
                              SNAP_R2_BUCKET
 """
 
 import os
+import sys
 import time
 import subprocess
 import tempfile
+from urllib.parse import urlparse
 from playwright.sync_api import sync_playwright, Page, BrowserContext
 
 
@@ -20,8 +23,8 @@ from playwright.sync_api import sync_playwright, Page, BrowserContext
 # CONFIG
 # ──────────────────────────────────────────────────────────────────────────────
 
-EMAIL    = os.getenv("YSENSE_EMAIL", "wilsaah456@gmail.com")
-PASSWORD = os.getenv("YSENSE_PASSWORD", "p@ssw0rD!123")
+EMAIL    = os.getenv("YSENSE_EMAIL", "")
+PASSWORD = os.getenv("YSENSE_PASSWORD", "")
 
 BASE_URL    = "https://www.ysense.com"
 LOGIN_URL   = f"{BASE_URL}/login"
@@ -29,13 +32,172 @@ SURVEYS_URL = f"{BASE_URL}/surveys"
 
 NAV_TIMEOUT = 45_000
 
+IS_LOCAL = os.getenv("RUN_ENV", "local") == "local"
+
 # Domaines appartenant à ySense (onglets à fermer après switch)
 PLATFORM_DOMAINS = ["ysense.com"]
 
+# Sélecteur discriminant : présent uniquement quand les surveys sont chargés
+SURVEY_LINK_SEL = "#survey-list-body a.survey-link[data-survey_reward][data-survey_loi]"
+
 
 # ──────────────────────────────────────────────────────────────────────────────
-# SNAP — upload R2 uniquement si SNAP_ENABLED=1 (prod)
-# En local, no-op silencieux.
+# LAUNCHER — même pattern que launch_browser_playwright() de prod
+# ──────────────────────────────────────────────────────────────────────────────
+
+def _parse_proxy_env() -> tuple:
+    """Retourne (server, user, pass) ou (None, None, None) si pas de proxy."""
+    proxy_url  = os.getenv("PROXY_URL", "").strip()
+    proxy_user = os.getenv("PROXY_USER", "").strip()
+    proxy_pass = os.getenv("PROXY_PASS", "").strip()
+
+    if not proxy_url:
+        return None, None, None
+
+    if "://" not in proxy_url:
+        proxy_url = "http://" + proxy_url
+
+    parsed = urlparse(proxy_url)
+    server = f"{parsed.scheme}://{parsed.hostname}:{parsed.port}"
+    return server, proxy_user or None, proxy_pass or None
+
+
+def _detect_chrome_binary() -> str:
+    import shutil
+    if sys.platform != "win32":
+        for p in ("/usr/bin/chromium", "/usr/bin/chromium-browser", "/usr/bin/google-chrome"):
+            if os.path.exists(p):
+                return p
+        for name in ("chromium", "chromium-browser", "google-chrome", "chrome"):
+            path = shutil.which(name)
+            if path and not path.endswith(".exe"):
+                return path
+    else:
+        for name in ("chrome", "chrome.exe", "chromium"):
+            path = shutil.which(name)
+            if path:
+                return path
+    candidates = [
+        r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+        r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+        "/usr/bin/chromium",
+        "/usr/bin/chromium-browser",
+        "/usr/bin/google-chrome",
+    ]
+    for p in candidates:
+        if os.path.exists(p):
+            return p
+    raise FileNotFoundError("Chrome/Chromium introuvable.")
+
+
+def _fingerprint_js() -> str:
+    """JS de spoofing fingerprint — identique à launch_browser_playwright."""
+    base = """
+        const _origResolvedOptions = Intl.DateTimeFormat.prototype.resolvedOptions;
+        Intl.DateTimeFormat.prototype.resolvedOptions = function () {
+            const opts = _origResolvedOptions.apply(this, arguments);
+            opts.timeZone = 'Europe/Paris';
+            return opts;
+        };
+        if (!window.chrome) {
+            const _chrome = {
+                app: { isInstalled: false },
+                runtime: {},
+                loadTimes: function() { return {}; },
+                csi: function() { return {}; },
+            };
+            try {
+                Object.defineProperty(window, 'chrome', { value: _chrome, writable: false, enumerable: true, configurable: false });
+            } catch(e) {}
+        }
+    """
+    if not IS_LOCAL:
+        base += """
+        try {
+            Object.defineProperty(window, 'RTCPeerConnection',       { value: undefined, writable: false });
+            Object.defineProperty(window, 'webkitRTCPeerConnection', { value: undefined, writable: false });
+        } catch(e) {}
+        """
+    return base
+
+
+def launch_browser() -> Page:
+    """
+    Lance Chrome via launch_persistent_context — même pattern que prod.
+    Proxy injecté au niveau context uniquement (pas de browser.launch séparé).
+    Retourne une Page prête à l'emploi.
+    """
+    chrome_bin = _detect_chrome_binary()
+    proxy_server, proxy_user, proxy_pass = _parse_proxy_env()
+    headless = not bool(os.environ.get("DISPLAY")) if sys.platform != "win32" else False
+    user_data_dir = tempfile.mkdtemp(prefix="chrome_profile_ysense_")
+
+    chrome_args = [
+        "--no-first-run",
+        "--no-default-browser-check",
+        "--disable-dev-shm-usage",
+        "--disable-background-networking",
+        "--disable-component-update",
+        "--disable-sync",
+        "--no-pings",
+        "--disable-domain-reliability",
+        "--disable-client-side-phishing-detection",
+        "--safebrowsing-disable-auto-update",
+        "--disable-features=Translate,OptimizationHints,SafeBrowsingProtections,"
+            "SafeBrowsingRealTimeUrlLookupEnabled,ChromeWhatsNewUI,"
+            "MediaRouter,DialMediaRouteProvider",
+        "--disable-extensions",
+        "--disable-notifications",
+        "--window-size=1280,900",
+        "--lang=en-US",
+    ]
+    if not hasattr(os, "getuid") or os.getuid() == 0:
+        chrome_args += ["--no-sandbox", "--test-type"]
+    if not IS_LOCAL:
+        chrome_args += [
+            "--disable-features=WebRTC",
+            "--enforce-webrtc-ip-permission-check",
+            "--webrtc-ip-handling-policy=disable_non_proxied_udp",
+        ]
+    if not headless and os.environ.get("DISPLAY") and ".exe" not in chrome_bin.lower():
+        chrome_args += ["--use-gl=angle", "--use-angle=swiftshader"]
+
+    pw_proxy = None
+    if proxy_server:
+        pw_proxy = {"server": proxy_server}
+        if proxy_user:
+            pw_proxy["username"] = proxy_user
+        if proxy_pass:
+            pw_proxy["password"] = proxy_pass
+        print(f"[PROXY] {proxy_server} user={proxy_user or '(none)'}")
+    else:
+        print("[PROXY] Aucun proxy configuré.")
+
+    pw = sync_playwright().start()
+    context = pw.chromium.launch_persistent_context(
+        user_data_dir,
+        executable_path=chrome_bin,
+        args=chrome_args,
+        env={**os.environ, "TZ": "Europe/Paris"},
+        headless=headless,
+        locale="fr-FR",
+        timezone_id="Europe/Paris",
+        user_agent=(
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/149.0.0.0 Safari/537.36"
+        ),
+        viewport={"width": 1280, "height": 900},
+        proxy=pw_proxy,
+    )
+    context.add_init_script(_fingerprint_js())
+    page = context.pages[0] if context.pages else context.new_page()
+    page._pw = pw
+    return page
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# SNAP — upload R2 uniquement si SNAP_ENABLED=1. No-op en local.
 # ──────────────────────────────────────────────────────────────────────────────
 
 _session_id: str = time.strftime("%Y%m%d_%H%M%S")
@@ -47,11 +209,10 @@ def _snap_enabled() -> bool:
 
 
 def _capture_png(page: Page) -> bytes:
-    """
-    Capture via scrot (Linux/Xvfb prod) avec fallback page.screenshot().
-    """
+    """Capture via scrot (Linux/Xvfb) avec fallback page.screenshot()."""
     display = os.getenv("DISPLAY", "")
     if display:
+        path = None
         try:
             with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
                 path = tmp.name
@@ -72,19 +233,16 @@ def _capture_png(page: Page) -> bytes:
         except Exception as e:
             print(f"[SNAP] scrot failed ({e}) — fallback screenshot()")
         finally:
-            try:
-                os.remove(path)
-            except Exception:
-                pass
-
+            if path:
+                try:
+                    os.remove(path)
+                except Exception:
+                    pass
     return page.screenshot(full_page=False)
 
 
 def snap_and_upload(page: Page, label: str) -> None:
-    """
-    En prod (SNAP_ENABLED=1) : capture + upload R2.
-    En local : no-op silencieux.
-    """
+    """En prod (SNAP_ENABLED=1) : capture + upload R2. En local : no-op."""
     if not _snap_enabled():
         return
 
@@ -105,7 +263,6 @@ def snap_and_upload(page: Page, label: str) -> None:
         bucket     = os.environ["SNAP_R2_BUCKET"]
         endpoint   = f"https://{account_id}.r2.cloudflarestorage.com"
         key        = f"ysense/{_session_id}/{_snap_step:03d}_{label}.png"
-
         client = boto3.client(
             "s3",
             endpoint_url=endpoint,
@@ -123,24 +280,48 @@ def snap_and_upload(page: Page, label: str) -> None:
 # HELPERS NAVIGATION
 # ──────────────────────────────────────────────────────────────────────────────
 
-def wait_for_network_idle(page: Page, idle_ms: int = 1500, timeout: int = 30_000):
-    """Attend networkidle puis un délai fixe. Fallback silencieux."""
+def _wait_selector(page: Page, selector: str, timeout_ms: int = 15_000) -> bool:
+    """Attend qu'un sélecteur soit attaché. Retourne True si trouvé, False si timeout."""
     try:
-        page.wait_for_load_state("networkidle", timeout=timeout)
+        page.wait_for_selector(selector, state="attached", timeout=timeout_ms)
+        return True
     except Exception:
-        pass
-    time.sleep(idle_ms / 1000)
+        return False
 
 
-def pick_best_survey(page: Page) -> dict | None:
+def _reload_until_content(
+    page: Page,
+    selector: str,
+    max_reloads: int = 3,
+    wait_ms: int = 10_000,
+) -> bool:
     """
-    Extrait tous les liens surveys de #survey-list-body via data-attributes DOM.
-    Calcule le ratio reward/loi (cents/min) et retourne le meilleur.
+    Recharge la page jusqu'à max_reloads fois si le sélecteur est absent.
+    Retourne True si le contenu est détecté, False si épuisé.
+    """
+    if page.query_selector(selector) is not None:
+        return True
+
+    for attempt in range(1, max_reloads + 1):
+        print(f"[RELOAD] Contenu absent — reload {attempt}/{max_reloads}")
+        try:
+            page.reload(wait_until="domcontentloaded", timeout=NAV_TIMEOUT)
+        except Exception as e:
+            print(f"[RELOAD][WARN] reload échoué : {e}")
+        if _wait_selector(page, selector, timeout_ms=wait_ms):
+            print(f"[RELOAD] Contenu détecté après reload {attempt}.")
+            return True
+
+    return False
+
+
+def pick_best_survey(page: Page) -> "dict | None":
+    """
+    Extrait tous les surveys de #survey-list-body via data-attributes.
+    Calcule ratio reward/loi (cents/min) et retourne le meilleur.
     """
     surveys = []
-    links = page.query_selector_all(
-        "#survey-list-body a.survey-link[data-survey_reward][data-survey_loi]"
-    )
+    links = page.query_selector_all(SURVEY_LINK_SEL)
     print(f"[SURVEYS] {len(links)} surveys trouvés dans #survey-list-body")
 
     for link in links:
@@ -178,18 +359,15 @@ def switch_to_latest_window_and_close_others(
     context: BrowserContext,
     base_handles: list,
     timeout: int = 10,
-) -> Page | None:
+) -> "Page | None":
     """
-    Attend l'ouverture d'un nouvel onglet survey, ferme les onglets plateforme.
-    Adapté de redirect_watcher.py pour ce script autonome.
+    Attend l'ouverture d'un nouvel onglet survey et ferme les onglets plateforme.
     Retourne la Page du survey, ou None si aucun nouvel onglet détecté.
     """
-    # Cas 1 : nouvel onglet déjà présent au moment de l'appel
     already_new = [p for p in context.pages if p not in base_handles]
     new_page = already_new[-1] if already_new else None
 
     if new_page is None:
-        # Cas 2 : attente événementielle CDP (résolution dès notification Chrome)
         try:
             new_page = context.wait_for_event("page", timeout=timeout * 1000)
             if new_page in base_handles:
@@ -199,13 +377,11 @@ def switch_to_latest_window_and_close_others(
 
     if new_page is not None:
         new_page.bring_to_front()
-        # Fermer les onglets plateforme (base_handles)
         for p in list(base_handles):
             try:
                 p.close()
             except Exception:
                 pass
-        # Vérifier que le nouvel onglet est encore vivant après les fermetures
         live = context.pages
         if new_page in live:
             new_page.bring_to_front()
@@ -217,7 +393,7 @@ def switch_to_latest_window_and_close_others(
         print(f"[SWITCH] Nouvel onglet survey → {new_page.url}")
         return new_page
 
-    # Cas 3 : fallback — chercher un onglet dont l'URL n'est pas sur la plateforme
+    # Fallback : chercher un onglet externe
     for p in context.pages:
         try:
             url = p.url or ""
@@ -234,7 +410,7 @@ def switch_to_latest_window_and_close_others(
         except Exception:
             continue
 
-    print("[SWITCH][WARN] Aucun nouvel onglet détecté — navigation même onglet supposée.")
+    print("[SWITCH][WARN] Aucun nouvel onglet — navigation même onglet supposée.")
     return None
 
 
@@ -244,85 +420,72 @@ def switch_to_latest_window_and_close_others(
 
 def do_login(page: Page):
     """
-    Login ySense. Le formulaire a target="dummy" : la soumission se fait dans un
-    iframe caché, le frame principal ne navigue jamais. On attend côté serveur
-    via sleep puis on goto explicitement la home pour vérifier la session.
+    Login ySense. Le formulaire a target="dummy" : soumission dans un iframe caché,
+    le frame principal ne navigue jamais. On attend 5s côté serveur puis on goto
+    /surveys directement (inutile de passer par la home).
     """
     print(f"[LOGIN] Navigation vers {LOGIN_URL}")
     page.goto(LOGIN_URL, wait_until="domcontentloaded", timeout=NAV_TIMEOUT)
-    wait_for_network_idle(page)
+    page.wait_for_selector("input#username", state="visible", timeout=20_000)
 
-    email_input = page.wait_for_selector("input#username", state="visible", timeout=20_000)
-    email_input.fill(EMAIL)
+    page.fill("input#username", EMAIL)
     print(f"[LOGIN] Email saisi : {EMAIL}")
-    time.sleep(0.4)
+    time.sleep(0.3)
 
-    pwd_input = page.wait_for_selector("input#password", state="visible", timeout=10_000)
-    pwd_input.fill(PASSWORD)
+    page.fill("input#password", PASSWORD)
     print("[LOGIN] Mot de passe saisi.")
-    time.sleep(0.4)
+    time.sleep(0.3)
 
-    btn = page.wait_for_selector("button.sbutton.large", state="visible", timeout=10_000)
-    btn.click()
+    page.click("button.sbutton.large")
     print("[LOGIN] Bouton Sign In cliqué.")
 
-    # Attendre validation serveur puis naviguer explicitement vers la home
-    time.sleep(4)
-    page.goto(BASE_URL, wait_until="domcontentloaded", timeout=NAV_TIMEOUT)
-    wait_for_network_idle(page, idle_ms=1500)
-    print(f"[LOGIN] URL après goto home : {page.url}")
+    # Attente validation serveur (iframe dummy, pas de navigation frame principal)
+    time.sleep(5)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# ÉTAPE 2 : NAVIGATION VERS /surveys
+# ÉTAPE 2 : NAVIGATION VERS /surveys + reload si contenu absent
 # ──────────────────────────────────────────────────────────────────────────────
 
-def go_to_surveys(page: Page):
+def go_to_surveys(page: Page) -> bool:
     """
-    Navigue vers /surveys et attend que #survey-list-body contienne au moins un lien.
+    Navigue vers /surveys, attend le contenu.
+    Recharge jusqu'à 3 fois si #survey-list-body est vide après chargement.
+    Retourne True si des surveys sont détectés, False sinon.
     """
     print(f"[SURVEYS] Navigation vers {SURVEYS_URL}")
     page.goto(SURVEYS_URL, wait_until="domcontentloaded", timeout=NAV_TIMEOUT)
 
-    try:
-        page.wait_for_selector(
-            "#survey-list-body a.survey-link",
-            state="attached",
-            timeout=30_000,
-        )
-        print("[SURVEYS] Liste surveys chargée.")
-    except Exception:
-        print("[SURVEYS][WARN] Timeout #survey-list-body — on continue quand même.")
+    found = _wait_selector(page, SURVEY_LINK_SEL, timeout_ms=15_000)
+    if not found:
+        found = _reload_until_content(page, SURVEY_LINK_SEL, max_reloads=3, wait_ms=10_000)
 
-    wait_for_network_idle(page, idle_ms=1500)
-    print(f"[SURVEYS] URL courante : {page.url}")
+    count = len(page.query_selector_all(SURVEY_LINK_SEL))
+    print(f"[SURVEYS] URL={page.url} | surveys détectés={count}")
+    return count > 0
 
 
 # ──────────────────────────────────────────────────────────────────────────────
 # ÉTAPE 3 : SÉLECTION, CLIC, SWITCH & SNAP
 # ──────────────────────────────────────────────────────────────────────────────
 
-def click_best_survey(page: Page, context: BrowserContext) -> tuple[str | None, Page | None]:
+def click_best_survey(page: Page, context: BrowserContext) -> "tuple[str | None, Page | None]":
     """
-    Sélectionne le meilleur survey, clique, switch vers le nouvel onglet si ouvert,
-    attend la stabilisation, puis snap (prod uniquement).
-    Retourne (url_finale, survey_page) ou (None, None) si échec.
+    Sélectionne le meilleur survey, clique, switch vers le nouvel onglet,
+    attend la stabilisation avec reload si nécessaire, puis snap (prod).
     """
     best = pick_best_survey(page)
     if best is None:
         print("[SURVEYS][ERROR] Aucun survey disponible.")
+        snap_and_upload(page, "no_surveys")
         return None, None
 
-    # Capturer les Page objects ouverts AVANT le clic
     base_handles = list(context.pages)
-
     print(f"[CLICK] Clic natif sur survey id={best['sid']}")
     before_url = page.url
 
-    # Clic natif Playwright (isTrusted: true)
     best["element"].click()
 
-    # Switch vers le nouvel onglet (ou détection navigation même onglet)
     survey_page = switch_to_latest_window_and_close_others(
         context=context,
         base_handles=base_handles,
@@ -330,29 +493,36 @@ def click_best_survey(page: Page, context: BrowserContext) -> tuple[str | None, 
     )
 
     if survey_page is not None:
-        # Nouvel onglet : attendre chargement complet
         try:
-            survey_page.wait_for_load_state("domcontentloaded", timeout=30_000)
+            survey_page.wait_for_load_state("domcontentloaded", timeout=20_000)
         except Exception:
             pass
-        wait_for_network_idle(survey_page, idle_ms=2000)
+        # Reload si page vide après switch
+        if not survey_page.url or survey_page.url in ("about:blank", ""):
+            print("[CLICK][WARN] Page vide après switch — reload")
+            try:
+                survey_page.reload(wait_until="domcontentloaded", timeout=NAV_TIMEOUT)
+            except Exception:
+                pass
         final_url = survey_page.url
         print(f"[CLICK] URL survey (nouvel onglet) : {final_url}")
     else:
-        # Même onglet : attendre stabilisation URL
         survey_page = page
-        deadline = time.time() + 20
+        deadline = time.time() + 15
         while time.time() < deadline:
             if page.url != before_url:
                 break
             time.sleep(0.3)
-        wait_for_network_idle(page, idle_ms=1500)
+        if page.url == before_url:
+            print("[CLICK][WARN] URL inchangée — reload")
+            try:
+                page.reload(wait_until="domcontentloaded", timeout=NAV_TIMEOUT)
+            except Exception:
+                pass
         final_url = page.url
         print(f"[CLICK] URL survey (même onglet) : {final_url}")
 
-    # Snap de la page survey après stabilisation (prod uniquement)
     snap_and_upload(survey_page, "survey_landing")
-
     return final_url, survey_page
 
 
@@ -365,48 +535,61 @@ def main():
         print("[ERROR] Définir YSENSE_EMAIL et YSENSE_PASSWORD dans l'environnement.")
         return
 
-    with sync_playwright() as pw:
-        browser = pw.chromium.launch(headless=False, slow_mo=50)
-        context = browser.new_context(
-            viewport={"width": 1280, "height": 900},
-            user_agent=(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/124.0.0.0 Safari/537.36"
-            ),
+    page = launch_browser()
+    context = page.context
+
+    try:
+        # ── Étape 1 : Login
+        do_login(page)
+
+        # ── Étape 2 : /surveys avec reloads si contenu absent
+        surveys_ok = go_to_surveys(page)
+
+        # Vérification session sur /surveys (plusieurs sélecteurs selon rendu)
+        SESSION_SELECTORS = [
+            "#ysnNavbarRight",
+            "a[href='/rewards']",
+            "a[onclick*='logout']",
+            "#header_avatar",
+        ]
+        session_ok = any(
+            page.query_selector(sel) is not None for sel in SESSION_SELECTORS
         )
-        page = context.new_page()
+        if not session_ok:
+            print("[LOGIN][ERROR] Session non établie sur /surveys. Arrêt.")
+            snap_and_upload(page, "login_failed")
+            return
+        print("[LOGIN] Session établie ✓")
 
+        if not surveys_ok:
+            print("[SURVEYS][ERROR] Aucun survey après 3 reloads.")
+            snap_and_upload(page, "no_surveys")
+            return
+
+        # ── Étape 3 : Clic + switch + snap
+        final_url, survey_page = click_best_survey(page, context)
+
+        if final_url:
+            print(f"\n✅ Résultat final : {final_url}")
+            print("\n[PROBE] Pause 3600s pour observation visuelle...")
+            time.sleep(3600)
+        else:
+            print("[PROBE][ERROR] Aucun survey cliqué.")
+
+    except Exception as e:
+        print(f"[PROBE][FATAL] {type(e).__name__}: {e}")
+        import traceback
+        traceback.print_exc()
+        time.sleep(15)
+    finally:
         try:
-            # ── Étape 1 : Login
-            do_login(page)
-
-            # Vérification session par présence de la navbar logged-in (#ysnNavbarRight)
-            if page.query_selector("#ysnNavbarRight") is None:
-                print("[LOGIN][ERROR] Session non établie (navbar absente). Arrêt.")
-                return
-            print("[LOGIN] Session établie ✓")
-
-            # ── Étape 2 : /surveys
-            go_to_surveys(page)
-
-            # ── Étape 3 : Clic + switch + snap
-            final_url, survey_page = click_best_survey(page, context)
-
-            if final_url:
-                print(f"\n✅ Résultat final : {final_url}")
-                print("\n[PROBE] Pause 3600s pour observation visuelle...")
-                time.sleep(3600)
-            else:
-                print("[PROBE][ERROR] Aucun survey cliqué.")
-
-        except Exception as e:
-            print(f"[PROBE][FATAL] {type(e).__name__}: {e}")
-            import traceback
-            traceback.print_exc()
-            time.sleep(15)
-        finally:
-            browser.close()
+            context.close()
+        except Exception:
+            pass
+        try:
+            page._pw.stop()
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":
