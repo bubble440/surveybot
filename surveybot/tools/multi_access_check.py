@@ -57,28 +57,28 @@ def _capture_full_page(driver) -> bytes:
     """
     from PIL import Image
 
-    viewport_h = driver.execute_script("return window.innerHeight")
-    total_h    = driver.execute_script("return document.body.scrollHeight")
-    viewport_w = driver.execute_script("return window.innerWidth")
+    viewport_h = driver.evaluate("() => window.innerHeight")
+    total_h    = driver.evaluate("() => document.body.scrollHeight")
+    viewport_w = driver.evaluate("() => window.innerWidth")
 
-    driver.execute_script("window.scrollTo(0, 0)")
+    driver.evaluate("() => window.scrollTo(0, 0)")
     time.sleep(0.3)
 
     strips = []
     y = 0
     while y < total_h:
-        driver.execute_script(f"window.scrollTo(0, {y})")
+        driver.evaluate(f"() => window.scrollTo(0, {y})")
         time.sleep(SCROLL_PAUSE)
-        png = driver.get_screenshot_as_png()
+        png = driver.screenshot()
         img = Image.open(io.BytesIO(png))
         strips.append((y, img))
         y += viewport_h
 
     # Strip final pour couvrir exactement le bas de page
     last_y = max(0, total_h - viewport_h)
-    driver.execute_script(f"window.scrollTo(0, {last_y})")
+    driver.evaluate(f"() => window.scrollTo(0, {last_y})")
     time.sleep(SCROLL_PAUSE)
-    png = driver.get_screenshot_as_png()
+    png = driver.screenshot()
     img = Image.open(io.BytesIO(png))
     strips.append((last_y, img))
 
@@ -108,19 +108,19 @@ def _collect_page_info(driver) -> dict:
     """
     info = {}
     try:
-        info["final_url"]    = driver.current_url
-        info["title"]        = driver.title
-        info["body_snippet"] = driver.execute_script(
-            "return (document.body && document.body.innerText || '').slice(0, 500)"
+        info["final_url"]    = driver.url
+        info["title"]        = driver.title()
+        info["body_snippet"] = driver.evaluate(
+            "() => (document.body && document.body.innerText || '').slice(0, 500)"
         )
-        info["status_code"]  = driver.execute_script(
-            """
-            try {
-                var entries = performance.getEntriesByType('navigation');
-                if (entries && entries.length) return entries[0].responseStatus || 'n/a';
-            } catch(e) {}
-            return 'unavailable';
-            """
+        info["status_code"]  = driver.evaluate(
+            """() => {
+                try {
+                    var entries = performance.getEntriesByType('navigation');
+                    if (entries && entries.length) return entries[0].responseStatus || 'n/a';
+                } catch(e) {}
+                return 'unavailable';
+            }"""
         )
     except Exception as e:
         info["error"] = str(e)
@@ -182,7 +182,7 @@ def _check_one(driver, url: str, label: str) -> dict:
     print(f"  [URL]    {url}")
 
     try:
-        driver.get(url)
+        driver.goto(url)
         print(f"  [WAIT]   {WAIT_AFTER_LOAD}s ...")
         time.sleep(WAIT_AFTER_LOAD)
 
@@ -214,7 +214,7 @@ def _check_one(driver, url: str, label: str) -> dict:
             png = _capture_full_page(driver)
         except Exception as e:
             print(f"  [WARN]   Capture pleine page échouée ({e}), fallback viewport ...")
-            png = driver.get_screenshot_as_png()
+            png = driver.screenshot()
             label = label + "_viewport_only"
 
         result["path"] = _upload_or_save(png, label)
@@ -260,7 +260,7 @@ def main():
             results.append(r)
     finally:
         try:
-            driver.quit()
+            driver.context.browser.close()
         except Exception:
             pass
 
