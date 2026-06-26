@@ -272,6 +272,7 @@ def login(driver, email, password):
         print(f"[HTML_DEBUG][ERROR] {type(e).__name__}: {e}")
 
     # suite normale
+    net_probe()
     dom_probe(driver)
     wait_for_vue_hydration(driver, timeout=15)
 
