@@ -30,7 +30,7 @@ BASE_URL    = "https://www.ysense.com"
 LOGIN_URL   = f"{BASE_URL}/login"
 SURVEYS_URL = f"{BASE_URL}/surveys"
 
-NAV_TIMEOUT = 45_000
+NAV_TIMEOUT = 90_000
 
 IS_LOCAL = os.getenv("RUN_ENV", "local") == "local"
 
@@ -222,10 +222,11 @@ def _capture_png_scrot() -> bytes:
     except Exception:
         pass
     try:
+        time.sleep(1.5)  # laisser Chrome finir le rendu avant capture X11
         result = subprocess.run(
             ["scrot", path],
             env={**os.environ, "DISPLAY": display},
-            timeout=4,
+            timeout=8,
             capture_output=True,
         )
         if result.returncode != 0:
@@ -425,7 +426,17 @@ def do_login(page: Page):
     """
     print(f"[LOGIN] Navigation vers {LOGIN_URL}")
     page.goto(LOGIN_URL, wait_until="domcontentloaded", timeout=NAV_TIMEOUT)
-    page.wait_for_selector("input#username", state="visible", timeout=20_000)
+    # Attente que le JS de la page login soit exécuté (proxy lent)
+    page.wait_for_selector("input#username", state="visible", timeout=30_000)
+
+    try:
+        png = _capture_png_scrot()
+        snap_path = "/tmp/ysense_login_before_login.png"
+        with open(snap_path, "wb") as f:
+            f.write(png)
+        print(f"[SNAP] login_before_login -> {snap_path}")
+    except Exception as e:
+        print(f"[SNAP][WARN] scrot login_before_login echoue : {e}")
 
     page.fill("input#username", EMAIL)
     print(f"[LOGIN] Email saisi : {EMAIL}")
