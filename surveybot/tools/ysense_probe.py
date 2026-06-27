@@ -461,8 +461,25 @@ def do_login(page: Page):
     except Exception as e:
         print(f"[SNAP][WARN] scrot login_before_submit echoue : {e}")
 
-    page.click("button.sbutton.large")
-    print("[LOGIN] Bouton Sign In clique.")
+    # Dismiss cookie banner si present (peut couvrir le bouton Sign In)
+    try:
+        for sel in ["button.ot-cta-btn", "#onetrust-reject-all-handler", "button[id*='reject']", "button[class*='reject']"]:
+            cb = page.query_selector(sel)
+            if cb:
+                cb.click()
+                time.sleep(0.5)
+                print("[LOGIN] Cookie banner dismissed.")
+                break
+    except Exception:
+        pass
+
+    # Clic JS — contourne les overlays residuels
+    btn = page.query_selector("button.sbutton.large")
+    if btn:
+        page.evaluate("(el) => el.click()", btn)
+        print("[LOGIN] Bouton Sign In clique (JS).")
+    else:
+        print("[LOGIN][ERROR] Bouton Sign In introuvable.")
 
     # Attente généreuse : validation serveur via iframe dummy + latence proxy
     time.sleep(8)
