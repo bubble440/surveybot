@@ -75,7 +75,7 @@ def _detect_chrome_binary() -> str:
     for root in pw_roots:
         if not root:
             continue
-        matches = glob.glob(os.path.join(root, "chromium-*/chrome-linux/chrome"))
+        matches = glob.glob(os.path.join(root, "chromium-*/chrome-linux*/chrome"))
         if matches:
             return sorted(matches)[-1]  # version la plus récente si plusieurs
 
