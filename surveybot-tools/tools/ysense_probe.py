@@ -64,6 +64,21 @@ def _parse_proxy_env() -> tuple:
 
 def _detect_chrome_binary() -> str:
     import shutil
+    import glob
+
+    # Chemin fixé dans le Dockerfile via PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+    # Couvre aussi le cas ~/.cache/ms-playwright en local
+    pw_roots = [
+        os.environ.get("PLAYWRIGHT_BROWSERS_PATH", ""),
+        os.path.expanduser("~/.cache/ms-playwright"),
+    ]
+    for root in pw_roots:
+        if not root:
+            continue
+        matches = glob.glob(os.path.join(root, "chromium-*/chrome-linux/chrome"))
+        if matches:
+            return sorted(matches)[-1]  # version la plus récente si plusieurs
+
     if sys.platform != "win32":
         for p in ("/usr/bin/chromium", "/usr/bin/chromium-browser", "/usr/bin/google-chrome"):
             if os.path.exists(p):
