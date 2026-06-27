@@ -473,13 +473,22 @@ def do_login(page: Page):
     except Exception:
         pass
 
-    # Clic JS — contourne les overlays residuels
-    btn = page.query_selector("button.sbutton.large")
-    if btn:
-        page.evaluate("(el) => el.click()", btn)
-        print("[LOGIN] Bouton Sign In clique (JS).")
-    else:
-        print("[LOGIN][ERROR] Bouton Sign In introuvable.")
+    # Soumission via requestSubmit() sur le formulaire — plus fiable que el.click()
+    # sur un bouton sans type='submit' dans un formulaire target='dummy'
+    submitted = page.evaluate("""
+        () => {
+            const form = document.querySelector('form#loginform');
+            if (!form) return 'no_form';
+            try {
+                form.requestSubmit();
+                return 'requestSubmit_ok';
+            } catch(e) {
+                form.submit();
+                return 'submit_ok';
+            }
+        }
+    """)
+    print(f"[LOGIN] Soumission formulaire : {submitted}")
 
     # Attente généreuse : validation serveur via iframe dummy + latence proxy
     time.sleep(8)
