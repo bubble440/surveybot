@@ -1,8 +1,13 @@
 # captcha_solver.py
 import os, time, requests
-import config_loader
-
-config =config_loader.load_config()
+try:
+    import config_loader
+    config = config_loader.load_config()
+except Exception:
+    # config_loader utilise des imports relatifs de package — non disponible
+    # en contexte standalone (ex : surveybot-tools). Les clés sont lues
+    # directement depuis les variables d'environnement.
+    config = {}
 TWO_CAPTCHA_KEY = (
     os.getenv("CAPTCHA_API_KEY")
     or os.getenv("TWO_CAPTCHA_KEY")

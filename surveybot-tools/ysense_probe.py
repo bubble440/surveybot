@@ -499,20 +499,14 @@ def _post_submit_captcha_and_wait(page: Page) -> None:
     """
     Après soumission Sign In :
     1. Détecte reCAPTCHA Enterprise visible (bframe challenge affiché).
-    2. Si présent, résout via TwoCaptchaClient (RecaptchaV2EnterpriseTaskProxyless),
-       injecte le token dans g-recaptcha-response, déclenche les callbacks,
-       soumet le formulaire. Max MAX_ATTEMPTS tentatives.
+    2. Si présent, résout via recaptcha_handler.solve_recaptcha_v2_auto() (max MAX_ATTEMPTS).
     3. Attend la sortie de /login (URL change) max 30s.
 
-    Implémentation autonome : utilise captcha_solver.TwoCaptchaClient directement,
-    sans passer par recaptcha_handler (qui contient des imports relatifs de package
-    non disponibles dans l'image surveybot-tools).
-    captcha_solver.py doit être présent dans tools/ (même répertoire que ce script).
+    Sans CAPTCHA (bframe absent), la boucle passe immédiatement.
     """
-    # reCAPTCHA Enterprise visible = bframe challenge déclenché (pas juste le badge invisible).
-    # Le badge seul (anchor uniquement) = score-based invisible, aucune résolution nécessaire.
+    # reCAPTCHA Enterprise visible = bframe challenge déclenché.
+    # Le badge seul (anchor uniquement) = invisible score-based, aucune résolution nécessaire.
     _BFRAME_SEL = 'iframe[src*="recaptcha/enterprise/bframe"]'
-    _ANCHOR_SEL = 'iframe[src*="recaptcha/enterprise/anchor"]'
     MAX_ATTEMPTS = 2
 
     for attempt in range(1, MAX_ATTEMPTS + 1):
@@ -526,101 +520,24 @@ def _post_submit_captcha_and_wait(page: Page) -> None:
         print(f"[LOGIN][CAPTCHA] reCAPTCHA Enterprise détecté "
               f"(tentative {attempt}/{MAX_ATTEMPTS}) — résolution...")
 
-        # Extraire le sitekey depuis l'attribut src de l'iframe anchor
-        sitekey = None
         try:
-            anchor = page.query_selector(_ANCHOR_SEL)
-            if anchor:
-                src = anchor.get_attribute("src") or ""
-                for part in src.split("&"):
-                    if part.startswith("k="):
-                        sitekey = part[2:]
-                        break
-        except Exception as e:
-            print(f"[LOGIN][CAPTCHA][WARN] Extraction sitekey échouée : {e}")
-
-        if not sitekey:
-            print("[LOGIN][CAPTCHA][ERROR] Sitekey introuvable — abandon résolution.")
-            break
-
-        print(f"[LOGIN][CAPTCHA] Sitekey : {sitekey}")
-
-        # Import tardif de captcha_solver (standalone, juste requests).
-        # captcha_solver.py est copié dans tools/ dans l'image surveybot-tools.
-        try:
+            # Import tardif : évite la dépendance au boot si le CAPTCHA est absent.
+            # recaptcha_handler, captcha_solver, recaptcha_utils, log_utils
+            # sont tous dans tools/ — même dossier que ce script.
             import sys as _sys
             _tools_dir = os.path.dirname(os.path.abspath(__file__))
             if _tools_dir not in _sys.path:
                 _sys.path.insert(0, _tools_dir)
-            from captcha_solver import TwoCaptchaClient  # noqa: PLC0415
+            from recaptcha_handler import solve_recaptcha_v2_auto  # noqa: PLC0415
         except Exception as e:
-            print(f"[LOGIN][CAPTCHA][ERROR] Import captcha_solver échoué : {e}")
+            print(f"[LOGIN][CAPTCHA][ERROR] Import recaptcha_handler échoué : {e}")
             break
 
-        two_captcha_key = os.getenv("TWO_CAPTCHA_KEY", "").strip()
-        if not two_captcha_key:
-            print("[LOGIN][CAPTCHA][ERROR] TWO_CAPTCHA_KEY absent — résolution impossible.")
+        solved = solve_recaptcha_v2_auto(page)
+        if solved:
+            print(f"[LOGIN][CAPTCHA] Résolution OK (tentative {attempt}).")
             break
-
-        try:
-            client = TwoCaptchaClient(api_key=two_captcha_key)
-            token = client.solve_recaptcha_v2_enterprise(
-                sitekey=sitekey,
-                url=page.url,
-            )
-        except Exception as e:
-            print(f"[LOGIN][CAPTCHA][ERROR] solve_recaptcha_v2_enterprise échoué : {e}")
-            continue
-
-        # Injecter le token dans la textarea g-recaptcha-response et déclencher
-        # les callbacks reCAPTCHA Enterprise, puis soumettre le formulaire.
-        try:
-            injected = page.evaluate("""(token) => {
-                const areas = document.querySelectorAll('textarea[id*="g-recaptcha-response"]');
-                for (const ta of areas) {
-                    const nativeSet = Object.getOwnPropertyDescriptor(
-                        window.HTMLTextAreaElement.prototype, 'value'
-                    );
-                    if (nativeSet) nativeSet.set.call(ta, token);
-                    ta.dispatchEvent(new Event('input', { bubbles: true }));
-                    ta.dispatchEvent(new Event('change', { bubbles: true }));
-                }
-                try {
-                    const clients = window.___grecaptcha_cfg && window.___grecaptcha_cfg.clients;
-                    if (clients) {
-                        for (const k of Object.keys(clients)) {
-                            const obj = clients[k];
-                            for (const key of Object.keys(obj)) {
-                                if (typeof obj[key] === 'function') {
-                                    try { obj[key](token); } catch(e) {}
-                                }
-                            }
-                        }
-                    }
-                } catch(e) {}
-                const form = document.querySelector('form#loginform');
-                if (form) {
-                    try { form.requestSubmit(); return 'requestSubmit'; }
-                    catch(e) { form.submit(); return 'submit'; }
-                }
-                return 'no_form';
-            }""", token)
-            print(f"[LOGIN][CAPTCHA] Token injecté — soumission : {injected}")
-        except Exception as e:
-            print(f"[LOGIN][CAPTCHA][ERROR] Injection token échouée : {e}")
-            continue
-
-        # Attendre la sortie de /login après injection
-        _inner_deadline = time.time() + 15
-        while time.time() < _inner_deadline:
-            if "/login" not in page.url:
-                print(f"[LOGIN][CAPTCHA] Résolution OK (tentative {attempt}) → {page.url}")
-                break
-            time.sleep(1)
-        else:
-            print(f"[LOGIN][CAPTCHA] Résolution échouée (tentative {attempt}/{MAX_ATTEMPTS}).")
-            continue
-        break  # sortie de la boucle tentatives si /login quitté
+        print(f"[LOGIN][CAPTCHA] Résolution échouée (tentative {attempt}/{MAX_ATTEMPTS}).")
 
     # Attente finale : URL quitte /login (session établie côté serveur) — max 30s.
     _deadline = time.time() + 30
@@ -631,11 +548,6 @@ def _post_submit_captcha_and_wait(page: Page) -> None:
         time.sleep(1)
     else:
         print(f"[LOGIN][WARN] URL encore sur /login après 30s — URL={page.url}")
-
-
-# ──────────────────────────────────────────────────────────────────────────────
-# ÉTAPE 1 : LOGIN
-# ──────────────────────────────────────────────────────────────────────────────
 
 def do_login(page: Page):
     """
