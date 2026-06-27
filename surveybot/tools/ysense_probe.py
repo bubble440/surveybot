@@ -434,6 +434,25 @@ def do_login(page: Page):
     # Attente que le JS de la page login soit exécuté (proxy lent)
     page.wait_for_selector("input#username", state="visible", timeout=30_000)
 
+    # Dismiss cookie banner OneTrust avant toute interaction
+    # ySense bloque parfois la redirection post-login si le consentement n'est pas donné
+    try:
+        cookie_btn = page.wait_for_selector(
+            "button#onetrust-accept-btn-handler, "
+            "button.ot-cta-btn, "
+            "button[class*='accept'], "
+            "button[id*='accept']",
+            state="visible",
+            timeout=5_000,
+        )
+        cookie_btn.click()
+        time.sleep(1)
+        print("[LOGIN] Cookie banner accepté.")
+    except Exception:
+        # Banner absent ou déjà dismissed — on continue
+        pass
+
+
     try:
         png = _capture_png_scrot()
         snap_path = "/tmp/ysense_login_before_login.png"
