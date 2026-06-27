@@ -29,4 +29,4 @@ RUN playwright install chromium
 WORKDIR /app
 COPY tools/ tools/
 
-CMD ["python", "tools/ysense_probe.py"]
+CMD ["python", "ysense_probe.py"]
