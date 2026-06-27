@@ -7,6 +7,7 @@ __pycache__/
 .venv/
 venv/
 .venv-wsl
+.venv-wsl
 
 # IDE / OS
 .vscode/
@@ -21,7 +22,10 @@ tmp/
 *.pid
 
 # snapshots / debug captures
+# snapshots / debug captures
 snapshots
+snapshots/
+debug_*.html
 snapshots/
 debug_*.html
 surveybot/Utils/config
@@ -33,4 +37,5 @@ surveybot/tools/attach_tab
 surveybot/tools/attach_tab.ps1
 
 
-surveybot-tools/tools/config
+surveybot/tools/attach_tab
+surveybot/tools/attach_tab.ps1
