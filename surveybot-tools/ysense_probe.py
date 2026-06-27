@@ -522,12 +522,12 @@ def _post_submit_captcha_and_wait(page: Page) -> None:
 
         try:
             # Import tardif : évite la dépendance au boot si le CAPTCHA est absent.
-            # recaptcha_handler, captcha_solver, recaptcha_utils, log_utils
-            # sont tous dans tools/ — même dossier que ce script.
+            # Tous les modules (recaptcha_handler, captcha_solver, recaptcha_utils,
+            # log_utils) sont à la racine de l'app — même dossier que ce script.
             import sys as _sys
-            _tools_dir = os.path.dirname(os.path.abspath(__file__))
-            if _tools_dir not in _sys.path:
-                _sys.path.insert(0, _tools_dir)
+            _app_dir = os.path.dirname(os.path.abspath(__file__))
+            if _app_dir not in _sys.path:
+                _sys.path.insert(0, _app_dir)
             from recaptcha_handler import solve_recaptcha_v2_auto  # noqa: PLC0415
         except Exception as e:
             print(f"[LOGIN][CAPTCHA][ERROR] Import recaptcha_handler échoué : {e}")
