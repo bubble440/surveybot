@@ -520,13 +520,17 @@ def _post_submit_captcha_and_wait(page: Page) -> None:
 
         try:
             # Import tardif : évite la dépendance au boot si le CAPTCHA est absent.
-            # surveybot-tools/tools/ → ../../surveybot = racine du package surveybot
+            # Dans le container surveybot-tools (WORKDIR /app, COPY tools/ tools/),
+            # recaptcha_handler se trouve dans /app/captcha/.
+            # On remonte depuis tools/ysense_probe.py → /app, puis on ajoute /app
+            # et /app/captcha au path pour couvrir les deux structures possibles.
             import sys as _sys
-            _surveybot_root = os.path.normpath(
-                os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "surveybot")
+            _app_root = os.path.normpath(
+                os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
             )
-            if _surveybot_root not in _sys.path:
-                _sys.path.insert(0, _surveybot_root)
+            for _candidate in (_app_root, os.path.join(_app_root, "captcha")):
+                if _candidate not in _sys.path:
+                    _sys.path.insert(0, _candidate)
             from recaptcha_handler import solve_recaptcha_v2_auto  # noqa: PLC0415
         except Exception as e:
             print(f"[LOGIN][CAPTCHA][ERROR] Import recaptcha_handler échoué : {e}")

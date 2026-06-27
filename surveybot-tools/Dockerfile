@@ -15,8 +15,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates curl \
     && rm -rf /var/lib/apt/lists/*
 
-# ── Python : Playwright + boto3 ─────────────────────────────────────────────
-RUN pip install --no-cache-dir playwright boto3
+# ── Python : Playwright + boto3 + requests (requis par captcha_solver) ───────
+RUN pip install --no-cache-dir playwright boto3 requests
 
 # Chemin fixe pour les browsers Playwright — évite le ~/.cache/ms-playwright
 # imprévisible selon l'utilisateur courant.
