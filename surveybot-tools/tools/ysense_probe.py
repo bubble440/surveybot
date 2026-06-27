@@ -13,7 +13,6 @@ Snap R2 (prod uniquement) : SNAP_ENABLED=1 + SNAP_R2_ACCOUNT_ID,
 import os
 import sys
 import time
-import subprocess
 import tempfile
 from urllib.parse import urlparse
 from playwright.sync_api import sync_playwright, Page, BrowserContext
@@ -249,46 +248,58 @@ def _r2_client():
     )
 
 
-def _capture_png_scrot() -> bytes:
+def _capture_png(page: Page) -> bytes:
     """
-    Capture via scrot uniquement (sans CDP ni Playwright).
-    Independant du browser — pas de blocage fonts/proxy.
-    Leve une exception si scrot echoue.
+    Capture PNG via page.screenshot() Playwright — pas de dépendance scrot/X11.
     """
-    display = os.getenv("DISPLAY", ":99")
-    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
-        path = tmp.name
+    return page.screenshot(full_page=True)
+
+
+def _r2_upload(client, bucket: str, key: str, body: bytes, content_type: str) -> None:
+    client.put_object(Bucket=bucket, Key=key, Body=body, ContentType=content_type)
+
+
+def png_and_upload(page: Page, label: str) -> None:
+    """
+    Capture PNG via Playwright et uploade vers R2.
+    Utilisé pour : login_page, surveys_page, login_failed, survey_landing.
+    """
+    global _snap_step
+    _snap_step += 1
+
     try:
-        os.remove(path)
-    except Exception:
-        pass
+        png = _capture_png(page)
+    except Exception as e:
+        print(f"[SNAP][ERROR] screenshot failed label={label} : {e}")
+        return
+
+    local_path = f"/tmp/ysense_{label}.png"
     try:
-        time.sleep(1.5)  # laisser Chrome finir le rendu avant capture X11
-        result = subprocess.run(
-            ["scrot", path],
-            env={**os.environ, "DISPLAY": display},
-            timeout=8,
-            capture_output=True,
-        )
-        if result.returncode != 0:
-            raise RuntimeError(f"scrot returncode={result.returncode} stderr={result.stderr!r}")
-        with open(path, "rb") as f:
-            return f.read()
-    finally:
-        try:
-            os.remove(path)
-        except Exception:
-            pass
+        with open(local_path, "wb") as f:
+            f.write(png)
+        print(f"[SNAP] saved locally → {local_path} ({len(png)}B)")
+    except Exception as e:
+        print(f"[SNAP][WARN] local PNG save failed : {e}")
+
+    if not all(os.environ.get(v) for v in _R2_VARS):
+        return
+
+    try:
+        client, bucket = _r2_client()
+        key = f"ysense/{_session_id}/{_snap_step:03d}_{label}.png"
+        _r2_upload(client, bucket, key, png, "image/png")
+        print(f"[SNAP] uploaded → r2://{bucket}/{key} ({len(png)}B)")
+    except Exception as e:
+        print(f"[SNAP][ERROR] R2 PNG upload failed label={label} : {e}")
 
 
 def dom_and_upload(page: Page, label: str) -> None:
     """
-    Capture page.content() (DOM HTML complet) et :
-    - sauvegarde toujours en /tmp/ysense_{label}.html (accessible via fly ssh sftp)
-    - uploade vers R2 sous ysense/{session}/{step}_{label}.html si vars R2 présentes
-    Exécuté indépendamment de SNAP_ENABLED pour faciliter le diagnostic.
+    Capture page.content() (DOM HTML complet) et uploade vers R2.
+    Utilisé pour : before_submit, post_login.
     """
     global _snap_step
+    _snap_step += 1
 
     try:
         html = page.content()
@@ -296,7 +307,6 @@ def dom_and_upload(page: Page, label: str) -> None:
         print(f"[DOM][ERROR] page.content() failed label={label} : {e}")
         return
 
-    # Sauvegarde locale systématique
     local_path = f"/tmp/ysense_{label}.html"
     try:
         with open(local_path, "w", encoding="utf-8") as f:
@@ -305,63 +315,16 @@ def dom_and_upload(page: Page, label: str) -> None:
     except Exception as e:
         print(f"[DOM][WARN] local save failed : {e}")
 
-    # Upload R2 si credentials disponibles
     if not all(os.environ.get(v) for v in _R2_VARS):
         return
 
     try:
         client, bucket = _r2_client()
         key = f"ysense/{_session_id}/{_snap_step:03d}_{label}.html"
-        client.put_object(
-            Bucket=bucket,
-            Key=key,
-            Body=html.encode("utf-8"),
-            ContentType="text/html; charset=utf-8",
-        )
+        _r2_upload(client, bucket, key, html.encode("utf-8"), "text/html; charset=utf-8")
         print(f"[DOM] uploaded → r2://{bucket}/{key} ({len(html)}B)")
     except Exception as e:
         print(f"[DOM][ERROR] R2 upload failed label={label} : {e}")
-
-
-def snap_and_upload(page: Page, label: str) -> None:
-    """
-    En prod (SNAP_ENABLED=1) : capture PNG via scrot + DOM HTML → upload R2.
-    DOM toujours capturé (indépendant de SNAP_ENABLED).
-    En local sans R2 : sauvegarde /tmp uniquement.
-    """
-    global _snap_step
-    _snap_step += 1
-
-    # ── DOM (toujours) ───────────────────────────────────────────────────────
-    dom_and_upload(page, label)
-
-    # ── PNG (seulement si SNAP_ENABLED) ─────────────────────────────────────
-    if not _snap_enabled():
-        return
-
-    try:
-        png = _capture_png_scrot()
-    except Exception as e:
-        print(f"[SNAP][ERROR] capture failed label={label} : {e}")
-        return
-
-    if not all(os.environ.get(v) for v in _R2_VARS):
-        local_path = f"/tmp/ysense_{label}.png"
-        try:
-            with open(local_path, "wb") as f:
-                f.write(png)
-            print(f"[SNAP] saved locally → {local_path} ({len(png)}B)")
-        except Exception as e:
-            print(f"[SNAP][WARN] local PNG save failed : {e}")
-        return
-
-    try:
-        client, bucket = _r2_client()
-        key = f"ysense/{_session_id}/{_snap_step:03d}_{label}.png"
-        client.put_object(Bucket=bucket, Key=key, Body=png, ContentType="image/png")
-        print(f"[SNAP] uploaded → r2://{bucket}/{key} ({len(png)}B)")
-    except Exception as e:
-        print(f"[SNAP][ERROR] R2 PNG upload failed label={label} : {e}")
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -534,8 +497,8 @@ def do_login(page: Page):
     except Exception:
         pass
 
-    # Snap + DOM page login (avant saisie des creds)
-    snap_and_upload(page, "login_page")
+    # PNG page login (état visuel avant saisie des creds)
+    png_and_upload(page, "login_page")
 
     page.fill("input#username", EMAIL)
     print(f"[LOGIN] Email saisi : {EMAIL}")
@@ -591,8 +554,8 @@ def do_login(page: Page):
         page.fill("input#password", PASSWORD)
         time.sleep(0.3)
 
-    # Snap + DOM juste avant soumission (champs remplis visibles)
-    snap_and_upload(page, "before_submit")
+    # DOM juste avant soumission (champs remplis — vérifie valeurs saisies)
+    dom_and_upload(page, "before_submit")
 
     # Soumission : clic natif scroll_into_view (1) → JS click (2) → requestSubmit (3)
     submitted = False
@@ -627,8 +590,8 @@ def do_login(page: Page):
     # Attente généreuse : validation serveur via iframe dummy + latence proxy
     time.sleep(15)
 
-    # Snap + DOM post-login (état réel après soumission)
-    snap_and_upload(page, "post_login")
+    # DOM post-login (état réel après soumission — session établie ou erreur)
+    dom_and_upload(page, "post_login")
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -652,8 +615,8 @@ def go_to_surveys(page: Page) -> bool:
     count = len(page.query_selector_all(SURVEY_LINK_SEL))
     print(f"[SURVEYS] URL={page.url} | surveys détectés={count}")
 
-    # DOM /surveys — vérifie session + liste surveys
-    snap_and_upload(page, "surveys_page")
+    # PNG /surveys (état visuel — session + liste surveys)
+    png_and_upload(page, "surveys_page")
 
     return count > 0
 
@@ -670,7 +633,7 @@ def click_best_survey(page: Page, context: BrowserContext) -> "tuple[str | None,
     best = pick_best_survey(page)
     if best is None:
         print("[SURVEYS][ERROR] Aucun survey disponible.")
-        snap_and_upload(page, "no_surveys")
+        png_and_upload(page, "no_surveys")
         return None, None
 
     base_handles = list(context.pages)
@@ -714,7 +677,7 @@ def click_best_survey(page: Page, context: BrowserContext) -> "tuple[str | None,
         final_url = page.url
         print(f"[CLICK] URL survey (même onglet) : {final_url}")
 
-    snap_and_upload(survey_page, "survey_landing")
+    png_and_upload(survey_page, "survey_landing")
     return final_url, survey_page
 
 
@@ -747,13 +710,13 @@ def main():
         )
         if not session_ok:
             print("[LOGIN][ERROR] Session non établie sur /surveys. Arrêt.")
-            snap_and_upload(page, "login_failed")
+            png_and_upload(page, "login_failed")
             return
         print("[LOGIN] Session établie ✓")
 
         if not surveys_ok:
             print("[SURVEYS][ERROR] Aucun survey après reloads.")
-            snap_and_upload(page, "no_surveys")
+            png_and_upload(page, "no_surveys")
             return
 
         # ── Étape 3 : Clic + switch + snap
