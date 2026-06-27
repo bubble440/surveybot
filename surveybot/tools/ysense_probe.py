@@ -297,7 +297,7 @@ def _wait_selector(page: Page, selector: str, timeout_ms: int = 15_000) -> bool:
 def _reload_until_content(
     page: Page,
     selector: str,
-    max_reloads: int = 2,
+    max_reloads: int = 1,
     wait_ms: int = 10_000,
 ) -> bool:
     """
@@ -480,6 +480,26 @@ def do_login(page: Page):
     except Exception as e:
         print(f"[SNAP][WARN] scrot login_before_submit echoue : {e}")
 
+    # Capture DOM avant clic Sign In
+    try:
+        html_before = page.content()
+        with open('/tmp/ysense_login_before_submit.html', 'w', encoding='utf-8') as _f:
+            _f.write(html_before)
+        print("[DOM/before_submit] HTML sauvegardé -> /tmp/ysense_login_before_submit.html")
+    except Exception as _e:
+        print(f"[DOM/before_submit][WARN] {_e}")
+
+
+    # Capture DOM avant soumission
+    try:
+        html_before = page.content()
+        with open('/tmp/ysense_login_before_submit.html', 'w', encoding='utf-8') as _f:
+            _f.write(html_before)
+        print("[DOM/before_submit] HTML sauvegardé -> /tmp/ysense_login_before_submit.html")
+    except Exception as _e:
+        print(f"[DOM/before_submit][WARN] {_e}")
+
+
     # Dismiss cookie banner si present (peut couvrir le bouton Sign In)
     try:
         for sel in ["button.ot-cta-btn", "#onetrust-reject-all-handler", "button[id*='reject']", "button[class*='reject']"]:
@@ -528,40 +548,51 @@ def do_login(page: Page):
         time.sleep(0.3)
 
 
-    # Résolution reCAPTCHA v2 si présent (déclenché sur IP proxy par ySense)
-    # Utilise TwoCaptchaClient + inject_recaptcha_token directement (pas de dépendances bot)
-    try:
-        import sys as _sys
-        _sys.path.insert(0, '/app')
-        from captcha.recaptcha_utils import extract_recaptcha_v2_sitekey, inject_recaptcha_token
-        from captcha.captcha_solver import TwoCaptchaClient
+    # Note : reCAPTCHA v2 image challenge se déclenche APRÈS le clic côté serveur
+    # La résolution automatique via 2Captcha aggrave le problème (escalade Google).
+    # On soumet directement — le reCAPTCHA ne bloque pas sur IP propre.
 
-        # Sitekey ySense connu (reCAPTCHA v2 invisible, badge bottomright)
-        # La détection DOM échoue car le widget charge en arrière-plan sans data-sitekey visible
-        YSENSE_SITEKEY = "6Ld48JYUAAAAAGBYDutKlRp2ggwiDzfl1iApfaxE"
-        sitekey, invisible, is_enterprise = extract_recaptcha_v2_sitekey(page)
-        if not sitekey:
-            sitekey, invisible, is_enterprise = YSENSE_SITEKEY, True, False
-            print(f"[RECAPTCHA] Fallback sitekey hardcodé : {sitekey}")
-        if sitekey:
-            print(f"[RECAPTCHA] sitekey détecté : {sitekey} (invisible={invisible} enterprise={is_enterprise})")
-            client = TwoCaptchaClient()
-            if client.api_key:
-                token = client.solve_recaptcha_v2(sitekey, LOGIN_URL, invisible)
-                if token:
-                    inject_recaptcha_token(page, token)
-                    print(f"[RECAPTCHA] Token injecté ({len(token)} chars)")
-                    time.sleep(1)
-                else:
-                    print("[RECAPTCHA][WARN] Token vide reçu")
-            else:
-                print("[RECAPTCHA][WARN] Pas de clé 2Captcha (CAPTCHA_API_KEY/TWO_CAPTCHA_KEY) — soumission sans token")
-        else:
-            print("[RECAPTCHA] Aucun sitekey détecté — pas de reCAPTCHA actif")
-    except ImportError:
-        print("[RECAPTCHA][WARN] Module captcha indisponible (local sans /app) — skip")
-    except Exception as e_rc:
-        print(f"[RECAPTCHA][ERROR] {type(e_rc).__name__}: {e_rc}")
+
+    # ySense utilise reCAPTCHA invisible : grecaptcha.execute() doit être appelé
+    # avant le submit pour générer le token côté client. Sans ça, le POST part sans token
+    # et Google bloque silencieusement (pas d'erreur serveur, juste ignoré).
+    try:
+        exec_result = page.evaluate("""
+            () => new Promise((resolve) => {
+                try {
+                    const cfg = window.___grecaptcha_cfg;
+                    if (!cfg) { resolve('no_cfg'); return; }
+                    // Trouver le widget ID et appeler execute()
+                    const clients = Object.values(cfg.clients || {});
+                    for (const c of clients) {
+                        // Recherche récursive du callback execute
+                        function findAndExecute(obj, depth) {
+                            if (depth > 4 || !obj || typeof obj !== 'object') return false;
+                            for (const k of Object.keys(obj)) {
+                                if (k === 'execute' && typeof obj[k] === 'function') {
+                                    try { obj[k](); resolve('execute_called'); return true; } catch(e) {}
+                                }
+                                if (findAndExecute(obj[k], depth + 1)) return true;
+                            }
+                            return false;
+                        }
+                        if (findAndExecute(c, 0)) return;
+                    }
+                    // Fallback: grecaptcha.execute() global
+                    if (window.grecaptcha && typeof window.grecaptcha.execute === 'function') {
+                        window.grecaptcha.execute();
+                        resolve('grecaptcha_execute_global');
+                    } else {
+                        resolve('no_execute_found');
+                    }
+                } catch(e) { resolve('error: ' + e.message); }
+            })
+        """, timeout=8000)
+        print(f"[RECAPTCHA] grecaptcha.execute() : {exec_result}")
+        if exec_result not in ('no_cfg', 'no_execute_found'):
+            time.sleep(3)  # laisser le token se générer et s'injecter dans g-recaptcha-response
+    except Exception as e_exec:
+        print(f"[RECAPTCHA][WARN] grecaptcha.execute() failed : {e_exec}")
 
     # Soumission : clic natif scroll_into_view (1) → JS click (2) → requestSubmit (3)
     submitted = False
@@ -610,6 +641,24 @@ def do_login(page: Page):
 
     # Capture DOM post-login pour diagnostic
     try:
+        html_post = page.content()
+        with open('/tmp/ysense_post_login_dom.html', 'w', encoding='utf-8') as _f:
+            _f.write(html_post)
+        _li = 'logged-in' in html_post
+        _lo = 'logged-out' in html_post
+        _rc = 'recaptcha' in html_post.lower()
+        import re as _re
+        _err = ''
+        _m = _re.search(r'<div id="errors">(.*?)</div>', html_post, _re.DOTALL)
+        if _m: _err = _m.group(1).strip()[:200]
+        print(f"[DOM/login] logged-in={_li} logged-out={_lo} recaptcha={_rc}")
+        if _err: print(f"[DOM/login] errors: {_err}")
+    except Exception as _e:
+        print(f"[DOM/login][WARN] {_e}")
+
+
+    # Capture DOM post-login pour diagnostic
+    try:
         html = page.content()
         with open("/tmp/ysense_post_login.html", "w", encoding="utf-8") as f:
             f.write(html)
@@ -650,7 +699,7 @@ def go_to_surveys(page: Page) -> bool:
 
     found = _wait_selector(page, SURVEY_LINK_SEL, timeout_ms=15_000)
     if not found:
-        found = _reload_until_content(page, SURVEY_LINK_SEL, max_reloads=2, wait_ms=10_000)
+        found = _reload_until_content(page, SURVEY_LINK_SEL, max_reloads=1, wait_ms=10_000)
 
     count = len(page.query_selector_all(SURVEY_LINK_SEL))
     print(f"[SURVEYS] URL={page.url} | surveys détectés={count}")
