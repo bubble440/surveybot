@@ -467,6 +467,16 @@ def do_login(page: Page):
     # Attente généreuse : validation serveur via iframe dummy + latence proxy
     time.sleep(8)
 
+    # Snap post-login via scrot — verifie l'etat reel apres soumission
+    try:
+        png = _capture_png_scrot()
+        snap_path = "/tmp/ysense_post_login.png"
+        with open(snap_path, "wb") as f:
+            f.write(png)
+        print(f"[SNAP] post_login -> {snap_path}")
+    except Exception as e:
+        print(f"[SNAP][WARN] post_login echoue : {e}")
+
 
 # ──────────────────────────────────────────────────────────────────────────────
 # ÉTAPE 2 : NAVIGATION VERS /surveys + reload si contenu absent
