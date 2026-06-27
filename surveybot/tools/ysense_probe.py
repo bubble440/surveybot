@@ -527,6 +527,36 @@ def do_login(page: Page):
         page.fill("input#password", PASSWORD)
         time.sleep(0.3)
 
+
+    # Résolution reCAPTCHA v2 si présent (déclenché sur IP proxy par ySense)
+    # Utilise TwoCaptchaClient + inject_recaptcha_token directement (pas de dépendances bot)
+    try:
+        import sys as _sys
+        _sys.path.insert(0, '/app')
+        from captcha.recaptcha_utils import extract_recaptcha_v2_sitekey, inject_recaptcha_token
+        from captcha.captcha_solver import TwoCaptchaClient
+
+        sitekey, invisible, is_enterprise = extract_recaptcha_v2_sitekey(page)
+        if sitekey:
+            print(f"[RECAPTCHA] sitekey détecté : {sitekey} (invisible={invisible} enterprise={is_enterprise})")
+            client = TwoCaptchaClient()
+            if client.api_key:
+                token = client.solve_recaptcha_v2(sitekey, LOGIN_URL, invisible)
+                if token:
+                    inject_recaptcha_token(page, token)
+                    print(f"[RECAPTCHA] Token injecté ({len(token)} chars)")
+                    time.sleep(1)
+                else:
+                    print("[RECAPTCHA][WARN] Token vide reçu")
+            else:
+                print("[RECAPTCHA][WARN] Pas de clé 2Captcha (CAPTCHA_API_KEY/TWO_CAPTCHA_KEY) — soumission sans token")
+        else:
+            print("[RECAPTCHA] Aucun sitekey détecté — pas de reCAPTCHA actif")
+    except ImportError:
+        print("[RECAPTCHA][WARN] Module captcha indisponible (local sans /app) — skip")
+    except Exception as e_rc:
+        print(f"[RECAPTCHA][ERROR] {type(e_rc).__name__}: {e_rc}")
+
     # Soumission : clic natif scroll_into_view (1) → JS click (2) → requestSubmit (3)
     submitted = False
     btn = page.query_selector("button.sbutton.large")
