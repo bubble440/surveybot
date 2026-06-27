@@ -492,43 +492,74 @@ def do_login(page: Page):
     except Exception:
         pass
 
-    # Séquence de soumission avec fallbacks multiples
-    # 1. Enter depuis le champ password (isTrusted:true, déclenche les event listeners)
+    # Dismiss cookie banner Transcend (Shadow DOM) + fallback sélecteurs standards
     try:
-        pwd_field = page.query_selector("input#password")
-        if pwd_field:
-            pwd_field.focus()
-            time.sleep(0.3)
-            page.keyboard.press("Enter")
-            print("[LOGIN] Soumission via Enter keyboard.")
-        else:
-            raise Exception("password field not found")
-    except Exception as e1:
-        print(f"[LOGIN][WARN] Enter failed ({e1}) — fallback clic natif")
-        # 2. Clic natif Playwright sur le bouton
-        try:
-            btn = page.query_selector("button.sbutton.large")
-            if btn:
-                btn.scroll_into_view_if_needed()
-                btn.click()
-                print("[LOGIN] Soumission via clic natif.")
-            else:
-                raise Exception("button not found")
-        except Exception as e2:
-            print(f"[LOGIN][WARN] clic natif failed ({e2}) — fallback requestSubmit")
-            # 3. requestSubmit JS
-            result = page.evaluate("""
-                () => {
-                    const form = document.querySelector('form#loginform');
-                    if (!form) return 'no_form';
-                    try { form.requestSubmit(); return 'requestSubmit_ok'; }
-                    catch(e) { form.submit(); return 'submit_ok'; }
+        dismissed = page.evaluate("""
+            () => {
+                // Transcend consent manager utilise un Shadow DOM
+                const cm = document.querySelector('#transcend-consent-manager');
+                if (cm && cm.shadowRoot) {
+                    const btns = cm.shadowRoot.querySelectorAll('button');
+                    for (const btn of btns) {
+                        const txt = (btn.textContent || '').toLowerCase().trim();
+                        if (txt === 'reject all' || txt === 'tout rejeter') {
+                            btn.click();
+                            return 'shadow_rejected';
+                        }
+                    }
                 }
-            """)
-            print(f"[LOGIN] Soumission formulaire JS : {result}")
+                return 'no_banner';
+            }
+        """)
+        print(f"[LOGIN] Cookie banner : {dismissed}")
+    except Exception as e:
+        print(f"[LOGIN][WARN] Cookie dismiss failed : {e}")
+    time.sleep(0.5)
+
+    # Vérifier que les champs sont toujours remplis avant soumission
+    email_val = page.evaluate("() => document.querySelector('input#username')?.value || ''")
+    pwd_val   = page.evaluate("() => document.querySelector('input#password')?.value || ''")
+    print(f"[LOGIN] Vérif champs — email={bool(email_val.strip())} pwd={bool(pwd_val.strip())}")
+
+    if not email_val.strip() or not pwd_val.strip():
+        print("[LOGIN][WARN] Champs vidés — re-saisie")
+        page.fill("input#username", EMAIL)
+        page.fill("input#password", PASSWORD)
+        time.sleep(0.3)
+
+    # Soumission : clic natif scroll_into_view (1) → JS click (2) → requestSubmit (3)
+    submitted = False
+    btn = page.query_selector("button.sbutton.large")
+    if btn:
+        try:
+            btn.scroll_into_view_if_needed()
+            time.sleep(0.2)
+            btn.click()
+            print("[LOGIN] Soumission via clic natif.")
+            submitted = True
+        except Exception as e1:
+            print(f"[LOGIN][WARN] clic natif failed ({e1}) — fallback JS click")
+            try:
+                page.evaluate("(el) => el.click()", btn)
+                print("[LOGIN] Soumission via JS click.")
+                submitted = True
+            except Exception as e2:
+                print(f"[LOGIN][WARN] JS click failed ({e2}) — fallback requestSubmit")
+
+    if not submitted:
+        result = page.evaluate("""
+            () => {
+                const form = document.querySelector('form#loginform');
+                if (!form) return 'no_form';
+                try { form.requestSubmit(); return 'requestSubmit_ok'; }
+                catch(e) { form.submit(); return 'submit_ok'; }
+            }
+        """)
+        print(f"[LOGIN] Soumission formulaire JS : {result}")
 
     # Attente généreuse : validation serveur via iframe dummy + latence proxy
     time.sleep(15)
+
 
 
     # Snap post-login via scrot — verifie l'etat reel apres soumission
@@ -540,6 +571,30 @@ def do_login(page: Page):
         print(f"[SNAP] post_login -> {snap_path}")
     except Exception as e:
         print(f"[SNAP][WARN] post_login echoue : {e}")
+
+    # Capture DOM post-login pour diagnostic
+    try:
+        html = page.content()
+        with open("/tmp/ysense_post_login.html", "w", encoding="utf-8") as f:
+            f.write(html)
+        # Extraire les signaux clés du DOM
+        logged_in  = 'logged-in' in html
+        logged_out = 'logged-out' in html
+        recaptcha  = 'recaptcha' in html.lower()
+        errors_div = '<div id="errors">' in html
+        error_msg  = ''
+        if errors_div:
+            import re as _re
+            m = _re.search(r'<div id="errors">(.*?)</div>', html, _re.DOTALL)
+            if m:
+                error_msg = m.group(1).strip()[:200]
+        print(f"[DOM] logged-in={logged_in} logged-out={logged_out} recaptcha={recaptcha}")
+        if error_msg:
+            print(f"[DOM] errors div : {error_msg}")
+        print("[DOM] HTML sauvegardé -> /tmp/ysense_post_login.html")
+    except Exception as e:
+        print(f"[DOM][WARN] capture DOM échouée : {e}")
+
 
 
 # ──────────────────────────────────────────────────────────────────────────────
