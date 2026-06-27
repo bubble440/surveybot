@@ -297,7 +297,7 @@ def _wait_selector(page: Page, selector: str, timeout_ms: int = 15_000) -> bool:
 def _reload_until_content(
     page: Page,
     selector: str,
-    max_reloads: int = 3,
+    max_reloads: int = 2,
     wait_ms: int = 10_000,
 ) -> bool:
     """
@@ -536,7 +536,13 @@ def do_login(page: Page):
         from captcha.recaptcha_utils import extract_recaptcha_v2_sitekey, inject_recaptcha_token
         from captcha.captcha_solver import TwoCaptchaClient
 
+        # Sitekey ySense connu (reCAPTCHA v2 invisible, badge bottomright)
+        # La détection DOM échoue car le widget charge en arrière-plan sans data-sitekey visible
+        YSENSE_SITEKEY = "6Ld48JYUAAAAAGBYDutKlRp2ggwiDzfl1iApfaxE"
         sitekey, invisible, is_enterprise = extract_recaptcha_v2_sitekey(page)
+        if not sitekey:
+            sitekey, invisible, is_enterprise = YSENSE_SITEKEY, True, False
+            print(f"[RECAPTCHA] Fallback sitekey hardcodé : {sitekey}")
         if sitekey:
             print(f"[RECAPTCHA] sitekey détecté : {sitekey} (invisible={invisible} enterprise={is_enterprise})")
             client = TwoCaptchaClient()
@@ -634,7 +640,7 @@ def do_login(page: Page):
 def go_to_surveys(page: Page) -> bool:
     """
     Navigue vers /surveys, attend le contenu.
-    Recharge jusqu'à 2 fois si #survey-list-body est vide après chargement.
+    Recharge jusqu'à 3 fois si #survey-list-body est vide après chargement.
     Retourne True si des surveys sont détectés, False sinon.
     """
     # Pause supplémentaire pour absorber la latence proxy post-login
