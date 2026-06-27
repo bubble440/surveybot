@@ -610,10 +610,9 @@ def main():
 
         # Vérification session sur /surveys (plusieurs sélecteurs selon rendu)
         SESSION_SELECTORS = [
-            "#ysnNavbarRight",
-            "a[href='/rewards']",
-            "a[onclick*='logout']",
-            "#header_avatar",
+            "#ysnNavbarRight",       # navbar logged-in
+            "#header_avatar",         # avatar utilisateur
+            "a[onclick*='logout']",   # lien Sign Out
         ]
         session_ok = any(
             page.query_selector(sel) is not None for sel in SESSION_SELECTORS
