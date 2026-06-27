@@ -297,7 +297,7 @@ def _wait_selector(page: Page, selector: str, timeout_ms: int = 15_000) -> bool:
 def _reload_until_content(
     page: Page,
     selector: str,
-    max_reloads: int = 1,
+    max_reloads: int = 3,
     wait_ms: int = 10_000,
 ) -> bool:
     """
@@ -425,282 +425,100 @@ def switch_to_latest_window_and_close_others(
 
 def do_login(page: Page):
     """
-    Login ySense. Le formulaire a target="dummy" : soumission dans un iframe caché,
-    le frame principal ne navigue jamais. On attend 5s côté serveur puis on goto
-    /surveys directement (inutile de passer par la home).
+    Login ySense en deux phases :
+    1. Browser Playwright navigue sur /login pour générer les cookies Cloudflare (__cf_bm, etc.)
+    2. POST HTTP via requests en réutilisant ces cookies — bypasse le reCAPTCHA JS
     """
+    import requests
+
     print(f"[LOGIN] Navigation vers {LOGIN_URL}")
     page.goto(LOGIN_URL, wait_until="domcontentloaded", timeout=NAV_TIMEOUT)
-    # Attente que le JS de la page login soit exécuté (proxy lent)
     page.wait_for_selector("input#username", state="visible", timeout=30_000)
 
-    # Dismiss cookie banner OneTrust avant toute interaction
-    # ySense bloque parfois la redirection post-login si le consentement n'est pas donné
-    try:
-        cookie_btn = page.wait_for_selector(
-            "button#onetrust-accept-btn-handler, "
-            "button.ot-cta-btn, "
-            "button[class*='accept'], "
-            "button[id*='accept']",
-            state="visible",
-            timeout=5_000,
-        )
-        cookie_btn.click()
-        time.sleep(1)
-        print("[LOGIN] Cookie banner accepté.")
-    except Exception:
-        # Banner absent ou déjà dismissed — on continue
-        pass
-
-
-    try:
-        png = _capture_png_scrot()
-        snap_path = "/tmp/ysense_login_before_login.png"
-        with open(snap_path, "wb") as f:
-            f.write(png)
-        print(f"[SNAP] login_before_login -> {snap_path}")
-    except Exception as e:
-        print(f"[SNAP][WARN] scrot login_before_login echoue : {e}")
-
+    # Saisir les creds (déclenche chargement JS Cloudflare)
     page.fill("input#username", EMAIL)
-    print(f"[LOGIN] Email saisi : {EMAIL}")
     time.sleep(0.3)
-
     page.fill("input#password", PASSWORD)
-    print("[LOGIN] Mot de passe saisi.")
-    time.sleep(0.3)
+    print(f"[LOGIN] Creds saisies — attente chargement Cloudflare JS (3s)")
+    time.sleep(3)
 
-    # Snap pre-clic via scrot (independant CDP — pas de blocage fonts proxy)
+    # Extraire TOUS les cookies Playwright (incluant __cf_bm)
+    pw_cookies = page.context.cookies()
+    print(f"[LOGIN] Cookies Playwright : {[c['name'] for c in pw_cookies]}")
+
+    # Proxy requests
+    proxy_server, proxy_user, proxy_pass = _parse_proxy_env()
+    proxies = None
+    if proxy_server:
+        from urllib.parse import urlparse
+        parsed = urlparse(proxy_server)
+        if proxy_user and proxy_pass:
+            proxy_url_auth = f"http://{proxy_user}:{proxy_pass}@{parsed.hostname}:{parsed.port}"
+        else:
+            proxy_url_auth = proxy_server
+        proxies = {"http": proxy_url_auth, "https": proxy_url_auth}
+
+    # Session requests avec cookies Playwright
+    session = requests.Session()
+    for ck in pw_cookies:
+        session.cookies.set(ck["name"], ck["value"], domain=ck.get("domain", ".ysense.com"))
+
+    session.headers.update({
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/124.0.0.0 Safari/537.36"
+        ),
+        "Referer":      LOGIN_URL,
+        "Origin":       BASE_URL,
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Accept":       "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    })
+
+    payload = {
+        "email":                EMAIL,
+        "password":             PASSWORD,
+        "persist":              "on",
+        "g-recaptcha-response": "",
+    }
+
+    print(f"[LOGIN] POST {LOGIN_URL} avec cookies Cloudflare")
     try:
-        png = _capture_png_scrot()
-        snap_path = "/tmp/ysense_login_before_submit.png"
-        with open(snap_path, "wb") as f:
-            f.write(png)
-        print(f"[SNAP] login_before_submit -> {snap_path}")
+        r = session.post(LOGIN_URL, data=payload, proxies=proxies, timeout=30, allow_redirects=True)
+        print(f"[LOGIN] POST status={r.status_code} final_url={r.url}")
+        logged_in  = "logged-in" in r.text
+        logged_out = "logged-out" in r.text
+        print(f"[LOGIN] POST response: logged-in={logged_in} logged-out={logged_out}")
+
+        with open("/tmp/ysense_post_response.html", "w", encoding="utf-8") as f:
+            f.write(r.text)
+        print("[LOGIN] POST response -> /tmp/ysense_post_response.html")
+
+        if logged_in:
+            for name, value in session.cookies.items():
+                try:
+                    page.context.add_cookies([{
+                        "name": name, "value": value,
+                        "domain": ".ysense.com", "path": "/",
+                    }])
+                except Exception:
+                    pass
+            print(f"[LOGIN] Session cookies injectés : {list(session.cookies.keys())}")
+        else:
+            print("[LOGIN][WARN] POST non connecté — on continue avec les cookies Playwright")
+
     except Exception as e:
-        print(f"[SNAP][WARN] scrot login_before_submit echoue : {e}")
+        print(f"[LOGIN][ERROR] POST failed : {e}")
 
-    # Capture DOM avant clic Sign In
-    try:
-        html_before = page.content()
-        with open('/tmp/ysense_login_before_submit.html', 'w', encoding='utf-8') as _f:
-            _f.write(html_before)
-        print("[DOM/before_submit] HTML sauvegardé -> /tmp/ysense_login_before_submit.html")
-    except Exception as _e:
-        print(f"[DOM/before_submit][WARN] {_e}")
-
-
-    # Capture DOM avant soumission
-    try:
-        html_before = page.content()
-        with open('/tmp/ysense_login_before_submit.html', 'w', encoding='utf-8') as _f:
-            _f.write(html_before)
-        print("[DOM/before_submit] HTML sauvegardé -> /tmp/ysense_login_before_submit.html")
-    except Exception as _e:
-        print(f"[DOM/before_submit][WARN] {_e}")
-
-
-    # Dismiss cookie banner si present (peut couvrir le bouton Sign In)
-    try:
-        for sel in ["button.ot-cta-btn", "#onetrust-reject-all-handler", "button[id*='reject']", "button[class*='reject']"]:
-            cb = page.query_selector(sel)
-            if cb:
-                cb.click()
-                time.sleep(0.5)
-                print("[LOGIN] Cookie banner dismissed.")
-                break
-    except Exception:
-        pass
-
-    # Dismiss cookie banner Transcend (Shadow DOM) + fallback sélecteurs standards
-    try:
-        dismissed = page.evaluate("""
-            () => {
-                // Transcend consent manager utilise un Shadow DOM
-                const cm = document.querySelector('#transcend-consent-manager');
-                if (cm && cm.shadowRoot) {
-                    const btns = cm.shadowRoot.querySelectorAll('button');
-                    for (const btn of btns) {
-                        const txt = (btn.textContent || '').toLowerCase().trim();
-                        if (txt === 'reject all' || txt === 'tout rejeter') {
-                            btn.click();
-                            return 'shadow_rejected';
-                        }
-                    }
-                }
-                return 'no_banner';
-            }
-        """)
-        print(f"[LOGIN] Cookie banner : {dismissed}")
-    except Exception as e:
-        print(f"[LOGIN][WARN] Cookie dismiss failed : {e}")
-    time.sleep(0.5)
-
-    # Vérifier que les champs sont toujours remplis avant soumission
-    email_val = page.evaluate("() => document.querySelector('input#username')?.value || ''")
-    pwd_val   = page.evaluate("() => document.querySelector('input#password')?.value || ''")
-    print(f"[LOGIN] Vérif champs — email={bool(email_val.strip())} pwd={bool(pwd_val.strip())}")
-
-    if not email_val.strip() or not pwd_val.strip():
-        print("[LOGIN][WARN] Champs vidés — re-saisie")
-        page.fill("input#username", EMAIL)
-        page.fill("input#password", PASSWORD)
-        time.sleep(0.3)
-
-
-    # Note : reCAPTCHA v2 image challenge se déclenche APRÈS le clic côté serveur
-    # La résolution automatique via 2Captcha aggrave le problème (escalade Google).
-    # On soumet directement — le reCAPTCHA ne bloque pas sur IP propre.
-
-
-    # ySense utilise reCAPTCHA invisible : grecaptcha.execute() doit être appelé
-    # avant le submit pour générer le token côté client. Sans ça, le POST part sans token
-    # et Google bloque silencieusement (pas d'erreur serveur, juste ignoré).
-    try:
-        exec_result = page.evaluate("""
-            () => new Promise((resolve) => {
-                try {
-                    const cfg = window.___grecaptcha_cfg;
-                    if (!cfg) { resolve('no_cfg'); return; }
-                    // Trouver le widget ID et appeler execute()
-                    const clients = Object.values(cfg.clients || {});
-                    for (const c of clients) {
-                        // Recherche récursive du callback execute
-                        function findAndExecute(obj, depth) {
-                            if (depth > 4 || !obj || typeof obj !== 'object') return false;
-                            for (const k of Object.keys(obj)) {
-                                if (k === 'execute' && typeof obj[k] === 'function') {
-                                    try { obj[k](); resolve('execute_called'); return true; } catch(e) {}
-                                }
-                                if (findAndExecute(obj[k], depth + 1)) return true;
-                            }
-                            return false;
-                        }
-                        if (findAndExecute(c, 0)) return;
-                    }
-                    // Fallback: grecaptcha.execute() global
-                    if (window.grecaptcha && typeof window.grecaptcha.execute === 'function') {
-                        window.grecaptcha.execute();
-                        resolve('grecaptcha_execute_global');
-                    } else {
-                        resolve('no_execute_found');
-                    }
-                } catch(e) { resolve('error: ' + e.message); }
-            })
-        """, timeout=8000)
-        print(f"[RECAPTCHA] grecaptcha.execute() : {exec_result}")
-        if exec_result not in ('no_cfg', 'no_execute_found'):
-            time.sleep(3)  # laisser le token se générer et s'injecter dans g-recaptcha-response
-    except Exception as e_exec:
-        print(f"[RECAPTCHA][WARN] grecaptcha.execute() failed : {e_exec}")
-
-    # Soumission : clic natif scroll_into_view (1) → JS click (2) → requestSubmit (3)
-    submitted = False
-    btn = page.query_selector("button.sbutton.large")
-    if btn:
-        try:
-            btn.scroll_into_view_if_needed()
-            time.sleep(0.2)
-            btn.click()
-            print("[LOGIN] Soumission via clic natif.")
-            submitted = True
-        except Exception as e1:
-            print(f"[LOGIN][WARN] clic natif failed ({e1}) — fallback JS click")
-            try:
-                page.evaluate("(el) => el.click()", btn)
-                print("[LOGIN] Soumission via JS click.")
-                submitted = True
-            except Exception as e2:
-                print(f"[LOGIN][WARN] JS click failed ({e2}) — fallback requestSubmit")
-
-    if not submitted:
-        result = page.evaluate("""
-            () => {
-                const form = document.querySelector('form#loginform');
-                if (!form) return 'no_form';
-                try { form.requestSubmit(); return 'requestSubmit_ok'; }
-                catch(e) { form.submit(); return 'submit_ok'; }
-            }
-        """)
-        print(f"[LOGIN] Soumission formulaire JS : {result}")
-
-    # Attente généreuse : validation serveur via iframe dummy + latence proxy
-    time.sleep(15)
-
-
-
-    # Snap post-login via scrot — verifie l'etat reel apres soumission
-    try:
-        png = _capture_png_scrot()
-        snap_path = "/tmp/ysense_post_login.png"
-        with open(snap_path, "wb") as f:
-            f.write(png)
-        print(f"[SNAP] post_login -> {snap_path}")
-    except Exception as e:
-        print(f"[SNAP][WARN] post_login echoue : {e}")
-
-    # Capture DOM post-login pour diagnostic
-    try:
-        html_post = page.content()
-        with open('/tmp/ysense_post_login_dom.html', 'w', encoding='utf-8') as _f:
-            _f.write(html_post)
-        _li = 'logged-in' in html_post
-        _lo = 'logged-out' in html_post
-        _rc = 'recaptcha' in html_post.lower()
-        import re as _re
-        _err = ''
-        _m = _re.search(r'<div id="errors">(.*?)</div>', html_post, _re.DOTALL)
-        if _m: _err = _m.group(1).strip()[:200]
-        print(f"[DOM/login] logged-in={_li} logged-out={_lo} recaptcha={_rc}")
-        if _err: print(f"[DOM/login] errors: {_err}")
-    except Exception as _e:
-        print(f"[DOM/login][WARN] {_e}")
-
-
-    # Capture DOM post-login pour diagnostic
-    try:
-        html = page.content()
-        with open("/tmp/ysense_post_login.html", "w", encoding="utf-8") as f:
-            f.write(html)
-        # Extraire les signaux clés du DOM
-        logged_in  = 'logged-in' in html
-        logged_out = 'logged-out' in html
-        recaptcha  = 'recaptcha' in html.lower()
-        errors_div = '<div id="errors">' in html
-        error_msg  = ''
-        if errors_div:
-            import re as _re
-            m = _re.search(r'<div id="errors">(.*?)</div>', html, _re.DOTALL)
-            if m:
-                error_msg = m.group(1).strip()[:200]
-        print(f"[DOM] logged-in={logged_in} logged-out={logged_out} recaptcha={recaptcha}")
-        if error_msg:
-            print(f"[DOM] errors div : {error_msg}")
-        print("[DOM] HTML sauvegardé -> /tmp/ysense_post_login.html")
-    except Exception as e:
-        print(f"[DOM][WARN] capture DOM échouée : {e}")
-
-
-
-# ──────────────────────────────────────────────────────────────────────────────
-# ÉTAPE 2 : NAVIGATION VERS /surveys + reload si contenu absent
-# ──────────────────────────────────────────────────────────────────────────────
+    page.goto(BASE_URL, wait_until="domcontentloaded", timeout=NAV_TIMEOUT)
 
 def go_to_surveys(page: Page) -> bool:
-    """
-    Navigue vers /surveys, attend le contenu.
-    Recharge jusqu'à 3 fois si #survey-list-body est vide après chargement.
-    Retourne True si des surveys sont détectés, False sinon.
-    """
-    # Pause supplémentaire pour absorber la latence proxy post-login
     time.sleep(3)
     print(f"[SURVEYS] Navigation vers {SURVEYS_URL}")
     page.goto(SURVEYS_URL, wait_until="domcontentloaded", timeout=NAV_TIMEOUT)
-
     found = _wait_selector(page, SURVEY_LINK_SEL, timeout_ms=15_000)
     if not found:
-        found = _reload_until_content(page, SURVEY_LINK_SEL, max_reloads=1, wait_ms=10_000)
-
+        found = _reload_until_content(page, SURVEY_LINK_SEL, max_reloads=3, wait_ms=10_000)
     count = len(page.query_selector_all(SURVEY_LINK_SEL))
     print(f"[SURVEYS] URL={page.url} | surveys détectés={count}")
     return count > 0
@@ -711,10 +529,6 @@ def go_to_surveys(page: Page) -> bool:
 # ──────────────────────────────────────────────────────────────────────────────
 
 def click_best_survey(page: Page, context: BrowserContext) -> "tuple[str | None, Page | None]":
-    """
-    Sélectionne le meilleur survey, clique, switch vers le nouvel onglet,
-    attend la stabilisation avec reload si nécessaire, puis snap (prod).
-    """
     best = pick_best_survey(page)
     if best is None:
         print("[SURVEYS][ERROR] Aucun survey disponible.")
@@ -724,7 +538,6 @@ def click_best_survey(page: Page, context: BrowserContext) -> "tuple[str | None,
     base_handles = list(context.pages)
     print(f"[CLICK] Clic natif sur survey id={best['sid']}")
     before_url = page.url
-
     best["element"].click()
 
     survey_page = switch_to_latest_window_and_close_others(
@@ -738,9 +551,7 @@ def click_best_survey(page: Page, context: BrowserContext) -> "tuple[str | None,
             survey_page.wait_for_load_state("domcontentloaded", timeout=20_000)
         except Exception:
             pass
-        # Reload si page vide après switch
         if not survey_page.url or survey_page.url in ("about:blank", ""):
-            print("[CLICK][WARN] Page vide après switch — reload")
             try:
                 survey_page.reload(wait_until="domcontentloaded", timeout=NAV_TIMEOUT)
             except Exception:
@@ -755,7 +566,6 @@ def click_best_survey(page: Page, context: BrowserContext) -> "tuple[str | None,
                 break
             time.sleep(0.3)
         if page.url == before_url:
-            print("[CLICK][WARN] URL inchangée — reload")
             try:
                 page.reload(wait_until="domcontentloaded", timeout=NAV_TIMEOUT)
             except Exception:
@@ -766,10 +576,6 @@ def click_best_survey(page: Page, context: BrowserContext) -> "tuple[str | None,
     snap_and_upload(survey_page, "survey_landing")
     return final_url, survey_page
 
-
-# ──────────────────────────────────────────────────────────────────────────────
-# MAIN
-# ──────────────────────────────────────────────────────────────────────────────
 
 def main():
     if not EMAIL or not PASSWORD:
