@@ -1,0 +1,12 @@
+# surveybot-tools — app Fly.io pour scripts de diagnostic autonomes
+# Pas de machine always-on. Utilisé uniquement via "fly machine run --rm".
+# Les secrets de surveybot-bot sont réutilisés (même app) ou passés en --env.
+
+app    = "surveybot-tools"
+primary_region = "cdg"
+
+[build]
+  image = "registry.fly.io/surveybot-tools:latest"
+
+# Pas de [[services]] ni de [http_service] — aucun port exposé.
+# Pas de [[vm]] par défaut — spécifié au moment du fly machine run.
