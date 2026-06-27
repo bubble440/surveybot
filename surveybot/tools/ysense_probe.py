@@ -492,25 +492,44 @@ def do_login(page: Page):
     except Exception:
         pass
 
-    # Soumission via requestSubmit() sur le formulaire — plus fiable que el.click()
-    # sur un bouton sans type='submit' dans un formulaire target='dummy'
-    submitted = page.evaluate("""
-        () => {
-            const form = document.querySelector('form#loginform');
-            if (!form) return 'no_form';
-            try {
-                form.requestSubmit();
-                return 'requestSubmit_ok';
-            } catch(e) {
-                form.submit();
-                return 'submit_ok';
-            }
-        }
-    """)
-    print(f"[LOGIN] Soumission formulaire : {submitted}")
+    # Séquence de soumission avec fallbacks multiples
+    # 1. Enter depuis le champ password (isTrusted:true, déclenche les event listeners)
+    try:
+        pwd_field = page.query_selector("input#password")
+        if pwd_field:
+            pwd_field.focus()
+            time.sleep(0.3)
+            page.keyboard.press("Enter")
+            print("[LOGIN] Soumission via Enter keyboard.")
+        else:
+            raise Exception("password field not found")
+    except Exception as e1:
+        print(f"[LOGIN][WARN] Enter failed ({e1}) — fallback clic natif")
+        # 2. Clic natif Playwright sur le bouton
+        try:
+            btn = page.query_selector("button.sbutton.large")
+            if btn:
+                btn.scroll_into_view_if_needed()
+                btn.click()
+                print("[LOGIN] Soumission via clic natif.")
+            else:
+                raise Exception("button not found")
+        except Exception as e2:
+            print(f"[LOGIN][WARN] clic natif failed ({e2}) — fallback requestSubmit")
+            # 3. requestSubmit JS
+            result = page.evaluate("""
+                () => {
+                    const form = document.querySelector('form#loginform');
+                    if (!form) return 'no_form';
+                    try { form.requestSubmit(); return 'requestSubmit_ok'; }
+                    catch(e) { form.submit(); return 'submit_ok'; }
+                }
+            """)
+            print(f"[LOGIN] Soumission formulaire JS : {result}")
 
     # Attente généreuse : validation serveur via iframe dummy + latence proxy
-    time.sleep(8)
+    time.sleep(15)
+
 
     # Snap post-login via scrot — verifie l'etat reel apres soumission
     try:
@@ -530,7 +549,7 @@ def do_login(page: Page):
 def go_to_surveys(page: Page) -> bool:
     """
     Navigue vers /surveys, attend le contenu.
-    Recharge jusqu'à 3 fois si #survey-list-body est vide après chargement.
+    Recharge jusqu'à 2 fois si #survey-list-body est vide après chargement.
     Retourne True si des surveys sont détectés, False sinon.
     """
     # Pause supplémentaire pour absorber la latence proxy post-login
@@ -540,7 +559,7 @@ def go_to_surveys(page: Page) -> bool:
 
     found = _wait_selector(page, SURVEY_LINK_SEL, timeout_ms=15_000)
     if not found:
-        found = _reload_until_content(page, SURVEY_LINK_SEL, max_reloads=3, wait_ms=10_000)
+        found = _reload_until_content(page, SURVEY_LINK_SEL, max_reloads=2, wait_ms=10_000)
 
     count = len(page.query_selector_all(SURVEY_LINK_SEL))
     print(f"[SURVEYS] URL={page.url} | surveys détectés={count}")
