@@ -492,6 +492,66 @@ def switch_to_latest_window_and_close_others(
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# CAPTCHA POST-SUBMIT
+# ──────────────────────────────────────────────────────────────────────────────
+
+def _post_submit_captcha_and_wait(page: Page) -> None:
+    """
+    Après soumission Sign In :
+    1. Détecte reCAPTCHA Enterprise (iframe enterprise ou data-sitekey).
+    2. Si présent, résout via solve_recaptcha_v2_auto() (max MAX_ATTEMPTS).
+    3. Attend la sortie de /login (URL change ou sélecteur de session) max 30s.
+    Sans CAPTCHA, la boucle passe immédiatement ; le timeout 30s remplace sleep(15).
+    """
+    _CAPTCHA_SEL = 'iframe[src*="recaptcha/enterprise"], [data-sitekey]'
+    MAX_ATTEMPTS = 2
+    _solved = False
+
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        # Courte pause pour laisser le DOM post-submit se stabiliser
+        time.sleep(3)
+
+        if page.query_selector(_CAPTCHA_SEL) is None:
+            print(f"[LOGIN][CAPTCHA] Aucun reCAPTCHA détecté (tentative {attempt}) — skip.")
+            break
+
+        print(f"[LOGIN][CAPTCHA] reCAPTCHA Enterprise détecté "
+              f"(tentative {attempt}/{MAX_ATTEMPTS}) — résolution...")
+
+        try:
+            # Import tardif : évite la dépendance au boot si le CAPTCHA est absent.
+            # surveybot-tools/tools/ → ../../surveybot = racine du package surveybot
+            import sys as _sys
+            _surveybot_root = os.path.normpath(
+                os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "surveybot")
+            )
+            if _surveybot_root not in _sys.path:
+                _sys.path.insert(0, _surveybot_root)
+            from recaptcha_handler import solve_recaptcha_v2_auto  # noqa: PLC0415
+        except Exception as e:
+            print(f"[LOGIN][CAPTCHA][ERROR] Import recaptcha_handler échoué : {e}")
+            break
+
+        _solved = solve_recaptcha_v2_auto(page)
+        if _solved:
+            print(f"[LOGIN][CAPTCHA] Résolution OK (tentative {attempt}).")
+            break
+        print(f"[LOGIN][CAPTCHA] Résolution échouée (tentative {attempt}/{MAX_ATTEMPTS}).")
+
+    # Attente active : URL quitte /login (session établie côté serveur) — max 30s.
+    # Dans le cas sans CAPTCHA (target="dummy"), l'URL peut rester sur /login ;
+    # on attend quand même 30s pour laisser les cookies de session s'établir.
+    _deadline = time.time() + 30
+    while time.time() < _deadline:
+        if "/login" not in page.url:
+            print(f"[LOGIN] Redirection post-login détectée → {page.url}")
+            break
+        time.sleep(1)
+    else:
+        print(f"[LOGIN][WARN] URL encore sur /login après 30s — URL={page.url}")
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # ÉTAPE 1 : LOGIN
 # ──────────────────────────────────────────────────────────────────────────────
 
@@ -613,8 +673,10 @@ def do_login(page: Page):
         """)
         print(f"[LOGIN] Soumission formulaire JS : {result}")
 
-    # Attente généreuse : validation serveur via iframe dummy + latence proxy
-    time.sleep(15)
+    # Détection reCAPTCHA Enterprise post-submit + résolution (max 2 tentatives).
+    # Sans CAPTCHA, la boucle passe immédiatement ; avec CAPTCHA, on résout puis
+    # on attend que l'URL quitte /login (session établie) ou timeout 30s.
+    _post_submit_captcha_and_wait(page)
 
     # DOM post-login (état réel après soumission — session établie ou erreur)
     dom_and_upload(page, "post_login")

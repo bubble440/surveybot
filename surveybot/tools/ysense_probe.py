@@ -13,7 +13,6 @@ Snap R2 (prod uniquement) : SNAP_ENABLED=1 + SNAP_R2_ACCOUNT_ID,
 import os
 import sys
 import time
-import subprocess
 import tempfile
 from urllib.parse import urlparse
 from playwright.sync_api import sync_playwright, Page, BrowserContext
@@ -64,6 +63,21 @@ def _parse_proxy_env() -> tuple:
 
 def _detect_chrome_binary() -> str:
     import shutil
+    import glob
+
+    # Chemin fixé dans le Dockerfile via PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+    # Couvre aussi le cas ~/.cache/ms-playwright en local
+    pw_roots = [
+        os.environ.get("PLAYWRIGHT_BROWSERS_PATH", ""),
+        os.path.expanduser("~/.cache/ms-playwright"),
+    ]
+    for root in pw_roots:
+        if not root:
+            continue
+        matches = glob.glob(os.path.join(root, "chromium-*/chrome-linux*/chrome"))
+        if matches:
+            return sorted(matches)[-1]  # version la plus récente si plusieurs
+
     if sys.platform != "win32":
         for p in ("/usr/bin/chromium", "/usr/bin/chromium-browser", "/usr/bin/google-chrome"):
             if os.path.exists(p):
@@ -202,83 +216,141 @@ def launch_browser() -> Page:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# SNAP — upload R2 uniquement si SNAP_ENABLED=1. No-op en local.
+# SNAP / DOM — upload R2 si SNAP_ENABLED=1, sinon sauvegarde /tmp uniquement.
 # ──────────────────────────────────────────────────────────────────────────────
 
 _session_id: str = time.strftime("%Y%m%d_%H%M%S")
 _snap_step: int = 0
+
+_R2_VARS = [
+    "SNAP_R2_ACCOUNT_ID", "SNAP_R2_ACCESS_KEY_ID",
+    "SNAP_R2_SECRET_ACCESS_KEY", "SNAP_R2_BUCKET",
+]
 
 
 def _snap_enabled() -> bool:
     return os.getenv("SNAP_ENABLED", "").strip() == "1"
 
 
-def _capture_png_scrot() -> bytes:
+def _r2_client():
+    """Retourne (client boto3, bucket). Lève une exception si vars manquantes."""
+    import boto3
+    account_id = os.environ["SNAP_R2_ACCOUNT_ID"]
+    return (
+        boto3.client(
+            "s3",
+            endpoint_url=f"https://{account_id}.r2.cloudflarestorage.com",
+            aws_access_key_id=os.environ["SNAP_R2_ACCESS_KEY_ID"],
+            aws_secret_access_key=os.environ["SNAP_R2_SECRET_ACCESS_KEY"],
+            region_name="auto",
+        ),
+        os.environ["SNAP_R2_BUCKET"],
+    )
+
+
+def _capture_png(page: Page) -> bytes:
     """
-    Capture via scrot uniquement (sans CDP ni Playwright).
-    Independant du browser — pas de blocage fonts/proxy.
-    Leve une exception si scrot echoue.
+    Capture PNG via page.screenshot() Playwright — pas de dépendance scrot/X11.
     """
-    display = os.getenv("DISPLAY", ":99")
-    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
-        path = tmp.name
-    try:
-        os.remove(path)
-    except Exception:
-        pass
-    try:
-        time.sleep(1.5)  # laisser Chrome finir le rendu avant capture X11
-        result = subprocess.run(
-            ["scrot", path],
-            env={**os.environ, "DISPLAY": display},
-            timeout=8,
-            capture_output=True,
-        )
-        if result.returncode != 0:
-            raise RuntimeError(f"scrot returncode={result.returncode} stderr={result.stderr!r}")
-        with open(path, "rb") as f:
-            return f.read()
-    finally:
-        try:
-            os.remove(path)
-        except Exception:
-            pass
+    return page.screenshot(full_page=True)
 
 
+def _r2_upload(client, bucket: str, key: str, body: bytes, content_type: str) -> None:
+    client.put_object(Bucket=bucket, Key=key, Body=body, ContentType=content_type)
 
-def snap_and_upload(page: Page, label: str) -> None:
-    """En prod (SNAP_ENABLED=1) : capture + upload R2. En local : no-op."""
-    if not _snap_enabled():
-        return
 
+def png_and_upload(page: Page, label: str) -> None:
+    """
+    Capture PNG via Playwright et uploade vers R2.
+    Utilisé pour : login_page, surveys_page, login_failed, survey_landing.
+    """
     global _snap_step
     _snap_step += 1
 
     try:
-        png = _capture_png_scrot()
+        png = _capture_png(page)
     except Exception as e:
-        print(f"[SNAP][ERROR] capture failed label={label} : {e}")
+        print(f"[SNAP][ERROR] screenshot failed label={label} : {e}")
+        return
+
+    local_path = f"/tmp/ysense_{label}.png"
+    try:
+        with open(local_path, "wb") as f:
+            f.write(png)
+        print(f"[SNAP] saved locally → {local_path} ({len(png)}B)")
+    except Exception as e:
+        print(f"[SNAP][WARN] local PNG save failed : {e}")
+
+    if not all(os.environ.get(v) for v in _R2_VARS):
         return
 
     try:
-        import boto3
-        account_id = os.environ["SNAP_R2_ACCOUNT_ID"]
-        access_key = os.environ["SNAP_R2_ACCESS_KEY_ID"]
-        secret_key = os.environ["SNAP_R2_SECRET_ACCESS_KEY"]
-        bucket     = os.environ["SNAP_R2_BUCKET"]
-        endpoint   = f"https://{account_id}.r2.cloudflarestorage.com"
-        key        = f"ysense/{_session_id}/{_snap_step:03d}_{label}.png"
-        client = boto3.client(
-            "s3",
-            endpoint_url=endpoint,
-            aws_access_key_id=access_key,
-            aws_secret_access_key=secret_key,
-            region_name="auto",
-        )
-        client.put_object(Bucket=bucket, Key=key, Body=png, ContentType="image/png")
+        client, bucket = _r2_client()
+        key = f"ysense/{_session_id}/{_snap_step:03d}_{label}.png"
+        _r2_upload(client, bucket, key, png, "image/png")
         print(f"[SNAP] uploaded → r2://{bucket}/{key} ({len(png)}B)")
     except Exception as e:
-        print(f"[SNAP][ERROR] R2 upload failed label={label} : {e}")
+        print(f"[SNAP][ERROR] R2 PNG upload failed label={label} : {e}")
+
+
+def dom_and_upload(page: Page, label: str) -> None:
+    """
+    Capture page.content() (DOM HTML) + screenshot PNG et uploade les deux vers R2.
+    Utilisé pour : before_submit, post_login.
+    """
+    global _snap_step
+    _snap_step += 1
+
+    # ── HTML ─────────────────────────────────────────────────────────────────
+    try:
+        html = page.content()
+    except Exception as e:
+        print(f"[DOM][ERROR] page.content() failed label={label} : {e}")
+        html = None
+
+    if html is not None:
+        local_path = f"/tmp/ysense_{label}.html"
+        try:
+            with open(local_path, "w", encoding="utf-8") as f:
+                f.write(html)
+            print(f"[DOM] saved locally → {local_path} ({len(html)}B)")
+        except Exception as e:
+            print(f"[DOM][WARN] local save failed : {e}")
+
+        if all(os.environ.get(v) for v in _R2_VARS):
+            try:
+                client, bucket = _r2_client()
+                key = f"ysense/{_session_id}/{_snap_step:03d}_{label}.html"
+                _r2_upload(client, bucket, key, html.encode("utf-8"), "text/html; charset=utf-8")
+                print(f"[DOM] uploaded → r2://{bucket}/{key} ({len(html)}B)")
+            except Exception as e:
+                print(f"[DOM][ERROR] R2 upload failed label={label} : {e}")
+
+    # ── PNG ──────────────────────────────────────────────────────────────────
+    try:
+        png = _capture_png(page)
+    except Exception as e:
+        print(f"[SNAP][ERROR] screenshot failed label={label} : {e}")
+        return
+
+    local_path = f"/tmp/ysense_{label}.png"
+    try:
+        with open(local_path, "wb") as f:
+            f.write(png)
+        print(f"[SNAP] saved locally → {local_path} ({len(png)}B)")
+    except Exception as e:
+        print(f"[SNAP][WARN] local PNG save failed : {e}")
+
+    if not all(os.environ.get(v) for v in _R2_VARS):
+        return
+
+    try:
+        client, bucket = _r2_client()
+        key = f"ysense/{_session_id}/{_snap_step:03d}_{label}.png"
+        _r2_upload(client, bucket, key, png, "image/png")
+        print(f"[SNAP] uploaded → r2://{bucket}/{key} ({len(png)}B)")
+    except Exception as e:
+        print(f"[SNAP][ERROR] R2 PNG upload failed label={label} : {e}")
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -297,7 +369,7 @@ def _wait_selector(page: Page, selector: str, timeout_ms: int = 15_000) -> bool:
 def _reload_until_content(
     page: Page,
     selector: str,
-    max_reloads: int = 3,
+    max_reloads: int = 1,
     wait_ms: int = 10_000,
 ) -> bool:
     """
@@ -425,102 +497,153 @@ def switch_to_latest_window_and_close_others(
 
 def do_login(page: Page):
     """
-    Login ySense en deux phases :
-    1. Browser Playwright navigue sur /login pour générer les cookies Cloudflare (__cf_bm, etc.)
-    2. POST HTTP via requests en réutilisant ces cookies — bypasse le reCAPTCHA JS
+    Login ySense. Le formulaire a target="dummy" : soumission dans un iframe caché,
+    le frame principal ne navigue jamais. On attend 5s côté serveur puis on goto
+    /surveys directement (inutile de passer par la home).
     """
-    import requests
-
     print(f"[LOGIN] Navigation vers {LOGIN_URL}")
     page.goto(LOGIN_URL, wait_until="domcontentloaded", timeout=NAV_TIMEOUT)
+    # Attente que le JS de la page login soit exécuté (proxy lent)
     page.wait_for_selector("input#username", state="visible", timeout=30_000)
 
-    # Saisir les creds (déclenche chargement JS Cloudflare)
-    page.fill("input#username", EMAIL)
-    time.sleep(0.3)
-    page.fill("input#password", PASSWORD)
-    print(f"[LOGIN] Creds saisies — attente chargement Cloudflare JS (3s)")
-    time.sleep(3)
-
-    # Extraire TOUS les cookies Playwright (incluant __cf_bm)
-    pw_cookies = page.context.cookies()
-    print(f"[LOGIN] Cookies Playwright : {[c['name'] for c in pw_cookies]}")
-
-    # Proxy requests
-    proxy_server, proxy_user, proxy_pass = _parse_proxy_env()
-    proxies = None
-    if proxy_server:
-        from urllib.parse import urlparse
-        parsed = urlparse(proxy_server)
-        if proxy_user and proxy_pass:
-            proxy_url_auth = f"http://{proxy_user}:{proxy_pass}@{parsed.hostname}:{parsed.port}"
-        else:
-            proxy_url_auth = proxy_server
-        proxies = {"http": proxy_url_auth, "https": proxy_url_auth}
-
-    # Session requests avec cookies Playwright
-    session = requests.Session()
-    for ck in pw_cookies:
-        session.cookies.set(ck["name"], ck["value"], domain=ck.get("domain", ".ysense.com"))
-
-    session.headers.update({
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/124.0.0.0 Safari/537.36"
-        ),
-        "Referer":      LOGIN_URL,
-        "Origin":       BASE_URL,
-        "Content-Type": "application/x-www-form-urlencoded",
-        "Accept":       "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    })
-
-    payload = {
-        "email":                EMAIL,
-        "password":             PASSWORD,
-        "persist":              "on",
-        "g-recaptcha-response": "",
-    }
-
-    print(f"[LOGIN] POST {LOGIN_URL} avec cookies Cloudflare")
+    # Dismiss cookie banner OneTrust avant toute interaction
+    # ySense bloque parfois la redirection post-login si le consentement n'est pas donné
     try:
-        r = session.post(LOGIN_URL, data=payload, proxies=proxies, timeout=30, allow_redirects=True)
-        print(f"[LOGIN] POST status={r.status_code} final_url={r.url}")
-        logged_in  = "logged-in" in r.text
-        logged_out = "logged-out" in r.text
-        print(f"[LOGIN] POST response: logged-in={logged_in} logged-out={logged_out}")
+        cookie_btn = page.wait_for_selector(
+            "button#onetrust-accept-btn-handler, "
+            "button.ot-cta-btn, "
+            "button[class*='accept'], "
+            "button[id*='accept']",
+            state="visible",
+            timeout=5_000,
+        )
+        cookie_btn.click()
+        time.sleep(1)
+        print("[LOGIN] Cookie banner accepté.")
+    except Exception:
+        pass
 
-        with open("/tmp/ysense_post_response.html", "w", encoding="utf-8") as f:
-            f.write(r.text)
-        print("[LOGIN] POST response -> /tmp/ysense_post_response.html")
+    # PNG page login (état visuel avant saisie des creds)
+    png_and_upload(page, "login_page")
 
-        if logged_in:
-            for name, value in session.cookies.items():
-                try:
-                    page.context.add_cookies([{
-                        "name": name, "value": value,
-                        "domain": ".ysense.com", "path": "/",
-                    }])
-                except Exception:
-                    pass
-            print(f"[LOGIN] Session cookies injectés : {list(session.cookies.keys())}")
-        else:
-            print("[LOGIN][WARN] POST non connecté — on continue avec les cookies Playwright")
+    page.fill("input#username", EMAIL)
+    print(f"[LOGIN] Email saisi : {EMAIL}")
+    time.sleep(0.3)
 
+    page.fill("input#password", PASSWORD)
+    print("[LOGIN] Mot de passe saisi.")
+    time.sleep(0.3)
+
+    # Dismiss cookie banner si present (peut couvrir le bouton Sign In)
+    try:
+        for sel in ["button.ot-cta-btn", "#onetrust-reject-all-handler", "button[id*='reject']", "button[class*='reject']"]:
+            cb = page.query_selector(sel)
+            if cb:
+                cb.click()
+                time.sleep(0.5)
+                print("[LOGIN] Cookie banner dismissed.")
+                break
+    except Exception:
+        pass
+
+    # Dismiss cookie banner Transcend (Shadow DOM) + fallback sélecteurs standards
+    try:
+        dismissed = page.evaluate("""
+            () => {
+                const cm = document.querySelector('#transcend-consent-manager');
+                if (cm && cm.shadowRoot) {
+                    const btns = cm.shadowRoot.querySelectorAll('button');
+                    for (const btn of btns) {
+                        const txt = (btn.textContent || '').toLowerCase().trim();
+                        if (txt === 'reject all' || txt === 'tout rejeter') {
+                            btn.click();
+                            return 'shadow_rejected';
+                        }
+                    }
+                }
+                return 'no_banner';
+            }
+        """)
+        print(f"[LOGIN] Cookie banner : {dismissed}")
     except Exception as e:
-        print(f"[LOGIN][ERROR] POST failed : {e}")
+        print(f"[LOGIN][WARN] Cookie dismiss failed : {e}")
+    time.sleep(0.5)
 
-    page.goto(BASE_URL, wait_until="domcontentloaded", timeout=NAV_TIMEOUT)
+    # Vérifier que les champs sont toujours remplis avant soumission
+    email_val = page.evaluate("() => document.querySelector('input#username')?.value || ''")
+    pwd_val   = page.evaluate("() => document.querySelector('input#password')?.value || ''")
+    print(f"[LOGIN] Vérif champs — email={bool(email_val.strip())} pwd={bool(pwd_val.strip())}")
+
+    if not email_val.strip() or not pwd_val.strip():
+        print("[LOGIN][WARN] Champs vidés — re-saisie")
+        page.fill("input#username", EMAIL)
+        page.fill("input#password", PASSWORD)
+        time.sleep(0.3)
+
+    # DOM juste avant soumission (champs remplis — vérifie valeurs saisies)
+    dom_and_upload(page, "before_submit")
+
+    # Soumission : clic natif scroll_into_view (1) → JS click (2) → requestSubmit (3)
+    submitted = False
+    btn = page.query_selector("button.sbutton.large")
+    if btn:
+        try:
+            btn.scroll_into_view_if_needed()
+            time.sleep(0.2)
+            btn.click()
+            print("[LOGIN] Soumission via clic natif.")
+            submitted = True
+        except Exception as e1:
+            print(f"[LOGIN][WARN] clic natif failed ({e1}) — fallback JS click")
+            try:
+                page.evaluate("(el) => el.click()", btn)
+                print("[LOGIN] Soumission via JS click.")
+                submitted = True
+            except Exception as e2:
+                print(f"[LOGIN][WARN] JS click failed ({e2}) — fallback requestSubmit")
+
+    if not submitted:
+        result = page.evaluate("""
+            () => {
+                const form = document.querySelector('form#loginform');
+                if (!form) return 'no_form';
+                try { form.requestSubmit(); return 'requestSubmit_ok'; }
+                catch(e) { form.submit(); return 'submit_ok'; }
+            }
+        """)
+        print(f"[LOGIN] Soumission formulaire JS : {result}")
+
+    # Attente généreuse : validation serveur via iframe dummy + latence proxy
+    time.sleep(15)
+
+    # DOM post-login (état réel après soumission — session établie ou erreur)
+    dom_and_upload(page, "post_login")
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# ÉTAPE 2 : NAVIGATION VERS /surveys + reload si contenu absent
+# ──────────────────────────────────────────────────────────────────────────────
 
 def go_to_surveys(page: Page) -> bool:
+    """
+    Navigue vers /surveys, attend le contenu.
+    Recharge jusqu'à 1 fois si #survey-list-body est vide après chargement.
+    Retourne True si des surveys sont détectés, False sinon.
+    """
     time.sleep(3)
     print(f"[SURVEYS] Navigation vers {SURVEYS_URL}")
     page.goto(SURVEYS_URL, wait_until="domcontentloaded", timeout=NAV_TIMEOUT)
+
     found = _wait_selector(page, SURVEY_LINK_SEL, timeout_ms=15_000)
     if not found:
-        found = _reload_until_content(page, SURVEY_LINK_SEL, max_reloads=3, wait_ms=10_000)
+        found = _reload_until_content(page, SURVEY_LINK_SEL, max_reloads=1, wait_ms=10_000)
+
     count = len(page.query_selector_all(SURVEY_LINK_SEL))
     print(f"[SURVEYS] URL={page.url} | surveys détectés={count}")
+
+    # PNG /surveys (état visuel — session + liste surveys)
+    png_and_upload(page, "surveys_page")
+
     return count > 0
 
 
@@ -529,15 +652,20 @@ def go_to_surveys(page: Page) -> bool:
 # ──────────────────────────────────────────────────────────────────────────────
 
 def click_best_survey(page: Page, context: BrowserContext) -> "tuple[str | None, Page | None]":
+    """
+    Sélectionne le meilleur survey, clique, switch vers le nouvel onglet,
+    attend la stabilisation avec reload si nécessaire, puis snap (prod).
+    """
     best = pick_best_survey(page)
     if best is None:
         print("[SURVEYS][ERROR] Aucun survey disponible.")
-        snap_and_upload(page, "no_surveys")
+        png_and_upload(page, "no_surveys")
         return None, None
 
     base_handles = list(context.pages)
     print(f"[CLICK] Clic natif sur survey id={best['sid']}")
     before_url = page.url
+
     best["element"].click()
 
     survey_page = switch_to_latest_window_and_close_others(
@@ -552,6 +680,7 @@ def click_best_survey(page: Page, context: BrowserContext) -> "tuple[str | None,
         except Exception:
             pass
         if not survey_page.url or survey_page.url in ("about:blank", ""):
+            print("[CLICK][WARN] Page vide après switch — reload")
             try:
                 survey_page.reload(wait_until="domcontentloaded", timeout=NAV_TIMEOUT)
             except Exception:
@@ -566,6 +695,7 @@ def click_best_survey(page: Page, context: BrowserContext) -> "tuple[str | None,
                 break
             time.sleep(0.3)
         if page.url == before_url:
+            print("[CLICK][WARN] URL inchangée — reload")
             try:
                 page.reload(wait_until="domcontentloaded", timeout=NAV_TIMEOUT)
             except Exception:
@@ -573,9 +703,13 @@ def click_best_survey(page: Page, context: BrowserContext) -> "tuple[str | None,
         final_url = page.url
         print(f"[CLICK] URL survey (même onglet) : {final_url}")
 
-    snap_and_upload(survey_page, "survey_landing")
+    png_and_upload(survey_page, "survey_landing")
     return final_url, survey_page
 
+
+# ──────────────────────────────────────────────────────────────────────────────
+# MAIN
+# ──────────────────────────────────────────────────────────────────────────────
 
 def main():
     if not EMAIL or not PASSWORD:
@@ -592,18 +726,6 @@ def main():
         # ── Étape 2 : /surveys avec reloads si contenu absent
         surveys_ok = go_to_surveys(page)
 
-        # Vérification session sur /surveys (plusieurs sélecteurs selon rendu)
-        # Capture DOM /surveys pour diagnostic session
-        try:
-            surveys_html = page.content()
-            surveys_logged_in  = 'logged-in' in surveys_html
-            surveys_logged_out = 'logged-out' in surveys_html
-            with open('/tmp/ysense_surveys.html', 'w', encoding='utf-8') as _f:
-                _f.write(surveys_html)
-            print(f"[DOM/surveys] logged-in={surveys_logged_in} logged-out={surveys_logged_out}")
-        except Exception as _e:
-            print(f"[DOM/surveys][WARN] {_e}")
-
         SESSION_SELECTORS = [
             "#ysnNavbarRight",       # navbar logged-in
             "#header_avatar",         # avatar utilisateur
@@ -614,13 +736,13 @@ def main():
         )
         if not session_ok:
             print("[LOGIN][ERROR] Session non établie sur /surveys. Arrêt.")
-            snap_and_upload(page, "login_failed")
+            png_and_upload(page, "login_failed")
             return
         print("[LOGIN] Session établie ✓")
 
         if not surveys_ok:
-            print("[SURVEYS][ERROR] Aucun survey après 3 reloads.")
-            snap_and_upload(page, "no_surveys")
+            print("[SURVEYS][ERROR] Aucun survey après reloads.")
+            png_and_upload(page, "no_surveys")
             return
 
         # ── Étape 3 : Clic + switch + snap
