@@ -295,36 +295,62 @@ def png_and_upload(page: Page, label: str) -> None:
 
 def dom_and_upload(page: Page, label: str) -> None:
     """
-    Capture page.content() (DOM HTML complet) et uploade vers R2.
+    Capture page.content() (DOM HTML) + screenshot PNG et uploade les deux vers R2.
     Utilisé pour : before_submit, post_login.
     """
     global _snap_step
     _snap_step += 1
 
+    # ── HTML ─────────────────────────────────────────────────────────────────
     try:
         html = page.content()
     except Exception as e:
         print(f"[DOM][ERROR] page.content() failed label={label} : {e}")
+        html = None
+
+    if html is not None:
+        local_path = f"/tmp/ysense_{label}.html"
+        try:
+            with open(local_path, "w", encoding="utf-8") as f:
+                f.write(html)
+            print(f"[DOM] saved locally → {local_path} ({len(html)}B)")
+        except Exception as e:
+            print(f"[DOM][WARN] local save failed : {e}")
+
+        if all(os.environ.get(v) for v in _R2_VARS):
+            try:
+                client, bucket = _r2_client()
+                key = f"ysense/{_session_id}/{_snap_step:03d}_{label}.html"
+                _r2_upload(client, bucket, key, html.encode("utf-8"), "text/html; charset=utf-8")
+                print(f"[DOM] uploaded → r2://{bucket}/{key} ({len(html)}B)")
+            except Exception as e:
+                print(f"[DOM][ERROR] R2 upload failed label={label} : {e}")
+
+    # ── PNG ──────────────────────────────────────────────────────────────────
+    try:
+        png = _capture_png(page)
+    except Exception as e:
+        print(f"[SNAP][ERROR] screenshot failed label={label} : {e}")
         return
 
-    local_path = f"/tmp/ysense_{label}.html"
+    local_path = f"/tmp/ysense_{label}.png"
     try:
-        with open(local_path, "w", encoding="utf-8") as f:
-            f.write(html)
-        print(f"[DOM] saved locally → {local_path} ({len(html)}B)")
+        with open(local_path, "wb") as f:
+            f.write(png)
+        print(f"[SNAP] saved locally → {local_path} ({len(png)}B)")
     except Exception as e:
-        print(f"[DOM][WARN] local save failed : {e}")
+        print(f"[SNAP][WARN] local PNG save failed : {e}")
 
     if not all(os.environ.get(v) for v in _R2_VARS):
         return
 
     try:
         client, bucket = _r2_client()
-        key = f"ysense/{_session_id}/{_snap_step:03d}_{label}.html"
-        _r2_upload(client, bucket, key, html.encode("utf-8"), "text/html; charset=utf-8")
-        print(f"[DOM] uploaded → r2://{bucket}/{key} ({len(html)}B)")
+        key = f"ysense/{_session_id}/{_snap_step:03d}_{label}.png"
+        _r2_upload(client, bucket, key, png, "image/png")
+        print(f"[SNAP] uploaded → r2://{bucket}/{key} ({len(png)}B)")
     except Exception as e:
-        print(f"[DOM][ERROR] R2 upload failed label={label} : {e}")
+        print(f"[SNAP][ERROR] R2 PNG upload failed label={label} : {e}")
 
 
 # ──────────────────────────────────────────────────────────────────────────────
