@@ -738,6 +738,17 @@ def main():
         surveys_ok = go_to_surveys(page)
 
         # Vérification session sur /surveys (plusieurs sélecteurs selon rendu)
+        # Capture DOM /surveys pour diagnostic session
+        try:
+            surveys_html = page.content()
+            surveys_logged_in  = 'logged-in' in surveys_html
+            surveys_logged_out = 'logged-out' in surveys_html
+            with open('/tmp/ysense_surveys.html', 'w', encoding='utf-8') as _f:
+                _f.write(surveys_html)
+            print(f"[DOM/surveys] logged-in={surveys_logged_in} logged-out={surveys_logged_out}")
+        except Exception as _e:
+            print(f"[DOM/surveys][WARN] {_e}")
+
         SESSION_SELECTORS = [
             "#ysnNavbarRight",       # navbar logged-in
             "#header_avatar",         # avatar utilisateur
