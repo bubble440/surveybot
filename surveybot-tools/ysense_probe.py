@@ -143,7 +143,7 @@ def launch_browser() -> Page:
     """
     chrome_bin = _detect_chrome_binary()
     proxy_server, proxy_user, proxy_pass = _parse_proxy_env()
-    headless = not bool(os.environ.get("DISPLAY")) if sys.platform != "win32" else False
+    headless = sys.platform != "win32"
     user_data_dir = tempfile.mkdtemp(prefix="chrome_profile_ysense_")
 
     chrome_args = [
@@ -174,10 +174,10 @@ def launch_browser() -> Page:
             "--webrtc-ip-handling-policy=disable_non_proxied_udp",
         ]
     if ".exe" not in chrome_bin.lower():
-        # SwiftShader CPU rendering — angle echoue sur Fly.io Firecracker (pas de GPU)
+        # Headless natif Chromium — évite SwiftShader (signal anti-bot fort pour reCAPTCHA).
+        # --headless=new utilise le renderer headless intégré, sans GPU ni rasterizer logiciel.
         chrome_args += [
-            "--disable-gpu",
-            "--use-gl=swiftshader-webgl",
+            "--headless=new",
             "--disable-software-rasterizer",
         ]
 
