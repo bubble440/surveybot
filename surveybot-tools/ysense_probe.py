@@ -513,7 +513,21 @@ def _post_submit_captcha_and_wait(page: Page) -> None:
         # Courte pause pour laisser le DOM post-submit se stabiliser
         time.sleep(3)
 
-        if page.query_selector(_BFRAME_SEL) is None:
+        # Le bframe est présent dans le DOM dès le chargement (score-based invisible).
+        # Un challenge visuel réel = bframe visibility:visible ET parent dans le viewport.
+        bframe_visible = page.evaluate("""
+            (sel) => {
+                const el = document.querySelector(sel);
+                if (!el) return false;
+                const style = window.getComputedStyle(el);
+                if (style.visibility !== 'visible') return false;
+                const parent = el.parentElement;
+                if (!parent) return false;
+                const top = parseInt(window.getComputedStyle(parent).top || '0', 10);
+                return top > -1000;
+            }
+        """, _BFRAME_SEL)
+        if not bframe_visible:
             print(f"[LOGIN][CAPTCHA] Aucun reCAPTCHA challenge détecté (tentative {attempt}) — skip.")
             break
 
@@ -578,7 +592,7 @@ def do_login(page: Page):
         pass
 
     # PNG page login (état visuel avant saisie des creds)
-    png_and_upload(page, "login_page")
+    # png_and_upload(page, "login_page")
 
     page.fill("input#username", EMAIL)
     print(f"[LOGIN] Email saisi : {EMAIL}")
@@ -682,7 +696,7 @@ def go_to_surveys(page: Page) -> bool:
     print(f"[SURVEYS] URL={page.url} | surveys détectés={count}")
 
     # PNG /surveys (état visuel — session + liste surveys)
-    png_and_upload(page, "surveys_page")
+    # png_and_upload(page, "surveys_page")
 
     return count > 0
 
@@ -762,7 +776,7 @@ def main():
     try:
         # ── Étape 1 : Login
         do_login(page)
-
+        return
         # ── Étape 2 : /surveys avec reloads si contenu absent
         surveys_ok = go_to_surveys(page)
 
@@ -776,7 +790,7 @@ def main():
         )
         if not session_ok:
             print("[LOGIN][ERROR] Session non établie sur /surveys. Arrêt.")
-            png_and_upload(page, "login_failed")
+            # png_and_upload(page, "login_failed")
             return
         print("[LOGIN] Session établie ✓")
 
