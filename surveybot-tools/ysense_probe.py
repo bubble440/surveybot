@@ -637,35 +637,19 @@ def do_login(page: Page):
     # DOM juste avant soumission (champs remplis — vérifie valeurs saisies)
     dom_and_upload(page, "before_submit")
 
-    # Soumission : clic natif scroll_into_view (1) → JS click (2) → requestSubmit (3)
-    submitted = False
-    btn = page.query_selector("button.sbutton.large")
-    if btn:
-        try:
-            btn.scroll_into_view_if_needed()
-            time.sleep(0.2)
-            btn.click()
-            print("[LOGIN] Soumission via clic natif.")
-            submitted = True
-        except Exception as e1:
-            print(f"[LOGIN][WARN] clic natif failed ({e1}) — fallback JS click")
-            try:
-                page.evaluate("(el) => el.click()", btn)
-                print("[LOGIN] Soumission via JS click.")
-                submitted = True
-            except Exception as e2:
-                print(f"[LOGIN][WARN] JS click failed ({e2}) — fallback requestSubmit")
-
-    if not submitted:
-        result = page.evaluate("""
-            () => {
-                const form = document.querySelector('form#loginform');
-                if (!form) return 'no_form';
-                try { form.requestSubmit(); return 'requestSubmit_ok'; }
-                catch(e) { form.submit(); return 'submit_ok'; }
-            }
-        """)
-        print(f"[LOGIN] Soumission formulaire JS : {result}")
+    # Soumission via requestSubmit() — évite le clic natif qui atterrit sur le
+    # badge grecaptcha-badge (position fixed) en headless et déclenche le reCAPTCHA
+    # hors du flux formulaire. requestSubmit() respecte la validation HTML5 et les
+    # handlers onsubmit (dont l'intégration reCAPTCHA invisible).
+    result = page.evaluate("""
+        () => {
+            const form = document.querySelector('form#loginform');
+            if (!form) return 'no_form';
+            try { form.requestSubmit(); return 'requestSubmit_ok'; }
+            catch(e) { form.submit(); return 'submit_fallback'; }
+        }
+    """)
+    print(f"[LOGIN] Soumission formulaire JS : {result}")
 
     # Détection reCAPTCHA Enterprise post-submit + résolution (max 2 tentatives).
     # Sans CAPTCHA, la boucle passe immédiatement ; avec CAPTCHA, on résout puis
