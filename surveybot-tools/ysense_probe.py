@@ -510,25 +510,26 @@ def _post_submit_captcha_and_wait(page: Page) -> None:
     MAX_ATTEMPTS = 2
 
     for attempt in range(1, MAX_ATTEMPTS + 1):
-        # Courte pause pour laisser le DOM post-submit se stabiliser
-        time.sleep(3)
+        # Attendre l'apparition du bframe dans le DOM (injecté dynamiquement après submit,
+        # délai réseau variable — sleep fixe insuffisant). Timeout 10s : si absent → pas de challenge.
+        try:
+            page.wait_for_selector(_BFRAME_SEL, timeout=10_000)
+        except Exception:
+            print(f"[LOGIN][CAPTCHA] Aucun reCAPTCHA challenge détecté (tentative {attempt}) — skip.")
+            break
 
-        # Le bframe est présent dans le DOM dès le chargement (score-based invisible).
-        # Un challenge visuel réel = bframe visibility:visible ET parent dans le viewport.
+        # Distinguer challenge réel (offsetWidth≥300, offsetHeight≥300) du badge invisible
+        # (offsetWidth=256, offsetHeight=60, positionné hors viewport). La taille est le
+        # critère le plus fiable : le bframe challenge fait ~400×580px, le badge ~256×60px.
         bframe_visible = page.evaluate("""
             (sel) => {
                 const el = document.querySelector(sel);
                 if (!el) return false;
-                const style = window.getComputedStyle(el);
-                if (style.visibility !== 'visible') return false;
-                const parent = el.parentElement;
-                if (!parent) return false;
-                const top = parseInt(window.getComputedStyle(parent).top || '0', 10);
-                return top > -1000;
+                return el.offsetWidth >= 300 && el.offsetHeight >= 300;
             }
         """, _BFRAME_SEL)
         if not bframe_visible:
-            print(f"[LOGIN][CAPTCHA] Aucun reCAPTCHA challenge détecté (tentative {attempt}) — skip.")
+            print(f"[LOGIN][CAPTCHA] bframe présent mais non visible (badge score-based) — skip.")
             break
 
         print(f"[LOGIN][CAPTCHA] reCAPTCHA Enterprise détecté "
