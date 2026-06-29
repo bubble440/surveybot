@@ -135,16 +135,23 @@ def _fingerprint_js() -> str:
     return base
 
 
-def launch_browser() -> Page:
+def launch_browser(account_id: str) -> tuple:
     """
     Lance Chrome via launch_persistent_context — même pattern que prod.
     Proxy injecté au niveau context uniquement (pas de browser.launch séparé).
-    Retourne une Page prête à l'emploi.
+    Retourne (page, user_data_dir) pour permettre save_profile() en fin de run.
     """
     chrome_bin = _detect_chrome_binary()
     proxy_server, proxy_user, proxy_pass = _parse_proxy_env()
     headless = sys.platform != "win32"
-    user_data_dir = tempfile.mkdtemp(prefix="chrome_profile_ysense_")
+    user_data_dir = os.path.join(tempfile.gettempdir(), f"chrome_profile_ysense_{account_id}")
+    os.makedirs(user_data_dir, exist_ok=True)
+
+    try:
+        from chrome_profile_store import load_profile  # noqa: PLC0415
+        load_profile(account_id, user_data_dir)
+    except Exception as e:
+        print(f"[PROFILE][WARN] load_profile échoué : {e}")
 
     chrome_args = [
         "--no-first-run",
@@ -212,7 +219,7 @@ def launch_browser() -> Page:
     context.add_init_script(_fingerprint_js())
     page = context.pages[0] if context.pages else context.new_page()
     page._pw = pw
-    return page
+    return page, user_data_dir
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -771,7 +778,8 @@ def main():
         print("[ERROR] Définir YSENSE_EMAIL et YSENSE_PASSWORD dans l'environnement.")
         return
 
-    page = launch_browser()
+    account_id = os.getenv("ACCOUNT_ID", "ysense_default")
+    page, user_data_dir = launch_browser(account_id)
     context = page.context
 
     try:
@@ -824,6 +832,11 @@ def main():
             page._pw.stop()
         except Exception:
             pass
+        try:
+            from chrome_profile_store import save_profile  # noqa: PLC0415
+            save_profile(account_id, user_data_dir)
+        except Exception as e:
+            print(f"[PROFILE][WARN] save_profile échoué : {e}")
 
 
 if __name__ == "__main__":
