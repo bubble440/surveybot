@@ -16,7 +16,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # ── Python : Playwright + boto3 + requests (requis par captcha_solver) ───────
-RUN pip install --no-cache-dir playwright boto3 requests
+RUN pip install --no-cache-dir playwright boto3 requests psycopg2-binary
 
 # Chemin fixe pour les browsers Playwright — évite le ~/.cache/ms-playwright
 # imprévisible selon l'utilisateur courant.
