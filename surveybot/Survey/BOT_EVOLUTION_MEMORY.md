@@ -949,6 +949,46 @@ Patterns exclus :
 
 ---
 
+
+---
+
+## UTILITAIRE : DROPDOWN BLOCK RESOLVER
+Fichier : Survey/dropdown_block_resolver.py
+Appelé depuis : Survey/action_dispatcher.py, bloc `itype == "dropdown"`, stratégie `dropdown_block` (avant `dropdown_select`).
+Rôle : associer un contexte-question → bon `<select>` ou dropdown custom → sélectionner la valeur.
+
+### _collect_dropdown_blocks
+Guard : collecte en deux passes strictement séparées.
+  Passe 1 — `<select>` natifs : `driver.query_selector_all("select")`, marqués `is_native=True`.
+  Passe 2 — customs : `[role='combobox'], [aria-haspopup='listbox'], .dropdown, .select` avec
+             exclusion immédiate de tout élément dont `tagName == "select"` (via `_el_is_select()`).
+Patterns couverts :
+- `<select>` natifs (Nielsen, Decipher, Forsta…) : options lues depuis `<option>` enfants
+- Dropdowns custom ARIA (combobox, listbox) : options lues après ouverture
+Patterns exclus :
+- `<select class="... dropdown ...">` ne doit PAS être collecté deux fois :
+  la classe CSS `.dropdown` peut matcher le sélecteur custom — `_el_is_select()` l'exclut.
+
+### _extract_label — ordre de priorité
+1. `aria-labelledby` → texte de l'élément référencé (robuste Nielsen/Decipher)
+2. `label[for=id]` — recherche globale depuis la racine
+3. `aria-label`, `placeholder`, `name` (scalaires)
+4. texte parent immédiat — UNIQUEMENT pour les dropdowns custom (jamais pour `<select>`)
+Note critique : `inner_text()` sur le parent d'un `<select>` retourne la concaténation de
+toutes les options — ce label pollué fausse le score Jaccard. La branche 4 est donc
+conditionnée à `not is_select`.
+
+### Idempotence — _selected_text_native
+Pour `is_native=True` : lit `options[selectedIndex].text` via `evaluate()`.
+NE PAS appeler `inner_text()` sur un `<select>` : retourne le texte de toutes les options.
+Pour custom (`is_native=False`) : `inner_text()` du trigger (texte visible affiché).
+
+### Sélection natif
+`select_option(label=value)` Playwright + dispatch events `input/change/blur`.
+Fallback : fuzzy match sur `Array.from(el.options)` → `select_option(value=matched_value)`.
+
+---
+
 ## FRONTIÈRES INTER-EXTRACTEURS
 
 | Plateforme | Extracteur A | Extracteur B | Signal de discrimination |

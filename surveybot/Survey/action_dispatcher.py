@@ -1118,7 +1118,7 @@ def _apply_by_target_id(
                 while time.time() < end:
                     try:
                         if input_id:
-                            ok = input_id.evaluate("(_el) => { var e=document.getElementById(_el); return !!(e && e.checked); }")
+                            ok = driver.evaluate("(id) => { var e=document.getElementById(id); return !!(e && e.checked); }", input_id)
                             if ok:
                                 return True
 
@@ -4514,13 +4514,13 @@ def handle_prodege_data_privacy_screen(driver):
 
     # Vérification guard strict
     try:
-        guard_ok = bool(CMP_CONTAINER_SELECTORS.evaluate("""(_el) => {
+        guard_ok = bool(driver.evaluate("""() => {
             return !!(
                 document.querySelector('form#dataPrivacyAgreeForm') &&
                 document.querySelector('input.dataPrivacyCheckboxRequired') &&
                 document.querySelector('button#dataPrivacySubmitBtn')
             );
-        """))
+        }"""))
     except Exception:
         guard_ok = False
 
@@ -4845,7 +4845,7 @@ def handle_consent_screen(driver):
     # Trigger strictement DOM-first pour éviter tout impact sur les autres providers/pages.
     def _handle_cint_collect_consent_page() -> bool:
         try:
-            detected = bool(drop_zone.evaluate("""(_el) => {
+            detected = bool(driver.evaluate("""() => {
                 const mandatory = Array.from(document.querySelectorAll("input.mandatory[type='checkbox'][name='consents']"));
                 if (!mandatory.length) return false;
 
@@ -4856,7 +4856,7 @@ def handle_consent_screen(driver):
 
                 const submit = form.querySelector("input[type='submit'], button[type='submit']");
                 return !!submit;
-            """))
+            }"""))
         except Exception:
             detected = False
 
@@ -5892,7 +5892,7 @@ def handle_captcha_guard(driver):
             return True
 
         try:
-            still_there = bool(target_id.evaluate("""(_el) => {
+            still_there = bool(driver.evaluate("""() => {
                 const isVisible = (e) => {
                   try{
                     const cs = getComputedStyle(e);
