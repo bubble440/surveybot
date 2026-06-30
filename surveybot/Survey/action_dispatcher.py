@@ -3168,10 +3168,12 @@ def _apply_by_target_id(
 
                     if mx_collapsible_scope:
                         try:
-                            cell_pre = el.evaluate("""(_el) => {
+                            # evaluate_handle : retourne un ElementHandle (nœud DOM cliquable),
+                            # contrairement à evaluate() qui sérialise le retour en dict/None.
+                            cell_pre = el.evaluate_handle("""(_el) => {
                                 const node = _el;
                                 return (node && node.closest) ? node.closest('.clickableCell') : null;
-}""")
+}""").as_element()
                         except Exception:
                             cell_pre = None
                         if cell_pre is not None and _is_decipher_mx_collapsible_checkbox_selected(cell_pre):
@@ -3195,7 +3197,9 @@ def _apply_by_target_id(
                 # On applique une stratégie unique et DOM-gardée pour éviter les faux positifs.
                 if resolved_itype == "checkbox":
                     try:
-                        decipher_cell = el.evaluate("""(_el) => {
+                        # evaluate_handle : retourne un ElementHandle (nœud DOM cliquable),
+                        # contrairement à evaluate() qui sérialise le retour JS en dict/None.
+                        decipher_cell = el.evaluate_handle("""(_el) => {
                             const node = _el;
                             if (!node || !node.closest) return null;
                             const cell = node.closest('.clickableCell');
@@ -3203,29 +3207,55 @@ def _apply_by_target_id(
                             const hiddenInput = cell.querySelector("input[type='checkbox'].fir-hidden");
                             if (!hiddenInput) return null;
                             return cell;
-}""")
+}""").as_element()
                     except Exception:
                         decipher_cell = None
 
                     if decipher_cell is not None:
-                        clicked = _click_candidate(decipher_cell, "decipher_clickable_cell")
-                        if not clicked:
-                            if debug_target:
-                                log_debug("[TARGET_DEBUG]", f"decipher clickableCell click failed: value='{value}' xpath='{xp}'")
-                            return False
+                        # Extraire l'id de l'input depuis le XPath (ex: @id="ans4725.0.13")
+                        # pour cibler le label et vérifier depuis le DOM frais post-clic.
+                        _inp_id_m = re.search(r'@id=["\']([^"\']+)["\']', xp)
+                        _inp_id_fv = _inp_id_m.group(1) if _inp_id_m else None
 
+                        # Stratégie : cliquer le <label for=id> Decipher (déclenche les handlers natifs)
+                        # plutôt que la .clickableCell qui n'a pas d'event listener JS.
+                        # Fallback : clic sur la .clickableCell si pas de label trouvé.
+                        _clicked_via_label = False
+                        if _inp_id_fv:
+                            try:
+                                _clicked_via_label = bool(driver.evaluate("""(inp_id) => {
+                                    const lbl = document.querySelector('label[for="' + inp_id + '"]');
+                                    if (!lbl) return false;
+                                    lbl.click();
+                                    return true;
+}""", _inp_id_fv))
+                            except Exception:
+                                _clicked_via_label = False
+
+                        if not _clicked_via_label:
+                            clicked = _click_candidate(decipher_cell, "decipher_clickable_cell")
+                            if not clicked:
+                                if debug_target:
+                                    log_debug("[TARGET_DEBUG]", f"decipher clickableCell click failed: value='{value}' xpath='{xp}'")
+                                return False
+
+                        # Vérification post-clic via getElementById (DOM frais, jamais stale).
+                        # Signaux : inp.checked OU span.fir-icon.selected dans la cellule.
+                        time.sleep(0.05)
+                        ok_decipher = False
                         try:
-                            ok_decipher = _is_decipher_mx_collapsible_checkbox_selected(decipher_cell)
-                            if not ok_decipher:
-                                ok_decipher = decipher_cell.evaluate("""(_el) => {
-                                    const cell = _el;
-                                    if (!cell) return false;
-                                    const inp = cell.querySelector("input[type='checkbox'].fir-hidden");
+                            if _inp_id_fv:
+                                ok_decipher = bool(driver.evaluate("""(inp_id) => {
+                                    const inp = document.getElementById(inp_id);
                                     if (!inp) return false;
                                     if (inp.checked) return true;
+                                    const cell = inp.closest('.clickableCell, .element');
+                                    if (!cell) return false;
                                     const icon = cell.querySelector('.fir-icon');
-                                    return !!(icon && icon.classList && icon.classList.contains('selected'));
-}""")
+                                    return !!(icon && icon.classList.contains('selected'));
+}""", _inp_id_fv))
+                            else:
+                                ok_decipher = _is_decipher_mx_collapsible_checkbox_selected(decipher_cell)
                         except Exception:
                             ok_decipher = False
 

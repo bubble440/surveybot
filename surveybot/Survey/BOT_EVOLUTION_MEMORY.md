@@ -949,6 +949,33 @@ Patterns exclus :
 
 ---
 
+## PLATEFORME : DECIPHER / FOCUSVISION — ANSWERS-LIST CHECKBOX (fir-hidden)
+Signature DOM : `div.answers.answers-list` > N `div.element.clickableCell`
+Chaque cellule : `input[type="checkbox"].fir-hidden` (CSS-masqué) + `span.fir-icon` + `label[for=inputId]`
+Signal de sélection : `span.fir-icon.selected` dans la cellule (PAS `input.checked` — non mis à jour par Decipher).
+Domaine observé : selfserve Nielsen (selfserve/540/…), extrait par `_extract_focusvision_answers_list_groups`.
+Flag payload : `focusvision_answers_list=True`.
+
+### _apply_by_target_id — bloc decipher_clickable_cell checkbox
+Fichier : Survey/action_dispatcher.py
+Emplacement : bloc `if resolved_itype == "checkbox":`, après idempotence, avant Toluna Runtime.
+Guard (double) :
+  1. `el.evaluate_handle(closest('.clickableCell')).as_element()` retourne un ElementHandle non-null
+  2. `cell.querySelector("input[type='checkbox'].fir-hidden")` présent dans la cellule
+Patterns couverts :
+- Extraction de l'input id depuis le XPath via `re.search(r'@id=["\']([^"\']+)["\']', xp)`
+- Clic via `label[for=inp_id].click()` JS — déclenche les handlers natifs Decipher (fir-icon toggle)
+- Fallback si label absent : `_click_candidate(decipher_cell, "decipher_clickable_cell")`
+- Vérification post-clic via `document.getElementById(inp_id)` (DOM frais, jamais stale) :
+  `inp.checked` OU `cell.querySelector('.fir-icon').classList.contains('selected')`
+- Fallback vérif si pas d'id extractible : `_is_decipher_mx_collapsible_checkbox_selected(decipher_cell)`
+Note DOM critique : `_click_candidate` sur `.clickableCell` est inopérant (pas d'event listener JS sur ce wrapper).
+  Le clic doit impérativement cibler `label[for=id]` pour activer les handlers Decipher.
+  Le handle `decipher_cell` peut être stale après clic (re-render DOM) — vérification via getElementById obligatoire.
+Patterns exclus :
+- `div.mx-stage .mx-collapsible-container` présent → `_is_decipher_mx_collapsible_checkbox_selected` (branche MX)
+- `input[type='radio']` → chemin radio distinct
+- Inputs natifs interactables (non fir-hidden) → chemin générique `_click_candidate`
 
 ---
 
