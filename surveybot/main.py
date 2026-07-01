@@ -348,22 +348,43 @@ def run_attach_takeover(driver, *, api_key: str, account_id: str) -> None:
 
 
 def _get_attach_route() -> str:
-    if os.getenv("ATTACH_ROUTE_PROMPT") != "1":
-        return "resolution"
+    """
+    Résolution de la route attach, par ordre de priorité :
+      1) ATTACH_ROUTE env var (valeur persistante : "preselection" | "resolution" | "login")
+         → définie par l'utilisateur dans le script de lancement, jamais redemandée.
+      2) ATTACH_ROUTE_PROMPT=1 → prompt interactif dans le terminal.
+         Le choix est écrit dans ATTACH_ROUTE via os.environ pour que les relances
+         dans le même processus héritent de la valeur sans redemander.
+      3) Défaut silencieux : "resolution".
+    """
+    # Priorité 1 : valeur déjà fixée (env de lancement ou prompt précédent)
+    fixed = (os.getenv("ATTACH_ROUTE") or "").strip().lower()
+    if fixed in {"preselection", "resolution", "login"}:
+        return fixed
 
-    print("[ATTACH] Choisis la route de takeover :")
-    print("  1) preselection  (popup déjà affiché)")
-    print("  2) resolution    (déjà sur la page survey)")
-    print("  3) login         (login + sélection survey complète — BLOC 1 natif Playwright)")
-    choice = (input("Choix [1/2/3, défaut=2]: ") or "").strip().lower()
+    # Priorité 2 : prompt interactif si demandé
+    if os.getenv("ATTACH_ROUTE_PROMPT") == "1":
+        print("[ATTACH] Choisis la route de takeover :")
+        print("  1) preselection  (popup déjà affiché)")
+        print("  2) resolution    (déjà sur la page survey)")
+        print("  3) login         (login + sélection survey complète — BLOC 1 natif Playwright)")
+        choice = (input("Choix [1/2/3, défaut=2]: ") or "").strip().lower()
 
-    if choice in {"1", "preselection"}:
-        return "preselection"
-    if choice in {"3", "login"}:
-        return "login"
+        if choice in {"1", "preselection"}:
+            route = "preselection"
+        elif choice in {"3", "login"}:
+            route = "login"
+        else:
+            if choice not in {"", "2", "resolution"}:
+                print(f"[ATTACH] choix invalide={choice!r} -> fallback resolution")
+            route = "resolution"
 
-    if choice not in {"", "2", "resolution"}:
-        print(f"[ATTACH] choix invalide={choice!r} -> fallback resolution")
+        # Mémoriser dans l'env du processus pour les relances dans la même session
+        os.environ["ATTACH_ROUTE"] = route
+        print(f"[ATTACH] route={route!r} mémorisée (ATTACH_ROUTE). Modifier la var env pour changer.")
+        return route
+
+    # Priorité 3 : défaut silencieux
     return "resolution"
 
 
@@ -670,12 +691,23 @@ def main():
         if not attach_addr:
             raise RuntimeError("ATTACH_DEBUGGER_ADDRESS manquant en mode attach")
 
+        # Résoudre la route AVANT de sélectionner l'onglet :
+        #   - en mode "resolution", on exclut topsurveys.app de la liste affichée
+        #   - le prompt (si ATTACH_ROUTE_PROMPT=1) doit précéder l'affichage des tabs
+        attach_route = _get_attach_route()
+        print(f"[ATTACH] route={attach_route}")
+
         from preselection.playwright_launcher import attach_browser_playwright
         _pw, _browser = attach_browser_playwright(attach_addr)
         _context = _browser.contexts[0]
 
+        # En mode résolution, exclure les onglets TopSurveys de la sélection
+        _exclude = None
+        if attach_route == "resolution":
+            _exclude = lambda url: "topsurveys.app" in (url or "").lower()
+
         # Sélection de l'onglet actif (Playwright natif)
-        page = _attach_select_tab_pw(_context)
+        page = _attach_select_tab_pw(_context, exclude_url_pred=_exclude)
         print(f"[ATTACH] Page sélectionnée url={_attach_display_url(page.url)}")
 
         from Survey.survey_solver import get_current_survey_ctx
@@ -693,9 +725,6 @@ def main():
 
         if should_run_hot_reload():
             start_hot_reload_thread()
-
-        attach_route = _get_attach_route()
-        print(f"[ATTACH] route={attach_route}")
 
         if attach_route == "login":
             # Route BLOC 1 complète : login + sélection survey + présélection + résolution

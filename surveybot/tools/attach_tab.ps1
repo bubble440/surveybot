@@ -50,9 +50,8 @@ Write-Host "1) Va dans le Chrome du port $Port."
 Write-Host "2) Connecte-toi, lance un survey, arrête-toi sur la page cible."
 Write-Host "3) Reviens ici."
 Write-Host ""
-Write-Host "Mode route attach : resolution par défaut (sans prompt)."
-Write-Host "Pour activer le choix interactif à chaque lancement de main.py :"
-Write-Host "  `$env:ATTACH_ROUTE_PROMPT=1"
+Write-Host "Mode route attach : ATTACH_ROUTE=$env:ATTACH_ROUTE (modifiable ci-dessous)."
+Write-Host "Valeurs possibles : resolution | preselection | login"
 Write-Host ""
 
 # Vars env (attach)
@@ -84,7 +83,9 @@ $env:DIAG_ISTRUSTED="1"
 $env:DIAG_STABILITY="1"
 $env:DOM_DEBUG_FRAMES="1"
 $env:SURVEY_CTX_DEBUG="1"
-$env:ATTACH_ROUTE_PROMPT="1"
+# Route attach fixée ici — pas de prompt interactif.
+# Changer la valeur pour modifier la route sans toucher à main.py.
+$env:ATTACH_ROUTE="resolution"
 $env:BOT_RUN_ID="port_$Port"
 $env:DIAG_CHECKBOX_CLICK="1"
 $env:ACTION_DEBUG_TARGET="1"
