@@ -246,6 +246,36 @@ def _is_actionable_captcha_element(el) -> bool:
         return False
 
 
+_REAL_RECAPTCHA_SELECTORS = (
+    "iframe[src*='recaptcha']",
+    "iframe[title*='recaptcha']",
+    ".g-recaptcha",
+    "[data-sitekey]",
+)
+
+
+def is_real_recaptcha_present(driver) -> bool:
+    """
+    True uniquement si un widget Google reCAPTCHA réel (iframe/sitekey) est présent.
+
+    Distinct de reason="captcha" de detect_strict_survey() : ce dernier inclut aussi
+    "#captcha" et "iframe[src*='captcha']" génériques, qui matchent également les
+    CAPTCHA image-texte classiques (canvas/img id="captcha" + input texte), gérés
+    par captcha.normal_captcha et non par solve_recaptcha_v2_auto.
+    """
+    try:
+        for sel in _REAL_RECAPTCHA_SELECTORS:
+            try:
+                for el in driver.query_selector_all(sel):
+                    if _is_element_visible(el) and _is_actionable_captcha_element(el):
+                        return True
+            except Exception:
+                continue
+        return False
+    except Exception:
+        return False
+
+
 def detect_strict_survey(driver) -> Tuple[bool, Optional[str]]:
     """
     Détecte si la page demande une interaction "stricte".

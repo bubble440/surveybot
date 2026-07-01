@@ -190,6 +190,21 @@ def run_attach_takeover(driver, *, api_key: str, account_id: str) -> None:
                     captcha_behavior = get_captcha_behavior()
 
                     if captcha_behavior == "auto_2captcha":
+                        if not difficulty_guard.is_real_recaptcha_present(driver):
+                            print("[ATTACH][CAPTCHA] Pas de reCAPTCHA Google (iframe/sitekey) détecté → tentative CAPTCHA image-texte (normal_captcha)")
+                            try:
+                                from captcha.normal_captcha import handle_captcha as handle_normal_captcha
+                                normal_handled = handle_normal_captcha(driver)
+                            except Exception as e:
+                                print(f"[ATTACH][CAPTCHA] Erreur inattendue normal_captcha: {e}")
+                                normal_handled = False
+                            if normal_handled:
+                                print("[ATTACH][CAPTCHA] ✅ CAPTCHA image-texte traité — reprise de la boucle")
+                                continue
+                            else:
+                                print("[ATTACH][CAPTCHA] ❌ Aucun CAPTCHA image-texte trouvé/résolu → abandon du survey")
+                                break
+
                         print("[ATTACH][CAPTCHA] reCAPTCHA détecté → tentative 2Captcha...")
                         try:
                             from captcha.recaptcha_handler import solve_recaptcha_v2_auto

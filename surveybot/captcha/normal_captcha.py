@@ -67,6 +67,10 @@ def detect_normal_captcha(driver) -> dict | None:
 
         # Cherche le champ de saisie de la réponse — d'abord dans le même conteneur
         # evaluate_handle retourne un JSHandle ; as_element() donne un ElementHandle utilisable
+        # PATCH: la parenthèse fermante de l'arrow function "(e => { ... })" manquait,
+        # ce qui produisait un JS syntaxiquement invalide (SyntaxError: Unexpected end
+        # of input) silencieusement avalé par le except englobant → faux négatif de
+        # détection. Chaîne reconstruite avec parenthésage explicite et correct.
         input_handle = captcha_img.evaluate_handle(
             "(e => {"
             " let n = e;"
@@ -78,7 +82,7 @@ def detect_normal_captcha(driver) -> dict | None:
             "  if (inp) return inp;"
             " }"
             " return null;"
-            "}"
+            "})"
         )
         input_el = input_handle.as_element() if input_handle else None
 

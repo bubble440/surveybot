@@ -517,6 +517,23 @@ def solve_full_survey(driver, api_key, *, account_id: str, survey_context=None, 
                         guard.record_success()
                         guard.signal_strict_survey("captcha_loop_detected")
                         return
+                    if not Management.guards.survey_difficulty_guard.is_real_recaptcha_present(page):
+                        log_info("CAPTCHA", "Pas de reCAPTCHA Google (iframe/sitekey) détecté → tentative CAPTCHA image-texte (normal_captcha)")
+                        try:
+                            from captcha.normal_captcha import handle_captcha as handle_normal_captcha
+                            normal_handled = handle_normal_captcha(page)
+                        except Exception as e:
+                            print(f"[CAPTCHA] Erreur inattendue normal_captcha: {e}")
+                            normal_handled = False
+                        if normal_handled:
+                            print("[CAPTCHA] ✅ CAPTCHA image-texte traité — reprise du survey")
+                            continue
+                        else:
+                            print("[CAPTCHA] ❌ Aucun CAPTCHA image-texte trouvé/résolu → abandon survey")
+                            guard.record_success()
+                            guard.signal_strict_survey("captcha_auto_failed")
+                            return
+
                     try:
                         from captcha.recaptcha_handler import solve_recaptcha_v2_auto
                         resolved = solve_recaptcha_v2_auto(page)
