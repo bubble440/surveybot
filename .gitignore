@@ -39,3 +39,5 @@ surveybot/tools/attach_tab.ps1
 
 surveybot/tools/attach_tab
 surveybot/tools/attach_tab.ps1
+
+surveybot/preselection/_license_config.py

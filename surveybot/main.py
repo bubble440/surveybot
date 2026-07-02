@@ -2,6 +2,10 @@ print("BOOT: container démarré.", flush=True)
 import os
 IS_LOCAL = os.getenv("RUN_ENV", "local") == "local"
 
+from preselection.license_guard import check_license_or_exit
+if os.getenv("RUN_ENV", "").lower() == "prod":
+    check_license_or_exit()
+    
 import sys, json, time, traceback
 from urllib.parse import urlparse
 from preselection.config_loader import load_config
