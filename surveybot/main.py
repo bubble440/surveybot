@@ -791,16 +791,6 @@ def main():
 
             _acct_env = os.getenv("ACCOUNT_ID", "").strip()
             _db_env = os.getenv("DATABASE_URL", "").strip()
-            # if _acct_env and _db_env:
-            #     from preselection.chrome_profile_store import start_profile_autosave
-            #     def _get_user_data_dir(_ctx=runtime_ctx):
-            #         _d = _ctx.get("driver")
-            #         if _d and hasattr(_d, "_chrome_user_data_dir"):
-            #             return _d._chrome_user_data_dir or ""
-            #         return ""
-            #     _autosave_stop_event = start_profile_autosave(_acct_env, _get_user_data_dir, interval_sec=300)
-
-            # restore_session_cookies(driver, account_id) #Archivé car le profil sauvegardé contient deja les cookies.
 
             def _soft_restart(reason):
                 return soft_restart(
@@ -865,15 +855,6 @@ def main():
             # FIX-B4: pas de 'continue' ici — supprime les SystemExit et empêche l'arrêt propre
             try:
                 if driver and (not is_attach_mode()):
-                    # Arrêter l'autosave avant la sauvegarde finale pour éviter une double écriture simultanée
-                    if _autosave_stop_event is not None:
-                        _autosave_stop_event.set()
-                    # Sauvegarder le profil Chrome avant de quitter (si profil persistant)
-                    # _acct = os.getenv("ACCOUNT_ID", "").strip()  #Autosave desactivé pour le moment.
-                    # _db   = os.getenv("DATABASE_URL", "").strip()
-                    # if _acct and _db and hasattr(driver, "_chrome_user_data_dir") and driver._chrome_user_data_dir:
-                    #     from preselection.chrome_profile_store import save_profile
-                    #     save_profile(_acct, driver._chrome_user_data_dir)
                     # Terminer le processus Chrome lancé par subprocess.Popen
                     if hasattr(driver, '_chrome_proc') and driver._chrome_proc:
                         try:

@@ -412,16 +412,7 @@ def launch_browser_playwright(config: dict | None = None):
     locale, tz            = _parse_locale_tz_env()
     headless              = _want_headless()
 
-    # ── user_data_dir : même logique que launch_browser() ────────────────────
-    _persist_account_id = os.getenv("ACCOUNT_ID", "").strip()
-    _persist_db_url     = os.getenv("DATABASE_URL", "").strip()
-    if _persist_account_id and _persist_db_url:
-        user_data_dir = f"/tmp/chrome_profile_{_persist_account_id}"
-        os.makedirs(user_data_dir, exist_ok=True)
-        from preselection.chrome_profile_store import load_profile
-        load_profile(_persist_account_id, user_data_dir)
-    else:
-        user_data_dir = tempfile.mkdtemp(prefix="chrome_profile_pw_")
+    user_data_dir = tempfile.mkdtemp(prefix="chrome_profile_pw_")
 
     log_info("[LAUNCH][PW]", f"chrome_bin={chrome_bin} headless={headless} locale={locale} tz={tz} proxy={proxy_server or 'none'}")
 

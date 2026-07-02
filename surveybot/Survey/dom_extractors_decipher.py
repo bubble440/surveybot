@@ -53,6 +53,18 @@ def _has_inline_display_none(el) -> bool:
         return False
     return bool(re.search(r"(?:^|;)\s*display\s*:\s*none\s*(?:;|$)", style_attr))
 
+
+def _is_q_container_rendered(el) -> bool:
+    """Retourne True si le conteneur question est effectivement rendu à l'écran.
+    offsetWidth/Height = 0 indique display:none hérité ou dimensions nulles (classe CSS externe,
+    honeypot anti-bot, etc.) — indépendamment de la mécanique CSS exacte.
+    En cas d'erreur d'évaluation JS, retourne True (pas de filtrage par défaut).
+    """
+    try:
+        return bool(el.evaluate("e => e.offsetWidth > 0 || e.offsetHeight > 0"))
+    except Exception:
+        return True
+
 def _logical_answers_list_group_name(raw_name: str, all_raw_names: Set[str]) -> str:
     """Retourne le nom de groupe logique pour les names Decipher answers-list.
 
@@ -126,7 +138,7 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
     # Question containers FocusVision
     q_containers = page.query_selector_all("div.question[role='radiogroup'], div.question.radio, div.question.checkbox")
     for q in q_containers:
-        if _has_inline_display_none(q):
+        if _has_inline_display_none(q) or not _is_q_container_rendered(q):
             continue
 
         answers = q.query_selector(".answers.answers-list, .answers.answers-table")
@@ -1305,7 +1317,7 @@ def _extract_decipher_grid_select_blocks(driver, frame_chain: List[Any]) -> List
 
     for q_el in q_containers:
         try:
-            if _has_inline_display_none(q_el):
+            if _has_inline_display_none(q_el) or not _is_q_container_rendered(q_el):
                 continue
 
             # Garde-fou: grille group-by-col table-mode uniquement
