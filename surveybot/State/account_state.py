@@ -75,9 +75,18 @@ def _ts_to_unix(ts) -> int:
         return int(datetime.strptime(ts, "%Y-%m-%dT%H:%M:%S").replace(tzinfo=tz).timestamp())
     return 0
 
+def _get_license_key() -> str:
+    """Lit LICENSE_KEY depuis _license_config (embarquée dans le compilé). Vide si absent."""
+    try:
+        from _license_config import LICENSE_KEY  # type: ignore
+        return (LICENSE_KEY or "").strip()
+    except ImportError:
+        return ""
+
+
 def _default_state(account_id: str) -> Dict[str, Any]:
     """
-    Structure par défaut: garde ça minimal pour rester compatible avec les évolutions.
+    Structure par défaut : garde ça minimal pour rester compatible avec les évolutions.
     """
     return {
         "account_id": account_id,
@@ -95,8 +104,10 @@ def _default_state(account_id: str) -> Dict[str, Any]:
         "daily_balance_target": {},   # ex: {"2026-04-10": 3.50} — objectif de solde courant pour la journée
         "daily_balance_gained": {},   # ex: {"2026-04-10": 1.00} — gain journalier cumulé (survit aux retraits)
         "total_earned": 0.0,
-        "fivesim_phone": "",
-        "fivesim_order_id": "",
+        # Clé de licence — permet la jointure avec la table licenses pour supervision.
+        # Lue depuis _license_config.LICENSE_KEY (embarquée dans le compilé PyInstaller).
+        # Vide en mode attach (debug).
+        "license_key": _get_license_key(),
         "updated_ts": _now(),
     }
 

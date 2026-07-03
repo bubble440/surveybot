@@ -651,6 +651,13 @@ def run_main_loop(driver, api_key: str, account_id: str, payout_name: str = "", 
         payout_revolut_tag=payout_revolut_tag,
         platform=platform,
     )
+
+    # Vérification mise à jour du code au retour au listing (entre deux cycles).
+    # No-op si UPDATE_CHECK_ENABLED != "1" ou si git est inaccessible.
+    # Si une mise à jour est disponible : git pull + os.execv() (ne retourne pas).
+    from update_checker import check_and_apply
+    check_and_apply(account_id)
+
     # H1: en prod le bot doit quitter proprement (pas bloquer Chrome indéfiniment)
     if IS_LOCAL:
         print("Script terminé. Navigateur maintenu ouvert pour inspection.")
