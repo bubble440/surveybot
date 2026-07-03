@@ -14,8 +14,8 @@ Objectif:
 
 # State/account_state.py
 
-RUN_ENV = os.getenv("RUN_ENV", "local").lower()
-IS_LOCAL = RUN_ENV == "local"
+RUN_ENV = os.getenv("RUN_ENV", "prod").lower()
+IS_LOCAL = RUN_ENV != "prod"  # True en attach (debug), False en prod
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 
 # En environnement non-local (prod), le filesystem n'est PAS une source de vérité partagée.

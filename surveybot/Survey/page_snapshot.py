@@ -202,7 +202,7 @@ def dump_page_snapshot(
     else:
         folder_name = f"{ts}_{_slug(reason)}"
 
-    is_local = os.getenv("RUN_ENV", "local") == "local"
+    is_local = os.getenv("RUN_ENV", "prod") != "prod"
     default_root = "./snapshots" if is_local else "/tmp/snapshots"
 
     root = Path(out_root or os.getenv("SURVEY_SNAPSHOT_DIR", default_root))
@@ -368,7 +368,7 @@ def snapshot_if_enabled(driver, *, reason: str, question_blocks: Any = None) -> 
     if v in ("0", "false", "off", "no"):
         return None
 
-    is_local = os.getenv("RUN_ENV", "local") == "local"
+    is_local = os.getenv("RUN_ENV", "prod") != "prod"
     default_flag = "./snapshots/.snapshot_flag" if is_local else "/tmp/survey_snapshot.flag"
     flag_path = Path(os.getenv("SURVEY_SNAPSHOT_FLAG_FILE", default_flag))
 

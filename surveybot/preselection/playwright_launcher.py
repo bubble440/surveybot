@@ -412,9 +412,20 @@ def launch_browser_playwright(config: dict | None = None):
     locale, tz            = _parse_locale_tz_env()
     headless              = _want_headless()
 
-    user_data_dir = tempfile.mkdtemp(prefix="chrome_profile_pw_")
+    # Profil Chrome permanent (bare-metal) : lu depuis CHROME_PROFILE_DIR.
+    # Créé manuellement une fois sur le NVMe ; jamais recréé automatiquement.
+    # Fail-fast en prod si absent ou dossier inexistant.
+    user_data_dir = os.getenv("CHROME_PROFILE_DIR", "").strip()
+    if not user_data_dir:
+        if not IS_LOCAL:
+            raise SystemExit("[LAUNCH][PW] CHROME_PROFILE_DIR manquant — arrêt.")
+        # Mode local/debug uniquement : profil temporaire jetable
+        user_data_dir = tempfile.mkdtemp(prefix="chrome_profile_pw_")
+        log_info("[LAUNCH][PW]", f"CHROME_PROFILE_DIR absent — profil temporaire : {user_data_dir}")
+    elif not os.path.isdir(user_data_dir):
+        raise SystemExit(f"[LAUNCH][PW] CHROME_PROFILE_DIR introuvable : {user_data_dir!r} — arrêt.")
 
-    log_info("[LAUNCH][PW]", f"chrome_bin={chrome_bin} headless={headless} locale={locale} tz={tz} proxy={proxy_server or 'none'}")
+    log_info("[LAUNCH][PW]", f"chrome_bin={chrome_bin} headless={headless} locale={locale} tz={tz} proxy={proxy_server or 'none'} user_data_dir={user_data_dir}")
 
     # ── Arguments Chrome (identiques à launch_browser, hors remote-debugging-*) ──
     # --user-data-dir est passé directement à launch_persistent_context(), pas ici.

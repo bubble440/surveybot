@@ -5605,7 +5605,7 @@ def handle_drag_drop_logic(driver):
 
         offsets = [(0, 0), (15, 0)]
         can_use_cdp = hasattr(driver, "execute_cdp_cmd")
-        is_local_env = (os.getenv("RUN_ENV", "local") or "local").strip().lower() == "local"
+        is_local_env = (os.getenv("RUN_ENV", "prod") or "prod").strip().lower() != "prod"
         for idx, (ox, oy) in enumerate(offsets, start=1):
             print(f"[DRAGDROP] attempt={idx} start")
             try:
@@ -5884,10 +5884,10 @@ def handle_captcha_guard(driver):
             get_guard().signal_strict_survey("captcha_auto_failed")
             return False
 
-    # AWS/non-local : soft-restart même si auto_2captcha échoue (pas de terminal interactif)
-    from config import is_local_env
-    if not is_local_env():
-        print("[GUARD] CAPTCHA détecté ; soft-restart (aws/non-local)")
+    # En prod (pas attach) : soft-restart si auto_2captcha échoue (pas de terminal interactif)
+    from config import is_attach_mode
+    if not is_attach_mode():
+        print("[GUARD] CAPTCHA détecté ; soft-restart (prod)")
         from Management.guards.runtime_guard import get_guard
         get_guard().signal_strict_survey("captcha_guard_aws")
         return False

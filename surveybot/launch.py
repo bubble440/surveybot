@@ -2,6 +2,40 @@ import os, random
 IS_LOCAL = os.getenv("RUN_ENV", "local") == "local"
 from config import is_prod_like, should_run_guard_monitor, should_run_hot_reload
 
+# ---------- PID file (bare-metal Windows) ----------
+
+def _pid_path(account_id: str) -> str:
+    """Retourne le chemin du fichier PID pour ce bot (pids\bot_<id>.pid)."""
+    base = os.path.dirname(os.path.abspath(__file__))
+    pid_dir = os.path.join(base, "pids")
+    os.makedirs(pid_dir, exist_ok=True)
+    return os.path.join(pid_dir, f"bot_{account_id}.pid")
+
+def write_pid_file(account_id: str) -> None:
+    """Écrit le PID courant dans pids\bot_<account_id>.pid."""
+    if IS_LOCAL:
+        return
+    try:
+        path = _pid_path(account_id)
+        with open(path, "w") as f:
+            f.write(str(os.getpid()))
+        print(f"[PID] Fichier écrit : {path} (pid={os.getpid()})")
+    except Exception as e:
+        print(f"[PID][WARN] Impossible d'écrire le fichier PID : {e}")
+
+def delete_pid_file(account_id: str) -> None:
+    """Supprime pids\bot_<account_id>.pid à l'arrêt propre."""
+    if IS_LOCAL:
+        return
+    try:
+        path = _pid_path(account_id)
+        if os.path.exists(path):
+            os.remove(path)
+            print(f"[PID] Fichier supprimé : {path}")
+    except Exception as e:
+        print(f"[PID][WARN] Impossible de supprimer le fichier PID : {e}")
+
+
 from Management.guards.runtime_guard import RuntimeGuard, StopReason, set_guard, get_guard
 from State.daily_target import DAILY_TARGET_EUR, ensure_daily_timer_started
 from Cash.payout import MIN_CASHOUT_EUR
@@ -92,33 +126,41 @@ def install_sigusr1_handler():
     print("[SIGUSR1] Handler installé. Dump via : kill -SIGUSR1", os.getpid())
 
 def install_sigterm_handler(account_id: str):
-    signal.signal(signal.SIGTERM, _make_sigterm_handler(account_id))
+    signal.signal(signal.SIGTERM, _make_stop_handler(account_id, sig_name="SIGTERM"))
 
-def _make_sigterm_handler(aid: str):
+def install_sigint_handler(account_id: str):
     """
-    Handler SIGTERM (ECS) : marque l'arrêt demandé dans l'état du compte.
-    - On capture 'aid' via closure pour éviter les variables globales non définies.
+    Handler SIGINT (Ctrl+C / Windows bare-metal).
+    Même comportement que SIGTERM : libère le slot Postgres, supprime le PID, exit propre.
     """
-    def _handle_sigterm(signum, frame):
-        print(f"🛑 SIGTERM reçu depuis ECS | account_id={aid}")
+    signal.signal(signal.SIGINT, _make_stop_handler(account_id, sig_name="SIGINT"))
+
+def _make_stop_handler(aid: str, sig_name: str = "SIGTERM"):
+    """
+    Fabrique un handler d'arrêt propre pour SIGTERM ou SIGINT.
+    Libère le slot Postgres, supprime le fichier PID, stoppe le heartbeat, puis exit.
+    """
+    def _handle(signum, frame):
+        print(f"🛑 {sig_name} reçu | account_id={aid}")
 
         try:
             update_state(aid, lambda st: (
                 st.__setitem__("ecs_stop_requested", True),
                 st.__setitem__("ecs_stop_ts", _now()),
-                st.__setitem__("ecs_stop_notified", False),  # reset anti-spam à chaque SIGTERM
+                st.__setitem__("ecs_stop_notified", False),
                 st.__setitem__("status", "idle"),
-                st.__setitem__("cooldown_until_ts", "1970-01-01T00:00:00"),  # relance immédiate autorisée
+                st.__setitem__("cooldown_until_ts", "1970-01-01T00:00:00"),
             ))
         except Exception as e:
-            print("[SIGTERM][WARN] update_state échoué:", e)
-        
+            print(f"[{sig_name}][WARN] update_state échoué:", e)
+
         finally:
             stop_heartbeat_thread()
-            print("SIGTERM traité → exit immédiat")
-            raise SystemExit("ecs_sigterm")
+            delete_pid_file(aid)
+            print(f"{sig_name} traité → exit immédiat")
+            raise SystemExit(f"{sig_name.lower()}_received")
 
-    return _handle_sigterm
+    return _handle
 
 def build_notifier(config):
     tg_token = os.getenv("telegram_bot_token", "").strip()
@@ -318,6 +360,7 @@ def setup_logging():
 
 def mark_bot_running(account_id: str, email):
     print(f"🚀 Démarrage surveybot pour account_id={account_id}, EMAIL={email}")
+    write_pid_file(account_id)
     update_state(account_id, lambda st: (
         st.__setitem__("status", "running"),
         st.__setitem__("last_boot_ts", _now())
@@ -410,6 +453,7 @@ def launch_driver_or_fail(config, account_id: str):
                 st.__setitem__("cooldown_until_ts", "1970-01-01T00:00:00"),
                 st.__setitem__("last_stop_reason", "browser_launch_failed"),
             ))
+        delete_pid_file(account_id)
         raise SystemExit("browser_launch_failed")
 
 def start_debug_http_server(survey_ctx_getter):

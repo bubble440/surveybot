@@ -14,6 +14,42 @@ MIN_CASHOUT_EUR = 5.0
 IS_LOCAL = os.getenv("RUN_ENV", "local") == "local"
 
 
+# ---------- Licence ----------
+
+def _increment_license_payout(amount_eur: float) -> None:
+    """
+    Incrémente total_payout_eur dans la table licenses après un retrait confirmé.
+    Non bloquant : un échec est loggué mais ne stoppe pas le bot
+    (le retrait est déjà effectué à ce stade).
+    Actif uniquement en prod (RUN_ENV=prod).
+    """
+    if IS_LOCAL:
+        return
+
+    try:
+        from preselection.license_guard import _get_license_key, _get_database_url
+        license_key = _get_license_key()
+        if not license_key:
+            return
+        database_url = _get_database_url()
+        if not database_url:
+            return
+
+        import psycopg2
+        conn = psycopg2.connect(database_url)
+        conn.autocommit = True
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE licenses SET total_payout_eur = total_payout_eur + %s WHERE license_key = %s",
+                    (amount_eur, license_key),
+                )
+        finally:
+            conn.close()
+    except Exception as exc:
+        print(f"[PAYOUT][LICENSE][WARN] Impossible d'incrémenter total_payout_eur: {exc}")
+
+
 # ---------- Helpers ----------
 
 def _notify_cashout_failure(account_id: str, amount: float, email: str = "") -> None:
@@ -468,6 +504,9 @@ def check_and_cashout_if_needed(
         return None  # tentative effectuée, échec
 
     print("[PAYOUT] Récompense réclamée.")
+
+    # Incrémenter le compteur de licence (non bloquant)
+    _increment_license_payout(MIN_CASHOUT_EUR)
 
     if failed_methods:
         _notify_cashout_result(account_id, amount, failed_methods=failed_methods, succeeded_method=succeeded_method, email=email)

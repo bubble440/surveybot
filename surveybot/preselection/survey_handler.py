@@ -1,8 +1,6 @@
 import time, os, threading
 from Cash.payout import _payout_and_check_daily_stop
 
-IS_LOCAL = os.getenv("RUN_ENV", "local") == "local"
-
 
 
 # FIX-B3: _restart_depth était un global partagé entre threads.

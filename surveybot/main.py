@@ -1,27 +1,26 @@
 print("BOOT: container démarré.", flush=True)
 import os
-IS_LOCAL = os.getenv("RUN_ENV", "local") == "local"
 
 from preselection.license_guard import check_license_or_exit
-if os.getenv("RUN_ENV", "").lower() == "prod":
+if os.getenv("RUN_ENV", "prod").lower() == "prod":
     check_license_or_exit()
     
 import sys, json, time, traceback
 from urllib.parse import urlparse
 from preselection.config_loader import load_config
 from launch import start_heartbeat_thread, acquire_account_lock_or_exit, mark_bot_running
-from launch import install_sigterm_handler, start_runtime_guard, launch_driver_or_fail, init_session_and_enter_surveys, install_sigusr1_handler, restore_session_cookies
+from launch import install_sigterm_handler, install_sigint_handler, start_runtime_guard, launch_driver_or_fail, init_session_and_enter_surveys, install_sigusr1_handler, restore_session_cookies
 from launch import start_hot_reload_thread, run_main_loop, build_notifier, soft_restart, start_debug_http_server
 from platforms import get_platform
 from Management.guards.runtime_guard import get_guard
 from config import is_attach_mode, RUN_ENV, RUN_MODE, BROWSER_MODE, is_prod_like, should_run_guard_monitor, should_run_heartbeat, should_run_hot_reload, log_config_summary
 
-if IS_LOCAL:
+if is_attach_mode():
     ACCOUNT_ID = "local_debug"
 else:
     ACCOUNT_ID = os.getenv("ACCOUNT_ID")
     if not ACCOUNT_ID:
-        raise RuntimeError("ACCOUNT_ID manquant en environnement non-local")
+        raise RuntimeError("ACCOUNT_ID manquant en prod (BROWSER_MODE != attach)")
 
 # 1) stdout en line-buffering si dispo (Python 3.7+)
 if hasattr(sys.stdout, "reconfigure"):
@@ -488,7 +487,7 @@ def _attach_select_tab_pw(context, *, exclude_url_pred=None):
     candidates = [p for p in pages if _is_candidate(p)]
 
     # 4a) pick/prompt
-    if mode in ("pick", "prompt", "menu") and IS_LOCAL:
+    if mode in ("pick", "prompt", "menu") and is_attach_mode():
         print("[ATTACH_PW] Tabs disponibles:")
         for i, p in enumerate(candidates):
             print(f"  {i:02d} | {p.url}")
@@ -670,9 +669,8 @@ def main():
         flush=True,
     )
 
-    #  Fail-fast : même si quelqu'un force des env vars en prod, attach ne doit jamais tourner
-    if is_attach_mode() and (not IS_LOCAL):
-        raise SystemExit("attach_forbidden_in_prod")
+    # Note : attach est désormais contrôlé uniquement par BROWSER_MODE=attach,
+    # indépendamment de RUN_ENV. Pas de garde supplémentaire nécessaire.
 
     account_id = (
         os.getenv("ACCOUNT_ID")
@@ -747,6 +745,7 @@ def main():
     # terminait le processus sans remettre cooldown_until_ts à zéro en Postgres,
     # forçant le scheduler à attendre l'expiration du TTL avant de relancer.
     install_sigterm_handler(account_id)
+    install_sigint_handler(account_id)   # Ctrl+C / Windows bare-metal
     install_sigusr1_handler()
 
     acquire_account_lock_or_exit(account_id)
@@ -839,7 +838,7 @@ def main():
             print(f"[MAIN][ERROR] cycle={cycle}/{max_cycles} {type(e).__name__}: {e}")
             traceback.print_exc()
             # FIX-B2 (partie catch): libération lock en cas de crash Exception
-            if not IS_LOCAL:
+            if not is_attach_mode():
                 try:
                     from State.account_state import update_state
                     update_state(account_id, lambda st: (
@@ -875,8 +874,8 @@ def main():
             except Exception:
                 pass
 
-    # Si on sort de la boucle, on stoppe proprement (ECS relancera via scheduler)
-    if not IS_LOCAL:
+    # Si on sort de la boucle, libérer le slot Postgres (le scheduler relancera)
+    if not is_attach_mode():
         try:
             from State.account_state import update_state
             update_state(account_id, lambda st: (

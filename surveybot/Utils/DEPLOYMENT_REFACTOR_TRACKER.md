@@ -1,171 +1,176 @@
 # DEPLOYMENT_REFACTOR_TRACKER.md
-# Suivi des modifications — Migration Fly.io → Bare-metal Windows
-# Créé lors de la session de conception architecture (2026-07-02)
-# À passer à Claude en contexte avant chaque session de travail.
+# Suivi des modifications — Migration Fly.io -> Bare-metal Windows
+# Cree lors de la session de conception architecture (2026-07-02)
+# A passer a Claude en contexte avant chaque session de travail.
 
 ================================================================================
-DÉCISIONS D'ARCHITECTURE
+DECISIONS D'ARCHITECTURE
 ================================================================================
 
 **Contexte :**
-Migration du déploiement Fly.io (VMs éphémères Linux) vers des mini-PCs Windows
+Migration du deploiement Fly.io (VMs ephemeres Linux) vers des mini-PCs Windows
 bare-metal (NiPoGi, Ryzen 5 7430U, 32 GB RAM, 512 GB NVMe, Windows 11 Pro).
-7 bots par machine. Chaque bot a un proxy ISP dédié et un profil Chrome local permanent.
+7 bots par machine. Chaque bot a un proxy ISP dedie et un profil Chrome local permanent.
 
 **Principes retenus :**
-- Profil Chrome créé manuellement une fois (avec le bon proxy), réutilisé en permanence.
-- Pas de rotation de profil, pas de recréation automatique.
-- Fail-closed : si le Postgres central est injoignable, le bot s'arrête.
-- Mise à jour du code via git pull + redémarrage au retour au listing TopSurveys.
-- Compilation PyInstaller : un binaire distinct par licencié, LICENSE_KEY et
-  DATABASE_URL embarquées en dur — invisibles pour l'utilisateur final.
+- Profil Chrome cree manuellement une fois (avec le bon proxy), reutilise en permanence.
+- Pas de rotation de profil, pas de recreation automatique.
+- Fail-closed : si le Postgres central est injoignable, le bot s'arrete.
+- Mise a jour du code via git pull + redemarrage au retour au listing TopSurveys.
+- Compilation PyInstaller : un binaire distinct par licence, LICENSE_KEY et
+  DATABASE_URL embarquees en dur — invisibles pour l'utilisateur final.
 - Pas de compte backup.
 
 ================================================================================
 ENVIRONNEMENTS — COMPORTEMENT ATTENDU
 ================================================================================
 
-**Décision : deux environnements seulement, RUN_ENV=local supprimé.**
-  - RUN_ENV=prod        → bots en production (fonctionnement autonome)
-  - BROWSER_MODE=attach → debug ponctuel sur un survey précis (via main.py)
-RUN_ENV=local et LOCAL_UNATTENDED sont a supprimr du projet.
+**Decision : deux environnements seulement, RUN_ENV=local supprime.**
+  - RUN_ENV=prod        -> bots en production (fonctionnement autonome)
+  - BROWSER_MODE=attach -> debug ponctuel sur un survey precis (via main.py)
+RUN_ENV=local et LOCAL_UNATTENDED sont a supprimer du projet (item 9).
 
-Tableau de référence :
+Tableau de reference :
 
   Comportement                        | prod bare-metal | attach (debug)
   ------------------------------------|-----------------|---------------
   Pauses interactives (input())       |       NON       |     OUI
   should_pause_for_captcha()          |       NON       |     OUI
-  RuntimeGuard activé                 |       OUI       |     NON
+  RuntimeGuard active                 |       OUI       |     NON
   Heartbeat Postgres                  |       OUI       |     NON
   Hot reload (hot_reload.py)          |       NON       |     NON
-  Mise à jour code (git pull)         |       OUI       |     NON
-  chrome_profile_store (load/save)    |    SUPPRIMÉ     |     NON
+  Mise a jour code (git pull)         |       OUI       |     NON
+  chrome_profile_store (load/save)    |    SUPPRIME     |     NON
   Serveur HTTP debug local            |       NON       |     NON
-  Écriture fichier PID                |       OUI       |     NON
-  Vérification licence (license_guard)|       OUI       |     NON
-  Handler arrêt propre                |  SIGINT Windows |   Ctrl+C
+  Ecriture fichier PID                |       OUI       |     NON
+  Verification licence (license_guard)|       OUI       |     NON
+  Handler arret propre                |  SIGINT Windows |   Ctrl+C
 
 **Note sur SIGTERM :**
-Le handler SIGTERM existant était conçu pour Fly.io (signal envoyé avant
-destruction VM). Sur Windows bare-metal, SIGTERM n'est pas le signal natif.
-→ Ajouter un handler SIGINT (Ctrl+C) avec le même comportement :
-  libérer le slot Postgres + arrêt propre + suppression du fichier PID.
-SIGTERM conservé en parallèle pour compatibilité.
+Le handler SIGTERM existant etait concu pour Fly.io. Sur Windows bare-metal,
+SIGTERM n'est pas le signal natif.
+-> Handler SIGINT (Ctrl+C) ajoute avec le meme comportement :
+   liberer le slot Postgres + arret propre + suppression du fichier PID.
+SIGTERM conserve en parallele pour compatibilite. [FAIT item 8]
 
 **Note sur config.py :**
-RUN_ENV=local et LOCAL_UNATTENDED sont supprimés du projet. config.py doit
-être nettoyé de toutes les branches qui en dépendent (voir section SUPPRESSIONS).
+RUN_ENV=local et LOCAL_UNATTENDED sont supprimes du projet. config.py doit
+etre nettoye de toutes les branches qui en dependent (voir item 9).
 
 ================================================================================
-FICHIERS À SUPPRIMER
+FICHIERS A SUPPRIMER
 ================================================================================
 
-[ ] preselection/chrome_profile_store.py
-    — Obsolète : le profil Chrome vit en permanence sur le NVMe local.
-      Plus aucun besoin de sérialiser/désérialiser vers Postgres.
+[x] preselection/chrome_profile_store.py — FAIT (supprime manuellement)
 
 ================================================================================
 SUPPRESSIONS DANS LES FICHIERS EXISTANTS
 ================================================================================
 
-[ ] launch.py
-    — Supprimer l'import de chrome_profile_store.
-    — Supprimer les appels à load_profile() et save_profile().
-    — Supprimer le démarrage du thread start_profile_autosave().
-    — Supprimer toute référence à chrome_profile_chunks.
-    — Ajouter un handler SIGINT/Ctrl+C Windows avec le même comportement
-      que l'actuel handler SIGTERM : libérer slot Postgres + arrêt propre
-      + suppression PID. Conserver SIGTERM en parallèle.
+[x] launch.py
+    — Import chrome_profile_store supprime.
+    — Appels load_profile() / save_profile() / start_profile_autosave() supprimes.
+    — References chrome_profile_chunks supprimees.
+    — Handler SIGINT/Ctrl+C ajoute (install_sigint_handler) — meme comportement
+      que SIGTERM : liberer slot Postgres + supprimer PID + arreter heartbeat.
+    — SIGTERM conserve en parallele. [FAIT items 7 & 8]
 
 [ ] account_state.py
-    — Supprimer les variables et logiques liées à fivesim
-      (solution SMS non finalisée, à traiter séparément).
-    — Auditer les autres variables d'état devenues inutiles en bare-metal
-      (item 13 de l'ordre d'implémentation).
+    — Supprimer les variables et logiques liees a fivesim
+      (solution SMS non finalisee, a traiter separement).
+    — Auditer les autres variables d'etat devenues inutiles en bare-metal
+      (item 13 de l'ordre d'implementation).
 
-[ ] config.py
-    — Supprimer RUN_ENV=local : toutes les branches conditionnées sur
-      is_local_env() doivent être supprimées ou reconditionnées sur
+[ ] config.py  [item 9]
+    — Supprimer RUN_ENV=local : toutes les branches conditionnees sur
+      is_local_env() doivent etre supprimees ou reconditionnees sur
       BROWSER_MODE=attach si elles sont utiles en mode debug.
-    — Supprimer LOCAL_UNATTENDED et toutes ses branches associées.
-    — Supprimer les fonctions devenues sans objet après suppression du
+    — Supprimer LOCAL_UNATTENDED et toutes ses branches associees.
+    — Supprimer les fonctions devenues sans objet apres suppression du
       mode local (is_local_env(), should_block_for_input(),
       should_run_hot_reload(), serveur HTTP debug, etc.).
-    — Vérifier que les pauses interactives (input(), captcha) sont
-      conditionnées sur is_attach_mode() avant suppression de is_local_env().
+    — Verifier que les pauses interactives (input(), captcha) sont
+      conditionnees sur is_attach_mode() avant suppression de is_local_env().
     — Conserver : is_attach_mode(), is_prod_like(), should_run_guard_monitor(),
-      should_run_heartbeat(), should_pause_for_captcha() (reconditionné sur
+      should_run_heartbeat(), should_pause_for_captcha() (reconditionne sur
       attach), get_captcha_behavior(), log_config_summary().
 
-[ ] Scheduler Fly.io (scheduler/scheduler_fly.py et dépendances)
-    — Hors périmètre bare-metal. Archiver dans un dossier legacy/ ou supprimer.
-    — Remplacé par launch_all.ps1.
+[ ] Scheduler Fly.io (scheduler/scheduler_fly.py et dependances)  [item 12]
+    — Hors perimetre bare-metal. Archiver dans un dossier legacy/ ou supprimer.
+    — Remplace par launch_all.ps1.
 
 ================================================================================
-BASE DE DONNÉES POSTGRES — ARCHITECTURE CENTRALISÉE
+BASE DE DONNEES POSTGRES — ARCHITECTURE CENTRALISEE
 ================================================================================
 
-**Décision : une seule instance Postgres centrale, contrôlée uniquement par
-l'opérateur. DATABASE_URL embarquée dans chaque compilé PyInstaller.
-Les utilisateurs finaux n'ont aucun accès à la BD et ne connaissent pas
-son adresse.**
+**Decision : une seule instance Postgres centrale, controlee uniquement par
+l'operateur. DATABASE_URL embarquee dans chaque compile PyInstaller.
+Les utilisateurs finaux n'ont aucun acces a la BD.**
 
-Hébergement recommandé :
-  - Fly.io Postgres existant (si déjà en place) — option de continuité.
+Hebergement recommande :
+  - Fly.io Postgres existant (si deja en place) — option de continuite.
   - Neon.tech tier gratuit — Postgres serverless, compatible psycopg2,
     0.5 GB stockage, suffisant pour account_state + licenses sur 100+ bots.
 
-Supervision : requêtes SQL directes depuis l'opérateur. Les heartbeats des
-bots (toutes les 60s, last_seen_at dans account_state) donnent une vue
-temps réel du nombre de bots actifs par license_key sans update dédié.
+Supervision : requetes SQL directes depuis l'operateur. Les heartbeats des
+bots (toutes les 60s, updated_ts dans account_state) donnent une vue
+temps reel du nombre de bots actifs par license_key.
 
-TABLE À SUPPRIMER :
-[ ] chrome_profile_chunks — plus aucun usage en bare-metal.
+  Requete de supervision recommandee :
+    SELECT l.license_key, l.owner_label,
+           l.total_payout_eur, l.max_payout_eur, l.is_active,
+           COUNT(a.account_id) AS bots_actifs
+    FROM licenses l
+    LEFT JOIN account_state a
+      ON a.state->>'license_key' = l.license_key
+     AND a.updated_ts > NOW() - INTERVAL '5 minutes'
+     AND a.state->>'status' = 'running'
+    GROUP BY l.license_key, l.owner_label,
+             l.total_payout_eur, l.max_payout_eur, l.is_active
+    ORDER BY l.owner_label;
+  Prerequis : ajouter "license_key" dans _default_state() (item 13).
 
-TABLE À CRÉER :
-[ ] licenses
-    Colonnes :
-      license_key       TEXT PRIMARY KEY     -- UUID embarqué dans le compilé
-      owner_label       TEXT                 -- label lisible ("ami_pierre")
-      max_payout_eur    FLOAT                -- quota max, fixé par l'opérateur
-      total_payout_eur  FLOAT DEFAULT 0      -- cumul des retraits réels détectés
-      is_active         BOOLEAN DEFAULT TRUE -- kill switch manuel
-      created_at        TIMESTAMPTZ DEFAULT NOW()
+TABLE A SUPPRIMER :
+[ ] chrome_profile_chunks — plus aucun usage en bare-metal. A supprimer via SQL.
 
-    Règles :
-      - max_payout_eur : modifiable à tout moment par l'opérateur seul.
-      - total_payout_eur : incrémenté par le bot à chaque retrait confirmé.
-        UPDATE licenses SET total_payout_eur = total_payout_eur + <montant>
-        WHERE license_key = <clé>
-      - Quota partagé entre tous les bots utilisant la même license_key,
-        peu importe le nombre de machines ou de redistributions.
-      - Supervision du nombre de bots actifs par licencié : via les heartbeats
-        de account_state filtrés sur license_key + last_seen_at < NOW() - 5min.
+TABLE CREEE :
+[x] licenses — FAIT (item 1, 2026-07-02)
+    Colonnes : license_key, owner_label, max_payout_eur, total_payout_eur,
+               is_active, created_at.
+    Contraintes CHECK : max_payout_eur >= 0, total_payout_eur >= 0.
 
 ================================================================================
-FICHIERS À CRÉER
+FICHIERS A CREER
 ================================================================================
 
-[ ] launch_all.ps1  (PowerShell, sur chaque mini-PC)
-    Rôle : lancer uniquement les bots qui ne tournent pas déjà.
+[x] preselection/license_guard.py — FAIT (item 2, 2026-07-02)
+    Verifie licence au demarrage (is_active, quota). Fail-closed si Postgres
+    injoignable. No-op si LICENSE_KEY absente (mode dev/attach).
+    Lit LICENSE_KEY et DATABASE_URL depuis _license_config.py (non versionne).
+
+[ ] _license_config.py  (non versionne, .gitignore, un fichier par compile)
+    Contenu :
+      LICENSE_KEY = "<uuid>"
+      DATABASE_URL = "postgres://..."
+    A creer manuellement avant chaque build PyInstaller.
+
+[ ] launch_all.ps1  (PowerShell, sur chaque mini-PC)  [item 10]
+    Role : lancer uniquement les bots qui ne tournent pas deja.
     Logique :
       - Lire accounts.json (liste des bots de la machine).
       - Pour chaque bot :
-        - Vérifier si pids\bot_<id>.pid existe.
-          - OUI + processus vivant (tasklist) → skip.
-          - OUI + processus mort (PID stale) → supprimer PID + lancer.
-          - NON → lancer.
-      - Chaque bot lancé via Start-Process en processus indépendant,
+        - Verifier si pids\bot_<id>.pid existe.
+          - OUI + processus vivant (tasklist) -> skip.
+          - OUI + processus mort (PID stale) -> supprimer PID + lancer.
+          - NON -> lancer.
+      - Chaque bot lance via Start-Process en processus independant,
         avec variables d'env : ACCOUNT_ID, EMAIL, PASSWORD, PROXY_URL,
         PROXY_USER, PROXY_PASS, CHROME_PROFILE_DIR, RUN_ENV=prod,
         GEO_LAT, GEO_LON, SURVEY_LANG, SURVEY_TZ.
-        (LICENSE_KEY et DATABASE_URL sont embarquées dans le compilé —
-        ne pas les passer en variable d'env.)
-      - Peut être planifié via le Planificateur de tâches Windows pour
-        s'exécuter au démarrage de la machine et toutes les N minutes.
+        (LICENSE_KEY et DATABASE_URL embarquees dans le compile.)
+      - Peut etre planifie via le Planificateur de taches Windows.
 
-[ ] accounts.json  (sur chaque mini-PC, non versionné, non inclus dans le repo)
+[ ] accounts.json  (sur chaque mini-PC, non versionne, non inclus dans le repo)
     [
       {
         "account_id": "bot_001",
@@ -174,128 +179,118 @@ FICHIERS À CRÉER
         "proxy_url": "http://host:port",
         "proxy_user": "...",
         "proxy_pass": "...",
-        "profile_dir": "C:\\surveybot\\profiles\\bot_001",
+        "profile_dir": "C:\\surveybot\\profiles\\bot_001"
       }
     ]
-    Note : LICENSE_KEY et DATABASE_URL absents — embarqués dans le compilé.
+    Note : LICENSE_KEY et DATABASE_URL absents — embarques dans le compile.
 
-[ ] preselection/license_guard.py  (nouveau module)
-    Rôle : vérification du quota de licence au démarrage du bot.
-    Logique :
-      - Lire LICENSE_KEY depuis une constante embarquée à la compilation
-        (définie dans un fichier _license_config.py non versionné, inclus
-        dans le build PyInstaller).
-      - Connexion au Postgres central via DATABASE_URL embarquée.
-      - SELECT max_payout_eur, total_payout_eur, is_active
-        FROM licenses WHERE license_key = <clé>.
-      - Si connexion impossible → log erreur + SystemExit (fail-closed).
-      - Si is_active = false → log + SystemExit.
-      - Si total_payout_eur >= max_payout_eur → log + SystemExit.
-      - Sinon → OK, le bot continue.
-    Appelé en tout premier dans main(), uniquement si RUN_ENV=prod.
-
-================================================================================
-MODIFICATIONS DANS LES FICHIERS EXISTANTS
-================================================================================
-
-[ ] Cash/payout.py
-    — Après chaque retrait réel confirmé :
-      UPDATE licenses SET total_payout_eur = total_payout_eur + <montant>
-      WHERE license_key = <clé>
-    — Clé lue depuis la même constante que license_guard.py.
-    — Échec de l'UPDATE → loggué, non bloquant (retrait déjà effectué).
-    — Actif uniquement si RUN_ENV=prod.
-
-[ ] main.py
-    — Appeler license_guard.check_license_or_exit() en tout premier,
-      avant toute autre initialisation, uniquement si RUN_ENV=prod.
-
-[ ] launch.py
-    — Lire CHROME_PROFILE_DIR depuis os.getenv("CHROME_PROFILE_DIR").
-    — Supprimer chrome_profile_store (imports + appels).
-    — Écrire pids\bot_<account_id>.pid au démarrage.
-    — Supprimer pids\bot_<account_id>.pid à l'arrêt propre
-      (handler SIGINT + bloc finally).
-    — Ajouter handler SIGINT Windows (voir section ENVIRONNEMENTS).
-
-[ ] preselection/playwright_launcher.py
-    — Lire user_data_dir depuis os.getenv("CHROME_PROFILE_DIR").
-    — Si absent ou dossier inexistant → log erreur + SystemExit.
-    — Supprimer toute logique de création ou restauration de profil.
-
-================================================================================
-LOGIQUE DE MISE À JOUR DU CODE
-================================================================================
-
-[ ] Nouveau module : update_checker.py
+[ ] update_checker.py  [item 11]
     Point d'appel : launch.py, au retour au listing TopSurveys.
     Logique :
       - Actif uniquement si UPDATE_CHECK_ENABLED=1.
       - git fetch origin (silencieux, timeout court).
       - Comparer git rev-parse HEAD vs git rev-parse origin/main.
-      - Si identiques → rien à faire.
-      - Si différents :
+      - Si identiques -> rien a faire.
+      - Si differents :
           1. Terminer proprement le cycle en cours.
           2. git pull origin main.
           3. Supprimer le fichier PID courant.
-          4. Se relancer via os.execv() avec les mêmes arguments/env.
-      - Si git inaccessible → ignorer, réessayer au prochain cycle.
-    Prérequis sur chaque mini-PC :
-      - Git installé.
-      - Credentials GitHub configurés (token en variable d'env GIT_TOKEN
-        ou dans les credentials Windows Git).
-      - Code source présent (repo cloné sur la machine).
+          4. Se relancer via os.execv() avec les memes arguments/env.
+      - Si git inaccessible -> ignorer, reessayer au prochain cycle.
+
+================================================================================
+MODIFICATIONS DANS LES FICHIERS EXISTANTS
+================================================================================
+
+[x] Cash/payout.py — FAIT (item 4, 2026-07-02)
+    Apres chaque retrait reel confirme, appelle _increment_license_payout()
+    qui execute :
+      UPDATE licenses SET total_payout_eur = total_payout_eur + <montant>
+      WHERE license_key = <cle>
+    Non bloquant. Actif uniquement si RUN_ENV=prod.
+
+[x] main.py — FAIT (items 3 & 8, 2026-07-02)
+    - check_license_or_exit() appele en tout premier (lignes 5-7).
+    - install_sigint_handler(account_id) appele apres install_sigterm_handler.
+    - import install_sigint_handler depuis launch ajoute.
+
+[x] launch.py — FAIT (items 7 & 8, 2026-07-02)
+    - Helpers PID : _pid_path(), write_pid_file(), delete_pid_file().
+    - write_pid_file() appele dans mark_bot_running().
+    - delete_pid_file() appele dans _make_stop_handler() (SIGTERM/SIGINT)
+      et dans launch_driver_or_fail() avant SystemExit.
+    - install_sigint_handler() ajoute (delegue a _make_stop_handler).
+    - _make_sigterm_handler() remplace par _make_stop_handler(sig_name=...).
+      SIGTERM et SIGINT partagent le meme handler.
+
+[x] preselection/playwright_launcher.py — FAIT (item 6, 2026-07-02)
+    - user_data_dir lu depuis CHROME_PROFILE_DIR (os.getenv).
+    - Fail-fast en prod si absent ou dossier inexistant (SystemExit).
+    - Fallback tempfile.mkdtemp() conserve pour mode local/attach uniquement.
+    - launch_browser_playwright_debug() inchange (profil jetable intentionnel).
+
+[ ] config.py  [item 9 — A FAIRE]
+    Voir section SUPPRESSIONS ci-dessus.
+
+================================================================================
+LOGIQUE DE MISE A JOUR DU CODE
+================================================================================
+
+[ ] update_checker.py  [item 11 — A FAIRE]
+    Voir section FICHIERS A CREER ci-dessus.
 
 ================================================================================
 STRUCTURE DES DOSSIERS SUR CHAQUE MINI-PC
 ================================================================================
 
 C:\surveybot\
-  ├── surveybot.exe          ← compilé PyInstaller (par licencié, LICENSE_KEY
-  │                            et DATABASE_URL embarquées en dur)
-  ├── launch_all.ps1         ← script de lancement sélectif
-  ├── accounts.json          ← credentials + config par bot (non versionné)
-  ├── pids\
-  │   ├── bot_001.pid
-  │   └── bot_002.pid
-  └── profiles\
-      ├── bot_001\           ← user-data-dir Chrome (créé manuellement)
-      ├── bot_002\
-      └── ...
+  |-- surveybot.exe          <- compile PyInstaller (par licence, LICENSE_KEY
+  |                             et DATABASE_URL embarquees en dur)
+  |-- launch_all.ps1         <- script de lancement selectif
+  |-- accounts.json          <- credentials + config par bot (non versionne)
+  |-- pids\
+  |   |-- bot_001.pid
+  |   `-- bot_002.pid
+  `-- profiles\
+      |-- bot_001\           <- user-data-dir Chrome (cree manuellement)
+      |-- bot_002\
+      `-- ...
 
-Si UPDATE_CHECK_ENABLED=1, le repo git est également présent sur la machine.
-
-================================================================================
-ORDRE D'IMPLÉMENTATION RECOMMANDÉ
-================================================================================
-
-1.  Créer la table `licenses` dans Postgres (script SQL).
-2.  Créer preselection/license_guard.py.
-3.  Intégrer license_guard dans main.py.
-4.  Modifier Cash/payout.py pour incrémenter total_payout_eur.
-5.  Supprimer chrome_profile_store.py et ses références dans launch.py.
-6.  Adapter playwright_launcher.py pour le profil local (CHROME_PROFILE_DIR).
-7.  Ajouter écriture/suppression du fichier PID dans launch.py.
-8.  Ajouter handler SIGINT Windows dans launch.py.
-9.  Mettre à jour config.py (commentaires + confirmation branches prod).
-10. Créer launch_all.ps1.
-11. Créer update_checker.py + intégrer dans launch.py.
-12. Archiver le scheduler Fly.io (dossier legacy/).
-13. Auditer account_state.py : supprimer vars fivesim + nettoyage
-    LOCAL_UNATTENDED + autres obsolètes bare-metal.
+Si UPDATE_CHECK_ENABLED=1, le repo git est egalement present sur la machine.
 
 ================================================================================
-POINTS EN SUSPENS (non bloquants pour les items 1–10)
+ORDRE D'IMPLEMENTATION
 ================================================================================
 
-[ ] Solution SMS pour vérifications de compte : 5sim abandonné, alternative
-    non finalisée. Impact sur fivesim_client.py et account_state.py.
-    À traiter après stabilisation du déploiement bare-metal.
+[x] 1.  Creer la table `licenses` dans Postgres (script SQL).
+[x] 2.  Creer preselection/license_guard.py.
+[x] 3.  Integrer license_guard dans main.py.
+[x] 4.  Modifier Cash/payout.py pour incrementer total_payout_eur.
+[x] 5.  Supprimer chrome_profile_store.py et ses references dans launch.py.
+[x] 6.  Adapter playwright_launcher.py pour le profil local (CHROME_PROFILE_DIR).
+[x] 7.  Ajouter ecriture/suppression du fichier PID dans launch.py.
+[x] 8.  Ajouter handler SIGINT Windows dans launch.py + main.py.
+[ ] 9.  Nettoyer config.py (supprimer RUN_ENV=local, LOCAL_UNATTENDED, branches mortes).
+[ ] 10. Creer launch_all.ps1.
+[ ] 11. Creer update_checker.py + integrer dans launch.py.
+[ ] 12. Archiver le scheduler Fly.io (dossier legacy/).
+[ ] 13. Auditer account_state.py : supprimer vars fivesim + "license_key" dans
+        _default_state() pour activer la requete de supervision.
+
+================================================================================
+POINTS EN SUSPENS (non bloquants pour les items 1-10)
+================================================================================
+
+[ ] Solution SMS pour verifications de compte : 5sim abandonne, alternative
+    non finalisee. Impact sur fivesim_client.py et account_state.py.
+    A traiter apres stabilisation du deploiement bare-metal.
+
+[ ] Table chrome_profile_chunks a supprimer via SQL :
+      DROP TABLE IF EXISTS chrome_profile_chunks;
 
 ================================================================================
 STATUT
 ================================================================================
 
-Tous les items ci-dessus sont EN ATTENTE d'implémentation.
-Session de conception : 2026-07-02.
-Aucun fichier modifié à ce stade.
+Items 1-8 : TERMINES (2026-07-02).
+Items 9-13 : EN ATTENTE.
