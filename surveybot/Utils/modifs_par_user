@@ -3,113 +3,6 @@
 > **Source lue :** `BOT_EVOLUTION_MEMORY.md` ✅ · Tous les `.py`, `.ps1`, `fly.toml`, `Dockerfile`, `accounts.json` ✅
 
 
-## Tableau complet
-
-| Variable | Fichier(s) source | Rôle / description | Catégorie | Remarque |
-|---|---|---|---|---|
-x| `ACCOUNT_ID` | `main.py`, `launch.py`, `State/account_state.py`, `tools/attach_tab.ps1`, `launch_all.ps1` | Identifiant unique du compte/bot — clé primaire de toutes les opérations d'état | **PAR_BOT** | Obligatoire en prod ; `"local_debug"` si mode attach |
-x| `EMAIL` | `preselection/secret_loader.py`, `launch_all.ps1` | Email de connexion à la plateforme TopSurveys | **PAR_BOT** | Aussi mappé via `TOPSURVEYS_EMAIL` dans `secret_loader.py` |
-x| `PASSWORD` | `preselection/secret_loader.py`, `launch_all.ps1` | Mot de passe de connexion | **PAR_BOT** | Aussi mappé via `TOPSURVEYS_PASSWORD` |
-x| `TOPSURVEYS_EMAIL` | `preselection/secret_loader.py` | Surcharge ENV de `Email` dans le config (alias de `EMAIL`) | **PAR_BOT** | Override prioritaire sur `EMAIL` via `_from_env_overrides()` |
-x| `TOPSURVEYS_PASSWORD` | `preselection/secret_loader.py` | Surcharge ENV de `Password` | **PAR_BOT** | Override prioritaire sur `PASSWORD` |
-x| `TOPSURVEYS_SECRET_JSON` | `preselection/secret_loader.py` | JSON consolidé contenant email, password, keys, payout, telegram | **PAR_BOT** ou **GLOBAL_SECRET** | Si présent, parsé en premier — pratique pour Fly.io secrets ; écrasé par les overrides unitaires |
-x| `PROXY_URL` | `captcha/recaptcha_handler.py`, `preselection/playwright_launcher.py`, `preselection/auth_handler.py`, `tools/ysense_probe.py`, `launch_all.ps1` | URL complète du proxy (format `host:port` ou `scheme://host:port`) | **PAR_BOT** | Priorité sur `PROXY_HOST`+`PROXY_PORT` |
-x| `PROXY_USER` | `captcha/recaptcha_handler.py`, `preselection/playwright_launcher.py`, `preselection/auth_handler.py`, `tools/ysense_probe.py`, `launch_all.ps1` | Login du proxy | **PAR_BOT** | |
-x| `PROXY_PASS` | `captcha/recaptcha_handler.py`, `preselection/playwright_launcher.py`, `preselection/auth_handler.py`, `tools/ysense_probe.py`, `launch_all.ps1` | Mot de passe du proxy | **PAR_BOT** | |
-x| `PROXY_HOST` | `captcha/recaptcha_handler.py` | Hôte proxy (alternatif à `PROXY_URL`) | **PAR_BOT** | Utilisé si `PROXY_URL` est vide, dans recaptcha_handler uniquement |
-x| `PROXY_PORT` | `captcha/recaptcha_handler.py` | Port proxy (défaut 8080) | **PAR_BOT** | Idem, recaptcha_handler uniquement |
-x| `PROXY_TYPE` | `captcha/recaptcha_handler.py` | Type de proxy (défaut `http`) | **PAR_BOT** | Idem |
-x| `CHROME_PROFILE_DIR` | `preselection/playwright_launcher.py`, `launch_all.ps1`, `tools/push_attach_profile.py` | Chemin du profil Chrome permanent (bare-metal) | **PAR_BOT** | Obligatoire en prod bare-metal ; `SystemExit` si absent en prod |
-x| `GEO_LAT` | `preselection/playwright_launcher.py`, `tools/ysense_probe.py`, `launch_all.ps1` | Latitude pour la géolocalisation du browser (défaut 48.8566) | **PAR_BOT** | |
-x| `GEO_LON` | `preselection/playwright_launcher.py`, `tools/ysense_probe.py`, `launch_all.ps1` | Longitude (défaut 2.3522) | **PAR_BOT** | |
-x| `SURVEY_LANG` | `preselection/playwright_launcher.py`, `preselection/secret_loader.py`, `launch_all.ps1` | Locale du browser (défaut `fr-FR`) | **PAR_BOT** | |
-x| `SURVEY_TZ` | `preselection/playwright_launcher.py`, `preselection/secret_loader.py`, `launch_all.ps1` | Timezone du browser (défaut `Europe/Paris`) | **PAR_BOT** | |
-x| `PAYOUT_NAME` | `preselection/secret_loader.py`, `preselection/config_loader.py` | Nom affiché pour le paiement | **PAR_BOT** | Peut être commun si un seul bénéficiaire |
-x| `PAYOUT_REVOLUT_TAG` | `preselection/secret_loader.py`, `preselection/config_loader.py` | Tag Revolut pour le cashout | **PAR_BOT** | Peut être commun si un seul compte Revolut |
-x| `BOT_ID` | `Survey/action_dispatcher.py` | Seed pour la randomisation — fallback sur `ACCOUNT_ID` | **PAR_BOT** | Présent dans le code mais pas dans `launch_all.ps1` ni `accounts.json`; probablement alias inutile |
-x| `DATABASE_URL` | `State/account_state.py`, `State/survey_memory.py`, `preselection/license_guard.py`, `tools/attach_tab.ps1` | URL de connexion PostgreSQL | **GLOBAL_SECRET** | Obligatoire si `STATE_BACKEND=postgres`; `postgres://user:pass@host:port/db` |
-x| `OPENAI_API_KEY` | `preselection/secret_loader.py`, `main.py`, `preselection/config_loader.py` | Clé API OpenAI pour l'analyse IA des questions | **GLOBAL_SECRET** | |
-x| `OPENAI_API_KEY_LOCAL` | `main.py` | Clé OpenAI alternative pour usage local | **DEBUG_LOCAL** | Fallback si `OPENAI_API_KEY` absent en local |
-x| `CAPTCHA_API_KEY` | `captcha/captcha_solver.py`, `captcha/normal_captcha.py` | Clé 2Captcha (alias de `TWO_CAPTCHA_KEY`) | **GLOBAL_SECRET** | Priorité sur `TWO_CAPTCHA_KEY` dans `captcha_solver.py` |
-x| `TWO_CAPTCHA_KEY` | `captcha/captcha_solver.py`, `tools/attach_tab.ps1` | Clé API 2Captcha pour résolution auto CAPTCHA | **GLOBAL_SECRET** | Valeur exemple hardcodée dans `attach_tab.ps1` (à remplacer) |
-x| `CAPSOLVER_API_KEY` | `captcha/captcha_solver.py`, `tools/attach_tab.ps1` | Clé API Capsolver | **GLOBAL_SECRET** | Valeur exemple hardcodée dans `attach_tab.ps1` |
-x| `FIVESIM_API_KEY` | `Survey/fivesim_client.py`, `Survey/survey_executor.py`, `tools/attach_tab.ps1` | Clé API 5sim pour numéros virtuels (vérif. PIN) | **GLOBAL_SECRET** | JWT hardcodé dans `attach_tab.ps1` (à remplacer) |
-x| `SNAP_R2_ACCOUNT_ID` | `Management/snap_uploader.py`, `tools/ysense_probe.py`, `tools/snap_diagnostic.py`, `tools/playwright_access_check.py`, `tools/fingerprint_check.py`, `tools/multi_access_check.py` | Cloudflare Account ID pour l'upload R2 | **GLOBAL_SECRET** | Obligatoire si `SNAP_ENABLED=1` |
-x| `SNAP_R2_ACCESS_KEY_ID` | Idem ci-dessus | Access Key ID R2 (compatible S3) | **GLOBAL_SECRET** | |
-x| `SNAP_R2_SECRET_ACCESS_KEY` | Idem ci-dessus | Secret Access Key R2 | **GLOBAL_SECRET** | |
-x| `SNAP_R2_BUCKET` | Idem ci-dessus | Nom du bucket R2 | **GLOBAL_CONFIG** | Non-secret |
-x| `telegram_bot_token` | `launch.py`, `Cash/payout.py`, `preselection/secret_loader.py`, `preselection/config_loader.py` | Token du bot Telegram pour les notifications | **GLOBAL_SECRET** | Attention : nom en minuscule dans `launch.py`/`payout.py`, majuscule `TELEGRAM_BOT_TOKEN` dans `secret_loader.py` — les deux sont lus |
-x| `telegram_chat_id` | `launch.py`, `Cash/payout.py`, `preselection/secret_loader.py`, `preselection/config_loader.py` | Chat ID Telegram | **GLOBAL_SECRET** | Même remarque sur la casse |
-x| `TELEGRAM_BOT_TOKEN` | `preselection/secret_loader.py`, `preselection/config_loader.py` | Alias majuscule de `telegram_bot_token` | **GLOBAL_SECRET** | Mappé vers `telegram_bot_token` dans la config |
-x| `TELEGRAM_CHAT_ID` | `preselection/secret_loader.py`, `preselection/config_loader.py` | Alias majuscule de `telegram_chat_id` | **GLOBAL_SECRET** | |
-x| `GIT_TOKEN` | `update_checker.py` | Token GitHub pour `git pull` automatique (hot-reload code) | **GLOBAL_SECRET** | Injecté comme `GIT_PASSWORD` dans subprocess git |
-x| `RUN_ENV` | `config.py`, `main.py`, `launch.py`, `State/account_state.py`, `fly.toml`, `Dockerfile`, `tools/attach_tab.ps1`, `launch_all.ps1` | Environnement d'exécution : `local` ou `prod` | **GLOBAL_CONFIG** | Hardcodé `prod` dans `fly.toml` et `Dockerfile` |
-x| `RUN_MODE` | `config.py`, `tools/attach_tab.ps1` | Mode d'exécution (`local` / `prod`) — distinct de `RUN_ENV` | **GLOBAL_CONFIG** | Usage limité ; principalement lu dans `is_attach_mode()` |
-x| `BROWSER_MODE` | `config.py`, `tools/attach_tab.ps1` | `normal` ou `attach` — mode CDP de debug | **GLOBAL_CONFIG** | `attach` uniquement en debug local |
-x| `LOCAL_UNATTENDED` | `config.py` | Simule le comportement prod en local (no pauses) | **DEBUG_LOCAL** | |
-x| `CAPTCHA_PROVIDER` | `captcha/recaptcha_handler.py`, `tools/attach_tab.ps1` | Fournisseur CAPTCHA : `2captcha` (défaut) ou `capsolver` | **GLOBAL_CONFIG** | |
-x| `CAPTCHA_WAIT_SEC` | `Survey/action_dispatcher.py` | Timeout en secondes pour attendre la résolution CAPTCHA (défaut 25) | **GLOBAL_CONFIG** | |
-x| `SNAP_ENABLED` | `Management/snap_uploader.py`, `preselection/auth_handler.py`, `Survey/survey_solver.py`, `tools/*_check.py`, `launch.py` | Active l'upload de screenshots vers R2 | **GLOBAL_CONFIG** | `"1"` pour activer |
-x| `PLATFORM` | `platforms/__init__.py` | Nom de la plateforme survey (défaut `topsurveys`) | **GLOBAL_CONFIG** | |
-x| `STATE_BACKEND` | `State/account_state.py`, `State/survey_memory.py`, `tools/attach_tab.ps1` | Backend d'état : `postgres` ou vide (fichier) | **GLOBAL_CONFIG** | |
-x| `STATE_TABLE` | `State/account_state.py` | Nom de la table PostgreSQL d'état (ex: `surveybot_account_state`) | **GLOBAL_CONFIG** | |
-x| `STATE_TTL_DAYS` | `State/account_state.py` | TTL en jours des entrées d'état (0 = pas de TTL) | **GLOBAL_CONFIG** | |
-x| `SURVEY_BROWSER_BIN` | `preselection/playwright_launcher.py`, `Dockerfile` | Chemin du binaire Chrome/Chromium | **GLOBAL_CONFIG** | Hardcodé `/usr/bin/google-chrome` dans `Dockerfile` |
-x| `SURVEY_HEADLESS` | `preselection/playwright_launcher.py`, `tools/ysense_probe.py`, `Dockerfile` | Mode headless (`0` ou `1`) | **GLOBAL_CONFIG** | `Dockerfile` fixe à `0` (Xvfb utilisé) |
-x| `SURVEY_VISION_MODEL` | `Survey/screenshot_analyzer.py` | ID du modèle OpenAI fine-tuné pour l'analyse visuelle | **GLOBAL_CONFIG** | Défaut : `ft:gpt-4o-2024-08-06:survey-bot:version-2:CLEp48bw` |
-x| `LOG_LEVEL` | `launch.py`, `preselection/survey_navigator.py`, `Survey/batch_response_parser.py`, `Survey/survey_executor.py`, `fly.toml` | Niveau de log (`INFO`, `DEBUG`, etc.) | **GLOBAL_CONFIG** | `fly.toml` : `DEBUG` |
-x| `LOG_STEP_SUMMARY` | `Survey/log_utils.py` | Active le résumé des steps dans les logs (défaut `"1"`) | **GLOBAL_CONFIG** | |
-x| `CTA_INTERCEPT_ONLY` | `config.py`, `Survey/action_dispatcher.py`, `Survey/cta_handler.py`, `Cash/payout.py`, `Management/guards/runtime_guard.py`, `preselection/survey_navigator.py` | Intercepte les CTAs sans naviguer réellement | **GLOBAL_CONFIG** | Aussi utile en debug ; utilisé partout dans le code |
-x| `MAX_MAIN_CYCLES` | `main.py` | Nombre max de cycles principaux avant arrêt (défaut 3) | **GLOBAL_CONFIG** | |
-x| `ACCOUNT_LOCK_TTL_SEC` | `Management/guards/runtime_guard.py` | TTL du verrou de compte en secondes (défaut 240) | **GLOBAL_CONFIG** | |
-x| `HEARTBEAT_INTERVAL_SEC` | `launch.py` | Intervalle heartbeat en secondes (défaut 60) | **GLOBAL_CONFIG** | |
-x| `HEARTBEAT_JITTER_SEC` | `launch.py` | Jitter aléatoire du heartbeat (défaut 3.0) | **GLOBAL_CONFIG** | |
-x| `UPDATE_CHECK_ENABLED` | `update_checker.py` | Active la vérification auto des MàJ git (défaut `"0"`) | **GLOBAL_CONFIG** | Ne jamais activer sans `GIT_TOKEN` |
-x| `DOM_FRAME_MAX_DEPTH` | `Survey/dom_analyzer.py` | Profondeur max d'analyse des iframes (défaut 2) | **GLOBAL_CONFIG** | |
-x| `AA_MATRIX_MAX_ROWS` | `Survey/dom_extractors_misc.py` | Nb max de lignes dans une matrice Askia (défaut 40) | **GLOBAL_CONFIG** | |
-x| `AA_SELECTION_LIST_MAX` | `Survey/dom_extractors_misc.py` | Nb max de listes de sélection (défaut 10) | **GLOBAL_CONFIG** | |
-x| `MAX_ACTIONS_PER_PLAN` | `Survey/action_dispatcher.py` | Nb max d'actions dans un plan IA (défaut 60) | **GLOBAL_CONFIG** | |
-x| `PLAYWRIGHT_BROWSERS_PATH` | `tools/ysense_probe.py` | Chemin des browsers Playwright (outil diagnostic uniquement) | **GLOBAL_CONFIG** | Utilisé uniquement dans `ysense_probe.py` |
-x| `STATE_DIR` | `State/account_state.py` | Répertoire de l'état fichier (fallback non-postgres) | **DEBUG_LOCAL** | |
-x| `DISPLAY` | `Management/snap_uploader.py`, `tools/snap_diagnostic.py`, `preselection/playwright_launcher.py`, `tools/ysense_probe.py`, `Dockerfile` | Display X11 virtuel (`:99` via Xvfb) | **INFRA** | Injecté par `entrypoint.sh` au runtime dans le conteneur |
-x| `SURVEY_SNAPSHOT` | `Survey/page_snapshot.py` | Active les snapshots via ENV (`"1"`, `"true"`, etc.) | **DEBUG_LOCAL** | Hot-toggle, sinon via fichier flag |
-x| `SURVEY_SNAPSHOT_DIR` | `Survey/page_snapshot.py`, `Survey/action_dispatcher.py` | Répertoire de destination des snapshots | **DEBUG_LOCAL** | |
-x| `SURVEY_SNAPSHOT_NAME` | `Survey/page_snapshot.py` | Nom forcé pour le snapshot courant | **DEBUG_LOCAL** | |
-x| `SURVEY_SNAPSHOT_FLAG_FILE` | `Survey/page_snapshot.py` | Fichier flag pour hot-toggle des snapshots | **DEBUG_LOCAL** | |
-x| `ATTACH_DEBUGGER_ADDRESS` | `main.py`, `launch.py`, `tools/attach_tab.ps1` | Adresse CDP Chrome (ex: `127.0.0.1:9009`) | **DEBUG_LOCAL** | |
-x| `ATTACH_ROUTE` | `main.py`, `tools/attach_tab.ps1` | Route attach : `resolution`, `preselection`, `login` | **DEBUG_LOCAL** | Écrit dans `os.environ` au runtime pour persistance entre relances |
-x| `ATTACH_ROUTE_PROMPT` | `main.py` | Active le prompt interactif de sélection de route | **DEBUG_LOCAL** | |
-x| `ATTACH_TAB_URL_CONTAINS` | `main.py` | Filtre l'onglet attach par URL | **DEBUG_LOCAL** | |
-x| `ATTACH_TAB_TITLE_CONTAINS` | `main.py` | Filtre l'onglet attach par titre | **DEBUG_LOCAL** | |
-x| `ATTACH_TAB_DOM_CONTAINS` | `main.py` | Filtre l'onglet attach par contenu DOM | **DEBUG_LOCAL** | |
-x| `ATTACH_TAB_SELECTOR` | `main.py`, `tools/attach_tab.ps1` | Stratégie de sélection d'onglet (défaut `current`) | **DEBUG_LOCAL** | |
-x| `ATTACH_MAX_STEPS` | `main.py` | Nb max de steps en mode attach (défaut 100) | **DEBUG_LOCAL** | |
-x| `ATTACH_PRESELECTION_MAX_ROUNDS` | `main.py` | Nb max de rounds preselection en attach (défaut 15) | **DEBUG_LOCAL** | |
-x| `ATTACH_PRESELECTION_TRANSITION_TIMEOUT_S` | `main.py` | Timeout de transition preselection (défaut 45s) | **DEBUG_LOCAL** | |
-x| `LOCAL_CTA_REQUIRE_ENTER` | `config.py`, `preselection/playwright_launcher.py`, `preselection/response_executor.py`, `tools/attach_tab.ps1` | Pause avant chaque clic CTA (confirmation manuelle) | **DEBUG_LOCAL** | |
-x| `LOCAL_CTA_DEBUG` | `config.py` | Permet les pauses CTA même en `LOCAL_UNATTENDED=1` | **DEBUG_LOCAL** | |
-x| `DIAG_ISTRUSTED` | `preselection/response_executor.py`, `tools/attach_tab.ps1` | Active le diagnostic des événements `isTrusted` | **DEBUG_LOCAL** | |
-x| `DIAG_CHECKBOX_CLICK` | `preselection/response_executor.py`, `tools/attach_tab.ps1` | Active le diagnostic des clics checkbox | **DEBUG_LOCAL** | |
-x| `DIAG_STABILITY` | `preselection/response_executor.py`, `tools/attach_tab.ps1` | Active le diagnostic de stabilité DOM | **DEBUG_LOCAL** | |
-x| `DOM_DEBUG_FRAMES` | `Survey/log_utils.py`, `tools/attach_tab.ps1` | Active les logs de debug des frames | **DEBUG_LOCAL** | |
-x| `ACTION_DEBUG_TARGET` | `Survey/log_utils.py`, `tools/attach_tab.ps1` | Active les logs de debug des cibles d'action | **DEBUG_LOCAL** | |
-x| `SURVEY_CTX_DEBUG` | `Survey/survey_solver.py`, `tools/attach_tab.ps1` | Active le debug du contexte survey | **DEBUG_LOCAL** | |
-x| `DOM_CONTEXT_DEBUG` | `Survey/page_snapshot.py`, `Survey/action_dispatcher.py`, `Survey/dom_extractors_misc.py`, `Survey/dom_frame_selector.py` | Active le debug détaillé du contexte DOM | **DEBUG_LOCAL** | |
-x| `FIVESIM_ORDER_ID` | `Survey/survey_executor.py` | ID de commande 5sim statique (fallback si pas d'ordre dynamique) | **DEBUG_LOCAL** | |
-x| `YSENSE_EMAIL` | `tools/ysense_probe.py` | Email pour l'outil diagnostic ySense (défaut hardcodé) | **DEBUG_LOCAL** | Valeur par défaut exposée dans le code source |
-x| `YSENSE_PASSWORD` | `tools/ysense_probe.py` | Mot de passe pour l'outil diagnostic ySense (défaut hardcodé) | **DEBUG_LOCAL** | Valeur par défaut exposée dans le code source |
-x| `BOT_RUN_ID` | `tools/attach_tab.ps1` | Identifiant de run pour debug (ex: `port_9009`) | **DEBUG_LOCAL** | **Non lu dans le code Python** — set uniquement dans attach_tab.ps1 |
-x| `SURVEY_RESOURCE_BLOCKING` | `tools/attach_tab.ps1` | Blocage des ressources (images, etc.) dans le browser | **DEBUG_LOCAL** | **Non lu dans le code Python** — set uniquement dans attach_tab.ps1 |
-x| `HTTP_PROXY` / `HTTPS_PROXY` | `tools/attach_tab.ps1` (commenté) | Proxy global niveau OS | **DEBUG_LOCAL** | Commentés dans attach_tab.ps1 ; non lus en Python |
-x| `FAILURE_PIPELINE_TRIGGER_FILE` | `tools/attach_tab.ps1` (commenté) | Fichier trigger de pipeline de failure | **DEBUG_LOCAL** | Commenté ; non lu en Python |
-x| `LOCAL_USE_PROXY` | `tools/attach_tab.ps1` (commenté) | Active le proxy en local | **DEBUG_LOCAL** | Commenté ; non lu en Python |
-x| `PYTHONUNBUFFERED` | `Dockerfile` | Désactive le buffering stdout Python | **INFRA** | Injecté par Docker |
-x| `PYTHONDONTWRITEBYTECODE` | `Dockerfile` | Désactive la génération de `.pyc` | **INFRA** | Injecté par Docker |
-x| `DEBIAN_FRONTEND` | `Dockerfile` | Mode non-interactif pour `apt-get` | **INFRA** | Build-time uniquement |
-x| `LICENSE_KEY` | `State/account_state.py`, `preselection/license_guard.py`, `preselection/_license_config.py` | Clé de licence — **embarquée dans le compilé PyInstaller**, pas via env | **INFRA** | Lu depuis `_license_config.py` (module Python embarqué) ; actuellement `"Wilfried"` en clair |
-
----
-
 ### Liste 1 — Variables à inclure dans `accounts.json` (une entrée par compte)
 
 Ces variables sont propres à chaque bot/compte et doivent figurer dans chaque entrée de `accounts.json` :
@@ -125,88 +18,35 @@ Ces variables sont propres à chaque bot/compte et doivent figurer dans chaque e
   "payout_name": "Wilfried",
   "payout_revolut_tag": "@wilfried_revolut",
   "OPENAI_API_KEY": "Clé OpenAI"
-| `TWO_CAPTCHA_KEY` ou `CAPTCHA_API_KEY` | Clé 2Captcha |
-| `CAPSOLVER_API_KEY` | Clé Capsolver |
-| `FIVESIM_API_KEY` | Clé JWT 5sim |
-| `telegram_bot_token` | Token bot Telegram |
-| `telegram_chat_id` | Chat ID Telegram |
-| `telegram_bot_token` | Token bot Telegram |
-| `telegram_chat_id` | Chat ID Telegram |
-| `CAPTCHA_WAIT_SEC` |
-| `OPENAI_API_KEY_LOCAL` |
-| `BOT_ID` |
-| `CHROME_PROFILE_DIR` |
-| `TOPSURVEYS_SECRET_JSON` |
+  "TWO_CAPTCHA_KEY": Clé 2Captcha
+  "FIVESIM_API_KEY": Clé JWT 5sim
+  "CAPTCHA_WAIT_SEC":
+  "BOT_ID":
+  "CHROME_PROFILE_DIR":
+  "telegram_bot_token": Token bot Telegram
+  "telegram_chat_id": Chat ID Telegram
+  "YSENSE_EMAIL":
+  "YSENSE_PASSWORD":
+
 }
-
-
-Champs optionnels (si différents par compte) : `payout_name`, `payout_revolut_tag`, `geo_lat`, `geo_lon`, `survey_lang`, `survey_tz`.
-
 
 ### Liste 2 — Variables à injecter globalement (variables globales bare-metal)
 
 | Variable | Description |
 |---|---|
-| `DATABASE_URL` | URL Postgres complète |
-| `SNAP_R2_ACCOUNT_ID` | Cloudflare R2 Account ID | # Cette var sera désactivé en prod car snap_enbled vaudra 0
-| `SNAP_R2_ACCESS_KEY_ID` | Clé R2 |    # Cette var sera désactivé en prod car snap_enbled vaudra 0
-| `SNAP_R2_SECRET_ACCESS_KEY` | Secret R2 | # Cette var sera désactivé en prod car snap_enbled vaudra 0
-| `SNAP_R2_BUCKET` |    # Cette var sera désactivé en prod car snap_enbled vaudra 0
-| `SNAP_ENABLED` |
-| `GIT_TOKEN` | Token GitHub pour auto-update |
-| `GEO_LAT` | 48.8566 |
-| `GEO_LON` | 2.3522 |
-| `SURVEY_LANG` | fr-FR |
-| `SURVEY_TZ` | Europe/Paris |
-| `GIT_TOKEN` |
-| `RUN_ENV` |
-| `RUN_MODE` |
-| `PLATFORM` |
-| `STATE_BACKEND` |
-| `STATE_TABLE` |
-| `STATE_TTL_DAYS` |
-| `SURVEY_BROWSER_BIN` |
-| `SURVEY_HEADLESS` |
-| `SURVEY_VISION_MODEL` |
-| `LOG_LEVEL` |
-| `LOG_STEP_SUMMARY` |
-| `CTA_INTERCEPT_ONLY` |
-| `MAX_MAIN_CYCLES` |
-| `ACCOUNT_LOCK_TTL_SEC` |
-| `HEARTBEAT_INTERVAL_SEC` |
-| `HEARTBEAT_JITTER_SEC` |
-| `DOM_FRAME_MAX_DEPTH` |
-| `AA_MATRIX_MAX_ROWS` |
-| `AA_SELECTION_LIST_MAX` |
-| `MAX_ACTIONS_PER_PLAN` |
-| `PLAYWRIGHT_BROWSERS_PATH` |
-| `STATE_DIR` |
-| `DISPLAY` |
-| `SURVEY_SNAPSHOT` |
-| `SURVEY_SNAPSHOT_DIR` |
-| `SURVEY_SNAPSHOT_NAME` |
-| `SURVEY_SNAPSHOT_FLAG_FILE` |
-| `LOCAL_CTA_REQUIRE_ENTER` |
-| `LOCAL_CTA_DEBUG` |
-| `DIAG_ISTRUSTED` |
-| `DIAG_CHECKBOX_CLICK` |
-| `CAPTCHA_PROVIDER` |
-| `DIAG_STABILITY` |
-| `DOM_DEBUG_FRAMES` |
 | `ACTION_DEBUG_TARGET` |
-| `SURVEY_CTX_DEBUG` |
-| `DOM_CONTEXT_DEBUG` |
-| `FIVESIM_ORDER_ID` |
-| `YSENSE_EMAIL` |
-| `YSENSE_PASSWORD` |
-| `BOT_RUN_ID` |
-| `SURVEY_RESOURCE_BLOCKING` |
-| `HTTP_PROXY` / `HTTPS_PROXY` |
-| `FAILURE_PIPELINE_TRIGGER_FILE` |
-| `LOCAL_USE_PROXY` |
-| `PYTHONUNBUFFERED` |
-| `PYTHONDONTWRITEBYTECODE` |
-| `DEBIAN_FRONTEND` |
+| `CAPTCHA_PROVIDER` | 2captcha
+| `DATABASE_URL` | URL Postgres complète |
+| `DOM_CONTEXT_DEBUG` | 0
+| `LOG_LEVEL` | INFO
 | `LICENSE_KEY` |
-| `UPDATE_MANIFEST_URL`|
-| `UPDATE_CHECK_ENABLED` |
+| `PLATFORM` | topsurveys
+| `RUN_ENV` | prod
+| `SNAP_ENABLED` | =0
+| `SURVEY_TZ` | Europe/Paris |
+| `STATE_BACKEND` | =postgres
+| `STATE_TABLE` | account_state
+| `SURVEY_HEADLESS` | 0
+| `SURVEY_CTX_DEBUG` | 0
+| `UPDATE_CHECK_ENABLED` | =1
+| `UPDATE_MANIFEST_URL` | =https://pub-565d2bb59d364c1490255c5dddc296aa.r2.dev/manifest.json

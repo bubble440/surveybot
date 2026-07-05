@@ -1,19 +1,27 @@
 print("BOOT: container démarré.", flush=True)
 import os
 
+# ⚠ Doit s'exécuter AVANT tout import qui lit une constante d'environnement au
+# niveau module (config.py: RUN_ENV/BROWSER_MODE, State/account_state.py via
+# launch.py: DATABASE_URL/STATE_BACKEND/STATE_TABLE, license_guard.py appelé
+# ci-dessous). Réinjecte la config globale dans os.environ sans écraser une
+# valeur déjà présente (accounts.json, script de lancement, secrets Fly.io).
+from preselection.config_loader import load_config
+load_config()
+
+from config import is_attach_mode, RUN_ENV, BROWSER_MODE, is_prod_like, should_run_guard_monitor, should_run_heartbeat, should_run_hot_reload, log_config_summary
+
 from preselection.license_guard import check_license_or_exit
-if os.getenv("RUN_ENV", "prod").lower() == "prod":
+if not is_attach_mode():
     check_license_or_exit()
-    
+
 import sys, json, time, traceback
 from urllib.parse import urlparse
-from preselection.config_loader import load_config
 from launch import start_heartbeat_thread, acquire_account_lock_or_exit, mark_bot_running
 from launch import install_sigterm_handler, install_sigint_handler, start_runtime_guard, launch_driver_or_fail, init_session_and_enter_surveys, install_sigusr1_handler, restore_session_cookies
 from launch import start_hot_reload_thread, run_main_loop, build_notifier, soft_restart, start_debug_http_server
 from platforms import get_platform
 from Management.guards.runtime_guard import get_guard
-from config import is_attach_mode, RUN_ENV, RUN_MODE, BROWSER_MODE, is_prod_like, should_run_guard_monitor, should_run_heartbeat, should_run_hot_reload, log_config_summary
 
 if is_attach_mode():
     ACCOUNT_ID = "local_debug"
@@ -665,7 +673,7 @@ def main():
     platform = get_platform()
 
     print(
-        f"[BOOT] RUN_ENV={RUN_ENV} RUN_MODE={RUN_MODE} BROWSER_MODE={BROWSER_MODE} attach={is_attach_mode()}",
+        f"[BOOT] RUN_ENV={RUN_ENV} BROWSER_MODE={BROWSER_MODE} attach={is_attach_mode()}",
         flush=True,
     )
 
@@ -717,9 +725,7 @@ def main():
 
         api_key = (
             os.getenv("OPENAI_API_KEY")
-            or os.getenv("OPENAI_API_KEY_LOCAL")
             or config.get("openai_api_key")
-            or config.get("api_key")
             or config.get("OPENAI_API_KEY")
         )
         if not api_key:

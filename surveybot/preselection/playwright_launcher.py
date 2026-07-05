@@ -2,9 +2,7 @@ from __future__ import annotations
 import os, time
 import subprocess
 from Survey.functions import _env_truthy
-
-# IS_LOCAL = os.getenv("RUN_ENV", "local") == "local"
-IS_LOCAL = os.getenv("RUN_ENV", "local") == "local"
+from config import is_attach_mode
 
 # preselection/playwright_launcher.py
 """
@@ -140,7 +138,7 @@ def _fingerprint_js() -> str:
     Patches appliqués :
       - Timezone : Intl.DateTimeFormat patché pour retourner Europe/Paris
       - window.chrome : injecté si absent (contexte Playwright headless)
-      - WebRTC : suppression de RTCPeerConnection en prod (non IS_LOCAL)
+      - WebRTC : suppression de RTCPeerConnection hors mode attach
     """
     return """
         // ── Timezone ─────────────────────────────────────────────────────────
@@ -195,7 +193,7 @@ def _fingerprint_js() -> str:
             Object.defineProperty(window, 'RTCPeerConnection',       { value: undefined, writable: false });
             Object.defineProperty(window, 'webkitRTCPeerConnection', { value: undefined, writable: false });
         } catch(e) {}
-    """ if not IS_LOCAL else "")
+    """ if not is_attach_mode() else "")
 
 
 
@@ -417,9 +415,9 @@ def launch_browser_playwright(config: dict | None = None):
     # Fail-fast en prod si absent ou dossier inexistant.
     user_data_dir = os.getenv("CHROME_PROFILE_DIR", "").strip()
     if not user_data_dir:
-        if not IS_LOCAL:
+        if not is_attach_mode():
             raise SystemExit("[LAUNCH][PW] CHROME_PROFILE_DIR manquant — arrêt.")
-        # Mode local/debug uniquement : profil temporaire jetable
+        # Mode attach uniquement : profil temporaire jetable
         user_data_dir = tempfile.mkdtemp(prefix="chrome_profile_pw_")
         log_info("[LAUNCH][PW]", f"CHROME_PROFILE_DIR absent — profil temporaire : {user_data_dir}")
     elif not os.path.isdir(user_data_dir):
@@ -453,7 +451,7 @@ def launch_browser_playwright(config: dict | None = None):
         "--lang=en-US",
     ]
 
-    if not IS_LOCAL:
+    if not is_attach_mode():
         chrome_args += [
             "--disable-features=WebRTC",
             "--enforce-webrtc-ip-permission-check",

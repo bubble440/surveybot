@@ -11,3 +11,16 @@ flyctl ssh console -a surveybot-bot -s
 # Sélectionner la machine avec "sleep" dans la liste si plusieurs machines
 
 su - botuser -c 'cd /app && DISPLAY=:99 PYTHONPATH=/app RUN_ENV=prod YSENSE_EMAIL=wilsaah456@gmail.com TWO_CAPTCHA_KEY=ff2f59cd67845abf5c1b7db1c0a17cf2 YSENSE_PASSWORD=p@ssw0rD!123 LOCAL_UNATTENDED=1 SNAP_ENABLED=1 SNAP_R2_ACCOUNT_ID='"$SNAP_R2_ACCOUNT_ID"' SNAP_R2_ACCESS_KEY_ID='"$SNAP_R2_ACCESS_KEY_ID"' SNAP_R2_SECRET_ACCESS_KEY='"$SNAP_R2_SECRET_ACCESS_KEY"' SNAP_R2_BUCKET='"$SNAP_R2_BUCKET"' PROXY_URL='"'http://14abf236340a1:bb82a9e63b@185.134.194.152:12323'"' PROXY_USER=14abf236340a1 PROXY_PASS='"'bb82a9e63b'"' ACCOUNT_ID=topsurveys_bot_001 python tools/ysense_probe.py'
+
+
+
+# Build du fichier
+pyinstaller --onefile --name surveybot --add-data "_license_config.py;." main.py
+
+# modifier la version dans _license_config
+
+# Calculer le SHA du binanire
+(Get-FileHash dist\surveybot.exe -Algorithm SHA256).Hash.ToLower()
+
+# Lancer Chrome une première fois avec le bon proxy et pointer vers le dossier cible :
+"C:\Program Files\Google\Chrome\Application\chrome.exe" --user-data-dir="C:\surveybot\profiles\bot_001" --proxy-server="http://host:port"

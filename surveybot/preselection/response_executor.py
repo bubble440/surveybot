@@ -176,7 +176,7 @@ def _diag_pw_actionability(label, label_text: str) -> None:
 # DIAGNOSTIC TEMPORAIRE — stabilité géométrique avant clic label (retirer après confirmation)
 # Activer avec : DIAG_STABILITY=1
 # ---------------------------------------------------------------------------
-_DIAG_STABILITY = os.environ.get("DIAG_STABILITY", "").strip() not in ("", "0")
+_DIAG_STABILITY = os.environ.get("DIAG_STABILITY", "0").strip() not in ("", "0")
 
 # Rect + scrollTop du premier ancêtre scrollable (overflowY scroll/auto)
 _JS_SAMPLE_RECT_EXT = """

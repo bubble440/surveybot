@@ -1,6 +1,5 @@
 import os, random
-IS_LOCAL = os.getenv("RUN_ENV", "local") == "local"
-from config import is_prod_like, should_run_guard_monitor, should_run_hot_reload
+from config import is_attach_mode, is_prod_like, should_run_guard_monitor, should_run_hot_reload
 
 # ---------- PID file (bare-metal Windows) ----------
 
@@ -13,7 +12,7 @@ def _pid_path(account_id: str) -> str:
 
 def write_pid_file(account_id: str) -> None:
     """Écrit le PID courant dans pids\bot_<account_id>.pid."""
-    if IS_LOCAL:
+    if is_attach_mode():
         return
     try:
         path = _pid_path(account_id)
@@ -25,7 +24,7 @@ def write_pid_file(account_id: str) -> None:
 
 def delete_pid_file(account_id: str) -> None:
     """Supprime pids\bot_<account_id>.pid à l'arrêt propre."""
-    if IS_LOCAL:
+    if is_attach_mode():
         return
     try:
         path = _pid_path(account_id)
@@ -460,9 +459,9 @@ def start_debug_http_server(survey_ctx_getter):
     """
     Serveur HTTP de debug accessible sur chrome_port + 1000.
     Exemple : bot sur port 9222 → http://localhost:10222/ctx
-    Uniquement en local — ignoré en prod.
+    Uniquement en mode attach — ignoré en prod.
     """
-    if not IS_LOCAL:
+    if not is_attach_mode():
         return
 
     attach_port = int(os.getenv("ATTACH_DEBUGGER_ADDRESS", ":0").split(":")[-1] or 0)
@@ -559,83 +558,80 @@ def init_session_and_enter_surveys(driver, config, account_id: str, notify_fn, p
 def start_hot_reload_thread():
     global _HOT_RELOAD_STARTED
     if not should_run_hot_reload():
-        print("[HOT_RELOAD] Ignoré en environnement mode unattended ou non-local.")
+        print("[HOT_RELOAD] Ignoré hors mode attach.")
         return
     if _HOT_RELOAD_STARTED:
         return
     _HOT_RELOAD_STARTED = True
 
-    if IS_LOCAL:        
-        import Survey.survey_executor as _se
-        from hot_reload.hot_reload import ModuleReloader
+    import Survey.survey_executor as _se
+    from hot_reload.hot_reload import ModuleReloader
 
-        reloader = ModuleReloader(
-            [
-                "captcha.captcha_solver",
-                "captcha.datadome_handler",
-                "captcha.normal_captcha",
-                "captcha.recaptcha_handler",
-                "captcha.recaptcha_utils",
-                "captcha.tencent_handler",
-                "Survey.action_dispatcher",
-                "Survey.action_types",
-                "Survey.batch_response_parser",
-                "Survey.cta_handler",
-                "Survey.dom_analyzer",
-                "Survey.dom_classifier",
-                "Survey.dom_context_mapper",
-                "Survey.dom_extractors_areyounet",
-                "Survey.dom_extractors_decipher",
-                "Survey.dom_extractors_misc",
-                "Survey.dom_frame_selector",
-                "Survey.dom_question_extractor",
-                "Survey.dom_registry",
-                "Survey.dom_selection_rules",
-                "Survey.dom_utils",
-                "Survey.dropdown_block_resolver",
-                "Survey.frame_utils",
-                "Survey.input_checkbox",
-                "Survey.input_dropdown",
-                "Survey.input_frame",
-                "Survey.input_handler",
-                "Survey.input_matrix",
-                "Survey.input_radio",
-                "Survey.input_slider",
-                "Survey.input_text",
-                "Survey.input_utils",
-                "Survey.page_snapshot",
-                "Survey.prompt_builder",
-                "Survey.question_block_analyzer",
-                "Survey.question_block_resolver",
-                "Survey.screenshot_analyzer",
-                "Survey.survey_executor",
-                "Survey.survey_solver",
-                "preselection.question_analyzer",
-                "preselection.question_validation",
-                "preselection.response_executor",
-                "preselection.survey_handler",
-                "Management.pause_policy",
-                "Management.redirect_watcher",
-                "Management.guards.runtime_guard",
-                "Management.guards.survey_difficulty_guard",
-            ],
-            poll_interval=0.5,
-        )
+    reloader = ModuleReloader(
+        [
+            "captcha.captcha_solver",
+            "captcha.datadome_handler",
+            "captcha.normal_captcha",
+            "captcha.recaptcha_handler",
+            "captcha.recaptcha_utils",
+            "captcha.tencent_handler",
+            "Survey.action_dispatcher",
+            "Survey.action_types",
+            "Survey.batch_response_parser",
+            "Survey.cta_handler",
+            "Survey.dom_analyzer",
+            "Survey.dom_classifier",
+            "Survey.dom_context_mapper",
+            "Survey.dom_extractors_areyounet",
+            "Survey.dom_extractors_decipher",
+            "Survey.dom_extractors_misc",
+            "Survey.dom_frame_selector",
+            "Survey.dom_question_extractor",
+            "Survey.dom_registry",
+            "Survey.dom_selection_rules",
+            "Survey.dom_utils",
+            "Survey.dropdown_block_resolver",
+            "Survey.frame_utils",
+            "Survey.input_checkbox",
+            "Survey.input_dropdown",
+            "Survey.input_frame",
+            "Survey.input_handler",
+            "Survey.input_matrix",
+            "Survey.input_radio",
+            "Survey.input_slider",
+            "Survey.input_text",
+            "Survey.input_utils",
+            "Survey.page_snapshot",
+            "Survey.prompt_builder",
+            "Survey.question_block_analyzer",
+            "Survey.question_block_resolver",
+            "Survey.screenshot_analyzer",
+            "Survey.survey_executor",
+            "Survey.survey_solver",
+            "preselection.question_analyzer",
+            "preselection.question_validation",
+            "preselection.response_executor",
+            "preselection.survey_handler",
+            "Management.pause_policy",
+            "Management.redirect_watcher",
+            "Management.guards.runtime_guard",
+            "Management.guards.survey_difficulty_guard",
+        ],
+        poll_interval=0.5,
+    )
 
-        def _on_change(reloaded):
-            nonlocal _se
-            if "Survey.survey_executor" in reloaded:
-                _se = reloaded["Survey.survey_executor"]
-            print(" Modules rechargés:", ", ".join(reloaded.keys()))
+    def _on_change(reloaded):
+        nonlocal _se
+        if "Survey.survey_executor" in reloaded:
+            _se = reloaded["Survey.survey_executor"]
+        print(" Modules rechargés:", ", ".join(reloaded.keys()))
 
-        threading.Thread(
-            target=reloader.watch_loop,
-            args=(_on_change,),
-            daemon=True,
-        ).start()
-    else:
-        print("[HOT_RELOAD] Ignoré en environnement non-local.")
-        
+    threading.Thread(
+        target=reloader.watch_loop,
+        args=(_on_change,),
+        daemon=True,
+    ).start()
+
 _HOT_RELOAD_STARTED = False
 
 def run_main_loop(driver, api_key: str, account_id: str, payout_name: str = "", payout_revolut_tag: str = "", platform=None):
@@ -659,7 +655,7 @@ def run_main_loop(driver, api_key: str, account_id: str, payout_name: str = "", 
     check_and_apply(account_id)
 
     # H1: en prod le bot doit quitter proprement (pas bloquer Chrome indéfiniment)
-    if IS_LOCAL:
+    if is_attach_mode():
         print("Script terminé. Navigateur maintenu ouvert pour inspection.")
         while True:
             time.sleep(999)

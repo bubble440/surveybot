@@ -57,46 +57,26 @@ Write-Host ""
 # Vars env (attach)
 #test prod-like
 $env:ACCOUNT_ID ="topsurveys_bot_101" # Valeur a modifier dans le terminal pour sauvegarder les cookies dans le bon compte.
-# $env:PROXY_USER="14abf236340a1"
-# $env:PROXY_PASS="bb82a9e63b"
-# $env:PROXY_URL="185.134.194.152:12323" #Ces 3 valeurs sont responsable de l'ouverture du pop-up de saisi des creds lors du launch.
-
 $env:RUN_ENV="local"
 $env:RUN_MODE="local"
 $env:STATE_BACKEND = "postgres"
 $env:DATABASE_URL = "postgres://postgres:3o1L6kfCFxuncbY@localhost:5432/postgres"
-# $env:SURVEY_HEADLESS="1"
-# $env:ACCOUNT_ID = "topsurveys_test_prod_like"
-# $env:STATE_BACKEND = "postgres"
-# $env:LOCAL_USE_PROXY = "1"
-
-# $env:HTTPS_PROXY = "http://14abf236340a1:bb82a9e63b@185.134.194.152:12323"
-# $env:HTTP_PROXY  = "http://14abf236340a1:bb82a9e63b@185.134.194.152:12323"
-
 $env:BROWSER_MODE="attach"
 $env:ATTACH_TAB_SELECTOR=$AttachTabSelector
 $env:ATTACH_DEBUGGER_ADDRESS="127.0.0.1:$Port"
 
 # Tes vars debug
 $env:LOG_LEVEL="DEBUG"
-$env:DIAG_ISTRUSTED="1"
-$env:DIAG_STABILITY="1"
 $env:DOM_DEBUG_FRAMES="1"
 $env:SURVEY_CTX_DEBUG="1"
-# Route attach fixée ici — pas de prompt interactif.
-# Changer la valeur pour modifier la route sans toucher à main.py.
 $env:ATTACH_ROUTE="resolution"
 $env:BOT_RUN_ID="port_$Port"
-$env:DIAG_CHECKBOX_CLICK="1"
 $env:ACTION_DEBUG_TARGET="1"
 $env:LOCAL_CTA_REQUIRE_ENTER="1"
 $env:CAPTCHA_PROVIDER="capsolver"
 $env:SURVEY_RESOURCE_BLOCKING="0"
 $env:TWO_CAPTCHA_KEY="ff2f59cd67845abf5c1b7db1c0a17cf2"
 $env:CAPSOLVER_API_KEY="CAP-9AD6AB7A2E5A42B4935558CA7493AFC30CDDD8CC543AA5665419B7A63DAE26A0"
-$env:FIVESIM_API_KEY="eyJhbGciOiJSUzUxMiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE4MDgxNjY5MDMsImlhdCI6MTc3NjYzMDkwMywicmF5IjoiMjlkMzI4MGM4YjMzYTI2MWUwYWNiNzMyNjQ3MjY1ZjUiLCJzdWIiOjM5ODIyNjN9.jtHwiXwr-F1PCKJ8Ka79woFNMm4c7VLJYRzgskCrSKSMy9FIxktAUztjEiafTD-Hw_UKGwdUEDZMw2o8K_4JzIwBWa_Gb2noQqODIwF0Pj7xhe1-znbd49wNMJnCsicj03nYRyEefkieZUUROzeKLfGiKESuwk9xqoXxhIcPNu8OZCft6pOxrTmXI26gSgZiwtEDkd2DlvDsMTyRbAAVHEI8BwCS32OhckC4p0GfGwL326R-bk2iN_m1oJ0-cOKaM8B40MT-Fsasfe_IbjNAguPyZtVSjCdiHv91aHfHCYgHKFUOkMpFmRqhBp7T2gthCG6sY462sWBIYFZS2gh9-g"
-# $env:CTA_INTERCEPT_ONLY="0"
-# $env:FAILURE_PIPELINE_TRIGGER_FILE = "C:/tmp/fp_trigger"
 
 # Utiliser python du venv si présent (plus fiable)
 $venvPy = Join-Path $ProjectDir ".venv\Scripts\python.exe"
