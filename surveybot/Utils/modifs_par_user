@@ -175,7 +175,6 @@ Champs optionnels (si différents par compte) : `payout_name`, `payout_revolut_t
 | `ACCOUNT_LOCK_TTL_SEC` |
 | `HEARTBEAT_INTERVAL_SEC` |
 | `HEARTBEAT_JITTER_SEC` |
-| `UPDATE_CHECK_ENABLED` |
 | `DOM_FRAME_MAX_DEPTH` |
 | `AA_MATRIX_MAX_ROWS` |
 | `AA_SELECTION_LIST_MAX` |
@@ -209,3 +208,5 @@ Champs optionnels (si différents par compte) : `payout_name`, `payout_revolut_t
 | `PYTHONDONTWRITEBYTECODE` |
 | `DEBIAN_FRONTEND` |
 | `LICENSE_KEY` |
+| `UPDATE_MANIFEST_URL`|
+| `UPDATE_CHECK_ENABLED` |
