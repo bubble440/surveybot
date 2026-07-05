@@ -1,31 +1,20 @@
-# Python
 __pycache__/
 *.pyc
 *.pyo
 
-# Virtual env
 .venv/
 venv/
 .venv-wsl
-.venv-wsl
 
-# IDE / OS
 .vscode/
 .DS_Store
 
-# Logs / runtime
 *.log
 logs/
 tmp/
-
-# Docker leftovers
 *.pid
 
-# snapshots / debug captures
-# snapshots / debug captures
 snapshots
-snapshots/
-debug_*.html
 snapshots/
 debug_*.html
 surveybot/Utils/config
@@ -36,8 +25,9 @@ surveybot/nul
 surveybot/tools/attach_tab
 surveybot/tools/attach_tab.ps1
 
-
-surveybot/tools/attach_tab
-surveybot/tools/attach_tab.ps1
-
 surveybot/preselection/_license_config.py
+surveybot/_license_config.py
+
+dist/
+build/
+*.spec

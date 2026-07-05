@@ -26,7 +26,7 @@ log = logging.getLogger("license_guard")
 # ---------------------------------------------------------------------------
 def _get_license_key() -> str | None:
     try:
-        from _license_config import LICENSE_KEY  # type: ignore
+        from surveybot._license_config import LICENSE_KEY  # type: ignore
         return LICENSE_KEY.strip() if LICENSE_KEY else None
     except ImportError:
         return None
@@ -35,7 +35,7 @@ def _get_license_key() -> str | None:
 def _get_database_url() -> str:
     # DATABASE_URL embarquée dans le compilé via _license_config ou variable d'env
     try:
-        from _license_config import DATABASE_URL as _DB  # type: ignore
+        from surveybot._license_config import DATABASE_URL as _DB  # type: ignore
         if _DB and _DB.strip():
             return _DB.strip()
     except ImportError:

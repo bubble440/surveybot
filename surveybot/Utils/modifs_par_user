@@ -1,27 +1,9 @@
-Infos a modifier avant de transmettre:
-
-surveybot\preselection\_license_config.py
-Telegram
-license_key
-
-
-
-
-
-
-Vars env #TOUTES les vars env doivent etre
-
-UPDATE_CHECK_ENABLED=1
-
-
-
-## Inventaire exhaustif des variables d'environnement — SurveyBot
+# Inventaire exhaustif des variables d'environnement — SurveyBot
 
 > **Source lue :** `BOT_EVOLUTION_MEMORY.md` ✅ · Tous les `.py`, `.ps1`, `fly.toml`, `Dockerfile`, `accounts.json` ✅
 
----
 
-### Tableau complet
+## Tableau complet
 
 | Variable | Fichier(s) source | Rôle / description | Catégorie | Remarque |
 |---|---|---|---|---|
@@ -156,15 +138,12 @@ Ces variables sont propres à chaque bot/compte et doivent figurer dans chaque e
 | `CHROME_PROFILE_DIR` |
 | `TOPSURVEYS_SECRET_JSON` |
 }
-```
+
 
 Champs optionnels (si différents par compte) : `payout_name`, `payout_revolut_tag`, `geo_lat`, `geo_lon`, `survey_lang`, `survey_tz`.
 
----
 
-### Liste 2 — Variables à injecter globalement (secrets Fly.io / `fly.toml [env]` / variables globales bare-metal)
-
-#### Secrets Fly.io (`fly secrets set ...`) — valeurs sensibles, jamais en clair dans fly.toml :
+### Liste 2 — Variables à injecter globalement (variables globales bare-metal)
 
 | Variable | Description |
 |---|---|
@@ -177,8 +156,8 @@ Champs optionnels (si différents par compte) : `payout_name`, `payout_revolut_t
 | `GIT_TOKEN` | Token GitHub pour auto-update |
 | `GEO_LAT` | 48.8566 |
 | `GEO_LON` | 2.3522 |
-| `SURVEY_LANG" | fr-FR |
-| `SURVEY_TZ" | Europe/Paris |
+| `SURVEY_LANG` | fr-FR |
+| `SURVEY_TZ` | Europe/Paris |
 | `GIT_TOKEN` |
 | `RUN_ENV` |
 | `RUN_MODE` |
@@ -230,33 +209,3 @@ Champs optionnels (si différents par compte) : `payout_name`, `payout_revolut_t
 | `PYTHONDONTWRITEBYTECODE` |
 | `DEBIAN_FRONTEND` |
 | `LICENSE_KEY` |
-
-#### `fly.toml [env]` — paramètres non-secrets déjà présents ou à ajouter :
-
-```toml
-[env]
-  RUN_ENV    = "prod"
-  LOG_LEVEL  = "INFO"          # DEBUG actuellement, à réduire en prod
-  STATE_BACKEND = "postgres"
-  STATE_TABLE   = "surveybot_account_state"
-  SNAP_ENABLED  = "0"
-  SNAP_R2_BUCKET = "surveybot-snapshots"
-  CAPTCHA_PROVIDER = "2captcha"
-  PLATFORM = "topsurveys"
-```
-
-#### Variables globales pour le déploiement bare-metal (toutes les machines) — injectées dans le contexte du processus lanceur `launch_all.ps1` ou via des variables système Windows :
-
-| Variable | Valeur typique |
-|---|---|
-| `DATABASE_URL` | `postgres://user:pass@host:5432/db` |
-| `OPENAI_API_KEY` | `sk-...` |
-| `TWO_CAPTCHA_KEY` | `ff2f59cd...` |
-| `CAPSOLVER_API_KEY` | `CAP-9AD6AB...` |
-| `FIVESIM_API_KEY` | JWT |
-| `SNAP_R2_*` | Voir ci-dessus |
-| `telegram_bot_token` | Bot Telegram |
-| `telegram_chat_id` | Chat ID |
-| `GIT_TOKEN` | Token GitHub |
-| `STATE_BACKEND` | `postgres` |
-| `UPDATE_CHECK_ENABLED` | `1` (si git dispo) |
