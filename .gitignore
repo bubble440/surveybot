@@ -33,3 +33,4 @@ build/
 *.spec
 global_config.py
 accounts.json
+manifest.json
