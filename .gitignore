@@ -34,3 +34,4 @@ build/
 global_config.py
 accounts.json
 manifest.json
+receiver_config.json

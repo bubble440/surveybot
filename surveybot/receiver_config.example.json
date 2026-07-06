@@ -1,0 +1,8 @@
+{
+  "OPENAI_API_KEY": "sk-proj-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+  "TWO_CAPTCHA_KEY": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+  "telegram_bot_token": "xxxxxxxxxx:xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+  "telegram_chat_id": "xxxxxxxxxx",
+  "payout_name": "Prénom Nom",
+  "payout_revolut_tag": "@revolut_tag"
+}

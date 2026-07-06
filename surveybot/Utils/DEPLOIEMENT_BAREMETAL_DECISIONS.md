@@ -19,9 +19,19 @@ qui possède physiquement une machine (ou reçoit le binaire).
 
 ---
 
-## 2. Catégorisation des variables — décision actée
+## 2. Catégorisation des variables — décision actée et corrigée
 
-Deux catégories strictement séparées, ne jamais les mélanger dans un même fichier :
+**Correction actée** : la version précédente de cette section rangeait `OPENAI_API_KEY`,
+`TWO_CAPTCHA_KEY`/`CAPSOLVER_API_KEY`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` dans
+`GLOBAL_CONFIG` (figées à la compilation, non modifiables par le récepteur). Ce classement
+était une erreur : ce sont des ressources qui **appartiennent au récepteur** (son propre compte
+OpenAI, son propre bot Telegram, sa propre clé 2Captcha) — lui imposer les ressources de
+l'opérateur (toi) poserait un problème de coût et de responsabilité (qui paie le quota OpenAI de
+tout le parc, qui répond si une clé est bannie). Le récepteur doit pouvoir les renseigner et les
+changer lui-même, sans recompilation. Ces quatre clés sortent donc de `GLOBAL_CONFIG` (section
+mise à jour ci-dessous) et forment une troisième catégorie, distincte des deux existantes :
+
+Trois catégories strictement séparées, ne jamais les mélanger dans un même fichier :
 
 ### PAR_BOT (propre à chaque instance, modifiable par le récepteur)
 Transmises via `accounts.json` → injectées dans l'environnement du process enfant par
@@ -29,16 +39,70 @@ Transmises via `accounts.json` → injectées dans l'environnement du process en
 de process Windows : aucune fuite possible entre bots sur une même machine.
 
 Liste actuelle : `ACCOUNT_ID`, `EMAIL`, `PASSWORD`, `PROXY_URL`, `PROXY_USER`, `PROXY_PASS`,
-`profile_dir` / `CHROME_PROFILE_DIR`, `payout_name`, `payout_revolut_tag`.
+`profile_dir` / `CHROME_PROFILE_DIR`.
 
-**Décision** : `accounts.json` ne doit contenir QUE ces clés. Toute clé globale qui s'y glisse
-(ex: `OPENAI_API_KEY`, `TWO_CAPTCHA_KEY`, tokens Telegram) doit être retirée — déjà fait lors du
-nettoyage initial.
+**Correction actée** : `payout_name` et `payout_revolut_tag` sortent de cette catégorie.
+Confirmé par l'utilisateur : ces deux clés sont identiques sur toutes les machines et tous les
+bots d'un même récepteur (un récepteur n'a qu'une identité de paiement), donc `PAR_RECEPTEUR`,
+pas `PAR_BOT`.
 
-**Point ouvert (non implémenté)** : une fonctionnalité d'import de fichier JSON pour peupler
-`accounts.json` est prévue côté logiciel (build Nuitka). Elle doit valider le schéma à l'import
-et rejeter/alerter toute clé qui ne fait pas partie de la liste PAR_BOT ci-dessus, pour éviter
-qu'un import réintroduise silencieusement des secrets globaux dans un fichier par-bot.
+**Décision** : `accounts.json` ne doit contenir QUE les clés listées ci-dessus — identité et
+accès propres à un bot individuel, qui diffèrent forcément d'un bot à l'autre. `OPENAI_API_KEY`,
+`TWO_CAPTCHA_KEY`, `telegram_bot_token`, `telegram_chat_id`, `payout_name`, `payout_revolut_tag`
+n'y ont pas leur place : ce ne sont pas des clés `GLOBAL_CONFIG` (voir correction plus haut),
+mais elles ne varient pas non plus par bot — voir catégorie `PAR_RECEPTEUR` ci-dessous. Les
+dupliquer dans chaque entrée d'`accounts.json` (état initial du fichier) fonctionnait mais
+créait un risque de désynchronisation (clé modifiée sur un bot, oubliée sur un autre).
+
+### PAR_RECEPTEUR (nouvelle catégorie — appartient au récepteur, partagé entre tous ses bots et toutes ses machines, éditable par lui)
+Ressources propres au récepteur (comptes/services qu'il paie ou gère lui-même, ou son identité
+de paiement), mais **constantes entre tous les bots qu'il fait tourner, sur toutes ses
+machines** — une seule valeur logique par récepteur, pas une par bot ni une par machine. Ni
+figées à la compilation (le récepteur doit pouvoir les changer quand il veut), ni dupliquées
+par bot (source unique, pas de désynchronisation possible).
+
+Liste : `OPENAI_API_KEY`, `TWO_CAPTCHA_KEY` (ou `CAPSOLVER_API_KEY` selon le fournisseur
+retenu), `telegram_bot_token`, `telegram_chat_id`, `payout_name`, `payout_revolut_tag`.
+
+**Décision de structure (actée, à implémenter)** : nouveau fichier séparé, non versionné, non
+compilé — ex. `receiver_config.json` à la racine du dossier d'installation, à côté
+d'`accounts.json`. Lu une fois au démarrage par chaque bot de la machine (les valeurs sont
+partagées, pas besoin de les relire par bot). Édité directement par le récepteur avec un éditeur
+de texte — pas besoin d'un mécanisme d'import dédié comme pour `accounts.json`, puisqu'il n'y a
+qu'une seule instance de ce fichier par machine, pas une liste à valider bot par bot.
+
+**Point de vigilance propre à cette portée multi-machines** : comme il n'existe aucun mécanisme
+de synchronisation réseau entre les machines d'un même récepteur (chaque `receiver_config.json`
+est local à sa machine), c'est au récepteur de recopier manuellement le même fichier sur chacune
+de ses machines. Aucune garantie logicielle qu'il reste identique partout — à documenter côté
+utilisateur final (ex. dans les instructions d'installation), pas à résoudre par du code tant
+que ça reste 1 récepteur = quelques machines gérées à la main.
+
+**Statut : implémenté.**
+- `preselection/secret_loader.py` : ajout de `_from_receiver_config_file()`, qui lit
+  `receiver_config.json` (racine du dossier bot, à côté d'`accounts.json`) et le fusionne dans
+  `load_remote_secrets()` avec la priorité la plus basse de la pile (écrasable par
+  `TOPSURVEYS_SECRET_JSON`, puis par les ENV directs, puis par les overrides ENV nommés — ordre
+  inchangé, `receiver_config.json` vient juste combler le point de départ). Absence de fichier
+  = dict vide, silencieux, cas normal en dev/attach.
+- `receiver_config.example.json` : gabarit fourni au récepteur, avec les 6 clés `PAR_RECEPTEUR`.
+- `import_accounts.py` (voir section 7) : reconnaît désormais `payout_name`/`payout_revolut_tag`
+  comme clés `PAR_RECEPTEUR` (et non `PAR_BOT`) pour produire un message de rejet correct si
+  elles apparaissent par erreur dans un import `accounts.json`.
+
+**Incohérence détectée dans l'implémentation livrée, non corrigée ici (à traiter séparément)** :
+dans `secret_loader.py`, `_from_direct_env_keys()` lit les overrides ENV directs sous les clés
+`PAYOUT_NAME`, `PAYOUT_REVOLUT_TAG`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` (majuscules), alors
+que `_from_receiver_config_file()` et `_from_env_overrides()` produisent ces mêmes valeurs sous
+les clés `payout_name`, `payout_revolut_tag`, `telegram_bot_token`, `telegram_chat_id`
+(minuscules) — `OPENAI_API_KEY` n'a pas ce problème car déjà en majuscules des deux côtés. Avec
+la casse différente, `load_remote_secrets()` produit deux clés distinctes pour la même donnée
+logique au lieu d'une seule écrasée par priorité : la pile d'empilement documentée dans le
+docstring (receiver_config → JSON env → ENV directs → overrides nommés) ne fonctionne pas comme
+annoncé pour ces 4 clés précises. À corriger par patch dédié (harmonisation de la casse), pas
+dans le cadre de cette tâche.
+
+
 
 ### GLOBAL_CONFIG / GLOBAL_SECRET (constant entre toutes les instances, NE DOIT PAS être modifiable par le récepteur)
 Décision actée : ces variables seront compilées en dur dans le binaire (module Python
@@ -46,10 +110,10 @@ Décision actée : ces variables seront compilées en dur dans le binaire (modul
 fichier JSON externe éditable.
 
 Liste retenue (issue du tri effectué dans la conversation, hors `LICENSE_KEY`/`DATABASE_URL`/
-`BOT_VERSION` qui restent dans `_license_config.py` — voir section 3) :
+`BOT_VERSION` qui restent dans `_license_config.py` — voir section 3 ; hors `OPENAI_API_KEY`,
+`TWO_CAPTCHA_KEY`/`CAPSOLVER_API_KEY`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` qui relèvent
+désormais de `PAR_RECEPTEUR` ci-dessus, pas de cette catégorie) :
 
-- Secrets : `OPENAI_API_KEY`, `TWO_CAPTCHA_KEY` (ou `CAPSOLVER_API_KEY` selon le fournisseur
-  retenu — un seul des deux, pas les deux), `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`.
 - Config : `RUN_ENV`, `PLATFORM`, `STATE_BACKEND`, `STATE_TABLE`, `STATE_TTL_DAYS`,
   `SURVEY_BROWSER_BIN`, `SURVEY_HEADLESS`, `SURVEY_VISION_MODEL`,
   `CTA_INTERCEPT_ONLY` (confirmé = 0 en prod), `MAX_MAIN_CYCLES`,
@@ -439,8 +503,20 @@ couvre déjà tous les secrets nécessaires en dev/attach.
       auto-update → relance sur une seule machine avant généralisation aux 14 PC — en
       particulier le diagnostic `sys.executable`/`NUITKA_ONEFILE_BINARY` (voir section 4,
       point critique), à valider avant tout autre test.
-- [ ] Implémenter la fonctionnalité d'import JSON pour `accounts.json` côté logiciel, avec
-      validation de schéma (rejet/alerte si une clé `GLOBAL_CONFIG` y apparaît).
+- [x] Implémenter la fonctionnalité d'import JSON pour `accounts.json` côté logiciel. Fait via
+      `import_accounts.py` — script autonome, jamais embarqué dans le binaire Nuitka, remplace
+      entièrement `accounts.json` (avec sauvegarde `.bak` de l'ancien fichier), validation
+      indépendante par entrée (une entrée invalide est exclue, les autres sont importées),
+      résumé clair en fin d'exécution (succès + raisons de rejet). Reconnaît les clés
+      `PAR_RECEPTEUR`/`GLOBAL_CONFIG` glissées par erreur pour produire un message de rejet
+      explicite plutôt qu'un simple "clé inconnue".
+      **Bug de casse détecté dans le code livré en parallèle (`secret_loader.py`), non corrigé
+      ici** : `_from_direct_env_keys()` lit les overrides ENV sous les clés `PAYOUT_NAME`,
+      `PAYOUT_REVOLUT_TAG`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` (majuscules), alors que le
+      reste de la pile (`receiver_config.json`, overrides ENV nommés) produit ces mêmes valeurs
+      en minuscules (`payout_name`, `payout_revolut_tag`, `telegram_bot_token`,
+      `telegram_chat_id`) — voir section 2 pour le détail. Casse la logique de priorité
+      documentée pour ces 4 clés précises ; à corriger par patch dédié.
 - [ ] Allouer une IP publique à `surveybot-db`, configurer `pg_hba.conf`/SSL (`sslmode=require`),
       basculer `DATABASE_URL` sur `surveybot_client` avec le nouveau host public, tester en
       transaction annulée avant bascule définitive — voir section 8.
