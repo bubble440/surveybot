@@ -90,17 +90,15 @@ que ça reste 1 récepteur = quelques machines gérées à la main.
   comme clés `PAR_RECEPTEUR` (et non `PAR_BOT`) pour produire un message de rejet correct si
   elles apparaissent par erreur dans un import `accounts.json`.
 
-**Incohérence détectée dans l'implémentation livrée, non corrigée ici (à traiter séparément)** :
-dans `secret_loader.py`, `_from_direct_env_keys()` lit les overrides ENV directs sous les clés
-`PAYOUT_NAME`, `PAYOUT_REVOLUT_TAG`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` (majuscules), alors
-que `_from_receiver_config_file()` et `_from_env_overrides()` produisent ces mêmes valeurs sous
-les clés `payout_name`, `payout_revolut_tag`, `telegram_bot_token`, `telegram_chat_id`
-(minuscules) — `OPENAI_API_KEY` n'a pas ce problème car déjà en majuscules des deux côtés. Avec
-la casse différente, `load_remote_secrets()` produit deux clés distinctes pour la même donnée
-logique au lieu d'une seule écrasée par priorité : la pile d'empilement documentée dans le
-docstring (receiver_config → JSON env → ENV directs → overrides nommés) ne fonctionne pas comme
-annoncé pour ces 4 clés précises. À corriger par patch dédié (harmonisation de la casse), pas
-dans le cadre de cette tâche.
+**Bug de casse détecté dans l'implémentation livrée — corrigé.**
+`_from_direct_env_keys()` lisait `PAYOUT_NAME`, `PAYOUT_REVOLUT_TAG`, `TELEGRAM_BOT_TOKEN`,
+`TELEGRAM_CHAT_ID` (majuscules) alors que `_from_receiver_config_file()` et
+`_from_env_overrides()` produisaient ces mêmes valeurs en minuscules
+(`payout_name`, `payout_revolut_tag`, `telegram_bot_token`, `telegram_chat_id`) — la casse
+différente cassait la logique de priorité pour ces 4 clés. Corrigé : `_from_direct_env_keys()`
+remappe désormais explicitement le nom ENV (majuscules) vers la clé logique en minuscules avant
+insertion dans le résultat, avec commentaire expliquant pourquoi une casse unique est requise.
+`OPENAI_API_KEY` confirmé non concerné (casse déjà uniforme partout).
 
 
 
@@ -510,13 +508,11 @@ couvre déjà tous les secrets nécessaires en dev/attach.
       résumé clair en fin d'exécution (succès + raisons de rejet). Reconnaît les clés
       `PAR_RECEPTEUR`/`GLOBAL_CONFIG` glissées par erreur pour produire un message de rejet
       explicite plutôt qu'un simple "clé inconnue".
-      **Bug de casse détecté dans le code livré en parallèle (`secret_loader.py`), non corrigé
-      ici** : `_from_direct_env_keys()` lit les overrides ENV sous les clés `PAYOUT_NAME`,
-      `PAYOUT_REVOLUT_TAG`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` (majuscules), alors que le
-      reste de la pile (`receiver_config.json`, overrides ENV nommés) produit ces mêmes valeurs
-      en minuscules (`payout_name`, `payout_revolut_tag`, `telegram_bot_token`,
-      `telegram_chat_id`) — voir section 2 pour le détail. Casse la logique de priorité
-      documentée pour ces 4 clés précises ; à corriger par patch dédié.
+      **Bug de casse détecté puis corrigé** (voir section 2) : `_from_direct_env_keys()` dans
+      `secret_loader.py` remappe désormais explicitement `PAYOUT_NAME`/`PAYOUT_REVOLUT_TAG`/
+      `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID` vers leur clé logique en minuscules — la pile de
+      priorité (receiver_config → JSON env → ENV directs → overrides nommés) fonctionne
+      maintenant comme documenté pour ces 4 clés.
 - [ ] Allouer une IP publique à `surveybot-db`, configurer `pg_hba.conf`/SSL (`sslmode=require`),
       basculer `DATABASE_URL` sur `surveybot_client` avec le nouveau host public, tester en
       transaction annulée avant bascule définitive — voir section 8.
