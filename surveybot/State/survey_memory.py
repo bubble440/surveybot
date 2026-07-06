@@ -35,6 +35,12 @@ try:
 except ImportError:
     STATE_BACKEND = os.getenv("STATE_BACKEND", "")
 
+# Résolution centralisée (partagée avec preselection/license_guard.py et
+# State/account_state.py) : _license_config en priorité, os.getenv en dev/attach.
+from db_config import get_database_url
+
+DATABASE_URL = get_database_url()
+
 
 # ---------------------------------------------------------------------------
 # Backend helpers
@@ -43,13 +49,13 @@ except ImportError:
 def _pg_available() -> bool:
     return (
         STATE_BACKEND.strip().lower() == "postgres"
-        and bool(os.getenv("DATABASE_URL", "").strip())
+        and bool(DATABASE_URL)
     )
 
 
 def _get_conn():
     import psycopg2
-    conn = psycopg2.connect(os.getenv("DATABASE_URL", ""))
+    conn = psycopg2.connect(DATABASE_URL)
     conn.autocommit = False
     return conn
 

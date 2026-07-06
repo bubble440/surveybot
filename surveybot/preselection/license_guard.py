@@ -14,7 +14,6 @@ Logique :
 from __future__ import annotations
 
 import logging
-import os
 import sys
 
 log = logging.getLogger("license_guard")
@@ -33,14 +32,10 @@ def _get_license_key() -> str | None:
 
 
 def _get_database_url() -> str:
-    # DATABASE_URL embarquée dans le compilé via _license_config ou variable d'env
-    try:
-        from _license_config import DATABASE_URL as _DB  # type: ignore
-        if _DB and _DB.strip():
-            return _DB.strip()
-    except ImportError:
-        pass
-    return os.getenv("DATABASE_URL", "").strip()
+    # Résolution centralisée (partagée avec State/account_state.py et
+    # State/survey_memory.py) : _license_config en priorité, os.getenv en dev/attach.
+    from db_config import get_database_url
+    return get_database_url()
 
 
 # ---------------------------------------------------------------------------

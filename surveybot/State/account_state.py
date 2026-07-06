@@ -1,6 +1,7 @@
 from __future__ import annotations
 import os
 from config import RUN_ENV as _RUN_ENV
+from db_config import get_database_url
 
 # State/account_state.py
 """
@@ -17,7 +18,9 @@ Objectif:
 
 RUN_ENV = _RUN_ENV.lower()
 IS_LOCAL = RUN_ENV != "prod"  # True en attach (debug), False en prod
-DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
+# Résolution centralisée (partagée avec preselection/license_guard.py et
+# State/survey_memory.py) : _license_config en priorité, os.getenv en dev/attach.
+DATABASE_URL = get_database_url()
 
 # En environnement non-local (prod), le filesystem n'est PAS une source de vérité partagée.
 # Donc: pas de fallback fichier → Postgres doit être correctement configuré.

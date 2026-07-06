@@ -224,20 +224,46 @@ mécanisme de réinjection continue de fonctionner sans changement pour le reste
 - `preselection/playwright_launcher.py` : `SURVEY_BROWSER_BIN`, `SURVEY_HEADLESS`.
 - `update_checker.py` : `UPDATE_CHECK_ENABLED`, `UPDATE_MANIFEST_URL`.
 
-**Explicitement non touché lors de ce patch** (décision actée, hors périmètre — voir section 2) :
-`Survey/log_utils.py` (`LOG_LEVEL`, `LOG_STEP_SUMMARY` restent en `os.getenv` classique) et toute
-lecture de `CAPTCHA_PROVIDER`.
+**Deuxième patch — trou de sécurité détecté par audit, puis corrigé.** L'audit exhaustif (grep
+sur tous les `os.getenv` restants, voir méthode ci-dessous) a révélé que la première vague de
+migration avait laissé deux variables partiellement non protégées, dans des fichiers non
+couverts par le premier patch :
+- `RUN_ENV` : lu encore via `os.getenv` direct dans `Cash/payout.py`,
+  `preselection/auth_handler.py`, `State/account_state.py`, `Survey/action_dispatcher.py`,
+  `Survey/dom_extractors_decipher.py` (4 occurrences), `Survey/dom_extractors_misc.py`,
+  `Survey/page_snapshot.py` (2 occurrences).
+- `CTA_INTERCEPT_ONLY` : lu encore via `os.getenv` direct à 17 endroits, notamment
+  `Survey/action_dispatcher.py` (11 occurrences), `Cash/payout.py`,
+  `Management/guards/runtime_guard.py`, `preselection/question_analyzer.py`,
+  `preselection/survey_navigator.py`, `Survey/functions.py`, `Survey/survey_executor.py`.
+  Point le plus sensible de toute la liste `GLOBAL_CONFIG` : c'est l'interrupteur qui décide si
+  les clics CTA sont réels ou interceptés (y compris potentiellement sur le chemin de retrait) —
+  tant qu'il restait lisible via `os.getenv`, un tiers pouvait le neutraliser en définissant la
+  variable d'environnement avant le lancement du binaire compilé.
 
-**Point de vigilance non encore vérifié** : `preselection/auth_handler.py` lit aussi `RUN_ENV`
-(dans `_is_prod_env()`, pour distinguer prod/local à des fins de debug) — laissé tel quel
-volontairement lors de ce patch, à trancher séparément si on veut une lecture RUN_ENV unifiée
-partout ou si ce cas précis justifie de rester sur `os.getenv`.
+**Statut : patché et vérifié par audit.** Les deux variables ont été migrées vers le pattern
+import direct + fallback dev dans tous les fichiers listés ci-dessus. Un script d'audit
+PowerShell (grep de tout `os.getenv("X")` sur les noms `GLOBAL_CONFIG` migrés, avec détection
+heuristique de la présence d'un `from global_config import X` dans le même fichier pour
+distinguer un fallback légitime d'un consommateur oublié) a été passé après ce second patch :
+**0 occurrence à vérifier** — chaque `os.getenv` restant sur `RUN_ENV`, `CTA_INTERCEPT_ONLY`, et
+toutes les autres variables migrées correspond bien au point de définition unique dans le
+fichier qui importe `global_config` (le fallback `except ImportError` attendu), confirmé par
+relecture manuelle des lignes.
 
-**Non traité tant que le point de vigilance ci-dessus n'est pas tranché et qu'un audit exhaustif
-n'a pas été refait** : retirer `Utils/config` (fichier JSON externe) et sa lecture dans
-`config_loader.py`/`key_aliases`. Un audit de non-régression (recherche exhaustive de tout
-`os.getenv` restant sur les noms `GLOBAL_CONFIG` migrés) est recommandé avant de considérer la
-migration comme définitivement close.
+**Point de vigilance de la section précédente : clos.** `preselection/auth_handler.py` a bien
+été inclus dans ce second patch pour `RUN_ENV` ; l'audit confirme qu'il ne reste plus de lecture
+`os.getenv` isolée pour cette variable dans ce fichier.
+
+**Limite connue de l'audit, à garder en tête** : la détection est une heuristique texte (regex),
+pas une preuve formelle. Un import indirect (`import global_config as gc` puis `gc.RUN_ENV`) ou
+un alias ne serait pas détecté par le script actuel. Aucune occurrence de ce style n'a été
+observée dans le code à ce jour, mais si un futur patch en introduit une, l'audit devra être
+adapté en conséquence.
+
+**Toujours hors périmètre** (décision actée, voir section 2) : `Survey/log_utils.py`
+(`LOG_LEVEL`, `LOG_STEP_SUMMARY` restent en `os.getenv` classique) et toute lecture de
+`CAPTCHA_PROVIDER`.
 
 ---
 
@@ -255,15 +281,24 @@ migration comme définitivement close.
       le module compilé, avec fallback `os.getenv` uniquement en dev/attach — voir section 6
       pour la liste exhaustive des fichiers migrés. `config_loader.py` corrigé en parallèle :
       la boucle de réinjection `os.environ` ne couvre plus ces clés.
-- [ ] Point de vigilance ouvert par ce patch : trancher le cas de `RUN_ENV` dans
-      `preselection/auth_handler.py` (`_is_prod_env()`), laissé volontairement en `os.getenv`
-      — voir section 6.
-- [ ] Faire un audit exhaustif (grep complet) de tout `os.getenv` restant sur les noms
-      `GLOBAL_CONFIG` migrés, pour confirmer qu'aucun consommateur n'a été oublié, avant de
-      considérer retirer `Utils/config` (fichier JSON externe) et sa lecture dans
-      `config_loader.py`/`key_aliases`. Ne pas le faire avant cet audit, sous peine de casser
-      un consommateur non repéré.
-- [ ] Retirer `DATABASE_URL` de `key_aliases`/`config_loader.py` et du fichier `Utils/config`.
+- [x] Deuxième patch : corriger les lectures `os.getenv` directes de `RUN_ENV` et
+      `CTA_INTERCEPT_ONLY` détectées par audit dans des fichiers non couverts par le premier
+      patch (`Cash/payout.py`, `preselection/auth_handler.py`, `State/account_state.py`,
+      `Survey/action_dispatcher.py`, `Survey/dom_extractors_decipher.py`,
+      `Survey/dom_extractors_misc.py`, `Survey/page_snapshot.py`,
+      `Management/guards/runtime_guard.py`, `preselection/question_analyzer.py`,
+      `preselection/survey_navigator.py`, `Survey/functions.py`, `Survey/survey_executor.py`) —
+      voir section 6.
+- [x] Point de vigilance sur `RUN_ENV` dans `preselection/auth_handler.py` : clos par le
+      deuxième patch ci-dessus.
+- [x] Audit exhaustif (grep) de tout `os.getenv` restant sur les noms `GLOBAL_CONFIG` migrés :
+      réalisé après le deuxième patch, 0 occurrence à vérifier — voir section 6 pour la méthode
+      et ses limites connues (heuristique texte, pas une preuve formelle).
+- [ ] Considérer retirer `Utils/config` (fichier JSON externe) et sa lecture dans
+      `config_loader.py`/`key_aliases`, maintenant que l'audit ne montre plus de consommateur
+      manquant. Vérifier avant tout qu'aucune clé `PAR_BOT`/secret légitime ne dépend encore
+      exclusivement de ce fichier avant de le supprimer.
+
 - [ ] Aligner `State/account_state.py` et `State/survey_memory.py` sur la même logique de
       résolution que `license_guard._get_database_url()` (embarqué en priorité, fallback env
       pour le dev/attach uniquement) — en attendant le remplacement par l'endpoint serveur.

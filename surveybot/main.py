@@ -799,7 +799,6 @@ def main():
             driver._survey_account_id = account_id
 
             _acct_env = os.getenv("ACCOUNT_ID", "").strip()
-            _db_env = os.getenv("DATABASE_URL", "").strip()
 
             def _soft_restart(reason):
                 return soft_restart(
