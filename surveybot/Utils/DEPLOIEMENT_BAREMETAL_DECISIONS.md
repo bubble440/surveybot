@@ -104,6 +104,17 @@ sur tout le parc sans qu'aucune erreur ne soit visible. Corrigé : les deux impo
 de `_get_license_key()` pour qu'une régression future sur cet import soit visible dans les
 logs plutôt que de retomber silencieusement dans un mode qui contourne la licence.
 
+**Bug actif détecté (session Nuitka), non corrigé — tâche séparée requise.**
+`preselection/license_guard.py` importe toujours `from surveybot._license_config import
+LICENSE_KEY` (préfixe de package `surveybot` inexistant dans ce repo), alors que
+`db_config.py` fait l'import plat correct (`from _license_config import ...`). C'est très
+exactement le même bug que celui déjà corrigé une fois dans ce fichier (voir plus haut dans
+cette section) — réapparu ou jamais propagé à ce module. Conséquence : `check_license_or_exit()`
+échoue silencieusement à l'import (capturé par le `except ImportError` sans log réclamé par le
+point ouvert ci-dessus) et traite la situation comme un mode dev sans licence, désactivant de
+fait tout contrôle de quota sur le parc actuel. Indépendant du chantier Nuitka — à traiter comme
+patch dédié, pas dans le cadre du packaging.
+
 **Décision initiale (dépassée) sur `DATABASE_URL`** : un remplacement par un endpoint HTTP côté
 serveur avait été envisagé (le client n'enverrait que `LICENSE_KEY`, recevrait un simple
 booléen/statut, sans jamais voir la chaîne de connexion complète).
@@ -186,6 +197,55 @@ aux 14 PC. Point d'incertitude à vérifier spécifiquement : le comportement de
 `sys.executable` / l'auto-remplacement de l'exe (`_replace_exe_and_restart` dans
 `update_checker.py`) avec un binaire `--onefile` Nuitka, qui gère l'extraction de ses
 dépendances différemment de PyInstaller en interne.
+
+**Statut : patché côté configuration de build, test réel restant.** `surveybot.spec`
+(PyInstaller, non versionné) supprimé. Créé `nuitka_build.ps1` — commande de build
+`python -m nuitka main.py --onefile --output-dir=dist_nuitka --output-filename=surveybot.exe
+--windows-console-mode=force --follow-imports --assume-yes-for-downloads
+--include-module=_license_config --include-module=global_config --include-package=Survey
+--include-package=Management --include-package=preselection --include-package=captcha
+--include-package-data=playwright --include-package-data=botocore --include-package-data=boto3`.
+Prérequis machine de build : `pip install nuitka ordered-set zstandard` + compilateur C — soit
+Visual Studio Build Tools (détecté automatiquement par Nuitka), soit `-UseMinGW` sur le script
+(Nuitka télécharge son propre MinGW64 portable, aucune install manuelle).
+
+**Inclusions manuelles vérifiées (équivalent `hiddenimports`), pas supposées** :
+- `_license_config` / `global_config` : suivi automatique déjà probable (imports directs),
+  déclarés explicitement en défense en profondeur — une régression silencieuse sur ce point
+  ferait retomber licence/config sur les fallbacks `os.getenv` sans avertissement.
+- `hot_reload/hot_reload.py` : `importlib.import_module()` sur ~35 modules par nom de chaîne
+  (`Survey.*`, `preselection.*`, `Management.*`, `captcha.*`) — non suivi par l'analyse statique
+  de Nuitka. Couvert par `--include-package` sur les 4 packages concernés.
+- `playwright` : dossier `driver/` (binaire Node.js + JS, non-Python) requis à l'exécution,
+  jamais suivi par défaut → `--include-package-data=playwright` obligatoire.
+- `boto3`/`botocore` : modèles de service internes en JSON, chargés dynamiquement → package-data
+  requis, sinon `NoRegionError`/`UnknownServiceError` au runtime. Alourdit le binaire d'environ
+  70 Mo — à re-questionner si le snapshot S3 (`SNAP_ENABLED`) doit rester dans le binaire prod ou
+  passer dans un outil séparé (hors scope de ce patch).
+- `psycopg2-binary` : extension C + DLLs OpenSSL vendues, suivi automatique attendu en mode
+  standalone/onefile mais à confirmer explicitement au premier build réel (connexion Postgres).
+- `selenium`/`undetected-chromedriver` : plus aucun `import selenium` dans le code (migration
+  Playwright déjà faite) — rien à déclarer, ne seront pas embarqués malgré leur présence dans
+  `requirements.txt`.
+
+**Point critique non résolu, à traiter en premier lors du test réel** : le comportement de
+`sys.executable` dans un process onefile Nuitka n'est pas garanti identique à PyInstaller — il
+peut pointer vers le binaire extrait en dossier temporaire plutôt que vers l'exe distribué, ce
+qui casserait silencieusement `_replace_exe_and_restart` (renommage d'un fichier temporaire
+jetable, mise à jour perdue au redémarrage suivant). Nuitka expose pour ce cas la variable
+d'environnement `NUITKA_ONEFILE_BINARY` (chemin absolu de l'exe onefile réel). **Ne rien modifier
+dans `update_checker.py` avant d'avoir vérifié** — c'est la toute première étape du plan de test,
+avant même le cycle auto-update complet. Si le diagnostic montre un écart, seul changement
+autorisé : `current_exe = os.environ.get("NUITKA_ONEFILE_BINARY") or sys.executable` (fallback
+non intrusif, no-op en dev/attach où la variable est absente).
+
+**Bug hors-scope détecté au passage, non corrigé ici (tâche séparée)** :
+`preselection/license_guard.py` importe `from surveybot._license_config import LICENSE_KEY` —
+package `surveybot` inexistant dans ce repo, contrairement à `db_config.py` qui fait l'import
+plat correct. Conséquence : le contrôle de licence/quota est actuellement mort silencieusement
+sur tous les builds existants, y compris en prod (capturé par un `except ImportError` sans log,
+même défaut que celui déjà documenté en section 3). Indépendant du packaging — à traiter comme
+patch dédié.
 
 **Rejeté explicitement** : build unique par machine ("app non-décompilable car unique") —
 casse le mécanisme d'auto-update actuel (un seul `manifest.json`/SHA256 pour tout le parc) pour
@@ -373,8 +433,12 @@ couvre déjà tous les secrets nécessaires en dev/attach.
       (`surveybot_client`) + deux fonctions `SECURITY DEFINER` (`check_license`,
       `increment_license_payout`), côté serveur et côté client (`license_guard.py`,
       `payout.py`). Reste à faire : basculer `DATABASE_URL` sur ce rôle (voir section 8).
-- [ ] Basculer le pipeline de build de PyInstaller vers Nuitka ; tester le cycle complet
-      build → upload R2 → auto-update → relance sur une seule machine avant généralisation.
+- [x] Basculer le pipeline de build de PyInstaller vers Nuitka. `surveybot.spec` supprimé,
+      `nuitka_build.ps1` créé (voir section 4 pour la commande exacte et les inclusions
+      manuelles vérifiées). Reste à faire : tester le cycle complet build → upload R2 →
+      auto-update → relance sur une seule machine avant généralisation aux 14 PC — en
+      particulier le diagnostic `sys.executable`/`NUITKA_ONEFILE_BINARY` (voir section 4,
+      point critique), à valider avant tout autre test.
 - [ ] Implémenter la fonctionnalité d'import JSON pour `accounts.json` côté logiciel, avec
       validation de schéma (rejet/alerte si une clé `GLOBAL_CONFIG` y apparaît).
 - [ ] Allouer une IP publique à `surveybot-db`, configurer `pg_hba.conf`/SSL (`sslmode=require`),
