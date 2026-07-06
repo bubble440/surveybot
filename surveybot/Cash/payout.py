@@ -42,8 +42,8 @@ def _increment_license_payout(amount_eur: float) -> None:
         try:
             with conn.cursor() as cur:
                 cur.execute(
-                    "UPDATE licenses SET total_payout_eur = total_payout_eur + %s WHERE license_key = %s",
-                    (amount_eur, license_key),
+                    "SELECT increment_license_payout(%s, %s)",
+                    (license_key, amount_eur),
                 )
         finally:
             conn.close()

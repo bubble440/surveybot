@@ -69,11 +69,7 @@ def check_license_or_exit() -> None:
     try:
         with conn.cursor() as cur:
             cur.execute(
-                """
-                SELECT is_active, total_payout_eur, max_payout_eur
-                FROM licenses
-                WHERE license_key = %s
-                """,
+                "SELECT * FROM check_license(%s)",
                 (license_key,),
             )
             row = cur.fetchone()

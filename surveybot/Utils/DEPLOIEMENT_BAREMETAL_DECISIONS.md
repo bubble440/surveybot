@@ -104,13 +104,46 @@ sur tout le parc sans qu'aucune erreur ne soit visible. Corrigé : les deux impo
 de `_get_license_key()` pour qu'une régression future sur cet import soit visible dans les
 logs plutôt que de retomber silencieusement dans un mode qui contourne la licence.
 
-**Décision actée sur `DATABASE_URL`** : ne devrait à terme plus être embarquée du tout, ni dans
-`_license_config.py` ni ailleurs côté client. Remplacement prévu par un petit endpoint HTTP
-côté serveur (hébergé par exemple à côté du bucket R2) qui reçoit `LICENSE_KEY`, interroge
-Postgres côté serveur, et renvoie uniquement un résultat de validation (booléen/statut) —
-jamais la chaîne de connexion complète. Ainsi, même un binaire totalement décompilé ne donnerait
-jamais accès direct à la base centrale. **Non implémenté à ce stade — décision de principe
-actée, à planifier comme chantier séparé.**
+**Décision initiale (dépassée) sur `DATABASE_URL`** : un remplacement par un endpoint HTTP côté
+serveur avait été envisagé (le client n'enverrait que `LICENSE_KEY`, recevrait un simple
+booléen/statut, sans jamais voir la chaîne de connexion complète).
+
+**Décision finale actée et implémentée** : l'endpoint a été écarté. Il ne résolvait qu'une
+moitié du problème (la lecture du quota), alors que `payout.py` **écrit** aussi dans
+`licenses` (incrément de `total_payout_eur` après chaque retrait confirmé) — et `DATABASE_URL`
+doit de toute façon rester embarquée pour `account_state.py`/`survey_memory.py` (lock
+row-level, heartbeat, mémoire inter-bots : pas transposable en HTTP sans réarchitecture
+disproportionnée). Ajouter un endpoint n'aurait donc rien fermé : un récepteur ayant
+décompilé le binaire récupère `DATABASE_URL` de toute façon, endpoint ou pas, et peut agir
+directement sur `licenses` par un simple client Postgres — pour un coût d'infrastructure
+supplémentaire (service à héberger, monitorer, sécuriser) et un gain de sécurité nul.
+
+**Solution retenue, plus simple et effective** : restreindre les permissions Postgres
+elles-mêmes plutôt que d'ajouter une couche applicative. Un rôle dédié `surveybot_client`
+(celui utilisé par `DATABASE_URL` embarquée) a été créé côté serveur, avec :
+- accès `SELECT/INSERT/UPDATE` normal sur `account_state` et `survey_memory` (inchangé) ;
+- **aucun accès direct** (`REVOKE ALL`, y compris pour `PUBLIC`) sur la table `licenses` ;
+- deux fonctions SQL `SECURITY DEFINER`, seules portes d'entrée possibles sur `licenses` :
+  `check_license(license_key)` (lecture : `is_active`, `total_payout_eur`, `max_payout_eur`)
+  et `increment_license_payout(license_key, amount_eur)` (écriture bornée : montant strictement
+  compris entre 0 et 10 exclus/inclus, rejette toute valeur hors bornes).
+
+Avec ce rôle, même un binaire totalement décompilé qui révèle `DATABASE_URL` ne permet à un
+récepteur ni de lire, ni de modifier `licenses` directement — seulement d'appeler ces deux
+fonctions dans les limites qu'elles imposent (impossible de mettre `is_active = true` ou
+d'effacer son propre quota). L'objectif de la décision initiale est donc atteint sans ajouter
+aucun service, ni latence réseau supplémentaire au démarrage du bot.
+
+**Statut : implémenté côté serveur (SQL exécuté sur la base de prod `surveybot-db`, via
+`flyctl proxy` + Adminer) et côté client** (`license_guard.py` appelle désormais
+`check_license()`, `payout.py` appelle `increment_license_payout()`, plus aucune requête
+directe sur `licenses` dans le code applicatif).
+
+**Point ouvert, non encore fait** : le rôle `surveybot_client` n'est pas encore utilisé en
+pratique — `DATABASE_URL` dans `_license_config.py` doit être mise à jour avec ses identifiants
+avant le prochain build, et testée (connexion + `check_license`/`increment_license_payout` en
+transaction annulée) avant bascule définitive. Voir aussi section 8 (accès réseau) : ce nouveau
+`DATABASE_URL` ne peut être finalisé qu'après la décision sur l'exposition réseau de la base.
 
 **`LICENSE_KEY` reste embarquée**, propre à chaque récepteur. Sa compromission éventuelle
 (après décompilation réussie) reste contenue à ce récepteur — révocable unitairement via
@@ -335,11 +368,55 @@ couvre déjà tous les secrets nécessaires en dev/attach.
       dev/attach), consommé par les trois fichiers au lieu de dupliquer la logique. Voir
       section 3. Le remplacement par l'endpoint serveur (item suivant) reste un chantier
       séparé, non résolu par ce patch.
-- [ ] Concevoir et implémenter l'endpoint de validation de licence côté serveur (remplace la
-      connexion Postgres directe depuis le client pour la vérification de licence).
+- [x] Sécuriser l'accès à `licenses` depuis le client (remplace l'item "concevoir un endpoint
+      HTTP", écarté — voir section 3 pour le raisonnement). Fait via un rôle Postgres restreint
+      (`surveybot_client`) + deux fonctions `SECURITY DEFINER` (`check_license`,
+      `increment_license_payout`), côté serveur et côté client (`license_guard.py`,
+      `payout.py`). Reste à faire : basculer `DATABASE_URL` sur ce rôle (voir section 8).
 - [ ] Basculer le pipeline de build de PyInstaller vers Nuitka ; tester le cycle complet
       build → upload R2 → auto-update → relance sur une seule machine avant généralisation.
 - [ ] Implémenter la fonctionnalité d'import JSON pour `accounts.json` côté logiciel, avec
       validation de schéma (rejet/alerte si une clé `GLOBAL_CONFIG` y apparaît).
-- [ ] Nettoyer `accounts.json` des variables de diagnostic non-prod (`YSENSE_EMAIL`,
-      `YSENSE_PASSWORD`) si souhaité.
+- [ ] Allouer une IP publique à `surveybot-db`, configurer `pg_hba.conf`/SSL (`sslmode=require`),
+      basculer `DATABASE_URL` sur `surveybot_client` avec le nouveau host public, tester en
+      transaction annulée avant bascule définitive — voir section 8.
+
+---
+
+## 8. Accès réseau à la base Postgres depuis le parc bare-metal — décision actée
+
+**Contexte** : `DATABASE_URL` est partagée entre toutes les instances (une seule base centrale
+pour tout le parc, d'où le hardcoding). La base tourne sur Fly.io (`surveybot-db`), dont le
+hostname canonique (`surveybot-db.flycast`) n'est routable que depuis le réseau privé Fly.io
+(WireGuard/6PN) — pas depuis des mini-PC Windows bare-metal situés hors de ce réseau. Aucun
+déploiement prod n'existe encore à ce jour : la question doit être tranchée avant le premier
+déploiement, pas corrigée après coup.
+
+**Deux options considérées** :
+- **A — IP publique Fly.io + TLS obligatoire.** Allouer une IP publique à `surveybot-db`,
+  forcer les connexions chiffrées (`sslmode=require`), autoriser les connexions distantes.
+  `DATABASE_URL` devient directement joignable depuis n'importe quel mini-PC sans dépendance
+  réseau supplémentaire.
+- **B — VPN mesh (Tailscale/ZeroTier) partagé avec l'administration.** Réutiliser le mesh déjà
+  prévu pour l'administration multi-site (RDP/SSH, voir section "infrastructure" du projet)
+  pour aussi faire transiter l'accès à la base.
+
+**Décision actée : option A.** Coupler la disponibilité de la fonction cœur du bot (accès BD,
+nécessaire à chaque cycle pour tourner et retirer) à la disponibilité d'un VPN mesh tiers
+aurait introduit une dépendance disproportionnée : un incident ou un agent Tailscale down sur
+une machine aurait empêché cette machine de gagner de l'argent, pas seulement d'être
+administrée à distance. Un bot ne doit dépendre que du strict nécessaire pour fonctionner
+(proxy + Chrome + accès direct BD). Le risque de l'exposition publique est jugé acceptable
+car déjà borné par les permissions Postgres restreintes de la section 3 : en cas de fuite de
+`DATABASE_URL`, l'accès reste limité à `account_state`/`survey_memory` (gênant mais pas
+critique), avec zéro accès direct possible à `licenses`. Le mesh VPN reste pertinent et
+prévu pour l'administration (RDP/SSH), un besoin différent et non-bloquant pour les gains.
+
+**Statut : non implémenté.** Reste à faire, dans l'ordre : allouer une IP publique à
+`surveybot-db` (`flyctl ips allocate-v4`/`allocate-v6 -a surveybot-db`), configurer
+`pg_hba.conf` pour autoriser les connexions distantes avec `sslmode=require` forcé, construire
+la nouvelle `DATABASE_URL` avec ce host public et les identifiants `surveybot_client`, tester
+en transaction annulée (lecture `check_license`, écriture `increment_license_payout` suivie
+d'un rollback, plus vérification que `account_state`/`survey_memory` restent accessibles et que
+`licenses` reste inaccessible en direct) avant de committer dans `_license_config.py` et de
+déclencher un rebuild/déploiement.
