@@ -4,6 +4,7 @@ import time
 
 from preselection.auth_handler import handle_proxy_error_page_if_needed
 from Survey.log_utils import log_debug, log_info
+from config import is_cta_intercept_only
 
 # SNAP_ENABLED est une variable GLOBAL_CONFIG : en build compilé (Nuitka), elle provient
 # exclusivement de global_config.py, jamais de l'environnement du process (cf. config.py).
@@ -107,7 +108,7 @@ def _click_button_with_optional_intercept(driver, element) -> bool:
     element : Playwright ElementHandle
     """
     page = driver
-    if not _is_truthy_env(os.getenv("CTA_INTERCEPT_ONLY")):
+    if not is_cta_intercept_only():
         page.evaluate("(el) => el.click()", element)
         return True
 

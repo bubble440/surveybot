@@ -1,4 +1,5 @@
 import time, os, requests, base64, re
+from config import RUN_ENV
 
 # SNAP_ENABLED est une variable GLOBAL_CONFIG : en build compilé (Nuitka), elle provient
 # exclusivement de global_config.py, jamais de l'environnement du process (cf. config.py).
@@ -79,7 +80,7 @@ def _is_prod_env() -> bool:
     """
     Retourne True si on tourne dans un environnement de production (Fly.io/Docker).
     """
-    return os.getenv("RUN_ENV", "local").lower() != "local"
+    return RUN_ENV.lower() != "local"
 
 
 def dom_probe(driver):

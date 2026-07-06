@@ -1,6 +1,7 @@
 import time, os, unicodedata
 from preselection.question_validation import detect_disqualification_reason
 from Cash.payout import _payout_and_check_daily_stop
+from config import is_cta_intercept_only
 
 
 
@@ -143,7 +144,7 @@ def _handle_topsurveys_exclusion_popup(driver, account_id) -> bool: #survey_exec
 
     if btn:
         try:
-            if os.getenv("CTA_INTERCEPT_ONLY", "0") == "1":
+            if is_cta_intercept_only():
                 reason = "[TOPSURVEYS_POPUP] Bouton 'Complete' trouvé — interception OK (CTA_INTERCEPT_ONLY actif)"
                 print(reason)
                 _local_pause_before_cta(reason)

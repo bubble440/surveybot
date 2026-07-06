@@ -16,6 +16,7 @@ from __future__ import annotations
 from typing import List, Dict, Any, Set, Tuple
 import json, os, re, time, zlib
 from Survey.log_utils import log_debug, log_info, is_debug
+from config import RUN_ENV
 
 # Import des utilitaires
 try:
@@ -209,7 +210,7 @@ def _extract_angular_material_radio_groups(driver, frame_chain: list[int] | None
             )
             
         except Exception as e:
-            if os.getenv("RUN_ENV", "local") == "local":
+            if RUN_ENV == "local":
                 print(f"[DOM_ANALYZER][WARN] angular_material extract: {type(e).__name__}: {e}")
             continue
     

@@ -12,6 +12,7 @@ from enum import Enum
 from State.account_state import load_state, update_state, touch_heartbeat, _ts_add, _ts_to_unix
 from State.daily_target import DAILY_TARGET_EUR
 from Management.pause_policy import PausePolicy, resolve_pause_seconds
+from config import is_cta_intercept_only
 
 
 
@@ -139,7 +140,7 @@ class RuntimeGuard:
             cta.scroll_into_view_if_needed()
             time.sleep(5)  # laisser le temps à l'UI de réagir après scroll
 
-            if os.getenv("CTA_INTERCEPT_ONLY", "0") == "1":
+            if is_cta_intercept_only():
                 print("✅ CTA 'Ouvrir l'application' trouvé — interception OK (CTA_INTERCEPT_ONLY actif)")
                 self.record_success()
                 return True

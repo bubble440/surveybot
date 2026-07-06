@@ -51,11 +51,21 @@ Liste retenue (issue du tri effectué dans la conversation, hors `LICENSE_KEY`/`
 - Secrets : `OPENAI_API_KEY`, `TWO_CAPTCHA_KEY` (ou `CAPSOLVER_API_KEY` selon le fournisseur
   retenu — un seul des deux, pas les deux), `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`.
 - Config : `RUN_ENV`, `PLATFORM`, `STATE_BACKEND`, `STATE_TABLE`, `STATE_TTL_DAYS`,
-  `SURVEY_BROWSER_BIN`, `SURVEY_HEADLESS`, `SURVEY_VISION_MODEL`, `LOG_LEVEL`,
-  `LOG_STEP_SUMMARY`, `CTA_INTERCEPT_ONLY` (confirmé = 0 en prod), `MAX_MAIN_CYCLES`,
+  `SURVEY_BROWSER_BIN`, `SURVEY_HEADLESS`, `SURVEY_VISION_MODEL`,
+  `CTA_INTERCEPT_ONLY` (confirmé = 0 en prod), `MAX_MAIN_CYCLES`,
   `ACCOUNT_LOCK_TTL_SEC`, `HEARTBEAT_INTERVAL_SEC`, `HEARTBEAT_JITTER_SEC`,
   `DOM_FRAME_MAX_DEPTH`, `AA_MATRIX_MAX_ROWS`, `AA_SELECTION_LIST_MAX`, `MAX_ACTIONS_PER_PLAN`,
-  `CAPTCHA_PROVIDER`, `SNAP_ENABLED` (= 0), `UPDATE_CHECK_ENABLED`, `UPDATE_MANIFEST_URL`.
+  `SNAP_ENABLED` (= 0), `UPDATE_CHECK_ENABLED`, `UPDATE_MANIFEST_URL`.
+
+**Retrait décidé lors de l'implémentation** : `LOG_LEVEL`, `LOG_STEP_SUMMARY` et
+`CAPTCHA_PROVIDER` sortent finalement de la liste `GLOBAL_CONFIG`.
+- `LOG_LEVEL`/`LOG_STEP_SUMMARY` ne sont pas des clés de sécurité (rien à protéger contre
+  un tiers) — les figer dans le binaire compilé aurait ajouté de la rigidité opérationnelle
+  (impossible de debug un bot en prod sans recompiler) sans gagner en prédictibilité.
+  Restent en `os.getenv` classique, pilotables par bot via `accounts.json` si besoin.
+- `CAPTCHA_PROVIDER` : aucun consommateur direct trouvé dans le code au moment du patch.
+  Exclu de la migration ; à investiguer séparément (variable probablement morte, ou lue
+  ailleurs) avant de décider de sa catégorie définitive.
 
 **Exclu explicitement de cette liste** (variables `DEBUG_LOCAL`/attach uniquement, jamais lues
 en prod, à ne jamais mettre dans le fichier/module global) : `LOCAL_CTA_REQUIRE_ENTER`,
@@ -171,45 +181,63 @@ ces paramètres via `os.getenv(...)` avec la casse d'origine, sans jamais consul
 toute valeur définie uniquement dans le fichier de config globale était donc silencieusement
 ignorée.
 
-**Statut : patché.** `config_loader.py` réinjecte désormais chaque clé listée dans
-`key_aliases` dans `os.environ` via une boucle générique (pas de cas par cas), en respectant la
-priorité stricte (ne jamais écraser une valeur déjà présente dans l'environnement — donc jamais
-écraser ce que fournit `accounts.json`/le script de lancement). L'appel à `load_config()` dans
-`main.py` a été vérifié comme placé avant l'import de tout module qui lit des constantes au
-niveau module (ex: `State/account_state.py`, dont l'import est différé en local dans les
-fonctions).
+**Statut initial (dépassé) : réinjection généralisée.** Une première version du patch faisait
+réinjecter par `config_loader.py` chaque clé de `key_aliases` dans `os.environ` via une boucle
+générique. Cette approche a été identifiée comme incompatible avec la protection recherchée par
+`global_config.py` : tant qu'un mécanisme réinjecte une clé dans `os.environ`, un tiers peut
+définir cette variable d'environnement avant le lancement du binaire compilé et, selon l'ordre
+d'exécution, contourner la valeur figée à la compilation. Les deux mécanismes ne peuvent pas
+coexister sur les mêmes clés.
 
-**Statut : migration en cours vers `global_config.py`.** `global_config.py` créé (module à la
-racine du projet, à côté de `_license_config.py`, même convention d'import à plat — voir
-section 3bis) avec l'ensemble des constantes `GLOBAL_CONFIG`/`GLOBAL_SECRET` listées en
-section 2. `surveybot.spec` mis à jour (`hiddenimports=['_license_config', 'global_config']`).
+**Statut : migration terminée pour les variables non-exclues.** `global_config.py` créé (module
+à la racine du projet, à côté de `_license_config.py`, même convention d'import à plat — voir
+section 3) avec l'ensemble des constantes `GLOBAL_CONFIG` retenues en section 2 (hors
+`LOG_LEVEL`, `LOG_STEP_SUMMARY`, `CAPTCHA_PROVIDER`, explicitement exclus — voir section 2).
+`surveybot.spec` mis à jour (`hiddenimports=['_license_config', 'global_config']`).
 
-Convention de migration actée pour chaque consommateur : `try: from global_config import X /
+Convention de migration appliquée à chaque consommateur : `try: from global_config import X /
 except ImportError: fallback os.getenv("X", défaut)` — garantit qu'en build compilé (module
 forcé par `hiddenimports`) l'import réussit toujours et l'environnement n'est jamais consulté
 pour ces noms, tout en gardant le workflow dev/attach intact (module absent en local → fallback
 naturel). Les variables `PAR_BOT` ne sont pas concernées et continuent d'être lues depuis
 l'environnement du process — c'est leur mécanisme de transmission légitime.
 
-**Déjà migrés vers `global_config.py` avec cette convention** :
-- `config.py` : `RUN_ENV`, `CTA_INTERCEPT_ONLY` (via `is_cta_intercept_only()`).
+**`config_loader.py` corrigé en conséquence** : la boucle de réinjection dans `os.environ` a été
+retirée pour les clés désormais couvertes par `global_config.py` (`RUN_ENV`, `PLATFORM`,
+`STATE_BACKEND`, `STATE_TABLE`, `STATE_TTL_DAYS`, `SURVEY_BROWSER_BIN`, `SURVEY_HEADLESS`,
+`SNAP_ENABLED`, `UPDATE_CHECK_ENABLED`, `UPDATE_MANIFEST_URL`, `CTA_INTERCEPT_ONLY`). Le
+mécanisme de réinjection continue de fonctionner sans changement pour le reste des clés
+`PAR_BOT`/secrets (`EMAIL`, `PASSWORD`, `OPENAI_API_KEY`, `DATABASE_URL`, `LICENSE_KEY`,
+`payout_name`, `payout_revolut_tag`, `telegram_*`, `TWO_CAPTCHA_KEY`, `SURVEY_TZ`,
+`ACTION_DEBUG_TARGET`, `DOM_CONTEXT_DEBUG`, `SURVEY_CTX_DEBUG`).
 
-**Consommateurs restants — À FAIRE, un par un** (recensés par grep sur les noms de variables
-`GLOBAL_CONFIG`/`GLOBAL_SECRET` listés en section 2, à vérifier exhaustivement au moment de
-chaque patch) :
-- [ ] `State/account_state.py` — `STATE_BACKEND`, `STATE_TABLE`, `STATE_TTL_DAYS`.
-- [ ] `State/survey_memory.py` — `STATE_BACKEND` (vérifier usage exact).
-- [ ] `Survey/log_utils.py` — `LOG_LEVEL`, `LOG_STEP_SUMMARY`.
-- [ ] `preselection/playwright_launcher.py` — `SURVEY_BROWSER_BIN`, `SURVEY_HEADLESS`.
-- [ ] `Management/snap_uploader.py`/`Survey/page_snapshot.py` — `SNAP_ENABLED`.
-- [ ] `update_checker.py` — `UPDATE_CHECK_ENABLED`, `UPDATE_MANIFEST_URL`.
-- [ ] `PLATFORM` — module(s) consommateur(s) à identifier.
+**Migrés vers `global_config.py` avec la convention import direct + fallback dev** :
+- `config.py` : `RUN_ENV`, `CTA_INTERCEPT_ONLY` (via `is_cta_intercept_only()`) — fait en premier,
+  a servi de pattern de référence.
+- `platforms/__init__.py`, `main.py` : `PLATFORM`.
+- `preselection/auth_handler.py`, `preselection/survey_handler.py`,
+  `preselection/survey_navigator.py`, `Survey/survey_solver.py`, `Management/snap_uploader.py`,
+  `launch.py` : `SNAP_ENABLED`.
+- `State/account_state.py` : `STATE_BACKEND`, `STATE_TABLE`, `STATE_TTL_DAYS`, `RUN_ENV`.
+- `State/survey_memory.py` : `STATE_BACKEND`.
+- `Cash/payout.py`, `Survey/page_snapshot.py` : `RUN_ENV`.
+- `preselection/playwright_launcher.py` : `SURVEY_BROWSER_BIN`, `SURVEY_HEADLESS`.
+- `update_checker.py` : `UPDATE_CHECK_ENABLED`, `UPDATE_MANIFEST_URL`.
 
-**Non traité tant que ces migrations ne sont pas faites** : retirer `Utils/config` (fichier JSON
-externe) et sa lecture dans `config_loader.py`/`key_aliases` — tant qu'un seul consommateur lit
-encore via `os.getenv` sans fallback sur `global_config`, supprimer le fichier JSON externe
-casserait ce consommateur en prod. Ne pas retirer `Utils/config` avant migration complète de la
-liste ci-dessus.
+**Explicitement non touché lors de ce patch** (décision actée, hors périmètre — voir section 2) :
+`Survey/log_utils.py` (`LOG_LEVEL`, `LOG_STEP_SUMMARY` restent en `os.getenv` classique) et toute
+lecture de `CAPTCHA_PROVIDER`.
+
+**Point de vigilance non encore vérifié** : `preselection/auth_handler.py` lit aussi `RUN_ENV`
+(dans `_is_prod_env()`, pour distinguer prod/local à des fins de debug) — laissé tel quel
+volontairement lors de ce patch, à trancher séparément si on veut une lecture RUN_ENV unifiée
+partout ou si ce cas précis justifie de rester sur `os.getenv`.
+
+**Non traité tant que le point de vigilance ci-dessus n'est pas tranché et qu'un audit exhaustif
+n'a pas été refait** : retirer `Utils/config` (fichier JSON externe) et sa lecture dans
+`config_loader.py`/`key_aliases`. Un audit de non-régression (recherche exhaustive de tout
+`os.getenv` restant sur les noms `GLOBAL_CONFIG` migrés) est recommandé avant de considérer la
+migration comme définitivement close.
 
 ---
 
@@ -222,15 +250,19 @@ liste ci-dessus.
       section 2. Ajouté à `hiddenimports` dans `surveybot.spec`.
 - [ ] Ajouter un `log.warning` dans le `except ImportError` de `license_guard._get_license_key()`
       pour rendre visible toute régression future sur cet import (voir section 3).
-- [ ] **EN COURS** — Modifier le code consommateur de ces variables pour lire exclusivement le
-      module compilé (pas de fallback `os.getenv` pour ces noms précis) — voir section 6 pour
-      la liste détaillée des consommateurs restants et la convention de migration actée.
-      `config.py` (`RUN_ENV`, `CTA_INTERCEPT_ONLY`) déjà fait ; le reste de la liste (captcha,
-      state, log_utils, notifier, playwright_launcher, screenshot_analyzer, runtime_guard,
-      snap_uploader, update_checker...) reste à faire, un fichier à la fois.
-- [ ] Une fois la migration ci-dessus complète : retirer `Utils/config` (fichier JSON externe)
-      et sa lecture dans `config_loader.py`/`key_aliases`. Ne pas le faire avant, sous peine de
-      casser tout consommateur encore non migré.
+- [x] Modifier le code consommateur des variables `GLOBAL_CONFIG` retenues (hors `LOG_LEVEL`,
+      `LOG_STEP_SUMMARY`, `CAPTCHA_PROVIDER`, exclus — voir section 2) pour lire exclusivement
+      le module compilé, avec fallback `os.getenv` uniquement en dev/attach — voir section 6
+      pour la liste exhaustive des fichiers migrés. `config_loader.py` corrigé en parallèle :
+      la boucle de réinjection `os.environ` ne couvre plus ces clés.
+- [ ] Point de vigilance ouvert par ce patch : trancher le cas de `RUN_ENV` dans
+      `preselection/auth_handler.py` (`_is_prod_env()`), laissé volontairement en `os.getenv`
+      — voir section 6.
+- [ ] Faire un audit exhaustif (grep complet) de tout `os.getenv` restant sur les noms
+      `GLOBAL_CONFIG` migrés, pour confirmer qu'aucun consommateur n'a été oublié, avant de
+      considérer retirer `Utils/config` (fichier JSON externe) et sa lecture dans
+      `config_loader.py`/`key_aliases`. Ne pas le faire avant cet audit, sous peine de casser
+      un consommateur non repéré.
 - [ ] Retirer `DATABASE_URL` de `key_aliases`/`config_loader.py` et du fichier `Utils/config`.
 - [ ] Aligner `State/account_state.py` et `State/survey_memory.py` sur la même logique de
       résolution que `license_guard._get_database_url()` (embarqué en priorité, fallback env

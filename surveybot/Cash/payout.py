@@ -7,11 +7,12 @@ from State.account_state import update_state, load_state
 from State.daily_target import DAILY_TARGET_EUR, record_daily_earning_and_target, init_daily_balance_target, today_str
 from Management.guards.runtime_guard import get_guard
 from Management.notifier import send_telegram
+from config import RUN_ENV, is_cta_intercept_only
 # Seuil minimal réel pour déclencher un encaissement sur TopSurveys.
 # Le modal ne propose que des options >= 5 €, donc ouvrir en dessous est inutile.
 MIN_CASHOUT_EUR = 5.0
 
-IS_LOCAL = os.getenv("RUN_ENV", "local") == "local"
+IS_LOCAL = RUN_ENV == "local"
 
 
 # ---------- Licence ----------
@@ -97,7 +98,7 @@ def _notify_cashout_result(
 
 def _js_click(driver, el):
     el.scroll_into_view_if_needed()
-    if os.getenv("CTA_INTERCEPT_ONLY", "0") == "1":
+    if is_cta_intercept_only():
         print("[PAYOUT] CTA trouvé — interception OK (CTA_INTERCEPT_ONLY actif)")
         time.sleep(3)
         return
@@ -180,7 +181,7 @@ def _select_money_option_in_open_tab(driver, tab_el, amount="5") -> bool:
             # 1) scroll + click (conditionné CTA_INTERCEPT_ONLY)
             wrapper.scroll_into_view_if_needed()
             time.sleep(5)
-            if os.getenv("CTA_INTERCEPT_ONLY", "0") == "1":
+            if is_cta_intercept_only():
                 print("[PAYOUT] CTA reward-option trouvé — interception OK (CTA_INTERCEPT_ONLY actif)")
                 return True
             try:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 import os
+from config import RUN_ENV as _RUN_ENV
 
 # State/account_state.py
 """
@@ -14,7 +15,7 @@ Objectif:
 
 # State/account_state.py
 
-RUN_ENV = os.getenv("RUN_ENV", "prod").lower()
+RUN_ENV = _RUN_ENV.lower()
 IS_LOCAL = RUN_ENV != "prod"  # True en attach (debug), False en prod
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 

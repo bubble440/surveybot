@@ -4,6 +4,7 @@ import Survey.input_handler
 from Survey.dom_registry import get_target
 from typing import Optional
 from Survey.log_utils import is_debug, log_debug, log_info
+from config import RUN_ENV, is_cta_intercept_only
 
 
 
@@ -3110,7 +3111,7 @@ def _apply_by_target_id(
                     if not next_xpath:
                         return
 
-                    intercept_only = (os.getenv("CTA_INTERCEPT_ONLY", "") or "").strip().lower() in {"1", "true", "yes", "on"}
+                    intercept_only = is_cta_intercept_only()
                     moved = False
                     found_clickable_next = False
                     for _ in range(2):
@@ -4479,7 +4480,7 @@ def handle_datadiggers_icontrol_final_screen(driver):
     import time
     from Survey.log_utils import log_info, log_debug
 
-    intercept_only = (os.getenv("CTA_INTERCEPT_ONLY", "") or "").strip().lower() in {"1", "true", "yes", "on"}
+    intercept_only = is_cta_intercept_only()
 
     try:
         btn = driver.query_selector("div.wrap.infrmtion button.next_btn[translate='srvyFinal.btnLtsDo']")
@@ -4540,7 +4541,7 @@ def handle_prodege_data_privacy_screen(driver):
     import time
     from Survey.log_utils import log_info, log_debug
 
-    intercept_only = (os.getenv("CTA_INTERCEPT_ONLY", "") or "").strip().lower() in {"1", "true", "yes", "on"}
+    intercept_only = is_cta_intercept_only()
 
     # Vérification guard strict
     try:
@@ -4679,7 +4680,7 @@ def handle_consent_screen(driver):
             return False
 
         print("[CONSENT][TOLUNA] detected")
-        intercept_only = (os.getenv("CTA_INTERCEPT_ONLY", "") or "").strip().lower() in {"1", "true", "yes", "on"}
+        intercept_only = is_cta_intercept_only()
 
         for _ in range(2):
             try:
@@ -4894,7 +4895,7 @@ def handle_consent_screen(driver):
             return False
 
         print("[CONSENT][CINT] detected")
-        intercept_only = (os.getenv("CTA_INTERCEPT_ONLY", "") or "").strip().lower() in {"1", "true", "yes", "on"}
+        intercept_only = is_cta_intercept_only()
 
         # Budget anti-boucle: max 2 passes pour forcer l'état checked + événements DOM.
         for _ in range(2):
@@ -5035,7 +5036,7 @@ def handle_consent_screen(driver):
 
     def _handle_ipsos_privacy_policy_page() -> bool:
         # Détection volontairement stricte (évite les faux positifs sur d'autres consent screens)
-        intercept_only = (os.getenv("CTA_INTERCEPT_ONLY", "") or "").strip().lower() in {"1", "true", "yes", "on"}
+        intercept_only = is_cta_intercept_only()
         cta = driver.query_selector("a.btn.btn-primary[id^='acceptAndTakeSurveyLink']")
         if cta is None:
             if intercept_only:
@@ -5199,7 +5200,7 @@ def handle_consent_screen(driver):
         except Exception:
             return False
 
-        intercept_only = (os.getenv("CTA_INTERCEPT_ONLY", "") or "").strip().lower() in {"1", "true", "yes", "on"}
+        intercept_only = is_cta_intercept_only()
         if intercept_only:
             label = _norm_lc(btn.get_attribute("value") or btn.inner_text() or "suivant")
             try:
@@ -5243,7 +5244,7 @@ def handle_consent_screen(driver):
         except Exception:
             return False
 
-        intercept_only = (os.getenv("CTA_INTERCEPT_ONLY", "") or "").strip().lower() in {"1", "true", "yes", "on"}
+        intercept_only = is_cta_intercept_only()
         if intercept_only:
             label = _norm_lc(btn.get_attribute("value") or btn.inner_text() or "suivant")
             try:
@@ -5299,7 +5300,7 @@ def handle_consent_screen(driver):
         except Exception:
             return False
 
-        intercept_only = (os.getenv("CTA_INTERCEPT_ONLY", "") or "").strip().lower() in {"1", "true", "yes", "on"}
+        intercept_only = is_cta_intercept_only()
         if intercept_only:
             label = _norm_lc(btn.inner_text() or "allons-y")
             log_info("CONSENT", f"CTA_INTERCEPT_ONLY: interception angular survey-final CTA '{label}'")
@@ -5374,7 +5375,7 @@ def handle_consent_screen(driver):
             btn = cands[0]
             # En mode CTA_INTERCEPT_ONLY=1 (tests/non-régression), on force un clic via input_handler
             # pour que le CTA passe par cta_handler et soit intercepté.
-            intercept_only = (os.getenv("CTA_INTERCEPT_ONLY", "") or "").strip().lower() in {"1", "true", "yes", "on"}
+            intercept_only = is_cta_intercept_only()
             try:
                 if intercept_only:
                     label = _norm_lc(btn.inner_text() or btn.get_attribute('value') or "")
@@ -5484,7 +5485,7 @@ def handle_drag_drop_logic(driver):
         return True
 
     def _attempt_cta_once() -> bool:
-        intercept_only = (os.getenv("CTA_INTERCEPT_ONLY", "") or "").strip().lower() in {"1", "true", "yes", "on"}
+        intercept_only = is_cta_intercept_only()
         cta_found = False
         try:
             candidates = driver.query_selector_all("button[aria-label='Go to next question']")
@@ -5605,7 +5606,7 @@ def handle_drag_drop_logic(driver):
 
         offsets = [(0, 0), (15, 0)]
         can_use_cdp = hasattr(driver, "execute_cdp_cmd")
-        is_local_env = (os.getenv("RUN_ENV", "prod") or "prod").strip().lower() != "prod"
+        is_local_env = RUN_ENV.strip().lower() != "prod"
         for idx, (ox, oy) in enumerate(offsets, start=1):
             print(f"[DRAGDROP] attempt={idx} start")
             try:
@@ -5780,7 +5781,7 @@ def handle_error_recovery_screen(driver):
 
     TAG = "error_recovery"
 
-    intercept_only = (os.getenv("CTA_INTERCEPT_ONLY", "") or "").strip().lower() in ("1", "true", "yes", "on")
+    intercept_only = is_cta_intercept_only()
 
     try:
         btn = driver.query_selector("#confirmation-button")

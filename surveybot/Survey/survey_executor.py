@@ -2,6 +2,7 @@ import re, openai, time, unicodedata, os, sys, hashlib, tempfile
 from urllib.parse import urlsplit
 from Survey.log_utils import log_debug, log_info
 from Survey.functions import _handle_topsurveys_exclusion_popup
+from config import is_cta_intercept_only
 
 
 
@@ -1461,7 +1462,7 @@ def _handle_phone_verification(driver):
         log_info("[PHONE_VERIF]", "Bouton Suivant introuvable après saisie")
         return False
 
-    if _env_truthy("CTA_INTERCEPT_ONLY"):
+    if is_cta_intercept_only():
         is_disabled = btn.get_attribute("disabled") is not None
         status = "disabled" if is_disabled else "enabled"
         log_info("[PHONE_VERIF]", f"CTA_INTERCEPT_ONLY — bouton={status}, interception OK sans navigation")
@@ -1564,7 +1565,7 @@ def _handle_pin_verification(driver):
         log_info("[PIN_VERIF]", "Bouton Confirmer toujours désactivé après 3s — abandon")
         return False
 
-    if _env_truthy("CTA_INTERCEPT_ONLY"):
+    if is_cta_intercept_only():
         log_info("[PIN_VERIF]", "CTA_INTERCEPT_ONLY — interception OK, bouton Confirmer enabled, pas de clic")
         return True
 
@@ -1803,7 +1804,7 @@ def execute_survey_page(driver, account_id, api_key, ctx=None):
     if video_gate_state == "soft_restart":
         return True
     if video_gate_state == "resolved":
-        intercept_only = _env_truthy("CTA_INTERCEPT_ONLY")
+        intercept_only = is_cta_intercept_only()
         try:
             before_url = page.url
             before_sig = redirect_watcher._dom_signature(driver)
@@ -1836,7 +1837,7 @@ def execute_survey_page(driver, account_id, api_key, ctx=None):
         return False
     if image_only_abort == "random_selected":
         print("[DOM_ONLY_ABORT] image_only_wrapped_inputs random_selected -> CTA direct")
-        intercept_only = _env_truthy("CTA_INTERCEPT_ONLY")
+        intercept_only = is_cta_intercept_only()
         try:
             before_url = page.url
             before_sig = redirect_watcher._dom_signature(driver)
@@ -1865,7 +1866,7 @@ def execute_survey_page(driver, account_id, api_key, ctx=None):
     try:
         if question_blocks and _handle_cf_carousel_image_blocks(driver, question_blocks, api_key):
             print("[CF_CAROUSEL_VISION] Blocs traités avec succès -> CTA")
-            intercept_only = _env_truthy("CTA_INTERCEPT_ONLY")
+            intercept_only = is_cta_intercept_only()
             try:
                 before_url = page.url
                 before_sig = redirect_watcher._dom_signature(driver)
@@ -2149,7 +2150,7 @@ def execute_survey_page(driver, account_id, api_key, ctx=None):
                             continue
 
                         btn.evaluate("(el) => el.scrollIntoView({block:'center'})")
-                        intercept_only = (os.getenv("CTA_INTERCEPT_ONLY", "") or "").strip().lower() in {"1", "true", "yes", "on"}
+                        intercept_only = is_cta_intercept_only()
                         if intercept_only:
                             clicked = input_handler.try_click_navigation_cta_any_context(driver)
                             if not clicked:
@@ -2200,7 +2201,7 @@ def execute_survey_page(driver, account_id, api_key, ctx=None):
                         pass
             # Phase 3: CTA structurel (mrIWeb mrNext, etc.)
             if not clicked:
-                cta_intercept_only = _env_truthy("CTA_INTERCEPT_ONLY", "0")
+                cta_intercept_only = is_cta_intercept_only()
                 try:
                     if cta_intercept_only:
                         _btn = page.query_selector("input[type='submit'][name='_NNext']")

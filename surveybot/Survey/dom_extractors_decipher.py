@@ -14,6 +14,7 @@ from __future__ import annotations
 from typing import List, Dict, Any, Set
 import os
 import re
+from config import RUN_ENV
 
 # Import des utilitaires
 try:
@@ -713,7 +714,7 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
                 if (inps[0].get_attribute("type") or "").strip().lower() == "checkbox":
                     itype = "checkbox"
             except Exception as e:
-                if os.getenv("RUN_ENV", "local") == "local":
+                if RUN_ENV == "local":
                     print(f"[DOM_ANALYZER][WARN] focusvision extract: {type(e).__name__}: {e}")
                 continue
 
@@ -835,7 +836,7 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
                             if oe_name:
                                 aux_openended_input_names.add(oe_name)
                     else:
-                        if os.getenv("RUN_ENV", "local") == "local":
+                        if RUN_ENV == "local":
                             pass
                         continue
 
@@ -1583,12 +1584,12 @@ def _extract_decipher_answers_list_fallback(driver, frame_chain: List[Any]) -> L
                     })
 
             except Exception as e:
-                if os.getenv("RUN_ENV", "local") == "local":
+                if RUN_ENV == "local":
                     print(f"[DOM_ANALYZER][WARN] decipher fallback: {type(e).__name__}: {e}")
                 continue
 
     except Exception as e:
-        if os.getenv("RUN_ENV", "local") == "local":
+        if RUN_ENV == "local":
             print(f"[DOM_ANALYZER][ERROR] decipher fallback outer: {type(e).__name__}: {e}")
 
     return blocks

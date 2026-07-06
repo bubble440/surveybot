@@ -4,6 +4,7 @@ from bs4 import BeautifulSoup
 import os, time, re, unicodedata
 from preselection.question_validation import detect_disqualification_reason
 from Survey.log_utils import log_debug, log_info
+from config import is_cta_intercept_only
 
 
 
@@ -580,7 +581,7 @@ def click_participer_if_qualified(driver):
             base_handles = set(page.context.pages)
 
             # CTA_INTERCEPT_ONLY : interception sans navigation (tests/non-régression)
-            if os.getenv("CTA_INTERCEPT_ONLY", "0") == "1":
+            if is_cta_intercept_only():
                 print("🛑 CTA_INTERCEPT_ONLY=1 — bouton 'Participer' trouvé, interception OK sans clic.")
                 return False
 
