@@ -87,20 +87,47 @@ def _from_env_overrides() -> dict:
     return out
 
 def _from_direct_env_keys() -> dict:
+    """
+    ENV unitaires directs. Par défaut, la clé de sortie est le nom de la variable ENV
+    telle quelle (ex: EMAIL, PASSWORD, PROXY_URL, ACCOUNT_ID — clés PAR_BOT).
+
+    Pour 4 des clés PAR_RECEPTEUR (payout_name, payout_revolut_tag, telegram_bot_token,
+    telegram_chat_id), la clé de sortie DOIT rester en minuscules : c'est la convention
+    déjà utilisée par receiver_config.json (_from_receiver_config_file) et par
+    _from_env_overrides() ci-dessous, et c'est la seule casse lue par le code
+    consommateur (config.get("payout_name"), os.getenv("telegram_bot_token"), ...).
+    Historiquement ces 4 clés étaient stockées ici sous le nom ENV en MAJUSCULES : une
+    source de priorité plus haute écrivait alors sous une clé jamais relue par personne,
+    au lieu d'écraser la valeur de la source de priorité plus basse dans
+    load_remote_secrets() — cassant la logique d'empilement par priorité pour ces
+    4 clés precisement. OPENAI_API_KEY n'a pas ce problème (casse déjà uniforme
+    partout, y compris ici) et n'est donc pas concernée par ce remappage.
+    """
     keys = [
         "EMAIL", "PASSWORD",
         "PROXY_URL", "PROXY_USER", "PROXY_PASS",
         "GEO_LAT", "GEO_LON",
         "SURVEY_LANG", "SURVEY_TZ",
         "ACCOUNT_ID",
-        "OPENAI_API_KEY", "PAYOUT_NAME", "PAYOUT_REVOLUT_TAG",
-        "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID",
+        "OPENAI_API_KEY",
     ]
     out = {}
     for k in keys:
         v = os.getenv(k)
         if v is not None and v != "":
             out[k] = v
+
+    # ENV (nom en MAJUSCULES) -> clé logique en minuscules (cf. docstring ci-dessus)
+    receiver_env_keys = {
+        "PAYOUT_NAME": "payout_name",
+        "PAYOUT_REVOLUT_TAG": "payout_revolut_tag",
+        "TELEGRAM_BOT_TOKEN": "telegram_bot_token",
+        "TELEGRAM_CHAT_ID": "telegram_chat_id",
+    }
+    for envvar, logical_key in receiver_env_keys.items():
+        v = os.getenv(envvar)
+        if v is not None and v != "":
+            out[logical_key] = v
     return out
 
 def load_remote_secrets() -> dict:
