@@ -72,6 +72,16 @@ def load_config() -> dict:
         if src in merged:
             merged[dst] = merged[src]
 
+    # Variables GLOBAL_CONFIG : source unique de vérité = import direct depuis
+    # global_config.py (cf. config.py). Jamais réinjectées dans os.environ ici —
+    # un fallback os.getenv les rendrait écrasables via une variable d'environnement
+    # définie avant le lancement du bot, ce qui annulerait la protection du build figé.
+    _GLOBAL_CONFIG_KEYS = {
+        "PLATFORM", "STATE_BACKEND", "STATE_TABLE", "STATE_TTL_DAYS",
+        "SURVEY_BROWSER_BIN", "SURVEY_HEADLESS", "SNAP_ENABLED",
+        "UPDATE_CHECK_ENABLED", "UPDATE_MANIFEST_URL",
+    }
+
     # 🧩 Réinjection dans os.environ (mécanisme centralisé unique).
     # Tout le code applicatif (State/account_state.py, Survey/log_utils.py,
     # captcha/recaptcha_handler.py, preselection/license_guard.py, ...) lit ces
@@ -83,6 +93,8 @@ def load_config() -> dict:
     # dans os.environ (accounts.json, script de lancement, secrets Fly.io, ...).
     _injected = 0
     for src, dst in key_aliases.items():
+        if src in _GLOBAL_CONFIG_KEYS:
+            continue
         if src in os.environ:
             continue
         val = merged.get(dst)

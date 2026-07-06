@@ -27,6 +27,14 @@ log = logging.getLogger("survey_memory")
 
 _TTL_HOURS = 3
 
+# STATE_BACKEND est une variable GLOBAL_CONFIG : en build compilé (Nuitka), elle provient
+# exclusivement de global_config.py, jamais de l'environnement du process (cf. config.py).
+# En dev/attach (global_config.py absent du projet), fallback os.getenv.
+try:
+    from global_config import STATE_BACKEND  # type: ignore
+except ImportError:
+    STATE_BACKEND = os.getenv("STATE_BACKEND", "")
+
 
 # ---------------------------------------------------------------------------
 # Backend helpers
@@ -34,7 +42,7 @@ _TTL_HOURS = 3
 
 def _pg_available() -> bool:
     return (
-        os.getenv("STATE_BACKEND", "").strip().lower() == "postgres"
+        STATE_BACKEND.strip().lower() == "postgres"
         and bool(os.getenv("DATABASE_URL", "").strip())
     )
 

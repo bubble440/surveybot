@@ -1,5 +1,13 @@
 import time, os, requests, base64, re
 
+# SNAP_ENABLED est une variable GLOBAL_CONFIG : en build compilé (Nuitka), elle provient
+# exclusivement de global_config.py, jamais de l'environnement du process (cf. config.py).
+# En dev/attach (global_config.py absent du projet), fallback os.getenv.
+try:
+    from global_config import SNAP_ENABLED  # type: ignore
+except ImportError:
+    SNAP_ENABLED = os.getenv("SNAP_ENABLED", "")
+
 # ---------------------------------------------------------------------------
 # Sélecteurs selon la page de login (TopSurveys expose deux interfaces)
 #   - topsurveys.app       → check-email-*  (landing marketing)
@@ -276,7 +284,7 @@ def login(driver, email, password):
     dom_probe(driver)
     wait_for_vue_hydration(driver, timeout=15)
 
-    if os.getenv("SNAP_ENABLED", "").strip() == "1":
+    if SNAP_ENABLED.strip() == "1":
         from Management.snap_uploader import new_survey, capture_and_upload
         new_survey()
         capture_and_upload(driver, "survey_account")

@@ -1,6 +1,14 @@
 import time, os, threading
 from Cash.payout import _payout_and_check_daily_stop
 
+# SNAP_ENABLED est une variable GLOBAL_CONFIG : en build compilé (Nuitka), elle provient
+# exclusivement de global_config.py, jamais de l'environnement du process (cf. config.py).
+# En dev/attach (global_config.py absent du projet), fallback os.getenv.
+try:
+    from global_config import SNAP_ENABLED  # type: ignore
+except ImportError:
+    SNAP_ENABLED = os.getenv("SNAP_ENABLED", "")
+
 
 
 # FIX-B3: _restart_depth était un global partagé entre threads.
@@ -368,7 +376,7 @@ def _run_survey_impl(driver, api_key, *, account_id: str, ctx=None, payout_name:
                 # ❌ Cas : disqualification détectée par la validation
                 if action == "DISQUALIFIED":
                     print(f"⚠️ Disqualification détectée (validator) | reason={answer.get('reason')}")
-                    if os.getenv("SNAP_ENABLED", "").strip() == "1":
+                    if SNAP_ENABLED.strip() == "1":
                         from Management.snap_uploader import capture_and_upload
                         capture_and_upload(driver, "disqualified")
                     try:
@@ -439,7 +447,7 @@ def _run_survey_impl(driver, api_key, *, account_id: str, ctx=None, payout_name:
             else:
                 try:
                     # Cas : on est qualifié → lancer solve_full_survey()
-                    if os.getenv("SNAP_ENABLED", "").strip() == "1":
+                    if SNAP_ENABLED.strip() == "1":
                         from Management.snap_uploader import new_survey, capture_and_upload
                         new_survey()
                         capture_and_upload(driver, "pre-qualification-click")
@@ -450,7 +458,7 @@ def _run_survey_impl(driver, api_key, *, account_id: str, ctx=None, payout_name:
                         # ici pour éviter la race condition du double switch.
                         final_url = Management.redirect_watcher.wait_for_final_redirection(driver, max_wait=60)
 
-                        if os.getenv("SNAP_ENABLED", "").strip() == "1":
+                        if SNAP_ENABLED.strip() == "1":
                             from Management.snap_uploader import new_survey, capture_and_upload
                             new_survey()
                             capture_and_upload(driver, "qualification")

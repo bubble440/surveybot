@@ -78,16 +78,21 @@ pour une raison précise : la propriété recherchée n'est pas la confidentiali
 **résistance à la modification persistante** (une édition du récepteur ne doit avoir aucun effet
 au redémarrage suivant).
 
-**Constat technique important (à corriger, patch non encore fait)** : dans `surveybot.spec`
-actuel, `_license_config.py` est déclaré dans `datas=[...]`, ce qui l'embarque **en clair, non
-compilé** — extrait en clair dans `%TEMP%\_MEIxxxxxx` à chaque lancement (mode `--onefile`).
-Cela ne protège donc PAS la confidentialité du contenu (lisible via extraction/inspection du
-dossier temporaire), seulement l'intégrité (une édition ne persiste pas au lancement suivant,
-car réextraite depuis l'exe immuable).
+**Statut : patché.** `_license_config.py` retiré de `datas` dans `surveybot.spec` ; il est
+désormais importé comme un module Python classique (`hiddenimports=['_license_config']`),
+compilé au même niveau de protection que le reste du code applicatif (Nuitka, section 4).
 
-**Décision actée** : retirer `_license_config.py` de `datas` et le laisser être importé
-normalement comme un module Python classique, pour qu'il soit compilé (par Nuitka, voir
-section 4) au même niveau de protection que le reste du code applicatif.
+**Bug corrigé au passage** : `license_guard.py` importait via `from surveybot._license_config
+import ...` (préfixe de package `surveybot` inexistant dans l'Analysis), alors que
+`update_checker.py`/`account_state.py` importaient déjà correctement via `from _license_config
+import ...`. Avec l'ancien `.spec`, cet import échouait silencieusement dans `license_guard.py`
+(capturé par un `except ImportError` sans log), désactivant de fait `check_license_or_exit()`
+sur tout le parc sans qu'aucune erreur ne soit visible. Corrigé : les deux imports de
+`license_guard.py` alignés sur `from _license_config import ...`, sans préfixe.
+
+**Point ouvert, non traité** : ajouter un `log.warning` explicite dans le `except ImportError`
+de `_get_license_key()` pour qu'une régression future sur cet import soit visible dans les
+logs plutôt que de retomber silencieusement dans un mode qui contourne la licence.
 
 **Décision actée sur `DATABASE_URL`** : ne devrait à terme plus être embarquée du tout, ni dans
 `_license_config.py` ni ailleurs côté client. Remplacement prévu par un petit endpoint HTTP
@@ -174,25 +179,58 @@ priorité stricte (ne jamais écraser une valeur déjà présente dans l'environ
 niveau module (ex: `State/account_state.py`, dont l'import est différé en local dans les
 fonctions).
 
-**Point ouvert, non encore implémenté** : suite au passage prévu de `GLOBAL_CONFIG` vers un
-module compilé (`global_config.py`, section 2), le code qui consomme ces variables devra lire
-la constante compilée **directement et exclusivement**, sans jamais consulter `os.environ` pour
-ces noms précis. Sinon, un simple `$env:OPENAI_API_KEY=...` avant lancement (ou une clé ajoutée
-par erreur dans `accounts.json`, injectée dans l'environnement du process enfant comme les
-variables PAR_BOT légitimes) contournerait silencieusement toute la protection Nuitka, sans
-même nécessiter de décompilation. Cette règle doit être appliquée uniquement aux noms de
-variables `GLOBAL_CONFIG`/`GLOBAL_SECRET` — les variables `PAR_BOT` doivent continuer à être
-lues depuis l'environnement du process, c'est leur mécanisme de transmission légitime.
+**Statut : migration en cours vers `global_config.py`.** `global_config.py` créé (module à la
+racine du projet, à côté de `_license_config.py`, même convention d'import à plat — voir
+section 3bis) avec l'ensemble des constantes `GLOBAL_CONFIG`/`GLOBAL_SECRET` listées en
+section 2. `surveybot.spec` mis à jour (`hiddenimports=['_license_config', 'global_config']`).
+
+Convention de migration actée pour chaque consommateur : `try: from global_config import X /
+except ImportError: fallback os.getenv("X", défaut)` — garantit qu'en build compilé (module
+forcé par `hiddenimports`) l'import réussit toujours et l'environnement n'est jamais consulté
+pour ces noms, tout en gardant le workflow dev/attach intact (module absent en local → fallback
+naturel). Les variables `PAR_BOT` ne sont pas concernées et continuent d'être lues depuis
+l'environnement du process — c'est leur mécanisme de transmission légitime.
+
+**Déjà migrés vers `global_config.py` avec cette convention** :
+- `config.py` : `RUN_ENV`, `CTA_INTERCEPT_ONLY` (via `is_cta_intercept_only()`).
+
+**Consommateurs restants — À FAIRE, un par un** (recensés par grep sur les noms de variables
+`GLOBAL_CONFIG`/`GLOBAL_SECRET` listés en section 2, à vérifier exhaustivement au moment de
+chaque patch) :
+- [ ] `State/account_state.py` — `STATE_BACKEND`, `STATE_TABLE`, `STATE_TTL_DAYS`.
+- [ ] `State/survey_memory.py` — `STATE_BACKEND` (vérifier usage exact).
+- [ ] `Survey/log_utils.py` — `LOG_LEVEL`, `LOG_STEP_SUMMARY`.
+- [ ] `preselection/playwright_launcher.py` — `SURVEY_BROWSER_BIN`, `SURVEY_HEADLESS`.
+- [ ] `Management/snap_uploader.py`/`Survey/page_snapshot.py` — `SNAP_ENABLED`.
+- [ ] `update_checker.py` — `UPDATE_CHECK_ENABLED`, `UPDATE_MANIFEST_URL`.
+- [ ] `PLATFORM` — module(s) consommateur(s) à identifier.
+
+**Non traité tant que ces migrations ne sont pas faites** : retirer `Utils/config` (fichier JSON
+externe) et sa lecture dans `config_loader.py`/`key_aliases` — tant qu'un seul consommateur lit
+encore via `os.getenv` sans fallback sur `global_config`, supprimer le fichier JSON externe
+casserait ce consommateur en prod. Ne pas retirer `Utils/config` avant migration complète de la
+liste ci-dessus.
 
 ---
 
 ## 7. Prochaines étapes (à traiter une par une, patchs séparés)
 
-- [ ] Retirer `_license_config.py` de `datas` dans `surveybot.spec` (import module normal).
-- [ ] Créer `global_config.py` avec les constantes `GLOBAL_CONFIG`/`GLOBAL_SECRET` listées en
-      section 2, en remplacement du fichier JSON externe `Utils/config`.
-- [ ] Modifier le code consommateur de ces variables pour lire exclusivement le module compilé
-      (pas de fallback `os.getenv` pour ces noms précis) — voir section 6.
+- [x] Retirer `_license_config.py` de `datas` dans `surveybot.spec` (import module normal).
+- [x] Corriger l'incohérence d'import `surveybot._license_config` vs `_license_config` dans
+      `license_guard.py`.
+- [x] Créer `global_config.py` avec les constantes `GLOBAL_CONFIG`/`GLOBAL_SECRET` listées en
+      section 2. Ajouté à `hiddenimports` dans `surveybot.spec`.
+- [ ] Ajouter un `log.warning` dans le `except ImportError` de `license_guard._get_license_key()`
+      pour rendre visible toute régression future sur cet import (voir section 3).
+- [ ] **EN COURS** — Modifier le code consommateur de ces variables pour lire exclusivement le
+      module compilé (pas de fallback `os.getenv` pour ces noms précis) — voir section 6 pour
+      la liste détaillée des consommateurs restants et la convention de migration actée.
+      `config.py` (`RUN_ENV`, `CTA_INTERCEPT_ONLY`) déjà fait ; le reste de la liste (captcha,
+      state, log_utils, notifier, playwright_launcher, screenshot_analyzer, runtime_guard,
+      snap_uploader, update_checker...) reste à faire, un fichier à la fois.
+- [ ] Une fois la migration ci-dessus complète : retirer `Utils/config` (fichier JSON externe)
+      et sa lecture dans `config_loader.py`/`key_aliases`. Ne pas le faire avant, sous peine de
+      casser tout consommateur encore non migré.
 - [ ] Retirer `DATABASE_URL` de `key_aliases`/`config_loader.py` et du fichier `Utils/config`.
 - [ ] Aligner `State/account_state.py` et `State/survey_memory.py` sur la même logique de
       résolution que `license_guard._get_database_url()` (embarqué en priorité, fallback env

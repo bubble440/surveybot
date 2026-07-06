@@ -5,6 +5,14 @@ import time
 from preselection.auth_handler import handle_proxy_error_page_if_needed
 from Survey.log_utils import log_debug, log_info
 
+# SNAP_ENABLED est une variable GLOBAL_CONFIG : en build compilé (Nuitka), elle provient
+# exclusivement de global_config.py, jamais de l'environnement du process (cf. config.py).
+# En dev/attach (global_config.py absent du projet), fallback os.getenv.
+try:
+    from global_config import SNAP_ENABLED  # type: ignore
+except ImportError:
+    SNAP_ENABLED = os.getenv("SNAP_ENABLED", "")
+
 # UUIDs de surveys bloquants (irrésolvables) accumulés sur la durée du processus.
 # Alimenté via mark_last_selected_survey_as_blocked() lors d'un soft restart.
 _excluded_survey_uuids: set = set()
@@ -461,7 +469,7 @@ def go_to_best_value_survey(driver):
         try:
             page.goto("https://app.topsurveys.app/surveys", wait_until="domcontentloaded")
             handle_proxy_error_page_if_needed(driver)
-            if os.getenv("SNAP_ENABLED", "").strip() == "1":
+            if SNAP_ENABLED.strip() == "1":
                 from Management.snap_uploader import capture_and_upload
                 capture_and_upload(driver, "nav_fallback")
             print("↪️  Navigation directe /surveys")
@@ -493,7 +501,7 @@ def go_to_best_value_survey(driver):
     time.sleep(0.5)  # stabilisation post-popup
 
     if not _find_survey_cards(driver):
-        if os.getenv("SNAP_ENABLED", "").strip() == "1":
+        if SNAP_ENABLED.strip() == "1":
             from Management.snap_uploader import capture_and_upload
             capture_and_upload(driver, "no_surveys_available")
         time.sleep(3)

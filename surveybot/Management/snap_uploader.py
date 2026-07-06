@@ -28,7 +28,13 @@ Compteurs :
 import os
 import time
 
-
+# SNAP_ENABLED est une variable GLOBAL_CONFIG : en build compilé (Nuitka), elle provient
+# exclusivement de global_config.py, jamais de l'environnement du process (cf. config.py).
+# En dev/attach (global_config.py absent du projet), fallback os.getenv.
+try:
+    from global_config import SNAP_ENABLED  # type: ignore
+except ImportError:
+    SNAP_ENABLED = os.getenv("SNAP_ENABLED", "")
 
 _TAG = "SNAP_R2"
 
@@ -52,7 +58,7 @@ def new_survey() -> None:
 
 
 def _is_enabled() -> bool:
-    return os.getenv("SNAP_ENABLED", "").strip() == "1"
+    return SNAP_ENABLED.strip() == "1"
 
 
 def _get_account_id() -> str:

@@ -31,3 +31,5 @@ surveybot/_license_config.py
 dist/
 build/
 *.spec
+global_config.py
+accounts.json

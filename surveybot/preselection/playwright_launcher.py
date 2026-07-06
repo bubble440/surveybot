@@ -19,12 +19,22 @@ import tempfile
 from urllib.parse import urlparse
 from Survey.log_utils import log_info, log_debug
 
+# SURVEY_BROWSER_BIN / SURVEY_HEADLESS sont des variables GLOBAL_CONFIG : en build
+# compilé (Nuitka), elles proviennent exclusivement de global_config.py, jamais de
+# l'environnement du process (cf. config.py). En dev/attach (global_config.py absent
+# du projet), fallback os.getenv.
+try:
+    from global_config import SURVEY_BROWSER_BIN, SURVEY_HEADLESS  # type: ignore
+except ImportError:
+    SURVEY_BROWSER_BIN = os.getenv("SURVEY_BROWSER_BIN", "")
+    SURVEY_HEADLESS = os.getenv("SURVEY_HEADLESS", "0")
+
 
 def _detect_chrome_binary() -> str:
     import os, shutil, sys
 
     # 1) variable explicite
-    env_bin = os.getenv("SURVEY_BROWSER_BIN")
+    env_bin = SURVEY_BROWSER_BIN
     if env_bin and os.path.exists(env_bin):
         return env_bin
 
@@ -100,10 +110,10 @@ def _want_headless() -> bool:
     """
     import sys
     if sys.platform == "win32":
-        return os.getenv("SURVEY_HEADLESS", "0") == "1"
+        return SURVEY_HEADLESS == "1"
 
     use_display = bool(os.environ.get("DISPLAY"))
-    headless_env = os.getenv("SURVEY_HEADLESS", "0") == "1"
+    headless_env = SURVEY_HEADLESS == "1"
     return headless_env or not use_display
 
 def _parse_geo_env():

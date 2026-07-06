@@ -2266,57 +2266,6 @@ def execute_survey_page(driver, account_id, api_key, ctx=None):
             print("DOM-only: abort_reason=dom_no_match_abort (SURVEY_DOM_ONLY_ABORT=1).")
             return False
 
-        # screenshot_analyzer : hors-périmètre → take_screenshot reçoit driver (= shim)
-        import Survey.screenshot_analyzer as screenshot_analyzer
-        try:
-            img = page.query_selector("img.taImage")
-            if img is not None:
-                tmp_dir = os.path.join(tempfile.gettempdir(), "surveybot_screens")
-                os.makedirs(tmp_dir, exist_ok=True)
-                screenshot_path = os.path.join(tmp_dir, f"taImage_{int(time.time()*1000)}.png")
-                img.screenshot(path=screenshot_path)
-                print(f" Screenshot capturé (img.taImage) -> {screenshot_path}")
-        except Exception:
-            screenshot_path = None
-
-        if not screenshot_path:
-            print(" Screenshot viewport (pas full-page). source: survey_executor.py")
-            try:
-                screenshot_path = screenshot_analyzer.take_screenshot(driver, full_page=False)
-            except Exception:
-                screenshot_path = screenshot_analyzer.take_screenshot(driver, full_page=True)
-
-        print(" Envoi screenshot GPT pour analyse visuelle. source: survey_executor.py line 59")
-        instruction = screenshot_analyzer.send_image_to_gpt(screenshot_path, api_key)
-
-        lines = [ln for ln in (instruction or "").splitlines() if ln.strip()]
-        fixed_lines = [_coerce_safe_value_if_questionish(ln) for ln in lines]
-        instruction = "\n".join(fixed_lines)
-
-        if instruction:
-            instruction = next(
-                (ln.strip() for ln in instruction.splitlines() if ln.strip()), ""
-            )
-
-        print(
-            " Instruction reçue ():",
-            instruction,
-            " source: survey_executor.py line 67",
-        )
-
-        try:
-            # action_dispatcher est hors-périmètre → passer driver (= shim)
-            success = action_dispatcher.execute_action(driver, instruction)
-            if not success:
-                print(
-                    " Aucune action appliquée par le dispatcher. source: survey_executor.py"
-                )
-            return success
-        except Exception as e:
-            print(
-                " Erreur dans execute_action sur GPT; source: survey_executor.py",
-            )
-            return False
 
 def extract_full_visible_text(driver):
     """

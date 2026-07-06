@@ -30,10 +30,21 @@ import os
 
 # ══════════════════════════════════════════════════════════════════════════════
 # CONFIGURATION DE BASE
+#
+# RUN_ENV et CTA_INTERCEPT_ONLY sont des variables GLOBAL_CONFIG : en build
+# compilé (Nuitka), elles proviennent exclusivement de global_config.py, jamais
+# de l'environnement du process — sinon un simple `$env:RUN_ENV=...` avant
+# lancement suffirait à contourner la configuration figée à la compilation.
+# En dev/attach (global_config.py absent du projet), on retombe sur os.getenv
+# pour ne pas casser le workflow local — même convention que _license_config.py.
 # ══════════════════════════════════════════════════════════════════════════════
 
-RUN_ENV = os.getenv("RUN_ENV", "prod")  # prod (défaut) | autre valeur = non-prod
-BROWSER_MODE = os.getenv("BROWSER_MODE", "normal")  # normal | attach
+try:
+    from global_config import RUN_ENV  # type: ignore
+except ImportError:
+    RUN_ENV = os.getenv("RUN_ENV", "prod")  # prod (défaut) | autre valeur = non-prod
+
+BROWSER_MODE = os.getenv("BROWSER_MODE", "normal")  # normal | attach — jamais dans global_config (dev/attach uniquement)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # FONCTIONS DE DÉCISION CENTRALISÉES
@@ -75,8 +86,15 @@ def is_cta_intercept_only() -> bool:
     Retourne True si CTA_INTERCEPT_ONLY est actif.
     Dans ce mode, les clics CTA sont interceptés (events déclenchés) mais la navigation
     ne se produit pas réellement.
+    Lit global_config.py en priorité (build compilé) ; fallback os.getenv en dev/attach
+    (global_config.py absent du projet, même convention que RUN_ENV ci-dessus).
     """
-    return _env_truthy("CTA_INTERCEPT_ONLY", "0")
+    try:
+        from global_config import CTA_INTERCEPT_ONLY  # type: ignore
+        v = (CTA_INTERCEPT_ONLY or "0").strip().lower()
+        return v in ("1", "true", "yes", "on")
+    except ImportError:
+        return _env_truthy("CTA_INTERCEPT_ONLY", "0")
 
 
 def should_pause_before_cta() -> bool:

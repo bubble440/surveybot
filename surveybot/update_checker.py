@@ -45,6 +45,16 @@ log = logging.getLogger("update_checker")
 
 _HTTP_TIMEOUT = 15  # secondes
 
+# UPDATE_CHECK_ENABLED / UPDATE_MANIFEST_URL sont des variables GLOBAL_CONFIG : en
+# build compilé (Nuitka), elles proviennent exclusivement de global_config.py, jamais
+# de l'environnement du process (cf. config.py). En dev/attach (global_config.py
+# absent du projet), fallback os.getenv.
+try:
+    from global_config import UPDATE_CHECK_ENABLED, UPDATE_MANIFEST_URL  # type: ignore
+except ImportError:
+    UPDATE_CHECK_ENABLED = os.getenv("UPDATE_CHECK_ENABLED", "0")
+    UPDATE_MANIFEST_URL = os.getenv("UPDATE_MANIFEST_URL", "")
+
 
 def _current_version() -> str:
     """Version courante du binaire — lue depuis _license_config ou BOT_VERSION env."""
@@ -129,10 +139,10 @@ def check_and_apply(account_id: str) -> None:
     No-op si UPDATE_CHECK_ENABLED != "1" ou si UPDATE_MANIFEST_URL est absent.
     Ne retourne jamais si une mise à jour est appliquée (os.execv remplace le processus).
     """
-    if os.getenv("UPDATE_CHECK_ENABLED", "0").strip() != "1":
+    if UPDATE_CHECK_ENABLED.strip() != "1":
         return
 
-    manifest_url = os.getenv("UPDATE_MANIFEST_URL", "").strip()
+    manifest_url = UPDATE_MANIFEST_URL.strip()
     if not manifest_url:
         log.debug("[UPDATE] UPDATE_MANIFEST_URL non défini — update ignoré.")
         return

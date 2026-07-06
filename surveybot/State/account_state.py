@@ -36,9 +36,19 @@ log = logging.getLogger("account_state")
 # -----------------------------
 # Config backend
 # -----------------------------
-STATE_BACKEND = os.getenv("STATE_BACKEND", "").strip().lower()  # "postgres" en prod
-STATE_TABLE = os.getenv("STATE_TABLE", "").strip()             # ex: surveybot_account_state
-STATE_TTL_DAYS = int(os.getenv("STATE_TTL_DAYS", "0") or "0")   # 0 = pas de TTL auto
+# STATE_BACKEND / STATE_TABLE / STATE_TTL_DAYS sont des variables GLOBAL_CONFIG : en
+# build compilé (Nuitka), elles proviennent exclusivement de global_config.py, jamais
+# de l'environnement du process (cf. config.py). En dev/attach (global_config.py
+# absent du projet), fallback os.getenv.
+try:
+    from global_config import STATE_BACKEND, STATE_TABLE, STATE_TTL_DAYS  # type: ignore
+    STATE_BACKEND = (STATE_BACKEND or "").strip().lower()
+    STATE_TABLE = (STATE_TABLE or "").strip()
+    STATE_TTL_DAYS = int(STATE_TTL_DAYS or 0)
+except ImportError:
+    STATE_BACKEND = os.getenv("STATE_BACKEND", "").strip().lower()  # "postgres" en prod
+    STATE_TABLE = os.getenv("STATE_TABLE", "").strip()             # ex: surveybot_account_state
+    STATE_TTL_DAYS = int(os.getenv("STATE_TTL_DAYS", "0") or "0")   # 0 = pas de TTL auto
 
 # Fallback fichier (debug seulement)
 _default_state_dir = (

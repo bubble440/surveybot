@@ -1,6 +1,14 @@
 import os, random
 from config import is_attach_mode, is_prod_like, should_run_guard_monitor, should_run_hot_reload
 
+# SNAP_ENABLED est une variable GLOBAL_CONFIG : en build compilé (Nuitka), elle provient
+# exclusivement de global_config.py, jamais de l'environnement du process (cf. config.py).
+# En dev/attach (global_config.py absent du projet), fallback os.getenv.
+try:
+    from global_config import SNAP_ENABLED  # type: ignore
+except ImportError:
+    SNAP_ENABLED = os.getenv("SNAP_ENABLED", "")
+
 # ---------- PID file (bare-metal Windows) ----------
 
 def _pid_path(account_id: str) -> str:
@@ -514,7 +522,7 @@ def init_session_and_enter_surveys(driver, config, account_id: str, notify_fn, p
 
     if _session_active:
         print("[INIT] session active détectée — login ignoré")
-        if os.getenv("SNAP_ENABLED", "").strip() == "1":
+        if SNAP_ENABLED.strip() == "1":
             from Management.snap_uploader import new_survey, capture_and_upload
             new_survey()
             capture_and_upload(driver, "survey_account")
@@ -605,7 +613,6 @@ def start_hot_reload_thread():
             "Survey.prompt_builder",
             "Survey.question_block_analyzer",
             "Survey.question_block_resolver",
-            "Survey.screenshot_analyzer",
             "Survey.survey_executor",
             "Survey.survey_solver",
             "preselection.question_analyzer",
