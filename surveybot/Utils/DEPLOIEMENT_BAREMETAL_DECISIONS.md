@@ -118,6 +118,16 @@ actée, à planifier comme chantier séparé.**
 parc. Pas besoin de builds uniques par machine pour obtenir cette propriété : elle existe déjà
 au niveau de la table Postgres `licenses`.
 
+**Statut : centralisation de la résolution de `DATABASE_URL` — patché.** `license_guard.py`
+appliquait déjà la bonne priorité (`_license_config.py` en premier, `os.getenv` en fallback
+dev/attach uniquement), mais `State/account_state.py` et `State/survey_memory.py` lisaient
+`DATABASE_URL` uniquement via `os.getenv`, sans passer par `_license_config.py` — alors qu'ils
+se connectent à la même base centrale. Corrigé en créant `db_config.py` (module dédié, racine
+du projet), qui expose une fonction unique `get_database_url()` appliquant la même priorité.
+Les trois consommateurs (`license_guard.py`, `State/account_state.py`,
+`State/survey_memory.py`) appellent désormais tous cette même fonction — plus de logique
+dupliquée à trois endroits.
+
 ---
 
 ## 4. Protection contre la décompilation — décision actée : migration vers Nuitka
@@ -265,6 +275,24 @@ adapté en conséquence.
 (`LOG_LEVEL`, `LOG_STEP_SUMMARY` restent en `os.getenv` classique) et toute lecture de
 `CAPTCHA_PROVIDER`.
 
+**Troisième patch — retrait de `Utils/config` et nettoyage de `key_aliases`.** Maintenant que
+l'audit confirme qu'aucun consommateur `GLOBAL_CONFIG` ne dépendait plus du fichier JSON externe
+`Utils/config`, sa lecture (`_load_local_config()`) a été retirée de `config_loader.py`. La seule
+source de secrets restante est `load_remote_secrets()` (`secret_loader.py` — ENV unitaires,
+`TOPSURVEYS_SECRET_JSON`, overrides) : mécanisme non touché par ce patch, toujours indépendant
+de `Utils/config`.
+
+Au passage, `LICENSE_KEY` a été retirée de `key_aliases` dans `config_loader.py` : cette entrée
+n'était consommée nulle part via `os.getenv`/`os.environ` — `LICENSE_KEY` est lue exclusivement
+depuis `_license_config.py` par `license_guard.py` (voir section 3). Sa présence dans
+`key_aliases` était trompeuse (laissait croire à un mécanisme de réinjection qui n'existait pas
+pour cette clé) et a été supprimée.
+
+**Point ouvert** : le retrait de `Utils/config` change le comportement du workflow dev local si
+un développeur s'appuyait sur ce fichier pour des secrets non définis en variable
+d'environnement — à vérifier une fois en usage réel ; sinon aucun impact, `load_remote_secrets()`
+couvre déjà tous les secrets nécessaires en dev/attach.
+
 ---
 
 ## 7. Prochaines étapes (à traiter une par une, patchs séparés)
@@ -294,14 +322,19 @@ adapté en conséquence.
 - [x] Audit exhaustif (grep) de tout `os.getenv` restant sur les noms `GLOBAL_CONFIG` migrés :
       réalisé après le deuxième patch, 0 occurrence à vérifier — voir section 6 pour la méthode
       et ses limites connues (heuristique texte, pas une preuve formelle).
-- [ ] Considérer retirer `Utils/config` (fichier JSON externe) et sa lecture dans
-      `config_loader.py`/`key_aliases`, maintenant que l'audit ne montre plus de consommateur
-      manquant. Vérifier avant tout qu'aucune clé `PAR_BOT`/secret légitime ne dépend encore
-      exclusivement de ce fichier avant de le supprimer.
+- [x] Retirer `Utils/config` (fichier JSON externe) et sa lecture dans
+      `config_loader.py`/`key_aliases`. Fait — `load_remote_secrets()` (`secret_loader.py`)
+      reste l'unique source de secrets restante. Nettoyage au passage : entrée `LICENSE_KEY`
+      retirée de `key_aliases` (jamais consommée via `os.environ`, voir section 3/6).
+      Point ouvert : vérifier en usage réel qu'aucun workflow dev local ne dépendait de ce
+      fichier pour un secret non couvert par `load_remote_secrets()`.
 
-- [ ] Aligner `State/account_state.py` et `State/survey_memory.py` sur la même logique de
-      résolution que `license_guard._get_database_url()` (embarqué en priorité, fallback env
-      pour le dev/attach uniquement) — en attendant le remplacement par l'endpoint serveur.
+- [x] Aligner `State/account_state.py` et `State/survey_memory.py` sur la même logique de
+      résolution que `license_guard._get_database_url()`. Fait — centralisé dans un module
+      dédié `db_config.py` (`get_database_url()`, même priorité `_license_config` → `os.getenv`
+      dev/attach), consommé par les trois fichiers au lieu de dupliquer la logique. Voir
+      section 3. Le remplacement par l'endpoint serveur (item suivant) reste un chantier
+      séparé, non résolu par ce patch.
 - [ ] Concevoir et implémenter l'endpoint de validation de licence côté serveur (remplace la
       connexion Postgres directe depuis le client pour la vérification de licence).
 - [ ] Basculer le pipeline de build de PyInstaller vers Nuitka ; tester le cycle complet
