@@ -14,6 +14,9 @@ su - botuser -c 'cd /app && DISPLAY=:99 PYTHONPATH=/app RUN_ENV=prod YSENSE_EMAI
 
 
 
+## A chaque nouvelle version du projet, modifier le fichier `manifest.json`
+## Update la `version` et le `sha256`
+
 # Build du fichier
 pyinstaller --onefile --name surveybot --add-data "_license_config.py;." main.py
 
