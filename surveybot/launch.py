@@ -1,5 +1,5 @@
 import os, random
-from config import is_attach_mode, is_prod_like, should_run_guard_monitor, should_run_hot_reload
+from config import is_attach_mode, is_prod_like, should_run_guard_monitor
 
 # SNAP_ENABLED est une variable GLOBAL_CONFIG : en build compilé (Nuitka), elle provient
 # exclusivement de global_config.py, jamais de l'environnement du process (cf. config.py).
@@ -562,84 +562,6 @@ def init_session_and_enter_surveys(driver, config, account_id: str, notify_fn, p
         go_to_best_value_survey(driver)
 
     return api_key, payout_name, payout_revolut_tag
-
-def start_hot_reload_thread():
-    global _HOT_RELOAD_STARTED
-    if not should_run_hot_reload():
-        print("[HOT_RELOAD] Ignoré hors mode attach.")
-        return
-    if _HOT_RELOAD_STARTED:
-        return
-    _HOT_RELOAD_STARTED = True
-
-    import Survey.survey_executor as _se
-    from hot_reload.hot_reload import ModuleReloader
-
-    reloader = ModuleReloader(
-        [
-            "captcha.captcha_solver",
-            "captcha.datadome_handler",
-            "captcha.normal_captcha",
-            "captcha.recaptcha_handler",
-            "captcha.recaptcha_utils",
-            "captcha.tencent_handler",
-            "Survey.action_dispatcher",
-            "Survey.action_types",
-            "Survey.batch_response_parser",
-            "Survey.cta_handler",
-            "Survey.dom_analyzer",
-            "Survey.dom_classifier",
-            "Survey.dom_context_mapper",
-            "Survey.dom_extractors_areyounet",
-            "Survey.dom_extractors_decipher",
-            "Survey.dom_extractors_misc",
-            "Survey.dom_frame_selector",
-            "Survey.dom_question_extractor",
-            "Survey.dom_registry",
-            "Survey.dom_selection_rules",
-            "Survey.dom_utils",
-            "Survey.dropdown_block_resolver",
-            "Survey.frame_utils",
-            "Survey.input_checkbox",
-            "Survey.input_dropdown",
-            "Survey.input_frame",
-            "Survey.input_handler",
-            "Survey.input_matrix",
-            "Survey.input_radio",
-            "Survey.input_slider",
-            "Survey.input_text",
-            "Survey.input_utils",
-            "Survey.page_snapshot",
-            "Survey.prompt_builder",
-            "Survey.question_block_analyzer",
-            "Survey.question_block_resolver",
-            "Survey.survey_executor",
-            "Survey.survey_solver",
-            "preselection.question_analyzer",
-            "preselection.question_validation",
-            "preselection.response_executor",
-            "preselection.survey_handler",
-            "Management.pause_policy",
-            "Management.redirect_watcher",
-            "Management.guards.runtime_guard",
-            "Management.guards.survey_difficulty_guard",
-        ],
-        poll_interval=0.5,
-    )
-
-    def _on_change(reloaded):
-        nonlocal _se
-        if "Survey.survey_executor" in reloaded:
-            _se = reloaded["Survey.survey_executor"]
-        print(" Modules rechargés:", ", ".join(reloaded.keys()))
-
-    threading.Thread(
-        target=reloader.watch_loop,
-        args=(_on_change,),
-        daemon=True,
-    ).start()
-
-_HOT_RELOAD_STARTED = False
 
 def run_main_loop(driver, api_key: str, account_id: str, payout_name: str = "", payout_revolut_tag: str = "", platform=None):
     from Survey.survey_context import SurveyContext

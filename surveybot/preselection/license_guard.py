@@ -25,7 +25,7 @@ log = logging.getLogger("license_guard")
 # ---------------------------------------------------------------------------
 def _get_license_key() -> str | None:
     try:
-        from surveybot._license_config import LICENSE_KEY  # type: ignore
+        from _license_config import LICENSE_KEY  # type: ignore
         return LICENSE_KEY.strip() if LICENSE_KEY else None
     except ImportError:
         return None

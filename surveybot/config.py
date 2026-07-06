@@ -120,11 +120,6 @@ def should_run_heartbeat() -> bool:
     return is_prod_like()
 
 
-def should_run_hot_reload() -> bool:
-    """Retourne True si le hot reload des modules doit être activé (attach uniquement)."""
-    return is_attach_mode()
-
-
 def get_captcha_behavior() -> str:
     """
     Retourne le comportement à adopter face à un CAPTCHA.
@@ -157,6 +152,5 @@ def log_config_summary():
 ║   • Pause CAPTCHA     : {str(should_pause_for_captcha()):<10}                ║
 ║   • RuntimeGuard      : {str(should_run_guard_monitor()):<10}                ║
 ║   • Heartbeat         : {str(should_run_heartbeat()):<10}                    ║
-║   • Hot Reload        : {str(should_run_hot_reload()):<10}                   ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
 """)

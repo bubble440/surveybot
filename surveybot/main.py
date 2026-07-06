@@ -9,7 +9,7 @@ import os
 from preselection.config_loader import load_config
 load_config()
 
-from config import is_attach_mode, RUN_ENV, BROWSER_MODE, is_prod_like, should_run_guard_monitor, should_run_heartbeat, should_run_hot_reload, log_config_summary
+from config import is_attach_mode, RUN_ENV, BROWSER_MODE, is_prod_like, should_run_guard_monitor, should_run_heartbeat, log_config_summary
 
 from preselection.license_guard import check_license_or_exit
 if not is_attach_mode():
@@ -731,9 +731,6 @@ def main():
         if not api_key:
             raise RuntimeError("OPENAI_API_KEY introuvable (nécessaire en attach)")
 
-        if should_run_hot_reload():
-            start_hot_reload_thread()
-
         if attach_route == "login":
             # Route BLOC 1 complète : login + sélection survey + présélection + résolution
             run_attach_login_takeover(page, _pw, api_key=api_key, account_id=account_id, config=config)
@@ -829,10 +826,6 @@ def main():
                 "email": config.get("Email", ""),
                 "password": config.get("Password", ""),
             }
-
-            if should_run_hot_reload() and not hot_reload_started:
-                start_hot_reload_thread()
-                hot_reload_started = True
 
             run_main_loop(driver, api_key, account_id, payout_name=payout_name, payout_revolut_tag=payout_revolut_tag, platform=platform)
 
