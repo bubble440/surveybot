@@ -1,12 +1,7 @@
 import psycopg2
 
 conn = psycopg2.connect(
-    host="surveybot-db.fly.dev",
-    port=5432,
-    dbname="postgres",
-    user="surveybot_client",
-    password="p@ssw0rD!123",
-    sslmode="require",
+    "postgres://surveybot_client:p%40ssw0rD%21123@surveybot-db.fly.dev:5432/postgres?sslmode=require"
 )
 conn.autocommit = False
 cur = conn.cursor()
