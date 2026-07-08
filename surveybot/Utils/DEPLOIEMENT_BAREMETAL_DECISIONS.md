@@ -513,9 +513,12 @@ couvre déjà tous les secrets nécessaires en dev/attach.
       `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID` vers leur clé logique en minuscules — la pile de
       priorité (receiver_config → JSON env → ENV directs → overrides nommés) fonctionne
       maintenant comme documenté pour ces 4 clés.
-- [ ] Allouer une IP publique à `surveybot-db`, configurer `pg_hba.conf`/SSL (`sslmode=require`),
-      basculer `DATABASE_URL` sur `surveybot_client` avec le nouveau host public, tester en
-      transaction annulée avant bascule définitive — voir section 8.
+- [x] Allouer une IP publique à `surveybot-db`, configurer `pg_hba.conf`/SSL (`sslmode=require`),
+      tester en transaction annulée avant bascule définitive — voir section 8 pour le détail
+      complet (IP dédiée `137.66.7.173`, connexion via `surveybot-db.fly.dev` obligatoire — pas
+      l'IP directement, `pg_hba.conf` déjà permissif par défaut, test réussi avec la licence
+      `Wilfried` insérée). Seule étape restante, non cochée séparément : mettre à jour
+      `DATABASE_URL` dans `_license_config.py` avec le nouveau host, puis rebuild Nuitka.
 
 ---
 
@@ -548,11 +551,75 @@ car déjà borné par les permissions Postgres restreintes de la section 3 : en 
 critique), avec zéro accès direct possible à `licenses`. Le mesh VPN reste pertinent et
 prévu pour l'administration (RDP/SSH), un besoin différent et non-bloquant pour les gains.
 
-**Statut : non implémenté.** Reste à faire, dans l'ordre : allouer une IP publique à
-`surveybot-db` (`flyctl ips allocate-v4`/`allocate-v6 -a surveybot-db`), configurer
-`pg_hba.conf` pour autoriser les connexions distantes avec `sslmode=require` forcé, construire
-la nouvelle `DATABASE_URL` avec ce host public et les identifiants `surveybot_client`, tester
-en transaction annulée (lecture `check_license`, écriture `increment_license_payout` suivie
-d'un rollback, plus vérification que `account_state`/`survey_memory` restent accessibles et que
-`licenses` reste inaccessible en direct) avant de committer dans `_license_config.py` et de
-déclencher un rebuild/déploiement.
+**Option B reconsidérée puis explicitement écartée** : une variante plus légère de l'option B
+a été proposée en cours de discussion — WireGuard natif Fly.io (`flyctl wireguard create`),
+distinct du mesh Tailscale/ZeroTier d'administration, qui aurait évité toute exposition
+publique de la base en faisant rejoindre chaque mini-PC au réseau privé Fly directement.
+Confirmé par l'utilisateur : option A maintenue malgré cette alternative plus étanche par
+construction. Décision actée, ne pas rouvrir sans nouvel élément.
+
+**Précisions actées avant exécution (points non évidents, tranchés explicitement)** :
+- `sslmode=require` (chiffrement, sans vérification d'identité serveur) retenu plutôt que
+  `verify-full` (chiffrement + vérification via certificat CA distribué à chaque binaire) —
+  jugé disproportionné vu le rôle déjà restreint aux deux fonctions `SECURITY DEFINER` de la
+  section 3 ; une interception ne donnerait accès qu'à ce que ces fonctions autorisent.
+- La protection réelle contre une connexion en clair se joue côté serveur (`pg_hba.conf` en
+  `hostssl` uniquement pour `surveybot_client`, aucune ligne `host`/`hostnossl` de repli), pas
+  côté client (`sslmode=require` seul n'empêche rien si le serveur accepte aussi le non-chiffré).
+- Restriction par IP source jugée impraticable (machines sur plusieurs sites, IP dynamiques) —
+  acceptée en `0.0.0.0/0`, compensée uniquement par mot de passe fort (`scram-sha-256`) + rôle
+  restreint + SSL forcé côté serveur.
+
+**Statut : non exécuté — plan détaillé fourni, en attente d'exécution manuelle par
+l'utilisateur** (nécessite `flyctl`/accès Fly.io, hors d'atteinte de cette session) :
+1. `flyctl ips list -a surveybot-db` puis `flyctl ips allocate-v4 -a surveybot-db`.
+2. Vérifier que `fly.toml` expose bien un service TCP externe sur le port Postgres (5432) —
+   un cluster managé `flyctl postgres create` n'expose par défaut que le réseau privé 6PN ;
+   ajouter le bloc `[[services]]` correspondant si absent, puis redéployer avant que l'IP
+   allouée serve à quelque chose.
+3. Éditer `pg_hba.conf` sur la VM Postgres (SSH via `flyctl ssh console`) : ajouter des lignes
+   `hostssl all surveybot_client 0.0.0.0/0 scram-sha-256` (IPv4 et IPv6), sans ligne de repli
+   non-SSL pour ce rôle. Confirmer `ssl = on` dans `postgresql.conf`, recharger la config.
+4. **Test en transaction annulée avant toute bascule définitive** : depuis une machine externe,
+   `psql` vers le nouveau host public avec `sslmode=require`, exécuter
+   `BEGIN; SELECT * FROM check_license('Wilfried'); ROLLBACK;` — valide la connexion SSL, le
+   résultat de la fonction, et garantit qu'aucune écriture n'est persistée pendant le test.
+5. Seulement après succès du test : mettre à jour `DATABASE_URL` dans `_license_config.py` avec
+   le nouveau host public, puis rebuild Nuitka. Pas de cycle d'auto-update à gérer pour ce
+   changement précis — aucun déploiement prod n'existe encore, c'est le tout premier build avec
+   la bonne valeur.
+
+**Statut : test réseau/SSL validé — un point de données reste en suspens.**
+Exécuté par l'utilisateur :
+- IP dédiée allouée (`137.66.7.173`, ~2$/mois) — la partagée ne convient pas ici (Fly ne
+  supporte le TCP brut sur IPv4 partagée que pour HTTP/TLS avec SNI, pas pour le protocole
+  Postgres `pg_tls`, confirmé par la doc Fly).
+- Service TCP externe déjà présent dans `fly.toml` généré (`internal_port = 5432`,
+  `protocol = "tcp"`, `handlers = ["pg_tls"]`) — l'app managée l'avait déjà, aucun ajout requis.
+- `pg_hba.conf` déjà permissif par défaut sur l'image (`host all all 0.0.0.0/0 md5`) — aucune
+  édition nécessaire, contrairement à l'hypothèse initiale de cette section.
+- **Point non anticipé, corrigé en cours de route** : une connexion par IP brute échoue
+  (`SSL SYSCALL error: EOF detected`) — le proxy Fly route/termine le TLS du handler `pg_tls`
+  sur la base du nom d'hôte demandé (SNI), y compris avec une IP dédiée. Il faut se connecter
+  via `surveybot-db.fly.dev` (résolu automatiquement vers l'IP dédiée), jamais l'IP en direct.
+  **`DATABASE_URL` finale devra donc utiliser ce nom d'hôte, pas l'IP.**
+- Test en transaction annulée exécuté avec succès (SSL négocié, rôle `surveybot_client`
+  authentifié, fonction `check_license('Wilfried')` exécutée, `ROLLBACK` propre) — la fonction
+  ne retourne aucune ligne (`None`) **confirmé normal, pas un bug** : la table `licenses` est
+  vérifiée vide (`SELECT * FROM licenses` via Adminer → "No rows.") — elle n'a simplement jamais
+  été peuplée depuis sa création. `check_license` elle-même n'est donc pas mise en cause.
+
+**Reste à faire avant bascule définitive** :
+1. ~~Insérer la ligne de licence attendue dans `licenses`~~ **Fait** — ligne insérée
+   (`license_key='Wilfried'`, `is_active=true`, `total_payout_eur=200`,
+   `max_payout_eur=1000000000`).
+2. ~~Re-tester `check_license('Wilfried')` en transaction annulée~~ **Fait, succès confirmé** —
+   `(True, Decimal('200'), Decimal('1000000000'))` retourné, `ROLLBACK` propre. Le test complet
+   (réseau, SSL, authentification, droits `SECURITY DEFINER`, données) est validé de bout en
+   bout.
+3. **Fait** — `DATABASE_URL` mis à jour dans `_license_config.py` :
+   `postgres://surveybot_client:p%40ssw0rD%21123@surveybot-db.fly.dev:5432/postgres?sslmode=require`.
+   Mot de passe percent-encodé (`%40`=`@`, `%21`=`!`) — la valeur précédente avait le même bug
+   de parsing d'URI que celui contourné plus haut pour les tests (`@` non encodé dans le mot de
+   passe cassait le découpage user:password/host), corrigé au passage. `sslmode=require` ajouté
+   dans l'URL. **Reste seulement le rebuild Nuitka** avant tout déploiement.
