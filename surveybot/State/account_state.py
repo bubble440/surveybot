@@ -149,21 +149,35 @@ def _get_pg_conn():
         raise RuntimeError(f"[STATE] Postgres indisponible. err={e}")
 
 def _pg_ensure_table(conn) -> None:
-    """Crée la table si elle n'existe pas encore (idempotent)."""
-    with conn.cursor() as cur:
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS account_state (
-                account_id TEXT PRIMARY KEY,
-                state      JSONB NOT NULL,
-                version    INTEGER NOT NULL DEFAULT 0,
-                updated_ts TIMESTAMPTZ DEFAULT now()
-            )
-        """)
-        cur.execute("""
-            ALTER TABLE account_state
-            ADD COLUMN IF NOT EXISTS datadome_cookies JSONB DEFAULT '{}'
-        """)
-    conn.commit()
+    """
+    Crée la table si elle n'existe pas encore (idempotent).
+    Le rôle surveybot_client n'a volontairement aucun droit DDL (CREATE/ALTER) — voir
+    décision de restriction de rôle, section 3 du doc de suivi. La table doit donc déjà
+    exister (créée manuellement une fois par un rôle privilégié). Un refus de permission
+    ici est attendu dans ce cas et ne doit pas empêcher le bot de démarrer : on le logue
+    et on continue, en supposant que la table existe déjà avec le bon schéma.
+    """
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS account_state (
+                    account_id TEXT PRIMARY KEY,
+                    state      JSONB NOT NULL,
+                    version    INTEGER NOT NULL DEFAULT 0,
+                    updated_ts TIMESTAMPTZ DEFAULT now()
+                )
+            """)
+            cur.execute("""
+                ALTER TABLE account_state
+                ADD COLUMN IF NOT EXISTS datadome_cookies JSONB DEFAULT '{}'
+            """)
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        log.debug(
+            "[STATE] Impossible de créer/modifier account_state (rôle sans droits DDL, "
+            "attendu si la table existe déjà) : %s", e
+        )
 
 
 def _normalize_state(st: Dict[str, Any], account_id: str) -> Dict[str, Any]:

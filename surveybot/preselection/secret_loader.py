@@ -21,9 +21,21 @@ def _receiver_config_path() -> str:
     Chemin de receiver_config.json : à côté de l'exécutable/du script du bot (racine
     surveybot\\), un niveau au-dessus de preselection\\ — même convention que
     accounts.json / pids\\ (cf. launch.py::_pid_path).
+
+    En build Nuitka onefile, __file__ pointe vers le dossier d'extraction temporaire
+    (%TEMP%\\onefile_...), jamais vers l'emplacement réel de l'exe distribué — un calcul
+    basé sur __file__ donnerait donc un bot_root bidon dans un dossier jetable, et
+    receiver_config.json semblerait "absent" alors qu'il existe bien à côté de l'exe.
+    Nuitka expose NUITKA_ONEFILE_BINARY (chemin absolu de l'exe onefile réel) pour ce cas
+    précis — même mécanisme que celui déjà anticipé pour update_checker.py. Priorité à
+    cette variable quand présente ; fallback __file__ en dev/attach (pas de build onefile).
     """
-    preselection_dir = os.path.dirname(os.path.abspath(__file__))
-    bot_root = os.path.dirname(preselection_dir)
+    onefile_binary = os.environ.get("NUITKA_ONEFILE_BINARY")
+    if onefile_binary:
+        bot_root = os.path.dirname(os.path.abspath(onefile_binary))
+    else:
+        preselection_dir = os.path.dirname(os.path.abspath(__file__))
+        bot_root = os.path.dirname(preselection_dir)
     return os.path.join(bot_root, "receiver_config.json")
 
 def _from_receiver_config_file() -> dict:

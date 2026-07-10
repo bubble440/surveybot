@@ -61,24 +61,38 @@ def _get_conn():
 
 
 def _ensure_table(conn) -> None:
-    with conn.cursor() as cur:
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS survey_memory (
-                survey_key    TEXT NOT NULL,
-                attempt_id    TEXT NOT NULL,
-                outcome       TEXT NOT NULL DEFAULT 'disqualified',
-                dq_page_index INTEGER DEFAULT NULL,
-                choices       JSONB NOT NULL DEFAULT '[]',
-                created_at    TIMESTAMPTZ DEFAULT now(),
-                expires_at    TIMESTAMPTZ NOT NULL,
-                PRIMARY KEY (survey_key, attempt_id)
-            )
-        """)
-        cur.execute("""
-            CREATE INDEX IF NOT EXISTS survey_memory_key_expires
-            ON survey_memory (survey_key, expires_at)
-        """)
-    conn.commit()
+    """
+    Le rôle surveybot_client n'a volontairement aucun droit DDL (CREATE/ALTER) — voir
+    décision de restriction de rôle, section 3 du doc de suivi. La table doit donc déjà
+    exister (créée manuellement une fois par un rôle privilégié). Un refus de permission
+    ici est attendu dans ce cas et ne doit pas remonter comme une erreur de lecture/écriture
+    normale : on le logue en debug et on continue, en supposant que la table existe déjà.
+    """
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS survey_memory (
+                    survey_key    TEXT NOT NULL,
+                    attempt_id    TEXT NOT NULL,
+                    outcome       TEXT NOT NULL DEFAULT 'disqualified',
+                    dq_page_index INTEGER DEFAULT NULL,
+                    choices       JSONB NOT NULL DEFAULT '[]',
+                    created_at    TIMESTAMPTZ DEFAULT now(),
+                    expires_at    TIMESTAMPTZ NOT NULL,
+                    PRIMARY KEY (survey_key, attempt_id)
+                )
+            """)
+            cur.execute("""
+                CREATE INDEX IF NOT EXISTS survey_memory_key_expires
+                ON survey_memory (survey_key, expires_at)
+            """)
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        log.debug(
+            "[SURVEY_MEMORY] Impossible de créer/modifier survey_memory (rôle sans droits "
+            "DDL, attendu si la table existe déjà) : %s", e
+        )
 
 
 # ---------------------------------------------------------------------------
