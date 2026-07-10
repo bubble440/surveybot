@@ -42,6 +42,7 @@ python -m nuitka main.py `
     --include-package-data=playwright `
     --include-package-data=botocore `
     --include-package-data=boto3 `
+    --include-package-data=psycopg2 `
     --product-name="SurveyBot" `
     --file-version=1.0.0.0 `
     --product-version=1.0.0.0 `

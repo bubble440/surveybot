@@ -18,8 +18,8 @@ if not is_attach_mode():
 import sys, json, time, traceback
 from urllib.parse import urlparse
 from launch import start_heartbeat_thread, acquire_account_lock_or_exit, mark_bot_running
-from launch import install_sigterm_handler, install_sigint_handler, start_runtime_guard, launch_driver_or_fail, init_session_and_enter_surveys, install_sigusr1_handler, restore_session_cookies
-from launch import start_hot_reload_thread, run_main_loop, build_notifier, soft_restart, start_debug_http_server
+from launch import install_sigterm_handler, install_sigint_handler, start_runtime_guard, launch_driver_or_fail, init_session_and_enter_surveys, install_sigusr1_handler
+from launch import run_main_loop, build_notifier, soft_restart, start_debug_http_server
 from platforms import get_platform
 from Management.guards.runtime_guard import get_guard
 

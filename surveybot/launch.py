@@ -52,7 +52,7 @@ from preselection.auth_handler import login
 from preselection.survey_navigator import go_to_best_value_survey
 from preselection.survey_handler import run_survey
 from Management.notifier import send_telegram
-from State.account_state import update_state, load_state, try_acquire_cooldown_slot, _now, load_datadome_cookies, load_cookies
+from State.account_state import update_state, load_state, try_acquire_cooldown_slot, _now
 from preselection.auth_handler import is_session_expired, handle_proxy_error_page_if_needed
 from Management.pause_policy import PausePolicy
 import subprocess
@@ -372,74 +372,6 @@ def mark_bot_running(account_id: str, email):
         st.__setitem__("status", "running"),
         st.__setitem__("last_boot_ts", _now())
     ))
-
-def restore_session_cookies(driver, account_id: str) -> None:
-    """
-    Restaure tous les cookies de session depuis cookie_store via CDP.
-    Appelé après le lancement de Chrome, avant le premier chargement de page.
-    Les cookies expirés sont filtrés. Les échecs par cookie sont loggés et ignorés.
-    Ne bloque jamais le démarrage du bot.
-    """
-    import time as _time
-    from Survey.log_utils import log_info, log_debug
-    _TAG = "SESSION_RESTORE"
-    try:
-        all_cookies = load_cookies(account_id)
-    except Exception as e:
-        log_info(_TAG, f"load_cookies() a échoué, démarrage sans cookies: {e}")
-        return
-    if not all_cookies:
-        return
-    for domain, cookies in all_cookies.items():
-        restored = 0
-        for cookie in cookies:
-            try:
-                expires = cookie.get("expires")
-                if expires is not None and expires != -1 and expires < _time.time():
-                    log_debug(_TAG, f"Cookie expiré ignoré: name={cookie.get('name')} domain={domain}")
-                    continue
-                params = {"name": cookie["name"], "value": cookie["value"], "domain": domain}
-                if "path" in cookie:
-                    params["path"] = cookie["path"]
-                if "secure" in cookie:
-                    params["secure"] = cookie["secure"]
-                if "httpOnly" in cookie:
-                    params["httpOnly"] = cookie["httpOnly"]
-                if expires is not None and expires != -1:
-                    params["expires"] = expires
-                if "sameSite" in cookie:
-                    params["sameSite"] = cookie["sameSite"]
-                driver.execute_cdp_cmd("Network.setCookie", params)
-                restored += 1
-            except Exception as e:
-                log_info(_TAG, f"Cookie ignoré: name={cookie.get('name')} domain={domain}: {e}")
-        log_info(_TAG, f"{restored} cookie(s) restauré(s) pour domaine={domain}")
-
-
-def restore_datadome_cookies(driver, account_id: str) -> None:
-    """
-    Restaure les cookies DataDome persistés dans le navigateur via CDP.
-    Appelé après le lancement de Chrome, avant le premier chargement de page.
-    Les échecs par cookie sont loggés et ignorés — ne bloque jamais le démarrage.
-    """
-    from Survey.log_utils import log_info, log_debug
-    _TAG = "DATADOME_RESTORE"
-    cookies = load_datadome_cookies(account_id)
-    if not cookies:
-        return
-    log_info(_TAG, f"{len(cookies)} cookie(s) DataDome à restaurer")
-    for domain, cookie_value in cookies.items():
-        try:
-            driver.execute_cdp_cmd("Network.setCookie", {
-                "name": "datadome",
-                "value": cookie_value,
-                "domain": domain,
-                "path": "/",
-            })
-            log_info(_TAG, f"Cookie restauré pour domaine={domain}")
-        except Exception as e:
-            log_info(_TAG, f"Restauration ignorée pour domaine={domain}: {e}")
-
 
 def launch_driver_or_fail(config, account_id: str):
     try:
