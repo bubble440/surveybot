@@ -485,6 +485,13 @@ def launch_browser_playwright(config: dict | None = None):
         "Chrome/149.0.0.0 Safari/537.36"
     )
 
+    import asyncio
+    try:
+        _loop = asyncio.get_event_loop()
+        print(f"[DIAG][ASYNCIO] loop={_loop} running={_loop.is_running()} closed={_loop.is_closed()}")
+    except Exception as _diag_exc:
+        print(f"[DIAG][ASYNCIO] get_event_loop a levé : {_diag_exc}")
+
     pw = sync_playwright().start()
     # launch_persistent_context reçoit user_data_dir en premier argument positionnel
     # et interdit --user-data-dir dans args (erreur Playwright explicite).
