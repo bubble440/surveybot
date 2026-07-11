@@ -35,3 +35,8 @@ global_config.py
 accounts.json
 manifest.json
 receiver_config.json
+dist_nuitka/
+*.dist/
+*.build/
+*.onefile-build/
+*.pyd

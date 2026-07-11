@@ -798,9 +798,24 @@ def main():
             _acct_env = os.getenv("ACCOUNT_ID", "").strip()
 
             def _soft_restart(reason):
+                # 🔎 FIX : runtime_ctx["driver"] est figé au lancement initial et n'est
+                # jamais mis à jour après un switch d'onglet interne (cf. survey_handler.py
+                # ::_resync_live_page, qui republie désormais la page vivante vers le
+                # RuntimeGuard à chaque resync). On préfère donc self.driver du guard
+                # quand il est disponible et vivant — c'est la copie la plus fraîche.
+                # Sans ce fix, soft_restart_cleanup()/safe_get() échouait systématiquement
+                # avec "Target page, context or browser has been closed" dès qu'un
+                # restart survenait après un survey ayant fait un switch d'onglet.
+                _driver_for_restart = runtime_ctx["driver"]
+                try:
+                    _guard_driver = get_guard().driver
+                    if _guard_driver is not None and not _guard_driver.is_closed():
+                        _driver_for_restart = _guard_driver
+                except Exception:
+                    pass
                 return soft_restart(
                     runtime_ctx["session"],
-                    runtime_ctx["driver"],
+                    _driver_for_restart,
                     reason,
                     platform=platform,
                 )

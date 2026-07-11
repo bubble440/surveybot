@@ -46,6 +46,18 @@ def _resync_live_page(driver):
         if live:
             resynced = live[-1]
             print(f"[DRIVER][DIAG] Resync OK → {resynced.url}")
+            # 🔎 FIX : republier la page vivante vers le RuntimeGuard (source de vérité
+            # globale utilisée par main.py::_soft_restart via runtime_ctx["driver"] ET
+            # par RuntimeGuard.try_open_application_cta via self.driver). Sans ça, le
+            # resync local à cette fonction ne corrige que survey_handler.py — les
+            # autres holders de `driver` (soft_restart, guard interne) restent périmés
+            # et échouent avec la même erreur "Target page ... has been closed" dès
+            # qu'un restart ou un CTA guard se déclenche après un switch d'onglet.
+            try:
+                from Management.guards.runtime_guard import get_guard
+                get_guard().attach_driver(resynced)
+            except Exception as _ge:
+                print(f"[DRIVER][DIAG][WARN] Impossible de republier vers RuntimeGuard: {_ge}")
             return resynced
         print("[DRIVER][DIAG][WARN] Aucune page vivante trouvée dans le contexte après resync.")
     except Exception as e:
