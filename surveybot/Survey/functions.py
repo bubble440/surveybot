@@ -50,6 +50,11 @@ def _local_pause_before_cta(reason: str = "") -> None:
         return
 
 
+def _is_target_closed(e: Exception) -> bool:
+    msg = str(e).lower()
+    return "target page" in msg or "has been closed" in msg or "target closed" in msg
+
+
 def _handle_topsurveys_exclusion_popup(driver, account_id) -> bool: #survey_executor
     """
     Gere les popups TopSurveys au retour sur app.topsurveys.app.
@@ -67,7 +72,13 @@ def _handle_topsurveys_exclusion_popup(driver, account_id) -> bool: #survey_exec
         url = (driver.url or "").lower()
         if "topsurveys.app" not in url:
             return False
-    except Exception:
+    except Exception as e:
+        # 🔎 DIAG : si la page est déjà fermée à ce stade, c'est la toute première
+        # instruction de la fonction — donc la page est morte AVANT même d'entrer ici
+        # (entre le "Retour TopSurveys" du log_info et cet appel).
+        if _is_target_closed(e):
+            print(f"[TOPSURVEYS_POPUP][DIAG] Page déjà fermée dès l'entrée de "
+                  f"_handle_topsurveys_exclusion_popup (avant tout traitement) : {e}")
         return False
 
     import preselection.survey_navigator as survey_navigator
@@ -75,8 +86,12 @@ def _handle_topsurveys_exclusion_popup(driver, account_id) -> bool: #survey_exec
     # === PRIORITE 1 : Mystery boxes ===
     try:
         has_boxes = bool(driver.query_selector_all("[data-test-id^='ps-mystery-box-item-button']"))
-    except Exception:
+    except Exception as e:
+        if _is_target_closed(e):
+            print(f"[TOPSURVEYS_POPUP][DIAG] Page fermée pendant le scan mystery-box "
+                  f"(driver.url avait pourtant réussi juste avant) : {e}")
         has_boxes = False
+
 
     if has_boxes:
         reason = "[TOPSURVEYS_POPUP] Mystery boxes detectees - selection en cours..."
@@ -100,7 +115,10 @@ def _handle_topsurveys_exclusion_popup(driver, account_id) -> bool: #survey_exec
     # === PRIORITE 2 : Popup 'Bon travail !' sans mystery boxes ===
     try:
         txt = (driver.evaluate("() => document.body.innerText || ''") or "").lower()
-    except Exception:
+    except Exception as e:
+        if _is_target_closed(e):
+            print(f"[TOPSURVEYS_POPUP][DIAG] Page fermée pendant la lecture innerText "
+                  f"(après le scan mystery-box) : {e}")
         return False
 
     def _norm(s):

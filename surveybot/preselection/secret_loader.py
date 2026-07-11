@@ -2,7 +2,7 @@
 # Chargement robuste des secrets (ENV + fallback local)
 
 from __future__ import annotations
-import json, logging, os
+import json, logging, os, sys
 
 log = logging.getLogger("secret_loader")
 
@@ -16,27 +16,92 @@ RECEIVER_CONFIG_KEYS = [
     "payout_name", "payout_revolut_tag",
 ]
 
-def _receiver_config_path() -> str:
-    """
-    Chemin de receiver_config.json : à côté de l'exécutable/du script du bot (racine
-    surveybot\\), un niveau au-dessus de preselection\\ — même convention que
-    accounts.json / pids\\ (cf. launch.py::_pid_path).
 
-    En build Nuitka onefile, __file__ pointe vers le dossier d'extraction temporaire
-    (%TEMP%\\onefile_...), jamais vers l'emplacement réel de l'exe distribué — un calcul
-    basé sur __file__ donnerait donc un bot_root bidon dans un dossier jetable, et
-    receiver_config.json semblerait "absent" alors qu'il existe bien à côté de l'exe.
-    Nuitka expose NUITKA_ONEFILE_BINARY (chemin absolu de l'exe onefile réel) pour ce cas
-    précis — même mécanisme que celui déjà anticipé pour update_checker.py. Priorité à
-    cette variable quand présente ; fallback __file__ en dev/attach (pas de build onefile).
+def _receiver_config_candidates() -> list[str]:
     """
-    onefile_binary = os.environ.get("NUITKA_ONEFILE_BINARY")
+    Retourne la liste ORDONNÉE des chemins candidats pour receiver_config.json,
+    du plus fiable au moins fiable.
+
+    ⚠️ CORRECTIF : en build Nuitka onefile, NUITKA_ONEFILE_BINARY est censé être
+    positionné automatiquement par le bootstrap, mais rien ne garantit qu'il le
+    soit dans tous les cas (attach manuel, wrapper externe, variante de build,
+    etc.). Si cette variable est absente/vide et qu'on utilisait __file__ comme
+    seul fallback, on retombe silencieusement sur le dossier d'extraction
+    temporaire (%TEMP%\\onefile_...) — qui ne contient jamais receiver_config.json
+    puisque ce fichier vit à côté du VRAI exécutable distribué. C'est très
+    probablement la cause du bug "OPENAI_API_KEY absent malgré receiver_config.json
+    présent à côté de l'exe" : le fichier était bien là, mais on cherchait au
+    mauvais endroit, et l'échec était noyé dans un simple `log.warning`
+    (module `logging`, jamais configuré → invisible dans la console du bot qui
+    n'utilise que `print`).
+
+    On empile donc PLUSIEURS candidats et on prend le premier qui existe
+    réellement sur disque :
+      1. NUITKA_ONEFILE_BINARY (chemin de l'exe onefile réel, si fourni)
+      2. sys.executable, si le process tourne bien depuis un binaire figé
+         (sys.frozen / compilé) — filet de sécurité si la variable Nuitka
+         n'est pas positionnée dans ce build/contexte précis
+      3. __file__ (dev/attach — preselection/ un niveau sous bot_root)
+      4. Répertoire courant du process (cwd) — dernier recours
+    """
+    candidates: list[str] = []
+
+    # ✅ Chemin réel connu et figé (confirmé manuellement sur la machine de prod) :
+    # l'exe tourne depuis C:\surveybot\ (cf. `PS C:\surveybot> .\surveybot.exe`).
+    # On le met en tête absolue de la liste : aucune ambiguïté possible, quel que
+    # soit le comportement de NUITKA_ONEFILE_BINARY/sys.executable dans ce build.
+    candidates.append(r"C:\surveybot\receiver_config.json")
+
+    onefile_binary = os.environ.get("NUITKA_ONEFILE_BINARY", "").strip()
     if onefile_binary:
-        bot_root = os.path.dirname(os.path.abspath(onefile_binary))
-    else:
+        candidates.append(os.path.join(os.path.dirname(os.path.abspath(onefile_binary)), "receiver_config.json"))
+
+    try:
+        is_frozen = getattr(sys, "frozen", False) or bool(getattr(sys, "_MEIPASS", ""))
+        exe_path = os.path.abspath(sys.executable or "")
+        if (is_frozen or exe_path.lower().endswith(".exe")) and "temp" not in exe_path.lower():
+            candidates.append(os.path.join(os.path.dirname(exe_path), "receiver_config.json"))
+    except Exception:
+        pass
+
+    try:
         preselection_dir = os.path.dirname(os.path.abspath(__file__))
         bot_root = os.path.dirname(preselection_dir)
-    return os.path.join(bot_root, "receiver_config.json")
+        candidates.append(os.path.join(bot_root, "receiver_config.json"))
+    except Exception:
+        pass
+
+    candidates.append(os.path.join(os.path.abspath(os.getcwd()), "receiver_config.json"))
+
+    # dédoublonnage en préservant l'ordre
+    seen = set()
+    ordered = []
+    for c in candidates:
+        c_norm = os.path.normcase(os.path.normpath(c))
+        if c_norm not in seen:
+            seen.add(c_norm)
+            ordered.append(c)
+    return ordered
+
+
+def _receiver_config_path() -> str:
+    """
+    Retourne le premier chemin candidat pour lequel receiver_config.json existe
+    réellement. Si aucun n'existe, retourne le premier candidat (comportement
+    précédent conservé pour compat) mais affiche un diagnostic clair via print()
+    (visible dans la console du bot, contrairement à logging.warning).
+    """
+    candidates = _receiver_config_candidates()
+    for path in candidates:
+        if os.path.isfile(path):
+            print(f"[SECRETS] receiver_config.json trouvé : {path}")
+            return path
+
+    print("[SECRETS][WARN] receiver_config.json introuvable. Chemins essayés :")
+    for path in candidates:
+        print(f"[SECRETS][WARN]   - {path}")
+    return candidates[0] if candidates else os.path.join(os.getcwd(), "receiver_config.json")
+
 
 def _from_receiver_config_file() -> dict:
     """
@@ -58,12 +123,23 @@ def _from_receiver_config_file() -> dict:
         with open(path, "r", encoding="utf-8") as f:
             raw = json.load(f)
     except Exception as e:
+        # print() en plus de log.warning : logging n'a jamais de handler configuré
+        # dans ce process, donc ce message était invisible en pratique jusqu'ici.
+        print(f"[SECRETS][WARN] receiver_config.json illisible ({path}) — ignoré : {e}")
         log.warning("receiver_config.json illisible (%s) — ignoré : %s", path, e)
         return {}
     if not isinstance(raw, dict):
+        print(f"[SECRETS][WARN] receiver_config.json doit contenir un objet JSON — ignoré ({path}).")
         log.warning("receiver_config.json doit contenir un objet JSON — ignoré (%s).", path)
         return {}
-    return {k: v for k, v in raw.items() if k in RECEIVER_CONFIG_KEYS}
+    out = {k: v for k, v in raw.items() if k in RECEIVER_CONFIG_KEYS}
+    missing = [k for k in RECEIVER_CONFIG_KEYS if k not in out or not out.get(k)]
+    if missing:
+        print(f"[SECRETS][WARN] receiver_config.json chargé mais clé(s) manquante(s)/vide(s) : {missing}")
+    else:
+        print(f"[SECRETS] receiver_config.json chargé : {sorted(out.keys())}")
+    return out
+
 
 def _from_env_json() -> dict:
     """
@@ -157,4 +233,10 @@ def load_remote_secrets() -> dict:
     data.update(_from_env_json())
     data.update(_from_direct_env_keys())
     data.update(_from_env_overrides())
+
+    if not data.get("OPENAI_API_KEY") and not data.get("openai_api_key"):
+        print("[SECRETS][FATAL] OPENAI_API_KEY introuvable après empilement de toutes les sources "
+              "(receiver_config.json / TOPSURVEYS_SECRET_JSON / ENV). Le bot va probablement échouer "
+              "au premier appel OpenAI.")
+
     return data

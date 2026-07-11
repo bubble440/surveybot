@@ -10,6 +10,50 @@ except ImportError:
     SNAP_ENABLED = os.getenv("SNAP_ENABLED", "")
 
 
+def _resync_live_page(driver):
+    """
+    🔎 FIX : certaines fonctions (click_participer_if_qualified côté
+    question_analyzer.py, switch_to_latest_window_and_close_others côté
+    redirect_watcher.py) font le switch vers le nouvel onglet EN INTERNE, sur une
+    variable locale, et ferment l'ancien onglet (souvent celui référencé par
+    `driver` chez l'appelant) — sans jamais renvoyer la nouvelle Page. `driver`
+    continue donc de pointer vers une Page FERMÉE.
+
+    Symptôme observé : `page.url` est une propriété mise en cache côté client
+    Playwright (pas un appel réseau) — elle continue de répondre même sur une
+    page fermée, en renvoyant la dernière valeur connue. `wait_for_final_redirection`
+    peut donc "stabiliser" sur une URL qui semble correcte (ex: l'URL de l'onglet
+    d'origine avant l'ouverture du popup) alors que la page est déjà morte. Toute
+    vraie opération DOM qui suit (query_selector_all, evaluate, wait_for_selector)
+    échoue alors immédiatement avec "Target page, context or browser has been closed".
+
+    Cette fonction revérifie que `driver` est bien une page vivante ; si ce n'est
+    plus le cas, elle retombe sur la dernière page vivante du même contexte
+    navigateur (best-effort : c'est la page la plus probable après un switch).
+    À appeler après tout appel à une fonction susceptible d'avoir fait un switch
+    d'onglet en interne, avant de continuer à utiliser `driver`.
+    """
+    try:
+        if not driver.is_closed():
+            return driver
+    except Exception:
+        pass
+
+    print("[DRIVER][DIAG] Référence `driver` fermée détectée — resync sur la page vivante du contexte.")
+    try:
+        pages = driver.context.pages
+        live = [p for p in pages if not p.is_closed()]
+        if live:
+            resynced = live[-1]
+            print(f"[DRIVER][DIAG] Resync OK → {resynced.url}")
+            return resynced
+        print("[DRIVER][DIAG][WARN] Aucune page vivante trouvée dans le contexte après resync.")
+    except Exception as e:
+        print(f"[DRIVER][DIAG][WARN] Resync impossible ({e}) — on retourne `driver` tel quel.")
+
+    return driver
+
+
 
 # FIX-B3: _restart_depth était un global partagé entre threads.
 # Un soft_restart peut relancer run_survey() depuis n'importe quel thread
@@ -187,6 +231,7 @@ def run_attach_preselection_takeover(
                     timeout=min(12, transition_timeout_s),
                     prefer_external=True,
                 )
+                driver = _resync_live_page(driver)
                 Management.redirect_watcher.wait_for_final_redirection(driver, max_wait=transition_timeout_s)
             except Exception as _e:
                 # H4: on logue l'erreur pour permettre le diagnostic — le bot risque
@@ -456,6 +501,10 @@ def _run_survey_impl(driver, api_key, *, account_id: str, ctx=None, payout_name:
                         # H3: click_participer_if_qualified fait déjà le switch de fenêtre
                         # en interne — ne pas rappeler switch_to_latest_window_and_close_others
                         # ici pour éviter la race condition du double switch.
+                        # 🔎 FIX : ce switch interne ferme l'ancien onglet référencé par `driver`
+                        # sans jamais renvoyer la nouvelle page — resync obligatoire avant de
+                        # continuer, sous peine d'opérer sur une Page fermée (cf. _resync_live_page).
+                        driver = _resync_live_page(driver)
                         final_url = Management.redirect_watcher.wait_for_final_redirection(driver, max_wait=60)
 
                         if SNAP_ENABLED.strip() == "1":
