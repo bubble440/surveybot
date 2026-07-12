@@ -71,6 +71,14 @@ function Start-Bot {
         "GEO_LON"           = if ($Bot.ContainsKey("geo_lon"))     { $Bot.geo_lon }     else { "2.3522" }
         "SURVEY_LANG"       = if ($Bot.ContainsKey("survey_lang")) { $Bot.survey_lang } else { "fr-FR" }
         "SURVEY_TZ"         = if ($Bot.ContainsKey("survey_tz"))   { $Bot.survey_tz }   else { "Europe/Paris" }
+        # Sans ceci, Python détecte un stdout redirigé (non-tty) et retombe sur le
+        # codepage console Windows (cp1252 ici) au lieu d'UTF-8 : les caractères
+        # accentués sont mal réencodés (mojibake) et tout print() contenant un
+        # emoji (ex: 🚀 dans launch.py) fait planter le process avec un
+        # UnicodeEncodeError. PYTHONUTF8 force le mode UTF-8 global de l'interpréteur
+        # (PEP 540), PYTHONIOENCODING force spécifiquement l'encodage stdout/stderr.
+        "PYTHONIOENCODING"  = "utf-8"
+        "PYTHONUTF8"        = "1"
     }
 
     # Construire le bloc d'environnement pour Start-Process
@@ -102,6 +110,8 @@ function Start-Bot {
     $psi.UseShellExecute        = $false
     $psi.RedirectStandardOutput = $true
     $psi.RedirectStandardError  = $true
+    $psi.StandardOutputEncoding = [System.Text.Encoding]::UTF8
+    $psi.StandardErrorEncoding  = [System.Text.Encoding]::UTF8
     $psi.CreateNoWindow         = $true
 
     foreach ($kv in $envBlock.GetEnumerator()) {
@@ -113,14 +123,14 @@ function Start-Bot {
     # Redirection asynchrone des sorties vers le log du bot
     $process.BeginOutputReadLine()
     $process.BeginErrorReadLine()
-    Register-ObjectEvent -InputObject $process -EventName "OutputDataReceived" -Action {
+    Register-ObjectEvent -InputObject $process -EventName "OutputDataReceived" -MessageData $logFile -Action {
         if ($Event.SourceEventArgs.Data) {
-            Add-Content -Path $logFile -Value $Event.SourceEventArgs.Data -Encoding UTF8
+            Add-Content -Path $Event.MessageData -Value $Event.SourceEventArgs.Data -Encoding UTF8
         }
     } | Out-Null
-    Register-ObjectEvent -InputObject $process -EventName "ErrorDataReceived" -Action {
+    Register-ObjectEvent -InputObject $process -EventName "ErrorDataReceived" -MessageData $logFile -Action {
         if ($Event.SourceEventArgs.Data) {
-            Add-Content -Path $logFile -Value $Event.SourceEventArgs.Data -Encoding UTF8
+            Add-Content -Path $Event.MessageData -Value $Event.SourceEventArgs.Data -Encoding UTF8
         }
     } | Out-Null
 

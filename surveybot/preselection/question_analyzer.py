@@ -585,10 +585,14 @@ def click_participer_if_qualified(driver):
                 print("🛑 CTA_INTERCEPT_ONLY=1 — bouton 'Participer' trouvé, interception OK sans clic.")
                 return False
 
-            # JS dispatch : contourne l'overlay (.popup-content / .popup-container)
-            # qui intercepte pointer-events et bloque le clic natif Playwright (TimeoutError 30 s).
-            btn.evaluate("(el) => el.click()")
-            print("🖱️ JS dispatch click sur 'Participer' (overlay bypass).")
+            # Clic natif Playwright (isTrusted=true), avec force=True pour bypasser
+            # l'overlay (.popup-content / .popup-container) qui intercepte les
+            # pointer-events et provoquait un TimeoutError 30s avec le clic natif
+            # standard. force=True saute le contrôle d'actionabilité (hit-test) sans
+            # recourir à un dispatch JS non fiable (isTrusted=false), qui est un
+            # signal détectable et peut perturber le traitement CDP du popup ouvert.
+            btn.click(force=True, timeout=10_000)
+            print("🖱️ Clic natif (force=True) sur 'Participer' (overlay bypass).")
 
             # Pont BLOC 2 → redirect_watcher (hors périmètre, attend un objet shim/driver)
             switched = Management.redirect_watcher.switch_to_latest_window_and_close_others(

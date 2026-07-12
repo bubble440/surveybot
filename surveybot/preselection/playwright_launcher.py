@@ -629,12 +629,36 @@ def attach_browser_playwright(attach_addr: str):
     Ne modifie PAS le chemin de lancement prod (launch_browser_playwright).
     """
     from playwright.sync_api import sync_playwright
+    import urllib.request, urllib.error
 
     endpoint = attach_addr if "://" in attach_addr else f"http://{attach_addr}"
     log_info("[ATTACH_PW]", f"connect_over_cdp → {endpoint}")
 
+    # Pré-vérification rapide : sans ça, un endpoint CDP injoignable (Chrome pas
+    # encore prêt, port occupé par autre chose, DevTools déjà connecté ailleurs)
+    # fait attendre connect_over_cdp jusqu'à son timeout interne (180s) sans
+    # aucun indice sur la cause. On échoue vite avec un message clair à la place.
+    version_url = f"{endpoint.rstrip('/')}/json/version"
+    try:
+        with urllib.request.urlopen(version_url, timeout=5) as resp:
+            resp.read()
+    except Exception as e:
+        raise RuntimeError(
+            f"[ATTACH_PW] Endpoint CDP injoignable sur {version_url} ({type(e).__name__}: {e}). "
+            "Vérifie que Chrome est bien lancé avec --remote-debugging-port sur ce port, "
+            "qu'aucune fenêtre DevTools n'est déjà ouverte manuellement dessus, et qu'aucun "
+            "autre processus n'occupe déjà ce port."
+        ) from e
+
     pw = sync_playwright().start()
-    browser = pw.chromium.connect_over_cdp(endpoint)
+    try:
+        # Timeout explicite court (15s) au lieu du défaut : le endpoint vient
+        # d'être validé joignable ci-dessus, donc connect_over_cdp doit aboutir
+        # rapidement ; s'il traîne, mieux vaut échouer vite et relancer.
+        browser = pw.chromium.connect_over_cdp(endpoint, timeout=15_000)
+    except Exception:
+        pw.stop()
+        raise
 
     contexts = browser.contexts
     if not contexts:

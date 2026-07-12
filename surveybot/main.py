@@ -7,7 +7,15 @@ import os
 # ci-dessous). Réinjecte la config globale dans os.environ sans écraser une
 # valeur déjà présente (accounts.json, script de lancement, secrets Fly.io).
 from preselection.config_loader import load_config
-load_config()
+
+# En mode attach, toutes les variables d'environnement nécessaires sont déjà
+# injectées par le script de lancement PowerShell (attach_tab.ps1) avant
+# l'exécution de ce script : le chargement du fichier de configuration prod
+# (receiver_config.json, secrets) est donc inutile et est sauté. On détecte
+# le mode attach directement via la variable d'environnement BROWSER_MODE,
+# sans importer config.py (pas encore garanti chargeable à ce stade).
+if os.getenv("BROWSER_MODE", "").strip().lower() != "attach":
+    load_config()
 
 from config import is_attach_mode, RUN_ENV, BROWSER_MODE, is_prod_like, should_run_guard_monitor, should_run_heartbeat, log_config_summary
 
@@ -669,7 +677,13 @@ def run_attach_preselection_takeover(driver, *, api_key: str, account_id: str) -
     print("[ATTACH][PRESEL] route terminée.")
 
 def main():
-    config = load_config()
+    # Même garde qu'à l'import du module (cf. plus haut) : en mode attach,
+    # l'environnement est déjà entièrement fourni par attach_tab.ps1, donc pas
+    # besoin de relire receiver_config.json ici non plus.
+    if os.getenv("BROWSER_MODE", "").strip().lower() != "attach":
+        config = load_config()
+    else:
+        config = {}
     platform = get_platform()
 
     print(

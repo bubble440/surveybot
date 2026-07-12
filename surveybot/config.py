@@ -39,12 +39,20 @@ import os
 # pour ne pas casser le workflow local — même convention que _license_config.py.
 # ══════════════════════════════════════════════════════════════════════════════
 
-try:
-    from global_config import RUN_ENV  # type: ignore
-except ImportError:
-    RUN_ENV = os.getenv("RUN_ENV", "prod")  # prod (défaut) | autre valeur = non-prod
-
 BROWSER_MODE = os.getenv("BROWSER_MODE", "normal")  # normal | attach — jamais dans global_config (dev/attach uniquement)
+
+# En mode attach, global_config ne doit JAMAIS être importé : toutes les
+# variables proviennent de l'environnement du process, injecté par
+# attach_tab.ps1. On ne tente l'import que si BROWSER_MODE != attach, pour ne
+# pas dépendre d'un ImportError accidentel si un global_config.py traînait
+# localement (résidu de build Nuitka par ex.).
+if BROWSER_MODE == "attach":
+    RUN_ENV = os.getenv("RUN_ENV", "prod")
+else:
+    try:
+        from global_config import RUN_ENV  # type: ignore
+    except ImportError:
+        RUN_ENV = os.getenv("RUN_ENV", "prod")  # prod (défaut) | autre valeur = non-prod
 
 # ══════════════════════════════════════════════════════════════════════════════
 # FONCTIONS DE DÉCISION CENTRALISÉES
@@ -86,9 +94,11 @@ def is_cta_intercept_only() -> bool:
     Retourne True si CTA_INTERCEPT_ONLY est actif.
     Dans ce mode, les clics CTA sont interceptés (events déclenchés) mais la navigation
     ne se produit pas réellement.
-    Lit global_config.py en priorité (build compilé) ; fallback os.getenv en dev/attach
-    (global_config.py absent du projet, même convention que RUN_ENV ci-dessus).
+    Lit global_config.py en priorité (build compilé) ; en mode attach, global_config
+    n'est jamais importé (cf. RUN_ENV plus haut) — fallback direct sur os.getenv.
     """
+    if is_attach_mode():
+        return _env_truthy("CTA_INTERCEPT_ONLY", "0")
     try:
         from global_config import CTA_INTERCEPT_ONLY  # type: ignore
         v = (CTA_INTERCEPT_ONLY or "0").strip().lower()

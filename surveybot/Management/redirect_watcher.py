@@ -95,6 +95,19 @@ def switch_to_latest_window_and_close_others(driver, base_handles, timeout=10, p
             new_page = None  # timeout — aucun onglet ouvert, on tombe sur Cas 2
 
     if new_page is not None:
+        # ⚠️ FIX "Debugger paused in another tab" : sous connect_over_cdp, un
+        # nouveau target (popup/tab ouvert via window.open, ex: clic sur
+        # "Participer") peut démarrer en pause CDP (waitForDebuggerOnStart),
+        # car un client CDP externe (notre attach) est déjà connecté au
+        # navigateur. Sans Runtime.runIfWaitingForDebugger explicite, l'onglet
+        # reste figé sur about:blank indéfiniment — c'est exactement ce
+        # symptôme. On envoie ce signal avant toute interaction avec la page.
+        try:
+            cdp = context.new_cdp_session(new_page)
+            cdp.send("Runtime.runIfWaitingForDebugger")
+        except Exception as _cdp_e:
+            print(f"[REDIRECT_WATCHER][WARN] Runtime.runIfWaitingForDebugger a échoué: {_cdp_e}")
+
         new_page.bring_to_front()
 
         # 🔥 Fermer tous les anciens onglets

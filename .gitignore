@@ -41,5 +41,6 @@ dist_nuitka/
 *.onefile-build/
 *.pyd
 .nuitka_cache
+.nuitka_cache/
 dist_nuitka_dev/
 ./tools/attach_tab.ps1
