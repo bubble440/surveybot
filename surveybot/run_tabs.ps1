@@ -12,12 +12,12 @@ $wtArgs = @()
 $first = $true
 
 foreach($p in $ports){
-  $cmd = "& `"$tabScript`" -Port $p -ProjectDir `"$projectDir`" -TargetUrl `"$("https://www.topsurveys.app")`" -AttachTabSelector pick"
+  $tabArgs = @("new-tab","--title","bot:$p","--","powershell.exe","-NoExit","-File",$tabScript,"-Port",$p,"-ProjectDir",$projectDir,"-TargetUrl","https://www.topsurveys.app","-AttachTabSelector","pick")
   if($first){
-    $wtArgs += @("new-tab","--title","bot:$p","powershell.exe","-NoExit","-Command",$cmd)
+    $wtArgs += $tabArgs
     $first = $false
   } else {
-    $wtArgs += @(";","new-tab","--title","bot:$p","powershell.exe","-NoExit","-Command",$cmd)
+    $wtArgs += @(";") + $tabArgs
   }
 }
 

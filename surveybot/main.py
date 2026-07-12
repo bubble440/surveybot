@@ -757,6 +757,13 @@ def main():
                 run_attach_takeover(page, api_key=api_key, account_id=account_id)
         return
 
+    # Vérification et application d'une mise à jour binaire avant tout démarrage.
+    # No-op si UPDATE_CHECK_ENABLED != "1". Si une mise à jour est appliquée,
+    # os.execv() remplace le processus et cette ligne ne retourne jamais.
+    # Placé ici : account_id résolu, aucun lock ni driver acquis → relance propre.
+    from update_checker import check_and_apply as _check_and_apply
+    _check_and_apply(account_id)
+
     # FIX-A: install_sigterm_handler AVANT acquire_account_lock_or_exit.
     # Auparavant, un SIGTERM arrivant entre acquire et install_sigterm_handler
     # terminait le processus sans remettre cooldown_until_ts à zéro en Postgres,
