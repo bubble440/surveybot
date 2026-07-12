@@ -39,20 +39,29 @@ def _resync_live_page(driver):
     except Exception:
         pass
 
-    print("[DRIVER][DIAG] Référence `driver` fermée détectée — resync sur la page vivante du contexte.")
+    print("[DRIVER][DIAG] Référence `driver` fermée détectée — resync en cours.")
+
+    # Priorité 1 : la page publiée par le RuntimeGuard (survey_solver.py y republie
+    # désormais à chaque switch interne — souvent plus fraîche que driver.context,
+    # notamment si `driver` lui-même est une référence tellement périmée que même
+    # son .context n'est plus fiable).
+    try:
+        from Management.guards.runtime_guard import get_guard
+        _gd = get_guard().driver
+        if _gd is not None and not _gd.is_closed():
+            print(f"[DRIVER][DIAG] Resync via RuntimeGuard → {_gd.url}")
+            return _gd
+    except Exception:
+        pass
+
+    # Priorité 2 : dernière page vivante du contexte de `driver`.
     try:
         pages = driver.context.pages
         live = [p for p in pages if not p.is_closed()]
         if live:
             resynced = live[-1]
-            print(f"[DRIVER][DIAG] Resync OK → {resynced.url}")
-            # 🔎 FIX : republier la page vivante vers le RuntimeGuard (source de vérité
-            # globale utilisée par main.py::_soft_restart via runtime_ctx["driver"] ET
-            # par RuntimeGuard.try_open_application_cta via self.driver). Sans ça, le
-            # resync local à cette fonction ne corrige que survey_handler.py — les
-            # autres holders de `driver` (soft_restart, guard interne) restent périmés
-            # et échouent avec la même erreur "Target page ... has been closed" dès
-            # qu'un restart ou un CTA guard se déclenche après un switch d'onglet.
+            print(f"[DRIVER][DIAG] Resync via context.pages → {resynced.url}")
+            # Republication pour les autres holders (soft_restart, guard CTA, ...).
             try:
                 from Management.guards.runtime_guard import get_guard
                 get_guard().attach_driver(resynced)
@@ -553,6 +562,13 @@ def _run_survey_impl(driver, api_key, *, account_id: str, ctx=None, payout_name:
                                 platform=platform,
                             )
                         except TopSurveysReturn:
+                            # 🔎 FIX : solve_full_survey() peut avoir basculé en interne sur
+                            # un autre onglet (cf. survey_solver.py::_switch_to_external_tab,
+                            # qui republie maintenant vers le RuntimeGuard). `driver` ici est
+                            # celui d'AVANT l'appel — on le resynchronise avant de continuer
+                            # la boucle, sinon la prochaine itération opère sur une page
+                            # potentiellement fermée.
+                            driver = _resync_live_page(driver)
                             continue
                         return
 

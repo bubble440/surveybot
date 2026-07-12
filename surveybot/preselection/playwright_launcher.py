@@ -457,7 +457,7 @@ def launch_browser_playwright(config: dict | None = None):
         "--disable-search-engine-choice-screen",
         "--disable-extensions",
         "--disable-notifications",
-        "--window-size=1920,1080",
+        # "--window-size=1920,1080",
         "--lang=en-US",
     ]
 

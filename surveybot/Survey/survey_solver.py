@@ -53,6 +53,24 @@ PAUSE_BEFORE_FIRST_SCAN = 1.5  # post-chargement, avant le premier scan DOM (abs
 PAUSE_POST_CTA_NAV = 2.0       # après navigation CTA, avant toute interaction avec la nouvelle page
 
 
+def _publish_live_page(pg):
+    """
+    🔎 FIX (même famille que survey_handler.py::_resync_live_page) : quand ce module
+    bascule en interne sur une nouvelle Page (onglet externe du survey, focus multi-
+    onglets), l'appelant (survey_handler.py) ne récupère jamais cette nouvelle page —
+    l'appel à solve_full_survey() ignore sa valeur de retour, et le chemin
+    `except TopSurveysReturn: continue` relance la boucle avec le `driver` d'avant
+    l'appel. On republie donc systématiquement vers le RuntimeGuard (source de vérité
+    globale) à chaque switch, pour que soft_restart et les guards internes utilisent
+    toujours la page réellement vivante.
+    """
+    try:
+        from Management.guards.runtime_guard import get_guard
+        get_guard().attach_driver(pg)
+    except Exception:
+        pass
+
+
 def _switch_to_external_tab(driver, platform):
     """
     Identifie l'onglet du survey (non-plateforme) parmi tous les onglets du contexte CDP.
@@ -70,6 +88,7 @@ def _switch_to_external_tab(driver, platform):
             if hasattr(driver, "_page"):
                 driver._page = pg
                 driver._current_frame = pg
+            _publish_live_page(pg)
             return pg
     print("⚠ Aucun onglet externe détecté. Reste sur la plateforme.")
     return None
@@ -451,6 +470,7 @@ def solve_full_survey(driver, api_key, *, account_id: str, survey_context=None, 
         if len(all_pages) > 1:
             page = all_pages[-1]
             print(f"🧭 Focus forcé sur l'onglet actif : {page.url}")
+            _publish_live_page(page)
     except Exception as e:
         print("⚠ Impossible de forcer le focus onglet :", e)
 
@@ -458,6 +478,7 @@ def solve_full_survey(driver, api_key, *, account_id: str, survey_context=None, 
     ext_page = _switch_to_external_tab(page, platform=platform)
     if ext_page is not None and ext_page is not page:
         page = ext_page
+        _publish_live_page(page)
 
     # 1) Attendre que la redirection s'arrête sur une URL stable
     final_url = _wait_for_url_stable(page, max_wait=60)

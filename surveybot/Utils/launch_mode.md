@@ -27,3 +27,12 @@ pyinstaller --onefile --name surveybot --add-data "_license_config.py;." main.py
 
 # Lancer Chrome une première fois avec le bon proxy et pointer vers le dossier cible :
 "C:\Program Files\Google\Chrome\Application\chrome.exe" --user-data-dir="C:\surveybot\profiles\bot_001" --proxy-server="http://host:port"
+
+
+
+## Etape du build de surveybot.exe
+
+$env:NUITKA_CACHE_DIR = "C:\projects\Surveys\surveybot\.nuitka_cache" # Definir le fichier de cache 
+
+# Run de la commande de build
+.\nuitka_build_dev.ps1 #Fichier de debug
