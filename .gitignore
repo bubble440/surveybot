@@ -40,9 +40,6 @@ dist_nuitka/
 *.build/
 *.onefile-build/
 *.pyd
-.nuitka-cache
-.nuitka-cache/
-nuitka-cache
-nuitka-cache/
+.nuitka_cache
 dist_nuitka_dev/
-tools/attach_tabs.py
+./tools/attach_tab.ps1

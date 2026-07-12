@@ -23,7 +23,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 # Cache persistant Nuitka — évite de recompiler les modules C inchangés à chaque run.
-$env:NUITKA_CACHE_DIR = "C:\surveybot\.nuitka_cache"
+$env:NUITKA_CACHE_DIR = "C:\projects\Surveys\surveybot\.nuitka_cache"
 
 $compilerArgs = @()
 if ($UseMinGW) {
@@ -50,4 +50,24 @@ python -m nuitka main.py `
     --lto=no `
     --jobs=$([Environment]::ProcessorCount) `
     --include-module=_license_config `
+    --include-module=global_config `
+    --include-package=Survey `
+    --include-package=Management `
+    --include-package=preselection `
+    --include-package=captcha `
+    --include-package-data=playwright `
+    --include-package-data=botocore `
+    --include-package-data=boto3 `
+    --include-package-data=psycopg2 `
+    --include-package=pydantic_core `
+    --include-package-data=pydantic_core `
+    --product-name="SurveyBot" `
+    --file-version=1.0.0.0 `
+    --product-version=1.0.0.0 `
+    $dataDirArg `
+    @compilerArgs
+
+Write-Host ""
+Write-Host "Build DEV terminé -> dist_nuitka_dev\main.dist\main.exe"
+Write-Host "Ceci est un build standalone (non-onefile) : usage dev/debug uniquement, ne pas diffuser."g `
     --include-module
