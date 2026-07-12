@@ -8,17 +8,32 @@ if(-not (Test-Path $tabScript)){
   throw "Script introuvable: $tabScript"
 }
 
-$wtArgStr = ""
+# wt.exe est un stub "App Execution Alias" (reparse point UWP/MSIX), pas un exécutable
+# classique. Start-Process échoue à le lancer (0x80070002 - fichier introuvable) même
+# avec un chemin résolu explicite. L'opérateur d'appel & fonctionne de façon fiable.
+$wtCmd = (Get-Command wt.exe -ErrorAction SilentlyContinue).Source
+if(-not $wtCmd){
+  throw "wt.exe introuvable (Windows Terminal n'est peut-etre pas installe)."
+}
+
+$wtArgs = @()
 $first = $true
 
 foreach($p in $ports){
-  $tab = "new-tab --title `"bot:$p`" -- powershell.exe -NoExit -File `"$tabScript`" -Port $p -ProjectDir `"$projectDir`" -TargetUrl `"https://www.topsurveys.app`" -AttachTabSelector pick"
+  $tabArgs = @(
+    "new-tab","--title","bot:$p","--",
+    "powershell.exe","-NoExit","-File",$tabScript,
+    "-Port","$p",
+    "-ProjectDir",$projectDir,
+    "-TargetUrl","https://www.topsurveys.app",
+    "-AttachTabSelector","pick"
+  )
   if($first){
-    $wtArgStr = $tab
+    $wtArgs += $tabArgs
     $first = $false
   } else {
-    $wtArgStr += " ; $tab"
+    $wtArgs += @(";") + $tabArgs
   }
 }
 
-Start-Process "wt.exe" -ArgumentList $wtArgStr
+& $wtCmd @wtArgs
