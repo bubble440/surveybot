@@ -8,17 +8,17 @@ if(-not (Test-Path $tabScript)){
   throw "Script introuvable: $tabScript"
 }
 
-$wtArgs = @()
+$wtArgStr = ""
 $first = $true
 
 foreach($p in $ports){
-  $tabArgs = @("new-tab","--title","bot:$p","--","powershell.exe","-NoExit","-File",$tabScript,"-Port",$p,"-ProjectDir",$projectDir,"-TargetUrl","https://www.topsurveys.app","-AttachTabSelector","pick")
+  $tab = "new-tab --title `"bot:$p`" -- powershell.exe -NoExit -File `"$tabScript`" -Port $p -ProjectDir `"$projectDir`" -TargetUrl `"https://www.topsurveys.app`" -AttachTabSelector pick"
   if($first){
-    $wtArgs += $tabArgs
+    $wtArgStr = $tab
     $first = $false
   } else {
-    $wtArgs += @(";") + $tabArgs
+    $wtArgStr += " ; $tab"
   }
 }
 
-Start-Process "wt.exe" -ArgumentList $wtArgs
+Start-Process "wt.exe" -ArgumentList $wtArgStr
