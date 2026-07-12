@@ -42,4 +42,7 @@ dist_nuitka/
 *.pyd
 .nuitka-cache
 .nuitka-cache/
+nuitka-cache
+nuitka-cache/
 dist_nuitka_dev/
+tools/attach_tabs.py
