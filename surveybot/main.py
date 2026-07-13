@@ -1,5 +1,30 @@
+import sys, os
+
+# ── Mode CLI --query-cooldown (invoqué par wake_scheduler.ps1) ───────────────
+# Point d'entrée dédié : sortie JSON du statut cooldown par compte, sans aucune
+# initialisation bot (ni load_config, ni check_license, ni navigateur, ni lock).
+# account_state.load_state() n'a besoin que de global_config et _license_config,
+# tous deux compilés dans le binaire Nuitka — aucune dépendance externe requise.
+if len(sys.argv) >= 2 and sys.argv[1] == "--query-cooldown":
+    import json as _json, time as _time
+    from State.account_state import load_state as _load_state, _ts_to_unix
+    _now = int(_time.time())
+    _results = []
+    for _aid in sys.argv[2:]:
+        try:
+            _st = _load_state(_aid)
+            _cu = _st.get("cooldown_until_ts", "1970-01-01T00:00:00")
+            _results.append({
+                "account_id": _aid,
+                "cooldown_until_ts": _cu,
+                "is_expired": _ts_to_unix(_cu) < _now,
+            })
+        except Exception as _e:
+            _results.append({"account_id": _aid, "error": str(_e), "is_expired": False})
+    print(_json.dumps(_results))
+    sys.exit(0)
+
 print("BOOT: container démarré.", flush=True)
-import os
 
 # ⚠ Doit s'exécuter AVANT tout import qui lit une constante d'environnement au
 # niveau module (config.py: RUN_ENV/BROWSER_MODE, State/account_state.py via

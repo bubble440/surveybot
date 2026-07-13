@@ -8,7 +8,7 @@
 #   wake_scheduler.ps1     → restart les bots volontairement arrêtés après cooldown expiré
 #
 # Règles :
-#   - Cooldown lu en base Postgres (via State\query_cooldown_status.py).
+#   - Cooldown lu en base Postgres via le mode CLI --query-cooldown du binaire surveybot.exe.
 #   - EXIT_FATAL (last_exit_code = 3) : jamais relancé automatiquement — intervention humaine.
 #   - Service NSSM déjà en cours d'exécution : ignoré.
 #
@@ -29,8 +29,7 @@ param(
     [string]$AccountsFile  = "$PSScriptRoot\accounts.json",
     [string]$PidsDir       = "C:\surveybot\pids",
     [string]$ServicePrefix = "surveybot_",
-    [string]$PythonExe     = "C:\projects\Surveys\surveybot\.venv\Scripts\python.exe",
-    [string]$ProjectDir    = "C:\projects\Surveys\surveybot"
+    [string]$ExePath       = "$PSScriptRoot\surveybot.exe"
 )
 
 $MAX_ACCOUNTS = 200   # garde-fou boucle : abort si accounts.json est anormalement grand
@@ -69,24 +68,20 @@ if ($accountIds.Count -gt $MAX_ACCOUNTS) {
 
 Write-Output "[WAKE] $($accountIds.Count) compte(s) à vérifier."
 
-# ── Interrogation Postgres via point d'entrée Python ─────────────────────────
+# ── Interrogation Postgres via le mode CLI du binaire compilé ─────────────────
+# surveybot.exe --query-cooldown account1 account2 ...
+# Retourne un JSON sur stdout ; exit 0 dans tous les cas.
 
-if (-not (Test-Path $PythonExe)) {
-    Write-Warning "[WAKE] Python introuvable : $PythonExe"
-    exit 1
-}
-
-$queryScript = Join-Path $ProjectDir "State\query_cooldown_status.py"
-if (-not (Test-Path $queryScript)) {
-    Write-Warning "[WAKE] Script de requête introuvable : $queryScript"
+if (-not (Test-Path $ExePath)) {
+    Write-Warning "[WAKE] Binaire introuvable : $ExePath"
     exit 1
 }
 
 try {
-    # Passe tous les account_ids d'un coup pour une seule connexion Postgres
-    $jsonOut = & $PythonExe $queryScript @accountIds 2>$null
+    # Passe tous les account_ids d'un coup : une seule connexion Postgres, sortie rapide.
+    $jsonOut = & $ExePath --query-cooldown @accountIds 2>$null
     if (-not $jsonOut) {
-        Write-Warning "[WAKE] Aucune sortie du script Python — abandon."
+        Write-Warning "[WAKE] Aucune sortie du binaire (--query-cooldown) — abandon."
         exit 1
     }
     $cooldownList = $jsonOut | ConvertFrom-Json
@@ -129,7 +124,7 @@ foreach ($accountId in $accountIds) {
     }
 
     # — Vérification EXIT_FATAL via fichier .state local —
-    # last_exit_code = 3 → intervention humaine requise, ne pas relancer.
+    # last_exit_code = 3 → intervention humaine requise, ne pas relancer automatiquement.
     $stateFile = Join-Path $PidsDir "bot_$accountId.state"
     if (Test-Path $stateFile) {
         try {
