@@ -217,6 +217,7 @@ dérivé une fois avec le chemin en dur dans l'ancienne fonction).
 - `runtime_guard.py` — `heartbeat()` écrit l'état local ; `pause()` détermine et enregistre le code de sortie
 - `launch.py` — handler `SIGBREAK` ajouté ; `EXIT_VOLUNTARY` sur arrêt propre
 - `main.py` — check `check_and_record_start()` au démarrage (seuil crash-loop) ; mode CLI `--query-cooldown`
+- `captcha_solver.py` — appel à `load_config()` désormais conditionné à `is_attach_mode()`
 
 **Fichiers supprimés :**
 - `State/query_cooldown_status.py` — supprimé (remplacé par le mode CLI du binaire)
@@ -230,5 +231,32 @@ dérivé une fois avec le chemin en dur dans l'ancienne fonction).
 2. **Validation en conditions réelles non faite** : tous les correctifs ci-dessus ont été relus sur le code mais pas encore testés sur une machine de production réelle (rebuild Nuitka + déploiement + observation d'un cycle complet crash/zombie/cooldown).
 
 ---
+
+## 12. Collision secrets attach/prod (`captcha_solver.py`)
+
+- **Problème résolu** : en mode attach (`BROWSER_MODE=attach`), `attach_tab.ps1`
+  injecte déjà directement dans `os.environ` toutes les clés nécessaires
+  (`TWO_CAPTCHA_KEY`, `CAPSOLVER_API_KEY`, `OPENAI_API_KEY`) avant de lancer
+  `main.py`. Malgré ça, `captcha_solver.py` appelait
+  `preselection.config_loader.load_config()` au niveau module (à l'import),
+  sans jamais vérifier `is_attach_mode()` — contrairement au garde déjà en
+  place dans `main.py` pour ce même besoin. Conséquence : une session de debug
+  lisait quand même `receiver_config.json`, le fichier de config partagé de la
+  machine de prod, sans raison fonctionnelle (les valeurs d'env avaient déjà
+  priorité), et produisait des logs `[SECRETS]`/`[CONFIG_LOADER]` trompeurs en
+  contexte attach.
+- **Décision** : `captcha_solver.py` ne doit plus appeler `load_config()` sans
+  condition — le garde `is_attach_mode()` (déjà centralisé dans `config.py`,
+  même pivot que `should_run_guard_monitor()`/`should_run_heartbeat()`) doit
+  couvrir ce point d'appel aussi, pas seulement celui de `main.py`.
+- **Principe retenu** : un seul point de vérité pour "charge-t-on
+  `receiver_config.json` ou pas" ne suffit pas si plusieurs modules peuvent
+  déclencher `load_config()` indépendamment. Toute nouvelle dépendance à une
+  clé PAR_RECEPTEUR doit lire l'environnement déjà peuplé (`os.getenv(...)`),
+  pas rappeler `load_config()` de son côté.
+- **Validé le 13/07/2026** en conditions réelles (session attach via
+  `run_tabs.ps1` → `attach_tab.ps1`).
+
+  ---
 
 *Dernière mise à jour de ce fichier : 13/07/2026. À mettre à jour à chaque décision ou correction touchant l'orchestration — pas seulement en fin de chantier.*

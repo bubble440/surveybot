@@ -363,7 +363,7 @@ def snapshot_if_enabled(driver, *, reason: str, question_blocks: Any = None) -> 
     import os
     from pathlib import Path
 
-    v = (os.getenv("SURVEY_SNAPSHOT", "0") or "").strip().lower()
+    v = (os.getenv("SURVEY_SNAPSHOT", "1") or "").strip().lower()
     if v in ("1", "true", "all", "on", "yes"):
         return dump_page_snapshot(driver, reason=reason, question_blocks=question_blocks)
     if v in ("0", "false", "off", "no"):

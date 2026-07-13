@@ -1,8 +1,9 @@
 # captcha_solver.py
 import os, time, requests
 import preselection.config_loader
+from config import is_attach_mode
 
-config = preselection.config_loader.load_config()
+config = {} if is_attach_mode() else preselection.config_loader.load_config()
 TWO_CAPTCHA_KEY = (
     os.getenv("CAPTCHA_API_KEY")
     or os.getenv("TWO_CAPTCHA_KEY")
