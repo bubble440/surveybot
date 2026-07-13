@@ -1154,6 +1154,48 @@ Fallback : fuzzy match sur `Array.from(el.options)` → `select_option(value=mat
 
 ---
 
+## TRI POST-EXTRACTION : ORDRE DOM RÉEL + PROMOTION DU BLOC VISIBLE
+Contexte : pages prescreener multi-fieldsets où plusieurs blocs coexistent dans le DOM
+(ex. surveys.insights-today.com/v1/survey/prescreener) mais où un seul est visible/actionnable
+à la fois. Sans ce tri, les blocs "groupe" (radio/checkbox) et les blocs "single" (text/dropdown)
+étaient concaténés par famille de type selon l'ordre des passes d'extraction (tous les groupes
+d'abord, puis tous les singles), et non selon leur position réelle dans le document — un bloc
+single intercalé entre deux blocs groupe dans le DOM se retrouvait systématiquement rejeté en fin
+de liste, provoquant une résolution dans le désordre (ex. la question d'âge en dropdown, positionnée
+dans le DOM entre "genre" et "revenu du foyer", extraite en tout dernier).
+
+### Tri par position DOM (`_block_dom_pos` + `sorted(...)`) — étape avant promote_visible_block
+Fichier : Survey/dom_analyzer.py
+Emplacement : juste avant le bloc `# Promote the currently visible/actionable block to position 0.`
+Guard : `len(blocks) > 1` ; collecte JS unique (`driver.evaluate`) de tous les
+`input:not([type="hidden"]), select, textarea` du document dans leur ordre DOM (`domIndex`),
+mappés par `name`/`id` (premier index rencontré conservé).
+Patterns couverts :
+- Blocs `kind=single` : position = index DOM du `name`/`id` du champ (`context.name` / `context.id`)
+- Blocs `kind=group` : position = index DOM du premier champ dont le `name` correspond au
+  suffixe de `group_key` (ex. `radio:name:household_income` → `household_income`)
+- Tri stable (`sorted` avec position d'origine en clé secondaire) : les blocs sans position
+  résolue (`2**31`) gardent leur ordre relatif d'origine, jamais projetés arbitrairement en tête
+- Ce tri s'applique sur la liste déjà extraite (post-extraction), aucune modification des
+  extracteurs individuels
+Patterns exclus :
+- Pages à un seul bloc (`len(blocks) <= 1`) → tri non déclenché
+- Blocs `kind` autre que `single`/`group` (ex. `multi_text`, `date`) → position non résolue,
+  restent dans leur ordre relatif d'origine (fallback `2**31`)
+
+### Promotion du bloc visible (`promote_visible_block`) — inchangé, exécuté après le tri
+Fichier : Survey/dom_analyzer.py
+Guard : signal `visible` de la même collecte JS — premier `fieldset` visible
+(`display`/`visibility`/`opacity`/`getBoundingClientRect`) contenant un champ interactif visible.
+Patterns couverts :
+- Repêche le bloc correspondant au champ actuellement visible/actionnable et le place en
+  position 0, après que le tri par position DOM a déjà remis le reste de la liste dans l'ordre
+  réel du document — les deux mécanismes sont complémentaires, pas redondants
+Patterns exclus :
+- Aucun `fieldset` visible détecté (`visible=None`) → position 0 déterminée uniquement par le tri DOM
+
+---
+
 ## FRONTIÈRES INTER-EXTRACTEURS
 
 | Plateforme | Extracteur A | Extracteur B | Signal de discrimination |

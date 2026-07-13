@@ -2163,6 +2163,21 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                 except Exception:
                     pass
 
+            # Fieldset + legend pattern (prescreener-style: fieldset > article > legend).
+            # Guard DOM strict: premier ancêtre fieldset contient un <legend> avec texte.
+            # Placé avant le fallback générique pour éviter la concaténation question+options
+            # que produit inner_text() sur les structures sans séparateurs de lignes.
+            if not question:
+                try:
+                    legend_nodes = els[0].query_selector_all("xpath=" + "ancestor::fieldset[1]//legend")
+                    if legend_nodes:
+                        q_txt = _norm(legend_nodes[0].inner_text() or legend_nodes[0].get_attribute("innerText") or "")
+                        if q_txt and _is_question_text(q_txt):
+                            question = q_txt
+                            log_debug("[DOM_CONTEXT]", f"fieldset_legend resolved question={question[:60]!r}")
+                except Exception:
+                    pass
+
             if not question:
                 # Fallback: extraction générique via conteneur
                 container = _nearest_question_container(els[0])
@@ -4036,11 +4051,16 @@ def analyze_dom(driver) -> List[Dict[str, Any]]:
         ):
             block["min_select"] = 1
 
-    # Promote the currently visible/actionable question to position 0.
-    # Guard: only on multi-block pages where blocks[0] may not be the visible one.
+    # Sort blocks by DOM document order and promote the currently visible block to position 0.
+    # Guard: only on multi-block pages (single-block pages need neither sort nor promote).
+    #
+    # Strategy: one JS call returns {name, id, domIndex} for every non-hidden interactive
+    # element in document order, plus {name, id} of the first visible one (fieldset-aware).
+    # We build a position map, assign each block its earliest matching element's domIndex,
+    # stable-sort by that index, then move the visible block to position 0.
     if len(blocks) > 1:
         try:
-            _visible_signal = driver.evaluate(
+            _dom_order_info = driver.evaluate(
                 r"""() => {
                 const isVisible = (el) => {
                     if (!el) return false;
@@ -4049,14 +4069,70 @@ def analyze_dom(driver) -> List[Dict[str, Any]]:
                     const r = el.getBoundingClientRect();
                     return r.width > 0 && r.height > 0;
                 };
+                const elements = Array.from(
+                    document.querySelectorAll('input:not([type="hidden"]), select, textarea')
+                );
+                const order = elements.map((el, idx) => ({
+                    name: el.name || '',
+                    id: el.id || '',
+                    domIndex: idx,
+                }));
+                let visible = null;
                 for (const fs of document.querySelectorAll('fieldset')) {
                     if (!isVisible(fs)) continue;
                     const inp = fs.querySelector('input:not([type="hidden"]), select, textarea');
-                    if (inp && isVisible(inp)) return {name: inp.name || '', id: inp.id || ''};
+                    if (inp && isVisible(inp)) {
+                        visible = {name: inp.name || '', id: inp.id || ''};
+                        break;
+                    }
                 }
-                return null;
+                return {order: order, visible: visible};
             }"""
             )
+        except Exception:
+            _dom_order_info = None
+
+        if _dom_order_info and isinstance(_dom_order_info, dict):
+            # Build name→domIndex and id→domIndex maps (first occurrence wins).
+            _name_pos: Dict[str, int] = {}
+            _id_pos: Dict[str, int] = {}
+            for _entry in (_dom_order_info.get("order") or []):
+                _en = _norm_lc(_entry.get("name") or "")
+                _ei = _norm_lc(_entry.get("id") or "")
+                _eidx = int(_entry.get("domIndex") or 0)
+                if _en and _en not in _name_pos:
+                    _name_pos[_en] = _eidx
+                if _ei and _ei not in _id_pos:
+                    _id_pos[_ei] = _eidx
+
+            def _block_dom_pos(blk: Dict[str, Any]) -> int:
+                """Return the earliest DOM position for a block, or sys.maxsize if unknown."""
+                _bctx = blk.get("context") if isinstance(blk.get("context"), dict) else {}
+                _kind = _bctx.get("kind") or ""
+                if _kind == "single":
+                    _n = _norm_lc(_bctx.get("name") or "")
+                    _i = _norm_lc(_bctx.get("id") or "")
+                    pos = min(
+                        _name_pos.get(_n, 2**31) if _n else 2**31,
+                        _id_pos.get(_i, 2**31) if _i else 2**31,
+                    )
+                    return pos
+                elif _kind == "group":
+                    _gk = _norm_lc(_bctx.get("group_key") or "")
+                    _gk_name = _gk.split(":name:", 1)[-1] if ":name:" in _gk else ""
+                    return _name_pos.get(_gk_name, 2**31) if _gk_name else 2**31
+                return 2**31
+
+            # Stable sort by DOM position; blocks without a position keep their relative order.
+            _orig_positions = {id(b): i for i, b in enumerate(blocks)}
+            blocks = sorted(
+                blocks,
+                key=lambda b: (_block_dom_pos(b), _orig_positions.get(id(b), 0)),
+            )
+            log_debug("[DOM_ORDER]", f"dom_sort applied blocks={len(blocks)}")
+
+            # Promote the currently visible/actionable block to position 0.
+            _visible_signal = _dom_order_info.get("visible")
             if _visible_signal and (_visible_signal.get("name") or _visible_signal.get("id")):
                 _vis_name = _norm_lc(_visible_signal.get("name") or "")
                 _vis_id = _norm_lc(_visible_signal.get("id") or "")
@@ -4072,7 +4148,6 @@ def analyze_dom(driver) -> List[Dict[str, Any]]:
                             break
                     elif _kind == "group":
                         _gk = _norm_lc(_bctx.get("group_key") or "")
-                        # group_key pattern: "radio:name:<name>" or "checkbox:name:<name>"
                         _gk_name = _gk.split(":name:", 1)[-1] if ":name:" in _gk else ""
                         if _vis_name and _gk_name == _vis_name:
                             _visible_idx = _bi
@@ -4080,8 +4155,6 @@ def analyze_dom(driver) -> List[Dict[str, Any]]:
                 if _visible_idx is not None and _visible_idx > 0:
                     log_debug("[DOM_ORDER]", f"promote_visible_block idx={_visible_idx} name={_vis_name!r} id={_vis_id!r} to position 0")
                     blocks.insert(0, blocks.pop(_visible_idx))
-        except Exception:
-            pass
 
     summary_itypes = sorted({str((b or {}).get("itype") or "") for b in (blocks or []) if (b or {}).get("itype")})
     options_count = sum(len((b or {}).get("options") or []) for b in (blocks or []))
