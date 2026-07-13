@@ -3204,12 +3204,16 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                 if ssi_q:
                     question = ssi_q
                 elif _is_validation_instruction(question):
-                    # Pattern spécifique
-                    if is_debug():
-                        _el_id = (el.get_attribute("id") or "").strip()
-                        _el_name = (el.get_attribute("name") or "").strip()
-                        log_debug("[SINGLES_SKIP]", f"validation_instruction itype={itype} id={_el_id!r} name={_el_name!r} question={question!r}")
-                    continue
+                    # Chaîne mixte (question réelle + instruction de saisie concaténées) :
+                    # si un "?" est présent, l'intitulé de question est exploitable — ne pas sauter.
+                    if "?" in question:
+                        pass
+                    else:
+                        if is_debug():
+                            _el_id = (el.get_attribute("id") or "").strip()
+                            _el_name = (el.get_attribute("name") or "").strip()
+                            log_debug("[SINGLES_SKIP]", f"validation_instruction itype={itype} id={_el_id!r} name={_el_name!r} question={question!r}")
+                        continue
 
             if not question:
                 if is_debug():

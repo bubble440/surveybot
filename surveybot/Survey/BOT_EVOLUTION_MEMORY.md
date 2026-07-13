@@ -304,6 +304,23 @@ Patterns exclus :
 - Blocs sans `cm_key` → séquence complète inchangée
 - Structures avec un seul item (cache inutile) → skip_to=0, comportement identique à avant
 
+### _click_candidate — pré-détection label-intercept (skip vers CDP)
+Fichier : Survey/action_dispatcher.py
+Emplacement : dans `_click_candidate`, juste après le calcul de `_first` via le cache, avant la méthode 1 (click natif).
+Guard : `_first == 1` (premier appel, cache vide pour ce `cm_key`) ET le noeud est un `<input id=...>` dont le
+`parentElement` contient un `label[for="{id}"]` (sibling direct) — générique, pas lié à une plateforme précise.
+Patterns couverts :
+- Inputs natifs `<input type="checkbox">`/`radio` immédiatement suivis d'un `<label for=...>` dans le même parent
+  (ex. Alchemer/Gizmo) : le label recouvre visuellement l'input → méthodes 1 (click natif) et 2 (ActionChains
+  hover+click) échouent quasi systématiquement après 30s de timeout chacune ("intercepts pointer events")
+- Sans ce patch : ~60s perdues sur le tout premier clic d'un groupe avant de retomber sur la méthode 3 (CDP)
+  qui elle réussit et alimente normalement le cache pour les clics suivants du même `cm_key`
+- Avec le patch : `_first` est forcé à 3 dès la détection, sans jamais toucher au corps des méthodes 1/2/3/4
+- Log : `[TARGET_DEBUG] _click_candidate: label-intercept detected on {label!r}, skip to CDP`
+Patterns exclus :
+- Inputs sans `id`, ou label absent/non-sibling direct du parent → séquence complète inchangée (1→2→3→4)
+- Appels avec `_first > 1` (cache déjà résolu) → pré-détection non exécutée, skip_to standard s'applique
+
 ### _extract_confirmit_wix_rankedorderclick_block
 Fichier : Survey/dom_extractors_misc.py
 Guard : `fieldset[id^="fieldset_"].confirmit-rankedorderclick-default`
@@ -976,6 +993,30 @@ Patterns exclus :
 - `div.mx-stage .mx-collapsible-container` présent → `_is_decipher_mx_collapsible_checkbox_selected` (branche MX)
 - `input[type='radio']` → chemin radio distinct
 - Inputs natifs interactables (non fir-hidden) → chemin générique `_click_candidate`
+
+---
+
+## PLATEFORME : ALCHEMER / SURVEYGIZMO (sg-question, table.sg-table)
+Signature DOM : conteneur `div.sg-question-*` / `table.sg-table`, inputs `id`/`name` de forme `sgE-{surveyId}-{...}`.
+Cas observé : liste de champs texte ("un item par case", ex. rappel de marques), question et instruction de saisie
+concaténées dans le même bloc texte (ex. `<div>...question...?<br><em>Please enter one brand per box...</em></div>`).
+
+### Filtre "validation_instruction" — exception chaîne mixte question+instruction
+Fichier : Survey/dom_analyzer.py
+Emplacement : bloc `# --- [PATCH SSI/Confirmit] Filtrer les instructions de validation ---`, branche
+`elif _is_validation_instruction(question):`, avant le `continue` / log `[SINGLES_SKIP] validation_instruction`.
+Guard : `"?" in question` sur la chaîne concaténée déjà classée `_is_validation_instruction=True`.
+Patterns couverts :
+- Chaînes mixtes où un intitulé de question réel (terminé par `?`) précède une instruction de saisie
+  (ex. "Please enter one brand per box...") — la présence de `?` signale un contenu question exploitable,
+  le rejet total est annulé (`pass` au lieu de `continue`).
+- Sans ce guard : les N inputs texte de la liste étaient tous skippés (`[SINGLES_SKIP] validation_instruction`),
+  puis `[DOM_ONLY_ABORT] detector_no_match` → page entière non extraite, clic CTA "Next" sans réponse saisie.
+Patterns exclus :
+- Chaînes composées uniquement d'une instruction de validation, sans `?` (aucun contenu question détectable)
+  → rejet maintenu via `continue` (comportement inchangé).
+- Ne couvre pas les cas où l'instruction elle-même contiendrait un `?` sans question réelle associée
+  (non rencontré à ce jour — signal `?` traité comme heuristique généraliste, pas un cas Alchemer-only).
 
 ---
 
