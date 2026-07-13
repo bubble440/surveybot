@@ -359,6 +359,10 @@ def run_attach_takeover(driver, *, api_key: str, account_id: str) -> None:
             _ctx.maybe_update_summary()                                           # ← ajouter cette ligne
             print(f"[ATTACH] step={i}/{max_steps} ok={ok} url={_attach_display_url(driver.url)}")
 
+            if not ok and survey_executor._attach_disq_stop_requested:
+                print(f"[ATTACH][DISQ] Page de disqualification détectée → arrêt immédiat boucle step={i}.")
+                break
+
             if not ok:
                 try:
                     _is_isd_gate = bool(driver.evaluate(
@@ -652,6 +656,9 @@ def run_attach_login_takeover(page, pw, *, api_key: str, account_id: str, config
             done = survey_executor.execute_survey_page(page, account_id, api_key, ctx=_ctx)
             _ctx.maybe_update_summary()
             print(f"[ATTACH][LOGIN→RES] step={i}/{max_steps} ok={done} url={_attach_display_url(page.url)}")
+            if not done and survey_executor._attach_disq_stop_requested:
+                print(f"[ATTACH][LOGIN→RES][DISQ] Page de disqualification détectée → arrêt immédiat boucle step={i}.")
+                break
         except Exception as e:
             print(f"[ATTACH][LOGIN→RES][ERROR] step={i} {type(e).__name__}: {e}")
             break
@@ -694,6 +701,9 @@ def run_attach_preselection_takeover(driver, *, api_key: str, account_id: str) -
             done = survey_executor.execute_survey_page(driver, account_id, api_key, ctx=_ctx)
             _ctx.maybe_update_summary()
             print(f"[ATTACH][PRESEL->RES] step={i}/{max_steps} ok={done} url={_attach_display_url(driver.current_url)}")
+            if not done and survey_executor._attach_disq_stop_requested:
+                print(f"[ATTACH][PRESEL->RES][DISQ] Page de disqualification détectée → arrêt immédiat boucle step={i}.")
+                break
         except Exception as e:
             print(f"[ATTACH][PRESEL->RES][ERROR] step={i} {type(e).__name__}: {e}")
             break

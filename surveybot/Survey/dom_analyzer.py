@@ -4036,6 +4036,53 @@ def analyze_dom(driver) -> List[Dict[str, Any]]:
         ):
             block["min_select"] = 1
 
+    # Promote the currently visible/actionable question to position 0.
+    # Guard: only on multi-block pages where blocks[0] may not be the visible one.
+    if len(blocks) > 1:
+        try:
+            _visible_signal = driver.evaluate(
+                r"""() => {
+                const isVisible = (el) => {
+                    if (!el) return false;
+                    const st = window.getComputedStyle(el);
+                    if (!st || st.display === 'none' || st.visibility === 'hidden' || st.opacity === '0') return false;
+                    const r = el.getBoundingClientRect();
+                    return r.width > 0 && r.height > 0;
+                };
+                for (const fs of document.querySelectorAll('fieldset')) {
+                    if (!isVisible(fs)) continue;
+                    const inp = fs.querySelector('input:not([type="hidden"]), select, textarea');
+                    if (inp && isVisible(inp)) return {name: inp.name || '', id: inp.id || ''};
+                }
+                return null;
+            }"""
+            )
+            if _visible_signal and (_visible_signal.get("name") or _visible_signal.get("id")):
+                _vis_name = _norm_lc(_visible_signal.get("name") or "")
+                _vis_id = _norm_lc(_visible_signal.get("id") or "")
+                _visible_idx = None
+                for _bi, _blk in enumerate(blocks):
+                    _bctx = _blk.get("context") if isinstance(_blk.get("context"), dict) else {}
+                    _kind = _bctx.get("kind") or ""
+                    if _kind == "single":
+                        _b_name = _norm_lc(_bctx.get("name") or "")
+                        _b_id = _norm_lc(_bctx.get("id") or "")
+                        if (_vis_name and _b_name == _vis_name) or (_vis_id and _b_id == _vis_id):
+                            _visible_idx = _bi
+                            break
+                    elif _kind == "group":
+                        _gk = _norm_lc(_bctx.get("group_key") or "")
+                        # group_key pattern: "radio:name:<name>" or "checkbox:name:<name>"
+                        _gk_name = _gk.split(":name:", 1)[-1] if ":name:" in _gk else ""
+                        if _vis_name and _gk_name == _vis_name:
+                            _visible_idx = _bi
+                            break
+                if _visible_idx is not None and _visible_idx > 0:
+                    log_debug("[DOM_ORDER]", f"promote_visible_block idx={_visible_idx} name={_vis_name!r} id={_vis_id!r} to position 0")
+                    blocks.insert(0, blocks.pop(_visible_idx))
+        except Exception:
+            pass
+
     summary_itypes = sorted({str((b or {}).get("itype") or "") for b in (blocks or []) if (b or {}).get("itype")})
     options_count = sum(len((b or {}).get("options") or []) for b in (blocks or []))
     first_question_len = len(((blocks or [{}])[0].get("question") or "")) if blocks else 0

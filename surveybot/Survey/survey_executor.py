@@ -2,7 +2,7 @@ import re, openai, time, unicodedata, os, sys, hashlib, tempfile
 from urllib.parse import urlsplit
 from Survey.log_utils import log_debug, log_info
 from Survey.functions import _handle_topsurveys_exclusion_popup
-from config import is_cta_intercept_only
+from config import is_cta_intercept_only, is_attach_mode
 
 
 
@@ -482,9 +482,14 @@ _DISQ_TEXT_SIGNALS = [
     "screened out",
     "disqualified",
     "you have been disqualified",
+    "haven't qualified for any surveys",
 ]
 
 _DISQ_CALLBACK_PATTERNS = ["samplicio.us", "clientcallback", "client_callback"]
+
+# Sentinel positionné par _budgeted_disqualification_restart quand attach_stop est retourné.
+# Permet aux boucles takeover de main.py de distinguer ce cas d'un échec de step ordinaire.
+_attach_disq_stop_requested: bool = False
 
 
 def _detect_disqualification_page(driver) -> tuple:
@@ -551,6 +556,12 @@ def _budgeted_disqualification_restart(driver) -> str:
         driver._disq_page_seen = counters
     except Exception:
         pass
+
+    if is_attach_mode():
+        log_info("[DISQ_PAGE]", f"disqualification détectée ({signal}) en mode attach — arrêt bot (pas de relance).")
+        global _attach_disq_stop_requested
+        _attach_disq_stop_requested = True
+        return "attach_stop"
 
     log_info("[DISQ_PAGE]", f"disqualification détectée ({signal}) -> soft_restart key={budget_key}")
     try:
@@ -2082,7 +2093,7 @@ def execute_survey_page(driver, account_id, api_key, ctx=None):
         disq_abort = _budgeted_disqualification_restart(driver)
         if disq_abort == "restarted":
             return True
-        if disq_abort == "budget_exhausted":
+        if disq_abort in ("budget_exhausted", "attach_stop"):
             return False
 
         print("DOM-only: aucun input exploitable (abort). source: survey_executor.py")
