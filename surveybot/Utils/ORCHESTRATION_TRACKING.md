@@ -146,16 +146,13 @@ dérivé une fois avec le chemin en dur dans l'ancienne fonction).
 - Variables injectées par bot : `ACCOUNT_ID`, `EMAIL`, `PASSWORD`,
   `PROXY_URL`, `PROXY_USER`, `PROXY_PASS`, `CHROME_PROFILE_DIR` (alias de
   `profile_dir`), plus défauts fixes `GEO_LAT`/`GEO_LON`/`SURVEY_LANG`/
-  `SURVEY_TZ` (alignés sur les valeurs de `launch_all.ps1`) et
-  `PYTHONIOENCODING`/`PYTHONUTF8`.
+  `SURVEY_TZ` et `PYTHONIOENCODING`/`PYTHONUTF8`. Ces défauts ne vivent plus
+  que dans ce script depuis la suppression de `launch_all.ps1` (cf. section 9)
+  — plus de risque de divergence entre deux fichiers.
 - **Sécurité** : `PASSWORD` n'est jamais affiché dans les logs du script.
 - **Détection d'orphelins** : un service `surveybot_*` sans entrée
   correspondante dans `accounts.json` est signalé (`Write-Warning`) mais
   **jamais supprimé automatiquement** — décision humaine requise.
-- **Note de duplication non résolue** : les défauts
-  `GEO_LAT/GEO_LON/SURVEY_LANG/SURVEY_TZ` sont dupliqués en dur entre
-  `launch_all.ps1` et `nssm_setup_bot.ps1`. Risque mineur (divergence si l'un
-  est modifié sans l'autre) — pas encore mutualisé.
 
 ---
 
@@ -180,16 +177,15 @@ dérivé une fois avec le chemin en dur dans l'ancienne fonction).
 
 - **Confirmé non actif** sur les machines de production (pas de tâche
   planifiée existante) au 13/07/2026.
-- **Décision** : à supprimer, NSSM + `wake_scheduler.ps1` +
+- **✅ Supprimé (13/07/2026)** : NSSM + `wake_scheduler.ps1` +
   `check_zombie_bots.ps1` couvrent désormais l'intégralité de son rôle.
-- **✅ Résolu (13/07/2026)** : `launch_all.ps1` vérifiait l'existence du
-  dossier `profile_dir` avant de lancer un bot (`SKIP $id — profile_dir
-  introuvable`). Cette vérification a été portée dans `nssm_setup_bot.ps1` :
-  un compte dont `profile_dir`/`CHROME_PROFILE_DIR` est vide ou pointe vers un
-  dossier inexistant est skippé (`Write-Warning`, service NSSM non configuré),
-  sans être signalé comme "orphelin" (son `account_id` est ajouté au set de
-  comptes connus avant le check, pas après). `launch_all.ps1` peut désormais
-  être supprimé.
+  Le fichier n'existe plus dans le projet.
+- Vérification `profile_dir` (que `launch_all.ps1` faisait avant de lancer un
+  bot) portée dans `nssm_setup_bot.ps1` avant suppression : un compte dont
+  `profile_dir`/`CHROME_PROFILE_DIR` est vide ou pointe vers un dossier
+  inexistant est skippé (`Write-Warning`, service NSSM non configuré), sans
+  être signalé comme "orphelin" (son `account_id` est ajouté au set de
+  comptes connus avant le check, pas après).
 
 ---
 
@@ -207,17 +203,16 @@ dérivé une fois avec le chemin en dur dans l'ancienne fonction).
 - `launch.py` — handler `SIGBREAK` ajouté ; `EXIT_VOLUNTARY` sur arrêt propre
 - `main.py` — check `check_and_record_start()` au démarrage (seuil crash-loop) ; mode CLI `--query-cooldown`
 
-**Fichiers supprimés / à supprimer :**
+**Fichiers supprimés :**
 - `State/query_cooldown_status.py` — supprimé (remplacé par le mode CLI du binaire)
-- `launch_all.ps1` — à supprimer, sous réserve du point bloquant en section 9
+- `launch_all.ps1` — supprimé (13/07/2026), rôle repris par NSSM + `wake_scheduler.ps1` + `check_zombie_bots.ps1`
 
 ---
 
 ## 11. Points ouverts (non résolus à ce jour)
 
-1. **Duplication des défauts GEO/lang** entre `launch_all.ps1` (à supprimer) et `nssm_setup_bot.ps1` (mineur, mais `launch_all.ps1` disparaissant, ce point devient sans objet une fois la suppression faite).
-2. **Risque de process Chrome orphelins** si le timeout de 30 s de fermeture propre est dépassé (cf. section 4) — à surveiller, pas encore instrumenté.
-3. **Validation en conditions réelles non faite** : tous les correctifs ci-dessus ont été relus sur le code mais pas encore testés sur une machine de production réelle (rebuild Nuitka + déploiement + observation d'un cycle complet crash/zombie/cooldown).
+1. **Risque de process Chrome orphelins** si le timeout de 30 s de fermeture propre est dépassé (cf. section 4) — à surveiller, pas encore instrumenté.
+2. **Validation en conditions réelles non faite** : tous les correctifs ci-dessus ont été relus sur le code mais pas encore testés sur une machine de production réelle (rebuild Nuitka + déploiement + observation d'un cycle complet crash/zombie/cooldown).
 
 ---
 
