@@ -138,6 +138,7 @@ try:
         _extract_prodege_prescreener_radio_block,
         _extract_researchnow_autoscreener_radio_blocks,
         _extract_alchemer_rank_dragdrop_block,
+        _extract_alchemer_sg_table_checkbox_matrix_block,
     )
 
     # Registre et utilitaires
@@ -251,6 +252,7 @@ except ImportError:
         _extract_prodege_prescreener_radio_block,
         _extract_researchnow_autoscreener_radio_blocks,
         _extract_alchemer_rank_dragdrop_block,
+        _extract_alchemer_sg_table_checkbox_matrix_block,
     )
 
 
@@ -1222,6 +1224,24 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                     _sge_prefix = _group_key.split("table_matrix_sge:name:", 1)[1].strip()
                     if _sge_prefix:
                         table_matrix_sge_prefixes.add(_sge_prefix)
+    except Exception:
+        pass
+
+    # --- 0d-1quater-bis-0) Alchemer/SurveyGizmo tableau checkbox (fieldset.sg-type-table-checkbox) ---
+    # Objectif: extraire les matrices checkbox SGE avant le pipeline générique qui les fragmenterait
+    # en un bloc par cellule (chaque checkbox ayant un name unique sge-N-N-N-N).
+    # Les préfixes de lignes (sge-N-N-N) sont ajoutés à table_matrix_sge_prefixes pour bloquer
+    # le pipeline générique sur ces mêmes names.
+    try:
+        _sge_cb_blocks = _extract_alchemer_sg_table_checkbox_matrix_block(driver, frame_chain)
+        for _blk in _sge_cb_blocks:
+            if not isinstance(_blk, dict):
+                continue
+            _ctx = (_blk.get("context") or {}) if isinstance(_blk.get("context"), dict) else {}
+            _prefix = _norm_lc(_ctx.get("sge_row_name_prefix") or "")
+            if _prefix:
+                table_matrix_sge_prefixes.add(_prefix)
+            question_blocks.append(_blk)
     except Exception:
         pass
 

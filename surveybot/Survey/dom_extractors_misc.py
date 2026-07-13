@@ -1700,6 +1700,152 @@ def _extract_table_matrix_radio_rows(driver, frame_chain: list[int] | None) -> l
     return blocks
 
 
+def _extract_alchemer_sg_table_checkbox_matrix_block(driver, frame_chain: list[int] | None) -> list[dict]:
+    """
+    Alchemer/SurveyGizmo: matrice checkbox (fieldset.sg-type-table-checkbox > table.sg-table).
+    Guard DOM strict: fieldset.sg-type-table-checkbox.
+    Chaque cellule a un name unique sgE-{surveyId}-{pageId}-{rowId}-{colId} (4 groupes de chiffres).
+    Produit 1 bloc itype=checkbox par ligne, option_xpath_map ancré sur input[@id].
+    Expose sge_row_name_prefix (sge-N-N-N) pour que dom_analyzer bloque le pipeline générique.
+    """
+    frame_chain = list(frame_chain or [])
+    try:
+        fieldsets = driver.query_selector_all("fieldset.sg-type-table-checkbox")
+    except Exception:
+        return []
+    if not fieldsets:
+        return []
+
+    blocks: list[dict] = []
+
+    for fieldset in fieldsets[:5]:
+        try:
+            # Question depuis la légende du fieldset — évite _find_question_text_near_element
+            # qui capturerait tout le contenu textuel de la table.
+            matrix_question = ""
+            try:
+                legend = fieldset.query_selector("legend")
+                raw = _norm(legend.inner_text() or "") if legend else ""
+                raw = re.sub(r"^\d+\.\s*", "", raw)
+                raw = re.sub(r"\s*\*\s*This question is required\.?\s*$", "", raw).strip()
+                matrix_question = raw
+            except Exception:
+                pass
+
+            try:
+                table = fieldset.query_selector("table.sg-table")
+            except Exception:
+                table = None
+            if not table:
+                continue
+
+            # En-têtes de colonnes: th dans thead (td.sg-mock-th "Space Cell" exclu car c'est un td)
+            try:
+                col_ths = table.query_selector_all("thead tr th")
+            except Exception:
+                col_ths = []
+            col_headers: list[str] = []
+            for th in col_ths:
+                txt = _norm(th.inner_text() or "")
+                if txt:
+                    col_headers.append(txt)
+
+            if len(col_headers) < 2:
+                continue
+
+            try:
+                rows = table.query_selector_all("tbody tr")
+            except Exception:
+                rows = []
+            if not rows:
+                continue
+
+            for row in rows[:30]:
+                try:
+                    row_th = row.query_selector("th.sg-first-cell")
+                    if not row_th:
+                        continue
+                    row_label = _norm(row_th.inner_text() or "")
+                    if not row_label:
+                        continue
+
+                    checkboxes = row.query_selector_all("input[type='checkbox']")
+                    if len(checkboxes) < 2:
+                        continue
+
+                    # Guard pattern: sge-N-N-N-N (4 groupes de chiffres)
+                    first_name = _norm_lc(checkboxes[0].get_attribute("name") or "")
+                    if not re.match(r"^sge-\d+-\d+-\d+-\d+$", first_name):
+                        continue
+
+                    # Préfixe ligne = sge-N-N-N (strip dernier -colId)
+                    row_name_prefix = re.sub(r"-\d+$", "", first_name)
+
+                    option_xpath_map: dict[str, str] = {}
+                    options: list[str] = []
+                    for idx in range(min(len(col_headers), len(checkboxes))):
+                        col_label = col_headers[idx]
+                        cb = checkboxes[idx]
+                        cb_id = (cb.get_attribute("id") or "").strip()
+                        if not cb_id:
+                            continue
+                        nk = _norm_key(col_label)
+                        if not nk or nk in option_xpath_map:
+                            continue
+                        option_xpath_map[nk] = f"(//*[@id={_xpath_literal(cb_id)}])[1]"
+                        options.append(col_label)
+
+                    if len(options) < 2 or not option_xpath_map:
+                        continue
+
+                    question = f"{matrix_question} | {row_label}" if matrix_question else row_label
+                    group_key = f"checkbox:sge_table_matrix:{row_name_prefix}"
+                    target_id = make_target_id("group", group_key, question)
+
+                    register_target(
+                        target_id,
+                        {
+                            "kind": "group",
+                            "itype": "checkbox",
+                            "group_key": group_key,
+                            "question": question,
+                            "option_xpath_map": option_xpath_map,
+                            "frame_chain": frame_chain,
+                            "matrix_question": matrix_question,
+                            "matrix_row": row_label,
+                            "matrix_columns": col_headers,
+                            "alchemer_sg_table_checkbox": True,
+                            "sge_row_name_prefix": row_name_prefix,
+                        },
+                    )
+
+                    blocks.append({
+                        "question": question,
+                        "itype": "checkbox",
+                        "options": options,
+                        "max_select": len(options),
+                        "min_select": 0,
+                        "target_id": target_id,
+                        "context": {
+                            "kind": "group",
+                            "group_key": group_key,
+                            "matrix_question": matrix_question,
+                            "matrix_row": row_label,
+                            "matrix_columns": col_headers,
+                            "alchemer_sg_table_checkbox": True,
+                            "sge_row_name_prefix": row_name_prefix,
+                        },
+                    })
+                except Exception:
+                    continue
+        except Exception:
+            continue
+
+    if blocks:
+        log_debug("DOM_SGE_TABLE_CB", f"extracted {len(blocks)} checkbox row blocks from sg-type-table-checkbox")
+    return blocks
+
+
 def _extract_intellisurvey_table_matrix_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
     """IntelliSurvey: matrice table.i-question-table.i-dynamic (lignes x colonnes).
 

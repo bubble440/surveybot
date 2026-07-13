@@ -1038,6 +1038,38 @@ Patterns exclus :
 - Table sge_like visible avec sibling visible dans le parent (ex. BankedSA customChoice) →
   jamais marquée dedup-only, chemin normal inchangé
 
+### _extract_alchemer_sg_table_checkbox_matrix_block
+Fichier : Survey/dom_extractors_misc.py (extraction), Survey/dom_analyzer.py (appel avant le
+pipeline générique, ajout des préfixes de ligne à `table_matrix_sge_prefixes` pour bloquer le
+groupement générique checkbox par name).
+Cas observé : matrice checkbox Alchemer/SurveyGizmo (`fieldset.sg-question.sg-type-table.sg-type-table-checkbox`
+> `table.sg-table`), lignes = attributs, colonnes = marques, chaque cellule un `<input type="checkbox">`
+avec un `name` unique par cellule (`sge-<surveyId>-<pageId>-<rowId>-<colId>`, 4 groupes de chiffres).
+Sans ce guard : `_extract_table_matrix_radio_rows` ne matche que `input[type='radio']` par ligne,
+donc cette matrice checkbox lui est invisible ; elle retombait dans le pipeline générique checkbox
+par name (chaque cellule = un name unique = un groupe), produisant un bloc `itype=checkbox` par
+cellule (N lignes × M colonnes blocs), chacun avec `question` polluée par la concaténation de
+toute la table (texte de tous les libellés de lignes et colonnes) via `_find_question_text_near_element`.
+Guard : `fieldset.sg-type-table-checkbox` (sélecteur CSS strict, distinct de `sg-type-table-radio`
+implicitement couvert par l'extracteur radio existant)
+Patterns couverts :
+- Question de la matrice lue depuis `legend` du fieldset (nettoyage numéro + mention required),
+  jamais depuis `_find_question_text_near_element` (évite la pollution par le contenu de la table)
+- Par ligne (`tbody tr` avec `th.sg-first-cell` pour le libellé) : 1 bloc `itype=checkbox` avec
+  toutes les colonnes comme options, `question` = "{question matrice} | {libellé ligne}"
+- Guard supplémentaire par ligne : le `name` du premier checkbox doit matcher `^sge-\d+-\d+-\d+-\d+$`
+- `option_xpath_map` ancré sur `input[@id]` (1 XPath par colonne), consommé par le dispatcher
+  via le chemin générique `option_xpath_map` (pas de stratégie de clic dédiée nécessaire)
+- `sge_row_name_prefix` (préfixe `sge-N-N-N` sans le dernier `-colId`) exposé dans `context`,
+  consommé par `dom_analyzer.py` pour peupler `table_matrix_sge_prefixes` et bloquer le
+  groupement générique checkbox sur ces mêmes lignes (même mécanisme que `table_matrix_sge`
+  pour les matrices radio cachées)
+Patterns exclus :
+- Matrices radio du même type de page (`sg-type-table-radio` ou équivalent) → `_extract_table_matrix_radio_rows`
+  / branche `sge_like_matrix` existante, non modifiée
+- Lignes avec moins de 2 checkboxes, ou name ne matchant pas le pattern à 4 groupes de chiffres
+  → ligne ignorée (pas de bloc émis pour cette ligne)
+
 ### _extract_alchemer_rank_dragdrop_block
 Fichier : Survey/dom_extractors_misc.py (extraction), Survey/dom_analyzer.py (étape 0i-nonies,
 appel avant le pipeline générique singles), Survey/action_dispatcher.py (bloc dispatcher
