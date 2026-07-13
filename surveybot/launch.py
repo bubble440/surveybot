@@ -162,10 +162,12 @@ def _make_stop_handler(aid: str, sig_name: str = "SIGTERM"):
             print(f"[{sig_name}][WARN] update_state échoué:", e)
 
         finally:
+            from bot_supervisor import record_exit, EXIT_VOLUNTARY
+            record_exit(aid, EXIT_VOLUNTARY, f"{sig_name.lower()}_received")
             stop_heartbeat_thread()
             delete_pid_file(aid)
             print(f"{sig_name} traité → exit immédiat")
-            raise SystemExit(f"{sig_name.lower()}_received")
+            raise SystemExit(EXIT_VOLUNTARY)
 
     return _handle
 

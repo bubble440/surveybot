@@ -787,6 +787,27 @@ def main():
 
     notify_fn = build_notifier(config)
 
+    # Vérification du seuil de redémarrages automatiques (protection crash-loop NSSM).
+    # check_and_record_start() lit le code de sortie du run précédent et incrémente
+    # le compteur si ce run s'est terminé par un crash ou soft_restart dans la fenêtre.
+    # Si le seuil est dépassé : alerte Telegram + exit EXIT_FATAL (NSSM ne redémarrera pas).
+    if not is_attach_mode():
+        from bot_supervisor import check_and_record_start, record_exit, EXIT_FATAL
+        _should_abort, _restart_count = check_and_record_start(account_id)
+        if _should_abort:
+            _abort_msg = (
+                f"🚨 BOT {account_id} : seuil de redémarrages automatiques dépassé "
+                f"({_restart_count} redémarrages en fenêtre courte). "
+                "Arrêt FATAL — vérifier le proxy, le compte ou la plateforme."
+            )
+            print(_abort_msg)
+            try:
+                notify_fn(_abort_msg)
+            except Exception:
+                pass
+            record_exit(account_id, EXIT_FATAL, "restart_threshold_exceeded")
+            sys.exit(EXIT_FATAL)
+
     # Proxy-lock retiré : en prod on a 1 bot par proxy, donc lock proxy redondant
     runtime_ctx = {
         "driver": None,

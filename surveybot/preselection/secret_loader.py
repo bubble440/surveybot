@@ -17,71 +17,62 @@ RECEIVER_CONFIG_KEYS = [
 ]
 
 
-def _receiver_config_candidates() -> list[str]:
+def _bot_root_dirs() -> list[str]:
     """
-    Retourne la liste ORDONNÉE des chemins candidats pour receiver_config.json,
-    du plus fiable au moins fiable.
+    Retourne la liste ORDONNÉE des dossiers candidats pour les fichiers de
+    configuration locaux (receiver_config.json, pids/, etc.), du plus fiable
+    au moins fiable.
 
-    ⚠️ CORRECTIF : en build Nuitka onefile, NUITKA_ONEFILE_BINARY est censé être
-    positionné automatiquement par le bootstrap, mais rien ne garantit qu'il le
-    soit dans tous les cas (attach manuel, wrapper externe, variante de build,
-    etc.). Si cette variable est absente/vide et qu'on utilisait __file__ comme
-    seul fallback, on retombe silencieusement sur le dossier d'extraction
-    temporaire (%TEMP%\\onefile_...) — qui ne contient jamais receiver_config.json
-    puisque ce fichier vit à côté du VRAI exécutable distribué. C'est très
-    probablement la cause du bug "OPENAI_API_KEY absent malgré receiver_config.json
-    présent à côté de l'exe" : le fichier était bien là, mais on cherchait au
-    mauvais endroit, et l'échec était noyé dans un simple `log.warning`
-    (module `logging`, jamais configuré → invisible dans la console du bot qui
-    n'utilise que `print`).
-
-    On empile donc PLUSIEURS candidats et on prend le premier qui existe
-    réellement sur disque :
-      1. NUITKA_ONEFILE_BINARY (chemin de l'exe onefile réel, si fourni)
-      2. sys.executable, si le process tourne bien depuis un binaire figé
-         (sys.frozen / compilé) — filet de sécurité si la variable Nuitka
-         n'est pas positionnée dans ce build/contexte précis
-      3. __file__ (dev/attach — preselection/ un niveau sous bot_root)
-      4. Répertoire courant du process (cwd) — dernier recours
+    ⚠️ En build Nuitka onefile, NUITKA_ONEFILE_BINARY pointe vers l'exe distribué
+    réel, tandis que sys.executable et __file__ peuvent pointer vers le dossier
+    d'extraction temporaire (%TEMP%\onefile_...) qui ne contient aucun fichier de
+    config. C:\surveybot\ est mis en tête absolue car c'est le chemin confirmé
+    en production.
     """
     candidates: list[str] = []
 
     # ✅ Chemin réel connu et figé (confirmé manuellement sur la machine de prod) :
     # l'exe tourne depuis C:\surveybot\ (cf. `PS C:\surveybot> .\surveybot.exe`).
-    # On le met en tête absolue de la liste : aucune ambiguïté possible, quel que
-    # soit le comportement de NUITKA_ONEFILE_BINARY/sys.executable dans ce build.
-    candidates.append(r"C:\surveybot\receiver_config.json")
+    candidates.append(r"C:\surveybot")
 
     onefile_binary = os.environ.get("NUITKA_ONEFILE_BINARY", "").strip()
     if onefile_binary:
-        candidates.append(os.path.join(os.path.dirname(os.path.abspath(onefile_binary)), "receiver_config.json"))
+        candidates.append(os.path.dirname(os.path.abspath(onefile_binary)))
 
     try:
         is_frozen = getattr(sys, "frozen", False) or bool(getattr(sys, "_MEIPASS", ""))
         exe_path = os.path.abspath(sys.executable or "")
         if (is_frozen or exe_path.lower().endswith(".exe")) and "temp" not in exe_path.lower():
-            candidates.append(os.path.join(os.path.dirname(exe_path), "receiver_config.json"))
+            candidates.append(os.path.dirname(exe_path))
     except Exception:
         pass
 
     try:
         preselection_dir = os.path.dirname(os.path.abspath(__file__))
-        bot_root = os.path.dirname(preselection_dir)
-        candidates.append(os.path.join(bot_root, "receiver_config.json"))
+        candidates.append(os.path.dirname(preselection_dir))
     except Exception:
         pass
 
-    candidates.append(os.path.join(os.path.abspath(os.getcwd()), "receiver_config.json"))
+    candidates.append(os.path.abspath(os.getcwd()))
 
     # dédoublonnage en préservant l'ordre
-    seen = set()
-    ordered = []
+    seen: set[str] = set()
+    ordered: list[str] = []
     for c in candidates:
         c_norm = os.path.normcase(os.path.normpath(c))
         if c_norm not in seen:
             seen.add(c_norm)
             ordered.append(c)
     return ordered
+
+
+def _receiver_config_candidates() -> list[str]:
+    """
+    Retourne la liste ORDONNÉE des chemins candidats pour receiver_config.json.
+    Délègue la résolution des dossiers à _bot_root_dirs() — même ordre de
+    priorité, même comportement qu'avant le refactor.
+    """
+    return [os.path.join(d, "receiver_config.json") for d in _bot_root_dirs()]
 
 
 def _receiver_config_path() -> str:

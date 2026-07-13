@@ -224,6 +224,12 @@ class RuntimeGuard:
     def heartbeat(self):
         with self._lock:
             self.state.last_activity_ts = time.time()
+        # Heartbeat local (détection zombie par check_zombie_bots.ps1)
+        try:
+            from bot_supervisor import write_heartbeat as _wh
+            _wh(self.account_id)
+        except Exception:
+            pass
         # Avec heartbeat ~30s, un TTL plus large évite les expirations en cas de freeze CPU/selenium
         ttl = int(os.getenv("ACCOUNT_LOCK_TTL_SEC", "240") or "240")
         try:
@@ -364,6 +370,18 @@ class RuntimeGuard:
         """
         Applique une PausePolicy au bot et stoppe l'exécution.
         """
+        from bot_supervisor import (
+            EXIT_VOLUNTARY, EXIT_SOFT_RESTART,
+            record_exit as _record_exit,
+        )
+        # Arrêts qui ne doivent PAS déclencher un redémarrage NSSM automatique.
+        _VOLUNTARY_REASONS = {
+            StopReason.DAILY_TARGET_REACHED,
+            StopReason.SESSION_EXPIRED,
+            StopReason.PROXY_EXPIRED,
+        }
+        _exit_code = EXIT_VOLUNTARY if reason in _VOLUNTARY_REASONS else EXIT_SOFT_RESTART
+
         pause_sec = resolve_pause_seconds(policy)
 
         if reason not in {StopReason.NO_SURVEY_AVAILABLE, StopReason.DAILY_TARGET_REACHED}:
@@ -386,6 +404,7 @@ class RuntimeGuard:
                 f"le scheduler attendra l'expiration du TTL"
             )
         finally:
+            _record_exit(self.account_id, _exit_code, reason.value)
             # H5: signaler l'arrêt au thread heartbeat avant de quitter
             try:
                 import launch as _launch
@@ -395,11 +414,11 @@ class RuntimeGuard:
             # FIX-B1: SystemExit levé depuis un thread secondaire ne tue que ce thread,
             # laissant le bot tourner en zombie. On force la sortie du processus entier.
             if threading.current_thread() is threading.main_thread():
-                raise SystemExit(reason.value)
+                raise SystemExit(_exit_code)
             else:
                 # os._exit() court-circuite proprement le processus.
                 # L'état Postgres a déjà été écrit dans le bloc try ci-dessus.
-                os._exit(0)
+                os._exit(_exit_code)
 
 # ----------------------------
 # Singleton global (robuste)
