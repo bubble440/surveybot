@@ -12325,3 +12325,149 @@ def _extract_qualtrics_bankedsa_single_row_radio_blocks(
     return blocks
 
     return blocks
+
+
+# ================================================================================
+# PLATEFORME : ALCHEMER / SURVEYGIZMO — RANKING DRAG-DROP
+# ================================================================================
+
+def _extract_alchemer_rank_dragdrop_block(driver, frame_chain) -> list[dict]:
+    """
+    Extrait UN seul bloc checkbox pour une question de classement Alchemer/SurveyGizmo
+    de type drag-and-drop (div.sg-question.sg-type-rank.sg-type-rank-dragdrop).
+
+    Guard DOM strict : div.sg-question.sg-type-rank.sg-type-rank-dragdrop
+
+    Problème : les items de la liste origine contiennent chacun un <input type="text"
+    aria-hidden="true"> (helper d'accessibilité clavier) que le pipeline générique
+    singles capte à tort, créant N blocs fragmentés au lieu d'un seul bloc ranking.
+
+    Produit UN bloc unique :
+    - itype='checkbox', options = labels des items de ul#...-origin dans l'ordre DOM
+    - min_select = max_select = minimum_response extrait de SGAPI.surveyData
+    - Registry payload : item_input_map (label_norm -> input_id) pour le dispatcher
+    - Flag : alchemer_rank_dragdrop=True
+    """
+    blocks: list[dict] = []
+    try:
+        containers = driver.query_selector_all("div.sg-question.sg-type-rank.sg-type-rank-dragdrop")
+    except Exception:
+        return blocks
+
+    if not containers:
+        return blocks
+
+    for q_el in containers:
+        try:
+            # --- Texte de question depuis div.sg-question-title ---
+            q_title_el = q_el.query_selector("div.sg-question-title")
+            if q_title_el is None:
+                continue
+            raw_title = _norm(q_title_el.inner_text() or "") or ""
+            # Retirer le numéro de question (ex: "28. ") et le marqueur required
+            raw_title = re.sub(r"^\d+\.\s*", "", raw_title)
+            raw_title = re.sub(r"\s*\*\s*$", "", raw_title)
+            raw_title = re.sub(r"\s*This question is required\.\s*$", "", raw_title).strip()
+            if not raw_title:
+                continue
+            question_text = raw_title
+
+            # --- Items de la liste origine (ul[id$="-origin"] > li) ---
+            origin_ul = q_el.query_selector("ul[id$='-origin']")
+            if origin_ul is None:
+                continue
+            li_items = origin_ul.query_selector_all("li")
+            if not li_items:
+                continue
+
+            options: list[str] = []
+            item_input_map: dict[str, str] = {}
+            for li in li_items:
+                try:
+                    label_el = li.query_selector("label")
+                    if label_el is None:
+                        continue
+                    label_text = _norm(label_el.inner_text() or "").strip()
+                    if not label_text:
+                        continue
+                    inp_el = li.query_selector("input[type='text'][aria-hidden='true']")
+                    if inp_el is None:
+                        continue
+                    inp_id = (inp_el.get_attribute("id") or "").strip()
+                    if not inp_id:
+                        continue
+                    options.append(label_text)
+                    item_input_map[_norm_lc(label_text)] = inp_id
+                except Exception:
+                    continue
+
+            if not options or not item_input_map:
+                continue
+
+            # --- min/max_select depuis SGAPI.surveyData (minimum_response) ---
+            min_select = 1
+            try:
+                min_raw = q_el.evaluate("""(el) => {
+                    try {
+                        const parts = (el.id || '').split('-');
+                        if (parts.length < 4) return 1;
+                        const surveyId = parts[1];
+                        const questionId = parts[3];
+                        const sd = window.SGAPI && window.SGAPI.surveyData && window.SGAPI.surveyData[surveyId];
+                        if (!sd) return 1;
+                        const q = sd.questions && sd.questions[questionId];
+                        if (!q) return 1;
+                        const mr = q.properties && q.properties.minimum_response;
+                        return (mr && mr > 0) ? mr : 1;
+                    } catch (e) { return 1; }
+                }""")
+                if min_raw and isinstance(min_raw, (int, float)) and int(min_raw) > 0:
+                    min_select = int(min_raw)
+            except Exception:
+                min_select = 1
+
+            max_select = min_select
+
+            group_key = f"alchemer_rank_dragdrop:{_norm_lc(question_text)[:60]}"
+            target_id = make_target_id("group", group_key, question_text)
+
+            register_target(
+                target_id,
+                {
+                    "kind": "group",
+                    "itype": "checkbox",
+                    "group_key": group_key,
+                    "question": question_text,
+                    "options": options,
+                    "max_select": max_select,
+                    "min_select": min_select,
+                    "item_input_map": item_input_map,
+                    "frame_chain": list(frame_chain or []),
+                    "alchemer_rank_dragdrop": True,
+                },
+            )
+
+            blocks.append({
+                "question": question_text,
+                "itype": "checkbox",
+                "options": options,
+                "max_select": max_select,
+                "min_select": min_select,
+                "target_id": target_id,
+                "context": {
+                    "kind": "group",
+                    "alchemer_rank_dragdrop": True,
+                },
+            })
+
+            log_debug(
+                "[DOM_ALCHEMER_RANK_DRAGDROP]",
+                f"extracted 1 rank block: {len(options)} items min_select={min_select} q={question_text[:60]!r}",
+            )
+
+        except Exception as exc:
+            if is_debug():
+                log_debug("[DOM_ALCHEMER_RANK_DRAGDROP]", f"error: {type(exc).__name__}: {exc}")
+            continue
+
+    return blocks

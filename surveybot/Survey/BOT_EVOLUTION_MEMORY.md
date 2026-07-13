@@ -1038,6 +1038,31 @@ Patterns exclus :
 - Table sge_like visible avec sibling visible dans le parent (ex. BankedSA customChoice) →
   jamais marquée dedup-only, chemin normal inchangé
 
+### _extract_alchemer_rank_dragdrop_block
+Fichier : Survey/dom_extractors_misc.py (extraction), Survey/dom_analyzer.py (étape 0i-nonies,
+appel avant le pipeline générique singles), Survey/action_dispatcher.py (bloc dispatcher
+`payload.get("alchemer_rank_dragdrop") and resolved_itype == "checkbox"`).
+Cas observé : question de classement drag-and-drop (liste origine → liste classée), ex.
+"sélectionnez vos 3 aspects les plus importants". Chaque item de `ul[id$='-origin'] > li`
+contient un `<input type="text" aria-hidden="true">` (helper clavier) + `<label>` ; sans
+ce guard, le pipeline générique singles captait chacun de ces inputs cachés comme une
+question texte indépendante → N blocs fragmentés et incomplets au lieu d'un seul bloc.
+Guard : `div.sg-question.sg-type-rank.sg-type-rank-dragdrop`
+Patterns couverts :
+- Texte de la question depuis `div.sg-question-title` (nettoyage numéro + `*` + mention required)
+- Items depuis `ul[id$='-origin'] > li` (label + input `[type=text][aria-hidden='true']`), un seul
+  bloc `itype=checkbox` avec toutes les options, dans l'ordre DOM d'origine
+- `min_select`/`max_select` = `minimum_response` lu dans `window.SGAPI.surveyData[surveyId].questions[questionId].properties` (fallback 1 si absent)
+- Registry : `item_input_map` (label normalisé → id de l'input caché) consommé par le dispatcher
+- Dispatcher : pour chaque item choisi par l'IA, résout l'input caché via `item_input_map`
+  (lookup direct puis fuzzy), fixe `input.value = ordinal` (position 1-based dans le plan de
+  réponse) + dispatch `input`/`change` — pas de drag-and-drop simulé, Alchemer accepte la
+  valeur numérique directement sur l'input caché sortable
+- Compteur d'ordinal par question (`driver._alchemer_rank_dragdrop_counts` / `_ordinal`), réinitialisé à chaque nouveau plan
+Patterns exclus :
+- Ranking Alchemer non drag-drop (autres `sg-type-rank-*` non rencontrés à ce jour)
+- Tables sge_like matricielles → `_extract_table_matrix_radio_rows`
+
 ---
 
 ## UTILITAIRE : DROPDOWN BLOCK RESOLVER

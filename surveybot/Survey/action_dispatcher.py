@@ -1978,6 +1978,46 @@ def _apply_by_target_id(
                     )
                     return _rs_ok
 
+                # Guard alchemer_rank_dragdrop : 1 bloc checkbox, N items à classer via inputs text aria-hidden.
+                # value = texte de l'item retourné par GPT ; ordinal = sa position 1-based dans le plan.
+                # Interaction : set input.value = ordinal via JS + dispatch input/change (Alchemer jQuery UI sortable).
+                if payload.get("alchemer_rank_dragdrop") and resolved_itype == "checkbox":
+                    _ar_item_map = payload.get("item_input_map") or {}
+                    if not _ar_item_map:
+                        return False
+
+                    _ar_inp_id = _ar_item_map.get(v_norm) or (_ar_item_map.get(v_fold) if v_fold else None)
+                    if not _ar_inp_id:
+                        for _ar_k, _ar_v in _ar_item_map.items():
+                            _ar_kn = _norm_lc(_ar_k)
+                            if v_norm and (v_norm == _ar_kn or v_norm in _ar_kn or _ar_kn in v_norm):
+                                _ar_inp_id = _ar_v
+                                break
+
+                    if not _ar_inp_id:
+                        log_debug("[TARGET_DEBUG]", f"alchemer_rank_dragdrop: item introuvable value={value!r}")
+                        return False
+
+                    _ar_ordinal = int(getattr(driver, "_alchemer_rank_dragdrop_ordinal", 1) or 1)
+                    # inp_id and ordinal are embedded directly (inp_id is a controlled DOM attribute, ordinal is int)
+                    _ar_js_id = _ar_inp_id.replace("'", "\\'")
+                    _ar_ok = bool(driver.evaluate(f"""() => {{
+                        try {{
+                            var inp = document.getElementById('{_ar_js_id}');
+                            if (!inp) return false;
+                            inp.value = '{_ar_ordinal}';
+                            inp.dispatchEvent(new Event('input', {{bubbles: true}}));
+                            inp.dispatchEvent(new Event('change', {{bubbles: true}}));
+                            return true;
+                        }} catch (e) {{ return false; }}
+                    }}"""))
+
+                    log_debug(
+                        "[TARGET_DEBUG]",
+                        f"alchemer_rank_dragdrop: {'ok' if _ar_ok else 'ko'} item={value!r} rank={_ar_ordinal} inp={_ar_inp_id!r}",
+                    )
+                    return _ar_ok
+
                 # 1) lookup direct
                 xp = opt_map.get(v_norm) or (opt_map.get(v_fold) if v_fold else None)
 
@@ -6986,6 +7026,10 @@ def execute_actions_plan(
     driver._decipher_ranksort_counts = {}
     driver._decipher_ranksort_ordinal = 1
 
+    # Compteurs ordinaux alchemer_rank_dragdrop : réinitialisés à chaque plan (par qid)
+    driver._alchemer_rank_dragdrop_counts = {}
+    driver._alchemer_rank_dragdrop_ordinal = 1
+
     try:
         url_before = driver.url
     except Exception:
@@ -7099,6 +7143,23 @@ def execute_actions_plan(
                         driver._decipher_ranksort_ordinal = 1
                 except Exception:
                     driver._decipher_ranksort_ordinal = 1
+
+            # Alchemer rank_dragdrop: rang ordinal (1-based) pour cette action dans le plan
+            if tid:
+                try:
+                    _ar_p = get_target(tid) or {}
+                    if _ar_p.get("alchemer_rank_dragdrop"):
+                        _ar_key = qid or tid
+                        if not hasattr(driver, "_alchemer_rank_dragdrop_counts"):
+                            driver._alchemer_rank_dragdrop_counts = {}
+                        driver._alchemer_rank_dragdrop_counts[_ar_key] = (
+                            driver._alchemer_rank_dragdrop_counts.get(_ar_key, 0) + 1
+                        )
+                        driver._alchemer_rank_dragdrop_ordinal = driver._alchemer_rank_dragdrop_counts[_ar_key]
+                    else:
+                        driver._alchemer_rank_dragdrop_ordinal = 1
+                except Exception:
+                    driver._alchemer_rank_dragdrop_ordinal = 1
 
             if tid and qid:
                 instruction = f"{qid} //// {tid} //// {value} //// {itype} //// {context}"

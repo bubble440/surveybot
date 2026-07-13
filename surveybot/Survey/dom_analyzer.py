@@ -137,6 +137,7 @@ try:
         _extract_datadiggers_icontrol_radio_block,
         _extract_prodege_prescreener_radio_block,
         _extract_researchnow_autoscreener_radio_blocks,
+        _extract_alchemer_rank_dragdrop_block,
     )
 
     # Registre et utilitaires
@@ -249,6 +250,7 @@ except ImportError:
         _extract_datadiggers_icontrol_radio_block,
         _extract_prodege_prescreener_radio_block,
         _extract_researchnow_autoscreener_radio_blocks,
+        _extract_alchemer_rank_dragdrop_block,
     )
 
 
@@ -1776,6 +1778,17 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         rn_blocks = _extract_researchnow_autoscreener_radio_blocks(driver, frame_chain)
         if rn_blocks:
             return rn_blocks
+    except Exception:
+        pass
+
+    # --- 0i-nonies) Alchemer/SurveyGizmo ranking drag-drop (div.sg-question.sg-type-rank-dragdrop) ---
+    # Guard DOM strict : div.sg-question.sg-type-rank.sg-type-rank-dragdrop
+    # Problème : les inputs type=text aria-hidden="true" dans les li d'origine sont captés à tort
+    # par le pipeline générique singles → N blocs fragmentés au lieu d'un seul bloc ranking.
+    try:
+        alchemer_rank_blocks = _extract_alchemer_rank_dragdrop_block(driver, frame_chain)
+        if alchemer_rank_blocks:
+            return alchemer_rank_blocks
     except Exception:
         pass
 
