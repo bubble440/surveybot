@@ -1018,6 +1018,26 @@ Patterns exclus :
 - Ne couvre pas les cas où l'instruction elle-même contiendrait un `?` sans question réelle associée
   (non rencontré à ce jour — signal `?` traité comme heuristique généraliste, pas un cas Alchemer-only).
 
+### _extract_table_matrix_radio_rows — guard table sge_like masquée + dédup exact
+Fichier : Survey/dom_extractors_misc.py (guard), Survey/dom_analyzer.py (consommation `table_matrix_sge_exact_names`)
+Cas observé : page à questions séquentielles dans le même DOM (ex. Q18 NPS actif + Q19 matrice
+sge_like 13 lignes/5 colonnes encore `display:none`, révélée plus tard sans rechargement).
+Guard : `getBoundingClientRect()` de la table + siblings du parent. Si aucune surface visible :
+`_is_hidden_dedup_only=True` — la branche `sge_like_matrix` émet alors un bloc marqueur
+`{"_sge_dedup_only": True, "sge_row_names": [...]}` (noms EXACTS des radios, pas le préfixe)
+au lieu du bloc `itype=matrix` envoyé à l'IA. `dom_analyzer.py` route ce marqueur vers
+`table_matrix_sge_exact_names` (jamais dans `question_blocks`), utilisé plus loin pour bloquer
+le pipeline générique radio-par-name sur ces mêmes lignes.
+Patterns couverts :
+- Table sge_like visible → bloc `itype=matrix` unique inchangé (comportement historique)
+- Table sge_like masquée sans contexte visible → 0 bloc exposé à l'IA, mais ses noms de radio
+  exacts bloquent le groupement générique (évite les 13 blocs radio "row: col" parasites)
+Patterns exclus :
+- Noms EXACTS utilisés (pas le préfixe `sge-<survey>-<qid>`) pour ne pas bloquer une autre
+  question sge_like du même préfixe sur la même page (ex. Q18 NPS)
+- Table sge_like visible avec sibling visible dans le parent (ex. BankedSA customChoice) →
+  jamais marquée dedup-only, chemin normal inchangé
+
 ---
 
 ## UTILITAIRE : DROPDOWN BLOCK RESOLVER

@@ -1373,6 +1373,32 @@ def _extract_table_matrix_radio_rows(driver, frame_chain: list[int] | None) -> l
                 # Déjà géré par _extract_cmix_simple_grid_question_blocks
                 continue
 
+            # Guard: table cachée sans contexte visible.
+            # Si la table n'est pas rendue (rect=0) et qu'aucun sibling direct dans son
+            # parent n'est visible, elle n'est pas une question active.
+            # Pour les sge_like_matrix cachées on émet quand même un marqueur de dédup
+            # (sge_row_names exacts) afin que le pipeline générique ne crée pas 13 blocs
+            # radio séparés. On ne supprime PAS la table entière ici : le branchement
+            # sge_like_matrix / normal ci-dessous décide de l'action finale.
+            _is_hidden_dedup_only = False
+            try:
+                _tbl_has_visible_context = driver.evaluate("""(el) => {
+                    var r = el.getBoundingClientRect();
+                    if (r.width > 0 || r.height > 0) return true;
+                    var parent = el.parentElement;
+                    if (!parent) return false;
+                    for (var i = 0, ch = parent.children; i < ch.length; i++) {
+                        if (ch[i] === el) continue;
+                        var cr = ch[i].getBoundingClientRect();
+                        if (cr.width > 0 || cr.height > 0) return true;
+                    }
+                    return false;
+                }""", table)
+                if not _tbl_has_visible_context:
+                    _is_hidden_dedup_only = True
+            except Exception:
+                pass
+
             col_headers: list[str] = []
             try:
                 ths = table.query_selector_all("thead tr th")
@@ -1532,6 +1558,25 @@ def _extract_table_matrix_radio_rows(driver, frame_chain: list[int] | None) -> l
                 group_key = f"table_matrix_sge:name:{matrix_key}"
                 target_id = make_target_id("group", group_key, matrix_question or matrix_key)
 
+                if _is_hidden_dedup_only:
+                    # Table cachée : ne pas envoyer à l'IA, mais émettre les noms de
+                    # lignes exacts pour bloquer le pipeline générique radio. On utilise
+                    # les noms EXACTS (pas le préfixe) pour ne pas supprimer des radios
+                    # d'autres questions partageant le même préfixe (ex. Q18 NPS).
+                    sge_row_names = [c["row_name"] for c in row_candidates]
+                    log_debug("TABLE_MATRIX", f"dedup-only sge {len(sge_row_names)} rows prefix={matrix_key!r}")
+                    blocks.append({
+                        "_sge_dedup_only": True,
+                        "sge_row_names": sge_row_names,
+                        "context": {
+                            "kind": "group",
+                            "group_key": group_key,
+                            "table_matrix_radio": True,
+                            "table_matrix_sge": True,
+                        },
+                    })
+                    continue
+
                 register_target(
                     target_id,
                     {
@@ -1567,6 +1612,9 @@ def _extract_table_matrix_radio_rows(driver, frame_chain: list[int] | None) -> l
                         },
                     }
                 )
+                continue
+
+            if _is_hidden_dedup_only:
                 continue
 
             for row_data in row_candidates:

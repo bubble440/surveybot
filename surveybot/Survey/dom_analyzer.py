@@ -1035,6 +1035,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
     question_blocks: List[Dict[str, Any]] = []
     table_matrix_row_names: Set[str] = set()
     table_matrix_sge_prefixes: Set[str] = set()
+    table_matrix_sge_exact_names: Set[str] = set()
     clear_registry()
 
     # --- 0-pre) Nfield dragndrop (metaType=dragndrop, div._dragndrop + hidden mrQuestionTable) ---
@@ -1195,10 +1196,18 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
     try:
         table_matrix_blocks = _extract_table_matrix_radio_rows(driver, frame_chain)
         if table_matrix_blocks:
-            question_blocks.extend(table_matrix_blocks)
             for _matrix_block in table_matrix_blocks:
                 if not isinstance(_matrix_block, dict):
                     continue
+                if _matrix_block.get("_sge_dedup_only"):
+                    # Table sge cachée : enregistrer les noms exacts des lignes pour
+                    # bloquer le pipeline générique, sans exposer de bloc à l'IA.
+                    for _sge_name in (_matrix_block.get("sge_row_names") or []):
+                        _n = _norm_lc(_sge_name)
+                        if _n:
+                            table_matrix_sge_exact_names.add(_n)
+                    continue
+                question_blocks.append(_matrix_block)
                 _ctx = (_matrix_block.get("context") or {}) if isinstance(_matrix_block.get("context"), dict) else {}
                 if _ctx.get("table_matrix_radio") is not True:
                     continue
@@ -1953,6 +1962,8 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             if raw_name_key_lc in table_matrix_row_names:
                 continue
             if any(raw_name_key_lc.startswith(f"{prefix}-") for prefix in table_matrix_sge_prefixes):
+                continue
+            if raw_name_key_lc in table_matrix_sge_exact_names:
                 continue
             # Savanta JQM fieldset pattern: forcer itype="checkbox" pour que
             # les radio noneof soient fusionnés avec les checkboxes du même fieldset.
