@@ -70,6 +70,21 @@ if ($LASTEXITCODE -ne 0) {
 & nssm set $svcName AppRotateSeconds 86400    # rotation quotidienne
 & nssm set $svcName AppRotateBytes   10485760 # 10 Mo max par fichier
 
+# ── Méthodes d'arrêt gracieux ────────────────────────────────────────────────
+#
+# Sur Windows, seule la méthode Console (GenerateConsoleCtrlEvent CTRL_BREAK_EVENT)
+# est reçue par Python et déclenche notre handler SIGBREAK → séquence de fermeture
+# propre (record_exit, Postgres, Chrome). Les méthodes Window (WM_CLOSE) et Thread
+# (PostQuitMessage) sont sans effet sur un process console Python — on les saute
+# (AppStopMethodSkip 6 = bitmask : Window=2 + Thread=4) pour éviter ~3 s d'attente
+# inutile avant que NSSM ne passe directement à TerminateProcess.
+# AppStopMethodConsole est le seul timeout qui compte : c'est la fenêtre accordée
+# à la séquence de fermeture propre (Postgres + Chrome + record_exit). 30 s est
+# une marge confortable ; TerminateProcess ne s'enclenche qu'au-delà.
+#
+& nssm set $svcName AppStopMethodSkip    6      # skip Window (2) + Thread (4)
+& nssm set $svcName AppStopMethodConsole 30000  # 30 s pour la fermeture propre
+
 # ── Politique de redémarrage selon le code de sortie ─────────────────────────
 #
 # EXIT_VOLUNTARY    = 0  → ne pas redémarrer (arrêt intentionnel : SIGTERM, target journalier…)

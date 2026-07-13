@@ -133,14 +133,27 @@ def install_sigusr1_handler():
     print("[SIGUSR1] Handler installé. Dump via : kill -SIGUSR1", os.getpid())
 
 def install_sigterm_handler(account_id: str):
+    """
+    Sur Windows, SIGTERM n'est PAS délivré par les processus Win32 externes
+    (NSSM, taskkill, TerminateProcess…). Il ne peut être déclenché que via
+    os.kill(pid, signal.SIGTERM) depuis un autre process Python.
+    On l'enregistre pour la portabilité Linux et les cas de test Python-to-Python,
+    mais ce n'est pas le chemin d'arrêt réel sous Windows — voir install_sigint_handler.
+    """
     signal.signal(signal.SIGTERM, _make_stop_handler(account_id, sig_name="SIGTERM"))
 
 def install_sigint_handler(account_id: str):
     """
-    Handler SIGINT (Ctrl+C / Windows bare-metal).
-    Même comportement que SIGTERM : libère le slot Postgres, supprime le PID, exit propre.
+    Handlers des signaux console Windows — seul canal d'arrêt externe fonctionnel
+    pour un process Python sur Windows :
+      - SIGINT   : Ctrl+C dans le terminal (arrêt manuel opérateur).
+      - SIGBREAK : GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT) — signal exact
+                   envoyé par NSSM lors d'un `nssm stop` (méthode Console).
+    Les deux déclenchent la même séquence de fermeture propre.
     """
     signal.signal(signal.SIGINT, _make_stop_handler(account_id, sig_name="SIGINT"))
+    if hasattr(signal, "SIGBREAK"):   # Windows uniquement
+        signal.signal(signal.SIGBREAK, _make_stop_handler(account_id, sig_name="SIGBREAK"))
 
 def _make_stop_handler(aid: str, sig_name: str = "SIGTERM"):
     """
