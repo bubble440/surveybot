@@ -2181,6 +2181,22 @@ def _apply_by_target_id(
                     if _first > 1 and debug_target:
                         log_debug("[TARGET_DEBUG]", f"_click_candidate: skip_to={_first} cm_key={_cm_key!r}")
 
+                    # Pré-détection label-intercept : si le nœud est un <input> avec un <label for="id">
+                    # dans le même parent, les méthodes pointer (1 et 2) timeouteront à 30s chacune.
+                    # On saute directement à la méthode 3 (CDP) pour ce premier appel seulement.
+                    if _first == 1:
+                        try:
+                            _has_label_intercept = node.evaluate(
+                                "(e) => { if (!e.id || e.tagName.toLowerCase() !== 'input') return false;"
+                                " var p = e.parentElement; return p ? !!p.querySelector('label[for=\"' + e.id + '\"]') : false; }"
+                            )
+                            if _has_label_intercept:
+                                if debug_target:
+                                    log_debug("[TARGET_DEBUG]", f"_click_candidate: label-intercept detected on {label!r}, skip to CDP")
+                                _first = 3
+                        except Exception:
+                            pass
+
                     # 1) click webdriver standard
                     if _first <= 1:
                         try:
