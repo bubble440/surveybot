@@ -1095,6 +1095,26 @@ Patterns exclus :
 - Ranking Alchemer non drag-drop (autres `sg-type-rank-*` non rencontrés à ce jour)
 - Tables sge_like matricielles → `_extract_table_matrix_radio_rows`
 
+### _try_table_matrix_sge_set (dispatcher)
+Fichier : Survey/action_dispatcher.py
+Appelé depuis : bloc matrix_intent, après _try_gridclick_matrix_set, avant le fallback visuel
+(dom_context_mapper) et le fallback générique click_matrix_cell_by_row_and_col.
+Guard : target_payload marqué table_matrix_sge (racine ou context), row_label et col_label non vides.
+Patterns couverts :
+- Localisation des `<tr>` contenant des radios `@name` via XPath explicitement préfixé "xpath="
+  (`driver.query_selector_all("xpath=//tr[...]")`) — sans ce préfixe la requête ne matche aucune
+  ligne sur ce driver (convention obligatoire, cf. Survey/input_matrix.py).
+- Matching de ligne : `tr.querySelector('th, td')` comparé à row_label normalisé.
+- Matching de colonne : égalité stricte (pas de sous-chaîne) sur `aria-label` normalisé des radios
+  de la ligne matchée — une comparaison par sous-chaîne confond "Agree"/"Disagree" ou
+  "Agree"/"Strongly Agree".
+- Transmission d'éléments DOM à `evaluate()` : toujours appeler `.evaluate(fn, arg)` directement sur
+  le handle d'élément concerné (ex. `row.evaluate(fn, col_need)`), jamais `driver.evaluate(fn, [handle, arg])`
+  (un handle imbriqué dans une liste n'est pas résolu côté JS) ni `driver.evaluate(fn)` sans transmettre
+  l'élément trouvé à l'étape précédente (sinon `_el` est `undefined` et le clic échoue silencieusement).
+Patterns exclus :
+- Pages sans flag table_matrix_sge sur le target_id → fonction retourne False immédiatement.
+
 ---
 
 ## UTILITAIRE : DROPDOWN BLOCK RESOLVER
