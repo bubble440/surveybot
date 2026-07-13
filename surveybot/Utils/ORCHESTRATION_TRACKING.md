@@ -182,17 +182,14 @@ dérivé une fois avec le chemin en dur dans l'ancienne fonction).
   planifiée existante) au 13/07/2026.
 - **Décision** : à supprimer, NSSM + `wake_scheduler.ps1` +
   `check_zombie_bots.ps1` couvrent désormais l'intégralité de son rôle.
-- **⚠️ Point bloquant avant suppression définitive** : `launch_all.ps1`
-  vérifiait l'existence du dossier `profile_dir` avant de lancer un bot
-  (`SKIP $id — profile_dir introuvable`). Cette vérification **n'a pas
-  d'équivalent confirmé** dans `nssm_setup_bot.ps1` ni ailleurs dans le
-  pipeline NSSM à ce jour. Avec `SERVICE_AUTO_START`, NSSM tentera de démarrer
-  un bot même si son profil Chrome n'existe pas, probablement avec un crash
-  immédiat plutôt qu'un skip propre et loggé.
-  **Action à faire** : soit ajouter cette vérification dans
-  `nssm_setup_bot.ps1` (skip la configuration du service si `profile_dir`
-  n'existe pas), soit confirmer qu'elle est déjà gérée proprement au niveau
-  du bot lui-même (`playwright_launcher.py` ?) avant de supprimer le fichier.
+- **✅ Résolu (13/07/2026)** : `launch_all.ps1` vérifiait l'existence du
+  dossier `profile_dir` avant de lancer un bot (`SKIP $id — profile_dir
+  introuvable`). Cette vérification a été portée dans `nssm_setup_bot.ps1` :
+  un compte dont `profile_dir`/`CHROME_PROFILE_DIR` est vide ou pointe vers un
+  dossier inexistant est skippé (`Write-Warning`, service NSSM non configuré),
+  sans être signalé comme "orphelin" (son `account_id` est ajouté au set de
+  comptes connus avant le check, pas après). `launch_all.ps1` peut désormais
+  être supprimé.
 
 ---
 
@@ -218,10 +215,9 @@ dérivé une fois avec le chemin en dur dans l'ancienne fonction).
 
 ## 11. Points ouverts (non résolus à ce jour)
 
-1. **`profile_dir` non vérifié avant démarrage NSSM** (cf. section 9) — bloquant avant suppression de `launch_all.ps1`.
-2. **Duplication des défauts GEO/lang** entre `launch_all.ps1` et `nssm_setup_bot.ps1` (mineur).
-3. **Risque de process Chrome orphelins** si le timeout de 30 s de fermeture propre est dépassé (cf. section 4) — à surveiller, pas encore instrumenté.
-4. **Validation en conditions réelles non faite** : tous les correctifs ci-dessus ont été relus sur le code mais pas encore testés sur une machine de production réelle (rebuild Nuitka + déploiement + observation d'un cycle complet crash/zombie/cooldown).
+1. **Duplication des défauts GEO/lang** entre `launch_all.ps1` (à supprimer) et `nssm_setup_bot.ps1` (mineur, mais `launch_all.ps1` disparaissant, ce point devient sans objet une fois la suppression faite).
+2. **Risque de process Chrome orphelins** si le timeout de 30 s de fermeture propre est dépassé (cf. section 4) — à surveiller, pas encore instrumenté.
+3. **Validation en conditions réelles non faite** : tous les correctifs ci-dessus ont été relus sur le code mais pas encore testés sur une machine de production réelle (rebuild Nuitka + déploiement + observation d'un cycle complet crash/zombie/cooldown).
 
 ---
 
