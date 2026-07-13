@@ -30,6 +30,21 @@ Pas de scheduler qui relance périodiquement "tous les bots de accounts.json" �
 chaque bot est un service dédié et continu ; les trois briques ci-dessus ne
 font que décider *quand* NSSM doit (re)démarrer ce service.
 
+### 1bis. Chemins de déploiement — dev vs prod (à ne jamais confondre)
+
+- **Machine de dev** : `C:\projects\Surveys\surveybot` — Python + `.venv`,
+  code source, exécution via `python main.py`.
+- **Machine de prod (NiPoGi mini PC)** : **`C:\surveybot\`** — uniquement le
+  binaire compilé `surveybot.exe` (Nuitka onefile) + fichiers d'exploitation
+  (`accounts.json`, `receiver_config.json`, `pids\`, `logs\`, scripts `.ps1`).
+  **Aucun Python ni venv installé sur cette machine** — c'est tout l'intérêt
+  du build Nuitka.
+- Cette distinction n'est pas anecdotique : c'est la cause racine du bug
+  documenté en section 6 (`query_cooldown_status.py` invoqué via un chemin
+  Python de dev, qui n'existe pas en prod). Tout script d'orchestration
+  (`.ps1`) ou toute logique de résolution de chemin doit cibler `C:\surveybot\`
+  par défaut, jamais un chemin de dev codé en dur ou supposé.
+
 ---
 
 ## 2. Codes de sortie normalisés (`bot_supervisor.py`)
