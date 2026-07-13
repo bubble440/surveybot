@@ -96,7 +96,19 @@ foreach ($account in $accounts) {
         continue
     }
 
+    # Ajouté AVANT la vérification profile_dir : un compte présent dans accounts.json
+    # mais skippé ci-dessous ne doit jamais être signalé comme service NSSM "orphelin"
+    # dans la détection en fin de script — le compte existe, il manque juste son dossier.
     [void]$accountIds.Add($acctId)
+
+    # Vérification du dossier profil Chrome — même garde-fou que l'ancien launch_all.ps1.
+    # Sans ça, NSSM (via SERVICE_AUTO_START) tenterait de démarrer un bot dont le profil
+    # n'existe pas, avec un crash immédiat au lieu d'un skip propre et loggé.
+    if (-not $profileDir -or -not (Test-Path $profileDir)) {
+        Write-Warning "[SKIP] $acctId — profile_dir introuvable ou vide : '$profileDir' — service NSSM non configuré."
+        continue
+    }
+
     $processed++
 
     $svcName   = "surveybot_$acctId"
