@@ -1154,6 +1154,29 @@ Fallback : fuzzy match sur `Array.from(el.options)` → `select_option(value=mat
 
 ---
 
+## PARSER OPENAI : FALLBACK LIGNE BRUTE QID UNIQUE
+Fichier : Survey/batch_response_parser.py
+Fonction : `parse_batch_response`, bloc situé après la boucle principale de parsing (avant `_coerce_to_negative_frequency_option`).
+Contexte : quand le batch ne contient qu'une seule question en attente, OpenAI répond parfois
+par une valeur nue ("9") sans l'enveloppe `QID //// target_id //// valeur //// itype //// contexte`
+et sans aucun séparateur `////`. Sans ce fallback, la ligne est ignorée : `received=0 final_count=0`,
+aucune action générée, le champ reste vide et le bot bloque en attente de saisie.
+
+### bare_single_qid_fallback
+Guard : `constraints is not None`, exactement 1 QID de `constraints` encore sans action générée,
+ET le `raw` contient exactement 1 ligne sans `////`.
+Patterns couverts :
+- N'importe quel `itype` (text, number, etc.) — pas restreint à `kind=multi_text`
+  (généralisation de l'ancien `multi_text_bare_fallback`, qui ne couvrait que ce cas).
+- Valeur récupérée depuis `qid_meta[qid]` (`target_id`, `itype`, `question`), split via `_split_values`
+  (supporte le séparateur `|` si plusieurs segments).
+Patterns exclus :
+- Plusieurs QID encore sans réponse → fallback non déclenché (ambiguïté sur la question ciblée).
+- Raw contenant plusieurs lignes sans `////` → fallback non déclenché (ambiguïté sur la ligne à utiliser).
+- Toute ligne contenant déjà `////` → traitée par le parsing principal, hors scope de ce fallback.
+
+---
+
 ## TRI POST-EXTRACTION : ORDRE DOM RÉEL + PROMOTION DU BLOC VISIBLE
 Contexte : pages prescreener multi-fieldsets où plusieurs blocs coexistent dans le DOM
 (ex. surveys.insights-today.com/v1/survey/prescreener) mais où un seul est visible/actionnable
