@@ -667,7 +667,10 @@ def _try_table_matrix_sge_set(driver, target_payload: dict, row_label: str, col_
     - nécessite un <tr> contenant des radios avec @name
     - cible la radio par croisement row label + aria-label (colonne)
     """
-    if not isinstance(target_payload, dict) or not target_payload.get("table_matrix_sge"):
+    if not isinstance(target_payload, dict) or not (
+        target_payload.get("table_matrix_sge")
+        or (target_payload.get("context") or {}).get("table_matrix_sge")
+    ):
         return False
 
     def _matrix_label_norm(text: str) -> str:
@@ -690,10 +693,11 @@ def _try_table_matrix_sge_set(driver, target_payload: dict, row_label: str, col_
         return cand == needle or cand in needle or needle in cand
 
     try:
-        rows = driver.query_selector_all("//tr[.//input[@type='radio'][@name]]")
+        rows = driver.query_selector_all("xpath=//tr[.//input[@type='radio'][@name]]")
     except Exception:
         rows = []
 
+    log_debug("[SGE_MATRIX]", f"rows found={len(rows)} for table_matrix_sge candidate")
     if not rows:
         log_debug("[SGE_MATRIX]", "rows empty for table_matrix_sge candidate")
         return False
@@ -716,11 +720,10 @@ def _try_table_matrix_sge_set(driver, target_payload: dict, row_label: str, col_
         matched_row = True
 
         try:
-            radio = radio.evaluate("""(_el) => {
+            ok = bool(row.evaluate("""(_el, _arg1) => {
                 const tr = _el;
                 const need = _arg1;
-                if (!tr) return null;
-                const radios = Array.from(tr.querySelectorAll("input[type='radio'][name]"));
+                if (!tr) return false;
                 const norm = (txt) => {
                   return (txt || '')
                     .normalize('NFD')
@@ -731,54 +734,35 @@ def _try_table_matrix_sge_set(driver, target_payload: dict, row_label: str, col_
                     .toLowerCase();
                 };
                 const needNorm = norm(need);
-                const pick = radios.find((r) => {
+                const radios = Array.from(tr.querySelectorAll("input[type='radio'][name]"));
+                const input = radios.find((r) => {
                   const aria = (r.getAttribute('aria-label') || r.getAttribute('data-label') || '').trim();
-                  const ariaNorm = norm(aria);
-                  if (!!ariaNorm && !!needNorm && (ariaNorm === needNorm || ariaNorm.includes(needNorm) || needNorm.includes(ariaNorm))) {
-                    return true;
-                  }
-                  const cellOptText = (r.closest('td')?.querySelector('.opt-text')?.textContent || '').trim();
-                  const optNorm = norm(cellOptText);
-                  return !!optNorm && !!needNorm && (optNorm === needNorm || optNorm.includes(needNorm) || needNorm.includes(optNorm));
+                  if (norm(aria) === needNorm) return true;
+                  const optText = (r.closest('td')?.querySelector('.opt-text')?.textContent || '').trim();
+                  return norm(optText) === needNorm;
                 });
-                return pick || null;
-}""", [row, col_need])
-        except Exception:
-            radio = None
-
-        if radio is None:
-            log_debug("[SGE_MATRIX]", f"no radio matched col_need='{col_need}' in matched row")
-            continue
-
-        try:
-            ok = bool(driver.evaluate("""([_el, _arg1]) => {
-                const input = _el;
                 if (!input) return false;
                 try { input.scrollIntoView({block:'center', inline:'center'}); } catch(e) {}
                 const table = input.closest('table.i-question-table');
                 const cell = input.closest('td.i-option-cell[tabindex]');
-                const isIntelliSurveyCell = !!(table && cell);
                 const id = input.getAttribute('id') || '';
-                const label = id ? document.querySelector(`label[for="${CSS.escape(id)}"]`) : null;
+                const label = id ? document.querySelector('label[for="' + CSS.escape(id) + '"]') : null;
                 try {
-                  if (isIntelliSurveyCell) {
-                    cell.click();
-                  } else if (label) {
-                    label.click();
-                  } else {
-                    input.click();
-                  }
+                  if (table && cell) { cell.click(); }
+                  else if (label) { label.click(); }
+                  else { input.click(); }
                 } catch(e) {}
                 if (!input.checked) {
                   try { input.checked = true; } catch(e) {}
-                  try { input.dispatchEvent(new Event('input', { bubbles: true })); } catch(e) {}
-                  try { input.dispatchEvent(new Event('change', { bubbles: true })); } catch(e) {}
+                  try { input.dispatchEvent(new Event('input', {bubbles:true})); } catch(e) {}
+                  try { input.dispatchEvent(new Event('change', {bubbles:true})); } catch(e) {}
                 }
                 return !!input.checked;
-}"""))
+}""", col_need))
         except Exception:
             ok = False
 
+        log_debug("[SGE_MATRIX]", f"click ok={ok} col_need='{col_need}'")
         if ok:
             log_info("[TARGET]", "apply ok=true strategy=table_matrix_sge reason=applied")
             return True
