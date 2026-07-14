@@ -346,12 +346,16 @@ def run_attach_takeover(driver, *, api_key: str, account_id: str) -> None:
                     if el.is_visible()
                 ]
                 if _decipher_err_els:
-                    try:
-                        _derr_txt = (_decipher_err_els[0].inner_text() or "").strip()[:200]
-                    except Exception:
-                        _derr_txt = ""
-                    print(f"[PLATFORM-ERR] Page d'erreur Decipher (div.survey-error) step={i} url={_attach_display_url(driver.url)} texte={_derr_txt!r} → sortie boucle.")
-                    break
+                    _has_actionable_q = driver.query_selector(
+                        "div.question input[type='radio'], div.question input[type='checkbox']"
+                    ) is not None
+                    if not _has_actionable_q:
+                        try:
+                            _derr_txt = (_decipher_err_els[0].inner_text() or "").strip()[:200]
+                        except Exception:
+                            _derr_txt = ""
+                        print(f"[PLATFORM-ERR] Page d'erreur Decipher (div.survey-error) step={i} url={_attach_display_url(driver.url)} texte={_derr_txt!r} → sortie boucle.")
+                        break
             except Exception:
                 pass
 

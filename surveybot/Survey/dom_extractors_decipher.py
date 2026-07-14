@@ -840,6 +840,23 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
                             pass
                         continue
 
+                if not label_txt and lab is not None:
+                    # Fallback image-only: le label ne contient que des <img> (logo de marque),
+                    # aucun nœud texte — l'identifiant est dans alt, title ou nom de fichier src.
+                    # Guard DOM strict : img présente dans le label (contexte answers-list uniquement).
+                    _img_el = lab.query_selector("img")
+                    if _img_el is not None:
+                        for _attr in ("alt", "title"):
+                            _v = (_img_el.get_attribute(_attr) or "").strip()
+                            if _v:
+                                label_txt = re.sub(r"\.[a-zA-Z0-9]{2,5}$", "", _v).strip()
+                                if label_txt:
+                                    break
+                        if not label_txt:
+                            _src_v = (_img_el.get_attribute("src") or "").strip()
+                            if _src_v:
+                                _fname = _src_v.rsplit("/", 1)[-1]
+                                label_txt = re.sub(r"\.[a-zA-Z0-9]{2,5}$", "", _fname).strip()
                 if not label_txt:
                     continue
 
@@ -872,6 +889,24 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
                     f" or contains(concat(' ',normalize-space(@class),' '),' element ')"
                     f"][1]"
                 )
+
+                # Guard DOM: variante label-frère (ex: showInputParent_2) — l'input et le label
+                # sont au même niveau DOM (pas ancêtre/descendant), aucun ancêtre clickableCell
+                # ou element n'existe. Dans ce cas, cible le label[for=inp_id] directement.
+                # Les variantes clickableCell/element existantes ne sont pas affectées.
+                _has_clickable_ancestor = False
+                try:
+                    _has_clickable_ancestor = bool(
+                        inp.query_selector(
+                            "xpath=ancestor::*[contains(concat(' ',normalize-space(@class),' '),"
+                            "' clickableCell ') or contains(concat(' ',normalize-space(@class),' '),"
+                            "' element ')][1]"
+                        )
+                    )
+                except Exception:
+                    _has_clickable_ancestor = False
+                if not _has_clickable_ancestor and lab is not None:
+                    xp = f"//label[@for={_xpath_literal(inp_id)}]"
 
                 # Cas spécifique GridClick (DOM-only, déclenché par pattern DOM explicite):
                 # on mappe l'option vers le bouton d'échelle visible au lieu du <td> caché.

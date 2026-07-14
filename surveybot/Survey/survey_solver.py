@@ -689,16 +689,20 @@ def solve_full_survey(driver, api_key, *, account_id: str, survey_context=None, 
                 if el.is_visible()
             ]
             if _decipher_err_els:
-                try:
-                    _derr_url = page.url or ""
-                    _derr_txt = (_decipher_err_els[0].inner_text() or "").strip()[:200]
-                    log_info("PLATFORM-ERR", f"div.survey-error url={_derr_url} texte={_derr_txt!r}")
-                except Exception:
-                    pass
-                log_info("PLATFORM-ERR", "Page d'erreur applicative Decipher détectée → soft-restart.")
-                guard.record_success()
-                guard.request_survey_restart("decipher_survey_error")
-                return
+                _has_actionable_q = page.query_selector(
+                    "div.question input[type='radio'], div.question input[type='checkbox']"
+                ) is not None
+                if not _has_actionable_q:
+                    try:
+                        _derr_url = page.url or ""
+                        _derr_txt = (_decipher_err_els[0].inner_text() or "").strip()[:200]
+                        log_info("PLATFORM-ERR", f"div.survey-error url={_derr_url} texte={_derr_txt!r}")
+                    except Exception:
+                        pass
+                    log_info("PLATFORM-ERR", "Page d'erreur applicative Decipher détectée → soft-restart.")
+                    guard.record_success()
+                    guard.request_survey_restart("decipher_survey_error")
+                    return
         except Exception:
             pass
 
