@@ -991,8 +991,23 @@ Note DOM critique : `_click_candidate` sur `.clickableCell` est inopérant (pas 
   Le handle `decipher_cell` peut être stale après clic (re-render DOM) — vérification via getElementById obligatoire.
 Patterns exclus :
 - `div.mx-stage .mx-collapsible-container` présent → `_is_decipher_mx_collapsible_checkbox_selected` (branche MX)
-- `input[type='radio']` → chemin radio distinct
+- `input[type='radio']` → chemin radio distinct (`decipher_radio_clickable_cell`, cf. ci-dessous)
 - Inputs natifs interactables (non fir-hidden) → chemin générique `_click_candidate`
+
+### _apply_by_target_id — bloc decipher_radio_clickable_cell (radio)
+Fichier : Survey/action_dispatcher.py
+Emplacement : bloc `if resolved_itype == "radio":`, juste après le bloc checkbox `decipher_clickable_cell` ci-dessus.
+Guard : `el.closest('.clickableCell')` non-null ET `cell.querySelector("input[type='radio'].fir-hidden")` présent.
+Problème résolu : même layout answers-list que la variante checkbox (input natif masqué CSS dans `.clickableCell`, label sibling), mais en `itype=radio`. Avant ce patch, aucun bloc dispatcher dédié ne couvrait ce cas : le clic retombait sur le chemin générique `radio_main`, dont `_first_input_under()` ne trouve pas l'input (masqué), et qui rapportait malgré tout `apply ok=true` sans vérification DOM fiable — l'option réellement sélectionnée restait alors celle par défaut (1ère de la liste) au lieu de la valeur demandée.
+Patterns couverts :
+- Extraction de l'input id depuis le XPath via `re.search(r'@id=["\']([^"\']+)["\']', xp)`
+- Clic via `label[for=inp_id].click()` JS — déclenche les handlers natifs Decipher (fir-icon toggle), même logique que la variante checkbox
+- Fallback si label absent : `_click_candidate(decipher_radio_cell, "decipher_radio_clickable_cell")`
+- Vérification post-clic via `document.getElementById(inp_id)` (DOM frais) : `inp.checked` OU `cell.querySelector('.fir-icon').classList.contains('selected')`
+- Aucun succès rapporté sans que cette vérification passe (pas de faux positif comme avec `radio_main`)
+Patterns exclus :
+- `input[type='checkbox'].fir-hidden` → bloc `decipher_clickable_cell` (checkbox, ci-dessus)
+- Inputs natifs interactables (non fir-hidden) → chemin générique `_click_candidate` / `radio_main`
 
 ---
 
@@ -1236,3 +1251,4 @@ Patterns exclus :
 | ResearchNow | _extract_researchnow_autoscreener_radio_blocks | extracteur générique radio | `[ng-controller*="autoScreenerController"]` + `div.parameter-rendered.single_select.tooBigForDropdown` (step 0i-octies, retour immédiat si match) |
 | Qualtrics BankedSA | _extract_table_matrix_radio_rows (patch caption/legend) | chemin _find_question_text_near_element | `table.ChoiceStructure` avec `display:none` + `caption.QuestionText` ou `fieldset > legend > .QuestionText` |
 | Qualtrics BankedSA | _extract_qualtrics_bankedsa_single_row_radio_blocks | _extract_qualtrics_choice_structure_radio_blocks | `div.customChoice` présent + exactement 1 tr.ChoiceRow (single-row) vs ≥2 ChoiceRow même name (multi-lignes Likert) || Decipher | _extract_decipher_atmrating_blocks | extracteur générique singles/text | `div.question.sq-atmrating` + `div.sq-atmrating-container span.atmrating-btn` — inputs text cachés rejetés par pipeline générique |
+| Decipher/FocusVision answers-list | decipher_radio_clickable_cell (dispatcher) | decipher_clickable_cell (dispatcher, checkbox) / radio_main générique | `input[type='radio'].fir-hidden` dans `.clickableCell` (vs `input[type='checkbox'].fir-hidden` pour la variante checkbox) — guard strict avant tout fallback générique |

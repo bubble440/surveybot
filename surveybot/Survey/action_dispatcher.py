@@ -3309,6 +3309,67 @@ def _apply_by_target_id(
                             log_debug("[TARGET_DEBUG]", f"decipher clickableCell no checked/selected signal: value='{value}' xpath='{xp}'")
                         return False
 
+                # Decipher/FocusVision answers-list radio (même layout que checkbox ci-dessus,
+                # mais itype=radio). Guard strict : .clickableCell contenant input[type='radio'].fir-hidden.
+                if resolved_itype == "radio":
+                    try:
+                        decipher_radio_cell = el.evaluate_handle("""(_el) => {
+                            const node = _el;
+                            if (!node || !node.closest) return null;
+                            const cell = node.closest('.clickableCell');
+                            if (!cell) return null;
+                            if (!cell.querySelector("input[type='radio'].fir-hidden")) return null;
+                            return cell;
+}""").as_element()
+                    except Exception:
+                        decipher_radio_cell = None
+
+                    if decipher_radio_cell is not None:
+                        _inp_id_m2 = re.search(r'@id=["\']([^"\']+)["\']', xp)
+                        _inp_id_fv2 = _inp_id_m2.group(1) if _inp_id_m2 else None
+
+                        _clicked_via_label2 = False
+                        if _inp_id_fv2:
+                            try:
+                                _clicked_via_label2 = bool(driver.evaluate("""(inp_id) => {
+                                    const lbl = document.querySelector('label[for="' + inp_id + '"]');
+                                    if (!lbl) return false;
+                                    lbl.click();
+                                    return true;
+}""", _inp_id_fv2))
+                            except Exception:
+                                _clicked_via_label2 = False
+
+                        if not _clicked_via_label2:
+                            clicked = _click_candidate(decipher_radio_cell, "decipher_radio_clickable_cell")
+                            if not clicked:
+                                if debug_target:
+                                    log_debug("[TARGET_DEBUG]", f"decipher radio clickableCell click failed: value='{value}' xpath='{xp}'")
+                                return False
+
+                        time.sleep(0.05)
+                        ok_decipher_radio = False
+                        try:
+                            if _inp_id_fv2:
+                                ok_decipher_radio = bool(driver.evaluate("""(inp_id) => {
+                                    const inp = document.getElementById(inp_id);
+                                    if (!inp) return false;
+                                    if (inp.checked) return true;
+                                    const cell = inp.closest('.clickableCell, .element');
+                                    if (!cell) return false;
+                                    const icon = cell.querySelector('.fir-icon');
+                                    return !!(icon && icon.classList.contains('selected'));
+}""", _inp_id_fv2))
+                        except Exception:
+                            ok_decipher_radio = False
+
+                        if bool(ok_decipher_radio):
+                            return True
+
+                        if debug_target:
+                            log_debug("[TARGET_DEBUG]", f"decipher radio clickableCell no checked/selected signal: value='{value}' xpath='{xp}'")
+                        return False
+
                 # --- Toluna Runtime AnswerRow (check_box / radio_button custom, sans input natif) ---
                 # Guard DOM : row = [data-aut='Runtime_AnswerRow'] + [data-aut='Runtime_Wrapper']
                 #             présent + aucun <input> natif.

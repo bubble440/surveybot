@@ -4322,6 +4322,38 @@ def _dedupe_question_blocks(blocks: List[Dict[str, Any]]) -> List[Dict[str, Any]
         xpath_score = len(option_xpath_map) if isinstance(option_xpath_map, dict) else 0
         return (focusvision_priority, pollution_score, target_score, xpath_score)
 
+    # Pre-pass: drop generic button_group blocks whose options (matrix row labels)
+    # are entirely covered by table_matrix_radio blocks from the same parent question.
+    # This prevents the generic radio grouper from emitting a 17th spurious block for
+    # a Likert matrix already split row-by-row by _extract_table_matrix_radio_rows.
+    _matrix_rows_by_question: dict[str, set[str]] = {}
+    for _b in (blocks or []):
+        if not isinstance(_b, dict):
+            continue
+        _ctx = _b.get("context") or {}
+        if isinstance(_ctx, dict) and _ctx.get("table_matrix_radio") is True:
+            _mq = _norm((_ctx.get("matrix_question") or "")).lower()
+            _mr = _norm((_ctx.get("matrix_row") or "")).lower()
+            if _mq and _mr:
+                _matrix_rows_by_question.setdefault(_mq, set()).add(_mr)
+
+    def _is_button_group_covered_by_matrix(block: Dict[str, Any]) -> bool:
+        _ctx = block.get("context") or {}
+        if not isinstance(_ctx, dict):
+            return False
+        gk = _norm((_ctx.get("group_key") or "")).lower()
+        if ":button_group:" not in gk:
+            return False
+        _opts = [_norm(o).lower() for o in (block.get("options") or []) if _norm(o)]
+        if not _opts:
+            return False
+        for _mq, _row_set in _matrix_rows_by_question.items():
+            if all(o in _row_set for o in _opts):
+                return True
+        return False
+
+    blocks = [b for b in (blocks or []) if not (isinstance(b, dict) and _is_button_group_covered_by_matrix(b))]
+
     dedup_map: dict[tuple[str, str, tuple[str, ...]], Dict[str, Any]] = {}
     for b in (blocks or []):
         if not isinstance(b, dict):
