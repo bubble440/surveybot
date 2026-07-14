@@ -1169,6 +1169,20 @@ Fallback : fuzzy match sur `Array.from(el.options)` → `select_option(value=mat
 
 ---
 
+## DISPATCHER GÉNÉRIQUE : MULTI_TEXT (kind="multi_text") — DÉTECTION CHAMP VIDE
+
+### _apply_by_target_id — bloc multi_text : lecture valeur DOM live
+Fichier : Survey/action_dispatcher.py
+Emplacement : bloc `if kind == "multi_text" ...`, boucle `for fld in fields`, juste avant `elx.clear()` / `elx.type()`.
+Bug corrigé : `cur = elx.get_attribute("value")` lit l'attribut HTML statique, qui ne reflète pas la valeur réellement saisie via `.type()` sur le champ (reste vide après saisie) → le champ suivant du groupe était jugé "vide" à tort à chaque itération, donc toutes les valeurs retombaient sur le 1er champ, produisant une concaténation de toutes les réponses dans une seule case.
+Fix : lecture de la propriété DOM live via `driver.evaluate("(e) => e.value", elx)` au lieu de `get_attribute("value")`.
+Patterns couverts :
+- Tout bloc `kind=multi_text` générique (N champs texte indépendants partageant un même target_id de groupe), quel que soit le fournisseur — confirmé sur FocusVision/Decipher (inputs `name="ansXXX.N.M"`, ex: question "marques de luxe" à 10 champs).
+Patterns exclus :
+- N'affecte pas les extracteurs Qualtrics dédiés (`_extract_qualtrics_form_multi_text_blocks`, `_extract_qualtrics_te_matrix_multi_text_blocks`), qui ont leur propre chemin d'extraction mais partagent ce même bloc d'application dans `_apply_by_target_id`.
+
+---
+
 ## PARSER OPENAI : FALLBACK LIGNE BRUTE QID UNIQUE
 Fichier : Survey/batch_response_parser.py
 Fonction : `parse_batch_response`, bloc situé après la boucle principale de parsing (avant `_coerce_to_negative_frequency_option`).

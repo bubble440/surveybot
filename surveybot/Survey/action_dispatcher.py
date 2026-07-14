@@ -3825,7 +3825,7 @@ def _apply_by_target_id(
                         except Exception:
                             pass
 
-                        cur = (elx.get_attribute("value") or "").strip()
+                        cur = (driver.evaluate("(e) => e.value", elx) or "").strip()
                         if cur:
                             continue
 
