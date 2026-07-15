@@ -4621,6 +4621,15 @@ def _prune_cardrating_focusvision_blocks(blocks: List[Dict[str, Any]]) -> List[D
 
     Guard : context.decipher_cardrating=True ET context.cardrating_qa_prefix non vide.
     Matching : group_key du bloc focusvision = "radio:name:{prefix}".
+
+    Fallback additif (pipeline, pas l'extracteur) : sur certains DOM Decipher, la
+    sq-cardrating-qa-view est un SIBLING de sq-cardrating-widget (pas un descendant)
+    -> le querySelector scopé au widget dans l'extracteur ne la trouve pas ->
+    cardrating_qa_prefix reste vide. Convention DOM Decipher observée : le préfixe
+    des noms d'input de la vue QA partage systématiquement le data-uid du widget
+    (ex. data-uid="703" -> name="ans703.0.4"). On dérive donc aussi "ans{widget_uid}"
+    depuis context.cardrating_widget_uid (toujours renseigné), sans modifier
+    _extract_decipher_cardrating_blocks.
     """
     qa_prefixes: set[str] = set()
     for b in (blocks or []):
@@ -4631,6 +4640,9 @@ def _prune_cardrating_focusvision_blocks(blocks: List[Dict[str, Any]]) -> List[D
             pf = _norm_lc((ctx.get("cardrating_qa_prefix") or "")).strip()
             if pf:
                 qa_prefixes.add(pf)
+            widget_uid = _norm_lc((ctx.get("cardrating_widget_uid") or "")).strip()
+            if widget_uid:
+                qa_prefixes.add(f"ans{widget_uid}")
     if not qa_prefixes:
         return blocks
 
