@@ -44,31 +44,39 @@ def _wait_for_survey_dom(driver, timeout_s: float = 1.2, step_s: float = 0.2) ->
         True si DOM stable, False sinon
     """
     try:
+        # Playwright natif : évaluer dans le frame courant (getattr sur driver
+        # shim, sinon driver lui-même = Page = frame racine). driver.execute_script
+        # n'existe pas sur Page/Frame Playwright (API Selenium) — cf. dom_classifier.py
+        # pour la même convention.
+        current_frame = getattr(driver, "_current_frame", driver)
+
         start = time.time()
-        
+
         # Installer un MutationObserver pour détecter les changements
         script_install = """
-        if (!window.__domStableObserver) {
-            window.__domStableLastMutation = Date.now();
-            window.__domStableObserver = new MutationObserver(() => {
+        () => {
+            if (!window.__domStableObserver) {
                 window.__domStableLastMutation = Date.now();
-            });
-            window.__domStableObserver.observe(document.body, {
-                childList: true,
-                subtree: true,
-                attributes: true
-            });
+                window.__domStableObserver = new MutationObserver(() => {
+                    window.__domStableLastMutation = Date.now();
+                });
+                window.__domStableObserver.observe(document.body, {
+                    childList: true,
+                    subtree: true,
+                    attributes: true
+                });
+            }
         }
         """
-        driver.execute_script(script_install)
-        
+        current_frame.evaluate(script_install)
+
         # Attendre la stabilité
         while time.time() - start < timeout_s:
             # Vérifier si le DOM est stable depuis step_s
-            elapsed_since_mutation = driver.execute_script("""
-                return (Date.now() - window.__domStableLastMutation) / 1000;
+            elapsed_since_mutation = current_frame.evaluate("""
+                () => (Date.now() - window.__domStableLastMutation) / 1000
             """)
-            
+
             if elapsed_since_mutation >= step_s:
                 # DOM stable
                 return True
@@ -110,7 +118,12 @@ def _score_dom_context(driver) -> Dict[str, Any]:
         - 'text_length': longueur du texte visible
     """
     try:
-        result = driver.execute_script("""
+        # Playwright natif : évaluer dans le frame courant, même convention que
+        # _wait_for_survey_dom / dom_classifier.py. driver.execute_script n'existe
+        # pas sur Page/Frame Playwright (API Selenium).
+        current_frame = getattr(driver, "_current_frame", driver)
+        result = current_frame.evaluate("""
+            () => {
             const inputs = document.querySelectorAll('input:not([type=hidden])');
             const selects = document.querySelectorAll('select');
             const textareas = document.querySelectorAll('textarea');
@@ -153,6 +166,7 @@ def _score_dom_context(driver) -> Dict[str, Any]:
                 runtime_answer_rows_count: runtimeAnswerRows,
                 runtime_radio_wrappers_count: runtimeRadioWrappers,
             };
+            }
         """)
         
         # Calculer le score
@@ -263,19 +277,25 @@ def _select_best_frame_chain(driver, max_depth: int = 2) -> Tuple[List[int], Dic
         # (cas observé: top-level quasi vide et contenu survey dans ce frame).
         main_frame_idx = None
         try:
-            driver.switch_to.default_content()
-            main_frame_idx = driver.execute_script(
-                """
-                const frames = Array.from(document.querySelectorAll('iframe, frame'));
-                if (!frames.length) return null;
-                const idx = frames.findIndex(f => {
-                    const id = (f.id || '').trim().toLowerCase();
-                    const name = (f.getAttribute('name') || '').trim().toLowerCase();
-                    return id === 'mainframe' || name === 'mainframe';
-                });
-                return idx >= 0 ? idx : null;
-                """
-            )
+            # Playwright natif : reset au contexte racine via switch_to_frame_chain(driver, [])
+            # (driver.switch_to n'existe pas sur Page/Frame Playwright — API Selenium).
+            with switch_to_frame_chain(driver, []) as ok_root:
+                if ok_root:
+                    current_frame = getattr(driver, "_current_frame", driver)
+                    main_frame_idx = current_frame.evaluate(
+                        """
+                        () => {
+                        const frames = Array.from(document.querySelectorAll('iframe, frame'));
+                        if (!frames.length) return null;
+                        const idx = frames.findIndex(f => {
+                            const id = (f.id || '').trim().toLowerCase();
+                            const name = (f.getAttribute('name') || '').trim().toLowerCase();
+                            return id === 'mainframe' || name === 'mainframe';
+                        });
+                        return idx >= 0 ? idx : null;
+                        }
+                        """
+                    )
         except Exception:
             main_frame_idx = None
 
@@ -326,25 +346,24 @@ def _select_best_frame_chain(driver, max_depth: int = 2) -> Tuple[List[int], Dic
             except Exception:
                 # Frame inaccessible ou erreur, continuer
                 pass
-            finally:
-                # Retourner au contexte principal
-                try:
-                    driver.switch_to.default_content()
-                except Exception:
-                    pass
-        
+            # Pas de reset explicite ici : switch_to_frame_chain(driver, chain) revient déjà
+            # au contexte racine dans son propre `finally` en sortie du `with` ci-dessus
+            # (driver.switch_to n'existe pas sur Page/Frame Playwright — API Selenium).
+
         # Si aucun bon contexte trouvé, rester sur main
         if best_context is None:
             # Scorer le contexte principal
-            driver.switch_to.default_content()
-            best_context = _score_dom_context(driver)
+            with switch_to_frame_chain(driver, []):
+                best_context = _score_dom_context(driver)
             best_chain = []
 
         try:
             best_context['selected_chain'] = list(best_chain)
-            best_context['selected_ps_date_question_count'] = int(
-                driver.execute_script("return document.querySelectorAll('ps-date-question').length;") or 0
-            )
+            with switch_to_frame_chain(driver, best_chain) as ok_sel:
+                current_frame = getattr(driver, "_current_frame", driver) if ok_sel else driver
+                best_context['selected_ps_date_question_count'] = int(
+                    current_frame.evaluate("() => document.querySelectorAll('ps-date-question').length") or 0
+                )
         except Exception:
             best_context['selected_ps_date_question_count'] = best_context.get('ps_date_question_count', 0)
 
@@ -361,10 +380,11 @@ def _select_best_frame_chain(driver, max_depth: int = 2) -> Tuple[List[int], Dic
     except Exception:
         # En cas d'erreur, retourner contexte principal
         try:
-            driver.switch_to.default_content()
+            with switch_to_frame_chain(driver, []):
+                pass
         except Exception:
             pass
-        
+
         return [], {
             'score': 0,
             'input_count': 0,

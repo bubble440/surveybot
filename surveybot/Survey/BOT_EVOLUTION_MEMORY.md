@@ -460,12 +460,25 @@ Patterns exclus :
 Fichier : Survey/input_radio.py
 Guard : appelée uniquement depuis le guard `kantar_rowpicker_radio` du dispatcher.
 Patterns couverts :
-- `_JS_FIND` : cherche l'overlay par label dans `._rowpicker`, via `closest('div[dir="ltr"]')` + `querySelector('div[tabindex="0"]')` avec vérification `cursor` dans le style
-- Clic : `overlay.click()`, fallback `ActionChains`
+- `_JS_FIND` : cherche le label par texte dans `._rowpicker`, remonte au conteneur de carte réel via boucle `parentElement` jusqu'au premier `div[dir="ltr"]` SANS `tabindex` (mirroir exact de l'ancestor-axis XPath de `_extract_kantar_rowpicker_radio_blocks` : `ancestor::div[@dir='ltr'][not(@tabindex)][1]`), puis cible l'overlay `div[dir="ltr"][tabindex="0"]` descendant avec `cursor` dans le style inline
+- Résolution d'élément cliquable : `driver.evaluate_handle("(arg) => {...}", label).as_element()` — PAS `driver.evaluate(...)`. `evaluate()` sérialise la valeur de retour (un noeud DOM renvoyé par le script redescend en Python comme `str`/`dict` sans méthodes d'interaction, échec silencieux `AttributeError` sur `.click()`) ; `evaluate_handle().as_element()` retourne un véritable ElementHandle cliquable. Même convention que `action_dispatcher.py` (`cell_pre`/`decipher_cell`/`decipher_radio_cell` via `evaluate_handle(...).as_element()`).
+- Clic : `overlay.click()`, fallback `overlay.hover(); overlay.click()`
 - `_JS_VERIFY` : changement de `background-color` sur `div[style*="transition: background-color"]` de la carte
+- Logging de diagnostic à chaque branche de retour anticipé (`js_find_exception` avec type+message, `overlay_not_found`, `overlay_click_failed` avec les deux exceptions click/hover séparées, `native_verify=ok/ko`) — indispensable ici car les échecs précédents (JS cassé, mauvais mécanisme de résolution) étaient totalement silencieux sans ces logs.
 Note DOM : `input.checked` toujours `false` sur ce DOM — les inputs natifs dans `display:none` ne sont jamais synchronisés par React. Vérification obligatoirement via background-color de la carte.
+Note historique (piège à ne pas réintroduire) : les scripts `_JS_FIND`/`_JS_VERIFY` sont enveloppés en fonction fléchée `(arg) => {...}` au point d'appel — ne jamais référencer `arguments[0]` dans leur corps (une fonction fléchée n'a pas d'objet `arguments`), toujours utiliser le nom du paramètre (`arg`).
 Patterns exclus :
 - `div[id^='sq-QARTS-container-']` → guard DOM distinct
+
+### execute_action — bloc radio : pas de fallback générique après échec kantar_rowpicker_radio
+Fichier : Survey/action_dispatcher.py
+Emplacement : section `if itype == "radio":`, juste après `_tp = target_payload or {}`, avant le calcul de `_tmr_opt_keys`.
+Guard : `_tp.get("kantar_rowpicker_radio")` truthy (payload posé par `_extract_kantar_rowpicker_radio_blocks`).
+Problème résolu : quand `_apply_by_target_id()` échoue pour un bloc `kantar_rowpicker_radio` (ex. option "Homme"), `execute_action` retombait sur la séquence générique `radio_main` (`click_radio_by_label`) / `radio_buttonish`. Ces stratégies génériques forcent `input.checked = true` en JS et rapportent un succès même quand l'overlay React n'a reçu aucun clic effectif — aucune sélection visible sur la carte, faux positif silencieux.
+Correction : dès l'entrée du bloc radio, si `kantar_rowpicker_radio=True`, retour `False` immédiat (aucune stratégie générique invoquée). L'échec de la stratégie dédiée est donc rapporté tel quel.
+Patterns exclus :
+- Tout bloc radio sans flag `kantar_rowpicker_radio` → séquence `aa_answer_matrix` / `radio_slider` / `radio_main` / `radio_buttonish` inchangée.
+- Détections Kantar rowpicker par scan DOM runtime dans `_apply_by_target_id` (lignes ~2481/2644, sans passer par le payload extrait) → non concernées, elles retournent déjà `bool(_rp_ok)` directement sans tomber dans ce bloc radio générique.
 
 ---
 
@@ -1353,6 +1366,28 @@ Patterns exclus :
   par guard négatif additif dès lors que cet extracteur a produit des blocs pour le même `data-uid`
 - Widgets `sq-cardrating` sans configuration `rows`/`cardrating:completion` lisible → non couverts,
   chemin générique inchangé
+
+---
+
+## LEÇON TRANSVERSALE : RÉSOLUTION D'ÉLÉMENT DOM DEPUIS UN SCRIPT — evaluate() vs evaluate_handle().as_element()
+Quand un script exécuté dans la page doit **retourner un élément DOM** pour qu'on agisse dessus
+ensuite côté Python (`.click()`, `.hover()`, etc.), utiliser `driver.evaluate_handle(js, arg).as_element()`,
+jamais `driver.evaluate(js, arg)`. `evaluate()` sérialise la valeur de retour : un noeud DOM redescend
+alors comme `str`/`dict` sans méthode d'interaction → `AttributeError` silencieuse dès le premier
+`.click()`, souvent absorbée par un `try/except` englobant sans log détaillé, et donc invisible sans
+diagnostic explicite. `evaluate()` reste correct pour un retour de valeur simple (bool/str/number),
+comme dans `_JS_VERIFY` de `click_kantar_rowpicker_radio`. Convention correcte déjà en usage dans
+`action_dispatcher.py` (`cell_pre`/`decipher_cell`/`decipher_radio_cell`).
+Cas confirmé et corrigé : `click_kantar_rowpicker_radio` (Survey/input_radio.py).
+Cas signalés (même convention suspectée, **non confirmés ni corrigés** — à valider individuellement
+sur DOM de référence avant tout patch, un par un) :
+- `fallback_click_radio_js_generic` (Survey/input_radio.py)
+- Bloc `decipher_ranksort_dropdown` (Survey/action_dispatcher.py)
+- Bloc `DRAGDROP` (Survey/action_dispatcher.py)
+- Résolution `<select>` natif (Survey/input_dropdown.py) — probablement code mort post-migration
+  (mélange `execute_script`/`arguments[0]`/`evaluate` imbriqué)
+Note associée (piège récurrent, même famille de bug) : ne jamais référencer `arguments[0]` dans un
+corps de script enveloppé en fonction fléchée `(arg) => {...}` — utiliser le nom du paramètre.
 
 ---
 

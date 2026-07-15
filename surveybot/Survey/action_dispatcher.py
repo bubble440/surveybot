@@ -6877,6 +6877,21 @@ def execute_action(
 
             radio_cache = _get_block_strategy_memory(driver).get("radio", {})
             _tp = target_payload or {}
+
+            # Kantar/mrIWeb rowpicker radio : la stratégie dédiée (click_kantar_rowpicker_radio)
+            # a déjà été tentée via _apply_by_target_id avant d'atteindre ce bloc, et a échoué
+            # (sinon execute_action serait déjà retourné True plus haut). Sur ce DOM, input.checked
+            # ne reflète jamais l'état React (cf. BOT_EVOLUTION_MEMORY.md) : les stratégies génériques
+            # radio_main/radio_buttonish peuvent donc rapporter un faux succès (checked=true forcé en JS)
+            # sans aucune sélection visible sur la carte. On rapporte l'échec au lieu d'empiler un fallback
+            # non vérifiable sur ce widget.
+            if _tp.get("kantar_rowpicker_radio"):
+                log_debug(
+                    "[TARGET_DEBUG]",
+                    f"radio kantar_rowpicker_radio: dedicated strategy failed, no generic fallback value={label!r}",
+                )
+                return False
+
             _tmr_opt_keys = (
                 frozenset((_tp.get("option_xpath_map") or {}).keys())
                 if _tp.get("table_matrix_radio")

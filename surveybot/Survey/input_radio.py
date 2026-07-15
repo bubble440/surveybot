@@ -664,7 +664,7 @@ def click_kantar_rowpicker_radio(driver, label: str) -> bool:
       .replace(/ /g, ' ')
       .replace(/[»«“”"'‘’›→·•:]/g, '')
       .replace(/\s+/g, ' ').trim();
-    const needle = norm(arguments[0]);
+    const needle = norm(arg);
     if (!needle) return null;
 
     const pickers = Array.from(document.querySelectorAll(
@@ -677,11 +677,21 @@ def click_kantar_rowpicker_radio(driver, label: str) -> bool:
         const txt = norm(lab.innerText || lab.textContent || '');
         if (!txt || !(txt === needle || txt.includes(needle) || needle.includes(txt))) continue;
 
-        // Remonter au conteneur flex direct parent de l'overlay (div[dir="ltr"] le plus proche)
-        const cardContainer = lab.closest('div[dir="ltr"]');
+        // Remonter au conteneur de carte réel : premier ancestor div[dir="ltr"] SANS
+        // tabindex. Mirroir exact de l'ancestor-axis XPath utilisé par
+        // _extract_kantar_rowpicker_radio_blocks (ancestor::div[@dir='ltr'][not(@tabindex)][1]).
+        // lab.closest('div[dir="ltr"]') seul matche à tort l'overlay lui-même (aussi
+        // div[dir="ltr"][tabindex="0"]) quand le label est nested dedans, ce qui fait
+        // échouer/mal-cibler la recherche d'overlay descendant sur certaines cartes.
+        let cardContainer = lab.parentElement;
+        while (cardContainer && !(cardContainer.tagName === 'DIV' && cardContainer.getAttribute('dir') === 'ltr' && !cardContainer.hasAttribute('tabindex'))) {
+          cardContainer = cardContainer.parentElement;
+        }
         if (!cardContainer) continue;
 
-        const overlay = cardContainer.querySelector('div[tabindex="0"]');
+        // Sélecteur aligné sur l'extracteur : div[dir="ltr"][tabindex="0"], pas un
+        // div[tabindex="0"] générique qui peut matcher un descendant non pertinent.
+        const overlay = cardContainer.querySelector('div[dir="ltr"][tabindex="0"]');
         if (!overlay) continue;
 
         // Vérifier que c'est bien l'overlay interactif (cursor dans le style inline)
@@ -701,7 +711,7 @@ def click_kantar_rowpicker_radio(driver, label: str) -> bool:
       .replace(/ /g, ' ')
       .replace(/[»«“”‘’›→·•:]/g, '')
       .replace(/\s+/g, ' ').trim();
-    const needle = norm(arguments[0]);
+    const needle = norm(arg);
     const pickers = Array.from(document.querySelectorAll(
       "div[id^='container_'] [data-test='main-contain']._rowpicker"
     ));
@@ -709,7 +719,11 @@ def click_kantar_rowpicker_radio(driver, label: str) -> bool:
       for (const lab of Array.from(picker.querySelectorAll('label'))) {
         const txt = norm(lab.innerText || lab.textContent || '');
         if (!txt || !(txt === needle || txt.includes(needle) || needle.includes(txt))) continue;
-        const card = lab.closest('div[dir="ltr"]');
+        // Même résolution de carte que _JS_FIND (voir commentaire ci-dessus).
+        let card = lab.parentElement;
+        while (card && !(card.tagName === 'DIV' && card.getAttribute('dir') === 'ltr' && !card.hasAttribute('tabindex'))) {
+          card = card.parentElement;
+        }
         if (!card) continue;
         const transDiv = card.querySelector('div[style*="transition: background-color"]');
         if (!transDiv) continue;
@@ -721,20 +735,32 @@ def click_kantar_rowpicker_radio(driver, label: str) -> bool:
     """
 
     try:
-        overlay = driver.evaluate("(arg) => {" + _JS_FIND + "}", label)
-    except Exception:
+        # evaluate_handle().as_element() : retourne un ElementHandle réellement cliquable
+        # (.click()/.hover()), contrairement à evaluate() qui sérialise la valeur de retour
+        # (un noeud DOM renvoyé par le script redescend alors comme str/dict, sans méthodes
+        # d'interaction). Même convention que action_dispatcher.py (cell_pre/decipher_cell/
+        # decipher_radio_cell via evaluate_handle(...).as_element()).
+        overlay = driver.evaluate_handle("(arg) => {" + _JS_FIND + "}", label).as_element()
+    except Exception as exc:
+        log_debug("[TARGET_DEBUG]", f"kantar_rowpicker: js_find_exception label={label!r} error={type(exc).__name__}: {exc}")
         return False
 
     if overlay is None:
+        log_debug("[TARGET_DEBUG]", f"kantar_rowpicker: overlay_not_found label={label!r}")
         return False
 
     try:
         overlay.click()
-    except Exception:
+    except Exception as exc_click:
         try:
             overlay.hover(); overlay.click()
-        except Exception:
-            log_debug("[TARGET_DEBUG]", f"kantar_rowpicker: overlay_click_failed label={label!r}")
+        except Exception as exc_hover:
+            log_debug(
+                "[TARGET_DEBUG]",
+                f"kantar_rowpicker: overlay_click_failed label={label!r} "
+                f"click_error={type(exc_click).__name__}: {exc_click} "
+                f"hover_click_error={type(exc_hover).__name__}: {exc_hover}",
+            )
             return False
 
     time.sleep(0.15)
