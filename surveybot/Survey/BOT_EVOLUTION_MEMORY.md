@@ -1257,6 +1257,71 @@ Patterns exclus :
 
 ---
 
+## PLATEFORME : DECIPHER / FOCUSVISION — WIDGET CARD RATING (sq-cardrating)
+Signature DOM : `div.sq-cardrating-widget[data-uid]` avec bloc de configuration JS embarqué
+(`cardrating:completion`, `rows`, `cols`, `title`) dans un `<script>` frère du widget.
+Carrousel de cartes (une carte affichée à la fois, ex. logo de marque), avec un jeu unique de
+3 boutons de réponse (`.sq-cardrating-button`) partagé et réutilisé à chaque étape ; défilement
+automatique vers la carte suivante déclenché par le site après chaque sélection.
+Le widget expose également une vue de contrôle/QA cachée (`div.sq-cardrating-qa-view`,
+explicitement documentée "shown only when QA Codes are turned on"), non destinée à l'utilisateur
+final, contenant une table listant tous les éléments (rows) avec des inputs radio réels.
+
+### _extract_decipher_cardrating_blocks (nom de fonction à confirmer dans le code)
+Fichier : Survey/dom_extractors_decipher.py
+Enregistré dans : dom_analyzer.py (étape additive, avant/après le pipeline générique button_group
+et avant l'extracteur générique de groupes answers-list/matrice — ordre à confirmer dans le diff)
+Guard : présence de `div.sq-cardrating-widget[data-uid]` avec configuration `rows`/`cardrating:completion`
+lisible dans le `<script>` associé.
+Problème résolu :
+1. Le pipeline générique `button_group` produisait un bloc unique dont l'intitulé de question était
+   pollué par le texte du message de fin de séquence (`cardrating:completion`, ex. "C'est terminé !
+   Veuillez cliquer sur le bouton « Continuer »..."), normalement affiché uniquement une fois toutes
+   les cartes notées — ce message n'est pas une question et ne doit jamais être extrait.
+2. L'extracteur générique de groupes answers-list/matrice (lecture de la vue QA cachée) ne produisait
+   qu'un seul bloc fusionné pour l'ensemble des cartes (le libellé de chaque ligne, porté uniquement
+   par une image `<img alt/title>` sans texte, n'était pas différencié), au lieu d'un bloc par carte.
+Patterns couverts :
+- Un bloc `itype=radio` par élément (row) listé dans la configuration DOM du widget au moment de
+  l'extraction, avec la même question/mêmes options pour chacun, ancré sur le jeu unique de 3 boutons
+  de réponse partagé (`.sq-cardrating-button`)
+- `question` = intitulé réel de la question + instruction, suffixé par le libellé de l'élément
+  courant (`cardrating_card_label`, dérivé de l'`alt`/`title` de l'image de la carte)
+- `context.decipher_cardrating = True`, `cardrating_step_index`, `cardrating_total_steps`,
+  `cardrating_card_label`, `cardrating_widget_uid`, `is_last_carousel_item`
+- `group_key = decipher_cardrating:{uid}:card:{card_label normalisé}` (fallback `:step:{index}`
+  si `card_label` vide) — garantit un target_id distinct par carte malgré la réutilisation du même
+  jeu de boutons DOM, et surtout un target_id **stable** entre deux scans DOM successifs
+- Le nombre d'éléments extraits reflète l'état courant de la configuration DOM au moment du scan
+  (peut diminuer entre deux scans si le site retire les cartes déjà notées de sa configuration —
+  confirmé en usage réel : 5 éléments au premier scan, 4 au scan suivant après une première sélection)
+
+Correctif (clé par carte, pas par position) :
+Problème résolu : `group_key` utilisait initialement `:step:{index}`, l'index de position parmi
+les cartes *restantes*. Après application d'une réponse et retrait de la carte notée de la
+configuration DOM, les cartes suivantes glissent d'un cran (`step:1` → `step:0`, etc.). Comme
+`target_id = sha1(kind|group_key|question)`, ce glissement change le hash du target_id d'une carte
+déjà pré-calculée par le batch parser (une seule extraction en amont produit tous les target_id
+Q1..Qn), alors que la carte elle-même (et sa `question`, déjà suffixée par `card_label`) n'a pas
+changé. Conséquence observée en prod : `_apply_by_target_id` échoue silencieusement (payload absent
+du DOM_REGISTRY) dès la 2e étape du widget → fallback vers la chaîne générique radio
+(`click_decipher_grid_radio_strict` puis `radio_main`), qui rapporte `apply ok=true` malgré un
+`native_verify=ko` explicite juste avant (cf. entrée `_apply_by_target_id — cache de stratégie
+gagnante` : même symptôme de fond que le faux positif `radio_main` déjà documenté, mais cause
+différente — ici absence de resolution target_id, pas un défaut de `radio_main` lui-même).
+Correction : clé par `card_label` (identité stable de la carte) au lieu de la position `step_i`.
+Fallback conservé sur `step_i` si `card_label` est vide (évite une régression de garantie
+d'unicité dans ce cas rare, au prix de la même instabilité qu'avant pour ce cas précis uniquement).
+Patterns exclus :
+- Bloc de message de fin (`cardrating:completion`) → jamais extrait, ni par cet extracteur ni par
+  le pipeline générique button_group (guard négatif ajouté sur ce dernier)
+- Bloc issu de la vue QA cachée (`div.sq-cardrating-qa-view`, group_key `radio:name:{uid}`) → supprimé
+  par guard négatif additif dès lors que cet extracteur a produit des blocs pour le même `data-uid`
+- Widgets `sq-cardrating` sans configuration `rows`/`cardrating:completion` lisible → non couverts,
+  chemin générique inchangé
+
+---
+
 ## FRONTIÈRES INTER-EXTRACTEURS
 
 | Plateforme | Extracteur A | Extracteur B | Signal de discrimination |
@@ -1275,3 +1340,5 @@ Patterns exclus :
 | Qualtrics BankedSA | _extract_table_matrix_radio_rows (patch caption/legend) | chemin _find_question_text_near_element | `table.ChoiceStructure` avec `display:none` + `caption.QuestionText` ou `fieldset > legend > .QuestionText` |
 | Qualtrics BankedSA | _extract_qualtrics_bankedsa_single_row_radio_blocks | _extract_qualtrics_choice_structure_radio_blocks | `div.customChoice` présent + exactement 1 tr.ChoiceRow (single-row) vs ≥2 ChoiceRow même name (multi-lignes Likert) || Decipher | _extract_decipher_atmrating_blocks | extracteur générique singles/text | `div.question.sq-atmrating` + `div.sq-atmrating-container span.atmrating-btn` — inputs text cachés rejetés par pipeline générique |
 | Decipher/FocusVision answers-list | decipher_radio_clickable_cell (dispatcher) | decipher_clickable_cell (dispatcher, checkbox) / radio_main générique | `input[type='radio'].fir-hidden` dans `.clickableCell` (vs `input[type='checkbox'].fir-hidden` pour la variante checkbox) — guard strict avant tout fallback générique |
+| Decipher/FocusVision card rating | _extract_decipher_cardrating_blocks | button_group générique | `div.sq-cardrating-widget[data-uid]` avec config `rows`/`cardrating:completion` lisible — retour immédiat si match, guard négatif additif sur button_group pour ce widget |
+| Decipher/FocusVision card rating | _extract_decipher_cardrating_blocks | extracteur générique answers-list/matrice (vue QA) | même `data-uid` de widget déjà couvert par `_extract_decipher_cardrating_blocks` → bloc `radio:name:{uid}` de la vue QA cachée supprimé par guard négatif additif |

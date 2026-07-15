@@ -2294,7 +2294,14 @@ def _extract_decipher_cardrating_blocks(
                     question = _norm(f"{base_question} - {card_label}")
 
                 is_last = step_i == total - 1
-                group_key = f"decipher_cardrating:{widget_uid}:step:{step_i}"
+                # group_key stable par carte (card_label), pas par step_i : step_i est une
+                # position parmi les cartes restantes et se decale a chaque carte notee/retiree,
+                # ce qui invaliderait le target_id (hash) precalcule par le batch parser pour les
+                # cartes suivantes des qu'un rescan DOM intervient entre deux etapes.
+                if card_label:
+                    group_key = f"decipher_cardrating:{widget_uid}:card:{_norm_lc(card_label)}"
+                else:
+                    group_key = f"decipher_cardrating:{widget_uid}:step:{step_i}"
                 target_id = make_target_id("group", group_key, question)
 
                 ctx: Dict[str, Any] = {
