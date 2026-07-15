@@ -18,12 +18,12 @@ from config import RUN_ENV
 
 # Import des utilitaires
 try:
-    from Survey.dom_utils import _norm_lc, _xpath_literal
+    from Survey.dom_utils import _norm, _norm_lc, _xpath_literal
     from Survey.dom_registry import register_target, make_target_id
     from Survey.log_utils import is_debug, log_debug
 except ImportError:
     # Fallback pour tests locaux
-    from Survey.dom_utils import _norm_lc, _xpath_literal
+    from Survey.dom_utils import _norm, _norm_lc, _xpath_literal
     # dom_registry devra être disponible
     def is_debug(): return False
     def log_debug(tag, msg): pass
@@ -2134,5 +2134,211 @@ def _extract_qarts_hidden_answers_groups(driver, frame_chain: List[Any]) -> List
             })
 
             log_debug("[QARTS_HIDDEN]", f"extracted group name={name} options={len(options)} question={question[:40]!r}")
+
+    return blocks
+
+
+# ================================================================================
+# DECIPHER SQ-CARDRATING — CAROUSEL À BOUTONS PARTAGÉS
+# ================================================================================
+
+def _extract_decipher_cardrating_blocks(
+    driver, frame_chain: List[Any] | None = None
+) -> List[Dict[str, Any]]:
+    """
+    Extrait les blocs d'un widget sq-cardrating (carrousel de cartes Decipher/FocusVision).
+
+    Garde DOM strict (double signal obligatoire) :
+    - div.sq-cardrating-widget[data-uid] présent
+    - contient ul.sq-cardrating-cards + li.sq-cardrating-button
+
+    Comportement :
+    - Un bloc par carte restante (data-position >= 0), triées par data-ordinal croissant.
+    - Même jeu de 3 boutons partagé entre toutes les cartes → même options/option_xpath_map
+      pour tous les blocs ; le site auto-avance après chaque sélection.
+    - Question = h1.question-text + h2.instruction-text + "- {carte_courante}".
+    - Context : decipher_cardrating=True, cardrating_step_index, cardrating_total_steps,
+      cardrating_card_label, cardrating_widget_uid, cardrating_qa_prefix,
+      is_last_carousel_item (réutilise le signal déjà exploité par cf-hrs-single).
+    - Exclut la zone sq-cardrating-qa-view (vue de contrôle interne) — supprimée en
+      post-traitement par _prune_cardrating_focusvision_blocks.
+    """
+    blocks: List[Dict[str, Any]] = []
+    page = driver
+
+    try:
+        widgets = page.query_selector_all("div.sq-cardrating-widget")
+    except Exception:
+        return blocks
+
+    for widget in (widgets or []):
+        try:
+            # Guard strict : cartes + boutons obligatoires
+            cards_ul = widget.query_selector("ul.sq-cardrating-cards")
+            buttons_ul = widget.query_selector("ul.sq-cardrating-buttons, .sq-cardrating-buttonset")
+            if not cards_ul or not buttons_ul:
+                continue
+
+            widget_uid = (widget.get_attribute("data-uid") or "").strip()
+            if not widget_uid:
+                continue
+
+            # Question depuis le div question parent (hors widget, pas de pollution)
+            q_data = page.evaluate(
+                """(w) => {
+                    const qDiv = w.closest('[id^="question_"]') || w.closest('.question');
+                    if (!qDiv) return {q: '', instr: ''};
+                    const h1 = qDiv.querySelector('h1.question-text');
+                    const h2 = qDiv.querySelector('h2.instruction-text');
+                    return {
+                        q: h1 ? h1.innerText.trim() : '',
+                        instr: h2 ? h2.innerText.trim() : ''
+                    };
+                }""",
+                widget,
+            )
+            base_q = _norm((q_data.get("q") or "") if q_data else "")
+            base_instr = _norm((q_data.get("instr") or "") if q_data else "")
+            base_parts = [p for p in [base_q, base_instr] if p]
+            base_question = _norm(" ".join(base_parts))
+            if not base_question:
+                continue
+
+            # Options depuis les boutons visibles (partagés entre toutes les cartes)
+            button_els = buttons_ul.query_selector_all("li.sq-cardrating-button")
+            if not button_els:
+                continue
+
+            options: List[str] = []
+            option_data_indices: List[str] = []
+            for btn in button_els:
+                disabled = _norm_lc(btn.get_attribute("data-disabled") or "")
+                clickable = _norm_lc(btn.get_attribute("data-clickable") or "")
+                if disabled in ("true", "1") or clickable in ("false", "0"):
+                    continue
+                content_el = btn.query_selector("span.sq-cardrating-content")
+                if content_el:
+                    opt_text = _norm(
+                        content_el.inner_text() or content_el.get_attribute("innerText") or ""
+                    )
+                else:
+                    opt_text = _norm(btn.inner_text() or btn.get_attribute("innerText") or "")
+                if opt_text:
+                    options.append(opt_text)
+                    option_data_indices.append((btn.get_attribute("data-index") or str(len(options) - 1)).strip())
+
+            if len(options) < 2:
+                continue
+
+            # option_xpath_map : même pour tous les blocs (même boutons DOM)
+            option_xpath_map: Dict[str, str] = {}
+            for opt_text, data_idx in zip(options, option_data_indices):
+                xpath = (
+                    f"//div[contains(@class,'sq-cardrating-widget') and @data-uid='{widget_uid}']"
+                    f"//li[contains(@class,'sq-cardrating-button') and @data-index='{data_idx}']"
+                )
+                option_xpath_map[opt_text] = xpath
+
+            # Préfixe QA-view pour suppression focusvision en post-traitement
+            qa_prefix = ""
+            try:
+                qa_prefix_raw = page.evaluate(
+                    """(w) => {
+                        const qa = w.querySelector('.sq-cardrating-qa-view');
+                        if (!qa) return '';
+                        const inp = qa.querySelector('input[type="radio"], input[type="checkbox"]');
+                        return inp ? (inp.getAttribute('name') || '').split('.')[0] : '';
+                    }""",
+                    widget,
+                )
+                qa_prefix = (qa_prefix_raw or "").strip()
+            except Exception:
+                pass
+
+            # Cartes restantes (data-position >= 0), triées par data-ordinal
+            card_els = cards_ul.query_selector_all("li.sq-cardrating-card")
+            remaining: List[tuple] = []
+            for card in (card_els or []):
+                pos_raw = (card.get_attribute("data-position") or "").strip()
+                try:
+                    pos = int(pos_raw)
+                except (ValueError, TypeError):
+                    continue
+                if pos < 0:
+                    continue
+                ordinal_raw = (card.get_attribute("data-ordinal") or "").strip()
+                try:
+                    ordinal = int(ordinal_raw)
+                except (ValueError, TypeError):
+                    ordinal = pos
+                img_el = card.query_selector("span.sq-cardrating-content img")
+                if img_el:
+                    raw_label = (
+                        img_el.get_attribute("alt") or img_el.get_attribute("title") or ""
+                    ).strip()
+                    card_label = re.sub(r"\.png$", "", raw_label, flags=re.IGNORECASE).strip()
+                else:
+                    card_label = ""
+                remaining.append((ordinal, card_label))
+
+            remaining.sort(key=lambda x: x[0])
+
+            if not remaining:
+                continue
+
+            total = len(remaining)
+
+            for step_i, (ordinal, card_label) in enumerate(remaining):
+                question = base_question
+                if card_label:
+                    question = _norm(f"{base_question} - {card_label}")
+
+                is_last = step_i == total - 1
+                group_key = f"decipher_cardrating:{widget_uid}:step:{step_i}"
+                target_id = make_target_id("group", group_key, question)
+
+                ctx: Dict[str, Any] = {
+                    "kind": "group",
+                    "group_key": group_key,
+                    "decipher_cardrating": True,
+                    "cardrating_step_index": step_i,
+                    "cardrating_total_steps": total,
+                    "cardrating_card_label": card_label,
+                    "cardrating_widget_uid": widget_uid,
+                    "is_last_carousel_item": is_last,
+                }
+                if qa_prefix:
+                    ctx["cardrating_qa_prefix"] = qa_prefix
+
+                register_target(
+                    target_id,
+                    {
+                        "kind": "group",
+                        "group_key": group_key,
+                        "option_xpath_map": option_xpath_map,
+                        "decipher_cardrating": True,
+                        "cardrating_widget_uid": widget_uid,
+                        "cardrating_step_index": step_i,
+                    },
+                )
+
+                blocks.append(
+                    {
+                        "question": question,
+                        "itype": "radio",
+                        "options": options,
+                        "max_select": 1,
+                        "target_id": target_id,
+                        "context": ctx,
+                    }
+                )
+
+                log_debug(
+                    "[DOM_DECIPHER_CARDRATING]",
+                    f"uid={widget_uid} step={step_i}/{total - 1} card={card_label!r} q={question[:60]!r}",
+                )
+
+        except Exception:
+            continue
 
     return blocks

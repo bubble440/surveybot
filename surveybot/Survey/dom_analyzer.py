@@ -59,6 +59,7 @@ try:
         _extract_qarts_hidden_answers_groups,
         _extract_decipher_ranksort_dropdown_blocks,
         _extract_decipher_atmrating_blocks,
+        _extract_decipher_cardrating_blocks,
     )
 
     from Survey.dom_extractors_areyounet import (
@@ -175,6 +176,7 @@ except ImportError:
         _extract_qarts_hidden_answers_groups,
         _extract_decipher_ranksort_dropdown_blocks,
         _extract_decipher_atmrating_blocks,
+        _extract_decipher_cardrating_blocks,
     )
     from Survey.dom_extractors_areyounet import (
         _extract_areyounet_matrix_blocks,
@@ -2677,13 +2679,11 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             except Exception:
                 pass
 
-            # Filtre Decipher cardrating : ignore disabled / non-clickable
+            # Guard additif : les li.sq-cardrating-button sont gérés par
+            # _extract_decipher_cardrating_blocks — exclure du pipeline button_group.
             cls = _norm_lc(b.get_attribute("class") or "")
             if "sq-cardrating-button" in cls:
-                if _norm_lc(b.get_attribute("data-clickable") or "") in ("false", "0"):
-                    continue
-                if _norm_lc(b.get_attribute("data-disabled") or "") in ("true", "1"):
-                    continue
+                continue
 
             # Exclude <tr role="button"> in <thead> (lookup table column headers, not selectable)
             _b_tag = _norm_lc(getattr(b, "tag_name", "") or "")
@@ -3976,6 +3976,7 @@ def analyze_dom(driver) -> List[Dict[str, Any]]:
         if not _should_skip_focusvision_answers_list_groups(blocks):
             blocks.extend(_extract_focusvision_answers_list_groups(driver, frame_chain=chain))
             blocks = _drop_cardsort_when_mixed_with_other_blocks(blocks)
+        blocks.extend(_extract_decipher_cardrating_blocks(driver, frame_chain=chain))
         blocks.extend(_extract_angular_material_radio_groups(driver, frame_chain=chain))
         blocks.extend(_extract_decipher_grid_select_blocks(driver, frame_chain=chain))
 
@@ -3995,6 +3996,7 @@ def analyze_dom(driver) -> List[Dict[str, Any]]:
                 if not _should_skip_focusvision_answers_list_groups(blocks):
                     blocks.extend(_extract_focusvision_answers_list_groups(driver))
                     blocks = _drop_cardsort_when_mixed_with_other_blocks(blocks)
+                blocks.extend(_extract_decipher_cardrating_blocks(driver))
                 blocks.extend(_extract_angular_material_radio_groups(driver))
                 blocks.extend(_extract_decipher_grid_select_blocks(driver, frame_chain=chain))
 
@@ -4025,6 +4027,7 @@ def analyze_dom(driver) -> List[Dict[str, Any]]:
     blocks = _prune_focusvision_fragmented_groups(blocks)
     blocks = _prune_focusvision_auxiliary_openended_singles(blocks)
     blocks = _prune_trailing_open_inline_singles(blocks)
+    blocks = _prune_cardrating_focusvision_blocks(blocks)
 
     for block in blocks or []:
         if not isinstance(block, dict):
@@ -4602,5 +4605,50 @@ def _prune_trailing_open_inline_singles(blocks: List[Dict[str, Any]]) -> List[Di
             if (input_name and input_name in inline_names) or (input_id and input_id in inline_names):
                 log_debug("[DOM_CONTEXT]", f"prune_trailing_open_inline name={input_name!r} id={input_id!r}")
                 continue
+        pruned.append(b)
+    return pruned
+
+
+def _prune_cardrating_focusvision_blocks(blocks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Supprime les blocs focusvision_answers_list issus de la zone sq-cardrating-qa-view
+    quand des blocs _extract_decipher_cardrating_blocks couvrent le même widget.
+
+    La sq-cardrating-qa-view est une vue de contrôle interne (non destinée aux utilisateurs) :
+    les libellés de ligne sont des images sans texte → matrix_rows: [] → inutilisable.
+    Les blocs produits par _extract_decipher_cardrating_blocks (context.decipher_cardrating=True)
+    sont les seuls blocs actionnables corrects pour ce widget.
+
+    Guard : context.decipher_cardrating=True ET context.cardrating_qa_prefix non vide.
+    Matching : group_key du bloc focusvision = "radio:name:{prefix}".
+    """
+    qa_prefixes: set[str] = set()
+    for b in (blocks or []):
+        if not isinstance(b, dict):
+            continue
+        ctx = (b.get("context") or {}) if isinstance(b.get("context"), dict) else {}
+        if ctx.get("decipher_cardrating") is True:
+            pf = _norm_lc((ctx.get("cardrating_qa_prefix") or "")).strip()
+            if pf:
+                qa_prefixes.add(pf)
+    if not qa_prefixes:
+        return blocks
+
+    pruned: list[dict] = []
+    for b in (blocks or []):
+        if not isinstance(b, dict):
+            pruned.append(b)
+            continue
+        ctx = (b.get("context") or {}) if isinstance(b.get("context"), dict) else {}
+        if ctx.get("focusvision_answers_list") is True:
+            gk = _norm_lc((ctx.get("group_key") or ""))
+            if ":name:" in gk:
+                gk_prefix = gk.split(":name:", 1)[1].strip()
+                if gk_prefix in qa_prefixes:
+                    log_debug(
+                        "[DOM_CARDRATING_PRUNE]",
+                        f"drop focusvision QA-view block group_key={gk!r}",
+                    )
+                    continue
         pruned.append(b)
     return pruned
