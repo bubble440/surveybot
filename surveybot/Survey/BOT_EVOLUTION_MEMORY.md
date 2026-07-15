@@ -950,6 +950,40 @@ Patterns exclus :
 - Éléments div[data-testid^="option-"] non visibles ou < 2 visibles
 ---
 
+## PLATEFORME : ELEMENT HUMAN (SurveyJS classic, framework sv_*)
+Signature DOM : `sv_main sv_default_css` (framework SurveyJS classique), questions dans
+`div.sv_q.sv_qstn` / `[id^="sq_"]`, choix unique via `fieldset.sv_qcbc[role="radiogroup"]`
++ `input.sv_q_radiogroup_control_item[type="radio"]`.
+Domaine observé : activityv2.elementhuman.com
+
+### _is_formal_survey_question_page — hard guard SurveyJS classic (sv_qcbc radiogroup)
+Fichier : Survey/dom_classifier.py
+Emplacement : bloc JS de _is_formal_survey_question_page, après le guard Toluna/Confirmit
+Wix natif, avant le `return false` final.
+Guard (tous requis) :
+  1. `fieldset.sv_qcbc[role="radiogroup"]` présent
+  2. ≥2 `input.sv_q_radiogroup_control_item[type="radio"]` dans ce fieldset
+  3. ≥2 de ces radios ont un `aria-label` texte exploitable (>3 caractères après suppression des balises HTML)
+  4. Le conteneur question (`.sv_q.sv_qstn` ou `[id^="sq_"]` ancêtre du fieldset) contient un
+     bloc de validation obligatoire (`.sv_q_erbox` ou `[role="alert"]`)
+Patterns couverts :
+- Question de sondage SurveyJS à choix unique dont le libellé ou le `name` du champ contient
+  un vocabulaire de consentement (ex. question "consentez-vous...", `name="consent_0_sq_101"`)
+  — sans ce guard, `is_consent_screen` classait ces pages comme écran de consentement bloquant
+  (faux positif déclenché par le mot "consent" dans le texte/attributs, alors qu'il s'agit d'une
+  question de contenu du sondage, pas d'un bandeau cookie/RGPD)
+- Le bloc de validation obligatoire est utilisé comme signal discriminant : une vraie question
+  de sondage impose une réponse (message d'erreur affiché tant qu'aucune option n'est cochée),
+  contrairement à un simple écran d'info
+Patterns exclus :
+- Pages SurveyJS sans `fieldset.sv_qcbc[role="radiogroup"]` → guard inactif
+- Fieldset avec <2 radios ou <2 aria-label texte exploitables → non couvert
+- Absence de bloc de validation (`.sv_q_erbox`/`[role="alert"]`) dans le conteneur question →
+  non couvert (évite de qualifier une page d'info SurveyJS sans contrainte de réponse comme
+  question formelle)
+
+---
+
 ## PLATEFORME : DECIPHER — ATMRATING (sq-atmrating, boutons 1..N sur inputs text cachés)
 Signature DOM : `div.question.sq-atmrating.hasRows` > N `div.sq-atmrating-container`
 Chaque container : `div.sq-atmrating-row-legend` (texte sous-question) + `input[type="text" name="ans{Q}.0.{N}"]` (caché) + `div.atmrating_input > span.atmrating-btn` (1..5, cliquables).

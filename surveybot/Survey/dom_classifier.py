@@ -227,6 +227,24 @@ def _is_formal_survey_question_page(driver) -> bool:
                 }
             }
 
+            // --- SurveyJS classic (sv_* framework) ---
+            const svRadioGroups = document.querySelectorAll('fieldset.sv_qcbc[role="radiogroup"]');
+            for (const fs of svRadioGroups) {
+                const svRadios = fs.querySelectorAll('input.sv_q_radiogroup_control_item[type="radio"]');
+                if (svRadios.length < 2) continue;
+
+                let svTextLabels = 0;
+                for (const r of svRadios) {
+                    const label = (r.getAttribute('aria-label') || '').replace(/<[^>]*>/g, '').trim();
+                    if (label.length > 3) svTextLabels++;
+                }
+                if (svTextLabels < 2) continue;
+
+                const qRoot = fs.closest('.sv_q.sv_qstn') || fs.closest('[id^="sq_"]');
+                const hasRequiredValidation = !!(qRoot && qRoot.querySelector('.sv_q_erbox, [role="alert"]'));
+                if (hasRequiredValidation) return true;
+            }
+
             return false;
         }"""))
     except Exception:
