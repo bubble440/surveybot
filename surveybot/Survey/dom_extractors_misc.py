@@ -5004,28 +5004,73 @@ def _extract_kantar_rowpicker_radio_blocks(driver, frame_chain: list[int] | None
         if len(options) < 2 or len(option_xpath_map) < 2:
             continue
 
-        group_key = f"kantar_rowpicker:radio:{q_suffix}"
+        # Couche native cachée : `input[questionname='<q_suffix>']` porte la vérité
+        # sur le type de sélection (mrSingle=radio / mrMultiple=checkbox) ainsi que
+        # le statut exclusif par option (attribut `isexclusive`). Le conteneur de
+        # cartes `_rowpicker` seul ne permet pas de distinguer les deux cas.
+        try:
+            native_inputs = driver.query_selector_all(f"input[questionname='{q_suffix}']")
+        except Exception:
+            native_inputs = []
+
+        checkbox_inputs = [
+            inp for inp in native_inputs
+            if (inp.get_attribute("type") or "").strip().lower() == "checkbox"
+        ]
+        is_multi = len(checkbox_inputs) >= 2
+
+        itype = "checkbox" if is_multi else "radio"
+        max_select = 1
+        exclusive_options_norm: list[str] = []
+
+        if is_multi:
+            exclusive_count = 0
+            for inp in checkbox_inputs:
+                if (inp.get_attribute("isexclusive") or "").strip().lower() != "true":
+                    continue
+                exclusive_count += 1
+                input_id = (inp.get_attribute("id") or "").strip()
+                if not input_id:
+                    continue
+                try:
+                    label_el = driver.query_selector(f"label[for='{input_id}'] .mrMultipleText")
+                except Exception:
+                    label_el = None
+                if label_el is None:
+                    continue
+                lbl_txt = _norm(label_el.inner_text() or "")
+                nk = _norm_key(lbl_txt)
+                if nk:
+                    exclusive_options_norm.append(nk)
+
+            max_select = max(1, len(checkbox_inputs) - exclusive_count)
+
+        group_key = f"kantar_rowpicker:{itype}:{q_suffix}"
         target_id = make_target_id("group", group_key, question)
 
         register_target(
             target_id,
             {
                 "kind": "group",
-                "itype": "radio",
+                "itype": itype,
                 "group_key": group_key,
                 "question": question,
                 "option_xpath_map": option_xpath_map,
                 "frame_chain": frame_chain,
                 "kantar_rowpicker_radio": True,
+                "meta": {
+                    "exclusive_options_norm": exclusive_options_norm,
+                },
             },
         )
 
         blocks.append(
             {
                 "question": question,
-                "itype": "radio",
+                "itype": itype,
                 "options": options,
-                "max_select": 1,
+                "max_select": max_select,
+                "min_select": 1,
                 "target_id": target_id,
                 "context": {
                     "kind": "group",

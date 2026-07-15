@@ -6628,6 +6628,29 @@ def execute_action(
                         return True
                     continue
 
+                # Kantar/mrIWeb rowpicker checkbox (choix multiple) : même widget que le
+                # rowpicker radio (flag posé par _extract_kantar_rowpicker_radio_blocks),
+                # mais itype="checkbox" pour ces groupes à choix multiple avec option exclusive.
+                # Court-circuit AVANT _apply_by_target_id : sans ce bypass, le premier clic du
+                # groupe (cache checkbox vide) traverse _apply_toluna_runtime_answerrow_cached()
+                # (probe hors-scope pour ce widget, échoue avec AttributeError car value est un
+                # label str et non un ElementHandle) puis une résolution XPath qui échoue toujours
+                # (input natif dans un conteneur display:none) avant d'atteindre
+                # checkbox_fallback_radio -> click_kantar_rowpicker_radio. Le widget étant déjà
+                # identifiable via le flag du payload, on appelle directement la stratégie dédiée.
+                if _p.get("kantar_rowpicker_radio") and itype == "checkbox":
+                    skip_apply_by_target_id = True
+                    from Survey.input_radio import click_kantar_rowpicker_radio
+                    _rpcb_ok = click_kantar_rowpicker_radio(driver, value)
+                    log_debug(
+                        "[TARGET_DEBUG]",
+                        f"kantar_rowpicker_checkbox_dispatch: {'ok' if _rpcb_ok else 'ko'} value={value!r}",
+                    )
+                    if _rpcb_ok:
+                        log_info("[TARGET]", "apply ok=true strategy=kantar_rowpicker_checkbox_direct reason=applied")
+                        return True
+                    return False
+
             except Exception as e:
                 # meme en exception: pas de fallback générique pour sliderpoints
                 continue
