@@ -6970,9 +6970,9 @@ def execute_action(
                     return True
 
         # ==========================================================
-        # 🟦 TEXT / NUMBER
+        # 🟦 TEXT / NUMBER / TEXTAREA
         # ==========================================================
-        if itype in ("text", "number"):
+        if itype in ("text", "number", "textarea"):
             try:
                 resolved = Survey.question_block_resolver.try_resolve_number_block(
                     driver,

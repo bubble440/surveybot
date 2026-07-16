@@ -1462,3 +1462,36 @@ Deux points d'appel (additifs, un guard, deux entrées) :
 | Decipher/FocusVision answers-list | decipher_radio_clickable_cell (dispatcher) | decipher_clickable_cell (dispatcher, checkbox) / radio_main générique | `input[type='radio'].fir-hidden` dans `.clickableCell` (vs `input[type='checkbox'].fir-hidden` pour la variante checkbox) — guard strict avant tout fallback générique |
 | Decipher/FocusVision card rating | _extract_decipher_cardrating_blocks | button_group générique | `div.sq-cardrating-widget[data-uid]` avec config `rows`/`cardrating:completion` lisible — retour immédiat si match, guard négatif additif sur button_group pour ce widget |
 | Decipher/FocusVision card rating | _extract_decipher_cardrating_blocks | extracteur générique answers-list/matrice (vue QA) | même `data-uid` de widget déjà couvert par `_extract_decipher_cardrating_blocks` → bloc `radio:name:{uid}` de la vue QA cachée supprimé par guard négatif additif |
+
+---
+
+## PLATEFORME : GfK / mrIWeb (HTMLPlayer) — QUESTION TEXTAREA SINGLE
+Signature DOM : `form#mrForm` (SPSSMR/mrIWeb.dll), question single dans `div.que_txa` contenant
+un unique `<textarea name="_QQSeqMatchQuestion" id="_Q{N}">` (ex. question anti-inattention
+"tapez le texte exactement tel qu'il est affiché").
+
+### execute_action — inclusion itype "textarea" dans le dispatch générique TEXT/NUMBER
+Fichier : Survey/action_dispatcher.py
+Emplacement : bloc `# 🟦 TEXT / NUMBER / TEXTAREA`, juste avant le log terminal `no_strategy`.
+Guard : `itype in ("text", "number", "textarea")` (avant le patch : `("text", "number")` seul).
+Problème résolu : pour un bloc résolu `itype="textarea"` (question single avec un unique
+`<textarea>`), une valeur de réponse valide et non vide était bien résolue en amont, mais
+`execute_action` ne reconnaissait "textarea" dans aucun itype de son dispatch générique — le
+pipeline tombait directement sur `log_info("apply ok=false reason=no_strategy ...")` sans jamais
+appeler `fill_text_input`, alors que `_apply_by_target_id()` gérait déjà en interne
+`resolved_itype in ("text", "textarea", "number")` (lignes ~3775/3851) pour les chemins qui en
+dépendent (ex. `multi_text`). Le chemin générique post-`_apply_by_target_id` (celui qui appelle
+directement `fill_text_input`) était le seul encore fermé à "textarea".
+Correction : ajout de `"textarea"` au tuple d'entrée du bloc générique. `fill_text_input`
+(Survey/input_text.py) ciblait déjà `textarea` dans son sélecteur DOM (`selector` inclut
+`textarea`) — aucune modification de `fill_text_input` ni d'aucun extracteur existant.
+Patterns couverts :
+- Tout bloc `itype="textarea"`, kind `single`, dont le `target_id`/`_apply_by_target_id` ne
+  résout rien (pas d'option map applicable) → retombe sur `fill_text_input` via `context.id`
+  (même mécanisme que text/number, cf. entrée `execute_action — passage context.id →
+  fill_text_input` plus haut dans ce fichier)
+Patterns exclus :
+- Aucun changement de comportement pour "text"/"number" (tuple additif, pas de retrait)
+- Blocs textarea déjà résolus en amont par `_apply_by_target_id` (ex. `multi_text`) → chemin
+  inchangé, ce patch ne concerne que le fallback générique post-target_id
+Note : aucun CTA touché par ce patch (saisie de champ uniquement).
