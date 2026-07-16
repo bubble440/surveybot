@@ -101,6 +101,40 @@ def _looks_like_system_field(el) -> bool:
 # VISIBILITÉ
 # ================================================================================
 
+def _is_hidden_offscreen_ariahidden_container(el) -> bool:
+    """
+    Retourne True si l'élément est logé dans un conteneur `aria-hidden="true"`
+    positionné hors du viewport (position fixed/absolute + coordonnées très négatives).
+
+    Pattern GfK/mrIWeb (et similaires) : champs techniques (honeypot "What is your
+    name?", checkbox de contrôle qualité, etc.) rendus dans le DOM mais explicitement
+    exclus de l'arbre d'accessibilité ET du viewport visuel. Contrairement aux
+    techniques "visually-hidden" d'accessibilité (qui ne posent jamais aria-hidden=true
+    sur ce type de conteneur, sous peine de se cacher aussi des lecteurs d'écran),
+    cette combinaison signale sans ambiguïté un champ jamais visible/actionnable
+    pour l'utilisateur final.
+    """
+    try:
+        return bool(el.evaluate(
+            """(node) => {
+                let n = node;
+                while (n) {
+                    if (n.getAttribute && n.getAttribute('aria-hidden') === 'true') {
+                        const st = window.getComputedStyle(n);
+                        if (st && (st.position === 'fixed' || st.position === 'absolute')) {
+                            const r = n.getBoundingClientRect();
+                            if (r.top < -300 || r.left < -300) return true;
+                        }
+                    }
+                    n = n.parentElement;
+                }
+                return false;
+            }"""
+        ))
+    except Exception:
+        return False
+
+
 def _is_actionable_visible(el) -> bool:
     """
     Retourne True si l'élément est actionnable/visible par l'utilisateur.
@@ -116,6 +150,10 @@ def _is_actionable_visible(el) -> bool:
     3. Sinon, vérifier is_visible() standard
     """
     try:
+        # 0-bis) Conteneur technique aria-hidden hors-écran (honeypot / QA fields GfK mrIWeb)
+        if _is_hidden_offscreen_ariahidden_container(el):
+            return False
+
         # 0) LimeSurvey: ignorer tout ce qui est dans un bloc masqué "ls-js-hidden"
         try:
             if el.query_selector_all(

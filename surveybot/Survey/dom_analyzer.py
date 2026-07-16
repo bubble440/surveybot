@@ -29,11 +29,12 @@ try:
     from Survey.dom_utils import (
         _norm, _norm_lc, _norm_key,
         _looks_like_system_field, _is_actionable_visible,
+        _is_hidden_offscreen_ariahidden_container,
         _best_xpath_for_element, _xpath_literal,
         _is_question_text, _is_validation_instruction,
         _detect_itype, _dropdown_field_hint, _env_truthy
     )
-    
+
     # Extraction de questions
     from Survey.dom_question_extractor import (
         _find_question_text_near_element, _find_associated_label,
@@ -152,6 +153,7 @@ except ImportError:
     from Survey.dom_utils import (
         _norm, _norm_lc, _norm_key,
         _looks_like_system_field, _is_actionable_visible,
+        _is_hidden_offscreen_ariahidden_container,
         _best_xpath_for_element, _xpath_literal,
         _is_question_text, _is_validation_instruction,
         _detect_itype, _dropdown_field_hint, _env_truthy
@@ -1881,6 +1883,12 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         que le label (ou un wrapper). Dans ce cas `is_displayed()` sur l'input
         retourne False alors que l'option est bien visible et cliquable.
         """
+        try:
+            if _is_hidden_offscreen_ariahidden_container(el):
+                return False
+        except Exception:
+            pass
+
         try:
             if _is_actionable_visible(el):
                 return True

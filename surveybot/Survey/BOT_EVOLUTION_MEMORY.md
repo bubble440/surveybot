@@ -1405,6 +1405,43 @@ corps de script enveloppé en fonction fléchée `(arg) => {...}` — utiliser l
 
 ---
 
+## LEÇON TRANSVERSALE : CONTENEUR TECHNIQUE `aria-hidden="true"` HORS-VIEWPORT (honeypot / champs QA GfK mrIWeb)
+Plateforme observée : GfK / mrIWeb (SPSSMR/HTMLPlayer), page NielsenIQ — mais le guard est
+transversal (utilisé par les chemins texte ET radio/checkbox), pas un extracteur de plateforme.
+
+### _is_hidden_offscreen_ariahidden_container
+Fichier : Survey/dom_utils.py
+Problème résolu : deux blocs parasites étaient extraits en plus de la question réellement
+affichée (un radio de consentement) — un champ texte libre ("What is your name?") et un groupe
+de 2 checkboxes ("Yes"/"No"), tous deux logés dans un conteneur `aria-hidden="true"` positionné
+en `position:fixed`/`absolute` à des coordonnées très hors du viewport (ex. `top:-999px`). Ce
+conteneur n'est ni `display:none` ni `visibility:hidden`, donc les vérifications de visibilité
+existantes (bounding rect > 0, computed style display/visibility/opacity) le laissaient passer
+comme "visible".
+Guard : remonte les ancêtres de l'élément ; si un ancêtre porte `aria-hidden="true"` ET a un
+`position` calculé `fixed` ou `absolute` ET un `getBoundingClientRect()` avec `top` ou `left`
+inférieur à -300, retourne `True` (élément à ignorer).
+Patterns couverts :
+- Champs techniques/honeypot GfK mrIWeb rendus dans le DOM mais explicitement sortis de l'arbre
+  d'accessibilité et du viewport visuel (ex. `_Q2` type=text, `_Q3` checkboxes de contrôle qualité
+  dans `<div aria-hidden="true" style="position:fixed;top:-999px;left:-999px;">`)
+Patterns exclus :
+- Techniques "visually-hidden" d'accessibilité classiques (ex. classes sr-only) : ne posent
+  jamais `aria-hidden="true"` sur ce type de conteneur, car cela les cacherait aussi aux lecteurs
+  d'écran — donc pas de faux positif attendu sur ce pattern
+- Conteneurs `display:none` (ex. `#HiddenBanners`) : déjà exclus par ailleurs (`hidden_or_system`),
+  non concernés par ce guard
+
+Deux points d'appel (additifs, un guard, deux entrées) :
+- `Survey/dom_utils.py` → `_is_actionable_visible` : appelé en tête de fonction (étape 0-bis),
+  avant les autres vérifications ; couvre le chemin "autres inputs" (texte/textarea/select/bouton)
+  dans `Survey/dom_analyzer.py`.
+- `Survey/dom_analyzer.py` → `_choice_has_visible_proxy` (fonction interne à la boucle de
+  collecte des inputs radio/checkbox) : appelé avant le fallback JS de détection de proxy visible ;
+  couvre le chemin radio/checkbox.
+
+---
+
 ## FRONTIÈRES INTER-EXTRACTEURS
 
 | Plateforme | Extracteur A | Extracteur B | Signal de discrimination |
