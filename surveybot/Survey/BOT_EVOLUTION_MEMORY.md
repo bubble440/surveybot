@@ -427,9 +427,10 @@ Patterns exclus :
 
 ---
 
-## PLATEFORME : KANTAR / mrIWeb — ROWPICKER RADIO (REACT OVERLAY)
+## PLATEFORME : KANTAR / mrIWeb — ROWPICKER RADIO / CHECKBOX (REACT OVERLAY)
 Signature DOM : `form[name="mrForm"]` (sa.ktrmr.com), `metaType="rowpicker"` dans le SEJson.
 Double couche : `div.questionContainer[questionname][display:none]` (inputs natifs non interactables) + `div#container_{questionname}._rowpicker` (cartes React cliquables).
+Le même conteneur `_rowpicker` sert aussi bien des questions à choix unique que des questions à choix multiple (avec éventuellement une option exclusive) — la couche visuelle est identique dans les deux cas, seule la couche native cachée distingue les deux.
 
 ### _extract_kantar_rowpicker_radio_blocks
 Fichier : Survey/dom_extractors_misc.py
@@ -439,12 +440,15 @@ Patterns couverts :
 - Question : `#qc_{q_suffix} span.mrQuestionText` ; variante : `.questionContainer[questionname$='.{q_suffix}'] span.mrQuestionText`
 - Cartes : itération sur les overlays `div[dir='ltr'][tabindex='0']` dans le picker ; remontée au conteneur de carte via `ancestor::div[@dir='ltr'][not(@tabindex)][1]` ; label depuis `label span`
 - `option_xpath_map` pointe sur l'overlay (seul élément interactable), pas sur les inputs natifs
-- Flag payload : `kantar_rowpicker_radio=True` ; `group_key` : `kantar_rowpicker:radio:{q_suffix}`
+- Distinction radio/checkbox : lecture de `input[questionname='{q_suffix}']` dans la couche native cachée. ≥2 inputs `type="checkbox"` (classe `mrMultiple`) → `itype="checkbox"` ; sinon `itype="radio"`.
+- Option exclusive (checkbox uniquement) : détectée via `isexclusive="true"` sur l'input natif ; le label correspondant est résolu via `label[for={input_id}] .mrMultipleText` et stocké normalisé dans `payload["meta"]["exclusive_options_norm"]`. `max_select = nb_inputs_checkbox - nb_exclusifs` (min 1).
+- Flag payload : `kantar_rowpicker_radio=True` dans les deux cas (radio ET checkbox) ; `group_key` : `kantar_rowpicker:{itype}:{q_suffix}`
 Note DOM : l'overlay `div[dir='ltr'][tabindex='0']` est séparé de la carte `div[dir='ltr']` par un div intermédiaire sans attribut `dir` — `div[@tabindex='0']` (enfant direct) ne matche pas ; il faut itérer sur les overlays et remonter.
+Note DOM : le flag `kantar_rowpicker_radio` reste nommé ainsi même pour les blocs `itype="checkbox"` — c'est le nom du widget (rowpicker), pas le type de sélection ; ne pas le renommer sans mettre à jour tous les guards dispatcher qui le lisent.
 Patterns exclus :
 - `div[id^='sq-QARTS-container-']` (Decipher/LifePoints QARTS) → extracteur séparé
 - `_rowrank` (metaType=rowrank) → `_extract_kantar_rowrank_blocks`
-- Inputs natifs `input[type=radio][class*="mrSingle"]` dans `div.questionContainer` → jamais ciblés
+- Inputs natifs `input[type=radio][class*="mrSingle"]` / `input[type=checkbox][class*="mrMultiple"]` dans `div.questionContainer` → jamais ciblés directement (uniquement lus pour déterminer itype/exclusivité)
 
 ### kantar_rowpicker_radio — guard dispatcher
 Fichier : Survey/action_dispatcher.py
@@ -479,6 +483,16 @@ Correction : dès l'entrée du bloc radio, si `kantar_rowpicker_radio=True`, ret
 Patterns exclus :
 - Tout bloc radio sans flag `kantar_rowpicker_radio` → séquence `aa_answer_matrix` / `radio_slider` / `radio_main` / `radio_buttonish` inchangée.
 - Détections Kantar rowpicker par scan DOM runtime dans `_apply_by_target_id` (lignes ~2481/2644, sans passer par le payload extrait) → non concernées, elles retournent déjà `bool(_rp_ok)` directement sans tomber dans ce bloc radio générique.
+
+### execute_action — court-circuit dédié pour kantar_rowpicker en itype="checkbox"
+Fichier : Survey/action_dispatcher.py
+Emplacement : juste avant l'appel à `_apply_by_target_id` (bloc `if target_id and not skip_apply_by_target_id`), dans la section qui gère les stratégies dépendant du payload `_p`.
+Guard : `_p.get("kantar_rowpicker_radio") and itype == "checkbox"`
+Problème résolu : sans ce court-circuit, le premier clic d'un groupe checkbox rowpicker (cache de stratégie checkbox vide) traversait `_apply_toluna_runtime_answerrow_cached()` — sonde hors-scope pour ce widget qui échoue systématiquement avec `AttributeError: 'str' object has no attribute 'evaluate'` (elle appelle `.evaluate()` sur `value`, qui est le label texte de la réponse, pas un ElementHandle) — puis une résolution XPath qui échoue toujours (l'input natif est dans un conteneur `display:none`), avant d'atteindre `checkbox_fallback_radio` → `click_kantar_rowpicker_radio` qui fonctionne réellement. Ce chemin complet (sonde cassée + 2 stratégies génériques en échec avec timeouts) ne s'exécutait que pour la première option du groupe ; les options suivantes réutilisaient directement la stratégie mise en cache.
+Correction : le widget étant déjà identifiable via le flag `kantar_rowpicker_radio` posé par l'extracteur, `execute_action` appelle directement `click_kantar_rowpicker_radio(driver, value)` dès l'entrée, `skip_apply_by_target_id=True`, sans passer par `_apply_by_target_id` ni par la liste ordonnée `checkbox_main`/`checkbox_buttonish`/`checkbox_fallback_radio`. Pas de fallback générique après échec (retour `False` direct), même logique que le bloc radio équivalent.
+Note : `click_kantar_rowpicker_radio` (Survey/input_radio.py, voir entrée ci-dessus) est réutilisée telle quelle pour le cas checkbox — elle clique par label sur l'overlay React, ce qui fonctionne indépendamment du type de sélection sous-jacent.
+Patterns exclus :
+- Tout bloc checkbox sans flag `kantar_rowpicker_radio` → séquence `checkbox_main` / `checkbox_buttonish` / `checkbox_fallback_radio` inchangée (y compris la sonde `_apply_toluna_runtime_answerrow_cached`, non touchée par ce patch).
 
 ---
 
