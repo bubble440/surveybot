@@ -332,7 +332,10 @@ def is_checked(el) -> bool:
     t = (el.get_attribute("type") or "").lower()
     if t in ("checkbox", "radio"):
         try:
-            return el.is_selected()
+            # is_checked() (pas is_selected(), inexistant sur ElementHandle/Locator
+            # Playwright) : lit l'état "checked" réel sans wait de visibilité, valide
+            # aussi pour les inputs natifs masqués en CSS (visibility:hidden, etc.).
+            return el.is_checked()
         except Exception:
             pass
     aria = (el.get_attribute("aria-checked") or "").lower()

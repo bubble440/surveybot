@@ -2066,7 +2066,12 @@ def _apply_by_target_id(
 
                 def _is_selected(inp):
                     try:
-                        return bool(inp and inp.is_selected())
+                        # is_checked() (pas is_selected(), inexistant sur ElementHandle/Locator
+                        # Playwright — legacy Selenium jamais migré ici, cf.
+                        # Utils/PLAYWRIGHT_NATIVE_MIGRATION.md) : seule méthode qui lit l'état
+                        # "checked" réel sans wait d'actionability/visibilité, donc valide aussi
+                        # pour les inputs natifs masqués en CSS (visibility:hidden, etc.).
+                        return bool(inp and inp.is_checked())
                     except Exception:
                         return False
 
@@ -2087,22 +2092,108 @@ def _apply_by_target_id(
                         # (ex: AngularJS ng-checked + label contenant un <a> où le modèle ng-model
                         # n'est pas forcément synchronisé tant que input/change n'ont pas été dispatchés).
                         try:
-                            if inp.is_selected() and not force_when_selected:
+                            if inp.is_checked() and not force_when_selected:
                                 return
                         except Exception:
                             pass
 
-                        inp.evaluate("""(_el) => {
-                            const inp = _el;
-                            if (!inp) return;
-                            const type = (inp.type || '').toLowerCase();
-                            try { inp.checked = true; } catch(e) {}
-                            inp.dispatchEvent(new Event('input',  {bubbles:true}));
-                            inp.dispatchEvent(new Event('change', {bubbles:true}));
-                            if (type === 'radio') {
-                              inp.dispatchEvent(new MouseEvent('click', {bubbles:true}));
-                            }
+                        # [DIAG_CHECK_FORCE] instrumentation temporaire (diagnostic uniquement,
+                        # aucun changement de comportement) : capture explicite du résultat du
+                        # forçage JS + état checked (attribut vs propriété live) juste après,
+                        # au lieu de laisser l'exception passer sous silence.
+                        _diag_id = None
+                        try:
+                            _diag_id = (inp.get_attribute("id") or "").strip() or None
+                        except Exception:
+                            pass
+                        try:
+                            _diag_before = inp.evaluate(
+                                "(_el) => ({attr: _el.getAttribute('checked'), prop: !!_el.checked})"
+                            )
+                        except Exception as _diag_exc:
+                            _diag_before = None
+                            if debug_target:
+                                log_debug(
+                                    "[DIAG_CHECK_FORCE]",
+                                    f"pre-force state read failed id={_diag_id!r} "
+                                    f"{type(_diag_exc).__name__}: {_short_exc(_diag_exc)}",
+                                )
+                        if debug_target:
+                            log_debug(
+                                "[DIAG_CHECK_FORCE]",
+                                f"before force id={_diag_id!r} attr/prop={_diag_before!r}",
+                            )
+
+                        try:
+                            inp.evaluate("""(_el) => {
+                                const inp = _el;
+                                if (!inp) return;
+                                const type = (inp.type || '').toLowerCase();
+                                try { inp.checked = true; } catch(e) {}
+                                inp.dispatchEvent(new Event('input',  {bubbles:true}));
+                                inp.dispatchEvent(new Event('change', {bubbles:true}));
+                                if (type === 'radio') {
+                                  inp.dispatchEvent(new MouseEvent('click', {bubbles:true}));
+                                }
 }""")
+                        except Exception as _diag_force_exc:
+                            if debug_target:
+                                log_debug(
+                                    "[DIAG_CHECK_FORCE]",
+                                    f"force JS evaluate raised id={_diag_id!r} "
+                                    f"{type(_diag_force_exc).__name__}: {_short_exc(_diag_force_exc)}",
+                                )
+
+                        if debug_target:
+                            # Vérification via la référence déjà en main (inp)
+                            try:
+                                _diag_after_same_ref = inp.evaluate(
+                                    "(_el) => ({attr: _el.getAttribute('checked'), prop: !!_el.checked})"
+                                )
+                            except Exception as _diag_exc2:
+                                _diag_after_same_ref = None
+                                log_debug(
+                                    "[DIAG_CHECK_FORCE]",
+                                    f"post-force state read (same ref) failed id={_diag_id!r} "
+                                    f"{type(_diag_exc2).__name__}: {_short_exc(_diag_exc2)}",
+                                )
+                            log_debug(
+                                "[DIAG_CHECK_FORCE]",
+                                f"after force (same ref) id={_diag_id!r} attr/prop={_diag_after_same_ref!r}",
+                            )
+
+                            # Vérification indépendante : toute nouvelle requête DOM par id,
+                            # sans réutiliser la référence `inp` utilisée pour le forçage —
+                            # détecte une éventuelle divergence de référence (nœud remplacé/
+                            # re-rendu par le framework de la page entre le forçage et la lecture).
+                            if _diag_id:
+                                try:
+                                    _diag_fresh = driver.query_selector(f"[id='{_diag_id}']")
+                                    _diag_same_node = bool(
+                                        _diag_fresh is not None
+                                        and driver.evaluate(
+                                            "([a, b]) => a === b", [inp, _diag_fresh]
+                                        )
+                                    )
+                                    _diag_fresh_state = (
+                                        _diag_fresh.evaluate(
+                                            "(_el) => ({attr: _el.getAttribute('checked'), prop: !!_el.checked})"
+                                        )
+                                        if _diag_fresh is not None
+                                        else None
+                                    )
+                                    log_debug(
+                                        "[DIAG_CHECK_FORCE]",
+                                        f"post-force fresh requery id={_diag_id!r} "
+                                        f"found={_diag_fresh is not None} same_node={_diag_same_node} "
+                                        f"attr/prop={_diag_fresh_state!r}",
+                                    )
+                                except Exception as _diag_exc3:
+                                    log_debug(
+                                        "[DIAG_CHECK_FORCE]",
+                                        f"post-force fresh requery failed id={_diag_id!r} "
+                                        f"{type(_diag_exc3).__name__}: {_short_exc(_diag_exc3)}",
+                                    )
                     except Exception:
                         pass
 
@@ -3662,14 +3753,85 @@ def _apply_by_target_id(
                 except Exception:
                     pass
 
-                # NEW: si la cible est un <label for="...">, forcer l'input associé
+                # NEW: si la cible est un <label for="..."> OU un descendant d'un tel label
+                # (ex. GfK/mrIWeb mrMultipleText : _find_best_visible peut retenir le label
+                # lui-même, mais un clic natif sur n'importe quel descendant d'un label déclenche
+                # le même comportement de bascule sur l'input référencé par for=), forcer l'input
+                # associé et vérifier dessus.
                 try:
-                    if (el.evaluate("e => (e.tagName || '').toLowerCase()") or "") == "label":
-                        fid = (el.get_attribute("for") or "").strip()
+                    _lbl_el = el
+                    if (el.evaluate("e => (e.tagName || '').toLowerCase()") or "") != "label":
+                        _lbl_el = el.query_selector("xpath=ancestor::label[@for][1]")
+                    if _lbl_el is not None:
+                        fid = (_lbl_el.get_attribute("for") or "").strip()
                         if fid:
                             inp_for = driver.query_selector(f"[id='{fid}']")
+                            if debug_target:
+                                log_debug(
+                                    "[TARGET_DEBUG]",
+                                    f"label-for resolve: fid={fid!r} inp_for_found={inp_for is not None} "
+                                    f"selected_before={_is_selected(inp_for)}",
+                                )
                             if not _is_selected(inp_for):
-                                _dispatch_check_events(inp_for)
+                                # [DIAG_CHECK_FORCE] instrumentation temporaire (diagnostic
+                                # uniquement) : capturer explicitement toute exception levée
+                                # pendant l'appel de forçage au lieu de la laisser remonter
+                                # silencieusement dans le try/except englobant ce bloc.
+                                try:
+                                    _dispatch_check_events(inp_for)
+                                except Exception as _diag_lbl_exc:
+                                    if debug_target:
+                                        log_debug(
+                                            "[DIAG_CHECK_FORCE]",
+                                            f"label-for _dispatch_check_events raised fid={fid!r} "
+                                            f"{type(_diag_lbl_exc).__name__}: {_short_exc(_diag_lbl_exc)}",
+                                        )
+                            if debug_target:
+                                # Seconde vérification indépendante : nouvelle requête DOM par id,
+                                # sans réutiliser la référence inp_for utilisée pour le forçage.
+                                try:
+                                    _diag_lbl_fresh = driver.query_selector(f"[id='{fid}']")
+                                    _diag_lbl_same_node = bool(
+                                        _diag_lbl_fresh is not None
+                                        and inp_for is not None
+                                        and driver.evaluate(
+                                            "([a, b]) => a === b", [inp_for, _diag_lbl_fresh]
+                                        )
+                                    )
+                                    _diag_lbl_state = (
+                                        _diag_lbl_fresh.evaluate(
+                                            "(_el) => ({attr: _el.getAttribute('checked'), prop: !!_el.checked})"
+                                        )
+                                        if _diag_lbl_fresh is not None
+                                        else None
+                                    )
+                                    log_debug(
+                                        "[DIAG_CHECK_FORCE]",
+                                        f"label-for post-force fresh requery fid={fid!r} "
+                                        f"found={_diag_lbl_fresh is not None} same_node={_diag_lbl_same_node} "
+                                        f"attr/prop={_diag_lbl_state!r} selected_via_is_selected={_is_selected(inp_for)}",
+                                    )
+                                except Exception as _diag_lbl_exc2:
+                                    log_debug(
+                                        "[DIAG_CHECK_FORCE]",
+                                        f"label-for post-force fresh requery failed fid={fid!r} "
+                                        f"{type(_diag_lbl_exc2).__name__}: {_short_exc(_diag_lbl_exc2)}",
+                                    )
+                            # Court-circuit indispensable ici : quand l'input ciblé par
+                            # for="..." n'est PAS un descendant du label (ex. GfK/mrIWeb
+                            # span|mrquestiontable, label et input dans des sous-arbres
+                            # séparés), _first_input_under(el) ci-dessous ne le trouve
+                            # jamais et retourne None. Sans ce retour anticipé, le code
+                            # tombe sur le fallback "span" (cible un enfant du même
+                            # label) qui redéclenche le comportement natif du label et
+                            # décoche la case déjà cochée par le clic initial.
+                            if _is_selected(inp_for):
+                                return True
+                            if debug_target:
+                                log_debug(
+                                    "[TARGET_DEBUG]",
+                                    f"label-for resolve: still unselected after force fid={fid!r}",
+                                )
                 except Exception:
                     pass
 

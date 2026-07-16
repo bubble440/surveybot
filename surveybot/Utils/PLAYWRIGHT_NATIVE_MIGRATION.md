@@ -531,6 +531,31 @@ INTERFACE switch_to_frame_chain
 HISTORIQUE
 ================================================================================
 
+2026-07-16  Correctif post-S8 : résidu Selenium `el.is_selected()` trouvé dans
+            `_is_selected()` (Survey/action_dispatcher.py) et `is_checked()`
+            (Survey/input_utils.py). Cette méthode n'existe pas sur `ElementHandle`/
+            `Locator` Playwright (contrairement à `WebElement` Selenium) : l'appel
+            levait systématiquement une `AttributeError`, avalée silencieusement par
+            un `try/except`, retournant `False` par défaut quel que soit l'état réel
+            de l'input. Absent de la liste de correspondances établie au BLOC S7b
+            (is_displayed()→is_visible(), tag_name→evaluate, text→inner_text(),
+            send_keys→type(), rect→bounding_box()) — cette méthode n'y figurait pas et
+            n'avait donc pas été convertie lors du passage en revue de action_dispatcher.py/
+            input_utils.py. Impact concret : toute vérification post-clic de l'état
+            coché d'un checkbox/radio rapportait un faux `False` permanent, y compris
+            pour un input réellement coché (confirmé par instrumentation ciblée : état
+            DOM live `checked=true` sur nœud non-stale). Repéré via un bug GfK/mrIWeb
+            (widget "mrMultiple", checkbox masqué en CSS) où la case était cochée au
+            premier clic puis décochée par les stratégies de repli déclenchées à tort
+            par ce faux négatif — cf. BOT_EVOLUTION_MEMORY.md, section "LEÇON
+            TRANSVERSALE : is_selected() inexistant sur Playwright". Corrigé :
+            `el.is_selected()` → `el.is_checked()` (méthode Playwright native, lit
+            l'état "checked" réel sans wait d'actionability/visibilité — valide aussi
+            pour les inputs masqués en CSS). Portée : ces deux fonctions uniquement ;
+            aucune autre stratégie de clic ni logique de fallback modifiée. Les autres
+            fichiers migrés aux BLOCs 3b5b/3b5c/3b6/S7b n'ont pas été ré-audités pour
+            un usage résiduel de `is_selected()` — à vérifier si un symptôme similaire
+            réapparaît ailleurs.
 2026-06-24  Correctif post-S8 : playwright_launcher.py — launch_browser_playwright() et
             launch_browser_playwright_debug() instanciaient encore PlaywrightDriverShim
             (import local dans le corps) après suppression du module. Corrigé : shim

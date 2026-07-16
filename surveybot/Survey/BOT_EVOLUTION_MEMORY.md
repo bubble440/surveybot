@@ -1495,3 +1495,45 @@ Patterns exclus :
 - Blocs textarea déjà résolus en amont par `_apply_by_target_id` (ex. `multi_text`) → chemin
   inchangé, ce patch ne concerne que le fallback générique post-target_id
 Note : aucun CTA touché par ce patch (saisie de champ uniquement).
+
+---
+
+## LEÇON TRANSVERSALE : `is_selected()` INEXISTANT SUR PLAYWRIGHT — FAUX NÉGATIF SILENCIEUX SUR CHECKBOX/RADIO MASQUÉS EN CSS
+
+Détecté sur : GfK / mrIWeb (HTMLPlayer/SPSSMR), widget "mrMultiple", checkbox à choix multiple
+(conteneur `dom_container:span|mrquestiontable`, target_id de groupe). Le guard transversal
+ci-dessous n'est pas limité à cette plateforme : toute question radio/checkbox dont l'`<input>`
+natif est stylé `visibility:hidden`/masqué en CSS (widget custom re-stylé visuellement, très
+courant) était concernée.
+
+### `_is_selected` (Survey/action_dispatcher.py) et `is_checked` (Survey/input_utils.py)
+Problème résolu : les deux fonctions appelaient `el.is_selected()` — méthode Selenium, jamais
+migrée lors du passage à Playwright, **inexistante** sur `ElementHandle`/`Locator` Playwright.
+L'appel levait donc systématiquement une `AttributeError`, avalée par un `try/except` qui
+retournait `False` par défaut — indépendamment de l'état réel de l'input. Résultat observé :
+un `<input type="checkbox">` réellement coché (propriété DOM live `checked=true` confirmée par
+instrumentation, sur un nœud vérifié non-stale) était en permanence rapporté comme non coché.
+Toutes les stratégies de clic ultérieures considéraient donc l'action comme un échec et
+enchaînaient des fallbacks génériques (ex. `click_radio_by_label` en repli checkbox, tentative
+`kantar_rowpicker`) qui finissaient par décocher la case déjà correctement cochée — symptôme
+observable : case cochée puis décochée à chaque option, `apply ok=false reason=no_strategy` final
+pour chaque option du groupe, alors que le tout premier clic avait réellement fonctionné.
+Correction : remplacement de `el.is_selected()` par `el.is_checked()` (méthode Playwright native
+qui lit l'état "checked" réel sans wait d'actionability/visibilité — valide donc aussi pour les
+inputs masqués en CSS). Aucune autre stratégie de clic ni logique de fallback modifiée.
+Patterns couverts :
+- Tout `input[type=checkbox|radio]` dont l'état "checked" doit être vérifié après une tentative
+  de sélection, y compris quand l'input est natif mais masqué visuellement (`visibility:hidden`,
+  `position:absolute` hors-écran, etc.) et remplacé par un widget stylé (icône/`span` séparé).
+Patterns exclus :
+- Éléments `role="checkbox"` sans `<input>` natif sous-jacent (ARIA custom) : toujours couverts
+  par le fallback `aria-checked` existant dans ces mêmes fonctions, chemin inchangé.
+- Éléments avec état porté uniquement par des classes CSS (ex. `is-checked`) sans `checked`
+  natif ni `aria-checked` : fallback classes existant inchangé.
+Note diagnostic : ce bug ne se manifeste jamais par une exception visible — le faux `False`
+silencieux ressemble en tout point à un problème de stratégie de clic ou de résolution DOM,
+ce qui a nécessité une instrumentation dédiée (log de l'état "checked" via requête DOM fraîche,
+indépendante de toute référence potentiellement obsolète) pour être distingué d'un problème de
+clic. Si un futur bug checkbox/radio montre un premier clic visuellement réussi suivi d'un
+décochage en cascade sur d'autres plateformes, vérifier en priorité l'état réel du DOM avant de
+suspecter la stratégie de clic elle-même.
