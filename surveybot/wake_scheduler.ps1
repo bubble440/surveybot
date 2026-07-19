@@ -1,22 +1,22 @@
 # wake_scheduler.ps1
-# Relance les bots dont le cooldown Postgres est expiré (arrêt EXIT_VOLUNTARY avec cooldown,
-# session expirée, objectif journalier atteint, etc.) mais que NSSM n'a pas redémarrés
+# Relance les bots dont le cooldown Postgres est expire (arret EXIT_VOLUNTARY avec cooldown,
+# session expiree, objectif journalier atteint, etc.) mais que NSSM n'a pas redemarres
 # automatiquement (AppExit 0 Exit).
 #
-# Complémentaire de check_zombie_bots.ps1 :
-#   check_zombie_bots.ps1  → restart les bots vivants mais bloqués (zombie heartbeat)
-#   wake_scheduler.ps1     → restart les bots volontairement arrêtés après cooldown expiré
+# Complementaire de check_zombie_bots.ps1 :
+#   check_zombie_bots.ps1  -> restart les bots vivants mais bloques (zombie heartbeat)
+#   wake_scheduler.ps1     -> restart les bots volontairement arretes apres cooldown expire
 #
-# Règles :
+# Regles :
 #   - Cooldown lu en base Postgres via le mode CLI --query-cooldown de main.py (python.exe).
-#   - EXIT_FATAL (last_exit_code = 3) : jamais relancé automatiquement — intervention humaine.
-#   - Service NSSM déjà en cours d'exécution : ignoré.
+#   - EXIT_FATAL (last_exit_code = 3) : jamais relance automatiquement - intervention humaine.
+#   - Service NSSM deja en cours d'execution : ignore.
 #
 # Usage :
 #   .\wake_scheduler.ps1
 #   .\wake_scheduler.ps1 -AccountsFile "D:\surveybot\accounts.json" -PidsDir "D:\surveybot\pids"
 #
-# Installation en tâche planifiée (une seule fois, en tant qu'administrateur) :
+# Installation en tache planifiee (une seule fois, en tant qu'administrateur) :
 #   $action  = New-ScheduledTaskAction -Execute "powershell.exe" `
 #                -Argument "-NonInteractive -File C:\surveybot\wake_scheduler.ps1"
 #   $trigger = New-ScheduledTaskTrigger -RepetitionInterval (New-TimeSpan -Minutes 5) `
@@ -35,7 +35,7 @@ param(
 
 $MAX_ACCOUNTS = 200   # garde-fou boucle : abort si accounts.json est anormalement grand
 
-# ── Lecture accounts.json ─────────────────────────────────────────────────────
+# -- Lecture accounts.json -----------------------------------------------------
 
 if (-not (Test-Path $AccountsFile)) {
     Write-Output "[WAKE] accounts.json introuvable : $AccountsFile"
@@ -58,18 +58,18 @@ foreach ($acc in $accounts) {
 }
 
 if ($accountIds.Count -eq 0) {
-    Write-Output "[WAKE] Aucun account_id dans $AccountsFile — rien à vérifier."
+    Write-Output "[WAKE] Aucun account_id dans $AccountsFile - rien a verifier."
     exit 0
 }
 
 if ($accountIds.Count -gt $MAX_ACCOUNTS) {
-    Write-Warning "[WAKE] $($accountIds.Count) comptes > MAX_ACCOUNTS ($MAX_ACCOUNTS) — abort (vérifier accounts.json)."
+    Write-Warning "[WAKE] $($accountIds.Count) comptes > MAX_ACCOUNTS ($MAX_ACCOUNTS) - abort (verifier accounts.json)."
     exit 1
 }
 
-Write-Output "[WAKE] $($accountIds.Count) compte(s) à vérifier."
+Write-Output "[WAKE] $($accountIds.Count) compte(s) a verifier."
 
-# ── Interrogation Postgres via le mode CLI de main.py ─────────────────────────
+# -- Interrogation Postgres via le mode CLI de main.py -------------------------
 # python.exe code\main.py --query-cooldown account1 account2 ...
 # Retourne un JSON sur stdout ; exit 0 dans tous les cas.
 
@@ -87,7 +87,7 @@ try {
     # Passe tous les account_ids d'un coup : une seule connexion Postgres, sortie rapide.
     $jsonOut = & $PythonExe $MainScript --query-cooldown @accountIds 2>$null
     if (-not $jsonOut) {
-        Write-Warning "[WAKE] Aucune sortie du binaire (--query-cooldown) — abandon."
+        Write-Warning "[WAKE] Aucune sortie du binaire (--query-cooldown) - abandon."
         exit 1
     }
     $cooldownList = $jsonOut | ConvertFrom-Json
@@ -96,7 +96,7 @@ try {
     exit 1
 }
 
-# Indexer par account_id pour accès O(1)
+# Indexer par account_id pour acces O(1)
 $statusMap = @{}
 foreach ($entry in $cooldownList) {
     if ($entry.account_id) {
@@ -104,66 +104,66 @@ foreach ($entry in $cooldownList) {
     }
 }
 
-# ── Boucle principale ─────────────────────────────────────────────────────────
+# -- Boucle principale ---------------------------------------------------------
 
 $processed = 0
 foreach ($accountId in $accountIds) {
     if ($processed -ge $MAX_ACCOUNTS) {
-        Write-Warning "[WAKE] Budget MAX_ACCOUNTS atteint — arrêt de la boucle."
+        Write-Warning "[WAKE] Budget MAX_ACCOUNTS atteint - arret de la boucle."
         break
     }
     $processed++
 
-    # — Vérification cooldown Postgres —
+    # - Verification cooldown Postgres -
     $status = $statusMap[$accountId]
     if (-not $status) {
-        Write-Warning "[WAKE] bot=$accountId — statut Postgres absent, ignoré."
+        Write-Warning "[WAKE] bot=$accountId - statut Postgres absent, ignore."
         continue
     }
     if ($status.PSObject.Properties['error'] -and $status.error) {
-        Write-Warning "[WAKE] bot=$accountId — erreur Postgres : $($status.error)"
+        Write-Warning "[WAKE] bot=$accountId - erreur Postgres : $($status.error)"
         continue
     }
     if (-not $status.is_expired) {
-        Write-Output "[WAKE] bot=$accountId — cooldown actif jusqu'à $($status.cooldown_until_ts), ignoré."
+        Write-Output "[WAKE] bot=$accountId - cooldown actif jusqu'a $($status.cooldown_until_ts), ignore."
         continue
     }
 
-    # — Vérification EXIT_FATAL via fichier .state local —
-    # last_exit_code = 3 → intervention humaine requise, ne pas relancer automatiquement.
+    # - Verification EXIT_FATAL via fichier .state local -
+    # last_exit_code = 3 -> intervention humaine requise, ne pas relancer automatiquement.
     $stateFile = Join-Path $PidsDir "bot_$accountId.state"
     if (Test-Path $stateFile) {
         try {
             $localState = Get-Content $stateFile -Raw -ErrorAction Stop | ConvertFrom-Json
             if ($localState.last_exit_code -eq 3) {
-                Write-Output "[WAKE] bot=$accountId — EXIT_FATAL (code=3, reason=$($localState.last_exit_reason)) — intervention humaine requise, ignoré."
+                Write-Output "[WAKE] bot=$accountId - EXIT_FATAL (code=3, reason=$($localState.last_exit_reason)) - intervention humaine requise, ignore."
                 continue
             }
         } catch {
-            Write-Warning "[WAKE] bot=$accountId — impossible de lire $stateFile : $_ — on continue."
+            Write-Warning "[WAKE] bot=$accountId - impossible de lire $stateFile : $_ - on continue."
         }
     }
 
-    # — Vérification statut NSSM —
+    # - Verification statut NSSM -
     $svcName   = "$ServicePrefix$accountId"
     $svcStatus = & nssm status $svcName 2>$null
     if ($LASTEXITCODE -ne 0) {
-        Write-Warning "[WAKE] bot=$accountId — service $svcName introuvable (nssm code=$LASTEXITCODE), ignoré."
+        Write-Warning "[WAKE] bot=$accountId - service $svcName introuvable (nssm code=$LASTEXITCODE), ignore."
         continue
     }
     if ($svcStatus -match "^SERVICE_RUNNING") {
-        Write-Output "[WAKE] bot=$accountId — service déjà actif, ignoré."
+        Write-Output "[WAKE] bot=$accountId - service deja actif, ignore."
         continue
     }
 
-    # — Démarrage —
-    Write-Output "[WAKE] bot=$accountId — cooldown expiré ($($status.cooldown_until_ts)) + service arrêté → nssm start $svcName"
+    # - Demarrage -
+    Write-Output "[WAKE] bot=$accountId - cooldown expire ($($status.cooldown_until_ts)) + service arrete -> nssm start $svcName"
     try {
         $result = & nssm start $svcName 2>&1
-        Write-Output "[WAKE] NSSM start $svcName → $result"
+        Write-Output "[WAKE] NSSM start $svcName -> $result"
     } catch {
-        Write-Warning "[WAKE] Impossible de démarrer $svcName : $_"
+        Write-Warning "[WAKE] Impossible de demarrer $svcName : $_"
     }
 }
 
-Write-Output "[WAKE] Terminé — $processed compte(s) traité(s)."
+Write-Output "[WAKE] Termine - $processed compte(s) traite(s)."

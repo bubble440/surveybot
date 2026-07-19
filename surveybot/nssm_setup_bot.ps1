@@ -1,33 +1,33 @@
 # nssm_setup_bot.ps1
-# Configure un service NSSM par bot défini dans accounts.json.
-# Idempotent : peut être relancé pour mettre à jour des services existants.
+# Configure un service NSSM par bot defini dans accounts.json.
+# Idempotent : peut etre relance pour mettre a jour des services existants.
 #
 # Usage :
 #   .\nssm_setup_bot.ps1                           # tous les comptes
-#   .\nssm_setup_bot.ps1 -AccountId "bot1"         # un seul compte (ajout / mise à jour)
+#   .\nssm_setup_bot.ps1 -AccountId "bot1"         # un seul compte (ajout / mise a jour)
 #   .\nssm_setup_bot.ps1 -AccountsFile "D:\surveybot\accounts.json"
 #
-# Prérequis : nssm.exe dans le PATH, droits administrateur.
-# À exécuter depuis C:\surveybot\ ou avec -InstallDir pointant vers le bon dossier.
+# Prerequis : nssm.exe dans le PATH, droits administrateur.
+# A executer depuis C:\surveybot\ ou avec -InstallDir pointant vers le bon dossier.
 
 param(
     [string]$AccountId       = "",               # filtre optionnel : traiter un seul compte
     [string]$InstallDir      = "C:\surveybot",
     [string]$PythonRelPath   = "venv\Scripts\python.exe",
     [string]$MainRelPath     = "code\main.py",
-    [string]$AccountsFile    = "",               # défaut : $InstallDir\accounts.json
-    [string]$LogDir          = "",               # défaut : $InstallDir\logs
+    [string]$AccountsFile    = "",               # defaut : $InstallDir\accounts.json
+    [string]$LogDir          = "",               # defaut : $InstallDir\logs
     [int]   $RestartDelaySec = 30,
     [int]   $MAX_ACCOUNTS    = 50               # garde-fou : abandon si > N comptes
 )
 
-# Valeurs dérivées
+# Valeurs derivees
 if (-not $AccountsFile) { $AccountsFile = Join-Path $InstallDir "accounts.json" }
 if (-not $LogDir)       { $LogDir       = Join-Path $InstallDir "logs" }
 $pythonPath = Join-Path $InstallDir $PythonRelPath
 $mainPath   = Join-Path $InstallDir $MainRelPath
 
-# ── Pré-vérifications ────────────────────────────────────────────────────────
+# -- Pre-verifications --------------------------------------------------------
 
 if (-not (Test-Path $pythonPath)) {
     Write-Error "python.exe introuvable : $pythonPath"
@@ -48,13 +48,13 @@ if (-not (Test-Path $LogDir)) {
     New-Item -ItemType Directory -Path $LogDir -Force | Out-Null
 }
 
-# ── Lecture accounts.json ────────────────────────────────────────────────────
+# -- Lecture accounts.json ----------------------------------------------------
 
 $raw      = Get-Content -Path $AccountsFile -Raw -Encoding UTF8
 $accounts = $raw | ConvertFrom-Json
 
 if (-not $accounts -or @($accounts).Count -eq 0) {
-    Write-Warning "accounts.json est vide — aucun service à configurer."
+    Write-Warning "accounts.json est vide - aucun service a configurer."
     exit 0
 }
 
@@ -62,14 +62,14 @@ if (-not $accounts -or @($accounts).Count -eq 0) {
 if ($AccountId) {
     $accounts = @($accounts | Where-Object { $_.ACCOUNT_ID -eq $AccountId })
     if ($accounts.Count -eq 0) {
-        Write-Error "Aucun compte trouvé pour AccountId='$AccountId' dans $AccountsFile"
+        Write-Error "Aucun compte trouve pour AccountId='$AccountId' dans $AccountsFile"
         exit 1
     }
 }
 
-Write-Output "=== nssm_setup_bot.ps1 — $(@($accounts).Count) compte(s) à traiter ==="
+Write-Output "=== nssm_setup_bot.ps1 - $(@($accounts).Count) compte(s) a traiter ==="
 
-# ── Boucle principale ────────────────────────────────────────────────────────
+# -- Boucle principale --------------------------------------------------------
 
 $processed  = 0
 $accountIds = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
@@ -77,7 +77,7 @@ $accountIds = [System.Collections.Generic.HashSet[string]]::new([System.StringCo
 foreach ($account in $accounts) {
 
     if ($processed -ge $MAX_ACCOUNTS) {
-        Write-Warning "[GUARD] MAX_ACCOUNTS=$MAX_ACCOUNTS atteint — comptes restants ignorés."
+        Write-Warning "[GUARD] MAX_ACCOUNTS=$MAX_ACCOUNTS atteint - comptes restants ignores."
         break
     }
 
@@ -89,7 +89,7 @@ foreach ($account in $accounts) {
     $proxyUser = "$($account.PROXY_USER)".Trim()
     $proxyPass = "$($account.PROXY_PASS)".Trim()
 
-    # profile_dir ou CHROME_PROFILE_DIR (alias historique) — même champ logique
+    # profile_dir ou CHROME_PROFILE_DIR (alias historique) - meme champ logique
     $profileDir = ""
     if ($account.PSObject.Properties.Name -contains "profile_dir") {
         $profileDir = "$($account.profile_dir)".Trim()
@@ -99,20 +99,20 @@ foreach ($account in $accounts) {
     }
 
     if (-not $acctId) {
-        Write-Warning "[SKIP] Entrée sans ACCOUNT_ID — ignorée."
+        Write-Warning "[SKIP] Entree sans ACCOUNT_ID - ignoree."
         continue
     }
 
-    # Ajouté AVANT la vérification profile_dir : un compte présent dans accounts.json
-    # mais skippé ci-dessous ne doit jamais être signalé comme service NSSM "orphelin"
-    # dans la détection en fin de script — le compte existe, il manque juste son dossier.
+    # Ajoute AVANT la verification profile_dir : un compte present dans accounts.json
+    # mais skippe ci-dessous ne doit jamais etre signale comme service NSSM "orphelin"
+    # dans la detection en fin de script - le compte existe, il manque juste son dossier.
     [void]$accountIds.Add($acctId)
 
-    # Vérification du dossier profil Chrome — même garde-fou que l'ancien launch_all.ps1.
-    # Sans ça, NSSM (via SERVICE_AUTO_START) tenterait de démarrer un bot dont le profil
-    # n'existe pas, avec un crash immédiat au lieu d'un skip propre et loggé.
+    # Verification du dossier profil Chrome - meme garde-fou que l'ancien launch_all.ps1.
+    # Sans ca, NSSM (via SERVICE_AUTO_START) tenterait de demarrer un bot dont le profil
+    # n'existe pas, avec un crash immediat au lieu d'un skip propre et logge.
     if (-not $profileDir -or -not (Test-Path $profileDir)) {
-        Write-Warning "[SKIP] $acctId — profile_dir introuvable ou vide : '$profileDir' — service NSSM non configuré."
+        Write-Warning "[SKIP] $acctId - profile_dir introuvable ou vide : '$profileDir' - service NSSM non configure."
         continue
     }
 
@@ -124,31 +124,31 @@ foreach ($account in $accounts) {
 
     Write-Output ""
     Write-Output "--- $svcName ---"
-    # PASSWORD délibérément absent du log (règle projet : ne jamais afficher les mots de passe)
+    # PASSWORD deliberement absent du log (regle projet : ne jamais afficher les mots de passe)
     Write-Output "    ACCOUNT_ID=$acctId  EMAIL=$email  PROXY_URL=$proxyUrl  CHROME_PROFILE_DIR=$profileDir"
 
-    # ── Installation ou mise à jour ───────────────────────────────────────────
+    # -- Installation ou mise a jour -------------------------------------------
     & nssm status $svcName 2>$null | Out-Null
     if ($LASTEXITCODE -ne 0) {
         Write-Output "    [NSSM] Installation du service..."
         & nssm install $svcName $pythonPath $MainRelPath
     } else {
-        Write-Output "    [NSSM] Service existant — mise à jour de la config."
+        Write-Output "    [NSSM] Service existant - mise a jour de la config."
         & nssm set $svcName Application     $pythonPath
         & nssm set $svcName AppParameters   $MainRelPath
     }
 
-    # ── Paramètres de base ────────────────────────────────────────────────────
-    # AppDirectory = racine (InstallDir), JAMAIS code\ — l'auto-update (update_checker.py)
+    # -- Parametres de base ----------------------------------------------------
+    # AppDirectory = racine (InstallDir), JAMAIS code\ - l'auto-update (update_checker.py)
     # renomme code\ pendant que le process tourne ; si AppDirectory pointait dedans,
     # Windows refuserait le renommage tant que le service est actif.
     & nssm set $svcName AppDirectory  $InstallDir
 
-    # ── Variables d'environnement PAR_BOT ─────────────────────────────────────
-    # Aligné sur launch_all.ps1 : même jeu de variables, mêmes valeurs par défaut
+    # -- Variables d'environnement PAR_BOT -------------------------------------
+    # Aligne sur launch_all.ps1 : meme jeu de variables, memes valeurs par defaut
     # pour GEO_LAT/GEO_LON/SURVEY_LANG/SURVEY_TZ (absents de accounts.json car non
-    # acceptés par import_accounts.py — toujours injectés avec les défauts ci-dessous).
-    # CHROME_PROFILE_DIR est le nom normalisé côté env (alias de profile_dir).
+    # acceptes par import_accounts.py - toujours injectes avec les defauts ci-dessous).
+    # CHROME_PROFILE_DIR est le nom normalise cote env (alias de profile_dir).
     & nssm set $svcName AppEnvironmentExtra `
         "ACCOUNT_ID=$acctId" `
         "EMAIL=$email" `
@@ -165,54 +165,54 @@ foreach ($account in $accounts) {
         "PYTHONIOENCODING=utf-8" `
         "PYTHONUTF8=1"
 
-    # ── Logs ──────────────────────────────────────────────────────────────────
+    # -- Logs ------------------------------------------------------------------
     & nssm set $svcName AppStdout        $logStdout
     & nssm set $svcName AppStderr        $logStderr
     & nssm set $svcName AppRotateFiles   1
     & nssm set $svcName AppRotateSeconds 86400    # rotation quotidienne
     & nssm set $svcName AppRotateBytes   10485760 # 10 Mo max par fichier
 
-    # ── Méthodes d'arrêt gracieux ─────────────────────────────────────────────
+    # -- Methodes d'arret gracieux ---------------------------------------------
     #
-    # Sur Windows, seule la méthode Console (GenerateConsoleCtrlEvent CTRL_BREAK_EVENT)
-    # est reçue par Python et déclenche notre handler SIGBREAK → séquence de fermeture
-    # propre (record_exit, Postgres, Chrome). Les méthodes Window (WM_CLOSE) et Thread
-    # (PostQuitMessage) sont sans effet sur un process console Python — on les saute
-    # (AppStopMethodSkip 6 = bitmask : Window=2 + Thread=4) pour éviter ~3 s d'attente
-    # inutile avant que NSSM ne passe directement à TerminateProcess.
-    # AppStopMethodConsole est le seul timeout qui compte : c'est la fenêtre accordée
-    # à la séquence de fermeture propre (Postgres + Chrome + record_exit). 30 s est
-    # une marge confortable ; TerminateProcess ne s'enclenche qu'au-delà.
+    # Sur Windows, seule la methode Console (GenerateConsoleCtrlEvent CTRL_BREAK_EVENT)
+    # est recue par Python et declenche notre handler SIGBREAK -> sequence de fermeture
+    # propre (record_exit, Postgres, Chrome). Les methodes Window (WM_CLOSE) et Thread
+    # (PostQuitMessage) sont sans effet sur un process console Python - on les saute
+    # (AppStopMethodSkip 6 = bitmask : Window=2 + Thread=4) pour eviter ~3 s d'attente
+    # inutile avant que NSSM ne passe directement a TerminateProcess.
+    # AppStopMethodConsole est le seul timeout qui compte : c'est la fenetre accordee
+    # a la sequence de fermeture propre (Postgres + Chrome + record_exit). 30 s est
+    # une marge confortable ; TerminateProcess ne s'enclenche qu'au-dela.
     #
     & nssm set $svcName AppStopMethodSkip    6      # skip Window (2) + Thread (4)
     & nssm set $svcName AppStopMethodConsole 30000  # 30 s pour la fermeture propre
 
-    # ── Politique de redémarrage selon le code de sortie ──────────────────────
+    # -- Politique de redemarrage selon le code de sortie ----------------------
     #
-    # EXIT_VOLUNTARY    = 0  → ne pas redémarrer (SIGINT/SIGBREAK propre, target journalier…)
-    # EXIT_CRASH        = 1  → redémarrer (crash Python ou sortie inattendue)
-    # EXIT_SOFT_RESTART = 2  → redémarrer (idle, trop d'erreurs, runtime_limit…)
-    # EXIT_FATAL        = 3  → ne pas redémarrer (seuil de crash-loop dépassé)
-    # Tout autre code   → redémarrer par défaut (comportement NSSM sûr)
+    # EXIT_VOLUNTARY    = 0  -> ne pas redemarrer (SIGINT/SIGBREAK propre, target journalier...)
+    # EXIT_CRASH        = 1  -> redemarrer (crash Python ou sortie inattendue)
+    # EXIT_SOFT_RESTART = 2  -> redemarrer (idle, trop d'erreurs, runtime_limit...)
+    # EXIT_FATAL        = 3  -> ne pas redemarrer (seuil de crash-loop depasse)
+    # Tout autre code   -> redemarrer par defaut (comportement NSSM sur)
     #
     & nssm set $svcName AppExit Default  Restart
     & nssm set $svcName AppExit 0        Exit      # EXIT_VOLUNTARY : pas de restart
     & nssm set $svcName AppExit 3        Exit      # EXIT_FATAL     : pas de restart
     & nssm set $svcName AppRestartDelay  ($RestartDelaySec * 1000)   # en millisecondes
 
-    # ── Démarrage automatique au boot ─────────────────────────────────────────
+    # -- Demarrage automatique au boot -----------------------------------------
     & nssm set $svcName Start SERVICE_AUTO_START
 
-    Write-Output "    [OK] $svcName configuré."
+    Write-Output "    [OK] $svcName configure."
 }
 
-# ── Détection des services NSSM orphelins ────────────────────────────────────
-# Un service surveybot_* sans entrée correspondante dans accounts.json est signalé
-# clairement mais jamais supprimé automatiquement — une désinstallation est une
-# décision humaine (nssm remove <nom> confirm).
+# -- Detection des services NSSM orphelins ------------------------------------
+# Un service surveybot_* sans entree correspondante dans accounts.json est signale
+# clairement mais jamais supprime automatiquement - une desinstallation est une
+# decision humaine (nssm remove <nom> confirm).
 
 Write-Output ""
-Write-Output "=== Vérification des services orphelins (préfixe surveybot_) ==="
+Write-Output "=== Verification des services orphelins (prefixe surveybot_) ==="
 
 try {
     $existingSvcs = @(Get-Service -Name "surveybot_*" -ErrorAction SilentlyContinue)
@@ -222,21 +222,21 @@ try {
     })
 
     if ($orphans.Count -gt 0) {
-        Write-Warning "Services sans compte dans accounts.json (vérifier manuellement) :"
+        Write-Warning "Services sans compte dans accounts.json (verifier manuellement) :"
         foreach ($o in $orphans) {
-            Write-Warning "  → $($o.Name)  [Status=$($o.Status)]  — pour supprimer : nssm remove $($o.Name) confirm"
+            Write-Warning "  -> $($o.Name)  [Status=$($o.Status)]  - pour supprimer : nssm remove $($o.Name) confirm"
         }
     } else {
-        Write-Output "Aucun service orphelin détecté."
+        Write-Output "Aucun service orphelin detecte."
     }
 } catch {
     Write-Warning "Impossible de lister les services Windows : $_"
 }
 
 Write-Output ""
-Write-Output "=== nssm_setup_bot.ps1 terminé ($processed compte(s) traité(s)) ==="
-Write-Output "  Démarrer tous  : Get-Service surveybot_* | Start-Service"
+Write-Output "=== nssm_setup_bot.ps1 termine ($processed compte(s) traite(s)) ==="
+Write-Output "  Demarrer tous  : Get-Service surveybot_* | Start-Service"
 Write-Output "  Statut tous    : Get-Service surveybot_* | Format-Table Name,Status -AutoSize"
 Write-Output ""
-Write-Output "Pour installer la tâche planifiée de détection zombie :"
+Write-Output "Pour installer la tache planifiee de detection zombie :"
 Write-Output "  Voir le header de check_zombie_bots.ps1 (Register-ScheduledTask)"

@@ -13,7 +13,7 @@
 #
 # IMPORTANT : le processus est lance avec WorkingDirectory = la racine (PSScriptRoot),
 # jamais code\. Sur Windows, un dossier qui est le repertoire courant d'un process ne
-# peut pas etre renomme/supprime — si le cwd etait code\, l'auto-update ne pourrait
+# peut pas etre renomme/supprime - si le cwd etait code\, l'auto-update ne pourrait
 # jamais swapper ce dossier tant que le bot tourne.
 
 param(
@@ -48,7 +48,7 @@ function Get-PidPath {
 
 function Test-ProcessAlive {
     param([int]$ProcessId)
-    # tasklist ne leve pas d'exception si le PID est absent — on parse la sortie
+    # tasklist ne leve pas d'exception si le PID est absent - on parse la sortie
     $result = & tasklist /FI "PID eq $ProcessId" /NH 2>$null
     return ($result -match "\b$ProcessId\b")
 }
@@ -61,12 +61,12 @@ function Start-Bot {
 
     # Verification du dossier profil Chrome
     if (-not (Test-Path $profileDir)) {
-        Write-Log "SKIP $id — profile_dir introuvable : $profileDir"
+        Write-Log "SKIP $id - profile_dir introuvable : $profileDir"
         return
     }
 
     # Variables d'environnement passees au processus
-    # LICENSE_KEY et DATABASE_URL sont embarquees dans le compile — absentes ici.
+    # LICENSE_KEY et DATABASE_URL sont embarquees dans le compile - absentes ici.
     $env_vars = @{
         "ACCOUNT_ID"        = $id
         "EMAIL"             = $Bot.email
@@ -95,7 +95,7 @@ function Start-Bot {
     $logFile = Join-Path $LogDir "bot_$id.log"
 
     # Rotation : archive le log du cycle precedent avant d'en demarrer un nouveau.
-    # On conserve toujours le cycle courant + le cycle precedent (.old) — suffisant
+    # On conserve toujours le cycle courant + le cycle precedent (.old) - suffisant
     # pour diagnostiquer un crash sans laisser le fichier grossir indefiniment.
     $logOld = "$logFile.old"
     try {
@@ -103,13 +103,13 @@ function Start-Bot {
             Move-Item -Path $logFile -Destination $logOld -Force
         }
     } catch {
-        Write-Log "WARN $id — rotation log echouee : $_"
+        Write-Log "WARN $id - rotation log echouee : $_"
     }
 
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName               = $PythonExe
     $psi.Arguments              = "`"$MainScript`""
-    # cwd = racine, jamais code\ — cf. note en tete de fichier (renommage code\ par l'update).
+    # cwd = racine, jamais code\ - cf. note en tete de fichier (renommage code\ par l'update).
     $psi.WorkingDirectory        = $PSScriptRoot
     $psi.UseShellExecute        = $false
     $psi.RedirectStandardOutput = $true
@@ -136,11 +136,11 @@ function Start-Bot {
         }
     } | Out-Null
 
-    # Ecriture du PID (le bot ecrit aussi le sien via write_pid_file — double securite)
+    # Ecriture du PID (le bot ecrit aussi le sien via write_pid_file - double securite)
     $pidPath = Get-PidPath $id
     $process.Id | Out-File -FilePath $pidPath -Encoding ASCII -NoNewline
 
-    Write-Log "START $id — PID=$($process.Id) log=$logFile"
+    Write-Log "START $id - PID=$($process.Id) log=$logFile"
 }
 
 # ---------------------------------------------------------------------------
@@ -158,24 +158,24 @@ foreach ($dir in @($PidsDir, $LogDir)) {
 # ---------------------------------------------------------------------------
 
 if (-not (Test-Path $AccountsFile)) {
-    Write-Log "ERREUR — accounts.json introuvable : $AccountsFile"
+    Write-Log "ERREUR - accounts.json introuvable : $AccountsFile"
     exit 1
 }
 
 if (-not (Test-Path $PythonExe)) {
-    Write-Log "ERREUR — python.exe introuvable : $PythonExe"
+    Write-Log "ERREUR - python.exe introuvable : $PythonExe"
     exit 1
 }
 
 if (-not (Test-Path $MainScript)) {
-    Write-Log "ERREUR — code\main.py introuvable : $MainScript"
+    Write-Log "ERREUR - code\main.py introuvable : $MainScript"
     exit 1
 }
 
 $raw      = Get-Content -Path $AccountsFile -Raw -Encoding UTF8
 $accounts = $raw | ConvertFrom-Json
 
-Write-Log "=== launch_all.ps1 demarrage — $($accounts.Count) compte(s) configure(s) ==="
+Write-Log "=== launch_all.ps1 demarrage - $($accounts.Count) compte(s) configure(s) ==="
 
 # ---------------------------------------------------------------------------
 # Boucle principale
@@ -195,16 +195,16 @@ foreach ($account in $accounts) {
 
         if ([int]::TryParse($pidRaw, [ref]$pidInt) -and $pidInt -gt 0) {
             if (Test-ProcessAlive $pidInt) {
-                Write-Log "SKIP $id — deja actif (PID=$pidInt)"
+                Write-Log "SKIP $id - deja actif (PID=$pidInt)"
                 continue
             } else {
                 # PID stale : processus mort sans avoir supprime son PID
-                Write-Log "STALE $id — PID=$pidInt mort, nettoyage + relance"
+                Write-Log "STALE $id - PID=$pidInt mort, nettoyage + relance"
                 Remove-Item -Path $pidPath -Force
             }
         } else {
             # Fichier PID corrompu
-            Write-Log "CORRUPT $id — fichier PID illisible, nettoyage + relance"
+            Write-Log "CORRUPT $id - fichier PID illisible, nettoyage + relance"
             Remove-Item -Path $pidPath -Force
         }
     }
@@ -213,7 +213,7 @@ foreach ($account in $accounts) {
     try {
         Start-Bot $bot
     } catch {
-        Write-Log "ERREUR $id — echec lancement : $_"
+        Write-Log "ERREUR $id - echec lancement : $_"
     }
 }
 
