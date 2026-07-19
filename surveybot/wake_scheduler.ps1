@@ -8,7 +8,7 @@
 #   wake_scheduler.ps1     → restart les bots volontairement arrêtés après cooldown expiré
 #
 # Règles :
-#   - Cooldown lu en base Postgres via le mode CLI --query-cooldown du binaire surveybot.exe.
+#   - Cooldown lu en base Postgres via le mode CLI --query-cooldown de main.py (python.exe).
 #   - EXIT_FATAL (last_exit_code = 3) : jamais relancé automatiquement — intervention humaine.
 #   - Service NSSM déjà en cours d'exécution : ignoré.
 #
@@ -29,7 +29,8 @@ param(
     [string]$AccountsFile  = "$PSScriptRoot\accounts.json",
     [string]$PidsDir       = "C:\surveybot\pids",
     [string]$ServicePrefix = "surveybot_",
-    [string]$ExePath       = "$PSScriptRoot\surveybot.exe"
+    [string]$PythonExe     = "$PSScriptRoot\venv\Scripts\python.exe",
+    [string]$MainScript    = "$PSScriptRoot\code\main.py"
 )
 
 $MAX_ACCOUNTS = 200   # garde-fou boucle : abort si accounts.json est anormalement grand
@@ -68,18 +69,23 @@ if ($accountIds.Count -gt $MAX_ACCOUNTS) {
 
 Write-Output "[WAKE] $($accountIds.Count) compte(s) à vérifier."
 
-# ── Interrogation Postgres via le mode CLI du binaire compilé ─────────────────
-# surveybot.exe --query-cooldown account1 account2 ...
+# ── Interrogation Postgres via le mode CLI de main.py ─────────────────────────
+# python.exe code\main.py --query-cooldown account1 account2 ...
 # Retourne un JSON sur stdout ; exit 0 dans tous les cas.
 
-if (-not (Test-Path $ExePath)) {
-    Write-Warning "[WAKE] Binaire introuvable : $ExePath"
+if (-not (Test-Path $PythonExe)) {
+    Write-Warning "[WAKE] python.exe introuvable : $PythonExe"
+    exit 1
+}
+
+if (-not (Test-Path $MainScript)) {
+    Write-Warning "[WAKE] code\main.py introuvable : $MainScript"
     exit 1
 }
 
 try {
     # Passe tous les account_ids d'un coup : une seule connexion Postgres, sortie rapide.
-    $jsonOut = & $ExePath --query-cooldown @accountIds 2>$null
+    $jsonOut = & $PythonExe $MainScript --query-cooldown @accountIds 2>$null
     if (-not $jsonOut) {
         Write-Warning "[WAKE] Aucune sortie du binaire (--query-cooldown) — abandon."
         exit 1

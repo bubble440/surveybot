@@ -141,6 +141,7 @@ try:
         _extract_researchnow_autoscreener_radio_blocks,
         _extract_alchemer_rank_dragdrop_block,
         _extract_alchemer_sg_table_checkbox_matrix_block,
+        _extract_image_only_choice_checkbox_blocks,
     )
 
     # Registre et utilitaires
@@ -257,6 +258,7 @@ except ImportError:
         _extract_researchnow_autoscreener_radio_blocks,
         _extract_alchemer_rank_dragdrop_block,
         _extract_alchemer_sg_table_checkbox_matrix_block,
+        _extract_image_only_choice_checkbox_blocks,
     )
 
 
@@ -1044,6 +1046,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
     table_matrix_row_names: Set[str] = set()
     table_matrix_sge_prefixes: Set[str] = set()
     table_matrix_sge_exact_names: Set[str] = set()
+    image_only_choice_names: Set[str] = set()
     clear_registry()
 
     # --- 0-pre) Nfield dragndrop (metaType=dragndrop, div._dragndrop + hidden mrQuestionTable) ---
@@ -1816,6 +1819,28 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
     except Exception:
         pass
 
+    # --- 0i-decies) Choix multiple iconographique (checkbox + img[alt] sans texte) ---
+    # Guard DOM strict : groupe de ≥2 input[type=checkbox][name] partageant le même name,
+    # dont CHAQUE option n'expose aucun texte visible hors de l'attribut alt d'une <img>.
+    # Sans ce patch : _find_associated_label() renvoie "" pour ces options (aucune lecture
+    # de img[alt]) → le pipeline générique (boucle groups ci-dessous) rejette silencieusement
+    # tous les inputs du groupe (options=[] pour un groupe multi-éléments) → 0 bloc exploitable.
+    # image_only_choice_names exclut ces groupes du pipeline générique pour éviter un doublon vide.
+    try:
+        img_choice_blocks = _extract_image_only_choice_checkbox_blocks(driver, frame_chain)
+        for _blk in img_choice_blocks:
+            if not isinstance(_blk, dict):
+                continue
+            question_blocks.append(_blk)
+            _ctx = (_blk.get("context") or {}) if isinstance(_blk.get("context"), dict) else {}
+            _group_key = _norm_lc(_ctx.get("group_key") or "")
+            if _group_key.startswith("checkbox:image_alt:"):
+                _nm = _group_key.split("checkbox:image_alt:", 1)[1].strip()
+                if _nm:
+                    image_only_choice_names.add(_nm)
+    except Exception:
+        pass
+
     # Pattern spécifique
     try:
         choice_els = driver.query_selector_all("input[type='radio'], input[type='checkbox'], [role='radio']:not(svg), [role='checkbox']:not(svg)")
@@ -2007,6 +2032,8 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             if any(raw_name_key_lc.startswith(f"{prefix}-") for prefix in table_matrix_sge_prefixes):
                 continue
             if raw_name_key_lc in table_matrix_sge_exact_names:
+                continue
+            if itype == "checkbox" and raw_name_key_lc in image_only_choice_names:
                 continue
             # Savanta JQM fieldset pattern: forcer itype="checkbox" pour que
             # les radio noneof soient fusionnés avec les checkboxes du même fieldset.

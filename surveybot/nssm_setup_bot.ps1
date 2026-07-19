@@ -13,7 +13,8 @@
 param(
     [string]$AccountId       = "",               # filtre optionnel : traiter un seul compte
     [string]$InstallDir      = "C:\surveybot",
-    [string]$ExeName         = "surveybot.exe",
+    [string]$PythonRelPath   = "venv\Scripts\python.exe",
+    [string]$MainRelPath     = "code\main.py",
     [string]$AccountsFile    = "",               # défaut : $InstallDir\accounts.json
     [string]$LogDir          = "",               # défaut : $InstallDir\logs
     [int]   $RestartDelaySec = 30,
@@ -23,12 +24,18 @@ param(
 # Valeurs dérivées
 if (-not $AccountsFile) { $AccountsFile = Join-Path $InstallDir "accounts.json" }
 if (-not $LogDir)       { $LogDir       = Join-Path $InstallDir "logs" }
-$exePath = Join-Path $InstallDir $ExeName
+$pythonPath = Join-Path $InstallDir $PythonRelPath
+$mainPath   = Join-Path $InstallDir $MainRelPath
 
 # ── Pré-vérifications ────────────────────────────────────────────────────────
 
-if (-not (Test-Path $exePath)) {
-    Write-Error "Exécutable introuvable : $exePath"
+if (-not (Test-Path $pythonPath)) {
+    Write-Error "python.exe introuvable : $pythonPath"
+    exit 1
+}
+
+if (-not (Test-Path $mainPath)) {
+    Write-Error "code\main.py introuvable : $mainPath"
     exit 1
 }
 
@@ -124,14 +131,18 @@ foreach ($account in $accounts) {
     & nssm status $svcName 2>$null | Out-Null
     if ($LASTEXITCODE -ne 0) {
         Write-Output "    [NSSM] Installation du service..."
-        & nssm install $svcName $exePath
+        & nssm install $svcName $pythonPath $MainRelPath
     } else {
         Write-Output "    [NSSM] Service existant — mise à jour de la config."
+        & nssm set $svcName Application     $pythonPath
+        & nssm set $svcName AppParameters   $MainRelPath
     }
 
     # ── Paramètres de base ────────────────────────────────────────────────────
+    # AppDirectory = racine (InstallDir), JAMAIS code\ — l'auto-update (update_checker.py)
+    # renomme code\ pendant que le process tourne ; si AppDirectory pointait dedans,
+    # Windows refuserait le renommage tant que le service est actif.
     & nssm set $svcName AppDirectory  $InstallDir
-    & nssm set $svcName AppParameters ""
 
     # ── Variables d'environnement PAR_BOT ─────────────────────────────────────
     # Aligné sur launch_all.ps1 : même jeu de variables, mêmes valeurs par défaut

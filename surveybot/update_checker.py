@@ -1,30 +1,45 @@
 """
 update_checker.py
-Auto-update du binaire PyInstaller depuis une URL distante (Option A2).
+Auto-update du CODE SOURCE (dossier code\\) depuis une archive ZIP distante.
 
-Actif uniquement si UPDATE_CHECK_ENABLED=1 et UPDATE_MANIFEST_URL défini.
-Point d'appel : run_main_loop() dans launch.py, entre deux cycles survey.
+CHANGEMENT DE MÉCANISME (phase déploiement interne, bare metal) :
+Le bot ne tourne plus depuis un .exe Nuitka mais en Python interprété
+(python.exe code\\main.py). L'update ne remplace donc plus un binaire unique
+mais l'intégralité du dossier code\\ contenant les sources.
+
+Layout attendu sur chaque machine (voir launch_all.ps1 / nssm_setup_bot.ps1) :
+  C:\\surveybot\\                  racine persistante — jamais touchée par l'update
+      accounts.json, receiver_config.json, profiles\\, pids\\, logs\\, venv\\
+      code\\                       <- ce dossier est intégralement remplacé
+          main.py, launch.py, update_checker.py, global_config.py,
+          _license_config.py, Survey\\, Management\\, preselection\\, captcha\\, ...
+
+Actif uniquement si UPDATE_CHECK_ENABLED=1 et UPDATE_MANIFEST_URL défini (inchangé
+par rapport à l'ancienne version).
 
 Logique :
-  1. Télécharger UPDATE_MANIFEST_URL (JSON) — contient version, url, sha256.
-  2. Comparer avec BOT_VERSION (embarquée dans le compilé via _license_config).
+  1. Télécharger UPDATE_MANIFEST_URL (JSON) — contient version, url (zip), sha256.
+  2. Comparer avec BOT_VERSION (embarquée dans _license_config.py, dans code\\ courant).
   3. Si identiques -> rien à faire, on continue.
-  4. Si différents  -> télécharger le nouveau .exe, vérifier SHA256,
-                       remplacer l'exécutable courant, supprimer le PID,
-                       os.execv() pour relancer avec le nouveau binaire.
-  5. Si inaccessible ou hash invalide -> log + ignorer, réessayer au prochain cycle.
+  4. Si différents  -> télécharger le zip, vérifier SHA256, extraire dans un dossier
+                       temporaire, swap atomique du dossier code\\ (rename code -> code.old,
+                       rename staging -> code), supprimer le PID, os.execv() pour relancer.
+  5. Si inaccessible, hash invalide, ou zip incomplet -> log + ignorer, réessaie au
+     prochain cycle. Le dossier code\\ courant n'est JAMAIS touché tant que la
+     nouvelle version n'est pas intégralement extraite et validée sur le disque.
 
-Format du manifeste (JSON hébergé sur R2, GitHub Releases, ou tout HTTP public) :
+Format du manifeste (JSON hébergé sur R2, GitHub Releases, ou tout HTTP public) —
+inchangé dans sa forme, seul le contenu de "url" change (zip au lieu d'exe) :
   {
     "version": "1.2.3",
-    "url": "https://your-bucket.r2.dev/surveybot-1.2.3.exe",
+    "url": "https://your-bucket.r2.dev/surveybot-code-1.2.3.zip",
     "sha256": "abcdef1234..."
   }
 
-Variables d'environnement :
+Variables d'environnement (inchangées) :
   UPDATE_CHECK_ENABLED  = "1"           — active la vérification
   UPDATE_MANIFEST_URL   = "https://..." — URL du manifeste JSON
-  BOT_VERSION           = "1.0.0"       — version courante (embarquée dans le compilé)
+  BOT_VERSION           = "1.0.0"       — version courante (embarquée dans _license_config.py)
 
 Note : cette fonction est un no-op complet si UPDATE_CHECK_ENABLED != "1"
 ou si le manifeste est inaccessible. Elle ne bloque jamais le bot en cas d'échec.
@@ -35,19 +50,21 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
+import shutil
 import sys
 import tempfile
 import urllib.request
 import urllib.error
 import json
+import zipfile
 
 log = logging.getLogger("update_checker")
 
 _HTTP_TIMEOUT = 15  # secondes
+_MAX_ZIP_ENTRIES = 20000  # garde-fou : borne la taille d'archive traitée
 
-# UPDATE_CHECK_ENABLED / UPDATE_MANIFEST_URL sont des variables GLOBAL_CONFIG : en
-# build compilé (Nuitka), elles proviennent exclusivement de global_config.py, jamais
-# de l'environnement du process (cf. config.py). En dev/attach (global_config.py
+# UPDATE_CHECK_ENABLED / UPDATE_MANIFEST_URL sont des variables GLOBAL_CONFIG : elles
+# proviennent de global_config.py (dossier code\\ courant). En dev/attach (global_config.py
 # absent du projet), fallback os.getenv.
 try:
     from global_config import UPDATE_CHECK_ENABLED, UPDATE_MANIFEST_URL  # type: ignore
@@ -57,13 +74,18 @@ except ImportError:
 
 
 def _current_version() -> str:
-    """Version courante du binaire — lue depuis _license_config ou BOT_VERSION env."""
+    """Version courante du code — lue depuis _license_config ou BOT_VERSION env."""
     try:
         from _license_config import BOT_VERSION  # type: ignore
         return (BOT_VERSION or "").strip()
     except ImportError:
         pass
     return os.getenv("BOT_VERSION", "").strip()
+
+
+def _code_dir() -> str:
+    """Dossier code\\ courant — celui qui contient CE fichier (chemin absolu)."""
+    return os.path.dirname(os.path.abspath(__file__))
 
 
 def _fetch_manifest(url: str) -> dict:
@@ -81,8 +103,8 @@ def _sha256_file(path: str) -> str:
     return h.hexdigest()
 
 
-def _download_exe(url: str, dest: str) -> None:
-    """Télécharge le nouveau binaire vers dest."""
+def _download_zip(url: str, dest: str) -> None:
+    """Télécharge le zip du nouveau code vers dest."""
     req = urllib.request.Request(url, headers={"User-Agent": "SurveyBot-Updater/1.0"})
     with urllib.request.urlopen(req, timeout=_HTTP_TIMEOUT) as resp, \
          open(dest, "wb") as out:
@@ -93,49 +115,109 @@ def _download_exe(url: str, dest: str) -> None:
             out.write(chunk)
 
 
-def _replace_exe_and_restart(new_exe: str, account_id: str) -> None:
+def _extract_zip_flat(zip_path: str, dest_dir: str) -> None:
     """
-    Remplace le binaire courant par new_exe et relance le processus.
-    Sur Windows, on ne peut pas écraser un .exe en cours d'exécution directement.
-    Stratégie : renommer l'ancien en .old, copier le nouveau à sa place, relancer.
-    L'ancien .old sera supprimé au prochain démarrage.
+    Extrait le zip dans dest_dir. Si l'archive contient un unique dossier racine
+    (ex. tous les chemins préfixés par 'code/'), on aplatit son contenu directement
+    dans dest_dir — évite toute dépendance à la convention exacte du script de build
+    qui a produit le zip côté R2.
+    Garde-fous : nombre d'entrées borné, aucune évasion hors de dest_dir (path traversal).
     """
-    import shutil
+    os.makedirs(dest_dir, exist_ok=True)
+    with zipfile.ZipFile(zip_path, "r") as zf:
+        names = [n for n in zf.namelist() if n.strip("/")]
+        if not names or len(names) > _MAX_ZIP_ENTRIES:
+            raise ValueError(f"Zip suspect ({len(names)} entrées) — extraction annulée.")
 
-    current_exe = sys.executable
-    old_exe = current_exe + ".old"
+        top_level = {n.split("/", 1)[0] for n in names}
+        single_root = len(top_level) == 1
 
-    # Supprimer un éventuel .old résiduel du cycle précédent
+        for member in names:
+            if member.endswith("/"):
+                continue
+            norm = os.path.normpath(member)
+            if norm.startswith("..") or os.path.isabs(norm):
+                raise ValueError(f"Entrée zip invalide (path traversal) : {member}")
+
+            rel = member.split("/", 1)[1] if single_root else member
+            if not rel:
+                continue
+
+            target = os.path.join(dest_dir, rel)
+            os.makedirs(os.path.dirname(target), exist_ok=True)
+            with zf.open(member) as src, open(target, "wb") as out:
+                shutil.copyfileobj(src, out)
+
+
+def _swap_code_dir(new_code_dir: str) -> None:
+    """
+    Remplace le dossier code\\ courant par new_code_dir, en conservant l'ancien
+    en code.old (écrasé à chaque update — un seul niveau de rollback manuel,
+    volontairement pas de rotation pour rester prévisible).
+
+    Suppose que le processus courant tourne avec un cwd EXTÉRIEUR à code\\
+    (AppDirectory = C:\\surveybot, pas code\\) : sur Windows, un dossier qui est
+    le cwd d'un process ne peut pas être renommé ni supprimé.
+    """
+    code_dir = _code_dir()
+    root_dir = os.path.dirname(code_dir)
+    old_dir = os.path.join(root_dir, "code.old")
+
+    if os.path.exists(old_dir):
+        shutil.rmtree(old_dir, ignore_errors=True)
+
+    os.rename(code_dir, old_dir)
     try:
-        if os.path.exists(old_exe):
-            os.remove(old_exe)
-    except Exception as e:
-        log.warning("[UPDATE] Impossible de supprimer l'ancien .old : %s", e)
+        os.rename(new_code_dir, code_dir)
+    except Exception:
+        # Rollback best-effort : ne jamais laisser la machine sans dossier code\\.
+        os.rename(old_dir, code_dir)
+        raise
 
-    # Renommer l'exe courant en .old
-    os.rename(current_exe, old_exe)
 
-    # Copier le nouveau binaire à l'emplacement de l'exe courant
-    shutil.copy2(new_exe, current_exe)
+def _replace_source_and_restart(zip_path: str, account_id: str) -> None:
+    """
+    Extrait le zip vers un dossier temporaire, swap avec code\\, nettoie le PID,
+    puis os.execv() pour relancer avec le nouveau code.
+    Ne retourne jamais si le swap et le re-exec réussissent.
+    """
+    code_dir = _code_dir()
+    root_dir = os.path.dirname(code_dir)
+    staging_dir = os.path.join(root_dir, "code_new_tmp")
 
-    log.info("[UPDATE] Binaire remplacé. Relancement...")
+    if os.path.exists(staging_dir):
+        shutil.rmtree(staging_dir, ignore_errors=True)
+
+    _extract_zip_flat(zip_path, staging_dir)
+
+    # Garde-fou minimal avant tout swap : un zip tronqué/mal formé ne doit
+    # jamais écraser un code\\ courant qui fonctionne.
+    if not os.path.isfile(os.path.join(staging_dir, "main.py")):
+        shutil.rmtree(staging_dir, ignore_errors=True)
+        raise ValueError("main.py absent du zip extrait — swap annulé, code\\ courant conservé.")
+
+    _swap_code_dir(staging_dir)
+
+    log.info("[UPDATE] Code remplacé. Relancement...")
 
     # Supprimer le PID pour éviter un faux "déjà actif" dans launch_all.ps1
     try:
-        base = os.path.dirname(os.path.abspath(current_exe))
-        pid_path = os.path.join(base, "pids", f"bot_{account_id}.pid")
+        pid_path = os.path.join(root_dir, "pids", f"bot_{account_id}.pid")
         if os.path.exists(pid_path):
             os.remove(pid_path)
     except Exception as e:
         log.warning("[UPDATE] Impossible de supprimer le PID avant re-exec : %s", e)
 
-    # Remplacer le processus courant — ne retourne jamais
-    os.execv(current_exe, [current_exe] + sys.argv[1:])
+    # Même chemin absolu qu'avant le swap (seul le contenu a changé) : on peut
+    # réutiliser sys.executable (l'interpréteur python, pas un exe applicatif) tel quel.
+    python_exe = sys.executable
+    main_py = os.path.join(code_dir, "main.py")
+    os.execv(python_exe, [python_exe, main_py] + sys.argv[1:])
 
 
 def check_and_apply(account_id: str) -> None:
     """
-    Vérifie si une mise à jour binaire est disponible et l'applique si oui.
+    Vérifie si une mise à jour du code est disponible et l'applique si oui.
     No-op si UPDATE_CHECK_ENABLED != "1" ou si UPDATE_MANIFEST_URL est absent.
     Ne retourne jamais si une mise à jour est appliquée (os.execv remplace le processus).
     """
@@ -163,17 +245,17 @@ def check_and_apply(account_id: str) -> None:
             return
 
         if current_version and current_version == remote_version:
-            log.info("[UPDATE] Binaire à jour (%s).", current_version)
+            log.info("[UPDATE] Code à jour (%s).", current_version)
             return
 
         log.info("[UPDATE] Nouvelle version disponible : %s -> %s. Téléchargement...",
                  current_version or "?", remote_version)
 
         # Télécharger dans un fichier temporaire
-        tmp_fd, tmp_path = tempfile.mkstemp(suffix=".exe", prefix="surveybot_update_")
+        tmp_fd, tmp_path = tempfile.mkstemp(suffix=".zip", prefix="surveybot_update_")
         os.close(tmp_fd)
         try:
-            _download_exe(remote_url, tmp_path)
+            _download_zip(remote_url, tmp_path)
 
             # Vérifier l'intégrité
             actual_sha256 = _sha256_file(tmp_path)
@@ -185,11 +267,11 @@ def check_and_apply(account_id: str) -> None:
                 return
 
             log.info("[UPDATE] SHA256 OK. Application de la mise à jour...")
-            _replace_exe_and_restart(tmp_path, account_id)
-            # Ne retourne pas si _replace_exe_and_restart réussit
+            _replace_source_and_restart(tmp_path, account_id)
+            # Ne retourne pas si _replace_source_and_restart réussit
 
         finally:
-            # Nettoyage du temporaire si on n'a pas relancé (erreur ou version identique)
+            # Nettoyage du zip temporaire si on n'a pas relancé (erreur ou version identique)
             try:
                 if os.path.exists(tmp_path):
                     os.remove(tmp_path)

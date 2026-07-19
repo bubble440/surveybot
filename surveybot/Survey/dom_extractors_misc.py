@@ -11323,6 +11323,181 @@ def _extract_askia_myresponse_checkbox_blocks(driver, frame_chain: list[int] | N
 
 
 # ================================================================================
+# CHOIX MULTIPLE ICONOGRAPHIQUE — options portées uniquement par <img alt> (sans texte)
+# ================================================================================
+
+def _image_only_option_alt(driver, el) -> str:
+    """
+    Retourne le texte alt de l'image d'option si et seulement si le wrapper de
+    l'option (label ou parent direct) n'expose AUCUN texte visible en dehors de
+    cet attribut alt. Retourne "" sinon (option textuelle classique, ou image
+    accompagnée de texte — hors scope de ce guard).
+    """
+    try:
+        alt = driver.evaluate(
+            """(input) => {
+            const norm = (s) => (s || '').replace(/\\s+/g, ' ').trim();
+            const wrapper = input.closest('label') || input.parentElement;
+            if (!wrapper) return '';
+            const img = wrapper.querySelector('img[alt]');
+            if (!img) return '';
+            const altTxt = norm(img.getAttribute('alt'));
+            if (!altTxt) return '';
+            const clone = wrapper.cloneNode(true);
+            clone.querySelectorAll('input, img').forEach((n) => n.remove());
+            const remaining = norm(clone.innerText || clone.textContent || '');
+            if (remaining) return '';
+            return altTxt;
+            }""",
+            el,
+        )
+        return _norm(alt) if alt else ""
+    except Exception:
+        return ""
+
+
+def _extract_image_only_choice_checkbox_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
+    """
+    Extraction générique pour les questions à choix multiple (checkbox) dont
+    TOUTES les options sont portées uniquement par une image (`<img alt="...">`),
+    sans aucun texte de libellé visible.
+
+    Problème résolu :
+    `_find_associated_label()` (dom_question_extractor.py) ne lit jamais
+    `img[alt]` — pour ce pattern, elle retourne "" pour chaque input du groupe.
+    Dans la boucle de groupement générique (dom_analyzer.py, `for e in els:
+    ... if not lbl: continue`), TOUS les inputs sont donc ignorés → `options=[]`
+    pour un groupe à plusieurs éléments (le fallback `options=[question]`
+    n'existe que pour `len(els)==1`) → bloc généré avec 0 option exploitable.
+
+    Guard DOM strict (tous requis) :
+    1. ≥2 `input[type='checkbox'][name]` partageant le même `name`
+    2. Pour CHAQUE input du groupe : le wrapper (label ou parent direct)
+       contient un `img[alt]` non vide ET aucun autre texte visible
+       (`_image_only_option_alt` ci-dessus) — si un seul input du groupe a un
+       texte classique, le groupe entier est ignoré (laissé au pipeline
+       générique existant, inchangé).
+
+    Patterns exclus :
+    - Options avec texte (même partiellement) → pipeline générique existant
+    - Options radio (non checkbox) → hors scope de ce patch
+    - Images accompagnées de texte de libellé → déjà couvertes par les
+      extracteurs single-choice existants (ex: `_extract_confirmit_cf_single_image_choice_blocks`)
+    """
+    frame_chain = list(frame_chain or [])
+
+    try:
+        checkboxes = driver.query_selector_all("input[type='checkbox'][name]")
+    except Exception:
+        return []
+    if len(checkboxes) < 2:
+        return []
+
+    grouped: dict[str, list] = {}
+    for cb in checkboxes:
+        try:
+            name = (cb.get_attribute("name") or "").strip()
+            if not name:
+                continue
+            grouped.setdefault(name, []).append(cb)
+        except Exception:
+            continue
+
+    blocks: list[dict] = []
+
+    for name, els in grouped.items():
+        if len(els) < 2:
+            continue
+
+        alts: list[str] = []
+        option_xpath_map: dict[str, str] = {}
+        all_image_only = True
+
+        for el in els:
+            alt_txt = _image_only_option_alt(driver, el)
+            if not alt_txt:
+                all_image_only = False
+                break
+
+            nk = _norm_key(alt_txt)
+            if not nk or nk in option_xpath_map:
+                continue
+
+            el_id = (el.get_attribute("id") or "").strip()
+            if el_id:
+                id_lit = _xpath_literal(el_id)
+                xp = f"(//label[@for={id_lit}] | //*[@id={id_lit}])[1]"
+            else:
+                xp = _best_xpath_for_element(driver, el)
+
+            if not xp:
+                continue
+
+            option_xpath_map[nk] = xp
+            alts.append(alt_txt)
+
+        if not all_image_only or len(alts) < 2 or not option_xpath_map:
+            continue
+
+        try:
+            from Survey.dom_question_extractor import _nearest_question_container, _extract_question_from_container
+        except ImportError:
+            from Survey.dom_question_extractor import _nearest_question_container, _extract_question_from_container
+
+        question = ""
+        try:
+            container = _nearest_question_container(els[0])
+            if container:
+                question = _extract_question_from_container(container, alts)
+        except Exception:
+            question = ""
+        if not question:
+            question = _find_question_text_near_element(driver, els[0])
+        if not question:
+            continue
+
+        group_key = f"checkbox:image_alt:{_norm_lc(name)}"
+        target_id = make_target_id("group", group_key, question)
+
+        register_target(
+            target_id,
+            {
+                "kind": "group",
+                "itype": "checkbox",
+                "group_key": group_key,
+                "question": question,
+                "option_xpath_map": option_xpath_map,
+                "frame_chain": frame_chain,
+                "image_only_choice_checkbox": True,
+            },
+        )
+
+        max_sel = _compute_max_select("checkbox", alts, question)
+        blocks.append(
+            {
+                "question": question,
+                "itype": "checkbox",
+                "options": alts,
+                "max_select": max_sel,
+                "min_select": 1,
+                "target_id": target_id,
+                "context": {
+                    "kind": "group",
+                    "group_key": group_key,
+                    "image_only_choice_checkbox": True,
+                },
+            }
+        )
+
+        log_debug(
+            "[DOM_IMAGE_ONLY_CHOICE]",
+            f"name={name!r} question={question!r} options={alts}",
+        )
+
+    return blocks
+
+
+# ================================================================================
 # ASKIA — RANKING ISOTOPE (div.adc-ranking-isotope + div.statement[data-value])
 # ================================================================================
 
