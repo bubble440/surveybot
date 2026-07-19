@@ -6958,6 +6958,24 @@ def execute_action(
                 # No other fallback for sliderpoints (avoid false positives).
                 continue
 
+            # Guard DOM strict : <select> natif identifié via le registry (context.tag=="select").
+            # Bypasse select_option_with_hint()/open_dropdown_generic() pour ce cas : leur chemin
+            # custom appelle el.tag_name (API Selenium, absente sur ElementHandle Playwright) ->
+            # AttributeError non catché qui remonte jusqu'au plan d'exécution des actions.
+            if target_payload and (target_payload.get("tag") or "").strip().lower() == "select":
+                if _try(driver, "dropdown_native_by_id", lambda:
+                    Survey.input_handler.select_native_option_by_target(
+                        driver,
+                        target_payload.get("xpath") or "",
+                        target_payload.get("id") or "",
+                        label,
+                        alt_xpaths=target_payload.get("alt_xpaths") or [],
+                        el_name=target_payload.get("name") or "",
+                    )
+                ):
+                    return True
+                log_debug("[TARGET_DEBUG]", f"dropdown_native_by_id échec target_id={target_id!r}")
+
             if ctx and _try(driver, "dropdown_block", lambda:
                 dropdown_block_resolver.try_resolve_dropdown_block(
                     driver,
@@ -7541,6 +7559,18 @@ def execute_actions_plan(
                                 and tid == next_tid:
                             same_question_block = True
                             _skip_reason = f"same multi_text target_id={tid!r}"
+                        # Deux <select> natifs consécutifs (ex: mois puis année d'une même date
+                        # de naissance) : itype="dropdown" ne porte pas de qid partagé comme
+                        # radio/checkbox (chaque champ est un QID GPT distinct) ni de target_id
+                        # commun. Le contexte GPT (texte de question statique, non re-extrait du
+                        # DOM) est en revanche identique pour les deux champs d'une même question
+                        # à deux dropdowns — signal stable, contrairement au texte "question" du
+                        # registry qui embarque la valeur déjà sélectionnée (ex: "... Juillet
+                        # Année") et fait dériver le target_id du second champ après un rescan.
+                        if not same_question_block and itype_lower == "dropdown" and next_itype == "dropdown" \
+                                and context and (next_act.get("context") or "").strip() == context:
+                            same_question_block = True
+                            _skip_reason = f"same dropdown question context={context!r}"
                         if not same_question_block and _body_len_before is not None:
                             try:
                                 _body_len_after = int(

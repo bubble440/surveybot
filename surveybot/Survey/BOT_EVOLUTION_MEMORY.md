@@ -1237,6 +1237,62 @@ Pour custom (`is_native=False`) : `inner_text()` du trigger (texte visible affic
 `select_option(label=value)` Playwright + dispatch events `input/change/blur`.
 Fallback : fuzzy match sur `Array.from(el.options)` → `select_option(value=matched_value)`.
 
+### _collect_dropdown_blocks — budget/deadline sur le scan des customs
+Constantes : `_CUSTOM_DROPDOWN_SCAN_BUDGET = 40`, `_CUSTOM_DROPDOWN_SCAN_DEADLINE_S = 3.0`.
+Problème résolu : les sélecteurs CSS de la passe 2 (`.dropdown`, `.select`) sont génériques et peuvent matcher un grand nombre d'éléments hors-scope (navbars, sélecteurs de langue, bannières cookies…). Chaque candidat coûte plusieurs aller-retours navigateur (`_visible` + `_extract_label`) ; sans borne, un DOM avec de nombreux éléments correspondants pouvait faire durer la résolution plusieurs dizaines de secondes avant de rendre la main à la stratégie suivante — aucun `time.sleep`/deadline codé en dur nulle part dans ce chemin, le coût venait uniquement du nombre d'aller-retours cumulés (accentué par la latence réseau du proxy ISP par bot).
+Fix : liste `customs` tronquée à `_CUSTOM_DROPDOWN_SCAN_BUDGET` éléments (log si dépassement), puis boucle de collecte bornée par une deadline `time.monotonic()` de `_CUSTOM_DROPDOWN_SCAN_DEADLINE_S` secondes avec abandon contrôlé et log.
+Patterns exclus :
+- Ne change rien à la passe 1 (`<select>` natifs) : pas de budget ni de deadline dessus (nombre de `<select>` par page toujours faible en pratique).
+
+---
+
+## PLATEFORME : IPSOS / WICKET — DROPDOWN NATIF BOOTSTRAP-SELECT (bs-select-hidden)
+Contexte DOM : formulaires Wicket (ex. enter.ipsosinteractive.com), champ date de naissance
+à deux `<select>` natifs (mois, année) côte à côte. Chaque `<select>` porte la classe
+`bs-select-hidden` et est rendu invisible au profit d'un widget bootstrap-select
+(bouton `.filter-option` + menu `<ul class="dropdown-menu inner">` de `<li><a>` cliquables)
+qui est le seul élément réellement visible/interactif pour l'utilisateur.
+
+### select_native_option_by_target — assignation JS directe (bypass actionability Playwright)
+Fichier : Survey/input_dropdown.py
+Guard : appelé depuis action_dispatcher.py, branche `itype == "dropdown"`, quand
+`target_payload.get("tag") == "select"` (résolution par xpath/id/alt_xpaths/name du registry).
+Bug corrigé : `el.select_option(label=...)` applique les vérifications d'actionability
+Playwright, dont la visibilité. Sur un `<select class="bs-select-hidden">`, l'élément n'est
+jamais visible au sens Playwright (le widget de substitution l'est, lui) → `select_option()`
+échoue proprement (pas d'exception qui remonte) sans jamais appliquer la valeur → la fonction
+retournait `False` ("dropdown_native_by_id échec"), et le dispatch retombait alors sur le
+chemin générique (`select_option_with_hint` → `open_dropdown_generic`), qui lui plantait sur
+`el.tag_name` (API Selenium absente d'un ElementHandle Playwright).
+Fix : remplacement de `select_option()` par une assignation JS directe via `evaluate()`
+(`sel.value = val` + dispatch `input`/`change` + `jQuery(sel).selectpicker('refresh')` si
+présent) — fonctionne indépendamment de l'état de visibilité du `<select>` et rafraîchit le
+widget bootstrap-select. Vérification post-assignation via lecture de
+`options[selectedIndex].text`.
+Patterns couverts :
+- `<select>` natif résolu par target_id du registry, visible ou non (bs-select-hidden inclus)
+Patterns exclus :
+- Ne touche pas au chemin générique `select_option_with_hint`/`open_dropdown_generic`
+  (toujours vulnérable à `el.tag_name` si jamais atteint — cf entrée dédiée plus haut) ; cette
+  fonction est un contournement en amont, pas un correctif de ce chemin-là.
+
+### execute_actions_plan — skip rescan same_qblock pour deux dropdowns consécutifs de même contexte GPT
+Fichier : Survey/action_dispatcher.py
+Emplacement : bloc `rescan_between_actions`, condition `same_question_block`.
+Bug corrigé : pour une question à deux `<select>` liés (mois + année), chaque champ est un
+QID GPT distinct (pas de qid partagé comme radio/checkbox) et n'a pas de target_id commun
+(contrairement au multi_text). Le rescan DOM se déclenchait donc entre les deux actions. Or le
+texte "question" du registry embarque la valeur déjà sélectionnée du premier champ (ex.
+"... Juillet Année" après application du mois) — le rescan qui suit régénère un nouveau
+target_id pour le second champ à partir de ce texte modifié, target_id que
+`select_native_option_by_target` ne retrouve alors plus dans le registry (aucune tentative de
+résolution même journalisée), et le dispatch retombe sur le chemin générique fautif.
+Fix : `same_question_block = True` quand `itype_lower == next_itype == "dropdown"` ET le texte
+de contexte GPT (`context`, statique, non re-extrait du DOM) est identique entre les deux
+actions consécutives — signal stable contrairement au texte "question" du registry.
+Patterns exclus :
+- Deux dropdowns consécutifs de contexte différent (questions distinctes) → rescan maintenu.
+
 ---
 
 ## DISPATCHER GÉNÉRIQUE : MULTI_TEXT (kind="multi_text") — DÉTECTION CHAMP VIDE

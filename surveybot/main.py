@@ -773,6 +773,15 @@ def main():
         page = _attach_select_tab_pw(_context, exclude_url_pred=_exclude)
         print(f"[ATTACH] Page sélectionnée url={_attach_display_url(page.url)}")
 
+        # Bascule visuelle vers l'onglet sélectionné : certaines pages nécessitent
+        # d'être au premier plan (focus/visibility) pour fonctionner correctement.
+        # Additif uniquement : ne modifie pas la logique de sélection ci-dessus.
+        try:
+            page.bring_to_front()
+            print("[ATTACH] Tab bring_to_front OK")
+        except Exception as e:
+            print(f"[ATTACH] Tab bring_to_front impossible: {e}")
+
         from Survey.survey_solver import get_current_survey_ctx
         start_debug_http_server(get_current_survey_ctx)
 

@@ -588,6 +588,209 @@ def select_option_with_hint(driver, option_text: str, field_hint: str | None = N
     return False
 
 
+# =============================================================================
+# SÉLECTION NATIVE PAR TARGET_ID (registry) — bypass select_option_with_hint()
+# =============================================================================
+#
+# Guard DOM strict : appelée uniquement si target_payload.context.tag == "select"
+# (résolution par xpath/id du registry, cf. Survey/dom_analyzer.py register_target()).
+#
+# Corrige : select_option_with_hint() (fallback custom, section "CUSTOM: ouvrir puis
+# sélectionner") appelle open_dropdown_generic(), qui lit `el.tag_name` — attribut
+# Selenium (WebElement), inexistant sur ElementHandle Playwright. Cet AttributeError
+# n'est catché nulle part sur ce chemin et remonte jusqu'à execute_action()/_try(),
+# qui ne catch pas non plus -> l'exception atteint le plan d'exécution des actions.
+# Cette fonction résout et sélectionne le <select> directement via l'API Playwright
+# (query_selector/evaluate/select_option), sans jamais appeler open_dropdown_generic()
+# ni select_option_with_hint().
+def select_native_option_by_target(
+    driver,
+    xpath: str,
+    el_id: str,
+    option_text: str,
+    alt_xpaths=None,
+    el_name: str = "",
+) -> bool:
+    """
+    Sélectionne option_text dans le <select> natif résolu via xpath/id/alt_xpaths/name
+    du registry (target_payload d'un bloc itype=dropdown, context.tag=="select").
+
+    Résolution en 4 étapes (chacune vérifie tagName=="select" avant de servir) :
+    1) xpath principal du registry
+    2) #id du registry
+    3) alt_xpaths du registry (ex: //select[@name='...'])
+    4) dernier recours: tous les <select> visibles de la page, filtré par la
+       présence d'une option correspondant à option_text — nécessaire quand le
+       xpath absolu (position DOM) et l'id sont devenus stales (re-render Wicket/AJAX
+       entre l'extraction et l'exécution de l'action).
+    """
+    def _is_select(cand) -> bool:
+        try:
+            return (cand.evaluate("e => e.tagName.toLowerCase()") or "") == "select"
+        except Exception:
+            return False
+
+    el = None
+    if xpath:
+        try:
+            cand = driver.query_selector(f"xpath={xpath}")
+            if cand is not None and _is_select(cand):
+                el = cand
+        except Exception:
+            pass
+
+    if el is None and el_id:
+        try:
+            cand = driver.query_selector(f"#{el_id}")
+            if cand is not None and _is_select(cand):
+                el = cand
+        except Exception:
+            pass
+
+    if el is None:
+        for ax in (alt_xpaths or []):
+            if not ax:
+                continue
+            try:
+                cand = driver.query_selector(f"xpath={ax}")
+                if cand is not None and _is_select(cand):
+                    el = cand
+                    break
+            except Exception:
+                continue
+
+    target = norm_txt(option_text)
+    if not target:
+        log_debug("dropdown-native", "select_native_option_by_target: option_text vide")
+        return False
+
+    if el is None:
+        # Dernier recours: scanner tous les <select> visibles et matcher par option.
+        # Fait en UN SEUL aller-retour navigateur (evaluate_handle côté JS) au lieu
+        # d'un query_selector_all() + is_visible()/evaluate() par élément : sur une
+        # page avec de nombreux <select> (ex. champs techniques Wicket cachés), le
+        # coût par-élément (2 aller-retours Playwright chacun) faisait dériver cette
+        # résolution à plusieurs dizaines de secondes. Le budget (300 selects, cap
+        # dur côté JS) protège contre un DOM pathologique sans coût réseau ajouté.
+        try:
+            handle = driver.evaluate_handle(
+                """(tgt) => {
+                    const MAX = 300;
+                    const norm = (s) => (s || '').normalize('NFKD')
+                        .replace(/[\\u0300-\\u036f]/g, '')
+                        .trim().toLowerCase();
+                    const t = norm(tgt);
+                    if (!t) return null;
+                    const selects = Array.from(document.querySelectorAll('select')).slice(0, MAX);
+                    for (const s of selects) {
+                        const r = s.getBoundingClientRect();
+                        if (r.width <= 0 || r.height <= 0) continue;
+                        const opts = s.options;
+                        for (let i = 0; i < opts.length; i++) {
+                            if (norm(opts[i].text) === t) return s;
+                        }
+                    }
+                    return null;
+                }""",
+                option_text,
+            )
+            cand = handle.as_element() if handle else None
+            if cand is not None:
+                el = cand
+        except Exception:
+            el = None
+
+    if el is None:
+        log_debug(
+            "dropdown-native",
+            f"select_native_option_by_target: <select> introuvable (id={el_id!r} name={el_name!r})",
+        )
+        return False
+
+    try:
+        opts = driver.evaluate(
+            "el => Array.from(el.options).map(o => ({value: o.value, text: o.text.trim()}))",
+            el,
+        ) or []
+    except Exception:
+        opts = []
+
+    matched = None
+    for o in opts:
+        ot = norm_txt(o.get("text") or "")
+        ov = norm_txt(o.get("value") or "")
+        if target == ot or target == ov:
+            matched = o
+            break
+    if matched is None:
+        for o in opts:
+            ot = norm_txt(o.get("text") or "")
+            if ot and target in ot:
+                matched = o
+                break
+    if matched is None:
+        log_debug(
+            "dropdown-native",
+            f"select_native_option_by_target: option {option_text!r} absente des <option> (n={len(opts)})",
+        )
+        return False
+
+    try:
+        driver.evaluate("(e) => e.scrollIntoView({block:'center'})", el)
+    except Exception:
+        pass
+
+    # Assignation JS directe (sel.value + dispatch input/change), PAS el.select_option().
+    # select_option() applique les vérifications d'actionability Playwright, dont la
+    # visibilité — or ce <select> peut être rendu volontairement invisible au profit
+    # d'un widget de substitution visuel (ex. bootstrap-select : classe bs-select-hidden,
+    # menu <ul class="dropdown-menu inner"> cliquable en superposition). select_option()
+    # échoue alors proprement (timeout catché, pas d'exception qui remonte) sans jamais
+    # appliquer la valeur. L'assignation JS fonctionne indépendamment de la visibilité et
+    # déclenche le refresh du widget (jQuery selectpicker) quand il est présent, même
+    # pattern déjà utilisé pour ce cas dans Survey/action_dispatcher.py (_apply_by_target_id,
+    # branche kind="single"/dropdown).
+    try:
+        driver.evaluate(
+            """(args) => {
+                const [sel, val] = args;
+                sel.value = val;
+                try { sel.dispatchEvent(new Event('input', {bubbles:true})); } catch(e) {}
+                try { sel.dispatchEvent(new Event('change', {bubbles:true})); } catch(e) {}
+                try {
+                    if (window.jQuery && window.jQuery(sel).selectpicker) {
+                        window.jQuery(sel).selectpicker('refresh');
+                    }
+                } catch(e) {}
+            }""",
+            [el, matched.get("value")],
+        )
+    except Exception:
+        return False
+
+    try:
+        applied_txt = norm_txt(
+            driver.evaluate("e => e.options[e.selectedIndex]?.text || ''", el) or ""
+        )
+    except Exception:
+        applied_txt = ""
+
+    if applied_txt != norm_txt(matched.get("text") or ""):
+        log_debug(
+            "dropdown-native",
+            f"select_native_option_by_target: valeur non confirmée après assignation "
+            f"(attendu={matched.get('text')!r} lu={applied_txt!r})",
+        )
+        return False
+
+    print(f"✓ Option sélectionnée (natif/target_id) : {matched['text']}. source: input_dropdown.py")
+    try:
+        driver._ui_overlay_opened = None
+    except Exception:
+        pass
+    return True
+
+
 def select_option_with_hint(
     driver, 
     option_text: str, 

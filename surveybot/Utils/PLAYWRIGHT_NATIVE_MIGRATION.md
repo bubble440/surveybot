@@ -68,7 +68,10 @@ PROPRES (zéro driver ou Playwright natif pur) :
   Survey/frame_utils.py                ✅ migré BLOC 3b5a
   Survey/input_handler.py              ✅ migré BLOC 3b5d
   Survey/input_dropdown.py             ✅ migré BLOC 3b5c
-  Survey/input_slider.py               ✅ migré BLOC 3b5c
+  Survey/input_slider.py               ⚠️ classé migré BLOC 3b5c mais résidu Selenium
+                                          trouvé le 2026-07-19, cf HISTORIQUE — find_elements()
+                                          string-literal non converti, échoue silencieusement
+                                          depuis suppression du shim (BLOC S8)
   Survey/input_text.py                 ✅ migré BLOC 3b5c
 
 MIGRÉS AVEC RÉSIDUS SHIM (à nettoyer dans les blocs S) :
@@ -531,6 +534,50 @@ INTERFACE switch_to_frame_chain
 HISTORIQUE
 ================================================================================
 
+2026-07-19  Correctif post-S8 (dropdown natif Ipsos/Wicket, bs-select-hidden) :
+            select_native_option_by_target() (Survey/input_dropdown.py) utilisait
+            `el.select_option(label=...)`, qui applique les vérifications d'actionability
+            Playwright dont la visibilité — or les `<select>` de ce type de widget portent
+            la classe `bs-select-hidden` et ne sont jamais visibles au sens Playwright (le
+            widget de substitution l'est, lui). L'appel échouait proprement (pas d'exception
+            qui remonte), la fonction retournait `False`, et le dispatch retombait sur le
+            chemin générique `select_option_with_hint()` → `open_dropdown_generic()`, qui lui
+            plante toujours sur `el.tag_name` (résidu Selenium non converti, cf plus bas).
+            Corrigé : assignation JS directe (`sel.value = val` + dispatch `input`/`change` +
+            `jQuery(sel).selectpicker('refresh')` si présent) au lieu de `select_option()`.
+            Fonctionne indépendamment de la visibilité du `<select>`. En parallèle, un second
+            bug corrigé dans Survey/action_dispatcher.py (execute_actions_plan) : deux
+            `<select>` natifs consécutifs de même question (ex. mois + année) déclenchaient un
+            rescan DOM entre les deux actions (aucune condition `same_question_block`
+            existante ne couvrait ce cas), et ce rescan régénérait un target_id pour le second
+            champ à partir d'un texte de question déjà modifié par la sélection du premier
+            (pollution "... Juillet Année"), target_id que le registry ne reliait plus à rien
+            — la résolution native n'était alors même plus tentée pour le second champ. Fix :
+            skip du rescan quand deux actions dropdown consécutives partagent le même
+            contexte-question GPT (texte statique, non re-extrait du DOM — signal stable
+            contrairement au texte "question" du registry). Cf BOT_EVOLUTION_MEMORY.md,
+            section "PLATEFORME : IPSOS / WICKET — DROPDOWN NATIF BOOTSTRAP-SELECT".
+            —
+            Découverte annexe au cours du même diagnostic (piste initialement suivie puis
+            écartée, mais confirmée réelle) : Survey/input_slider.py (`set_sliderpoints()`)
+            contient encore `root.find_elements("css selector", ".sq-sliderpoints-container")`
+            — signature Selenium (`find_elements(by, value)`), jamais convertie en
+            `query_selector_all()` malgré le classement "✅ migré BLOC 3b5c" de ce fichier dans
+            l'inventaire ci-dessus. Avant BLOC S8, cet appel passait par
+            PlaywrightDriverShim et fonctionnait ; depuis la suppression du shim (2026-06-24),
+            un objet Playwright natif n'a pas de méthode `find_elements` → `AttributeError`
+            immédiate, avalée par le `try/except` local, `blocks_all = []`, `return False`.
+            Effet : `set_sliderpoints()` échoue désormais silencieusement à chaque appel,
+            quel que soit le DOM (pas seulement sur les pages de date de naissance qui ont
+            servi de fil rouge à ce diagnostic — sur toute page Decipher/Behaviorally à
+            sliderpoints réels, le scoping par row-legend ne peut plus fonctionner du tout).
+            NON CORRIGÉ à ce jour — hors périmètre du bug traité dans cette session, à traiter
+            dans un patch dédié. Reclassé de "PROPRES" vers annotation ⚠️ dans l'inventaire
+            ci-dessus en attendant. À vérifier si d'autres fichiers listés "✅ propre"
+            contiennent le même type de résidu non détecté par la revue BLOC S7b/S8 (celle-ci
+            portait sur `is_displayed→is_visible`, `tag_name→evaluate`, `text→inner_text`,
+            `send_keys→type`, `rect→bounding_box`, mais pas systématiquement sur
+            `find_elements`/`find_element` en signature string-literal comme celle-ci).
 2026-07-16  Correctif post-S8 : résidu Selenium `el.is_selected()` trouvé dans
             `_is_selected()` (Survey/action_dispatcher.py) et `is_checked()`
             (Survey/input_utils.py). Cette méthode n'existe pas sur `ElementHandle`/

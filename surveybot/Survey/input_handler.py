@@ -135,6 +135,7 @@ from Survey.input_dropdown import (
     open_dropdown_generic,
     select_option_with_hint,
     select_option_with_hint,
+    select_native_option_by_target,
 )
 
 # Aliases pour rétrocompatibilité
@@ -576,6 +577,7 @@ __all__ = [
     "best_dropdown_for_hint", "dropdown_visible_value", "is_dropdown_filled",
     "open_first_dropdown", "open_dropdown_generic",
     "select_option_with_hint", "select_option_with_hint",
+    "select_native_option_by_target",
     
     # Text
     "type_via_cdp", "react_set_value_and_fire", "is_numeric_field",

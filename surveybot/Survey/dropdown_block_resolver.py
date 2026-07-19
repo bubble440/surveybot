@@ -19,8 +19,20 @@
 from __future__ import annotations
 
 import re
+import time
 import unicodedata
 from typing import Any, List, Optional
+
+from Survey.log_utils import log_debug
+
+# Budget de scan pour les dropdowns custom (sélecteurs CSS génériques susceptibles
+# de matcher un grand nombre d'éléments hors-scope sur une page réelle : navbars,
+# sélecteurs de langue, bannières cookies, etc.). Chaque candidat coûte plusieurs
+# aller-retours navigateur (_visible + _extract_label) ; sans borne, un DOM avec
+# de nombreux éléments `.dropdown`/`.select` peut faire durer la résolution
+# plusieurs dizaines de secondes avant de rendre la main à la stratégie suivante.
+_CUSTOM_DROPDOWN_SCAN_BUDGET = 40
+_CUSTOM_DROPDOWN_SCAN_DEADLINE_S = 3.0
 
 
 # ------------------------------------------------------------
@@ -193,7 +205,24 @@ def _collect_dropdown_blocks(driver) -> List[DropdownBlock]:
         "[role='combobox'], [aria-haspopup='listbox'], .dropdown, .select"
     )
 
-    for el in customs:
+    if len(customs) > _CUSTOM_DROPDOWN_SCAN_BUDGET:
+        log_debug(
+            "dropdown-block",
+            f"_collect_dropdown_blocks: {len(customs)} candidats custom, "
+            f"borné à {_CUSTOM_DROPDOWN_SCAN_BUDGET}",
+        )
+        customs = customs[:_CUSTOM_DROPDOWN_SCAN_BUDGET]
+
+    _scan_deadline = time.monotonic() + _CUSTOM_DROPDOWN_SCAN_DEADLINE_S
+    for i, el in enumerate(customs):
+        if time.monotonic() > _scan_deadline:
+            log_debug(
+                "dropdown-block",
+                f"_collect_dropdown_blocks: deadline {_CUSTOM_DROPDOWN_SCAN_DEADLINE_S}s "
+                f"atteinte, abandon après {i}/{len(customs)} candidats custom",
+            )
+            break
+
         # Exclure les <select> natifs — déjà collectés ci-dessus
         if _el_is_select(el):
             continue
