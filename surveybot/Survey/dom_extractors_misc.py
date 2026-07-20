@@ -3542,6 +3542,118 @@ def _extract_confirmit_wix_fieldset_radio_block(driver, frame_chain: list[int] |
     return blocks
 
 
+def _extract_confirmit_wix_fieldset_text_sibling_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
+    """Champ texte natif (ex: âge) dans un fieldset[id^="fieldset_"] SANS radio/checkbox,
+    coexistant sur la même page qu'un fieldset radio/checkbox couvert par
+    _extract_confirmit_wix_fieldset_radio_block.
+
+    Contexte : dans analyze_dom (dom_analyzer.py), dès que
+    _extract_confirmit_wix_fieldset_radio_block retourne des blocs, la fonction retourne
+    immédiatement (court-circuit du pipeline générique "autres inputs" qui, sinon,
+    extrairait ce champ texte plus loin). Cette fonction couvre additivement ce cas sans
+    toucher à l'extracteur radio existant ni au pipeline générique.
+
+    Gate DOM (double) :
+    - fieldset[id^="fieldset_"] présent
+    - contient ≥1 input[type="text"] ET 0 input[type="radio"] ET 0 input[type="checkbox"]
+      dans ce même fieldset (sinon déjà couvert par _extract_confirmit_wix_fieldset_radio_block
+      ou _extract_confirmit_wix_rankedorderclick_block)
+
+    Patterns exclus :
+    - fieldset avec radio/checkbox → extracteurs dédiés existants (inchangés)
+    - textarea/select → hors scope de cette fonction
+    """
+    frame_chain = list(frame_chain or [])
+
+    try:
+        fieldsets = driver.query_selector_all("fieldset[id^='fieldset_']")
+    except Exception:
+        return []
+    if not fieldsets:
+        return []
+
+    blocks: list[dict] = []
+
+    for fieldset in fieldsets:
+        try:
+            _fs_cls = fieldset.get_attribute("class") or ""
+            if "confirmit-rankedorderclick-default" in _fs_cls:
+                continue
+            if fieldset.query_selector_all("input[type='radio']"):
+                continue
+            if fieldset.query_selector_all("input[type='checkbox']"):
+                continue
+            text_inputs = fieldset.query_selector_all("input[type='text']")
+            if not text_inputs:
+                continue
+
+            _fs_id = fieldset.get_attribute("id") or ""
+            _gname = _fs_id[len("fieldset_"):] if _fs_id.startswith("fieldset_") else ""
+
+            for inp in text_inputs:
+                try:
+                    el_id = (inp.get_attribute("id") or "").strip()
+                    el_name = (inp.get_attribute("name") or "").strip()
+                    if not el_id:
+                        continue
+
+                    question = ""
+                    if _gname:
+                        try:
+                            q_els = driver.query_selector_all(f"div[id='{_gname}_text']")
+                            if q_els:
+                                question = _norm(q_els[0].inner_text() or "")
+                        except Exception:
+                            pass
+                    if not question:
+                        try:
+                            q_els = driver.query_selector_all("div[id$='_text'].question_text_ng")
+                            if q_els:
+                                question = _norm(q_els[0].inner_text() or "")
+                        except Exception:
+                            pass
+                    if not question:
+                        continue
+
+                    single_key = f"text:{el_id}:{el_name}"
+                    target_id = make_target_id("single", single_key, question)
+
+                    register_target(
+                        target_id,
+                        {
+                            "kind": "single",
+                            "itype": "text",
+                            "question": question,
+                            "tag": "input",
+                            "name": el_name,
+                            "id": el_id,
+                            "frame_chain": frame_chain,
+                        },
+                    )
+
+                    log_debug("[CONFIRMIT_WIX_FIELDSET_TEXT]", f"detected group_name={_gname!r} id={el_id!r}")
+
+                    blocks.append({
+                        "question": question,
+                        "itype": "text",
+                        "options": [],
+                        "max_select": 1,
+                        "target_id": target_id,
+                        "context": {
+                            "kind": "single",
+                            "tag": "input",
+                            "name": el_name,
+                            "id": el_id,
+                        },
+                    })
+                except Exception:
+                    continue
+        except Exception:
+            continue
+
+    return blocks
+
+
 def _extract_confirmit_wix_checkbox_grid_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
     """Confirmit/Wix grille checkbox multi-colonnes (layout /wix/2/).
 

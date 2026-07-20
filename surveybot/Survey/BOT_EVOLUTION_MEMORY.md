@@ -290,6 +290,28 @@ Patterns exclus :
   (couvre aussi le cas pure-checkbox 0 radio + ≥2 checkboxes avec `td.confirmit-rankedorderclick`)
 - `table.confirmit-grid` dans le fieldset → `_extract_confirmit_wix_checkbox_grid_blocks`
 
+### _apply_by_target_id — bloc confirmit_wix_fieldset_radio_abtn (variante "AnswerButtons" sans <a>)
+Fichier : Survey/action_dispatcher.py
+Emplacement : bloc `payload.get("confirmit_wix_fieldset_radio") and resolved_itype == "radio"`, juste après la
+résolution de `xp` (option_xpath_map) et avant la séquence de fallbacks génériques radio_main.
+Guard : le `xp` existant (XPath `//input[@id=...]/ancestor::td[1]//a[1]`) ne résout aucun candidat
+(`driver.query_selector_all(xp)` vide) ET un `label[for="{input_id}"]` est trouvé dans un
+`ancestor::td[contains(@class,'confirmit-abtn')]` — confirmation structurelle de la variante AnswerButtons.
+Patterns couverts :
+- Variante Confirmit/Wix "AnswerButtons" : `td.confirmit-abtn` contenant `<input type="radio" hidden>` +
+  `div.confirmit-abtn-label` + `<label for="{input_id}">`, sans aucun `<a href="javascript:void(0)">`
+  dans le `<td>` (contrairement au layout classique déjà couvert par `_extract_confirmit_wix_fieldset_radio_block`)
+- Sans ce patch : `xp` ne résout jamais rien pour aucune option → fallback générique radio_main non
+  déterministe (clic par recherche de label pleine page, sans garantie de cibler la bonne option)
+- Clic : `label.click()` natif, fallback `driver.evaluate("(e) => e.click()", label)` si échec
+- Validation : `_wait_checked(input_id, None)` sur l'input radio masqué
+- Log : `[TARGET_DEBUG] confirmit_wix_fieldset_radio_abtn: ok/ko id={input_id}`
+- Succès : `log_info("[TARGET]", "apply ok=true strategy=confirmit_wix_fieldset_radio_abtn reason=input_checked")`
+Patterns exclus :
+- `xp` classique résolvant au moins un candidat (layout `<a>` déjà couvert) → chemin existant inchangé
+- Structure abtn non confirmée (aucun `label[for]` trouvé dans un `td.confirmit-abtn` ancêtre) → fall through
+  inchangé vers la séquence de fallbacks génériques existante
+
 ### _apply_by_target_id — cache de stratégie gagnante (_cm_strategy_cache)
 Fichier : Survey/action_dispatcher.py
 Emplacement : bloc `toluna_runtime_answerrow` dans `_click_candidate`, avant la séquence de fallbacks.
@@ -1662,3 +1684,35 @@ indépendante de toute référence potentiellement obsolète) pour être disting
 clic. Si un futur bug checkbox/radio montre un premier clic visuellement réussi suivi d'un
 décochage en cascade sur d'autres plateformes, vérifier en priorité l'état réel du DOM avant de
 suspecter la stratégie de clic elle-même.
+
+---
+
+## MODULE TRANSVERSAL : CTA_HANDLER.PY — DÉTECTION/CLIC NAVIGATION GÉNÉRIQUE
+
+### try_click_navigation_cta — exclusion structurelle des conteneurs de réponse radio/checkbox
+Fichier : Survey/cta_handler.py
+Emplacement : boucle de constitution des candidats CTA génériques (XPath `nav_xpath`), juste après
+le filtre d'exclusion `ancestor::ps-footer` et avant le filtre `disabled_patterns`.
+Guard : `el.query_selector_all("input[type='radio'], input[type='checkbox']")` non vide — le candidat
+encapsule au moins un input radio/checkbox descendant.
+Patterns couverts :
+- Faux positif générique : `nav_xpath` inclut l'alternative `//*[@tabindex and not(self::input or
+  self::textarea or self::select)]`, qui matche tout conteneur focusable non-input — y compris les
+  widgets de réponse à une question stylés en bouton (ex. `td.confirmit-abtn[tabindex="0"]` enveloppant
+  un `input[type=radio]` masqué + `label`, pattern Confirmit/Wix "AnswerButtons")
+- Ces conteneurs portent un texte lisible (le label de l'option, ex. "Un homme"), ce qui leur permet de
+  passer le filtre "doit contenir un mot-clé de navigation" (ce filtre ne s'applique que si le texte est
+  vide) sans jamais être vérifiés comme candidats de navigation légitimes
+- Ils accumulent ensuite un score suffisant (classe contenant la sous-chaîne "btn", `tabindex="0"`,
+  `ancestor::form`) pour dépasser le score du vrai bouton de navigation quand celui-ci n'a ni id/name/texte
+  correspondant aux mots-clés de scoring reconnus
+- Symptôme observé : le clic CTA cible de façon répétée l'option de réponse au lieu du bouton de
+  navigation réel — la sélection déjà validée bascule entre les options à chaque tentative de clic CTA,
+  sans jamais progresser vers la page suivante (`PROGRESSED=false` en boucle, URL inchangée)
+- Un vrai CTA de navigation (button/input[submit]/a) n'encapsule jamais un input radio/checkbox de
+  réponse à une question ; ce signal structurel exclut donc précisément ce cas
+Patterns exclus :
+- Candidats sans input radio/checkbox descendant → filtre inopérant, scoring et sélection inchangés
+- Aucun changement au scoring ni aux autres filtres existants (Askia, Forsta, Toluna nav wrapper,
+  AreYouNet, Decipher, IntelliSurvey, MRIWeb, ps-next-button, etc.) — patch additif, exclusion structurelle
+  uniquement

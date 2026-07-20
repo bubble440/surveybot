@@ -1762,6 +1762,19 @@ def try_click_navigation_cta(driver) -> bool:
             except Exception:
                 pass
 
+            # Garde-fou anti-faux-positif : conteneur de réponse radio/checkbox capté par
+            # le motif générique //*[@tabindex and not(self::input or self::textarea or
+            # self::select)] (ex: td.confirmit-abtn[tabindex="0"] enveloppant un
+            # input[type=radio] masqué + label — widget "AnswerButtons" Confirmit/Wix).
+            # Un vrai CTA de navigation (button/input[submit]/a) n'encapsule jamais un
+            # input radio/checkbox de réponse à une question ; ce signal structurel exclut
+            # donc précisément ce cas, sans toucher au scoring ni aux autres filtres.
+            try:
+                if el.query_selector_all("input[type='radio'], input[type='checkbox']"):
+                    continue
+            except Exception:
+                pass
+
             disabled_patterns = ("disabled", "btn-disabled", "is-disabled", "button--disabled", "btn--disabled")
             if any(tok in disabled_patterns for tok in cls_tokens):
                 continue

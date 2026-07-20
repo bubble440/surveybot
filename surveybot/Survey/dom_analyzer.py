@@ -98,6 +98,7 @@ try:
         _extract_consent_modal_radio_block,
         _extract_confirmit_wix_checkbox_grid_blocks,
         _extract_confirmit_wix_fieldset_radio_block,
+        _extract_confirmit_wix_fieldset_text_sibling_blocks,
         _extract_confirmit_wix_rankedorderclick_block,
         _extract_runtime_answerrow_radio_blocks,
         _extract_toluna_runtime_ranking_blocks,
@@ -215,6 +216,7 @@ except ImportError:
         _extract_consent_modal_radio_block,
         _extract_confirmit_wix_checkbox_grid_blocks,
         _extract_confirmit_wix_fieldset_radio_block,
+        _extract_confirmit_wix_fieldset_text_sibling_blocks,
         _extract_confirmit_wix_rankedorderclick_block,
         _extract_runtime_answerrow_radio_blocks,
         _extract_toluna_runtime_ranking_blocks,
@@ -1662,6 +1664,17 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
     try:
         wix_fieldset_blocks = _extract_confirmit_wix_fieldset_radio_block(driver, frame_chain)
         if wix_fieldset_blocks:
+            # Additif : un fieldset texte (ex: âge) peut coexister sur la même page sans
+            # être couvert par l'extracteur radio ci-dessus (0 radio/checkbox dans son
+            # propre fieldset). Sans ce complément, le retour anticipé ci-dessous empêche
+            # le pipeline générique "autres inputs" (plus loin dans analyze_dom) de
+            # l'atteindre. Voir BOT_EVOLUTION_MEMORY.md.
+            try:
+                wix_fieldset_text_blocks = _extract_confirmit_wix_fieldset_text_sibling_blocks(driver, frame_chain)
+                if wix_fieldset_text_blocks:
+                    wix_fieldset_blocks = wix_fieldset_blocks + wix_fieldset_text_blocks
+            except Exception:
+                pass
             return wix_fieldset_blocks
     except Exception:
         pass

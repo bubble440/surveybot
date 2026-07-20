@@ -2053,6 +2053,60 @@ def _apply_by_target_id(
                         log_debug("[TARGET_DEBUG]", f"target_id='{target_id}' kind='{kind}' itype='{resolved_itype}' value='{value}' -> option introuvable (opt_map={len(opt_map)})")
                     return False
 
+                # --- Confirmit/Wix "AnswerButtons" (confirmit-abtn) : variante sans <a> ---
+                # _extract_confirmit_wix_fieldset_radio_block construit xp en supposant un
+                # <a href="javascript:void(0)"> dans le <td> (layout classique). Sur la variante
+                # AnswerButtons (td.confirmit-abtn : <input hidden> + <label> dans
+                # div.confirmit-abtn-label, aucun <a>), ce xp ne résout jamais rien pour AUCUNE
+                # option -> _find_best_visible(xp) silencieux -> fallback générique radio_main
+                # non déterministe (clic par recherche de label pleine page, sans garantie de
+                # cibler la bonne option). Guard strict, additif : ne s'active QUE si le xp
+                # existant est introuvable ET que la structure confirmit-abtn est confirmée
+                # (label[for] dans un td.confirmit-abtn) ; sinon on retombe inchangé sur le
+                # chemin générique existant.
+                if payload.get("confirmit_wix_fieldset_radio") and resolved_itype == "radio":
+                    try:
+                        _a_cands = driver.query_selector_all(xp)
+                    except Exception:
+                        _a_cands = []
+                    if not _a_cands:
+                        _abtn_inp_id = None
+                        try:
+                            _m = re.search(r"@id=(['\"])(.*?)\1", xp)
+                            if _m:
+                                _abtn_inp_id = _m.group(2)
+                        except Exception:
+                            _abtn_inp_id = None
+                        _abtn_lbl = None
+                        if _abtn_inp_id:
+                            try:
+                                _abtn_lbl = driver.query_selector(
+                                    "xpath=" + f"//input[@id='{_abtn_inp_id}']/ancestor::td[contains(@class,'confirmit-abtn')][1]//label[@for='{_abtn_inp_id}']"
+                                )
+                            except Exception:
+                                _abtn_lbl = None
+                        if _abtn_lbl is not None:
+                            _abtn_clicked = False
+                            try:
+                                _abtn_lbl.click()
+                                _abtn_clicked = True
+                            except Exception:
+                                try:
+                                    driver.evaluate("(e) => e.click()", _abtn_lbl)
+                                    _abtn_clicked = True
+                                except Exception:
+                                    _abtn_clicked = False
+                            _abtn_ok = _abtn_clicked and _wait_checked(_abtn_inp_id, None)
+                            log_debug(
+                                "[TARGET_DEBUG]",
+                                f"confirmit_wix_fieldset_radio_abtn: {'ok' if _abtn_ok else 'ko'} id={_abtn_inp_id!r} clicked={_abtn_clicked}",
+                            )
+                            if _abtn_ok:
+                                log_info("[TARGET]", "apply ok=true strategy=confirmit_wix_fieldset_radio_abtn reason=input_checked")
+                                return True
+                            return False
+                        # structure abtn non confirmée (pas de label[for] trouvé) -> fall through inchangé
+
                 def _first_input_under(node):
                     try:
                         if (node.evaluate("e => (e.tagName || '').toLowerCase()") or "") == "input":
