@@ -477,8 +477,8 @@ def init_session_and_enter_surveys(driver, config, account_id: str, notify_fn, p
         if platform:
             platform.login(driver, config)
         else:
-            email = config.get("Email")
-            password = config.get("Password")
+            email = os.getenv("EMAIL") or config.get("Email")
+            password = os.getenv("PASSWORD") or config.get("Password")
             login(driver, email, password)
         # Après login, attendre que la page soit hydratée avant de continuer.
         try:

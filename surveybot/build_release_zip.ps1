@@ -26,7 +26,11 @@
 param(
     [string]$ProjectRoot = (Get-Location).Path,
     [string]$OutputDir   = "dist_zip",
-    [string]$R2BaseUrl   = "https://pub-565d2bb59d364c1490255c5dddc296aa.r2.dev"
+    [string]$R2BaseUrl   = "https://pub-565d2bb59d364c1490255c5dddc296aa.r2.dev",
+    # Contourne le garde-fou "version identique au manifeste distant" ci-dessous.
+    # Cas legitime : reposter le meme zip suite a une corruption/erreur d'upload R2,
+    # sans avoir change de code depuis. Hors de ce cas, ne pas utiliser -Force.
+    [switch]$Force
 )
 
 $ErrorActionPreference = "Stop"
@@ -62,6 +66,38 @@ if ($licenseContent -notmatch 'BOT_VERSION\s*=\s*"([^"]+)"') {
 }
 $version = $Matches[1]
 Write-Output "=== Version detectee : $version ==="
+
+# -- Garde-fou : version identique a celle deja publiee sur R2 ----------------
+# Oubli frequent : modifier le code sans remonter BOT_VERSION. Resultat silencieux
+# sans ce garde-fou : le build reussit, l'upload reussit, mais update_checker.py
+# cote bot voit current_version == remote_version et ignore la mise a jour -
+# aucune erreur nulle part, juste un no-op qui passe inapercu.
+# Verification unique et non bloquante en cas d'echec reseau (le manifeste distant
+# peut simplement ne pas encore exister, ex. tout premier build).
+$remoteManifestUrl = "$R2BaseUrl/manifest.json"
+try {
+    $remoteManifestRaw = Invoke-WebRequest -Uri $remoteManifestUrl -UseBasicParsing -TimeoutSec 10
+    $remoteManifest    = $remoteManifestRaw.Content | ConvertFrom-Json
+    $remoteVersion     = $remoteManifest.version
+
+    if ($remoteVersion -eq $version) {
+        if ($Force) {
+            Write-Output "=== ATTENTION : version $version identique au manifeste distant deja publie - poursuite forcee (-Force) ==="
+        } else {
+            Write-Error (
+                "BOT_VERSION ($version) est identique a la version deja publiee sur R2 ($remoteManifestUrl). " +
+                "Si du code a change depuis la derniere release, incrementer BOT_VERSION dans _license_config.py " +
+                "avant de relancer ce script. Si tu reposte volontairement la meme version (ex. correction d'un " +
+                "upload R2 corrompu, aucun changement de code), relancer avec -Force."
+            )
+            exit 1
+        }
+    } else {
+        Write-Output "=== Version distante actuelle : $remoteVersion -> $version, OK ==="
+    }
+} catch {
+    Write-Output "=== Manifeste distant inaccessible ($remoteManifestUrl) - garde-fou de version ignore : $_ ==="
+}
 
 # -- Preparation du dossier de sortie -----------------------------------------
 $outputPath = Join-Path $ProjectRoot $OutputDir

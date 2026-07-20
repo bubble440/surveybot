@@ -623,7 +623,11 @@ def run_attach_login_takeover(page, pw, *, api_key: str, account_id: str, config
 
     if _on_login:
         print("[ATTACH][LOGIN] Page de connexion détectée → login")
-        _do_login(page, config.get("Email", ""), config.get("Password", ""))
+        _do_login(
+            page,
+            os.getenv("EMAIL") or config.get("Email", ""),
+            os.getenv("PASSWORD") or config.get("Password", ""),
+        )
         _time.sleep(2)
 
     # Sélection du survey (navigue vers l'onglet Sondages, choisit la meilleure carte)
