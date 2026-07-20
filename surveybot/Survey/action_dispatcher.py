@@ -2107,6 +2107,58 @@ def _apply_by_target_id(
                             return False
                         # structure abtn non confirmée (pas de label[for] trouvé) -> fall through inchangé
 
+                # --- Confirmit/Wix "AnswerButtons" (confirmit-abtn) : variante checkbox sans <a> ---
+                # Même structure DOM que le bloc radio ci-dessus (td.confirmit-abtn : <input hidden>
+                # + <label> dans div.confirmit-abtn-label, aucun <a>), mais pour un groupe checkbox
+                # (multi-select). Le xp hérité de _extract_confirmit_wix_fieldset_radio_block suppose
+                # toujours un <a> -> aucune stratégie de clic disponible pour ce type de groupe ->
+                # échec systématique sur chaque option. Stratégie nommée distincte, additive : ne
+                # touche pas au bloc radio ci-dessus ; ne s'active QUE si le xp existant est
+                # introuvable ET que la structure confirmit-abtn est confirmée (label[for] dans un
+                # td.confirmit-abtn).
+                if payload.get("confirmit_wix_fieldset_radio") and resolved_itype == "checkbox":
+                    try:
+                        _c_cands = driver.query_selector_all(xp)
+                    except Exception:
+                        _c_cands = []
+                    if not _c_cands:
+                        _cabtn_inp_id = None
+                        try:
+                            _m = re.search(r"@id=(['\"])(.*?)\1", xp)
+                            if _m:
+                                _cabtn_inp_id = _m.group(2)
+                        except Exception:
+                            _cabtn_inp_id = None
+                        _cabtn_lbl = None
+                        if _cabtn_inp_id:
+                            try:
+                                _cabtn_lbl = driver.query_selector(
+                                    "xpath=" + f"//input[@id='{_cabtn_inp_id}']/ancestor::td[contains(@class,'confirmit-abtn')][1]//label[@for='{_cabtn_inp_id}']"
+                                )
+                            except Exception:
+                                _cabtn_lbl = None
+                        if _cabtn_lbl is not None:
+                            _cabtn_clicked = False
+                            try:
+                                _cabtn_lbl.click()
+                                _cabtn_clicked = True
+                            except Exception:
+                                try:
+                                    driver.evaluate("(e) => e.click()", _cabtn_lbl)
+                                    _cabtn_clicked = True
+                                except Exception:
+                                    _cabtn_clicked = False
+                            _cabtn_ok = _cabtn_clicked and _wait_checked(_cabtn_inp_id, None)
+                            log_debug(
+                                "[TARGET_DEBUG]",
+                                f"confirmit_wix_fieldset_checkbox_abtn: {'ok' if _cabtn_ok else 'ko'} id={_cabtn_inp_id!r} clicked={_cabtn_clicked}",
+                            )
+                            if _cabtn_ok:
+                                log_info("[TARGET]", "apply ok=true strategy=confirmit_wix_fieldset_checkbox_abtn reason=input_checked")
+                                return True
+                            return False
+                        # structure abtn non confirmée (pas de label[for] trouvé) -> fall through inchangé
+
                 def _first_input_under(node):
                     try:
                         if (node.evaluate("e => (e.tagName || '').toLowerCase()") or "") == "input":

@@ -312,6 +312,27 @@ Patterns exclus :
 - Structure abtn non confirmée (aucun `label[for]` trouvé dans un `td.confirmit-abtn` ancêtre) → fall through
   inchangé vers la séquence de fallbacks génériques existante
 
+### _apply_by_target_id — bloc confirmit_wix_fieldset_checkbox_abtn (variante "AnswerButtons" checkbox)
+Fichier : Survey/action_dispatcher.py
+Emplacement : juste après le bloc `confirmit_wix_fieldset_radio_abtn` ci-dessus (radio), avant `_first_input_under`.
+Guard : `payload.get("confirmit_wix_fieldset_radio") and resolved_itype == "checkbox"` ET le `xp` existant
+(XPath `//input[@id=...]/ancestor::td[1]//a[1]`) ne résout aucun candidat ET un `label[for="{input_id}"]` est
+trouvé dans un `ancestor::td[contains(@class,'confirmit-abtn')]`.
+Patterns couverts :
+- Même structure DOM "AnswerButtons" que le bloc radio équivalent (`td.confirmit-abtn` : `<input type="checkbox"
+  hidden>` + `div.confirmit-abtn-label` + `<label for="{input_id}">`, sans `<a>`), mais pour un groupe checkbox
+  (multi-select). Sans ce patch : le `xp` hérité de `_extract_confirmit_wix_fieldset_radio_block` suppose
+  toujours un `<a>` → aucune option ne pouvait être cochée, échec systématique sur chaque option du groupe.
+- Fonction nommée distincte, purement additive : ne modifie pas le bloc radio existant.
+- Clic : `label.click()` natif, fallback `driver.evaluate("(e) => e.click()", label)` si échec
+- Validation : `_wait_checked(input_id, None)` sur l'input checkbox masqué
+- Log : `[TARGET_DEBUG] confirmit_wix_fieldset_checkbox_abtn: ok/ko id={input_id}`
+- Succès : `log_info("[TARGET]", "apply ok=true strategy=confirmit_wix_fieldset_checkbox_abtn reason=input_checked")`
+Patterns exclus :
+- `xp` classique résolvant au moins un candidat (layout `<a>` déjà couvert) → chemin existant inchangé
+- Structure abtn non confirmée (aucun `label[for]` trouvé dans un `td.confirmit-abtn` ancêtre) → fall through
+  inchangé vers la séquence de fallbacks génériques checkbox existante
+
 ### _apply_by_target_id — cache de stratégie gagnante (_cm_strategy_cache)
 Fichier : Survey/action_dispatcher.py
 Emplacement : bloc `toluna_runtime_answerrow` dans `_click_candidate`, avant la séquence de fallbacks.
