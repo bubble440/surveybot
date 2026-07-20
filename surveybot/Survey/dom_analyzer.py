@@ -3788,6 +3788,20 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             el_name = (el.get_attribute("name") or "").strip()
             el_tag = (el.evaluate("e => e.tagName.toLowerCase()") or "").strip().lower()
 
+            # --- Détection additive : input natif type="date" (ex: Confirmit cf-question--date)
+            # Voir BOT_EVOLUTION_MEMORY.md : "CHAMP DATE NATIF (input type=date)".
+            # _detect_itype() (dom_utils.py, partagé avec email/tel/number) classe ce champ en
+            # itype="text" — comportement inchangé, non modifié ici. Ce flag additif permet au
+            # prompt/parser/dispatcher de distinguer ce cas sans toucher au chemin générique text.
+            _is_native_date_input = False
+            try:
+                _is_native_date_input = (
+                    el_tag == "input"
+                    and (el.get_attribute("type") or "").strip().lower() == "date"
+                )
+            except Exception:
+                _is_native_date_input = False
+
             single_key = f"{itype}:{el_id}:{el_name}"
             target_id = make_target_id("single", single_key, question)
 
@@ -3824,6 +3838,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                     "name": el_name,
                     "id": el_id,
                     "frame_chain": frame_chain,
+                    "native_date_input": _is_native_date_input,
                 },
             )
 
@@ -3839,6 +3854,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                     "name": el.get_attribute("name"),
                     "id": el.get_attribute("id"),
                     "role": el.get_attribute("role"),
+                    "native_date_input": _is_native_date_input,
                 },
             }
             

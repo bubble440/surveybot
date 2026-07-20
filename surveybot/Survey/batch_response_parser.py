@@ -572,6 +572,31 @@ def _normalize_multi_text_month_segments(value: str) -> str:
     return "|".join(out) if changed else value
 
 
+def _normalize_native_date_single(value: str) -> str | None:
+    """
+    Filet de sécurité pour un bloc kind=single flaggé context.native_date_input=True
+    (ex: <input type="date"> Confirmit cf-question--date).
+
+    Le prompt (build_batch_prompt) demande explicitement 1 valeur unique au format
+    AAAA-MM-JJ sans "|" pour ce type de bloc. Si le modèle suit malgré tout la RÈGLE
+    CHAMP MULTI-CASES générale (DOB décomposé MM|DD|YYYY, prévue pour context.kind=multi_text),
+    cette fonction réassemble les 3 segments en une seule chaîne ISO au lieu de les laisser
+    tronquer à 1 seul segment par la dédup single-target de la boucle principale.
+    Retourne None si la valeur ne matche pas un triplet MM|DD|YYYY exploitable (aucune
+    normalisation appliquée, comportement inchangé).
+    """
+    parts = [p.strip() for p in (value or "").split("|") if p.strip()]
+    if len(parts) != 3:
+        return None
+    mm, dd, yyyy = parts
+    if not (mm.isdigit() and dd.isdigit() and yyyy.isdigit()) or len(yyyy) != 4:
+        return None
+    mm_i, dd_i = int(mm), int(dd)
+    if not (1 <= mm_i <= 12 and 1 <= dd_i <= 31):
+        return None
+    return f"{yyyy}-{mm_i:02d}-{dd_i:02d}"
+
+
 def _is_matrix_action(itype: str, qid: str | None, target_id: str | None, qid_meta: dict | None) -> bool:
     it = (itype or "").strip().lower()
     if it == "matrix":
@@ -925,6 +950,17 @@ def parse_batch_response(raw: str, constraints: Optional[Dict[str, int]] = None,
             normalized = _normalize_multi_text_month_segments(value)
             if normalized != value:
                 _debug_log(f"normalized multi_text month segments: {value!r} -> {normalized!r}")
+                value = normalized
+
+        is_native_date_single_target = (
+            itype in {"text", "textarea", "number"}
+            and str(kind or "") == "single"
+            and bool(((qmeta or {}).get("context") or {}).get("native_date_input"))
+        )
+        if is_native_date_single_target and "|" in value:
+            normalized = _normalize_native_date_single(value)
+            if normalized:
+                _debug_log(f"normalized native_date_input segments: {value!r} -> {normalized!r}")
                 value = normalized
 
         is_matrix = _is_matrix_action(itype=itype, qid=qid, target_id=target_id, qid_meta=qid_meta)

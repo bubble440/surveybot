@@ -28,6 +28,7 @@ from Survey.input_utils import (
     find_context_container,
     DATE_HINTS,
 )
+from Survey.log_utils import log_debug
 
 
 # =============================================================================
@@ -161,6 +162,125 @@ def swagbucks_zip_patch(driver, value: str) -> bool:
         return cur.strip() == digits
     except Exception:
         return False
+
+
+# =============================================================================
+# CHAMP DATE NATIF (input[type="date"], ex: Confirmit cf-question--date)
+# =============================================================================
+
+_NATIVE_DATE_VERIFY_MAX_ATTEMPTS = 3
+_NATIVE_DATE_VERIFY_RETRY_DELAY_S = 0.1
+
+_NATIVE_DATE_SET_JS = """(args) => {
+    const [el, v] = args;
+    el.value = v;
+    try { el.dispatchEvent(new Event('input', {bubbles:true})); } catch(e) {}
+    try { el.dispatchEvent(new Event('change', {bubbles:true})); } catch(e) {}
+}"""
+
+
+def fill_native_date_input(driver, value: str, element_id: str, frame_chain=None) -> bool:
+    """
+    Saisie dédiée pour <input type="date"> natif (ex: Confirmit/Forsta cf-question--date).
+
+    N'appelle PAS fill_text_input : son selector générique (ligne `selector = ...` ci-dessous)
+    n'inclut pas input[type='date'], et son fallback driver.wait_for_selector() (non scopé)
+    peut alors retourner un tout autre champ texte de la page (ex: code postal) en cas
+    d'échec de scope -- cause racine du bug d'écrasement croisé zipcode/DOB. Ce champ est
+    donc résolu STRICTEMENT par id (jamais par contexte/texte de question), voir
+    BOT_EVOLUTION_MEMORY.md : "CHAMP DATE NATIF (input type=date)".
+
+    N'appelle pas non plus react_set_value_and_fire (helper générique React) : l'assignation
+    JS directe `el.value = v` + dispatch input/change ci-dessous suit le même pattern déjà
+    validé en production pour select_native_option_by_target (input_dropdown.py) sur des
+    inputs natifs non-React.
+
+    Support iframe : si frame_chain (context.frame_chain du registry DOM) est renseigné,
+    la résolution + saisie + vérification s'exécutent dans ce contexte, même convention
+    que _apply_by_target_id / _apply_toluna_runtime_answerrow_cached (action_dispatcher.py).
+    Avant ce patch, ce chemin ignorait frame_chain alors que le registry le porte déjà.
+
+    Args:
+        driver: WebDriver
+        value: date au format AAAA-MM-JJ (ISO) ou JJ/MM/AAAA, telle que produite par le
+            selection_rule dédié de build_batch_prompt / _normalize_native_date_single.
+        element_id: id DOM natif du champ (context.id du bloc), obligatoire.
+        frame_chain: liste d'indices d'iframes imbriquées (registry DOM_REGISTRY), ou None/[].
+
+    Returns:
+        True si la valeur ISO a été appliquée et vérifiée sur ce champ précis.
+    """
+    if not element_id:
+        return False
+
+    raw = (value or "").strip()
+    m = re.match(r"^(\d{4})-(\d{1,2})-(\d{1,2})$", raw)
+    if m:
+        yyyy, mm, dd = m.group(1), m.group(2), m.group(3)
+    else:
+        m = re.match(r"^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$", raw)
+        if not m:
+            log_debug("[NATIVE_DATE]", f"id={element_id!r} format non reconnu value={value!r}")
+            return False
+        dd, mm, yyyy = m.group(1), m.group(2), m.group(3)
+    iso = f"{yyyy}-{mm.zfill(2)}-{dd.zfill(2)}"
+
+    def _apply(ctx_driver) -> bool:
+        try:
+            field = ctx_driver.find_element("id", element_id)
+        except Exception as exc:
+            log_debug("[NATIVE_DATE]", f"id={element_id!r} element introuvable: {type(exc).__name__}: {exc}")
+            return False
+
+        try:
+            tag = (field.evaluate("e => e.tagName.toLowerCase()") or "").strip().lower()
+            native_type = (field.get_attribute("type") or "").strip().lower()
+        except Exception as exc:
+            log_debug("[NATIVE_DATE]", f"id={element_id!r} lecture tag/type échouée: {type(exc).__name__}: {exc}")
+            return False
+
+        if tag != "input" or native_type != "date":
+            log_debug("[NATIVE_DATE]", f"id={element_id!r} guard non satisfait tag={tag!r} type={native_type!r}")
+            return False
+
+        before = field.get_attribute("value") or ""
+        try:
+            ctx_driver.evaluate(_NATIVE_DATE_SET_JS, [field, iso])
+        except Exception as exc:
+            log_debug("[NATIVE_DATE]", f"id={element_id!r} assignation JS échouée: {type(exc).__name__}: {exc}")
+            return False
+
+        current = ""
+        attempt = 0
+        for attempt in range(_NATIVE_DATE_VERIFY_MAX_ATTEMPTS):
+            try:
+                current = ctx_driver.evaluate("(e) => e.value", field) or ""
+            except Exception:
+                current = field.get_attribute("value") or ""
+            if current.strip() == iso:
+                break
+            time.sleep(_NATIVE_DATE_VERIFY_RETRY_DELAY_S)
+
+        log_debug(
+            "[NATIVE_DATE]",
+            f"id={element_id!r} before={before!r} target={iso!r} after={current!r} "
+            f"verify_attempts={attempt + 1} frame_chain={frame_chain!r}",
+        )
+        return current.strip() == iso
+
+    if frame_chain:
+        try:
+            from Survey.frame_utils import switch_to_frame_chain  # type: ignore
+        except Exception:
+            switch_to_frame_chain = None  # type: ignore
+        if switch_to_frame_chain is not None:
+            with switch_to_frame_chain(driver, frame_chain) as ok:
+                if not ok:
+                    log_debug("[NATIVE_DATE]", f"id={element_id!r} switch_to_frame_chain échoué chain={frame_chain!r}")
+                    return False
+                return _apply(driver)
+
+    return _apply(driver)
 
 
 # =============================================================================

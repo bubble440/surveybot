@@ -7172,6 +7172,30 @@ def execute_action(
             if target_payload:
                 _blk_ctx = target_payload.get("context") or {}
                 _field_id = (_blk_ctx.get("id") or "").strip() or None
+
+            # --- Champ date natif (input[type="date"], ex: Confirmit cf-question--date) ---
+            # Stratégie dédiée additive : voir BOT_EVOLUTION_MEMORY.md "CHAMP DATE NATIF".
+            # target_payload est ici le registre DOM_REGISTRY flat (dom_analyzer.py, boucle
+            # singles), pas le context du bloc GPT -> le flag/id/frame_chain sont lus à la
+            # racine, pas sous "context". frame_chain transmis pour rester cohérent avec les
+            # autres branches dédiées de ce fichier (_apply_by_target_id, sq-sliderpoints, ...)
+            # qui se repositionnent dans l'iframe du registry avant d'agir sur l'élément.
+            # Ne retombe JAMAIS sur fill_text_input générique en cas d'échec (son selector ne
+            # couvre pas input[type=date] et son fallback page-entière peut cibler un autre
+            # champ texte de la page) : une seule stratégie, pas de fallback empilé.
+            _native_date_id = None
+            _native_date_frame_chain = None
+            if target_payload and target_payload.get("native_date_input"):
+                _native_date_id = (target_payload.get("id") or "").strip() or None
+                _native_date_frame_chain = target_payload.get("frame_chain") or None
+            if _native_date_id:
+                ok = _try(driver, "native_date_input", lambda fid=_native_date_id, fc=_native_date_frame_chain:
+                    Survey.input_handler.fill_native_date_input(driver, label, element_id=fid, frame_chain=fc))
+                if ok:
+                    return True
+                log_info("[TARGET]", f"apply ok=false reason=native_date_input_failed target_id={target_id!r}")
+                continue
+
             if _try(driver, "text_input", lambda fid=_field_id:
                 Survey.input_handler.fill_text_input(driver, label, context_hint=ctx, element_id=fid)
             ):

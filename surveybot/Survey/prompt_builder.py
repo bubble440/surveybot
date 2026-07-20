@@ -860,6 +860,16 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
                     f"selection_rule: Pour QID={qid}, renvoyer EXACTEMENT {max_sel} valeurs "
                     f"séparées par |. Pas de répétition. Valeurs différentes obligatoires."
                 )
+            elif ctx.get("native_date_input"):
+                # Champ natif <input type="date"> unique (ex: Confirmit cf-question--date) :
+                # 1 seul target DOM pour toute la date -> AUCUN séparateur "|" ici, contrairement
+                # à la RÈGLE CHAMP MULTI-CASES (context.kind=multi_text) plus haut, qui ne
+                # s'applique pas à ce bloc (kind=single). Voir BOT_EVOLUTION_MEMORY.md.
+                lines.append(
+                    f"selection_rule: Pour QID={qid}, renvoyer EXACTEMENT 1 valeur : la date complète "
+                    "au format AAAA-MM-JJ (ex: 1998-06-15), SANS séparateur '|', en une seule chaîne "
+                    "(ne jamais décomposer en jour/mois/année séparés pour ce champ)."
+                )
             else:
                 lines.append(
                     f"selection_rule: Pour QID={qid}, renvoyer EXACTEMENT 1 valeur"
