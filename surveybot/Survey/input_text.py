@@ -226,8 +226,13 @@ def fill_native_date_input(driver, value: str, element_id: str, frame_chain=None
     iso = f"{yyyy}-{mm.zfill(2)}-{dd.zfill(2)}"
 
     def _apply(ctx_driver) -> bool:
+        # query_selector (Playwright natif), pas find_element (API Selenium absente de
+        # l'objet page au runtime -> AttributeError). Même méthode que
+        # select_native_option_by_target (input_dropdown.py) : driver.query_selector(f"#{id}").
         try:
-            field = ctx_driver.find_element("id", element_id)
+            field = ctx_driver.query_selector(f"#{element_id}")
+            if field is None:
+                raise LookupError(f"no element with id={element_id!r}")
         except Exception as exc:
             log_debug("[NATIVE_DATE]", f"id={element_id!r} element introuvable: {type(exc).__name__}: {exc}")
             return False

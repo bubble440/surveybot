@@ -427,6 +427,75 @@ Patterns exclus :
 
 ---
 
+## CHAMP DATE NATIF (input type="date") — CONFIRMIT/FORSTA ET GÉNÉRIQUE
+Signature DOM : `<input type="date">` natif (ex : Confirmit/Forsta `cf-question--date`,
+`cf-date-answer__input`). Détecté via l'attribut `type` de l'input, indépendamment de la
+plateforme — pas une classe CSS spécifique à Confirmit.
+
+### dom_analyzer.py — flag native_date_input (boucle singles)
+Fichier : Survey/dom_analyzer.py
+Guard : `el_tag == "input"` ET `el.get_attribute("type") == "date"`
+Patterns couverts :
+- Ajoute `native_date_input: bool` dans le registre DOM_REGISTRY (register_target, clé
+  racine) et dans `context` du bloc GPT, sans changer `itype` (reste "text") ni toucher
+  `_detect_itype()` (dom_utils.py).
+Patterns exclus :
+- Aucun changement pour les inputs type="text"/"number"/etc. — flag additif, `False` par défaut.
+
+### prompt_builder.py — selection_rule dédiée date native
+Fichier : Survey/prompt_builder.py
+Guard : `context.native_date_input is True`
+Patterns couverts :
+- Consigne dédiée demandant une date complète au format AAAA-MM-JJ (ISO), remplaçant la
+  règle générique "renvoyer EXACTEMENT 1 valeur" pour ce bloc précis.
+Patterns exclus :
+- Champs text/textarea/number sans ce flag → règle générique inchangée.
+
+### batch_response_parser.py — préservation valeur composite date
+Fichier : Survey/batch_response_parser.py
+Guard : bloc correspondant à `native_date_input=True`
+Patterns couverts :
+- La valeur ISO complète (AAAA-MM-JJ) est conservée telle quelle, sans troncature par la
+  logique min_select/max_select générique (pensée pour les séparateurs "|" multi-select).
+Patterns exclus :
+- Toute autre question text à valeur unique → logique min_select/max_select inchangée.
+
+### action_dispatcher.py — branche dédiée native_date_input
+Fichier : Survey/action_dispatcher.py
+Emplacement : bloc `itype in ("text","number","textarea")`, avant le fallback générique
+`fill_text_input`.
+Guard : `target_payload.get("native_date_input") is True` (lu à la racine du registre
+DOM_REGISTRY flat, pas sous "context" — registre construit par dom_analyzer.py)
+Patterns couverts :
+- Appelle `Survey.input_handler.fill_native_date_input(driver, label, element_id=fid,
+  frame_chain=...)`, stratégie dédiée et unique pour ce type de champ.
+- En cas d'échec : `continue` explicite, AUCUN retour vers `fill_text_input` générique
+  (son sélecteur ne couvre pas input[type=date] et son fallback page-entière peut cibler
+  un autre champ texte de la page — cause racine historique de l'écrasement croisé zipcode/DOB).
+Patterns exclus :
+- Champs text sans ce flag → chemin générique `fill_text_input` inchangé.
+
+### input_text.py — fill_native_date_input
+Fichier : Survey/input_text.py
+Guard : `element_id` non vide ; résolution stricte par id uniquement (jamais par
+contexte/texte de question).
+Patterns couverts :
+- Résolution de l'élément via `driver.query_selector(f"#{element_id}")` (API Playwright
+  native) — PAS `driver.find_element(...)` (API Selenium absente de l'objet Page au
+  runtime → AttributeError silencieuse ; cause racine du bug "date jamais saisie").
+- Support iframe : si `frame_chain` est renseigné (porté par le registry DOM_REGISTRY),
+  résolution/saisie/vérification s'exécutent dans ce contexte, même convention que
+  `_apply_by_target_id` (switch_to_frame_chain, action_dispatcher.py).
+- Assignation directe `el.value = iso` + dispatch input/change (pattern déjà validé pour
+  `select_native_option_by_target`, input_dropdown.py) — PAS `react_set_value_and_fire`.
+- Formats d'entrée acceptés : AAAA-MM-JJ (ISO) ou JJ/MM/AAAA, normalisés en ISO.
+Patterns exclus :
+- Champs text/textarea classiques → `fill_text_input` inchangé, non appelé depuis cette fonction.
+- Aucun repli en cas d'échec de résolution/assignation (pas de fallback empilé) : retourne
+  `False`, laisse action_dispatcher.py logguer l'échec sans dérive vers un autre champ.
+
+---
+
 ## PLATEFORME : KANTAR / mrIWeb — ROWPICKER RADIO / CHECKBOX (REACT OVERLAY)
 Signature DOM : `form[name="mrForm"]` (sa.ktrmr.com), `metaType="rowpicker"` dans le SEJson.
 Double couche : `div.questionContainer[questionname][display:none]` (inputs natifs non interactables) + `div#container_{questionname}._rowpicker` (cartes React cliquables).
