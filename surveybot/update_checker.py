@@ -51,6 +51,7 @@ import hashlib
 import logging
 import os
 import shutil
+import ssl
 import sys
 import tempfile
 import urllib.request
@@ -62,6 +63,20 @@ log = logging.getLogger("update_checker")
 
 _HTTP_TIMEOUT = 15  # secondes
 _MAX_ZIP_ENTRIES = 20000  # garde-fou : borne la taille d'archive traitée
+
+# Contexte SSL explicite base sur le bundle de certificats certifi, plutot que de
+# dependre du magasin de certificats racine de Windows (ssl.create_default_context()
+# sans cafile) : sur une machine fraichement installee (avant tout Windows Update),
+# ce magasin est souvent incomplet et fait echouer la verification TLS avec
+# "unable to get local issuer certificate", meme quand le certificat distant est valide.
+# Fallback sur le contexte par defaut si certifi n'est pas installe (ne devrait pas
+# arriver en prod, requirements.txt l'inclut, mais coherent avec les autres imports
+# optionnels de ce fichier).
+try:
+    import certifi
+    _SSL_CONTEXT = ssl.create_default_context(cafile=certifi.where())
+except ImportError:
+    _SSL_CONTEXT = ssl.create_default_context()
 
 # UPDATE_CHECK_ENABLED / UPDATE_MANIFEST_URL sont des variables GLOBAL_CONFIG : elles
 # proviennent de global_config.py (dossier code\\ courant). En dev/attach (global_config.py
@@ -91,7 +106,7 @@ def _code_dir() -> str:
 def _fetch_manifest(url: str) -> dict:
     """Télécharge et parse le manifeste JSON distant."""
     req = urllib.request.Request(url, headers={"User-Agent": "SurveyBot-Updater/1.0"})
-    with urllib.request.urlopen(req, timeout=_HTTP_TIMEOUT) as resp:
+    with urllib.request.urlopen(req, timeout=_HTTP_TIMEOUT, context=_SSL_CONTEXT) as resp:
         return json.loads(resp.read().decode())
 
 
@@ -106,7 +121,7 @@ def _sha256_file(path: str) -> str:
 def _download_zip(url: str, dest: str) -> None:
     """Télécharge le zip du nouveau code vers dest."""
     req = urllib.request.Request(url, headers={"User-Agent": "SurveyBot-Updater/1.0"})
-    with urllib.request.urlopen(req, timeout=_HTTP_TIMEOUT) as resp, \
+    with urllib.request.urlopen(req, timeout=_HTTP_TIMEOUT, context=_SSL_CONTEXT) as resp, \
          open(dest, "wb") as out:
         while True:
             chunk = resp.read(65536)
