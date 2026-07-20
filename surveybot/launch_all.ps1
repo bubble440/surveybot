@@ -80,6 +80,11 @@ function Start-Bot {
         "GEO_LON"           = if ($Bot.ContainsKey("geo_lon"))     { $Bot.geo_lon }     else { "2.3522" }
         "SURVEY_LANG"       = if ($Bot.ContainsKey("survey_lang")) { $Bot.survey_lang } else { "fr-FR" }
         "SURVEY_TZ"         = if ($Bot.ContainsKey("survey_tz"))   { $Bot.survey_tz }   else { "Europe/Paris" }
+        # Sans ca, print() d'un caractere hors cp1252 (emoji, etc.) plante le process
+        # des que stdout est redirige vers un pipe (cas de ce script) au lieu d'un
+        # vrai terminal -- deja present dans nssm_setup_bot.ps1, manquait ici.
+        "PYTHONIOENCODING"  = "utf-8"
+        "PYTHONUTF8"        = "1"
     }
 
     # Construire le bloc d'environnement pour Start-Process
@@ -125,14 +130,14 @@ function Start-Bot {
     # Redirection asynchrone des sorties vers le log du bot
     $process.BeginOutputReadLine()
     $process.BeginErrorReadLine()
-    Register-ObjectEvent -InputObject $process -EventName "OutputDataReceived" -Action {
+    Register-ObjectEvent -InputObject $process -EventName "OutputDataReceived" -MessageData $logFile -Action {
         if ($Event.SourceEventArgs.Data) {
-            Add-Content -Path $logFile -Value $Event.SourceEventArgs.Data -Encoding UTF8
+            Add-Content -Path $Event.MessageData -Value $Event.SourceEventArgs.Data -Encoding UTF8
         }
     } | Out-Null
-    Register-ObjectEvent -InputObject $process -EventName "ErrorDataReceived" -Action {
+    Register-ObjectEvent -InputObject $process -EventName "ErrorDataReceived" -MessageData $logFile -Action {
         if ($Event.SourceEventArgs.Data) {
-            Add-Content -Path $logFile -Value $Event.SourceEventArgs.Data -Encoding UTF8
+            Add-Content -Path $Event.MessageData -Value $Event.SourceEventArgs.Data -Encoding UTF8
         }
     } | Out-Null
 
