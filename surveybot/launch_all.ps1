@@ -46,11 +46,22 @@ function Get-PidPath {
     return Join-Path $PidsDir "bot_$AccountId.pid"
 }
 
-function Test-ProcessAlive {
-    param([int]$ProcessId)
-    # tasklist ne leve pas d'exception si le PID est absent - on parse la sortie
-    $result = & tasklist /FI "PID eq $ProcessId" /NH 2>$null
-    return ($result -match "\b$ProcessId\b")
+function Test-BotProcessAlive {
+    # Un PID Windows est recyclable : une fois le process du bot termine, l'OS peut
+    # reattribuer ce meme PID a un process totalement different peu apres. Verifier
+    # seulement l'existence du PID (ex: via tasklist) est donc insuffisant - il faut
+    # aussi confirmer que c'est bien le MEME process (heure de demarrage identique).
+    param(
+        [int]$ProcessId,
+        [long]$ExpectedStartTicks
+    )
+    try {
+        $p = Get-Process -Id $ProcessId -ErrorAction Stop
+        return ($p.StartTime.Ticks -eq $ExpectedStartTicks)
+    } catch {
+        # PID absent ou inaccessible (process systeme protege, etc.)
+        return $false
+    }
 }
 
 function Start-Bot {
@@ -141,9 +152,11 @@ function Start-Bot {
         }
     } | Out-Null
 
-    # Ecriture du PID (le bot ecrit aussi le sien via write_pid_file - double securite)
+    # Ecriture du PID + heure de demarrage (ticks) - le couple sert a distinguer ce
+    # process precis d'un futur process sans rapport qui recyclerait le meme PID.
+    # Le bot ecrit aussi son propre PID via write_pid_file - double securite.
     $pidPath = Get-PidPath $id
-    $process.Id | Out-File -FilePath $pidPath -Encoding ASCII -NoNewline
+    "$($process.Id)|$($process.StartTime.Ticks)" | Out-File -FilePath $pidPath -Encoding ASCII -NoNewline
 
     Write-Log "START $id - PID=$($process.Id) log=$logFile"
 }
@@ -196,20 +209,22 @@ foreach ($account in $accounts) {
     # --- Cas 1 : fichier PID present ---
     if (Test-Path $pidPath) {
         $pidRaw = (Get-Content -Path $pidPath -Raw).Trim()
+        $parts  = $pidRaw -split '\|'
         $pidInt = 0
+        $startTicks = 0L
 
-        if ([int]::TryParse($pidRaw, [ref]$pidInt) -and $pidInt -gt 0) {
-            if (Test-ProcessAlive $pidInt) {
+        if ($parts.Count -eq 2 -and [int]::TryParse($parts[0], [ref]$pidInt) -and $pidInt -gt 0 -and [long]::TryParse($parts[1], [ref]$startTicks)) {
+            if (Test-BotProcessAlive -ProcessId $pidInt -ExpectedStartTicks $startTicks) {
                 Write-Log "SKIP $id - deja actif (PID=$pidInt)"
                 continue
             } else {
-                # PID stale : processus mort sans avoir supprime son PID
-                Write-Log "STALE $id - PID=$pidInt mort, nettoyage + relance"
+                # PID stale ou recycle par un process sans rapport (start time different)
+                Write-Log "STALE $id - PID=$pidInt mort ou recycle, nettoyage + relance"
                 Remove-Item -Path $pidPath -Force
             }
         } else {
-            # Fichier PID corrompu
-            Write-Log "CORRUPT $id - fichier PID illisible, nettoyage + relance"
+            # Fichier PID corrompu ou ancien format (sans heure de demarrage)
+            Write-Log "CORRUPT $id - fichier PID illisible/obsolete, nettoyage + relance"
             Remove-Item -Path $pidPath -Force
         }
     }

@@ -19,14 +19,25 @@ def _pid_path(account_id: str) -> str:
     return os.path.join(pid_dir, f"bot_{account_id}.pid")
 
 def write_pid_file(account_id: str) -> None:
-    """Écrit le PID courant dans pids\bot_<account_id>.pid."""
+    """
+    Écrit pids\bot_<account_id>.pid - sauf si launch_all.ps1 y a déjà écrit ce
+    même PID juste avant (format "PID|StartTicks" : PID + heure de démarrage du
+    process, utilisés ensemble côté ps1 pour détecter un PID Windows recyclé par
+    un autre process après la fin du bot). Cette écriture "double sécurité" ne
+    doit pas dégrader ce couple en un simple PID nu.
+    """
     if is_attach_mode():
         return
+    my_pid = os.getpid()
+    path = _pid_path(account_id)
     try:
-        path = _pid_path(account_id)
+        if os.path.exists(path):
+            existing_pid = open(path, "r").read().strip().split("|", 1)[0]
+            if existing_pid == str(my_pid):
+                return
         with open(path, "w") as f:
-            f.write(str(os.getpid()))
-        print(f"[PID] Fichier écrit : {path} (pid={os.getpid()})")
+            f.write(str(my_pid))
+        print(f"[PID] Fichier écrit : {path} (pid={my_pid})")
     except Exception as e:
         print(f"[PID][WARN] Impossible d'écrire le fichier PID : {e}")
 
