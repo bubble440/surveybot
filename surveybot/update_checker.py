@@ -54,6 +54,7 @@ import shutil
 import ssl
 import sys
 import tempfile
+import time
 import urllib.request
 import urllib.error
 import json
@@ -63,6 +64,18 @@ log = logging.getLogger("update_checker")
 
 _HTTP_TIMEOUT = 15  # secondes
 _MAX_ZIP_ENTRIES = 20000  # garde-fou : borne la taille d'archive traitée
+
+# check_and_apply() est appelé au tout début du process, avant tout autre accès
+# réseau applicatif. Sur une machine qui vient de démarrer (boot ou redémarrage
+# du service), la pile réseau/DNS locale peut ne pas être stabilisée pendant les
+# tout premiers instants : la résolution DNS de UPDATE_MANIFEST_URL échoue alors
+# que le réseau est en réalité sur le point de devenir disponible (les connexions
+# suivantes du même run, quelques secondes plus tard, réussissent normalement).
+# Budget borné pour absorber cette fenêtre sans retarder significativement le
+# démarrage ni abandonner silencieusement alors que le réseau est sur le point
+# de revenir.
+_MANIFEST_FETCH_MAX_ATTEMPTS = 3
+_MANIFEST_FETCH_RETRY_DELAY = 2  # secondes entre tentatives
 
 # Contexte SSL explicite base sur le bundle de certificats certifi, plutot que de
 # dependre du magasin de certificats racine de Windows (ssl.create_default_context()
@@ -107,7 +120,35 @@ def _fetch_manifest(url: str) -> dict:
     """Télécharge et parse le manifeste JSON distant."""
     req = urllib.request.Request(url, headers={"User-Agent": "SurveyBot-Updater/1.0"})
     with urllib.request.urlopen(req, timeout=_HTTP_TIMEOUT, context=_SSL_CONTEXT) as resp:
-        return json.loads(resp.read().decode())
+        # decode("utf-8-sig") : tolère un BOM UTF-8 optionnel en tête de fichier
+        # (certains outils Windows en ajoutent un à la génération/édition du
+        # manifeste) sans dépendre d'une convention d'encodage imposée côté
+        # hébergement — comportement identique avec ou sans BOM.
+        return json.loads(resp.read().decode("utf-8-sig"))
+
+
+def _fetch_manifest_with_early_boot_retry(url: str) -> dict:
+    """
+    Enrobe _fetch_manifest() d'un budget de réessais borné (_MANIFEST_FETCH_MAX_ATTEMPTS,
+    pause _MANIFEST_FETCH_RETRY_DELAY entre chaque tentative), pour tolérer une
+    indisponibilité réseau transitoire limitée aux tout premiers instants suivant le
+    démarrage du process (voir commentaire sur les constantes). N'affecte que ce premier
+    accès réseau ; _fetch_manifest() elle-même n'est pas modifiée.
+    """
+    last_exc: urllib.error.URLError | None = None
+    for attempt in range(1, _MANIFEST_FETCH_MAX_ATTEMPTS + 1):
+        try:
+            return _fetch_manifest(url)
+        except urllib.error.URLError as e:
+            last_exc = e
+            if attempt < _MANIFEST_FETCH_MAX_ATTEMPTS:
+                log.debug(
+                    "[UPDATE] Manifeste inaccessible (tentative %s/%s, réseau probablement "
+                    "pas encore stabilisé après démarrage) : %s — nouvel essai dans %ss.",
+                    attempt, _MANIFEST_FETCH_MAX_ATTEMPTS, e, _MANIFEST_FETCH_RETRY_DELAY,
+                )
+                time.sleep(_MANIFEST_FETCH_RETRY_DELAY)
+    raise last_exc
 
 
 def _sha256_file(path: str) -> str:
@@ -250,7 +291,7 @@ def check_and_apply(account_id: str) -> None:
         log.info("[UPDATE] Vérification des mises à jour (version courante : %s)...",
                  current_version or "inconnue")
 
-        manifest = _fetch_manifest(manifest_url)
+        manifest = _fetch_manifest_with_early_boot_retry(manifest_url)
         remote_version = manifest.get("version", "").strip()
         remote_url     = manifest.get("url", "").strip()
         remote_sha256  = manifest.get("sha256", "").strip().lower()

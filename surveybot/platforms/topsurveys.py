@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import List
 
 from platforms.base import Platform
@@ -15,7 +16,9 @@ class TopSurveysPlatform(Platform):
 
     def login(self, driver, config: dict) -> bool:
         from preselection.auth_handler import login
-        login(driver, config.get("Email", ""), config.get("Password", ""))
+        email = os.getenv("EMAIL") or config.get("Email", "")
+        password = os.getenv("PASSWORD") or config.get("Password", "")
+        login(driver, email, password)
         return True
 
     def select_survey(self, driver) -> bool:
