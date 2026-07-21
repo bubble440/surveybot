@@ -52,7 +52,7 @@ import sys, json, time, traceback
 from urllib.parse import urlparse
 from launch import start_heartbeat_thread, acquire_account_lock_or_exit, mark_bot_running
 from launch import install_sigterm_handler, install_sigint_handler, start_runtime_guard, launch_driver_or_fail, init_session_and_enter_surveys, install_sigusr1_handler
-from launch import run_main_loop, build_notifier, soft_restart, start_debug_http_server
+from launch import run_main_loop, build_notifier, soft_restart, start_debug_http_server, setup_logging
 from platforms import get_platform
 from Management.guards.runtime_guard import get_guard
 
@@ -808,6 +808,17 @@ def main():
             else:
                 run_attach_takeover(page, api_key=api_key, account_id=account_id)
         return
+
+    # setup_logging() attache un handler stdout au logger racine ("logging" stdlib).
+    # Jamais appelé nulle part avant ce patch (défini dans launch.py mais orphelin) :
+    # sans handler configuré, logging.getLogger(...).info/debug (update_checker.py,
+    # module "logging" stdlib) est avalé silencieusement par le handler de secours
+    # Python (seuil WARNING), et warning/error y échappent vers stderr — un fichier
+    # de log distinct de celui consulté par l'opérateur (bot_*_stdout.log vs
+    # bot_*_stderr.log, cf. nssm_setup_bot.ps1). D'où l'absence totale de trace de
+    # la vérification de mise à jour, quel que soit son issue.
+    # Doit précéder check_and_apply() ci-dessous, seul appelant concerné par ce bug.
+    setup_logging()
 
     # Vérification et application d'une mise à jour binaire avant tout démarrage.
     # No-op si UPDATE_CHECK_ENABLED != "1". Si une mise à jour est appliquée,

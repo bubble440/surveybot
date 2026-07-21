@@ -11609,6 +11609,205 @@ def _extract_image_only_choice_checkbox_blocks(driver, frame_chain: list[int] | 
     return blocks
 
 
+def _image_labelledby_option_alt(driver, el) -> str:
+    """
+    Comme `_image_only_option_alt` ci-dessus, mais résout le libellé de
+    l'option via `aria-labelledby` (conteneur frère référencé par ID,
+    contenant uniquement une `<img alt="...">`) plutôt que via un wrapper
+    label/parent direct. Retourne "" si le conteneur référencé porte un
+    texte autre que l'alt, ou si `aria-labelledby` est absent/invalide.
+    """
+    try:
+        alt = driver.evaluate(
+            """(input) => {
+            const norm = (s) => (s || '').replace(/\\s+/g, ' ').trim();
+            const labelledby = (input.getAttribute('aria-labelledby') || '').trim();
+            if (!labelledby) return '';
+            const ids = labelledby.split(/\\s+/);
+            for (const id of ids) {
+              const ref = document.getElementById(id);
+              if (!ref) continue;
+              const img = ref.querySelector('img[alt]');
+              if (!img) continue;
+              const a = norm(img.getAttribute('alt'));
+              if (!a) continue;
+              const clone = ref.cloneNode(true);
+              clone.querySelectorAll('img').forEach((n) => n.remove());
+              const remaining = norm(clone.innerText || clone.textContent || '');
+              if (remaining) continue;
+              return a;
+            }
+            return '';
+            }""",
+            el,
+        )
+        return _norm(alt) if alt else ""
+    except Exception:
+        return ""
+
+
+def _image_labelledby_container_sig(driver, el) -> str:
+    """Signature du conteneur ancêtre stable (liste/groupe) pour grouper les checkboxes sans `name`."""
+    try:
+        sig = driver.evaluate(
+            """(input) => {
+            const c = input.closest('ul, ol, [role="listbox"], [role="group"], fieldset');
+            if (!c) return '';
+            return `${c.tagName}|${c.id || ''}|${c.className || ''}`;
+            }""",
+            el,
+        )
+        return sig or ""
+    except Exception:
+        return ""
+
+
+def _extract_image_labelledby_choice_checkbox_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
+    """
+    Extraction pour les groupes de checkbox (ex. MUI React, plateforme Ipsos)
+    dont le libellé de chaque option est porté UNIQUEMENT par une image,
+    référencée via `aria-labelledby` vers un conteneur frère — pas de `name`
+    partagé entre les inputs, pas de `label[for]`, pas de wrapper texte.
+
+    Problème résolu :
+    `_extract_image_only_choice_checkbox_blocks` (ci-dessus) exige (1) un
+    `name` partagé entre les inputs du groupe et (2) un wrapper label/parent
+    direct contenant l'`<img>` — absents sur ce DOM (inputs sans `name`,
+    libellé résolu uniquement via `aria-labelledby`). Sans extracteur dédié,
+    ces groupes ne produisent aucun bloc exploitable (options=[]) →
+    `_detect_image_only_unresolvable_dom` (survey_executor.py) classe la page
+    `image_selection_challenge` → dom_only_abort, alors que le contenu de
+    chaque option (alt de l'image) est lisible en DOM.
+
+    Guard DOM strict (tous requis) :
+    1. `input[type='checkbox']` sans `name` (ou `name` vide) — pas de
+       chevauchement avec `_extract_image_only_choice_checkbox_blocks`
+    2. `aria-labelledby` non vide, résolu vers un élément ne contenant
+       qu'une `img[alt]` non vide (aucun autre texte visible)
+    3. ≥2 tels inputs partageant le même conteneur ancêtre stable
+       (`ul`/`ol`/`[role='listbox']`/`[role='group']`/`fieldset`)
+
+    Patterns exclus :
+    - Inputs avec `name` → `_extract_image_only_choice_checkbox_blocks`
+    - Libellé porté par `label[for]` ou texte wrapper → pipeline générique existant
+    - Radios (non checkbox) → hors scope de ce patch
+    """
+    frame_chain = list(frame_chain or [])
+
+    try:
+        checkboxes = driver.query_selector_all("input[type='checkbox'][aria-labelledby]")
+    except Exception:
+        return []
+    if len(checkboxes) < 2:
+        return []
+
+    grouped: dict[str, list] = {}
+    for cb in checkboxes:
+        try:
+            name_attr = (cb.get_attribute("name") or "").strip()
+            if name_attr:
+                continue
+            sig = _image_labelledby_container_sig(driver, cb)
+            if not sig:
+                continue
+            grouped.setdefault(sig, []).append(cb)
+        except Exception:
+            continue
+
+    blocks: list[dict] = []
+
+    for group_idx, (sig, els) in enumerate(grouped.items()):
+        if len(els) < 2:
+            continue
+
+        alts: list[str] = []
+        option_xpath_map: dict[str, str] = {}
+        all_image_only = True
+
+        for el in els:
+            alt_txt = _image_labelledby_option_alt(driver, el)
+            if not alt_txt:
+                all_image_only = False
+                break
+
+            nk = _norm_key(alt_txt)
+            if not nk or nk in option_xpath_map:
+                continue
+
+            # Résolution par contenu (alt de l'image), pas par position DOM figée
+            # à l'extraction : ces inputs n'ont ni `id` ni `name` (MUI React,
+            # Ipsos) et un XPath absolu positionnel (`_best_xpath_for_element`)
+            # ne résout plus rien au moment du clic (re-render React). La cible
+            # cliquable réelle est le conteneur `role="button"` (MuiListItemButton)
+            # ancêtre de l'image — l'input natif porte `tabindex="-1"` (non
+            # focusable, non pensé pour être ciblé directement).
+            alt_lit = _xpath_literal(alt_txt)
+            xp = f"(//img[@alt={alt_lit}]/ancestor::*[@role='button'][1])[1]"
+
+            option_xpath_map[nk] = xp
+            alts.append(alt_txt)
+
+        if not all_image_only or len(alts) < 2 or not option_xpath_map:
+            continue
+
+        try:
+            from Survey.dom_question_extractor import _nearest_question_container, _extract_question_from_container
+        except ImportError:
+            from Survey.dom_question_extractor import _nearest_question_container, _extract_question_from_container
+
+        question = ""
+        try:
+            container = _nearest_question_container(els[0])
+            if container:
+                question = _extract_question_from_container(container, alts)
+        except Exception:
+            question = ""
+        if not question:
+            question = _find_question_text_near_element(driver, els[0])
+        if not question:
+            continue
+
+        group_key = f"checkbox:image_labelledby:{group_idx}"
+        target_id = make_target_id("group", group_key, question)
+
+        register_target(
+            target_id,
+            {
+                "kind": "group",
+                "itype": "checkbox",
+                "group_key": group_key,
+                "question": question,
+                "option_xpath_map": option_xpath_map,
+                "frame_chain": frame_chain,
+                "image_only_choice_checkbox": True,
+            },
+        )
+
+        max_sel = _compute_max_select("checkbox", alts, question)
+        blocks.append(
+            {
+                "question": question,
+                "itype": "checkbox",
+                "options": alts,
+                "max_select": max_sel,
+                "min_select": 1,
+                "target_id": target_id,
+                "context": {
+                    "kind": "group",
+                    "group_key": group_key,
+                    "image_only_choice_checkbox": True,
+                },
+            }
+        )
+
+        log_debug(
+            "[DOM_IMAGE_LABELLEDBY_CHOICE]",
+            f"container={sig!r} question={question!r} options={alts}",
+        )
+
+    return blocks
+
+
 # ================================================================================
 # ASKIA — RANKING ISOTOPE (div.adc-ranking-isotope + div.statement[data-value])
 # ================================================================================

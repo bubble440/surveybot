@@ -1610,6 +1610,54 @@ Deux points d'appel (additifs, un guard, deux entrées) :
 
 ---
 
+## PLATEFORME : IPSOS / SIMSTORE (MUI REACT) — CHOIX MULTIPLE IMAGE-ONLY (aria-labelledby)
+Signature DOM : `<ul>` MUI (`MuiList*`) contenant N `<li>` > `div[role="button"].MuiListItemButton-root`
+> `input[type="checkbox"]` (SANS `name` ni `id`, `tabindex="-1"`, `aria-labelledby="{id}"`)
++ `div[id="{id}"].MuiListItemText-root` frère contenant uniquement une `<img alt="...">` (aucun texte).
+Domaine observé : field.simstore.ipsos.com. Le libellé de chaque option n'existe qu'à travers l'`alt`
+de l'image référencée par `aria-labelledby` — aucun `label[for]`, aucun `name` partagé, aucun `id` sur l'input.
+
+### _image_labelledby_option_alt / _image_labelledby_container_sig
+Fichier : Survey/dom_extractors_misc.py
+Rôle : résolution du libellé d'une option via `aria-labelledby` → élément référencé → `img[alt]`
+(rejette si l'élément référencé contient un autre texte que l'alt) ; signature de groupement basée
+sur le plus proche ancêtre `ul/ol/[role='listbox']/[role='group']/fieldset` (substitut au `name`
+partagé, absent sur ce DOM).
+Patterns exclus : options avec `label[for]` ou texte wrapper classique → pipeline générique existant.
+
+### _extract_image_labelledby_choice_checkbox_blocks
+Fichier : Survey/dom_extractors_misc.py
+Enregistré dans : dom_analyzer.py (après `_extract_image_only_choice_checkbox_blocks`)
+Guard (tous requis) :
+1. `input[type='checkbox'][aria-labelledby]` sans `name`
+2. `aria-labelledby` résolu vers un élément ne contenant qu'une `img[alt]` non vide
+3. ≥2 tels inputs partageant le même conteneur ancêtre stable (signature ci-dessus)
+Patterns couverts :
+- Groupe checkbox complet extrait sans recours Vision : question + options (`alt` des images)
+- Sans cet extracteur : `options=[]` → page classée `image_selection_challenge` par
+  `_detect_image_only_unresolvable_dom` (survey_executor.py) → dom_only_abort → disqualification
+- `group_key = checkbox:image_labelledby:{group_idx}` ; flag payload : `image_only_choice_checkbox=True`
+Patterns exclus :
+- Inputs avec `name` → `_extract_image_only_choice_checkbox_blocks`
+- Libellé porté par `label[for]` ou texte wrapper → pipeline générique existant
+- Radios (non checkbox) → hors scope
+
+### option_xpath_map — résolution de clic par contenu (alt), pas par position DOM
+Fichier : Survey/dom_extractors_misc.py, fonction `_extract_image_labelledby_choice_checkbox_blocks`
+Problème résolu : l'input n'ayant ni `id` ni `name`, le repli initial vers un XPath absolu positionnel
+(`_best_xpath_for_element`, basé sur les index de `<li>`/`<div>`) ne résolvait plus rien au moment du
+clic — React re-render les indices de la liste, et l'input `tabindex="-1"` n'est de toute façon pas la
+cible cliquable réelle (widget MUI stylé, clic géré par le `div[role="button"]` ancêtre).
+Fix : XPath ancré sur le contenu, pas la position : `//img[@alt='{alt}']/ancestor::*[@role='button'][1]`
+— cible directement le conteneur cliquable (MuiListItemButton) portant l'image de l'option choisie.
+Patterns couverts :
+- Toute option dont l'`alt` est unique dans la page au sein de ce groupe (garanti par le guard 2 ci-dessus)
+Patterns exclus :
+- Aucune modification du chemin `option_xpath_map` générique existant pour les autres extracteurs
+  (`_extract_image_only_choice_checkbox_blocks` conserve son XPath par `id`/`_best_xpath_for_element`)
+
+---
+
 ## FRONTIÈRES INTER-EXTRACTEURS
 
 | Plateforme | Extracteur A | Extracteur B | Signal de discrimination |
@@ -1630,6 +1678,7 @@ Deux points d'appel (additifs, un guard, deux entrées) :
 | Decipher/FocusVision answers-list | decipher_radio_clickable_cell (dispatcher) | decipher_clickable_cell (dispatcher, checkbox) / radio_main générique | `input[type='radio'].fir-hidden` dans `.clickableCell` (vs `input[type='checkbox'].fir-hidden` pour la variante checkbox) — guard strict avant tout fallback générique |
 | Decipher/FocusVision card rating | _extract_decipher_cardrating_blocks | button_group générique | `div.sq-cardrating-widget[data-uid]` avec config `rows`/`cardrating:completion` lisible — retour immédiat si match, guard négatif additif sur button_group pour ce widget |
 | Decipher/FocusVision card rating | _extract_decipher_cardrating_blocks | extracteur générique answers-list/matrice (vue QA) | même `data-uid` de widget déjà couvert par `_extract_decipher_cardrating_blocks` → bloc `radio:name:{uid}` de la vue QA cachée supprimé par guard négatif additif |
+| Ipsos/simstore MUI | _extract_image_labelledby_choice_checkbox_blocks | _extract_image_only_choice_checkbox_blocks | inputs SANS `name` + libellé résolu via `aria-labelledby` (vs inputs avec `name` + wrapper label/parent direct) |
 
 ---
 

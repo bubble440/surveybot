@@ -143,6 +143,7 @@ try:
         _extract_alchemer_rank_dragdrop_block,
         _extract_alchemer_sg_table_checkbox_matrix_block,
         _extract_image_only_choice_checkbox_blocks,
+        _extract_image_labelledby_choice_checkbox_blocks,
     )
 
     # Registre et utilitaires
@@ -261,6 +262,7 @@ except ImportError:
         _extract_alchemer_rank_dragdrop_block,
         _extract_alchemer_sg_table_checkbox_matrix_block,
         _extract_image_only_choice_checkbox_blocks,
+        _extract_image_labelledby_choice_checkbox_blocks,
     )
 
 
@@ -1849,6 +1851,26 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             _group_key = _norm_lc(_ctx.get("group_key") or "")
             if _group_key.startswith("checkbox:image_alt:"):
                 _nm = _group_key.split("checkbox:image_alt:", 1)[1].strip()
+                if _nm:
+                    image_only_choice_names.add(_nm)
+    except Exception:
+        pass
+
+    # --- 0i-undecies) Choix multiple iconographique via aria-labelledby (sans name) ---
+    # Guard DOM strict : ≥2 input[type=checkbox] sans `name`, libellé résolu uniquement
+    # via aria-labelledby vers un conteneur frère ne portant qu'une <img alt="...">.
+    # Additif, après l'extracteur name-based ci-dessus : aucun chevauchement (celui-ci
+    # exige `name`, celui-ci exige l'absence de `name`).
+    try:
+        img_labelledby_blocks = _extract_image_labelledby_choice_checkbox_blocks(driver, frame_chain)
+        for _blk in img_labelledby_blocks:
+            if not isinstance(_blk, dict):
+                continue
+            question_blocks.append(_blk)
+            _ctx = (_blk.get("context") or {}) if isinstance(_blk.get("context"), dict) else {}
+            _group_key = _norm_lc((_ctx.get("group_key") or ""))
+            if _group_key.startswith("checkbox:image_labelledby:"):
+                _nm = _group_key.split("checkbox:image_labelledby:", 1)[1].strip()
                 if _nm:
                     image_only_choice_names.add(_nm)
     except Exception:
