@@ -161,9 +161,11 @@ dérivé une fois avec le chemin en dur dans l'ancienne fonction).
 - Variables injectées par bot : `ACCOUNT_ID`, `EMAIL`, `PASSWORD`,
   `PROXY_URL`, `PROXY_USER`, `PROXY_PASS`, `CHROME_PROFILE_DIR` (alias de
   `profile_dir`), plus défauts fixes `GEO_LAT`/`GEO_LON`/`SURVEY_LANG`/
-  `SURVEY_TZ` et `PYTHONIOENCODING`/`PYTHONUTF8`. Ces défauts ne vivent plus
-  que dans ce script depuis la suppression de `launch_all.ps1` (cf. section 9)
-  — plus de risque de divergence entre deux fichiers.
+  `SURVEY_TZ` et `PYTHONIOENCODING`/`PYTHONUTF8`. **Mise à jour (cf. section 9)** :
+  `launch_all.ps1` a été réintroduit le 20/07/2026 et définit à nouveau les
+  mêmes défauts `GEO_LAT`/`GEO_LON`/`SURVEY_LANG`/`SURVEY_TZ` de son côté —
+  l'affirmation précédente (« ne vivent plus que dans ce script ») ne tient
+  donc plus ; les deux fichiers doivent être tenus synchronisés manuellement.
 - **Sécurité** : `PASSWORD` n'est jamais affiché dans les logs du script.
 - **Détection d'orphelins** : un service `surveybot_*` sans entrée
   correspondante dans `accounts.json` est signalé (`Write-Warning`) mais
@@ -192,15 +194,34 @@ dérivé une fois avec le chemin en dur dans l'ancienne fonction).
 
 - **Confirmé non actif** sur les machines de production (pas de tâche
   planifiée existante) au 13/07/2026.
-- **✅ Supprimé (13/07/2026)** : NSSM + `wake_scheduler.ps1` +
-  `check_zombie_bots.ps1` couvrent désormais l'intégralité de son rôle.
-  Le fichier n'existe plus dans le projet.
-- Vérification `profile_dir` (que `launch_all.ps1` faisait avant de lancer un
-  bot) portée dans `nssm_setup_bot.ps1` avant suppression : un compte dont
+- **Supprimé le 13/07/2026**, sur la base du constat ci-dessus : NSSM +
+  `wake_scheduler.ps1` + `check_zombie_bots.ps1` couvraient alors
+  l'intégralité de son rôle.
+- **Réintroduit le 20/07/2026** et activement maintenu depuis (dernier
+  correctif : détection des PID recyclés par comparaison de l'heure de
+  démarrage du process, pour éviter qu'un `bot_<id>.pid` obsolète fasse
+  ignorer à tort un compte comme "déjà actif"). **Le fichier existe donc à
+  nouveau dans le projet et doit être traité comme faisant partie de
+  l'orchestration active**, pas comme un résidu — toute correction future
+  touchant au démarrage/à la détection PID doit en tenir compte au même titre
+  que NSSM/`wake_scheduler.ps1`/`check_zombie_bots.ps1`.
+- Statut d'exécution effective en production (tâche planifiée l'invoquant
+  réellement) non vérifiable depuis ce dépôt, au même titre que
+  `wake_scheduler.ps1`/`check_zombie_bots.ps1` (cf. leurs en-têtes respectifs :
+  seule la commande `Register-ScheduledTask` à exécuter manuellement y est
+  documentée, aucune tâche planifiée n'est versionnée).
+- Vérification `profile_dir` (que `launch_all.ps1` fait avant de lancer un
+  bot) est également portée dans `nssm_setup_bot.ps1` : un compte dont
   `profile_dir`/`CHROME_PROFILE_DIR` est vide ou pointe vers un dossier
   inexistant est skippé (`Write-Warning`, service NSSM non configuré), sans
   être signalé comme "orphelin" (son `account_id` est ajouté au set de
   comptes connus avant le check, pas après).
+- **Point de vigilance non résolu** : `launch_all.ps1::Start-Bot` définit ses
+  propres défauts `GEO_LAT`/`GEO_LON`/`SURVEY_LANG`/`SURVEY_TZ`, séparément de
+  ceux de `nssm_setup_bot.ps1` (cf. section 7) — les deux scripts existant à
+  nouveau simultanément, ces valeurs sont désormais dupliquées à deux
+  endroits, exactement le risque de divergence que la suppression du
+  13/07/2026 avait éliminé. Non corrigé à ce jour.
 
 ---
 
@@ -221,7 +242,9 @@ dérivé une fois avec le chemin en dur dans l'ancienne fonction).
 
 **Fichiers supprimés :**
 - `State/query_cooldown_status.py` — supprimé (remplacé par le mode CLI du binaire)
-- `launch_all.ps1` — supprimé (13/07/2026), rôle repris par NSSM + `wake_scheduler.ps1` + `check_zombie_bots.ps1`
+- `launch_all.ps1` — supprimé le 13/07/2026, **puis réintroduit le 20/07/2026 et
+  activement maintenu depuis** (voir section 9 pour le détail et le statut à
+  jour) ; ne plus le considérer comme supprimé du projet.
 
 ---
 
@@ -259,4 +282,8 @@ dérivé une fois avec le chemin en dur dans l'ancienne fonction).
 
   ---
 
-*Dernière mise à jour de ce fichier : 13/07/2026. À mettre à jour à chaque décision ou correction touchant l'orchestration — pas seulement en fin de chantier.*
+*Dernière mise à jour de ce fichier : 23/07/2026 (section 9 : statut de
+`launch_all.ps1` corrigé — réintroduit le 20/07/2026 après sa suppression du
+13/07/2026, ne plus le documenter comme supprimé). À mettre à jour à chaque
+décision ou correction touchant l'orchestration — pas seulement en fin de
+chantier.*
