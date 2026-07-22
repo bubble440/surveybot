@@ -44,6 +44,39 @@ if os.getenv("BROWSER_MODE", "").strip().lower() != "attach":
 
 from config import is_attach_mode, RUN_ENV, BROWSER_MODE, is_prod_like, should_run_guard_monitor, should_run_heartbeat, log_config_summary
 
+if is_attach_mode():
+    ACCOUNT_ID = "local_debug"
+else:
+    ACCOUNT_ID = os.getenv("ACCOUNT_ID")
+    if not ACCOUNT_ID:
+        raise RuntimeError("ACCOUNT_ID manquant en prod (BROWSER_MODE != attach)")
+
+# Vérification du seuil de redémarrages automatiques (crash-loop) placée AVANT
+# check_license_or_exit() ci-dessous : check_license_or_exit() peut sys.exit()
+# très tôt (Postgres injoignable, licence désactivée, quota atteint) et ces
+# arrêts précoces doivent être comptés comme n'importe quel autre crash, sinon
+# seul NSSM (AppExit Default -> Restart) pilote la boucle de redémarrage sans
+# jamais déclencher EXIT_FATAL. Ne pas dupliquer cet appel plus bas dans main() :
+# une 2e lecture dans le même run verrait le sentinel EXIT_CRASH que la 1re
+# vient d'écrire et fausserait le compteur.
+if not is_attach_mode():
+    from bot_supervisor import check_and_record_start, record_exit, EXIT_FATAL
+    from launch import build_notifier
+    _should_abort, _restart_count = check_and_record_start(ACCOUNT_ID)
+    if _should_abort:
+        _abort_msg = (
+            f"🚨 BOT {ACCOUNT_ID} : seuil de redémarrages automatiques dépassé "
+            f"({_restart_count} redémarrages en fenêtre courte). "
+            "Arrêt FATAL — vérifier le proxy, le compte ou la plateforme."
+        )
+        print(_abort_msg)
+        try:
+            build_notifier(None)(_abort_msg)
+        except Exception:
+            pass
+        record_exit(ACCOUNT_ID, EXIT_FATAL, "restart_threshold_exceeded")
+        sys.exit(EXIT_FATAL)
+
 from preselection.license_guard import check_license_or_exit
 if not is_attach_mode():
     check_license_or_exit()
@@ -55,13 +88,6 @@ from launch import install_sigterm_handler, install_sigint_handler, start_runtim
 from launch import run_main_loop, build_notifier, soft_restart, start_debug_http_server, setup_logging
 from platforms import get_platform
 from Management.guards.runtime_guard import get_guard
-
-if is_attach_mode():
-    ACCOUNT_ID = "local_debug"
-else:
-    ACCOUNT_ID = os.getenv("ACCOUNT_ID")
-    if not ACCOUNT_ID:
-        raise RuntimeError("ACCOUNT_ID manquant en prod (BROWSER_MODE != attach)")
 
 # 1) stdout en line-buffering si dispo (Python 3.7+)
 if hasattr(sys.stdout, "reconfigure"):
@@ -850,26 +876,12 @@ def main():
 
     notify_fn = build_notifier(config)
 
-    # Vérification du seuil de redémarrages automatiques (protection crash-loop NSSM).
-    # check_and_record_start() lit le code de sortie du run précédent et incrémente
-    # le compteur si ce run s'est terminé par un crash ou soft_restart dans la fenêtre.
-    # Si le seuil est dépassé : alerte Telegram + exit EXIT_FATAL (NSSM ne redémarrera pas).
-    if not is_attach_mode():
-        from bot_supervisor import check_and_record_start, record_exit, EXIT_FATAL
-        _should_abort, _restart_count = check_and_record_start(account_id)
-        if _should_abort:
-            _abort_msg = (
-                f"🚨 BOT {account_id} : seuil de redémarrages automatiques dépassé "
-                f"({_restart_count} redémarrages en fenêtre courte). "
-                "Arrêt FATAL — vérifier le proxy, le compte ou la plateforme."
-            )
-            print(_abort_msg)
-            try:
-                notify_fn(_abort_msg)
-            except Exception:
-                pass
-            record_exit(account_id, EXIT_FATAL, "restart_threshold_exceeded")
-            sys.exit(EXIT_FATAL)
+    # Vérification du seuil de redémarrages automatiques (crash-loop) : tourne
+    # désormais au niveau module, avant check_license_or_exit() — voir le
+    # commentaire correspondant en tête de fichier. Ne pas la réintroduire ici :
+    # un second appel à check_and_record_start() dans le même run lirait le
+    # sentinel EXIT_CRASH que le premier appel vient d'écrire et fausserait le
+    # compteur (incrément à tort dès le premier démarrage sain).
 
     # Proxy-lock retiré : en prod on a 1 bot par proxy, donc lock proxy redondant
     runtime_ctx = {
