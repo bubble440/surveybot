@@ -1785,14 +1785,6 @@ def execute_survey_page(driver, account_id, api_key, ctx=None):
         print(f"[CAPTCHA][WARN] {_cap_exc}")
 
     try:
-        from captcha.datadome_handler import solve_datadome_auto
-        if solve_datadome_auto(driver):
-            print("[DATADOME] DataDome résolu → reprise du flux")
-            return True
-    except Exception as _dd_exc:
-        print(f"[DATADOME][WARN] {_dd_exc}")
-
-    try:
         driver._dom_rescans_this_page = 0
     except Exception:
         pass
