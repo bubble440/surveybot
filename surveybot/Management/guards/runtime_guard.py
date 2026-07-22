@@ -384,7 +384,17 @@ class RuntimeGuard:
 
         pause_sec = resolve_pause_seconds(policy)
 
-        if reason not in {StopReason.NO_SURVEY_AVAILABLE, StopReason.DAILY_TARGET_REACHED}:
+        # NO_SURVEY_AVAILABLE / DAILY_TARGET_REACHED : trop fréquents pour alerter.
+        # SESSION_EXPIRED / PROXY_EXPIRED : l'appelant a déjà notifié explicitement
+        # (avec account_id) juste avant d'appeler pause() — voir
+        # auth_handler.py::handle_proxy_error_page_if_needed et launch.py::safe_get.
+        # Notifier une deuxième fois ici doublonnerait la même alerte.
+        if reason not in {
+            StopReason.NO_SURVEY_AVAILABLE,
+            StopReason.DAILY_TARGET_REACHED,
+            StopReason.SESSION_EXPIRED,
+            StopReason.PROXY_EXPIRED,
+        }:
             self._notify(
                 f"⏸️ Pause bot ({policy.name}) | raison={reason.value}"
             )
