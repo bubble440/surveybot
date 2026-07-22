@@ -92,13 +92,19 @@ def safe_get(driver, url, base_delay=4):
             page.goto(url, timeout=70_000, wait_until="domcontentloaded")
             handle_proxy_error_page_if_needed(driver)
             if is_session_expired(driver):
-                msg = "🔐 Session expirée — ré-authentification manuelle requise."
+                # account_id inclus dans le message : même convention que le message
+                # PROXY_EXPIRED (auth_handler.py::handle_proxy_error_page_if_needed) —
+                # sans lui, l'alerte Telegram ne permet pas de savoir quel compte,
+                # parmi les services NSSM du parc, nécessite la ré-authentification.
+                _guard = get_guard()
+                _account_id = getattr(_guard, "account_id", "unknown")
+                msg = f"🔐 Session expirée — ré-authentification manuelle requise. | account={_account_id}"
                 print(msg)
                 try:
-                    get_guard().notify_fn(msg)
+                    _guard.notify_fn(msg)
                 except Exception:
                     pass
-                get_guard().pause(
+                _guard.pause(
                     PausePolicy.UNTIL_MANUAL,
                     StopReason.SESSION_EXPIRED,
                 )
