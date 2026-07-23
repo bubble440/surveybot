@@ -24,6 +24,23 @@ if len(sys.argv) >= 2 and sys.argv[1] == "--query-cooldown":
     print(_json.dumps(_results))
     sys.exit(0)
 
+# ── Mode CLI --selftest-tz (diagnostic embarquement tzdata / Nuitka) ─────────
+# Point d'entrée dédié : vérifie que ZoneInfo("Europe/Paris") se résout dans CE
+# binaire, sans navigateur/licence/lock/Postgres. Ajouté le 24/07/2026 suite au
+# diagnostic tzdata absent de requirements.txt et de nuitka_build_release.ps1
+# (voir Utils/DEPLOIEMENT_BAREMETAL_DECISIONS.md section 4) — conservé en
+# permanence comme mode de diagnostic réutilisable après tout changement de
+# dépendances liées aux fuseaux horaires.
+if len(sys.argv) >= 2 and sys.argv[1] == "--selftest-tz":
+    from Management.pause_policy import PausePolicy, resolve_pause_seconds
+    try:
+        secs = resolve_pause_seconds(PausePolicy.DAILY_RESET)
+        print(f"TZ_SELFTEST_OK seconds_until_midnight_europe_paris={secs}")
+        sys.exit(0)
+    except Exception as e:
+        print(f"TZ_SELFTEST_FAIL {type(e).__name__}: {e}")
+        sys.exit(1)
+
 print("BOOT: container démarré.", flush=True)
 
 # ⚠ Doit s'exécuter AVANT tout import qui lit une constante d'environnement au

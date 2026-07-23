@@ -24,3 +24,10 @@ pproxy
 playwright
 boto3
 psycopg2-binary==2.9.9
+
+# --- Fuseaux horaires (zoneinfo/ZoneInfo) ---
+# Windows ne fournit pas nativement la base IANA tzdata consultée par le module
+# stdlib `zoneinfo` (contrairement à Linux/macOS) : sans ce paquet,
+# ZoneInfo("Europe/Paris") lève ZoneInfoNotFoundError. Utilisé par
+# Management/pause_policy.py::resolve_pause_seconds() (PausePolicy.DAILY_RESET).
+tzdata
