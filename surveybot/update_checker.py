@@ -1,11 +1,23 @@
 """
 update_checker.py
-Auto-update du CODE SOURCE (dossier code\\) depuis une archive ZIP distante.
+Auto-update — deux mécanismes selon le contexte d'exécution, même manifeste
+(version/url/sha256) et même logique de vérification/version dans les deux cas.
 
-CHANGEMENT DE MÉCANISME (phase déploiement interne, bare metal) :
-Le bot ne tourne plus depuis un .exe Nuitka mais en Python interprété
-(python.exe code\\main.py). L'update ne remplace donc plus un binaire unique
-mais l'intégralité du dossier code\\ contenant les sources.
+PARC INTERNE (phase déploiement interne, bare metal) :
+Le bot tourne en Python interprété (venv\\Scripts\\python.exe code\\main.py),
+pas depuis un .exe Nuitka. L'update remplace l'intégralité du dossier code\\
+contenant les sources (_replace_source_and_restart / _swap_code_dir).
+
+PIPELINE TIERS/RÉCEPTEURS (binaire Nuitka onefile, nuitka_build_release.ps1) :
+Correction (24/07/2026) — _replace_source_and_restart ne peut pas fonctionner
+dans ce contexte : sys.executable et __file__ pointent vers le dossier
+d'extraction temporaire du onefile (%TEMP%\\onefile_...), pas vers l'exe
+distribué réel — même constat déjà établi et exploité dans
+preselection/secret_loader.py::_bot_root_dirs(). Détection via la variable
+NUITKA_ONEFILE_BINARY (même mécanisme que secret_loader.py) : si présente,
+_replace_exe_and_restart() remplace le binaire lui-même (adapté de
+l'implémentation pré-pivot de ce fichier, qui utilisait sys.executable — donc
+sujette au même piège avant même la migration Nuitka).
 
 Layout attendu sur chaque machine (voir launch_all.ps1 / nssm_setup_bot.ps1) :
   C:\\surveybot\\                  racine persistante — jamais touchée par l'update
@@ -99,6 +111,17 @@ try:
 except ImportError:
     UPDATE_CHECK_ENABLED = os.getenv("UPDATE_CHECK_ENABLED", "0")
     UPDATE_MANIFEST_URL = os.getenv("UPDATE_MANIFEST_URL", "")
+
+
+def _is_onefile_binary() -> bool:
+    """
+    True si ce process tourne depuis un binaire Nuitka onefile compilé
+    (pipeline tiers/récepteurs). Même variable, même raison que
+    preselection/secret_loader.py::_bot_root_dirs() : NUITKA_ONEFILE_BINARY
+    est fiable pour retrouver l'exe réel ; sys.executable/__file__ ne le sont
+    pas dans ce mode.
+    """
+    return bool(os.environ.get("NUITKA_ONEFILE_BINARY", "").strip())
 
 
 def _current_version() -> str:
@@ -271,6 +294,59 @@ def _replace_source_and_restart(zip_path: str, account_id: str) -> None:
     os.execv(python_exe, [python_exe, main_py] + sys.argv[1:])
 
 
+def _replace_exe_and_restart(new_exe: str, account_id: str) -> None:
+    """
+    Remplace le binaire onefile Nuitka courant par new_exe et relance le
+    processus. Utilisé uniquement quand _is_onefile_binary() est vrai (pipeline
+    tiers/récepteurs) — jamais pour le parc interne, qui passe par
+    _replace_source_and_restart() ci-dessus, inchangée.
+
+    Adapté de l'implémentation pré-pivot de ce fichier (avant le 20/07/2026,
+    voir git log), qui utilisait déjà cette stratégie renommer-copier-relancer
+    mais avec sys.executable comme référence de l'exe courant — non fiable en
+    onefile Nuitka (voir docstring du module). Seul changement : NUITKA_ONEFILE_BINARY
+    remplace sys.executable comme source de vérité pour le chemin de l'exe réel,
+    même mécanisme que preselection/secret_loader.py::_bot_root_dirs().
+    shutil est déjà importé au niveau module (utilisé par _extract_zip_flat/
+    _swap_code_dir ci-dessus), pas besoin de le réimporter ici.
+    """
+    current_exe = os.environ.get("NUITKA_ONEFILE_BINARY", "").strip()
+    if not current_exe or not os.path.isfile(current_exe):
+        raise RuntimeError(
+            "NUITKA_ONEFILE_BINARY absent ou invalide — remplacement du binaire "
+            "annulé (sys.executable n'est pas fiable pour cette opération en "
+            "onefile Nuitka)."
+        )
+
+    old_exe = current_exe + ".old"
+
+    # Supprimer un éventuel .old résiduel du cycle précédent
+    try:
+        if os.path.exists(old_exe):
+            os.remove(old_exe)
+    except Exception as e:
+        log.warning("[UPDATE] Impossible de supprimer l'ancien .old : %s", e)
+
+    # Renommer l'exe courant en .old (Windows autorise le renommage d'un exe en
+    # cours d'exécution, pas son écrasement direct), copier le nouveau à sa place.
+    os.rename(current_exe, old_exe)
+    shutil.copy2(new_exe, current_exe)
+
+    log.info("[UPDATE] Binaire remplacé. Relancement...")
+
+    # Supprimer le PID pour éviter un faux "déjà actif" dans launch_all.ps1
+    try:
+        base = os.path.dirname(current_exe)
+        pid_path = os.path.join(base, "pids", f"bot_{account_id}.pid")
+        if os.path.exists(pid_path):
+            os.remove(pid_path)
+    except Exception as e:
+        log.warning("[UPDATE] Impossible de supprimer le PID avant re-exec : %s", e)
+
+    # Relance avec l'exe réel (pas sys.executable) — ne retourne jamais.
+    os.execv(current_exe, [current_exe] + sys.argv[1:])
+
+
 def check_and_apply(account_id: str) -> None:
     """
     Vérifie si une mise à jour du code est disponible et l'applique si oui.
@@ -307,8 +383,13 @@ def check_and_apply(account_id: str) -> None:
         log.info("[UPDATE] Nouvelle version disponible : %s -> %s. Téléchargement...",
                  current_version or "?", remote_version)
 
-        # Télécharger dans un fichier temporaire
-        tmp_fd, tmp_path = tempfile.mkstemp(suffix=".zip", prefix="surveybot_update_")
+        # Télécharger dans un fichier temporaire. Suffixe informatif uniquement
+        # (zip pour le parc interne, exe pour le pipeline tiers/récepteurs) —
+        # _download_zip() est un téléchargeur générique malgré son nom (simple
+        # flux d'octets vers un fichier), réutilisable tel quel dans les deux cas.
+        onefile = _is_onefile_binary()
+        tmp_suffix = ".exe" if onefile else ".zip"
+        tmp_fd, tmp_path = tempfile.mkstemp(suffix=tmp_suffix, prefix="surveybot_update_")
         os.close(tmp_fd)
         try:
             _download_zip(remote_url, tmp_path)
@@ -323,11 +404,16 @@ def check_and_apply(account_id: str) -> None:
                 return
 
             log.info("[UPDATE] SHA256 OK. Application de la mise à jour...")
-            _replace_source_and_restart(tmp_path, account_id)
-            # Ne retourne pas si _replace_source_and_restart réussit
+            # Un seul point de branchement : pipeline tiers (binaire onefile)
+            # vs parc interne (source+venv, comportement inchangé).
+            if onefile:
+                _replace_exe_and_restart(tmp_path, account_id)
+            else:
+                _replace_source_and_restart(tmp_path, account_id)
+            # Ne retourne pas si l'une ou l'autre réussit
 
         finally:
-            # Nettoyage du zip temporaire si on n'a pas relancé (erreur ou version identique)
+            # Nettoyage du fichier temporaire si on n'a pas relancé (erreur ou version identique)
             try:
                 if os.path.exists(tmp_path):
                     os.remove(tmp_path)

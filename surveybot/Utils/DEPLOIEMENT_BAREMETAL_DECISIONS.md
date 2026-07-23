@@ -339,8 +339,17 @@ envoi d'un binaire à un récepteur** : dans un process onefile Nuitka, il n'exi
 `code\` distinct à renommer, et `sys.executable` peut ne pas pointer vers un interpréteur
 Python exploitable (voir paragraphe ci-dessus) — `_replace_source_and_restart` pourrait donc
 échouer silencieusement ou se comporter de façon imprévisible si un récepteur reçoit un jour un
-binaire compilé avec cette version du fichier. Non corrigé ici (documentation uniquement) — à
-traiter comme un diagnostic dédié si le pipeline tiers est réactivé.
+binaire compilé avec cette version du fichier.
+
+**Statut : corrigé (24/07/2026), non testé en conditions réelles (pas de cycle complet
+build+update exécuté).** `update_checker.py::check_and_apply()` détecte désormais le contexte
+onefile via `NUITKA_ONEFILE_BINARY` (même variable que `secret_loader.py::_bot_root_dirs()`) et
+branche vers `_replace_exe_and_restart()` — remplacement de l'exe réel (renommer + copier +
+`os.execv` sur le chemin trouvé via `NUITKA_ONEFILE_BINARY`, jamais `sys.executable`), adapté de
+l'implémentation pré-pivot de ce fichier (git history, avant le 20/07/2026), qui utilisait déjà
+cette stratégie mais avec `sys.executable` — donc sujette au même piège. Le chemin parc interne
+(`_replace_source_and_restart`, `onefile` faux) est inchangé : vérifié par lecture de code et
+test de la fonction de détection, pas par un cycle d'update réel de bout en bout.
 
 **Bug hors-scope détecté au passage, non corrigé ici (tâche séparée)** :
 `preselection/license_guard.py` importe `from surveybot._license_config import LICENSE_KEY` —
