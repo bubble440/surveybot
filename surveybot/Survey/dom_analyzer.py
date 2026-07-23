@@ -2645,6 +2645,12 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         Guard DOM strict (appelée uniquement quand
         `_is_mui_dialog_question_optimal_container(cont)` est vrai) : ne
         s'applique qu'aux options portant un descendant '.option-text' non vide.
+        Préfixe "xpath=" : convention systématique du projet pour toute
+        expression XPath construite à la main avant transmission au driver
+        (voir Survey/input_matrix.py, et les blocs dédiés de
+        action_dispatcher.py qui construisent leur propre xpath) — sans ce
+        préfixe, le chemin générique de résolution radio (_find_best_visible,
+        action_dispatcher.py) ne la traite pas comme une expression XPath.
         """
         try:
             node = b.query_selector(".option-text")
@@ -2654,7 +2660,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             if not txt:
                 return ""
             return (
-                "//div[contains(@class,'option-text') and normalize-space(text())="
+                "xpath=//div[contains(@class,'option-text') and normalize-space(text())="
                 f"{_xpath_literal(txt)}]/ancestor::*[@role='button'][1]"
             )
         except Exception:

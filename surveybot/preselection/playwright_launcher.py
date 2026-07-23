@@ -148,7 +148,15 @@ def _fingerprint_js() -> str:
     Patches appliqués :
       - Timezone : Intl.DateTimeFormat patché pour retourner Europe/Paris
       - window.chrome : injecté si absent (contexte Playwright headless)
-      - WebRTC : suppression de RTCPeerConnection hors mode attach
+
+    WebRTC n'est volontairement PAS patché ici : un vrai Chrome desktop a
+    toujours RTCPeerConnection défini. Le supprimer via JS crée un signal
+    d'anomalie plus fort (typeof RTCPeerConnection === 'undefined', jamais
+    observé sur un navigateur réel) que la fuite d'IP qu'il visait à éviter.
+    La protection contre la fuite d'IP passe uniquement par les flags Chrome
+    --enforce-webrtc-ip-permission-check / --webrtc-ip-handling-policy
+    (voir chrome_args dans launch_browser_playwright), qui restreignent
+    WebRTC à l'IP du proxy sans retirer l'API.
     """
     return """
         // ── Timezone ─────────────────────────────────────────────────────────
@@ -195,15 +203,7 @@ def _fingerprint_js() -> str:
                 Object.defineProperty(window, 'chrome', { value: _chrome, writable: false, enumerable: true, configurable: false });
             } catch(e) {}
         }
-    """ + ("""
-        // ── WebRTC suppression (prod uniquement) ────────────────────────────
-        // Fallback JS : supprime RTCPeerConnection si les flags Chrome ne
-        // suffisent pas à bloquer le STUN/ICE sur ce build.
-        try {
-            Object.defineProperty(window, 'RTCPeerConnection',       { value: undefined, writable: false });
-            Object.defineProperty(window, 'webkitRTCPeerConnection', { value: undefined, writable: false });
-        } catch(e) {}
-    """ if not is_attach_mode() else "")
+    """
 
 
 

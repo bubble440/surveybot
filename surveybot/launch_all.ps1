@@ -27,6 +27,11 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
+# Nombre de cycles de lancement passes conserves en historique de logs, au-dela
+# du cycle courant (bot_$id.log.1 = cycle precedent, ... .10 = plus ancien
+# conserve). Permet l'analyse retrospective de comportements intermittents.
+$LOG_HISTORY_CYCLES = 10
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -110,13 +115,25 @@ function Start-Bot {
 
     $logFile = Join-Path $LogDir "bot_$id.log"
 
-    # Rotation : archive le log du cycle precedent avant d'en demarrer un nouveau.
-    # On conserve toujours le cycle courant + le cycle precedent (.old) - suffisant
-    # pour diagnostiquer un crash sans laisser le fichier grossir indefiniment.
-    $logOld = "$logFile.old"
+    # Rotation : conserve un historique borne de $LOG_HISTORY_CYCLES cycles de
+    # lancement passes (bot_$id.log.1 = precedent, ... .N = plus ancien), au-dela
+    # du cycle courant. Chaque decalage est independant : une interruption en
+    # plein cycle perd au pire un cran d'historique, sans etat intermediaire
+    # casse ni croissance illimitee (le plus ancien est ecrase a chaque tour).
+    for ($i = $LOG_HISTORY_CYCLES - 1; $i -ge 1; $i--) {
+        $src = "$logFile.$i"
+        $dst = "$logFile.$($i + 1)"
+        if (Test-Path $src) {
+            try {
+                Move-Item -Path $src -Destination $dst -Force
+            } catch {
+                Write-Log "WARN $id - rotation log echouee ($src -> $dst) : $_"
+            }
+        }
+    }
     try {
         if (Test-Path $logFile) {
-            Move-Item -Path $logFile -Destination $logOld -Force
+            Move-Item -Path $logFile -Destination "$logFile.1" -Force
         }
     } catch {
         Write-Log "WARN $id - rotation log echouee : $_"
