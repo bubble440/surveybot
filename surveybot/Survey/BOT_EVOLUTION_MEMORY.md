@@ -1786,3 +1786,46 @@ Patterns exclus :
 - Aucun changement au scoring ni aux autres filtres existants (Askia, Forsta, Toluna nav wrapper,
   AreYouNet, Decipher, IntelliSurvey, MRIWeb, ps-next-button, etc.) — patch additif, exclusion structurelle
   uniquement
+
+---
+
+## PLATEFORME : IPSOS-NORM MUI REACT (dialog-question)
+Signature DOM : bandeau technique `<div id="tr-check" style="display:none">This is an ipsos-norm survey</div>`.
+Question rendue dans `div.dialog-question[-vertical]` contenant `div.text-container.question-text`
+(texte de question) ET `ul` d'options bouton, tous deux enfants directs du même conteneur.
+Options : `li` > conteneur cliquable (`role="button"` `tabindex="0"`, sans input radio/checkbox natif,
+sans `name` partagé) > 2 niveaux imbriqués > `div.option-text` (texte affiché).
+
+### _is_mui_dialog_question_optimal_container
+Fichier : Survey/dom_analyzer.py
+Emplacement : boucle `for b in btn_like`, juste avant l'appel à `_resolve_button_group_container`.
+Guard : `cont.get_attribute("class")` contient `dialog-question` ET `cont.query_selector(".text-container.question-text")` non null.
+Problème résolu : sans ce guard, `_resolve_button_group_container` remontait le conteneur résolu
+jusqu'au `<ul>` d'options seul (premier ancêtre où ≥2 boutons visibles sont trouvés) — ce `<ul>`
+exclut le texte de question, sibling du `<ul>` et non de ses ancêtres directs. `_extract_question_from_container(ul)`
+ne trouvait alors que les options (filtrées comme telles) → question vide → bloc entier abandonné silencieusement.
+Patterns couverts :
+- Conteneur `div.dialog-question[-vertical|-text]` déjà optimal (question + options dans le même scope) : le patch court-circuite `_resolve_button_group_container` et conserve `cont` tel quel.
+Patterns exclus :
+- Conteneurs sans classe `dialog-question` → `_resolve_button_group_container` inchangé
+- `div.dialog-question` sans `.text-container.question-text` descendant (cas non rencontré à ce jour) → non couvert, chemin existant
+
+### _mui_dialog_question_option_text_xpath
+Fichier : Survey/dom_analyzer.py
+Emplacement : construction de `option_xpath_map`, boucle `for b in btns`, juste après le calcul de `xp` via `_best_xpath_for_element`, avant l'affectation dans le dict. Appelée uniquement si `_is_mui_dialog_question_optimal_container(cont)` est vrai.
+Guard : `b.query_selector(".option-text")` non vide (texte affiché de l'option lisible).
+Problème résolu : `_best_xpath_for_element` produit un xpath absolu positionnel (`/html/body/.../ul/li[2]/div`).
+Cet index devient invalide après un re-render React (ex. réponse déjà appliquée sur une autre question de la page,
+ou classe `Mui-selected` togglée sur une autre option) → "element not found for xpath" au moment du clic,
+alors que l'extraction avait réussi. Le fallback générique suivant (`click_kantar_rowpicker_radio`, cherche un
+"overlay" par label dans une structure de carte/rowpicker) est structurellement inadapté à ce DOM et échoue aussi
+("overlay_not_found") → `apply ok=false reason=no_strategy` malgré une extraction correcte.
+Fix : xpath ancré sur le contenu (`div.option-text` avec le texte exact de l'option), remontée à l'ancêtre
+`[@role='button'][1]` (conteneur cliquable réel) — même famille de correctif que
+`_extract_image_labelledby_choice_checkbox_blocks` (résolution par `alt`, pas par position).
+Patterns couverts :
+- Options dans un conteneur validé par `_is_mui_dialog_question_optimal_container`, avec un `.option-text` non vide et un texte stable entre extraction et clic
+Patterns exclus :
+- Conteneurs non `dialog-question` (guard parent) → `xp` reste le xpath positionnel `_best_xpath_for_element` d'origine, chemin générique inchangé
+- Lignes `tr` (lookup tables) → hors scope (`_btns_are_tr` exclu explicitement)
+- Options sans `.option-text` descendant → `xp` reste positionnel (pas de dégradation, juste pas d'amélioration)

@@ -2626,6 +2626,40 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         except Exception:
             return False
 
+    def _mui_dialog_question_option_text_xpath(b) -> str:
+        """
+        Guard additif : xpath ancré sur le contenu ('.option-text'), pas la
+        position DOM, pour les options MUI 'dialog-question' (ex: ipsos-norm
+        survey) — même famille de correctif que
+        `_extract_image_labelledby_choice_checkbox_blocks` (résolution par alt,
+        pas par position), voir BOT_EVOLUTION_MEMORY.md.
+        Problème résolu : `_best_xpath_for_element` produit un xpath absolu
+        positionnel (ex: /html/body/.../ul/li[2]/div) — l'option n'a ni id, ni
+        name, ni input natif pour un ciblage stable. Après un re-render React
+        (ex: réponse appliquée sur une autre question de la page), cet index
+        devient invalide -> "element not found for xpath" au clic, alors que
+        l'extraction avait réussi.
+        Fix : ancrer sur le texte affiché de l'option ('.option-text'), stable
+        tant que le libellé ne change pas, puis remonter au conteneur
+        cliquable réel (role='button').
+        Guard DOM strict (appelée uniquement quand
+        `_is_mui_dialog_question_optimal_container(cont)` est vrai) : ne
+        s'applique qu'aux options portant un descendant '.option-text' non vide.
+        """
+        try:
+            node = b.query_selector(".option-text")
+            if not node:
+                return ""
+            txt = _norm(node.inner_text() or node.get_attribute("innerText") or "")
+            if not txt:
+                return ""
+            return (
+                "//div[contains(@class,'option-text') and normalize-space(text())="
+                f"{_xpath_literal(txt)}]/ancestor::*[@role='button'][1]"
+            )
+        except Exception:
+            return ""
+
     def _resolve_button_group_container(el, fallback_container):
         """
         Trouve le plus petit ancêtre DOM qui représente un groupe d'options bouton.
@@ -3036,6 +3070,10 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                 if not lbl or _is_nav_like_choice(lbl):
                     continue
                 xp = _best_xpath_for_element(driver, b)
+                if not _btns_are_tr and _is_mui_dialog_question_optimal_container(cont):
+                    _mui_xp = _mui_dialog_question_option_text_xpath(b)
+                    if _mui_xp:
+                        xp = _mui_xp
                 if xp:
                     option_xpath_map[_norm_key(lbl)] = xp
 
