@@ -1,3 +1,14 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# CIBLE : parc interne (mini-PC bare-metal que tu exploites toi-meme, sous NSSM).
+# MECANISME : zippe le code source Python. Les mini-PC l'executent via un
+#   interpreteur Python LOCAL au sein d'un venv\ propre a chaque machine
+#   (venv\Scripts\python.exe code\main.py - voir nssm_setup_bot.ps1/
+#   launch_all.ps1, provisionne une fois par setup_machine.ps1) - PAS via un
+#   binaire compile. update_checker.py remplace uniquement le dossier code\ ;
+#   venv\ n'est jamais touche par l'auto-update.
+# Voir aussi : nuitka_build_release.ps1 - binaire compile, cible et mecanisme
+#   differents (transfert a des tiers), ne pas confondre les deux.
+# ═══════════════════════════════════════════════════════════════════════════
 # build_release_zip.ps1
 # Remplace nuitka_build_release.ps1 pour la phase de deploiement interne (mini-PC
 # du parc bare metal). Ne compile plus rien : zippe le code source tel quel.

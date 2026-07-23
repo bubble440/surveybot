@@ -1,3 +1,14 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# CIBLE : transfert à des tiers/récepteurs externes (machines hors de ton
+#   contrôle direct) — PAS le parc interne de mini-PC bare-metal.
+# MÉCANISME : compile main.py en un binaire natif autonome (Nuitka onefile),
+#   pour la résistance à la décompilation par le récepteur (voir
+#   Utils/DEPLOIEMENT_BAREMETAL_DECISIONS.md section 4).
+# Le parc interne n'utilise plus ce binaire depuis le 20/07/2026 : il tourne en
+#   Python interprété depuis du code source zippé (venv\ + code\, jamais
+#   recompilé) — voir build_release_zip.ps1, nssm_setup_bot.ps1,
+#   launch_all.ps1, setup_machine.ps1.
+# ═══════════════════════════════════════════════════════════════════════════
 # nuitka_build_release.ps1
 # Build ONEFILE — pour diffusion aux récepteurs.
 # Plus lent que le build dev (packaging onefile en plus de la compilation standalone).
@@ -61,6 +72,7 @@ python -m nuitka main.py `
     --include-package-data=botocore `
     --include-package-data=boto3 `
     --include-package-data=psycopg2 `
+    --include-package-data=tzdata `
     --include-package=pydantic_core `
     --include-package-data=pydantic_core `
     --product-name="SurveyBot" `
