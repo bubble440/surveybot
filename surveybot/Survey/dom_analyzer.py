@@ -2601,6 +2601,31 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         ]
         return any(tok in v for tok in nav_tokens)
 
+    def _is_mui_dialog_question_optimal_container(cont) -> bool:
+        """
+        Guard additif : détecte un conteneur MUI 'dialog-question' déjà optimal
+        (contient à la fois le texte de question ET les options bouton), pour
+        éviter que _resolve_button_group_container ne le remplace par un
+        conteneur plus étroit (ex: <ul> d'options seul) qui exclurait le
+        texte de question, sibling du <ul> et non de ses ancêtres directs.
+        Guard DOM strict : classe 'dialog-question' + présence d'un descendant
+        '.text-container.question-text' à l'intérieur du conteneur résolu.
+        Sans ce guard, sur ce DOM précis, _resolve_button_group_container
+        remonte à l'<ul> (2-12 boutons visibles trouvés dès le 1er ancêtre),
+        _extract_question_from_container(ul) ne trouve que les options
+        (filtrées) → question vide → bloc entier silencieusement abandonné.
+        """
+        try:
+            if not cont:
+                return False
+            cls = _norm_lc(cont.get_attribute("class") or "")
+            if "dialog-question" not in cls:
+                return False
+            qtext = cont.query_selector(".text-container.question-text")
+            return qtext is not None
+        except Exception:
+            return False
+
     def _resolve_button_group_container(el, fallback_container):
         """
         Trouve le plus petit ancêtre DOM qui représente un groupe d'options bouton.
@@ -2800,7 +2825,8 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             if not cont:
                 continue
 
-            cont = _resolve_button_group_container(b, cont)
+            if not _is_mui_dialog_question_optimal_container(cont):
+                cont = _resolve_button_group_container(b, cont)
 
             cid = (cont.get_attribute("id") or "").strip()
             ccl = _norm_lc(cont.get_attribute("class") or "")

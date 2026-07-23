@@ -650,15 +650,43 @@ def attach_browser_playwright(attach_addr: str):
             "autre processus n'occupe déjà ce port."
         ) from e
 
+    # Instance Chrome réutilisée (port déjà en écoute) redémarrée après un arrêt non
+    # propre de sa session précédente : le endpoint HTTP /json/version répond déjà
+    # (serveur DevTools HTTP prêt), mais le dispatcher CDP qui sert la mise à niveau
+    # websocket (Target.*) peut ne pas l'être encore pendant que Chrome restaure ses
+    # onglets — connect_over_cdp reste alors bloqué jusqu'à son propre timeout sans
+    # jamais aboutir ni erreur exploitable. Budget de {_CDP_ATTACH_MAX_ATTEMPTS}
+    # tentatives avec abandon contrôlé, au lieu d'un unique essai qui échoue à sec.
+    _CDP_ATTACH_MAX_ATTEMPTS = 3
+    _CDP_ATTACH_TIMEOUT_MS = 15_000
+    _CDP_ATTACH_RETRY_DELAY_S = 2
+
     pw = sync_playwright().start()
-    try:
-        # Timeout explicite court (15s) au lieu du défaut : le endpoint vient
-        # d'être validé joignable ci-dessus, donc connect_over_cdp doit aboutir
-        # rapidement ; s'il traîne, mieux vaut échouer vite et relancer.
-        browser = pw.chromium.connect_over_cdp(endpoint, timeout=15_000)
-    except Exception:
+    browser = None
+    last_exc: Exception | None = None
+    for _attempt in range(1, _CDP_ATTACH_MAX_ATTEMPTS + 1):
+        try:
+            browser = pw.chromium.connect_over_cdp(endpoint, timeout=_CDP_ATTACH_TIMEOUT_MS)
+            break
+        except Exception as e:
+            last_exc = e
+            log_debug(
+                "[ATTACH_PW]",
+                f"connect_over_cdp tentative {_attempt}/{_CDP_ATTACH_MAX_ATTEMPTS} "
+                f"échouée ({type(e).__name__}: {e})",
+            )
+            if _attempt < _CDP_ATTACH_MAX_ATTEMPTS:
+                time.sleep(_CDP_ATTACH_RETRY_DELAY_S)
+
+    if browser is None:
         pw.stop()
-        raise
+        raise RuntimeError(
+            f"[ATTACH_PW] connect_over_cdp a échoué après {_CDP_ATTACH_MAX_ATTEMPTS} "
+            f"tentatives sur {endpoint} (dernière erreur : {type(last_exc).__name__}: {last_exc}). "
+            "L'instance Chrome réutilisée est probablement encore en train de restaurer sa "
+            "session précédente (arrêt non propre) ; relance dans quelques secondes, ou ferme "
+            "cette instance Chrome si le problème persiste."
+        ) from last_exc
 
     contexts = browser.contexts
     if not contexts:
