@@ -253,12 +253,23 @@ ingénierier. L'objectif réaliste est d'élever significativement la barre tech
 pas de l'annuler. Une option de durcissement supplémentaire (packer/protecteur natif type
 VMProtect/Themida) reste envisageable plus tard, mais n'est pas retenue dans l'immédiat.
 
-**Étape de validation avant généralisation (non encore faite)** : tester le cycle complet
-`build Nuitka → upload R2 → auto-update → relance` sur **une seule machine** avant de déployer
-aux 14 PC. Point d'incertitude à vérifier spécifiquement : le comportement de
+**Étape de validation avant généralisation (non encore faite au moment de la rédaction ; plan
+depuis dépassé pour le parc interne, voir correction 24/07/2026 ci-dessous)** : tester le cycle
+complet `build Nuitka → upload R2 → auto-update → relance` sur **une seule machine** avant de
+déployer aux 14 PC. Point d'incertitude à vérifier spécifiquement : le comportement de
 `sys.executable` / l'auto-remplacement de l'exe (`_replace_exe_and_restart` dans
 `update_checker.py`) avec un binaire `--onefile` Nuitka, qui gère l'extraction de ses
 dépendances différemment de PyInstaller en interne.
+
+**Correction (24/07/2026)** : ce paragraphe supposait que les 14 PC du parc interne
+tourneraient sur ce binaire Nuitka. Depuis le pivot du 20/07/2026, le parc interne utilise un
+pipeline distinct (code source zippé + venv Python local, voir
+`Utils/ORCHESTRATION_TRACKING.md` section 1bis) — ce plan de validation ne concerne donc plus
+que le pipeline de transfert à des tiers/récepteurs, s'il est encore utilisé. Par ailleurs, la
+fonction `_replace_exe_and_restart` citée ci-dessus n'existe plus dans `update_checker.py` : le
+fichier a été réécrit (pivot du 20/07/2026) en `_replace_source_and_restart`, qui remplace un
+dossier `code\` plutôt qu'un exécutable — voir le point ouvert correspondant plus bas dans
+cette section.
 
 **Statut : patché côté configuration de build, test réel restant.** `surveybot.spec`
 (PyInstaller, non versionné) supprimé. Créé `nuitka_build.ps1` — commande de build
@@ -286,6 +297,19 @@ Visual Studio Build Tools (détecté automatiquement par Nuitka), soit `-UseMinG
   passer dans un outil séparé (hors scope de ce patch).
 - `psycopg2-binary` : extension C + DLLs OpenSSL vendues, suivi automatique attendu en mode
   standalone/onefile mais à confirmer explicitement au premier build réel (connexion Postgres).
+- `tzdata` : base de données IANA des fuseaux horaires (fichiers, pas du code Python), consultée
+  par le module stdlib `zoneinfo`. Windows ne fournit pas cette base nativement (contrairement à
+  Linux/macOS, où `zoneinfo` retombe sur le système) — sans `tzdata`, `ZoneInfo("Europe/Paris")`
+  lève `ZoneInfoNotFoundError`. Même cas que `playwright`/`boto3`/`botocore` ci-dessus : données
+  pures, non suivies par `--follow-imports` → `--include-package-data=tzdata` ajouté. Utilisé par
+  `Management/pause_policy.py::resolve_pause_seconds()` (`PausePolicy.DAILY_RESET`, déclenché par
+  `StopReason.DAILY_TARGET_REACHED` et `StopReason.PROXY_EXPIRED`, donc par
+  `Management/guards/runtime_guard.py::pause()`). **Détecté par diagnostic (24/07/2026), pas
+  encore validé par un build réel** — à couvrir par la même étape de validation que le reste de
+  cette section (voir "Étape de validation avant généralisation" en tête de section 4). Avant ce
+  patch, `tzdata` était absent à la fois de `requirements.txt` et du venv de build : le paquet
+  aurait été manquant dès l'étape `pip install`, avant même la question de son embarquement par
+  Nuitka.
 - `selenium`/`undetected-chromedriver` : plus aucun `import selenium` dans le code (migration
   Playwright déjà faite) — rien à déclarer, ne seront pas embarqués malgré leur présence dans
   `requirements.txt`.
@@ -300,6 +324,23 @@ dans `update_checker.py` avant d'avoir vérifié** — c'est la toute première 
 avant même le cycle auto-update complet. Si le diagnostic montre un écart, seul changement
 autorisé : `current_exe = os.environ.get("NUITKA_ONEFILE_BINARY") or sys.executable` (fallback
 non intrusif, no-op en dev/attach où la variable est absente).
+
+**Correction (24/07/2026) — ce point ne concerne plus le parc interne, mais soulève une
+question non résolue pour le pipeline tiers.** Le parc interne n'exécute plus de binaire
+Nuitka onefile (voir correction plus haut dans cette section) : ce risque `sys.executable`/
+`NUITKA_ONEFILE_BINARY` ne s'applique donc plus à lui. Mais `update_checker.py` a depuis été
+réécrit (pivot du 20/07/2026) pour un mécanisme différent : `_replace_source_and_restart`
+renomme un dossier `code\` puis relance via
+`os.execv(sys.executable, [sys.executable, main_py, ...])` — logique pensée pour une exécution
+source (un vrai `python.exe` de venv, un vrai dossier `code\` à côté). Or
+`nuitka_build_release.ps1` compile toujours `main.py` (et donc `update_checker.py` tel qu'il
+existe aujourd'hui) pour le pipeline tiers/récepteurs. **Point non vérifié, à tester avant tout
+envoi d'un binaire à un récepteur** : dans un process onefile Nuitka, il n'existe pas de dossier
+`code\` distinct à renommer, et `sys.executable` peut ne pas pointer vers un interpréteur
+Python exploitable (voir paragraphe ci-dessus) — `_replace_source_and_restart` pourrait donc
+échouer silencieusement ou se comporter de façon imprévisible si un récepteur reçoit un jour un
+binaire compilé avec cette version du fichier. Non corrigé ici (documentation uniquement) — à
+traiter comme un diagnostic dédié si le pipeline tiers est réactivé.
 
 **Bug hors-scope détecté au passage, non corrigé ici (tâche séparée)** :
 `preselection/license_guard.py` importe `from surveybot._license_config import LICENSE_KEY` —
@@ -324,7 +365,16 @@ disproportionné (orchestrateur central multi-sessions Chrome).
 
 ---
 
-## 5. Mise à jour automatique du parc — confirmé, aucun changement de mécanisme requis
+## 5. Mise à jour automatique du parc — description historique, dépassée pour le parc interne
+
+**Correction (24/07/2026)** : cette section décrivait le mécanisme tel qu'il existait juste
+après la migration Nuitka (06-08/07/2026), pour l'ensemble du parc à l'époque. Depuis le pivot
+du 20/07/2026, le parc interne utilise un pipeline différent — voir
+`Utils/ORCHESTRATION_TRACKING.md` section 1bis et `build_release_zip.ps1`. La description
+ci-dessous (build d'un binaire, auto-remplacement de l'exe) ne s'applique donc plus qu'au
+pipeline de transfert à des tiers/récepteurs, s'il est encore utilisé — voir aussi le point
+ouvert non vérifié ajouté en section 4 sur la compatibilité de `update_checker.py` (réécrit
+depuis pour un remplacement de dossier source, pas d'exécutable) avec ce pipeline tiers.
 
 Le pipeline R2 existant (`update_checker.py` + `manifest.json` hébergé sur Cloudflare R2) reste
 valable tel quel après migration vers Nuitka. Le cycle reste :
@@ -335,6 +385,14 @@ valable tel quel après migration vers Nuitka. Le cycle reste :
 2. Chaque bot (via `UPDATE_CHECK_ENABLED=1`) compare sa version courante au manifeste à chaque
    cycle, télécharge et vérifie le SHA256, puis se remplace lui-même et redémarre
    (`os.execv`) — automatique, sans intervention.
+
+**Mécanisme actuel du parc interne (depuis le 20/07/2026)** : le principe ci-dessus (manifeste
+JSON, SHA256, `os.execv` pour relancer) reste le même, mais ce qui est téléchargé et remplacé a
+changé — un zip du dossier `code\` (source Python), pas un exécutable. Voir
+`build_release_zip.ps1` (construit le zip + `manifest.json`) et `update_checker.py` actuel
+(`_replace_source_and_restart`, `_swap_code_dir` : renomme `code\` en `code.old`, extrait le zip
+en remplacement, puis `os.execv(sys.executable, [sys.executable, main_py, ...])` — un vrai
+interpréteur Python du `venv\` local, pas un binaire).
 
 ---
 
@@ -501,6 +559,12 @@ couvre déjà tous les secrets nécessaires en dev/attach.
       auto-update → relance sur une seule machine avant généralisation aux 14 PC — en
       particulier le diagnostic `sys.executable`/`NUITKA_ONEFILE_BINARY` (voir section 4,
       point critique), à valider avant tout autre test.
+      **Correction (24/07/2026)** : « généralisation aux 14 PC » visait le parc interne, qui
+      n'utilise plus ce pipeline Nuitka depuis le pivot du 20/07/2026 (voir
+      `Utils/ORCHESTRATION_TRACKING.md` section 1bis). Cette étape de test ne concerne donc plus
+      le parc interne ; si le pipeline tiers/récepteurs est encore actif, voir le point ouvert
+      ajouté en section 4 sur la compatibilité de `update_checker.py` réécrit avec un binaire
+      onefile.
 - [x] Implémenter la fonctionnalité d'import JSON pour `accounts.json` côté logiciel. Fait via
       `import_accounts.py` — script autonome, jamais embarqué dans le binaire Nuitka, remplace
       entièrement `accounts.json` (avec sauvegarde `.bak` de l'ancien fichier), validation

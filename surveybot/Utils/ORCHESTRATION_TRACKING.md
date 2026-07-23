@@ -34,16 +34,36 @@ font que décider *quand* NSSM doit (re)démarrer ce service.
 
 - **Machine de dev** : `C:\projects\Surveys\surveybot` — Python + `.venv`,
   code source, exécution via `python main.py`.
-- **Machine de prod (NiPoGi mini PC)** : **`C:\surveybot\`** — uniquement le
-  binaire compilé `surveybot.exe` (Nuitka onefile) + fichiers d'exploitation
-  (`accounts.json`, `receiver_config.json`, `pids\`, `logs\`, scripts `.ps1`).
-  **Aucun Python ni venv installé sur cette machine** — c'est tout l'intérêt
-  du build Nuitka.
-- Cette distinction n'est pas anecdotique : c'est la cause racine du bug
-  documenté en section 6 (`query_cooldown_status.py` invoqué via un chemin
-  Python de dev, qui n'existe pas en prod). Tout script d'orchestration
-  (`.ps1`) ou toute logique de résolution de chemin doit cibler `C:\surveybot\`
-  par défaut, jamais un chemin de dev codé en dur ou supposé.
+- **Machine de prod (NiPoGi mini PC), parc interne** : **`C:\surveybot\`** —
+  code source Python (dossier `code\`), déployé par auto-update R2
+  (`update_checker.py`), exécuté via un interpréteur Python présent dans un
+  `venv\` propre à chaque machine : `venv\Scripts\python.exe code\main.py`.
+  **Un Python/venv complet est bien installé sur cette machine** — pas de
+  binaire compilé pour le parc interne. Vérifiable directement dans le code :
+  `build_release_zip.ps1` (construit l'archive source uploadée sur R2),
+  `nssm_setup_bot.ps1` (`Application = venv\Scripts\python.exe`,
+  `AppParameters = code\main.py`), `setup_machine.ps1` (crée `venv\` et y
+  installe `requirements.txt`, une seule fois par machine).
+  **Correction (24/07/2026)** : cette section affirmait auparavant l'inverse
+  (binaire `surveybot.exe` Nuitka onefile, aucun Python en prod). C'était
+  exact au moment de la migration Nuitka (voir historique en section 6), mais
+  obsolète depuis le pivot du 20/07/2026 vers ce mécanisme source+venv pour le
+  parc interne. Le binaire compilé Nuitka (`nuitka_build_release.ps1`) sert
+  désormais exclusivement au transfert à des tiers/récepteurs externes — un
+  pipeline distinct du parc interne, voir
+  `Utils/DEPLOIEMENT_BAREMETAL_DECISIONS.md` section 4.
+- **Conséquence pratique** : un paquet Python ajouté à `requirements.txt` ne se
+  propage PAS automatiquement sur une machine du parc interne déjà
+  provisionnée — l'auto-update (`update_checker.py`) ne remplace que le
+  dossier `code\`, jamais `venv\`. La mise à jour des dépendances n'est
+  appliquée que par `setup_machine.ps1`, exécuté une seule fois par machine
+  (à l'installation initiale, ou manuellement rejoué pour rafraîchir `venv\`).
+- Cette distinction dev/prod reste utile : toute logique de résolution de
+  chemin (`secret_loader.py::_bot_root_dirs()`, section 5) doit cibler
+  `C:\surveybot\` par défaut pour la prod, jamais un chemin de dev codé en dur
+  ou supposé — historique du bug qui a motivé cette règle en section 6
+  (`query_cooldown_status.py`, invoqué via un chemin Python de dev absent en
+  prod à l'époque du binaire Nuitka).
 
 ---
 
@@ -126,18 +146,26 @@ dérivé une fois avec le chemin en dur dans l'ancienne fonction).
 
 ## 6. Mode CLI `--query-cooldown` (`main.py`)
 
-- **Problème résolu** : `wake_scheduler.ps1` devait interroger le cooldown
-  Postgres par compte. Un script Python autonome (`query_cooldown_status.py`)
-  avait été créé, invoqué via un interpréteur Python + venv — **inexistants
-  sur la machine de production bare-metal** (Nuitka onefile = aucune
-  dépendance Python requise sur la machine cible). Le script échouait
-  silencieusement en prod.
-- **Décision** : exposer ce besoin directement dans le binaire compilé via un
-  argument CLI (`surveybot.exe --query-cooldown <id1> <id2> ...`), intercepté
-  en tout début de `main.py`, avant `load_config()`, `check_license_or_exit()`
-  et tout import lourd. Sortie JSON sur stdout, `sys.exit(0)` systématique.
-  Réutilise `State.account_state.load_state()` sans dupliquer la logique
-  Postgres.
+- **Problème résolu (historique, contexte binaire Nuitka)** : `wake_scheduler.ps1`
+  devait interroger le cooldown Postgres par compte. Un script Python autonome
+  (`query_cooldown_status.py`) avait été créé, invoqué via un interpréteur
+  Python + venv — à l'époque (parc interne sur binaire Nuitka onefile, avant
+  le pivot du 20/07/2026 vers le pipeline source+venv, voir section 1bis),
+  ceux-ci étaient effectivement absents de la machine cible. Le script
+  échouait silencieusement en prod.
+- **Décision (toujours valide, mécanisme d'invocation mis à jour)** : exposer
+  ce besoin directement dans `main.py` via un argument CLI
+  (`--query-cooldown <id1> <id2> ...`), intercepté en tout début du fichier,
+  avant `load_config()`, `check_license_or_exit()` et tout import lourd.
+  Sortie JSON sur stdout, `sys.exit(0)` systématique. Réutilise
+  `State.account_state.load_state()` sans dupliquer la logique Postgres.
+  **Correction (24/07/2026)** : depuis le pivot du 20/07/2026, le parc interne
+  invoque ce mode via l'interpréteur Python du venv local, pas via un binaire
+  compilé — `wake_scheduler.ps1` appelle littéralement
+  `venv\Scripts\python.exe code\main.py --query-cooldown <ids>` (voir son
+  code). L'invocation `surveybot.exe --query-cooldown` décrite ci-dessus à
+  l'origine ne s'applique qu'au pipeline de transfert à des tiers (binaire
+  Nuitka), pas au parc interne.
 - `query_cooldown_status.py` a été supprimé (obsolète).
 - **Vérifié** : `State.account_state` s'importe sans dépendre de
   `load_config()` (il lit `global_config`/`_license_config`, compilés dans le
@@ -182,10 +210,12 @@ dérivé une fois avec le chemin en dur dans l'ancienne fonction).
   continu), toutes les 5 min. Peut être suspendu (`Disable-ScheduledTask`) ou
   retiré (`Unregister-ScheduledTask`) sans toucher à NSSM.
 - Logique : lit `accounts.json` → interroge le cooldown via
-  `surveybot.exe --query-cooldown` (une seule connexion Postgres pour tous
-  les comptes) → ignore les comptes en `EXIT_FATAL` (fichier `.state` local,
-  `last_exit_code == 3`) → ignore les services déjà `SERVICE_RUNNING` →
-  `nssm start` pour le reste.
+  `venv\Scripts\python.exe code\main.py --query-cooldown` (une seule
+  connexion Postgres pour tous les comptes — **correction (24/07/2026)** :
+  invocation réelle vérifiée dans le code du script, pas un binaire compilé,
+  voir section 1bis/6) → ignore les comptes en `EXIT_FATAL` (fichier `.state`
+  local, `last_exit_code == 3`) → ignore les services déjà `SERVICE_RUNNING`
+  → `nssm start` pour le reste.
 - Garde-fou boucle `MAX_ACCOUNTS = 200`.
 
 ---
@@ -282,8 +312,14 @@ dérivé une fois avec le chemin en dur dans l'ancienne fonction).
 
   ---
 
-*Dernière mise à jour de ce fichier : 23/07/2026 (section 9 : statut de
-`launch_all.ps1` corrigé — réintroduit le 20/07/2026 après sa suppression du
-13/07/2026, ne plus le documenter comme supprimé). À mettre à jour à chaque
+*Dernière mise à jour de ce fichier : 24/07/2026 (sections 1bis, 6, 8 :
+corrigé l'affirmation obsolète « parc interne = binaire Nuitka, aucun Python »
+— vérifié par lecture directe de `wake_scheduler.ps1`, `nssm_setup_bot.ps1`,
+`launch_all.ps1`, `setup_machine.ps1`, `build_release_zip.ps1` et
+`update_checker.py` : le parc interne tourne en Python interprété depuis un
+`venv\` local sur du code source zippé depuis le pivot du 20/07/2026 ; le
+binaire compilé Nuitka ne concerne plus que le transfert à des tiers, voir
+`Utils/DEPLOIEMENT_BAREMETAL_DECISIONS.md` section 4). Précédemment :
+23/07/2026 (section 9, statut de `launch_all.ps1`). À mettre à jour à chaque
 décision ou correction touchant l'orchestration — pas seulement en fin de
 chantier.*
