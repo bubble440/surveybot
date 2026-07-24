@@ -141,72 +141,6 @@ def _parse_locale_tz_env():
     tz = (os.getenv("SURVEY_TZ", "Europe/Paris") or "Europe/Paris").strip()
     return locale, tz
 
-def _fingerprint_js() -> str:
-    """
-    Retourne le JS de spoofing fingerprint à injecter sur chaque nouvelle page.
-
-    Patches appliqués :
-      - Timezone : Intl.DateTimeFormat patché pour retourner Europe/Paris
-      - window.chrome : injecté si absent (contexte Playwright headless)
-
-    WebRTC n'est volontairement PAS patché ici : un vrai Chrome desktop a
-    toujours RTCPeerConnection défini. Le supprimer via JS crée un signal
-    d'anomalie plus fort (typeof RTCPeerConnection === 'undefined', jamais
-    observé sur un navigateur réel) que la fuite d'IP qu'il visait à éviter.
-    La protection contre la fuite d'IP passe uniquement par les flags Chrome
-    --enforce-webrtc-ip-permission-check / --webrtc-ip-handling-policy
-    (voir chrome_args dans launch_browser_playwright), qui restreignent
-    WebRTC à l'IP du proxy sans retirer l'API.
-    """
-    return """
-        // ── Timezone ─────────────────────────────────────────────────────────
-        const _origResolvedOptions = Intl.DateTimeFormat.prototype.resolvedOptions;
-        Intl.DateTimeFormat.prototype.resolvedOptions = function () {
-            const opts = _origResolvedOptions.apply(this, arguments);
-            opts.timeZone = 'Europe/Paris';
-            return opts;
-        };
-
-        // ── window.chrome (absent en headless) ───────────────────────────────
-        if (!window.chrome) {
-            const _chrome = {
-                app: {
-                    isInstalled: false,
-                    InstallState: { DISABLED: 'disabled', INSTALLED: 'installed', NOT_INSTALLED: 'not_installed' },
-                    RunningState: { CANNOT_RUN: 'cannot_run', READY_TO_RUN: 'ready_to_run', RUNNING: 'running' },
-                },
-                runtime: {
-                    OnInstalledReason: {}, OnRestartRequiredReason: {},
-                    PlatformArch: {}, PlatformNaclArch: {}, PlatformOs: {},
-                    RequestUpdateCheckStatus: {},
-                },
-                loadTimes: function() {
-                    return {
-                        requestTime: Date.now() / 1000, startLoadTime: Date.now() / 1000,
-                        commitLoadTime: Date.now() / 1000, finishDocumentLoadTime: Date.now() / 1000,
-                        finishLoadTime: Date.now() / 1000, firstPaintTime: Date.now() / 1000,
-                        firstPaintAfterLoadTime: 0, navigationType: 'Other',
-                        wasFetchedViaSpdy: false, wasNpnNegotiated: true,
-                        npnNegotiatedProtocol: 'h2', wasAlternateProtocolAvailable: false,
-                        connectionInfo: 'h2',
-                    };
-                },
-                csi: function() {
-                    return {
-                        startE: Date.now(), onloadT: Date.now(),
-                        pageT: Date.now() - performance.timing.navigationStart,
-                        tran: 15,
-                    };
-                },
-            };
-            try {
-                Object.defineProperty(window, 'chrome', { value: _chrome, writable: false, enumerable: true, configurable: false });
-            } catch(e) {}
-        }
-    """
-
-
-
 def _detect_chrome_major_version(chrome_bin: str) -> int | None:
     """Retourne le numéro de version majeure de Chrome (ex: 145), ou None si échec."""
     import subprocess, re, sys
@@ -463,7 +397,6 @@ def launch_browser_playwright(config: dict | None = None):
 
     if not is_attach_mode():
         chrome_args += [
-            "--disable-features=WebRTC",
             "--enforce-webrtc-ip-permission-check",
             "--webrtc-ip-handling-policy=disable_non_proxied_udp",
         ]
@@ -478,12 +411,6 @@ def launch_browser_playwright(config: dict | None = None):
         if proxy_user and proxy_pass:
             pw_proxy["username"] = proxy_user
             pw_proxy["password"] = proxy_pass
-
-    _UA = (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/149.0.0.0 Safari/537.36"
-    )
 
     import asyncio
     try:
@@ -504,18 +431,19 @@ def launch_browser_playwright(config: dict | None = None):
         headless=headless,
         locale=locale,
         timezone_id=tz,
-        user_agent=_UA,
         viewport={"width": 1920, "height": 1080},
         proxy=pw_proxy,
     )
-    context.add_init_script(_fingerprint_js())
+    # Pas de user_agent forcé, pas d'add_init_script : Chrome desktop natif annonce
+    # nativement son propre User-Agent (cohérent avec la version réellement installée)
+    # et window.chrome/Intl.DateTimeFormat sont déjà natifs sur ce type de lancement.
     # launch_persistent_context ouvre toujours une page about:blank dans context.pages[0].
     # On la réutilise pour éviter un second onglet parasite.
     page = context.pages[0] if context.pages else context.new_page()
 
     page._pw                   = pw
     page._chrome_user_data_dir = user_data_dir
-    log_info("[LAUNCH][PW]", "Browser Playwright lancé, fingerprint injecté via add_init_script.")
+    log_info("[LAUNCH][PW]", "Browser Playwright lancé (fingerprint natif, aucun override JS).")
     return page
 
 
@@ -577,12 +505,6 @@ def launch_browser_playwright_debug(config: dict | None = None):
             pw_proxy["username"] = proxy_user
             pw_proxy["password"] = proxy_pass
 
-    _UA = (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/149.0.0.0 Safari/537.36"
-    )
-
     pw = sync_playwright().start()
     context = pw.chromium.launch_persistent_context(
         user_data_dir,
@@ -592,11 +514,10 @@ def launch_browser_playwright_debug(config: dict | None = None):
         headless=False,          # toujours visible, indépendamment de SURVEY_HEADLESS
         locale=locale,
         timezone_id=tz,
-        user_agent=_UA,
         no_viewport=True,        # viewport naturel = taille réelle de la fenêtre OS
         proxy=pw_proxy,
     )
-    context.add_init_script(_fingerprint_js())
+    # Pas de user_agent forcé, pas d'add_init_script : identique au lancement prod.
     page = context.new_page()
 
     print(

@@ -696,3 +696,72 @@ Exécuté par l'utilisateur :
    de parsing d'URI que celui contourné plus haut pour les tests (`@` non encodé dans le mot de
    passe cassait le découpage user:password/host), corrigé au passage. `sslmode=require` ajouté
    dans l'URL. **Reste seulement le rebuild Nuitka** avant tout déploiement.
+
+---
+
+## 9. Nettoyage post-pivot bare-metal — spoofing JS obsolète, flag WebRTC, User-Agent figé (24/07/2026)
+
+**Contexte** : plusieurs mesures de `preselection/playwright_launcher.py` compensaient des
+limitations propres à l'ancien déploiement cloud (Fly.io, conteneurs Linux partagés, Chrome
+headless ancienne génération — headless sans `window.chrome` natif, absence de `tzdata` IANA
+fiable sur certaines images). Sur le nouveau déploiement bare-metal (mini-PC Windows dédiés,
+1 proxy ISP par bot, Chrome desktop natif), ces limitations n'existent plus : les mesures qui
+les compensaient étaient devenues non seulement inutiles mais contre-productives (un signal
+d'automatisation plus fort que ce qu'elles cherchaient à masquer).
+
+**Statut : patché.**
+
+**1. Spoofing JS retiré (`_fingerprint_js()` supprimée)** — patchait
+`Intl.DateTimeFormat.prototype.resolvedOptions` pour forcer `Europe/Paris`, et injectait un
+shim `window.chrome` si absent. Motif du retrait : sur Chrome desktop natif, `timezone_id` est
+déjà transmis nativement à Playwright (aucun besoin du patch JS) et `window.chrome` existe déjà
+nativement (headless ancienne génération uniquement). Une fonction JS native retourne
+`"[native code]"` via `.toString()` ; une fonction patchée par-dessus expose le code source du
+patch à tout site qui l'inspecte — signal d'automatisation plus détectable que ce que le patch
+visait à masquer. Les deux appels `context.add_init_script(_fingerprint_js())` (lancement prod
+et lancement debug) sont retirés en conséquence.
+
+**2. Flag WebRTC corrigé** — `--disable-features=WebRTC` (désactivait entièrement l'API,
+uniquement hors mode attach) retiré des `chrome_args`, alors qu'un commentaire du même fichier
+expliquait déjà que supprimer l'API crée un signal d'anomalie plus fort qu'un Chrome desktop
+normal (`RTCPeerConnection` toujours défini nativement) que la fuite d'IP qu'il visait à éviter.
+Les deux flags qui restreignent WebRTC à l'IP du proxy sans retirer l'API sont conservés
+(`--enforce-webrtc-ip-permission-check`, `--webrtc-ip-handling-policy=disable_non_proxied_udp`)
+— la protection contre la fuite d'IP reste nécessaire en bare-metal (proxy ISP dédié par
+instance).
+
+**3. User-Agent natif** — le `user_agent` codé en dur (numéro de version Chrome fixe,
+potentiellement désynchronisé de la version réellement installée sur la machine — incohérence
+détectable via Client Hints/`navigator.userAgentData`) est retiré des deux appels à
+`launch_persistent_context()` (prod et debug), sans être remplacé par une valeur construite
+dynamiquement. Chrome desktop natif annonce déjà nativement son propre User-Agent, cohérent par
+construction avec sa version réelle — ne rien passer élimine toute la classe de bugs de
+désynchronisation, plutôt que de la déplacer vers une reconstruction manuelle de chaîne de
+version. `_detect_chrome_major_version()` (déjà utilisée ailleurs pour le build Nuitka) reste
+inchangée et n'est pas utilisée ici : elle ne retourne que le numéro de version majeure, pas la
+chaîne complète nécessaire à un User-Agent, et la construire aurait réintroduit un risque de
+désynchronisation partielle pour un gain nul face à la simple absence d'override.
+
+**4. Décision actée — politique headless / viewport (aucun changement de code)**
+`SURVEY_HEADLESS` existe déjà comme interrupteur fonctionnel ; aucune modification requise sur
+ce point, seulement une décision à documenter :
+- **Phase actuelle (debug du comportement du bot en mode prod)** : non-headless, pour observer
+  le bot visuellement. Le mini-PC n°1 est relié à un vrai écran HDMI ; les autres machines du
+  parc utiliseront un dummy plug HDMI pour garantir une résolution d'affichage stable même sans
+  écran physique branché.
+- **Phase scaling (une fois le comportement validé)** : bascule vers le headless "new" de
+  Chrome (même moteur de rendu que le mode fenêtré, ne dépend d'aucun écran ni session
+  interactive) pour l'ensemble du parc.
+- **Point de vigilance explicite** : les correctifs validés pendant la phase de debug
+  non-headless portent sur un pipeline DOM/extraction/dispatcher identique entre les deux modes
+  (donc valables tels quels sans re-travail), mais une poignée de comportements (`isTrusted` des
+  clics JS liés au focus OS réel, timing de rendu) sont spécifiques au non-headless et devront
+  être re-vérifiés sur un run de contrôle avant la bascule complète en headless.
+
+**Vérifié après patch** : `python -m py_compile preselection/playwright_launcher.py` passe ;
+`attach_browser_playwright()` (mode attach — `connect_over_cdp` sur une instance déjà lancée) ne
+référence ni `_fingerprint_js()` ni le User-Agent codé en dur, donc non concerné par ce patch et
+non régressé. Pas de test de lancement réel exécuté dans cette session (changement de
+configuration de lancement navigateur, pas de logique métier) — à valider par un run réel avant
+généralisation au parc, en particulier sur le point de vigilance non-headless/headless
+ci-dessus.
