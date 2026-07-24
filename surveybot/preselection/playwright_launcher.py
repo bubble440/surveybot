@@ -409,6 +409,16 @@ def launch_browser_playwright(config: dict | None = None):
     if not headless and os.environ.get("DISPLAY") and ".exe" not in chrome_bin.lower():
         chrome_args.extend(["--use-gl=angle", "--use-angle=swiftshader"])
 
+    # viewport 1920x1080 fixe = zone de rendu CSS émulée uniquement (window.innerWidth/
+    # innerHeight), sans lien avec la taille réelle de la fenêtre OS (dépend de l'écran/
+    # session RDP réels). En non-headless, ça produit un viewport figé incohérent avec
+    # window.screen.width/height (signal anti-fraude) et avec la taille de fenêtre réelle.
+    # Correction : même approche que launch_browser_playwright_debug() (viewport naturel
+    # + --start-maximized) uniquement pour la fenêtre visible ; le mode headless garde
+    # le viewport fixe existant (pas d'écran réel à faire correspondre).
+    if not headless:
+        chrome_args.append("--start-maximized")
+
     # ── Proxy Playwright natif (pas de relay local) ───────────────────────────
     pw_proxy = None
     if proxy_server:
@@ -424,6 +434,14 @@ def launch_browser_playwright(config: dict | None = None):
     except Exception as _diag_exc:
         print(f"[DIAG][ASYNCIO] get_event_loop a levé : {_diag_exc}")
 
+    # viewport et no_viewport sont mutuellement exclusifs pour launch_persistent_context :
+    # headless conserve la taille fixe existante (aucun écran réel à faire correspondre) ;
+    # non-headless passe en viewport naturel (taille réelle de la fenêtre OS, maximisée
+    # via --start-maximized ci-dessus), seule dimension touchée par ce patch.
+    _viewport_kwargs = (
+        {"viewport": {"width": 1920, "height": 1080}} if headless else {"no_viewport": True}
+    )
+
     pw = sync_playwright().start()
     # launch_persistent_context reçoit user_data_dir en premier argument positionnel
     # et interdit --user-data-dir dans args (erreur Playwright explicite).
@@ -436,8 +454,8 @@ def launch_browser_playwright(config: dict | None = None):
         headless=headless,
         locale=locale,
         timezone_id=tz,
-        viewport={"width": 1920, "height": 1080},
         proxy=pw_proxy,
+        **_viewport_kwargs,
     )
     # Pas de user_agent forcé, pas d'add_init_script : Chrome desktop natif annonce
     # nativement son propre User-Agent (cohérent avec la version réellement installée)
