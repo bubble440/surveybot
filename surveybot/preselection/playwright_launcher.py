@@ -392,7 +392,12 @@ def launch_browser_playwright(config: dict | None = None):
         "--disable-extensions",
         "--disable-notifications",
         # "--window-size=1920,1080",
-        "--lang=en-US",
+        f"--lang={locale}",
+        # navigator.webdriver=True en lancement direct launch_persistent_context (confirmé par
+        # instrumentation diagnostique) — absent en mode attach (Chrome rejoint via CDP après coup,
+        # jamais lancé par Playwright). Flag de lancement natif Chromium, pas d'override JS
+        # (cf. historique spoofing JS retiré) : cohérent avec le choix "fingerprint natif" déjà fait.
+        "--disable-blink-features=AutomationControlled",
     ]
 
     if not is_attach_mode():
@@ -440,6 +445,16 @@ def launch_browser_playwright(config: dict | None = None):
     # launch_persistent_context ouvre toujours une page about:blank dans context.pages[0].
     # On la réutilise pour éviter un second onglet parasite.
     page = context.pages[0] if context.pages else context.new_page()
+
+    # Diagnostic temporaire, purement observationnel (aucun impact sur le lancement) :
+    # confirme si le contexte lancé directement par launch_persistent_context expose
+    # navigator.webdriver=true, contrairement au mode attach CDP (cf. attach_browser_playwright,
+    # qui rejoint un Chrome déjà démarré hors Playwright et n'a jamais ce marqueur).
+    try:
+        _webdriver_flag = page.evaluate("() => navigator.webdriver")
+        log_info("[LAUNCH][PW][DIAG]", f"navigator.webdriver={_webdriver_flag!r} (mode=launch_persistent_context)")
+    except Exception as _diag_exc:
+        log_debug("[LAUNCH][PW][DIAG]", f"lecture navigator.webdriver échouée : {_diag_exc}")
 
     page._pw                   = pw
     page._chrome_user_data_dir = user_data_dir
