@@ -3046,8 +3046,30 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             except Exception:
                 _is_choice_multiple = False
 
-            _block_itype = "checkbox" if _is_choice_multiple else "radio"
-            _block_max_select = len(options) if _is_choice_multiple else 1
+            # Détection multi-select ipsos-norm MUI 'dialog-question' natif.
+            # Guard DOM strict, scopé au conteneur déjà validé optimal pour ce widget
+            # (_is_mui_dialog_question_optimal_container) : au moins un
+            # input[type="checkbox"] natif visible dans les options du groupe.
+            # Sans ce guard : ce widget est toujours résolu radio/max_select=1, y
+            # compris pour la variante à case à cocher native (bug — le prompt GPT
+            # impose alors 1 seule valeur alors que plusieurs options sont cochables).
+            # N'affecte jamais la variante radio existante du même widget (options
+            # sans case à cocher native) : celle-ci ne matche pas ce guard et continue
+            # à emprunter le chemin _is_choice_multiple=False ci-dessous.
+            _is_mui_dialog_checkbox = False
+            if not _is_choice_multiple and _is_mui_dialog_question_optimal_container(cont):
+                try:
+                    _is_mui_dialog_checkbox = bool(driver.evaluate(
+                        """(btn) => {
+                        const c = btn.closest('.dialog-question');
+                        if (!c) return false;
+                        return c.querySelector('input[type="checkbox"]') !== null;
+                    }""", btns[0]))
+                except Exception:
+                    _is_mui_dialog_checkbox = False
+
+            _block_itype = "checkbox" if (_is_choice_multiple or _is_mui_dialog_checkbox) else "radio"
+            _block_max_select = len(options) if (_is_choice_multiple or _is_mui_dialog_checkbox) else 1
 
             sig = (question, _block_itype)
             if sig in seen_signatures:
@@ -3100,6 +3122,11 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             # ce widget (voir Survey/input_radio.py, click_mui_dialog_question_option).
             if _block_itype == "radio" and _is_mui_dialog_question_optimal_container(cont):
                 _reg_ctx["mui_dialog_question_option"] = True
+            # Variante checkbox du même widget (options avec case à cocher native) :
+            # flag distinct, stratégie de clic dédiée séparée (click_mui_dialog_question_checkbox_option,
+            # Survey/input_radio.py) — ne touche jamais au flag/chemin radio ci-dessus.
+            if _block_itype == "checkbox" and _is_mui_dialog_checkbox:
+                _reg_ctx["mui_dialog_question_checkbox_option"] = True
             if _is_lookup_table:
                 _reg_ctx["lookup_table"] = True
                 _reg_ctx["columns"] = _lookup_columns

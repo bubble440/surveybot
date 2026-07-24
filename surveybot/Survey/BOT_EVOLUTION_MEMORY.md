@@ -1871,3 +1871,66 @@ Patterns exclus :
 - Conteneurs non validés par `_is_mui_dialog_question_optimal_container` → chemin XPath/option_xpath_map
   générique inchangé
 Validé sur run réel (clic + navigation CTA) le 24/07/2026.
+
+---
+
+## MISE A JOUR : IPSOS-NORM MUI REACT (dialog-question) — variante checkbox
+
+Statut : le même widget `dialog-question` peut aussi se présenter en sélection multiple, avec
+une case à cocher native (`input[type="checkbox"]`) visible dans chaque option — signal absent
+de la variante radio décrite dans les sections précédentes. Sans ce patch, ce cas était détecté
+comme itype=radio/max_select=1 (comportement par défaut du bloc button_group générique), ce qui
+limitait artificiellement le nombre de valeurs renvoyables alors que la question autorisait
+plusieurs sélections.
+
+### Détection itype checkbox — `_is_mui_dialog_checkbox`
+Fichier : Survey/dom_analyzer.py
+Emplacement : boucle btn_groups, juste après le calcul de `_is_choice_multiple` (guard
+interview-layout `ChoiceMultiple_ChoiceFields` / `image-select`), avant l'affectation de
+`_block_itype`/`_block_max_select`.
+Guard DOM strict : `_is_mui_dialog_question_optimal_container(cont)` vrai ET au moins un
+`input[type="checkbox"]` présent dans le conteneur `.dialog-question` (évalué uniquement si
+`_is_choice_multiple` est faux, donc jamais concurrent avec le guard interview-layout).
+Mécanisme : `_block_itype` devient `"checkbox"` (et `_block_max_select = len(options)`) si
+`_is_choice_multiple` OU `_is_mui_dialog_checkbox` est vrai — extension additive de la condition
+existante, aucune branche radio existante modifiée.
+Patterns couverts :
+- Widget `dialog-question` avec options portant un `input[type="checkbox"]` natif visible
+  (ex. question "Veuillez sélectionner toutes les réponses qui s'appliquent")
+Patterns exclus :
+- Widget `dialog-question` variante radio (options `div[role="button"]` sans input natif) →
+  `_is_mui_dialog_checkbox` reste faux, chemin radio existant inchangé
+- Tout conteneur non validé par `_is_mui_dialog_question_optimal_container` → non évalué
+
+### Flag registry — `mui_dialog_question_checkbox_option`
+Fichier : Survey/dom_analyzer.py
+Emplacement : juste après l'enregistrement du flag `mui_dialog_question_option` (variante radio),
+dans le même bloc `_reg_ctx`.
+Guard : `_block_itype == "checkbox" and _is_mui_dialog_checkbox`.
+Flag strictement distinct du flag radio existant — jamais posé simultanément (mutuellement
+exclusifs via `_block_itype`).
+
+### click_mui_dialog_question_checkbox_option (Survey/input_radio.py)
+Fichier : Survey/input_radio.py (fonction distincte, n'affecte jamais `click_mui_dialog_question_option`).
+Guard DOM strict : conteneur validé par `_is_mui_dialog_question_optimal_container` ET au moins un
+`.dialog-question input[type="checkbox"]` présent (posé en amont dans dom_analyzer.py).
+Mécanisme : même résolution par comparaison de texte normalisée en JS que la variante radio
+(`.dialog-question .option-text`, le XPath positionnel étant invalidé par le re-render React),
+mais ciblage direct de l'`input[type="checkbox"]` de l'option (via `li.querySelector('input[type="checkbox"]')`)
+au lieu de l'overlay `[role="button"]`. Vérification déterministe via `input.checked === true`
+(plus fiable sur ce widget que la classe `Mui-selected` utilisée côté radio). Court-circuite si
+l'option est déjà cochée (`already_checked`, idempotent pour les dispatchs multi-valeurs).
+Déclenchement (additif, ordre de priorité) :
+- action_dispatcher.py, chemin dédié checkbox (avant `_apply_by_target_id`, même schéma que
+  `kantar_rowpicker_checkbox`) : si `_p.get("mui_dialog_question_checkbox_option") and itype ==
+  "checkbox"` → `skip_apply_by_target_id = True`, appel direct de
+  `click_mui_dialog_question_checkbox_option`, retour immédiat (pas de fallback générique sur échec —
+  même logique défensive que la variante radio et que `kantar_rowpicker_checkbox`).
+Patterns couverts :
+- Bloc checkbox dont le conteneur est validé par `_is_mui_dialog_question_optimal_container`, avec
+  options portant un `input[type="checkbox"]` natif dans leur `li`
+Patterns exclus :
+- Bloc radio du même widget (`mui_dialog_question_option`) → chemin dédié radio inchangé
+- Conteneurs non validés par `_is_mui_dialog_question_optimal_container` → chemin générique checkbox
+  inchangé (`_apply_by_target_id` / stratégies génériques)
+Validé sur run réel (sélection multiple + navigation CTA) le 24/07/2026.

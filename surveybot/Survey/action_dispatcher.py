@@ -6923,6 +6923,26 @@ def execute_action(
                         return True
                     return False
 
+                # MUI dialog-question option (ipsos-norm) — variante checkbox : même
+                # widget que mui_dialog_question_option (radio), mais options portant
+                # une case à cocher native. Flag distinct posé par le pipeline
+                # button_group générique (dom_analyzer.py, _is_mui_dialog_checkbox) ;
+                # ne touche jamais au flag/chemin radio ci-dessus. Court-circuit avant
+                # _apply_by_target_id, même schéma que kantar_rowpicker_radio/checkbox :
+                # ce widget n'a ni name partagé ni xpath stable après re-render React.
+                if _p.get("mui_dialog_question_checkbox_option") and itype == "checkbox":
+                    skip_apply_by_target_id = True
+                    from Survey.input_radio import click_mui_dialog_question_checkbox_option
+                    _mdqcb_ok = click_mui_dialog_question_checkbox_option(driver, value)
+                    log_debug(
+                        "[TARGET_DEBUG]",
+                        f"mui_dialog_question_checkbox_option_dispatch: {'ok' if _mdqcb_ok else 'ko'} value={value!r}",
+                    )
+                    if _mdqcb_ok:
+                        log_info("[TARGET]", "apply ok=true strategy=mui_dialog_question_checkbox_option_direct reason=applied")
+                        return True
+                    return False
+
             except Exception as e:
                 # meme en exception: pas de fallback générique pour sliderpoints
                 continue

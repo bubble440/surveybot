@@ -747,6 +747,94 @@ def click_mui_dialog_question_option(driver, label: str) -> bool:
     return ok
 
 
+def click_mui_dialog_question_checkbox_option(driver, label: str) -> bool:
+    """
+    Variante multi-sélection du widget MUI 'dialog-question' (ipsos-norm) : options
+    portant une case à cocher native visible (input[type="checkbox"]), contrairement
+    à la variante radio ci-dessus (click_mui_dialog_question_option) qui n'a pas
+    d'input natif. Fonction distincte, n'affecte jamais le chemin radio existant.
+
+    Guard DOM strict (posé en amont, dom_analyzer.py) : conteneur validé par
+    _is_mui_dialog_question_optimal_container ET au moins un
+    '.dialog-question input[type="checkbox"]' présent.
+
+    Résolution : même mécanisme de comparaison de texte normalisée en JS que
+    click_mui_dialog_question_option (le positionnement DOM/xpath devient invalide
+    après re-render React), mais ciblage direct de l'input natif de l'option (au
+    lieu de l'overlay [role='button']) — vérification déterministe via
+    input.checked, plutôt que la classe 'Mui-selected' (moins fiable sur ce widget,
+    cf. note historique ci-dessus).
+    """
+    _JS_FIND = r"""
+    const norm = s => (s || '')
+      .toLowerCase().normalize('NFKC')
+      .replace(/\s+/g, ' ').trim();
+    const needle = norm(arg);
+    if (!needle) return null;
+
+    const nodes = Array.from(document.querySelectorAll('.dialog-question .option-text'));
+    for (const node of nodes) {
+      const txt = norm(node.innerText || node.textContent || '');
+      if (txt !== needle) continue;
+      const li = node.closest('li');
+      if (!li) continue;
+      const input = li.querySelector('input[type="checkbox"]');
+      if (input) return input;
+    }
+    return null;
+    """
+
+    try:
+        inp = driver.evaluate_handle("(arg) => {" + _JS_FIND + "}", label).as_element()
+    except Exception as exc:
+        log_debug(
+            "[TARGET_DEBUG]",
+            f"mui_dialog_question_checkbox_option: js_find_exception label={label!r} error={type(exc).__name__}: {exc}",
+        )
+        return False
+
+    if inp is None:
+        log_debug("[TARGET_DEBUG]", f"mui_dialog_question_checkbox_option: option_not_found label={label!r}")
+        return False
+
+    try:
+        if bool(driver.evaluate("(el) => el.checked === true", inp)):
+            log_debug("[TARGET_DEBUG]", f"mui_dialog_question_checkbox_option: already_checked label={label!r}")
+            return True
+    except Exception:
+        pass
+
+    try:
+        inp.scroll_into_view_if_needed()
+    except Exception:
+        pass
+
+    try:
+        inp.click()
+    except Exception as exc_click:
+        try:
+            inp.hover()
+            inp.click()
+        except Exception as exc_hover:
+            log_debug(
+                "[TARGET_DEBUG]",
+                f"mui_dialog_question_checkbox_option: click_failed label={label!r} "
+                f"click_error={type(exc_click).__name__}: {exc_click} "
+                f"hover_click_error={type(exc_hover).__name__}: {exc_hover}",
+            )
+            return False
+
+    time.sleep(0.15)
+
+    try:
+        ok = bool(driver.evaluate("(el) => el.checked === true", inp))
+    except Exception:
+        ok = False
+
+    log_debug("[TARGET_DEBUG]", f"mui_dialog_question_checkbox_option: native_verify={'ok' if ok else 'ko'} label={label!r}")
+    return ok
+
+
 # =============================================================================
 # KANTAR / mrIWeb ROWPICKER RADIO
 # =============================================================================
