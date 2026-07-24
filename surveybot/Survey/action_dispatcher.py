@@ -1941,6 +1941,23 @@ def _apply_by_target_id(
                     )
                     return bool(_rp_ok)
 
+                # MUI dialog-question option (ipsos-norm survey) : div[role='button'] sans
+                # input natif/name/id stable, libellé porté par '.option-text'. La résolution
+                # XPath (option_xpath_map) échoue de façon persistante sur ce widget malgré une
+                # correspondance textuelle apparente — flag posé par le pipeline button_group
+                # générique (dom_analyzer.py, _is_mui_dialog_question_optimal_container).
+                # Bypass total du chemin XPath/_find_best_visible : résolution par texte
+                # normalisé en JS (click_mui_dialog_question_option), même famille de fix que
+                # kantar_rowpicker_radio ci-dessus.
+                if payload.get("mui_dialog_question_option") and resolved_itype == "radio":
+                    from Survey.input_radio import click_mui_dialog_question_option
+                    _mdq_ok = click_mui_dialog_question_option(driver, value)
+                    log_debug(
+                        "[TARGET_DEBUG]",
+                        f"mui_dialog_question_option_dispatch: {'ok' if _mdq_ok else 'ko'} value={value!r}",
+                    )
+                    return bool(_mdq_ok)
+
                 # Guard decipher_ranksort_dropdown : 1 bloc checkbox, N items à classer.
                 # value = texte de l'item retourné par GPT ; ordinal = sa position (1-based) dans la réponse.
                 # On set le select de cet item à rank_labels[ordinal-1] via JS (le select est display:none).
@@ -7185,6 +7202,20 @@ def execute_action(
                 log_debug(
                     "[TARGET_DEBUG]",
                     f"radio kantar_rowpicker_radio: dedicated strategy failed, no generic fallback value={label!r}",
+                )
+                return False
+
+            # MUI dialog-question option (ipsos-norm) : même logique que kantar_rowpicker_radio
+            # ci-dessus — la stratégie dédiée (click_mui_dialog_question_option) a déjà été
+            # tentée via _apply_by_target_id et a échoué. Ce widget n'a ni input natif, ni
+            # name, ni label[for] : les stratégies génériques radio_main/radio_buttonish
+            # (recherche par label/input) ne peuvent rien y trouver et retomberaient sur des
+            # stratégies conçues pour d'autres widgets (ex: click_kantar_rowpicker_radio,
+            # premier appel de click_radio_by_label) sans aucune garantie de pertinence.
+            if _tp.get("mui_dialog_question_option"):
+                log_debug(
+                    "[TARGET_DEBUG]",
+                    f"radio mui_dialog_question_option: dedicated strategy failed, no generic fallback value={label!r}",
                 )
                 return False
 

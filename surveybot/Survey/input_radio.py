@@ -645,6 +645,109 @@ def fallback_click_radio_js_generic(driver, target_text: str) -> bool:
 
 
 # =============================================================================
+# MUI DIALOG-QUESTION OPTION (ipsos-norm survey, React/MUI, sans input natif)
+# =============================================================================
+
+def click_mui_dialog_question_option(driver, label: str) -> bool:
+    """
+    Options MUI 'dialog-question' (ex: ipsos-norm survey) : conteneur cliquable
+    div[role='button'] sans input natif, ni name, ni id stable ; libellé porté
+    par un descendant '.option-text'.
+
+    Guard DOM strict : au moins un '.dialog-question .option-text' présent.
+
+    Problème résolu : la résolution par XPath ancré sur normalize-space(text())
+    de '.option-text' (dom_analyzer.py) échouait de façon persistante et
+    reproductible au clic ("element not found for xpath"), malgré une
+    correspondance textuelle apparente avec le DOM au moment du clic — la
+    correspondance exacte de nœud texte enfant direct via XPath text() est
+    fragile sur ce widget (normalisation espaces/accents, structure exacte du
+    nœud texte). Remplacement par le mécanisme déjà éprouvé ailleurs dans le
+    code pour les widgets custom sans input natif (ex: click_kantar_rowpicker_radio
+    ci-dessous) : comparaison de texte normalisée exécutée en JS côté page,
+    insensible à la casse/aux espaces, avant clic — pas de XPath du tout.
+
+    Vérification : classe 'Mui-selected' présente sur le conteneur role='button'
+    après clic (observée sur DOM réel de ce widget lors d'une sélection active).
+    """
+    _JS_FIND = r"""
+    const norm = s => (s || '')
+      .toLowerCase().normalize('NFKC')
+      .replace(/\s+/g, ' ').trim();
+    const needle = norm(arg);
+    if (!needle) return null;
+
+    const nodes = Array.from(document.querySelectorAll('.dialog-question .option-text'));
+    for (const node of nodes) {
+      const txt = norm(node.innerText || node.textContent || '');
+      if (txt !== needle) continue;
+      const btn = node.closest('[role="button"]');
+      if (btn) return btn;
+    }
+    return null;
+    """
+
+    _JS_VERIFY = r"""
+    const norm = s => (s || '')
+      .toLowerCase().normalize('NFKC')
+      .replace(/\s+/g, ' ').trim();
+    const needle = norm(arg);
+    const nodes = Array.from(document.querySelectorAll('.dialog-question .option-text'));
+    for (const node of nodes) {
+      const txt = norm(node.innerText || node.textContent || '');
+      if (txt !== needle) continue;
+      const btn = node.closest('[role="button"]');
+      if (!btn) continue;
+      return (btn.className || '').indexOf('Mui-selected') !== -1;
+    }
+    return false;
+    """
+
+    try:
+        # evaluate_handle().as_element() : retourne un ElementHandle réellement cliquable
+        # (.click()/.hover()), contrairement à evaluate() qui sérialise la valeur de retour.
+        # Même convention que click_kantar_rowpicker_radio / action_dispatcher.py.
+        btn = driver.evaluate_handle("(arg) => {" + _JS_FIND + "}", label).as_element()
+    except Exception as exc:
+        log_debug("[TARGET_DEBUG]", f"mui_dialog_question_option: js_find_exception label={label!r} error={type(exc).__name__}: {exc}")
+        return False
+
+    if btn is None:
+        log_debug("[TARGET_DEBUG]", f"mui_dialog_question_option: option_not_found label={label!r}")
+        return False
+
+    try:
+        btn.scroll_into_view_if_needed()
+    except Exception:
+        pass
+
+    try:
+        btn.click()
+    except Exception as exc_click:
+        try:
+            btn.hover()
+            btn.click()
+        except Exception as exc_hover:
+            log_debug(
+                "[TARGET_DEBUG]",
+                f"mui_dialog_question_option: click_failed label={label!r} "
+                f"click_error={type(exc_click).__name__}: {exc_click} "
+                f"hover_click_error={type(exc_hover).__name__}: {exc_hover}",
+            )
+            return False
+
+    time.sleep(0.15)
+
+    try:
+        ok = bool(driver.evaluate("(arg) => {" + _JS_VERIFY + "}", label))
+    except Exception:
+        ok = False
+
+    log_debug("[TARGET_DEBUG]", f"mui_dialog_question_option: native_verify={'ok' if ok else 'ko'} label={label!r}")
+    return ok
+
+
+# =============================================================================
 # KANTAR / mrIWeb ROWPICKER RADIO
 # =============================================================================
 

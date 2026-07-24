@@ -1829,3 +1829,45 @@ Patterns exclus :
 - Conteneurs non `dialog-question` (guard parent) → `xp` reste le xpath positionnel `_best_xpath_for_element` d'origine, chemin générique inchangé
 - Lignes `tr` (lookup tables) → hors scope (`_btns_are_tr` exclu explicitement)
 - Options sans `.option-text` descendant → `xp` reste positionnel (pas de dégradation, juste pas d'amélioration)
+
+---
+
+## MISE A JOUR : IPSOS-NORM MUI REACT (dialog-question) — clic
+Statut : la résolution par XPath ancré sur `.option-text` (`_mui_dialog_question_option_text_xpath`,
+section précédente) reste utilisée pour peupler `option_xpath_map` à l'extraction, mais n'est plus
+le mécanisme réellement emprunté au clic pour les blocs radio de ce widget : le dispatcher court-circuite
+ce chemin via le flag `mui_dialog_question_option` (voir ci-dessous). Le XPath text()-based s'est révélé
+non fiable au clic ("element not found for xpath") malgré une correspondance textuelle apparente et un
+préfixe "xpath=" correct — cause exacte non isolée avec certitude (nœud texte/normalisation), non retestée
+depuis le remplacement.
+
+### click_mui_dialog_question_option (Survey/input_radio.py)
+Fichier : Survey/input_radio.py (fonction), déclenchement additif dans Survey/dom_analyzer.py et
+Survey/action_dispatcher.py.
+Guard DOM strict : au moins un `.dialog-question .option-text` présent dans le document.
+Mécanisme : résolution par comparaison de texte normalisée exécutée en JS côté page
+(`document.querySelectorAll('.dialog-question .option-text')`, normalisation casse/espaces/NFKC),
+`node.closest('[role="button"]')` pour remonter au conteneur cliquable réel — aucun XPath. Récupération
+via `evaluate_handle(...).as_element()` (ElementHandle cliquable), même convention que
+`click_kantar_rowpicker_radio`. Vérification post-clic : présence de la classe `Mui-selected` sur le
+conteneur `role='button'` correspondant au libellé.
+Déclenchement (additif, ordre de priorité) :
+- dom_analyzer.py : à l'enregistrement du bloc, si `_block_itype == "radio"` et
+  `_is_mui_dialog_question_optimal_container(cont)` est vrai → `_reg_ctx["mui_dialog_question_option"] = True`
+  (registry), en plus de `option_xpath_map` (toujours peuplé, non utilisé au clic pour ce flag).
+- action_dispatcher.py, chemin générique radio (avant résolution XPath) : si
+  `payload.get("mui_dialog_question_option")` et `resolved_itype == "radio"` → appel direct de
+  `click_mui_dialog_question_option`, retour immédiat (bypass total du chemin XPath/option_xpath_map).
+- action_dispatcher.py, bloc `itype == "radio"` (fallback générique après échec de la stratégie dédiée) :
+  si `_tp.get("mui_dialog_question_option")` → retour `False` direct, pas de fallback générique
+  (`radio_main`/`radio_buttonish`/`click_kantar_rowpicker_radio`) — même logique defensive que
+  `kantar_rowpicker_radio` (éviter un faux positif d'une stratégie générique non fiable sur ce DOM).
+Patterns couverts :
+- Bloc radio dont le conteneur est validé par `_is_mui_dialog_question_optimal_container` — options
+  `div[role="button"]` sans input natif, libellé porté par `.option-text`
+Patterns exclus :
+- Blocs non radio (checkbox notamment) sur ce même widget — non couverts par ce flag, chemin générique
+  inchangé
+- Conteneurs non validés par `_is_mui_dialog_question_optimal_container` → chemin XPath/option_xpath_map
+  générique inchangé
+Validé sur run réel (clic + navigation CTA) le 24/07/2026.

@@ -3094,6 +3094,12 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                 "option_xpath_map": option_xpath_map,
                 "frame_chain": frame_chain,
             }
+            # Flag additif : dispatcher bascule sur click_mui_dialog_question_option
+            # (résolution par texte normalisé en JS, pas de XPath) au lieu du chemin
+            # XPath/option_xpath_map générique, qui échoue de façon persistante sur
+            # ce widget (voir Survey/input_radio.py, click_mui_dialog_question_option).
+            if _block_itype == "radio" and _is_mui_dialog_question_optimal_container(cont):
+                _reg_ctx["mui_dialog_question_option"] = True
             if _is_lookup_table:
                 _reg_ctx["lookup_table"] = True
                 _reg_ctx["columns"] = _lookup_columns
