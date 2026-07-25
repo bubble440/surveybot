@@ -1934,3 +1934,50 @@ Patterns exclus :
 - Conteneurs non validés par `_is_mui_dialog_question_optimal_container` → chemin générique checkbox
   inchangé (`_apply_by_target_id` / stratégies génériques)
 Validé sur run réel (sélection multiple + navigation CTA) le 24/07/2026.
+
+### _handle_topsurveys_genial_reward_popup
+
+Fichier : Survey/functions.py
+
+Rôle : détecte et ferme un popup de récompense/remerciement TopSurveys dont le
+bouton de validation affiche "Genial", sans forcer de navigation après
+fermeture (le flux appelant reprend son cours normal).
+
+Garde DOM (strict) : bouton visible dont le texte normalisé (accents retirés,
+minuscule, espaces de bord retirés) == "genial". Recherche prioritaire via
+button[data-test-id='ps-common-actions-button'], fallback sur tous les
+boutons visibles de la page si le sélecteur ciblé ne matche pas.
+
+Intégration pipeline : appelée en priorité 0 (avant Mystery boxes et
+"Bon travail !") depuis _handle_topsurveys_exclusion_popup, elle-même
+invoquée depuis :
+  - main.py → run_attach_takeover() (mode ATTACH)
+  - Survey/survey_executor.py
+  - Survey/survey_handler.py
+aux moments de chargement de la page listing TopSurveys, de retour dessus,
+ou de retour après clic sur un sondage.
+
+Patterns couverts : popup de bonus périodique / remerciement avec bouton
+libellé "Genial" (DOM de référence : classe periodic-bonus-popup,
+data-test-id="ps-periodic-bonus-popup" / "ps-periodic-bonus-close").
+
+Patterns exclus (gérés par les branches existantes, non modifiées) :
+  - Mystery box popup (data-test-id^="ps-mystery-box-item-button")
+  - Popup "Bon travail !" (texte "bon travail" / "tu as partiellement
+    repondu" / "credite ton compte")
+
+CTA : clic conditionné par is_cta_intercept_only() (config.py). Comportement
+vérifié identique en mode attach et en mode prod : False par défaut dans les
+deux cas, sauf activation explicite de CTA_INTERCEPT_ONLY par variable
+d'environnement.
+
+Compatibilité mode ATTACH : validée. driver est le même objet Page Playwright
+qu'en mode normal (obtenu via connect_over_cdp dans
+attach_browser_playwright), et la fonction n'utilise que des méthodes
+Playwright standard (query_selector_all, is_visible, inner_text, click).
+Aucune divergence de comportement entre les deux modes.
+
+Budget : 1 scan de détection, 1 tentative de clic. Retourne False si le
+bouton n'est pas trouvé.
+
+Statut : patch validé.

@@ -1,6 +1,16 @@
 ﻿# launch_all.ps1
-# Lance uniquement les bots qui ne tournent pas deja sur cette machine.
-# A placer dans C:\surveybot\ et planifier via le Planificateur de taches Windows.
+# Lancement MANUEL et PONCTUEL d'un seul compte, pour un test isole - hors perimetre
+# de la supervision de production (NSSM + check_zombie_bots.ps1 + wake_scheduler.ps1,
+# cf. Utils/ORCHESTRATION_TRACKING.md section 9).
+#
+# NE JAMAIS planifier ce script (Planificateur de taches Windows ou autre) : un bot
+# lance ainsi tourne comme process brut, invisible pour check_zombie_bots.ps1 et
+# wake_scheduler.ps1 qui n'agissent que sur des services NSSM (nssm status/start/
+# restart surveybot_<id>). Le parc de production est exploite exclusivement via les
+# services NSSM installes par nssm_setup_bot.ps1.
+#
+# Usage :
+#   .\launch_all.ps1 -AccountId "bot1"
 #
 # Prerequis :
 #   - accounts.json dans le meme dossier que ce script (C:\surveybot\, la racine).
@@ -17,6 +27,8 @@
 # jamais swapper ce dossier tant que le bot tourne.
 
 param(
+    [Parameter(Mandatory = $true)]
+    [string]$AccountId,
     [string]$AccountsFile = "$PSScriptRoot\accounts.json",
     [string]$PythonExe    = "$PSScriptRoot\venv\Scripts\python.exe",
     [string]$MainScript   = "$PSScriptRoot\code\main.py",
@@ -49,6 +61,22 @@ function Write-Log {
 function Get-PidPath {
     param([string]$AccountId)
     return Join-Path $PidsDir "bot_$AccountId.pid"
+}
+
+function Test-NssmServiceExists {
+    # Empeche un double lancement (meme profil Chrome/proxy) si un service NSSM
+    # surveybot_<id> est deja installe pour ce compte, quel que soit son statut
+    # (running ou stoppe - meme stoppe, il reste le chemin de supervision attendu).
+    param([string]$AccountId)
+    $svcName = "surveybot_$AccountId"
+    try {
+        & nssm status $svcName 2>$null | Out-Null
+        return ($LASTEXITCODE -eq 0)
+    } catch {
+        # nssm.exe absent du PATH (ex: machine de test isolee sans NSSM) - pas de
+        # service possible, donc pas de conflit a craindre.
+        return $false
+    }
 }
 
 function Test-BotProcessAlive {
@@ -208,9 +236,15 @@ if (-not (Test-Path $MainScript)) {
 }
 
 $raw      = Get-Content -Path $AccountsFile -Raw -Encoding UTF8
-$accounts = $raw | ConvertFrom-Json
+$allAccounts = $raw | ConvertFrom-Json
+$accounts = @($allAccounts | Where-Object { $_.account_id -eq $AccountId })
 
-Write-Log "=== launch_all.ps1 demarrage - $($accounts.Count) compte(s) configure(s) ==="
+if ($accounts.Count -eq 0) {
+    Write-Log "ERREUR - aucun compte trouve pour AccountId='$AccountId' dans $AccountsFile"
+    exit 1
+}
+
+Write-Log "=== launch_all.ps1 demarrage - lancement manuel ponctuel de '$AccountId' ==="
 
 # ---------------------------------------------------------------------------
 # Boucle principale
@@ -222,6 +256,15 @@ foreach ($account in $accounts) {
 
     $id      = $bot.account_id
     $pidPath = Get-PidPath $id
+
+    # --- Cas 0 : service NSSM deja installe pour ce compte ---
+    # Le parc de production est exploite via NSSM (nssm_setup_bot.ps1) - un lancement
+    # manuel ici sur un compte deja couvert par un service creerait un double process
+    # sur le meme profil Chrome/proxy.
+    if (Test-NssmServiceExists -AccountId $id) {
+        Write-Log "ABORT $id - service NSSM surveybot_$id deja installe - lancement manuel refuse (double lancement meme profil/proxy). Utiliser 'nssm start surveybot_$id' ou verifier son statut a la place."
+        continue
+    }
 
     # --- Cas 1 : fichier PID present ---
     if (Test-Path $pidPath) {

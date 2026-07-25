@@ -227,31 +227,43 @@ dérivé une fois avec le chemin en dur dans l'ancienne fonction).
 - **Supprimé le 13/07/2026**, sur la base du constat ci-dessus : NSSM +
   `wake_scheduler.ps1` + `check_zombie_bots.ps1` couvraient alors
   l'intégralité de son rôle.
-- **Réintroduit le 20/07/2026** et activement maintenu depuis (dernier
-  correctif : détection des PID recyclés par comparaison de l'heure de
-  démarrage du process, pour éviter qu'un `bot_<id>.pid` obsolète fasse
-  ignorer à tort un compte comme "déjà actif"). **Le fichier existe donc à
-  nouveau dans le projet et doit être traité comme faisant partie de
-  l'orchestration active**, pas comme un résidu — toute correction future
-  touchant au démarrage/à la détection PID doit en tenir compte au même titre
-  que NSSM/`wake_scheduler.ps1`/`check_zombie_bots.ps1`.
-- Statut d'exécution effective en production (tâche planifiée l'invoquant
-  réellement) non vérifiable depuis ce dépôt, au même titre que
-  `wake_scheduler.ps1`/`check_zombie_bots.ps1` (cf. leurs en-têtes respectifs :
-  seule la commande `Register-ScheduledTask` à exécuter manuellement y est
-  documentée, aucune tâche planifiée n'est versionnée).
+- **Réintroduit le 20/07/2026**, puis **son rôle a été restreint le
+  26/07/2026** suite au constat suivant : `check_zombie_bots.ps1` et
+  `wake_scheduler.ps1` n'agissent tous les deux **que** sur des noms de
+  service NSSM (`nssm status`/`start`/`restart surveybot_<id>`) — ils n'ont
+  strictement aucune connaissance des fichiers `pids\bot_<id>.pid` ni des
+  process bruts lancés par `launch_all.ps1`. Le header du script recommandait
+  pourtant explicitement de le planifier via le Planificateur de tâches
+  Windows : un compte démarré ainsi aurait été invisible pour les deux
+  briques de supervision périodique (aucune détection zombie, aucune relance
+  après cooldown).
+- **Décision (26/07/2026)** : `launch_all.ps1` n'est plus un mécanisme de
+  démarrage de parc. Le parc de production est exploité **exclusivement** via
+  les services NSSM installés par `nssm_setup_bot.ps1`, seuls couverts par
+  `check_zombie_bots.ps1`/`wake_scheduler.ps1`. `launch_all.ps1` reste
+  disponible mais uniquement pour un **lancement manuel et ponctuel d'un
+  compte isolé** (test), jamais planifié :
+  - Le paramètre `-AccountId` est désormais obligatoire (plus de boucle sur
+    l'ensemble d'`accounts.json`).
+  - Un garde-fou (`Test-NssmServiceExists`) refuse le lancement si un service
+    NSSM `surveybot_<id>` est déjà installé pour ce compte (quel que soit son
+    statut), pour éviter un double lancement sur le même profil Chrome/proxy.
+  - Le header ne recommande plus de planification via le Planificateur de
+    tâches Windows.
+  - Aucune logique existante (`Start-Bot`, `Test-BotProcessAlive`, détection
+    PID recyclé) n'a été modifiée — le garde-fou est additif, exécuté avant
+    la vérification PID existante.
 - Vérification `profile_dir` (que `launch_all.ps1` fait avant de lancer un
   bot) est également portée dans `nssm_setup_bot.ps1` : un compte dont
   `profile_dir`/`CHROME_PROFILE_DIR` est vide ou pointe vers un dossier
   inexistant est skippé (`Write-Warning`, service NSSM non configuré), sans
   être signalé comme "orphelin" (son `account_id` est ajouté au set de
   comptes connus avant le check, pas après).
-- **Point de vigilance non résolu** : `launch_all.ps1::Start-Bot` définit ses
+- **Point de vigilance résiduel** : `launch_all.ps1::Start-Bot` définit ses
   propres défauts `GEO_LAT`/`GEO_LON`/`SURVEY_LANG`/`SURVEY_TZ`, séparément de
-  ceux de `nssm_setup_bot.ps1` (cf. section 7) — les deux scripts existant à
-  nouveau simultanément, ces valeurs sont désormais dupliquées à deux
-  endroits, exactement le risque de divergence que la suppression du
-  13/07/2026 avait éliminé. Non corrigé à ce jour.
+  ceux de `nssm_setup_bot.ps1` (cf. section 7). Risque réduit depuis le
+  26/07/2026 (usage manuel/ponctuel uniquement, plus un chemin de démarrage de
+  parc), mais toujours dupliqué à deux endroits — non corrigé à ce jour.
 
 ---
 
@@ -312,7 +324,11 @@ dérivé une fois avec le chemin en dur dans l'ancienne fonction).
 
   ---
 
-*Dernière mise à jour de ce fichier : 24/07/2026 (sections 1bis, 6, 8 :
+*Dernière mise à jour de ce fichier : 26/07/2026 (section 9 : rôle de
+`launch_all.ps1` restreint à un lancement manuel/ponctuel, garde-fou NSSM
+anti double-lancement — le parc de production n'est désormais exploité que
+via NSSM, seul chemin couvert par `check_zombie_bots.ps1`/
+`wake_scheduler.ps1`). Précédemment : 24/07/2026 (sections 1bis, 6, 8 :
 corrigé l'affirmation obsolète « parc interne = binaire Nuitka, aucun Python »
 — vérifié par lecture directe de `wake_scheduler.ps1`, `nssm_setup_bot.ps1`,
 `launch_all.ps1`, `setup_machine.ps1`, `build_release_zip.ps1` et

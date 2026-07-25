@@ -2,6 +2,7 @@ import time, os, unicodedata
 from preselection.question_validation import detect_disqualification_reason
 from Cash.payout import _payout_and_check_daily_stop
 from config import is_cta_intercept_only
+from Survey.log_utils import log_info, log_debug
 
 
 
@@ -55,6 +56,64 @@ def _is_target_closed(e: Exception) -> bool:
     return "target page" in msg or "has been closed" in msg or "target closed" in msg
 
 
+def _handle_topsurveys_genial_reward_popup(driver) -> bool:
+    """
+    Gere le popup de recompense/remerciement TopSurveys dont le bouton de validation
+    affiche 'Genial' (peut apparaitre au chargement de la page listing, au retour sur
+    cette page, ou au retour apres clic sur un sondage).
+    Fonction additive et independante de _handle_topsurveys_exclusion_popup : aucune
+    navigation forcee apres fermeture, le flux appelant reprend normalement ensuite.
+    Guard strict : bouton visible dont le texte normalise (accents retires) == 'genial'.
+    Budget : 1 scan de detection, 1 tentative de clic. Retourne False si non detecte.
+    """
+    def _norm_genial(s):
+        s = s.replace("‘", "'").replace("’", "'")
+        s = unicodedata.normalize('NFD', s)
+        s = ''.join(c for c in s if unicodedata.category(c) != 'Mn')
+        return s.lower().strip()
+
+    try:
+        btn = None
+        for b in driver.query_selector_all("button[data-test-id='ps-common-actions-button']"):
+            try:
+                if b.is_visible() and _norm_genial(b.inner_text() or "") == "genial":
+                    btn = b
+                    break
+            except Exception:
+                continue
+        if not btn:
+            for b in driver.query_selector_all("button"):
+                try:
+                    if b.is_visible() and _norm_genial(b.inner_text() or "") == "genial":
+                        btn = b
+                        break
+                except Exception:
+                    continue
+    except Exception as e:
+        if _is_target_closed(e):
+            log_debug("[TOPSURVEYS_GENIAL_POPUP]", f"page fermee pendant le scan: {e}")
+        return False
+
+    if not btn:
+        return False
+
+    log_info("[TOPSURVEYS_GENIAL_POPUP]", "popup 'Genial' detecte - fermeture...")
+    _local_pause_before_cta("[TOPSURVEYS_GENIAL_POPUP] popup detecte")
+
+    try:
+        if is_cta_intercept_only():
+            log_info("[TOPSURVEYS_GENIAL_POPUP]", "bouton 'Genial' trouve - interception OK (CTA_INTERCEPT_ONLY actif)")
+        else:
+            btn.click()
+            log_info("[TOPSURVEYS_GENIAL_POPUP]", "bouton 'Genial' clique.")
+        time.sleep(1.0)
+    except Exception as e:
+        log_info("[TOPSURVEYS_GENIAL_POPUP]", f"erreur clic: {e}")
+        return False
+
+    return True
+
+
 def _handle_topsurveys_exclusion_popup(driver, account_id) -> bool: #survey_executor
     """
     Gere les popups TopSurveys au retour sur app.topsurveys.app.
@@ -80,6 +139,12 @@ def _handle_topsurveys_exclusion_popup(driver, account_id) -> bool: #survey_exec
             print(f"[TOPSURVEYS_POPUP][DIAG] Page déjà fermée dès l'entrée de "
                   f"_handle_topsurveys_exclusion_popup (avant tout traitement) : {e}")
         return False
+
+    # === PRIORITE ADDITIVE : popup recompense 'Genial' (cf. BOT_EVOLUTION_MEMORY.md) ===
+    # Verifiee avant les priorites existantes ci-dessous, sans modifier leur logique :
+    # popup independant (bouton 'Genial'), pas de navigation forcee apres fermeture.
+    if _handle_topsurveys_genial_reward_popup(driver):
+        return True
 
     import preselection.survey_navigator as survey_navigator
 

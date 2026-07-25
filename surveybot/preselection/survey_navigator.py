@@ -501,6 +501,12 @@ def go_to_best_value_survey(driver):
     _handle_mystery_box_popup(driver)
     time.sleep(0.5)  # stabilisation post-popup
 
+    # Additif : popup recompense 'Genial' (cf. BOT_EVOLUTION_MEMORY.md) — couvre le
+    # chargement/retour listing, en complement du retour post-clic deja gere par
+    # _handle_topsurveys_exclusion_popup (Survey/functions.py, meme implementation).
+    from Survey.functions import _handle_topsurveys_genial_reward_popup
+    _handle_topsurveys_genial_reward_popup(driver)
+
     if not _find_survey_cards(driver):
         if SNAP_ENABLED.strip() == "1":
             from Management.snap_uploader import capture_and_upload
