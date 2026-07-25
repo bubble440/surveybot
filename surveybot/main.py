@@ -1017,7 +1017,24 @@ def main():
                             driver._proxy_relay_proc.terminate()
                         except Exception:
                             pass
-                    driver.quit()
+                    # FIX: driver est une Page Playwright (launch_browser_playwright),
+                    # pas un driver Selenium — pas de méthode quit(). L'appeler levait
+                    # un AttributeError silencieusement avalé ici, donc context.close()
+                    # et l'arrêt de la connexion Playwright (driver._pw.stop()) n'étaient
+                    # jamais exécutés. La connexion Playwright du cycle précédent restait
+                    # active, et le rappel de sync_playwright().start() au cycle suivant
+                    # (même process/thread) échouait avec "Sync API inside the asyncio
+                    # loop". context.close() ferme le BrowserContext persistant (et le
+                    # process Chrome sous-jacent) ; pw.stop() libère la connexion.
+                    try:
+                        driver.context.close()
+                    except Exception:
+                        pass
+                    try:
+                        if getattr(driver, "_pw", None):
+                            driver._pw.stop()
+                    except Exception:
+                        pass
             except Exception:
                 pass
 

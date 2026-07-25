@@ -765,3 +765,66 @@ non régressé. Pas de test de lancement réel exécuté dans cette session (cha
 configuration de lancement navigateur, pas de logique métier) — à valider par un run réel avant
 généralisation au parc, en particulier sur le point de vigilance non-headless/headless
 ci-dessus.
+
+---
+
+## 10. Détection anti-fraude en production — écart attach vs prod (`navigator.webdriver`,
+`--lang`, viewport) — 24/07/2026
+
+**Contexte** : blocages captcha récurrents en production (Sample.us/Cint), absents en mode
+attach (Chrome lancé manuellement puis rejoint via `connect_over_cdp`) sur le même compte, le
+même réseau, le même proxy. Écarté au préalable : réputation de l'IP proxy (score fraude 0/100
+sur Scamalytics pour `188.126.3.247`, `is_blacklisted_external: false`) et mismatch géo/fuseau
+horaire (ipinfo.io confirme Saint-Denis/Île-de-France/Europe-Paris, cohérent avec les valeurs
+`GEO_LAT`/`GEO_LON`/`SURVEY_TZ` codées en dur). IPQualityScore signale bien un fraud score élevé
+(93/100, proxy détecté) sur la même IP, mais un test prod sans `PROXY_URL` (bot connecté avec
+l'IP réelle de la machine) a reproduit exactement les mêmes messages de détection — écartant
+la réputation IP comme cause suffisante à elle seule.
+
+**Cause racine identifiée** : `launch_browser_playwright()` (chemin de lancement navigateur
+utilisé en production, `launch_persistent_context`) diffère structurellement de
+`attach_browser_playwright()` (mode attach, `connect_over_cdp` sur un Chrome déjà lancé
+indépendamment). Quand Playwright lance lui-même le process Chrome, il injecte par défaut ses
+propres arguments d'automatisation — absents d'un Chrome lancé hors de Playwright puis
+simplement rejoint via CDP.
+
+**Statut : patché et confirmé par instrumentation de diagnostic sur runs réels en production.**
+
+**1. `navigator.webdriver` — confirmé `True` en prod avant patch, `False` après.**
+Log `[LAUNCH][PW][DIAG] navigator.webdriver=True (mode=launch_persistent_context)` obtenu sur un
+run prod réel (bot_topsurveys_bot_001, 24/07/2026 15:15) avant patch. Après ajout de
+`--disable-blink-features=AutomationControlled` aux `chrome_args` du chemin prod, un second run
+réel (15:34) confirme `navigator.webdriver=False`. Log de diagnostic (`page.evaluate("()
+=> navigator.webdriver")` juste après la création du contexte, `log_info`) conservé en place —
+non retiré, sert de vérification permanente à chaque démarrage plutôt que d'instrumentation
+jetable.
+
+**2. `--lang=en-US` codé en dur → aligné sur `SURVEY_LANG`.**
+Le chemin prod forçait `--lang=en-US` dans `chrome_args` alors que `locale` (paramètre Playwright
+distinct, dérivé de `SURVEY_LANG`, `fr-FR` par défaut) était passé séparément à
+`launch_persistent_context()` — écart entre l'en-tête HTTP `Accept-Language` et
+`navigator.language`/`Intl` côté navigateur, un signal de détection distinct de celui du point 1.
+Corrigé : `chrome_args` utilise désormais `f"--lang={locale}"`, la même variable `locale` que
+celle passée au contexte Playwright — source unique, plus de valeur contradictoire codée en dur.
+Non revérifié indépendamment par un log dédié (`navigator.language`/`Accept-Language`) — à faire
+si une confirmation isolée de ce point précis est utile plus tard.
+
+**3. Viewport fixe (1920x1080) en non-headless → viewport naturel + fenêtre maximisée.**
+`viewport={"width": 1920, "height": 1080}` fixait la zone de rendu CSS émulée
+(`window.innerWidth`/`innerHeight`) indépendamment de la taille réelle de la fenêtre OS (qui
+dépend de la résolution d'écran/session RDP de la machine) — incohérence visible (fenêtre mal
+dimensionnée) et incohérence potentielle `window.screen.width/height` vs
+`window.innerWidth/innerHeight` par rapport à un usage humain normal. Corrigé, conditionné au
+mode headless (`_viewport_kwargs`) :
+- non-headless → `no_viewport=True` + `--start-maximized` dans `chrome_args` (même approche que
+  `launch_browser_playwright_debug()`, qui n'avait pas ce problème).
+- headless → viewport fixe conservé tel quel (pas d'écran réel à faire correspondre, rien à
+  corriger dans ce cas).
+Confirmé fonctionnel par retour utilisateur après déploiement (pas de log de diagnostic dédié
+pour ce point — validation visuelle directe).
+
+**Point de vigilance** : ces trois correctifs réduisent des signaux de détection individuels
+(scoring cumulatif côté anti-fraude), ils ne garantissent pas l'absence totale de blocage captcha
+— cohérent avec l'objectif produit 80-90% de réussite stable plutôt que 100%. Aucune mesure
+chiffrée avant/après (taux de captcha sur plusieurs dizaines de runs) n'a encore été mise en
+place à ce stade ; suggéré mais pas encore fait.
