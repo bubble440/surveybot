@@ -464,7 +464,34 @@ def go_to_best_value_survey(driver):
                 _debug(f"Stratégie [{label}] échouée.")
         return False
 
-    if not _click_surveys_tab():
+    def _reload_and_retry_surveys_tab(max_reloads: int = 2) -> bool:
+        """
+        DOM figé après échec de toutes les stratégies de _click_surveys_tab (inchangées) :
+        recharge la page en cours un nombre borné de fois et retente la détection sur le
+        DOM rafraîchi, avant d'escalader vers le fallback de navigation directe existant.
+        N'agit pas si la page/contexte est déjà fermé (reload garanti en échec dans ce cas
+        — cf. TargetClosedError observé sur le fallback direct).
+        """
+        for attempt in range(1, max_reloads + 1):
+            try:
+                if page.is_closed():
+                    _debug(f"[RELOAD_RETRY] page déjà fermée avant tentative {attempt} — abandon")
+                    return False
+            except Exception:
+                return False
+            try:
+                _debug(f"[RELOAD_RETRY] tentative {attempt}/{max_reloads} — reload page")
+                page.reload(wait_until="domcontentloaded")
+                time.sleep(2)
+            except Exception as e:
+                _debug(f"[RELOAD_RETRY] reload échoué tentative {attempt}: {type(e).__name__}")
+                return False
+            if _click_surveys_tab():
+                log_info("[TOPSURVEYS][RELOAD_RETRY]", f"Onglet Sondages détecté après reload (tentative {attempt}/{max_reloads})")
+                return True
+        return False
+
+    if not _click_surveys_tab() and not _reload_and_retry_surveys_tab():
         # Fallback: navigation directe vers /surveys
         print("⚠️ Onglet Sondages introuvable via nav — navigation directe vers /surveys")
         try:

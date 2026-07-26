@@ -2234,37 +2234,39 @@ def execute_survey_page(driver, account_id, api_key, ctx=None):
             print(f" Fallback CTA-only : {type(e).__name__}: {e}")
 
         # ----------------------------------------------------------------
-        # WAIT_PAGE : pages transitoires "veuillez patienter"
+        # RELOAD_RETRY : page bloquée sans élément actionnable détectable
+        # (ex. redirection intermédiaire figée sur un loader) — reload borné
+        # et re-détection DOM, générique, sans dépendance à un signal texte.
         # ----------------------------------------------------------------
-        if _env_truthy("PROXY_LATENCY_MODE", "0"):
+        _RELOAD_RETRY_MAX = 2
+        for _rr_attempt in range(1, _RELOAD_RETRY_MAX + 1):
             try:
-                _WAIT_SIGNALS = [
-                    "please wait", "veuillez patienter",
-                    "please do not refresh", "do not refresh",
-                    "validating", "validation en cours",
-                    "just a moment", "un instant",
-                ]
-                _wp_src = (page.content() or "").lower()
-                if any(sig in _wp_src for sig in _WAIT_SIGNALS):
-                    _wp_before_url = page.url
-                    print(f"[WAIT_PAGE] Page transitoire détectée ({_wp_before_url}) → attente redirection (10s max)")
-                    for _ in range(10):
-                        time.sleep(1)
-                        try:
-                            if page.url != _wp_before_url:
-                                print(f"[WAIT_PAGE] Redirection automatique détectée → {page.url}")
-                                return True
-                        except Exception:
-                            break
-                    print("[WAIT_PAGE] Pas de redirection automatique → refresh forcé")
-                    try:
-                        page.reload()
-                        time.sleep(5)
-                    except Exception as _wp_re:
-                        print(f"[WAIT_PAGE][WARN] Refresh échoué: {_wp_re}")
-                    return True
-            except Exception as _wp_e:
-                print(f"[WAIT_PAGE][WARN] Détection échouée: {_wp_e}")
+                if page.is_closed():
+                    log_debug("[RELOAD_RETRY]", f"page déjà fermée avant tentative {_rr_attempt} — abandon")
+                    break
+            except Exception:
+                break
+            try:
+                log_debug(
+                    "[RELOAD_RETRY]",
+                    f"tentative {_rr_attempt}/{_RELOAD_RETRY_MAX} — reload page (aucun élément actionnable)",
+                )
+                page.reload(wait_until="domcontentloaded")
+                time.sleep(2)
+            except Exception as _rr_e:
+                log_debug("[RELOAD_RETRY]", f"reload échoué tentative {_rr_attempt}: {type(_rr_e).__name__}")
+                break
+            try:
+                _rr_blocks = dom_analyzer.analyze_dom(driver) or []
+            except Exception as _rr_e2:
+                log_debug("[RELOAD_RETRY]", f"re-détection échouée tentative {_rr_attempt}: {type(_rr_e2).__name__}")
+                _rr_blocks = []
+            if _rr_blocks:
+                log_info(
+                    "[RELOAD_RETRY]",
+                    f"élément actionnable détecté après reload (tentative {_rr_attempt}/{_RELOAD_RETRY_MAX})",
+                )
+                return True
 
         if _env_truthy("SURVEY_DOM_ONLY_ABORT", "1"):
             print("DOM-only: abort_reason=dom_no_match_abort (SURVEY_DOM_ONLY_ABORT=1).")
