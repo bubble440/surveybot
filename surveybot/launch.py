@@ -384,7 +384,41 @@ def start_heartbeat_thread():
     _HEARTBEAT_STOP.clear()
     threading.Thread(target=_heartbeat, name="heartbeat", daemon=True).start()
 
-def setup_logging():
+def _purge_old_session_logs(account_id: str, keep: int = 10) -> None:
+    """
+    Purge additive, distincte de la rotation NSSM elle-même (nssm_setup_bot.ps1 :
+    AppRotateFiles=1, AppRotateSeconds=0, AppRotateBytes=0 -> 1 fichier roté par
+    démarrage de process, suffixe NSSM "<fichier>.<YYYYMMDDHHMMSS>"). NSSM rote
+    mais ne purge jamais les fichiers rotés -> accumulation indéfinie sans ce
+    patch. Ne touche jamais le fichier actif (sans suffixe, en cours d'écriture
+    par CE process) ni les mécanismes PID/heartbeat/signaux/update_checker.
+    Best-effort : une erreur ici ne doit jamais empêcher le boot du bot.
+    """
+    try:
+        from bot_supervisor import _pids_dir
+        log_dir = os.path.join(os.path.dirname(_pids_dir()), "logs")
+        if not os.path.isdir(log_dir):
+            return
+        from Survey.log_utils import log_info
+        for stream in ("stdout", "stderr"):
+            prefix = f"bot_{account_id}_{stream}.log."
+            rotated = [
+                f for f in os.listdir(log_dir)
+                if f.startswith(prefix) and f[len(prefix):].isdigit()
+            ]
+            rotated.sort(reverse=True)  # suffixe timestamp NSSM -> tri chronologique
+            stale = rotated[max(0, keep - 1):]
+            for f in stale:
+                try:
+                    os.remove(os.path.join(log_dir, f))
+                except Exception:
+                    pass
+            if stale:
+                log_info("[LOG_PURGE]", f"account={account_id} stream={stream} removed={len(stale)} kept={keep}")
+    except Exception as e:
+        print(f"[LOG_PURGE][WARN] échec purge logs session pour {account_id}: {e}")
+
+def setup_logging(account_id: str | None = None):
     # 2) niveau depuis l'env (default INFO)
     _level = os.getenv("LOG_LEVEL", "INFO").upper()
     logging.basicConfig(
@@ -400,6 +434,10 @@ def setup_logging():
     def _excepthook(exc_type, exc, tb):
         logging.getLogger("uncaught").exception("UNCAUGHT EXCEPTION", exc_info=(exc_type, exc, tb))
     sys.excepthook = _excepthook
+
+    # 4) purge des logs de session NSSM au-delà des 10 dernières (cf. nssm_setup_bot.ps1)
+    if account_id:
+        _purge_old_session_logs(account_id)
 
 def mark_bot_running(account_id: str, email):
     print(f"🚀 Démarrage surveybot pour account_id={account_id}, EMAIL={email}")

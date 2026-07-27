@@ -853,7 +853,7 @@ def main():
         return
 
     # setup_logging() attache un handler stdout au logger racine ("logging" stdlib).
-    # Jamais appelé nulle part avant ce patch (défini dans launch.py mais orphelin) :
+    # ajout du paramètre account_id pour permettre la purge par compte:
     # sans handler configuré, logging.getLogger(...).info/debug (update_checker.py,
     # module "logging" stdlib) est avalé silencieusement par le handler de secours
     # Python (seuil WARNING), et warning/error y échappent vers stderr — un fichier
@@ -861,7 +861,7 @@ def main():
     # bot_*_stderr.log, cf. nssm_setup_bot.ps1). D'où l'absence totale de trace de
     # la vérification de mise à jour, quel que soit son issue.
     # Doit précéder check_and_apply() ci-dessous, seul appelant concerné par ce bug.
-    setup_logging()
+    setup_logging(account_id=account_id)
 
     # Vérification et application d'une mise à jour binaire avant tout démarrage.
     # No-op si UPDATE_CHECK_ENABLED != "1". Si une mise à jour est appliquée,
