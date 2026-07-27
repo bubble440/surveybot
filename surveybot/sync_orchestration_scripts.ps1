@@ -38,8 +38,10 @@
 #
 # Installation en tache planifiee (une seule fois, en tant qu'administrateur),
 # cadence de verification 10 minutes :
+#   ATTENTION : -ManifestUrl est obligatoire (pas de valeur par defaut) - sans lui,
+#   le script se termine immediatement (exit 1) a chaque declenchement.
 #   $action  = New-ScheduledTaskAction -Execute "powershell.exe" `
-#                -Argument "-NonInteractive -File C:\surveybot\sync_orchestration_scripts.ps1"
+#                -Argument "-NonInteractive -File C:\surveybot\sync_orchestration_scripts.ps1 -ManifestUrl `"https://pub-565d2bb59d364c1490255c5dddc296aa.r2.dev/orchestration_manifest.json`""
 #   $trigger = New-ScheduledTaskTrigger -RepetitionInterval (New-TimeSpan -Minutes 10) `
 #                -Once -At (Get-Date)
 #   $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 5)
