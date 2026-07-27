@@ -39,7 +39,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-# Nombre de cycles de lancement passes conserves en historique de logs, au-dela
+# Nombre de cycles de lancement passes conserves en historique de logs, au-dela 
 # du cycle courant (bot_$id.log.1 = cycle precedent, ... .10 = plus ancien
 # conserve). Permet l'analyse retrospective de comportements intermittents.
 $LOG_HISTORY_CYCLES = 10

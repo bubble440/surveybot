@@ -1,9 +1,9 @@
 {
-    "generated_at":  "2026-07-27T18:19:12Z",
+    "generated_at":  "2026-07-27T23:57:35Z",
     "files":  [
                   {
                       "rel_path":  "launch_all.ps1",
-                      "sha256":  "c3cfba326884169e0e79a624b668f770f5faa069550f2195f1660cf5739b10e9",
+                      "sha256":  "6396e142824ff270759e7727a4e61780460f3038bd69b5b82811d5cba562b1a4",
                       "url":  "https://pub-565d2bb59d364c1490255c5dddc296aa.r2.dev/orchestration/launch_all.ps1"
                   },
                   {
@@ -20,11 +20,6 @@
                       "rel_path":  "check_zombie_bots.ps1",
                       "sha256":  "2c3229bc625a9f13f759eaadd5cae2a21697b7a0f8089e1f1d04220a7a115cbc",
                       "url":  "https://pub-565d2bb59d364c1490255c5dddc296aa.r2.dev/orchestration/check_zombie_bots.ps1"
-                  },
-                  {
-                      "rel_path":  "run_tabs.ps1",
-                      "sha256":  "7e970f9acc7edd7489ea72fc5de3011748dda5a4489ef365af4825fcca9e2c1d",
-                      "url":  "https://pub-565d2bb59d364c1490255c5dddc296aa.r2.dev/orchestration/run_tabs.ps1"
                   }
               ],
     "track_only":  [

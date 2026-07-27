@@ -78,6 +78,12 @@ def acquire_account_lock_or_exit(account_id: str, ttl_sec: int = 240):
     ok = try_acquire_cooldown_slot(account_id=account_id, ttl_sec=ttl_sec)
     if not ok:
         print(f"[COOLDOWN] Account {account_id} en cooldown ou déjà actif → exit")
+        # Même convention que RuntimeGuard.pause() (runtime_guard.py) pour un arrêt
+        # volontaire : sans cet enregistrement, last_exit_code restait bloqué sur le
+        # sentinel EXIT_CRASH écrit par check_and_record_start() au démarrage précédent,
+        # faisant compter à tort ce cooldown répété comme une crash-loop.
+        from bot_supervisor import record_exit, EXIT_VOLUNTARY
+        record_exit(account_id, EXIT_VOLUNTARY, "cooldown_active")
         sys.exit(0)
 
 def safe_get(driver, url, base_delay=4):

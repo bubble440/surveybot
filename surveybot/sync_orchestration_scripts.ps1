@@ -169,6 +169,15 @@ foreach ($entry in $fileEntries) {
         }
 
         Move-Item -Path $tmpPath -Destination $target -Force
+
+        # Un fichier ecrit via Invoke-WebRequest herite du tag "provenance Internet"
+        # (Zone.Identifier) - RemoteSigned bloquerait alors son execution ulterieure,
+        # silencieusement (voir set-up.txt, prerequis n.3). Best-effort : ne doit
+        # jamais faire echouer la synchro si le flux NTFS n'est pas manipulable.
+        try { Unblock-File -Path $target -ErrorAction Stop } catch {
+            Write-Warning "[ORCH_SYNC] $relPath - Unblock-File a echoue (fichier peut-etre bloque a l'execution) : $_"
+        }
+
         Write-Output "[ORCH_SYNC] $relPath - mis a jour (sha256=$remoteHash)."
         $changedFiles.Add($relPath)
         $state["applied__$relPath"] = $remoteHash
