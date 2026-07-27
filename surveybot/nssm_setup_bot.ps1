@@ -27,6 +27,20 @@ if (-not $LogDir)       { $LogDir       = Join-Path $InstallDir "logs" }
 $pythonPath = Join-Path $InstallDir $PythonRelPath
 $mainPath   = Join-Path $InstallDir $MainRelPath
 
+# -- Garde-fou droits administrateur ------------------------------------------
+# nssm install/set echoue silencieusement sans droits admin (Access is denied
+# en cascade sur chaque "nssm set"), tout en laissant le script continuer et
+# afficher un faux "[OK] configure." en fin de boucle. On coupe court ici,
+# avant toute autre action, plutot que de laisser echouer chaque commande nssm
+# une par une plus bas.
+$_isAdmin = ([Security.Principal.WindowsPrincipal] `
+    [Security.Principal.WindowsIdentity]::GetCurrent()
+    ).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+if (-not $_isAdmin) {
+    Write-Error "Droits administrateur requis - relance PowerShell via 'Executer en tant qu'administrateur'."
+    exit 1
+}
+
 # -- Pre-verifications --------------------------------------------------------
 
 if (-not (Test-Path $pythonPath)) {
@@ -129,9 +143,14 @@ foreach ($account in $accounts) {
 
     # -- Installation ou mise a jour -------------------------------------------
     & nssm status $svcName 2>$null | Out-Null
-    if ($LASTEXITCODE -ne 0) {
+    $_serviceExisted = ($LASTEXITCODE -eq 0)
+    if (-not $_serviceExisted) {
         Write-Output "    [NSSM] Installation du service..."
         & nssm install $svcName $pythonPath $MainRelPath
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warning "[SKIP] $svcName - echec 'nssm install' (code=$LASTEXITCODE) - service non configure. Verifier les droits admin."
+            continue
+        }
     } else {
         Write-Output "    [NSSM] Service existant - mise a jour de la config."
         & nssm set $svcName Application     $pythonPath

@@ -1981,3 +1981,49 @@ Budget : 1 scan de détection, 1 tentative de clic. Retourne False si le
 bouton n'est pas trouvé.
 
 Statut : patch validé.
+
+## MODULE TRANSVERSAL : RELOAD_RETRY — RÉCUPÉRATION PAGE BLOQUÉE SANS ÉLÉMENT ACTIONNABLE (execute_survey_page)
+
+### RELOAD_RETRY (bloc inline en fin de Survey/survey_executor.py::execute_survey_page)
+
+Fichier : Survey/survey_executor.py
+
+Rôle : quand aucune stratégie de clic CTA ni aucun élément actionnable n'a pu
+être trouvé sur la page courante (fin de la cascade CTA_FALLBACK), tente un
+rechargement borné de la page en cours et relance la détection DOM
+(dom_analyzer.analyze_dom) avant d'abandonner définitivement. Cible
+principalement les pages de redirection intermédiaire figées sur un loader
+(spinner) sans contenu exploitable, y compris quand aucun signal texte
+("please wait", "veuillez patienter"...) n'est présent — c'est un mécanisme
+générique, pas basé sur du texte.
+
+Garde : `page.is_closed()` vérifié avant chaque tentative de reload — n'agit
+pas si la page/contexte est déjà fermé (reload garanti en échec dans ce cas,
+cf. TargetClosedError déjà observé sur d'autres fallbacks de navigation dans
+preselection/survey_navigator.py).
+
+Intégration pipeline : dernier recours dans execute_survey_page, après
+l'échec de toutes les phases CTA_FALLBACK (texte, ID, structurel), avant le
+retour False final (abort_reason=dom_no_match_abort). Ne modifie aucune
+stratégie CTA existante — bloc additif en fin de fonction.
+
+Budget : 2 tentatives de reload max (`_RELOAD_RETRY_MAX = 2`), 2s d'attente
+après chaque reload avant re-détection. Si un bloc actionnable est détecté
+après reload → return True (reprise normale du flux). Si les 2 tentatives
+échouent ou si la page est fermée → poursuite vers l'abandon existant
+(inchangé).
+
+Validation : mécanisme équivalent déjà validé indépendamment dans
+preselection/survey_navigator.py::_reload_and_retry_surveys_tab (même
+principe : reload borné + re-détection, sans signal texte), confirmé en
+conditions réelles sur une page de redirection tierce (new.surveylion.com)
+qui restait bloquée à 0% et a progressé normalement vers le sondage cible
+après reload.
+
+Remplace : l'ancien bloc WAIT_PAGE conditionné par la variable d'environnement
+PROXY_LATENCY_MODE (détection par signaux texte, désactivée par défaut,
+ne couvrait pas les pages bloquées sans texte identifiable). PROXY_LATENCY_MODE
+a été retiré du projet — ne plus le chercher ni le référencer dans un
+diagnostic futur.
+
+Statut : patch validé.

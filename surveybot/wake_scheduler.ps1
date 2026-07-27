@@ -12,6 +12,12 @@
 #   - EXIT_FATAL (last_exit_code = 3) : jamais relance automatiquement - intervention humaine.
 #   - Service NSSM deja en cours d'execution : ignore.
 #
+# Capture de sortie :
+#   Toute la sortie (Write-Output/Write-Warning/erreurs non gerees) est ecrite dans
+#   $LogFile (Start-Transcript), en plus de la console si lancee en interactif.
+#   Utile car une tache planifiee (Register-ScheduledTask) n'affiche aucune sortie
+#   nulle part par defaut : sans ceci, un echec silencieux de la tache est invisible.
+#
 # Usage :
 #   .\wake_scheduler.ps1
 #   .\wake_scheduler.ps1 -AccountsFile "D:\surveybot\accounts.json" -PidsDir "D:\surveybot\pids"
@@ -30,10 +36,26 @@ param(
     [string]$PidsDir       = "C:\surveybot\pids",
     [string]$ServicePrefix = "surveybot_",
     [string]$PythonExe     = "$PSScriptRoot\venv\Scripts\python.exe",
-    [string]$MainScript    = "$PSScriptRoot\code\main.py"
+    [string]$MainScript    = "$PSScriptRoot\code\main.py",
+    [string]$LogFile       = "C:\surveybot\logs\wake_scheduler_task.log"
 )
 
 $MAX_ACCOUNTS = 200   # garde-fou boucle : abort si accounts.json est anormalement grand
+
+# -- Capture de sortie (transcript) --------------------------------------------
+$_logDir = Split-Path -Path $LogFile -Parent
+if ($_logDir -and -not (Test-Path $_logDir)) {
+    New-Item -ItemType Directory -Path $_logDir -Force | Out-Null
+}
+try {
+    Start-Transcript -Path $LogFile -Append -ErrorAction Stop | Out-Null
+} catch {
+    Write-Warning "[WAKE] Impossible de demarrer le transcript ($LogFile) : $_"
+}
+# NB : Stop-Transcript est appele en toute fin de script (chemin nominal). En cas
+# d'"exit" premature plus haut (accounts.json absent, etc.), le transcript n'est
+# pas explicitement ferme mais son contenu est deja ecrit sur disque au fil de
+# l'eau - suffisant pour le diagnostic, sans restructurer les sorties existantes.
 
 # -- Lecture accounts.json -----------------------------------------------------
 
@@ -167,3 +189,5 @@ foreach ($accountId in $accountIds) {
 }
 
 Write-Output "[WAKE] Termine - $processed compte(s) traite(s)."
+
+try { Stop-Transcript | Out-Null } catch { }

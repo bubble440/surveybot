@@ -12,11 +12,15 @@ except ImportError:
 # ---------- PID file (bare-metal Windows) ----------
 
 def _pid_path(account_id: str) -> str:
-    """Retourne le chemin du fichier PID pour ce bot (pids\bot_<id>.pid)."""
-    base = os.path.dirname(os.path.abspath(__file__))
-    pid_dir = os.path.join(base, "pids")
-    os.makedirs(pid_dir, exist_ok=True)
-    return os.path.join(pid_dir, f"bot_{account_id}.pid")
+    """
+    Retourne le chemin du fichier PID pour ce bot (pids\bot_<id>.pid).
+    Réutilise _pids_dir() de bot_supervisor.py (résolution via _bot_root_dirs())
+    pour pointer vers le même dossier racine que le fichier .state du bot,
+    plutôt que le dossier du module launch.py (qui peut différer : sous-dossier
+    "code", ou dossier d'extraction temporaire Nuitka onefile).
+    """
+    from bot_supervisor import _pids_dir
+    return os.path.join(_pids_dir(), f"bot_{account_id}.pid")
 
 def write_pid_file(account_id: str) -> None:
     """
