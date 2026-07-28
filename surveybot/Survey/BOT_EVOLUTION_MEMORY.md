@@ -19,6 +19,52 @@
 
 ---
 
+## MODULE TRANSVERSAL : SWITCH_TO_FRAME_CHAIN — ARGUMENT frame_chain MANQUANT + ROBUSTESSE THROW() DANS LE CONTEXT MANAGER
+
+### analyze_dom — argument frame_chain manquant sur _extract_focusvision_answers_list_groups (2e point d'appel)
+Fichier : Survey/dom_analyzer.py
+Emplacement : bloc de repli (ligne ~4179), à l'intérieur de `with switch_to_frame_chain(driver, []) as ok:`.
+Bug corrigé : l'appel `_extract_focusvision_answers_list_groups(driver)` ne transmettait pas l'argument
+positionnel requis `frame_chain`, provoquant un `TypeError` systématique dès que ce chemin de repli était
+atteint (n'importe quelle plateforme, pas spécifique à Ipsos/FocusVision). Ce `TypeError`, levé pendant que
+le générateur `switch_to_frame_chain` était suspendu au `yield`, se propageait sous forme de
+`RuntimeError: generator didn't stop after throw()` (contextlib), masquant totalement l'erreur d'origine.
+Correction : ajout de `frame_chain=None` à cet appel (contexte racine à ce point du code, cohérent avec les
+autres appels du même bloc de repli déjà en `frame_chain=None`).
+Patterns exclus : le 1er point d'appel (ligne ~4166, bloc `best_chain`) passait déjà correctement
+`frame_chain=chain` — non concerné, non modifié.
+
+### switch_to_frame_chain — séparation résolution de chaîne / bloc yield (throw-safety)
+Fichier : Survey/frame_utils.py
+Problème résolu : la résolution de la chaîne d'iframes (navigation dans `child_frames`) était auparavant
+susceptible d'être fusionnée avec le `try/except` entourant le `yield` du context manager. Si une exception
+survient dans le corps du `with` (ex. le `TypeError` ci-dessus), Python la relance dans le générateur via
+`throw()` au point du `yield` ; un `except Exception` trop large à cet endroit peut intercepter cette
+relance et, en tentant de continuer/yield à nouveau, provoque `RuntimeError("generator didn't stop after
+throw()")` côté contextlib — masquant l'exception réelle du corps du `with`.
+Correction : la résolution de la chaîne (recherche des `child_frames`, calcul de `ok`/`target`) est
+effectuée entièrement AVANT le `yield`, dans son propre `try/except Exception: ok = False` isolé. Le bloc
+`try/finally` autour du `yield` ne contient plus que `_reset()` en `finally` — aucun `except` autour du
+`yield` lui-même, donc toute exception levée dans le corps du `with` remonte immédiatement et proprement.
+Patterns couverts :
+- Tout appel à `switch_to_frame_chain` où le corps du `with` peut lever une exception (signature manquante,
+  erreur DOM, etc.) — l'exception d'origine reste visible dans la stack trace, plus de `RuntimeError`
+  masquante.
+Patterns exclus :
+- Aucun changement du comportement fonctionnel (résolution de chaîne, mise à jour de `_current_frame`,
+  retour au contexte racine via `_reset()` en sortie) — patch défensif sur la gestion d'exception uniquement.
+
+Diagnostic associé : le symptôme observable avant ce patch était `RuntimeError: generator didn't stop after
+throw()` dans la boucle attach (main.py::run_attach_takeover), sans lien apparent avec un extracteur ou une
+plateforme précise, et sans stack trace exploitable (le bloc `except Exception` de la boucle attach
+n'affichait que type+message). Un patch de traceback complet a permis de révéler le `TypeError` réel sous-
+jacent, confirmant que ce n'était pas un problème de connexion CDP partagée ou de concurrence entre threads,
+mais un simple désalignement d'arguments à un point d'appel après évolution de signature.
+
+Statut : patch validé.
+
+---
+
 ## PLATEFORME : ASKIA
 Signature : `<body onload="loadFormAskia();">`, form action `AskiaExt.dll`
 Inputs : schéma `M{N} {value}` (checkbox/radio) ou `U{N}` (hidden slider)

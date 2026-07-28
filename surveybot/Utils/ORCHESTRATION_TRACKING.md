@@ -294,6 +294,7 @@ dérivé une fois avec le chemin en dur dans l'ancienne fonction).
 
 1. **Risque de process Chrome orphelins** si le timeout de 30 s de fermeture propre est dépassé (cf. section 4) — à surveiller, pas encore instrumenté.
 2. **Validation en conditions réelles non faite** : tous les correctifs ci-dessus ont été relus sur le code mais pas encore testés sur une machine de production réelle (rebuild Nuitka + déploiement + observation d'un cycle complet crash/zombie/cooldown).
+3. **Sentinel `EXIT_CRASH` toujours non écrasé sur 3 chemins de sortie** (`max_restart_depth_reached`, `browser_launch_failed`, `CHROME_PROFILE_DIR` manquant/introuvable) — même défaut que celui corrigé en section 13 pour `MAX_MAIN_CYCLES`, mais pas encore traité sur ces trois chemins.
 
 ---
 
@@ -324,7 +325,56 @@ dérivé une fois avec le chemin en dur dans l'ancienne fonction).
 
   ---
 
-*Dernière mise à jour de ce fichier : 26/07/2026 (section 9 : rôle de
+## 13. Sentinel `EXIT_CRASH` sur le recyclage périodique (`MAX_MAIN_CYCLES`) — corrigé partiellement
+
+- **Problème** : à la sortie normale de la boucle `while cycle < max_cycles` dans
+  `main.py::main` (recyclage volontaire et sain du process toutes les
+  `MAX_MAIN_CYCLES` itérations, défaut 3), le code libérait bien le slot
+  Postgres (`update_state(status="idle", cooldown_until_ts=epoch, ...)`) mais
+  ne rappelait jamais `bot_supervisor.record_exit()` avant de faire
+  `raise SystemExit("max_main_cycles_reached")`. Le sentinel `EXIT_CRASH`
+  écrit par `check_and_record_start()` au tout début du run restait donc en
+  place dans `pids\bot_<id>.state`. Au démarrage suivant,
+  `check_and_record_start()` lisait ce sentinel comme un crash et incrémentait
+  `restart_count` à tort — un recyclage sain répété plusieurs fois dans la
+  fenêtre de 10 minutes pouvait donc faire atteindre le seuil de crash-loop
+  (5 redémarrages) et déclencher `EXIT_FATAL` sans qu'aucun crash réel ne se
+  soit produit.
+- **Correction appliquée** (`main.py`, sortie de boucle `MAX_MAIN_CYCLES`) :
+  appel explicite à `bot_supervisor.record_exit(account_id, EXIT_VOLUNTARY,
+  "max_main_cycles_reached")` juste avant le `raise SystemExit`, dans le même
+  bloc `if not is_attach_mode()` que la libération du slot Postgres — même
+  principe que la correction `SIGBREAK` de la section 3 : marquer
+  explicitement un arrêt sain comme `EXIT_VOLUNTARY` côté supervision locale,
+  pour que le prochain démarrage réinitialise `restart_count` au lieu de
+  l'incrémenter.
+- **Point de vigilance** : le code réel renvoyé au process par
+  `SystemExit("max_main_cycles_reached")` (argument chaîne) reste `1` côté
+  OS/NSSM — NSSM continuera donc de redémarrer immédiatement le service via
+  `AppExit Default → Restart`, ce qui correspond à l'intention (recyclage
+  volontaire, pas une pause). Seule la donnée locale utilisée par
+  `check_and_record_start()` change ; ce n'est pas un changement de
+  comportement NSSM.
+- **Portée du correctif — partielle** : l'audit (`Utils/AUDIT_ARRET_RELANCE_BOTS.md`,
+  Observation 5) recense trois autres chemins de sortie qui présentent
+  exactement le même défaut (sentinel `EXIT_CRASH` jamais écrasé) et qui
+  **ne sont pas couverts par ce correctif** : `max_restart_depth_reached`
+  (`preselection/survey_handler.py::run_survey`), `browser_launch_failed` et
+  les deux cas `CHROME_PROFILE_DIR` manquant/introuvable
+  (`launch.py::launch_driver_or_fail` / `preselection/playwright_launcher.py`).
+  Ces chemins restent à corriger séparément si le même risque de faux
+  crash-loop y est jugé pertinent.
+- **Non validé en conditions réelles** à ce jour (relecture de code
+  uniquement — voir section 11).
+
+  ---
+
+*Dernière mise à jour de ce fichier : 28/07/2026 (section 13 : correctif du
+sentinel `EXIT_CRASH` non écrasé à la sortie du recyclage `MAX_MAIN_CYCLES`
+dans `main.py` — `record_exit(EXIT_VOLUNTARY, "max_main_cycles_reached")`
+ajouté avant le `raise SystemExit`, pour éviter un faux comptage de
+crash-loop sur des recyclages sains ; correctif partiel, 3 chemins similaires
+encore ouverts, voir section 11 point 3). Précédemment : 26/07/2026 (section 9 : rôle de
 `launch_all.ps1` restreint à un lancement manuel/ponctuel, garde-fou NSSM
 anti double-lancement — le parc de production n'est désormais exploité que
 via NSSM, seul chemin couvert par `check_zombie_bots.ps1`/

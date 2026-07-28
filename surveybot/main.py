@@ -1065,6 +1065,14 @@ def main():
             ))
         except Exception as _le:
             print(f"[MAIN][WARN] Impossible de libérer le lock en fin de cycles: {_le}")
+        # Recyclage volontaire et sain (pas un crash) : sans cet appel, le sentinel
+        # EXIT_CRASH écrit par check_and_record_start() au début de CE run reste en
+        # place (ce chemin ne passait jusqu'ici jamais par record_exit()) — le
+        # prochain démarrage le lirait comme un crash et incrémenterait à tort
+        # restart_count, pouvant faire atteindre le seuil EXIT_FATAL après plusieurs
+        # recyclages sains consécutifs (voir Utils/AUDIT_ARRET_RELANCE_BOTS.md, Observation 5b).
+        from bot_supervisor import record_exit, EXIT_VOLUNTARY
+        record_exit(account_id, EXIT_VOLUNTARY, "max_main_cycles_reached")
     raise SystemExit("max_main_cycles_reached")
         
 if __name__ == "__main__":
