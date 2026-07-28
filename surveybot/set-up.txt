@@ -72,6 +72,16 @@ nssm version
 # CHECKLIST - A FAIRE UNE SEULE FOIS PAR MACHINE
 # (terminal PowerShell en mode administrateur, dans C:\surveybot)
 #############################################
+# IMPORTANT : les 3 taches planifiees ci-dessous s'executent sous le principal
+# SYSTEM (-LogonType ServiceAccount), qui ne voit PAS la policy definie via
+# Set-ExecutionPolicy -Scope CurrentUser (etape 2 des PRE-REQUIS - un hive de
+# registre different). Sans -ExecutionPolicy Bypass dans l'argument de la
+# tache elle-meme, le scope LocalMachine reste Undefined -> PowerShell retombe
+# sur Restricted pour SYSTEM -> le script ne s'execute jamais (echec avant
+# meme sa premiere ligne, LastTaskResult=1, aucun log ecrit car le script
+# n'atteint jamais son propre Start-Transcript). Deja rencontre en prod sur
+# wake_scheduler.ps1 (28/07/2026) - voir Utils/ORCHESTRATION_TRACKING.md
+# section 14 pour le diagnostic complet.
 
 # 1) Creer/mettre a jour les services NSSM a partir de accounts.json
 .\nssm_setup_bot.ps1
@@ -81,13 +91,13 @@ nssm version
 #    aller-retour de reconfiguration ulterieur.
 $principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
 
-$action   = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NonInteractive -WindowStyle Hidden -File C:\surveybot\check_zombie_bots.ps1"
+$action   = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File C:\surveybot\check_zombie_bots.ps1"
 $trigger  = New-ScheduledTaskTrigger -RepetitionInterval (New-TimeSpan -Minutes 3) -Once -At (Get-Date)
 $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 2)
 Register-ScheduledTask -TaskName "SurveyBot_ZombieCheck" -Action $action -Trigger $trigger -Settings $settings -Principal $principal -Force
 
 # 3) Tache planifiee wake_scheduler (reveil des bots en cooldown expire)
-$action   = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NonInteractive -WindowStyle Hidden -File C:\surveybot\wake_scheduler.ps1"
+$action   = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File C:\surveybot\wake_scheduler.ps1"
 $trigger  = New-ScheduledTaskTrigger -RepetitionInterval (New-TimeSpan -Minutes 5) -Once -At (Get-Date)
 $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 4)
 Register-ScheduledTask -TaskName "SurveyBot_WakeScheduler" -Action $action -Trigger $trigger -Settings $settings -Principal $principal -Force
@@ -100,7 +110,7 @@ Register-ScheduledTask -TaskName "SurveyBot_WakeScheduler" -Action $action -Trig
 #    NB : sync_orchestration_scripts.ps1 lui-meme n'est PAS couvert par ce
 #    mecanisme (deja copie manuellement a l'etape de provisioning initial) -
 #    a remettre a jour manuellement sur chaque machine si ce fichier change.
-$action   = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NonInteractive -WindowStyle Hidden -File C:\surveybot\sync_orchestration_scripts.ps1 -ManifestUrl `"https://pub-565d2bb59d364c1490255c5dddc296aa.r2.dev/orchestration_manifest.json`""
+$action   = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File C:\surveybot\sync_orchestration_scripts.ps1 -ManifestUrl `"https://pub-565d2bb59d364c1490255c5dddc296aa.r2.dev/orchestration_manifest.json`""
 $trigger  = New-ScheduledTaskTrigger -RepetitionInterval (New-TimeSpan -Minutes 10) -Once -At (Get-Date)
 $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 5)
 Register-ScheduledTask -TaskName "SurveyBot_OrchestrationSync" -Action $action -Trigger $trigger -Settings $settings -Principal $principal -Force
@@ -135,3 +145,11 @@ Get-ChildItem C:\surveybot\pids -Filter "bot_*.state" | ForEach-Object {
 # la veille ecran seule (extinction moniteur) n'a aucun impact et peut rester active :
 powercfg /change standby-timeout-ac 0
 powercfg /change hibernate-timeout-ac 0
+
+
+
+# Pour lancer un bot a l'arret, executer la commande ci-dessous:
+nssm start surveybot_topsurveys_bot_001
+
+# Pour stopper un bot
+nssm stop surveybot_topsurveys_bot_001

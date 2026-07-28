@@ -295,6 +295,7 @@ dérivé une fois avec le chemin en dur dans l'ancienne fonction).
 1. **Risque de process Chrome orphelins** si le timeout de 30 s de fermeture propre est dépassé (cf. section 4) — à surveiller, pas encore instrumenté.
 2. **Validation en conditions réelles non faite** : tous les correctifs ci-dessus ont été relus sur le code mais pas encore testés sur une machine de production réelle (rebuild Nuitka + déploiement + observation d'un cycle complet crash/zombie/cooldown).
 3. **Sentinel `EXIT_CRASH` toujours non écrasé sur 3 chemins de sortie** (`max_restart_depth_reached`, `browser_launch_failed`, `CHROME_PROFILE_DIR` manquant/introuvable) — même défaut que celui corrigé en section 13 pour `MAX_MAIN_CYCLES`, mais pas encore traité sur ces trois chemins.
+4. **Correctif `-ExecutionPolicy Bypass` (section 14) non redéployé sur tout le parc** : validé sur une seule machine à ce jour ; les autres machines déjà provisionnées ont probablement le même défaut sur leurs 3 tâches planifiées tant que `Set-ScheduledTaskAction` n'y est pas rejoué manuellement.
 
 ---
 
@@ -369,12 +370,62 @@ dérivé une fois avec le chemin en dur dans l'ancienne fonction).
 
   ---
 
-*Dernière mise à jour de ce fichier : 28/07/2026 (section 13 : correctif du
-sentinel `EXIT_CRASH` non écrasé à la sortie du recyclage `MAX_MAIN_CYCLES`
-dans `main.py` — `record_exit(EXIT_VOLUNTARY, "max_main_cycles_reached")`
-ajouté avant le `raise SystemExit`, pour éviter un faux comptage de
-crash-loop sur des recyclages sains ; correctif partiel, 3 chemins similaires
-encore ouverts, voir section 11 point 3). Précédemment : 26/07/2026 (section 9 : rôle de
+## 14. Tâches planifiées SYSTEM bloquées par la politique d'exécution — corrigé
+
+- **Problème observé en prod (28/07/2026)** : `wake_scheduler.ps1` ne relançait
+  jamais un bot dont le cooldown Postgres était pourtant expiré depuis
+  longtemps. `Get-ScheduledTaskInfo` indiquait `LastTaskResult = 1` et
+  `C:\surveybot\logs\wake_scheduler_task.log` **n'existait pas du tout** —
+  signe que le script n'atteignait même pas sa première instruction
+  (`Start-Transcript`), donc un blocage en amont du code, pas un bug de
+  logique métier.
+- **Cause racine** : la checklist de provisioning (`set-up.txt`) applique
+  `Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser`.
+  Ce scope ne s'applique qu'à l'utilisateur interactif qui l'exécute. Les 3
+  tâches planifiées (`SurveyBot_ZombieCheck`, `SurveyBot_WakeScheduler`,
+  `SurveyBot_OrchestrationSync`) tournent sous le principal `SYSTEM`
+  (`-LogonType ServiceAccount`, cf. `set-up.txt` section CHECKLIST), qui lit
+  le scope `LocalMachine` — resté `Undefined` sur la machine concernée
+  (confirmé par `Get-ExecutionPolicy -List`), ce qui fait retomber PowerShell
+  sur `Restricted` par défaut pour ce compte. Le script était donc bloqué à
+  chaque exécution planifiée, silencieusement (aucune sortie capturée nulle
+  part, puisque le blocage intervient avant que le script ait la main).
+- **Correction appliquée** : ajout de `-ExecutionPolicy Bypass` dans
+  l'argument `powershell.exe` de la tâche elle-même (`New-ScheduledTaskAction
+  -Argument "-NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden
+  -File ..."`), pour les 3 tâches. Portée volontairement limitée au process
+  de la tâche (scope `Process`), sans toucher à la policy globale de la
+  machine — cohérent avec le principe de patch minimal.
+- **Fichiers modifiés** : `set-up.txt` (les 3 blocs `Register-ScheduledTask`
+  de la section CHECKLIST, + note explicative ajoutée juste avant). Les
+  scripts `.ps1` eux-mêmes n'ont pas été modifiés (le défaut est dans la
+  commande d'enregistrement de la tâche, pas dans leur contenu).
+- **Validé en conditions réelles (28/07/2026)** : `Start-ScheduledTask` →
+  `LastTaskResult = 0`, log `wake_scheduler_task.log` désormais généré,
+  `nssm start surveybot_topsurveys_bot_001` déclenché, service repassé à
+  `SERVICE_RUNNING`.
+- **Point de vigilance** : toute machine déjà provisionnée AVANT ce correctif
+  a ses tâches planifiées enregistrées avec l'ancienne action (sans
+  `-ExecutionPolicy Bypass`) — `sync_orchestration_scripts.ps1` ne
+  re-enregistre pas les tâches planifiées elles-mêmes (il ne fait que
+  télécharger les fichiers `.ps1`), donc ce correctif doit être **réappliqué
+  manuellement** (`Set-ScheduledTaskAction` avec la nouvelle commande) sur
+  chaque machine du parc déjà en production, pas seulement sur les nouvelles.
+
+  ---
+
+*Dernière mise à jour de ce fichier : 28/07/2026 (section 14 : les 3 tâches
+planifiées SYSTEM — `SurveyBot_ZombieCheck`, `SurveyBot_WakeScheduler`,
+`SurveyBot_OrchestrationSync` — étaient bloquées par la politique
+d'exécution PowerShell, `Set-ExecutionPolicy -Scope CurrentUser` ne
+s'appliquant pas au principal SYSTEM ; correctif : `-ExecutionPolicy Bypass`
+ajouté dans l'action de chaque tâche, cf. `set-up.txt`. À réappliquer
+manuellement sur les machines déjà provisionnées). Précédemment : 28/07/2026
+(section 13 : correctif du sentinel `EXIT_CRASH` non écrasé à la sortie du
+recyclage `MAX_MAIN_CYCLES` dans `main.py` — `record_exit(EXIT_VOLUNTARY,
+"max_main_cycles_reached")` ajouté avant le `raise SystemExit`, pour éviter
+un faux comptage de crash-loop sur des recyclages sains ; correctif partiel,
+3 chemins similaires encore ouverts, voir section 11 point 3). Précédemment : 26/07/2026 (section 9 : rôle de
 `launch_all.ps1` restreint à un lancement manuel/ponctuel, garde-fou NSSM
 anti double-lancement — le parc de production n'est désormais exploité que
 via NSSM, seul chemin couvert par `check_zombie_bots.ps1`/
