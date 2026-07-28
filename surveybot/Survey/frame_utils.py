@@ -57,30 +57,39 @@ def switch_to_frame_chain(driver, chain: FrameChain):
         if hasattr(driver, "_current_frame"):
             driver._current_frame = page
 
-    try:
-        _reset()  # Repositionner au contexte racine avant toute navigation
+    _reset()  # Repositionner au contexte racine avant toute navigation
 
-        if not chain:
-            # Chaîne vide → contexte racine, _current_frame reste page
-            yield True
-            return
+    # Résolution de la chaîne AVANT le yield : toute exception ici ne peut pas
+    # entrer en conflit avec un throw() ultérieur du context manager, car on
+    # n'est pas encore suspendu sur un yield. Ne jamais fusionner cette
+    # résolution avec le bloc try/finally qui entoure le yield ci-dessous —
+    # un except Exception autour du yield intercepterait aussi l'exception
+    # relancée par __exit__() quand le corps du "with" échoue, et un second
+    # yield après throw() lève RuntimeError("generator didn't stop after
+    # throw()") côté contextlib, masquant l'erreur d'origine.
+    ok = not chain
+    target = None
+    if chain:
+        try:
+            current = page.main_frame
+            for idx in chain:
+                children = list(current.child_frames)
+                if idx < 0 or idx >= len(children):
+                    ok = False
+                    break
+                current = children[idx]
+            else:
+                ok = True
+                target = current
+        except Exception:
+            ok = False
 
-        # Navigation dans la chaîne d'iframes via l'API Playwright native
-        current = page.main_frame
-        for idx in chain:
-            children = list(current.child_frames)
-            if idx < 0 or idx >= len(children):
-                yield False
-                return
-            current = children[idx]
-
+    if ok and chain and hasattr(driver, "_current_frame"):
         # Mettre à jour _current_frame pour les appelants (compat getattr pattern)
-        if hasattr(driver, "_current_frame"):
-            driver._current_frame = current
+        driver._current_frame = target
 
-        yield True
-    except Exception:
-        yield False
+    try:
+        yield ok
     finally:
         _reset()
 

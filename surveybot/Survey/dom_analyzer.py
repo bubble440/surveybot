@@ -4183,10 +4183,10 @@ def analyze_dom(driver) -> List[Dict[str, Any]]:
                     return sp_blocks
                 blocks = _analyze_dom_current_context(driver)
                 if not _should_skip_focusvision_answers_list_groups(blocks):
-                    blocks.extend(_extract_focusvision_answers_list_groups(driver))
+                    blocks.extend(_extract_focusvision_answers_list_groups(driver, frame_chain=None))
                     blocks = _drop_cardsort_when_mixed_with_other_blocks(blocks)
                 blocks.extend(_extract_decipher_cardrating_blocks(driver))
-                blocks.extend(_extract_angular_material_radio_groups(driver))
+                blocks.extend(_extract_angular_material_radio_groups(driver, frame_chain=None))
                 blocks.extend(_extract_decipher_grid_select_blocks(driver, frame_chain=chain))
 
                 if not blocks:

@@ -1,0 +1,137 @@
+#############################################
+# PRE-REQUIS (une seule fois par machine)
+#############################################
+
+# 1) Installer Microsoft Visual C++ Redistribuable
+winget install --id Microsoft.VCRedist.2015+.x64 -e --silent
+
+# 2) Autoriser l'execution de scripts locaux non signes
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+
+# 3) Debloquer les fichiers .ps1 copies sur cette machine (telechargement/partage
+#    reseau/cle USB) - Set-ExecutionPolicy seul NE suffit PAS : Windows marque
+#    individuellement chaque fichier recu de l'exterieur ("Zone.Identifier"), et
+#    RemoteSigned peut continuer a bloquer un script marque ainsi meme avec la
+#    policy ci-dessus. A refaire a chaque fois que de nouveaux .ps1 arrivent sur
+#    la machine (copie initiale, mise a jour manuelle) :
+Get-ChildItem -Path C:\surveybot -Recurse -Filter *.ps1 | Unblock-File
+
+
+#############################################
+# PROVISIONING INITIAL (une seule fois par machine, AVANT setup_machine.ps1)
+#############################################
+# Rien de tout ceci n'est automatise : update_checker.py ne remplace QUE le
+# contenu de code\ une fois que code\ existe deja et tourne. Sur une machine
+# neuve, il faut d'abord faire exister ce depart manuellement.
+
+# 1) Copier manuellement depuis le repo dev vers C:\surveybot\ (racine) :
+#      - nssm_setup_bot.ps1
+#      - check_zombie_bots.ps1
+#      - wake_scheduler.ps1
+#      - sync_orchestration_scripts.ps1
+#      - setup_machine.ps1
+#      - requirements.txt
+#      - accounts.json         (comptes/proxies de cette machine)
+#      - receiver_config.json  (OPENAI_API_KEY / TWO_CAPTCHA_KEY / telegram_bot_token /
+#                                telegram_chat_id / payout_name / payout_revolut_tag)
+#    Ces fichiers ne sont PAS geres par update_checker.py (il ne touche que code\).
+#    Seuls les 4 premiers seront ensuite synchronises automatiquement par
+#    sync_orchestration_scripts.ps1 (etape 4 de la checklist) - jusque-la, et pour
+#    setup_machine.ps1/requirements.txt/accounts.json/receiver_config.json en
+#    permanence, la mise a jour reste manuelle.
+
+# 2) Deployer la derniere version de code\ (contenu du zip de dist_zip\, cote
+#    build : build_release_zip.ps1) :
+#      - telecharger le zip le plus recent (voir manifest.json sur R2)
+#      - extraire son contenu directement dans C:\surveybot\code\
+#    Une fois cette premiere version en place, chaque demarrage du bot verifie
+#    et applique lui-meme les mises a jour suivantes (update_checker.py) - cette
+#    etape manuelle ne se refait qu'en cas de C:\surveybot\code\ absent/corrompu.
+
+
+#############################################
+# PROVISIONING AUTOMATISE (setup_machine.ps1)
+#############################################
+# A executer une seule fois par machine, en administrateur, une fois les fichiers
+# ci-dessus en place. Cree le venv\, installe les dependances (requirements.txt),
+# cree les dossiers profiles\ (un par compte de accounts.json), cree pids\/logs\,
+# et installe NSSM automatiquement (telechargement + PATH systeme) s'il est absent.
+cd C:\surveybot
+.\setup_machine.ps1
+
+# Si NSSM vient d'etre installe par ce script : ROUVRIR le terminal (le PATH
+# systeme n'est relu qu'a l'ouverture) avant de continuer, puis verifier :
+nssm version
+
+# Test manuel recommande avant toute automatisation (verifie login/config/proxy
+# sans dependre de NSSM ni des taches planifiees) :
+.\venv\Scripts\python.exe .\code\main.py
+
+
+#############################################
+# CHECKLIST - A FAIRE UNE SEULE FOIS PAR MACHINE
+# (terminal PowerShell en mode administrateur, dans C:\surveybot)
+#############################################
+
+# 1) Creer/mettre a jour les services NSSM a partir de accounts.json
+.\nssm_setup_bot.ps1
+
+# 2) Tache planifiee de detection zombie (heartbeat perime -> restart NSSM)
+#    Principal SYSTEM des la creation : evite toute fenetre visible et tout
+#    aller-retour de reconfiguration ulterieur.
+$principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
+
+$action   = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NonInteractive -WindowStyle Hidden -File C:\surveybot\check_zombie_bots.ps1"
+$trigger  = New-ScheduledTaskTrigger -RepetitionInterval (New-TimeSpan -Minutes 3) -Once -At (Get-Date)
+$settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 2)
+Register-ScheduledTask -TaskName "SurveyBot_ZombieCheck" -Action $action -Trigger $trigger -Settings $settings -Principal $principal -Force
+
+# 3) Tache planifiee wake_scheduler (reveil des bots en cooldown expire)
+$action   = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NonInteractive -WindowStyle Hidden -File C:\surveybot\wake_scheduler.ps1"
+$trigger  = New-ScheduledTaskTrigger -RepetitionInterval (New-TimeSpan -Minutes 5) -Once -At (Get-Date)
+$settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 4)
+Register-ScheduledTask -TaskName "SurveyBot_WakeScheduler" -Action $action -Trigger $trigger -Settings $settings -Principal $principal -Force
+
+# 4) Tache planifiee de sync des scripts d'orchestration (launch_all.ps1,
+#    nssm_setup_bot.ps1, wake_scheduler.ps1, check_zombie_bots.ps1) - verifie
+#    toutes les 10 min si une version plus recente existe sur R2 et la
+#    telecharge automatiquement. requirements.txt est verifie mais JAMAIS
+#    applique automatiquement (juste signale par Telegram).
+#    NB : sync_orchestration_scripts.ps1 lui-meme n'est PAS couvert par ce
+#    mecanisme (deja copie manuellement a l'etape de provisioning initial) -
+#    a remettre a jour manuellement sur chaque machine si ce fichier change.
+$action   = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NonInteractive -WindowStyle Hidden -File C:\surveybot\sync_orchestration_scripts.ps1 -ManifestUrl `"https://pub-565d2bb59d364c1490255c5dddc296aa.r2.dev/orchestration_manifest.json`""
+$trigger  = New-ScheduledTaskTrigger -RepetitionInterval (New-TimeSpan -Minutes 10) -Once -At (Get-Date)
+$settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 5)
+Register-ScheduledTask -TaskName "SurveyBot_OrchestrationSync" -Action $action -Trigger $trigger -Settings $settings -Principal $principal -Force
+
+# Verification que les 3 taches sont bien enregistrees :
+Get-ScheduledTask -TaskName "SurveyBot_*" | Format-Table TaskName,State -AutoSize
+
+# Verification du Principal (doit afficher SYSTEM / ServiceAccount pour les 3) :
+Get-ScheduledTask -TaskName "SurveyBot_*" | Select-Object TaskName,Principal
+
+
+#############################################
+# VERIFICATIONS POST-DEPLOIEMENT
+#############################################
+
+# Service(s) reellement actifs :
+Get-Service surveybot_* | Format-Table Name,Status -AutoSize
+
+# Heartbeat applicatif (age_sec doit rester bas et STABLE d'une lecture a l'autre -
+# s'il augmente au meme rythme que l'horloge, le bot est arrete malgre un .state
+# ancien, pas "encore vivant") :
+Get-ChildItem C:\surveybot\pids -Filter "bot_*.state" | ForEach-Object {
+    $s = Get-Content $_.FullName -Raw | ConvertFrom-Json
+    [PSCustomObject]@{
+        account_id        = $s.account_id
+        last_heartbeat_ts = $s.last_heartbeat_ts
+        age_sec           = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds() - [long]$s.last_heartbeat_ts
+    }
+} | Format-Table -AutoSize
+
+# Empecher toute mise en veille systeme (S3) - a faire sur CHAQUE machine du parc,
+# la veille ecran seule (extinction moniteur) n'a aucun impact et peut rester active :
+powercfg /change standby-timeout-ac 0
+powercfg /change hibernate-timeout-ac 0

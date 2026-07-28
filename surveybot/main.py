@@ -433,6 +433,22 @@ def run_attach_takeover(driver, *, api_key: str, account_id: str) -> None:
                     print(f"[ATTACH][VIDEO_GATE] Page vidéo ISD non résolvable détectée step={i} → sortie boucle.")
                     break
         except Exception as e:
+            # Diagnostic additif : ne change pas le comportement (le break reste
+            # inconditionnel) — capture la stack trace complète et l'état des
+            # threads actifs pour identifier, à la prochaine occurrence, l'appel
+            # Playwright précis en cause et un éventuel accès concurrent au même
+            # driver/page depuis un autre thread (API sync Playwright non thread-safe).
+            import traceback as _traceback, threading as _threading
+            from Survey.log_utils import log_debug as _log_debug
+            _other_threads = [
+                t.name for t in _threading.enumerate()
+                if t is not _threading.current_thread()
+            ]
+            _log_debug(
+                "[ATTACH][ERROR_TRACE]",
+                f"step={i} thread={_threading.current_thread().name} "
+                f"other_active_threads={_other_threads}\n{_traceback.format_exc()}",
+            )
             print(f"[ATTACH][ERROR] step={i} {type(e).__name__}: {e}")
             break
 
