@@ -182,12 +182,23 @@ def install_sigint_handler(account_id: str):
     if hasattr(signal, "SIGBREAK"):   # Windows uniquement
         signal.signal(signal.SIGBREAK, _make_stop_handler(account_id, sig_name="SIGBREAK"))
 
+# Levé en tout premier dans _handle() ci-dessous, avant toute autre instruction :
+# consommé par RuntimeGuard.pause() (runtime_guard.py) pour forcer EXIT_VOLUNTARY
+# quand un arrêt externe (nssm stop) est déjà en cours, même si c'est le thread de
+# supervision (_monitor_loop, séparé du thread principal) qui termine le process
+# en premier via os._exit(). Sans cela, la course entre le handler de signal et ce
+# thread pouvait laisser un code de sortie "restart" gagner, faisant croire à NSSM
+# qu'il doit relancer le service alors qu'un arrêt volontaire était demandé.
+_external_stop_requested = threading.Event()
+
+
 def _make_stop_handler(aid: str, sig_name: str = "SIGTERM"):
     """
     Fabrique un handler d'arrêt propre pour SIGTERM ou SIGINT.
     Libère le slot Postgres, supprime le fichier PID, stoppe le heartbeat, puis exit.
     """
     def _handle(signum, frame):
+        _external_stop_requested.set()
         print(f"🛑 {sig_name} reçu | account_id={aid}")
 
         try:

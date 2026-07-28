@@ -382,6 +382,21 @@ class RuntimeGuard:
         }
         _exit_code = EXIT_VOLUNTARY if reason in _VOLUNTARY_REASONS else EXIT_SOFT_RESTART
 
+        # Un arrêt externe (nssm stop -> SIGBREAK/SIGINT) est déjà en cours : le
+        # handler de signal (launch.py::_make_stop_handler) tourne dans le thread
+        # principal et peut être retardé (appel natif Selenium/Playwright en cours),
+        # pendant que ce pause() peut être appelé depuis le thread de supervision
+        # (_monitor_loop) et terminer le process en premier via os._exit(). Forcer
+        # EXIT_VOLUNTARY ici garantit que le code de sortie observé par NSSM reste
+        # cohérent avec l'arrêt volontaire demandé, quel que soit le thread qui
+        # termine effectivement le process.
+        try:
+            import launch as _launch
+            if _launch._external_stop_requested.is_set():
+                _exit_code = EXIT_VOLUNTARY
+        except Exception:
+            pass
+
         pause_sec = resolve_pause_seconds(policy)
 
         # NO_SURVEY_AVAILABLE / DAILY_TARGET_REACHED : trop fréquents pour alerter.
