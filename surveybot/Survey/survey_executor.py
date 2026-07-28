@@ -491,6 +491,15 @@ _DISQ_CALLBACK_PATTERNS = ["samplicio.us", "clientcallback", "client_callback"]
 # Permet aux boucles takeover de main.py de distinguer ce cas d'un échec de step ordinaire.
 _attach_disq_stop_requested: bool = False
 
+# ---------------------------------------------------------------------------
+# CONSENT_SCREEN_STUCK_RELOAD : reload borné quand handle_consent_screen échoue
+# de façon répétée sur le même DOM (clic CTA sans effet observable, cf.
+# BOT_EVOLUTION_MEMORY.md). État conservé par instance driver (id) car
+# execute_survey_page est ré-invoquée à chaque step avec les mêmes locals réinitialisés.
+# ---------------------------------------------------------------------------
+_CONSENT_SCREEN_STUCK_STATE: dict = {}
+_CONSENT_SCREEN_STUCK_BUDGET = 2  # échecs consécutifs sur le même DOM avant reload
+
 
 def _detect_disqualification_page(driver) -> tuple:
     """Retourne (True, signal) si la page est une page de disqualification/fin, (False, '') sinon."""
@@ -1702,6 +1711,63 @@ def _should_skip_post_actions_navigation(
     except Exception:
         return False
 
+def _consent_screen_stuck_reload_retry(driver) -> bool:
+    """
+    Reload borné quand handle_consent_screen échoue de façon répétée sur le même
+    écran de consentement (DOM inchangé, clic CTA sans effet observable).
+
+    Ne s'invoque que si handle_consent_screen vient de retourner False. Compare la
+    signature DOM légère (cta_handler._dom_progress_marker) à celle du dernier échec
+    enregistré pour cette instance driver : si identique _CONSENT_SCREEN_STUCK_BUDGET
+    fois de suite, déclenche un reload et réinitialise le compteur. Retourne toujours
+    False (le step courant reste un échec ; le step suivant repart d'un DOM frais après
+    reload, ou retente normalement sinon).
+    """
+    import Survey.cta_handler as cta_handler
+
+    key = id(driver)
+    try:
+        sig = cta_handler._dom_progress_marker(driver)
+    except Exception:
+        return False
+
+    state = _CONSENT_SCREEN_STUCK_STATE.get(key)
+    if state and state.get("sig") == sig:
+        state["fail_count"] = state.get("fail_count", 0) + 1
+    else:
+        state = {"sig": sig, "fail_count": 1}
+    _CONSENT_SCREEN_STUCK_STATE[key] = state
+
+    log_debug(
+        "[CONSENT_SCREEN_STUCK_RELOAD]",
+        f"fail_count={state['fail_count']}/{_CONSENT_SCREEN_STUCK_BUDGET} même DOM détecté",
+    )
+
+    if state["fail_count"] < _CONSENT_SCREEN_STUCK_BUDGET:
+        return False
+
+    _CONSENT_SCREEN_STUCK_STATE.pop(key, None)
+
+    try:
+        if driver.is_closed():
+            log_debug("[CONSENT_SCREEN_STUCK_RELOAD]", "page déjà fermée — abandon")
+            return False
+    except Exception:
+        return False
+
+    try:
+        log_info(
+            "[CONSENT_SCREEN_STUCK_RELOAD]",
+            f"reload déclenché après {_CONSENT_SCREEN_STUCK_BUDGET} échecs consécutifs sur le même DOM",
+        )
+        driver.reload(wait_until="domcontentloaded")
+        time.sleep(2)
+    except Exception as _reload_exc:
+        log_debug("[CONSENT_SCREEN_STUCK_RELOAD]", f"reload échoué: {type(_reload_exc).__name__}")
+
+    return False
+
+
 def execute_survey_page(driver, account_id, api_key, ctx=None):
     """
     Orchestration d'une page de survey : DOM analysis → GPT → dispatch actions.
@@ -1801,7 +1867,15 @@ def execute_survey_page(driver, account_id, api_key, ctx=None):
 
         if not allow_openai:
             # action_dispatcher est hors-périmètre → passer driver (= shim)
-            return getattr(action_dispatcher, handler_name)(driver)
+            handler_result = getattr(action_dispatcher, handler_name)(driver)
+
+            # CONSENT_SCREEN_STUCK_RELOAD : consentement détecté à chaque itération
+            # mais clic CTA sans effet (cf. RELOAD_RETRY plus bas, qui ne couvre que
+            # l'absence totale d'élément actionnable — pas ce cas).
+            if itype == "consent_screen" and not handler_result:
+                handler_result = _consent_screen_stuck_reload_retry(driver)
+
+            return handler_result
 
     video_gate_state = _handle_forcewatch_video_gate(driver)
     if video_gate_state == "soft_restart":

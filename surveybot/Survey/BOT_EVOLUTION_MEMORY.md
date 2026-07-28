@@ -2026,4 +2026,43 @@ ne couvrait pas les pages bloquées sans texte identifiable). PROXY_LATENCY_MODE
 a été retiré du projet — ne plus le chercher ni le référencer dans un
 diagnostic futur.
 
+## MODULE TRANSVERSAL : CONSENT_SCREEN_STUCK_RELOAD — RECHARGEMENT BORNÉ SUR ÉCRAN DE CONSENTEMENT BLOQUÉ (execute_survey_page)
+
+### _consent_screen_stuck_reload_retry (Survey/survey_executor.py)
+
+Fichier : Survey/survey_executor.py
+
+Rôle : couvre un cas distinct de RELOAD_RETRY (ci-dessus). Quand le
+dom_classifier détecte itype="consent_screen" à chaque itération et que le
+handler correspondant (handle_consent_screen, via action_dispatcher) retourne
+False de façon répétée sur un DOM inchangé — checkbox de consentement cochée,
+boutons CTA visibles, mais clic sans effet observable (pas de navigation, pas
+de changement DOM) — déclenche un reload borné de la page pour tenter de
+débloquer l'état. RELOAD_RETRY ne couvre pas ce cas car il ne s'invoque que
+lorsqu'aucun élément actionnable n'est détecté ; ici un consent_screen valide
+est détecté à chaque passage, donc cette branche n'est jamais atteinte.
+
+Garde : état conservé par instance driver (`id(driver)` comme clé, dict module
+`_CONSENT_SCREEN_STUCK_STATE`) car execute_survey_page est ré-invoquée à
+chaque step avec des locals réinitialisés. Signature DOM légère comparée via
+`cta_handler._dom_progress_marker(driver)` — reload déclenché seulement si la
+signature reste identique `_CONSENT_SCREEN_STUCK_BUDGET` fois consécutives
+(= 3). `driver.is_closed()` vérifié avant tout reload.
+
+Intégration pipeline : dans execute_survey_page, immédiatement après l'appel
+du handler quand `itype == "consent_screen" and not handler_result` — ne
+modifie ni handle_consent_screen ni aucune stratégie de clic CTA existante
+(bloc additif, appelé seulement en cas d'échec du handler).
+
+Budget : 3 échecs consécutifs sur la même signature DOM avant reload
+(`_CONSENT_SCREEN_STUCK_BUDGET = 3`), 2s d'attente après reload. Retourne
+toujours False (le step courant reste un échec ; la reprise se fait au step
+suivant sur un DOM frais après reload, ou retente normalement sinon). Compteur
+réinitialisé après déclenchement du reload.
+
+Contexte de détection : observé sur écran de consentement Ipsos
+(enter.ipsosinteractive.com) — logs montrant strategy=press_click_release en
+boucle avec wait_reason=timeout, target_changed=false, progressed=false,
+malgré un rendu visuel apparemment normal (checkbox cochée, CTA visibles).
+
 Statut : patch validé.
