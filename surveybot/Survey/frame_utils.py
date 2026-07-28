@@ -39,8 +39,9 @@ def switch_to_frame_chain(driver, chain: FrameChain):
     Interface publique :
     - Entrée : driver = PlaywrightDriverShim OU Page Playwright native.
     - Yield   : True si la navigation réussit, False si un index est hors-borne ou erreur.
-    - Met à jour driver._current_frame (si driver est un shim) pour que les appelants
-      puissent lire le contexte courant via :
+    - Met à jour driver._current_frame (assignation dynamique inconditionnelle, y compris
+      sur une Page Playwright native sans shim) pour que les appelants puissent lire le
+      contexte courant via :
           current_frame = getattr(driver, "_current_frame", driver)
       puis appeler current_frame.evaluate(...) / current_frame.content() etc.
     - Toujours retour au contexte racine (Page) en sortie du with (équivalent default_content()).
@@ -54,8 +55,20 @@ def switch_to_frame_chain(driver, chain: FrameChain):
 
     def _reset():
         """Retour au contexte racine : driver._current_frame = page."""
-        if hasattr(driver, "_current_frame"):
+        # Assignation inconditionnelle (pas de hasattr() gate) : Playwright Page/Frame
+        # supportent l'attribution dynamique d'attributs (cf. main.py:864
+        # page._survey_account_id = account_id, sur le même type d'objet). Gater
+        # derrière hasattr(driver, "_current_frame") empêchait toute création de cet
+        # attribut sur un driver qui ne l'avait jamais eu au préalable — notamment la
+        # Page brute obtenue via connect_over_cdp dans le flux d'attache à un navigateur
+        # déjà lancé (main.py::run_attach_takeover) — bloquant silencieusement la
+        # propagation du contexte de frame pour toute la session : _current_frame
+        # n'était jamais créé, donc getattr(driver, "_current_frame", driver) retombait
+        # en permanence sur le document racine dans tous les modules appelants.
+        try:
             driver._current_frame = page
+        except Exception:
+            pass
 
     _reset()  # Repositionner au contexte racine avant toute navigation
 
@@ -84,9 +97,13 @@ def switch_to_frame_chain(driver, chain: FrameChain):
         except Exception:
             ok = False
 
-    if ok and chain and hasattr(driver, "_current_frame"):
-        # Mettre à jour _current_frame pour les appelants (compat getattr pattern)
-        driver._current_frame = target
+    if ok and chain:
+        # Mettre à jour _current_frame pour les appelants (compat getattr pattern).
+        # Assignation inconditionnelle, même raison que dans _reset() ci-dessus.
+        try:
+            driver._current_frame = target
+        except Exception:
+            pass
 
     try:
         yield ok

@@ -15,7 +15,7 @@ import time
 # Import des utilitaires
 try:
     from Survey.dom_utils import _env_truthy
-    from Survey.frame_utils import iter_frame_chains, switch_to_frame_chain
+    from Survey.frame_utils import iter_frame_chains, switch_to_frame_chain, _frame_elements
 except ImportError:
     # Fallback pour tests locaux
     from Survey.dom_utils import _env_truthy
@@ -275,27 +275,35 @@ def _select_best_frame_chain(driver, max_depth: int = 2) -> Tuple[List[int], Dic
 
         # Ciblage DOM explicite: frameset avec frame#mainFrame
         # (cas observé: top-level quasi vide et contenu survey dans ce frame).
+        # Recherche effectuée directement dans la collection Playwright
+        # child_frames (celle utilisée par switch_to_frame_chain pour résoudre
+        # un indice de chaîne), et non plus via un indice calculé séparément
+        # depuis document.querySelectorAll('iframe, frame') au niveau racine :
+        # sur une frameset à plusieurs frames sœurs avec attache tardive (CDP
+        # connecté à une page déjà chargée plutôt que navigation initiée par le
+        # bot), l'ordre d'enregistrement des frames côté driver peut différer
+        # de l'ordre DOM — réutiliser un indice calculé dans une collection pour
+        # indexer l'autre pouvait alors désigner la mauvaise frame (ex: la
+        # leftFrame vide au lieu de la mainFrame contenant la question).
         main_frame_idx = None
         try:
             # Playwright natif : reset au contexte racine via switch_to_frame_chain(driver, [])
             # (driver.switch_to n'existe pas sur Page/Frame Playwright — API Selenium).
             with switch_to_frame_chain(driver, []) as ok_root:
                 if ok_root:
-                    current_frame = getattr(driver, "_current_frame", driver)
-                    main_frame_idx = current_frame.evaluate(
-                        """
-                        () => {
-                        const frames = Array.from(document.querySelectorAll('iframe, frame'));
-                        if (!frames.length) return null;
-                        const idx = frames.findIndex(f => {
-                            const id = (f.id || '').trim().toLowerCase();
-                            const name = (f.getAttribute('name') || '').trim().toLowerCase();
-                            return id === 'mainframe' || name === 'mainframe';
-                        });
-                        return idx >= 0 ? idx : null;
-                        }
-                        """
-                    )
+                    for _i, _child in enumerate(_frame_elements(driver)):
+                        try:
+                            # Frame.name (propriété Playwright native, calculée à la
+                            # création de la frame via CDP, sans évaluation JS) :
+                            # retourne l'attribut name, ou l'attribut id si name est
+                            # vide — même sémantique id-ou-name que l'ancien check,
+                            # sans dépendre d'un accès cross-frame à window.frameElement.
+                            _fname = (_child.name or "").strip().lower()
+                        except Exception:
+                            _fname = ""
+                        if _fname == "mainframe":
+                            main_frame_idx = _i
+                            break
         except Exception:
             main_frame_idx = None
 
