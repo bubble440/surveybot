@@ -38,7 +38,10 @@ $TrackedFiles = @(
     "launch_all.ps1",
     "nssm_setup_bot.ps1",
     "wake_scheduler.ps1",
-    "check_zombie_bots.ps1"
+    "check_zombie_bots.ps1",
+    "stop_bot.ps1",
+    "set-up.txt",
+    "setup_machine.ps1"
 )
 $TrackOnlyFiles = @(
     "requirements.txt"

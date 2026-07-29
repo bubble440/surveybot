@@ -51,8 +51,9 @@ function Write-Log {
     param([string]$Message)
     $ts = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
     $line = "[$ts] $Message"
-    # Write-Host peut echouer une fois la console detachee (SendCtrlBreak fait
-    # FreeConsole/AttachConsole/FreeConsole) - le fichier log reste la source fiable.
+    # Ce process (stop_bot.ps1) n'appelle plus FreeConsole/AttachConsole lui-meme
+    # (cf. Invoke-CtrlBreakInChildProcess) - Write-Host reste fiable ici. Garde le
+    # try/catch par prudence (aucun cout).
     try { Write-Host $line } catch {}
     try {
         Add-Content -Path "$LogDir\stop_bot.log" -Value $line -Encoding UTF8
@@ -75,36 +76,59 @@ function Test-BotProcessAlive {
     }
 }
 
-Add-Type -Language CSharp -TypeDefinition @"
+# Delai max (ms) accorde au sous-process jetable pour envoyer le signal et se
+# terminer. Budget borne : au-dela, on le tue de force et on abandonne avec un log
+# clair plutot que de bloquer stop_bot.ps1 indefiniment.
+$CTRL_BREAK_CHILD_TIMEOUT_MS = 15000
+
+function Invoke-CtrlBreakInChildProcess {
+    <#
+    Envoie CTRL_BREAK_EVENT au PID cible, depuis un process powershell.exe separe et
+    jetable, plutot que directement dans CE process (stop_bot.ps1).
+
+    Raison : FreeConsole()/AttachConsole() detachent le PROCESS QUI LES APPELLE de sa
+    console courante, et rien ne le reattache jamais a son origine. Si cette sequence
+    tournait directement ici, une session PowerShell interactive de l'operateur qui
+    invoque ".\stop_bot.ps1" perdrait definitivement son attachement console (plus de
+    Write-Host/Read-Host fonctionnels) pour le reste de la session. En isolant
+    FreeConsole/AttachConsole/GenerateConsoleCtrlEvent dans un sous-process cree pour
+    cette seule operation puis aussitot detruit, seul CE sous-process jetable subit la
+    perte d'attachement - jamais l'appelant, quel que soit l'endroit d'ou stop_bot.ps1
+    est invoque.
+    #>
+    param([int]$TargetPid)
+
+    # Meme classe C# et meme logique Win32 que precedemment (FreeConsole/AttachConsole/
+    # GenerateConsoleCtrlEvent/FreeConsole cible sur le groupe TargetPid uniquement,
+    # jamais la console entiere) - seul le PROCESS qui l'execute change.
+    $childScript = @"
+Add-Type -Language CSharp -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
 using System.ComponentModel;
 
 public static class SurveyBotConsoleCtrl
 {
-    [DllImport("kernel32.dll", SetLastError = true)]
+    [DllImport(`"kernel32.dll`", SetLastError = true)]
     private static extern bool FreeConsole();
 
-    [DllImport("kernel32.dll", SetLastError = true)]
+    [DllImport(`"kernel32.dll`", SetLastError = true)]
     private static extern bool AttachConsole(uint dwProcessId);
 
-    [DllImport("kernel32.dll", SetLastError = true)]
+    [DllImport(`"kernel32.dll`", SetLastError = true)]
     private static extern bool GenerateConsoleCtrlEvent(uint dwCtrlEvent, uint dwProcessGroupId);
 
     private const uint CTRL_BREAK_EVENT = 1;
 
-    // dwProcessGroupId non nul -> l'evenement n'est livre qu'aux process membres de CE
-    // groupe precis (le bot cible, cree racine de son propre groupe par
-    // CREATE_NEW_PROCESS_GROUP dans launch_all.ps1) - jamais a la console entiere.
     public static void SendCtrlBreak(int targetPid)
     {
         FreeConsole();
         try
         {
             if (!AttachConsole((uint)targetPid))
-                throw new Win32Exception(Marshal.GetLastWin32Error(), "AttachConsole a echoue pour PID " + targetPid);
+                throw new Win32Exception(Marshal.GetLastWin32Error(), `"AttachConsole a echoue pour PID `" + targetPid);
             if (!GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT, (uint)targetPid))
-                throw new Win32Exception(Marshal.GetLastWin32Error(), "GenerateConsoleCtrlEvent a echoue pour PID " + targetPid);
+                throw new Win32Exception(Marshal.GetLastWin32Error(), `"GenerateConsoleCtrlEvent a echoue pour PID `" + targetPid);
         }
         finally
         {
@@ -112,7 +136,60 @@ public static class SurveyBotConsoleCtrl
         }
     }
 }
+'@
+try {
+    [SurveyBotConsoleCtrl]::SendCtrlBreak($TargetPid)
+    exit 0
+} catch {
+    Write-Error "`$_"
+    exit 1
+}
 "@
+
+    $bytes   = [System.Text.Encoding]::Unicode.GetBytes($childScript)
+    $encoded = [Convert]::ToBase64String($bytes)
+
+    # [System.Diagnostics.Process]::Start direct (PAS la cmdlet Start-Process) : la
+    # cmdlet Start-Process, avec -WindowStyle Hidden + redirection vers fichiers, rompt
+    # l'heritage de console du sous-process cree (constate empiriquement - le
+    # sous-process se retrouve sans console attachable, AttachConsole echoue avec
+    # ERROR_INVALID_PARAMETER). Un [System.Diagnostics.Process]::Start avec
+    # UseShellExecute=$false / CreateNoWindow=$true preserve cet heritage et est le
+    # meme mecanisme deja utilise ailleurs dans ce projet (launch_all.ps1).
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName               = "powershell.exe"
+    $psi.Arguments              = "-NoProfile -NonInteractive -EncodedCommand $encoded"
+    $psi.UseShellExecute        = $false
+    $psi.CreateNoWindow         = $true
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError  = $true
+
+    try {
+        $childProc = [System.Diagnostics.Process]::Start($psi)
+        # Lecture asynchrone des deux flux avant WaitForExit : evite un deadlock si le
+        # sous-process remplit le buffer d'un flux pendant qu'on bloque sur l'autre.
+        $outTask = $childProc.StandardOutput.ReadToEndAsync()
+        $errTask = $childProc.StandardError.ReadToEndAsync()
+
+        if (-not $childProc.WaitForExit($CTRL_BREAK_CHILD_TIMEOUT_MS)) {
+            try { $childProc.Kill() } catch {}
+            Write-Log "ERREUR - sous-process d'envoi CTRL_BREAK (PID sous-process=$($childProc.Id)) n'a pas termine sous ${CTRL_BREAK_CHILD_TIMEOUT_MS}ms pour cible PID=$TargetPid - tue de force, abandon."
+            return $false
+        }
+
+        if ($childProc.ExitCode -ne 0) {
+            $outText = $outTask.GetAwaiter().GetResult()
+            $errText = $errTask.GetAwaiter().GetResult()
+            Write-Log "ERREUR - sous-process d'envoi CTRL_BREAK termine avec exit=$($childProc.ExitCode) pour PID=$TargetPid : $errText$(if ($outText) { " (stdout: $outText)" })"
+            return $false
+        }
+        
+        return $true
+    } catch {
+        Write-Log "ERREUR - impossible de lancer le sous-process d'envoi CTRL_BREAK pour PID=$TargetPid : $_"
+        return $false
+    }
+}
 
 # ---------------------------------------------------------------------------
 # Lecture + validation du fichier PID
@@ -148,12 +225,11 @@ if (-not (Test-BotProcessAlive -ProcessId $targetPid -ExpectedStartTicks $startT
 # Envoi du signal cible
 # ---------------------------------------------------------------------------
 
-Write-Log "STOP $AccountId - envoi CTRL_BREAK_EVENT cible au groupe de processus PID=$targetPid"
+Write-Log "STOP $AccountId - envoi CTRL_BREAK_EVENT cible au groupe de processus PID=$targetPid (via sous-process jetable)"
 
-try {
-    [SurveyBotConsoleCtrl]::SendCtrlBreak($targetPid)
-} catch {
-    Write-Log "ERREUR $AccountId - echec envoi du signal a PID=$targetPid : $_"
+$sent = Invoke-CtrlBreakInChildProcess -TargetPid $targetPid
+if (-not $sent) {
+    Write-Log "ABANDON $AccountId - signal non confirme envoye a PID=$targetPid (voir erreur ci-dessus)."
     exit 1
 }
 

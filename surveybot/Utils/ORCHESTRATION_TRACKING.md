@@ -481,10 +481,56 @@ dérivé une fois avec le chemin en dur dans l'ancienne fonction).
 
   ---
 
-*Dernière mise à jour de ce fichier : 29/07/2026 (section 15 : isolation de groupe de
-processus `CREATE_NEW_PROCESS_GROUP` pour `launch_all.ps1`, nouveau script
-`stop_bot.ps1` pour l'arrêt ciblé d'un bot manuel via `CTRL_BREAK_EVENT`, sans risque
-pour les autres process de la même console — chemin NSSM non touché). Précédemment :
+## 16. Fuite d'attachement console dans `stop_bot.ps1` — corrigé
+
+- **Problème observé (29/07/2026)** : la première version de `stop_bot.ps1` (section 15)
+  appelait `FreeConsole`/`AttachConsole`/`GenerateConsoleCtrlEvent`/`FreeConsole`
+  directement dans le process PowerShell qui exécute le script lui-même.
+  `FreeConsole()` détache CE process appelant de sa propre console, et la séquence ne le
+  réattachait jamais à son origine. En usage réel (`stop_bot.ps1` invoqué depuis la même
+  session PowerShell interactive que celle utilisée pour `launch_all.ps1`, consulter des
+  logs, etc.), cette session perdait définitivement son attachement console (plus de
+  `Write-Host`/`Read-Host` fonctionnels) pour le reste de la fenêtre.
+- **Correction appliquée** : la logique `FreeConsole`/`AttachConsole`/
+  `GenerateConsoleCtrlEvent` (classe C# `SurveyBotConsoleCtrl`, inchangée) est
+  désormais exécutée dans un **sous-process powershell.exe séparé et jetable**
+  (fonction `Invoke-CtrlBreakInChildProcess`), créé pour la seule durée de cette
+  opération puis détruit — seul ce sous-process perd son attachement console, jamais
+  le process appelant. Budget borné (`$CTRL_BREAK_CHILD_TIMEOUT_MS = 15000` ms) : si le
+  sous-process ne se termine pas dans ce délai, il est tué de force et l'échec est
+  loggé clairement (jamais de succès supposé silencieusement).
+- **Détail d'implémentation notable (validé empiriquement)** : le sous-process doit être
+  créé via `[System.Diagnostics.Process]::Start()` direct (`UseShellExecute=$false`,
+  `CreateNoWindow=$true`), **pas** via la cmdlet `Start-Process` avec
+  `-WindowStyle Hidden` + redirection vers fichiers — cette dernière combinaison casse
+  l'héritage de console du sous-process créé (`AttachConsole` échoue alors avec
+  `ERROR_INVALID_PARAMETER`, constaté en test). `[System.Diagnostics.Process]::Start`
+  direct (même mécanisme que `launch_all.ps1`) préserve cet héritage et fonctionne de
+  façon fiable.
+- **Aucune modification** de la logique de validation PID+StartTicks existante (lecture
+  du fichier PID, les 3 chemins d'abandon sans envoi de signal), ni de
+  `SurveyBotIsolatedLauncher`/`CREATE_NEW_PROCESS_GROUP` dans `launch_all.ps1`, ni de
+  `launch.py`/`nssm_setup_bot.ps1` — seul le mécanisme d'émission du signal, une fois la
+  cible déjà validée, est concerné.
+- **Validé en conditions réelles (29/07/2026, machine de dev)** : bot factice relancé,
+  arrêté via `stop_bot.ps1` corrigé — signal bien reçu et traité côté process cible
+  (log `GOT SIGBREAK`). Après exécution de `stop_bot.ps1` dans la session appelante,
+  `Write-Host` et un calcul trivial exécutés ensuite dans **cette même session**
+  fonctionnent normalement (console non perdue). Isolation reconfirmée : un second bot
+  sur la même console reste non affecté. Les 3 chemins d'abandon existants re-testés,
+  inchangés.
+- **Fichiers modifiés** : `stop_bot.ps1` uniquement.
+
+  ---
+
+*Dernière mise à jour de ce fichier : 29/07/2026 (section 16 : correction d'une fuite
+d'attachement console dans `stop_bot.ps1` — `FreeConsole`/`AttachConsole`/
+`GenerateConsoleCtrlEvent` déplacés dans un sous-process jetable pour ne jamais affecter
+la session PowerShell interactive appelante). Précédemment : 29/07/2026 (section 15 :
+isolation de groupe de processus `CREATE_NEW_PROCESS_GROUP` pour `launch_all.ps1`,
+nouveau script `stop_bot.ps1` pour l'arrêt ciblé d'un bot manuel via
+`CTRL_BREAK_EVENT`, sans risque pour les autres process de la même console — chemin
+NSSM non touché). Précédemment :
 28/07/2026 (section 14 : les 3 tâches
 planifiées SYSTEM — `SurveyBot_ZombieCheck`, `SurveyBot_WakeScheduler`,
 `SurveyBot_OrchestrationSync` — étaient bloquées par la politique
