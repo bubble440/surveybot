@@ -178,6 +178,15 @@ foreach ($entry in $fileEntries) {
             Write-Warning "[ORCH_SYNC] $relPath - Unblock-File a echoue (fichier peut-etre bloque a l'execution) : $_"
         }
 
+        # Remplacement confirme (SHA256 verifie + fichier deplace en place) : le
+        # backup .old n'a plus de raison de rester sur le disque. Unblock-File est
+        # deja best-effort ci-dessus et ne conditionne pas ce nettoyage.
+        if (Test-Path "$target.old") {
+            try { Remove-Item -Path "$target.old" -Force -ErrorAction Stop } catch {
+                Write-Warning "[ORCH_SYNC] $relPath - impossible de supprimer le backup residuel .old : $_"
+            }
+        }
+
         Write-Output "[ORCH_SYNC] $relPath - mis a jour (sha256=$remoteHash)."
         $changedFiles.Add($relPath)
         $state["applied__$relPath"] = $remoteHash

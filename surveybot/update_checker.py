@@ -230,9 +230,10 @@ def _extract_zip_flat(zip_path: str, dest_dir: str) -> None:
 
 def _swap_code_dir(new_code_dir: str) -> None:
     """
-    Remplace le dossier code\\ courant par new_code_dir, en conservant l'ancien
-    en code.old (écrasé à chaque update — un seul niveau de rollback manuel,
-    volontairement pas de rotation pour rester prévisible).
+    Remplace le dossier code\\ courant par new_code_dir. L'ancien code\\ est
+    renommé en code.old le temps du swap (rollback automatique en cas d'échec
+    du rename du nouveau dossier), puis supprimé dès que le swap est confirmé
+    réussi — pas de sauvegarde persistante entre deux updates.
 
     Suppose que le processus courant tourne avec un cwd EXTÉRIEUR à code\\
     (AppDirectory = C:\\surveybot, pas code\\) : sur Windows, un dossier qui est
@@ -252,6 +253,10 @@ def _swap_code_dir(new_code_dir: str) -> None:
         # Rollback best-effort : ne jamais laisser la machine sans dossier code\\.
         os.rename(old_dir, code_dir)
         raise
+
+    # Swap confirmé réussi (nouveau code en place, aucune exception levée) :
+    # la sauvegarde n'a plus de raison de rester sur le disque en permanence.
+    shutil.rmtree(old_dir, ignore_errors=True)
 
 
 def _replace_source_and_restart(zip_path: str, account_id: str) -> None:
