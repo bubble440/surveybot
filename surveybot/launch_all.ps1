@@ -3,6 +3,17 @@
 # de la supervision de production (NSSM + check_zombie_bots.ps1 + wake_scheduler.ps1,
 # cf. Utils/ORCHESTRATION_TRACKING.md section 9).
 #
+# ISOLATION DE GROUPE DE PROCESSUS (cf. bug fix "isolation console lancement manuel") :
+# le process bot est cree via CreateProcess (Win32, P/Invoke) avec le flag
+# CREATE_NEW_PROCESS_GROUP, PAS via [System.Diagnostics.Process]::Start (qui n'expose
+# aucun moyen de definir ce flag). Sans cette isolation, le bot herite du groupe de
+# processus de la console PowerShell qui l'a lance ; un CTRL_BREAK_EVENT cible (envoye
+# par stop_bot.ps1, meme mecanisme que `nssm stop`) risquerait alors d'atteindre TOUS
+# les process attaches a cette console (le lanceur PowerShell, et tout autre bot lance
+# manuellement depuis le meme terminal reste ouvert). Avec ce flag, chaque bot devient
+# la racine de son propre groupe (id de groupe = son propre PID), ce qui permet a
+# stop_bot.ps1 de cibler un seul bot sans effet de bord. Voir stop_bot.ps1.
+#
 # NE JAMAIS planifier ce script (Planificateur de taches Windows ou autre) : un bot
 # lance ainsi tourne comme process brut, invisible pour check_zombie_bots.ps1 et
 # wake_scheduler.ps1 qui n'agissent que sur des services NSSM (nssm status/start/
@@ -39,10 +50,162 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-# Nombre de cycles de lancement passes conserves en historique de logs, au-dela 
+# Nombre de cycles de lancement passes conserves en historique de logs, au-dela
 # du cycle courant (bot_$id.log.1 = cycle precedent, ... .10 = plus ancien
 # conserve). Permet l'analyse retrospective de comportements intermittents.
 $LOG_HISTORY_CYCLES = 10
+
+# ---------------------------------------------------------------------------
+# Creation de process isole (CREATE_NEW_PROCESS_GROUP) - cf. note d'isolation en
+# tete de fichier. Redirection stdout+stderr directement vers le fichier log via un
+# handle Win32 (CreateFile inheritable), sans pipes ni threads de pompage - plus
+# simple et suffisant, le seul besoin etant "ecrire dans le fichier log", pas de
+# traitement en temps reel du flux cote PowerShell.
+# ---------------------------------------------------------------------------
+
+Add-Type -Language CSharp -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+using System.ComponentModel;
+
+public static class SurveyBotIsolatedLauncher
+{
+    [StructLayout(LayoutKind.Sequential)]
+    private struct SECURITY_ATTRIBUTES
+    {
+        public int nLength;
+        public IntPtr lpSecurityDescriptor;
+        public bool bInheritHandle;
+    }
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct STARTUPINFO
+    {
+        public int cb;
+        public string lpReserved;
+        public string lpDesktop;
+        public string lpTitle;
+        public int dwX; public int dwY; public int dwXSize; public int dwYSize;
+        public int dwXCountChars; public int dwYCountChars; public int dwFillAttribute;
+        public int dwFlags;
+        public short wShowWindow;
+        public short cbReserved2;
+        public IntPtr lpReserved2;
+        public IntPtr hStdInput;
+        public IntPtr hStdOutput;
+        public IntPtr hStdError;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct PROCESS_INFORMATION
+    {
+        public IntPtr hProcess;
+        public IntPtr hThread;
+        public int dwProcessId;
+        public int dwThreadId;
+    }
+
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    private static extern bool CreateProcess(
+        string lpApplicationName, string lpCommandLine,
+        IntPtr lpProcessAttributes, IntPtr lpThreadAttributes,
+        bool bInheritHandles, uint dwCreationFlags,
+        IntPtr lpEnvironment, string lpCurrentDirectory,
+        ref STARTUPINFO lpStartupInfo, out PROCESS_INFORMATION lpProcessInformation);
+
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    private static extern IntPtr CreateFile(
+        string lpFileName, uint dwDesiredAccess, uint dwShareMode,
+        ref SECURITY_ATTRIBUTES lpSecurityAttributes, uint dwCreationDisposition,
+        uint dwFlagsAndAttributes, IntPtr hTemplateFile);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool CloseHandle(IntPtr hObject);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool GetProcessTimes(IntPtr hProcess, out long lpCreationTime, out long lpExitTime, out long lpKernelTime, out long lpUserTime);
+
+    private const uint GENERIC_WRITE = 0x40000000;
+    private const uint FILE_SHARE_READ = 0x00000001;
+    private const uint FILE_SHARE_WRITE = 0x00000002;
+    private const uint CREATE_ALWAYS = 2;
+    private const uint FILE_ATTRIBUTE_NORMAL = 0x80;
+    private const uint STARTF_USESTDHANDLES = 0x00000100;
+    private const uint CREATE_NO_WINDOW = 0x08000000;
+    // Flag racine du correctif : place le nouveau process a la tete de son PROPRE
+    // groupe de processus console (id de groupe = son propre PID), au lieu d'heriter
+    // du groupe de la console PowerShell appelante. Seul moyen de cibler un CTRL_BREAK
+    // sur un unique bot manuel sans affecter les autres process de la meme console.
+    private const uint CREATE_NEW_PROCESS_GROUP = 0x00000200;
+    private const uint CREATE_UNICODE_ENVIRONMENT = 0x00000400;
+
+    // Sortie : PID + heure de demarrage (ticks), meme calcul que Process.StartTime
+    // cote .NET (DateTime.FromFileTime sur GetProcessTimes) - garantit la compatibilite
+    // avec le format existant pids\bot_<id>.pid ("PID|StartTicks") et avec
+    // Test-BotProcessAlive (launch_all.ps1 / stop_bot.ps1), inchanges.
+    public static int ProcessId;
+    public static long StartTimeTicks;
+
+    public static void Start(string exePath, string arguments, string workingDir, string[] envEntries, string logPath)
+    {
+        var fileSa = new SECURITY_ATTRIBUTES
+        {
+            nLength = Marshal.SizeOf(typeof(SECURITY_ATTRIBUTES)),
+            bInheritHandle = true,
+            lpSecurityDescriptor = IntPtr.Zero
+        };
+
+        IntPtr logHandle = CreateFile(
+            logPath, GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
+            ref fileSa, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, IntPtr.Zero);
+
+        if (logHandle == new IntPtr(-1))
+            throw new Win32Exception(Marshal.GetLastWin32Error(), "CreateFile(log) a echoue : " + logPath);
+
+        var si = new STARTUPINFO();
+        si.cb = Marshal.SizeOf(typeof(STARTUPINFO));
+        si.dwFlags = (int)STARTF_USESTDHANDLES;
+        // Meme handle pour stdout et stderr (equivalent shell "2>&1") : un seul fichier
+        // log fusionne, comme le comportement existant (les deux flux y ecrivaient deja).
+        si.hStdOutput = logHandle;
+        si.hStdError = logHandle;
+        si.hStdInput = IntPtr.Zero;
+
+        var envBlock = new System.Text.StringBuilder();
+        foreach (var entry in envEntries)
+            envBlock.Append(entry).Append('\0');
+        envBlock.Append('\0');
+        IntPtr envPtr = Marshal.StringToHGlobalUni(envBlock.ToString());
+
+        string cmdLine = "\"" + exePath + "\" " + arguments;
+        uint flags = CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP | CREATE_UNICODE_ENVIRONMENT;
+
+        PROCESS_INFORMATION pi;
+        bool ok;
+        try
+        {
+            ok = CreateProcess(null, cmdLine, IntPtr.Zero, IntPtr.Zero, true, flags, envPtr, workingDir, ref si, out pi);
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(envPtr);
+            CloseHandle(logHandle);
+        }
+
+        if (!ok)
+            throw new Win32Exception(Marshal.GetLastWin32Error(), "CreateProcess a echoue pour " + exePath);
+
+        CloseHandle(pi.hThread);
+
+        long creationTime, exitTime, kernelTime, userTime;
+        GetProcessTimes(pi.hProcess, out creationTime, out exitTime, out kernelTime, out userTime);
+        CloseHandle(pi.hProcess);
+
+        ProcessId = pi.dwProcessId;
+        StartTimeTicks = DateTime.FromFileTime(creationTime).Ticks;
+    }
+}
+"@
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -167,43 +330,40 @@ function Start-Bot {
         Write-Log "WARN $id - rotation log echouee : $_"
     }
 
-    $psi = New-Object System.Diagnostics.ProcessStartInfo
-    $psi.FileName               = $PythonExe
-    $psi.Arguments              = "`"$MainScript`""
-    # cwd = racine, jamais code\ - cf. note en tete de fichier (renommage code\ par l'update).
-    $psi.WorkingDirectory        = $PSScriptRoot
-    $psi.UseShellExecute        = $false
-    $psi.RedirectStandardOutput = $true
-    $psi.RedirectStandardError  = $true
-    $psi.CreateNoWindow         = $true
-
+    # Cree le process bot isole dans son propre groupe de processus console
+    # (CREATE_NEW_PROCESS_GROUP - cf. SurveyBotIsolatedLauncher et note d'isolation en
+    # tete de fichier). [System.Diagnostics.Process]::Start ne permet pas de definir ce
+    # flag, d'ou le recours a CreateProcess (Win32) directement.
+    $envEntries = @()
     foreach ($kv in $envBlock.GetEnumerator()) {
-        $psi.EnvironmentVariables[$kv.Key] = $kv.Value
+        $envEntries += "$($kv.Key)=$($kv.Value)"
     }
 
-    $process = [System.Diagnostics.Process]::Start($psi)
+    try {
+        [SurveyBotIsolatedLauncher]::Start(
+            $PythonExe,
+            "`"$MainScript`"",
+            $PSScriptRoot,
+            $envEntries,
+            $logFile
+        )
+    } catch {
+        Write-Log "ERREUR $id - echec creation process isole : $_"
+        return
+    }
 
-    # Redirection asynchrone des sorties vers le log du bot
-    $process.BeginOutputReadLine()
-    $process.BeginErrorReadLine()
-    Register-ObjectEvent -InputObject $process -EventName "OutputDataReceived" -MessageData $logFile -Action {
-        if ($Event.SourceEventArgs.Data) {
-            Add-Content -Path $Event.MessageData -Value $Event.SourceEventArgs.Data -Encoding UTF8
-        }
-    } | Out-Null
-    Register-ObjectEvent -InputObject $process -EventName "ErrorDataReceived" -MessageData $logFile -Action {
-        if ($Event.SourceEventArgs.Data) {
-            Add-Content -Path $Event.MessageData -Value $Event.SourceEventArgs.Data -Encoding UTF8
-        }
-    } | Out-Null
+    $newPid    = [SurveyBotIsolatedLauncher]::ProcessId
+    $newTicks  = [SurveyBotIsolatedLauncher]::StartTimeTicks
 
     # Ecriture du PID + heure de demarrage (ticks) - le couple sert a distinguer ce
     # process precis d'un futur process sans rapport qui recyclerait le meme PID.
     # Le bot ecrit aussi son propre PID via write_pid_file - double securite.
+    # Meme format qu'avant ("PID|StartTicks") : Test-BotProcessAlive et stop_bot.ps1
+    # restent inchanges.
     $pidPath = Get-PidPath $id
-    "$($process.Id)|$($process.StartTime.Ticks)" | Out-File -FilePath $pidPath -Encoding ASCII -NoNewline
+    "$newPid|$newTicks" | Out-File -FilePath $pidPath -Encoding ASCII -NoNewline
 
-    Write-Log "START $id - PID=$($process.Id) log=$logFile"
+    Write-Log "START $id - PID=$newPid log=$logFile (groupe de processus isole)"
 }
 
 # ---------------------------------------------------------------------------

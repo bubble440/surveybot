@@ -414,7 +414,78 @@ dérivé une fois avec le chemin en dur dans l'ancienne fonction).
 
   ---
 
-*Dernière mise à jour de ce fichier : 28/07/2026 (section 14 : les 3 tâches
+## 15. Isolation de groupe de processus pour l'arrêt ciblé d'un bot manuel (`launch_all.ps1`, `stop_bot.ps1`) — corrigé
+
+- **Problème observé (29/07/2026)** : aucun moyen fiable d'arrêter proprement UN SEUL
+  bot lancé manuellement via `launch_all.ps1` (hors NSSM). `nssm stop` envoie en
+  réalité un `CTRL_BREAK_EVENT` via `GenerateConsoleCtrlEvent` (cf. section 3) — capté
+  par `install_sigint_handler`/`_make_stop_handler` (`launch.py`), qui déclenche la
+  séquence de fermeture propre. Reproduire ce mécanisme pour un lancement manuel
+  nécessite de cibler un `CTRL_BREAK_EVENT` sur un unique process.
+- **Cause racine** : `launch_all.ps1::Start-Bot` créait le process bot via
+  `[System.Diagnostics.Process]::Start($psi)`. `ProcessStartInfo` n'expose aucun moyen
+  de définir le flag Win32 `CREATE_NEW_PROCESS_GROUP` — le bot héritait donc du groupe
+  de processus de la console PowerShell qui l'a lancé. Un `CTRL_BREAK_EVENT` envoyé à
+  ce groupe aurait atteint TOUS les process qui en sont membres : le lanceur
+  PowerShell lui-même, et tout autre bot lancé manuellement depuis le même terminal
+  resté ouvert (double lancement type "test isolé" fréquent en usage manuel, cf.
+  section 9). Risque explicitement écarté : pas de mécanisme d'arrêt ciblé tant que
+  cette isolation n'existait pas.
+- **Correction appliquée** :
+  - `launch_all.ps1::Start-Bot` : remplacement du point de création du process par un
+    appel P/Invoke direct à `CreateProcess` (Win32), classe `SurveyBotIsolatedLauncher`
+    ajoutée en tête de script (`Add-Type`), avec le flag `CREATE_NEW_PROCESS_GROUP`.
+    Chaque bot devient ainsi la racine de son propre groupe de processus (id de groupe
+    = son propre PID). Redirection stdout+stderr vers le fichier log via un handle
+    `CreateFile` inheritable (remplace les pipes managés .NET + `Register-ObjectEvent`
+    — plus simple, même résultat). Le format du fichier `pids\bot_<id>.pid`
+    (`"PID|StartTicks"`) est strictement conservé : `StartTicks` recalculé côté
+    `GetProcessTimes`/`DateTime.FromFileTime`, identique à ce que `Process.StartTime`
+    aurait renvoyé — `Test-BotProcessAlive` (inchangée) reste compatible.
+  - Nouveau fichier `stop_bot.ps1` (arrêt manuel ciblé, hors NSSM) : lit
+    `pids\bot_<id>.pid`, revalide PID+StartTicks (même garde que
+    `Test-BotProcessAlive`), puis envoie `CTRL_BREAK_EVENT` uniquement au groupe
+    identifié par ce PID via `FreeConsole`/`AttachConsole`/`GenerateConsoleCtrlEvent`
+    (classe `SurveyBotConsoleCtrl`). **Abandon sans envoi de signal** si le fichier PID
+    est absent, illisible, ou si le PID ne correspond plus au process attendu (recyclé)
+    — jamais de signal envoyé en cas de doute.
+  - **Aucune modification** de `install_sigterm_handler`/`install_sigint_handler`/
+    `_make_stop_handler`/`write_pid_file`/`delete_pid_file` (`launch.py`), ni de
+    `nssm_setup_bot.ps1` — hors périmètre, chemin NSSM déjà validé en production
+    (section 3/4). `Test-NssmServiceExists`, `Test-BotProcessAlive`, la boucle
+    principale et la rotation de logs de `launch_all.ps1` restent inchangées.
+- **Validé en conditions réelles (29/07/2026, machine de dev)** : bot factice
+  (handler `signal.SIGBREAK` imitant `_make_stop_handler`) lancé via `launch_all.ps1`
+  patché, puis arrêté via `stop_bot.ps1` — log confirme la réception du signal côté
+  process cible et sa terminaison propre. Un second bot lancé depuis la **même**
+  console PowerShell n'est pas affecté, ni le process PowerShell appelant lui-même.
+  Les 3 chemins d'abandon (fichier absent / format inattendu / PID recyclé) validés :
+  aucun signal envoyé, log clair dans chaque cas.
+- **Point de vigilance découvert pendant la validation (non corrigé, hors périmètre de
+  ce patch)** : sur une installation Python utilisant le "launcher" de venv introduit
+  par certains installeurs récents (le `venv\Scripts\python.exe` est un stub qui
+  relance le véritable interpréteur comme process enfant, avec un PID différent),
+  `write_pid_file()` (`launch.py`) détecte que `os.getpid()` ne correspond pas au PID
+  déjà écrit par `launch_all.ps1` et écrase le fichier avec un PID nu (sans
+  `StartTicks`) — comportement **préexistant**, indépendant de ce patch (le PID observé
+  par `[System.Diagnostics.Process]::Start` avant ce correctif aurait eu exactement le
+  même effet). Conséquence : `stop_bot.ps1` abandonnerait alors systématiquement
+  (format de fichier inattendu), sans jamais envoyer de signal erroné — dégradation
+  sûre, mais `stop_bot.ps1` ne fonctionnerait pas sur une telle machine. Non vérifié
+  si ce cas de figure existe sur le parc de production (dépend de la méthode
+  d'installation Python utilisée par `setup_machine.ps1` au provisioning de chaque
+  machine, pas du code du dépôt) — à vérifier si `stop_bot.ps1` semble sans effet en
+  usage réel.
+- **Fichiers modifiés/créés** : `launch_all.ps1` (modifié, isolation de process
+  additive) ; `stop_bot.ps1` (nouveau).
+
+  ---
+
+*Dernière mise à jour de ce fichier : 29/07/2026 (section 15 : isolation de groupe de
+processus `CREATE_NEW_PROCESS_GROUP` pour `launch_all.ps1`, nouveau script
+`stop_bot.ps1` pour l'arrêt ciblé d'un bot manuel via `CTRL_BREAK_EVENT`, sans risque
+pour les autres process de la même console — chemin NSSM non touché). Précédemment :
+28/07/2026 (section 14 : les 3 tâches
 planifiées SYSTEM — `SurveyBot_ZombieCheck`, `SurveyBot_WakeScheduler`,
 `SurveyBot_OrchestrationSync` — étaient bloquées par la politique
 d'exécution PowerShell, `Set-ExecutionPolicy -Scope CurrentUser` ne
