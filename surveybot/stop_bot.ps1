@@ -233,7 +233,7 @@ if (-not $sent) {
     exit 1
 }
 
-Write-Log "STOP $AccountId - signal envoye, arret propre en cours cote bot (voir logs\bot_$AccountId.log)"
+Write-Log "STOP $AccountId - signal envoye, arret propre en cours cote bot (voir logs\$AccountId\bot_$AccountId.log)"
 
 # ---------------------------------------------------------------------------
 # Confirmation best-effort (n'affecte pas le resultat : le signal a deja ete envoye)
@@ -251,5 +251,5 @@ for ($i = 0; $i -lt $CONFIRM_POLL_MAX; $i++) {
 if ($confirmed) {
     Write-Log "STOP $AccountId - process PID=$targetPid confirme arrete."
 } else {
-    Write-Log "STOP $AccountId - process PID=$targetPid toujours actif apres $($CONFIRM_POLL_MAX * 500) ms (fermeture propre peut prendre plus de temps - cf. AppStopMethodConsole 30s cote NSSM pour un ordre de grandeur) - non bloquant, verifier logs\bot_$AccountId.log."
+    Write-Log "STOP $AccountId - process PID=$targetPid toujours actif apres $($CONFIRM_POLL_MAX * 500) ms (fermeture propre peut prendre plus de temps - cf. AppStopMethodConsole 30s cote NSSM pour un ordre de grandeur) - non bloquant, verifier logs\$AccountId\bot_$AccountId.log."
 }

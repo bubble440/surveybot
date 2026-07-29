@@ -1,4 +1,4 @@
-import os, random
+import os, random, re
 from config import is_attach_mode, is_prod_like, should_run_guard_monitor
 
 # SNAP_ENABLED est une variable GLOBAL_CONFIG : en build compilé (Nuitka), elle provient
@@ -405,24 +405,57 @@ def _purge_old_session_logs(account_id: str, keep: int = 10) -> None:
     """
     Purge additive, distincte de la rotation NSSM elle-même (nssm_setup_bot.ps1 :
     AppRotateFiles=1, AppRotateSeconds=0, AppRotateBytes=0 -> 1 fichier roté par
-    démarrage de process, suffixe NSSM "<fichier>.<YYYYMMDDHHMMSS>"). NSSM rote
-    mais ne purge jamais les fichiers rotés -> accumulation indéfinie sans ce
-    patch. Ne touche jamais le fichier actif (sans suffixe, en cours d'écriture
-    par CE process) ni les mécanismes PID/heartbeat/signaux/update_checker.
+    démarrage de process). NSSM rote mais ne purge jamais les fichiers rotés ->
+    accumulation indéfinie sans ce patch. Ne touche jamais le fichier actif (sans
+    suffixe, en cours d'écriture par CE process) ni les mécanismes
+    PID/heartbeat/signaux/update_checker.
+    Reconnaissance alignée sur le format réel de rotation NSSM (constaté sur
+    disque, cf. diagnostic) : "<base>-<YYYYMMDDTHHMMSS>.<mmm>.log", ex.
+    bot_<id>_stdout-20260729T125348.078.log — PAS un suffixe numérique pur
+    directement après ".log." comme supposé par l'ancienne regex (qui ne
+    matchait donc jamais aucun fichier réel).
+    Flux stderr : un fichier roté de 0 octet (aucune erreur écrite pour cette
+    session) est supprimé immédiatement, hors quota des "keep" dernières
+    sessions conservées — il ne représente aucune session avec erreur et ne
+    doit pas polluer la rétention.
+    Chaque bot a son propre sous-dossier logs\\<account_id>\\ (cf.
+    nssm_setup_bot.ps1 / launch_all.ps1) — un flux/bot par appel, pas de
+    boucle non bornée.
     Best-effort : une erreur ici ne doit jamais empêcher le boot du bot.
     """
     try:
         from bot_supervisor import _pids_dir
-        log_dir = os.path.join(os.path.dirname(_pids_dir()), "logs")
+        log_dir = os.path.join(os.path.dirname(_pids_dir()), "logs", account_id)
         if not os.path.isdir(log_dir):
             return
         from Survey.log_utils import log_info
         for stream in ("stdout", "stderr"):
-            prefix = f"bot_{account_id}_{stream}.log."
-            rotated = [
-                f for f in os.listdir(log_dir)
-                if f.startswith(prefix) and f[len(prefix):].isdigit()
-            ]
+            pattern = re.compile(
+                rf"^bot_{re.escape(account_id)}_{stream}-\d{{8}}T\d{{6}}\.\d{{3}}\.log$"
+            )
+            rotated = [f for f in os.listdir(log_dir) if pattern.match(f)]
+
+            if stream == "stderr":
+                non_empty = []
+                removed_empty = 0
+                for f in rotated:
+                    fp = os.path.join(log_dir, f)
+                    try:
+                        is_empty = os.path.getsize(fp) == 0
+                    except Exception:
+                        is_empty = False
+                    if is_empty:
+                        try:
+                            os.remove(fp)
+                            removed_empty += 1
+                        except Exception:
+                            pass
+                    else:
+                        non_empty.append(f)
+                rotated = non_empty
+                if removed_empty:
+                    log_info("[LOG_PURGE]", f"account={account_id} stream=stderr removed_empty={removed_empty}")
+
             rotated.sort(reverse=True)  # suffixe timestamp NSSM -> tri chronologique
             stale = rotated[max(0, keep - 1):]
             for f in stale:

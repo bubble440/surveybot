@@ -133,8 +133,18 @@ foreach ($account in $accounts) {
     $processed++
 
     $svcName   = "surveybot_$acctId"
-    $logStdout = Join-Path $LogDir "bot_${acctId}_stdout.log"
-    $logStderr = Join-Path $LogDir "bot_${acctId}_stderr.log"
+
+    # Sous-dossier dedie a ce bot, distinct des logs d'orchestration transverses
+    # (launch_all.log, orchestration_sync_task.log, wake_scheduler_task.log, ...)
+    # qui restent a plat dans $LogDir. NSSM n'auto-cree jamais le dossier cible
+    # d'AppStdout/AppStderr - sans cette creation, le service echouerait a
+    # ouvrir ses fichiers de log au demarrage.
+    $botLogDir = Join-Path $LogDir $acctId
+    if (-not (Test-Path $botLogDir)) {
+        New-Item -ItemType Directory -Path $botLogDir -Force | Out-Null
+    }
+    $logStdout = Join-Path $botLogDir "bot_${acctId}_stdout.log"
+    $logStderr = Join-Path $botLogDir "bot_${acctId}_stderr.log"
 
     Write-Output ""
     Write-Output "--- $svcName ---"

@@ -304,7 +304,14 @@ function Start-Bot {
         $envBlock[$kv.Key] = $kv.Value
     }
 
-    $logFile = Join-Path $LogDir "bot_$id.log"
+    # Sous-dossier dedie a ce bot, distinct des logs d'orchestration transverses
+    # (launch_all.log, ...) qui restent a plat dans $LogDir - meme convention que
+    # nssm_setup_bot.ps1 pour la lisibilite/nettoyage sur un parc a plusieurs bots.
+    $botLogDir = Join-Path $LogDir $id
+    if (-not (Test-Path $botLogDir)) {
+        New-Item -ItemType Directory -Path $botLogDir -Force | Out-Null
+    }
+    $logFile = Join-Path $botLogDir "bot_$id.log"
 
     # Rotation : conserve un historique borne de $LOG_HISTORY_CYCLES cycles de
     # lancement passes (bot_$id.log.1 = precedent, ... .N = plus ancien), au-dela
