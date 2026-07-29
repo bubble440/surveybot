@@ -61,7 +61,7 @@ $ExcludeFiles = @(
     "check_zombie_bots.ps1", "run_tabs.ps1", "attach_tab.ps1",
     "nuitka_build_dev.ps1", "nuitka_build_release.ps1", "build_release_zip.ps1",
     "Dockerfile", "fly.toml", "requirements.txt", "sync_orchestration_scripts.ps1",
-    "build_orchestration_release.ps1"
+    "build_orchestration_release.ps1", "setup_machine.ps1", "set-up.txt", "stop_bot.ps1"
 )
 
 # -- Lecture de BOT_VERSION depuis _license_config.py -------------------------

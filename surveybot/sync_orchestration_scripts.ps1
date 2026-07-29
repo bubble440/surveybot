@@ -170,6 +170,21 @@ foreach ($entry in $fileEntries) {
 
         Move-Item -Path $tmpPath -Destination $target -Force
 
+        # $tmpPath vit dans le dossier temp du profil SYSTEM (tache planifiee SYSTEM),
+        # dont l'ACL est protegee et restrictive. Move-Item vers $target, sur le meme
+        # volume, est en pratique un renommage NTFS qui conserve l'ACL du fichier
+        # source au lieu de recalculer une ACL heritee du dossier de destination -
+        # le fichier applique se retrouve donc accessible a SYSTEM/Administrateurs
+        # uniquement. Best-effort : reinitialise l'ACL du fichier sur celle heritee
+        # de son dossier parent (memes droits qu'un fichier deja present dans
+        # $InstallDir), ne doit jamais faire echouer la synchro si indisponible.
+        try {
+            $icaclsOutput = icacls $target /reset 2>&1
+            if ($LASTEXITCODE -ne 0) { throw "icacls exit code $LASTEXITCODE : $icaclsOutput" }
+        } catch {
+            Write-Warning "[ORCH_SYNC] $relPath - reinitialisation des permissions NTFS (icacls /reset) a echoue (le fichier peut rester inaccessible a un utilisateur standard) : $_"
+        }
+
         # Un fichier ecrit via Invoke-WebRequest herite du tag "provenance Internet"
         # (Zone.Identifier) - RemoteSigned bloquerait alors son execution ulterieure,
         # silencieusement (voir set-up.txt, prerequis n.3). Best-effort : ne doit
