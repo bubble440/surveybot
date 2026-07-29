@@ -63,6 +63,77 @@ mais un simple désalignement d'arguments à un point d'appel après évolution 
 
 Statut : patch validé.
 
+### switch_to_frame_chain — assignation inconditionnelle de _current_frame (hasattr gate supprimé)
+Fichier : Survey/frame_utils.py
+Bug corrigé : `_reset()` et la mise à jour post-switch de `_current_frame` étaient conditionnées par
+`hasattr(driver, "_current_frame")`. Sur un driver Page Playwright native obtenu via `connect_over_cdp`
+(flux d'attache à un navigateur déjà lancé, main.py::run_attach_takeover), cet attribut n'existait jamais
+au préalable → la condition était toujours fausse → `_current_frame` n'était jamais créé, et
+`getattr(driver, "_current_frame", driver)` retombait en permanence sur le document racine dans tous les
+modules appelants (dom_frame_selector.py, dom_classifier.py), quel que soit le chain sélectionné.
+Correction : assignation inconditionnelle (`try: driver._current_frame = ... except Exception: pass`),
+Playwright Page/Frame supportant l'attribution dynamique d'attributs.
+Patterns couverts :
+- Tout driver Page Playwright natif sans shim préexistant (attache CDP à un navigateur déjà lancé).
+Patterns exclus :
+- Aucun changement pour un driver qui exposait déjà `_current_frame` au préalable (comportement identique).
+
+### analyze_dom / dom_extractors — passage explicite du contexte résolu (_ctx) aux extracteurs
+Fichier : Survey/dom_analyzer.py (bloc principal, ligne ~4156-4186)
+Constat : Page.evaluate/query_selector*/query_selector_all ignorent l'attribut `_current_frame` posé par
+switch_to_frame_chain — seules les fonctions qui résolvent explicitement
+`getattr(driver, "_current_frame", driver)` avant d'interroger le DOM opèrent dans le frame réellement
+sélectionné. Le bloc d'extraction principal calcule `_ctx = getattr(driver, "_current_frame", driver)` une
+fois après le switch, et passe `_ctx` (et non `driver`) à tous les extracteurs de ce bloc.
+Patterns couverts :
+- Frameset classique (`<frameset>` + `<frame>` sœurs, ex. Ipsos/mrIWeb `frame#mainFrame` + `frame#leftFrame`)
+  où le contenu de la question est dans un frame enfant, jamais dans le document racine.
+Patterns exclus :
+- Extracteurs/modules qui reçoivent encore `driver` directement sans résoudre `_current_frame` (ex. couche
+  de sélection/clic action_dispatcher.py / input_radio.py / input_utils.py) — non couverts par ce patch,
+  cause probable d'un échec de sélection malgré une extraction réussie (voir diagnostic en cours).
+
+Diagnostic associé : Ipsos/mrIWeb (insights.ipsosinteractive.com), question SA (single answer) native
+`<input type="radio" name="_QHH__FR01INC_C">` dans `frame#mainFrame`. Avant patch : score de contexte à 0,
+0 bloc extrait malgré 21 options radio visibles. Après patch : score=90, extraction réussie
+(21 options, target_id="group_..." group_key="radio:name:_qhh__fr01inc_c"). La sélection de la réponse
+échoue encore à ce stade — cause suspectée : même classe de bug (résolution de `_current_frame` absente),
+mais localisée dans la couche de clic/dispatch plutôt que d'extraction.
+
+Statut : patch extraction validé (score + blocks_count > 0 confirmés en conditions réelles).
+
+### action_dispatcher / input_radio — résolution du contexte de frame dans la couche de sélection/clic
+Fichier : Survey/action_dispatcher.py (_apply_by_target_id / _apply_in_current_context), Survey/input_radio.py
+(click_radio_by_label et fonctions appelées en cascade), Survey/input_utils.py (find_question_container_by_ctx)
+Bug corrigé : `_apply_by_target_id` lisait bien `frame_chain` depuis le payload du registry et se positionnait
+correctement dans ce contexte via `switch_to_frame_chain`, mais les fonctions de recherche/clic appelées
+ensuite (recherche par xpath du label associé à l'option, recherche de conteneur de question, clic JS)
+interrogeaient l'objet driver directement plutôt que de résoudre le contexte de frame actif au moment de la
+recherche. Sur un driver Page Playwright native (attache CDP), ces recherches s'exécutaient donc toujours sur
+le document racine de la frameset (aucun input) plutôt que dans `frame#mainFrame`, malgré une extraction et un
+scoring de contexte déjà corrigés en amont (cf. entrées précédentes de cette section).
+Correction : la couche de sélection/clic résout désormais le contexte de frame actif de la même manière que
+le module de scoring, avant toute recherche DOM.
+Patterns couverts :
+- Ipsos/mrIWeb (frameset `frame#mainFrame`/`frame#leftFrame`), question SA native
+  (`<input type="radio" name="_QHH__FR01INC_C">`, label `for="_Q0_C{n}"`) — sélection confirmée en run réel
+  (apply ok=true strategy=target_id, option "175 000 euros ou plus" correctement cochée à l'écran).
+Patterns exclus :
+- Aucune modification du contenu des stratégies de clic existantes (xpath, JS, overlay) — seule la résolution
+  du contexte dans lequel elles s'exécutent a été corrigée.
+
+Diagnostic associé : la chaîne complète du bug frame-context (extraction ET sélection) touchait 3 points
+distincts, tous liés à la même cause racine (propagation de `_current_frame` non systématique) :
+1. `switch_to_frame_chain` ne créait jamais `_current_frame` sur un driver qui ne l'avait pas déjà (hasattr
+   gate) — corrigé (entrée précédente).
+2. Les extracteurs de dom_analyzer.py recevaient `driver` au lieu du contexte résolu `_ctx` — corrigé (entrée
+   précédente).
+3. La couche de sélection/clic (action_dispatcher.py, input_radio.py, input_utils.py) recevait/interrogeait
+   `driver` directement au lieu du contexte résolu — corrigé par ce patch.
+
+Statut : patch validé en conditions réelles (log `[TARGET] apply ok=true strategy=target_id reason=applied`,
+confirmation visuelle du radio coché sur la question Ipsos/mrIWeb de test).
+
 ---
 
 ## PLATEFORME : ASKIA

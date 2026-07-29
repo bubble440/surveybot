@@ -1027,8 +1027,13 @@ def _apply_by_target_id(
                 return False
 
             def _find_best_visible(xpath: str):
+                # Résout le frame actif (positionné par switch_to_frame_chain juste avant
+                # l'appel à _apply_in_current_context) : driver.query_selector_all opère
+                # toujours sur le document racine, indépendamment de driver._current_frame,
+                # ce qui faisait échouer toute recherche xpath sur une page en frameset.
+                _search_ctx = getattr(driver, "_current_frame", driver)
                 try:
-                    cands = driver.query_selector_all(xpath)
+                    cands = _search_ctx.query_selector_all(xpath)
                 except Exception:
                     cands = []
 
@@ -1099,16 +1104,20 @@ def _apply_by_target_id(
             def _wait_checked(input_id: str | None, input_name: str | None, timeout_s: float = 1.2) -> bool:
                 import time
                 end = time.time() + timeout_s
+                # Même raison que _find_best_visible ci-dessus : vérifier .checked sur
+                # driver directement lirait le document racine, pas le frame où le clic
+                # vient d'avoir lieu.
+                _verify_ctx = getattr(driver, "_current_frame", driver)
 
                 while time.time() < end:
                     try:
                         if input_id:
-                            ok = driver.evaluate("(id) => { var e=document.getElementById(id); return !!(e && e.checked); }", input_id)
+                            ok = _verify_ctx.evaluate("(id) => { var e=document.getElementById(id); return !!(e && e.checked); }", input_id)
                             if ok:
                                 return True
 
                         if input_name:
-                            ok = driver.evaluate(
+                            ok = _verify_ctx.evaluate(
                                 "(n) => !!document.querySelector("
                                 "  `input[type='radio'][name='${n}']:checked,`"
                                 "  +` input[type='checkbox'][name='${n}']:checked`)",

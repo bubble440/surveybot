@@ -4156,23 +4156,34 @@ def analyze_dom(driver) -> List[Dict[str, Any]]:
     with switch_to_frame_chain(driver, best_chain) as ok:
         chain = best_chain if ok else []
 
+        # Contexte résolu (Frame Playwright si best_chain pointe une iframe/frame,
+        # sinon driver lui-même) : switch_to_frame_chain positionne driver._current_frame,
+        # mais Page.evaluate/query_selector* ignorent cet attribut — seules les fonctions
+        # qui lisent explicitement getattr(driver, "_current_frame", driver) opèrent dans
+        # le bon contexte. Les extracteurs ci-dessous (et tout le graphe qu'ils appellent)
+        # n'utilisent que .evaluate/.query_selector/.query_selector_all, disponibles à
+        # l'identique sur Page et Frame : passer _ctx au lieu de driver leur fait résoudre
+        # les éléments dans le frame réellement sélectionné (chain=[] → _ctx is driver,
+        # comportement inchangé pour toute page sans frameset).
+        _ctx = getattr(driver, "_current_frame", driver)
+
         # --- FocusVision/Decipher sliderpoints (matrix dropdowns) ---
-        sp_blocks = extract_sliderpoints_question_blocks(driver)
+        sp_blocks = extract_sliderpoints_question_blocks(_ctx)
         if sp_blocks:
             return sp_blocks
 
-        blocks = _analyze_dom_current_context(driver, frame_chain=chain)
+        blocks = _analyze_dom_current_context(_ctx, frame_chain=chain)
         if not _should_skip_focusvision_answers_list_groups(blocks):
-            blocks.extend(_extract_focusvision_answers_list_groups(driver, frame_chain=chain))
+            blocks.extend(_extract_focusvision_answers_list_groups(_ctx, frame_chain=chain))
             blocks = _drop_cardsort_when_mixed_with_other_blocks(blocks)
-        blocks.extend(_extract_decipher_cardrating_blocks(driver, frame_chain=chain))
-        blocks.extend(_extract_angular_material_radio_groups(driver, frame_chain=chain))
-        blocks.extend(_extract_decipher_grid_select_blocks(driver, frame_chain=chain))
+        blocks.extend(_extract_decipher_cardrating_blocks(_ctx, frame_chain=chain))
+        blocks.extend(_extract_angular_material_radio_groups(_ctx, frame_chain=chain))
+        blocks.extend(_extract_decipher_grid_select_blocks(_ctx, frame_chain=chain))
 
         if not blocks:
-            blocks = _extract_qarts_hidden_answers_groups(driver, frame_chain=chain)
+            blocks = _extract_qarts_hidden_answers_groups(_ctx, frame_chain=chain)
         if not blocks:
-            blocks = _extract_decipher_answers_list_fallback(driver, frame_chain=chain)
+            blocks = _extract_decipher_answers_list_fallback(_ctx, frame_chain=chain)
 
     # Pattern spécifique
     if not blocks and chain:

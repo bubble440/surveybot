@@ -925,13 +925,19 @@ def click_kantar_rowpicker_radio(driver, label: str) -> bool:
     return false;
     """
 
+    # Résout le frame actif : le caller (_apply_by_target_id / action_dispatcher.py)
+    # positionne driver._current_frame via switch_to_frame_chain avant cet appel, mais
+    # driver.evaluate_handle/evaluate opèrent toujours sur le document racine sinon —
+    # même correctif que _find_best_visible/_wait_checked (action_dispatcher.py).
+    _ctx = getattr(driver, "_current_frame", driver)
+
     try:
         # evaluate_handle().as_element() : retourne un ElementHandle réellement cliquable
         # (.click()/.hover()), contrairement à evaluate() qui sérialise la valeur de retour
         # (un noeud DOM renvoyé par le script redescend alors comme str/dict, sans méthodes
         # d'interaction). Même convention que action_dispatcher.py (cell_pre/decipher_cell/
         # decipher_radio_cell via evaluate_handle(...).as_element()).
-        overlay = driver.evaluate_handle("(arg) => {" + _JS_FIND + "}", label).as_element()
+        overlay = _ctx.evaluate_handle("(arg) => {" + _JS_FIND + "}", label).as_element()
     except Exception as exc:
         log_debug("[TARGET_DEBUG]", f"kantar_rowpicker: js_find_exception label={label!r} error={type(exc).__name__}: {exc}")
         return False
@@ -957,7 +963,7 @@ def click_kantar_rowpicker_radio(driver, label: str) -> bool:
     time.sleep(0.15)
 
     try:
-        ok = bool(driver.evaluate("(arg) => {" + _JS_VERIFY + "}", label))
+        ok = bool(_ctx.evaluate("(arg) => {" + _JS_VERIFY + "}", label))
     except Exception:
         ok = False
 
