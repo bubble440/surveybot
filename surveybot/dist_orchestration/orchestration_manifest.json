@@ -1,14 +1,14 @@
 {
-    "generated_at":  "2026-07-29T17:45:02Z",
+    "generated_at":  "2026-07-30T01:17:10Z",
     "files":  [
                   {
                       "rel_path":  "launch_all.ps1",
-                      "sha256":  "8d7be1d856cdae6fff3fb8cc231b64639118b528e0ef5af7817f53b818243cee",
+                      "sha256":  "97705f73239ca654be30f540c38e7aabc57732bbc4e2d799fecb1165cea9d568",
                       "url":  "https://pub-565d2bb59d364c1490255c5dddc296aa.r2.dev/orchestration/launch_all.ps1"
                   },
                   {
                       "rel_path":  "nssm_setup_bot.ps1",
-                      "sha256":  "cf2e8af587b8d9a32bcdc89a5d23a81eaf1bb6324d23065e2eca20aec2e2eaed",
+                      "sha256":  "2fc48f8495eb8685d7b1d4a1859375b36efca835df5faf3cda48e1455f8c1598",
                       "url":  "https://pub-565d2bb59d364c1490255c5dddc296aa.r2.dev/orchestration/nssm_setup_bot.ps1"
                   },
                   {
@@ -23,18 +23,33 @@
                   },
                   {
                       "rel_path":  "stop_bot.ps1",
-                      "sha256":  "62e63a1b606784593983445082a782229423702bec3cb7cf1ea5fd2ef4b1cfe7",
+                      "sha256":  "be7b7d1a4025d70cf7a79d1403862830b9370676d6c87ae8832be66fa0d6913b",
                       "url":  "https://pub-565d2bb59d364c1490255c5dddc296aa.r2.dev/orchestration/stop_bot.ps1"
                   },
                   {
+                      "rel_path":  "rotate_orchestration_logs.ps1",
+                      "sha256":  "c63d29285cb82065846a7e22cd0f27c39ee6dda4d5d60903f97cfeccee2e7044",
+                      "url":  "https://pub-565d2bb59d364c1490255c5dddc296aa.r2.dev/orchestration/rotate_orchestration_logs.ps1"
+                  },
+                  {
                       "rel_path":  "set-up.txt",
-                      "sha256":  "9f17e62b8e01258238305bb73c7b30038d7fd973a285699285bda1b18928517f",
+                      "sha256":  "0e151f2fd04bdafc996fbad3669f6d6fbe476da7f6a4ba88904788459470b57d",
                       "url":  "https://pub-565d2bb59d364c1490255c5dddc296aa.r2.dev/orchestration/set-up.txt"
                   },
                   {
                       "rel_path":  "setup_machine.ps1",
                       "sha256":  "d12decc1bd7365b8632cb45cdbfe8af289a614432823eb89f88803c847d3457b",
                       "url":  "https://pub-565d2bb59d364c1490255c5dddc296aa.r2.dev/orchestration/setup_machine.ps1"
+                  },
+                  {
+                      "rel_path":  "sync_orchestration_scripts.ps1",
+                      "sha256":  "79fb99eb389785622b9a2fd1442bfbeb78da9281e7f52c0f232b1bf70b2e29b9",
+                      "url":  "https://pub-565d2bb59d364c1490255c5dddc296aa.r2.dev/orchestration/sync_orchestration_scripts.ps1"
+                  },
+                  {
+                      "rel_path":  "nssm_setup_bot.ps1",
+                      "sha256":  "2fc48f8495eb8685d7b1d4a1859375b36efca835df5faf3cda48e1455f8c1598",
+                      "url":  "https://pub-565d2bb59d364c1490255c5dddc296aa.r2.dev/orchestration/nssm_setup_bot.ps1"
                   }
               ],
     "track_only":  [

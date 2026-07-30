@@ -72,7 +72,7 @@ nssm version
 # CHECKLIST - A FAIRE UNE SEULE FOIS PAR MACHINE
 # (terminal PowerShell en mode administrateur, dans C:\surveybot)
 #############################################
-# IMPORTANT : les 3 taches planifiees ci-dessous s'executent sous le principal
+# IMPORTANT : les 4 taches planifiees ci-dessous s'executent sous le principal
 # SYSTEM (-LogonType ServiceAccount), qui ne voit PAS la policy definie via
 # Set-ExecutionPolicy -Scope CurrentUser (etape 2 des PRE-REQUIS - un hive de
 # registre different). Sans -ExecutionPolicy Bypass dans l'argument de la
@@ -115,10 +115,20 @@ $trigger  = New-ScheduledTaskTrigger -RepetitionInterval (New-TimeSpan -Minutes 
 $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 5)
 Register-ScheduledTask -TaskName "SurveyBot_OrchestrationSync" -Action $action -Trigger $trigger -Settings $settings -Principal $principal -Force
 
-# Verification que les 3 taches sont bien enregistrees :
+# 5) Tache planifiee de rotation/purge des logs transverses d'orchestration
+#    (wake_scheduler_task.log, orchestration_sync_task.log, launch_all.log, ...) -
+#    segmentation quotidienne + retention 7 jours dans un dossier d'archive plat
+#    unique. Ne touche jamais aux logs par bot (deja gere par LOG_HISTORY_CYCLES
+#    dans launch_all.ps1). Voir rotate_orchestration_logs.ps1 pour le detail.
+$action   = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File C:\surveybot\rotate_orchestration_logs.ps1"
+$trigger  = New-ScheduledTaskTrigger -RepetitionInterval (New-TimeSpan -Minutes 10) -Once -At (Get-Date)
+$settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 5)
+Register-ScheduledTask -TaskName "SurveyBot_LogRotation" -Action $action -Trigger $trigger -Settings $settings -Principal $principal -Force
+
+# Verification que les 4 taches sont bien enregistrees :
 Get-ScheduledTask -TaskName "SurveyBot_*" | Format-Table TaskName,State -AutoSize
 
-# Verification du Principal (doit afficher SYSTEM / ServiceAccount pour les 3) :
+# Verification du Principal (doit afficher SYSTEM / ServiceAccount pour les 4) :
 Get-ScheduledTask -TaskName "SurveyBot_*" | Select-Object TaskName,Principal
 
 
@@ -145,6 +155,7 @@ Get-ChildItem C:\surveybot\pids -Filter "bot_*.state" | ForEach-Object {
 # la veille ecran seule (extinction moniteur) n'a aucun impact et peut rester active :
 powercfg /change standby-timeout-ac 0
 powercfg /change hibernate-timeout-ac 0
+
 
 
 
