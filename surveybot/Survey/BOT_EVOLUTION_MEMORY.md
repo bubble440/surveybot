@@ -2183,3 +2183,46 @@ boucle avec wait_reason=timeout, target_changed=false, progressed=false,
 malgré un rendu visuel apparemment normal (checkbox cochée, CTA visibles).
 
 Statut : patch validé.
+
+
+## MODULE TRANSVERSAL : CTA_NAV_BAD_KEYWORD_SUBSTRING_FALSE_POSITIVE — FAUX POSITIF FILTRE ANTI-RETOUR SUR SOUS-CHAÎNE "BACK"
+
+### try_click_navigation_cta — faux positif du filtre anti-bouton-retour sur substring "back"
+
+Fichier : Survey/cta_handler.py (boucle générique de collecte de candidats, vérification bad_keyword_check)
+
+Bug corrigé : le filtre destiné à exclure les boutons "retour/annuler/quitter/précédent"
+testait la présence des mots de la liste `bad` comme simple sous-chaîne (`in signature`)
+dans la signature de l'élément (texte + id + name + classes + href + role concaténés).
+Sur une page Ifop/SSI (s2.ifoponline.com), le seul CTA réel de la page
+(`div#next_button`, role="button") porte une classe CSS `background_primary_color`
+(couleur de fond), qui contient la sous-chaîne "back" issue de "background" — sans
+rapport avec un bouton "retour". Le filtre l'excluait donc à tort, ne laissant plus
+aucun candidat ("CTA_NOT_FOUND (no candidates)").
+
+Correction : remplacement du test de sous-chaîne par un match sur mot entier
+(`re.search(rf"\b{re.escape(b)}\b", signature)`), pour chaque mot de `bad`. `\b` s'appuie
+sur les frontières `\w` (lettres/chiffres/underscore, y compris accents Unicode) : "back"
+dans "background" n'a pas de frontière après (suivi de "g"), donc n'est plus détecté,
+tandis qu'un vrai token "back"/"retour"/"précédent" isolé (espace, tiret, début/fin de
+chaîne) reste détecté normalement.
+
+Patterns couverts :
+- Tout CTA dont un attribut (classe CSS notamment) contient accidentellement une des
+  sous-chaînes de `bad` sans former un mot entier (ex. "background", et par extension
+  tout autre attribut composé où un des mots de `bad` apparaît comme fragment interne).
+
+Patterns exclus :
+- Aucune régression sur la détection de vrais boutons "retour/annuler/quitter/précédent" :
+  ceux-ci restent détectés tant que le mot apparaît isolé (espace, tiret, ponctuation,
+  début/fin de chaîne) dans la signature.
+
+Diagnostic associé : confirmé via instrumentation temporaire [CTA_NAV_DIAG]
+(nav_xpath_matched count=5, no_candidates matched=5 retained=0
+exclusions=[bad_keyword_match=1 no_text_no_nav_keyword=3 not_visible_or_disabled=1]),
+isolant précisément le candidat exclu à tort avant correction. Après patch :
+CTA_FOUND candidate score=110, clic réussi (strategy=press_click_release), navigation
+détectée après CTA (confirmé en conditions réelles sur s2.ifoponline.com, page
+"Vous êtes... ?" → "Dans quelle tranche d'âge vous vous situez ?").
+
+Statut : patch validé.

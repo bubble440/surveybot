@@ -1888,8 +1888,15 @@ def try_click_navigation_cta(driver) -> bool:
                 continue
 
             _diag_step = "bad_keyword_check"
+            # Match sur mot entier (\b...\b), pas sur simple sous-chaîne : une classe CSS
+            # comme "background_primary_color" contient "back" en sous-chaîne sans être un
+            # bouton "retour" (ex. Ifop/SSI id="next_button" class="background_primary_color").
+            # \b s'appuie sur les frontières \w (lettres/chiffres/underscore, y compris accents
+            # en Unicode) donc "back" dans "background" n'a pas de frontière après "back" (suivi
+            # de "g"), tandis qu'un vrai texte/attribut "back"/"retour"/"précédent" isolé par
+            # espace, tiret ou début/fin de chaîne reste détecté normalement.
             bad = ("refuser", "disagree", "quitter", "quit", "exit", "annuler", "cancel", "fermer", "close", "retour", "précédent", "precedent", "previous", "back")
-            if any(b in signature for b in bad):
+            if any(re.search(rf"\b{re.escape(b)}\b", signature) for b in bad):
                 _diag_mark("bad_keyword_match")
                 continue
 
