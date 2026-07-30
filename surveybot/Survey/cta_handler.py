@@ -21,8 +21,9 @@ import re
 from urllib.parse import urlsplit
 import time
 import os
+from typing import Dict
 
-from Survey.log_utils import log_debug, log_info
+from Survey.log_utils import is_debug, log_debug, log_info
 
 
 # =============================================================================
@@ -1716,48 +1717,85 @@ def try_click_navigation_cta(driver) -> bool:
         "//button|//input[@type='submit' or @type='button' or @type='image']|//span[contains(concat(' ', normalize-space(@class), ' '), ' fakeNextButton ')]|//span[@id='NextBtn' and contains(concat(' ', normalize-space(@class), ' '), ' NavBtn ')]|//a[@role='button']|//a[contains(concat(' ', normalize-space(@class), ' '), ' btn ')]|//li[@id='next' or contains(concat(' ', normalize-space(@class), ' '), ' next-button ') or contains(@onclick, 'submitForm')]|//*[contains(@onmousedown, 'ToggSel')]|//*[@tabindex and not(self::input or self::textarea or self::select)]"
     )
 
-    for el in driver.query_selector_all("xpath=" + nav_xpath):
+    # --- Instrumentation diagnostique pure (LOG_LEVEL=debug) ---------------------
+    # Aucun impact fonctionnel : mêmes éléments matchés, même ordre, mêmes filtres,
+    # mêmes seuils de score. Sert uniquement à répondre, en cas de "no candidates",
+    # aux questions : combien d'éléments matchés par le xpath générique, à quelle
+    # étape chacun a été écarté, et si une exception individuelle (masquée par
+    # `except Exception: continue`) explique une exclusion.
+    _cta_diag_enabled = is_debug()
+    _cta_nav_matches = driver.query_selector_all("xpath=" + nav_xpath)
+    _cta_exclusion_counts: Dict[str, int] = {}
+    if _cta_diag_enabled:
+        log_debug(
+            "[CTA_NAV_DIAG]",
+            f"nav_xpath_matched count={len(_cta_nav_matches)}",
+        )
+
+    def _diag_mark(reason: str) -> None:
+        if _cta_diag_enabled:
+            _cta_exclusion_counts[reason] = _cta_exclusion_counts.get(reason, 0) + 1
+
+    for _cta_idx, el in enumerate(_cta_nav_matches):
+        _diag_step = "visibility_check"
         try:
             if not el.is_visible() or not el.is_enabled():
+                _diag_mark("not_visible_or_disabled")
                 continue
 
             tag = ""
+            _diag_step = "tag_eval"
             try:
                 tag = (el.evaluate("e => e.tagName.toLowerCase()") or "").lower()
             except Exception:
                 tag = ""
 
+            _diag_step = "aria_disabled_check"
             if (el.get_attribute("aria-disabled") or "").lower() == "true":
+                _diag_mark("aria_disabled")
                 continue
 
+            _diag_step = "internal_task_carousel_arrow_check"
             if _is_internal_task_carousel_arrow(driver, el):
+                _diag_mark("internal_task_carousel_arrow")
                 continue
 
+            _diag_step = "inline_hidden_cta_check"
             if _is_inline_hidden_cta(el):
+                _diag_mark("inline_hidden_cta")
                 continue
 
+            _diag_step = "class_read"
             cls = (el.get_attribute("class") or "").lower()
             cls_tokens = cls.split()
 
+            _diag_step = "encuesta_inline_done_check"
             if should_filter_encuesta_inline_done and "encuesta__done-button" in cls:
+                _diag_mark("encuesta_inline_done")
                 continue
 
             # Exclude CookieYes consent overlay buttons (structural DOM guard).
             # Triggered by cky-* class tokens on the element itself, OR by an ancestor
             # bearing data-cky-tag (e.g. data-cky-tag="notice", data-cky-tag="detail").
             # The ancestor check catches buttons whose own classes lack the cky-* prefix.
+            _diag_step = "cookieyes_class_check"
             if any(tok.startswith("cky-") for tok in cls_tokens):
+                _diag_mark("cookieyes_class")
                 continue
+            _diag_step = "cookieyes_ancestor_check"
             try:
                 if el.query_selector_all("xpath=" + "ancestor::*[@data-cky-tag][1]"):
+                    _diag_mark("cookieyes_ancestor")
                     continue
             except Exception:
                 pass
 
             # Exclude buttons inside ps-footer Angular component (survey page footer:
             # privacy policy, legal links…). Triggered by structural ancestor presence.
+            _diag_step = "ps_footer_ancestor_check"
             try:
                 if el.query_selector_all("xpath=" + "ancestor::ps-footer[1]"):
+                    _diag_mark("ps_footer_ancestor")
                     continue
             except Exception:
                 pass
@@ -1769,18 +1807,23 @@ def try_click_navigation_cta(driver) -> bool:
             # Un vrai CTA de navigation (button/input[submit]/a) n'encapsule jamais un
             # input radio/checkbox de réponse à une question ; ce signal structurel exclut
             # donc précisément ce cas, sans toucher au scoring ni aux autres filtres.
+            _diag_step = "radio_checkbox_container_check"
             try:
                 if el.query_selector_all("input[type='radio'], input[type='checkbox']"):
+                    _diag_mark("radio_checkbox_container")
                     continue
             except Exception:
                 pass
 
+            _diag_step = "disabled_class_pattern_check"
             disabled_patterns = ("disabled", "btn-disabled", "is-disabled", "button--disabled", "btn--disabled")
             if any(tok in disabled_patterns for tok in cls_tokens):
+                _diag_mark("disabled_class_pattern")
                 continue
 
             # Les CTA "image-only" (Play/Next) ont souvent txt vide.
             # On élargit la lecture aux attributs title/alt et au premier <img> enfant.
+            _diag_step = "text_extraction"
             txt = (
                 el.inner_text()
                 or el.get_attribute("value")
@@ -1796,9 +1839,11 @@ def try_click_navigation_cta(driver) -> bool:
                 except Exception:
                     txt = ""
             if not txt:
+                _diag_step = "overlay_text_recovery"
                 txt = _recover_overlay_cta_text(driver, el)
             t = _norm_btn_text(txt)
 
+            _diag_step = "attrs_and_signature"
             el_id = (el.get_attribute("id") or "").lower()
             el_name = (el.get_attribute("name") or "").lower()
             href = (el.get_attribute("href") or "").lower()
@@ -1813,11 +1858,13 @@ def try_click_navigation_cta(driver) -> bool:
             # Ces wrappers sont souvent non actionnables et provoquent la boucle
             # click -> rescan sans progression. On ne garde que les labels courts
             # pour les éléments non sémantiques.
+            _diag_step = "long_text_non_semantic_wrapper_check"
             if (
                 len(t) > 40
                 and tag not in {"button", "a", "input"}
                 and role != "button"
             ):
+                _diag_mark("long_text_non_semantic_wrapper")
                 continue
 
             # Certains CTA sont purement iconiques (ex: a#cm-NextButton avec <img>)
@@ -1825,9 +1872,11 @@ def try_click_navigation_cta(driver) -> bool:
             # Même logique pour le submit IntelliSurvey structurel (contbtn) à value vide.
             # On ne rejette que les éléments sans texte ET sans indice de navigation,
             # sauf signature DOM IntelliSurvey explicite.
+            _diag_step = "structural_submit_flags"
             has_intellisurvey_structural_submit = _is_intellisurvey_structural_submit_cta(el)
             has_mriweb_structural_submit = _is_mriweb_structural_submit_cta(el)
             has_mriweb_vue_next = _is_mriweb_vue_next_cta(el)
+            _diag_step = "no_text_no_nav_keyword_check"
             if (
                 not t
                 and not has_intellisurvey_structural_submit
@@ -1835,12 +1884,16 @@ def try_click_navigation_cta(driver) -> bool:
                 and not has_mriweb_vue_next
                 and not any(k in signature for k in ["next", "continue", "submit", "suivant", "valider", "confirm", "confirmer", "confirmez"])
             ):
+                _diag_mark("no_text_no_nav_keyword")
                 continue
 
+            _diag_step = "bad_keyword_check"
             bad = ("refuser", "disagree", "quitter", "quit", "exit", "annuler", "cancel", "fermer", "close", "retour", "précédent", "precedent", "previous", "back")
             if any(b in signature for b in bad):
+                _diag_mark("bad_keyword_match")
                 continue
 
+            _diag_step = "scoring"
             score = 0
             if any(x in t for x in ["continue", "continuer", "next", "suivant", "proceed"]):
                 score += 50
@@ -1894,10 +1947,25 @@ def try_click_navigation_cta(driver) -> bool:
                 pass
 
             candidates.append((score, el))
-        except Exception:
+        except Exception as _cta_exc:
+            if _cta_diag_enabled:
+                log_debug(
+                    "[CTA_NAV_DIAG]",
+                    f"candidate_exception idx={_cta_idx} step={_diag_step} "
+                    f"type={type(_cta_exc).__name__} msg={_cta_exc}",
+                )
             continue
 
     if not candidates:
+        if _cta_diag_enabled:
+            _diag_summary = " ".join(
+                f"{reason}={count}" for reason, count in sorted(_cta_exclusion_counts.items())
+            )
+            log_debug(
+                "[CTA_NAV_DIAG]",
+                f"no_candidates matched={len(_cta_nav_matches)} retained=0"
+                f" exclusions=[{_diag_summary}]",
+            )
         _nav_log("[CTA_NAV]", "CTA_NOT_FOUND (no candidates)", driver)
         return False
 
