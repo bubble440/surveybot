@@ -2075,6 +2075,14 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             if raw_name_key.startswith("fieldset:"):
                 effective_itype = "checkbox"
                 group_key = f"checkbox:fieldset:{raw_name_key[len('fieldset:'):]}"
+            elif raw_name_key.startswith(f"{itype}:name:"):
+                # SSI Confirmit "graphical_radio_native_name" (dom_question_extractor.py)
+                # renvoie déjà une clé qualifiée "radio:name:<name>" pour unifier le
+                # widget graphique et l'input natif caché sous une même group_key.
+                # Ne pas re-préfixer ici, sinon double préfixage "radio:name:radio:name:x"
+                # -> 2 group_key distinctes pour une seule question physique.
+                effective_itype = itype
+                group_key = raw_name_key
             else:
                 effective_itype = itype
                 group_key = f"{itype}:name:{raw_name_key}"

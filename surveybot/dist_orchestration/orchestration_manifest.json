@@ -1,5 +1,5 @@
 {
-    "generated_at":  "2026-07-30T01:17:10Z",
+    "generated_at":  "2026-07-30T03:08:09Z",
     "files":  [
                   {
                       "rel_path":  "launch_all.ps1",
@@ -45,11 +45,6 @@
                       "rel_path":  "sync_orchestration_scripts.ps1",
                       "sha256":  "79fb99eb389785622b9a2fd1442bfbeb78da9281e7f52c0f232b1bf70b2e29b9",
                       "url":  "https://pub-565d2bb59d364c1490255c5dddc296aa.r2.dev/orchestration/sync_orchestration_scripts.ps1"
-                  },
-                  {
-                      "rel_path":  "nssm_setup_bot.ps1",
-                      "sha256":  "2fc48f8495eb8685d7b1d4a1859375b36efca835df5faf3cda48e1455f8c1598",
-                      "url":  "https://pub-565d2bb59d364c1490255c5dddc296aa.r2.dev/orchestration/nssm_setup_bot.ps1"
                   }
               ],
     "track_only":  [
