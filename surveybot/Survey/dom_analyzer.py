@@ -2289,6 +2289,47 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                 except Exception:
                     pass
 
+            # SSI Confirmit "mobile grid" (matrice à radios graphiques, pattern
+            # graphical_radio_native_name de _group_key_for_choice) : une carte
+            # par ligne (div.mobile_grid_card) porte le libellé de SA ligne
+            # (div.row_label_cell) et son propre radiogroup ; la consigne
+            # partagée de la matrice est dans div.header2, ancêtre commun à
+            # toutes les cartes (div.question.grid > div.header2).
+            # Sans ce guard, le fallback générique (_nearest_question_container)
+            # remonte jusqu'à div.question.grid (toute la matrice) et
+            # _extract_question_from_container concatène les libellés des 5
+            # lignes au lieu de scoper à la ligne courante.
+            # Guard DOM strict : ancêtre .mobile_grid_card contenant un
+            # .row_label_cell, lui-même dans un ancêtre .question.grid.
+            if not question and group_key.startswith("radio:name:"):
+                try:
+                    card_nodes = els[0].query_selector_all(
+                        "xpath=" + "ancestor::div[contains(concat(' ',normalize-space(@class),' '),' mobile_grid_card ')][1]"
+                    )
+                    if card_nodes:
+                        row_label_nodes = card_nodes[0].query_selector_all(
+                            "xpath=" + ".//div[contains(concat(' ',normalize-space(@class),' '),' row_label_cell ')][1]"
+                        )
+                        grid_nodes = els[0].query_selector_all(
+                            "xpath=" + "ancestor::div[contains(concat(' ',normalize-space(@class),' '),' question ') and contains(concat(' ',normalize-space(@class),' '),' grid ')][1]"
+                        )
+                        if row_label_nodes and grid_nodes:
+                            row_txt = _norm(row_label_nodes[0].inner_text() or row_label_nodes[0].get_attribute("innerText") or "")
+                            intro_txt = ""
+                            header_nodes = grid_nodes[0].query_selector_all(
+                                "xpath=" + "./div[contains(concat(' ',normalize-space(@class),' '),' header2 ')][1]"
+                            )
+                            if header_nodes:
+                                intro_txt = _norm(header_nodes[0].inner_text() or header_nodes[0].get_attribute("innerText") or "")
+                            if row_txt:
+                                question = _norm(f"{intro_txt} {row_txt}") if intro_txt else row_txt
+                                log_debug(
+                                    "[DOM_CONTEXT]",
+                                    f"ssi_confirmit_mobile_grid_card resolved question={question[:60]!r}",
+                                )
+                except Exception:
+                    pass
+
             if not question:
                 # Fallback: extraction générique via conteneur
                 container = _nearest_question_container(els[0])

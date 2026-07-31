@@ -2347,3 +2347,53 @@ assureur(s) avez-vous été en contact lors des 12 derniers mois ?" — avant pa
 sur `Q2_11` et `Q2_10`, même `target_id`, rescan `same_qblock=True`).
 
 Statut : patch validé.
+## PLATEFORME : IFOP / SSI CONFIRMIT — MATRICE "MOBILE GRID" À RADIOS GRAPHIQUES (une carte par ligne)
+
+### ssi_confirmit_mobile_grid_card — résolution de question scopée à la ligne — Survey/dom_analyzer.py
+Fichier : Survey/dom_analyzer.py (bloc de résolution de "question" par groupe, avant le fallback
+générique `_nearest_question_container` / `_extract_question_from_container`).
+Guard DOM strict : `group_key` du groupe commence par `radio:name:` (issu du pattern
+"graphical_radio_native_name" de `_group_key_for_choice`, dom_question_extractor.py) ET présence
+d'un ancêtre `.mobile_grid_card` contenant un `.row_label_cell`, lui-même situé dans un ancêtre
+`.question.grid` portant un `div.header2` enfant direct (consigne partagée de la matrice).
+Problème résolu : sur cette structure Confirmit "mobile grid" (une carte `div.mobile_grid_card`
+par ligne de matrice, chacune avec son propre radiogroup graphique), aucune branche de résolution
+de question dédiée n'existait pour le pattern `radio:name:*`. Le code retombait sur le fallback
+générique, qui remonte via `_nearest_question_container` jusqu'à `div.question.grid` — l'ancêtre
+englobant TOUTE la matrice (les 5 lignes) — puis `_extract_question_from_container` concatène les
+libellés des 5 lignes au lieu de scoper à la ligne courante, et n'inclut pas la consigne partagée
+(`div.header2`) car son texte se mêle aux lignes dans l'`inner_text()` du conteneur global.
+Résultat avant patch : les 5 blocs recevaient un `question` identique et pollué, contenant la
+concaténation des 5 intitulés de ligne, sans la consigne d'intro.
+Correction : nouvelle branche insérée avant le fallback générique, scopée au `group_key` du
+pattern `radio:name:` : lecture du `.row_label_cell` de la carte courante (`.mobile_grid_card`
+ancêtre le plus proche) pour l'intitulé de ligne, lecture du `div.header2` de l'ancêtre
+`.question.grid` pour la consigne partagée, puis `question = "{intro_txt} {row_txt}"` (ou
+`row_txt` seul si `intro_txt` absent).
+Log discriminant : `[DOM_CONTEXT] ssi_confirmit_mobile_grid_card resolved question={...}`
+
+Patterns couverts :
+- Matrices Confirmit/SSI "mobile grid" où chaque ligne est une carte `div.mobile_grid_card`
+  distincte contenant son propre widget radio graphique (`div[role="radio"]` + input radio natif
+  caché, regroupés via `_group_key_for_choice` sous `radio:name:{name}`), avec consigne partagée
+  dans `div.header2` ancêtre commun (`div.question.grid`).
+
+Patterns exclus :
+- Toute autre structure produisant un `group_key` `radio:name:*` mais sans `.mobile_grid_card`
+  et/ou sans `.row_label_cell` et/ou sans `.question.grid > div.header2` — comportement inchangé,
+  retombe sur le fallback générique existant (`_nearest_question_container` +
+  `_extract_question_from_container`), non modifiés par ce patch.
+- `_group_key_for_choice` (regroupement) et `_extract_question_from_container` (fallback
+  générique) : fonctions partagées non modifiées — ce patch ajoute uniquement une branche de
+  résolution de question additionnelle, insérée avant leur appel en dernier recours.
+
+Diagnostic associé : confirmé en conditions réelles sur s2.ifoponline.com, page "Globalement,
+considérez-vous que cette/ces démarche(s) avec cet autre assureur a/ont été facile(s) à
+réaliser ?" (échelle 1-5 TRES PEU D'EFFORT / BEAUCOUP D'EFFORT, 5 lignes : souscription, demande
+d'information, point conseiller, sinistre, devis). Avant patch : 5 blocs avec `question` identique
+concaténant les 5 libellés de ligne (`question_len=554`), sans la consigne d'intro. Après patch :
+5 blocs avec `question` correctement scopée (consigne partagée + libellé de sa propre ligne
+uniquement, `question_len=439`), réponses GPT cohérentes et application réussie sur les 5
+`target_id` (`apply ok=true strategy=target_id`).
+
+Statut : patch validé.
