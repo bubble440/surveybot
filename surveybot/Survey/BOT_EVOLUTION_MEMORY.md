@@ -2311,3 +2311,39 @@ s2.ifoponline.com — `[SINGLES_DETECT] ifop_zip2city_input_detected data_prefix
 `extracted_blocks count=1 itypes=['text']`, prompt GPT généré et réponse `75001` correctement
 appliquée au champ). La résolution de ville en aval (clic dropdown → champs cachés peuplés) reste
 à surveiller au cas par cas selon la validité du code postal transmis.
+
+## PLATEFORME : IFOP / SSI CONFIRMIT — QUESTION "SELECT" NATIVE À CHECKBOXES NOMMÉES INDIVIDUELLEMENT (hid_list_)
+
+### _group_key_for_choice — regroupement via hid_list_{prefix} (ssi_confirmit_rs1_hid_list_group)
+Fichier : Survey/dom_question_extractor.py
+Guard : conteneur `div.question.select` (id `Q{n}_div`) contenant plusieurs `response_row` avec
+`div.graphical_select.checkbox` + `input[type="checkbox"]` dont le `name` est distinct par option
+(ex. `Q2_11`, `Q2_10`), ET présence d'un `input[type="hidden"][name^="hid_list_{prefix}"]` frère du
+conteneur listant les identifiants de toutes les options de la question.
+Problème résolu : sans ce guard, `_group_key_for_choice` retombait sur le `name` individuel de
+chaque checkbox (`checkbox:name:q2_11`, `checkbox:name:q2_10`), cassant une question physique unique
+en autant de blocs mono-option (`max_select=1` chacun) que d'options réelles.
+Correction : détection du `hid_list_{prefix}` (ex. `hid_list_Q2` → prefix=`q2`), vérification que
+≥2 checkboxes du conteneur partagent ce préfixe, puis retour d'une clé de groupement unique basée
+sur le préfixe commun (`checkbox:name:q2`), fusionnant toutes les options en un seul bloc.
+Log discriminant : `[DOM_GROUPING] ssi_confirmit_rs1_hid_list_group prefix={prefix} matching={n}`
+Patterns couverts :
+- Questions Ifop/SSI Confirmit natives de type `div.question.select` (non-grid) où chaque option
+  checkbox porte un `name` propre suffixé (ex. `Q{n}_{option_id}`), avec `hid_list_Q{n}` présent
+  comme marqueur DOM du regroupement logique des options.
+- `max_select` correctement dérivé pour permettre une sélection multiple (confirmé ici à 2, cf.
+  texte d'aide "Vous pouvez sélectionner jusqu'à 2 réponses").
+Patterns exclus :
+- Questions sans `hid_list_` (autres plateformes/structures) → comportement de `_group_key_for_choice`
+  inchangé pour tous les autres guards déjà en place (SPSSMR/HTMLPlayer, LimeSurvey, etc.).
+- `div.question.grid` (variante grid Decipher/SSI déjà couverte par un extracteur dédié) — non
+  concerné par ce guard.
+
+Diagnostic associé : confirmé en conditions réelles sur s2.ifoponline.com, page "Avec quel(s)
+assureur(s) avez-vous été en contact lors des 12 derniers mois ?" — avant patch : 2 blocs distincts
+(`group_8a84a03777e5` / `group_2f047f80a151`, max_select=1 chacun) ; après patch : 1 seul bloc
+(`group_d9960ff963df`, options=['Abeille', 'Un autre assureur'], max_select=2), réponse GPT correcte
+(`Abeille|Un autre assureur`) et application des 2 sélections réussie (`apply ok=true strategy=target_id`
+sur `Q2_11` et `Q2_10`, même `target_id`, rescan `same_qblock=True`).
+
+Statut : patch validé.
