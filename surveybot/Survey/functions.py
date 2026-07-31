@@ -114,6 +114,37 @@ def _handle_topsurveys_genial_reward_popup(driver) -> bool:
     return True
 
 
+def _topsurveys_qualification_popup_active(driver) -> bool:
+    """
+    Detecte le popup de qualification TopSurveys ('Tu t'es qualifie pour ce sondage !'
+    / bouton 'Participer') pouvant remplacer le popup 'Bon travail !' entre sa detection
+    par scan texte et le clic de fermeture (course DOM declenchee par la selection du
+    survey en cours de transition dans go_to_best_value_survey).
+    Garde DOM stricte : div.popup.integration-script-popup visible contenant un
+    bouton/texte normalise == 'participer'. Fonction additive et independante des
+    handlers existants, aucune interaction avec le popup detecte (lecture seule).
+    """
+    def _norm_p(s):
+        s = s.replace("‘", "'").replace("’", "'")
+        s = unicodedata.normalize('NFD', s)
+        s = ''.join(c for c in s if unicodedata.category(c) != 'Mn')
+        return s.lower().strip()
+
+    try:
+        for el in driver.query_selector_all("div.popup.integration-script-popup"):
+            try:
+                if not el.is_visible():
+                    continue
+                if "participer" in _norm_p(el.inner_text() or ""):
+                    return True
+            except Exception:
+                continue
+    except Exception as e:
+        if _is_target_closed(e):
+            log_debug("[TOPSURVEYS_POPUP_RACE]", f"page fermee pendant le scan: {e}")
+    return False
+
+
 def _handle_topsurveys_exclusion_popup(driver, account_id) -> bool: #survey_executor
     """
     Gere les popups TopSurveys au retour sur app.topsurveys.app.
@@ -225,6 +256,15 @@ def _handle_topsurveys_exclusion_popup(driver, account_id) -> bool: #survey_exec
         except Exception:
             pass
 
+    # === GARDE COURSE DOM : popup de qualification ('Participer') a remplace le
+    # popup 'Bon travail !' entre la detection texte et le clic (cf. BOT_EVOLUTION_MEMORY.md) ===
+    if btn and _topsurveys_qualification_popup_active(driver):
+        reason = ("[TOPSURVEYS_POPUP] Popup 'Bon travail !' remplace par le popup de "
+                  "qualification ('Participer') avant clic - abandon controle (pas de clic).")
+        print(reason)
+        _local_pause_before_cta(reason)
+        return False
+
     if btn:
         try:
             if is_cta_intercept_only():
@@ -232,7 +272,7 @@ def _handle_topsurveys_exclusion_popup(driver, account_id) -> bool: #survey_exec
                 print(reason)
                 _local_pause_before_cta(reason)
             else:
-                btn.click()
+                btn.click(timeout=5000)
                 reason = "[TOPSURVEYS_POPUP] Bouton 'Complete' clique."
                 print(reason)
                 _local_pause_before_cta(reason)

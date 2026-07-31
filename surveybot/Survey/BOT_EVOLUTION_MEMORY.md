@@ -1904,6 +1904,48 @@ Patterns exclus :
   AreYouNet, Decipher, IntelliSurvey, MRIWeb, ps-next-button, etc.) — patch additif, exclusion structurelle
   uniquement
 
+### try_click_navigation_cta — résolution du contexte de frame actif (_resolve_ctx) avant recherche de candidats
+Fichier : Survey/cta_handler.py
+Bug corrigé : la fonction interrogeait `driver.query_selector_all(...)` directement (recherche de CTA
+Askia/MetrixLab/Forsta/Toluna/AreYouNet/Decipher/RSCH, filtre encuesta, et surtout la boucle générique
+`nav_xpath`), sans jamais résoudre le contexte de frame actif. Sur un frameset (ex. Ipsos/mrIWeb,
+`frame#mainFrame` + `frame#leftFrame`), ces requêtes portaient donc systématiquement sur le document
+racine de la frameset — même quand `switch_to_frame_chain` (frame_utils.py) avait positionné
+`driver._current_frame` sur `frame#mainFrame` — et n'atteignaient jamais le document enfant contenant
+le vrai bouton de navigation.
+Symptôme observé : `[CTA_NAV] CTA_FOUND CLICK_IMPOSSIBLE candidates=1 tried=0` en boucle (une fois par
+chaîne de frame explorée par `try_click_navigation_cta_any_context`/`_in_each_frame_recursive`), sans
+qu'aucun clic ne soit jamais tenté, alors que la sélection radio en amont (action_dispatcher.py déjà
+corrigé, cf. entrée précédente de ce fichier) réussissait normalement. Cause : le xpath générique
+`//*[@tabindex and not(self::input or self::textarea or self::select)]` matchait `frame#leftFrame`
+(porteur d'un `tabindex="-1"` dans le document racine), seul candidat retenu, avec un score de 0
+(aucun mot-clé de navigation, aucun signal structurel) — donc rejeté par le seuil minimal avant tout
+clic. Le vrai bouton (`input[type=submit].mrNext` value="Suivant") dans `frame#mainFrame` n'était
+jamais interrogé.
+Correction : ajout de `_ctx = _resolve_ctx(driver)` en tête de fonction (helper déjà utilisé ailleurs
+dans le fichier, `getattr(driver, "_current_frame", driver)`), et remplacement de tous les appels
+`driver.query_selector_all(...)` du corps de la fonction par `_ctx.query_selector_all(...)` — y compris
+la requête `nav_xpath` principale. Le scroll précédant le clic (`el.evaluate(...)` au lieu de
+`driver.evaluate(..., el)`) s'appuie désormais sur le handle d'élément lui-même, intrinsèquement lié à
+son frame d'origine, donc correct quel que soit le contexte au moment du clic.
+Patterns couverts :
+- Tout DOM avec frameset/frame où le CTA de navigation réel est situé dans un document enfant distinct
+  du document racine (Ipsos/mrIWeb confirmé ; même mécanisme que pour l'extraction/sélection déjà
+  documentée plus haut dans ce fichier).
+Patterns exclus :
+- Hors contexte multi-frame, `_current_frame` est absent → `_resolve_ctx` retombe sur `driver` :
+  comportement strictement identique à avant ce patch pour toutes les plateformes sans frameset.
+- Aucun changement au scoring, aux filtres d'exclusion existants, ni à l'ordre des motifs
+  spécifiques (Askia, MetrixLab/Toluna, Forsta, AreYouNet, Decipher, RSCH, encuesta) — patch
+  uniquement sur le document interrogé, pas sur la logique de sélection du candidat.
+
+Diagnostic associé : confirmé en conditions réelles sur insights.ipsosinteractive.com (Ipsos/mrIWeb),
+question SA native dans `frame#mainFrame`. Avant patch : `CTA_FOUND CLICK_IMPOSSIBLE candidates=1
+tried=0` en boucle, aucune progression. Après patch : candidat `input[type=submit].mrNext` détecté et
+cliqué dans le bon contexte de frame, progression confirmée vers la page suivante.
+
+Statut : patch validé.
+
 ---
 
 ## PLATEFORME : IPSOS-NORM MUI REACT (dialog-question)

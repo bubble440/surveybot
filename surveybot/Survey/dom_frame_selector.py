@@ -245,6 +245,53 @@ def _score_dom_context(driver) -> Dict[str, Any]:
         }
 
 
+def _wait_for_frames_attached(driver, timeout_s: float = 2.0, poll_s: float = 0.1) -> None:
+    """
+    Attend, avec budget borné, que les frames enfants déclarées dans le DOM
+    racine (balises <frame>/<iframe>) soient effectivement synchronisées côté
+    Playwright (page.main_frame.child_frames), avant toute recherche de chaîne.
+
+    Sur une attache CDP fraîche à une page déjà chargée (main.py::run_attach_takeover),
+    document.querySelectorAll('frame, iframe') peut déjà voir les balises alors que
+    Playwright n'a pas fini de synchroniser son arbre de frames : _frame_elements()
+    renvoie alors [] côté racine, ce qui fait échouer silencieusement le ciblage
+    explicite frame#mainFrame ci-dessous ET la boucle de scoring générique
+    (aucune chaîne enfant à parcourir) -> selected_chain=[] score=0 malgré un
+    frameset réel avec question exploitable dans frame#mainFrame.
+
+    Abandon silencieux au timeout : comportement identique à avant ce patch si
+    les frames ne s'attachent jamais (page sans frameset, ou frames qui ne se
+    synchronisent jamais côté Playwright).
+    """
+    try:
+        with switch_to_frame_chain(driver, []) as ok_root:
+            if not ok_root:
+                return
+            current_frame = getattr(driver, "_current_frame", driver)
+            try:
+                declared = int(
+                    current_frame.evaluate("() => document.querySelectorAll('frame, iframe').length") or 0
+                )
+            except Exception:
+                declared = 0
+            if declared == 0:
+                return
+
+            deadline = time.time() + max(0.0, timeout_s)
+            while time.time() < deadline:
+                if len(_frame_elements(driver)) > 0:
+                    return
+                time.sleep(poll_s)
+
+            if _env_truthy("DOM_CONTEXT_DEBUG", "0"):
+                print(
+                    f"[DOM_CONTEXT_DEBUG] frames_wait_timeout declared={declared} "
+                    f"attached=0 timeout_s={timeout_s}"
+                )
+    except Exception:
+        return
+
+
 # ================================================================================
 # SÉLECTION MEILLEURE FRAME
 # ================================================================================
@@ -272,6 +319,10 @@ def _select_best_frame_chain(driver, max_depth: int = 2) -> Tuple[List[int], Dic
         best_chain = []
         best_score = 0
         best_context = None
+
+        # Budget borné : attend la synchronisation Playwright des frames déclarées
+        # dans le DOM racine avant tout ciblage/scoring (cf. _wait_for_frames_attached).
+        _wait_for_frames_attached(driver)
 
         # Ciblage DOM explicite: frameset avec frame#mainFrame
         # (cas observé: top-level quasi vide et contenu survey dans ce frame).
