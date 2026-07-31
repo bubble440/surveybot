@@ -1005,6 +1005,55 @@ def _group_key_for_choice(el, itype: str) -> str:
                             )
                             return qid_prefix
 
+                    # SSI/Confirmit RS1 pattern (ex: Ifop s2.ifoponline.com): the
+                    # question wrapper is `<div class="question select" id="{QID}_div">`
+                    # (not a `<fieldset id="fieldset_{QID}">` as in the Confirmit/Wix
+                    # pattern above), and each checkbox option carries a distinct name
+                    # `{QID}_{optionId}`. A hidden sibling input
+                    # `name="hid_list_{QID}"` lists every option id of the question —
+                    # used here as the strict DOM discriminant to avoid over-matching
+                    # unrelated `<alpha><digits>_<digits>` names on other platforms.
+                    # Guard DOM strict: ancestor div[id="{QID}_div"] (case-insensitive)
+                    # containing BOTH an input[type=hidden][name="hid_list_{QID}"] AND
+                    # >=2 checkboxes sharing the "{QID}_<digits>" name prefix.
+                    _div_xp = (
+                        f"xpath=ancestor::div["
+                        f"translate(@id,'{_upper}','{_lower}')='{qid_prefix}_div'"
+                        f"][1]"
+                    )
+                    try:
+                        div_nodes = el.query_selector_all(_div_xp)
+                    except Exception:
+                        div_nodes = []
+                    if div_nodes:
+                        try:
+                            hid_list_nodes = div_nodes[0].query_selector_all(
+                                "xpath=.//input[@type='hidden' and "
+                                f"translate(@name,'{_upper}','{_lower}')='hid_list_{qid_prefix}']"
+                            )
+                        except Exception:
+                            hid_list_nodes = []
+                        if hid_list_nodes:
+                            try:
+                                sibling_boxes = div_nodes[0].query_selector_all(
+                                    "xpath=.//input[@type='checkbox'][@name]"
+                                )
+                            except Exception:
+                                sibling_boxes = []
+                            prefix_pat = re.compile(
+                                rf"^{re.escape(qid_prefix)}_\d+$", re.IGNORECASE
+                            )
+                            matching = sum(
+                                1 for sib in sibling_boxes
+                                if prefix_pat.match(_norm_lc(sib.get_attribute("name") or ""))
+                            )
+                            if matching >= 2:
+                                log_debug(
+                                    "[DOM_GROUPING]",
+                                    f"ssi_confirmit_rs1_hid_list_group prefix={qid_prefix} matching={matching}",
+                                )
+                                return qid_prefix
+
                 # ARIA-group pattern (SurveyJS / sd-selectbase and similar): options of
                 # the same checkbox question carry distinct names but all share a single
                 # fieldset[role="group"][aria-labelledby] container.

@@ -2226,3 +2226,88 @@ détectée après CTA (confirmé en conditions réelles sur s2.ifoponline.com, p
 "Vous êtes... ?" → "Dans quelle tranche d'âge vous vous situez ?").
 
 Statut : patch validé.
+
+## PLATEFORME : IFOP / SSI — WIDGET ZIP2CITY (input[type="search"].jz2c-input)
+
+Signature DOM : `div.question.text` contenant un unique `<input type="search" class="jz2c-input"
+data-prefix="{prefix}">` (sans `id` ni `name`), un `<div class="{prefix}-box">` frère vide au
+chargement, et un `<script src=".../zip2city.ifop.com/z2c.js">` dans le même conteneur `.question`.
+Widget tiers de résolution code postal → ville (host observé : s2.ifoponline.com). Des champs
+satellites cachés (`display:none`) suivent dans le DOM (ex. `{prefix}insee`, `{prefix}cp`,
+`{prefix}dep`, `{prefix}tuu`, `{prefix}tailcom`, `{prefix}typcom`) et ne sont peuplés qu'après
+sélection d'une ville dans le dropdown AJAX.
+
+### _is_ifop_zip2city_input + réclassification locale — Survey/dom_analyzer.py
+Emplacement : fonction `_is_ifop_zip2city_input` (garde-fou), appelée dans la boucle générique
+"Autres inputs" juste après `itype = _detect_itype(el)`.
+Problème résolu : `Survey/dom_utils.py::_detect_itype` ne reconnaît que
+`input_type in ("text", "email", "tel", "number", "date")` comme `itype="text"`. Le type
+`"search"` n'y figure pas → `_detect_itype` retournait `"unknown"` pour `input.jz2c-input`,
+ce qui déclenchait un `continue` silencieux (aucun log) dans le filtre
+`if itype in ("radio", "checkbox", "unknown"): continue`. Résultat : la question "code postal +
+ville" n'était jamais extraite (`question_len=0`, `extracted_blocks count=0`), malgré un champ
+visible et interactif à l'écran.
+Correction : `_detect_itype` (dom_utils.py, fonction partagée à large surface d'impact) n'est PAS
+modifiée. Réclassification strictement locale et scopée : si `itype == "unknown"`,
+`_is_ifop_zip2city_input(el)` vérifie 4 critères DOM cumulatifs (tag `input`, classe `jz2c-input`,
+`type="search"`, attribut `data-prefix` non vide, présence d'un `<script src*="zip2city.ifop.com">`
+dans l'ancêtre `.question`) ; si tous confirmés, `itype` est réassigné à `"text"` localement pour
+cet élément seulement, et un flag `ifop_zip2city_widget=True` est posé dans le registry
+(`register_target`) et dans `context` du bloc question.
+Log discriminant : `[SINGLES_DETECT] ifop_zip2city_input_detected data_prefix='{prefix}'`
+
+### selection_rule dédiée — Survey/prompt_builder.py
+Emplacement : bloc `elif ctx.get("ifop_zip2city_widget")`, au même niveau que `native_date_input`.
+Rôle : la question affichée demande "code postal + ville", mais le seul champ saisissable est le
+code postal — la ville est résolue et sélectionnée ensuite par la couche d'application, pas par le
+texte libre. Consigne renvoyée à GPT : exactement 1 valeur, code postal français 5 chiffres, sans
+séparateur `|`, sans nom de ville.
+
+### fill_ifop_zip2city_widget — Survey/input_text.py
+Rôle : stratégie de saisie dédiée (PAS `fill_text_input` générique, cet input n'a ni `id` ni
+`name` : résolution strictement par xpath via le registry). Interaction en 2 temps :
+1. Saisie du code postal (5 chiffres) dans `input.jz2c-input` via `set_input_value_with_events`
+   (déclenche la résolution AJAX du widget).
+2. Poll du `div.{prefix}-box` frère (budget `_IFOP_Z2C_DROPDOWN_MAX_POLLS=15`, intervalle
+   `_IFOP_Z2C_DROPDOWN_POLL_DELAY_S=0.3s`, soit ~4.5s) pour détecter l'apparition d'une suggestion
+   de ville (premier nœud feuille visible avec texte), puis clic dessus.
+3. Vérification du succès réel : poll du champ caché `#{prefix}cp` jusqu'à ce qu'il soit peuplé
+   (et non simplement "le clic a été exécuté sans erreur").
+Une seule stratégie, pas de fallback empilé : en cas d'échec à n'importe quelle étape (input
+introuvable, guard DOM non satisfait, div box introuvable, aucune suggestion après budget, clic
+échoué, champ caché toujours vide après clic), retourne `False` sans retomber sur
+`fill_text_input`.
+Log discriminant : `[IFOP_Z2C]` (raison précise à chaque point de sortie possible).
+
+### execute_action — routage dédié — Survey/action_dispatcher.py
+Emplacement : bloc dédié au widget zip2city Ifop, avant le dispatch générique TEXT/NUMBER/TEXTAREA.
+Guard : `target_payload.get("ifop_zip2city_widget")` truthy → appelle
+`Survey.input_handler.fill_ifop_zip2city_widget(...)` au lieu du chemin générique
+`fill_text_input`. Échec → `log_info("[TARGET]", "apply ok=false
+reason=ifop_zip2city_widget_failed ...")`, pas de fallback vers une autre stratégie de saisie.
+
+Patterns couverts :
+- Tout `input[type="search"]` portant la classe `jz2c-input`, un `data-prefix` non vide, situé
+  dans un conteneur `.question` contenant un `<script src*="zip2city.ifop.com">` (host Ifop/SSI,
+  ex. s2.ifoponline.com). Widget observé sur une question "code postal + ville".
+
+Patterns exclus :
+- Tout autre `input[type="search"]` du projet ne matchant pas les 4 critères DOM cumulatifs reste
+  classé `"unknown"` par `_detect_itype` (comportement générique inchangé — `_detect_itype`
+  elle-même n'a reçu aucune modification).
+- Les 6 champs satellites cachés (`{prefix}insee`, `{prefix}cp`, `{prefix}dep`, `{prefix}tuu`,
+  `{prefix}tailcom`, `{prefix}typcom`) restent ignorés par le chemin générique (`display:none`,
+  correctement filtrés comme `not_actionable_visible`) — ils ne sont jamais des cibles directes,
+  seulement des indicateurs de succès post-clic pour `fill_ifop_zip2city_widget`.
+
+Note diagnostic : si le dropdown ne propose aucune ville après le budget de 15 polls
+(`[IFOP_Z2C] aucune ville proposée après N polls, cp=...`), vérifier en priorité si le code postal
+transmis par GPT est un code réellement existant/résolu par le service zip2city avant de suspecter
+la mécanique de polling elle-même (le poll technique fonctionne : cause probable côté valeur
+plutôt que côté DOM/timing dans ce cas).
+
+Statut : patch validé (extraction + détection confirmées en conditions réelles sur
+s2.ifoponline.com — `[SINGLES_DETECT] ifop_zip2city_input_detected data_prefix='jz2c'`,
+`extracted_blocks count=1 itypes=['text']`, prompt GPT généré et réponse `75001` correctement
+appliquée au champ). La résolution de ville en aval (clic dropdown → champs cachés peuplés) reste
+à surveiller au cas par cas selon la validité du code postal transmis.

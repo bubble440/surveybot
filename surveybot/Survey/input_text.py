@@ -289,6 +289,151 @@ def fill_native_date_input(driver, value: str, element_id: str, frame_chain=None
 
 
 # =============================================================================
+# WIDGET ZIP2CITY IFOP (input[type="search"].jz2c-input, s2.ifoponline.com)
+# =============================================================================
+
+_IFOP_Z2C_DROPDOWN_POLL_DELAY_S = 0.3
+_IFOP_Z2C_DROPDOWN_MAX_POLLS = 15  # budget ~4.5s d'attente AJAX/rendu du dropdown
+
+_IFOP_Z2C_FIND_SUGGESTION_JS = """(box) => {
+    const nodes = Array.from(box.querySelectorAll('*'));
+    const leaf = nodes.find(n =>
+        n.children.length === 0 &&
+        n.textContent && n.textContent.trim().length > 0 &&
+        n.offsetParent !== null
+    );
+    return leaf || null;
+}"""
+
+
+def fill_ifop_zip2city_widget(driver, value: str, xpath: str, frame_chain=None) -> bool:
+    """
+    Saisie dédiée pour le widget tiers zip2city (Ifop/SSI, s2.ifoponline.com,
+    script zip2city.ifop.com/z2c.js). Voir dom_analyzer.py::_is_ifop_zip2city_input
+    et BOT_EVOLUTION_MEMORY.md : "IFOP ZIP2CITY".
+
+    Interaction en 2 temps, PAS une simple saisie de texte : la saisie du code
+    postal dans <input type="search" class="jz2c-input"> déclenche une résolution
+    AJAX qui peuple un dropdown de villes dans le <div class="jz2c-box"> adjacent
+    (vide au chargement). Les champs satellites cachés (ex: {prefix}cp,
+    {prefix}insee) ne sont peuplés qu'après clic sur une ville du dropdown.
+
+    Résolution STRICTE par xpath (registry DOM_REGISTRY, _best_xpath_for_element) :
+    cet input n'a ni id ni name, fill_text_input générique n'est donc pas
+    applicable ici. Une seule stratégie, pas de fallback empilé : en cas d'échec
+    (dropdown absent après budget, aucune suggestion), retourne False sans
+    retomber sur fill_text_input.
+
+    Args:
+        driver: WebDriver (Page Playwright ou frame résolu)
+        value: code postal (5 chiffres), produit par le selection_rule dédié
+            (prompt_builder.py, context.ifop_zip2city_widget).
+        xpath: xpath de l'input jz2c-input (registry DOM_REGISTRY["xpath"]).
+        frame_chain: liste d'indices d'iframes imbriquées, ou None/[].
+
+    Returns:
+        True si le code postal a été saisi ET une ville sélectionnée dans le
+        dropdown (vérifié via le champ caché satellite "{prefix}cp" peuplé).
+    """
+    digits = re.sub(r"\D", "", value or "")[:5]
+    if len(digits) != 5:
+        log_debug("[IFOP_Z2C]", f"value invalide (attendu 5 chiffres): value={value!r}")
+        return False
+
+    def _apply(ctx_driver) -> bool:
+        try:
+            field = ctx_driver.query_selector(f"xpath={xpath}")
+            if field is None:
+                raise LookupError(f"no element for xpath={xpath!r}")
+        except Exception as exc:
+            log_debug("[IFOP_Z2C]", f"input introuvable xpath={xpath!r}: {type(exc).__name__}: {exc}")
+            return False
+
+        try:
+            cls = (field.get_attribute("class") or "").lower()
+            native_type = (field.get_attribute("type") or "").strip().lower()
+            prefix = (field.get_attribute("data-prefix") or "").strip()
+        except Exception as exc:
+            log_debug("[IFOP_Z2C]", f"lecture attributs échouée: {type(exc).__name__}: {exc}")
+            return False
+
+        if "jz2c-input" not in cls.split() or native_type != "search" or not prefix:
+            log_debug("[IFOP_Z2C]", f"guard non satisfait class={cls!r} type={native_type!r} prefix={prefix!r}")
+            return False
+
+        try:
+            set_input_value_with_events(ctx_driver, field, digits)
+        except Exception as exc:
+            log_debug("[IFOP_Z2C]", f"saisie code postal échouée: {type(exc).__name__}: {exc}")
+            return False
+
+        try:
+            box_nodes = field.query_selector_all(
+                "xpath=following-sibling::div[contains(concat(' ',normalize-space(@class),' '),' jz2c-box ')]"
+            )
+            box = box_nodes[0] if box_nodes else None
+        except Exception:
+            box = None
+        if box is None:
+            log_debug("[IFOP_Z2C]", "div.jz2c-box introuvable (sibling)")
+            return False
+
+        candidate = None
+        attempt = 0
+        for attempt in range(_IFOP_Z2C_DROPDOWN_MAX_POLLS):
+            try:
+                handle = box.evaluate_handle(_IFOP_Z2C_FIND_SUGGESTION_JS)
+                candidate = handle.as_element() if handle else None
+            except Exception:
+                candidate = None
+            if candidate is not None:
+                break
+            time.sleep(_IFOP_Z2C_DROPDOWN_POLL_DELAY_S)
+
+        if candidate is None:
+            log_debug("[IFOP_Z2C]", f"aucune ville proposée après {attempt + 1} polls, cp={digits!r}")
+            return False
+
+        try:
+            candidate_text = (candidate.inner_text() or "").strip()
+            candidate.click()
+        except Exception as exc:
+            log_debug("[IFOP_Z2C]", f"clic ville échoué: {type(exc).__name__}: {exc}")
+            return False
+
+        cp_val = ""
+        for attempt in range(_IFOP_Z2C_DROPDOWN_MAX_POLLS):
+            try:
+                cp_field = ctx_driver.query_selector(f"#{prefix}cp")
+                cp_val = (cp_field.get_attribute("value") or "") if cp_field else ""
+            except Exception:
+                cp_val = ""
+            if cp_val.strip():
+                break
+            time.sleep(_IFOP_Z2C_DROPDOWN_POLL_DELAY_S)
+
+        log_debug(
+            "[IFOP_Z2C]",
+            f"cp={digits!r} ville={candidate_text!r} {prefix}cp_after={cp_val!r} frame_chain={frame_chain!r}",
+        )
+        return bool(cp_val.strip())
+
+    if frame_chain:
+        try:
+            from Survey.frame_utils import switch_to_frame_chain  # type: ignore
+        except Exception:
+            switch_to_frame_chain = None  # type: ignore
+        if switch_to_frame_chain is not None:
+            with switch_to_frame_chain(driver, frame_chain) as ok:
+                if not ok:
+                    log_debug("[IFOP_Z2C]", f"switch_to_frame_chain échoué chain={frame_chain!r}")
+                    return False
+                return _apply(driver)
+
+    return _apply(driver)
+
+
+# =============================================================================
 # FONCTION PRINCIPALE DE SAISIE TEXTE
 # =============================================================================
 

@@ -7349,6 +7349,26 @@ def execute_action(
                 log_info("[TARGET]", f"apply ok=false reason=native_date_input_failed target_id={target_id!r}")
                 continue
 
+            # --- Widget zip2city Ifop (input[type="search"].jz2c-input, s2.ifoponline.com) ---
+            # Stratégie dédiée additive : voir BOT_EVOLUTION_MEMORY.md "IFOP ZIP2CITY".
+            # Même convention que le bloc native_date_input ci-dessus (flag/xpath/frame_chain
+            # lus à la racine du registre DOM_REGISTRY, pas sous "context"). Interaction en
+            # 2 temps (saisie code postal -> attente dropdown -> clic ville), incompatible
+            # avec fill_text_input générique (pas d'id, pas de sélection de ville) : ne
+            # retombe JAMAIS dessus en cas d'échec, une seule stratégie.
+            _z2c_xpath = None
+            _z2c_frame_chain = None
+            if target_payload and target_payload.get("ifop_zip2city_widget"):
+                _z2c_xpath = target_payload.get("xpath") or None
+                _z2c_frame_chain = target_payload.get("frame_chain") or None
+            if _z2c_xpath:
+                ok = _try(driver, "ifop_zip2city_widget", lambda xp=_z2c_xpath, fc=_z2c_frame_chain:
+                    Survey.input_handler.fill_ifop_zip2city_widget(driver, label, xpath=xp, frame_chain=fc))
+                if ok:
+                    return True
+                log_info("[TARGET]", f"apply ok=false reason=ifop_zip2city_widget_failed target_id={target_id!r}")
+                continue
+
             if _try(driver, "text_input", lambda fid=_field_id:
                 Survey.input_handler.fill_text_input(driver, label, context_hint=ctx, element_id=fid)
             ):

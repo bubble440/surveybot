@@ -870,6 +870,17 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
                     "au format AAAA-MM-JJ (ex: 1998-06-15), SANS séparateur '|', en une seule chaîne "
                     "(ne jamais décomposer en jour/mois/année séparés pour ce champ)."
                 )
+            elif ctx.get("ifop_zip2city_widget"):
+                # Widget tiers zip2city (Ifop/SSI, s2.ifoponline.com) : la question demande
+                # code postal + ville, mais le seul champ saisissable est un code postal ;
+                # la ville est résolue et sélectionnée ensuite par la couche d'application
+                # (Survey/input_text.py::fill_ifop_zip2city_widget), pas par ce texte. Voir
+                # BOT_EVOLUTION_MEMORY.md : "IFOP ZIP2CITY".
+                lines.append(
+                    f"selection_rule: Pour QID={qid}, renvoyer EXACTEMENT 1 valeur : un code postal "
+                    "français valide à 5 chiffres (ex: 75001), cohérent avec le profil/la localisation "
+                    "connue du répondant si disponible, SANS séparateur '|', SANS nom de ville."
+                )
             else:
                 lines.append(
                     f"selection_rule: Pour QID={qid}, renvoyer EXACTEMENT 1 valeur"

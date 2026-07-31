@@ -851,6 +851,37 @@ def _get_choice_trailing_open_info(driver, choice_el) -> dict | None:
         return None
 
 
+def _is_ifop_zip2city_input(el) -> bool:
+    """
+    Garde-fou DOM strict pour le widget tiers zip2city (Ifop/SSI,
+    s2.ifoponline.com) : <input type="search" class="jz2c-input"
+    data-prefix="..."> sans id/name, chargé avec un
+    <script src=".../zip2city.ifop.com/z2c.js"> dans le même conteneur
+    .question. Voir BOT_EVOLUTION_MEMORY.md : "IFOP ZIP2CITY".
+
+    Additif, aucun impact hors de ce guard : n'importe quel autre
+    input[type="search"] du projet reste classé "unknown" par _detect_itype()
+    (dom_utils.py, inchangé) tant qu'il ne matche pas ces 4 critères.
+    """
+    try:
+        if (el.evaluate("e => e.tagName.toLowerCase()") or "").strip().lower() != "input":
+            return False
+        cls = (el.get_attribute("class") or "").lower()
+        if "jz2c-input" not in cls.split():
+            return False
+        if (el.get_attribute("type") or "").strip().lower() != "search":
+            return False
+        if not (el.get_attribute("data-prefix") or "").strip():
+            return False
+        nodes = el.query_selector_all(
+            "xpath=" + "ancestor::div[contains(concat(' ',normalize-space(@class),' '),' question ')][1]"
+            "//script[contains(@src,'zip2city.ifop.com')]"
+        )
+        return bool(nodes)
+    except Exception:
+        return False
+
+
 def _is_modal_related_control(driver, el) -> bool:
     """
     Ignore les contrôles UI liés à des modals/dialogs (confirmation/info)
@@ -3183,6 +3214,29 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         try:
             itype = _detect_itype(el)
 
+            # --- Détection additive : widget zip2city Ifop (s2.ifoponline.com) ---
+            # input[type="search"].jz2c-input, sans id/name -> _detect_itype() (dom_utils.py,
+            # partagé avec tout le projet) ne reconnaît pas type="search" et retourne "unknown",
+            # ce qui faisait disparaître ce champ silencieusement via le "continue" ci-dessous
+            # (Patterns exclus historiques : radio/checkbox/unknown). _detect_itype() n'est PAS
+            # modifié (fonction partagée, large surface d'impact) : réclassification locale,
+            # scopée à ce seul élément via garde-fou DOM strict (classe + type + data-prefix +
+            # script zip2city.ifop.com dans le même conteneur .question). Voir
+            # BOT_EVOLUTION_MEMORY.md : "IFOP ZIP2CITY".
+            _ifop_zip2city = False
+            if itype == "unknown":
+                try:
+                    _ifop_zip2city = _is_ifop_zip2city_input(el)
+                except Exception:
+                    _ifop_zip2city = False
+                if _ifop_zip2city:
+                    itype = "text"
+                    if is_debug():
+                        log_debug(
+                            "[SINGLES_DETECT]",
+                            f"ifop_zip2city_input_detected data_prefix={(el.get_attribute('data-prefix') or '')!r}",
+                        )
+
             # 1) On ignore les champs techniques/hidden
             if itype == "hidden" or _looks_like_system_field(el):
                 if is_debug():
@@ -3985,6 +4039,11 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                     "id": el_id,
                     "frame_chain": frame_chain,
                     "native_date_input": _is_native_date_input,
+                    # Flag additif (voir _is_ifop_zip2city_input plus haut dans cette boucle) :
+                    # permet à action_dispatcher.py de router vers la stratégie de saisie dédiée
+                    # (code postal + sélection ville dans le dropdown), sans toucher au chemin
+                    # générique text/fill_text_input.
+                    "ifop_zip2city_widget": _ifop_zip2city,
                 },
             )
 
@@ -4001,6 +4060,7 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                     "id": el.get_attribute("id"),
                     "role": el.get_attribute("role"),
                     "native_date_input": _is_native_date_input,
+                    "ifop_zip2city_widget": _ifop_zip2city,
                 },
             }
             
