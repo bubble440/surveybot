@@ -245,6 +245,51 @@ def _score_dom_context(driver) -> Dict[str, Any]:
         }
 
 
+def _score_dom_context_ready(driver, timeout_s: float = 1.5, poll_s: float = 0.2) -> Dict[str, Any]:
+    """
+    Variante additive de _score_dom_context() (non modifiée) : sur une attache CDP
+    fraîche, l'evaluate() interne de _score_dom_context peut échouer transitoirement
+    (même classe de fragilité que _wait_for_frames_attached, cf. son docstring), ce
+    qui est silencieusement absorbé par son except Exception et retourne un contexte
+    à zéro strict sur tous les champs simultanément (score, input_count, select_count,
+    textarea_count, button_count, text_length) — signature confirmée sur une page
+    Ipsos/mrIWeb (MA checkboxes natifs) où le DOM contenait pourtant des inputs
+    exploitables au même instant.
+
+    Ne fait AUCUNE hypothèse sur le contenu réel de la page : une frame légitimement
+    vide (ex: sous-iframe sans contenu) retourne aussi ce pattern de zéros et sera
+    retentée jusqu'au budget avant d'être acceptée telle quelle (abandon contrôlé,
+    comportement final identique à un appel direct de _score_dom_context en cas de
+    frame réellement vide).
+
+    Appelée uniquement au(x) point(s) d'appel scopés au chain racine [] dans
+    _select_best_frame_chain, où le bug a été confirmé (pas de changement sur les
+    autres chaînes ni sur _score_dom_context elle-même).
+    """
+    debug_ctx = _env_truthy("DOM_CONTEXT_DEBUG", "0")
+    deadline = time.time() + max(0.0, timeout_s)
+    attempt = 0
+    context = _score_dom_context(driver)
+    while True:
+        attempt += 1
+        is_hard_zero = (
+            context.get('score', 0) == 0
+            and context.get('input_count', 0) == 0
+            and context.get('select_count', 0) == 0
+            and context.get('textarea_count', 0) == 0
+            and context.get('button_count', 0) == 0
+            and context.get('text_length', 0) == 0
+        )
+        if not is_hard_zero or time.time() >= deadline:
+            if is_hard_zero and debug_ctx and attempt > 1:
+                print(f"[DOM_CONTEXT_DEBUG] score_dom_context_ready hard_zero_persists attempts={attempt}")
+            return context
+        if debug_ctx:
+            print(f"[DOM_CONTEXT_DEBUG] score_dom_context_ready hard_zero_retry attempt={attempt}")
+        time.sleep(poll_s)
+        context = _score_dom_context(driver)
+
+
 def _wait_for_frames_attached(driver, timeout_s: float = 2.0, poll_s: float = 0.1) -> None:
     """
     Attend, avec budget borné, que les frames enfants déclarées dans le DOM
@@ -397,8 +442,13 @@ def _select_best_frame_chain(driver, max_depth: int = 2) -> Tuple[List[int], Dic
                     # Attendre stabilité
                     _wait_for_survey_dom(driver, timeout_s=0.5, step_s=0.1)
 
-                    # Scorer le contexte
-                    context = _score_dom_context(driver)
+                    # Scorer le contexte (variante avec retry borné sur zéro strict
+                    # pour le contexte racine, cf. _score_dom_context_ready ; les
+                    # sous-frames gardent le scoring direct, non concernées par le bug)
+                    if chain == []:
+                        context = _score_dom_context_ready(driver)
+                    else:
+                        context = _score_dom_context(driver)
                 if debug_ctx:
                     print(
                         f"[DOM_CONTEXT_DEBUG] candidate_chain={chain} score={context.get('score', 0)} "
@@ -424,9 +474,9 @@ def _select_best_frame_chain(driver, max_depth: int = 2) -> Tuple[List[int], Dic
 
         # Si aucun bon contexte trouvé, rester sur main
         if best_context is None:
-            # Scorer le contexte principal
+            # Scorer le contexte principal (variante avec retry borné, cf. ci-dessus)
             with switch_to_frame_chain(driver, []):
-                best_context = _score_dom_context(driver)
+                best_context = _score_dom_context_ready(driver)
             best_chain = []
 
         try:
