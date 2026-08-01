@@ -1666,6 +1666,18 @@ def _should_skip_post_actions_navigation(
     for block in question_blocks or []:
         try:
             ctx = block.get("context") if isinstance(block, dict) else None
+            if isinstance(ctx, dict) and ctx.get("ipsos_mriweb_grid_progressive_auto_advance") is True:
+                log_info(
+                    "[IPSOS_GRID_PROGRESSIVE]",
+                    "clic radio a déjà déclenché l'avance automatique → skip CTA",
+                )
+                return True
+        except Exception:
+            continue
+
+    for block in question_blocks or []:
+        try:
+            ctx = block.get("context") if isinstance(block, dict) else None
             if not (isinstance(ctx, dict) and ctx.get("savanta_jqm_carousel") is True):
                 continue
             try:

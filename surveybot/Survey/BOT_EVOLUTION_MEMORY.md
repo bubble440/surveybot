@@ -2467,6 +2467,45 @@ réponse GPT ("Tous les jours") correspondant à un libellé DOM exact, sélecti
 
 Statut : patch validé.
 
+### _should_skip_post_actions_navigation / analyze_dom — signal auto-advance pour éviter un clic CTA superflu
+Fichier : Survey/dom_analyzer.py (émission du flag, bloc de construction `_block_ctx`, group_key
+`radio:name:dom:*`), Survey/survey_executor.py (`_should_skip_post_actions_navigation`, consommation).
+Bug corrigé : sur la grille progressive Ipsos/mrIWeb "GridProgressive", le clic sur une option du
+widget radio graphique (`div.the-radiogroup`) déclenche déjà l'avance automatique vers la
+ligne/question suivante (AutoAdvanced côté page). `_should_skip_post_actions_navigation` ne
+reconnaissait pas ce pattern : sa détection générique de changement de DOM après clic radio était
+gardée par un cas de formulaire spécifique (Askia) qui ne couvre pas cette structure. Le pipeline
+tentait donc quand même un clic CTA post-réponse, sur un DOM potentiellement déjà obsolète (ligne
+suivante déjà chargée), avec en symptôme observé un message d'erreur "Veuillez fournir une réponse"
+côté page.
+Correction : dom_analyzer.py pose `_block_ctx["ipsos_mriweb_grid_progressive_auto_advance"] = True`
+lors de la construction du bloc, scopé au même guard DOM strict que la résolution de question
+existante pour ce pattern (`group_key` commençant par `radio:name:dom:` ET ancêtre
+`.GridProgressive`). `_should_skip_post_actions_navigation` ajoute une branche additive qui retourne
+`True` (skip CTA) si ce flag est présent sur un des `question_blocks`, avec le même style que les
+signaux existants (`walr_cardsort`, `studystream_auto_advance`, `qarts_autosubmit`).
+Log discriminant : `[IPSOS_GRID_PROGRESSIVE] clic radio a déjà déclenché l'avance automatique → skip CTA`
+puis `[AUTONAV] skip post-actions CTA navigation (auto-navigation déjà effectuée)`.
+Patterns couverts :
+- Grille progressive Ipsos/mrIWeb Sharky (`div.the-radiogroup` sous ancêtre `.GridProgressive`),
+  group_key `radio:name:dom:*` — même périmètre DOM que la résolution de question associée.
+Patterns exclus :
+- Tout autre bloc/pattern ne portant pas ce flag : comportement de `_should_skip_post_actions_navigation`
+  strictement inchangé (branches existantes non modifiées, ordre additif).
+- `analyze_dom` : aucune fonction d'extraction existante modifiée — ajout d'une clé de contexte
+  supplémentaire sur le bloc déjà construit, scopée au même guard DOM que la branche de résolution de
+  question voisine.
+
+Diagnostic associé : confirmé en conditions réelles sur insights.ipsosinteractive.com (Ipsos/mrIWeb),
+question "À quelle fréquence est-ce que vous regardez... ChatGPT ou d'une autre IA" (target_id
+group_82bea303f887). Avant patch : `apply ok=true strategy=radio_main` suivi d'une tentative de clic
+CTA post-réponse (pause `[LOCAL][PAUSE]` déclenchée) alors que la question suivante avait déjà avancé.
+Après patch : log `[IPSOS_GRID_PROGRESSIVE] clic radio a déjà déclenché l'avance automatique → skip CTA`
+suivi de `[AUTONAV] skip post-actions CTA navigation (auto-navigation déjà effectuée)`, aucune tentative
+de clic CTA, flux de bot fluide confirmé (capture terminal `bot:9009`).
+
+Statut : patch validé.
+
 ## PLATEFORME : IFOP / SSI CONFIRMIT — MATRICE "MOBILE GRID" À RADIOS GRAPHIQUES (une carte par ligne)
 
 ### ssi_confirmit_mobile_grid_card — résolution de question scopée à la ligne — Survey/dom_analyzer.py

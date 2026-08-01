@@ -2649,6 +2649,23 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             if inline_openend_names:
                 _block_ctx["inline_openend_names"] = list(dict.fromkeys(inline_openend_names))
 
+            # Ipsos/mrIWeb Sharky "GridProgressive": le clic sur une option du
+            # widget radio graphique (div.the-radiogroup) déclenche déjà l'avance
+            # automatique vers la ligne/question suivante (AutoAdvanced=true dans
+            # customJSONproperties) -- un clic CTA post-réponse est donc superflu
+            # et peut cibler un DOM déjà obsolète (ligne suivante déjà chargée).
+            # Signal consommé par _should_skip_post_actions_navigation
+            # (survey_executor.py). Guard DOM strict : même ancêtre .GridProgressive
+            # que la résolution de question ci-dessus (scopé, additif).
+            if group_key.startswith("radio:name:dom:"):
+                try:
+                    if els[0].query_selector_all(
+                        "xpath=" + "ancestor::div[contains(concat(' ',normalize-space(@class),' '),' GridProgressive ')][1]"
+                    ):
+                        _block_ctx["ipsos_mriweb_grid_progressive_auto_advance"] = True
+                except Exception:
+                    pass
+
             block = {
                 "question": question,
                 "itype": itype,
