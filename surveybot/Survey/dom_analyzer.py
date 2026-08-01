@@ -48,9 +48,9 @@ try:
     # Gestion des frames
     from Survey.dom_frame_selector import (
         _wait_for_survey_dom, _score_dom_context, _select_best_frame_chain,
-        _wait_for_mriweb_ready
+        _wait_for_mriweb_ready, _wait_for_ssi_ciwweb_ready
     )
-    
+
     # Extracteurs platform-spécifiques
     from Survey.dom_extractors_decipher import (
         _extract_focusvision_answers_list_groups,
@@ -173,7 +173,7 @@ except ImportError:
     )
     from Survey.dom_frame_selector import (
         _wait_for_survey_dom, _score_dom_context, _select_best_frame_chain,
-        _wait_for_mriweb_ready
+        _wait_for_mriweb_ready, _wait_for_ssi_ciwweb_ready
     )
     from Survey.dom_extractors_decipher import (
         _extract_focusvision_answers_list_groups,
@@ -2378,6 +2378,52 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                 except Exception:
                     pass
 
+            # SSI Confirmit legacy "select" (ciwweb.pl, pattern
+            # graphical_radio_native_name de _group_key_for_choice) : le
+            # widget radio graphique + input natif caché vit dans
+            # div.question_body, FRÈRE DIRECT de div.header1 (texte de
+            # consigne/question), les deux étant enfants directs d'un même
+            # conteneur div[id$="_div"].question.select.
+            # Sans ce guard, le fallback générique (_nearest_question_container)
+            # remonte à l'ancêtre le PLUS PROCHE portant une classe contenant
+            # "question" — ici div.question_body lui-même (le mot "question"
+            # est un sous-token de sa classe) — qui ne contient que les
+            # libellés d'options. _extract_question_from_container retire
+            # ensuite ces libellés (dédup anti-option), laissant une question
+            # vide → bloc rejeté (missing_question) malgré un DOM stable et
+            # rendu (pas un problème de timing, confirmé par capture d'écran).
+            # Guard DOM strict : ancêtre div[id$="_div"].question.select
+            # contenant un enfant direct div.header1 ET un enfant direct
+            # div.question_body (structure frère, pas ancêtre/descendant).
+            if not question and group_key.startswith("radio:name:"):
+                try:
+                    select_nodes = els[0].query_selector_all(
+                        "xpath=" + "ancestor::div["
+                        "substring(@id, string-length(@id) - 3) = '_div' "
+                        "and contains(concat(' ',normalize-space(@class),' '),' question ') "
+                        "and contains(concat(' ',normalize-space(@class),' '),' select ')"
+                        "][1]"
+                    )
+                    if select_nodes:
+                        header_nodes = select_nodes[0].query_selector_all(
+                            "xpath=" + "./div[contains(concat(' ',normalize-space(@class),' '),' header1 ')][1]"
+                        )
+                        body_nodes = select_nodes[0].query_selector_all(
+                            "xpath=" + "./div[contains(concat(' ',normalize-space(@class),' '),' question_body ')][1]"
+                        )
+                        if header_nodes and body_nodes:
+                            header_txt = _norm(
+                                header_nodes[0].inner_text() or header_nodes[0].get_attribute("innerText") or ""
+                            )
+                            if header_txt and _is_question_text(header_txt):
+                                question = header_txt
+                                log_debug(
+                                    "[DOM_CONTEXT]",
+                                    f"ssi_confirmit_select_header1 resolved question={question[:60]!r}",
+                                )
+                except Exception:
+                    pass
+
             if not question:
                 # Fallback: extraction générique via conteneur
                 container = _nearest_question_container(els[0])
@@ -4274,6 +4320,10 @@ def analyze_dom(driver) -> List[Dict[str, Any]]:
     # changement de question (classe body.everythingReady) avant scoring/
     # extraction, cf. _wait_for_mriweb_ready. No-op sur toute autre plateforme.
     _wait_for_mriweb_ready(driver)
+    # Garde-fou additif scopé SSI legacy (ciwweb.pl) : attend le retrait de
+    # la classe body.element_hidden avant scoring/extraction, cf.
+    # _wait_for_ssi_ciwweb_ready. No-op sur toute autre plateforme.
+    _wait_for_ssi_ciwweb_ready(driver)
 
     # Early exit: Kantar/mrIWeb page with unsupported metaType (e.g. dragndrop)
     _unsupported_meta = _detect_sejson_unsupported_metatype(driver)
@@ -4368,6 +4418,10 @@ def analyze_dom(driver) -> List[Dict[str, Any]]:
         # contexte (comportement inchangé pour les pages non-mrIWeb ou
         # mrIWeb sans frameset, déjà couvertes par l'appel racine).
         _wait_for_mriweb_ready(driver)
+        # Même logique additive pour le garde-fou SSI legacy (ciwweb.pl) :
+        # relecture dans _ctx, no-op strict sur toute page sans signature
+        # ssi-form-submit/ciwweb.pl dans ce contexte.
+        _wait_for_ssi_ciwweb_ready(driver)
 
         # --- FocusVision/Decipher sliderpoints (matrix dropdowns) ---
         sp_blocks = extract_sliderpoints_question_blocks(_ctx)

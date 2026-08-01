@@ -139,6 +139,55 @@ def _wait_for_mriweb_ready(driver, timeout_s: float = 1.5, poll_s: float = 0.1) 
         return
 
 
+def _wait_for_ssi_ciwweb_ready(driver, timeout_s: float = 1.5, poll_s: float = 0.1) -> None:
+    """
+    Garde-fou additif, strictement scopé aux pages SSI/Confirmit legacy
+    (ciwweb.pl, ex. eu.surveyme.online) : `document.body` porte une classe
+    `element_hidden` (avec `aria-busy="true"`) pendant la phase de
+    chargement/rendu, retirée par le template une fois la page prête (cf.
+    snapshot de référence : `<body aria-busy="true" class="element_hidden">`).
+
+    Sans cette attente, une extraction déclenchée pendant cette fenêtre peut
+    lire un DOM dont le rendu visuel n'est pas encore stabilisé — même
+    classe de symptôme que le fondu CSS mrIWeb/Sharky déjà couvert par
+    _wait_for_mriweb_ready (non modifiée par cette fonction, purement
+    additive et parallèle).
+
+    Garde-fou DOM strict : n'attend QUE si `form#ssi-form-submit` ou
+    `form[action*="ciwweb.pl"]` est présent (signature SSI legacy). Sur
+    toute autre plateforme, retour immédiat sans attente ni effet de bord.
+    Budget borné avec abandon contrôlé et log (DOM_CONTEXT_DEBUG) si la
+    classe reste présente au-delà du budget imparti (comportement alors
+    identique à avant ce patch : pas de blocage).
+    """
+    try:
+        current_frame = getattr(driver, "_current_frame", driver)
+        is_ssi_ciwweb = bool(
+            current_frame.evaluate(
+                "() => !!(document.querySelector('form#ssi-form-submit') "
+                "|| document.querySelector('form[action*=\"ciwweb.pl\"]'))"
+            )
+        )
+        if not is_ssi_ciwweb:
+            return
+
+        deadline = time.time() + max(0.0, timeout_s)
+        while time.time() < deadline:
+            ready = bool(
+                current_frame.evaluate(
+                    "() => !!(document.body && !document.body.classList.contains('element_hidden'))"
+                )
+            )
+            if ready:
+                return
+            time.sleep(poll_s)
+
+        if _env_truthy("DOM_CONTEXT_DEBUG", "0"):
+            print(f"[DOM_CONTEXT_DEBUG] ssi_ciwweb_ready_timeout timeout_s={timeout_s}")
+    except Exception:
+        return
+
+
 # ================================================================================
 # SCORING CONTEXTE DOM
 # ================================================================================
