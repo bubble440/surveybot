@@ -2709,3 +2709,50 @@ Diagnostic associé :
   réponses."), 8 options extraites, bloc créé.
 
 Statut : patch validé.
+## PLATEFORME : ASKIA — TEXTAREA OUVERTE SANS ID, DISCRIMINÉE PAR NAME (S52/S53)
+Signature DOM : plusieurs `<textarea>` sur une même page, aucun attribut `id`, distingués
+uniquement par leur attribut `name` (ex: name="S52", name="S53"), consigne de fin de bloc
+quasi identique entre questions ("Veuillez fournir une réponse aussi détaillée que possible").
+
+### action_dispatcher.py — lecture de target_payload à la racine (pas sous "context")
+Fichier : Survey/action_dispatcher.py, bloc TEXT/NUMBER/TEXTAREA dans execute_action.
+Bug corrigé : `_field_id` et `_name_field_id` étaient lus via `target_payload.get("context")`,
+une sous-clé qui n'existe que dans le bloc "context" envoyé au prompt GPT (structure
+imbriquée), absente du payload retourné par `get_target()`/`register_target()`
+(Survey/dom_registry.py + Survey/dom_analyzer.py, boucle singles) où `tag`/`name`/`id` sont
+des clés RACINE. Cette lecture retournait donc invariablement `{}` → `_field_id` et
+`_name_field_id` toujours `None`, quel que soit le DOM → branche de discrimination par name
+jamais activée (log : `reason=no_strategy` au lieu de `textarea_name_fallback_failed`).
+Correction : lecture directe `target_payload.get("id")` / `target_payload.get("tag")` /
+`target_payload.get("name")`.
+Patterns couverts : toute branche de ce bloc qui lit `target_payload = get_target(target_id)`
+(payload registre, pas le bloc GPT).
+Patterns exclus : aucune autre structure de payload (ex: contexte GPT nested) n'est concernée
+par ce fichier.
+
+### input_text.py — fill_text_input, résolution element_id via query_selector (pas find_element)
+Fichier : Survey/input_text.py.
+Bug corrigé : la résolution du champ par `element_id` appelait `driver.find_element("id",
+element_id)` puis `driver.find_element("name", element_id)` — API Selenium (By, valeur)
+absente de l'objet Page Playwright natif depuis la suppression du shim (migration native,
+cf. PLAYWRIGHT_NATIVE_MIGRATION.md BLOC S8). `AttributeError` systématique, avalée par le
+try/except → `field` jamais résolu par id/name malgré un `element_id` valide transmis par
+l'appelant → repli silencieux sur `driver.wait_for_selector(selector, ...)` non scopé, qui
+renvoie le premier textarea du DOM quel que soit le `target_id` demandé.
+Correction : `driver.query_selector(f"#{element_id}")` puis, si `None`,
+`driver.query_selector(f'[name="{element_id}"]')`.
+Patterns couverts : tout appel à `fill_text_input` avec `element_id` renseigné
+(text/number/textarea), y compris la branche `textarea_name_fallback` d'action_dispatcher.py.
+Patterns exclus : aucun changement aux autres stratégies de saisie de la cascade
+(send_keys/ActionChains/CDP/JS) ni à la logique de vérification finale — non concernées par
+ce patch. Ces autres appels Selenium résiduels dans la même fonction (`field.send_keys(...)`,
+`driver.execute_cdp_cmd(...)`) restent en l'état, non auditées par ce patch.
+
+Diagnostic associé : confirmé sur Critical Research / Askia (crweblab.com), page à 2
+questions ouvertes indépendantes S52/S53. Avant patch : `reason=no_strategy` puis (après le
+seul fix action_dispatcher.py, isolément) `reason=textarea_name_fallback_failed` avec Q1 non
+rempli et Q2 rempli de façon incohérente avec le log. Après les deux patchs combinés :
+`apply ok=true strategy=textarea_name_fallback reason=applied` pour Q1 et Q2, chaque
+textarea rempli avec le texte correspondant à sa propre question.
+
+Statut : patch validé.

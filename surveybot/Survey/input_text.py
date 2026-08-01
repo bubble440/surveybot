@@ -69,6 +69,25 @@ def react_set_value_and_fire(driver, el, value: str):
         return False
 
 
+def _read_live_field_value(el) -> str:
+    """
+    Lecture de la valeur réellement affichée dans le champ.
+    Playwright natif : `el.input_value()` lit la propriété DOM live "value"
+    (input/textarea/select) — contrairement à `el.get_attribute("value")`, qui ne lit
+    que l'attribut HTML statique (jamais mis à jour par une saisie clavier ou un
+    `el.value = v` JS) et retourne donc systématiquement None/"" pour un <textarea>
+    (pas d'attribut "value" en HTML) et pour un <input> dont la valeur a été modifiée
+    après le chargement de la page. Fallback `text_content()` pour [contenteditable].
+    """
+    try:
+        return el.input_value() or ""
+    except Exception:
+        try:
+            return el.text_content() or ""
+        except Exception:
+            return ""
+
+
 def is_numeric_field(el) -> bool:
     """Détecte si un champ est numérique (type, inputmode, pattern)."""
     t = (el.get_attribute("type") or "").lower()
@@ -577,14 +596,24 @@ def fill_text_input(driver, text: str, context_hint: str | None = None, element_
                     set_input_value_with_events(driver, el, raw if raw else lbl)
                     return True
 
+    # Résolution par element_id : API Playwright native (query_selector), pas
+    # driver.find_element(by, value) — API Selenium absente de l'objet Page Playwright
+    # depuis la suppression du shim de compatibilité (cf. Utils/PLAYWRIGHT_NATIVE_MIGRATION.md,
+    # BLOC S8) -> AttributeError systématique, avalée par le try/except, field jamais résolu
+    # par id/name malgré un element_id valide transmis par l'appelant (retombée silencieuse
+    # sur le sélecteur générique non scopé plus bas, cause racine confirmée du bug Askia
+    # S52/S53 : les deux textareas sans id, distingués uniquement par name, ne pouvaient
+    # jamais être discriminés).
     if field is None and element_id:
         try:
-            field = driver.find_element("id", element_id)
+            field = driver.query_selector(f"#{element_id}")
         except Exception:
+            field = None
+        if field is None:
             try:
-                field = driver.find_element("name", element_id)
+                field = driver.query_selector(f'[name="{element_id}"]')
             except Exception:
-                pass
+                field = None
 
     if field is None:
         field = driver.wait_for_selector(selector, state='attached', timeout=10_000)
@@ -677,7 +706,7 @@ def fill_text_input(driver, text: str, context_hint: str | None = None, element_
         pass
 
     # Vérifier
-    current = field.get_attribute("value") or field.get_attribute("textContent") or ""
+    current = _read_live_field_value(field)
     if current.strip() != value:
         # Tentative B : frappe char-par-char avec ActionChains
         try:
@@ -690,7 +719,7 @@ def fill_text_input(driver, text: str, context_hint: str | None = None, element_
         except Exception:
             pass
 
-        current = field.get_attribute("value") or field.get_attribute("textContent") or ""
+        current = _read_live_field_value(field)
 
     # [NUM fallback 1]
     if is_numeric_field(field):
@@ -704,7 +733,7 @@ def fill_text_input(driver, text: str, context_hint: str | None = None, element_
                 field.send_keys(only_digits)
             except Exception:
                 pass
-            current = field.get_attribute("value") or field.get_attribute("textContent") or ""
+            current = _read_live_field_value(field)
 
     if current.strip() != value:
         # Tentative C : frappe via CDP
@@ -717,7 +746,7 @@ def fill_text_input(driver, text: str, context_hint: str | None = None, element_
         except Exception:
             pass
 
-        current = field.get_attribute("value") or field.get_attribute("textContent") or ""
+        current = _read_live_field_value(field)
 
     if current.strip() != value:
         # Fallback JS + events (React/Angular)
@@ -731,7 +760,7 @@ def fill_text_input(driver, text: str, context_hint: str | None = None, element_
             pass
 
     # [NUM fallback 2]
-    current = field.get_attribute("value") or field.get_attribute("textContent") or ""
+    current = _read_live_field_value(field)
     if is_numeric_field(field) and current.strip() != re.sub(r"\D", "", value):
         print("[NUM] patch JS digits-only")
         digits = re.sub(r"\D", "", value)
@@ -739,14 +768,14 @@ def fill_text_input(driver, text: str, context_hint: str | None = None, element_
         time.sleep(0.3)
 
     # Re-lecture finale
-    current = field.get_attribute("value") or field.get_attribute("textContent") or ""
+    current = _read_live_field_value(field)
 
     # Dernier filet (numérique) : setter natif + événements
     if is_numeric_field(field) and (current.strip() != re.sub(r"\D", "", value)):
         try:
             react_set_value_and_fire(driver, field, re.sub(r"\D", "", value))
             time.sleep(0.15)
-            current = field.get_attribute("value") or field.get_attribute("textContent") or ""
+            current = _read_live_field_value(field)
         except Exception:
             pass
 

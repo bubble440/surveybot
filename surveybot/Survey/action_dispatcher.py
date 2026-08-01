@@ -7346,28 +7346,33 @@ def execute_action(
             except Exception:
                 pass
 
+            # NB: target_payload == get_target(target_id) (Survey/dom_registry.py) == le
+            # payload enregistré par register_target() dans Survey/dom_analyzer.py (boucle
+            # singles, ~L4207) : tag/name/id sont des clés RACINE de ce dict ("context" est une
+            # sous-clé du bloc GPT distinct envoyé au prompt, absente de ce payload registre).
+            # Corrigé ici (cf. BOT_EVOLUTION_MEMORY.md, diagnostic confirmé sur get_target) :
+            # l'ancienne lecture via target_payload.get("context") retournait invariablement
+            # un dict vide, donc _field_id restait toujours None quel que soit le DOM.
             _field_id = None
             if target_payload:
-                _blk_ctx = target_payload.get("context") or {}
-                _field_id = (_blk_ctx.get("id") or "").strip() or None
+                _field_id = (target_payload.get("id") or "").strip() or None
 
             # --- Textarea sans id, plusieurs textareas homogènes sur la même page
             # (ex: Askia, 2 questions ouvertes indépendantes <textarea name="S52">/<textarea
             # name="S53">, aucun attribut id côté DOM) ---
             # Stratégie dédiée additive : voir BOT_EVOLUTION_MEMORY.md "ASKIA — TEXTAREA
-            # OUVERTE SANS ID, DISCRIMINÉE PAR NAME". Quand context["id"] est vide, _field_id
-            # reste None -> fill_text_input (Survey/input_text.py) retombe, si la résolution
-            # par scope/context_hint échoue aussi (consignes de fin de bloc quasi identiques
-            # entre questions), sur driver.wait_for_selector(selector, ...) qui renvoie
+            # OUVERTE SANS ID, DISCRIMINÉE PAR NAME". Quand id est vide, _field_id reste None
+            # -> fill_text_input (Survey/input_text.py) retombe, si la résolution par
+            # scope/context_hint échoue aussi (consignes de fin de bloc quasi identiques entre
+            # questions), sur driver.wait_for_selector(selector, ...) qui renvoie
             # systématiquement le PREMIER textarea du DOM, écrasant la réponse déjà saisie de
             # la question précédente. fill_text_input résout déjà element_id par name en
-            # fallback (After By.ID) si un id est fourni sans correspondre -> transmettre le
+            # fallback (après By.ID) si un id est fourni sans correspondre -> transmettre le
             # name ici ne modifie pas fill_text_input, seule la valeur d'element_id change.
             _name_field_id = None
             if not _field_id and target_payload:
-                _blk_ctx_name = target_payload.get("context") or {}
-                if (_blk_ctx_name.get("tag") or "").strip().lower() == "textarea":
-                    _name_field_id = (_blk_ctx_name.get("name") or "").strip() or None
+                if (target_payload.get("tag") or "").strip().lower() == "textarea":
+                    _name_field_id = (target_payload.get("name") or "").strip() or None
 
             if _name_field_id:
                 ok = _try(driver, "textarea_name_fallback", lambda fid=_name_field_id:
