@@ -2136,10 +2136,114 @@ attach_browser_playwright), et la fonction n'utilise que des méthodes
 Playwright standard (query_selector_all, is_visible, inner_text, click).
 Aucune divergence de comportement entre les deux modes.
 
-Budget : 1 scan de détection, 1 tentative de clic. Retourne False si le
-bouton n'est pas trouvé.
+Budget : 1 scan de détection, 1 tentative de clic (timeout clic explicite
+3000ms — ajouté ultérieurement, cf. module TOPSURVEYS_POPUP_RESOLVE ci-dessous ;
+absent à l'origine, c'était la cause racine du blocage sur popups superposés).
+Retourne False si le bouton n'est pas trouvé.
 
-Statut : patch validé.
+Statut : patch validé. Appel unitaire (1 scan, 1 clic) conservé tel quel —
+c'est désormais _resolve_topsurveys_popups qui la ré-invoque en boucle pour
+gérer le cas des popups superposés (voir module ci-dessous).
+
+## MODULE TRANSVERSAL : TOPSURVEYS_POPUP_RESOLVE — RE-SCAN BORNÉ POUR POPUPS SUPERPOSÉS
+
+Contexte : au retour sur app.topsurveys.app, deux popups peuvent s'afficher
+simultanément et superposés (ex. récompense "Genial" + résultat de sondage
+"Bon travail !"/"Complète"), dans un ordre d'apparition non déterministe
+d'une session à l'autre. L'ancienne logique (scan + 1 tentative de clic par
+type de popup, sans re-scan après échec/succès) restait bloquée quand le
+popup détecté en premier n'était pas celui au premier plan : clic intercepté
+("element intercepts pointer events") jusqu'au timeout par défaut Playwright
+(~30s, aucun timeout explicite sur le chemin "Genial"), et le popup
+réellement visible n'était jamais traité.
+
+### _resolve_topsurveys_popups
+
+Fichier : Survey/functions.py
+
+Rôle : boucle de re-scan bornée (budget `_TOPSURVEYS_POPUP_RESOLVE_MAX_ATTEMPTS
+= 5`) qui, à chaque itération, réévalue l'état de la page et tente de fermer
+UN popup connu (ordre de priorité par itération : popup de qualification
+["Participer"] → arrêt immédiat, pas notre responsabilité ; sinon "Genial" ;
+sinon boîte mystère ; sinon "Bon travail !"/"Complète"), puis boucle à
+nouveau — que la tentative ait réussi ou échoué. S'arrête dès qu'aucun popup
+connu n'est détectable (état stable) ou si la page quitte topsurveys.app.
+Abandon contrôlé avec log `[TOPSURVEYS_POPUP_RESOLVE]` (via `for...else`) si
+le budget est épuisé sans état stable atteint. Ne navigue jamais elle-même —
+retourne un dict `{genial_closed, mystery_box_closed, bon_travail_closed}` à
+l'appelant, qui décide de la navigation (une seule fois, après stabilisation).
+
+Patterns couverts :
+- Tout enchaînement/superposition des 3 popups connus (Genial, boîte mystère,
+  Bon travail), quel que soit l'ordre d'apparition.
+
+Patterns exclus :
+- Popup de qualification ("Participer", div.popup.integration-script-popup)
+  → jamais fermé par ce mécanisme, cf. _topsurveys_qualification_popup_active
+  ci-dessous (décision : garde dédiée conservée en parallèle, non absorbée).
+
+### _close_topsurveys_bon_travail_popup_once
+
+Fichier : Survey/functions.py
+
+Rôle : une seule tentative de détection+fermeture du popup "Bon travail !"
+(bouton "Complete", data-test-id='ps-common-actions-button'), extraite telle
+quelle de l'ancienne priorité 2 de _handle_topsurveys_exclusion_popup.
+Appelée à chaque itération de _resolve_topsurveys_popups.
+
+Garde course DOM inchangée : re-vérifie _topsurveys_qualification_popup_active
+juste avant le clic (micro-fenêtre entre "bouton trouvé" et "clic exécuté"
+au sein de CETTE itération — non couverte par le check en tête de boucle de
+_resolve_topsurveys_popups, qui protège l'inter-itération).
+
+CTA : timeout clic réduit de 5000ms à 3000ms (délai court, cf. règle "un clic
+obstrué ne doit jamais bloquer au-delà d'un délai court"), conditionné par
+is_cta_intercept_only() (inchangé).
+
+### _topsurveys_qualification_popup_active — décision de conservation
+
+Non absorbée par _resolve_topsurveys_popups malgré le chevauchement de rôle
+apparent (les deux "surveillent" l'état popup de la page). Raison : elle
+protège une fenêtre temporelle plus fine (intra-itération, entre la détection
+du bouton "Complete" et l'exécution du clic) que celle du re-scan global
+(inter-itération, après chaque tentative complète). Elle reste donc appelée
+à deux niveaux distincts et complémentaires : en tête de boucle de
+_resolve_topsurveys_popups (évite de gaspiller une itération sur un popup
+qui a déjà été remplacé par l'écran de qualification) ET juste avant le clic
+dans _close_topsurveys_bon_travail_popup_once (protège la race originale
+documentée). Fonction elle-même non modifiée (lecture seule, inchangée).
+
+### _handle_topsurveys_exclusion_popup — refactor délégation
+
+Fichier : Survey/functions.py
+
+Rôle inchangé dans ses grandes lignes (3 priorités : boîte mystère+payout,
+"Bon travail !"+navigation+check disqualification, "Genial" seul sans
+navigation forcée), mais la phase de détection/fermeture est désormais
+entièrement déléguée à _resolve_topsurveys_popups (au lieu d'un scan+clic
+unique par branche). La navigation vers le sondage suivant
+(go_to_best_value_survey) est déclenchée une seule fois, après stabilisation
+du popup — jamais à chaque itération de résolution.
+
+Patterns exclus : aucun changement de comportement par type de popup fermé
+(payout/navigation/disqualification identiques à l'implémentation d'origine)
+— seule la robustesse de la phase de fermeture face aux popups superposés a
+changé.
+
+### go_to_best_value_survey — consolidation de la duplication
+
+Fichier : preselection/survey_navigator.py
+
+L'ancien bloc dupliqué (_handle_mystery_box_popup puis
+_handle_topsurveys_genial_reward_popup, chacun en 1 seul passage sans
+re-scan, indépendant du mécanisme de Survey/functions.py) est remplacé par un
+appel unique à _resolve_topsurveys_popups (Survey/functions.py), éliminant la
+duplication de mécanisme et bénéficiant du même re-scan borné pour les
+popups superposés au chargement/retour sur le listing.
+
+Statut : patch validé (compile-check OK). Non re-testé en conditions réelles
+au moment de cette entrée — à confirmer sur un run réel présentant la
+superposition Genial/Complète avant de considérer le diagnostic clos.
 
 ## MODULE TRANSVERSAL : RELOAD_RETRY — RÉCUPÉRATION PAGE BLOQUÉE SANS ÉLÉMENT ACTIONNABLE (execute_survey_page)
 

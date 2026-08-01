@@ -525,14 +525,16 @@ def go_to_best_value_survey(driver):
     except Exception:
         _debug("Timeout attente cartes surveys — on continue quand même.")
 
-    _handle_mystery_box_popup(driver)
+    # Consolidation : remplace l'ancien double appel independant
+    # (_handle_mystery_box_popup puis _handle_topsurveys_genial_reward_popup en un
+    # seul passage chacun, sans re-scan) par le meme mecanisme de re-scan borne que
+    # _handle_topsurveys_exclusion_popup (Survey/functions.py) — elimine la
+    # duplication de logique et couvre le meme cas de popups superposes en ordre
+    # non deterministe (Genial / boite mystere / Bon travail) au chargement ou au
+    # retour sur le listing.
+    from Survey.functions import _resolve_topsurveys_popups
+    _resolve_topsurveys_popups(driver)
     time.sleep(0.5)  # stabilisation post-popup
-
-    # Additif : popup recompense 'Genial' (cf. BOT_EVOLUTION_MEMORY.md) — couvre le
-    # chargement/retour listing, en complement du retour post-clic deja gere par
-    # _handle_topsurveys_exclusion_popup (Survey/functions.py, meme implementation).
-    from Survey.functions import _handle_topsurveys_genial_reward_popup
-    _handle_topsurveys_genial_reward_popup(driver)
 
     if not _find_survey_cards(driver):
         if SNAP_ENABLED.strip() == "1":
