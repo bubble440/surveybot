@@ -2506,6 +2506,45 @@ de clic CTA, flux de bot fluide confirmé (capture terminal `bot:9009`).
 
 Statut : patch validé.
 
+### analyze_dom — restriction du signal auto-advance à la dernière ligne de la grille progressive
+Fichier : Survey/dom_analyzer.py (même bloc que l'entrée précédente, émission de
+`_block_ctx["ipsos_mriweb_grid_progressive_auto_advance"]`).
+Bug corrigé : le signal `ipsos_mriweb_grid_progressive_auto_advance` (cf. entrée précédente) était
+posé de façon inconditionnelle dès que le bloc correspondait au guard DOM du pattern (`group_key`
+`radio:name:dom:*` + ancêtre `.GridProgressive`), sans distinguer une ligne intermédiaire de la
+dernière ligne de la séquence progressive. Or sur la dernière ligne, le clic sur l'option ne
+déclenche PAS d'avance automatique : les contrôles de navigation internes à la grille
+(`.prog-control-next`) sont désactivés (classe `.prog-control-disabled`), et c'est le bouton de
+soumission de page réel (`input[name="_NNext"].mrNext`) qui doit être cliqué pour poursuivre. Le
+signal étant posé à tort sur cette dernière ligne, `_should_skip_post_actions_navigation` sautait le
+clic CTA alors qu'il était requis — symptôme observé : page bloquée sur "Veuillez fournir une
+réponse", bouton "Suivant" réel jamais cliqué.
+Correction : le signal n'est désormais posé que si l'ancêtre `.GridProgressive` contient au moins un
+`.prog-control-next` NON désactivé (`.prog-control-next:not(.prog-control-disabled)`), ce qui
+caractérise une ligne intermédiaire (avance interne encore possible). Sur la dernière ligne, ce
+sélecteur ne retourne rien → signal absent → clic CTA de page exécuté normalement (comportement par
+défaut, aucune branche supplémentaire nécessaire côté `_should_skip_post_actions_navigation`).
+Patterns couverts :
+- Lignes intermédiaires de la grille progressive Ipsos/mrIWeb Sharky (`.prog-control-next` présent et
+  non désactivé dans l'ancêtre `.GridProgressive`) : comportement inchangé par rapport au patch
+  précédent (signal posé, CTA sauté).
+Patterns exclus :
+- Dernière ligne de la séquence progressive (tous les `.prog-control-next` de l'ancêtre
+  `.GridProgressive` sont `.prog-control-disabled`) : signal non posé, clic CTA de page exécuté comme
+  pour tout bloc standard.
+- `_should_skip_post_actions_navigation` (survey_executor.py) : non modifiée par ce patch, la
+  correction est entièrement scopée à l'émission du signal dans dom_analyzer.py.
+
+Diagnostic associé : confirmé en conditions réelles sur insights.ipsosinteractive.com (Ipsos/mrIWeb),
+dernière ligne de la grille "France Inter" (target_id group_db9bfe8d68fb), barre de progression
+interne (`.prog-progress-bar-item[data-item-index]`) confirmant l'item courant comme dernier index de
+la séquence (`aria-selected="true"` sur le dernier `data-item-index`). Avant patch : réponse appliquée
+(`apply ok=true strategy=radio_main`) puis CTA sauté à tort, page bloquée sur "Veuillez fournir une
+réponse". Après patch : signal absent sur cette ligne, clic CTA de page réel exécuté et confirmé
+(`[CTA_NAV] CTA_CLICKED candidate score=340 PROGRESSED=true`, `[CTA_NAV] CLICKED`).
+
+Statut : patch validé.
+
 ## PLATEFORME : IFOP / SSI CONFIRMIT — MATRICE "MOBILE GRID" À RADIOS GRAPHIQUES (une carte par ligne)
 
 ### ssi_confirmit_mobile_grid_card — résolution de question scopée à la ligne — Survey/dom_analyzer.py

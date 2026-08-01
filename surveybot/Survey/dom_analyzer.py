@@ -2657,10 +2657,19 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             # Signal consommé par _should_skip_post_actions_navigation
             # (survey_executor.py). Guard DOM strict : même ancêtre .GridProgressive
             # que la résolution de question ci-dessus (scopé, additif).
+            # Restriction : sur la DERNIÈRE ligne de la séquence progressive, le
+            # clic ne déclenche PAS d'avance interne -- les contrôles de nav
+            # internes (.prog-control-next) sont désactivés (.prog-control-disabled)
+            # et c'est le vrai bouton de page (_NNext) qui doit être cliqué. Le
+            # signal n'est donc posé que s'il existe au moins un .prog-control-next
+            # NON désactivé dans l'ancêtre .GridProgressive (ligne intermédiaire).
             if group_key.startswith("radio:name:dom:"):
                 try:
-                    if els[0].query_selector_all(
+                    grid_nodes = els[0].query_selector_all(
                         "xpath=" + "ancestor::div[contains(concat(' ',normalize-space(@class),' '),' GridProgressive ')][1]"
+                    )
+                    if grid_nodes and grid_nodes[0].query_selector_all(
+                        ".prog-control-next:not(.prog-control-disabled)"
                     ):
                         _block_ctx["ipsos_mriweb_grid_progressive_auto_advance"] = True
                 except Exception:
