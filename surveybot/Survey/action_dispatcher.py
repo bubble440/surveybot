@@ -7043,6 +7043,31 @@ def execute_action(
         except Exception:
             pass
 
+        # Support iframe pour le fallback legacy (label-based) : si le bloc registry
+        # vit dans une iframe enfant (frame_chain non vide), driver._current_frame a
+        # déjà été remis au document racine par le _reset() de sortie du
+        # switch_to_frame_chain utilisé par _apply_by_target_id ci-dessus, alors que ce
+        # bloc continue de vivre dans l'iframe. Les stratégies label-based qui résolvent
+        # getattr(driver, "_current_frame", driver) (ex: click_kantar_rowpicker_radio,
+        # click_ipsos_sharky_grid_progressive_radio) interrogeaient donc le document
+        # racine au lieu de l'iframe où le widget a été extrait/scoré. _run_in_target_frame
+        # ré-exécute la stratégie dans ce frame_chain, même convention que
+        # _apply_by_target_id (switch_to_frame_chain). No-op si frame_chain est vide.
+        _fallback_frame_chain = (target_payload or {}).get("frame_chain") or []
+
+        def _run_in_target_frame(fn):
+            if not _fallback_frame_chain:
+                return fn()
+            try:
+                from Survey.frame_utils import switch_to_frame_chain as _fallback_sfc  # type: ignore
+            except Exception:
+                return fn()
+            try:
+                with _fallback_sfc(driver, _fallback_frame_chain):
+                    return fn()
+            except Exception:
+                return fn()
+
         # ==========================================================
         # 🟦 BUTTON
         # ==========================================================
@@ -7173,9 +7198,9 @@ def execute_action(
 
             def _run_checkbox_strategy(strategy_name: str) -> bool:
                 strategy_map = {
-                    "checkbox_main": lambda: Survey.input_handler.click_checkbox_by_label(driver, label, context_hint=ctx),
-                    "checkbox_buttonish": lambda: Survey.input_handler.click_checkbox_buttonish_by_label(driver, label, context_hint=ctx),
-                    "checkbox_fallback_radio": lambda: Survey.input_handler.click_radio_by_label(driver, label, context_hint=ctx),
+                    "checkbox_main": lambda: _run_in_target_frame(lambda: Survey.input_handler.click_checkbox_by_label(driver, label, context_hint=ctx)),
+                    "checkbox_buttonish": lambda: _run_in_target_frame(lambda: Survey.input_handler.click_checkbox_buttonish_by_label(driver, label, context_hint=ctx)),
+                    "checkbox_fallback_radio": lambda: _run_in_target_frame(lambda: Survey.input_handler.click_radio_by_label(driver, label, context_hint=ctx)),
                 }
                 fn = strategy_map.get(strategy_name)
                 if fn is None:
@@ -7277,10 +7302,10 @@ def execute_action(
                         Survey.input_handler.set_sliderpoints(driver, label, context_hint=ctx))
                 elif strategy_name == "radio_main":
                     ok = _try(driver, "radio_main", lambda:
-                        Survey.input_handler.click_radio_by_label(driver, label, context_hint=ctx))
+                        _run_in_target_frame(lambda: Survey.input_handler.click_radio_by_label(driver, label, context_hint=ctx)))
                 elif strategy_name == "radio_buttonish":
                     ok = _try(driver, "radio_buttonish", lambda:
-                        Survey.input_handler.click_checkbox_buttonish_by_label(driver, label, context_hint=ctx))
+                        _run_in_target_frame(lambda: Survey.input_handler.click_checkbox_buttonish_by_label(driver, label, context_hint=ctx)))
                 else:
                     return False
                 if ok and radio_cache_key:
