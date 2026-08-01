@@ -2434,6 +2434,39 @@ cette page.
 
 Statut : patch validé.
 
+### _find_ipsos_sharky_grid_progressive_option_label — libellé d'option pour le widget GridProgressive Ipsos/Sharky
+Fichier : Survey/dom_question_extractor.py (nouvelle fonction), appelée en complément dans
+Survey/dom_analyzer.py (bloc de construction des options, ligne ~2191-2200), uniquement si
+_find_associated_label(driver, e) n'a rien résolu pour cet élément.
+Guard DOM strict : el porte role="radio" ET classe "prog-the-answer-container" ET est un enfant
+direct de div.the-radiogroup[role="radiogroup"]. Libellé lu dans le premier span.mrQuestionText
+descendant.
+Problème résolu : sur ce widget (Ipsos/mrIWeb Sharky "GridProgressive", template iis-sharky, matrice
+progressive une ligne à la fois), aucune des stratégies existantes de _find_associated_label ne
+couvrait ce cas (pas de for=id, pas de label ancêtre/sibling, pas de .answer_options/.option_label,
+span non sibling direct — descendant imbriqué). Résultat avant patch : options=[] pour ce group_key
+("radio:name:dom:the-radiogroup"), le modèle recevait "options: (champ ouvert)" au lieu de la liste
+fermée et répondait un texte non garanti de correspondre à un libellé DOM réel.
+Correction : nouvelle fonction additive, appelée uniquement en fallback (jamais à la place de
+_find_associated_label), qui lit le span.mrQuestionText descendant du div.prog-the-answer-container.
+Patterns couverts :
+- div.the-radiogroup[role="radiogroup"] > div.prog-the-answer-container[role="radio"] avec libellé
+  dans un span.mrQuestionText descendant (Ipsos/mrIWeb Sharky "GridProgressive").
+Patterns exclus :
+- _find_associated_label : non modifiée, aucune de ses stratégies existantes touchée.
+- Tout élément role="radio" sans classe "prog-the-answer-container", ou non enfant direct de
+  div.the-radiogroup[role="radiogroup"] — retombe sur le comportement existant (options vides si
+  aucune autre stratégie ne matche).
+
+Diagnostic associé : confirmé en conditions réelles sur insights.ipsosinteractive.com (Ipsos/Sharky),
+question "À quelle fréquence est-ce que vous regardez... ChatGPT ou d'une autre IA" (target_id
+group_a2d7901b9f45). Avant patch : options_count=0, réponse GPT ("Chaque jour") non garantie de
+correspondre à un libellé DOM. Après patch : options_count=5 (options réelles transmises au modèle),
+réponse GPT ("Tous les jours") correspondant à un libellé DOM exact, sélection appliquée avec succès
+(apply ok=true strategy=radio_main, ipsos_sharky_grid_progressive: native_verify=ok).
+
+Statut : patch validé.
+
 ## PLATEFORME : IFOP / SSI CONFIRMIT — MATRICE "MOBILE GRID" À RADIOS GRAPHIQUES (une carte par ligne)
 
 ### ssi_confirmit_mobile_grid_card — résolution de question scopée à la ligne — Survey/dom_analyzer.py

@@ -286,6 +286,58 @@ def _find_associated_label(driver, el) -> str:
         return ""
 
 
+def _find_ipsos_sharky_grid_progressive_option_label(el) -> str:
+    """
+    Résolution additionnelle et strictement scopée du libellé d'option pour le
+    widget Ipsos/mrIWeb Sharky "GridProgressive" (matrice progressive, template
+    iis-sharky) : chaque option est un div.prog-the-answer-container[role='radio']
+    sans <label>, sans aria-labelledby, sans name — le libellé est porté par un
+    span.mrQuestionText descendant. Aucune des stratégies de _find_associated_label
+    ne couvre ce cas (pas de for=id, pas de label ancêtre/sibling, pas de
+    .answer_options/.option_label, et le sibling span direct visé par la
+    stratégie 4b n'existe pas ici — le span est un descendant imbriqué, pas un
+    sibling immédiat de l'élément role='radio').
+
+    Voir BOT_EVOLUTION_MEMORY.md ("ipsos_mriweb_grid_progressive", dom_analyzer.py)
+    pour la résolution de la question associée à ce même widget.
+
+    Guard DOM strict : el porte role='radio' ET la classe 'prog-the-answer-container',
+    ET est un enfant direct d'un div.the-radiogroup[role='radiogroup'].
+    N'est appelée qu'en complément de _find_associated_label (jamais à sa place),
+    uniquement quand celle-ci n'a rien résolu pour cet élément.
+    """
+    try:
+        role = (el.get_attribute("role") or "").strip().lower()
+        class_attr = (el.get_attribute("class") or "")
+        if role != "radio" or "prog-the-answer-container" not in class_attr.split():
+            return ""
+
+        parent_groups = el.query_selector_all(
+            "xpath=parent::div[contains(concat(' ',normalize-space(@class),' '),' the-radiogroup ')]"
+        )
+        if not parent_groups:
+            return ""
+
+        span_nodes = el.query_selector_all("xpath=.//span[contains(concat(' ',normalize-space(@class),' '),' mrQuestionText ')]")
+        if not span_nodes:
+            return ""
+        txt = _norm(span_nodes[0].inner_text() or span_nodes[0].get_attribute("innerText") or "")
+        if txt and _is_valid_option_label_text(txt):
+            return txt
+        return ""
+    except Exception:
+        return ""
+
+
+def _is_valid_option_label_text(txt: str) -> bool:
+    txt = _norm(txt)
+    if not txt:
+        return False
+    if _is_validation_instruction(txt):
+        return False
+    return True
+
+
 # ================================================================================
 # EXTRACTEURS PLATFORM-SPÉCIFIQUES
 # ================================================================================

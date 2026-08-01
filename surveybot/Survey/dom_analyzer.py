@@ -41,7 +41,8 @@ try:
         _extract_ssi_confirmit_question, _extract_surveywriter_ssi_question,
         _nearest_question_container, _extract_question_from_container,
         _find_group_heading_text_near_element, _extract_mriweb_grid_question_text,
-        _group_key_for_choice, _compute_max_select, _compute_min_select
+        _group_key_for_choice, _compute_max_select, _compute_min_select,
+        _find_ipsos_sharky_grid_progressive_option_label
     )
     
     # Gestion des frames
@@ -167,7 +168,8 @@ except ImportError:
         _extract_ssi_confirmit_question, _extract_surveywriter_ssi_question,
         _nearest_question_container, _extract_question_from_container,
         _find_group_heading_text_near_element, _extract_mriweb_grid_question_text,
-        _group_key_for_choice, _compute_max_select, _compute_min_select
+        _group_key_for_choice, _compute_max_select, _compute_min_select,
+        _find_ipsos_sharky_grid_progressive_option_label
     )
     from Survey.dom_frame_selector import (
         _wait_for_survey_dom, _score_dom_context, _select_best_frame_chain,
@@ -2187,6 +2189,17 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             inline_openend_names: List[str] = []
             for e in els:
                 lbl = _find_associated_label(driver, e)
+                if not lbl:
+                    # Ipsos/mrIWeb Sharky "GridProgressive" : div.prog-the-answer-container
+                    # [role="radio"] sans label/aria-labelledby/name exploitable par
+                    # _find_associated_label (libellé porté par un span.mrQuestionText
+                    # descendant, pas un sibling direct). Résolution additionnelle
+                    # strictement scopée (voir BOT_EVOLUTION_MEMORY.md), sans toucher aux
+                    # stratégies existantes de _find_associated_label.
+                    try:
+                        lbl = _find_ipsos_sharky_grid_progressive_option_label(e)
+                    except Exception:
+                        lbl = ""
                 if not lbl:
                     continue
                 trailing_info = _get_choice_trailing_open_info(driver, e)
