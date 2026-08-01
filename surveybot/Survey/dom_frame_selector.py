@@ -262,25 +262,38 @@ def _wait_for_frames_attached(driver, timeout_s: float = 2.0, poll_s: float = 0.
     Abandon silencieux au timeout : comportement identique à avant ce patch si
     les frames ne s'attachent jamais (page sans frameset, ou frames qui ne se
     synchronisent jamais côté Playwright).
+
+    Important : juste après un `connect_over_cdp` frais, le tout premier appel
+    `evaluate()` sur la page peut lui-même échouer transitoirement (contexte
+    d'exécution pas encore prêt côté CDP) — une unique tentative ratée ne doit
+    PAS être interprétée comme "pas de frameset" (declared=0 => abandon immédiat
+    sans attente ni log, symptôme observé). Le nombre de balises déclarées est
+    donc retenté à chaque itération tant qu'il n'a pas pu être établi, au même
+    rythme que la vérification des frames attachées, jusqu'au budget commun.
     """
     try:
         with switch_to_frame_chain(driver, []) as ok_root:
             if not ok_root:
                 return
             current_frame = getattr(driver, "_current_frame", driver)
-            try:
-                declared = int(
-                    current_frame.evaluate("() => document.querySelectorAll('frame, iframe').length") or 0
-                )
-            except Exception:
-                declared = 0
-            if declared == 0:
-                return
+            declared = None  # None = pas encore établi (transitoire), 0 = confirmé absent
 
             deadline = time.time() + max(0.0, timeout_s)
             while time.time() < deadline:
-                if len(_frame_elements(driver)) > 0:
-                    return
+                if declared is None:
+                    try:
+                        declared = int(
+                            current_frame.evaluate("() => document.querySelectorAll('frame, iframe').length") or 0
+                        )
+                    except Exception:
+                        declared = None  # toujours indéterminé : on retente au prochain tour
+
+                if declared == 0:
+                    return  # confirmé : pas de frameset, aucune attente nécessaire
+
+                if declared and len(_frame_elements(driver)) > 0:
+                    return  # frames synchronisées côté Playwright
+
                 time.sleep(poll_s)
 
             if _env_truthy("DOM_CONTEXT_DEBUG", "0"):

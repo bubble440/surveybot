@@ -564,6 +564,48 @@ def _attach_select_tab_pw(context, *, exclude_url_pred=None):
                 return p
         return None
 
+    def _is_page_ready(p) -> bool:
+        try:
+            return p.evaluate("() => document.readyState") == "complete"
+        except Exception:
+            return False
+
+    def _last_web_ready(timeout_s: float = 2.0, poll_s: float = 0.15):
+        """
+        Variante additive de _last_web() : parmi les onglets candidats (mêmes
+        critères que _is_candidate), ne retient que ceux dont document.readyState
+        vaut "complete" au moment de la lecture, avec budget borné pour laisser le
+        temps à un onglet encore en chaîne de redirection (ex: panel -> domaine
+        racine -> page survey finale) de se stabiliser plutôt que d'être retenu sur
+        une URL transitoire qui satisfait _is_candidate sans porter le contenu réel.
+
+        Cause confirmée (attach CDP fraîche, route=resolution) : _last_web() lit
+        p.url en direct sans vérifier l'état de chargement ; un onglet encore en
+        transit peut transitoirement passer le filtre URL de _is_candidate et être
+        choisi à la place de l'onglet réellement affiché et chargé. _last_web()
+        elle-même n'est pas modifiée ; cette variante est appelée à la place aux
+        points d'appel concernés par ce bug.
+        """
+        import time as _time_lw
+
+        deadline = _time_lw.time() + max(0.0, timeout_s)
+        last_seen = None
+        while _time_lw.time() < deadline:
+            for p in reversed(pages):
+                if not _is_candidate(p):
+                    continue
+                last_seen = last_seen or p
+                if _is_page_ready(p):
+                    print(f"[ATTACH_PW] Tab=last_web_ready url={_attach_display_url(p.url)}")
+                    return p
+            _time_lw.sleep(poll_s)
+        if last_seen is not None:
+            print(
+                f"[ATTACH_PW] Tab=last_web_ready timeout={timeout_s}s "
+                f"fallback last_seen url={_attach_display_url(last_seen.url)}"
+            )
+        return last_seen
+
     # 1) URL contains
     if url_contains:
         for p in pages:
@@ -605,7 +647,7 @@ def _attach_select_tab_pw(context, *, exclude_url_pred=None):
             if 0 <= idx < len(candidates):
                 print(f"[ATTACH_PW] Tab=pick idx={idx} url={_attach_display_url(candidates[idx].url)}")
                 return candidates[idx]
-        lw = _last_web()
+        lw = _last_web_ready()
         if lw:
             return lw
 
@@ -648,7 +690,7 @@ def _attach_select_tab_pw(context, *, exclude_url_pred=None):
             return candidates[idx]
 
     # Fallback final
-    lw = _last_web()
+    lw = _last_web_ready()
     if lw:
         return lw
     print("[ATTACH_PW] Tab=pages[0] (fallback absolu)")
