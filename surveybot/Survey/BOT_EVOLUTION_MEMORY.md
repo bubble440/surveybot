@@ -2651,45 +2651,61 @@ Non confirmé comme causal à lui seul — la cause racine confirmée est la ré
 question (cf. entrée suivante) ; cette fonction reste une garde défensive additive et sans effet de
 bord sur les autres plateformes, conservée car elle ne casse rien de confirmé.
 
-### ssi_confirmit_select_header1 — résolution de question scopée div.header1/div.question_body
-Fichier : Survey/dom_analyzer.py (bloc de résolution de question pour `group_key` `radio:name:*`,
-juste avant le fallback générique `_nearest_question_container` / `_extract_question_from_container`).
+### ssi_confirmit_select_header1 — résolution de question scopée div.header1(+header2)/div.question_body
+Fichier : Survey/dom_analyzer.py (bloc de résolution de question, juste avant le fallback générique
+`_nearest_question_container` / `_extract_question_from_container`).
 Guard DOM strict : ancêtre `div[id$="_div"]` dont la classe contient à la fois "question" et
 "select", possédant un enfant direct `div.header1` ET un enfant direct `div.question_body`
-(structure frère, pas ancêtre/descendant).
-Problème résolu : sur ce pattern (widget radio graphique + input natif caché, déjà groupés
-correctement via `graphical_radio_native_name` → `radio:name:{name}`), le fallback générique
-`_nearest_question_container` remonte à l'ancêtre le PLUS PROCHE portant une classe contenant
-"question" — ici `div.question_body` lui-même (le mot "question" est un sous-token de sa classe),
-qui ne contient que les libellés d'options, pas le texte de consigne/question situé dans le
-`div.header1` frère. `_extract_question_from_container` retire ensuite ces libellés (dédup
-anti-option), laissant une question vide → bloc rejeté (`missing_question`) malgré un DOM stable et
-déjà rendu (confirmé : pas un problème de timing/chargement).
-Correction : nouvelle branche insérée avant le fallback générique, scopée au guard ci-dessus :
-lecture du `div.header1` (texte de consigne + question) de l'ancêtre `div[id$="_div"].question.select`,
-validation via `_is_question_text`.
+(structure frère, pas ancêtre/descendant), pour un `group_key` préfixé `radio:name:` OU
+`checkbox:name:` (les deux group_key émis par `_group_key_for_choice` pour cette structure —
+`graphical_radio_native_name` pour le widget radio, `ssi_confirmit_rs1_hid_list_group` pour le
+widget checkbox multi-select).
+Problème résolu : sur ce pattern (widget radio/checkbox graphique + input natif caché, déjà groupés
+correctement en amont), le fallback générique `_nearest_question_container` remonte à l'ancêtre le
+PLUS PROCHE portant une classe contenant "question" — ici `div.question_body` lui-même (le mot
+"question" est un sous-token de sa classe) — qui ne contient que les libellés d'options, pas le
+texte de consigne/question situé dans les `div.header1`/`div.header2` frères. `_extract_question_
+from_container` retire ensuite ces libellés (dédup anti-option), laissant une question vide → bloc
+rejeté (`missing_question`) malgré un DOM stable et déjà rendu (confirmé : pas un problème de
+timing/chargement).
+Correction : branche insérée avant le fallback générique, scopée au guard ci-dessus : lecture du
+`div.header1` (intitulé de la question, obligatoire) et, si présent, du `div.header2` (consigne de
+sélection, ex. "Veuillez sélectionner une ou plusieurs réponses."), combinés en `"{header1} {header2}"`
+si header2 présent sinon header1 seul, validation via `_is_question_text`. Guard initialement
+scopé au seul `radio:name:*` puis étendu au même bloc pour couvrir aussi `checkbox:name:*` — même
+structure DOM sous-jacente, seul le type de widget (radio vs checkbox) diffère.
 Log discriminant : `[DOM_CONTEXT] ssi_confirmit_select_header1 resolved question={...}`
 
 Patterns couverts :
-- Pages SSI/ciwweb.pl (ex. eu.surveyme.online) de type `div.question.select` (single-select natif),
-  widget radio graphique `div.graphical_select.radiobox` + input radio natif caché sœur, dont le
-  texte de question/consigne est porté par un `div.header1` enfant direct du même conteneur
-  `div[id$="_div"]` que `div.question_body` (structure en frères, pas imbriquée).
+- Pages SSI/ciwweb.pl (ex. eu.surveyme.online) de type `div.question.select`, widget radio
+  graphique (`div.graphical_select.radiobox`, single-select) OU widget checkbox graphique
+  (`div.graphical_select.checkbox`, multi-select) + input natif caché sœur, dont le texte de
+  question/consigne est porté par `div.header1` (et optionnellement `div.header2`), enfants directs
+  du même conteneur `div[id$="_div"]` que `div.question_body` (structure en frères, pas imbriquée).
 
 Patterns exclus :
-- Toute structure produisant un `group_key` `radio:name:*` sans `div[id$="_div"]` matchant
-  `.question.select`, ou sans les deux enfants directs `header1`/`question_body` requis —
-  comportement inchangé, retombe sur le fallback générique existant, non modifié par ce patch.
+- Toute structure produisant un `group_key` `radio:name:*` ou `checkbox:name:*` sans
+  `div[id$="_div"]` matchant `.question.select`, ou sans les deux enfants directs
+  `header1`/`question_body` requis — comportement inchangé, retombe sur le fallback générique
+  existant, non modifié par ce patch.
 - `_nearest_question_container` / `_extract_question_from_container` (fallback générique) et
-  `_group_key_for_choice` (regroupement `graphical_radio_native_name`) : fonctions partagées non
-  modifiées — ce patch ajoute uniquement une branche de résolution de question additionnelle.
+  `_group_key_for_choice` (regroupements `graphical_radio_native_name` /
+  `ssi_confirmit_rs1_hid_list_group`) : fonctions partagées non modifiées — ce patch ajoute
+  uniquement une branche de résolution de question additionnelle.
 - Le pattern "mobile grid" Confirmit (`.mobile_grid_card` / `.row_label_cell` / `header2`), déjà
   couvert par un guard distinct (`ssi_confirmit_mobile_grid_card`) — non concerné, structure DOM
   différente (matrice vs question simple).
 
-Diagnostic associé : confirmé en conditions réelles sur eu.surveyme.online (G5711FR, question
-"IntroFR" — consentement). Avant patch : `choice_groups detected=1 created=0
-rejected={'missing_question': 1}`, DOM-only abort malgré 2 wrappers de réponse visibles. Après
-patch : question résolue depuis `div.header1`, 2 options extraites, bloc créé.
+Diagnostic associé :
+- Confirmé sur eu.surveyme.online (G5711FR, question "IntroFR" — consentement, widget radio).
+  Avant patch : `choice_groups detected=1 created=0 rejected={'missing_question': 1}`, DOM-only
+  abort malgré 2 wrappers de réponse visibles. Après patch : question résolue depuis `div.header1`,
+  2 options extraites, bloc créé.
+- Confirmé sur eu.surveyme.online (G5711FR, question "Q1" — secteurs d'activité, widget checkbox,
+  8 options, groupées via `ssi_confirmit_rs1_hid_list_group prefix=q1 matching=8`). Avant extension
+  du guard : même symptôme `missing_question` (le guard ne couvrait alors que `radio:name:*`, ce
+  cas checkbox n'était pas concerné). Après extension : question résolue en combinant `div.header1`
+  ("Veuillez indiquer si vous-même...") + `div.header2` ("Veuillez sélectionner une ou plusieurs
+  réponses."), 8 options extraites, bloc créé.
 
 Statut : patch validé.

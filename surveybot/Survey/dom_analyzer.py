@@ -2379,10 +2379,12 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                     pass
 
             # SSI Confirmit legacy "select" (ciwweb.pl, pattern
-            # graphical_radio_native_name de _group_key_for_choice) : le
-            # widget radio graphique + input natif caché vit dans
-            # div.question_body, FRÈRE DIRECT de div.header1 (texte de
-            # consigne/question), les deux étant enfants directs d'un même
+            # graphical_radio_native_name / ssi_confirmit_rs1_hid_list_group
+            # de _group_key_for_choice) : le widget radio/checkbox graphique
+            # + input natif caché vit dans div.question_body, FRÈRE DIRECT de
+            # div.header1 (intitulé de la question) et, si présent, de
+            # div.header2 (consigne de sélection, ex. "Veuillez sélectionner
+            # une ou plusieurs réponses."), tous enfants directs d'un même
             # conteneur div[id$="_div"].question.select.
             # Sans ce guard, le fallback générique (_nearest_question_container)
             # remonte à l'ancêtre le PLUS PROCHE portant une classe contenant
@@ -2395,7 +2397,13 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             # Guard DOM strict : ancêtre div[id$="_div"].question.select
             # contenant un enfant direct div.header1 ET un enfant direct
             # div.question_body (structure frère, pas ancêtre/descendant).
-            if not question and group_key.startswith("radio:name:"):
+            # Couvre les deux group_key émis par _group_key_for_choice pour
+            # cette structure : radio:name:* (widget radio, ex. IntroFR) et
+            # checkbox:name:* (widget checkbox multi-select via
+            # ssi_confirmit_rs1_hid_list_group, ex. Q1).
+            if not question and (
+                group_key.startswith("radio:name:") or group_key.startswith("checkbox:name:")
+            ):
                 try:
                     select_nodes = els[0].query_selector_all(
                         "xpath=" + "ancestor::div["
@@ -2405,18 +2413,27 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                         "][1]"
                     )
                     if select_nodes:
-                        header_nodes = select_nodes[0].query_selector_all(
+                        header1_nodes = select_nodes[0].query_selector_all(
                             "xpath=" + "./div[contains(concat(' ',normalize-space(@class),' '),' header1 ')][1]"
+                        )
+                        header2_nodes = select_nodes[0].query_selector_all(
+                            "xpath=" + "./div[contains(concat(' ',normalize-space(@class),' '),' header2 ')][1]"
                         )
                         body_nodes = select_nodes[0].query_selector_all(
                             "xpath=" + "./div[contains(concat(' ',normalize-space(@class),' '),' question_body ')][1]"
                         )
-                        if header_nodes and body_nodes:
-                            header_txt = _norm(
-                                header_nodes[0].inner_text() or header_nodes[0].get_attribute("innerText") or ""
+                        if header1_nodes and body_nodes:
+                            header1_txt = _norm(
+                                header1_nodes[0].inner_text() or header1_nodes[0].get_attribute("innerText") or ""
                             )
-                            if header_txt and _is_question_text(header_txt):
-                                question = header_txt
+                            header2_txt = ""
+                            if header2_nodes:
+                                header2_txt = _norm(
+                                    header2_nodes[0].inner_text() or header2_nodes[0].get_attribute("innerText") or ""
+                                )
+                            combined_txt = _norm(f"{header1_txt} {header2_txt}") if header2_txt else header1_txt
+                            if combined_txt and _is_question_text(combined_txt):
+                                question = combined_txt
                                 log_debug(
                                     "[DOM_CONTEXT]",
                                     f"ssi_confirmit_select_header1 resolved question={question[:60]!r}",
