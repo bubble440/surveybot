@@ -46,7 +46,8 @@ try:
     
     # Gestion des frames
     from Survey.dom_frame_selector import (
-        _wait_for_survey_dom, _score_dom_context, _select_best_frame_chain
+        _wait_for_survey_dom, _score_dom_context, _select_best_frame_chain,
+        _wait_for_mriweb_ready
     )
     
     # Extracteurs platform-spécifiques
@@ -169,7 +170,8 @@ except ImportError:
         _group_key_for_choice, _compute_max_select, _compute_min_select
     )
     from Survey.dom_frame_selector import (
-        _wait_for_survey_dom, _score_dom_context, _select_best_frame_chain
+        _wait_for_survey_dom, _score_dom_context, _select_best_frame_chain,
+        _wait_for_mriweb_ready
     )
     from Survey.dom_extractors_decipher import (
         _extract_focusvision_answers_list_groups,
@@ -4196,6 +4198,10 @@ def analyze_dom(driver) -> List[Dict[str, Any]]:
     clear_registry()
 
     _wait_for_survey_dom(driver)
+    # Garde-fou additif scopé mrIWeb : attend la fin de la transition de
+    # changement de question (classe body.everythingReady) avant scoring/
+    # extraction, cf. _wait_for_mriweb_ready. No-op sur toute autre plateforme.
+    _wait_for_mriweb_ready(driver)
 
     # Early exit: Kantar/mrIWeb page with unsupported metaType (e.g. dragndrop)
     _unsupported_meta = _detect_sejson_unsupported_metatype(driver)

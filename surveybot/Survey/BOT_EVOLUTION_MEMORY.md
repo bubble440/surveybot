@@ -2389,6 +2389,51 @@ assureur(s) avez-vous été en contact lors des 12 derniers mois ?" — avant pa
 sur `Q2_11` et `Q2_10`, même `target_id`, rescan `same_qblock=True`).
 
 Statut : patch validé.
+## PLATEFORME : IPSOS / mrIWeb (SHARKY) — EXTRACTION DÉCLENCHÉE AVANT FIN DE TRANSITION VISUELLE (rendu dédoublé/fantôme)
+
+### _wait_for_mriweb_ready — attente de la classe `everythingReady` sur `document.body`
+Fichier : Survey/dom_frame_selector.py (nouvelle fonction, appelée dans dom_analyzer.py::analyze_dom
+juste après `_wait_for_survey_dom`, avant `_select_best_frame_chain`).
+Guard DOM strict : n'attend QUE si `form[name="mrForm"]` est présent dans le contexte courant
+(signature mrIWeb déjà référencée dans ce fichier). Sur toute autre plateforme, retour immédiat
+sans attente ni effet de bord.
+Problème résolu : sur une page Ipsos/mrIWeb (SavePoint=NEWPARENTQUESTION, question MA à checkboxes
+`mrMultiple`/`.mrQuestionTable`), `analyze_dom()` et le détecteur de repli DOM-only de
+`survey_executor.py` retournaient tous deux zéro sur l'intégralité de leurs compteurs
+simultanément (score de contexte, choice_groups, inputs, wrappers, groups...), alors que la page
+contenait bien 6 checkboxes natives visibles et un bouton "Suivant". Cause confirmée : la page
+était encore en transition visuelle (fondu CSS opacity/transform, rendu dédoublé/fantôme observé
+à l'écran au moment précis de l'extraction) lorsque l'extraction DOM s'est déclenchée.
+`_wait_for_survey_dom` (non modifiée) ne détecte que l'absence de mutation DOM pendant `step_s` —
+un fondu CSS pur sans mutation d'attribut ni de structure après la fin du chargement peut donc être
+déclaré "stable" avant la fin réelle de la transition visuelle du template Ipsos/Sharky.
+Correction : nouvelle fonction additive qui attend, avec budget borné (timeout_s=1.5s, poll 0.1s),
+l'apparition de la classe `everythingReady` sur `document.body` (marqueur de fin de transition
+propre au template Ipsos/Sharky, ex. `class="progress-bar-minimal prevent-select no-touch
+direction-ltr everythingReady"`) avant de laisser `_select_best_frame_chain`/les extracteurs
+s'exécuter. Abandon contrôlé avec log `[DOM_CONTEXT_DEBUG] mriweb_ready_timeout` si la classe
+n'apparaît jamais dans le budget imparti (comportement alors identique à avant ce patch : pas de
+blocage).
+Log discriminant : `[DOM_CONTEXT_DEBUG] mriweb_ready_timeout timeout_s={timeout_s}` (uniquement en
+cas d'abandon).
+Patterns couverts :
+- Toute page portant `form[name="mrForm"]` (Ipsos/mrIWeb, template Sharky) où l'extraction peut se
+  déclencher pendant la transition visuelle de changement de question (fondu CSS sans mutation DOM
+  détectable), avant l'ajout de la classe `everythingReady` sur `document.body`.
+Patterns exclus :
+- Toute page sans `form[name="mrForm"]` → retour immédiat, aucun effet (`_wait_for_survey_dom`
+  seule reste inchangée pour toutes les autres plateformes).
+- `_wait_for_survey_dom` elle-même : non modifiée, aucun changement de son mécanisme de détection
+  de mutation DOM ; ce patch ajoute uniquement une attente additionnelle après son retour.
+
+Diagnostic associé : confirmé en conditions réelles sur insights.ipsosinteractive.com (Ipsos/mrIWeb),
+question MA checkbox (SavePoint=NEWPARENTQUESTION). Avant patch : `analyze_dom` et le détecteur
+DOM-only de repli retournaient 0 sur tous leurs compteurs de façon simultanée, malgré 6 checkboxes
+natives visibles à l'écran (rendu dédoublé/fantôme observé). Après patch : extraction réussie sur
+cette page.
+
+Statut : patch validé.
+
 ## PLATEFORME : IFOP / SSI CONFIRMIT — MATRICE "MOBILE GRID" À RADIOS GRAPHIQUES (une carte par ligne)
 
 ### ssi_confirmit_mobile_grid_card — résolution de question scopée à la ligne — Survey/dom_analyzer.py

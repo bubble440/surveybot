@@ -86,10 +86,57 @@ def _wait_for_survey_dom(driver, timeout_s: float = 1.2, step_s: float = 0.2) ->
         
         # Timeout atteint
         return False
-    
+
     except Exception:
         # En cas d'erreur, considérer que le DOM est prêt
         return True
+
+
+def _wait_for_mriweb_ready(driver, timeout_s: float = 1.5, poll_s: float = 0.1) -> None:
+    """
+    Garde-fou additif, strictement scopé au template Ipsos/mrIWeb (Sharky) :
+    `document.body` porte une classe `everythingReady`, ajoutée par le template
+    une fois la transition de changement de question terminée (cf. body_text.txt
+    de référence : `class="progress-bar-minimal prevent-select no-touch
+    direction-ltr everythingReady"`).
+
+    _wait_for_survey_dom() (non modifiée) ne détecte que l'absence de mutation
+    DOM pendant step_s — un fondu CSS pur (opacity/transform) sans mutation
+    d'attribut ni de structure après la fin du chargement peut donc le déclarer
+    "stable" avant la fin réelle de la transition visuelle du template, ce qui a
+    été corrélé à un rendu dédoublé/fantôme à l'écran au moment précis de
+    l'extraction sur une page Ipsos/mrIWeb (SavePoint=NEWPARENTQUESTION).
+
+    Garde-fou DOM strict : n'attend QUE si `form[name="mrForm"]` est présent
+    (signature mrIWeb déjà référencée dans BOT_EVOLUTION_MEMORY.md). Sur toute
+    autre plateforme, retour immédiat sans attente ni effet de bord. Budget
+    borné avec abandon contrôlé et log (DOM_CONTEXT_DEBUG) si la classe
+    n'apparaît jamais dans le budget imparti (comportement alors identique à
+    avant ce patch : pas de blocage).
+    """
+    try:
+        current_frame = getattr(driver, "_current_frame", driver)
+        is_mriweb = bool(
+            current_frame.evaluate("() => !!document.querySelector('form[name=\"mrForm\"]')")
+        )
+        if not is_mriweb:
+            return
+
+        deadline = time.time() + max(0.0, timeout_s)
+        while time.time() < deadline:
+            ready = bool(
+                current_frame.evaluate(
+                    "() => !!(document.body && document.body.classList.contains('everythingReady'))"
+                )
+            )
+            if ready:
+                return
+            time.sleep(poll_s)
+
+        if _env_truthy("DOM_CONTEXT_DEBUG", "0"):
+            print(f"[DOM_CONTEXT_DEBUG] mriweb_ready_timeout timeout_s={timeout_s}")
+    except Exception:
+        return
 
 
 # ================================================================================
