@@ -245,12 +245,55 @@ def _close_topsurveys_bon_travail_popup_once(driver) -> bool:
     return True
 
 
+def _handle_topsurveys_streak_complete_popup(driver) -> bool:
+    """
+    Gere la modale de fin de serie quotidienne TopSurveys ('La serie est terminee'),
+    dont le bouton de validation unique affiche aussi 'Genial' mais dans un conteneur
+    structurellement distinct (data-test-id='streak_complete_modal') du popup de
+    recompense periodique deja couvert par _handle_topsurveys_genial_reward_popup.
+    Fonction additive et independante : guard DOM strict et disjoint, ne fusionne
+    jamais avec ce dernier (aucune modification de son guard ni de son role). Aucune
+    navigation forcee apres fermeture, le flux appelant reprend normalement.
+    Guard strict : conteneur [data-test-id='streak_complete_modal'] visible, contenant
+    le bouton [data-test-id='streak-complete-modal-button'] visible.
+    Budget : 1 scan de detection, 1 tentative de clic. Retourne False si non detecte.
+    """
+    try:
+        container = driver.query_selector("[data-test-id='streak_complete_modal']")
+        if not container or not container.is_visible():
+            return False
+        btn = container.query_selector("[data-test-id='streak-complete-modal-button']")
+        if not btn or not btn.is_visible():
+            return False
+    except Exception as e:
+        if _is_target_closed(e):
+            log_debug("[TOPSURVEYS_STREAK_POPUP]", f"page fermee pendant le scan: {e}")
+        return False
+
+    log_info("[TOPSURVEYS_STREAK_POPUP]", "modale 'fin de serie quotidienne' detectee - fermeture...")
+    _local_pause_before_cta("[TOPSURVEYS_STREAK_POPUP] modale detectee")
+
+    try:
+        if is_cta_intercept_only():
+            log_info("[TOPSURVEYS_STREAK_POPUP]",
+                      "bouton 'Genial' (streak_complete_modal) trouve - interception OK (CTA_INTERCEPT_ONLY actif)")
+        else:
+            btn.click(timeout=3000)
+            log_info("[TOPSURVEYS_STREAK_POPUP]", "bouton 'Genial' (streak_complete_modal) clique.")
+        time.sleep(1.0)
+    except Exception as e:
+        log_info("[TOPSURVEYS_STREAK_POPUP]", f"erreur clic: {e}")
+        return False
+
+    return True
+
+
 def _resolve_topsurveys_popups(driver, max_attempts: int = _TOPSURVEYS_POPUP_RESOLVE_MAX_ATTEMPTS) -> dict:
     """
     Ferme successivement les popups TopSurveys connus (recompense 'Genial', boite
-    mystere, resultat de sondage 'Bon travail !'/'Complete') pouvant apparaitre
-    superposes au retour sur app.topsurveys.app, dans un ordre non deterministe
-    d'une session a l'autre.
+    mystere, resultat de sondage 'Bon travail !'/'Complete', modale de fin de serie
+    quotidienne) pouvant apparaitre superposes au retour sur app.topsurveys.app, dans
+    un ordre non deterministe d'une session a l'autre.
 
     Re-evalue l'etat de la page apres CHAQUE tentative (reussie ou non) plutot
     qu'un scan+clic unique par type de popup — corrige le blocage observe quand
@@ -270,10 +313,16 @@ def _resolve_topsurveys_popups(driver, max_attempts: int = _TOPSURVEYS_POPUP_RES
     Ne navigue jamais vers le sondage suivant — reste la responsabilite de
     l'appelant, a declencher une seule fois apres stabilisation.
 
-    Retourne un dict {"genial_closed", "mystery_box_closed", "bon_travail_closed"}
-    (bool chacun) indiquant quels types de popup ont ete fermes au moins une fois.
+    Retourne un dict {"genial_closed", "mystery_box_closed", "bon_travail_closed",
+    "streak_complete_closed"} (bool chacun) indiquant quels types de popup ont ete
+    fermes au moins une fois.
     """
-    result = {"genial_closed": False, "mystery_box_closed": False, "bon_travail_closed": False}
+    result = {
+        "genial_closed": False,
+        "mystery_box_closed": False,
+        "bon_travail_closed": False,
+        "streak_complete_closed": False,
+    }
 
     for attempt in range(1, max_attempts + 1):
         try:
@@ -311,6 +360,10 @@ def _resolve_topsurveys_popups(driver, max_attempts: int = _TOPSURVEYS_POPUP_RES
             result["bon_travail_closed"] = True
             continue
 
+        if _handle_topsurveys_streak_complete_popup(driver):
+            result["streak_complete_closed"] = True
+            continue
+
         # Aucun popup connu detecte a ce passage -> etat stable, fin de boucle.
         break
     else:
@@ -334,9 +387,10 @@ def _handle_topsurveys_exclusion_popup(driver, account_id) -> bool: #survey_exec
     - Sinon, popup 'Bon travail !' ferme : navigation vers le meilleur sondage
       suivant, puis verification de disqualification (comportement inchange).
       Retourne True.
-    - Sinon, popup 'Genial' ferme seul (aucun autre popup superpose) : aucune
-      navigation forcee, le flux appelant reprend son cours normal (comportement
-      inchange par rapport a l'implementation additive d'origine).
+    - Sinon, popup 'Genial' et/ou modale de fin de serie quotidienne fermes seuls
+      (aucun autre popup superpose) : aucune navigation forcee, le flux appelant
+      reprend son cours normal (comportement inchange par rapport a
+      l'implementation additive d'origine).
     - Aucun popup detecte : False.
     """
     try:

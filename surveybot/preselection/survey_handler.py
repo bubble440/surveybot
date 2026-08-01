@@ -170,7 +170,15 @@ def run_attach_preselection_takeover(
         pass  # best-effort : on tente la détection quand même
 
     if not is_topsurveys_preselection_popup(driver):
-        return False, "popup_not_detected"
+        # Un popup TopSurveys connu (recompense periodique, boite mystere, "Bon
+        # travail !", fin de serie quotidienne) peut obstruer la page et empecher
+        # la detection du popup de preselection. On delegue leur resolution au
+        # mecanisme deja centralise (Survey/functions.py, non modifie, non
+        # duplique) avant de conclure a une absence reelle de popup de preselection.
+        from Survey.functions import _resolve_topsurveys_popups
+        _resolve_topsurveys_popups(driver)
+        if not is_topsurveys_preselection_popup(driver):
+            return False, "popup_not_detected"
 
     print(f"[ATTACH][PRESEL] takeover start (max_rounds={max_rounds}, timeout={transition_timeout_s}s)")
 

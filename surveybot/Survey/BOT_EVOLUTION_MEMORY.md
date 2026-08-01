@@ -2245,6 +2245,91 @@ Statut : patch validé (compile-check OK). Non re-testé en conditions réelles
 au moment de cette entrée — à confirmer sur un run réel présentant la
 superposition Genial/Complète avant de considérer le diagnostic clos.
 
+### _handle_topsurveys_streak_complete_popup
+
+Fichier : Survey/functions.py
+
+Rôle : détecte et ferme la modale de fin de série quotidienne TopSurveys
+("La série est terminée"), dont le bouton de validation unique affiche aussi
+"Genial" mais dans un conteneur structurellement disjoint du popup de
+récompense périodique déjà couvert par _handle_topsurveys_genial_reward_popup
+(aucune fusion des deux, guards indépendants).
+
+Garde DOM (stricte, scopée) : conteneur `[data-test-id='streak_complete_modal']`
+visible, contenant le bouton `[data-test-id='streak-complete-modal-button']`
+visible (recherche du bouton scopée au conteneur, pas de scan page entière).
+
+Intégration pipeline : enregistrée dans _resolve_topsurveys_popups
+(Survey/functions.py), en dernière priorité additive (après Genial, boîte
+mystère, "Bon travail !"), clé de résultat `streak_complete_closed`. Aucune
+navigation forcée après fermeture — comportement identique au popup "Genial"
+seul dans _handle_topsurveys_exclusion_popup (fallthrough générique existant,
+non modifié).
+
+CTA : clic conditionné par is_cta_intercept_only() (timeout explicite 3000ms,
+même convention que _handle_topsurveys_genial_reward_popup).
+
+Statut : patch validé en conditions réelles (fermeture confirmée sur un run
+réel présentant la superposition récompense périodique + fin de série
+quotidienne, cf. entrée run_attach_preselection_takeover ci-dessous).
+
+### go_to_best_value_survey — attente bornée streak_complete_modal avant resolve
+
+Fichier : preselection/survey_navigator.py
+
+Diagnostic : sur le chemin post-login (SPA froide), la modale
+streak_complete_modal se monte via un appel API asynchrone distinct du rendu
+initial, avec un délai plus marqué qu'après un simple changement d'onglet
+(SPA déjà chaude). _resolve_topsurveys_popups ne re-scanne qu'après avoir
+fermé un popup — si aucun popup connu n'est détecté au tout premier passage,
+la boucle sort immédiatement sans revenir. Sans attente, le passage unique
+s'exécutait avant le montage de la modale et ne la voyait jamais.
+
+Correction : `page.wait_for_selector("[data-test-id='streak_complete_modal']",
+state="attached", timeout=2000)` (best-effort, silencieux si absent) juste
+avant l'appel existant à _resolve_topsurveys_popups. Lecture seule — ne ferme
+rien elle-même, aucune duplication du mécanisme centralisé. Timeout aligné
+sur celui déjà utilisé pour le bouton "Complete" dans
+_close_topsurveys_bon_travail_popup_once (2000ms).
+
+Patterns exclus : n'affecte pas la détection des autres popups (Genial,
+boîte mystère, "Bon travail !"), qui suivent le même appel _resolve_topsurveys_popups
+inchangé juste après.
+
+Statut : patch validé (compile-check OK + confirmé indirectement par le run
+réel ayant validé run_attach_preselection_takeover ci-dessous).
+
+### run_attach_preselection_takeover — résolution popups avant abandon popup_not_detected
+
+Fichier : preselection/survey_handler.py
+
+Bug corrigé : en mode ATTACH route "preselection", la fonction attendait
+uniquement le bouton d'action de présélection (best-effort 10s) puis testait
+is_topsurveys_preselection_popup(driver) ; si ce test échouait (popup
+TopSurveys connu — récompense périodique et/ou fin de série quotidienne —
+au premier plan, obstruant le popup de présélection), elle retournait
+immédiatement `False, "popup_not_detected"` sans jamais invoquer
+_resolve_topsurveys_popups ni aucun de ses handlers enregistrés. Route
+jamais couverte par le pipeline de résolution, contrairement aux routes
+"login" (go_to_best_value_survey) et "resolution"
+(_handle_topsurveys_exclusion_popup).
+
+Correction : si is_topsurveys_preselection_popup(driver) échoue une première
+fois, appel unique à _resolve_topsurveys_popups(driver) (Survey/functions.py,
+réutilisée telle quelle, non dupliquée, non modifiée) puis re-test avant de
+conclure à "popup_not_detected". Diff minimal validé explicitement avant
+application (fonction de flux, pas un extracteur).
+
+Patterns exclus : cas nominal (popup de présélection déjà seul au premier
+plan, sans popup TopSurveys superposé) — _resolve_topsurveys_popups sort au
+premier passage sans rien fermer (aucun guard de ses handlers ne matche le
+popup de présélection), surcoût négligeable, comportement inchangé.
+
+Statut : patch validé en conditions réelles (log `popup_not_detected` +
+capture montrant récompense périodique/"Genial" superposée à
+streak_complete_modal — les deux popups sont désormais fermés et la
+présélection reprend normalement).
+
 ## MODULE TRANSVERSAL : RELOAD_RETRY — RÉCUPÉRATION PAGE BLOQUÉE SANS ÉLÉMENT ACTIONNABLE (execute_survey_page)
 
 ### RELOAD_RETRY (bloc inline en fin de Survey/survey_executor.py::execute_survey_page)

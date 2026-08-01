@@ -525,6 +525,22 @@ def go_to_best_value_survey(driver):
     except Exception:
         _debug("Timeout attente cartes surveys — on continue quand même.")
 
+    # Fenetre d'attente bornee (non bloquante si absente) : la modale de fin de serie
+    # quotidienne (streak_complete_modal) se monte via un appel API distinct du rendu
+    # initial de la page, avec un delai plus marque apres un chargement complet
+    # post-login qu'apres un simple changement d'onglet sur une SPA deja "chaude".
+    # Sans cette attente, _resolve_topsurveys_popups s'executait avant le montage de
+    # la modale (1 seul passage sans popup detecte a cet instant => sortie immediate
+    # de boucle, cf. BOT_EVOLUTION_MEMORY.md) et ne la voyait donc jamais. Ne ferme
+    # rien elle-meme (lecture seule) : la fermeture reste entierement deleguee a
+    # _resolve_topsurveys_popups ci-dessous (pas de duplication du mecanisme
+    # centralise). Timeout aligne sur celui deja utilise pour l'attente du bouton
+    # 'Complete' dans _close_topsurveys_bon_travail_popup_once (Survey/functions.py).
+    try:
+        page.wait_for_selector("[data-test-id='streak_complete_modal']", state="attached", timeout=2000)
+    except Exception:
+        pass
+
     # Consolidation : remplace l'ancien double appel independant
     # (_handle_mystery_box_popup puis _handle_topsurveys_genial_reward_popup en un
     # seul passage chacun, sans re-scan) par le meme mecanisme de re-scan borne que
