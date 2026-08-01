@@ -972,6 +972,117 @@ def click_kantar_rowpicker_radio(driver, label: str) -> bool:
 
 
 # =============================================================================
+# IPSOS/mrIWeb SHARKY "GridProgressive" — WIDGET RADIO DIV-BASED (SANS INPUT NATIF)
+# =============================================================================
+
+def click_ipsos_sharky_grid_progressive_radio(driver, label: str) -> bool:
+    """
+    Ipsos/mrIWeb Sharky "GridProgressive" (matrice progressive : une seule ligne
+    affichée à la fois, template iis-sharky). Widget radio graphique : chaque
+    option est un div.prog-the-answer-container[role='radio'] (libellé dans un
+    span.mrQuestionText imbriqué), regroupés dans un div.the-radiogroup
+    [role='radiogroup']. Les <input type="radio" class="mrSingle"> natifs
+    existent bien dans le DOM mais dans une table séparée (.no-display-answers,
+    masquée) — ce ne sont pas les éléments cliqués ni vérifiés ici.
+
+    Voir BOT_EVOLUTION_MEMORY.md ("ipsos_mriweb_grid_progressive", dom_analyzer.py)
+    pour la résolution de la question associée à ce même widget (group_key
+    "radio:name:dom:the-radiogroup").
+
+    Guard DOM strict : div.the-radiogroup[role='radiogroup'] présent, contenant
+    des div.prog-the-answer-container[role='radio'] enfants directs.
+
+    Cible du clic : le div.prog-the-answer-container[role='radio'] lui-même.
+    Vérification : aria-checked="true" reflété sur ce même div après clic (pas
+    de dépendance à l'input natif caché, dont l'état ne reflète pas forcément
+    l'interaction React/JS de ce widget).
+    """
+    _JS_FIND = r"""
+    const norm = s => (s || '')
+      .toLowerCase().normalize('NFKC')
+      .replace(/\s+/g, ' ').trim();
+    const needle = norm(arg);
+    if (!needle) return null;
+
+    const groups = Array.from(document.querySelectorAll("div.the-radiogroup[role='radiogroup']"));
+    if (!groups.length) return null;
+
+    for (const grp of groups) {
+      const opts = Array.from(grp.querySelectorAll(":scope > div.prog-the-answer-container[role='radio']"));
+      for (const opt of opts) {
+        const span = opt.querySelector('span.mrQuestionText');
+        const txt = norm(span ? (span.innerText || span.textContent || '') : '');
+        if (!txt || !(txt === needle || txt.includes(needle) || needle.includes(txt))) continue;
+        return opt;
+      }
+    }
+    return null;
+    """
+
+    _JS_VERIFY = r"""
+    const norm = s => (s || '')
+      .toLowerCase().normalize('NFKC')
+      .replace(/\s+/g, ' ').trim();
+    const needle = norm(arg);
+    const groups = Array.from(document.querySelectorAll("div.the-radiogroup[role='radiogroup']"));
+    for (const grp of groups) {
+      const opts = Array.from(grp.querySelectorAll(":scope > div.prog-the-answer-container[role='radio']"));
+      for (const opt of opts) {
+        const span = opt.querySelector('span.mrQuestionText');
+        const txt = norm(span ? (span.innerText || span.textContent || '') : '');
+        if (!txt || !(txt === needle || txt.includes(needle) || needle.includes(txt))) continue;
+        return (opt.getAttribute('aria-checked') || '').toLowerCase() === 'true';
+      }
+    }
+    return false;
+    """
+
+    # Résout le frame actif, même convention que click_kantar_rowpicker_radio
+    # (driver.evaluate_handle/evaluate opèrent sur le document racine sinon).
+    _ctx = getattr(driver, "_current_frame", driver)
+
+    try:
+        opt = _ctx.evaluate_handle("(arg) => {" + _JS_FIND + "}", label).as_element()
+    except Exception as exc:
+        log_debug("[TARGET_DEBUG]", f"ipsos_sharky_grid_progressive: js_find_exception label={label!r} error={type(exc).__name__}: {exc}")
+        return False
+
+    if opt is None:
+        log_debug("[TARGET_DEBUG]", f"ipsos_sharky_grid_progressive: option_not_found label={label!r}")
+        return False
+
+    try:
+        opt.scroll_into_view_if_needed()
+    except Exception:
+        pass
+
+    try:
+        opt.click()
+    except Exception as exc_click:
+        try:
+            opt.hover()
+            opt.click()
+        except Exception as exc_hover:
+            log_debug(
+                "[TARGET_DEBUG]",
+                f"ipsos_sharky_grid_progressive: click_failed label={label!r} "
+                f"click_error={type(exc_click).__name__}: {exc_click} "
+                f"hover_click_error={type(exc_hover).__name__}: {exc_hover}",
+            )
+            return False
+
+    time.sleep(0.15)
+
+    try:
+        ok = bool(_ctx.evaluate("(arg) => {" + _JS_VERIFY + "}", label))
+    except Exception:
+        ok = False
+
+    log_debug("[TARGET_DEBUG]", f"ipsos_sharky_grid_progressive: native_verify={'ok' if ok else 'ko'} label={label!r}")
+    return ok
+
+
+# =============================================================================
 # FONCTION PRINCIPALE CLICK_RADIO_BY_LABEL
 # =============================================================================
 
@@ -1007,6 +1118,15 @@ def click_radio_by_label(driver, label: str, context_hint: str | None = None) ->
     # Guard DOM strict : div[id^='container_'] [data-test='main-contain']._rowpicker
     try:
         if click_kantar_rowpicker_radio(driver, label):
+            return True
+    except Exception:
+        pass
+
+    # Ipsos/mrIWeb Sharky "GridProgressive" (widget radio div-based, sans input
+    # natif exploitable). Guard DOM strict : div.the-radiogroup[role='radiogroup']
+    # > div.prog-the-answer-container[role='radio'].
+    try:
+        if click_ipsos_sharky_grid_progressive_radio(driver, label):
             return True
     except Exception:
         pass

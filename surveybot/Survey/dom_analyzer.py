@@ -2261,6 +2261,39 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                                 question = _norm(" ".join(texts))
                 except Exception:
                     pass
+            # Ipsos/mrIWeb Sharky "GridProgressive" (matrice progressive : une
+            # seule ligne affichée à la fois, navigation Précédent/Suivant).
+            # Le widget radio graphique visible (div.the-radiogroup[role="radiogroup"])
+            # n'a ni name ni aria-labelledby -> le bloc "dom:" ci-dessus ne résout
+            # rien (labelledby vide) et le code retombait sur le fallback générique,
+            # qui remonte jusqu'à div.question-container.GridProgressive (toute la
+            # matrice : consigne + 5 lignes + options + boutons nav) et
+            # _extract_question_from_container concatène tout.
+            # Guard DOM strict : ancêtre .GridProgressive contenant à la fois
+            # .prog-the-statement (libellé de la ligne courante affichée) et
+            # #question (consigne partagée de la matrice).
+            if not question and group_key.startswith("radio:name:dom:"):
+                try:
+                    grid_nodes = els[0].query_selector_all(
+                        "xpath=" + "ancestor::div[contains(concat(' ',normalize-space(@class),' '),' GridProgressive ')][1]"
+                    )
+                    if grid_nodes:
+                        row_nodes = grid_nodes[0].query_selector_all(
+                            "xpath=" + ".//div[contains(concat(' ',normalize-space(@class),' '),' prog-the-statement ')]//span[contains(concat(' ',normalize-space(@class),' '),' mrQuestionText ')][1]"
+                        )
+                        intro_nodes = grid_nodes[0].query_selector_all(
+                            "xpath=" + ".//div[@id='question']//span[contains(concat(' ',normalize-space(@class),' '),' mrQuestionText ')][1]"
+                        )
+                        row_txt = _norm(row_nodes[0].inner_text() or row_nodes[0].get_attribute("innerText") or "") if row_nodes else ""
+                        intro_txt = _norm(intro_nodes[0].inner_text() or intro_nodes[0].get_attribute("innerText") or "") if intro_nodes else ""
+                        if row_txt:
+                            question = _norm(f"{intro_txt} {row_txt}") if intro_txt else row_txt
+                            log_debug(
+                                "[DOM_CONTEXT]",
+                                f"ipsos_mriweb_grid_progressive resolved question={question[:60]!r}",
+                            )
+                except Exception:
+                    pass
             # Pattern screener-style: div.answer > div.options.js-question-options
             # La question est dans div.question, frère précédent de div.answer.
             # Guard: présence d'un ancêtre div avec classe js-question-options
@@ -4281,6 +4314,21 @@ def analyze_dom(driver) -> List[Dict[str, Any]]:
         # les éléments dans le frame réellement sélectionné (chain=[] → _ctx is driver,
         # comportement inchangé pour toute page sans frameset).
         _ctx = getattr(driver, "_current_frame", driver)
+
+        # Garde-fou additif : re-appliquer l'attente everythingReady (mrIWeb)
+        # une fois le meilleur frame résolu. L'appel initial (avant
+        # _select_best_frame_chain, cf. plus haut dans analyze_dom) s'exécute
+        # au contexte racine, qui ne contient jamais form[name="mrForm"] sur
+        # une page frameset (frame#mainFrame/frame#leftFrame) — le formulaire
+        # mrIWeb vit dans le sous-document de frame#mainFrame, jamais dans le
+        # document racine de la frameset. Sur ce layout, le guard de l'appel
+        # racine ne se déclenche donc jamais (is_mriweb=False au root), et la
+        # page peut être capturée pendant la transition CSS. Cet appel
+        # supplémentaire relit le guard dans _ctx (le contexte réellement
+        # sélectionné) : no-op strict sur toute page sans mrForm dans ce
+        # contexte (comportement inchangé pour les pages non-mrIWeb ou
+        # mrIWeb sans frameset, déjà couvertes par l'appel racine).
+        _wait_for_mriweb_ready(driver)
 
         # --- FocusVision/Decipher sliderpoints (matrix dropdowns) ---
         sp_blocks = extract_sliderpoints_question_blocks(_ctx)

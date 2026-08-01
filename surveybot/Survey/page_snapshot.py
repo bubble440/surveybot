@@ -215,6 +215,23 @@ def dump_page_snapshot(
     except Exception:
         pass
 
+    # Contexte de frame réellement sélectionné pour l'analyse de la question
+    # (même résolution que analyze_dom : _select_best_frame_chain +
+    # switch_to_frame_chain, dom_frame_selector.py / frame_utils.py — non
+    # modifiés ici). Sur une page sans frameset, best_chain == [] et
+    # snapshot_ctx reste `page` : capture strictement inchangée.
+    snapshot_ctx = page
+    try:
+        from Survey.dom_frame_selector import _select_best_frame_chain
+        from Survey.frame_utils import switch_to_frame_chain as _switch_ctx
+
+        _best_chain, _ = _select_best_frame_chain(driver)
+        with _switch_ctx(driver, _best_chain) as _ok:
+            if _ok:
+                snapshot_ctx = getattr(driver, "_current_frame", page)
+    except Exception:
+        snapshot_ctx = page
+
     # Meta
     try:
         url = page.url
@@ -225,14 +242,14 @@ def dump_page_snapshot(
     dom_sig = ""
     title = ""
     try:
-        title = page.evaluate("() => document.title") or ""
+        title = snapshot_ctx.evaluate("() => document.title") or ""
         try:
-            ready_state = page.evaluate("() => document.readyState") or ""
+            ready_state = snapshot_ctx.evaluate("() => document.readyState") or ""
         except Exception:
             ready_state = ""
 
         try:
-            dom_sig = page.evaluate("""() =>
+            dom_sig = snapshot_ctx.evaluate("""() =>
                 [document.readyState,
                  (document.documentElement && document.documentElement.outerHTML || '').length,
                  (document.body && (document.body.innerText || '').length) || 0,
@@ -260,14 +277,14 @@ def dump_page_snapshot(
 
     # DOM outerHTML
     try:
-        outer = page.evaluate("() => document.documentElement.outerHTML") or ""
+        outer = snapshot_ctx.evaluate("() => document.documentElement.outerHTML") or ""
     except Exception:
         outer = ""
     (folder / "dom_outer.html").write_text(outer, encoding="utf-8", errors="ignore")
 
     # DOM body
     try:
-        body_outer = page.evaluate("() => document.body ? document.body.outerHTML : ''") or ""
+        body_outer = snapshot_ctx.evaluate("() => document.body ? document.body.outerHTML : ''") or ""
     except Exception:
         body_outer = ""
     (folder / "dom_body.html").write_text(body_outer, encoding="utf-8", errors="ignore")
@@ -280,7 +297,7 @@ def dump_page_snapshot(
 
     # page_source
     try:
-        src = page.content() or ""
+        src = snapshot_ctx.content() or ""
     except Exception:
         src = ""
     (folder / "page_source.html").write_text(src, encoding="utf-8", errors="ignore")

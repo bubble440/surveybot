@@ -2484,3 +2484,43 @@ uniquement, `question_len=439`), réponses GPT cohérentes et application réuss
 `target_id` (`apply ok=true strategy=target_id`).
 
 Statut : patch validé.
+
+## MODULE TRANSVERSAL : SNAPSHOT DEBUG (page_snapshot.py) — CAPTURE SUR LE DOCUMENT RACINE AU LIEU DU FRAME SÉLECTIONNÉ
+
+### dump_page_snapshot — résolution du contexte de frame avant capture (snapshot_ctx)
+Fichier : Survey/page_snapshot.py
+Bug corrigé : `dump_page_snapshot()` capturait `dom_outer.html`, `dom_body.html`, `page_source.html`
+ainsi que les champs meta `title`/`ready_state`/`dom_sig` en évaluant systématiquement sur `page`
+(le document racine), sans jamais tenir compte du frame réellement sélectionné pour l'analyse de
+la question par `_select_best_frame_chain` (dom_frame_selector.py). Sur une page en frameset
+(`<frameset>` + `frame#mainFrame` contenant le vrai contenu, `frame#leftFrame` vide — ex. Ipsos/
+mrIWeb insights.ipsosinteractive.com), ces fichiers de snapshot ne contenaient donc que le squelette
+du frameset racine, jamais le contenu réel de la question, alors même que le pipeline d'extraction
+(analyze_dom) résolvait déjà correctement `frame#mainFrame` via `_ctx` (cf. entrée "analyze_dom /
+dom_extractors — passage explicite du contexte résolu (_ctx) aux extracteurs" ci-dessus).
+`_dump_frames_best_effort()` (non modifiée) dumpait déjà un DOM par frame, mais uniquement dans un
+sous-dossier `frames/` distinct — sans remplacer ni enrichir les fichiers principaux du snapshot.
+Correction : nouvelle variable `snapshot_ctx`, résolue une fois en tout début de
+`dump_page_snapshot()` via `_select_best_frame_chain(driver)` + `switch_to_frame_chain(driver,
+best_chain)` + `getattr(driver, "_current_frame", page)`, avec fallback silencieux sur `page` en cas
+d'exception ou de chain vide. `dom_outer.html`, `dom_body.html`, `page_source.html` et les champs
+meta `title`/`ready_state`/`dom_sig` sont désormais évalués sur `snapshot_ctx` au lieu de `page`.
+Patterns couverts :
+- Toute page en frameset où le contenu de question vit dans un frame enfant (`frame#mainFrame` ou
+  équivalent), jamais dans le document racine — le snapshot reflète désormais le même contexte que
+  l'extraction réelle.
+Patterns exclus :
+- Page sans frameset : `_select_best_frame_chain` retourne `best_chain == []`, `snapshot_ctx` reste
+  `page` → capture strictement inchangée.
+- `_dump_frames_best_effort()` et son dump par frame dans `frames/` : non modifiés.
+- `body_text.txt` (texte visible) et `viewport.png` (screenshot) : toujours capturés sur `page`
+  racine, non concernés par ce bug (hors périmètre du symptôme signalé).
+
+Diagnostic associé : confirmé en conditions réelles sur insights.ipsosinteractive.com (Ipsos/
+mrIWeb), page frameset `frame#mainFrame`/`frame#leftFrame`, question grid "À quelle fréquence...".
+Avant patch : `dom_body.html` ne contenait que `<frameset>`/`<frame>` (aucune trace de la question,
+des inputs radio, etc.), confirmé par comparaison avec l'inspecteur DevTools montrant le contenu
+réel sous `frame#mainFrame > #document`. Après patch : `dom_body.html` contient le `<body>` complet
+du document de `frame#mainFrame` (question, grid, inputs radio inclus).
+
+Statut : patch validé.
