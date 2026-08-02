@@ -2968,3 +2968,56 @@ rempli et Q2 rempli de façon incohérente avec le log. Après les deux patchs c
 textarea rempli avec le texte correspondant à sa propre question.
 
 Statut : patch validé.
+## PLATEFORME : IPSOS / mrIWeb (SHARKY) — DETECTION DE PROGRESSION APRES CLIC CTA, VARIANTE GRIDPROGRESSIVE CHECKBOX
+Signature DOM : grille progressive Ipsos/mrIWeb Sharky "GridProgressive" en variante checkbox
+(`div.question-container.GridProgressive.prog-type-checkbox`), SPA sans changement d'URL entre
+sous-catégories, toutes les cases à cocher natives de toutes les sous-catégories déjà présentes
+dans le tableau caché `.no-display-answers` (une seule sous-catégorie visible à la fois via
+`.prog-answers-row` / `.prog-the-statement-inner-frame`).
+
+### cta_handler.py — _dom_progress_marker / _did_progress, signal dédié progGridSig
+Fichier : Survey/cta_handler.py.
+Bug corrigé : après un clic CTA réel (hors CTA_INTERCEPT_ONLY) qui faisait progresser la page
+vers la sous-catégorie suivante de la grille, le marqueur de progression généraliste (extrait de
+texte `#root`/body sur 220 caractères, compteur `qNodes`, signature de notification, URL) restait
+identique avant/après clic : le texte dominant les 220 premiers caractères et le nombre de noeuds
+de question ne varient pas d'une sous-catégorie à l'autre pour ce gabarit (toutes les checkboxes
+de toutes les sous-catégories sont déjà dans le DOM, seule leur sous-catégorie visible change).
+`_did_progress` retournait donc `false` malgré une progression réelle → `_click_with_intercept`
+déclenchait un second clic, puis `try_click_navigation_cta` relançait des scans de candidats CTA,
+ces tentatives supplémentaires s'exécutant sur le contenu déjà basculé sur la nouvelle
+sous-catégorie et cliquant sur de mauvaises options → erreur de validation affichée
+("Veuillez fournir une réponse").
+Correction : ajout d'un signal dédié `progGridSig` dans `_dom_progress_marker`, scopé strictement
+par le guard DOM `div.question-container.GridProgressive.prog-type-checkbox` — construit à partir
+du texte de la consigne de ligne (`.prog-the-statement-inner-frame`), des libellés d'options de la
+sous-catégorie active (`.prog-answers-row .prog-the-answer`) et de l'index de l'item actif dans la
+barre de progression (`.prog-progress-bar-item[aria-selected="true"]`). `_did_progress` compare ce
+signal avant/après clic uniquement lorsque les deux marqueurs le portent (guard matché des deux
+côtés) ; sinon le comportement générique existant (texte/qNodes/notifSig/url) reste inchangé.
+
+Patterns couverts :
+- Grille progressive Ipsos/mrIWeb Sharky, variante checkbox uniquement
+  (`.question-container.GridProgressive.prog-type-checkbox`), détection de progression après clic
+  CTA réel (hors mode CTA_INTERCEPT_ONLY).
+
+Patterns exclus :
+- Toute page où `div.question-container.GridProgressive.prog-type-checkbox` est absent : le signal
+  `progGridSig` reste une chaîne vide des deux côtés, `_did_progress` retombe intégralement sur la
+  logique générique (texte/qNodes/notifSig/url), non modifiée par ce patch.
+- La variante radio du même widget GridProgressive (`prog-type-checkbox` absent) : non couverte
+  par ce guard, comportement de détection de progression inchangé pour cette variante.
+- `_wait_post_click_stabilization` (mutations locales du CTA cliqué : stale/déconnecté/remplacé/
+  caché) : fonction partagée non modifiée, sert toujours uniquement au diagnostic/prolongation
+  d'attente, pas à la décision PROGRESSED elle-même.
+
+Diagnostic associé : confirmé en conditions réelles sur insights.ipsosinteractive.com (Ipsos/
+mrIWeb Sharky), question grille progressive checkbox "Parmi ces produits, lesquels avez-vous
+achetés..." (target_id `group_3aa7603038b5`). Avant patch : clic CTA visuellement réussi sur la
+sous-catégorie "NEUFS", logs `[CTA_CLICK] ... progressed=false` (attempt=1 et attempt=2,
+wait_reason=timeout), second clic et scans CTA suivants retombant sur la sous-catégorie
+"VINTAGE/D'OCCASION" déjà affichée → mauvaise sélection, bandeau d'erreur "Veuillez fournir une
+réponse". Après patch : `progGridSig` diffère entre les deux sous-catégories dès le premier clic,
+`_did_progress` retourne `true`, aucun second clic ni scan CTA superflu.
+
+Statut : patch validé.

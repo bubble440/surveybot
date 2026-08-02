@@ -570,17 +570,45 @@ def _dom_progress_marker(driver):
             .slice(0, 140);
           notifSig = `${klass}::${msg}`;
         }
-        return { url, txt, qNodes, notifSig };
+
+        // Ipsos/mrIWeb Sharky "GridProgressive" (variante checkbox, SPA sans changement
+        // d'URL entre sous-catégories, ex. insights.ipsosinteractive.com) : le texte de
+        // question principal (dominant les 220 premiers caractères de `txt`) et le nombre
+        // de noeuds de question (`qNodes`) restent identiques d'une sous-catégorie à l'autre
+        // car toutes les cases à cocher natives de toutes les sous-catégories sont déjà
+        // présentes dans le tableau caché `.no-display-answers`. Signal dédié, scopé
+        // strictement à ce gabarit, portant sur la sous-catégorie active affichée.
+        let progGridSig = '';
+        try {
+          const gridRoot = document.querySelector('.question-container.GridProgressive.prog-type-checkbox');
+          if (gridRoot) {
+            const stmt = gridRoot.querySelector('.prog-the-statement-inner-frame');
+            const stmtTxt = ((stmt && (stmt.innerText || stmt.textContent)) || '')
+              .replace(/\s+/g, ' ')
+              .trim();
+            const answerRow = gridRoot.querySelector('.prog-answers-row');
+            const answersTxt = answerRow
+              ? Array.from(answerRow.querySelectorAll('.prog-the-answer'))
+                  .map(a => (a.innerText || a.textContent || '').replace(/\s+/g, ' ').trim())
+                  .join('|')
+              : '';
+            const activeItem = gridRoot.querySelector('.prog-progress-bar-item[aria-selected="true"]');
+            const activeIdx = activeItem ? (activeItem.getAttribute('data-item-index') || '') : '';
+            progGridSig = `${activeIdx}::${stmtTxt}::${answersTxt}`.slice(0, 300);
+          }
+        } catch (e) {}
+
+        return { url, txt, qNodes, notifSig, progGridSig };
       } catch (e) {
-        return { url: '', txt: '', qNodes: -1, notifSig: '' };
+        return { url: '', txt: '', qNodes: -1, notifSig: '', progGridSig: '' };
       }
     })();
     """
     try:
         marker = _resolve_ctx(driver).evaluate("() => { " + js + " }")
-        return marker if isinstance(marker, dict) else {"url": "", "txt": "", "qNodes": -1, "notifSig": ""}
+        return marker if isinstance(marker, dict) else {"url": "", "txt": "", "qNodes": -1, "notifSig": "", "progGridSig": ""}
     except Exception:
-        return {"url": "", "txt": "", "qNodes": -1, "notifSig": ""}
+        return {"url": "", "txt": "", "qNodes": -1, "notifSig": "", "progGridSig": ""}
 
 
 def _did_progress(before_marker, after_marker) -> bool:
@@ -602,6 +630,15 @@ def _did_progress(before_marker, after_marker) -> bool:
     after_url = after_marker.get("url") or ""
     if before_url and after_url and before_url != after_url:
         return True
+
+    # Signal dédié GridProgressive checkbox (cf. _dom_progress_marker) : ne s'applique
+    # que lorsque les deux marqueurs portent une signature non vide (DOM guard matché
+    # avant ET après clic) — n'affecte aucune autre plateforme.
+    before_grid_sig = before_marker.get("progGridSig") or ""
+    after_grid_sig = after_marker.get("progGridSig") or ""
+    if before_grid_sig and after_grid_sig and before_grid_sig != after_grid_sig:
+        return True
+
     return (
         (before_marker.get("txt") or "") != (after_marker.get("txt") or "")
         or (before_marker.get("notifSig") or "") != (after_marker.get("notifSig") or "")
