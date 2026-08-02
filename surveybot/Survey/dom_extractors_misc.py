@@ -4474,6 +4474,7 @@ def _extract_button_choice_radio_blocks(driver, frame_chain: list[int] | None) -
         options: list[str] = []
         option_xpath_map: dict[str, str] = {}
         button_ids: list[str] = []
+        has_checkbox_indicator = False
 
         for choice in choice_wrappers:
             try:
@@ -4483,6 +4484,12 @@ def _extract_button_choice_radio_blocks(driver, frame_chain: list[int] | None) -
                     options = []
                     option_xpath_map = {}
                     break
+
+                try:
+                    if btn.query_selector(".choice__indicator__check") is not None:
+                        has_checkbox_indicator = True
+                except Exception:
+                    pass
 
                 label_txt = ""
                 try:
@@ -4522,6 +4529,8 @@ def _extract_button_choice_radio_blocks(driver, frame_chain: list[int] | None) -
         if len(options) < 2 or len(option_xpath_map) < 2:
             continue
 
+        itype = "checkbox" if has_checkbox_indicator else "radio"
+
         group_sig = "|".join(button_ids[:10])
         group_key = f"button_choice_radio:{root_idx}:{zlib.crc32(group_sig.encode('utf-8')):x}"
         target_id = make_target_id("group", group_key, question)
@@ -4530,7 +4539,7 @@ def _extract_button_choice_radio_blocks(driver, frame_chain: list[int] | None) -
             target_id,
             {
                 "kind": "group",
-                "itype": "radio",
+                "itype": itype,
                 "group_key": group_key,
                 "question": question,
                 "option_xpath_map": option_xpath_map,
@@ -4543,9 +4552,9 @@ def _extract_button_choice_radio_blocks(driver, frame_chain: list[int] | None) -
         blocks.append(
             {
                 "question": question,
-                "itype": "radio",
+                "itype": itype,
                 "options": options,
-                "max_select": _compute_max_select("radio", options),
+                "max_select": _compute_max_select(itype, options),
                 "target_id": target_id,
                 "context": {
                     "kind": "group",

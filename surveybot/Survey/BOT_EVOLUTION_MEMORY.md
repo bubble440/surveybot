@@ -3081,6 +3081,11 @@ Patterns couverts :
   restent extraites normalement.
 - `group_key = button_choice_radio:{root_idx}:{crc32(button_ids)}` ; flag payload :
   `button_choice_radio=True`, `studystream_auto_advance=True`.
+- `itype` déduit du DOM (pas figé) : `"checkbox"` si au moins un `button.choice` du groupe
+  contient un `.choice__indicator__check` (indicateur visuel case à cocher carrée) ; `"radio"`
+  sinon (défaut historique inchangé, ex. indicateur rond non matché par ce sélecteur).
+  `max_select`/`min_select` recalculés en conséquence (`_compute_max_select`/`_compute_min_select`
+  avec l'`itype` réel, ce dernier appliqué en aval dans `dom_analyzer.py`).
 Patterns exclus :
 - Tout `button.choice` sans id → abandon complet du groupe (comportement inchangé, cause non
   identifiée à ce jour → pas de garde-fou spécifique).
@@ -3099,6 +3104,23 @@ votre genre ?", 4 `div.question-body-options__choice` dont un `o_question-2-othe
 préfère ne pas répondre" (option "Autre" ignorée, sans bloquer le reste).
 
 Statut : patch validé.
+
+Bug corrigé (2) : `itype` était figé en dur à `"radio"` (et `min_select`/`max_select` à 1) pour
+tout groupe matchant ce pattern, y compris quand l'indicateur visuel réel des options était une
+case à cocher carrée (`choice__indicator__check`), signalant une sélection multiple potentielle.
+Diagnostic associé : confirmé sur DOM de référence (provider Confirmit/Forsta, question
+"Qu'est-ce qui, le cas échéant, peut donner l'impression qu'une marque est trop populaire ou
+moins spéciale ?", 13 `div.question-body-options__choice` dont chacun avec
+`span.choice__indicator__check`). Avant patch : `question_blocks.json` avec `itype="radio"`,
+`min_select=1`, `max_select=1`. Après patch : détection de l'indicateur `.choice__indicator__check`
+dans la boucle d'extraction existante → `itype="checkbox"`, `max_select`/`min_select` recalculés
+via `_compute_checkbox_max_select`/`_compute_min_select`.
+Patterns couverts (ajout) : tout groupe de ce pattern dont au moins un `button.choice` contient
+`.choice__indicator__check` → `itype="checkbox"`.
+Patterns exclus (ajout) : aucun changement pour les groupes sans `.choice__indicator__check`
+détecté sur aucun bouton → `itype="radio"` inchangé (comportement historique, y compris DOM de
+référence "Quel est votre genre ?" ci-dessus).
+Statut : patch validé (test confirmé par l'opérateur).
 
 ## MODULE TRANSVERSAL : STUDYSTREAM_AUTO_ADVANCE — FAUX POSITIFS SUR LE GARDE-FOU CTA (button_choice_radio)
 
