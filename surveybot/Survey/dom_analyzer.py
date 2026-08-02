@@ -42,9 +42,10 @@ try:
         _nearest_question_container, _extract_question_from_container,
         _find_group_heading_text_near_element, _extract_mriweb_grid_question_text,
         _group_key_for_choice, _compute_max_select, _compute_min_select,
-        _find_ipsos_sharky_grid_progressive_option_label
+        _find_ipsos_sharky_grid_progressive_option_label,
+        _find_ipsos_sharky_grid_progressive_checkbox_option_label
     )
-    
+
     # Gestion des frames
     from Survey.dom_frame_selector import (
         _wait_for_survey_dom, _score_dom_context, _select_best_frame_chain,
@@ -169,7 +170,8 @@ except ImportError:
         _nearest_question_container, _extract_question_from_container,
         _find_group_heading_text_near_element, _extract_mriweb_grid_question_text,
         _group_key_for_choice, _compute_max_select, _compute_min_select,
-        _find_ipsos_sharky_grid_progressive_option_label
+        _find_ipsos_sharky_grid_progressive_option_label,
+        _find_ipsos_sharky_grid_progressive_checkbox_option_label
     )
     from Survey.dom_frame_selector import (
         _wait_for_survey_dom, _score_dom_context, _select_best_frame_chain,
@@ -2201,6 +2203,17 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                     except Exception:
                         lbl = ""
                 if not lbl:
+                    # Variante checkbox (multi-réponses) du même widget Ipsos/mrIWeb
+                    # Sharky "GridProgressive" : div.prog-the-answer-container
+                    # [role="checkbox"] enfant direct de div.clearfix.prog-answers-row
+                    # (pas de div.the-radiogroup). Résolution additionnelle strictement
+                    # scopée (voir BOT_EVOLUTION_MEMORY.md), sans toucher aux stratégies
+                    # existantes.
+                    try:
+                        lbl = _find_ipsos_sharky_grid_progressive_checkbox_option_label(e)
+                    except Exception:
+                        lbl = ""
+                if not lbl:
                     continue
                 trailing_info = _get_choice_trailing_open_info(driver, e)
                 if trailing_info:
@@ -2304,6 +2317,38 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                             log_debug(
                                 "[DOM_CONTEXT]",
                                 f"ipsos_mriweb_grid_progressive resolved question={question[:60]!r}",
+                            )
+                except Exception:
+                    pass
+            # Variante checkbox (multi-réponses) du même widget Ipsos/mrIWeb Sharky
+            # "GridProgressive" : le conteneur question-container porte QSubType-MA /
+            # prog-type-checkbox, les options sont des div.prog-the-answer-container
+            # [role="checkbox"] regroupées sous div.clearfix.prog-answers-row (pas de
+            # div.the-radiogroup dans cette variante). Sans cette branche additive, le
+            # group_key "checkbox:name:dom:*" ne matche pas le guard radio ci-dessus et
+            # retombe sur le fallback générique (concaténation nav + consigne + options
+            # dupliquées + libellés de barre de progression).
+            # Guard DOM strict : identique au guard radio (ancêtre .GridProgressive avec
+            # .prog-the-statement et #question), scopé au group_key "checkbox:name:dom:".
+            if not question and group_key.startswith("checkbox:name:dom:"):
+                try:
+                    grid_nodes = els[0].query_selector_all(
+                        "xpath=" + "ancestor::div[contains(concat(' ',normalize-space(@class),' '),' GridProgressive ')][1]"
+                    )
+                    if grid_nodes:
+                        row_nodes = grid_nodes[0].query_selector_all(
+                            "xpath=" + ".//div[contains(concat(' ',normalize-space(@class),' '),' prog-the-statement ')]//span[contains(concat(' ',normalize-space(@class),' '),' mrQuestionText ')][1]"
+                        )
+                        intro_nodes = grid_nodes[0].query_selector_all(
+                            "xpath=" + ".//div[@id='question']//span[contains(concat(' ',normalize-space(@class),' '),' mrQuestionText ')][1]"
+                        )
+                        row_txt = _norm(row_nodes[0].inner_text() or row_nodes[0].get_attribute("innerText") or "") if row_nodes else ""
+                        intro_txt = _norm(intro_nodes[0].inner_text() or intro_nodes[0].get_attribute("innerText") or "") if intro_nodes else ""
+                        if row_txt:
+                            question = _norm(f"{intro_txt} {row_txt}") if intro_txt else row_txt
+                            log_debug(
+                                "[DOM_CONTEXT]",
+                                f"ipsos_mriweb_grid_progressive_checkbox resolved question={question[:60]!r}",
                             )
                 except Exception:
                     pass

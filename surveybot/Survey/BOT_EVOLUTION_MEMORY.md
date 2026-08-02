@@ -2656,6 +2656,29 @@ réponse GPT ("Tous les jours") correspondant à un libellé DOM exact, sélecti
 
 Statut : patch validé.
 
+### Variante checkbox (multi-réponses) du widget GridProgressive Ipsos/Sharky — question + libellés d'option + clic
+Fichiers :
+- Survey/dom_analyzer.py (bloc `if not question and group_key.startswith("checkbox:name:dom:")`, juste après le bloc radio équivalent)
+- Survey/dom_question_extractor.py (`_find_ipsos_sharky_grid_progressive_checkbox_option_label`, appelée en complément dans le bloc de construction des options, uniquement si `_find_associated_label` et la variante radio n'ont rien résolu)
+- Survey/input_checkbox.py (`click_ipsos_sharky_grid_progressive_checkbox`, enregistrée en position 0c dans `click_checkbox_by_label`, avant les fallbacks génériques)
+
+Guard DOM strict (identique aux trois couches) : ancêtre `.GridProgressive` portant `QSubType-MA` / `prog-type-checkbox` ; options = `div.prog-the-answer-container[role="checkbox"]` enfants directs de `div.clearfix.prog-answers-row` (pas de `div.the-radiogroup`, contrairement à la variante radio) ; libellé dans un `span.mrQuestionText` descendant.
+
+Problème résolu : sur cette variante multi-réponses du même widget Ipsos/mrIWeb Sharky "GridProgressive" que la variante radio déjà couverte, aucun des guards existants (question ni libellé d'option) n'était scopé au `group_key` `checkbox:name:dom:*` — seul `radio:name:dom:*` était couvert. Résultat avant patch : question polluée (concaténation nav "Précédent Suivant" + statement + 8 libellés d'options dupliqués + libellés de barre de progression), `options=[]` (`options_count=0`), et échec de sélection en aval (`kantar_rowpicker: overlay_not_found`, `ipsos_sharky_grid_progressive: option_not_found` — ces deux stratégies étant elles-mêmes scopées à d'autres widgets/variantes).
+
+Correction : trois branches additives strictement scopées au préfixe `checkbox:name:dom:` / `role="checkbox"`, mirroir de la variante radio, sans aucune modification des fonctions radio existantes.
+
+Patterns couverts :
+- Grille progressive Ipsos/mrIWeb Sharky, conteneur `.question-container.GridProgressive` portant `QSubType-MA`/`prog-type-checkbox`, options `div.prog-the-answer-container[role="checkbox"]` sous `div.clearfix.prog-answers-row`.
+
+Patterns exclus :
+- La variante radio (`div.the-radiogroup[role="radiogroup"]` > `div.prog-the-answer-container[role="radio"]`) : non modifiée, guards et fonctions séparés.
+- Tout élément `role="checkbox"` hors de ce guard DOM strict (pas d'ancêtre `.GridProgressive`, ou pas enfant direct de `div.clearfix.prog-answers-row`) : comportement inchangé, retombe sur les stratégies existantes.
+
+Diagnostic associé : confirmé sur une page Ipsos/mrIWeb Sharky, question "Parmi les produits suivants, lesquels avez-vous achetés..." (grille progressive, ligne "AU COURS DES 3 DERNIERS MOIS", 8 catégories de produits en options, target_id `group_04a3aca29a74`). Avant patch : `options_count=0`, question polluée par duplication, `apply ok=false reason=no_strategy`. Après patch (relecture DOM) : question résolue proprement (consigne + statement de ligne, sans doublon), 8 options extraites individuellement, stratégie de clic dédiée disponible en position 0c.
+
+Statut : patch en place — à valider explicitement en conditions réelles (prochain run sur ce type de page), notamment le calcul de `max_select` (non revu, dépend de `_compute_max_select` en dehors du périmètre de ce patch), avant de retirer cette réserve.
+
 ### _should_skip_post_actions_navigation / analyze_dom — signal auto-advance pour éviter un clic CTA superflu
 Fichier : Survey/dom_analyzer.py (émission du flag, bloc de construction `_block_ctx`, group_key
 `radio:name:dom:*`), Survey/survey_executor.py (`_should_skip_post_actions_navigation`, consommation).

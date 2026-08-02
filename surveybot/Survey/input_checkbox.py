@@ -450,6 +450,116 @@ def click_confirmit_checktable(driver, label: str, context_hint: str | None = No
 
 
 # =============================================================================
+# IPSOS/mrIWeb SHARKY "GridProgressive" — VARIANTE CHECKBOX (MULTI-RÉPONSES)
+# =============================================================================
+
+def click_ipsos_sharky_grid_progressive_checkbox(driver, label: str) -> bool:
+    """
+    Ipsos/mrIWeb Sharky "GridProgressive", variante multi-réponses (conteneur
+    question-container QSubType-MA / prog-type-checkbox) : chaque option est un
+    div.prog-the-answer-container[role='checkbox'] (libellé dans un
+    span.mrQuestionText imbriqué), enfant direct de div.clearfix.prog-answers-row
+    (pas de div.the-radiogroup, contrairement à la variante radio couverte par
+    click_ipsos_sharky_grid_progressive_radio dans Survey/input_radio.py, non
+    modifiée par cette fonction). Les <input type="checkbox" class="mrMultiple">
+    natifs existent dans une table séparée (.no-display-answers, masquée) — ce ne
+    sont pas les éléments cliqués ni vérifiés ici.
+
+    Voir BOT_EVOLUTION_MEMORY.md ("ipsos_mriweb_grid_progressive", dom_analyzer.py)
+    pour la résolution de la question associée à ce même widget.
+
+    Guard DOM strict : div.clearfix.prog-answers-row présent, contenant des
+    div.prog-the-answer-container[role='checkbox'] enfants directs.
+
+    Cible du clic : le div.prog-the-answer-container[role='checkbox'] lui-même.
+    Vérification : aria-checked="true" reflété sur ce même div après clic.
+    """
+    _JS_FIND = r"""
+    const norm = s => (s || '')
+      .toLowerCase().normalize('NFKC')
+      .replace(/\s+/g, ' ').trim();
+    const needle = norm(arg);
+    if (!needle) return null;
+
+    const rows = Array.from(document.querySelectorAll("div.clearfix.prog-answers-row"));
+    if (!rows.length) return null;
+
+    for (const row of rows) {
+      const opts = Array.from(row.querySelectorAll(":scope > div.prog-the-answer-container[role='checkbox']"));
+      for (const opt of opts) {
+        const span = opt.querySelector('span.mrQuestionText');
+        const txt = norm(span ? (span.innerText || span.textContent || '') : '');
+        if (!txt || !(txt === needle || txt.includes(needle) || needle.includes(txt))) continue;
+        return opt;
+      }
+    }
+    return null;
+    """
+
+    _JS_VERIFY = r"""
+    const norm = s => (s || '')
+      .toLowerCase().normalize('NFKC')
+      .replace(/\s+/g, ' ').trim();
+    const needle = norm(arg);
+    const rows = Array.from(document.querySelectorAll("div.clearfix.prog-answers-row"));
+    for (const row of rows) {
+      const opts = Array.from(row.querySelectorAll(":scope > div.prog-the-answer-container[role='checkbox']"));
+      for (const opt of opts) {
+        const span = opt.querySelector('span.mrQuestionText');
+        const txt = norm(span ? (span.innerText || span.textContent || '') : '');
+        if (!txt || !(txt === needle || txt.includes(needle) || needle.includes(txt))) continue;
+        return (opt.getAttribute('aria-checked') || '').toLowerCase() === 'true';
+      }
+    }
+    return false;
+    """
+
+    # Résout le frame actif, même convention que click_ipsos_sharky_grid_progressive_radio
+    # (driver.evaluate_handle/evaluate opèrent sur le document racine sinon).
+    _ctx = getattr(driver, "_current_frame", driver)
+
+    try:
+        opt = _ctx.evaluate_handle("(arg) => {" + _JS_FIND + "}", label).as_element()
+    except Exception as exc:
+        log_debug("[TARGET_DEBUG]", f"ipsos_sharky_grid_progressive_checkbox: js_find_exception label={label!r} error={type(exc).__name__}: {exc}")
+        return False
+
+    if opt is None:
+        log_debug("[TARGET_DEBUG]", f"ipsos_sharky_grid_progressive_checkbox: option_not_found label={label!r}")
+        return False
+
+    try:
+        opt.scroll_into_view_if_needed()
+    except Exception:
+        pass
+
+    try:
+        opt.click()
+    except Exception as exc_click:
+        try:
+            opt.hover()
+            opt.click()
+        except Exception as exc_hover:
+            log_debug(
+                "[TARGET_DEBUG]",
+                f"ipsos_sharky_grid_progressive_checkbox: click_failed label={label!r} "
+                f"click_error={type(exc_click).__name__}: {exc_click} "
+                f"hover_click_error={type(exc_hover).__name__}: {exc_hover}",
+            )
+            return False
+
+    time.sleep(0.15)
+
+    try:
+        ok = bool(_ctx.evaluate("(arg) => {" + _JS_VERIFY + "}", label))
+    except Exception:
+        ok = False
+
+    log_debug("[TARGET_DEBUG]", f"ipsos_sharky_grid_progressive_checkbox: native_verify={'ok' if ok else 'ko'} label={label!r}")
+    return ok
+
+
+# =============================================================================
 # QARTS WIDGET HANDLER (Decipher / LifePoints)
 # =============================================================================
 
@@ -808,6 +918,15 @@ def click_checkbox_by_label(driver, target_text: str, context_hint: str | None =
     #     ET div[tabindex][style*="cursor: pointer"][style*="inset: 0"] dans la même portée.
     try:
         if click_nfield_swatches_by_label(driver, target_text, scope=scope):
+            return True
+    except Exception:
+        pass
+
+    # 0c) Ipsos/mrIWeb Sharky "GridProgressive" variante checkbox (multi-réponses,
+    #     widget div-based sans input natif exploitable). Guard DOM strict :
+    #     div.clearfix.prog-answers-row > div.prog-the-answer-container[role='checkbox'].
+    try:
+        if click_ipsos_sharky_grid_progressive_checkbox(driver, target_text):
             return True
     except Exception:
         pass

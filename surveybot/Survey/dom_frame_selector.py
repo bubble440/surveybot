@@ -446,6 +446,59 @@ def _wait_for_frames_attached(driver, timeout_s: float = 2.0, poll_s: float = 0.
         return
 
 
+def _resolve_named_frame_index_with_retry(
+    driver, frame_name: str, timeout_s: float = 1.5, poll_s: float = 0.1
+):
+    """
+    Résout l'indice, parmi les enfants du contexte racine, d'une frame portant
+    le nom `frame_name`, avec re-tentatives bornées.
+
+    Garde-fou additif : n'intervient qu'en repli, uniquement quand la
+    résolution en un seul passage déjà en place dans `_select_best_frame_chain`
+    n'a trouvé aucune frame de ce nom. Cas visé : juste après une navigation
+    interne d'une frame nommée du frameset (le document racine ne navigue pas,
+    seule la frame enfant se recharge) — sur ce type de transition, certains
+    moteurs détachent puis ré-attachent un nouvel objet Frame côté Playwright
+    pour cette frame, ce qui peut la rendre transitoirement absente (ou son nom
+    transitoirement non résolu) de `_frame_elements()` au moment précis d'un
+    unique passage de recherche, sans qu'aucun mécanisme de nouvelle tentative
+    existant ne couvre spécifiquement cette étape de résolution par nom
+    (`_wait_for_frames_attached` ne vérifie que la présence d'AU MOINS une
+    frame enfant, déjà trivialement vraie si une autre frame sœur reste
+    attachée pendant la transition de celle-ci).
+
+    Abandon contrôlé au budget imparti (retourne None, log DOM_CONTEXT_DEBUG) :
+    comportement alors identique à avant ce patch (repli sur le scoring
+    générique `iter_frame_chains`). Ne modifie ni ne remplace la boucle de
+    résolution en un seul passage existante — fonction nommée distincte,
+    appelée en complément.
+    """
+    target_name = (frame_name or "").strip().lower()
+    if not target_name:
+        return None
+    deadline = time.time() + max(0.0, timeout_s)
+    while time.time() < deadline:
+        try:
+            with switch_to_frame_chain(driver, []) as ok_root:
+                if ok_root:
+                    for _i, _child in enumerate(_frame_elements(driver)):
+                        try:
+                            _fname = (_child.name or "").strip().lower()
+                        except Exception:
+                            _fname = ""
+                        if _fname == target_name:
+                            return _i
+        except Exception:
+            pass
+        time.sleep(poll_s)
+
+    if _env_truthy("DOM_CONTEXT_DEBUG", "0"):
+        print(
+            f"[DOM_CONTEXT_DEBUG] named_frame_retry_timeout name={frame_name!r} timeout_s={timeout_s}"
+        )
+    return None
+
+
 # ================================================================================
 # SÉLECTION MEILLEURE FRAME
 # ================================================================================
@@ -511,6 +564,18 @@ def _select_best_frame_chain(driver, max_depth: int = 2) -> Tuple[List[int], Dic
                             break
         except Exception:
             main_frame_idx = None
+
+        if main_frame_idx is None:
+            # Repli additif : le passage unique ci-dessus n'a trouvé aucune
+            # frame nommée "mainFrame" — nouvelle tentative bornée avant de
+            # tomber dans le scoring générique (cf. _resolve_named_frame_index_with_retry
+            # pour le mécanisme visé : transition de frame nommée en cours de
+            # resynchronisation côté Playwright).
+            main_frame_idx = _resolve_named_frame_index_with_retry(driver, "mainFrame")
+            if debug_ctx and isinstance(main_frame_idx, int):
+                print(
+                    f"[DOM_CONTEXT_DEBUG] mainframe_resolved_after_retry idx={main_frame_idx}"
+                )
 
         if isinstance(main_frame_idx, int) and main_frame_idx >= 0:
             forced_chain = [main_frame_idx]
