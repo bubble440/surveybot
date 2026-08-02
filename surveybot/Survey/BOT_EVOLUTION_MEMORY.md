@@ -3100,4 +3100,63 @@ préfère ne pas répondre" (option "Autre" ignorée, sans bloquer le reste).
 
 Statut : patch validé.
 
+## MODULE TRANSVERSAL : STUDYSTREAM_AUTO_ADVANCE — FAUX POSITIFS SUR LE GARDE-FOU CTA (button_choice_radio)
+
+Contexte : les blocs produits par `_extract_button_choice_radio_blocks` (cf. section
+"BOUTONS CUSTOM `button.choice` (SANS INPUT NATIF)") portent le flag de contexte
+`studystream_auto_advance=True`. Ce flag est consommé dans `_should_skip_post_actions_navigation`
+(Survey/survey_executor.py) pour décider si le clic CTA post-réponse doit être sauté, au motif
+qu'une navigation automatique aurait déjà eu lieu après le clic sur l'option. Sur la page de
+référence (studystream.me, question "Dans lesquelles des catégories de produits suivantes..."),
+aucune auto-navigation réelle n'a lieu : la question reste affichée à l'identique après le clic,
+mais le clic CTA était systématiquement sauté, bloquant le bot en boucle sur la même question.
+
+Deux causes distinctes, corrigées ensemble :
+
+### 1. Comparaison question_text / body_text non normalisée (faux négatif "question absente")
+Fichier : Survey/survey_executor.py, `_should_skip_post_actions_navigation`, branche
+`studystream_auto_advance`.
+Bug corrigé : la vérification `question_text in body_text` comparait le texte de question déjà
+normalisé (extrait via `_norm`, qui collapse les espaces y compris les espaces insécables) au
+texte brut renvoyé par `document.body.innerText` (qui conserve les espaces insécables `\u00A0`,
+ex. avant le point d'interrogation de la question). Cette différence de représentation des
+espaces faisait échouer la recherche de sous-chaîne même quand la question était strictement
+identique à l'écran, produisant un faux "question précédente absente du DOM → navigation réelle
+confirmée" et donc un skip CTA à tort.
+Correction : les deux côtés de la comparaison passent désormais par `_norm` (Survey/dom_utils.py) :
+`_norm(question_text) in _norm(body_text)`.
+Patterns couverts : tout bloc `studystream_auto_advance=True` dont le texte de question contient
+un espace insécable ou toute autre variation d'espace normalisée différemment entre l'extraction
+et la relecture DOM post-clic.
+Patterns exclus : aucun changement pour les blocs sans ce flag, ni pour la détection par URL
+(`url_changed`), inchangée.
+
+### 2. Fallback structurel générique écrasant la décision de la branche dédiée
+Fichier : Survey/survey_executor.py, fin de `_should_skip_post_actions_navigation` (dernier bloc
+avant le `except Exception: return False` de clôture).
+Bug corrigé : une vérification structurelle générique, non conditionnée par un flag de contexte,
+retournait un résultat provoquant le skip CTA dès que la page contenait au moins 2
+`div.question-body-options__choice button.choice` — exactement la structure DOM des blocs
+`button_choice_radio`/`studystream_auto_advance`. Cette vérification s'exécutait après la branche
+dédiée `studystream_auto_advance` (qui avait déjà correctement tranché "CTA requis" via la
+vérification normalisée du point 1), et écrasait systématiquement cette décision par un simple
+comptage de boutons, sans rapport avec une navigation réelle.
+Correction : si au moins un bloc de `question_blocks` porte déjà `studystream_auto_advance=True`,
+ce fallback structurel retourne `False` (ne décide plus rien — la décision a déjà été prise plus
+haut par la branche dédiée) au lieu d'appliquer son comptage générique.
+Patterns couverts : toute page où un bloc `studystream_auto_advance=True` est présent — la
+décision revient entièrement à la branche dédiée (point 1), plus jamais écrasée par ce fallback.
+Patterns exclus : pages sans aucun bloc `studystream_auto_advance` → comportement du fallback
+structurel générique (comptage `button.choice >= 2`) inchangé.
+
+Diagnostic associé : confirmé en conditions réelles sur app.studystream.me, question "Dans
+lesquelles des catégories de produits suivantes avez-vous acheté un article de luxe...". Avant
+patch : `apply` échouait par ailleurs sur la sélection (cf. section "BOUTONS CUSTOM button.choice"),
+et même quand la sélection réussissait visuellement, le clic CTA était sauté à chaque step
+(`[STUDYSTREAM_AUTONAV] question précédente absente du DOM...` puis, après le fix point 1,
+écrasement par le fallback structurel du point 2). Après les deux correctifs : log
+`[STUDYSTREAM_AUTONAV] question toujours affichée après clic (mutation d'état de sélection
+uniquement) → CTA requis` suivi d'une tentative réelle de clic CTA (confirmé en mode local via
+la pause `[LOCAL][PAUSE] Appuie sur <Enter> pour autoriser le clic CTA`).
+
 Statut : patch validé.

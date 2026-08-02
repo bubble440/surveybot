@@ -1647,10 +1647,45 @@ def _should_skip_post_actions_navigation(
     for block in question_blocks or []:
         try:
             ctx = block.get("context") if isinstance(block, dict) else None
-            if isinstance(ctx, dict) and (
-                ctx.get("walr_cardsort") is True or ctx.get("studystream_auto_advance") is True
-            ):
+            if isinstance(ctx, dict) and ctx.get("walr_cardsort") is True:
                 return True
+        except Exception:
+            continue
+
+    for block in question_blocks or []:
+        try:
+            ctx = block.get("context") if isinstance(block, dict) else None
+            if not (isinstance(ctx, dict) and ctx.get("studystream_auto_advance") is True):
+                continue
+            url_changed = False
+            if before_url is not None:
+                try:
+                    url_changed = page.url != before_url
+                except Exception:
+                    pass
+            if url_changed:
+                log_info("[STUDYSTREAM_AUTONAV]", "URL changée après clic → skip CTA (auto-navigation confirmée)")
+                return True
+            # La signature DOM générique (_dom_signature, basée sur innerText) capte aussi
+            # la mutation d'état visuel de l'option cliquée (ex: icône "check" qui apparaît) :
+            # ce n'est pas un changement de page. On vérifie donc explicitement que le texte
+            # de la question courante (déjà extrait dans le bloc) a disparu du DOM avant de
+            # conclure à une navigation réelle.
+            question_text = (block.get("question") or "").strip()
+            question_still_present = True
+            if question_text:
+                try:
+                    from Survey.dom_utils import _norm
+                    body_text = page.evaluate(
+                        "() => document.body ? (document.body.innerText || '') : ''"
+                    ) or ""
+                    question_still_present = _norm(question_text) in _norm(body_text)
+                except Exception:
+                    question_still_present = True
+            if not question_still_present:
+                log_info("[STUDYSTREAM_AUTONAV]", "question précédente absente du DOM → navigation réelle confirmée → skip CTA")
+                return True
+            log_info("[STUDYSTREAM_AUTONAV]", "question toujours affichée après clic (mutation d'état de sélection uniquement) → CTA requis")
         except Exception:
             continue
 
@@ -1717,6 +1752,19 @@ def _should_skip_post_actions_navigation(
     try:
         if page.query_selector_all("#cardSortContainer button.answer-button"):
             return True
+        # Le pattern `div.question-body-options__choice button.choice` est celui de
+        # _extract_button_choice_radio_blocks, qui pose déjà studystream_auto_advance=True
+        # sur ces blocs. Quand ce flag est présent, la branche STUDYSTREAM_AUTONAV ci-dessus
+        # a déjà tranché (avec vérification de navigation réelle) : ce fallback structurel,
+        # purement DOM, ne doit pas écraser cette décision par un simple comptage de boutons.
+        has_studystream_flag = any(
+            isinstance(b, dict)
+            and isinstance(b.get("context"), dict)
+            and b["context"].get("studystream_auto_advance") is True
+            for b in (question_blocks or [])
+        )
+        if has_studystream_flag:
+            return False
         return len(
             page.query_selector_all("div.question-body-options__choice button.choice")
         ) >= 2
