@@ -3811,6 +3811,48 @@ def _apply_by_target_id(
                         log_debug("[TARGET_DEBUG]", f"askia_responsive_table_checkbox: input.checked=false after label click value='{value}' xpath='{xp}'")
                     return False
 
+                # --- Ipsos/mrIWeb Sharky "CategoricalClickImages" + "CustomPopup" (logos cliquables) ---
+                # Guard DOM strict : ancêtre .question-container.CategoricalClickImages.CustomPopup
+                # ET label[for] contenant à la fois l'input checkbox natif ET un <img style*="cursor:
+                # pointer"> (déclencheur d'agrandissement CustomPopup, cf. customJSONproperties
+                # AdditionalQuestion.Popups[].Trigger="#picN"). Un clic réel (par coordonnées, via
+                # _click_candidate ci-dessous) sur ce label atteint visuellement l'image plutôt que
+                # l'input masqué dessous, ce qui déclenche EN PLUS l'ouverture de la fenêtre
+                # d'agrandissement (div.CustomPopup-modalWindow.image-enlarge). Cette fenêtre reste
+                # ouverte au premier plan et bloque tout clic ultérieur (options suivantes ET bouton
+                # CTA Suivant, cause du CTA_FOUND CLICK_IMPOSSIBLE / progressed=false observé).
+                # Stratégie unique : ne jamais cliquer le label/l'image, forcer uniquement
+                # checked=true + input/change sur l'<input> natif via _dispatch_check_events
+                # (aucun clic synthétique, donc aucun risque de déclencher le Trigger de l'image).
+                if resolved_itype == "checkbox":
+                    try:
+                        _cci_input = el.evaluate_handle("""(_el) => {
+                            const node = _el;
+                            if (!node || !node.closest) return null;
+                            const qc = node.closest('.question-container.CategoricalClickImages.CustomPopup');
+                            if (!qc) return null;
+                            const label = (node.tagName || '').toLowerCase() === 'label' ? node : node.closest('label[for]');
+                            if (!label) return null;
+                            if (!label.querySelector('img[style*="cursor: pointer"], img[style*="cursor:pointer"]')) return null;
+                            const fid = label.getAttribute('for');
+                            if (!fid) return null;
+                            const inp = document.getElementById(fid);
+                            if (!inp || (inp.type || '').toLowerCase() !== 'checkbox') return null;
+                            return inp;
+}""").as_element()
+                    except Exception:
+                        _cci_input = None
+
+                    if _cci_input is not None:
+                        if not _is_selected(_cci_input):
+                            _dispatch_check_events(_cci_input)
+                        if _is_selected(_cci_input):
+                            log_info("[TARGET]", "apply ok=true strategy=ipsos_sharky_categorical_click_images_checkbox reason=checked_no_click")
+                            return True
+                        if debug_target:
+                            log_debug("[TARGET_DEBUG]", f"ipsos_sharky_categorical_click_images_checkbox: not checked after force value='{value}'")
+                        return False
+
                 _click_candidate(el, "target")
 
                 _maybe_advance_mx_vertical_carousel_after_answer()
@@ -3897,7 +3939,17 @@ def _apply_by_target_id(
                     if _lbl_el is not None:
                         fid = (_lbl_el.get_attribute("for") or "").strip()
                         if fid:
-                            inp_for = driver.query_selector(f"[id='{fid}']")
+                            # Résout le contexte de frame actif (même convention que
+                            # _find_best_visible/_search_ctx et _verify_ctx plus haut dans
+                            # cette fonction) : driver.query_selector interroge toujours le
+                            # document racine, indépendamment de driver._current_frame. Sur
+                            # un frameset (Ipsos/mrIWeb, label et input dans des sous-arbres
+                            # séparés — cf. commentaire ci-dessus), l'input référencé par
+                            # for="..." vit dans le frame enfant et n'était donc jamais
+                            # trouvé (inp_for_found=False systématique), quelle que soit
+                            # l'option ciblée.
+                            _lbl_ctx = getattr(driver, "_current_frame", driver)
+                            inp_for = _lbl_ctx.query_selector(f"[id='{fid}']")
                             if debug_target:
                                 log_debug(
                                     "[TARGET_DEBUG]",
@@ -3922,11 +3974,11 @@ def _apply_by_target_id(
                                 # Seconde vérification indépendante : nouvelle requête DOM par id,
                                 # sans réutiliser la référence inp_for utilisée pour le forçage.
                                 try:
-                                    _diag_lbl_fresh = driver.query_selector(f"[id='{fid}']")
+                                    _diag_lbl_fresh = _lbl_ctx.query_selector(f"[id='{fid}']")
                                     _diag_lbl_same_node = bool(
                                         _diag_lbl_fresh is not None
                                         and inp_for is not None
-                                        and driver.evaluate(
+                                        and _lbl_ctx.evaluate(
                                             "([a, b]) => a === b", [inp_for, _diag_lbl_fresh]
                                         )
                                     )

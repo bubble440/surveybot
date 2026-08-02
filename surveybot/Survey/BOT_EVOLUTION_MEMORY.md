@@ -2757,6 +2757,45 @@ réponse". Après patch : signal absent sur cette ligne, clic CTA de page réel 
 
 Statut : patch validé.
 
+## PLATEFORME : IPSOS / mrIWeb (SHARKY) — CHECKBOX "CATEGORICALCLICKIMAGES" AVEC POPUP D'AGRANDISSEMENT (CustomPopup)
+Signature DOM : conteneur `div.question-container.QType-MA...CategoricalClickImages.CustomPopup`,
+config JSON associée `customJSONproperties` avec `"questionLook": "CategoricalClickImages"` et bloc
+`"AdditionalQuestion": {"questionLook": "CustomPopup", "Popups": [{"Trigger": "#picN", ...}]}`.
+Chaque option = `<label for="_Q0_Cx">` englobant l'`<input type="checkbox">` natif ET un
+`<img id="picN" style="cursor:pointer">` (déclencheur d'agrandissement CustomPopup).
+
+### _apply_by_target_id — branche ipsos_sharky_categorical_click_images_checkbox
+Fichier : Survey/action_dispatcher.py (bloc `resolved_itype == "checkbox"`, avant l'appel générique
+`_click_candidate(el, "target")`).
+Bug corrigé : un clic réel par coordonnées (`_click_candidate`) sur le label de cette question
+atteint visuellement l'image plutôt que l'input masqué dessous, ce qui coche bien la case mais
+déclenche EN PLUS le Trigger CustomPopup de l'image (`div.CustomPopup-modalWindow.image-enlarge`
+ouverte, classe `in`, `display:block`). Cette fenêtre reste ouverte au premier plan et bloque tout
+clic ultérieur (options suivantes ET bouton CTA "Suivant"), symptôme observé :
+`CTA_FOUND ... progressed=false` puis `CTA_NOT_FOUND`.
+Correction : garde DOM stricte (ancêtre `.question-container.CategoricalClickImages.CustomPopup` +
+label[for] contenant un `img[style*="cursor: pointer"]`) qui résout l'`<input>` natif via `for=` et
+force uniquement `checked=true` + events `input`/`change` (`_dispatch_check_events`, helper
+existant), sans jamais cliquer le label ni l'image — aucun risque de déclencher le Trigger
+CustomPopup.
+Patterns couverts :
+- Toute question checkbox Ipsos/mrIWeb Sharky avec ce guard DOM exact (logos/images cliquables +
+  CustomPopup d'agrandissement).
+Patterns exclus :
+- Toute autre question checkbox Ipsos/mrIWeb (ex. GridProgressive, déjà couverte séparément) :
+  guard DOM différent, non concernée, comportement inchangé.
+- Le clic générique `_click_candidate(el, "target")` : non modifié, reste le chemin par défaut pour
+  tout élément qui ne matche pas ce guard.
+
+Diagnostic associé : confirmé en conditions réelles sur insights.ipsosinteractive.com, question
+"Parmi les marques de mode ci-dessous, desquelles avez-vous déjà entendu parler..." (target_id
+`group_2606407bf215`, 5 réponses max). Avant patch : coche de la première option (ex. "Chanel")
+ouvrait en plus la modale d'agrandissement associée, restée ouverte au premier plan après les coches
+suivantes, CTA "Suivant" introuvable/sans effet. Après patch : coche silencieuse (aucun clic
+synthétique sur le label/l'image), aucune modale ouverte, CTA cliqué avec succès.
+
+Statut : patch validé.
+
 ## PLATEFORME : IFOP / SSI CONFIRMIT — MATRICE "MOBILE GRID" À RADIOS GRAPHIQUES (une carte par ligne)
 
 ### ssi_confirmit_mobile_grid_card — résolution de question scopée à la ligne — Survey/dom_analyzer.py
