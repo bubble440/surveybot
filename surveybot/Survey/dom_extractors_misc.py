@@ -10690,6 +10690,115 @@ def _extract_confirmit_cf_open_list_blocks(driver, frame_chain: list[int] | None
     return blocks
 
 
+def _extract_studystream_contenteditable_open_text_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
+    """Studystream (*.studystream.me) : question ouverte dont l'unique champ de saisie
+    est une div contenteditable, sans input/textarea natif.
+
+    Gate DOM strict (additif) :
+    - div.question-body-open-text présent
+    - contient div[contenteditable="true"].input-voice__contenteditable dans un
+      wrapper data-cx="text-input"
+
+    Structure ciblée :
+      div.question-body-open-text
+        div.input-voice[data-cx="text-input"]
+          div#{id}.input-voice__contenteditable[contenteditable="true"] ← cible de saisie
+
+    Sans ce garde-fou, _detect_itype() (dom_utils.py) ne reconnaît que <input>/<textarea>/
+    <select> : cette div n'est jamais candidate, itype reste "unknown", abort DOM-only
+    malgré un champ de saisie visible et fonctionnel.
+    """
+    frame_chain = list(frame_chain or [])
+    blocks: list[dict] = []
+
+    try:
+        containers = driver.query_selector_all("div.question-body-open-text")
+    except Exception:
+        return blocks
+    if not containers:
+        return blocks
+
+    for qc in containers[:20]:
+        try:
+            fields = qc.query_selector_all(
+                "[data-cx='text-input'] div.input-voice__contenteditable[contenteditable='true']"
+            )
+            if not fields:
+                continue
+            fld = fields[0]
+            fld_id = (fld.get_attribute("id") or "").strip()
+            if not fld_id:
+                continue
+
+            question = ""
+            try:
+                q_el = driver.query_selector(".question-title__title")
+                if q_el:
+                    question = _norm(q_el.get_attribute("textContent") or q_el.inner_text() or "")
+            except Exception:
+                pass
+            if not question:
+                try:
+                    q_el = driver.query_selector(".embed-header__sub__question-title")
+                    if q_el:
+                        question = _norm(q_el.get_attribute("textContent") or q_el.inner_text() or "")
+                except Exception:
+                    pass
+            if not question:
+                continue
+
+            single_key = f"studystream_open_text:{fld_id}"
+            target_id = make_target_id("single", single_key, question)
+
+            try:
+                xpath = _best_xpath_for_element(driver, fld)
+            except Exception:
+                xpath = f"//*[@id='{fld_id}']"
+
+            register_target(
+                target_id,
+                {
+                    "kind": "single",
+                    "itype": "text",
+                    "question": question,
+                    "xpath": xpath,
+                    "alt_xpaths": [f"//*[@id='{fld_id}']"],
+                    "tag": "div",
+                    "name": "",
+                    "id": fld_id,
+                    "frame_chain": frame_chain,
+                    "studystream_contenteditable_open_text": True,
+                },
+            )
+
+            blocks.append(
+                {
+                    "question": question,
+                    "itype": "text",
+                    "options": [],
+                    "max_select": 1,
+                    "min_select": 1,
+                    "target_id": target_id,
+                    "context": {
+                        "kind": "single",
+                        "tag": "div",
+                        "id": fld_id,
+                        "studystream_contenteditable_open_text": True,
+                    },
+                }
+            )
+            log_debug(
+                "[DOM_STUDYSTREAM_OPEN_TEXT]",
+                f"fld_id={fld_id!r} question={question!r}",
+            )
+        except Exception:
+            continue
+
+    if blocks:
+        log_info("[DOM_STUDYSTREAM_OPEN_TEXT]", f"blocks_extracted={len(blocks)}")
+    return blocks
+
+
 # ================================================================================
 # FORSTA/CONFIRMIT — SINGLE IMAGE-CHOICE (cf-question--single + cf-image-answer)
 # ================================================================================

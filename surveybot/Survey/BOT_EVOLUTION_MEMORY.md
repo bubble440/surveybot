@@ -3160,3 +3160,40 @@ uniquement) → CTA requis` suivi d'une tentative réelle de clic CTA (confirmé
 la pause `[LOCAL][PAUSE] Appuie sur <Enter> pour autoriser le clic CTA`).
 
 Statut : patch validé.
+
+---
+
+## PLATEFORME : STUDYSTREAM.ME — QUESTION OUVERTE À CHAMP CONTENTEDITABLE (SANS INPUT/TEXTAREA NATIF)
+
+### _extract_studystream_contenteditable_open_text_blocks
+Fichier : Survey/dom_extractors_misc.py
+Enregistré dans : Survey/dom_analyzer.py, point d'appel dédié (bloc "0i-duodecies"), avant le
+pattern générique radio/checkbox — retour anticipé (`return studystream_open_text_blocks`) si des
+blocs sont produits.
+Guard DOM strict : `div.question-body-open-text` contenant, sous un wrapper
+`[data-cx="text-input"]`, une `div.input-voice__contenteditable[contenteditable="true"]` avec un
+`id` non vide. Question résolue via `.question-title__title`, avec repli sur
+`.embed-header__sub__question-title` si absent.
+Patterns couverts :
+- Question ouverte studystream.me dont l'unique champ de saisie est une div contenteditable
+  (pas de `<input type="text">` ni `<textarea>` natif).
+- Bloc produit : `itype="text"`, `tag="div"`, `kind="single"`, flag de contexte
+  `studystream_contenteditable_open_text=True` (payload registry et bloc), `target_id` construit
+  via `make_target_id("single", f"studystream_open_text:{fld_id}", question)`.
+Patterns exclus :
+- Toute question ouverte avec input/textarea natif → non concernée, extracteurs existants
+  inchangés (`_detect_itype` continue de les couvrir normalement).
+- Conteneur `div.question-body-open-text` sans `div.input-voice__contenteditable` exploitable
+  (pas de wrapper `[data-cx="text-input"]`, ou champ sans `id`) → aucun bloc produit, abandon
+  silencieux de ce conteneur (pas de fallback générique).
+
+Bug corrigé : `_detect_itype()` (Survey/dom_utils.py) ne reconnaît que `<input>`/`<textarea>`/
+`<select>` — une div contenteditable n'était jamais candidate, `itype` restait `"unknown"`, et le
+pipeline aboutissait à un abort DOM-only malgré un champ de saisie visible et fonctionnel à
+l'écran (`clickable_visible=8`, `input_groups=0`, `visual_tiles=1`).
+Diagnostic associé : confirmé sur app.studystream.me, question "Quelles marques de luxe avez-vous
+achetées au cours des 12 derniers mois ?" (champ `div#ie_wIqbydwlyaVHIU1A.input-voice__contenteditable`).
+Avant patch : `question_blocks.json` vide, `[DOM_ONLY_ABORT] detector_no_match ... clickable_visible=8`.
+Après patch : bloc unique extrait (`itype=text`, `studystream_contenteditable_open_text=True`).
+
+Statut : patch validé.

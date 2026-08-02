@@ -147,6 +147,7 @@ try:
         _extract_alchemer_sg_table_checkbox_matrix_block,
         _extract_image_only_choice_checkbox_blocks,
         _extract_image_labelledby_choice_checkbox_blocks,
+        _extract_studystream_contenteditable_open_text_blocks,
     )
 
     # Registre et utilitaires
@@ -269,6 +270,7 @@ except ImportError:
         _extract_alchemer_sg_table_checkbox_matrix_block,
         _extract_image_only_choice_checkbox_blocks,
         _extract_image_labelledby_choice_checkbox_blocks,
+        _extract_studystream_contenteditable_open_text_blocks,
     )
 
 
@@ -1910,6 +1912,16 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                 _nm = _group_key.split("checkbox:image_labelledby:", 1)[1].strip()
                 if _nm:
                     image_only_choice_names.add(_nm)
+    except Exception:
+        pass
+
+    # --- 0i-duodecies) Studystream : question ouverte, champ de saisie div contenteditable ---
+    # Guard DOM strict : div.question-body-open-text > [data-cx="text-input"]
+    # div.input-voice__contenteditable[contenteditable="true"] — aucun input/textarea natif.
+    try:
+        studystream_open_text_blocks = _extract_studystream_contenteditable_open_text_blocks(driver, frame_chain)
+        if studystream_open_text_blocks:
+            return studystream_open_text_blocks
     except Exception:
         pass
 
