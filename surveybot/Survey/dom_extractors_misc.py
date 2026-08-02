@@ -4497,6 +4497,12 @@ def _extract_button_choice_radio_blocks(driver, frame_chain: list[int] | None) -
                         break
 
                 if not label_txt:
+                    try:
+                        other_marker = btn.query_selector("[data-cx='option-other-input']")
+                    except Exception:
+                        other_marker = None
+                    if other_marker is not None:
+                        continue
                     options = []
                     option_xpath_map = {}
                     break

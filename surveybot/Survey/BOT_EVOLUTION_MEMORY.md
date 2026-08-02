@@ -3059,4 +3059,45 @@ wait_reason=timeout), second clic et scans CTA suivants retombant sur la sous-ca
 réponse". Après patch : `progGridSig` diffère entre les deux sous-catégories dès le premier clic,
 `_did_progress` retourne `true`, aucun second clic ni scan CTA superflu.
 
+---
+
+## PLATEFORME : BOUTONS CUSTOM `button.choice` (SANS INPUT NATIF)
+Signature DOM : `div.question-body-options__inner` > N `div.question-body-options__choice` >
+`button.choice[id]` (pas d'`<input>` natif) ; libellé dans `.choice__label` ; question dans
+`.question-title__title`.
+
+### _extract_button_choice_radio_blocks
+Fichier : Survey/dom_extractors_misc.py
+Enregistré dans : Survey/dom_analyzer.py (deux points d'appel, avant `_extract_custom_testid_multi_select_checkbox_blocks`)
+Guard : `div.question-body-options__inner` avec >= 2 `div.question-body-options__choice`, chaque
+`button.choice[id]` avec libellé résolu via `.choice__label`.
+Patterns couverts :
+- Question single-choice à boutons custom sans input natif (ex. genre : Homme/Femme/Je préfère
+  ne pas répondre/Autre).
+- Option "Autre" à saisie libre sans libellé statique (`.choice__label` contient un champ
+  `contenteditable` vide, ex. `div.rename[data-cx="option-other-input"]` avec placeholder
+  "Autre") : détectée via le marqueur `[data-cx="option-other-input"]` à l'intérieur du
+  `button.choice` concerné → cette option est ignorée (skip), les autres options du même groupe
+  restent extraites normalement.
+- `group_key = button_choice_radio:{root_idx}:{crc32(button_ids)}` ; flag payload :
+  `button_choice_radio=True`, `studystream_auto_advance=True`.
+Patterns exclus :
+- Tout `button.choice` sans id → abandon complet du groupe (comportement inchangé, cause non
+  identifiée à ce jour → pas de garde-fou spécifique).
+- Toute option sans libellé ET sans marqueur `[data-cx="option-other-input"]` → abandon complet
+  du groupe (signal insuffisant pour distinguer un "Autre" légitime d'un DOM cassé).
+
+Bug corrigé : avant patch, la moindre option sans libellé textuel statique (ex. l'option "Autre"
+vide tant que l'utilisateur n'a rien saisi) provoquait `options = []; break` sur la boucle
+complète du groupe → 0 bloc produit pour toute la question, malgré 3 options valides sur 4 et un
+`DOM_ONLY_ABORT` en aval, alors que l'extracteur dédié à ce pattern était bien présent et son
+gate DOM correctement matché.
+Diagnostic associé : confirmé sur DOM de référence (plateforme survey Vue.js, question "Quel est
+votre genre ?", 4 `div.question-body-options__choice` dont un `o_question-2-other` avec
+`div.rename__contenteditable` vide). Avant patch : `question_blocks.json` vide, 0 groupe créé sur
+14 éléments cliquables visibles. Après patch : bloc radio extrait avec "Homme", "Femme", "Je
+préfère ne pas répondre" (option "Autre" ignorée, sans bloquer le reste).
+
+Statut : patch validé.
+
 Statut : patch validé.
