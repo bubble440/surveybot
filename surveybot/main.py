@@ -182,7 +182,7 @@ def _attach_pick_ui_active_tab(driver, handles):
             continue
 
         try:
-            url = driver.current_url or ""
+            url = driver.url or ""
         except Exception:
             url = ""
 
@@ -239,7 +239,7 @@ def run_attach_takeover(driver, *, api_key: str, account_id: str) -> None:
     from Survey.functions import _handle_topsurveys_exclusion_popup
 
     max_steps = int(os.getenv("ATTACH_MAX_STEPS", "100"))
-    print(f"[ATTACH] takeover loop start (max_steps={max_steps}) url={_attach_display_url(getattr(driver,'current_url',''))}")
+    print(f"[ATTACH] takeover loop start (max_steps={max_steps}) url={_attach_display_url(getattr(driver,'url',''))}")
     for i in range(1, max_steps + 1):
         try:
             # Préqualification Cint/QPS : passer directement au sondage si disponible
@@ -809,7 +809,7 @@ def run_attach_preselection_takeover(driver, *, api_key: str, account_id: str) -
         try:
             done = survey_executor.execute_survey_page(driver, account_id, api_key, ctx=_ctx)
             _ctx.maybe_update_summary()
-            print(f"[ATTACH][PRESEL->RES] step={i}/{max_steps} ok={done} url={_attach_display_url(driver.current_url)}")
+            print(f"[ATTACH][PRESEL->RES] step={i}/{max_steps} ok={done} url={_attach_display_url(driver.url)}")
             if not done and survey_executor._attach_disq_stop_requested:
                 print(f"[ATTACH][PRESEL->RES][DISQ] Page de disqualification détectée → arrêt immédiat boucle step={i}.")
                 break
