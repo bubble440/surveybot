@@ -148,6 +148,7 @@ try:
         _extract_image_only_choice_checkbox_blocks,
         _extract_image_labelledby_choice_checkbox_blocks,
         _extract_studystream_contenteditable_open_text_blocks,
+        _extract_mriweb_grid_num_row_blocks,
     )
 
     # Registre et utilitaires
@@ -271,6 +272,7 @@ except ImportError:
         _extract_image_only_choice_checkbox_blocks,
         _extract_image_labelledby_choice_checkbox_blocks,
         _extract_studystream_contenteditable_open_text_blocks,
+        _extract_mriweb_grid_num_row_blocks,
     )
 
 
@@ -1563,6 +1565,16 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         kantar_rowrank_blocks = _extract_kantar_rowrank_blocks(driver, frame_chain)
         if kantar_rowrank_blocks:
             return kantar_rowrank_blocks
+    except Exception:
+        pass
+
+    # --- 0h-bis-2a-ter) mrIWeb GRID/NUM par ligne (table.mrGridTable, input[number] par tr) ---
+    # Objectif: éviter la collision de dédoublonnage sur une grille NUM à plusieurs
+    # lignes dont le texte de question est commun (voir BOT_EVOLUTION_MEMORY.md).
+    try:
+        mriweb_grid_num_blocks = _extract_mriweb_grid_num_row_blocks(driver, frame_chain)
+        if mriweb_grid_num_blocks:
+            return mriweb_grid_num_blocks
     except Exception:
         pass
 

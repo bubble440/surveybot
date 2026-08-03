@@ -763,6 +763,50 @@ Patterns exclus :
 
 ---
 
+## PLATEFORME : IPSOS / mrIWeb — GRID/NUM PAR LIGNE (table.mrGridTable, input[type=number] par ligne)
+Signature DOM : `div.question-container.QType-GRID.QSubType-NUM` (script `customJSONproperties`
+`{"QType":"GRID","QSubType":"NUM",...}`) contenant `table.mrGridTable` (aussi classée
+`mrQuestionTable`). Chaque `<tr>` porte son propre `td.mrGridCategoryText` (libellé de ligne)
+et son propre `<input type="number" name="...">`. Le texte de question (`div#question
+.mrQuestionText`) est commun, affiché une seule fois en tête de grille — pas de colonnes
+(`QTopHeaders-false`, pas de `td.mrGridQuestionText`).
+
+### _extract_mriweb_grid_num_row_blocks
+Fichier : Survey/dom_extractors_misc.py
+Enregistré dans : dom_analyzer.py, étape `0h-bis-2a-ter` (juste avant
+`_extract_label_radio_list_blocks`), avec `return` immédiat si blocs produits.
+Guard : `div.question-container.QType-GRID.QSubType-NUM` présent ET `table.mrGridTable` à
+l'intérieur ET au moins une ligne avec `td.mrGridCategoryText` + `input[type='number']`.
+Bug corrigé : sur ce DOM, ni l'extracteur grid texte existant (dom_analyzer.py ~3874, exige
+`input.mrEdit[type='text']` avec name `..._Q__N_QAnswer`) ni l'extracteur DnD radio (exige
+`td.mrGridQuestionText` + radios `colid`) ne se déclenchaient — inputs `type="number"`, suffixe
+de name `_Q__{N}_Q__scale`. Les lignes retombaient sur le chemin générique "singles"
+(itype="text" via `_detect_itype`), et `_dedup_signature` (pas de `group_key`, options vides)
+fusionnait les lignes car leur `question` (texte de grille commun) était identique → une seule
+ligne survivait au dédoublonnage.
+Correction (additive, aucune modification de `_dedupe_question_blocks`) : un bloc
+`single`/`itype="number"` par ligne, `question` = `"{question_grille} — {row_label}"` (le
+libellé de ligne rend le texte de question unique par bloc → aucune collision de signature de
+dédup, aucun besoin de scoper `_dedup_signature`). `context.row_label` porte le libellé brut ;
+flag payload/context : `mriweb_grid_num_row=True`. Payload registry (xpath/alt_xpaths/tag/
+name/id) identique au pattern `confirmit_cf_numeric_list` déjà validé → dispatch fill number
+sans changement dispatcher.
+Patterns couverts :
+- Grilles Ipsos/mrIWeb GRID/NUM à ≥2 lignes, chaque ligne son propre `input[type=number]` +
+  `td.mrGridCategoryText`, question de tête commune.
+- Validé en conditions réelles : 2 blocs distincts extraits (`Comment se compose votre foyer ?
+  — Nombre d'adultes...` / `— Nombre d'enfants...`), 2 itypes "number", GPT a répondu 2 valeurs
+  distinctes, remplissage des 2 inputs confirmé à l'écran (capture bot:9009).
+Patterns exclus :
+- Grid texte `type='text'` + name `_QAnswer` → extracteur existant dom_analyzer.py ~3874
+  (inchangé).
+- Grid avec colonnes (`td.mrGridQuestionText` + radios `colid`) → extracteur DnD matrix
+  existant (inchangé).
+
+Statut : patch validé en conditions réelles (extraction + remplissage confirmés).
+
+---
+
 ## PLATEFORME : DATADIGGERS ICONTROL (AngularJS Screener)
 Signature DOM : `div.main_survey_page` + `form[id^="attention_questions_"]`, `ng-app="dataDiggerBackendApp"`
 Domaine observé : api-icontrol.datadiggers-mr.com

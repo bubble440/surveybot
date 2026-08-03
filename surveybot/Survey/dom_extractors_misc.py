@@ -13271,4 +13271,155 @@ def _extract_alchemer_rank_dragdrop_block(driver, frame_chain) -> list[dict]:
                 log_debug("[DOM_ALCHEMER_RANK_DRAGDROP]", f"error: {type(exc).__name__}: {exc}")
             continue
 
+
+# ================================================================================
+# IPSOS / mrIWeb — GRID NUM PAR LIGNE (table.mrGridTable, un input[number] par ligne)
+# ================================================================================
+
+def _extract_mriweb_grid_num_row_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
+    """
+    Ipsos/mrIWeb : grille GRID/NUM (`div.question-container.QType-GRID.QSubType-NUM`)
+    dont chaque ligne (`tr`) porte son propre `input[type="number"]` et son propre
+    libellé de ligne (`td.mrGridCategoryText`), sous un texte de question commun
+    affiché une seule fois en tête de grille.
+
+    Gate DOM strict (additif) :
+    - `div.question-container.QType-GRID.QSubType-NUM` présent
+    - `table.mrGridTable` à l'intérieur
+    - au moins une ligne avec `td.mrGridCategoryText` + `input[type='number']`
+
+    Ne couvre pas :
+    - Les grilles GRID/NUM dont les inputs suivent la convention `..._Q__N_QAnswer`
+      avec `type="text"` → chemin existant (dom_analyzer.py, bloc mriweb_grid text).
+    - Les grilles GRID avec colonnes (`td.mrGridQuestionText`) + radios `colid`
+      → extracteur dnd matrix existant (dom_analyzer.py).
+
+    Produit un bloc `single`/itype="number" distinct PAR LIGNE, avec le libellé de
+    ligne concaténé au texte de question partagé (évite toute collision de
+    dédoublonnage : la signature de dédup générique repose sur le texte de question
+    complet quand il n'y a pas de group_key, donc deux libellés de ligne différents
+    donnent deux signatures différentes sans toucher à `_dedupe_question_blocks`).
+    """
+    frame_chain = list(frame_chain or [])
+    blocks: list[dict] = []
+
+    try:
+        containers = driver.query_selector_all(
+            "div.question-container.QType-GRID.QSubType-NUM"
+        )
+    except Exception:
+        return blocks
+    if not containers:
+        return blocks
+
+    for qc in containers[:10]:
+        try:
+            try:
+                grid_table = qc.query_selector("table.mrGridTable")
+            except Exception:
+                grid_table = None
+            if grid_table is None:
+                continue
+
+            question = ""
+            try:
+                q_el = qc.query_selector(".question .mrQuestionText")
+                if q_el is not None:
+                    question = _norm(q_el.get_attribute("textContent") or q_el.inner_text() or "")
+            except Exception:
+                pass
+            if not question:
+                continue
+
+            try:
+                rows = grid_table.query_selector_all("tr")
+            except Exception:
+                rows = []
+
+            row_count = 0
+            for tr in rows[:50]:
+                try:
+                    cat_td = tr.query_selector("td.mrGridCategoryText")
+                    if cat_td is None:
+                        continue
+                    row_label = _norm(cat_td.get_attribute("textContent") or cat_td.inner_text() or "")
+                    if not row_label:
+                        continue
+
+                    inp = tr.query_selector("input[type='number']")
+                    if inp is None:
+                        continue
+
+                    inp_id = (inp.get_attribute("id") or "").strip()
+                    inp_name = (inp.get_attribute("name") or "").strip()
+                    if not inp_id and not inp_name:
+                        continue
+
+                    block_question = f"{question} — {row_label}"
+
+                    row_key = f"mriweb_grid_num:{inp_id or inp_name}"
+                    target_id = make_target_id("single", row_key, block_question)
+
+                    try:
+                        xpath = _best_xpath_for_element(driver, inp)
+                    except Exception:
+                        xpath = f"//*[@id='{inp_id}']" if inp_id else f"//input[@name={_xpath_literal(inp_name)}]"
+
+                    alt_xpaths: list[str] = []
+                    if inp_id:
+                        alt_xpaths.append(f"//*[@id='{inp_id}']")
+                    if inp_name:
+                        alt_xpaths.append(f"//input[@name={_xpath_literal(inp_name)}]")
+                    alt_xpaths = [x for x in dict.fromkeys(alt_xpaths) if x and x != xpath][:4]
+
+                    registry_payload: dict = {
+                        "kind": "single",
+                        "itype": "number",
+                        "question": block_question,
+                        "xpath": xpath,
+                        "alt_xpaths": alt_xpaths,
+                        "tag": "input",
+                        "name": inp_name,
+                        "id": inp_id,
+                        "frame_chain": frame_chain,
+                        "mriweb_grid_num_row": True,
+                    }
+                    block_ctx: dict = {
+                        "kind": "single",
+                        "tag": "input",
+                        "name": inp_name,
+                        "id": inp_id,
+                        "row_label": row_label,
+                        "mriweb_grid_num_row": True,
+                    }
+
+                    register_target(target_id, registry_payload)
+
+                    blocks.append(
+                        {
+                            "question": block_question,
+                            "itype": "number",
+                            "options": [],
+                            "max_select": 1,
+                            "min_select": 1,
+                            "target_id": target_id,
+                            "context": block_ctx,
+                        }
+                    )
+                    row_count += 1
+                except Exception:
+                    continue
+
+            if row_count:
+                log_debug(
+                    "[DOM_MRIWEB_GRID_NUM]",
+                    f"blocks_extracted={row_count} question={question[:60]!r}",
+                )
+        except Exception:
+            continue
+
+    if blocks:
+        log_info("[DOM_MRIWEB_GRID_NUM]", f"blocks_extracted={len(blocks)}")
+    return blocks
+
     return blocks
