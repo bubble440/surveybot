@@ -7154,6 +7154,24 @@ def execute_action(
         # ==========================================================
         if itype == "dropdown":
 
+            # PureSpectrum ps-select-dropdown (ng-bootstrap, date de naissance mois/année) :
+            # la stratégie dédiée (bloc is_ps_select_dropdown / is_purespectrum_date_dropdown
+            # dans _apply_by_target_id) a déjà été tentée avant d'atteindre ce bloc, et a échoué
+            # (sinon execute_action serait déjà retourné True plus haut). Ce widget n'a aucun
+            # <select> natif (composant custom ps-select-dropdown / div[ngbdropdown]) : le chemin
+            # générique select_option_with_hint()/open_dropdown_generic() appelle `el.tag_name`
+            # (API Selenium absente d'un ElementHandle Playwright) dès qu'aucun <select> n'est
+            # trouvé, provoquant un AttributeError non catché qui fait abandonner toute l'action
+            # (cf. guard analogue tag=="select" ci-dessous, et BOT_EVOLUTION_MEMORY.md). On
+            # rapporte l'échec au lieu de retomber sur un chemin non applicable à ce widget.
+            _tp_dd = target_payload or {}
+            if _tp_dd.get("ps_select_dropdown") or _tp_dd.get("purespectrum_date_dropdown"):
+                log_debug(
+                    "[TARGET_DEBUG]",
+                    f"dropdown ps_select_dropdown: dedicated strategy failed, no generic fallback value={label!r}",
+                )
+                continue
+
             # Guard: sliderpoints are rendered as <select> but behave like Likert sliders.
             # We forbid generic dropdown fallbacks here because they can return True without selecting a value.
             is_sliderpoints_target = False
@@ -7322,6 +7340,20 @@ def execute_action(
                 log_debug(
                     "[TARGET_DEBUG]",
                     f"radio mui_dialog_question_option: dedicated strategy failed, no generic fallback value={label!r}",
+                )
+                return False
+
+            # PureSpectrum mobile date (roue ps-select-scroll, _extract_purespectrum_mobile_date_blocks) :
+            # aucune stratégie de sélection dédiée n'existe encore pour ce widget (pas d'input/label
+            # natif, sélection via position rotateX/translateZ, mécanisme d'interaction non observé
+            # sur un DOM de référence à ce jour). Les stratégies génériques radio_main/radio_buttonish
+            # chercheraient un input/label inexistant page entière et pourraient cliquer un élément
+            # sans rapport. On rapporte l'échec proprement en attendant un DOM de référence pour
+            # implémenter une stratégie dédiée.
+            if _tp.get("purespectrum_mobile_date"):
+                log_debug(
+                    "[TARGET_DEBUG]",
+                    f"radio purespectrum_mobile_date: no dedicated strategy implemented, no generic fallback value={label!r}",
                 )
                 return False
 

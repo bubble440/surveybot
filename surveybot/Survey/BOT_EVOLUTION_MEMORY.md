@@ -3264,4 +3264,76 @@ avec le texte complet de la question `IntroEN` (question + options) comme "quest
 un seul bloc extrait (le radio `IntroEN`), le champ `errorreporting` est ignoré silencieusement par
 la boucle "Autres inputs".
 
+---
+
+## PLATEFORME : PURESPECTRUM — DATE DE NAISSANCE (ps-date-question)
+Signature DOM : `<ps-date-question qualificationid="...">`, deux variantes rendues selon
+responsive/device, mutuellement exclusives sur un même DOM :
+- Desktop : `<ps-date-picker-select>` → `<ps-select-dropdown data-e2e="month|year">` → ng-bootstrap
+  (`div[ngbdropdown]` : `button[ngbdropdowntoggle]` + `div[ngbdropdownmenu] > button[ngbdropdownitem][data-e2e=...]`).
+- Mobile/carrousel : `<ps-date-picker-mobile>` → `<ps-select-scroll>` (roues `div.select-scroll-slide`
+  positionnées par `transform: rotateX(...) translateZ(...)`, pas de `data-e2e`, pas d'input/label natif).
+
+Trois extracteurs enregistrés dans dom_analyzer.py (ordre additif, chacun avec `return` propre en
+cas de match — pas de risque de masquage croisé confirmé, gardes CSS strictement disjoints) :
+1. `_extract_ps_select_dropdown_blocks` — garde `ps-select-dropdown[data-e2e=month|year]`,
+   itype="select"/"dropdown", flag `ps_select_dropdown=True`.
+2. `_extract_purespectrum_date_dropdown_blocks` — garde `ps-date-question[qualificationid]` +
+   mêmes dropdowns ngbdropdown (variante plus ancienne), itype="radio", flag
+   `purespectrum_date_dropdown=True`. Ne s'exécute jamais sur un DOM desktop tant que #1 matche
+   (comportement voulu, #1 prioritaire — vérifié, pas un bug).
+3. `_extract_purespectrum_mobile_date_blocks` — garde `ps-date-picker-mobile ps-select-scroll`
+   (≥2 colonnes), itype="radio", flag `purespectrum_mobile_date=True`, `option_xpath_map` sur les
+   `.select-scroll-slide` (texte), pas d'input/label réel derrière.
+
+### action_dispatcher.py — guard anti-crash bloc 🟦 DROPDOWN pour ps_select_dropdown / purespectrum_date_dropdown
+Fichier : Survey/action_dispatcher.py, bloc `if itype == "dropdown":`, tout début (avant le guard
+sliderpoints), juste avant la séquence `dropdown_block_resolver` → `select_option_with_hint` →
+`open_dropdown_generic`.
+Guard : `target_payload.get("ps_select_dropdown") or target_payload.get("purespectrum_date_dropdown")`.
+Bug corrigé : la stratégie dédiée (`is_ps_select_dropdown`/`is_purespectrum_date_dropdown` dans
+`_apply_by_target_id`, ~ligne 1239-1304) est tentée en premier ; si elle échoue (clic sans effet sur
+ce widget ngbdropdown), l'exécution retombait sur le chemin générique `select_option_with_hint()` →
+`open_dropdown_generic()`, qui appelle `el.tag_name` (API Selenium absente d'un ElementHandle
+Playwright) dès qu'aucun `<select>` natif n'est trouvé (aucun sur ce widget custom) → `AttributeError`
+non catché qui faisait abandonner toute l'action (`execute_actions_plan idx=N crashed`), bloquant la
+progression du survey.
+Correction : sur le modèle exact du guard `kantar_rowpicker_radio`/`mui_dialog_question_option`
+(bloc 🟦 RADIO) — la stratégie dédiée ayant déjà échoué, on rapporte l'échec proprement
+(`log_debug` + `continue`) au lieu de retomber sur un chemin non applicable à ce widget. Zéro
+modification d'`open_dropdown_generic`/`select_option_with_hint` (stratégies existantes intactes).
+Patterns couverts :
+- Tout target_id portant le flag `ps_select_dropdown` ou `purespectrum_date_dropdown` dont la
+  stratégie dédiée a échoué.
+Patterns exclus :
+- Tout autre dropdown (natif `<select>`, custom sans ces flags) → chemin générique inchangé.
+Statut : patch anti-crash validé en conditions réelles (log `[TARGET_DEBUG] dropdown
+ps_select_dropdown: dedicated strategy failed, no generic fallback`, plus aucun `AttributeError:
+'ElementHandle' object has no attribute 'tag_name'` ni `execute_actions_plan idx=N crashed`).
+**Non résolu** : la stratégie dédiée elle-même (clic toggle_xpath puis option_xpath_map, ~ligne
+1294-1304) échoue systématiquement sur ce widget (`purespectrum xpath dropdown click failed` pour
+mois ET année, sur DOM desktop de référence confirmé) — cause probable : retour de
+`_click_xpath(toggle_xpath)` non vérifié + `time.sleep(0.1)` fixe non asservi à l'ouverture réelle
+du menu ng-bootstrap (pas de vérification `aria-expanded`/visibilité avant le clic sur l'option).
+Modification de cette stratégie existante en attente de validation explicite (diff proposé, non
+appliqué).
+
+### action_dispatcher.py — guard abandon contrôlé bloc 🟦 RADIO pour purespectrum_mobile_date
+Fichier : Survey/action_dispatcher.py, bloc `if itype == "radio":`, juste après le guard
+`mui_dialog_question_option`.
+Guard : `target_payload.get("purespectrum_mobile_date")`.
+Patterns couverts :
+- Widget roue `ps-select-scroll` (variante mobile) : aucune stratégie de sélection dédiée n'existe
+  à ce jour (pas d'input/label natif, mécanisme d'interaction — drag/scroll/clic centré — non
+  observé sur un DOM de référence réel). Sans ce guard, les stratégies génériques
+  radio_main/radio_buttonish chercheraient un input/label inexistant page entière, avec risque de
+  faux clic sur un élément sans rapport.
+- Abandon proprement loggé (`log_debug` + `return False`), pas d'implémentation de stratégie
+  d'interaction (aucun DOM réel de cette variante disponible — cf. `_extract_purespectrum_mobile_date_blocks`).
+Patterns exclus :
+- Tout autre radio sans ce flag → chemin générique inchangé.
+Statut : guard anti-fallback-erroné appliqué ; stratégie de sélection réelle à concevoir dès
+qu'un DOM de référence de la variante mobile (`ps-date-picker-mobile ps-select-scroll`) sera
+disponible.
+
 Statut : patch validé.
