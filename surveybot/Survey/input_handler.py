@@ -159,6 +159,7 @@ from Survey.input_text import (
     fill_text_input,
     fill_native_date_input,
     fill_ifop_zip2city_widget,
+    fill_text_input_by_id_in_frame,
 )
 
 # Aliases pour rétrocompatibilité
@@ -584,7 +585,7 @@ __all__ = [
     # Text
     "type_via_cdp", "react_set_value_and_fire", "is_numeric_field",
     "swagbucks_zip_patch", "fill_text_input", "fill_native_date_input",
-    "fill_ifop_zip2city_widget",
+    "fill_ifop_zip2city_widget", "fill_text_input_by_id_in_frame",
     
     # Radio
     "click_decipher_grid_radio", "click_decipher_grid_radio_strict",

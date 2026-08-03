@@ -453,6 +453,110 @@ def fill_ifop_zip2city_widget(driver, value: str, xpath: str, frame_chain=None) 
 
 
 # =============================================================================
+# CHAMP TEXT/NUMBER RÉSOLU DANS UN FRAME_CHAIN DU REGISTRY
+# (ex: Ipsos/mrIWeb GRID/NUM par ligne, _extract_mriweb_grid_num_row_blocks)
+# =============================================================================
+
+def fill_text_input_by_id_in_frame(
+    driver,
+    text: str,
+    element_id: str | None,
+    element_name: str | None = None,
+    frame_chain=None,
+) -> bool:
+    """
+    Saisie dédiée pour un champ text/number dont l'id/name est porté par le
+    registry DOM_REGISTRY avec un frame_chain (context.frame_chain du bloc).
+
+    N'appelle PAS fill_text_input générique : celui-ci résout le champ via
+    driver.query_selector / driver.wait_for_selector directement sur `driver`
+    (Page racine), qui ignore l'attribut _current_frame posé par
+    switch_to_frame_chain -- cf. BOT_EVOLUTION_MEMORY.md "analyze_dom /
+    dom_extractors — passage explicite du contexte résolu (_ctx)" : seules les
+    fonctions qui résolvent explicitement getattr(driver, "_current_frame",
+    driver) avant d'interroger le DOM opèrent dans le frame réellement
+    sélectionné. Cause racine confirmée du TimeoutError malgré un champ visible :
+    résolution par id et fallback générique tentés dans le mauvais contexte de
+    frame quand un frame_chain non vide est porté par le registry.
+
+    Résolution STRICTE par id puis name, dans le contexte de frame résolu par
+    frame_chain -- jamais par contexte/texte de question. Le chemin générique
+    fill_text_input reste inchangé et gère les cas sans frame_chain.
+
+    Args:
+        driver: WebDriver (Page Playwright)
+        text: valeur à saisir
+        element_id: id DOM du champ (registry "id")
+        element_name: name DOM du champ (registry "name"), fallback si id absent/non résolu
+        frame_chain: liste d'indices d'iframes imbriquées (registry "frame_chain")
+
+    Returns:
+        True si la valeur a été appliquée et vérifiée sur ce champ précis.
+    """
+    if not element_id and not element_name:
+        return False
+
+    def _apply(ctx_driver) -> bool:
+        field = None
+        if element_id:
+            try:
+                field = ctx_driver.query_selector(f"#{element_id}")
+            except Exception:
+                field = None
+        if field is None and element_name:
+            try:
+                field = ctx_driver.query_selector(f'[name="{element_name}"]')
+            except Exception:
+                field = None
+        if field is None:
+            log_debug(
+                "[TEXT_FRAMED]",
+                f"id={element_id!r} name={element_name!r} introuvable dans le contexte de frame chain={frame_chain!r}",
+            )
+            return False
+
+        value = re.sub(r"\s+", " ", text or "").strip()
+        if is_numeric_field(field):
+            digits = re.sub(r"\D", "", value)
+            if digits:
+                value = digits
+
+        before = _read_live_field_value(field)
+        try:
+            ctx_driver.evaluate("(el) => el.scrollIntoView({block:'center'})", field)
+        except Exception:
+            pass
+
+        if not react_set_value_and_fire(ctx_driver, field, value):
+            log_debug("[TEXT_FRAMED]", f"id={element_id!r} assignation JS échouée")
+            return False
+
+        current = _read_live_field_value(field)
+        log_debug(
+            "[TEXT_FRAMED]",
+            f"id={element_id!r} name={element_name!r} before={before!r} target={value!r} "
+            f"after={current!r} frame_chain={frame_chain!r}",
+        )
+        return current.strip() == value
+
+    if frame_chain:
+        try:
+            from Survey.frame_utils import switch_to_frame_chain  # type: ignore
+        except Exception:
+            switch_to_frame_chain = None  # type: ignore
+        if switch_to_frame_chain is not None:
+            with switch_to_frame_chain(driver, frame_chain) as ok:
+                if not ok:
+                    log_debug("[TEXT_FRAMED]", f"switch_to_frame_chain échoué chain={frame_chain!r}")
+                    return False
+                ctx = getattr(driver, "_current_frame", driver)
+                return _apply(ctx)
+
+    ctx = getattr(driver, "_current_frame", driver)
+    return _apply(ctx)
+
+
+# =============================================================================
 # FONCTION PRINCIPALE DE SAISIE TEXTE
 # =============================================================================
 

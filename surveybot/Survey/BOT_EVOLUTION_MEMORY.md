@@ -805,6 +805,37 @@ Patterns exclus :
 
 Statut : patch validé en conditions réelles (extraction + remplissage confirmés).
 
+### fill_text_input_by_id_in_frame — saisie text/number dans le frame_chain du registry
+Fichiers : Survey/input_text.py (fonction), Survey/input_handler.py (export), Survey/action_dispatcher.py
+(nouvelle branche dédiée, bloc `itype in ("text","number","textarea")`, après `ifop_zip2city_widget`,
+avant le fallback générique `text_input`).
+Bug corrigé : `_extract_mriweb_grid_num_row_blocks` stocke `frame_chain` dans le payload registry
+(cf. entrée ci-dessus), mais le chemin générique `fill_text_input` résout le champ via
+`driver.query_selector`/`driver.wait_for_selector` directement sur `driver` (Page racine), qui ignore
+l'attribut `_current_frame` posé par `switch_to_frame_chain` (même classe de bug que le module transversal
+en tête de ce fichier). Résultat : `TimeoutError` sur le sélecteur générique malgré les inputs visibles à
+l'écran, résolution par id ET fallback générique tentés dans le mauvais contexte de frame dès que
+`frame_chain` est non vide.
+Guard : `payload.get("frame_chain")` non vide (registry DOM_REGISTRY flat, racine — pas sous "context")
+ET `payload.get("id")` ou `payload.get("name")` présent.
+Patterns couverts :
+- Tout bloc text/number dont le registry porte un `frame_chain` non vide (ex : grilles Ipsos/mrIWeb
+  GRID/NUM par ligne, `mriweb_grid_num_row=True`, mais guard générique sur la présence de `frame_chain`,
+  pas sur ce flag précis).
+- Résolution id puis name dans le contexte de frame (`switch_to_frame_chain` + `getattr(driver,
+  "_current_frame", driver)`), application via `react_set_value_and_fire` (setter natif + dispatch
+  input/change), filtrage chiffres si champ numérique.
+- Validé en conditions réelles : Ipsos/mrIWeb GRID/NUM (2 lignes, `frame_chain=[0]`), logs
+  `[TEXT_FRAMED] id=... before='' target='1' after='1' frame_chain=[0]` /
+  `apply ok=true strategy=text_input_framed reason=applied` pour les 2 champs, valeurs 1 et 0 confirmées
+  à l'écran (capture bot:9009).
+- En cas d'échec : `continue` explicite, AUCUN retour vers `fill_text_input` générique (résolution racine
+  incompatible avec un frame_chain non vide — même principe que la branche `native_date_input`).
+Patterns exclus :
+- Blocs sans `frame_chain` dans le registry (cas majoritaire) → chemin générique `fill_text_input`
+  inchangé, non impacté par ce patch.
+- Aucune modification du corps de `fill_text_input` (stratégie distincte, additive).
+
 ---
 
 ## PLATEFORME : DATADIGGERS ICONTROL (AngularJS Screener)

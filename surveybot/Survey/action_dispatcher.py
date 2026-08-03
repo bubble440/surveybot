@@ -7522,6 +7522,32 @@ def execute_action(
                 log_info("[TARGET]", f"apply ok=false reason=ifop_zip2city_widget_failed target_id={target_id!r}")
                 continue
 
+            # --- Champ text/number résolu dans un frame_chain du registry ---
+            # Stratégie dédiée additive : voir BOT_EVOLUTION_MEMORY.md "IPSOS / mrIWeb —
+            # GRID/NUM PAR LIGNE" / "CHAMP TEXT/NUMBER RÉSOLU DANS UN FRAME_CHAIN DU
+            # REGISTRY". target_payload est ici le registre DOM_REGISTRY flat -> id/name/
+            # frame_chain lus à la racine, même convention que les blocs native_date_input
+            # et ifop_zip2city_widget ci-dessus. fill_text_input générique résout id/name
+            # via driver.query_selector directement sur `driver` (Page racine), qui ignore
+            # l'attribut _current_frame posé par switch_to_frame_chain -> résolution dans
+            # le mauvais contexte de frame quand frame_chain est non vide (TimeoutError sur
+            # le fallback générique malgré un champ visible). Ne retombe pas sur
+            # fill_text_input générique en cas d'échec (une seule stratégie, pas de
+            # fallback empilé) : ce dernier resterait dans le mauvais contexte de frame.
+            _framed_frame_chain = target_payload.get("frame_chain") if target_payload else None
+            if _framed_frame_chain:
+                _framed_id = (target_payload.get("id") or "").strip() or None
+                _framed_name = (target_payload.get("name") or "").strip() or None
+                if _framed_id or _framed_name:
+                    ok = _try(driver, "text_input_framed",
+                        lambda fid=_framed_id, fname=_framed_name, fc=_framed_frame_chain:
+                        Survey.input_handler.fill_text_input_by_id_in_frame(
+                            driver, label, element_id=fid, element_name=fname, frame_chain=fc))
+                    if ok:
+                        return True
+                    log_info("[TARGET]", f"apply ok=false reason=text_input_framed_failed target_id={target_id!r}")
+                    continue
+
             if _try(driver, "text_input", lambda fid=_field_id:
                 Survey.input_handler.fill_text_input(driver, label, context_hint=ctx, element_id=fid)
             ):
