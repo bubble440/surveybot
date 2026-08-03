@@ -3219,3 +3219,49 @@ Avant patch : `question_blocks.json` vide, `[DOM_ONLY_ABORT] detector_no_match .
 Après patch : bloc unique extrait (`itype=text`, `studystream_contenteditable_open_text=True`).
 
 Statut : patch validé.
+
+---
+
+## PLATEFORME : SSI CIWWEB LEGACY (ciwweb.pl, ex. eu.surveyme.online) — WIDGET FOOTER "SIGNALER UNE ERREUR" (custom element error-report-button)
+
+### Exclusion additive dans la boucle "Autres inputs"
+Fichier : Survey/dom_analyzer.py, boucle `# --- 2) Autres inputs (dropdown / text / textarea / button) ---`,
+juste après `itype = _detect_itype(el)`, avant tout autre filtre (y compris le guard zip2city Ifop).
+Guard DOM strict : élément dont l'hôte du shadow root (`e.getRootNode().host`) OU un ancêtre
+light-DOM (`e.closest(...)`) a pour tagName `error-report-button`. Vérifié via `el.evaluate(...)`
+(JS exécuté côté page), pas de dépendance au nom/id du champ interne.
+Log discriminant : `[SINGLES_SKIP] error_report_widget_input skipped` (conditionné `LOG_LEVEL`).
+
+Problème résolu : le custom element `<error-report-button>` (widget utilitaire de report d'erreur,
+`div.page_footer`) expose un champ interne (observé : `input[name="errorreporting"]`, souvent en
+shadow DOM, piercé automatiquement par le sélecteur CSS Playwright de la boucle générique) qui
+n'est rattaché à aucun conteneur de question réel. Le fallback générique
+(`_nearest_question_container` / `_extract_question_from_container`) remontait alors jusqu'à la
+question voisine (ex. le bloc de consentement `IntroEN`) et réutilisait son texte intégral
+(question + options concaténées) comme "question" du faux bloc, avec `itype="text"`. Résultat :
+2 blocs produits pour une page à une seule vraie question (radio, 2 options), le second étant un
+doublon fantôme du widget hors questionnaire.
+
+Patterns couverts :
+- Toute page portant un custom element `<error-report-button>` (light DOM ou shadow DOM à un
+  niveau), quel que soit le name/id du champ interne ou la locale — le garde cible le tag de
+  l'élément hôte, pas un attribut du champ.
+
+Patterns exclus :
+- Tout champ hors de ce custom element → non concerné, comportement de la boucle "Autres inputs"
+  inchangé pour tous les autres inputs/textarea/select/button/lien.
+- `_nearest_question_container` / `_extract_question_from_container` (fallback générique) et
+  `_detect_itype` : fonctions partagées non modifiées — ce patch ajoute uniquement une exclusion
+  en amont de leur appel dans cette boucle précise.
+- Le pattern `ssi_confirmit_select_header1` (résolution de question du bloc radio de consentement
+  lui-même, cf. entrée dédiée ci-dessus) : non concerné, branche de résolution différente et
+  en amont de cette boucle.
+
+Diagnostic associé : confirmé sur eu.surveyme.online (G5765_Translation, page 2, question
+"IntroEN" — consentement, widget radio graphique). Avant patch : `question_blocks.json` contenait
+2 blocs, le second `itype="text"`, `target_id` `single_fc281c12ccfe`, `context.name="errorreporting"`,
+avec le texte complet de la question `IntroEN` (question + options) comme "question". Après patch :
+un seul bloc extrait (le radio `IntroEN`), le champ `errorreporting` est ignoré silencieusement par
+la boucle "Autres inputs".
+
+Statut : patch validé.

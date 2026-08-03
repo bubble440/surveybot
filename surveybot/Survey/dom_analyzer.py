@@ -3449,6 +3449,31 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         try:
             itype = _detect_itype(el)
 
+            # --- Exclusion additive : widget utilitaire "signaler une erreur" ---
+            # Custom element <error-report-button> (pied de page, ex. SSI/ciwweb.pl
+            # eu.surveyme.online) : son champ interne (souvent en shadow DOM, un seul
+            # niveau) n'est pas une question du questionnaire. Sans ce garde, le
+            # fallback générique de résolution de conteneur/question réutilise le
+            # texte de la question voisine, produisant un faux bloc "text" en doublon
+            # (id/name="errorreporting" observé, mais le garde ne dépend pas de ce nom
+            # précis : il cible le custom element hôte, stable quelle que soit la
+            # locale). Guard DOM strict : élément hôte du shadow root de e, ou
+            # ancêtre light-DOM, avec tagName "error-report-button".
+            try:
+                _in_error_report_widget = bool(
+                    el.evaluate(
+                        "e => { const r = e.getRootNode && e.getRootNode(); "
+                        "if (r && r.host && r.host.tagName && r.host.tagName.toLowerCase() === 'error-report-button') return true; "
+                        "return !!(e.closest && e.closest('error-report-button')); }"
+                    )
+                )
+            except Exception:
+                _in_error_report_widget = False
+            if _in_error_report_widget:
+                if is_debug():
+                    log_debug("[SINGLES_SKIP]", "error_report_widget_input skipped")
+                continue
+
             # --- Détection additive : widget zip2city Ifop (s2.ifoponline.com) ---
             # input[type="search"].jz2c-input, sans id/name -> _detect_itype() (dom_utils.py,
             # partagé avec tout le projet) ne reconnaît pas type="search" et retourne "unknown",
