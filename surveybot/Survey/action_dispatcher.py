@@ -367,14 +367,9 @@ def solve_focusvision_cardsort(
         if not card:
             break
 
-        before_idx = ""
-        try:
-            before_idx = (card.get_attribute("index") or "").strip()
-        except Exception:
-            before_idx = ""
-
         qtxt = _get_question_text(cs, card)
         card_text = _norm(card.inner_text() or "")
+        before_text = card_text
         bucket = _pick_bucket(cs, qtxt, card_text)
         if not bucket:
             break
@@ -385,33 +380,33 @@ def solve_focusvision_cardsort(
         # petit wait pour l'auto-advance (page JS)
         time.sleep(0.12)
 
-        # si la carte n'a pas changé, on retente 1 fois en cliquant l'item interne
+        # Signal de progression : identité textuelle de la carte active, PAS un
+        # attribut "index" (absent du DOM sq-cardsort réel — les <li> exposent
+        # class="sq-cardsort-card" + atmost, cf. dom_analyzer.py _should_skip_...).
+        # Un attribut "index" toujours vide rendait avant/apres toujours égaux à ""
+        # => la comparaison ne se déclenchait jamais => apply_failed systématique
+        # même quand le clic avait réellement fait progresser le widget.
         card2 = _active_card(cs)
-        after_idx = ""
-        try:
-            after_idx = (card2.get_attribute("index") or "").strip() if card2 else ""
-        except Exception:
-            after_idx = ""
+        after_text = _norm(card2.inner_text() or "") if card2 else ""
 
-        if before_idx and after_idx and before_idx == after_idx:
+        # si la carte active n'a pas changé, on retente 1 fois en cliquant l'item interne
+        if card2 is not None and after_text == before_text:
             try:
                 inner = bucket.query_selector(".sq-cardsort-bucket-item")
                 _click(inner)
                 time.sleep(0.12)
             except Exception:
                 pass
-        card3 = _active_card(cs)
-        after_retry_idx = ""
-        try:
-            after_retry_idx = (card3.get_attribute("index") or "").strip() if card3 else ""
-        except Exception:
-            after_retry_idx = ""
+            card3 = _active_card(cs)
+            after_text = _norm(card3.inner_text() or "") if card3 else ""
 
         if _completion_visible(cs):
+            log_debug("[CARDSORT_DEBUG]", f"completion visible, card={before_text[:40]!r}")
             progressed = True
             break
 
-        if before_idx and after_retry_idx and before_idx != after_retry_idx:
+        if card2 is None or after_text != before_text:
+            log_debug("[CARDSORT_DEBUG]", f"advanced card={before_text[:40]!r} -> {after_text[:40]!r}")
             progressed = True
 
     return progressed
