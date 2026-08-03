@@ -6060,35 +6060,48 @@ def handle_drag_drop_logic(driver):
             try:
                 driver.evaluate("(e) => e.scrollIntoView({block:'center'})",source)
                 driver.evaluate("(e) => e.scrollIntoView({block:'center'})",drop_zone)
-                points = driver.evaluate("""() => {
-                    const src = _el;
-                    const dst = _arg1;
-                    const ox = arguments[2] || 0;
-                    const oy = arguments[3] || 0;
-                    if (!src || !dst) return null;
-                    const srcRect = src.getBoundingClientRect();
-                    const dstRect = dst.getBoundingClientRect();
-                    const endX = Math.floor(dstRect.left + dstRect.width / 2 + ox);
-                    const endY = Math.floor(dstRect.top + dstRect.height / 2 + oy);
-                    const atPoint = document.elementFromPoint(endX, endY);
+                src_rect = driver.evaluate(
+                    "(el) => { const r = el.getBoundingClientRect(); return {left: r.left, top: r.top, width: r.width, height: r.height}; }",
+                    source,
+                )
+                dst_rect = driver.evaluate(
+                    "(el) => { const r = el.getBoundingClientRect(); return {left: r.left, top: r.top, width: r.width, height: r.height}; }",
+                    drop_zone,
+                )
+                if not src_rect or not dst_rect:
+                    raise RuntimeError("drag_points_unavailable")
+                start_x_f = src_rect["left"] + src_rect["width"] / 2
+                start_y_f = src_rect["top"] + src_rect["height"] / 2
+                end_x_f = dst_rect["left"] + dst_rect["width"] / 2 + ox
+                end_y_f = dst_rect["top"] + dst_rect["height"] / 2 + oy
+                _end_x = int(end_x_f)
+                _end_y = int(end_y_f)
+                verify = driver.evaluate(
+                    f"""(dst) => {{
+                    const atPoint = document.elementFromPoint({_end_x}, {_end_y});
                     const insideDropZone = !!(atPoint && (atPoint === dst || dst.contains(atPoint)));
                     const insideDraggable = !!(atPoint && atPoint.closest('[cdkdrag], .cdk-drag, [draggable="true"]'));
-                    return {
-                        startX: Math.floor(srcRect.left + srcRect.width / 2),
-                        startY: Math.floor(srcRect.top + srcRect.height / 2),
-                        endX,
-                        endY,
+                    return {{
                         verified: insideDropZone && !insideDraggable,
                         elementTag: atPoint ? atPoint.tagName.toLowerCase() : '',
                         elementId: atPoint && atPoint.id ? atPoint.id : '',
                         elementClass: atPoint && atPoint.className ? String(atPoint.className) : '',
-                    };
-                    """,
-                    source,
+                    }};
+                    }}""",
                     drop_zone,
-                    ox,
-                    oy,
                 )
+                if not verify:
+                    raise RuntimeError("drag_points_unavailable")
+                points = {
+                    "startX": int(start_x_f),
+                    "startY": int(start_y_f),
+                    "endX": _end_x,
+                    "endY": _end_y,
+                    "verified": verify.get("verified"),
+                    "elementTag": verify.get("elementTag", ""),
+                    "elementId": verify.get("elementId", ""),
+                    "elementClass": verify.get("elementClass", ""),
+                }
                 if not points:
                     raise RuntimeError("drag_points_unavailable")
 

@@ -1682,9 +1682,12 @@ Cas signalés (même convention suspectée, **non confirmés ni corrigés** — 
 sur DOM de référence avant tout patch, un par un) :
 - `fallback_click_radio_js_generic` (Survey/input_radio.py)
 - Bloc `decipher_ranksort_dropdown` (Survey/action_dispatcher.py)
-- Bloc `DRAGDROP` (Survey/action_dispatcher.py)
 - Résolution `<select>` natif (Survey/input_dropdown.py) — probablement code mort post-migration
   (mélange `execute_script`/`arguments[0]`/`evaluate` imbriqué)
+
+Cas confirmé et corrigé : bloc `DRAGDROP` (Survey/action_dispatcher.py, `handle_drag_drop_logic`) —
+voir entrée dédiée `handle_drag_drop_logic — evaluate() multi-arguments invalide` (section PureSpectrum
+drag & drop) en fin de fichier.
 Note associée (piège récurrent, même famille de bug) : ne jamais référencer `arguments[0]` dans un
 corps de script enveloppé en fonction fléchée `(arg) => {...}` — utiliser le nom du paramètre.
 
@@ -3337,3 +3340,45 @@ qu'un DOM de référence de la variante mobile (`ps-date-picker-mobile ps-select
 disponible.
 
 Statut : patch validé.
+
+---
+
+## PLATEFORME : PURESPECTRUM — DRAG & DROP (déposer un numéro dans une case, `dropZoneList`)
+Signature DOM : Angular CDK — draggables `[cdkdrag]`/`.cdk-drag` contenant `img[alt="{valeur}"]`,
+zone de dépôt `#dropZoneList` (classe `.cdk-drop-list`/`.drop-zone`). CTA `button[aria-label='Go to
+next question']`.
+
+### handle_drag_drop_logic — evaluate() multi-arguments invalide
+Fichier : Survey/action_dispatcher.py, fonction `handle_drag_drop_logic` → sous-fonction
+`_run_drag_attempt`, bloc de calcul des points de drag (avant la séquence `_page.mouse.move/down/.../up`).
+Bug corrigé : l'appel `driver.evaluate(js, source, drop_zone, ox, oy)` passait 4 arguments
+positionnels supplémentaires à Playwright `Page.evaluate(expression, arg=None)`, qui n'accepte
+qu'un seul `arg` → `TypeError: Page.evaluate() takes from 2 to 3 positional arguments but 6 were
+given`, levée avant tout calcul de coordonnées, donc avant le moindre déplacement de souris. Les 2
+tentatives (offsets `(0,0)`/`(15,0)`) étaient consommées sans qu'aucun drag réel n'ait lieu. Le
+script JS lui-même était incohérent avec sa propre signature : déclaré `() => {...}` (zéro
+paramètre) mais référençant `_el`, `_arg1`, `arguments[2]`, `arguments[3]` à l'intérieur — cas
+déjà signalé comme suspect (non confirmé) dans la leçon transversale `evaluate() vs
+evaluate_handle()` / piège `arguments[0]` (voir plus haut dans ce fichier), confirmé ici sur DOM
+réel PureSpectrum (snapshot `20260803_042307_after_dom_analyze`, drop zone `dropZoneList`, source
+`img[alt=...]`).
+Correction : remplacement de l'appel unique à 6 arguments par 3 appels `evaluate()` mono-argument
+(1 seul ElementHandle chacun, forme supportée par Playwright) :
+1. `getBoundingClientRect()` de la source (fonction `(el) => {...}`, arg = `source`)
+2. `getBoundingClientRect()` de la drop zone (même fonction, arg = `drop_zone`)
+3. vérification `elementFromPoint` (fonction `(dst) => {...}`, arg = `drop_zone`), `ox`/`oy`/
+   coordonnées finales déjà calculées côté Python et injectées comme littéraux entiers (pas de
+   risque d'injection, valeurs `int` uniquement)
+Le dict `points` reconstruit en Python expose exactement les mêmes clés qu'avant
+(`startX`/`startY`/`endX`/`endY`/`verified`/`elementTag`/`elementId`/`elementClass`) — aucune
+modification de la logique de séquence mouse.move/down/.../up, du budget de tentatives (2 offsets),
+de la garde `_cdkdrag_cards_ready`/refresh, ni du comportement CTA (`_attempt_cta_once`,
+`CTA_INTERCEPT_ONLY` inchangé).
+Patterns couverts :
+- Tout appel à `handle_drag_drop_logic` (n'importe quelle valeur cible/instruction extraite via
+  `_extract_drag_drop_target_value`) — le bug était systématique, indépendant du DOM/de la
+  plateforme au-delà de la présence de `[cdkdrag]`/`.cdk-drag` + `#dropZoneList`.
+Patterns exclus :
+- Aucun autre bloc n'a été modifié (extraction `_extract_drag_drop_target_value`,
+  `_cdkdrag_cards_ready`, `_wait_cards_ready`, `_attempt_cta_once` intacts).
+Statut : patch validé (confirmé par l'utilisateur).
