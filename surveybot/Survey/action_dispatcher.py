@@ -353,6 +353,43 @@ def solve_focusvision_cardsort(
                 except Exception:
                     return False
 
+    def _find_internal_next_control(cs):
+        """
+        Contrôle de navigation interne au widget cardsort (carte -> carte suivante),
+        distinct de toute navigation de page. Scope strict au widget (cs), exclusion
+        des boutons carte/bucket, détection par libellé "suivant/next/continuer" —
+        pas de sélecteur CSS deviné (classe non confirmée sur le DOM de référence).
+        """
+        try:
+            candidates = cs.query_selector_all("button, a[role='button'], div[role='button'], input[type='button']")
+        except Exception:
+            candidates = []
+        next_tokens = ("suivant", "next", "continuer", "continue")
+        for el in candidates:
+            try:
+                cl = (el.get_attribute("class") or "").lower()
+                if "sq-cardsort-bucket" in cl or "sq-cardsort-card" in cl:
+                    continue
+                txt = _norm_lc(el.inner_text() or el.get_attribute("aria-label") or el.get_attribute("value") or "")
+                if not any(t in txt for t in next_tokens):
+                    continue
+                return el
+            except Exception:
+                continue
+        return None
+
+    def _is_control_enabled(el) -> bool:
+        try:
+            if el.get_attribute("disabled") is not None:
+                return False
+            if (el.get_attribute("aria-disabled") or "").strip().lower() == "true":
+                return False
+            if "disabled" in (el.get_attribute("class") or "").lower():
+                return False
+        except Exception:
+            return False
+        return True
+
     cs = _pick_cardsort_root()
     if not cs:
         return False
@@ -377,8 +414,35 @@ def solve_focusvision_cardsort(
         if not _click(bucket):
             break
 
-        # petit wait pour l'auto-advance (page JS)
+        # petit wait pour l'auto-advance éventuel (page JS)
         time.sleep(0.12)
+
+        # Contrôle de navigation interne au widget ("Suivant" carte à carte) : sur certains DOMs
+        # sq-cardsort, le widget n'avance PAS seul après le clic bucket — un bouton "Suivant" interne,
+        # désactivé tant qu'aucun bucket n'est assigné, doit être cliqué explicitement une fois activé.
+        # Sans ce clic, la carte active ne change jamais -> apply_failed systématique malgré une
+        # affectation réellement prise en compte par le widget (bucket visuellement sélectionné).
+        next_ctrl = _find_internal_next_control(cs)
+        if next_ctrl is not None:
+            _enabled = False
+            for _ in range(5):
+                if _is_control_enabled(next_ctrl):
+                    _enabled = True
+                    break
+                time.sleep(0.1)
+            if _enabled:
+                if is_cta_intercept_only():
+                    try:
+                        next_ctrl.evaluate("(_el) => { _el.dispatchEvent(new MouseEvent('click', {bubbles:true, cancelable:true})); }")
+                        log_info("[CARDSORT_CTA]", "controle interne 'Suivant' trouve + interception OK (CTA_INTERCEPT_ONLY)")
+                    except Exception as exc:
+                        log_info("[CARDSORT_CTA]", f"controle interne 'Suivant' trouve + interception impossible: {exc}")
+                else:
+                    _click(next_ctrl)
+                    log_debug("[CARDSORT_DEBUG]", "controle interne 'Suivant' clique")
+                    time.sleep(0.12)
+            else:
+                log_debug("[CARDSORT_DEBUG]", "controle interne 'Suivant' introuvable/desactive apres budget d'attente")
 
         # Signal de progression : identité textuelle de la carte active, PAS un
         # attribut "index" (absent du DOM sq-cardsort réel — les <li> exposent

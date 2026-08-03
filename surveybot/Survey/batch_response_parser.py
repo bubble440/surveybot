@@ -968,16 +968,74 @@ def parse_batch_response(raw: str, constraints: Optional[Dict[str, int]] = None,
 
         cardsort_assignments: list[tuple[str, str]] = []
         if is_cardsort:
-            chunks = [c.strip() for c in re.split(r"\s*;\s*", value) if c.strip()]
-            for chunk in chunks:
-                if "=>" not in chunk:
-                    continue
-                card_label, bucket_blob = chunk.split("=>", 1)
-                card_label = card_label.strip()
-                bucket_blob = bucket_blob.strip()
-                if not card_label or not bucket_blob:
-                    continue
-                cardsort_assignments.append((card_label, bucket_blob))
+            known_cards = [str(c or "").strip() for c in ((qmeta or {}).get("cards") or []) if str(c or "").strip()]
+            known_buckets = [str(b or "").strip() for b in ((qmeta or {}).get("buckets") or []) if str(b or "").strip()]
+
+            if known_cards:
+                # Découpage par ancrage sur les card_label CONNUS (buckets_cardsort/cards_cardsort
+                # transmis dans le prompt), au lieu d'un split rigide sur " ; ". Le modèle dévie parfois
+                # du séparateur demandé (observé: "|" utilisé pour tout, y compris entre cartes) — en
+                # repérant les positions réelles de "card_label connu =>" dans la réponse, le découpage
+                # reste correct quel que soit le caractère utilisé entre deux affectations.
+                anchors: list[tuple[int, int, str]] = []
+                for c in known_cards:
+                    for m in re.finditer(re.escape(c) + r"\s*=>", value, flags=re.IGNORECASE):
+                        anchors.append((m.start(), m.end(), c))
+                anchors.sort(key=lambda t: t[0])
+                dedup: list[tuple[int, int, str]] = []
+                last_end = -1
+                for start, end, c in anchors:
+                    if start < last_end:
+                        continue
+                    dedup.append((start, end, c))
+                    last_end = end
+                for i, (start, end, card_label) in enumerate(dedup):
+                    next_start = dedup[i + 1][0] if i + 1 < len(dedup) else len(value)
+                    bucket_blob = re.sub(r"[;|\s]+$", "", value[end:next_start]).strip()
+                    if not bucket_blob:
+                        continue
+                    cardsort_assignments.append((card_label, bucket_blob))
+            else:
+                # Dernier recours si aucune liste de cartes connue n'est disponible (ne devrait pas
+                # arriver: qid_meta transporte toujours "cards" pour un bloc cardsort, cf. survey_executor.py).
+                chunks = [c.strip() for c in re.split(r"\s*;\s*", value) if c.strip()]
+                for chunk in chunks:
+                    if "=>" not in chunk:
+                        continue
+                    card_label, bucket_blob = chunk.split("=>", 1)
+                    card_label = card_label.strip()
+                    bucket_blob = bucket_blob.strip()
+                    if not card_label or not bucket_blob:
+                        continue
+                    cardsort_assignments.append((card_label, bucket_blob))
+
+            # ✅ Validation des bucket labels contre buckets_cardsort connu (anti-hallucination LLM),
+            # même mécanisme que pour radio/checkbox/dropdown (_find_best_option_match). Une carte dont
+            # aucun bucket ne peut être fiabilisé est écartée seule, sans affecter les autres cartes.
+            if known_buckets:
+                validated: list[tuple[str, str]] = []
+                for card_label, bucket_blob in cardsort_assignments:
+                    sub_labels = [s.strip() for s in bucket_blob.split("|") if s.strip()]
+                    matched_labels = []
+                    for s in sub_labels:
+                        match = _find_best_option_match(s, known_buckets)
+                        if match is None:
+                            log_info("[batch_response_parser]",
+                                     f"qid={qid} cardsort bucket rejeté (hors buckets_cardsort): "
+                                     f"card={card_label!r} bucket={s!r} buckets={known_buckets}")
+                            continue
+                        matched_val, is_exact, score = match
+                        if not is_exact:
+                            log_debug("[batch_response_parser]",
+                                      f"qid={qid} cardsort bucket substitué fuzzy (score={score:.2f}): {s!r} -> {matched_val!r}")
+                        matched_labels.append(matched_val)
+                    if not matched_labels:
+                        log_info("[batch_response_parser]",
+                                 f"qid={qid} cardsort affectation écartée (carte={card_label!r}): aucun bucket valide")
+                        continue
+                    validated.append((card_label, "|".join(matched_labels)))
+                cardsort_assignments = validated
+
             if not cardsort_assignments:
                 continue
 
@@ -1042,7 +1100,13 @@ def parse_batch_response(raw: str, constraints: Optional[Dict[str, int]] = None,
                 kept_count.setdefault(qid, 0)
                 kept_values.setdefault(qid, set())
 
-                keyv = v.strip().lower()
+                # Cardsort: 2 cartes différentes peuvent légitimement partager le même bucket
+                # (ex: Café et Thé tous deux => "Chaud") — la clé de dédup doit inclure la carte,
+                # sinon la 2e affectation est éliminée à tort comme "valeur déjà vue" pour ce QID.
+                if is_cardsort:
+                    keyv = f"{cardsort_assignments[idx_v][0].strip().lower()}\x1f{v.strip().lower()}"
+                else:
+                    keyv = v.strip().lower()
                 if keyv in kept_values[qid]:
                     continue
                 kept_values[qid].add(keyv)
