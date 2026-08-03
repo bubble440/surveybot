@@ -300,9 +300,17 @@ def _is_auxiliary_text_for_choice_group(driver, el, container, question: str) ->
     choice_count = 0
     for node in choice_nodes or []:
         try:
-            txt = _norm(node.inner_text() or node.get_attribute("innerText") or node.get_attribute("value") or "")
-            if not txt:
-                txt = _norm(_find_associated_label(driver, node) or "")
+            # Inputs radio/checkbox natifs : le "value" est souvent un code
+            # technique (ex: value="1".."9" Angular Material), pas le libellé
+            # visible. Prioriser le label associé pour ne pas perdre le texte
+            # réel des options (cf. mat-radio-group avec value numérique).
+            is_native_input = _norm_lc(node.get_attribute("type") or "") in {"radio", "checkbox"}
+            if is_native_input:
+                txt = _norm(_find_associated_label(driver, node) or node.get_attribute("value") or "")
+            else:
+                txt = _norm(node.inner_text() or node.get_attribute("innerText") or node.get_attribute("value") or "")
+                if not txt:
+                    txt = _norm(_find_associated_label(driver, node) or "")
             if not txt:
                 continue
             tlc = _norm_lc(txt)
@@ -353,6 +361,17 @@ def _is_auxiliary_text_for_choice_group(driver, el, container, question: str) ->
     el_aria_labelledby = _norm(el.get_attribute("aria-labelledby") or "")
     own_label = _norm(_find_associated_label(driver, el) or "")
     has_own_label = bool(own_label or el_aria_label or el_aria_labelledby)
+
+    # Cas "champ de filtrage du widget de choix" : input texte sans label
+    # propre, avec un placeholder explicite de recherche/filtre (ex: mat-radio-group
+    # Angular Material avec "Search Here" au-dessus des options). Signal fort et
+    # étroitement scopé (placeholder uniquement, pas le texte de question) : ne
+    # déclenche pas sur une vraie question ouverte demandant de "rechercher" qqch
+    # dans son intitulé, seulement sur l'attribut placeholder du widget lui-même.
+    placeholder_raw = _norm_lc(el.get_attribute("placeholder") or "")
+    is_search_filter_placeholder = bool(re.search(r"\bsearch\b|\brecherch\w*\b|\bfilter\b|\bfiltr\w*\b", placeholder_raw))
+    if is_search_filter_placeholder and not has_own_label:
+        return True
 
     qlc = _norm_lc(question or "")
     q_words = set(re.findall(r"[a-z0-9à-ÿ]{2,}", qlc))

@@ -3382,3 +3382,51 @@ Patterns exclus :
 - Aucun autre bloc n'a été modifié (extraction `_extract_drag_drop_target_value`,
   `_cdkdrag_cards_ready`, `_wait_cards_ready`, `_attempt_cta_once` intacts).
 Statut : patch validé (confirmé par l'utilisateur).
+
+---
+
+## PLATEFORME : ANGULAR MATERIAL (mat-radio-group) — CHAMP DE FILTRAGE PARASITE
+
+Signature DOM : `app-single-question` > `mat-card.question-card` contenant `mat-label.question-text`
++ un `<input type="text" placeholder="Search Here">` de filtrage du widget de sélection, suivi d'un
+`mat-radio-group` (options `mat-radio-button` avec `input[type=radio]` dont `value` est un code
+numérique `1..N`, pas le libellé visible — libellé réel dans `label.mdc-label > span.category-text`).
+
+### _is_auxiliary_text_for_choice_group — priorité label sur value pour inputs radio/checkbox natifs
+Fichier : Survey/dom_analyzer.py
+Emplacement : boucle `for node in choice_nodes`, calcul de `option_words`.
+Bug corrigé : pour un `input[type=radio|checkbox]` natif, l'ancien ordre de fallback
+(`inner_text() || innerText attr || value attr`) retombait sur `value` (souvent un code technique,
+ex. `value="1".."9"` Angular Material) avant de tenter `_find_associated_label()`. Le vrai libellé de
+l'option n'était donc jamais capturé dans `option_words`, faussant le calcul du signal `generic_q`
+(chevauchement lexical question/options) utilisé par le score d'auxiliarité.
+Correction : pour ces nœuds uniquement (`type` natif radio/checkbox), `_find_associated_label()` est
+tenté en priorité, `value` reste le fallback. Aucun changement pour les autres nœuds de choix
+(`button`, `a[role=button]`, `[role=radio]`/`[role=checkbox]` custom).
+Patterns couverts :
+- `input[type=radio]`/`input[type=checkbox]` dont l'attribut `value` est un code technique et dont le
+  libellé visible est porté par un `<label>` associé (`for=id` ou ancêtre).
+Patterns exclus :
+- Nœuds de choix non-input natifs (boutons, rôles ARIA) → ordre de fallback inchangé.
+
+### _is_auxiliary_text_for_choice_group — cas additif "champ de filtrage du widget de choix"
+Fichier : Survey/dom_analyzer.py
+Emplacement : nouveau bloc juste après le garde-fou JS "Autre, précisez" inline, avant le calcul du
+score à 4 signaux. Retour direct `True` (bypass du score), même modèle que le cas "Autre, précisez"
+existant — n'a pas modifié le score ni son seuil (0,7 sur l'overlap lexical) qui reste trop fragile
+pour ce cas (mesuré à 0,673 sur le DOM de référence, sous le seuil de quelques centièmes).
+Guard (double, ET) :
+- `placeholder` de l'input matche `\bsearch\b|\brecherch\w*\b|\bfilter\b|\bfiltr\w*\b` (regex sur
+  l'attribut `placeholder` normalisé en minuscule — jamais sur le texte de la question)
+- L'input n'a pas de label propre (`has_own_label` False : ni `<label>` associé, ni `aria-label`, ni
+  `aria-labelledby`)
+Patterns couverts :
+- `input[type=text][placeholder="Search Here"]` dans le même conteneur qu'un `mat-radio-group` à 9
+  options (DOM de référence : profession du soutien économique du ménage, `mat-radio-group-1`) — le
+  filtre de recherche du widget Angular Material n'est plus extrait comme bloc `single` parasite.
+Patterns exclus :
+- Tout champ texte avec un placeholder ne matchant pas le motif recherche/filtre, ou disposant d'un
+  label propre (même dans un conteneur à choix) → chemin du score à 4 signaux inchangé.
+- Aucun autre DOM de référence dans `snapshots/` ne porte ce type de placeholder (vérifié, pas de
+  risque de faux positif sur une vraie question ouverte "recherchez votre ville" etc.).
+Statut : patch validé (confirmé par l'utilisateur).
