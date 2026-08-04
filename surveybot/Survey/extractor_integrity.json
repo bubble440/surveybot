@@ -1,4 +1,10 @@
 {
+  "../preselection/survey_handler.py::run_attach_preselection_takeover": {
+    "hash": "ac4be77e0b8fc0cf1e310c0dc9d361e3d97ccfc97fde3e32a4d32d7ab8a77d3d"
+  },
+  "../preselection/survey_navigator.py::go_to_best_value_survey": {
+    "hash": "679b71e600b9ceebf7e863a20feded550ab1f4b8bcbd65c545071ea54a63319d"
+  },
   "Survey/input_slider.py::set_sliderpoints": {
     "hash": "69b17e60cf9fb5ee50d339813b54171c567f566e3d4a63dc0add789d3e72ccf5"
   },

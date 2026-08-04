@@ -1,6 +1,5 @@
 dom_analyzer.py::analyze_dom
 frame_utils.py::switch_to_frame_chain
-dom_extractors_misc.py::_extract_askia_adc_slider
 action_dispatcher.py::_apply_by_target_id
 dom_extractors_misc.py::_extract_confirmit_cf_single_choice_blocks
 dom_extractors_misc.py::_extract_confirmit_cf_numeric_list_blocks
@@ -20,7 +19,6 @@ dom_extractors_misc.py::_extract_table_matrix_radio_rows
 input_text.py::fill_text_input
 action_dispatcher.py::execute_action
 dom_extractors_misc.py::_extract_kantar_rowpicker_radio_blocks
-action_dispatcher.py::kantar_rowpicker_radio
 input_radio.py::click_kantar_rowpicker_radio
 dom_extractors_misc.py::_extract_confirmit_wix_checkbox_grid_blocks
 dom_extractors_misc.py::_extract_mriweb_grid_num_row_blocks
@@ -48,9 +46,9 @@ functions.py::_handle_topsurveys_genial_reward_popup
 functions.py::_resolve_topsurveys_popups
 functions.py::_close_topsurveys_bon_travail_popup_once
 functions.py::_handle_topsurveys_exclusion_popup
-survey_navigator.py::go_to_best_value_survey
+../preselection/survey_navigator.py::go_to_best_value_survey
 functions.py::_handle_topsurveys_streak_complete_popup
-survey_handler.py::run_attach_preselection_takeover
+../preselection/survey_handler.py::run_attach_preselection_takeover
 dom_question_extractor.py::_group_key_for_choice
 page_snapshot.py::dump_page_snapshot
 dom_extractors_misc.py::_extract_button_choice_radio_blocks
