@@ -3561,3 +3561,24 @@ contexte (la sélection par checkboxes et le clic CTA aboutissent tous deux) —
 rapporté provenait d'une interruption manuelle du test par l'utilisateur, pas d'un bug réel.
 Statut : patch validé (confirmé par l'utilisateur) ; aucune modification supplémentaire nécessaire sur
 `try_click_navigation_cta` pour ce cas.
+
+### set_sliderpoints — récupération des containers de ligne via API Selenium résiduelle
+Fichier : Survey/input_slider.py
+Emplacement : tout début de la fonction, juste après le scoping par `find_context_container`.
+Bug corrigé : la récupération de la liste des containers de ligne (`.sq-sliderpoints-container`)
+appelait `root.find_elements("css selector", ...)` — signature Selenium, alors que `root` (page
+Playwright ou container retourné par `find_context_container`) n'expose que l'API Playwright
+(`query_selector`/`query_selector_all`). L'appel levait une exception silencieusement absorbée par
+le `except Exception: blocks_all = []` englobant, vidant la liste dès le départ et provoquant un
+`return False` immédiat avant même d'atteindre la boucle de traitement par ligne — sans aucun log
+"Sliderpoints rempli" ni échec détaillé par ligne, symptôme observé sur une question à deux lignes
+(Football masculin/féminin professionnel, DOM Decipher/FocusVision `sq-sliderpoints`).
+Correction (1 ligne) : remplacement par `root.query_selector_all(".sq-sliderpoints-container")`,
+cohérent avec le reste de la fonction (déjà 100% Playwright natif) et avec l'usage équivalent dans
+`input_utils.py` (`find_questions_container`/`has_visible_open_ended_field`) sur le même type d'objet.
+Patterns couverts : tout DOM `sq-sliderpoints` avec une ou plusieurs lignes (`.sq-sliderpoints-row-legend`
++ `.sq-sliderpoints-container`), scope page entière ou scope question via `context_hint`.
+Patterns exclus : aucun changement de logique de scoping, de mapping choice_text→index, ni des
+stratégies d'application (clic legend/circle, `<select>`, jQuery-UI `slider('value', ...)`) —
+uniquement la récupération initiale des containers.
+Statut : patch validé (test réel réussi par l'utilisateur, les deux lignes se positionnent correctement).

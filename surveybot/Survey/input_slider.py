@@ -110,7 +110,7 @@ def set_sliderpoints(driver, choice_text: str, context_hint: str | None = None) 
 
     # IMPORTANT: utiliser les *containers* (1 ligne = 1 container).
     try:
-        blocks_all = root.find_elements("css selector", ".sq-sliderpoints-container")
+        blocks_all = root.query_selector_all(".sq-sliderpoints-container")
     except Exception:
         blocks_all = []
 
