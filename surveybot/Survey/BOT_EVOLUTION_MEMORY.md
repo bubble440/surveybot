@@ -3505,3 +3505,59 @@ Patterns exclus :
 - Aucun autre DOM de référence dans `snapshots/` ne porte ce type de placeholder (vérifié, pas de
   risque de faux positif sur une vraie question ouverte "recherchez votre ville" etc.).
 Statut : patch validé (confirmé par l'utilisateur).
+
+---
+
+## PLATEFORME : DECIPHER/FOCUSVISION — WIDGET CARDSORT ADOSSÉ À UNE VRAIE MATRICE DE CHECKBOXES
+
+Signature DOM : question de type `.question.checkbox` contenant un widget visuel `.sq-cardsort`
+(`Survey.question.cardsort.setup(...)`, `type: "checkbox"`, `grouping: "rows"`, `automaticAdvance: 0`
+dans les `setupOptions` du script inline de la question) ET, dans le même bloc de question, une
+`<table class="grid ... answers-table">` masquée par une règle CSS scopée
+(`#question_<label> .answers-table { display: none; }`) contenant les vraies cases à cocher, nommées
+selon le motif `ans<uid>.<col>.<row>`, une case par combinaison carte (ligne) × bucket (colonne), avec
+sélection multiple réellement supportée par carte. La page contient également un vrai bouton de
+soumission `input[type="submit"]#btn_continue` (état `display: none` par défaut), distinct du
+contrôle de défilement interne au widget (`span.sq-cardsort-next`, propre au carrousel visuel des
+cartes et sans effet de soumission de page).
+
+### Traitement de la question — router vers checkbox plutôt que vers l'interaction cardsort
+Fichier : Survey/action_dispatcher.py (routage de la question), Survey/batch_response_parser.py
+(format de réponse), Survey/dom_analyzer.py / dom_extractors_decipher.py (détection du bloc)
+Bug corrigé : le pipeline traitait initialement ce DOM comme un cardsort classique (une affectation
+carte→bucket unique par carte, pilotée via clic/drag sur le widget visuel `.sq-cardsort`). Cette
+interaction s'est révélée systématiquement non fiable sur ce DOM précis (sélections n'aboutissant
+jamais, ou aboutissant toujours sur le même bucket indépendamment de la carte/du bucket visé), quelle
+que soit la qualité du format de réponse du modèle. Le DOM réel montre que le widget cardsort est en
+fait adossé à une véritable matrice de cases à cocher multi-select par ligne (une ligne = une carte,
+une colonne = un bucket), masquée visuellement mais fonctionnellement identique à une question
+checkbox groupée par ligne.
+Correction : cette question est désormais extraite/traitée comme N blocs indépendants de type
+`checkbox` (un par carte/ligne), au même format que les questions matrice-checkbox déjà supportées
+ailleurs, en ciblant directement les `input[type=checkbox]` réels (`ans<uid>.<col>.<row>`) plutôt que
+l'interaction visuelle du widget cardsort. Chaque ligne autorise un nombre de sélections correspondant
+aux attributs `atleast`/`atmost` portés par la carte (`min_select`/`max_select`).
+Patterns couverts :
+- DOM Decipher/FocusVision où `.sq-cardsort` coexiste avec une `table.grid` de checkboxes cachée
+  (motif `ans<uid>.<col>.<row>`) dans le même bloc de question — signature confirmée sur la question
+  "Comment interagissez-vous avec les ligues suivantes ?" (label `JANxNEW25x2`).
+Patterns exclus :
+- Les widgets `.sq-cardsort` classiques sans matrice de checkboxes sous-jacente équivalente
+  continuent d'être traités via l'interaction cardsort existante (fonction `solve_focusvision_cardsort`
+  non modifiée pour ce cas).
+Statut : patch validé (confirmé par l'utilisateur).
+
+### Navigation — bouton "Suivant" interne au carrousel cardsort vs bouton de soumission réel
+Fichier : Survey/cta_handler.py (`try_click_navigation_cta`)
+Bug corrigé (diagnostic initial, avant confirmation finale) : un traitement dédié avait été ajouté
+pour cibler spécifiquement `span.sq-cardsort-next` (bouton de défilement interne au carrousel visuel
+du widget cardsort, non natif — attribut `disabled="disabled"` non standard porté par un `<span>`,
+absent de tous les motifs génériques de détection de CTA). Une fois la question répondue via les
+checkboxes réelles (cf. entrée précédente) sans jamais naviguer dans le carrousel, une inquiétude
+avait été soulevée sur la pertinence de continuer à cibler ce bouton plutôt que le vrai bouton de
+soumission de page caché (`input[type=submit]#btn_continue`).
+Constat final : après nouvelle vérification, le clic de navigation fonctionne correctement dans ce
+contexte (la sélection par checkboxes et le clic CTA aboutissent tous deux) — l'échec initialement
+rapporté provenait d'une interruption manuelle du test par l'utilisateur, pas d'un bug réel.
+Statut : patch validé (confirmé par l'utilisateur) ; aucune modification supplémentaire nécessaire sur
+`try_click_navigation_cta` pour ce cas.

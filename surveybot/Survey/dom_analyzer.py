@@ -4491,6 +4491,17 @@ def analyze_dom(driver) -> List[Dict[str, Any]]:
         - et si le cardsort courant expose au moins une carte avec atmost > 1
         alors on évite l'extracteur answers-list (table cachée) pour ne pas dupliquer
         des groupes checkbox non pilotables par l'UI cardsort.
+
+        Exception (garde-fou additif, snapshot 20260804_025354) : quand la table
+        answers-list sous-jacente EST réellement pilotable (table.grid group-by-row/
+        table-mode avec de vraies cases input[type=checkbox|radio], motif de nommage
+        ans<uid>.<col>.<row>), l'hypothèse "non pilotable par l'UI cardsort" ci-dessus
+        est fausse pour ce DOM précis : le widget cardsort ne peut exprimer qu'une seule
+        affectation carte->bucket par clic alors que ces cases permettent réellement une
+        sélection multiple par carte (atmost>1) — piloter le cardsort visuel produit alors
+        une réponse structurellement incomplète/incorrecte. On laisse dans ce cas
+        l'extracteur answers-list tourner ; _drop_cardsort_when_mixed_with_other_blocks
+        (inchangé) élimine ensuite le bloc cardsort au profit des groupes checkbox réels.
         """
         if not any((b or {}).get("kind") == "cardsort" for b in (items or [])):
             return False
@@ -4500,15 +4511,40 @@ def analyze_dom(driver) -> List[Dict[str, Any]]:
         except Exception:
             return False
 
+        has_multi_select_card = False
         for card in cards or []:
             try:
                 atmost_raw = _norm(card.get_attribute("atmost") or "")
                 if atmost_raw and int(atmost_raw) > 1:
-                    return True
+                    has_multi_select_card = True
+                    break
             except Exception:
                 continue
 
-        return False
+        if not has_multi_select_card:
+            return False
+
+        try:
+            drivable_tables = driver.query_selector_all(
+                "table.grid[data-settings*='group-by-row'][data-settings*='table-mode']"
+            )
+        except Exception:
+            drivable_tables = []
+        for tbl in drivable_tables or []:
+            try:
+                real_inputs = tbl.query_selector_all(
+                    "input[type='checkbox'][name], input[type='radio'][name]"
+                )
+            except Exception:
+                real_inputs = []
+            for inp in real_inputs or []:
+                try:
+                    if re.fullmatch(r"ans\d+\.\d+\.\d+", (inp.get_attribute("name") or "").strip()):
+                        return False
+                except Exception:
+                    continue
+
+        return True
 
     def _drop_cardsort_when_mixed_with_other_blocks(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         has_cardsort = any((b or {}).get("kind") == "cardsort" for b in (items or []))

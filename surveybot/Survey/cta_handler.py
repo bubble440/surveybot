@@ -1739,6 +1739,68 @@ def try_click_navigation_cta(driver) -> bool:
     except Exception:
         return False
 
+    # --- Decipher/FocusVision sq-cardsort contourné par une vraie table checkbox ---
+    # Quand une question cardsort a été répondue en cochant directement les cases
+    # réelles de la table sous-jacente (cf. dom_analyzer.py::
+    # _should_skip_focusvision_answers_list_groups, motif ans<uid>.<col>.<row>) plutôt
+    # qu'en pilotant le carrousel visuel, le contrôle sq-cardsort-next (bloc ci-dessus)
+    # reste indéfiniment désactivé : son état est piloté par la progression INTERNE du
+    # widget (drag/drop entre cartes), jamais touchée puisqu'on la contourne. Le vrai
+    # bouton de soumission de la page, input#btn_continue, reste alors masqué (display:none)
+    # même une fois toutes les cases correctement cochées — cliquer sq-cardsort-next ne
+    # peut donc jamais faire progresser cette page dans ce contexte de réponse.
+    # Guard strict : présence simultanée du widget cardsort ET de sa table checkbox
+    # réelle (même signature DOM que le garde-fou dom_analyzer.py) ET de #btn_continue
+    # (que celui-ci soit visible ou non — à la différence du bloc #btn_continue générique
+    # ci-dessus, qui ne clique que s'il est déjà visible).
+    try:
+        btn_continue_nodes = _ctx.query_selector_all("input#btn_continue")
+        cardsort_next_present = bool(_ctx.query_selector_all(".sq-cardsort .sq-cardsort-next"))
+        if btn_continue_nodes and cardsort_next_present:
+            has_drivable_checkbox_table = False
+            grid_tables = _ctx.query_selector_all(
+                "table.grid[data-settings*='group-by-row'][data-settings*='table-mode']"
+            )
+            for tbl in grid_tables or []:
+                try:
+                    real_inputs = tbl.query_selector_all(
+                        "input[type='checkbox'][name], input[type='radio'][name]"
+                    )
+                except Exception:
+                    real_inputs = []
+                for inp in real_inputs or []:
+                    try:
+                        if re.fullmatch(r"ans\d+\.\d+\.\d+", (inp.get_attribute("name") or "").strip()):
+                            has_drivable_checkbox_table = True
+                            break
+                    except Exception:
+                        continue
+                if has_drivable_checkbox_table:
+                    break
+
+            if has_drivable_checkbox_table:
+                el = btn_continue_nodes[0]
+                _nav_log("[CTA_NAV]", "CTA_FOUND pattern=cardsort_bypassed_btn_continue", driver)
+                if _cta_intercept_enabled():
+                    clicked = _click_with_intercept(driver, el)
+                else:
+                    try:
+                        el.evaluate("(el) => el.click()")
+                        clicked = True
+                    except Exception:
+                        clicked = False
+                _nav_log(
+                    "[CTA_NAV]",
+                    f"CTA_CLICKED pattern=cardsort_bypassed_btn_continue PROGRESSED={str(bool(clicked)).lower()}",
+                    driver,
+                )
+                if clicked:
+                    if _cta_intercept_enabled():
+                        _nav_log("[CTA_NAV]", "INTERCEPT_OK pattern=cardsort_bypassed_btn_continue", driver)
+                    return True
+    except Exception:
+        pass
+
     # --- RSCH / Survey japonais ---
     try:
         btns = _ctx.query_selector_all("#btnsmall")
