@@ -1755,6 +1755,40 @@ def try_click_navigation_cta(driver) -> bool:
     except Exception:
         pass
 
+    # --- Decipher/FocusVision sq-cardsort: bouton navigation interne "Suivant" ---
+    # DOM observé (snapshot 20260803_221141):
+    #   <span class="sq-cardsort-icon-button sq-cardsort-next sq-cardsort-state-disabled"
+    #         disabled="disabled">Suivant <i class="fa-icon-chevron-right"></i></span>
+    # Ni <button>, ni [type=submit/button/image], ni classe fakeNextButton/NavBtn, ni
+    # tabindex -> ne matche AUCUN motif de nav_xpath (générique, inchangé ci-dessous).
+    # État désactivé porté par l'attribut non-standard disabled="disabled" (un <span> n'a
+    # pas de sémantique disabled native) ET par la classe sq-cardsort-state-disabled ; le
+    # widget retire les deux une fois l'action valide (dernière carte assignée). Guard
+    # strict : scope au widget .sq-cardsort, classe .sq-cardsort-next exacte.
+    try:
+        cardsort_next_nodes = _ctx.query_selector_all(".sq-cardsort .sq-cardsort-next")
+        for el in cardsort_next_nodes:
+            try:
+                if not el.is_visible():
+                    continue
+                if el.get_attribute("disabled") is not None:
+                    continue
+                cls_tokens = (el.get_attribute("class") or "").lower().split()
+                if "sq-cardsort-state-disabled" in cls_tokens:
+                    continue
+                el.evaluate("(el) => el.scrollIntoView({block:'center'})")
+                _nav_log("[CTA_NAV]", "CTA_FOUND pattern=sq_cardsort_next", driver)
+                clicked = _click_with_intercept(driver, el)
+                _nav_log("[CTA_NAV]", f"CTA_CLICKED pattern=sq_cardsort_next PROGRESSED={str(bool(clicked)).lower()}", driver)
+                if clicked:
+                    if _cta_intercept_enabled():
+                        _nav_log("[CTA_NAV]", "INTERCEPT_OK pattern=sq_cardsort_next", driver)
+                    return True
+            except Exception:
+                continue
+    except Exception:
+        pass
+
     candidates = []
 
     # --- Encuesta: coexistence d'un CTA intra-question et du vrai CTA footer ---

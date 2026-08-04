@@ -248,6 +248,25 @@ def solve_focusvision_cardsort(
         except Exception:
             return ""
 
+    def _card_label_text(card) -> str:
+        """
+        Texte de la carte utilisé pour la comparaison carte-affectation et le suivi de
+        progression. Doit être lu depuis le MÊME nœud que l'extracteur qui a construit
+        cards_cardsort (dom_extractors_decipher.py::_extract_focusvision_cardsort_block,
+        profil sq-cardsort -> ".sq-cardsort-card-legend"), pas depuis le <li> entier
+        (card.inner_text()) : le <li> contient aussi le bouton icône
+        .sq-cardsort-card-remove, absent du texte montré au modèle -> une comparaison sur
+        le <li> complet ne matche jamais le libellé de carte transmis dans l'affectation,
+        y compris pour la toute première carte.
+        """
+        try:
+            legend = card.query_selector(".sq-cardsort-card-legend")
+            if legend is not None:
+                return _norm(legend.inner_text() or "")
+        except Exception:
+            pass
+        return _norm(card.inner_text() or "")
+
     def _get_question_text(cs, card) -> str:
         parts = []
         # Question globale
@@ -260,7 +279,7 @@ def solve_focusvision_cardsort(
 
         # Texte carte active
         try:
-            parts.append(_norm(card.inner_text() or ""))
+            parts.append(_card_label_text(card))
         except Exception:
             pass
 
@@ -405,7 +424,7 @@ def solve_focusvision_cardsort(
             break
 
         qtxt = _get_question_text(cs, card)
-        card_text = _norm(card.inner_text() or "")
+        card_text = _card_label_text(card)
         before_text = card_text
         bucket = _pick_bucket(cs, qtxt, card_text)
         if not bucket:
@@ -451,7 +470,7 @@ def solve_focusvision_cardsort(
         # => la comparaison ne se déclenchait jamais => apply_failed systématique
         # même quand le clic avait réellement fait progresser le widget.
         card2 = _active_card(cs)
-        after_text = _norm(card2.inner_text() or "") if card2 else ""
+        after_text = _card_label_text(card2) if card2 else ""
 
         # si la carte active n'a pas changé, on retente 1 fois en cliquant l'item interne
         if card2 is not None and after_text == before_text:
@@ -462,7 +481,7 @@ def solve_focusvision_cardsort(
             except Exception:
                 pass
             card3 = _active_card(cs)
-            after_text = _norm(card3.inner_text() or "") if card3 else ""
+            after_text = _card_label_text(card3) if card3 else ""
 
         if _completion_visible(cs):
             log_debug("[CARDSORT_DEBUG]", f"completion visible, card={before_text[:40]!r}")
