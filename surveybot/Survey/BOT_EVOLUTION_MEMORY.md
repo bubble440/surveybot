@@ -3611,3 +3611,52 @@ Patterns exclus :
   rejet inchangé (pas de fallback empilé).
 Statut : patch validé (confirmé par l'utilisateur).
 Statut : patch validé (test réel réussi par l'utilisateur, les deux lignes se positionnent correctement).
+## PLATEFORME : DECIPHER/FOCUSVISION — GROUP-BY-COL TABLE : LIMITE DE SÉLECTION PAR COLONNE ("SÉLECTIONNEZ JUSQU'À N...") NON PRISE EN COMPTE
+
+Signature DOM : question `table.grid[data-settings*='group-by-col'][data-settings*='table-mode']`
+(extraction "group-by-col table" existante, 1 bloc checkbox par colonne, lignes = options
+communes), avec un `h2.instruction-text` au niveau de la question globale (`#question_QID`,
+sibling de `h1.question-text`) énonçant en langage naturel une limite de sélection par colonne
+(ex. "Sélectionnez jusqu'à deux responsables pour chaque problème.").
+
+### Extraction "group-by-col table" — fusion de l'instruction dans le texte de question par colonne
+Fichier : Survey/dom_extractors_decipher.py (section "group-by-col table : 1 bloc par colonne,
+lignes = options")
+Bug corrigé : `h2.instruction-text` de la question globale n'était jamais lu par ce bloc
+d'extraction — le texte de question construit pour chaque bloc-colonne (`col_q_gc`) ne contenait
+que le libellé de question + en-tête de colonne, sans l'instruction de limite. Le modèle n'avait
+donc aucune trace de la contrainte "jusqu'à deux" affichée à l'utilisateur.
+Correction : lecture de `h2.instruction-text` (même sélecteur déjà utilisé ailleurs dans le
+fichier, ex. lignes ~1682/~1847) et fusion dans `col_q_gc` (question + instruction + "[Col]"),
+à l'image de la fusion déjà pratiquée pour d'autres types de blocs.
+Patterns couverts :
+- Table `group-by-col` avec `h2.instruction-text` présent au niveau de la question globale.
+Patterns exclus :
+- Aucun changement de calcul de `max_select`/`min_select` pour ce bloc (reste `len(opts_gc)`,
+  volontairement — voir entrée suivante pour la raison).
+Statut : patch validé (confirmé par l'utilisateur).
+
+### prompt_builder — selection_rule (checkbox) : priorité explicite à une limite de sélection mentionnée dans la question
+Fichier : Survey/prompt_builder.py, branche `elif itype == "checkbox":` non-`cap_hard`
+(construction du `selection_rule`, ~ligne 848)
+Constat : même après fusion de l'instruction dans le texte de question (entrée précédente), le
+modèle continuait à sélectionner plus d'options que la limite réelle ("jusqu'à deux"). Cause :
+`display_max_sel` est plafonné par une heuristique générique indépendante du DOM
+(`min(max_sel, 5) if max_sel > 3 else max_sel`), donnant "sélectionner entre 1 et 5" alors que la
+vraie limite affichée à l'utilisateur est 2. Modifier ce plafond générique ou `max_select` selon
+l'itype checkbox comportait un risque de régression sur d'autres questions checkbox n'ayant pas
+de limite explicite dans leur texte.
+Correction : ajout d'une phrase dans le `selection_rule` existant (aucune nouvelle branche,
+aucun nouveau champ) indiquant que si le texte de la question mentionne explicitement un nombre
+maximal de sélections (ex. "jusqu'à deux", "au plus 3", "maximum 2 réponses"), ce nombre prime sur
+la limite numérique `display_max_sel` sinon indiquée.
+Patterns couverts :
+- Tout bloc checkbox (toutes plateformes) dont le texte de question contient une limite de
+  sélection explicite en langage naturel, quel que soit le `max_select` calculé par ailleurs.
+Patterns exclus :
+- Branche `cap_hard` (renvoyer EXACTEMENT N valeurs) — non modifiée, logique déjà stricte.
+- Aucune dérivation numérique de `max_select`/`display_max_sel` à partir du texte : la contrainte
+  reste une consigne textuelle au modèle, pas une validation dure côté code (`batch_response_parser`
+  ne rejette pas un nombre de sélections dépassant la limite textuelle si le modèle l'ignore malgré
+  tout — limite connue de cette approche, retenue par choix explicite plutôt qu'un cap numérique dur).
+Statut : patch validé (confirmé par l'utilisateur).

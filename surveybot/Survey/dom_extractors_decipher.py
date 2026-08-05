@@ -543,6 +543,20 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
             atm1d_buttons = []
 
         if len(atm1d_buttons) >= 2:
+            # Instruction optionnelle (h2.instruction-text) de la question globale,
+            # fusionnée dans le texte transmis pour ce bloc (même principe que le
+            # bloc group-by-col table ci-dessus — enrichissement textuel uniquement).
+            instruction_atm1d = ""
+            try:
+                _ins_atm1d = q.query_selector("h2.instruction-text")
+                if _ins_atm1d is not None:
+                    instruction_atm1d = (_ins_atm1d.inner_text() or "").strip()
+            except Exception:
+                instruction_atm1d = ""
+            question_atm1d = f"{question} {instruction_atm1d}".strip() if instruction_atm1d else question
+            if instruction_atm1d:
+                log_debug("[DECIPHER_ATM1D]", f"instruction merged: {instruction_atm1d[:80]!r}")
+
             # Deduce itype from role="radiogroup" on the ul, or role="radio" on the li.
             itype_atm1d = "checkbox"
             ul_buttons = q.query_selector(".sq-atm1d-widget .sq-atm1d-buttons")
@@ -595,7 +609,7 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
             if len(options) >= 2:
                 group_key = f"{itype_atm1d}:atm1d"
                 max_sel = 1 if itype_atm1d == "radio" else len(options)
-                target_id = make_target_id("group", group_key, question or "atm1d")
+                target_id = make_target_id("group", group_key, question_atm1d or "atm1d")
                 register_target(
                     target_id,
                     {
@@ -603,7 +617,7 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
                         "frame_chain": list(frame_chain or []),
                         "itype": itype_atm1d,
                         "group_key": group_key,
-                        "question": question,
+                        "question": question_atm1d,
                         "input_name": "atm1d",
                         "max_select": max_sel,
                         "options": options,
@@ -620,7 +634,7 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
                         "target_id": target_id,
                         "kind": "group",
                         "itype": itype_atm1d,
-                        "question": question,
+                        "question": question_atm1d,
                         "options": options,
                         "max_select": max_sel,
                         "min_select": 1,

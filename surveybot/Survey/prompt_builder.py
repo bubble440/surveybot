@@ -847,6 +847,9 @@ def build_batch_prompt(question_blocks: list[dict], ctx=None) -> str:
             else:
                 lines.append(
                     f"selection_rule: Pour QID={qid}, sélectionner entre 1 et {display_max_sel} option(s) pertinente(s) séparée(s) par |. "
+                    f"Si le texte de la question (contexte ci-dessus) indique explicitement un nombre maximal de "
+                    f"sélections différent (ex: \"jusqu'à deux\", \"au plus 3\", \"maximum 2 réponses\"), ce nombre "
+                    f"prime sur la limite de {display_max_sel} indiquée ici et doit être respecté en priorité. "
                     f"Ne jamais sélectionner 'Autre'/'Other'. "
                     f"Ne jamais sélectionner une option exclusive ('Aucune de ces réponses', 'Aucun', 'None of the above', etc.) sauf si la RÈGLE SECTEUR s'applique."
                 )
