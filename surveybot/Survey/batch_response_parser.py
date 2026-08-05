@@ -819,6 +819,19 @@ def _find_best_option_match(value: str, options: list[str], threshold: float = 0
             )
             return (suffix_candidates[0], False, 0.95)
 
+        # Résolution préfixe numérique exact (échelles bornées type "0 - Très négative" / "10 - Très positive")
+        # où les valeurs intermédiaires (1..9) sont des chiffres bruts mais les extrêmes portent un libellé complet.
+        # Guard : valeur reçue = entier pur ET exactement une option commence par ce chiffre suivi d'un non-chiffre.
+        prefix_candidates = [
+            opt for opt in options
+            if re.match(r"^" + num_str + r"(?!\d)", _fold_lc(opt))
+        ]
+        if len(prefix_candidates) == 1:
+            _debug_log(
+                f"numeric_prefix_match: {value!r} -> {prefix_candidates[0]!r}"
+            )
+            return (prefix_candidates[0], False, 0.95)
+
     return None
 
 

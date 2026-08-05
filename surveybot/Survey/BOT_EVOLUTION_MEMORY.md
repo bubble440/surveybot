@@ -3581,4 +3581,33 @@ Patterns couverts : tout DOM `sq-sliderpoints` avec une ou plusieurs lignes (`.s
 Patterns exclus : aucun changement de logique de scoping, de mapping choice_text→index, ni des
 stratégies d'application (clic legend/circle, `<select>`, jQuery-UI `slider('value', ...)`) —
 uniquement la récupération initiale des containers.
+
+### _find_best_option_match — numeric_prefix_match (échelles bornées à extrêmes libellés)
+Fichier : Survey/batch_response_parser.py
+Emplacement : dans le même bloc `if re.fullmatch(r"\d+", v_fold.strip())` que la stratégie
+existante `numeric_suffix_match`, juste après elle.
+Bug corrigé : sur les échelles radio 0-10 dont les deux valeurs extrêmes portent un libellé complet
+préfixé par le chiffre (ex. "0 - Très négative", "10 - Très positive") tandis que les valeurs
+intermédiaires sont des chiffres bruts ("1".."9"), une réponse modèle "10" ou "0" ne matchait aucune
+option : le match exact échoue (valeur ≠ libellé complet), le fuzzy est sous le seuil (0.80), et
+`numeric_suffix_match` ne couvre que les chiffres en fin de libellé (ex. "... 7"), pas en préfixe.
+Symptôme observé : `[batch_response_parser] qid=Q6 valeur rejetée (aucune option correspondante):
+'10' ...` puis `received=0 final_count=0` — le radio de l'entreprise correspondante restait non coché
+sur la page réelle (DOM Decipher/FocusVision, question "impression générale" par entreprise).
+Correction : nouvelle stratégie additive `numeric_prefix_match`, ajoutée après `numeric_suffix_match`
+sans modifier son corps. Guard : valeur reçue = entier pur ET exactement une option commence par ce
+chiffre suivi d'un caractère non-numérique (`^10(?!\d)`, folded/lowercased) — évite un faux match sur
+une option "100 ...".
+Patterns couverts :
+- Échelles radio/checkbox/dropdown dont seules les options extrêmes portent un libellé préfixé par
+  le chiffre, les autres étant des chiffres bruts (confirmé sur échelle 0-10 "Très négative"/"Très
+  positive", DOM Decipher/FocusVision, plusieurs blocs `group_*` de la même question à sous-items).
+Patterns exclus :
+- Valeurs intermédiaires (ex. "1".."9") → toujours résolues par le match exact (étape 1), chemin
+  inchangé.
+- `numeric_suffix_match` (chiffre en fin de libellé) → fonction/logique non modifiée, stratégie
+  distincte conservée telle quelle.
+- Ambiguïté (plusieurs options partageant le même préfixe numérique) → aucun match, comportement de
+  rejet inchangé (pas de fallback empilé).
+Statut : patch validé (confirmé par l'utilisateur).
 Statut : patch validé (test réel réussi par l'utilisateur, les deux lignes se positionnent correctement).

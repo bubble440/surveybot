@@ -410,6 +410,20 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
             group_by_col_table = None
 
         if group_by_col_table is not None:
+            # Instruction optionnelle (h2.instruction-text) de la question globale,
+            # fusionnée dans le texte transmis pour chaque bloc-colonne (pas de dérivation
+            # numérique — enrichissement textuel uniquement).
+            instruction_gc = ""
+            try:
+                _ins_gc = q.query_selector("h2.instruction-text")
+                if _ins_gc is not None:
+                    instruction_gc = (_ins_gc.inner_text() or "").strip()
+            except Exception:
+                instruction_gc = ""
+            question_gc = f"{question} {instruction_gc}".strip() if instruction_gc else question
+            if instruction_gc:
+                log_debug("[DECIPHER_GROUP_BY_COL]", f"instruction merged: {instruction_gc[:80]!r}")
+
             try:
                 col_hdr_nodes_gc = group_by_col_table.query_selector_all("th[scope='col']")
             except Exception:
@@ -485,7 +499,7 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
                         m2_gc = re.match(r"(ans\d+\.\d+)", (pairs_gc[0][1].get_attribute("name") or ""))
                         if m2_gc:
                             raw_col_nm_gc = m2_gc.group(1)
-                    col_q_gc = f"{question} [{hdr_gc}]" if question else hdr_gc
+                    col_q_gc = f"{question_gc} [{hdr_gc}]" if question_gc else hdr_gc
                     gkey_gc = f"{itype_gc}:name:{raw_col_nm_gc}"
                     tid_gc = make_target_id("group", gkey_gc, col_q_gc)
                     register_target(tid_gc, {
