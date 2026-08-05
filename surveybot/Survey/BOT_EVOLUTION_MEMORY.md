@@ -3660,3 +3660,27 @@ Patterns exclus :
   ne rejette pas un nombre de sélections dépassant la limite textuelle si le modèle l'ignore malgré
   tout — limite connue de cette approche, retenue par choix explicite plutôt qu'un cap numérique dur).
 Statut : patch validé (confirmé par l'utilisateur).
+### Extraction widget "sq-atm1d" — fusion locale de l'instruction dans le texte de question du bloc
+Fichier : Survey/dom_extractors_decipher.py (section widget `.sq-atm1d-widget .sq-atm1d-buttons
+.sq-atm1d-button[data-label]`, bloc checkbox/radio unique regroupant tous les boutons)
+Bug corrigé : ce bloc utilisait directement la variable `question` (h1.question-text uniquement,
+définie une fois en tête de fonction et partagée par plusieurs blocs d'extraction de ce même
+fichier) sans y fusionner `h2.instruction-text` de la question globale — même bug que celui déjà
+corrigé sur le bloc "group-by-col table", mais localisé dans un extracteur distinct (DOM différent,
+widget `sq-atm1d`). Symptôme observé : question "Dans la liste suivante, quels sont selon vous les
+TROIS avantages que le tourisme apporte à votre commune aujourd'hui ?" avec instruction séparée
+"Sélectionnez jusqu'à TROIS réponses." (DOM `#question_Q18.sq-atm1d`) — instruction absente du
+texte transmis au modèle pour ce bloc.
+Correction : nouvelle variable locale `question_atm1d` = fusion de `question` + `h2.instruction-text`
+(lue via le même sélecteur déjà utilisé ailleurs dans le fichier), utilisée uniquement pour ce bloc
+(target_id, payload, blocks.append). La variable partagée `question` n'est pas modifiée — aucun
+impact sur les autres blocs d'extraction de la même fonction (group-by-row, group-by-col, etc.).
+Patterns couverts :
+- Widget `sq-atm1d` avec `h2.instruction-text` présent au niveau de la question globale.
+Patterns exclus :
+- Aucun changement de calcul de `max_select`/`min_select` pour ce bloc (reste `len(options)`,
+  même choix que pour le bloc group-by-col — cf. entrée précédente et le patch prompt_builder.py
+  associé, qui gère la priorité de la limite textuelle au niveau du selection_rule).
+- Variable partagée `question` (autres blocs d'extraction de la fonction) — non modifiée,
+  fusion strictement locale à ce bloc.
+Statut : patch validé (test réel réussi par l'utilisateur).
