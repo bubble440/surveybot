@@ -910,6 +910,7 @@ Patterns couverts :
 Patterns exclus :
 - `ul.profilerAnswer[data-type!="radio"]` (non observé, guard passif)
 
+---
 
 ## PLATEFORME : DECIPHER / FOCUSVISION — DROPDOWN + CHAMP "AUTRE" FRÈRE
 
@@ -2223,6 +2224,8 @@ Statut : patch validé. Appel unitaire (1 scan, 1 clic) conservé tel quel —
 c'est désormais _resolve_topsurveys_popups qui la ré-invoque en boucle pour
 gérer le cas des popups superposés (voir module ci-dessous).
 
+---
+
 ## MODULE TRANSVERSAL : TOPSURVEYS_POPUP_RESOLVE — RE-SCAN BORNÉ POUR POPUPS SUPERPOSÉS
 
 Contexte : au retour sur app.topsurveys.app, deux popups peuvent s'afficher
@@ -2408,6 +2411,8 @@ capture montrant récompense périodique/"Genial" superposée à
 streak_complete_modal — les deux popups sont désormais fermés et la
 présélection reprend normalement).
 
+---
+
 ## MODULE TRANSVERSAL : RELOAD_RETRY — RÉCUPÉRATION PAGE BLOQUÉE SANS ÉLÉMENT ACTIONNABLE (execute_survey_page)
 
 ### RELOAD_RETRY (bloc inline en fin de Survey/survey_executor.py::execute_survey_page)
@@ -2452,6 +2457,8 @@ ne couvrait pas les pages bloquées sans texte identifiable). PROXY_LATENCY_MODE
 a été retiré du projet — ne plus le chercher ni le référencer dans un
 diagnostic futur.
 
+---
+
 ## MODULE TRANSVERSAL : CONSENT_SCREEN_STUCK_RELOAD — RECHARGEMENT BORNÉ SUR ÉCRAN DE CONSENTEMENT BLOQUÉ (execute_survey_page)
 
 ### _consent_screen_stuck_reload_retry (Survey/survey_executor.py)
@@ -2493,6 +2500,7 @@ malgré un rendu visuel apparemment normal (checkbox cochée, CTA visibles).
 
 Statut : patch validé.
 
+---
 
 ## MODULE TRANSVERSAL : CTA_NAV_BAD_KEYWORD_SUBSTRING_FALSE_POSITIVE — FAUX POSITIF FILTRE ANTI-RETOUR SUR SOUS-CHAÎNE "BACK"
 
@@ -2535,6 +2543,8 @@ détectée après CTA (confirmé en conditions réelles sur s2.ifoponline.com, p
 "Vous êtes... ?" → "Dans quelle tranche d'âge vous vous situez ?").
 
 Statut : patch validé.
+
+---
 
 ## PLATEFORME : IFOP / SSI — WIDGET ZIP2CITY (input[type="search"].jz2c-input)
 
@@ -2621,6 +2631,8 @@ s2.ifoponline.com — `[SINGLES_DETECT] ifop_zip2city_input_detected data_prefix
 appliquée au champ). La résolution de ville en aval (clic dropdown → champs cachés peuplés) reste
 à surveiller au cas par cas selon la validité du code postal transmis.
 
+---
+
 ## PLATEFORME : IFOP / SSI CONFIRMIT — QUESTION "SELECT" NATIVE À CHECKBOXES NOMMÉES INDIVIDUELLEMENT (hid_list_)
 
 ### _group_key_for_choice — regroupement via hid_list_{prefix} (ssi_confirmit_rs1_hid_list_group)
@@ -2656,6 +2668,10 @@ assureur(s) avez-vous été en contact lors des 12 derniers mois ?" — avant pa
 sur `Q2_11` et `Q2_10`, même `target_id`, rescan `same_qblock=True`).
 
 Statut : patch validé.
+
+
+---
+
 ## PLATEFORME : IPSOS / mrIWeb (SHARKY) — EXTRACTION DÉCLENCHÉE AVANT FIN DE TRANSITION VISUELLE (rendu dédoublé/fantôme)
 
 ### _wait_for_mriweb_ready — attente de la classe `everythingReady` sur `document.body`
@@ -2835,6 +2851,9 @@ réponse". Après patch : signal absent sur cette ligne, clic CTA de page réel 
 
 Statut : patch validé.
 
+
+---
+
 ## PLATEFORME : IPSOS / mrIWeb (SHARKY) — CHECKBOX "CATEGORICALCLICKIMAGES" AVEC POPUP D'AGRANDISSEMENT (CustomPopup)
 Signature DOM : conteneur `div.question-container.QType-MA...CategoricalClickImages.CustomPopup`,
 config JSON associée `customJSONproperties` avec `"questionLook": "CategoricalClickImages"` et bloc
@@ -2873,6 +2892,9 @@ suivantes, CTA "Suivant" introuvable/sans effet. Après patch : coche silencieus
 synthétique sur le label/l'image), aucune modale ouverte, CTA cliqué avec succès.
 
 Statut : patch validé.
+
+
+---
 
 ## PLATEFORME : IFOP / SSI CONFIRMIT — MATRICE "MOBILE GRID" À RADIOS GRAPHIQUES (une carte par ligne)
 
@@ -2925,6 +2947,9 @@ uniquement, `question_len=439`), réponses GPT cohérentes et application réuss
 
 Statut : patch validé.
 
+
+---
+
 ## MODULE TRANSVERSAL : SNAPSHOT DEBUG (page_snapshot.py) — CAPTURE SUR LE DOCUMENT RACINE AU LIEU DU FRAME SÉLECTIONNÉ
 
 ### dump_page_snapshot — résolution du contexte de frame avant capture (snapshot_ctx)
@@ -2964,6 +2989,10 @@ réel sous `frame#mainFrame > #document`. Après patch : `dom_body.html` contien
 du document de `frame#mainFrame` (question, grid, inputs radio inclus).
 
 Statut : patch validé.
+
+
+---
+
 ## PLATEFORME : SSI CIWWEB LEGACY (ciwweb.pl, ex. eu.surveyme.online) — QUESTION "SELECT" DONT LE TEXTE VIT DANS div.header1, FRÈRE DE div.question_body
 
 ### _wait_for_ssi_ciwweb_ready
@@ -3038,6 +3067,10 @@ Diagnostic associé :
   réponses."), 8 options extraites, bloc créé.
 
 Statut : patch validé.
+
+
+---
+
 ## PLATEFORME : ASKIA — TEXTAREA OUVERTE SANS ID, DISCRIMINÉE PAR NAME (S52/S53)
 Signature DOM : plusieurs `<textarea>` sur une même page, aucun attribut `id`, distingués
 uniquement par leur attribut `name` (ex: name="S52", name="S53"), consigne de fin de bloc
@@ -3083,6 +3116,8 @@ seul fix action_dispatcher.py, isolément) `reason=textarea_name_fallback_failed
 rempli et Q2 rempli de façon incohérente avec le log. Après les deux patchs combinés :
 `apply ok=true strategy=textarea_name_fallback reason=applied` pour Q1 et Q2, chaque
 textarea rempli avec le texte correspondant à sa propre question.
+
+---
 
 Statut : patch validé.
 ## PLATEFORME : IPSOS / mrIWeb (SHARKY) — DETECTION DE PROGRESSION APRES CLIC CTA, VARIANTE GRIDPROGRESSIVE CHECKBOX
@@ -3199,6 +3234,8 @@ Patterns exclus (ajout) : aucun changement pour les groupes sans `.choice__indic
 détecté sur aucun bouton → `itype="radio"` inchangé (comportement historique, y compris DOM de
 référence "Quel est votre genre ?" ci-dessus).
 Statut : patch validé (test confirmé par l'opérateur).
+
+---
 
 ## MODULE TRANSVERSAL : STUDYSTREAM_AUTO_ADVANCE — FAUX POSITIFS SUR LE GARDE-FOU CTA (button_choice_radio)
 
@@ -3611,6 +3648,10 @@ Patterns exclus :
   rejet inchangé (pas de fallback empilé).
 Statut : patch validé (confirmé par l'utilisateur).
 Statut : patch validé (test réel réussi par l'utilisateur, les deux lignes se positionnent correctement).
+
+
+---
+
 ## PLATEFORME : DECIPHER/FOCUSVISION — GROUP-BY-COL TABLE : LIMITE DE SÉLECTION PAR COLONNE ("SÉLECTIONNEZ JUSQU'À N...") NON PRISE EN COMPTE
 
 Signature DOM : question `table.grid[data-settings*='group-by-col'][data-settings*='table-mode']`
@@ -3684,3 +3725,60 @@ Patterns exclus :
 - Variable partagée `question` (autres blocs d'extraction de la fonction) — non modifiée,
   fusion strictement locale à ce bloc.
 Statut : patch validé (test réel réussi par l'utilisateur).
+
+---
+
+## MODULE TRANSVERSAL : TOPSURVEYS POPUP RESOLVE — INSTANCES DUPLIQUEES ET COLLISION DE LIBELLE ENTRE POPUPS DISTINCTS
+
+### _handle_topsurveys_streak_complete_popup — support de plusieurs instances empilees du conteneur streak_complete_modal
+Fichier : Survey/functions.py
+Bug corrige : le handler ne recuperait que la PREMIERE occurrence de
+[data-test-id='streak_complete_modal'] via query_selector et tentait un clic
+unique dessus. Confirme sur DOM de reference reel (captures successives, au
+retour topsurveys.app comme juste apres login) : le DOM contient de facon
+reproductible DEUX conteneurs streak_complete_modal empiles simultanement,
+contenu identique, chacun dans son propre div.p-modal-mask. Le clic sur
+l'instance retournee par query_selector echouait systematiquement par
+timeout, intercepte par le masque de l'autre instance empilee au-dessus -
+epuisant le budget de re-scan de _resolve_topsurveys_popups sans jamais
+fermer la modale.
+Correction : query_selector_all sur toutes les instances visibles du
+conteneur, collecte de tous les boutons candidats, puis tentative de clic
+sequentielle instance par instance jusqu'a la premiere qui accepte le clic
+(budget : 1 tentative de clic par instance candidate). Retour tri-etat
+(True/False/None) : False = popup detecte mais toutes les instances
+obstruees (permet a l'appelant de redonner une chance de re-scan), distinct
+de None = non detecte.
+Patterns couverts :
+- streak_complete_modal present en 1 ou plusieurs instances simultanees dans
+  le DOM (confirme jusqu'a 2 instances en conditions reelles).
+Patterns exclus :
+- Aucun changement de _resolve_topsurveys_popups (boucle de re-scan) ni des
+  autres handlers de popup du fichier.
+Statut : patch valide (confirme par l'utilisateur - fermeture reussie des
+2 instances sur deux sequences de logs distinctes, au retour topsurveys et
+juste apres login).
+
+### _handle_topsurveys_genial_reward_popup — exclusion du bouton streak-complete-modal-button dans le repli generique
+Fichier : Survey/functions.py
+Bug corrige : le repli generique de detection (parcours de tous les
+`button` de la page dont le texte normalise vaut "genial", utilise quand le
+selecteur specifique button[data-test-id='ps-common-actions-button'] ne
+matche rien) pouvait capturer par erreur le bouton
+data-test-id='streak-complete-modal-button' de la modale de serie
+quotidienne (meme libelle visible "Genial"), quand celle-ci etait presente
+sans veritable popup de recompense sur la page. La boucle de re-scan
+journalisait alors a tort la detection d'un popup "Genial" distinct et
+retentait un clic deja gere (et deja en echec) par
+_handle_topsurveys_streak_complete_popup.
+Correction : garde explicite dans le repli generique excluant tout bouton
+dont l'attribut data-test-id vaut "streak-complete-modal-button" avant
+d'evaluer son texte.
+Patterns couverts :
+- Tout DOM ou streak_complete_modal est present (1 ou plusieurs instances)
+  et ou aucun veritable popup de recompense n'existe simultanement.
+Patterns exclus :
+- Selecteur specifique button[data-test-id='ps-common-actions-button']
+  (chemin normal du popup de recompense) - non modifie.
+Statut : patch valide (confirme par l'utilisateur - plus de faux match
+"Genial" observe dans les sequences de logs suivant ce patch).

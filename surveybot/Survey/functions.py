@@ -84,7 +84,16 @@ def _handle_topsurveys_genial_reward_popup(driver) -> bool:
         if not btn:
             for b in driver.query_selector_all("button"):
                 try:
-                    if b.is_visible() and _norm_genial(b.inner_text() or "") == "genial":
+                    if not b.is_visible():
+                        continue
+                    # Exclusion stricte : ne jamais capturer un bouton appartenant a un
+                    # popup connu deja gere par un handler distinct (ex. le bouton
+                    # 'Genial' de streak_complete_modal, gere par
+                    # _handle_topsurveys_streak_complete_popup) - collision confirmee
+                    # sur DOM de reference (cf. BOT_EVOLUTION_MEMORY.md).
+                    if (b.get_attribute("data-test-id") or "") == "streak-complete-modal-button":
+                        continue
+                    if _norm_genial(b.inner_text() or "") == "genial":
                         btn = b
                         break
                 except Exception:
@@ -254,46 +263,64 @@ def _handle_topsurveys_streak_complete_popup(driver):
     Fonction additive et independante : guard DOM strict et disjoint, ne fusionne
     jamais avec ce dernier (aucune modification de son guard ni de son role). Aucune
     navigation forcee apres fermeture, le flux appelant reprend normalement.
-    Guard strict : conteneur [data-test-id='streak_complete_modal'] visible, contenant
-    le bouton [data-test-id='streak-complete-modal-button'] visible.
-    Budget : 1 scan de detection, 1 tentative de clic.
+    Guard strict : conteneur(s) [data-test-id='streak_complete_modal'] visible(s), chacun
+    contenant le bouton [data-test-id='streak-complete-modal-button'] visible.
+    Le DOM peut contenir plusieurs occurrences de ce conteneur empilees simultanement
+    (chacune dans son propre div.p-modal-mask, contenu identique) - confirme sur DOM de
+    reference reel (cf. BOT_EVOLUTION_MEMORY.md). Un clic sur l'instance la plus basse
+    du DOM peut alors etre intercepte par le masque d'une autre instance empilee
+    au-dessus ; toutes les instances candidates sont donc essayees jusqu'a la premiere
+    qui accepte le clic. Budget : 1 scan de detection (toutes instances), 1 tentative
+    de clic par instance candidate.
 
     Valeur de retour (tri-etat, cf. BOT_EVOLUTION_MEMORY.md - module TOPSURVEYS_POPUP_RESOLVE) :
-    - True  : popup detecte et ferme.
-    - False : popup detecte mais clic echoue (ex. intercepte par un autre popup
-              superpose au premier plan) - distinct de "non detecte" pour permettre
-              a l'appelant (_resolve_topsurveys_popups) de redonner une chance de
-              re-scan plutot que de conclure a tort a "aucun popup connu".
+    - True  : popup detecte et ferme (au moins une instance).
+    - False : popup detecte mais aucune instance candidate n'a pu etre fermee (toutes
+              interceptees) - distinct de "non detecte" pour permettre a l'appelant
+              (_resolve_topsurveys_popups) de redonner une chance de re-scan plutot
+              que de conclure a tort a "aucun popup connu".
     - None  : popup non detecte.
     """
     try:
-        container = driver.query_selector("[data-test-id='streak_complete_modal']")
-        if not container or not container.is_visible():
-            return None
-        btn = container.query_selector("[data-test-id='streak-complete-modal-button']")
-        if not btn or not btn.is_visible():
-            return None
+        candidates = []
+        for container in driver.query_selector_all("[data-test-id='streak_complete_modal']"):
+            try:
+                if not container.is_visible():
+                    continue
+                btn = container.query_selector("[data-test-id='streak-complete-modal-button']")
+                if btn and btn.is_visible():
+                    candidates.append(btn)
+            except Exception:
+                continue
     except Exception as e:
         if _is_target_closed(e):
             log_debug("[TOPSURVEYS_STREAK_POPUP]", f"page fermee pendant le scan: {e}")
         return None
 
-    log_info("[TOPSURVEYS_STREAK_POPUP]", "modale 'fin de serie quotidienne' detectee - fermeture...")
+    if not candidates:
+        return None
+
+    log_info("[TOPSURVEYS_STREAK_POPUP]",
+             f"modale 'fin de serie quotidienne' detectee ({len(candidates)} instance(s)) - fermeture...")
     _local_pause_before_cta("[TOPSURVEYS_STREAK_POPUP] modale detectee")
 
-    try:
-        if is_cta_intercept_only():
-            log_info("[TOPSURVEYS_STREAK_POPUP]",
-                      "bouton 'Genial' (streak_complete_modal) trouve - interception OK (CTA_INTERCEPT_ONLY actif)")
-        else:
+    if is_cta_intercept_only():
+        log_info("[TOPSURVEYS_STREAK_POPUP]",
+                  "bouton 'Genial' (streak_complete_modal) trouve - interception OK (CTA_INTERCEPT_ONLY actif)")
+        return True
+
+    for btn in candidates:
+        try:
             btn.click(timeout=3000)
             log_info("[TOPSURVEYS_STREAK_POPUP]", "bouton 'Genial' (streak_complete_modal) clique.")
-        time.sleep(1.0)
-    except Exception as e:
-        log_info("[TOPSURVEYS_STREAK_POPUP]", f"erreur clic: {e}")
-        return False
+            time.sleep(1.0)
+            return True
+        except Exception as e:
+            log_debug("[TOPSURVEYS_STREAK_POPUP]", f"instance obstruee, tentative instance suivante: {e}")
+            continue
 
-    return True
+    log_info("[TOPSURVEYS_STREAK_POPUP]", "erreur clic: toutes les instances empilees sont obstruees.")
+    return False
 
 
 _TOPSURVEYS_SURVEY_RESULT_PATTERNS = ("tu as repondu avec succes au sondage",)
