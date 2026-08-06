@@ -245,7 +245,7 @@ def _close_topsurveys_bon_travail_popup_once(driver) -> bool:
     return True
 
 
-def _handle_topsurveys_streak_complete_popup(driver) -> bool:
+def _handle_topsurveys_streak_complete_popup(driver):
     """
     Gere la modale de fin de serie quotidienne TopSurveys ('La serie est terminee'),
     dont le bouton de validation unique affiche aussi 'Genial' mais dans un conteneur
@@ -256,19 +256,27 @@ def _handle_topsurveys_streak_complete_popup(driver) -> bool:
     navigation forcee apres fermeture, le flux appelant reprend normalement.
     Guard strict : conteneur [data-test-id='streak_complete_modal'] visible, contenant
     le bouton [data-test-id='streak-complete-modal-button'] visible.
-    Budget : 1 scan de detection, 1 tentative de clic. Retourne False si non detecte.
+    Budget : 1 scan de detection, 1 tentative de clic.
+
+    Valeur de retour (tri-etat, cf. BOT_EVOLUTION_MEMORY.md - module TOPSURVEYS_POPUP_RESOLVE) :
+    - True  : popup detecte et ferme.
+    - False : popup detecte mais clic echoue (ex. intercepte par un autre popup
+              superpose au premier plan) - distinct de "non detecte" pour permettre
+              a l'appelant (_resolve_topsurveys_popups) de redonner une chance de
+              re-scan plutot que de conclure a tort a "aucun popup connu".
+    - None  : popup non detecte.
     """
     try:
         container = driver.query_selector("[data-test-id='streak_complete_modal']")
         if not container or not container.is_visible():
-            return False
+            return None
         btn = container.query_selector("[data-test-id='streak-complete-modal-button']")
         if not btn or not btn.is_visible():
-            return False
+            return None
     except Exception as e:
         if _is_target_closed(e):
             log_debug("[TOPSURVEYS_STREAK_POPUP]", f"page fermee pendant le scan: {e}")
-        return False
+        return None
 
     log_info("[TOPSURVEYS_STREAK_POPUP]", "modale 'fin de serie quotidienne' detectee - fermeture...")
     _local_pause_before_cta("[TOPSURVEYS_STREAK_POPUP] modale detectee")
@@ -283,6 +291,75 @@ def _handle_topsurveys_streak_complete_popup(driver) -> bool:
         time.sleep(1.0)
     except Exception as e:
         log_info("[TOPSURVEYS_STREAK_POPUP]", f"erreur clic: {e}")
+        return False
+
+    return True
+
+
+_TOPSURVEYS_SURVEY_RESULT_PATTERNS = ("tu as repondu avec succes au sondage",)
+
+
+def _close_topsurveys_survey_result_popup_once(driver) -> bool:
+    """
+    Une seule tentative de detection+fermeture du popup de resultat de sondage
+    'Tu as repondu avec succes au sondage !' (bouton 'Complete', meme
+    data-test-id='ps-common-actions-button' que le popup 'Bon travail !', mais
+    variant de texte non couvert par _TOPSURVEYS_BON_TRAVAIL_PATTERNS - cf.
+    BOT_EVOLUTION_MEMORY.md, module TOPSURVEYS_POPUP_RESOLVE). Fonction additive
+    et independante : _close_topsurveys_bon_travail_popup_once n'est ni
+    modifiee ni ses patterns etendus. Appelee depuis _resolve_topsurveys_popups.
+    """
+    try:
+        txt = (driver.evaluate("() => document.body.innerText || ''") or "")
+    except Exception as e:
+        if _is_target_closed(e):
+            log_debug("[TOPSURVEYS_POPUP_RESOLVE]", f"page fermee pendant lecture innerText (survey_result): {e}")
+        return False
+
+    if not any(p in _normalize_topsurveys_text(txt) for p in _TOPSURVEYS_SURVEY_RESULT_PATTERNS):
+        return False
+
+    log_info("[TOPSURVEYS_POPUP_RESOLVE]", "Popup resultat de sondage detecte - fermeture...")
+    _local_pause_before_cta("[TOPSURVEYS_POPUP_RESOLVE] Popup resultat de sondage detecte")
+
+    btn = None
+    try:
+        btn = driver.wait_for_selector(
+            "button[data-test-id='ps-common-actions-button']",
+            state="visible",
+            timeout=2000,
+        )
+    except Exception:
+        pass
+
+    if not btn:
+        reason = "[TOPSURVEYS_POPUP_RESOLVE] Bouton 'Complete' (popup resultat de sondage) non trouve."
+        print(reason)
+        _local_pause_before_cta(reason)
+        return False
+
+    if _topsurveys_qualification_popup_active(driver):
+        reason = ("[TOPSURVEYS_POPUP_RESOLVE] Popup resultat de sondage remplace par le popup de "
+                  "qualification ('Participer') avant clic - abandon controle (pas de clic).")
+        print(reason)
+        _local_pause_before_cta(reason)
+        return False
+
+    try:
+        if is_cta_intercept_only():
+            reason = "[TOPSURVEYS_POPUP_RESOLVE] Bouton 'Complete' (popup resultat de sondage) trouvé — interception OK (CTA_INTERCEPT_ONLY actif)"
+            print(reason)
+            _local_pause_before_cta(reason)
+        else:
+            btn.click(timeout=3000)
+            reason = "[TOPSURVEYS_POPUP_RESOLVE] Bouton 'Complete' (popup resultat de sondage) clique."
+            print(reason)
+            _local_pause_before_cta(reason)
+        time.sleep(1.0)
+    except Exception as e:
+        reason = f"[TOPSURVEYS_POPUP_RESOLVE] Erreur clic 'Complete' (popup resultat de sondage): {e}"
+        print(reason)
+        _local_pause_before_cta(reason)
         return False
 
     return True
@@ -314,14 +391,15 @@ def _resolve_topsurveys_popups(driver, max_attempts: int = _TOPSURVEYS_POPUP_RES
     l'appelant, a declencher une seule fois apres stabilisation.
 
     Retourne un dict {"genial_closed", "mystery_box_closed", "bon_travail_closed",
-    "streak_complete_closed"} (bool chacun) indiquant quels types de popup ont ete
-    fermes au moins une fois.
+    "streak_complete_closed", "survey_result_closed"} (bool chacun) indiquant quels
+    types de popup ont ete fermes au moins une fois.
     """
     result = {
         "genial_closed": False,
         "mystery_box_closed": False,
         "bon_travail_closed": False,
         "streak_complete_closed": False,
+        "survey_result_closed": False,
     }
 
     for attempt in range(1, max_attempts + 1):
@@ -360,8 +438,25 @@ def _resolve_topsurveys_popups(driver, max_attempts: int = _TOPSURVEYS_POPUP_RES
             result["bon_travail_closed"] = True
             continue
 
-        if _handle_topsurveys_streak_complete_popup(driver):
+        streak_state = _handle_topsurveys_streak_complete_popup(driver)
+        if streak_state is True:
             result["streak_complete_closed"] = True
+            continue
+
+        # streak_state False (detecte, clic echoue - ex. intercepte par le popup de
+        # resultat de sondage reste au premier plan sous la modale) ou None (non
+        # detecte) : dans les deux cas, tenter le popup de resultat de sondage avant
+        # de conclure a "etat stable" (cf. BOT_EVOLUTION_MEMORY.md).
+        if _close_topsurveys_survey_result_popup_once(driver):
+            result["survey_result_closed"] = True
+            continue
+
+        if streak_state is False:
+            # Detecte mais ni son propre clic ni le popup sous-jacent n'ont debloque
+            # l'etat a ce passage - nouveau passage de re-scan dans le budget existant
+            # plutot que de sortir a tort comme si aucun popup connu n'etait present.
+            log_debug("[TOPSURVEYS_POPUP_RESOLVE]",
+                      f"streak_complete detecte mais clic echoue, popup de resultat non ferme (attempt={attempt}) - nouveau passage.")
             continue
 
         # Aucun popup connu detecte a ce passage -> etat stable, fin de boucle.
