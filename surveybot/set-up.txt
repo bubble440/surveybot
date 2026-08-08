@@ -162,7 +162,22 @@ powercfg /change hibernate-timeout-ac 0
 # Pour lancer un bot a l'arret, executer la commande ci-dessous:
 nssm start surveybot_topsurveys_bot_001
 
-# Pour stopper un bot
+# Pour stopper un bot DURABLEMENT (maintenance, intervention operateur, ...) :
+# `nssm stop` seul NE SUFFIT PAS - wake_scheduler.ps1 (tache planifiee, tick 5 min)
+# relance automatiquement tout bot dont le cooldown Postgres est expire et dont le
+# service n'est pas SERVICE_RUNNING. Un `nssm stop` nu envoie exactement le meme
+# signal qu'un arret de service Windows ordinaire (reboot machine) : rien ne permet
+# alors de distinguer "arret operateur volontaire, ne pas relancer" de "la machine a
+# redemarre, le parc doit reprendre normalement". stop_bot_manual.ps1 pose un
+# marqueur dedie (pids\bot_<id>.manual_stop) AVANT d'appeler `nssm stop` : ce
+# marqueur est lu par wake_scheduler.ps1, qui ignore alors ce bot jusqu'a la
+# prochaine reprise explicite - il est leve automatiquement au demarrage reel
+# suivant (nssm start manuel, ou redemarrage machine qui relance le service NSSM).
+.\stop_bot_manual.ps1 -AccountId "topsurveys_bot_001"
+
+# nssm stop reste valide pour un arret COURT dont vous savez qu'il sera suivi d'un
+# nssm start dans les toutes prochaines minutes (avant le prochain tick de
+# wake_scheduler.ps1) - sinon toujours preferer stop_bot_manual.ps1 ci-dessus.
 nssm stop surveybot_topsurveys_bot_001
 
 # Pour voir le statut

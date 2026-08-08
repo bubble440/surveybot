@@ -77,8 +77,11 @@ else:
 # une 2e lecture dans le même run verrait le sentinel EXIT_CRASH que la 1re
 # vient d'écrire et fausserait le compteur.
 if not is_attach_mode():
-    from bot_supervisor import check_and_record_start, record_exit, EXIT_FATAL
+    from bot_supervisor import check_and_record_start, record_exit, EXIT_FATAL, clear_manual_stop_marker
     from launch import build_notifier
+    # Ce démarrage (nssm start explicite ou redémarrage machine) vaut reprise :
+    # lève le marqueur posé par stop_bot_manual.ps1, voir clear_manual_stop_marker().
+    clear_manual_stop_marker(ACCOUNT_ID)
     _should_abort, _restart_count = check_and_record_start(ACCOUNT_ID)
     if _should_abort:
         _abort_msg = (

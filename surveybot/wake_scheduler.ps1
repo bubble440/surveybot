@@ -10,6 +10,8 @@
 # Regles :
 #   - Cooldown lu en base Postgres via le mode CLI --query-cooldown de main.py (python.exe).
 #   - EXIT_FATAL (last_exit_code = 3) : jamais relance automatiquement - intervention humaine.
+#   - Marqueur pids\bot_<id>.manual_stop present (pose par stop_bot_manual.ps1) : jamais
+#     relance automatiquement tant que le bot n'a pas ete redemarre au moins une fois.
 #   - Service NSSM deja en cours d'execution : ignore.
 #
 # Capture de sortie :
@@ -164,6 +166,20 @@ foreach ($accountId in $accountIds) {
         } catch {
             Write-Warning "[WAKE] bot=$accountId - impossible de lire $stateFile : $_ - on continue."
         }
+    }
+
+    # - Verification arret manuel operateur (marqueur distinct du cooldown) -
+    # Pose par stop_bot_manual.ps1 (a utiliser a la place d'un `nssm stop` nu pour
+    # un arret destine a durer) ; leve automatiquement au prochain demarrage reel
+    # du bot (bot_supervisor.clear_manual_stop_marker, appelee au tout debut de
+    # main.py). Necessaire car `nssm stop` seul envoie le meme CTRL_BREAK_EVENT
+    # qu'un arret de service Windows ordinaire (redemarrage machine) : le cooldown
+    # Postgres seul ne peut donc pas porter cette distinction sans risquer de
+    # bloquer tout le parc apres un simple reboot.
+    $manualStopFile = Join-Path $PidsDir "bot_$accountId.manual_stop"
+    if (Test-Path $manualStopFile) {
+        Write-Output "[WAKE] bot=$accountId - arret manuel operateur signale ($manualStopFile) - intervention humaine requise, ignore."
+        continue
     }
 
     # - Verification statut NSSM -

@@ -11,7 +11,8 @@
 #
 # Perimetre suivi (fichiers "files", remplaces automatiquement) :
 #   launch_all.ps1, nssm_setup_bot.ps1, wake_scheduler.ps1, check_zombie_bots.ps1,
-#   rotate_orchestration_logs.ps1, run_tabs.ps1, tools\attach_tab.ps1
+#   stop_bot.ps1, stop_bot_manual.ps1, rotate_orchestration_logs.ps1, run_tabs.ps1,
+#   tools\attach_tab.ps1
 # Perimetre "track_only" (hash uniquement, jamais applique automatiquement) :
 #   requirements.txt
 # Explicitement HORS perimetre (jamais inclus ici) :
@@ -40,6 +41,7 @@ $TrackedFiles = @(
     "wake_scheduler.ps1",
     "check_zombie_bots.ps1",
     "stop_bot.ps1",
+    "stop_bot_manual.ps1",
     "rotate_orchestration_logs.ps1",
     "set-up.txt",
     "setup_machine.ps1",

@@ -47,6 +47,10 @@ def _state_path(account_id: str) -> str:
     return os.path.join(_pids_dir(), f"bot_{account_id}.state")
 
 
+def _manual_stop_path(account_id: str) -> str:
+    return os.path.join(_pids_dir(), f"bot_{account_id}.manual_stop")
+
+
 # ---------------------------------------------------------------------------
 # Lecture / écriture de l'état JSON
 # ---------------------------------------------------------------------------
@@ -103,6 +107,29 @@ def record_exit(account_id: str, exit_code: int, reason: str) -> None:
     state["last_exit_reason"] = reason
     state["last_exit_ts"]     = time.time()
     _write_state(account_id, state)
+
+
+def clear_manual_stop_marker(account_id: str) -> None:
+    """
+    Supprime le marqueur d'arrêt manuel posé par stop_bot_manual.ps1, si présent.
+
+    Ce marqueur est distinct du cooldown Postgres : il sert uniquement à
+    wake_scheduler.ps1 pour ne pas relancer un bot volontairement arrêté par
+    l'opérateur (contrairement au cooldown, un `nssm stop` seul ne suffit pas à
+    le distinguer d'un arrêt de service Windows ordinaire, ex. redémarrage
+    machine — voir stop_bot_manual.ps1). Appelée une seule fois, tout au début
+    de chaque démarrage réel du bot (main.py) : ce démarrage, qu'il vienne d'un
+    `nssm start` explicite ou d'un redémarrage machine qui relance le service
+    NSSM, vaut reprise — wake_scheduler.ps1 n'a plus de raison d'ignorer ce
+    compte ensuite.
+    """
+    path = _manual_stop_path(account_id)
+    try:
+        if os.path.isfile(path):
+            os.remove(path)
+            print(f"[SUPERVISOR] Marqueur d'arrêt manuel levé : {path}")
+    except Exception as e:
+        print(f"[SUPERVISOR][WARN] Impossible de supprimer {path}: {e}")
 
 
 def check_and_record_start(

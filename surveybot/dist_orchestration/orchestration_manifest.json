@@ -1,5 +1,5 @@
 {
-    "generated_at":  "2026-07-30T03:08:09Z",
+    "generated_at":  "2026-08-08T10:05:11Z",
     "files":  [
                   {
                       "rel_path":  "launch_all.ps1",
@@ -13,7 +13,7 @@
                   },
                   {
                       "rel_path":  "wake_scheduler.ps1",
-                      "sha256":  "acd6e643bf77f24e2c5d2bc0b810f2c83678c5a957ca2d22bdb8afef03f3ffd6",
+                      "sha256":  "685f6c4ef54c92a344d8cc1e6d44616490da402a11a6802ca5af1ca739af0530",
                       "url":  "https://pub-565d2bb59d364c1490255c5dddc296aa.r2.dev/orchestration/wake_scheduler.ps1"
                   },
                   {
@@ -27,13 +27,18 @@
                       "url":  "https://pub-565d2bb59d364c1490255c5dddc296aa.r2.dev/orchestration/stop_bot.ps1"
                   },
                   {
+                      "rel_path":  "stop_bot_manual.ps1",
+                      "sha256":  "850ff264594ab84b88b88f6898f56bbda4c5f807d5146bd434bec894f60b924f",
+                      "url":  "https://pub-565d2bb59d364c1490255c5dddc296aa.r2.dev/orchestration/stop_bot_manual.ps1"
+                  },
+                  {
                       "rel_path":  "rotate_orchestration_logs.ps1",
                       "sha256":  "c63d29285cb82065846a7e22cd0f27c39ee6dda4d5d60903f97cfeccee2e7044",
                       "url":  "https://pub-565d2bb59d364c1490255c5dddc296aa.r2.dev/orchestration/rotate_orchestration_logs.ps1"
                   },
                   {
                       "rel_path":  "set-up.txt",
-                      "sha256":  "0e151f2fd04bdafc996fbad3669f6d6fbe476da7f6a4ba88904788459470b57d",
+                      "sha256":  "24d9c68d55475f38acbba7e68bcb1b283c2fb043f7559f5b30e1cfe9e746aa28",
                       "url":  "https://pub-565d2bb59d364c1490255c5dddc296aa.r2.dev/orchestration/set-up.txt"
                   },
                   {

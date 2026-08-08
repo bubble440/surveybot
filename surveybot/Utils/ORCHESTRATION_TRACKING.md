@@ -523,7 +523,83 @@ dérivé une fois avec le chemin en dur dans l'ancienne fonction).
 
   ---
 
-*Dernière mise à jour de ce fichier : 29/07/2026 (section 16 : correction d'une fuite
+## 17. Arrêt manuel opérateur relancé par `wake_scheduler.ps1` — corrigé, non validé en conditions réelles
+
+- **Problème observé (08/08/2026)** : plusieurs `nssm stop surveybot_topsurveys_bot_003`
+  répétés par l'opérateur ne maintenaient pas le bot arrêté durablement — quelques
+  minutes plus tard, le heartbeat local montrait un bot de nouveau actif (âge 31 s).
+- **Cause racine** : `launch.py::_make_stop_handler` (§3, `_make_stop_handler`) traite
+  `nssm stop` (SIGBREAK) exactement comme n'importe quel arrêt volontaire automatique
+  normal (fin de session, objectif journalier) : `cooldown_until_ts` remis à l'epoch,
+  `status="idle"`, `record_exit(EXIT_VOLUNTARY)`. `wake_scheduler.ps1` (§8) ne fait que
+  lire ce cooldown Postgres — un cooldown à l'epoch est toujours expiré, donc le bot est
+  relancé (`nssm start`) au prochain passage (jusqu'à 5 min), qu'il ait été arrêté par un
+  cooldown normal ou par une décision opérateur destinée à durer.
+- **Piège identifié pendant le diagnostic (a écarté une première approche)** : corriger
+  ce cas dans `_make_stop_handler` lui-même (ex. réutiliser le cooldown ~1 an de
+  `PausePolicy.UNTIL_MANUAL`, déjà utilisé pour `StopReason.SESSION_EXPIRED`) est
+  **impossible à faire correctement** : `nssm stop` envoie le même `CTRL_BREAK_EVENT`
+  qu'un arrêt de service Windows ordinaire (redémarrage machine, Windows Update) —
+  rien côté process Python ne permet de distinguer les deux déclencheurs. Un correctif
+  au niveau du signal aurait donc mis en pause ~1 an *tout le parc* après un simple
+  reboot machine, pas seulement le bot visé par l'opérateur.
+- **Décision** : ne pas toucher au cooldown Postgres ni à `_make_stop_handler`/
+  `install_sigint_handler` (inchangés). Introduire un marqueur fichier explicite,
+  distinct du cooldown, posé uniquement par une action opérateur volontaire et lu
+  uniquement par `wake_scheduler.ps1` :
+  - **Nouveau script `stop_bot_manual.ps1`** (racine du dépôt, hors périmètre de
+    `stop_bot.ps1` qui cible les bots lancés via `launch_all.ps1`) : pose
+    `pids\bot_<id>.manual_stop` (contenu horodaté, diagnostic seulement) puis appelle
+    lui-même `nssm stop surveybot_<id>`. À utiliser à la place d'un `nssm stop` nu pour
+    un arrêt destiné à durer.
+  - **`wake_scheduler.ps1`** : nouveau bloc de vérification additif, entre le check
+    `EXIT_FATAL` existant et le check de statut NSSM — `continue` (compte ignoré) si
+    `pids\bot_<id>.manual_stop` existe. Même style que le check `EXIT_FATAL` voisin.
+  - **`bot_supervisor.py`** : nouvelle fonction additive `clear_manual_stop_marker()`
+    (mêmes conventions que `_pids_dir()`/`_state_path()` existants) — supprime le
+    marqueur s'il existe.
+  - **`main.py`** : un seul nouvel appel à `clear_manual_stop_marker(ACCOUNT_ID)`, au
+    tout début du démarrage réel du bot (juste avant `check_and_record_start`, dans le
+    même bloc `if not is_attach_mode()`). Tout démarrage réel du process — `nssm start`
+    explicite par l'opérateur, **ou** redémarrage machine qui relance le service NSSM —
+    lève donc le marqueur. Conséquence assumée : un redémarrage machine reprend le bot
+    normalement (comportement inchangé), exactement comme avant ce correctif ; seul
+    `wake_scheduler.ps1` (relance périodique à distance) est désormais bloqué par le
+    marqueur tant que le process n'a pas redémarré au moins une fois.
+  - **`build_orchestration_release.ps1`** : `stop_bot_manual.ps1` ajouté à
+    `$TrackedFiles` (sinon le script ne serait jamais synchronisé sur le parc via
+    `sync_orchestration_scripts.ps1`).
+- **Aucune modification** de `launch.py` (`_make_stop_handler`, `install_sigint_handler`),
+  `nssm_setup_bot.ps1`, `stop_bot.ps1`, `check_zombie_bots.ps1` (déjà correct : il ignore
+  `last_exit_code == 0`, donc un bot manuellement arrêté n'est de toute façon jamais
+  considéré comme zombie).
+- **Point de vigilance** : le marqueur ne bloque que `wake_scheduler.ps1`. Il ne modifie
+  pas le comportement de démarrage automatique du service NSSM lui-même (ex. au boot de
+  la machine, si le service est configuré en démarrage automatique) — ce point était
+  hors périmètre de la demande initiale (qui ne visait que la relance périodique par
+  `wake_scheduler.ps1`) et n'a pas été investigué plus avant.
+- **Non validé en conditions réelles à ce jour** : vérifié par relecture de code +
+  parsing syntaxique (PowerShell `PSParser`, Python `ast.parse`) uniquement. Cycle
+  complet (`stop_bot_manual.ps1` → `wake_scheduler.ps1` ignore le compte pendant
+  plusieurs passages → `nssm start` manuel lève le marqueur → `wake_scheduler.ps1`
+  reprend la gestion normale) à valider sur une machine réelle avant déploiement au
+  parc.
+- **Fichiers modifiés/créés** : `bot_supervisor.py`, `main.py`, `wake_scheduler.ps1`,
+  `build_orchestration_release.ps1` (modifiés) ; `stop_bot_manual.ps1` (nouveau).
+
+  ---
+
+*Dernière mise à jour de ce fichier : 08/08/2026 (section 17 : `nssm stop` répété ne
+maintenait pas un bot arrêté durablement — `wake_scheduler.ps1` le relançait dès son
+cooldown Postgres expiré, indiscernable d'un arrêt volontaire automatique normal.
+Correctif via marqueur fichier explicite distinct du cooldown — `stop_bot_manual.ps1`
+nouveau, `wake_scheduler.ps1` ignore le compte si le marqueur existe, levé
+automatiquement au prochain démarrage réel du bot via
+`bot_supervisor.clear_manual_stop_marker()` appelée depuis `main.py`. `_make_stop_handler`
+et le cooldown Postgres volontairement non touchés — `nssm stop` envoie le même signal
+qu'un arrêt de service Windows ordinaire, un correctif au niveau du signal aurait donc
+mis en pause tout le parc après un simple redémarrage machine. Non validé en conditions
+réelles). Précédemment : 29/07/2026 (section 16 : correction d'une fuite
 d'attachement console dans `stop_bot.ps1` — `FreeConsole`/`AttachConsole`/
 `GenerateConsoleCtrlEvent` déplacés dans un sous-process jetable pour ne jamais affecter
 la session PowerShell interactive appelante). Précédemment : 29/07/2026 (section 15 :
