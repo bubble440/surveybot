@@ -2375,8 +2375,6 @@ def try_click_qps_skip_to_survey(driver, *, max_wait_s: float = 8.0, poll_s: flo
         except Exception:
             time.sleep(poll_s)
             continue
-        except Exception:
-            return False
 
     log_info("QPS_SKIP", f"Lien 'Passez directement à l'enquête' introuvable après {max_wait_s}s")
     return False

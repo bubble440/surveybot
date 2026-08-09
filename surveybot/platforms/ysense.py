@@ -103,13 +103,65 @@ class YSensePlatform(Platform):
 
     def select_survey(self, driver) -> bool:
         """
-        Doit naviguer vers https://www.ysense.com/surveys?m=1&ds=39, analyser la liste
-        de surveys disponibles, choisir le meilleur selon le ratio reward/durée,
-        et cliquer pour l'ouvrir dans un nouvel onglet.
-        Retourner True si un survey a été sélectionné, False si aucun disponible.
+        Navigue vers https://www.ysense.com/surveys?m=1&ds=39, analyse la liste
+        de surveys disponibles (#survey-list-body > a.survey-link[data-survey_reward][data-survey_loi]),
+        choisit le meilleur selon le ratio reward/durée, et clique pour l'ouvrir.
+        Retourne True si un survey a été sélectionné, False si aucun disponible.
         """
         log_info(_TAG, "select_survey() called")
-        raise NotImplementedError(f"{_TAG} select_survey() non implémenté")
+        page = driver
+        _SURVEYS_URL = "https://www.ysense.com/surveys?m=1&ds=39"
+
+        try:
+            page.goto(_SURVEYS_URL)
+        except Exception as e:
+            log_info(_TAG, f"select_survey() — navigation échouée : {e}")
+            return False
+
+        try:
+            page.wait_for_selector("#survey-list-body", state="attached", timeout=20000)
+        except Exception:
+            log_info(_TAG, "select_survey() — #survey-list-body introuvable après 20s")
+            return False
+
+        try:
+            cards = page.query_selector_all(
+                "#survey-list-body > a.survey-link[data-survey_reward][data-survey_loi]"
+            )
+        except Exception as e:
+            log_info(_TAG, f"select_survey() — erreur lecture liste surveys : {e}")
+            return False
+
+        best = None
+        best_ratio = -1.0
+        for card in cards:
+            try:
+                reward = float(card.get_attribute("data-survey_reward") or "0")
+                loi = float(card.get_attribute("data-survey_loi") or "0")
+            except (TypeError, ValueError):
+                continue
+            if loi <= 0:
+                continue
+            ratio = reward / loi
+            if ratio > best_ratio:
+                best_ratio = ratio
+                best = card
+
+        if best is None:
+            log_info(_TAG, "select_survey() — aucun survey disponible")
+            return False
+
+        survey_id = best.get_attribute("data-survey_id") or "?"
+        try:
+            best.click()
+            log_info(
+                _TAG,
+                f"select_survey() — survey {survey_id} sélectionné (ratio reward/min={best_ratio:.2f})",
+            )
+            return True
+        except Exception as e:
+            log_info(_TAG, f"select_survey() — clic échoué sur survey {survey_id} : {e}")
+            return False
 
     def handle_post_survey(self, driver, account_id: str) -> bool:
         """
