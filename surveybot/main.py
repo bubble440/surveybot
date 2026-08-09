@@ -700,11 +700,13 @@ def _attach_select_tab_pw(context, *, exclude_url_pred=None):
     return pages[0]
 
 
-def run_attach_login_takeover(page, pw, *, api_key: str, account_id: str, config: dict) -> None:
+def run_attach_login_takeover(page, pw, *, api_key: str, account_id: str, config: dict, platform=None) -> None:
     """
     Route 'login' (BLOC 1 natif Playwright) :
-      1. Login si page de connexion détectée (auth_handler.login — natif Playwright)
-      2. Navigation + sélection du survey (survey_navigator — natif Playwright)
+      1. Login si page de connexion détectée (auth_handler.login — natif Playwright ;
+         ou platform.login() pour une plateforme configurée autre que TopSurveys)
+      2. Navigation + sélection du survey (survey_navigator — natif Playwright ;
+         ou platform.select_survey())
       3. Pont BLOC 1 → BLOC 2 : wrap page native en shim
       4. Résolution présélection + survey (BLOC 2/3 via shim)
     """
@@ -712,30 +714,57 @@ def run_attach_login_takeover(page, pw, *, api_key: str, account_id: str, config
     import Survey.survey_executor as survey_executor
     import Survey.survey_solver as survey_solver
     from Survey.survey_context import SurveyContext
-    from preselection.auth_handler import LOGIN_PAGE_SELECTORS
-    from preselection.auth_handler import login as _do_login
     from preselection.auth_handler import handle_proxy_error_page_if_needed
-    from preselection.survey_navigator import go_to_best_value_survey
 
     handle_proxy_error_page_if_needed(page)
 
-    # Login si page de connexion détectée
-    try:
-        _on_login = any(page.query_selector(sel) for sel in LOGIN_PAGE_SELECTORS)
-    except Exception:
-        _on_login = False
+    _is_topsurveys = platform is None or platform.get_platform_name() == "topsurveys"
 
-    if _on_login:
-        print("[ATTACH][LOGIN] Page de connexion détectée → login")
-        _do_login(
-            page,
-            os.getenv("EMAIL") or config.get("Email", ""),
-            os.getenv("PASSWORD") or config.get("Password", ""),
+    if _is_topsurveys:
+        # Chemin TopSurveys existant — inchangé.
+        from preselection.auth_handler import LOGIN_PAGE_SELECTORS
+        from preselection.auth_handler import login as _do_login
+        from preselection.survey_navigator import go_to_best_value_survey
+
+        # Login si page de connexion détectée
+        try:
+            _on_login = any(page.query_selector(sel) for sel in LOGIN_PAGE_SELECTORS)
+        except Exception:
+            _on_login = False
+
+        if _on_login:
+            print("[ATTACH][LOGIN] Page de connexion détectée → login")
+            _do_login(
+                page,
+                os.getenv("EMAIL") or config.get("Email", ""),
+                os.getenv("PASSWORD") or config.get("Password", ""),
+            )
+            _time.sleep(2)
+
+        # Sélection du survey (navigue vers l'onglet Sondages, choisit la meilleure carte)
+        go_to_best_value_survey(page)
+    else:
+        # Stratégie additive : plateforme configurée != TopSurveys → routage via
+        # l'interface Platform (login/select_survey), déjà implémentée pour ySense.
+        print(
+            f"[ATTACH][LOGIN] plateforme={platform.get_platform_name()} — "
+            "routage via Platform.login()/select_survey()"
         )
-        _time.sleep(2)
+        _login_config = {
+            "Email": os.getenv("EMAIL") or config.get("Email", ""),
+            "Password": os.getenv("PASSWORD") or config.get("Password", ""),
+        }
+        try:
+            _session_expired = platform.is_session_expired(page)
+        except Exception:
+            _session_expired = True
 
-    # Sélection du survey (navigue vers l'onglet Sondages, choisit la meilleure carte)
-    go_to_best_value_survey(page)
+        if _session_expired:
+            print("[ATTACH][LOGIN] session absente/expirée → platform.login()")
+            platform.login(page, _login_config)
+            _time.sleep(2)
+
+        platform.select_survey(page)
 
     # ── Pont BLOC 1 → BLOC 2 ─────────────────────────────────────────────────
     # Le popup de présélection est désormais ouvert. On enveloppe la Page native
@@ -872,10 +901,14 @@ def main():
         _pw, _browser = attach_browser_playwright(attach_addr)
         _context = _browser.contexts[0]
 
-        # En mode résolution, exclure les onglets TopSurveys de la sélection
+        # En mode résolution, exclure les onglets de la plateforme configurée de
+        # la sélection — dérivé de platform.get_domains() plutôt que câblé en dur
+        # sur topsurveys.app (identique à l'existant pour TopSurveys : get_domains()
+        # y retourne exactement ["topsurveys.app"]).
         _exclude = None
         if attach_route == "resolution":
-            _exclude = lambda url: "topsurveys.app" in (url or "").lower()
+            _exclude_domains = platform.get_domains() if platform else ["topsurveys.app"]
+            _exclude = lambda url, _d=_exclude_domains: any(d in (url or "").lower() for d in _d)
 
         # Sélection de l'onglet actif (Playwright natif)
         page = _attach_select_tab_pw(_context, exclude_url_pred=_exclude)
@@ -903,7 +936,7 @@ def main():
 
         if attach_route == "login":
             # Route BLOC 1 complète : login + sélection survey + présélection + résolution
-            run_attach_login_takeover(page, _pw, api_key=api_key, account_id=account_id, config=config)
+            run_attach_login_takeover(page, _pw, api_key=api_key, account_id=account_id, config=config, platform=platform)
         else:
             # Routes preselection / resolution : pont BLOC 1 → BLOC 2/3 immédiat via shim
             page._survey_account_id = account_id

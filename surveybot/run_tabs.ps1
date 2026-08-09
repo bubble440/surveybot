@@ -1,5 +1,12 @@
 # 1 fenêtre Windows Terminal, 1 tab par port, chaque tab exécute tools\attach_tab.ps1
 
+param(
+  # Valeur par défaut inchangée : préserve le comportement TopSurveys existant
+  # pour tout appel sans -TargetUrl. Permet de cibler une autre plateforme
+  # (ex: https://www.ysense.com) sans toucher au chemin par défaut.
+  [string]$TargetUrl = "https://www.topsurveys.app"
+)
+
 $ports = 9009
 $projectDir = "C:\projects\Surveys"
 $tabScript  = "C:\projects\Surveys\surveybot\tools\attach_tab.ps1"
@@ -25,7 +32,7 @@ foreach($p in $ports){
     "powershell.exe","-NoExit","-File",$tabScript,
     "-Port","$p",
     "-ProjectDir",$projectDir,
-    "-TargetUrl","https://www.topsurveys.app",
+    "-TargetUrl",$TargetUrl,
     "-AttachTabSelector","pick"
   )
   if($first){

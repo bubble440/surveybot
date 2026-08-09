@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from typing import List
-
+from config import is_cta_intercept_only
 from platforms.base import Platform
 from Survey.log_utils import log_info, log_debug
 
@@ -152,6 +152,15 @@ class YSensePlatform(Platform):
             return False
 
         survey_id = best.get_attribute("data-survey_id") or "?"
+
+        if is_cta_intercept_only():
+            log_info(
+                _TAG,
+                f"select_survey() — survey {survey_id} trouvé (ratio={best_ratio:.2f}) — "
+                "interception OK (CTA_INTERCEPT_ONLY actif), pas de clic réel."
+            )
+            return False
+    
         try:
             best.click()
             log_info(
