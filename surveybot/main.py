@@ -222,7 +222,7 @@ def _attach_pick_ui_active_tab(driver, handles):
     return None
 
 
-def run_attach_takeover(driver, *, api_key: str, account_id: str) -> None:
+def run_attach_takeover(driver, *, api_key: str, account_id: str, platform=None) -> None:
     """
     Mode takeover: on n'ouvre AUCUNE URL, on n'exécute PAS la présélection TopSurveys.
     On agit uniquement sur la page courante (celle que tu as ouverte à la main).
@@ -241,6 +241,8 @@ def run_attach_takeover(driver, *, api_key: str, account_id: str) -> None:
 
     from Survey.functions import _handle_topsurveys_exclusion_popup
 
+    _is_topsurveys = platform is None or platform.get_platform_name() == "topsurveys"
+
     max_steps = int(os.getenv("ATTACH_MAX_STEPS", "100"))
     print(f"[ATTACH] takeover loop start (max_steps={max_steps}) url={_attach_display_url(getattr(driver,'url',''))}")
     for i in range(1, max_steps + 1):
@@ -251,20 +253,37 @@ def run_attach_takeover(driver, *, api_key: str, account_id: str) -> None:
                 time.sleep(2.0)
                 continue
 
-            # === RETOUR TOPSURVEYS ? ===            
-            try:
-                _cur_url = (driver.url or "").lower()
-                if "topsurveys.app" in _cur_url:
-                    # Écran "Courte pause" (vérification téléphone/PIN) : laisser
-                    # execute_survey_page() le traiter via ses handlers dédiés.
-                    _has_phone_screen = bool(driver.evaluate("() => !!document.querySelector(\'div.phone-verification-container\')"))
-                    if not _has_phone_screen:
-                        _handle_topsurveys_exclusion_popup(driver, account_id)
-                        print(f"[ATTACH] Retour TopSurveys détecté step={i} → sortie boucle.")
-                        break
-            except Exception as _e:
-                print(f"[ATTACH][TOPSURVEYS_CHECK] erreur: {_e}")
-                break
+            if _is_topsurveys:
+                # === RETOUR TOPSURVEYS ? === (chemin existant — inchangé)
+                try:
+                    _cur_url = (driver.url or "").lower()
+                    if "topsurveys.app" in _cur_url:
+                        # Écran "Courte pause" (vérification téléphone/PIN) : laisser
+                        # execute_survey_page() le traiter via ses handlers dédiés.
+                        _has_phone_screen = bool(driver.evaluate("() => !!document.querySelector(\'div.phone-verification-container\')"))
+                        if not _has_phone_screen:
+                            _handle_topsurveys_exclusion_popup(driver, account_id)
+                            print(f"[ATTACH] Retour TopSurveys détecté step={i} → sortie boucle.")
+                            break
+                except Exception as _e:
+                    print(f"[ATTACH][TOPSURVEYS_CHECK] erreur: {_e}")
+                    break
+            else:
+                # Stratégie additive : plateforme configurée != TopSurveys → détection
+                # de retour plateforme via l'interface Platform (même pattern déjà en
+                # place et fonctionnel dans Survey/survey_solver.py::solve_full_survey()),
+                # plutôt qu'une vérification d'URL câblée en dur.
+                try:
+                    if platform.is_on_platform(driver):
+                        if platform.handle_post_survey(driver, account_id):
+                            print(
+                                f"[ATTACH] Retour plateforme ({platform.get_platform_name()}) "
+                                f"détecté step={i} → sortie boucle."
+                            )
+                            break
+                except Exception as _e:
+                    print(f"[ATTACH][PLATFORM_CHECK] erreur: {_e}")
+                    break
 
             # === STRICT GUARD CHECK ===
             # Détecte les pages non supportées (image_evaluation, drag_drop, etc.)
@@ -766,6 +785,16 @@ def run_attach_login_takeover(page, pw, *, api_key: str, account_id: str, config
 
         platform.select_survey(page)
 
+        # Repli propre : le pont BLOC 1 → BLOC 2 ci-dessous délègue au moteur de
+        # présélection popup spécifique à TopSurveys (preselection.survey_handler),
+        # sans équivalent implémenté pour les autres plateformes. On s'arrête donc
+        # ici plutôt que de le forcer sur un DOM qui ne peut pas correspondre.
+        print(
+            f"[ATTACH][LOGIN] plateforme={platform.get_platform_name()} — survey "
+            "sélectionné, pas de moteur de présélection générique disponible → arrêt contrôlé."
+        )
+        return
+
     # ── Pont BLOC 1 → BLOC 2 ─────────────────────────────────────────────────
     # Le popup de présélection est désormais ouvert. On enveloppe la Page native
     # dans le shim pour que survey_handler (BLOC 2) puisse consommer l'API façon Selenium.
@@ -808,8 +837,21 @@ def run_attach_login_takeover(page, pw, *, api_key: str, account_id: str, config
     print("[ATTACH][LOGIN] route terminée.")
 
 
-def run_attach_preselection_takeover(driver, *, api_key: str, account_id: str) -> None:
+def run_attach_preselection_takeover(driver, *, api_key: str, account_id: str, platform=None) -> None:
     """Attach takeover dédié au popup de présélection TopSurveys déjà affiché."""
+    _is_topsurveys = platform is None or platform.get_platform_name() == "topsurveys"
+    if not _is_topsurveys:
+        # Repli propre : ce moteur (preselection.survey_handler) est spécifique au
+        # popup de présélection TopSurveys ("popup de présélection TopSurveys déjà
+        # affiché"), sans équivalent implémenté pour les autres plateformes —
+        # abandon contrôlé plutôt que de le forcer sur un DOM qui ne peut pas
+        # correspondre.
+        print(
+            f"[ATTACH][PRESEL] plateforme={platform.get_platform_name()} — moteur de "
+            "présélection TopSurveys non applicable → abandon contrôlé."
+        )
+        return
+
     import Survey.survey_executor as survey_executor
     import Survey.survey_solver as survey_solver
     from Survey.survey_context import SurveyContext
@@ -941,9 +983,9 @@ def main():
             # Routes preselection / resolution : pont BLOC 1 → BLOC 2/3 immédiat via shim
             page._survey_account_id = account_id
             if attach_route == "preselection":
-                run_attach_preselection_takeover(page, api_key=api_key, account_id=account_id)
+                run_attach_preselection_takeover(page, api_key=api_key, account_id=account_id, platform=platform)
             else:
-                run_attach_takeover(page, api_key=api_key, account_id=account_id)
+                run_attach_takeover(page, api_key=api_key, account_id=account_id, platform=platform)
         return
 
     # setup_logging() attache un handler stdout au logger racine ("logging" stdlib).
