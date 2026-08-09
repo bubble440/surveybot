@@ -269,10 +269,10 @@ def run_attach_takeover(driver, *, api_key: str, account_id: str, platform=None)
                     print(f"[ATTACH][TOPSURVEYS_CHECK] erreur: {_e}")
                     break
             else:
-                # Stratégie additive : plateforme configurée != TopSurveys → détection
-                # de retour plateforme via l'interface Platform (même pattern déjà en
-                # place et fonctionnel dans Survey/survey_solver.py::solve_full_survey()),
-                # plutôt qu'une vérification d'URL câblée en dur.
+                # Non implémenté pour cette plateforme (ex: ySense) : on ignore ce check
+                # ponctuellement plutôt que d'interrompre toute la boucle de résolution,
+                # qui doit continuer à fonctionner sur la page courante indépendamment
+                # de la disponibilité de ce hook.
                 try:
                     if platform.is_on_platform(driver):
                         if platform.handle_post_survey(driver, account_id):
@@ -281,10 +281,12 @@ def run_attach_takeover(driver, *, api_key: str, account_id: str, platform=None)
                                 f"détecté step={i} → sortie boucle."
                             )
                             break
+                except NotImplementedError:
+                    pass
                 except Exception as _e:
                     print(f"[ATTACH][PLATFORM_CHECK] erreur: {_e}")
                     break
-
+                
             # === STRICT GUARD CHECK ===
             # Détecte les pages non supportées (image_evaluation, drag_drop, etc.)
             is_strict, reason = difficulty_guard.detect_strict_survey(driver)

@@ -191,15 +191,21 @@ class YSensePlatform(Platform):
         raise NotImplementedError(f"{_TAG} is_on_platform() non implémenté")
 
     def is_session_expired(self, driver) -> bool:
+        """
+        Force la navigation vers _LOGIN_URL avant évaluation : un compte
+        authentifié est automatiquement redirigé hors de /login, un compte
+        non authentifié y reste. Évite de statuer sur l'état de session à
+        partir d'un onglet attaché dont l'URL/contenu ne reflète pas
+        forcément ysense.com (cause du login systématiquement court-circuité).
+        """
         try:
-            url = driver.url or ""
-            if "/login" in url:
-                return True
-            src = (driver.content() or "").lower()
-            signals = ["sign in", "session expired", "please log in", "your session"]
-            return any(s in src for s in signals)
+            page = driver
+            page.goto(_LOGIN_URL)
+            page.wait_for_load_state("domcontentloaded")
+            url = page.url or ""
+            return "/login" in url
         except Exception:
-            return False
+            return True
 
     def get_platform_name(self) -> str:
         return "ysense"
