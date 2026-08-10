@@ -185,19 +185,24 @@ class YSensePlatform(Platform):
             log_info(_TAG, "select_survey() — #survey-list-body introuvable après 20s")
             return False
 
-        # Le DOM de la liste de surveys varie selon la méthode de connexion à
-        # ySense (rendu direct en <a> vs tableau en <tr>, selon layout/session).
-        # Le sélecteur historique n'est pas obsolète : il reste valide pour un
-        # de ces cas. On l'essaie donc en premier, puis on ajoute (de façon
-        # additive, sans le modifier) un sélecteur candidat supplémentaire pour
-        # l'autre cas observé (lignes <tr class="survey-link" ...> imbriquées
-        # dans #survey-list-body > table.tsurveys > tbody). Liste bornée,
-        # premier sélecteur qui retourne des cartes gagne — pas de fallback
-        # Vision, pas de boucle non bornée.
         _CARD_SELECTORS = [
             "#survey-list-body > a.survey-link[data-survey_reward][data-survey_loi]",
             "#survey-list-body tr.survey-link[data-survey_reward][data-survey_loi]",
         ]
+
+        # #survey-list-body peut être attaché au DOM avant que les lignes de
+        # surveys ne soient injectées (rendu asynchrone par vendor-react.compiled.js
+        # / surveys.js) : le wait_for_selector sur le conteneur seul ci-dessus ne
+        # garantit donc pas la présence des cartes. C'est la cause probable de la
+        # détection instable observée (parfois trouvées, parfois non selon le
+        # timing). Budget borné : on attend qu'au moins une carte candidate
+        # apparaisse réellement dans le DOM avant de scanner.
+        try:
+            page.wait_for_selector(
+                ", ".join(_CARD_SELECTORS), state="attached", timeout=10000
+            )
+        except Exception:
+            log_debug(_TAG, "select_survey() — aucune carte apparue dans le délai imparti (10s)")
 
         cards = []
         for _sel in _CARD_SELECTORS:
