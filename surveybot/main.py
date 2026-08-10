@@ -43,6 +43,24 @@ if len(sys.argv) >= 2 and sys.argv[1] == "--selftest-tz":
 
 print("BOOT: container démarré.", flush=True)
 
+# ── Diagnostic attach : snapshot Email/Password au tout premier instant du
+# process, avant le moindre import pouvant toucher os.environ (load_config,
+# global_config, ...). Permet de trancher si les valeurs injectées par
+# attach_tab.ps1 sont déjà absentes ici (problème en amont : session/ps1) ou
+# si elles disparaissent plus tard (problème d'initialisation Python). Gaté
+# sur BROWSER_MODE=attach uniquement — jamais de mot de passe en clair.
+if os.getenv("BROWSER_MODE", "").strip().lower() == "attach":
+    from Survey.log_utils import log_debug as _diag_log_debug
+    _diag_email0 = os.getenv("Email", "")
+    _diag_pwd0 = os.getenv("Password", "")
+    _diag_log_debug(
+        "[DIAG_ENV]",
+        f"entrée process (avant tout import) : "
+        f"Email={'present' if _diag_email0 else 'ABSENT'} (len={len(_diag_email0)}), "
+        f"Password={'present' if _diag_pwd0 else 'ABSENT'} (len={len(_diag_pwd0)})",
+    )
+    del _diag_email0, _diag_pwd0
+
 # ⚠ Doit s'exécuter AVANT tout import qui lit une constante d'environnement au
 # niveau module (config.py: RUN_ENV/BROWSER_MODE, State/account_state.py via
 # launch.py: DATABASE_URL/STATE_BACKEND/STATE_TABLE, license_guard.py appelé
@@ -771,6 +789,24 @@ def run_attach_login_takeover(page, pw, *, api_key: str, account_id: str, config
             f"[ATTACH][LOGIN] plateforme={platform.get_platform_name()} — "
             "routage via Platform.login()/select_survey()"
         )
+
+        # Diagnostic : snapshot juste avant construction de _login_config, à
+        # comparer avec le log [DIAG_ENV] émis en tout début de process (cf.
+        # haut de main.py). Si ce snapshot est déjà vide alors que celui de
+        # l'entrée du process ne l'était pas, la disparition se situe entre les
+        # deux — sinon la valeur était déjà absente à l'entrée du process
+        # (problème en amont : ps1 / session). Mot de passe jamais en clair.
+        from Survey.log_utils import log_debug as _diag_log_debug2
+        _diag_email1 = os.getenv("Email", "")
+        _diag_pwd1 = os.getenv("Password", "")
+        _diag_log_debug2(
+            "[DIAG_ENV]",
+            f"juste avant construction _login_config : "
+            f"Email={'present' if _diag_email1 else 'ABSENT'} (len={len(_diag_email1)}), "
+            f"Password={'present' if _diag_pwd1 else 'ABSENT'} (len={len(_diag_pwd1)})",
+        )
+        del _diag_email1, _diag_pwd1
+
         _login_config = {
             "Email": os.getenv("Email") or config.get("Email", ""),
             "Password": os.getenv("Password") or config.get("Password", ""),
