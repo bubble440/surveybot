@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import List
 from config import is_cta_intercept_only
 from platforms.base import Platform
@@ -9,6 +10,12 @@ _TAG = "[YSENSE]"
 _LOGIN_URL = "https://www.ysense.com/login"
 
 
+def _mask_secret(value: str) -> str:
+    """Longueur + bordure(s) seulement — jamais la valeur complète."""
+    v = value or ""
+    if len(v) < 2:
+        return f"len={len(v)}"
+    return f"len={len(v)} [{v[0]}…{v[-1]}]"
 
 
 class YSensePlatform(Platform):
@@ -16,6 +23,11 @@ class YSensePlatform(Platform):
     def login(self, driver, config: dict) -> bool:
         email = config["Email"]
         password = config["Password"]
+        log_debug(
+            _TAG,
+            f"login() — identifiants lus depuis config : email={email!r}, "
+            f"password={_mask_secret(password)}",
+        )
         log_info(_TAG, f"login() — navigation vers {_LOGIN_URL}")
 
         page = driver
@@ -68,18 +80,69 @@ class YSensePlatform(Platform):
         except Exception:
             pass
 
+        # Stabilisation anti-hydration : la page charge vendor-react.compiled.js
+        # + login.bundle.js après le HTML server-rendered. Une hydration React
+        # peut remonter le formulaire après nos fill() (sans exception), vidant
+        # silencieusement les champs avant le clic. On revérifie juste avant de
+        # soumettre et on re-remplit si nécessaire (budget borné).
+        _MAX_STABILIZE_ATTEMPTS = 3
+        stabilized = False
+        for attempt in range(_MAX_STABILIZE_ATTEMPTS):
+            email_val = (email_input.input_value() or "").strip()
+            pwd_val = (pwd_input.input_value() or "").strip()
+            if email_val == email and pwd_val == password:
+                stabilized = True
+                break
+            log_debug(
+                _TAG,
+                f"login() — champs vidés avant soumission (tentative {attempt + 1}/"
+                f"{_MAX_STABILIZE_ATTEMPTS}), re-remplissage",
+            )
+            if email_val != email:
+                email_input.fill(email)
+            if pwd_val != password:
+                pwd_input.fill(password)
+        else:
+            email_val = (email_input.input_value() or "").strip()
+            pwd_val = (pwd_input.input_value() or "").strip()
+            stabilized = email_val == email and pwd_val == password
+
+        if not stabilized:
+            log_info(_TAG, "login() — impossible de stabiliser les champs avant soumission, abandon")
+            return False
+
         # Soumettre via click
         try:
             submit_btn = page.query_selector("button.sbutton.large")
             if submit_btn is None:
                 raise RuntimeError("introuvable")
+
+            # Diagnostic : relecture DOM juste avant le clic (fenêtre restante
+            # après la boucle de stabilisation), pour trancher entre valeur
+            # source incorrecte (cf. log en tête de login()) et réinitialisation
+            # tardive par la page. Mot de passe jamais loggué en clair.
+            final_email_val = (email_input.input_value() or "").strip()
+            final_pwd_val = (pwd_input.input_value() or "").strip()
+            log_debug(
+                _TAG,
+                f"login() — juste avant clic soumission : "
+                f"email_match={final_email_val == email}, "
+                f"password_match={final_pwd_val == password} "
+                f"(password_lu={_mask_secret(final_pwd_val)})",
+            )
+
             submit_btn.click()
             log_info(_TAG, "login() — bouton de soumission cliqué")
         except Exception as e:
             log_info(_TAG, f"login() — bouton de soumission introuvable : {e}")
             return False
 
-        # Vérifier le succès : URL sans /login dans les 15s
+        # Vérifier le succès : URL sans /login dans les 15s.
+        # Seul signal fiable — cohérent avec is_session_expired() qui définit
+        # l'authentification de la même façon. L'ancien fallback "div#errors
+        # vide → succès" produisait un faux positif (le champ peut être vide
+        # avant le rendu async du message d'erreur), ce qui masquait un
+        # échec de connexion réel.
         try:
             page.wait_for_function(
                 "() => !window.location.href.includes('/login')", timeout=15000
@@ -89,16 +152,12 @@ class YSensePlatform(Platform):
         except Exception:
             pass
 
-        # Fallback : div#errors vide
         try:
             errors_div = page.query_selector("div#errors")
-            if errors_div is not None and not (errors_div.inner_text() or "").strip():
-                log_info(_TAG, "login() — succès (div#errors vide)")
-                return True
+            errors_text = (errors_div.inner_text() or "").strip() if errors_div else ""
         except Exception:
-            pass
-
-        log_info(_TAG, "login() — échec : /login toujours dans l'URL")
+            errors_text = ""
+        log_debug(_TAG, f"login() — échec : /login toujours dans l'URL, errors={errors_text!r}")
         return False
 
     def select_survey(self, driver) -> bool:

@@ -772,8 +772,8 @@ def run_attach_login_takeover(page, pw, *, api_key: str, account_id: str, config
             "routage via Platform.login()/select_survey()"
         )
         _login_config = {
-            "Email": os.getenv("EMAIL") or config.get("Email", ""),
-            "Password": os.getenv("PASSWORD") or config.get("Password", ""),
+            "Email": os.getenv("Email") or config.get("Email", ""),
+            "Password": os.getenv("Password") or config.get("Password", ""),
         }
         try:
             _session_expired = platform.is_session_expired(page)
