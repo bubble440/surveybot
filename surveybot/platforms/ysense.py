@@ -163,8 +163,10 @@ class YSensePlatform(Platform):
     def select_survey(self, driver) -> bool:
         """
         Navigue vers https://www.ysense.com/surveys?m=1&ds=39, analyse la liste
-        de surveys disponibles (#survey-list-body > a.survey-link[data-survey_reward][data-survey_loi]),
-        choisit le meilleur selon le ratio reward/durée, et clique pour l'ouvrir.
+        de surveys disponibles en essayant une liste bornée de sélecteurs DOM
+        candidats (cf. _CARD_SELECTORS — le DOM diffère selon la méthode de
+        connexion à ySense), choisit le meilleur selon le ratio reward/durée,
+        et clique pour l'ouvrir.
         Retourne True si un survey a été sélectionné, False si aucun disponible.
         """
         log_info(_TAG, "select_survey() called")
@@ -183,13 +185,40 @@ class YSensePlatform(Platform):
             log_info(_TAG, "select_survey() — #survey-list-body introuvable après 20s")
             return False
 
-        try:
-            cards = page.query_selector_all(
-                "#survey-list-body > a.survey-link[data-survey_reward][data-survey_loi]"
+        # Le DOM de la liste de surveys varie selon la méthode de connexion à
+        # ySense (rendu direct en <a> vs tableau en <tr>, selon layout/session).
+        # Le sélecteur historique n'est pas obsolète : il reste valide pour un
+        # de ces cas. On l'essaie donc en premier, puis on ajoute (de façon
+        # additive, sans le modifier) un sélecteur candidat supplémentaire pour
+        # l'autre cas observé (lignes <tr class="survey-link" ...> imbriquées
+        # dans #survey-list-body > table.tsurveys > tbody). Liste bornée,
+        # premier sélecteur qui retourne des cartes gagne — pas de fallback
+        # Vision, pas de boucle non bornée.
+        _CARD_SELECTORS = [
+            "#survey-list-body > a.survey-link[data-survey_reward][data-survey_loi]",
+            "#survey-list-body tr.survey-link[data-survey_reward][data-survey_loi]",
+        ]
+
+        cards = []
+        for _sel in _CARD_SELECTORS:
+            try:
+                _found = page.query_selector_all(_sel)
+            except Exception as e:
+                log_debug(_TAG, f"select_survey() — sélecteur {_sel!r} en erreur : {e}")
+                continue
+            if _found:
+                log_debug(
+                    _TAG,
+                    f"select_survey() — sélecteur {_sel!r} → {len(_found)} carte(s) trouvée(s)",
+                )
+                cards = _found
+                break
+
+        if not cards:
+            log_debug(
+                _TAG,
+                f"select_survey() — aucun des {len(_CARD_SELECTORS)} sélecteurs candidats n'a retourné de carte",
             )
-        except Exception as e:
-            log_info(_TAG, f"select_survey() — erreur lecture liste surveys : {e}")
-            return False
 
         best = None
         best_ratio = -1.0

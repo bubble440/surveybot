@@ -823,41 +823,50 @@ def run_attach_login_takeover(page, pw, *, api_key: str, account_id: str, config
 
         platform.select_survey(page)
 
-        # Repli propre : le pont BLOC 1 → BLOC 2 ci-dessous délègue au moteur de
-        # présélection popup spécifique à TopSurveys (preselection.survey_handler),
-        # sans équivalent implémenté pour les autres plateformes. On s'arrête donc
-        # ici plutôt que de le forcer sur un DOM qui ne peut pas correspondre.
+        # Repli propre : le pont BLOC 1 → BLOC 2 ci-dessous délègue, pour
+        # TopSurveys, au moteur de présélection popup spécifique
+        # (preselection.survey_handler), sans équivalent implémenté pour les
+        # autres plateformes. Pour ces dernières (ex. ySense), le clic sur le
+        # survey mène directement aux questions, sans étape de présélection —
+        # on saute donc uniquement cette étape (cf. `if _is_topsurveys` plus
+        # bas) plutôt que d'arrêter tout le flux ici.
         print(
             f"[ATTACH][LOGIN] plateforme={platform.get_platform_name()} — survey "
-            "sélectionné, pas de moteur de présélection générique disponible → arrêt contrôlé."
+            "sélectionné, pas de moteur de présélection générique → étape sautée, "
+            "passage direct à la résolution."
         )
-        return
 
     # ── Pont BLOC 1 → BLOC 2 ─────────────────────────────────────────────────
-    # Le popup de présélection est désormais ouvert. On enveloppe la Page native
-    # dans le shim pour que survey_handler (BLOC 2) puisse consommer l'API façon Selenium.
+    # Le popup de présélection est désormais ouvert (TopSurveys) ou inexistant
+    # sur cette plateforme (cf. ci-dessus). On enveloppe la Page native dans le
+    # shim pour que survey_handler (BLOC 2) puisse consommer l'API façon Selenium.
     page._survey_account_id = account_id
 
     _ctx = SurveyContext(session_id=account_id, openai_api_key=api_key)
     survey_solver._current_survey_ctx = _ctx
 
-    max_rounds = int(os.getenv("ATTACH_PRESELECTION_MAX_ROUNDS", "15"))
-    transition_timeout_s = int(os.getenv("ATTACH_PRESELECTION_TRANSITION_TIMEOUT_S", "45"))
+    if _is_topsurveys:
+        max_rounds = int(os.getenv("ATTACH_PRESELECTION_MAX_ROUNDS", "15"))
+        transition_timeout_s = int(os.getenv("ATTACH_PRESELECTION_TRANSITION_TIMEOUT_S", "45"))
 
-    from preselection.survey_handler import run_attach_preselection_takeover as _run_presel
-    ok, reason = _run_presel(
-        page,
-        api_key,
-        max_rounds=max_rounds,
-        transition_timeout_s=transition_timeout_s,
-        ctx=_ctx,
-    )
+        from preselection.survey_handler import run_attach_preselection_takeover as _run_presel
+        ok, reason = _run_presel(
+            page,
+            api_key,
+            max_rounds=max_rounds,
+            transition_timeout_s=transition_timeout_s,
+            ctx=_ctx,
+        )
 
-    if not ok:
-        print(f"[ATTACH][LOGIN] abandon présélection: reason={reason}")
-        return
+        if not ok:
+            print(f"[ATTACH][LOGIN] abandon présélection: reason={reason}")
+            return
 
-    print("[ATTACH][LOGIN] présélection terminée → résolution survey")
+        print("[ATTACH][LOGIN] présélection terminée → résolution survey")
+    else:
+        # Pas de moteur de présélection générique : la plateforme (ex. ySense)
+        # a déjà mené au survey via platform.select_survey() ci-dessus.
+        print(f"[ATTACH][LOGIN] plateforme={platform.get_platform_name()} — pas de présélection → résolution survey")
     max_steps = int(os.getenv("ATTACH_MAX_STEPS", "100"))
     for i in range(1, max_steps + 1):
         try:
