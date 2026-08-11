@@ -267,21 +267,44 @@ class YSensePlatform(Platform):
 
     def handle_post_survey(self, driver, account_id: str) -> bool:
         """
-        Doit gérer le retour sur ySense après qu'un survey externe s'est terminé :
-        confirmation de gains, popups de statut (complété, disqualifié, quota plein),
-        collecte du crédit éventuel.
-        Retourner True si la plateforme a géré la situation et qu'on peut enchaîner
-        un nouveau survey, False sinon.
+        Gère le retour sur ySense pendant la résolution d'un survey. À la
+        différence de TopSurveys, il n'y a pas de popup à fermer ni de crédit à
+        collecter ici : un retour signifie simplement qu'on est de nouveau sur
+        la page de sélection de surveys. On attend la fin du chargement de la
+        page puis on relance un nouveau survey via select_survey().
+        Retourne True si un retour a été traité (nouveau survey tenté), False
+        si l'URL courante n'est pas la page de sélection de surveys ySense.
         """
         log_info(_TAG, "handle_post_survey() called")
-        raise NotImplementedError(f"{_TAG} handle_post_survey() non implémenté")
+        page = driver
+        try:
+            url = (page.url or "").lower()
+        except Exception:
+            return False
+
+        # Ne traiter que le retour effectif sur la page de sélection de surveys
+        # (et non une page ysense.com quelconque en cours de redirection).
+        if "ysense.com/surveys" not in url:
+            return False
+
+        log_info(_TAG, "handle_post_survey() — retour sur la page de sélection de surveys détecté")
+
+        from Management.redirect_watcher import wait_for_page_load
+        wait_for_page_load(page, timeout=30)
+
+        self.select_survey(page)
+        return True
 
     def is_on_platform(self, driver) -> bool:
         """
         Retourne True si l'URL courante appartient au domaine ysense.com.
         """
         log_info(_TAG, "is_on_platform() called")
-        raise NotImplementedError(f"{_TAG} is_on_platform() non implémenté")
+        try:
+            url = (driver.url or "").lower()
+        except Exception:
+            return False
+        return any(d in url for d in self.get_domains())
 
     def is_session_expired(self, driver) -> bool:
         """
