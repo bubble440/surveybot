@@ -21,8 +21,8 @@ def _mask_secret(value: str) -> str:
 class YSensePlatform(Platform):
 
     def login(self, driver, config: dict) -> bool:
-        email = config["Email"]
-        password = config["Password"]
+        email = os.getenv("EMAIL") or config.get("Email", "")
+        password = os.getenv("PASSWORD") or config.get("Password", "")
         log_debug(
             _TAG,
             f"login() — identifiants lus depuis config : email={email!r}, "

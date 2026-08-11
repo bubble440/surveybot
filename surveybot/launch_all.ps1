@@ -21,7 +21,7 @@
 # services NSSM installes par nssm_setup_bot.ps1.
 #
 # Usage :
-#   .\launch_all.ps1 -AccountId "bot1"
+#   .\launch_all.ps1 -AccountId "topsurveys_bot_001"
 #
 # Prerequis :
 #   - accounts.json dans le meme dossier que ce script (C:\surveybot\, la racine).

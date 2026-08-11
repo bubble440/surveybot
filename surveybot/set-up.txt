@@ -184,7 +184,7 @@ nssm stop surveybot_topsurveys_bot_001
 nssm status surveybot_topsurveys_bot_001
 
 # voir le statut de la tache wake_scheduler
-Get-ScheduledTaskInfo -TaskName "SurveyBot_WakeScheduler" | Select-Object LastRunTime, LastTaskResult, NextRunTime
+Get-ScheduledTask -TaskName "SurveyBot_*" | Get-ScheduledTaskInfo | Select-Object TaskName, LastRunTime, LastTaskResult, NextRunTime | Format-Table -AutoSize
 
 # Pour stopper un bot lancé via launch_all.ps1
 .\stop_bot.ps1 -AccountId "account_id"
