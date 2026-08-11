@@ -821,7 +821,39 @@ def run_attach_login_takeover(page, pw, *, api_key: str, account_id: str, config
             platform.login(page, _login_config)
             _time.sleep(2)
 
-        platform.select_survey(page)
+        try:
+            _base_handles = set(page.context.pages)
+        except Exception:
+            _base_handles = set()
+
+        _survey_selected = platform.select_survey(page)
+
+        if _survey_selected:
+            # Comme sur TopSurveys, le clic sur le survey ouvre un nouvel onglet
+            # qui doit recevoir le focus — mais l'onglet plateforme (ex.
+            # ysense.com) reste ouvert, et sans switch explicite c'est lui qui
+            # garde le focus réel : l'analyse DOM/résolution plus bas
+            # s'exécuterait alors dessus au lieu du survey, produisant une
+            # extraction faussée. Réutilisation de switch_to_latest_window_and_
+            # close_others (déjà validée pour ce même problème côté TopSurveys)
+            # puis resynchronisation de `page` sur l'onglet réellement actif —
+            # cette fonction fait le switch en interne sans retourner la
+            # nouvelle Page (cf. _resync_live_page).
+            try:
+                import Management.redirect_watcher as redirect_watcher
+                from preselection.survey_handler import _resync_live_page
+
+                redirect_watcher.switch_to_latest_window_and_close_others(
+                    page,
+                    base_handles=_base_handles,
+                    timeout=12,
+                    prefer_external=True,
+                    platform_domains=platform.get_domains(),
+                )
+                page = _resync_live_page(page)
+                redirect_watcher.wait_for_final_redirection(page, max_wait=30)
+            except Exception as _switch_e:
+                print(f"[ATTACH][LOGIN][WARN] Erreur lors du switch d'onglet après sélection survey : {_switch_e}")
 
         # Repli propre : le pont BLOC 1 → BLOC 2 ci-dessous délègue, pour
         # TopSurveys, au moteur de présélection popup spécifique

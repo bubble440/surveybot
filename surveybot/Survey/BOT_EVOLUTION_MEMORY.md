@@ -3848,3 +3848,34 @@ Patterns exclus :
   affiché) — non modifiée, reste spécifique à TopSurveys.
 Statut : patch validé (confirmé par l'utilisateur — logs réels : login, sélection du
 survey et passage direct à la résolution sans arrêt contrôlé).
+
+### run_attach_login_takeover — branchement de switch_to_latest_window_and_close_others après sélection du survey ySense
+Fichier : main.py (branche non-TopSurveys de run_attach_login_takeover)
+Bug corrigé : après `platform.select_survey(page)`, le clic sur un survey ySense
+ouvre un nouvel onglet destiné à recevoir le focus, mais l'onglet plateforme
+(ysense.com) reste ouvert et conservait le focus réel côté navigateur — la même
+situation déjà rencontrée et corrigée sur TopSurveys. Sans switch explicite,
+`page` continuait de référencer l'onglet plateforme : l'analyse DOM/résolution
+plus bas s'exécutait donc dessus au lieu du survey nouvellement ouvert, produisant
+une extraction faussée (blocs vides ou hors-sujet).
+Correction : capture de `_base_handles` (onglets ouverts) juste avant l'appel à
+`platform.select_survey(page)`. Si la sélection réussit, appel à
+`switch_to_latest_window_and_close_others` (redirect_watcher.py — déjà validée
+pour ce même problème côté TopSurveys, réutilisée telle quelle, non modifiée),
+avec `platform_domains=platform.get_domains()` (générique — pas de valeur
+hardcodée à ysense.com, réutilisable pour toute future plateforme non-TopSurveys).
+Cette fonction fait le switch/la fermeture des anciens onglets en interne sans
+retourner la nouvelle Page ; `page = _resync_live_page(page)` (import réutilisé
+depuis preselection/survey_handler.py) resynchronise ensuite la référence locale
+sur l'onglet réellement actif, suivi de `wait_for_final_redirection`. Le tout est
+encapsulé dans un `try/except` non bloquant (log `WARN` en cas d'échec) — cohérent
+avec le traitement H4 déjà en place pour le même appel côté TopSurveys.
+Patterns couverts :
+- Toute plateforme non-TopSurveys dont `select_survey()` ouvre le survey dans un
+  nouvel onglet distinct de l'onglet plateforme (confirmé pour ySense).
+Patterns exclus :
+- `switch_to_latest_window_and_close_others` et `_resync_live_page` eux-mêmes —
+  non modifiés, réutilisation à l'identique de fonctions déjà validées.
+- Chemin TopSurveys — inchangé, gère déjà ce switch via son propre appel dans
+  preselection/survey_handler.py.
+Statut : patch validé (confirmé par l'utilisateur en conditions réelles).
