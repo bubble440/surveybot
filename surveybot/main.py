@@ -917,45 +917,87 @@ def run_attach_login_takeover(page, pw, *, api_key: str, account_id: str, config
 
 
 def run_attach_preselection_takeover(driver, *, api_key: str, account_id: str, platform=None) -> None:
-    """Attach takeover dédié au popup de présélection TopSurveys déjà affiché."""
+    """
+    Attach takeover route 'preselection' :
+      - TopSurveys : popup de présélection déjà affiché → résolution du popup
+        (preselection.survey_handler), puis bascule en résolution survey.
+      - Autres plateformes sans popup de présélection (ex. ySense) : la page
+        courante est déjà la liste de surveys (ouverte manuellement avant de
+        lancer le mode attach sur cette route) — on clique directement le
+        meilleur survey via platform.select_survey(), puis on bascule en
+        résolution survey.
+    """
     _is_topsurveys = platform is None or platform.get_platform_name() == "topsurveys"
-    if not _is_topsurveys:
-        # Repli propre : ce moteur (preselection.survey_handler) est spécifique au
-        # popup de présélection TopSurveys ("popup de présélection TopSurveys déjà
-        # affiché"), sans équivalent implémenté pour les autres plateformes —
-        # abandon contrôlé plutôt que de le forcer sur un DOM qui ne peut pas
-        # correspondre.
-        print(
-            f"[ATTACH][PRESEL] plateforme={platform.get_platform_name()} — moteur de "
-            "présélection TopSurveys non applicable → abandon contrôlé."
-        )
-        return
 
     import Survey.survey_executor as survey_executor
     import Survey.survey_solver as survey_solver
     from Survey.survey_context import SurveyContext
-    from preselection.survey_handler import run_attach_preselection_takeover as run_preselection_takeover
 
     _ctx = SurveyContext(session_id=account_id, openai_api_key=api_key)
     survey_solver._current_survey_ctx = _ctx
 
     driver._survey_account_id = account_id
 
-    max_rounds = int(os.getenv("ATTACH_PRESELECTION_MAX_ROUNDS", "15"))
-    transition_timeout_s = int(os.getenv("ATTACH_PRESELECTION_TRANSITION_TIMEOUT_S", "45"))
-    ok, reason = run_preselection_takeover(
-        driver,
-        api_key,
-        max_rounds=max_rounds,
-        transition_timeout_s=transition_timeout_s,
-        ctx=_ctx,
-    )
+    if _is_topsurveys:
+        from preselection.survey_handler import run_attach_preselection_takeover as run_preselection_takeover
 
-    if not ok:
-        print(f"[ATTACH][PRESEL] abandon contrôlé: reason={reason}")
-        return
+        max_rounds = int(os.getenv("ATTACH_PRESELECTION_MAX_ROUNDS", "15"))
+        transition_timeout_s = int(os.getenv("ATTACH_PRESELECTION_TRANSITION_TIMEOUT_S", "45"))
+        ok, reason = run_preselection_takeover(
+            driver,
+            api_key,
+            max_rounds=max_rounds,
+            transition_timeout_s=transition_timeout_s,
+            ctx=_ctx,
+        )
 
-    print("[ATTACH][PRESEL] présélection terminée -> bascule en résolution survey")
+        if not ok:
+            print(f"[ATTACH][PRESEL] abandon contrôlé: reason={reason}")
+            return
+
+        print("[ATTACH][PRESEL] présélection terminée -> bascule en résolution survey")
+    else:
+        # Stratégie additive : pas de moteur de présélection popup pour cette
+        # plateforme — on saute directement à la sélection du survey.
+        print(
+            f"[ATTACH][PRESEL] plateforme={platform.get_platform_name()} — pas de "
+            "popup de présélection → sélection directe du meilleur survey."
+        )
+
+        try:
+            _base_handles = set(driver.context.pages)
+        except Exception:
+            _base_handles = set()
+
+        _survey_selected = platform.select_survey(driver)
+
+        if not _survey_selected:
+            print("[ATTACH][PRESEL] aucun survey sélectionné → abandon contrôlé.")
+            return
+
+        # Même problème de focus que sur la route "login" (cf.
+        # run_attach_login_takeover) : le clic ouvre un nouvel onglet, mais
+        # l'onglet plateforme reste ouvert et garde le focus réel sans switch
+        # explicite. Réutilisation à l'identique de switch_to_latest_window_
+        # and_close_others + _resync_live_page (déjà validées).
+        try:
+            import Management.redirect_watcher as redirect_watcher
+            from preselection.survey_handler import _resync_live_page
+
+            redirect_watcher.switch_to_latest_window_and_close_others(
+                driver,
+                base_handles=_base_handles,
+                timeout=12,
+                prefer_external=True,
+                platform_domains=platform.get_domains(),
+            )
+            driver = _resync_live_page(driver)
+            driver._survey_account_id = account_id
+            redirect_watcher.wait_for_final_redirection(driver, max_wait=30)
+        except Exception as _switch_e:
+            print(f"[ATTACH][PRESEL][WARN] Erreur lors du switch d'onglet après sélection survey : {_switch_e}")
+
+        print("[ATTACH][PRESEL] survey sélectionné -> bascule en résolution survey")
 
     max_steps = int(os.getenv("ATTACH_MAX_STEPS", "100"))
     for i in range(1, max_steps + 1):
