@@ -3879,3 +3879,34 @@ Patterns exclus :
 - Chemin TopSurveys — inchangé, gère déjà ce switch via son propre appel dans
   preselection/survey_handler.py.
 Statut : patch validé (confirmé par l'utilisateur en conditions réelles).
+### run_attach_preselection_takeover — route "preselection" étendue aux plateformes sans popup (sélection directe du survey)
+Fichier : main.py
+Bug corrigé : pour toute plateforme non-TopSurveys (ex. ySense), la route
+"preselection" abandonnait systématiquement (repli contrôlé, aucune action) au
+motif qu'aucun moteur de présélection popup générique n'était disponible —
+alors que, pour ces plateformes, il n'y a justement pas de popup de
+présélection à résoudre : le rôle de cette route s'y réduit à cliquer le
+meilleur survey depuis la page de liste (ouverte manuellement par
+l'utilisateur avant de lancer le mode attach) puis enchaîner sur la résolution.
+Correction : la branche non-TopSurveys appelle désormais directement
+`platform.select_survey(driver)`. En cas de succès, même gestion de switch
+d'onglet que sur la route "login" (réutilisation à l'identique de
+`switch_to_latest_window_and_close_others` + `_resync_live_page`, cf. entrée
+précédente — le clic ouvre un nouvel onglet sujet au même problème de focus).
+En cas d'échec (aucun survey disponible), abandon contrôlé propre, sans forcer
+la suite. La boucle de résolution finale (`survey_executor.execute_survey_page`)
+reste commune aux deux chemins (TopSurveys après popup / autres plateformes
+après clic direct) — aucune duplication de cette partie.
+Patterns couverts :
+- Toute plateforme configurée sans popup de présélection (ex. ySense), route
+  "preselection" lancée avec la page de liste de surveys déjà ouverte
+  manuellement.
+Patterns exclus :
+- Chemin TopSurveys (`_is_topsurveys=True`) — inchangé, toujours résolu via
+  `preselection.survey_handler.run_attach_preselection_takeover`.
+- Route "login" (`run_attach_login_takeover`) — non modifiée par ce patch,
+  gère déjà son propre appel de sélection/switch en amont.
+- Route "resolution" (`run_attach_takeover`) — déjà générique au préalable
+  (hook optionnel `platform.is_on_platform`/`handle_post_survey` via
+  `NotImplementedError`), confirmée fonctionnelle sans modification.
+Statut : patch validé (confirmé par l'utilisateur en conditions réelles).
