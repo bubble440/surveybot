@@ -3782,3 +3782,69 @@ Patterns exclus :
   (chemin normal du popup de recompense) - non modifie.
 Statut : patch valide (confirme par l'utilisateur - plus de faux match
 "Genial" observe dans les sequences de logs suivant ce patch).
+---
+
+## MODULE TRANSVERSAL : YSENSE (ATTACH) — SÉLECTION DE SURVEY ET SAUT DE PRÉSÉLECTION GÉNÉRIQUE
+
+### YSensePlatform.select_survey — liste de sélecteurs candidats + attente de l'injection réelle des cartes
+Fichier : platforms/ysense.py
+Bug corrigé (1/2 — sélecteur) : le scan des surveys disponibles ne ciblait que
+`#survey-list-body > a.survey-link[data-survey_reward][data-survey_loi]` (enfants
+directs `<a>`). Sur le DOM réel observé en conditions réelles (compte/session
+donnés), les surveys sont des `<tr class="hova survey-link" data-survey_reward=...
+data-survey_loi=...>` imbriquées dans `#survey-list-body > table.tsurveys > tbody`
+— ni `<a>`, ni enfants directs. `query_selector_all` renvoyait donc toujours une
+liste vide alors que des dizaines de surveys exploitables étaient présentes.
+Bug corrigé (2/2 — course/timing) : même après ajout du sélecteur `tr.survey-link`
+ci-dessous, la détection restait instable (parfois trouvée, parfois non, sur un DOM
+par ailleurs identique entre deux runs). Cause : `#survey-list-body` peut être
+attaché au DOM avant que les lignes de surveys ne soient injectées par le rendu
+asynchrone (`vendor-react.compiled.js` / `surveys.js`). Le `wait_for_selector`
+portait uniquement sur le conteneur vide, jamais sur son contenu.
+Correction :
+- Liste bornée `_CARD_SELECTORS` (2 entrées) essayées dans l'ordre : le sélecteur
+  historique `a.survey-link` (conservé, non modifié — reste valide selon le mode
+  d'affichage/connexion) puis `#survey-list-body tr.survey-link[data-survey_reward]
+  [data-survey_loi]` (nouveau, additif). Le premier qui retourne des cartes gagne.
+- Avant le scan, attente bornée (10s) sur l'apparition d'au moins une carte réelle
+  (sélecteur combiné des deux entrées de la liste, `state="attached"`), en plus de
+  l'attente déjà existante sur le conteneur seul (20s). Timeout non bloquant (log
+  debug), retombe proprement sur "aucun survey disponible" si aucune carte
+  n'apparaît réellement.
+Patterns couverts :
+- Liste de surveys ySense rendue en tableau (`<tr class="survey-link">` dans
+  `table.tsurveys > tbody`), avec injection asynchrone des lignes après attache du
+  conteneur `#survey-list-body`.
+Patterns exclus :
+- Le sélecteur `a.survey-link` historique (mode d'affichage alternatif) — non
+  modifié, toujours essayé en premier.
+- Calcul du ratio reward/durée, clic (`best.click()`), `CTA_INTERCEPT_ONLY` —
+  inchangés.
+Statut : patch validé (confirmé par l'utilisateur — logs réels : 33 puis 35 cartes
+détectées, survey sélectionné avec succès sur deux sessions distinctes).
+
+### run_attach_login_takeover — saut de la présélection générique pour les plateformes non-TopSurveys
+Fichier : main.py
+Bug corrigé : après `platform.select_survey()` pour une plateforme configurée
+différente de TopSurveys (ex. ySense), le flux s'arrêtait systématiquement
+(`return` contrôlé) au motif qu'aucun moteur de présélection générique n'était
+disponible — alors que ySense (et plus généralement toute plateforme sans étape de
+présélection) mène directement des questions du survey après le clic, sans popup de
+présélection à gérer.
+Correction : l'appel au moteur de présélection (`preselection.survey_handler`,
+spécifique au popup TopSurveys) est désormais conditionné à `if _is_topsurveys:`.
+Les autres plateformes sautent uniquement cette étape et enchaînent directement sur
+la boucle de résolution commune (`survey_executor.execute_survey_page`). Le pont
+BLOC 1 → BLOC 2 (shim `page._survey_account_id`, construction de `SurveyContext`)
+reste commun aux deux chemins, sans duplication.
+Patterns couverts :
+- Toute plateforme configurée (`platform.get_platform_name() != "topsurveys"`) dont
+  la sélection du survey mène directement aux questions, sans popup de
+  présélection intermédiaire (confirmé pour ySense).
+Patterns exclus :
+- Chemin TopSurveys (`_is_topsurveys=True`) — comportement inchangé, présélection
+  toujours appelée via `preselection.survey_handler`.
+- `run_attach_preselection_takeover` (route dédiée au popup de présélection déjà
+  affiché) — non modifiée, reste spécifique à TopSurveys.
+Statut : patch validé (confirmé par l'utilisateur — logs réels : login, sélection du
+survey et passage direct à la résolution sans arrêt contrôlé).
