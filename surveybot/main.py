@@ -1222,7 +1222,17 @@ def main():
                     )
                 get_guard().attach_driver(driver)
 
-            api_key, payout_name, payout_revolut_tag = init_session_and_enter_surveys(driver, config, account_id, notify_fn, platform=platform)
+            # init_session_and_enter_surveys retourne désormais aussi le driver :
+            # pour les plateformes non-TopSurveys (ex. ySense), le clic sur le
+            # survey ouvre un nouvel onglet et un switch interne peut avoir
+            # remplacé la Page active — sans récupérer cette nouvelle référence
+            # ici, run_main_loop() ci-dessous continuerait sur l'ancien onglet
+            # (même bug que celui déjà corrigé en mode attach, cf. BEM).
+            api_key, payout_name, payout_revolut_tag, driver = init_session_and_enter_surveys(driver, config, account_id, notify_fn, platform=platform)
+            driver._survey_account_id = account_id
+            runtime_ctx["driver"] = driver
+            if should_run_guard_monitor():
+                get_guard().attach_driver(driver)
 
             runtime_ctx["session"] = {
                 "account_id": account_id,

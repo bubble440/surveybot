@@ -288,8 +288,41 @@ def soft_restart_resume(ctx, driver, platform=None):
             raise RuntimeError("soft_restart_resume: re-login échoué, page de login toujours présente")
 
     survey_ctx = SurveyContext(session_id=ctx["account_id"], openai_api_key=ctx["api_key"])
+
+    # Même configuration que dans init_session_and_enter_surveys ci-dessus
+    # (et déjà en place en mode attach) : switch d'onglet + fermeture des
+    # autres, uniquement pour les plateformes non-TopSurveys. Ici la
+    # réassignation locale de `driver` suffit puisque run_survey() est appelé
+    # plus bas dans cette même fonction.
+    _is_topsurveys = platform is None or platform.get_platform_name() == "topsurveys"
+
     if platform:
-        platform.select_survey(driver)
+        if _is_topsurveys:
+            platform.select_survey(driver)
+        else:
+            try:
+                _base_handles = set(driver.context.pages)
+            except Exception:
+                _base_handles = set()
+
+            _survey_selected = platform.select_survey(driver)
+
+            if _survey_selected:
+                try:
+                    import Management.redirect_watcher as redirect_watcher
+                    from preselection.survey_handler import _resync_live_page
+
+                    redirect_watcher.switch_to_latest_window_and_close_others(
+                        driver,
+                        base_handles=_base_handles,
+                        timeout=12,
+                        prefer_external=True,
+                        platform_domains=platform.get_domains(),
+                    )
+                    driver = _resync_live_page(driver)
+                    redirect_watcher.wait_for_final_redirection(driver, max_wait=30)
+                except Exception as _switch_e:
+                    print(f"[SOFT_RESTART][WARN] Erreur lors du switch d'onglet après sélection survey : {_switch_e}")
     else:
         go_to_best_value_survey(driver)
     run_survey(
@@ -612,12 +645,61 @@ def init_session_and_enter_surveys(driver, config, account_id: str, notify_fn, p
     except Exception:
         print("[INIT][WARN] surveys-nav non détecté après 30 s — select_survey lancé quand même.")
 
+    # Comme en mode attach (main.py::run_attach_login_takeover), le switch
+    # d'onglet post-sélection ne concerne que les plateformes configurées
+    # autres que TopSurveys : celle-ci gère déjà ce switch en interne dans son
+    # propre chemin (preselection.survey_handler). Pour les autres (ex.
+    # ySense), le clic sur le survey ouvre un nouvel onglet qui doit recevoir
+    # le focus — sans switch explicite, l'onglet plateforme (ex. ysense.com)
+    # garde le focus réel et toute résolution ultérieure s'exécute dessus au
+    # lieu du survey, produisant une extraction faussée. Cette configuration
+    # existait déjà en mode attach (cf. BOT_EVOLUTION_MEMORY.md) mais n'était
+    # pas répliquée sur ce chemin prod, seul point d'entrée de select_survey()
+    # hors attach/soft-restart.
+    _is_topsurveys = platform is None or platform.get_platform_name() == "topsurveys"
+
     if platform:
-        platform.select_survey(driver)
+        if _is_topsurveys:
+            # Chemin TopSurveys existant — inchangé.
+            platform.select_survey(driver)
+        else:
+            try:
+                _base_handles = set(driver.context.pages)
+            except Exception:
+                _base_handles = set()
+
+            _survey_selected = platform.select_survey(driver)
+
+            if _survey_selected:
+                # Réutilisation à l'identique de switch_to_latest_window_and_
+                # close_others + _resync_live_page, déjà validées pour ce même
+                # problème en mode attach. Non bloquant : un échec ici ne doit
+                # pas interrompre le flux d'initialisation de session.
+                try:
+                    import Management.redirect_watcher as redirect_watcher
+                    from preselection.survey_handler import _resync_live_page
+
+                    redirect_watcher.switch_to_latest_window_and_close_others(
+                        driver,
+                        base_handles=_base_handles,
+                        timeout=12,
+                        prefer_external=True,
+                        platform_domains=platform.get_domains(),
+                    )
+                    driver = _resync_live_page(driver)
+                    redirect_watcher.wait_for_final_redirection(driver, max_wait=30)
+                except Exception as _switch_e:
+                    print(f"[INIT][WARN] Erreur lors du switch d'onglet après sélection survey : {_switch_e}")
     else:
         go_to_best_value_survey(driver)
 
-    return api_key, payout_name, payout_revolut_tag
+    # driver est retourné en plus des valeurs de session existantes : le switch
+    # d'onglet ci-dessus peut avoir remplacé la Page active par une nouvelle
+    # (nouvel onglet du survey), et cette réassignation est locale à cette
+    # fonction — sans la retourner, l'appelant (main.py) continuerait sur
+    # l'ancienne Page pour la suite du flux (run_main_loop), reproduisant le
+    # même bug plus loin.
+    return api_key, payout_name, payout_revolut_tag, driver
 
 def run_main_loop(driver, api_key: str, account_id: str, payout_name: str = "", payout_revolut_tag: str = "", platform=None):
     from Survey.survey_context import SurveyContext
