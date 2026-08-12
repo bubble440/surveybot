@@ -600,14 +600,33 @@ def init_session_and_enter_surveys(driver, config, account_id: str, notify_fn, p
     safe_get(driver, _home_url)
     print("🚀 Brave lancé.")
 
-    _SESSION_SEL = "[data-test-id='surveys-nav']"
+    # Détection de session active gated par plateforme : le sélecteur
+    # [data-test-id='surveys-nav'] est spécifique au DOM TopSurveys et n'existe
+    # dans aucune page ySense (ni ailleurs) — sur cette dernière, _session_active
+    # était donc toujours faux, et platform.login() était appelé systématiquement
+    # à chaque lancement, y compris sur un profil Chrome persistant déjà
+    # authentifié (login() navigue alors vers /login sur une session déjà
+    # valide, sans effet utile autre que perdre du temps).
+    # Chemin TopSurveys inchangé. Pour les autres plateformes (ex. ySense),
+    # réutilisation de platform.is_session_expired() — déjà la détection
+    # correcte et validée (YSensePlatform : navigation vers la page de login,
+    # redirection automatique hors /login si la session est valide).
+    _is_topsurveys = platform is None or platform.get_platform_name() == "topsurveys"
     _page = driver
-    _session_active = False
-    try:
-        _page.wait_for_selector(_SESSION_SEL, state="attached", timeout=8_000)
-        _session_active = True
-    except Exception:
-        pass
+
+    if _is_topsurveys:
+        _SESSION_SEL = "[data-test-id='surveys-nav']"
+        _session_active = False
+        try:
+            _page.wait_for_selector(_SESSION_SEL, state="attached", timeout=8_000)
+            _session_active = True
+        except Exception:
+            pass
+    else:
+        try:
+            _session_active = not platform.is_session_expired(driver)
+        except Exception:
+            _session_active = False
 
     if _session_active:
         print("[INIT] session active détectée — login ignoré")
@@ -623,11 +642,17 @@ def init_session_and_enter_surveys(driver, config, account_id: str, notify_fn, p
             password = os.getenv("PASSWORD") or config.get("Password")
             login(driver, email, password)
         # Après login, attendre que la page soit hydratée avant de continuer.
-        try:
-            _page.wait_for_selector(_SESSION_SEL, state="attached", timeout=30_000)
-            print("[LOGIN] surveys-nav détecté post-login — page prête.")
-        except Exception:
-            print("[LOGIN][WARN] surveys-nav non détecté après 30 s — on continue quand même.")
+        # Best-effort, TopSurveys uniquement (cf. _SESSION_SEL ci-dessus) — pour
+        # les autres plateformes, platform.login() valide déjà lui-même son
+        # propre succès en interne (ex. YSensePlatform.login : vérifie l'URL
+        # sans /login avant de retourner), une attente supplémentaire ici sur
+        # un sélecteur TopSurveys n'aurait aucune valeur diagnostique.
+        if _is_topsurveys:
+            try:
+                _page.wait_for_selector(_SESSION_SEL, state="attached", timeout=30_000)
+                print("[LOGIN] surveys-nav détecté post-login — page prête.")
+            except Exception:
+                print("[LOGIN][WARN] surveys-nav non détecté après 30 s — on continue quand même.")
 
     # try:
     #     _payout_and_check_daily_stop(driver, account_id, email=config.get("Email", ""))  # retrait + DAILY STOP
@@ -639,11 +664,15 @@ def init_session_and_enter_surveys(driver, config, account_id: str, notify_fn, p
     # que l'app Vue est loggée et rendue, sans dépendre de la disponibilité de surveys.
     # Timeout généreux (30 s) pour absorber les démarrages lents en prod headless.
     # Si le sélecteur n'apparaît pas dans le délai, on continue quand même (best-effort).
-    try:
-        _page.wait_for_selector(_SESSION_SEL, state="attached", timeout=30_000)
-        print("[INIT] surveys-nav détecté — page prête, lancement select_survey.")
-    except Exception:
-        print("[INIT][WARN] surveys-nav non détecté après 30 s — select_survey lancé quand même.")
+    # TopSurveys uniquement — même raison que ci-dessus, sélecteur non
+    # applicable aux autres plateformes (évite un palier de 30 s systématique
+    # et inutile à chaque lancement/cycle sur ces dernières).
+    if _is_topsurveys:
+        try:
+            _page.wait_for_selector(_SESSION_SEL, state="attached", timeout=30_000)
+            print("[INIT] surveys-nav détecté — page prête, lancement select_survey.")
+        except Exception:
+            print("[INIT][WARN] surveys-nav non détecté après 30 s — select_survey lancé quand même.")
 
     # Comme en mode attach (main.py::run_attach_login_takeover), le switch
     # d'onglet post-sélection ne concerne que les plateformes configurées
@@ -656,8 +685,6 @@ def init_session_and_enter_surveys(driver, config, account_id: str, notify_fn, p
     # existait déjà en mode attach (cf. BOT_EVOLUTION_MEMORY.md) mais n'était
     # pas répliquée sur ce chemin prod, seul point d'entrée de select_survey()
     # hors attach/soft-restart.
-    _is_topsurveys = platform is None or platform.get_platform_name() == "topsurveys"
-
     if platform:
         if _is_topsurveys:
             # Chemin TopSurveys existant — inchangé.
