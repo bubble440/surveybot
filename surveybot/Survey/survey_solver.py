@@ -47,31 +47,42 @@ def _wait_for_url_stable(page, max_wait: int = 30) -> str:
 # page blanche / loader qui ne se résout jamais). Avant ce patch, ce cas
 # n'était rattrapé que beaucoup plus tard, via RELOAD_RETRY dans
 # survey_executor.py — atteint seulement après épuisement de toutes les
-# stratégies de clic CTA, donc bien après la redirection réelle. Détection
-# DOM-first générique (contenu visible quasi vide), sans dépendance à un
-# sélecteur ou un texte propre à une plateforme donnée.
+# stratégies de clic CTA, donc bien après la redirection réelle.
+# Détection : réutilisation telle quelle des deux détecteurs déjà existants
+# et validés (dom_classifier.classify_dom + dom_analyzer.analyze_dom, les
+# mêmes que ceux appelés en tête d'execute_survey_page et par RELOAD_RETRY) —
+# aucun nouveau critère inventé. Page considérée figée si aucun des deux ne
+# trouve quoi que ce soit d'exploitable.
 # ----------------------------------------------------------------------------
-_STUCK_PAGE_BODY_TEXT_MIN = 20   # longueur mini de texte visible pour considérer la page chargée
-_STUCK_PAGE_ELEMENT_MIN = 10     # nombre mini d'éléments DOM pour considérer la page chargée
-_STUCK_PAGE_RELOAD_BUDGET = 1    # une seule tentative ici — RELOAD_RETRY (survey_executor.py) reste le filet de sécurité
+_STUCK_PAGE_RELOAD_BUDGET = 1  # une seule tentative ici — RELOAD_RETRY (survey_executor.py) reste le filet de sécurité
 
 
 def _page_seems_frozen(page) -> bool:
     """
-    Retourne True si la page semble figée (contenu visible quasi inexistant).
+    Retourne True si ni dom_classifier.classify_dom() ni dom_analyzer.analyze_dom()
+    ne trouvent quoi que ce soit d'exploitable sur la page — même critère que
+    celui déjà utilisé en tête d'execute_survey_page() et par RELOAD_RETRY.
     Une évaluation qui échoue (page pas encore prête / navigation en cours)
     est elle aussi traitée comme un signe de gel, pour ne pas manquer ce cas.
     """
     try:
-        body_len = page.evaluate(
-            "() => (document.body && (document.body.innerText || '').trim().length) || 0"
-        )
-        elem_count = page.evaluate(
-            "() => document.body ? document.body.querySelectorAll('*').length : 0"
-        )
-        return body_len < _STUCK_PAGE_BODY_TEXT_MIN and elem_count < _STUCK_PAGE_ELEMENT_MIN
+        import Survey.dom_classifier as dom_classifier
+        import Survey.dom_analyzer as dom_analyzer
+    except Exception:
+        return False  # modules indisponibles : ne pas statuer, laisser le flux normal gérer
+
+    try:
+        if dom_classifier.classify_dom(page):
+            return False  # un handler dédié existe (consent_screen, etc.) — pas "figée"
+    except Exception:
+        pass
+
+    try:
+        blocks = dom_analyzer.analyze_dom(page) or []
     except Exception:
         return True
+
+    return not blocks
 
 
 def _reload_if_page_frozen(page) -> None:
