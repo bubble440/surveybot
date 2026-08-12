@@ -41,6 +41,67 @@ def _wait_for_url_stable(page, max_wait: int = 30) -> str:
     return page.url
 
 
+# ----------------------------------------------------------------------------
+# STUCK_PAGE_RELOAD : reload immédiat, borné, si la page est figée juste après
+# stabilisation d'URL (ex. redirection post-clic survey qui aboutit sur une
+# page blanche / loader qui ne se résout jamais). Avant ce patch, ce cas
+# n'était rattrapé que beaucoup plus tard, via RELOAD_RETRY dans
+# survey_executor.py — atteint seulement après épuisement de toutes les
+# stratégies de clic CTA, donc bien après la redirection réelle. Détection
+# DOM-first générique (contenu visible quasi vide), sans dépendance à un
+# sélecteur ou un texte propre à une plateforme donnée.
+# ----------------------------------------------------------------------------
+_STUCK_PAGE_BODY_TEXT_MIN = 20   # longueur mini de texte visible pour considérer la page chargée
+_STUCK_PAGE_ELEMENT_MIN = 10     # nombre mini d'éléments DOM pour considérer la page chargée
+_STUCK_PAGE_RELOAD_BUDGET = 1    # une seule tentative ici — RELOAD_RETRY (survey_executor.py) reste le filet de sécurité
+
+
+def _page_seems_frozen(page) -> bool:
+    """
+    Retourne True si la page semble figée (contenu visible quasi inexistant).
+    Une évaluation qui échoue (page pas encore prête / navigation en cours)
+    est elle aussi traitée comme un signe de gel, pour ne pas manquer ce cas.
+    """
+    try:
+        body_len = page.evaluate(
+            "() => (document.body && (document.body.innerText || '').trim().length) || 0"
+        )
+        elem_count = page.evaluate(
+            "() => document.body ? document.body.querySelectorAll('*').length : 0"
+        )
+        return body_len < _STUCK_PAGE_BODY_TEXT_MIN and elem_count < _STUCK_PAGE_ELEMENT_MIN
+    except Exception:
+        return True
+
+
+def _reload_if_page_frozen(page) -> None:
+    """
+    À appeler juste après stabilisation d'URL (_wait_for_url_stable). Si la
+    page est détectée comme figée, déclenche un reload unique — non bloquant,
+    toute exception est absorbée pour ne jamais interrompre le flux normal.
+    """
+    for _attempt in range(1, _STUCK_PAGE_RELOAD_BUDGET + 1):
+        if not _page_seems_frozen(page):
+            return
+        log_info(
+            "[STUCK_PAGE_RELOAD]",
+            f"page figée détectée après stabilisation d'URL (tentative {_attempt}/"
+            f"{_STUCK_PAGE_RELOAD_BUDGET}) — reload immédiat",
+        )
+        try:
+            page.reload(wait_until="domcontentloaded")
+            time.sleep(2)
+        except Exception as _e:
+            log_debug("[STUCK_PAGE_RELOAD]", f"reload échoué : {type(_e).__name__}: {_e}")
+            return
+    if _page_seems_frozen(page):
+        log_debug(
+            "[STUCK_PAGE_RELOAD]",
+            "page toujours figée après reload — la boucle de résolution / "
+            "RELOAD_RETRY prend le relais plus loin.",
+        )
+
+
 class TopSurveysReturn(BaseException):
     """Sentinelle levée quand handle_post_survey() signale un retour sur la plateforme.
     Hérite de BaseException pour traverser les blocs except Exception sans être avalée.
@@ -483,6 +544,14 @@ def solve_full_survey(driver, api_key, *, account_id: str, survey_context=None, 
     # 1) Attendre que la redirection s'arrête sur une URL stable
     final_url = _wait_for_url_stable(page, max_wait=60)
     print(f" URL finale stabilisée : {final_url}")
+
+    # STUCK_PAGE_RELOAD : la redirection post-clic survey aboutit parfois sur
+    # une page figée (chargement qui ne se termine jamais). Un reload suffit
+    # généralement à résoudre ce cas — on le tente ici, immédiatement après
+    # stabilisation, plutôt que d'attendre le RELOAD_RETRY plus tardif de
+    # survey_executor.py.
+    _reload_if_page_frozen(page)
+
     time.sleep(PAUSE_BEFORE_FIRST_SCAN)
 
     # 2) Boucle d'exécution des actions
