@@ -3910,3 +3910,123 @@ Patterns exclus :
   (hook optionnel `platform.is_on_platform`/`handle_post_survey` via
   `NotImplementedError`), confirmée fonctionnelle sans modification.
 Statut : patch validé (confirmé par l'utilisateur en conditions réelles).
+
+---
+
+## PRESCREENER YSENSE (ysense.com/surveys/prescreener-v2) — DATE DE NAISSANCE 3 CHAMPS TEXTE (Next.js, classes CSS modules hashees)
+
+### _nearest_question_container_structural
+Fichier : Survey/dom_question_extractor.py
+Emplacement : juste avant `_extract_question_from_container`.
+Guard DOM strict : remonte au plus 4 niveaux d'ancetres depuis le champ ; ne retient un
+ancetre que s'il regroupe >= 3 enfants directs contenant chacun un champ texte/nombre
+avec `id` ET un `<label>` associe (comptage purement structurel, aucune classe requise).
+Appelee UNIQUEMENT en complement additif de `_nearest_question_container` (Survey/dom_analyzer.py,
+boucle "singles", ~ligne 3592) quand celle-ci renvoie None ET itype in ("text","textarea") —
+ne remplace jamais son resultat quand elle en trouve un, fonction existante non modifiee.
+Patterns couverts :
+- DOM ou aucun ancetre ne porte de mot-cle semantique ('question'/'form-group'/'field-wrap')
+  ni balise fieldset/section (classes CSS modules Next.js/React hashees, ex:
+  `user-input_field__r_90_`, `user-input_container__l8b_U`) — confirme sur ysense.com
+  prescreener-v2, question "When were you born?" (3 inputs sans attribut `name`, ids
+  `month`/`day`/`year`, chacun dans son propre wrapper div).
+Patterns exclus :
+- Tout DOM ou `_nearest_question_container` trouve deja un ancetre valide, ou itype hors
+  text/textarea — chemin inchange.
+Bug corrige : sans ce fallback, `container = _nearest_question_container(el) or el`
+degradait a `container = el` (l'input lui-meme, sans descendant), la recherche de champs
+"pairs" pour la detection triplet date (Survey/dom_analyzer.py, `has_date_triplet`, cf.
+entree "CHAMP DATE TRIPLET" ci-dessus) ne trouvait donc jamais >= 2 pairs, et jour/annee
+etaient ensuite elimines en aval comme doublons de signature `(question, itype)` (meme
+question resolue via `_find_question_text_near_element`, meme itype "text") : un seul bloc
+"month" etait produit, jour et annee disparaissaient silencieusement.
+Diagnostic associe : `question_blocks.json` avant patch = 1 seul bloc text (`id=month`,
+question "When were you born?"). Apres patch : `[DOM_DATE_MULTI_TEXT] detected date triplet
+fields=3` puis 3 blocs distincts (Birth month/day/year), remplis correctement en conditions
+reelles (07/15/2001).
+Statut : patch valide (confirme par l'utilisateur en conditions reelles).
+
+---
+
+## PLATEFORME : YSENSE (ysense.com) — WIDGET ACCESSIBILITE TIERS EQUALWEB (shadow root, faux groupe button_group)
+
+### Exclusion additive dans la boucle "btn_like" (pipeline button_group generique)
+Fichier : Survey/dom_analyzer.py
+Emplacement : boucle `for b in btn_like:`, juste apres le filtre Bulbshare
+(data-survey-progress/data-survey-bulbshare), avant le guard `sq-cardrating-button`.
+Guard DOM strict (via `driver.evaluate`, y compris a travers un shadow root) : exclut tout
+element dont l'hote de shadow root (`el.getRootNode().host`) a pour `id`
+`INDShadowRootHost`, OU dont un ancetre light-DOM matche
+`#INDshadowRootWrap, #INDShadowRootHost, #quick-access-navigation-container, #INDquickAccess`.
+Log discriminant : aucun log dedie (filtre silencieux, comme les filtres CookieYes/
+interview-footer/Bulbshare deja presents dans cette meme boucle).
+Patterns couverts :
+- Widget accessibilite equalweb (`cdn.equalweb.com/core/.../accessibility.js`) injecte
+  globalement sur les pages ysense.com, panneau "Quick Access" rendu dans un shadow root
+  (`#INDShadowRootHost`, piercing automatique du selecteur CSS Playwright
+  `button, a[role='button'], [role='button']`). Confirme identique sur 5 snapshots
+  (20260810_042749, 20260810_043417, 20260811_014501, 20260811_025742, 20260813_022240) :
+  le pipeline button_group generique produisait un faux bloc radio unique
+  "Press enter for Accessibility for blind people who use screen readers / Press enter for
+  Keyboard Navigation / Press enter for Accessibility menu" (group_key contenant
+  `INDquickAccess`), sans rapport avec le contenu du questionnaire.
+Patterns exclus :
+- Boutons CTA legitimes du questionnaire (ex. "Continue") — non concernes, verifie
+  explicitement (pas d'exclusion a tort).
+- Tout autre widget hors des ids exacts ci-dessus — non concerne, pipeline button_group
+  generique inchange.
+Diagnostic associe : avant patch, `question_blocks.json` de la page date de naissance
+contenait un 2e bloc fantome `group_109633f1c580` (kind=group, itype=radio) en plus du bloc
+date reel. Apres patch : bloc fantome absent, uniquement les 3 blocs date reels produits.
+Statut : patch valide (confirme par l'utilisateur en conditions reelles).
+
+
+---
+
+## PLATEFORME : YSENSE (ysense.com/surveys/prescreener-v2) — GROUPE RADIO AVEC INTITULE COURT ("I am...") REJETE (missing_question)
+
+### _find_heading_tag_near_choice_group
+Fichier : Survey/dom_question_extractor.py
+Emplacement : juste avant `_group_key_for_choice`.
+Guard DOM strict : aucun mot-cle de classe CSS — signal discriminant = balise semantique
+heading (`h1-h6` / `[role="heading"]`). Remonte au plus 5 niveaux d'ancetres depuis le
+premier champ du groupe (budget controle), s'arrete au premier niveau ou un candidat
+valide est trouve. Ne retient qu'un heading visible, situe AVANT le groupe de choix en
+ordre DOM (jamais une section suivante), hors du conteneur du groupe lui-meme, dont le
+texte ne correspond a aucune option (filtre `optionKeys`, evite de promouvoir a tort un
+libelle d'option en question).
+Appelee en dernier recours, additif, dans Survey/dom_analyzer.py (cascade de resolution de
+question d'un groupe radio/checkbox, ~ligne 2628), juste avant le rejet final
+`missing_question` — seulement apres l'echec de TOUS les replis generiques existants
+(`_nearest_question_container`, `_find_question_text_near_element`,
+`_find_group_heading_text_near_element`, etc.), aucun d'eux non modifie.
+Patterns couverts :
+- Intitule de question COURT (< 8 caracteres, ex: "I am...") porte par une vraie balise
+  heading, frere structurel (pas ancetre) du conteneur d'options, dans un DOM sans classe
+  CSS semantique (Next.js/React hashees) — confirme sur ysense.com prescreener-v2, question
+  "I am..." (h3.container_text__QoTgu, 3 radios name="question-3": Male/Female/Not
+  Specified), meme famille de page que l'entree "PRESCREENER YSENSE ... DATE DE NAISSANCE"
+  ci-dessus (meme site, memes classes CSS modules hashees).
+Patterns exclus :
+- Tout groupe deja resolu par un repli existant (container, near-element, group-heading) —
+  chemin inchange, cette fonction n'est jamais appelee dans ce cas.
+- Heading dont le texte matche une option du groupe, ou heading situe apres le groupe en
+  ordre DOM, ou heading a l'interieur du conteneur du groupe lui-meme — jamais retenu.
+Bug corrige : `_find_question_text_near_element` (Survey/dom_question_extractor.py:59) et
+`_find_group_heading_text_near_element` (meme fichier, ligne 610) filtrent TOUTES DEUX,
+dans leur JS interne, tout texte candidat de moins de 8 caracteres
+(`if (!t || t.length < 8) continue;`) — non modifie par ce patch, seuil toujours en vigueur
+pour tous leurs autres appelants. "I am..." (7 caracteres) etait donc rejete par les deux
+AVANT meme d'atteindre `_is_question_text`. Combine a l'echec de
+`_nearest_question_container` (h3 et groupe d'options sont deux enfants freres d'un meme
+`<main>`, pas de relation ancetre/descendant, memes classes CSS modules hashees que le bug
+date de naissance), `question` restait vide → groupe entierement rejete
+(`missing_question`) malgre 3 options radio correctement detectees et regroupees par name.
+Diagnostic associe : `question_blocks.json` avant patch = `[]` (vide), log
+`[DOM_CONTEXT_DEBUG] analyze_dom choice_groups detected=1 created=0 rejected={'missing_question': 1}`.
+Apres patch : bloc unique produit (`question="I am...", options=[Male,Female,Not Specified],
+group_key="radio:name:question-3"`).
+Non-regression verifiee : snapshots des 2 patches precedents (triplet date + widget
+equalweb) et snapshot dropdown "How old are you?" — aucun changement de comportement,
+aucune promotion indue d'un libelle d'option en question.
+Statut : patch valide (confirme par l'utilisateur en conditions reelles).

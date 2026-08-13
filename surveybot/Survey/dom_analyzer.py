@@ -39,8 +39,10 @@ try:
     from Survey.dom_question_extractor import (
         _find_question_text_near_element, _find_associated_label,
         _extract_ssi_confirmit_question, _extract_surveywriter_ssi_question,
-        _nearest_question_container, _extract_question_from_container,
-        _find_group_heading_text_near_element, _extract_mriweb_grid_question_text,
+        _nearest_question_container, _nearest_question_container_structural,
+        _extract_question_from_container,
+        _find_group_heading_text_near_element, _find_heading_tag_near_choice_group,
+        _extract_mriweb_grid_question_text,
         _group_key_for_choice, _compute_max_select, _compute_min_select,
         _find_ipsos_sharky_grid_progressive_option_label,
         _find_ipsos_sharky_grid_progressive_checkbox_option_label
@@ -169,8 +171,10 @@ except ImportError:
     from Survey.dom_question_extractor import (
         _find_question_text_near_element, _find_associated_label,
         _extract_ssi_confirmit_question, _extract_surveywriter_ssi_question,
-        _nearest_question_container, _extract_question_from_container,
-        _find_group_heading_text_near_element, _extract_mriweb_grid_question_text,
+        _nearest_question_container, _nearest_question_container_structural,
+        _extract_question_from_container,
+        _find_group_heading_text_near_element, _find_heading_tag_near_choice_group,
+        _extract_mriweb_grid_question_text,
         _group_key_for_choice, _compute_max_select, _compute_min_select,
         _find_ipsos_sharky_grid_progressive_option_label,
         _find_ipsos_sharky_grid_progressive_checkbox_option_label
@@ -2623,6 +2627,16 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                 except Exception:
                     pass
 
+            # Repli additif : intitulé court porté par une vraie balise heading
+            # (h1-h6/[role="heading"]) proche du groupe, rejeté par les replis
+            # génériques ci-dessus faute d'atteindre leur seuil de longueur
+            # minimale (8 caractères). Cf. _find_heading_tag_near_choice_group.
+            if not question:
+                heading_short = _norm(_find_heading_tag_near_choice_group(driver, els[0], options))
+                if heading_short:
+                    question = heading_short
+                    log_debug("[DOM_CONTEXT]", f"heading_tag_short resolved question={question[:60]!r}")
+
             if not question:
                 # dernier recours: bloc "1 option" (rare, mais utile)
                 if len(options) == 1 and len(els) == 1:
@@ -3119,6 +3133,26 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
             except Exception:
                 pass
 
+            # Filtre widget accessibilité tiers equalweb (cdn.equalweb.com/core/.../accessibility.js) :
+            # panneau "Quick Access" injecté globalement sur la page (hôte de shadow root
+            # #INDShadowRootHost, wrapper #INDshadowRootWrap, portail #quick-access-navigation-container),
+            # pas du contenu de question. Guard DOM strict sur ids exacts, y compris à
+            # travers un shadow root (getRootNode().host).
+            try:
+                _in_equalweb_widget = driver.evaluate(
+                    """(el) => {
+                    if (!el) return false;
+                    const root = el.getRootNode();
+                    const host = root && root.host;
+                    if (host && host.id === 'INDShadowRootHost') return true;
+                    return el.closest('#INDshadowRootWrap, #INDShadowRootHost, #quick-access-navigation-container, #INDquickAccess') !== null;
+                }""", b
+                )
+                if _in_equalweb_widget:
+                    continue
+            except Exception:
+                pass
+
             # Guard additif : les li.sq-cardrating-button sont gérés par
             # _extract_decipher_cardrating_blocks — exclure du pipeline button_group.
             cls = _norm_lc(b.get_attribute("class") or "")
@@ -3589,7 +3623,13 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                 }:
                     continue
 
-            container = _nearest_question_container(el) or el
+            container = _nearest_question_container(el)
+            if container is None and itype in ("text", "textarea"):
+                # Additif : fallback structurel pour DOM sans classe/tag sémantique
+                # (cf. _nearest_question_container_structural) — n'active jamais pour
+                # les autres itypes, ne remplace jamais _nearest_question_container.
+                container = _nearest_question_container_structural(el)
+            container = container or el
 
             dropdown_options_for_question: List[str] = []
             if itype == "dropdown":

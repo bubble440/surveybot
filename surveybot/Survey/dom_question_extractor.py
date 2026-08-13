@@ -471,6 +471,45 @@ def _nearest_question_container(el):
         return None
 
 
+def _nearest_question_container_structural(el):
+    """
+    Fallback structurel additif à `_nearest_question_container`, pour les DOM où aucun
+    ancêtre ne porte de mot-clé sémantique ('question'/'survey-item'/'form-group'/
+    'field-wrap') ni de balise <fieldset>/<section> (ex: classes CSS modules hashées
+    type Next.js/React, sans sémantique lisible).
+
+    Ne doit être appelé qu'en complément (jamais en remplacement) de
+    `_nearest_question_container` — cible spécifiquement le pattern "un champ par
+    wrapper-frère" (ex: triplet de date mois/jour/année, chacun dans son propre div
+    avec son propre <label for=...>, sans attribut name).
+
+    Garde-fou DOM strict : remonte au plus 4 niveaux d'ancêtres ; à chaque niveau,
+    ne retient le parent que s'il regroupe au moins 3 enfants directs contenant chacun
+    exactement un champ texte/nombre (input/select/textarea) muni d'un id ET associé à
+    un <label>. Ce critère purement structurel (comptage de frères similaires) ne
+    dépend d'aucun nom de classe.
+    """
+    try:
+        node = el
+        for _ in range(4):
+            parent_nodes = node.query_selector_all("xpath=..")
+            if not parent_nodes:
+                return None
+            parent = parent_nodes[0]
+            try:
+                field_siblings = parent.query_selector_all(
+                    "xpath=*[.//input[@id] or .//select[@id] or .//textarea[@id]][.//label]"
+                )
+            except Exception:
+                field_siblings = []
+            if len(field_siblings) >= 3:
+                return parent
+            node = parent
+        return None
+    except Exception:
+        return None
+
+
 def _extract_question_from_container(container, options: List[str]) -> str:
     """
     Extrait le texte de question depuis un conteneur, en excluant les options.
@@ -677,6 +716,72 @@ def _find_group_heading_text_near_element(driver, el, options: List[str]) -> str
 
             candidates.sort((a,b) => (b.priority - a.priority) || (a.len - b.len));
             return candidates.length ? candidates[0].t : '';
+            }""",
+            [el, option_keys],
+        )
+        return _norm(txt) if txt else ""
+    except Exception:
+        return ""
+
+
+def _find_heading_tag_near_choice_group(driver, el, options: List[str]) -> str:
+    """
+    Dernier repli structurel pour un groupe radio/checkbox dont l'intitulé de
+    question est un texte COURT (ex: "I am..."), rejeté par les replis génériques
+    `_find_question_text_near_element` / `_find_group_heading_text_near_element`
+    (seuil de longueur minimale fixe à 8 caractères dans ces deux fonctions,
+    non modifié ici — appelé uniquement en complément additif, après leur échec).
+
+    Ne s'appuie sur AUCUN mot-clé de classe CSS : le signal discriminant est la
+    balise sémantique heading (h1-h6 / [role="heading"]) — un intitulé porté par
+    une vraie balise de titre est un signal fiable indépendamment de sa longueur,
+    contrairement à un nœud de texte quelconque.
+
+    Garde-fou DOM strict :
+    - remonte au plus 5 niveaux d'ancêtres depuis `el` (budget contrôlé), en
+      s'arrêtant au premier niveau où un candidat valide est trouvé.
+    - ne retient qu'un heading visible, situé AVANT le groupe de choix en ordre
+      DOM (jamais un titre d'une section suivante), hors du conteneur du groupe
+      lui-même, dont le texte ne correspond à aucune option.
+    - si plusieurs headings valides au même niveau, retient le plus proche du
+      groupe (dernier avant lui en ordre DOM), pas le premier de la page.
+    """
+    try:
+        option_keys = [_norm_lc(o) for o in (options or []) if _norm(o)]
+        txt = driver.evaluate(
+            r"""([el, optionKeys]) => {
+            optionKeys = Array.isArray(optionKeys) ? optionKeys : [];
+            if (!el) return "";
+            const norm = (v) => (v || "").replace(/\s+/g, " ").trim();
+            const normLc = (v) => norm(v).toLowerCase();
+            const isVisible = (node) => {
+              if (!node || !(node instanceof Element)) return false;
+              const st = window.getComputedStyle(node);
+              if (!st || st.display === 'none' || st.visibility === 'hidden' || st.opacity === '0') return false;
+              const r = node.getBoundingClientRect();
+              return r.width > 0 && r.height > 0;
+            };
+            const groupContainer = el.closest('label, fieldset, .question, .question-container') || el.parentElement;
+            let scope = el.parentElement;
+            const budget = 5;
+            for (let i = 0; i < budget && scope; i++) {
+              const headings = Array.from(scope.querySelectorAll('h1,h2,h3,h4,h5,h6,[role="heading"]'));
+              let best = "";
+              for (const h of headings) {
+                if (groupContainer && groupContainer.contains(h)) continue;
+                if (!isVisible(h)) continue;
+                const pos = h.compareDocumentPosition(el);
+                const beforeGroup = !!(pos & Node.DOCUMENT_POSITION_FOLLOWING);
+                if (!beforeGroup) continue;
+                const t = norm(h.textContent || h.innerText || '');
+                if (!t) continue;
+                if (optionKeys.includes(normLc(t))) continue;
+                best = t;
+              }
+              if (best) return best;
+              scope = scope.parentElement;
+            }
+            return "";
             }""",
             [el, option_keys],
         )
