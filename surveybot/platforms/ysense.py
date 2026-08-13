@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from typing import List
+from urllib.parse import urlparse
 from config import is_cta_intercept_only
 from platforms.base import Platform
 from Survey.log_utils import log_info, log_debug
@@ -282,9 +283,17 @@ class YSensePlatform(Platform):
         except Exception:
             return False
 
-        # Ne traiter que le retour effectif sur la page de sélection de surveys
-        # (et non une page ysense.com quelconque en cours de redirection).
-        if "ysense.com/surveys" not in url:
+        # Ne traiter que le retour effectif sur la page de liste des surveys
+        # (path exact "/surveys"). Le sous-chaîne "ysense.com/surveys" matchait
+        # aussi la page de résolution du survey ("/surveys/prescreener-v2?...",
+        # atteinte juste après select_survey()), provoquant un faux positif de
+        # "retour plateforme" qui interrompait solve_full_survey() avant même
+        # le premier scan DOM.
+        try:
+            path = urlparse(url).path.rstrip("/")
+        except Exception:
+            return False
+        if path != "/surveys":
             return False
 
         log_info(_TAG, "handle_post_survey() — retour sur la page de sélection de surveys détecté")

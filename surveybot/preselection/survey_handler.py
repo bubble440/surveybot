@@ -332,6 +332,39 @@ def _run_survey_impl(driver, api_key, *, account_id: str, ctx=None, payout_name:
             print(f"[RESTART][FATAL] soft_restart fallback échoué: {e}")
 
     time.sleep(1)
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Plateformes non-TopSurveys (ex. ySense) : toute la boucle ci-dessous
+    # (preselection.question_analyzer.get_response_for_question,
+    # click_participer_if_qualified, response_executor.execute_response,
+    # sélecteurs ps-*, vérification "app.topsurveys.app/surveys"...) est
+    # bâtie exclusivement sur le DOM et le parcours de présélection
+    # TopSurveys (popup de qualification + bouton "Participer" avant
+    # d'atteindre le survey réel). Ces plateformes n'ont pas cette phase :
+    # select_survey() amène déjà directement sur la page du survey réel (ou
+    # sur un écran de prescreening propre à la plateforme, géré de façon
+    # générique par solve_full_survey/execute_survey_page). Appliquer cette
+    # boucle malgré tout dessus produisait une détection de popup/DOM
+    # systématiquement erronée ("Aucun popup détecté", "JS DOM extraction
+    # échouée") et pouvait bloquer indéfiniment avant même d'atteindre
+    # solve_full_survey(). On délègue donc directement à cette dernière,
+    # qui gère déjà son propre cycle de vie (execute_survey_page, retour
+    # plateforme via platform.handle_post_survey, reload sur page figée).
+    # ─────────────────────────────────────────────────────────────────────
+    _is_topsurveys = platform is None or platform.get_platform_name() == "topsurveys"
+    if not _is_topsurveys:
+        try:
+            Survey.survey_solver.solve_full_survey(
+                driver,
+                api_key=api_key,
+                account_id=account_id,
+                survey_context=ctx,
+                platform=platform,
+            )
+        except TopSurveysReturn:
+            pass
+        return
+
     _STUCK_THRESHOLD = 5
     _last_scan_key = None
     _same_scan_count = 0
