@@ -45,8 +45,33 @@ class YSensePlatform(Platform):
 
         log_debug(_TAG, "login() — champ email présent dans le DOM")
 
-        email_input.fill(email)
-        log_debug(_TAG, "login() — email saisi")
+        # Variante additive — "ré-authentification, profil persistant" :
+        # quand le profil Chrome existe déjà et que ySense reconnaît la
+        # session, /login sert une page qui ne redemande que le mot de
+        # passe ("Please re-enter your password to continue."). Le champ
+        # #username reste présent dans le DOM (attaché, donc le
+        # wait_for_selector ci-dessus réussit toujours) mais son
+        # form-group parent porte style="display: none" : il n'est ni
+        # visible ni destiné à être rempli. Sans cette détection, le fill()
+        # sur un champ invisible attend indéfiniment (jusqu'au timeout).
+        # Détection scopée sur la visibilité réelle du champ, sans toucher
+        # au chemin standard (username + password) qui reste inchangé
+        # ci-dessous pour les autres cas (nouveau profil, session inconnue).
+        password_only_reauth = False
+        try:
+            password_only_reauth = not email_input.is_visible()
+        except Exception:
+            password_only_reauth = False
+
+        if password_only_reauth:
+            log_info(
+                _TAG,
+                "login() — variante détectée : ré-authentification mot de passe seul "
+                "(profil persistant, champ username non visible)",
+            )
+        else:
+            email_input.fill(email)
+            log_debug(_TAG, "login() — email saisi")
 
         try:
             pwd_input = page.query_selector("input[type='password']")
@@ -86,12 +111,16 @@ class YSensePlatform(Platform):
         # peut remonter le formulaire après nos fill() (sans exception), vidant
         # silencieusement les champs avant le clic. On revérifie juste avant de
         # soumettre et on re-remplit si nécessaire (budget borné).
+        # En variante password_only_reauth, le champ email n'est jamais rempli
+        # ni revérifié (il reste vide/invisible par design de cette page) :
+        # seule la stabilité du mot de passe conditionne la sortie de boucle.
         _MAX_STABILIZE_ATTEMPTS = 3
         stabilized = False
         for attempt in range(_MAX_STABILIZE_ATTEMPTS):
-            email_val = (email_input.input_value() or "").strip()
+            email_val = "" if password_only_reauth else (email_input.input_value() or "").strip()
             pwd_val = (pwd_input.input_value() or "").strip()
-            if email_val == email and pwd_val == password:
+            email_ok = password_only_reauth or (email_val == email)
+            if email_ok and pwd_val == password:
                 stabilized = True
                 break
             log_debug(
@@ -99,14 +128,15 @@ class YSensePlatform(Platform):
                 f"login() — champs vidés avant soumission (tentative {attempt + 1}/"
                 f"{_MAX_STABILIZE_ATTEMPTS}), re-remplissage",
             )
-            if email_val != email:
+            if not password_only_reauth and email_val != email:
                 email_input.fill(email)
             if pwd_val != password:
                 pwd_input.fill(password)
         else:
-            email_val = (email_input.input_value() or "").strip()
+            email_val = "" if password_only_reauth else (email_input.input_value() or "").strip()
             pwd_val = (pwd_input.input_value() or "").strip()
-            stabilized = email_val == email and pwd_val == password
+            email_ok = password_only_reauth or (email_val == email)
+            stabilized = email_ok and pwd_val == password
 
         if not stabilized:
             log_info(_TAG, "login() — impossible de stabiliser les champs avant soumission, abandon")
@@ -122,12 +152,13 @@ class YSensePlatform(Platform):
             # après la boucle de stabilisation), pour trancher entre valeur
             # source incorrecte (cf. log en tête de login()) et réinitialisation
             # tardive par la page. Mot de passe jamais loggué en clair.
-            final_email_val = (email_input.input_value() or "").strip()
+            final_email_val = "" if password_only_reauth else (email_input.input_value() or "").strip()
             final_pwd_val = (pwd_input.input_value() or "").strip()
             log_debug(
                 _TAG,
                 f"login() — juste avant clic soumission : "
-                f"email_match={final_email_val == email}, "
+                f"password_only_reauth={password_only_reauth}, "
+                f"email_match={'n/a' if password_only_reauth else (final_email_val == email)}, "
                 f"password_match={final_pwd_val == password} "
                 f"(password_lu={_mask_secret(final_pwd_val)})",
             )
