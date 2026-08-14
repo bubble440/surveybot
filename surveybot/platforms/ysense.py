@@ -180,6 +180,11 @@ class YSensePlatform(Platform):
                 "() => !window.location.href.includes('/login')", timeout=15000
             )
             log_info(_TAG, "login() — succès (URL sans /login)")
+            try:
+                from Cash.ysense_balance import check_balance_and_notify_if_needed
+                check_balance_and_notify_if_needed(page, os.getenv("ACCOUNT_ID") or "unknown")
+            except Exception as e:
+                log_debug(_TAG, f"login() — vérification solde post-login échouée (non bloquant) : {e}")
             return True
         except Exception:
             pass
@@ -331,6 +336,12 @@ class YSensePlatform(Platform):
 
         from Management.redirect_watcher import wait_for_page_load
         wait_for_page_load(page, timeout=30)
+
+        try:
+            from Cash.ysense_balance import check_balance_and_notify_if_needed
+            check_balance_and_notify_if_needed(page, account_id)
+        except Exception as e:
+            log_debug(_TAG, f"handle_post_survey() — vérification solde échouée (non bloquant) : {e}")
 
         self.select_survey(page)
         return True
