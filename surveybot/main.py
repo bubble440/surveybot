@@ -1295,13 +1295,25 @@ def main():
                     # process Chrome sous-jacent) ; pw.stop() libère la connexion.
                     try:
                         driver.context.close()
-                    except Exception:
-                        pass
+                    except Exception as _ctx_close_exc:
+                        from Survey.log_utils import log_debug as _teardown_log_debug
+                        _teardown_log_debug("[MAIN][TEARDOWN]", f"context.close() a échoué : {_ctx_close_exc}")
                     try:
-                        if getattr(driver, "_pw", None):
-                            driver._pw.stop()
-                    except Exception:
-                        pass
+                        # driver.context._pw (posé par launch_browser_playwright, cf.
+                        # playwright_launcher.py) survit aux switch d'onglet internes qui
+                        # remplacent `driver` par une autre Page (ex. _resync_live_page) —
+                        # driver._pw seul pouvait alors être None et pw.stop() jamais
+                        # appelé, laissant la connexion Playwright du cycle précédent
+                        # (et sa boucle asyncio interne) active pour le lancement suivant.
+                        from Survey.log_utils import log_debug as _teardown_log_debug2
+                        _pw = getattr(getattr(driver, "context", None), "_pw", None) or getattr(driver, "_pw", None)
+                        if _pw:
+                            _pw.stop()
+                        else:
+                            _teardown_log_debug2("[MAIN][TEARDOWN]", "Aucune instance Playwright (_pw) trouvée pour ce driver — stop() ignoré.")
+                    except Exception as _pw_stop_exc:
+                        from Survey.log_utils import log_debug as _teardown_log_debug3
+                        _teardown_log_debug3("[MAIN][TEARDOWN]", f"pw.stop() a échoué : {_pw_stop_exc}")
             except Exception:
                 pass
 

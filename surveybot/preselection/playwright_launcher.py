@@ -476,6 +476,16 @@ def launch_browser_playwright(config: dict | None = None):
 
     page._pw                   = pw
     page._chrome_user_data_dir = user_data_dir
+    # Posé aussi sur `context` (stable, jamais remplacé) en plus de `page` :
+    # certains flux (ex. ySense select_survey ouvrant un nouvel onglet, resync
+    # via _resync_live_page) remplacent la Page référencée par l'appelant sans
+    # jamais recopier les attributs custom posés sur l'ancienne Page. Sans ce
+    # second point d'ancrage, la connexion Playwright pouvait ne jamais être
+    # arrêtée au cycle suivant (driver._pw introuvable côté appelant), laissant
+    # sa boucle asyncio interne active et faisant échouer le prochain
+    # sync_playwright().start() sur le même thread ("Sync API inside the
+    # asyncio loop").
+    context._pw = pw
     log_info("[LAUNCH][PW]", "Browser Playwright lancé (fingerprint natif, aucun override JS).")
     return page
 
