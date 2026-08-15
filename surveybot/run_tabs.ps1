@@ -1,10 +1,18 @@
 # 1 fenêtre Windows Terminal, 1 tab par port, chaque tab exécute tools\attach_tab.ps1
 
+# Usage :
+#   .\run_tabs.ps1 -TargetUrl "https://www.ysense.com" -Platform "ysense"
+#   .\run_tabs.ps1 -TargetUrl "https://www.primeopinion.com" -Platform "primeopinion"
+
 param(
   # Valeur par défaut inchangée : préserve le comportement TopSurveys existant
   # pour tout appel sans -TargetUrl. Permet de cibler une autre plateforme
   # (ex: https://www.ysense.com) sans toucher au chemin par défaut.
-  [string]$TargetUrl = "https://www.topsurveys.app"
+  [string]$TargetUrl = "https://www.topsurveys.app",
+  # Valeur par défaut inchangée : préserve le comportement TopSurveys existant
+  # pour tout appel sans -Platform. Ex: -TargetUrl "https://www.primeopinion.com"
+  # -Platform "primeopinion".
+  [string]$Platform = "topsurveys"
 )
 
 $ports = 9009
@@ -33,6 +41,7 @@ foreach($p in $ports){
     "-Port","$p",
     "-ProjectDir",$projectDir,
     "-TargetUrl",$TargetUrl,
+    "-Platform",$Platform,
     "-AttachTabSelector","pick"
   )
   if($first){
