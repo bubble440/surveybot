@@ -397,6 +397,24 @@ def solve_focusvision_cardsort(
                 continue
         return None
 
+    def _find_cardsort_next_control_by_class(cs):
+        """
+        Stratégie additive de détection du contrôle "Suivant" du carrousel cardsort,
+        distincte de _find_internal_next_control (recherche par libellé sur
+        button/a[role=button]/div[role=button]/input[type=button]). Sur le DOM de
+        référence snapshot 20260815_051536 (widget sq-cardsort-B1_Percept_Master_Slot),
+        le contrôle réel est <span class="sq-cardsort-icon-button sq-cardsort-next
+        sq-cardsort-state-disabled" disabled="disabled">Suivant...</span> : ni <button>,
+        ni [role='button'], ni <input type='button'> -> invisible à la recherche
+        générique ci-dessus, ce qui empêchait toute validation carte->carte
+        (CARDSORT_ABORT reason='apply_failed' dès la première carte). Garde-fou strict :
+        classe dédiée .sq-cardsort-next, scope au widget (cs) uniquement.
+        """
+        try:
+            return cs.query_selector(".sq-cardsort-next")
+        except Exception:
+            return None
+
     def _is_control_enabled(el) -> bool:
         try:
             if el.get_attribute("disabled") is not None:
@@ -442,6 +460,8 @@ def solve_focusvision_cardsort(
         # Sans ce clic, la carte active ne change jamais -> apply_failed systématique malgré une
         # affectation réellement prise en compte par le widget (bucket visuellement sélectionné).
         next_ctrl = _find_internal_next_control(cs)
+        if next_ctrl is None:
+            next_ctrl = _find_cardsort_next_control_by_class(cs)
         if next_ctrl is not None:
             _enabled = False
             for _ in range(5):
@@ -459,7 +479,25 @@ def solve_focusvision_cardsort(
                 else:
                     _click(next_ctrl)
                     log_debug("[CARDSORT_DEBUG]", "controle interne 'Suivant' clique")
-                    time.sleep(0.12)
+                    # Le widget déclare "animationDuration": 500 (ms) dans son setupOptions
+                    # inline (transition carte->carte) : un sleep fixe de 0.12s (ancien code)
+                    # relit la carte active avant la fin de l'animation -> la carte sortante
+                    # est encore affichée au moment de la relecture (avant/apres identiques)
+                    # => apply_failed systématique malgré un clic Suivant réellement efficace.
+                    # Poll borné (budget max 8 x 0.1s = 0.8s, cohérent avec les 500ms déclarés
+                    # + marge) sur le changement d'identité de la carte active ou la complétion.
+                    _next_progressed = False
+                    for _ in range(8):
+                        if _completion_visible(cs):
+                            _next_progressed = True
+                            break
+                        polled = _active_card(cs)
+                        if polled is None or _card_label_text(polled) != before_text:
+                            _next_progressed = True
+                            break
+                        time.sleep(0.1)
+                    if not _next_progressed:
+                        log_debug("[CARDSORT_DEBUG]", "attente fin d'animation (500ms) epuisee sans changement de carte")
             else:
                 log_debug("[CARDSORT_DEBUG]", "controle interne 'Suivant' introuvable/desactive apres budget d'attente")
 
