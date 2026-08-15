@@ -378,8 +378,11 @@ def _run_survey_impl(driver, api_key, *, account_id: str, ctx=None, payout_name:
         Marque la carte courante comme bloquée et navigue vers la meilleure carte suivante.
         Retourne True si le budget est épuisé (soft restart déclenché → appelant doit `return`),
         False si la navigation a réussi (appelant doit `continue`).
+        Carte abandonnée sans disqualification/qualification détectée (ni flush) : la session
+        mémoire du popup abandonné ne doit pas fuiter sur le popup suivant → recréation ici,
+        au même titre que les recréations déjà faites après flush_disqualified/flush_qualified.
         """
-        nonlocal _card_retry_count, _last_scan_key, _same_scan_count
+        nonlocal _card_retry_count, _last_scan_key, _same_scan_count, session
         from preselection.survey_navigator import mark_last_selected_survey_as_blocked, go_to_best_paid_survey
         mark_last_selected_survey_as_blocked()
         _card_retry_count += 1
@@ -391,6 +394,8 @@ def _run_survey_impl(driver, api_key, *, account_id: str, ctx=None, payout_name:
         _last_scan_key = None
         _same_scan_count = 0
         go_to_best_paid_survey(driver)
+        session = SurveySession()
+        Survey.log_utils.log_debug("SURVEY_HANDLER", f"Session mémoire réinitialisée après carte abandonnée ({reason})")
         return False
 
     try:

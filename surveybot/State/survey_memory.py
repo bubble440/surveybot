@@ -180,6 +180,12 @@ def read_guidance(survey_key: str, question_key: str, page_index: int) -> Memory
       1. Tentative qualifiée → use_options (bypass GPT)
       2. Tentative ayant passé cette page avec succès → use_options (bypass GPT)
       3. Tentatives DQ à cette page exacte → avoid_options (inject dans prompt)
+
+    Chaque tier tente d'abord la correspondance exacte par question_key (inchangée,
+    prioritaire). Si elle échoue, repli sur la position (page_index) de la question
+    dans la série : la plateforme peut reformuler légèrement l'énoncé (piping,
+    ponctuation, texte additionnel) d'une tentative à l'autre pour une question
+    fonctionnellement identique, alors que sa position dans la série reste stable.
     """
     guidance = MemoryGuidance()
     if not _pg_available() or not survey_key:
@@ -213,10 +219,26 @@ def read_guidance(survey_key: str, question_key: str, page_index: int) -> Memory
                     return ch.get("chosen_options") or []
             return None
 
+        def _options_for_page(row, target_page_index) -> Optional[List[str]]:
+            """Repli positionnel (question_key non trouvé) : même page_index dans la
+            série pour ce survey_key. N'est jamais consulté quand _options_for()
+            trouve déjà une correspondance exacte."""
+            for ch in (row["choices"] or []):
+                if ch.get("page_index") == target_page_index:
+                    return ch.get("chosen_options") or []
+            return None
+
         # 1. Combinaison gagnante
         for row in rows:
             if row["outcome"] == "qualified":
                 opts = _options_for(row)
+                if opts is None:
+                    opts = _options_for_page(row, page_index)
+                    if opts is not None:
+                        log.debug(
+                            "[SURVEY_MEMORY] Combinaison gagnante (repli position page %d) survey=%s",
+                            page_index, survey_key[:8],
+                        )
                 if opts is not None:
                     guidance.use_options = opts
                     log.debug(
@@ -230,6 +252,13 @@ def read_guidance(survey_key: str, question_key: str, page_index: int) -> Memory
             dq_page = row.get("dq_page_index")
             if dq_page is not None and dq_page > page_index:
                 opts = _options_for(row)
+                if opts is None:
+                    opts = _options_for_page(row, page_index)
+                    if opts is not None:
+                        log.debug(
+                            "[SURVEY_MEMORY] Réutilisation page %d (repli position, DQ à %d) survey=%s",
+                            page_index, dq_page, survey_key[:8],
+                        )
                 if opts is not None:
                     guidance.use_options = opts
                     log.debug(
@@ -244,6 +273,8 @@ def read_guidance(survey_key: str, question_key: str, page_index: int) -> Memory
             dq_page = row.get("dq_page_index")
             if dq_page == page_index:
                 opts = _options_for(row)
+                if opts is None:
+                    opts = _options_for_page(row, page_index)
                 if opts:
                     for o in opts:
                         avoid_set.add(str(o))
