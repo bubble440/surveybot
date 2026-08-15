@@ -29,6 +29,10 @@ def get_platform(name: str | None = None) -> Platform:
         from platforms.ysense import YSensePlatform
         return YSensePlatform()
 
+    if name == "primeopinion":
+        from platforms.primeopinion import PrimeOpinionPlatform
+        return PrimeOpinionPlatform()
+
     raise ValueError(
-        f"Plateforme inconnue: {name!r}. Valeurs supportées: 'topsurveys', 'ysense'"
+        f"Plateforme inconnue: {name!r}. Valeurs supportées: 'topsurveys', 'ysense', 'primeopinion'"
     )
