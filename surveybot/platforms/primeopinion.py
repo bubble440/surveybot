@@ -2,14 +2,18 @@ from __future__ import annotations
 
 import os
 import re
+import time
 from typing import List
 
 from config import is_cta_intercept_only
 from platforms.base import Platform
 from preselection.question_analyzer import (
     click_participer_if_qualified,
+    get_response_for_question,
     handle_disqualification_and_retry,
 )
+from preselection.response_executor import execute_response
+from State.survey_memory import SurveySession, flush_disqualified, flush_qualified
 from Survey.log_utils import log_info, log_debug
 
 _TAG = "[PRIMEOPINION]"
@@ -34,6 +38,21 @@ _AUTHENTICATED_SIGNAL_SEL = "[data-test-id='surveys-nav'], [data-test-id='user-b
 _SURVEYS_NAV_SEL = "[data-test-id='surveys-nav']"
 _SURVEY_CARD_SEL = "div.survey-tile"
 _PS_POPUP_SEL = "[data-test-id='ps-popup-content-wrapper']"
+
+# Widget ps-* partagé avec TopSurveys — mêmes libellés/sélecteurs déjà
+# confirmés fonctionnels côté preselection/survey_handler.py::_run_survey_impl
+# pour décliner une question sensible (action SKIP).
+_DECLINE_LABELS = (
+    "Je ne peux pas répondre à cette question",
+    "Je ne peux pas répondre",
+    "Je préfère ne pas répondre",
+    "Prefer not to answer",
+    "I prefer not to answer",
+)
+_SKIP_QUESTION_BTN_SEL = "button[data-test-id='ps-skip-question-button']"
+
+_MAX_PRESELECTION_QUESTIONS = 30
+_PRESELECTION_STUCK_THRESHOLD = 5
 
 # Récompense affichée en Points (pas en €) : deux valeurs numériques par carte
 # (montant sans bonus, puis montant avec bonus) — on retient le max des
@@ -133,6 +152,111 @@ def _select_best_primeopinion_card(page, excluded_uuids: set):
     return best_card, best_uuid
 
 
+def _resolve_preselection_questions(page, api_key: str, session: SurveySession, uuid_) -> str:
+    """
+    Boucle bornée de résolution des questions de présélection intermédiaires
+    du popup ps-*, entre le clic sur une carte et la détermination
+    qualifié/disqualifié. Même pattern que la boucle équivalente TopSurveys
+    (preselection/survey_handler.py::_run_survey_impl) : get_response_for_question()
+    peut renvoyer soit une vraie question (exécutée via execute_response()),
+    soit une action de contrôle (SKIP/DISQUALIFIED/NOT_RETURNED), soit rien
+    (auquel cas on revérifie qualifié/disqualifié via les fonctions ps-*
+    génériques déjà en place). Détection de blocage : même (URL, question)
+    scanné _PRESELECTION_STUCK_THRESHOLD fois de suite → abandon propre.
+    Retourne "qualified" | "disqualified" | "unresolved".
+    """
+    last_scan_key = None
+    same_scan_count = 0
+
+    for _ in range(1, _MAX_PRESELECTION_QUESTIONS + 1):
+        try:
+            question, answer, input_type = get_response_for_question(page, api_key, session=session)
+        except Exception as e:
+            log_info(_TAG, f"select_survey() — get_response_for_question() a échoué (uuid={uuid_}) : {e}")
+            return "unresolved"
+
+        try:
+            cur_url = page.url
+        except Exception:
+            cur_url = ""
+        scan_key = (cur_url, str(question)[:150] if question else "")
+        if scan_key == last_scan_key:
+            same_scan_count += 1
+        else:
+            last_scan_key = scan_key
+            same_scan_count = 1
+        if same_scan_count >= _PRESELECTION_STUCK_THRESHOLD:
+            log_info(
+                _TAG,
+                f"select_survey() — même page scannée {_PRESELECTION_STUCK_THRESHOLD} fois "
+                f"(uuid={uuid_}), abandon présélection",
+            )
+            return "unresolved"
+
+        if isinstance(answer, dict) and answer.get("action"):
+            action = (answer.get("action") or "").upper()
+
+            if action == "SKIP":
+                skipped = False
+                for label in _DECLINE_LABELS:
+                    try:
+                        if execute_response(page, label):
+                            skipped = True
+                            break
+                    except Exception:
+                        continue
+                if not skipped:
+                    try:
+                        skip_btn = page.query_selector(_SKIP_QUESTION_BTN_SEL)
+                        if skip_btn:
+                            skip_btn.click()
+                            skipped = True
+                    except Exception:
+                        pass
+                if not skipped:
+                    log_info(_TAG, f"select_survey() — question sensible non déclinable (uuid={uuid_})")
+                    return "unresolved"
+                time.sleep(1.0)
+                continue
+
+            if action == "DISQUALIFIED":
+                log_info(_TAG, f"select_survey() — disqualification détectée en présélection (uuid={uuid_})")
+                return "disqualified"
+
+            if action == "NOT_RETURNED":
+                # Pas une vraie question (ex: écran "Soumettre") — retomber sur la
+                # vérification qualifié/disqualifié ci-dessous.
+                question, answer = None, None
+            else:
+                log_info(_TAG, f"select_survey() — action présélection inconnue ({action}, uuid={uuid_})")
+                return "unresolved"
+
+        if question and answer:
+            try:
+                success = execute_response(page, answer, input_type)
+            except Exception as e:
+                log_info(_TAG, f"select_survey() — execute_response() a échoué (uuid={uuid_}) : {e}")
+                return "unresolved"
+            if not success:
+                log_info(_TAG, f"select_survey() — exécution de la réponse échouée (uuid={uuid_})")
+                return "unresolved"
+            time.sleep(1.5)
+            continue
+
+        # Pas de question en attente : revérifier l'état qualifié/disqualifié
+        # via les fonctions ps-* génériques déjà utilisées par select_survey().
+        if handle_disqualification_and_retry(page):
+            return "disqualified"
+        if click_participer_if_qualified(page):
+            return "qualified"
+
+        log_info(_TAG, f"select_survey() — ni question ni qualification/disqualification détectée (uuid={uuid_})")
+        return "unresolved"
+
+    log_info(_TAG, f"select_survey() — budget de {_MAX_PRESELECTION_QUESTIONS} questions épuisé (uuid={uuid_})")
+    return "unresolved"
+
+
 class PrimeOpinionPlatform(Platform):
     """
     Implémentation PrimeOpinion — périmètre de ce patch limité au login.
@@ -145,6 +269,16 @@ class PrimeOpinionPlatform(Platform):
     def login(self, driver, config: dict) -> bool:
         email = os.getenv("EMAIL") or config.get("Email", "")
         password = os.getenv("PASSWORD") or config.get("Password", "")
+        # Cache pour select_survey() (l'interface Platform ne lui transmet pas
+        # `config`) — repli si la session était déjà active et que login() a
+        # été sauté par launch.py. Même chaîne de repli que main.py (ligne
+        # ~1093) pour cette variable.
+        self._api_key = (
+            os.getenv("OPENAI_API_KEY")
+            or config.get("openai_api_key")
+            or config.get("OPENAI_API_KEY")
+            or ""
+        )
         log_debug(
             _TAG,
             f"login() — identifiants lus depuis config : email={email!r}, "
@@ -222,19 +356,39 @@ class PrimeOpinionPlatform(Platform):
             log_info(_TAG, "login() — signal authentifié non détecté après 20s, échec")
             return False
 
+    def _resolve_api_key(self) -> str:
+        """
+        OPENAI_API_KEY n'est pas transmise à select_survey() par l'interface
+        Platform (contrairement à login(), qui reçoit `config`). Priorité à la
+        variable d'environnement (même modèle que EMAIL/PASSWORD dans
+        login()) ; repli sur la valeur mise en cache par login() (self._api_key,
+        absente si login() a été sauté par launch.py car la session était
+        déjà active).
+        """
+        return os.getenv("OPENAI_API_KEY") or getattr(self, "_api_key", "") or ""
+
     def select_survey(self, driver) -> bool:
         """
         Navigue vers l'onglet Sondages, sélectionne la meilleure carte par ratio
-        reward(Points)/durée(min), la clique, puis résout le popup de
-        qualification via les fonctions ps-* génériques (question_analyzer.py) :
-        qualifié → participation lancée par click_participer_if_qualified() ;
-        disqualifié → popup fermé par handle_disqualification_and_retry(), on
-        retente une autre carte (budget borné). Aucune carte exploitable →
-        cooldown générique NO_SURVEY_AVAILABLE (infra partagée, réutilisée
-        telle quelle).
+        reward(Points)/durée(min), la clique, puis résout les éventuelles
+        questions de présélection intermédiaires du popup ps-* (formulaire
+        GPT-répondu, via get_response_for_question/execute_response, mémoire
+        partagée State/survey_memory.py — même table que TopSurveys) jusqu'à
+        déterminer qualifié/disqualifié via les fonctions ps-* génériques déjà
+        en place (click_participer_if_qualified/handle_disqualification_and_retry).
+        Aucune carte exploitable → cooldown générique NO_SURVEY_AVAILABLE
+        (infra partagée, réutilisée telle quelle).
         """
         log_info(_TAG, "select_survey() called")
         page = driver
+
+        api_key = self._resolve_api_key()
+        if not api_key:
+            log_info(
+                _TAG,
+                "select_survey() — OPENAI_API_KEY introuvable (env + cache login) : "
+                "résolution des questions de présélection intermédiaires désactivée",
+            )
 
         try:
             tab = page.wait_for_selector(_SURVEYS_NAV_SEL, state="visible", timeout=15000)
@@ -283,6 +437,32 @@ class PrimeOpinionPlatform(Platform):
             except Exception:
                 log_debug(_TAG, "select_survey() — popup ps-* non visible après 15s, on tente quand même la résolution")
 
+            if api_key:
+                session = SurveySession()
+                outcome = _resolve_preselection_questions(page, api_key, session, uuid_)
+                try:
+                    if outcome == "qualified":
+                        flush_qualified(session)
+                    elif outcome == "disqualified":
+                        flush_disqualified(session)
+                except Exception as e:
+                    log_debug(_TAG, f"select_survey() — flush survey_memory échoué (uuid={uuid_}) : {e}")
+
+                if outcome == "qualified":
+                    log_info(_TAG, "select_survey() — survey qualifié, participation lancée")
+                    return True
+
+                if outcome == "disqualified":
+                    log_info(_TAG, f"select_survey() — carte disqualifiée (uuid={uuid_}), nouvelle tentative")
+                    excluded_uuids.add(uuid_ or f"_dq_{attempt}")
+                    continue
+
+                log_info(_TAG, f"select_survey() — résolution présélection abandonnée (uuid={uuid_}), nouvelle tentative")
+                excluded_uuids.add(uuid_ or f"_unresolved_{attempt}")
+                continue
+
+            # Repli : OPENAI_API_KEY indisponible — comportement minimal
+            # préexistant (pas de résolution des questions intermédiaires).
             if handle_disqualification_and_retry(page):
                 log_info(_TAG, f"select_survey() — carte disqualifiée (uuid={uuid_}), nouvelle tentative")
                 excluded_uuids.add(uuid_ or f"_dq_{attempt}")
