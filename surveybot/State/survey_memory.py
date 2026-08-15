@@ -86,6 +86,13 @@ def _ensure_table(conn) -> None:
                 CREATE INDEX IF NOT EXISTS survey_memory_key_expires
                 ON survey_memory (survey_key, expires_at)
             """)
+            # Index dédié pour le DELETE de purge (_write_attempt), qui filtre uniquement
+            # sur expires_at (toutes clés confondues) — non couvert efficacement par
+            # l'index composite ci-dessus, dont expires_at n'est que la 2e colonne.
+            cur.execute("""
+                CREATE INDEX IF NOT EXISTS survey_memory_expires
+                ON survey_memory (expires_at)
+            """)
         conn.commit()
     except Exception as e:
         conn.rollback()
@@ -93,7 +100,6 @@ def _ensure_table(conn) -> None:
             "[SURVEY_MEMORY] Impossible de créer/modifier survey_memory (rôle sans droits "
             "DDL, attendu si la table existe déjà) : %s", e
         )
-
 
 # ---------------------------------------------------------------------------
 # Key derivation
