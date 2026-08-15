@@ -212,6 +212,11 @@ class PrimeOpinionPlatform(Platform):
                 _AUTHENTICATED_SIGNAL_SEL, state="attached", timeout=20000
             )
             log_info(_TAG, "login() — succès (signal authentifié détecté)")
+            try:
+                from Cash.primeopinion_balance import check_and_claim_if_needed
+                check_and_claim_if_needed(page, os.getenv("ACCOUNT_ID") or "unknown")
+            except Exception as e:
+                log_debug(_TAG, f"login() — vérification solde/retrait post-login échouée (non bloquant) : {e}")
             return True
         except Exception:
             log_info(_TAG, "login() — signal authentifié non détecté après 20s, échec")
@@ -325,6 +330,13 @@ class PrimeOpinionPlatform(Platform):
             return False
 
         log_info(_TAG, "handle_post_survey() — retour sur la liste de sondages détecté")
+
+        try:
+            from Cash.primeopinion_balance import check_and_claim_if_needed
+            check_and_claim_if_needed(page, account_id)
+        except Exception as e:
+            log_debug(_TAG, f"handle_post_survey() — vérification solde/retrait échouée (non bloquant) : {e}")
+
         self.select_survey(page)
         return True
 
