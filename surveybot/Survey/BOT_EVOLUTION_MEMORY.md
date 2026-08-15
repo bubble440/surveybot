@@ -4030,3 +4030,54 @@ Non-regression verifiee : snapshots des 2 patches precedents (triplet date + wid
 equalweb) et snapshot dropdown "How old are you?" — aucun changement de comportement,
 aucune promotion indue d'un libelle d'option en question.
 Statut : patch valide (confirme par l'utilisateur en conditions reelles).
+
+---
+
+## PLATEFORME : DECIPHER/FOCUSVISION — ANSWERS-LIST GENERIQUE (GROUPEMENT PAR NAME) : LIMITE DE SELECTION ("SELECTIONNE JUSQU'A N...") NON PRISE EN COMPTE
+
+Signature DOM : `div.question[role='radiogroup'] / div.question.checkbox / div.question.radio`
+avec `.answers.answers-list` (branche generique, regroupement des inputs par attribut `name`,
+blocs produits avec `context.focusvision_answers_list=True`), et un `h2.instruction-text`
+sibling de `h1.question-text` au niveau du conteneur `.question`, enoncant une limite de
+selection en langage naturel (ex. "Selectionne jusqu'a 3 marques.").
+Confirme sur snapshot `20260814_040958_after_dom_analyze` (question
+`A5_LikelyToBuy_Clothes`, 17 marques + "Autre", `h2.instruction-text` = "Selectionne jusqu'a
+3 marques.").
+
+### _extract_focusvision_answers_list_groups — branche generique (by_name) : fusion de l'instruction dans le texte de question
+Fichier : Survey/dom_extractors_decipher.py (fonction `_extract_focusvision_answers_list_groups`,
+boucle `for name, inps in by_name.items():`, juste avant construction de `target_id`).
+Bug corrige : cette branche generique lisait le texte de question uniquement depuis la
+variable partagee `question` (`.question-text`, calculee une fois en tete de fonction et
+reutilisee par plusieurs branches du meme fichier) sans y fusionner `h2.instruction-text`
+du conteneur `.question` — meme bug deja corrige ailleurs dans ce fichier pour les blocs
+"group-by-col table" et "sq-atm1d" (cf. entrees precedentes), mais non couvert pour cette
+branche generique la plus courante (regroupement par `name`). Consequence observee : le
+modele en aval ne disposait d'aucune trace de la limite affichee a l'utilisateur et
+selectionnait plus d'options que la limite reelle (ex. 3 marques attendues, davantage
+cochees).
+Correction : nouvelle variable locale `instruction_generic` (lue via `h2.instruction-text`,
+meme selecteur deja utilise ailleurs dans le fichier), calculee une fois par conteneur `.question`
+juste avant la boucle `by_name`. Nouvelle variable locale `question_generic` = fusion de
+`question` + `instruction_generic`, utilisee uniquement pour `target_id`,
+`register_target["question"]` et `blocks[].question` de cette branche. La variable partagee
+`question` n'est pas modifiee — aucun impact sur les autres branches d'extraction de la meme
+fonction (group-by-row, group-by-col table, matrix, sq-atm1d), qui la reutilisent plus haut
+et sortent (`continue`) avant d'atteindre cette branche generique.
+Log debug ajoute : `[DECIPHER_ANSWERS_LIST_GENERIC] instruction merged: ...`.
+Patterns couverts :
+- Branche generique answers-list (`by_name`, `focusvision_answers_list=True`) avec
+  `h2.instruction-text` present au niveau du conteneur `.question` (radio ou checkbox).
+Patterns exclus :
+- Aucun changement de calcul de `max_select`/`min_select` pour cette branche (reste
+  `len(options)` pour checkbox / `1` pour radio) — la priorite de la limite textuelle est
+  geree cote `Survey/prompt_builder.py` (regle `selection_rule` deja en place depuis le
+  patch "group-by-col table", non modifiee par ce patch — cf. entree "prompt_builder —
+  selection_rule (checkbox) : priorite explicite a une limite de selection mentionnee dans
+  la question").
+- Autres branches de `_extract_focusvision_answers_list_groups` (group-by-row, group-by-col
+  table, matrix, sq-atm1d) → variable partagee `question` inchangee, fusion strictement
+  locale a la branche generique.
+- Conteneurs `.question` sans `h2.instruction-text` → `instruction_generic=""`,
+  `question_generic == question` (comportement inchange).
+Statut : patch applique, confirme fonctionnel par l'utilisateur en conditions reelles.

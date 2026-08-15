@@ -719,6 +719,25 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
                     if txt:
                         matrix_row_labels[m.group(1)] = txt
 
+        # Instruction optionnelle (h2.instruction-text) de la question globale,
+        # fusionnée dans le texte de question transmis pour la branche générique
+        # answers-list (regroupement par attribut name) — même principe que les
+        # fusions déjà faites plus haut dans ce fichier pour les blocs group-by-col
+        # table et sq-atm1d (enrichissement textuel uniquement, aucune dérivation
+        # de max_select/min_select à partir de ce texte).
+        instruction_generic = ""
+        try:
+            _ins_generic = q.query_selector("h2.instruction-text")
+            if _ins_generic is not None:
+                instruction_generic = (_ins_generic.inner_text() or "").strip()
+        except Exception:
+            instruction_generic = ""
+        if instruction_generic:
+            log_debug(
+                "[DECIPHER_ANSWERS_LIST_GENERIC]",
+                f"instruction merged: {instruction_generic[:80]!r}",
+            )
+
         by_name: dict[str, list] = {}
         all_raw_names = {
             (inp.get_attribute("name") or "").strip()
@@ -966,16 +985,20 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
             if len(options) < 2:
                 continue
 
+            question_generic = (
+                f"{question} {instruction_generic}".strip() if instruction_generic else question
+            )
+
             resolved_itype = "matrix" if matrix_mode and itype == "checkbox" else itype
             group_key = f"{resolved_itype}:name:{name}"
-            target_id = make_target_id("group", group_key, question or name)
+            target_id = make_target_id("group", group_key, question_generic or name)
 
             register_target(target_id, {
                 "kind": "group",
                 "frame_chain": list(frame_chain or []),
                 "itype": resolved_itype,
                 "group_key": group_key,
-                "question": question,
+                "question": question_generic,
                 "input_name": name,
                 "max_select": 1 if resolved_itype == "radio" else len(options),
                 "options": options,
@@ -989,7 +1012,7 @@ def _extract_focusvision_answers_list_groups(driver, frame_chain: list[int] | No
                 "target_id": target_id,
                 "kind": "group",
                 "itype": resolved_itype,
-                "question": question,
+                "question": question_generic,
                 "options": options,
                 "max_select": 1 if resolved_itype == "radio" else len(options),
                 "context": {
