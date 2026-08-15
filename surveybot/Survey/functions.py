@@ -436,7 +436,7 @@ def _resolve_topsurveys_popups(driver, max_attempts: int = _TOPSURVEYS_POPUP_RES
             if _is_target_closed(e):
                 log_debug("[TOPSURVEYS_POPUP_RESOLVE]", f"page fermee pendant re-scan (attempt={attempt}): {e}")
             break
-        if "topsurveys.app" not in url:
+        if "topsurveys.app" not in url and "primeopinion.com" not in url:
             break
 
         if _topsurveys_qualification_popup_active(driver):

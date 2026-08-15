@@ -382,6 +382,9 @@ class PrimeOpinionPlatform(Platform):
         log_info(_TAG, "select_survey() called")
         page = driver
 
+        from Survey.functions import _resolve_topsurveys_popups
+        _resolve_topsurveys_popups(driver)
+
         api_key = self._resolve_api_key()
         if not api_key:
             log_info(
@@ -490,6 +493,9 @@ class PrimeOpinionPlatform(Platform):
         """
         log_info(_TAG, "handle_post_survey() called")
         page = driver
+
+        from Survey.functions import _resolve_topsurveys_popups
+        _resolve_topsurveys_popups(driver)
 
         if not self.is_on_platform(page):
             return False
