@@ -181,11 +181,13 @@ def read_guidance(survey_key: str, question_key: str, page_index: int) -> Memory
       2. Tentative ayant passé cette page avec succès → use_options (bypass GPT)
       3. Tentatives DQ à cette page exacte → avoid_options (inject dans prompt)
 
-    Chaque tier tente d'abord la correspondance exacte par question_key (inchangée,
-    prioritaire). Si elle échoue, repli sur la position (page_index) de la question
-    dans la série : la plateforme peut reformuler légèrement l'énoncé (piping,
-    ponctuation, texte additionnel) d'une tentative à l'autre pour une question
-    fonctionnellement identique, alors que sa position dans la série reste stable.
+    Le repli positionnel (_options_for_page, même page_index sans vérification du
+    contenu de la question) n'est utilisé que pour le palier 3 (avoid_options) : la
+    donnée n'y est qu'injectée comme signal dans le prompt GPT, qui reste l'arbitre
+    final. Les paliers 1 et 2 déclenchent un bypass complet de GPT et exigent donc
+    la correspondance exacte par question_key — un repli positionnel n'offre aucune
+    garantie que la question antérieure est bien la même, en cas de branchement ou
+    de question sautée dans la série.
     """
     guidance = MemoryGuidance()
     if not _pg_available() or not survey_key:
@@ -228,17 +230,10 @@ def read_guidance(survey_key: str, question_key: str, page_index: int) -> Memory
                     return ch.get("chosen_options") or []
             return None
 
-        # 1. Combinaison gagnante
+        # 1. Combinaison gagnante (bypass GPT → correspondance exacte requise, pas de repli positionnel)
         for row in rows:
             if row["outcome"] == "qualified":
                 opts = _options_for(row)
-                if opts is None:
-                    opts = _options_for_page(row, page_index)
-                    if opts is not None:
-                        log.debug(
-                            "[SURVEY_MEMORY] Combinaison gagnante (repli position page %d) survey=%s",
-                            page_index, survey_key[:8],
-                        )
                 if opts is not None:
                     guidance.use_options = opts
                     log.debug(
@@ -247,18 +242,11 @@ def read_guidance(survey_key: str, question_key: str, page_index: int) -> Memory
                     )
                     return guidance
 
-        # 2. Tentative qui a passé cette page (DQ survenu plus tard)
+        # 2. Tentative qui a passé cette page (DQ survenu plus tard) (bypass GPT → idem)
         for row in rows:
             dq_page = row.get("dq_page_index")
             if dq_page is not None and dq_page > page_index:
                 opts = _options_for(row)
-                if opts is None:
-                    opts = _options_for_page(row, page_index)
-                    if opts is not None:
-                        log.debug(
-                            "[SURVEY_MEMORY] Réutilisation page %d (repli position, DQ à %d) survey=%s",
-                            page_index, dq_page, survey_key[:8],
-                        )
                 if opts is not None:
                     guidance.use_options = opts
                     log.debug(
@@ -337,11 +325,18 @@ def _write_attempt(session: SurveySession, outcome: str, dq_page_index: Optional
                         expires_at.isoformat(),
                     ),
                 )
+                # Purge des lignes expirées (TTL 3h) : seul point d'écriture existant,
+                # évite la croissance indéfinie de la table sans composant d'orchestration
+                # séparé. Filtre strict sur expires_at : ne touche jamais une ligne valide.
+                cur.execute("DELETE FROM survey_memory WHERE expires_at <= now()")
+                purged = cur.rowcount
             conn.commit()
             log.info(
                 "[SURVEY_MEMORY] flush %s survey=%s attempt=%s pages=%d",
                 outcome, session.survey_key[:8], session.attempt_id[:8], len(session.choices),
             )
+            if purged:
+                log.debug("[SURVEY_MEMORY] purge %d ligne(s) expirée(s)", purged)
         finally:
             conn.close()
 

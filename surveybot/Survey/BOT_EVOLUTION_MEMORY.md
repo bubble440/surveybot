@@ -3784,6 +3784,61 @@ Statut : patch valide (confirme par l'utilisateur - plus de faux match
 "Genial" observe dans les sequences de logs suivant ce patch).
 ---
 
+## MODULE TRANSVERSAL : SURVEY_MEMORY (State/survey_memory.py) — MÉMOIRE PARTAGÉE INTER-BOTS DE PRÉSÉLECTION : CYCLE DE VIE DE SESSION ET CORRESPONDANCE DE QUESTION
+
+Contexte : State/survey_memory.py stocke, par popup de qualification (SurveySession
+accumulée localement puis flushée en Postgres via flush_disqualified/flush_qualified),
+la séquence ordonnée {question_key, page_index, chosen_options}. À la lecture
+(read_guidance), un bot peut réutiliser une combinaison gagnante, réutiliser les options
+d'une tentative antérieure ayant dépassé la page courante, ou éviter les options ayant
+causé une disqualification à cette page — fil d'Ariane inter-bots sur un même survey_key
+(dérivé de la 1ère question de la série via make_key, TTL 3h).
+
+### SurveySession — recréation dans _skip_card_and_retry (carte abandonnée sans DQ ni qualification)
+Fichier : Survey/survey_handler.py (_run_survey_impl, fonction interne _skip_card_and_retry)
+Bug corrigé : la session mémoire n'était recréée qu'aux points de flush (disqualification
+détectée, qualification). _skip_card_and_retry — appelée sur échec de déclin d'une question
+sensible, action de préselection inconnue, ou échec d'exécution d'une réponse — naviguait
+vers la carte suivante sans flush ni recréation. survey_key (fixé une seule fois par
+set_survey_key_if_first) et le compteur de page restaient donc ceux du popup abandonné,
+contaminant potentiellement le popup suivant (questions du nouveau popup enregistrées sous
+le survey_key de l'ancien).
+Correction : session recréée (SurveySession()) dans _skip_card_and_retry, juste après la
+navigation vers la carte suivante — même principe que les recréations déjà faites après
+flush_disqualified/flush_qualified.
+Patterns couverts :
+- Tout abandon de carte via _skip_card_and_retry (question sensible non déclinable, action
+  de préselection inconnue, échec d'exécution d'une réponse) — session repart de zéro sur
+  la carte suivante.
+Patterns exclus :
+- Points de flush existants (disqualification/qualification) — comportement inchangé.
+- Logique de lecture/écriture de State/survey_memory.py — non touchée par ce patch.
+Statut : patch validé (confirmé en conditions réelles).
+
+### read_guidance — repli positionnel (_options_for_page) restreint au palier avoid_options
+Fichier : State/survey_memory.py (read_guidance, _options_for_page)
+Bug corrigé : un repli positionnel (même page_index, sans vérification du contenu de la
+question — destiné à tolérer une légère variation d'énoncé entre tentatives : piping,
+reformulation) avait été appliqué aux 3 paliers de priorité, y compris "combinaison
+qualifiée" et "page franchie avec succès", qui déclenchent un bypass complet de GPT. Un
+repli purement positionnel pouvait alors associer la question courante à une question sans
+rapport (branchement conditionnel, question sautée dans la série) et faire répondre le bot
+hors-sujet sans aucun garde-fou GPT — risque de propagation/renforcement d'une mauvaise
+association dans la mémoire partagée pour les tentatives suivantes.
+Correction : repli positionnel retiré des paliers "qualifiée" et "page franchie" (bypass) —
+ces paliers exigent désormais une correspondance exacte par question_key. Conservé
+uniquement sur le palier "options à éviter" (avoid_options), où la donnée n'est qu'injectée
+comme signal dans le prompt GPT, qui reste l'arbitre final — impact d'une association
+imparfaite nettement plus faible (pas de bypass).
+Patterns couverts :
+- Variation légère d'énoncé de question entre tentatives, palier avoid_options uniquement.
+Patterns exclus :
+- Paliers "qualifiée" et "page franchie" (bypass GPT) — correspondance exacte (question_key)
+  requise, aucun repli positionnel.
+Statut : patch validé (confirmé en conditions réelles).
+
+---
+
 ## MODULE TRANSVERSAL : YSENSE (ATTACH) — SÉLECTION DE SURVEY ET SAUT DE PRÉSÉLECTION GÉNÉRIQUE
 
 ### YSensePlatform.select_survey — liste de sélecteurs candidats + attente de l'injection réelle des cartes
