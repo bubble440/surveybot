@@ -96,7 +96,7 @@ class RuntimeGuard:
                 return
             self.state.stopped = True
 
-        self._notify(f"🔄 Reset bot : {reason}")
+        self._notify(f"🔄 Reset bot | account_id={self.account_id} | raison={reason}")
 
         if self.on_soft_restart:
             self.on_soft_restart(reason)
@@ -411,7 +411,7 @@ class RuntimeGuard:
             StopReason.PROXY_EXPIRED,
         }:
             self._notify(
-                f"⏸️ Pause bot ({policy.name}) | raison={reason.value}"
+                f"⏸️ Pause bot ({policy.name}) | account_id={self.account_id} | raison={reason.value}"
             )
 
         def _apply_pause(st):
