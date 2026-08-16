@@ -1,18 +1,20 @@
 # wake_scheduler.ps1
 # Relance les bots dont le cooldown Postgres est expire (arret EXIT_VOLUNTARY avec cooldown,
-# session expiree, objectif journalier atteint, etc.) mais que NSSM n'a pas redemarres
-# automatiquement (AppExit 0 Exit).
+# session expiree, objectif journalier atteint, etc.) mais dont le process n'a pas ete
+# redemarre automatiquement (NSSM n'est plus dans la boucle - relance via launch_all.ps1,
+# cf. Utils/ORCHESTRATION_TRACKING.md section 18).
 #
 # Complementaire de check_zombie_bots.ps1 :
-#   check_zombie_bots.ps1  -> restart les bots vivants mais bloques (zombie heartbeat)
+#   check_zombie_bots.ps1  -> restart les bots vivants mais bloques (zombie heartbeat) ou
+#                             reellement arretes suite a un crash/soft_restart
 #   wake_scheduler.ps1     -> restart les bots volontairement arretes apres cooldown expire
 #
-# Regles :
+# Regles (inchangees) :
 #   - Cooldown lu en base Postgres via le mode CLI --query-cooldown de main.py (python.exe).
 #   - EXIT_FATAL (last_exit_code = 3) : jamais relance automatiquement - intervention humaine.
 #   - Marqueur pids\bot_<id>.manual_stop present (pose par stop_bot_manual.ps1) : jamais
 #     relance automatiquement tant que le bot n'a pas ete redemarre au moins une fois.
-#   - Service NSSM deja en cours d'execution : ignore.
+#   - Bot deja actif (PID vivant, verifie via pids\bot_<id>.pid) : ignore.
 #
 # Capture de sortie :
 #   Toute la sortie (Write-Output/Write-Warning/erreurs non gerees) est ecrite dans
@@ -24,25 +26,64 @@
 #   .\wake_scheduler.ps1
 #   .\wake_scheduler.ps1 -AccountsFile "D:\surveybot\accounts.json" -PidsDir "D:\surveybot\pids"
 #
-# Installation en tache planifiee (une seule fois, en tant qu'administrateur) :
-#   $action  = New-ScheduledTaskAction -Execute "powershell.exe" `
-#                -Argument "-NonInteractive -File C:\surveybot\wake_scheduler.ps1"
-#   $trigger = New-ScheduledTaskTrigger -RepetitionInterval (New-TimeSpan -Minutes 5) `
-#                -Once -At (Get-Date)
-#   $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 4)
-#   Register-ScheduledTask -TaskName "SurveyBot_WakeScheduler" -Action $action `
-#     -Trigger $trigger -Settings $settings -RunLevel Highest -Force
+# Installation en tache planifiee (une seule fois, en tant qu'administrateur) - principal
+# INTERACTIVE (compte admin de l'operateur), PAS SYSTEM : un bot relance par ce script doit
+# atterrir dans la meme session Windows interactive que les bots demarres au logon
+# (compositeur DWM actif, GPU reel), pas en Session 0. Voir set-up.txt pour la commande
+# Register-ScheduledTask complete et sa justification.
 
 param(
     [string]$AccountsFile  = "$PSScriptRoot\accounts.json",
     [string]$PidsDir       = "C:\surveybot\pids",
-    [string]$ServicePrefix = "surveybot_",
+    [string]$LaunchAllScript = "$PSScriptRoot\launch_all.ps1",
     [string]$PythonExe     = "$PSScriptRoot\venv\Scripts\python.exe",
     [string]$MainScript    = "$PSScriptRoot\code\main.py",
     [string]$LogFile       = "C:\surveybot\logs\wake_scheduler_task.log"
 )
 
 $MAX_ACCOUNTS = 200   # garde-fou boucle : abort si accounts.json est anormalement grand
+
+# -- Helpers PID (cible launch_all.ps1, plus NSSM) ------------------------------
+# Dupliques ici plutot que partages, pour garder ce script autonome - meme convention
+# deja etablie dans ce projet (cf. stop_bot.ps1, check_zombie_bots.ps1).
+
+function Test-BotProcessAlive {
+    param([int]$ProcessId, [long]$ExpectedStartTicks)
+    try {
+        $p = Get-Process -Id $ProcessId -ErrorAction Stop
+        return ($p.StartTime.Ticks -eq $ExpectedStartTicks)
+    } catch {
+        return $false
+    }
+}
+
+function Test-BotAliveByAccountId {
+    param([string]$AccountId)
+    $pidPath = Join-Path $PidsDir "bot_$AccountId.pid"
+    if (-not (Test-Path $pidPath)) { return $false }
+    $raw = Get-Content -Path $pidPath -Raw -ErrorAction SilentlyContinue
+    if (-not $raw) { return $false }
+    $parts = $raw.Trim() -split '\|'
+    $pidInt = 0
+    $startTicks = 0L
+    if ($parts.Count -ne 2 -or -not [int]::TryParse($parts[0], [ref]$pidInt) -or $pidInt -le 0 -or -not [long]::TryParse($parts[1], [ref]$startTicks)) {
+        return $false
+    }
+    return Test-BotProcessAlive -ProcessId $pidInt -ExpectedStartTicks $startTicks
+}
+
+function Invoke-LaunchAll {
+    # Sous-process powershell.exe dedie (pas un dot-source/appel en processus) : evite
+    # tout risque de ré-execution du bloc Add-Type de launch_all.ps1 dans le meme
+    # AppDomain si plusieurs bots sont relances dans le meme passage de ce script.
+    param([string]$AccountId)
+    try {
+        $result = & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $LaunchAllScript -AccountId $AccountId 2>&1
+        Write-Output "[WAKE] launch_all.ps1 -AccountId $AccountId -> $result"
+    } catch {
+        Write-Warning "[WAKE] echec appel launch_all.ps1 pour $AccountId : $_"
+    }
+}
 
 # -- Capture de sortie (transcript) --------------------------------------------
 $_logDir = Split-Path -Path $LogFile -Parent
@@ -182,26 +223,15 @@ foreach ($accountId in $accountIds) {
         continue
     }
 
-    # - Verification statut NSSM -
-    $svcName   = "$ServicePrefix$accountId"
-    $svcStatus = & nssm status $svcName 2>$null
-    if ($LASTEXITCODE -ne 0) {
-        Write-Warning "[WAKE] bot=$accountId - service $svcName introuvable (nssm code=$LASTEXITCODE), ignore."
-        continue
-    }
-    if ($svcStatus -match "^SERVICE_RUNNING") {
-        Write-Output "[WAKE] bot=$accountId - service deja actif, ignore."
+    # - Verification PID (bot deja actif ?) -
+    if (Test-BotAliveByAccountId -AccountId $accountId) {
+        Write-Output "[WAKE] bot=$accountId - deja actif (PID vivant), ignore."
         continue
     }
 
     # - Demarrage -
-    Write-Output "[WAKE] bot=$accountId - cooldown expire ($($status.cooldown_until_ts)) + service arrete -> nssm start $svcName"
-    try {
-        $result = & nssm start $svcName 2>&1
-        Write-Output "[WAKE] NSSM start $svcName -> $result"
-    } catch {
-        Write-Warning "[WAKE] Impossible de demarrer $svcName : $_"
-    }
+    Write-Output "[WAKE] bot=$accountId - cooldown expire ($($status.cooldown_until_ts)) + arrete -> launch_all.ps1"
+    Invoke-LaunchAll -AccountId $accountId
 }
 
 Write-Output "[WAKE] Termine - $processed compte(s) traite(s)."

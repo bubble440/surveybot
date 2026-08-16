@@ -11,8 +11,10 @@
 #
 # Perimetre suivi (fichiers "files", remplaces automatiquement) :
 #   launch_all.ps1, nssm_setup_bot.ps1, wake_scheduler.ps1, check_zombie_bots.ps1,
-#   stop_bot.ps1, stop_bot_manual.ps1, rotate_orchestration_logs.ps1, run_tabs.ps1,
-#   tools\attach_tab.ps1
+#   stop_bot.ps1, stop_bot_manual.ps1, decommission_nssm.ps1, rotate_orchestration_logs.ps1
+#   NB : decommission_nssm.ps1 est distribue comme les autres (copie de fichier
+#   uniquement) mais reste a EXECUTION MANUELLE EXPLICITE - la synchronisation ne
+#   l'execute jamais automatiquement, voir son propre header.
 # Perimetre "track_only" (hash uniquement, jamais applique automatiquement) :
 #   requirements.txt
 # Explicitement HORS perimetre (jamais inclus ici) :
@@ -42,9 +44,9 @@ $TrackedFiles = @(
     "check_zombie_bots.ps1",
     "stop_bot.ps1",
     "stop_bot_manual.ps1",
+    "decommission_nssm.ps1",
     "rotate_orchestration_logs.ps1",
     "set-up.txt",
-    "setup_machine.ps1",
     "sync_orchestration_scripts.ps1"
 )
 $TrackOnlyFiles = @(

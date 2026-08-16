@@ -1,7 +1,15 @@
 ﻿# launch_all.ps1
-# Lancement MANUEL et PONCTUEL d'un seul compte, pour un test isole - hors perimetre
-# de la supervision de production (NSSM + check_zombie_bots.ps1 + wake_scheduler.ps1,
-# cf. Utils/ORCHESTRATION_TRACKING.md section 9).
+# Lancement des bots depuis accounts.json, en session Windows interactive normale
+# (compositeur DWM actif, GPU reel) - PAS via NSSM (Session 0, sans DWM, invisible en
+# RDP). Cf. Utils/ORCHESTRATION_TRACKING.md section 9 pour l'historique et section 18
+# pour la decision de bascule NSSM -> PID/launch_all.ps1.
+#
+# Deux usages :
+#   - Tache planifiee au logon de l'operateur (-AccountId omis) : lance TOUS les
+#     comptes de accounts.json. C'est le mecanisme de demarrage de parc.
+#   - Manuel et ponctuel (-AccountId fourni) : un seul compte, ex. test isole ou
+#     relance ciblee. Utilise aussi par check_zombie_bots.ps1/wake_scheduler.ps1 (via
+#     un sous-process powershell.exe dedie) pour relancer un bot precis.
 #
 # ISOLATION DE GROUPE DE PROCESSUS (cf. bug fix "isolation console lancement manuel") :
 # le process bot est cree via CreateProcess (Win32, P/Invoke) avec le flag
@@ -14,14 +22,17 @@
 # la racine de son propre groupe (id de groupe = son propre PID), ce qui permet a
 # stop_bot.ps1 de cibler un seul bot sans effet de bord. Voir stop_bot.ps1.
 #
-# NE JAMAIS planifier ce script (Planificateur de taches Windows ou autre) : un bot
-# lance ainsi tourne comme process brut, invisible pour check_zombie_bots.ps1 et
-# wake_scheduler.ps1 qui n'agissent que sur des services NSSM (nssm status/start/
-# restart surveybot_<id>). Le parc de production est exploite exclusivement via les
-# services NSSM installes par nssm_setup_bot.ps1.
+# FENETRAGE DETERMINISTE : chaque bot recoit une position/taille de fenetre Chrome
+# deduite de son index dans accounts.json (SURVEYBOT_WINDOW_X/Y/W/H, consommees par
+# preselection/playwright_launcher.py) - permet a l'operateur connecte en RDP de
+# reperer immediatement le bon compte. L'index est toujours calcule sur la liste
+# COMPLETE de accounts.json, jamais sur un sous-ensemble filtre par -AccountId : un
+# lancement manuel mono-compte obtient la meme position que ce compte aurait en mode
+# "tous les comptes".
 #
 # Usage :
-#   .\launch_all.ps1 -AccountId "topsurveys_bot_001"
+#   .\launch_all.ps1                                  # tous les comptes de accounts.json
+#   .\launch_all.ps1 -AccountId "topsurveys_bot_001"   # un seul compte
 #
 # Prerequis :
 #   - accounts.json dans le meme dossier que ce script (C:\surveybot\, la racine).
@@ -38,13 +49,18 @@
 # jamais swapper ce dossier tant que le bot tourne.
 
 param(
-    [Parameter(Mandatory = $true)]
-    [string]$AccountId,
+    [string]$AccountId    = "",     # vide = tous les comptes de accounts.json
     [string]$AccountsFile = "$PSScriptRoot\accounts.json",
     [string]$PythonExe    = "$PSScriptRoot\venv\Scripts\python.exe",
     [string]$MainScript   = "$PSScriptRoot\code\main.py",
     [string]$PidsDir      = "$PSScriptRoot\pids",
-    [string]$LogDir       = "$PSScriptRoot\logs"
+    [string]$LogDir       = "$PSScriptRoot\logs",
+    # Grille de fenetrage deterministe (voir note "FENETRAGE DETERMINISTE" ci-dessus).
+    [int]   $WindowCols     = 4,
+    [int]   $WindowWidth    = 480,
+    [int]   $WindowHeight   = 320,
+    [int]   $WindowOriginX  = 0,
+    [int]   $WindowOriginY  = 0
 )
 
 Set-StrictMode -Version Latest
@@ -54,6 +70,10 @@ $ErrorActionPreference = "Stop"
 # du cycle courant (bot_$id.log.1 = cycle precedent, ... .10 = plus ancien
 # conserve). Permet l'analyse retrospective de comportements intermittents.
 $LOG_HISTORY_CYCLES = 10
+
+# Garde-fou boucle : abandon si accounts.json est anormalement grand (meme convention
+# que wake_scheduler.ps1/nssm_setup_bot.ps1).
+$MAX_ACCOUNTS = 200
 
 # ---------------------------------------------------------------------------
 # Creation de process isole (CREATE_NEW_PROCESS_GROUP) - cf. note d'isolation en
@@ -261,7 +281,7 @@ function Test-BotProcessAlive {
 }
 
 function Start-Bot {
-    param([hashtable]$Bot)
+    param([hashtable]$Bot, [int]$WindowIndex)
 
     $id          = $Bot.account_id
     $profileDir  = $Bot.profile_dir
@@ -271,6 +291,15 @@ function Start-Bot {
         Write-Log "SKIP $id - profile_dir introuvable : $profileDir"
         return
     }
+
+    # Position/taille de fenetre deterministe, deduite de l'index du compte dans la
+    # liste COMPLETE de accounts.json (voir note "FENETRAGE DETERMINISTE" en tete de
+    # fichier) - consommees par preselection/playwright_launcher.py, ignorees si absentes
+    # (ex. bot lance via NSSM, pas de regression sur ce chemin).
+    $winCol = $WindowIndex % $WindowCols
+    $winRow = [math]::Floor($WindowIndex / $WindowCols)
+    $winX   = $WindowOriginX + ($winCol * $WindowWidth)
+    $winY   = $WindowOriginY + ($winRow * $WindowHeight)
 
     # Variables d'environnement passees au processus
     # LICENSE_KEY et DATABASE_URL sont embarquees dans le compile - absentes ici.
@@ -287,6 +316,10 @@ function Start-Bot {
         "GEO_LON"           = if ($Bot.ContainsKey("geo_lon"))     { $Bot.geo_lon }     else { "2.3522" }
         "SURVEY_LANG"       = if ($Bot.ContainsKey("survey_lang")) { $Bot.survey_lang } else { "fr-FR" }
         "SURVEY_TZ"         = if ($Bot.ContainsKey("survey_tz"))   { $Bot.survey_tz }   else { "Europe/Paris" }
+        "SURVEYBOT_WINDOW_X" = "$winX"
+        "SURVEYBOT_WINDOW_Y" = "$winY"
+        "SURVEYBOT_WINDOW_W" = "$WindowWidth"
+        "SURVEYBOT_WINDOW_H" = "$WindowHeight"
         # Sans ca, print() d'un caractere hors cp1252 (emoji, etc.) plante le process
         # des que stdout est redirige vers un pipe (cas de ce script) au lieu d'un
         # vrai terminal -- deja present dans nssm_setup_bot.ps1, manquait ici.
@@ -403,31 +436,60 @@ if (-not (Test-Path $MainScript)) {
 }
 
 $raw      = Get-Content -Path $AccountsFile -Raw -Encoding UTF8
-$allAccounts = $raw | ConvertFrom-Json
-$accounts = @($allAccounts | Where-Object { $_.account_id -eq $AccountId })
+$allAccounts = @($raw | ConvertFrom-Json)
 
-if ($accounts.Count -eq 0) {
-    Write-Log "ERREUR - aucun compte trouve pour AccountId='$AccountId' dans $AccountsFile"
-    exit 1
+# Index de chaque compte dans la liste COMPLETE (non filtree) - base du fenetrage
+# deterministe (voir note "FENETRAGE DETERMINISTE" en tete de fichier). Construit avant
+# tout filtrage par -AccountId pour rester stable quel que soit le mode d'invocation.
+$accountIndexById = @{}
+for ($i = 0; $i -lt $allAccounts.Count; $i++) {
+    $aid = "$($allAccounts[$i].account_id)"
+    if ($aid) { $accountIndexById[$aid] = $i }
 }
 
-Write-Log "=== launch_all.ps1 demarrage - lancement manuel ponctuel de '$AccountId' ==="
+if ($AccountId) {
+    $accounts = @($allAccounts | Where-Object { $_.account_id -eq $AccountId })
+    if ($accounts.Count -eq 0) {
+        Write-Log "ERREUR - aucun compte trouve pour AccountId='$AccountId' dans $AccountsFile"
+        exit 1
+    }
+    Write-Log "=== launch_all.ps1 demarrage - lancement manuel ponctuel de '$AccountId' ==="
+} else {
+    $accounts = $allAccounts
+    if ($accounts.Count -eq 0) {
+        Write-Log "ERREUR - accounts.json est vide : $AccountsFile"
+        exit 1
+    }
+    if ($accounts.Count -gt $MAX_ACCOUNTS) {
+        Write-Log "ERREUR - $($accounts.Count) comptes > MAX_ACCOUNTS ($MAX_ACCOUNTS) - abort (verifier accounts.json)."
+        exit 1
+    }
+    Write-Log "=== launch_all.ps1 demarrage - lancement de tous les comptes ($($accounts.Count)) ==="
+}
 
 # ---------------------------------------------------------------------------
 # Boucle principale
 # ---------------------------------------------------------------------------
 
+$processed = 0
 foreach ($account in $accounts) {
+    if ($processed -ge $MAX_ACCOUNTS) {
+        Write-Log "AVERTISSEMENT - budget MAX_ACCOUNTS ($MAX_ACCOUNTS) atteint - arret de la boucle."
+        break
+    }
+    $processed++
+
     $bot = @{}
     $account.PSObject.Properties | ForEach-Object { $bot[$_.Name] = $_.Value }
 
     $id      = $bot.account_id
     $pidPath = Get-PidPath $id
+    $winIdx  = if ($accountIndexById.ContainsKey($id)) { $accountIndexById[$id] } else { 0 }
 
     # --- Cas 0 : service NSSM deja installe pour ce compte ---
-    # Le parc de production est exploite via NSSM (nssm_setup_bot.ps1) - un lancement
-    # manuel ici sur un compte deja couvert par un service creerait un double process
-    # sur le meme profil Chrome/proxy.
+    # Garde-fou de transition (NSSM pas encore decommissionne, cf. decommission_nssm.ps1) :
+    # tant qu'un service surveybot_<id> existe pour ce compte, refuser le lancement ici
+    # eviterait un double process sur le meme profil Chrome/proxy.
     if (Test-NssmServiceExists -AccountId $id) {
         Write-Log "ABORT $id - service NSSM surveybot_$id deja installe - lancement manuel refuse (double lancement meme profil/proxy). Utiliser 'nssm start surveybot_$id' ou verifier son statut a la place."
         continue
@@ -458,7 +520,7 @@ foreach ($account in $accounts) {
 
     # --- Cas 2 : lancer le bot ---
     try {
-        Start-Bot $bot
+        Start-Bot -Bot $bot -WindowIndex $winIdx
     } catch {
         Write-Log "ERREUR $id - echec lancement : $_"
     }

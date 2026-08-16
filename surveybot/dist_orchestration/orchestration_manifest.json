@@ -1,9 +1,9 @@
 {
-    "generated_at":  "2026-08-11T22:53:31Z",
+    "generated_at":  "2026-08-16T12:30:15Z",
     "files":  [
                   {
                       "rel_path":  "launch_all.ps1",
-                      "sha256":  "da8a2e3766bc9b3a3b795ea7d88ef949620ded4d2d32a45f095d52d715e58cfd",
+                      "sha256":  "e4a0e5d694128b3877584a7f02be9d688110a381071fed018a4c40b60406d7f0",
                       "url":  "https://pub-565d2bb59d364c1490255c5dddc296aa.r2.dev/orchestration/launch_all.ps1"
                   },
                   {
@@ -13,12 +13,12 @@
                   },
                   {
                       "rel_path":  "wake_scheduler.ps1",
-                      "sha256":  "685f6c4ef54c92a344d8cc1e6d44616490da402a11a6802ca5af1ca739af0530",
+                      "sha256":  "401426465602c1060877a73ba6e2e3439f6493a8e71e6785affe7615235e56cc",
                       "url":  "https://pub-565d2bb59d364c1490255c5dddc296aa.r2.dev/orchestration/wake_scheduler.ps1"
                   },
                   {
                       "rel_path":  "check_zombie_bots.ps1",
-                      "sha256":  "2c3229bc625a9f13f759eaadd5cae2a21697b7a0f8089e1f1d04220a7a115cbc",
+                      "sha256":  "2c7626254f081569f55a93c39a0748006eccf6bd6b09c0f43ccb2e424ae4276a",
                       "url":  "https://pub-565d2bb59d364c1490255c5dddc296aa.r2.dev/orchestration/check_zombie_bots.ps1"
                   },
                   {
@@ -32,19 +32,19 @@
                       "url":  "https://pub-565d2bb59d364c1490255c5dddc296aa.r2.dev/orchestration/stop_bot_manual.ps1"
                   },
                   {
+                      "rel_path":  "decommission_nssm.ps1",
+                      "sha256":  "b87520a3ff27012c3b80260e0bc222d07c4ee7d4bbd0e86f1e73858d15fe6938",
+                      "url":  "https://pub-565d2bb59d364c1490255c5dddc296aa.r2.dev/orchestration/decommission_nssm.ps1"
+                  },
+                  {
                       "rel_path":  "rotate_orchestration_logs.ps1",
                       "sha256":  "c63d29285cb82065846a7e22cd0f27c39ee6dda4d5d60903f97cfeccee2e7044",
                       "url":  "https://pub-565d2bb59d364c1490255c5dddc296aa.r2.dev/orchestration/rotate_orchestration_logs.ps1"
                   },
                   {
                       "rel_path":  "set-up.txt",
-                      "sha256":  "d014a7f2a9f950c89b17003c1dd7a037fc6447c0dbc684df3fdd73b503b918f3",
+                      "sha256":  "524f04359e285b72e576bcb8863661be059038dd0bdccbb13beca3da0a5d9076",
                       "url":  "https://pub-565d2bb59d364c1490255c5dddc296aa.r2.dev/orchestration/set-up.txt"
-                  },
-                  {
-                      "rel_path":  "setup_machine.ps1",
-                      "sha256":  "d12decc1bd7365b8632cb45cdbfe8af289a614432823eb89f88803c847d3457b",
-                      "url":  "https://pub-565d2bb59d364c1490255c5dddc296aa.r2.dev/orchestration/setup_machine.ps1"
                   },
                   {
                       "rel_path":  "sync_orchestration_scripts.ps1",

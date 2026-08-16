@@ -261,9 +261,15 @@ dérivé une fois avec le chemin en dur dans l'ancienne fonction).
   comptes connus avant le check, pas après).
 - **Point de vigilance résiduel** : `launch_all.ps1::Start-Bot` définit ses
   propres défauts `GEO_LAT`/`GEO_LON`/`SURVEY_LANG`/`SURVEY_TZ`, séparément de
-  ceux de `nssm_setup_bot.ps1` (cf. section 7). Risque réduit depuis le
-  26/07/2026 (usage manuel/ponctuel uniquement, plus un chemin de démarrage de
-  parc), mais toujours dupliqué à deux endroits — non corrigé à ce jour.
+  ceux de `nssm_setup_bot.ps1` (cf. section 7). Toujours dupliqué à deux
+  endroits — non corrigé à ce jour.
+- **Décision du 26/07/2026 explicitement révisée le 16/08/2026 (section 18)** :
+  `launch_all.ps1` redevient le mécanisme de démarrage de parc (bascule
+  NSSM → PID, session interactive). `-AccountId` redevient optionnel (vide =
+  tous les comptes) ; le garde-fou `Test-NssmServiceExists` reste néanmoins
+  inchangé (protection utile pendant la transition, tant que NSSM n'est pas
+  décommissionné) et s'applique désormais par bot dans la boucle "tous les
+  comptes", pas seulement en usage mono-compte.
 
 ---
 
@@ -589,17 +595,155 @@ dérivé une fois avec le chemin en dur dans l'ancienne fonction).
 
   ---
 
-*Dernière mise à jour de ce fichier : 08/08/2026 (section 17 : `nssm stop` répété ne
-maintenait pas un bot arrêté durablement — `wake_scheduler.ps1` le relançait dès son
-cooldown Postgres expiré, indiscernable d'un arrêt volontaire automatique normal.
-Correctif via marqueur fichier explicite distinct du cooldown — `stop_bot_manual.ps1`
-nouveau, `wake_scheduler.ps1` ignore le compte si le marqueur existe, levé
-automatiquement au prochain démarrage réel du bot via
-`bot_supervisor.clear_manual_stop_marker()` appelée depuis `main.py`. `_make_stop_handler`
-et le cooldown Postgres volontairement non touchés — `nssm stop` envoie le même signal
-qu'un arrêt de service Windows ordinaire, un correctif au niveau du signal aurait donc
-mis en pause tout le parc après un simple redémarrage machine. Non validé en conditions
-réelles). Précédemment : 29/07/2026 (section 16 : correction d'une fuite
+## 18. Bascule NSSM → PID/`launch_all.ps1` en session interactive — décision actée
+
+- **Problème résolu** : le parc était exploité exclusivement via des services NSSM
+  exécutés en **Session 0** (isolée, sans compositeur DWM, aucun écran physique ni
+  session RDP ne peut afficher une fenêtre Session 0). Deux conséquences : un
+  navigateur bloqué est invisible et irrécupérable pour l'opérateur, et Chrome peut
+  basculer sur un pipeline de rendu logiciel (SwiftShader) au lieu du vrai pipeline
+  GPU en Session 0, ce qui peut désaligner les valeurs WebGL/Canvas déjà travaillées
+  pour coller à un profil de référence.
+- **Décision** : chaque bot tourne désormais en premier plan, dans une session
+  Windows interactive normale (compositeur DWM actif, GPU réel), démarré par une
+  tâche planifiée déclenchée au logon manuel de l'opérateur (pas d'auto-logon, pas de
+  mot de passe stocké — la connexion Windows reste un geste manuel). Les trois
+  briques de supervision gardent **exactement** leur logique de décision existante
+  (cooldown Postgres §8, `EXIT_FATAL`/crash-loop §2, marqueur `manual_stop` §17,
+  seuil heartbeat) — seul leur **mécanisme de vérification d'état et de démarrage**
+  change de cible : NSSM (`nssm status`/`start`/`restart`) → process brut (PID)
+  lancé par `launch_all.ps1`.
+- **`launch_all.ps1`** : `-AccountId` redevient optionnel (vide = tous les comptes
+  de `accounts.json`, usage tâche planifiée au logon ; renseigné = comportement
+  manuel/ponctuel existant, inchangé). Garde-fou `MAX_ACCOUNTS = 200` ajouté (même
+  convention que `wake_scheduler.ps1`). `Test-NssmServiceExists`,
+  `Test-BotProcessAlive`, `SurveyBotIsolatedLauncher`
+  (`CREATE_NEW_PROCESS_GROUP`), la détection PID recyclé et la rotation de logs ne
+  sont **pas modifiés** — ils s'appliquaient déjà par bot dans la boucle existante,
+  réutilisables tels quels pour "tous les comptes".
+- **Fenêtrage déterministe** (nouveau) : chaque bot reçoit une position/taille de
+  fenêtre Chrome déduite de son index dans `accounts.json` (grille par défaut : 4
+  colonnes, cellules 480×320, origine 0,0 — paramétrable), pour que l'opérateur
+  connecté en RDP repère immédiatement le bon compte. L'index est calculé sur la
+  liste **complète** de `accounts.json`, jamais sur un sous-ensemble filtré par
+  `-AccountId` : un lancement manuel mono-compte obtient la même position que ce
+  compte aurait en mode "tous les comptes". Transmis via de nouvelles variables
+  d'environnement `SURVEYBOT_WINDOW_X/Y/W/H`, consommées par
+  `preselection/playwright_launcher.py::launch_browser_playwright()` (remplace
+  `--start-maximized` par `--window-position=X,Y --window-size=W,H` si ces variables
+  sont présentes ; sinon comportement inchangé — additif, un bot NSSM garde
+  `--start-maximized`). `SURVEY_HEADLESS` était déjà à `"0"` (visible) dans
+  `global_config.py` — aucun changement requis sur ce point.
+- **`check_zombie_bots.ps1`** : cible désormais `pids\bot_<id>.pid`/`launch_all.ps1`
+  au lieu de `nssm restart`. Deux chemins distincts, additifs l'un par rapport à
+  l'autre :
+  1. **Bot réellement arrêté** (nouveau — pas seulement zombie) : le process
+     `pids\bot_<id>.pid` n'est plus vivant et `last_exit_code` n'est ni 0 ni 3 (déjà
+     filtré plus haut, donc crash/soft_restart/inconnu) → relance directe via
+     `launch_all.ps1 -AccountId <id>`. NSSM ne supervise plus ce chemin ; sans ce
+     nouveau check, un bot mort après `EXIT_CRASH`/`EXIT_SOFT_RESTART` resterait
+     arrêté indéfiniment (NSSM faisait ce travail via `AppExit Default Restart`).
+  2. **Zombie** (heartbeat périmé, process vivant, chemin existant, seuil 300 s
+     inchangé) : `stop_bot.ps1 -AccountId <id>` (best-effort, `CTRL_BREAK_EVENT`,
+     même mécanisme que `nssm stop`) → attente bornée (35 s, cohérent avec l'ancien
+     `AppStopMethodConsole` NSSM 30 s) → `Stop-Process -Force` en dernier recours si
+     toujours vivant (jamais d'abandon silencieux, log explicite dans tous les cas)
+     → `launch_all.ps1 -AccountId <id>`.
+  Nouveau check additif avant ces deux chemins : marqueur `manual_stop` (même règle
+  que `wake_scheduler.ps1` §17) — jamais relancé si présent. `launch_all.ps1` est
+  invoqué via un **sous-process `powershell.exe` dédié** (`-File`, pas un
+  dot-source/appel en processus), pour éviter tout risque de ré-exécution du bloc
+  `Add-Type` de `launch_all.ps1` dans le même AppDomain si plusieurs bots sont
+  relancés dans le même passage. `$ServicePrefix` supprimé (mort, plus aucun appel
+  `nssm` dans ce script).
+- **`wake_scheduler.ps1`** : seul le bloc final (statut NSSM + `nssm start`) est
+  remplacé par une lecture `pids\bot_<id>.pid` (`Test-BotProcessAlive`, même
+  logique dupliquée que `check_zombie_bots.ps1`) → déjà actif = ignoré, sinon
+  `launch_all.ps1 -AccountId <id>` (même sous-process dédié). Toute la logique de
+  décision en amont (cooldown Postgres §8, exclusion `EXIT_FATAL`, exclusion
+  `manual_stop` §17) est **inchangée**. `$ServicePrefix` supprimé (mort).
+- **Tâche planifiée de démarrage au logon (nouvelle)** : `SurveyBot_LaunchAllOnLogon`
+  (voir `set-up.txt`, étape 3bis), trigger `-AtLogOn` sur le compte admin de
+  l'opérateur, principal `-LogonType Interactive -RunLevel Limited` (pas d'opération
+  admin dans `launch_all.ps1`, contrairement à `nssm_setup_bot.ps1` — évite toute
+  friction UAC silencieuse au logon), action `launch_all.ps1` sans `-AccountId`
+  (tous les comptes).
+- **Retargeting de `SurveyBot_ZombieCheck`/`SurveyBot_WakeScheduler`** (décision
+  explicitement tranchée avec l'opérateur, pas déductible de la seule demande
+  initiale) : ces deux tâches tournaient en `SYSTEM`/`ServiceAccount` (Session 0).
+  Les laisser en `SYSTEM` tout en leur faisant spawner un bot via `launch_all.ps1`
+  aurait fait atterrir le bot relancé de nouveau en Session 0 — exactement le défaut
+  que ce patch corrige, pour tout bot relancé (pas le lancement initial au logon).
+  Décision actée : ces deux tâches basculent aussi sur le compte admin interactif
+  (même principal que `SurveyBot_LaunchAllOnLogon`). Contrepartie assumée : si
+  personne n'est connecté, ces deux tâches ne peuvent plus relancer de bot — jugé
+  cohérent avec le principe "aucun bot ne doit tourner hors session interactive"
+  dans ce nouveau modèle. `SurveyBot_OrchestrationSync` et `SurveyBot_LogRotation`
+  ne spawnent aucun process bot : restent `SYSTEM`, non modifiées.
+- **NSSM non supprimé automatiquement** : `nssm_setup_bot.ps1` n'est pas touché.
+  Nouveau script séparé `decommission_nssm.ps1` (racine du dépôt) : dry-run par
+  défaut (liste uniquement), `-Execute` (admin requis) pour `nssm stop` puis
+  `nssm remove confirm` sur chaque service `surveybot_*`. Jamais appelé
+  automatiquement par un autre script. Ajouté à `$TrackedFiles` dans
+  `build_orchestration_release.ps1` (distribution du fichier seule — la
+  synchronisation ne fait que copier le script, jamais l'exécuter). Décommissionnement
+  réel laissé à une exécution manuelle explicite de l'opérateur, une fois la nouvelle
+  orchestration validée en conditions réelles sur au moins une machine.
+- **`stop_bot_manual.ps1` — point de vigilance non corrigé (hors périmètre de ce
+  patch)** : ce script pose le marqueur `manual_stop` PUIS appelle `nssm stop`. Pour
+  un bot lancé uniquement via `launch_all.ps1` (pas de service NSSM), ce second appel
+  est un no-op silencieux (le marqueur est bien posé, mais le process n'est pas
+  réellement arrêté) — l'opérateur doit compléter avec `stop_bot.ps1 -AccountId <id>`
+  pour arrêter effectivement le process. Documenté dans `set-up.txt` (section
+  "COMMANDES USUELLES"), non corrigé dans le code de `stop_bot_manual.ps1` lui-même
+  (explicitement hors périmètre de ce patch).
+- **Non validé en conditions réelles à ce jour** : vérifié par relecture de code +
+  parsing syntaxique uniquement (pas de machine de prod/RDP accessible depuis cette
+  session). Cycle complet à valider par l'opérateur avant déploiement au parc : tous
+  les comptes lancés au logon avec fenêtres visibles et positionnées, zombie détecté
+  et relancé (fenêtre repositionnée à l'identique), bot réellement arrêté (crash)
+  détecté et relancé, non-régression sur `EXIT_VOLUNTARY`/`EXIT_FATAL`/`manual_stop`.
+- **Aucune modification** du pipeline de résolution de sondage (`survey_handler.py`,
+  `survey_solver.py`, `dom_analyzer.py`, `action_dispatcher.py`, extracteurs par
+  plateforme) — strictement hors périmètre de ce patch.
+- **Fichiers modifiés/créés** : `launch_all.ps1`, `check_zombie_bots.ps1`,
+  `wake_scheduler.ps1`, `preselection/playwright_launcher.py`, `set-up.txt`,
+  `build_orchestration_release.ps1`, `Utils/ORCHESTRATION_TRACKING.md` (modifiés) ;
+  `decommission_nssm.ps1` (nouveau). Non touchés : `nssm_setup_bot.ps1`,
+  `bot_supervisor.py`, `stop_bot.ps1`, `stop_bot_manual.ps1`,
+  `sync_orchestration_scripts.ps1`, `rotate_orchestration_logs.ps1`.
+
+  ---
+
+*Dernière mise à jour de ce fichier : 16/08/2026 (section 18 : bascule de
+l'orchestration du parc, NSSM (services Session 0) → process PID lancés par
+`launch_all.ps1` en session Windows interactive (compositeur DWM actif, GPU réel) —
+résout l'invisibilité d'un navigateur bloqué en Session 0 et le risque de rendu
+logiciel SwiftShader désalignant les valeurs WebGL/Canvas. `launch_all.ps1` redevient
+le mécanisme de démarrage de parc (mode "tous les comptes" réintroduit, décision du
+26/07/2026 explicitement révisée) avec fenêtrage Chrome déterministe par index de
+compte (`SURVEYBOT_WINDOW_X/Y/W/H`, consommées par `playwright_launcher.py`).
+`check_zombie_bots.ps1`/`wake_scheduler.ps1` ciblent désormais `pids\bot_<id>.pid` au
+lieu de services NSSM (logique de décision — cooldown, `EXIT_FATAL`, `manual_stop`,
+seuil heartbeat — inchangée) ; `check_zombie_bots.ps1` relance en plus les bots
+réellement arrêtés (pas seulement zombie), chemin qu'NSSM couvrait auparavant.
+Nouvelle tâche planifiée `SurveyBot_LaunchAllOnLogon` (logon de l'opérateur, pas
+SYSTEM) ; `SurveyBot_ZombieCheck`/`SurveyBot_WakeScheduler` retargetées sur le même
+principal interactif (décision tranchée explicitement avec l'opérateur, pas
+déductible de la demande initiale — sinon un bot relancé par ces deux tâches
+atterrirait de nouveau en Session 0). NSSM non supprimé automatiquement — nouveau
+script séparé `decommission_nssm.ps1`, dry-run par défaut, exécution manuelle
+explicite. Non validé en conditions réelles à ce jour). Précédemment : 08/08/2026
+(section 17 : `nssm stop` répété ne maintenait pas un bot arrêté durablement —
+`wake_scheduler.ps1` le relançait dès son cooldown Postgres expiré, indiscernable
+d'un arrêt volontaire automatique normal. Correctif via marqueur fichier explicite
+distinct du cooldown — `stop_bot_manual.ps1` nouveau, `wake_scheduler.ps1` ignore le
+compte si le marqueur existe, levé automatiquement au prochain démarrage réel du bot
+via `bot_supervisor.clear_manual_stop_marker()` appelée depuis `main.py`.
+`_make_stop_handler` et le cooldown Postgres volontairement non touchés — `nssm stop`
+envoie le même signal qu'un arrêt de service Windows ordinaire, un correctif au
+niveau du signal aurait donc mis en pause tout le parc après un simple redémarrage
+machine. Non validé en conditions réelles). Précédemment : 29/07/2026 (section 16 : correction d'une fuite
 d'attachement console dans `stop_bot.ps1` — `FreeConsole`/`AttachConsole`/
 `GenerateConsoleCtrlEvent` déplacés dans un sous-process jetable pour ne jamais affecter
 la session PowerShell interactive appelante). Précédemment : 29/07/2026 (section 15 :
