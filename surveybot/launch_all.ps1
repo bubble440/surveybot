@@ -22,13 +22,15 @@
 # la racine de son propre groupe (id de groupe = son propre PID), ce qui permet a
 # stop_bot.ps1 de cibler un seul bot sans effet de bord. Voir stop_bot.ps1.
 #
-# FENETRAGE DETERMINISTE : chaque bot recoit une position/taille de fenetre Chrome
-# deduite de son index dans accounts.json (SURVEYBOT_WINDOW_X/Y/W/H, consommees par
-# preselection/playwright_launcher.py) - permet a l'operateur connecte en RDP de
-# reperer immediatement le bon compte. L'index est toujours calcule sur la liste
-# COMPLETE de accounts.json, jamais sur un sous-ensemble filtre par -AccountId : un
-# lancement manuel mono-compte obtient la meme position que ce compte aurait en mode
-# "tous les comptes".
+# FENETRAGE DETERMINISTE : abandonne (cf. Utils/ORCHESTRATION_TRACKING.md). Chaque bot
+# recevait auparavant une position/taille de fenetre Chrome deduite de son index dans
+# accounts.json (SURVEYBOT_WINDOW_X/Y/W/H) pour que l'operateur connecte en RDP repere
+# le bon compte visuellement. Retire : un fenetrage reduit par compte peut tomber sous
+# le seuil responsive de certains sites et bloquer des clics valides en desktop (cas
+# observe en preselection TopSurveys) - preselection/playwright_launcher.py utilise
+# desormais --start-maximized inconditionnel en non-headless. L'identification du bon
+# compte en RDP repose maintenant sur le dummy plug HDMI par machine, voir
+# Utils/DEPLOIEMENT_BAREMETAL_DECISIONS.md.
 #
 # Usage :
 #   .\launch_all.ps1                                  # tous les comptes de accounts.json
@@ -54,13 +56,7 @@ param(
     [string]$PythonExe    = "$PSScriptRoot\venv\Scripts\python.exe",
     [string]$MainScript   = "$PSScriptRoot\code\main.py",
     [string]$PidsDir      = "$PSScriptRoot\pids",
-    [string]$LogDir       = "$PSScriptRoot\logs",
-    # Grille de fenetrage deterministe (voir note "FENETRAGE DETERMINISTE" ci-dessus).
-    [int]   $WindowCols     = 4,
-    [int]   $WindowWidth    = 480,
-    [int]   $WindowHeight   = 320,
-    [int]   $WindowOriginX  = 0,
-    [int]   $WindowOriginY  = 0
+    [string]$LogDir       = "$PSScriptRoot\logs"
 )
 
 Set-StrictMode -Version Latest
@@ -281,7 +277,7 @@ function Test-BotProcessAlive {
 }
 
 function Start-Bot {
-    param([hashtable]$Bot, [int]$WindowIndex)
+    param([hashtable]$Bot)
 
     $id          = $Bot.account_id
     $profileDir  = $Bot.profile_dir
@@ -291,15 +287,6 @@ function Start-Bot {
         Write-Log "SKIP $id - profile_dir introuvable : $profileDir"
         return
     }
-
-    # Position/taille de fenetre deterministe, deduite de l'index du compte dans la
-    # liste COMPLETE de accounts.json (voir note "FENETRAGE DETERMINISTE" en tete de
-    # fichier) - consommees par preselection/playwright_launcher.py, ignorees si absentes
-    # (ex. bot lance via NSSM, pas de regression sur ce chemin).
-    $winCol = $WindowIndex % $WindowCols
-    $winRow = [math]::Floor($WindowIndex / $WindowCols)
-    $winX   = $WindowOriginX + ($winCol * $WindowWidth)
-    $winY   = $WindowOriginY + ($winRow * $WindowHeight)
 
     # Variables d'environnement passees au processus
     # LICENSE_KEY et DATABASE_URL sont embarquees dans le compile - absentes ici.
@@ -316,10 +303,6 @@ function Start-Bot {
         "GEO_LON"           = if ($Bot.ContainsKey("geo_lon"))     { $Bot.geo_lon }     else { "2.3522" }
         "SURVEY_LANG"       = if ($Bot.ContainsKey("survey_lang")) { $Bot.survey_lang } else { "fr-FR" }
         "SURVEY_TZ"         = if ($Bot.ContainsKey("survey_tz"))   { $Bot.survey_tz }   else { "Europe/Paris" }
-        "SURVEYBOT_WINDOW_X" = "$winX"
-        "SURVEYBOT_WINDOW_Y" = "$winY"
-        "SURVEYBOT_WINDOW_W" = "$WindowWidth"
-        "SURVEYBOT_WINDOW_H" = "$WindowHeight"
         # Sans ca, print() d'un caractere hors cp1252 (emoji, etc.) plante le process
         # des que stdout est redirige vers un pipe (cas de ce script) au lieu d'un
         # vrai terminal -- deja present dans nssm_setup_bot.ps1, manquait ici.
@@ -453,15 +436,6 @@ $raw      = Get-Content -Path $AccountsFile -Raw -Encoding UTF8
 $allAccounts = $raw | ConvertFrom-Json
 $allAccounts = @($allAccounts)
 
-# Index de chaque compte dans la liste COMPLETE (non filtree) - base du fenetrage
-# deterministe (voir note "FENETRAGE DETERMINISTE" en tete de fichier). Construit avant
-# tout filtrage par -AccountId pour rester stable quel que soit le mode d'invocation.
-$accountIndexById = @{}
-for ($i = 0; $i -lt $allAccounts.Count; $i++) {
-    $aid = "$($allAccounts[$i].account_id)"
-    if ($aid) { $accountIndexById[$aid] = $i }
-}
-
 if ($AccountId) {
     $accounts = @($allAccounts | Where-Object { $_.account_id -eq $AccountId })
     if ($accounts.Count -eq 0) {
@@ -499,7 +473,6 @@ foreach ($account in $accounts) {
 
     $id      = $bot.account_id
     $pidPath = Get-PidPath $id
-    $winIdx  = if ($accountIndexById.ContainsKey($id)) { $accountIndexById[$id] } else { 0 }
 
     # --- Cas 0 : service NSSM deja installe pour ce compte ---
     # Garde-fou de transition (NSSM pas encore decommissionne, cf. decommission_nssm.ps1) :
@@ -535,7 +508,7 @@ foreach ($account in $accounts) {
 
     # --- Cas 2 : lancer le bot ---
     try {
-        Start-Bot -Bot $bot -WindowIndex $winIdx
+        Start-Bot -Bot $bot
     } catch {
         Write-Log "ERREUR $id - echec lancement : $_"
     }

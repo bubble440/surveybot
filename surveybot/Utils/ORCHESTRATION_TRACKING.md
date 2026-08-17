@@ -715,7 +715,58 @@ dérivé une fois avec le chemin en dur dans l'ancienne fonction).
 
   ---
 
-*Dernière mise à jour de ce fichier : 16/08/2026 (section 18 : bascule de
+## 19. Retrait du fenêtrage déterministe par compte (`launch_all.ps1`, `playwright_launcher.py`) — corrigé
+
+- **Problème observé** : le fenêtrage déterministe introduit en section 18
+  (grille de position/taille Chrome déduite de l'index du compte dans
+  `accounts.json`, variables `SURVEYBOT_WINDOW_X/Y/W/H`) réduisait la taille
+  effective de la fenêtre Chrome pour chaque bot. Constat en présélection
+  TopSurveys : une fenêtre réduite peut tomber sous le seuil responsive de
+  certains sites (bascule en layout mobile/tablette, overlays en position
+  fixe) et bloquer des clics pourtant valides en résolution desktop normale.
+- **Décision** : abandon du fenêtrage déterministe par compte au profit de
+  `--start-maximized` inconditionnel en non-headless.
+  `preselection/playwright_launcher.py` ne lit plus
+  `SURVEYBOT_WINDOW_X/Y/W/H` (retiré, commentaire en place expliquant la
+  raison). En conséquence, ces 4 variables d'environnement sont devenues du
+  code mort dans `launch_all.ps1::Start-Bot` — retirées, ainsi que tout ce qui
+  n'existait que pour les alimenter : les paramètres `-WindowCols`/
+  `-WindowWidth`/`-WindowHeight`/`-WindowOriginX`/`-WindowOriginY` du script,
+  le paramètre `-WindowIndex` de `Start-Bot`, et le calcul d'index
+  `$accountIndexById`/`$winIdx` (plus aucun consommateur après ce nettoyage).
+  Le bloc de commentaire "FENETRAGE DETERMINISTE" en tête de fichier a été mis
+  à jour pour documenter l'abandon, plutôt que retiré, afin qu'un futur
+  lecteur qui chercherait ce mécanisme comprenne pourquoi il n'existe plus.
+- **Conséquence pour l'opérateur** : l'identification du bon compte lors d'une
+  session RDP ne repose plus sur la position/taille de la fenêtre Chrome. Elle
+  repose désormais sur le dummy plug HDMI par machine (1 machine = 1 point
+  d'observation stable), voir `Utils/DEPLOIEMENT_BAREMETAL_DECISIONS.md`.
+- **Portée du patch — nettoyage uniquement** : aucune autre logique de
+  `launch_all.ps1` touchée — isolation de groupe de processus
+  (`CREATE_NEW_PROCESS_GROUP`/`SurveyBotIsolatedLauncher`), gestion
+  PID/`StartTicks` (`Test-BotProcessAlive`), `Test-NssmServiceExists`,
+  rotation de logs (`$LOG_HISTORY_CYCLES`), garde-fou `$MAX_ACCOUNTS`
+  inchangés. Vérifié avant retrait : aucun appelant externe
+  (`check_zombie_bots.ps1`, `wake_scheduler.ps1`,
+  `build_orchestration_release.ps1`) ne référence les paramètres
+  `-Window*` retirés — seul `launch_all.ps1` lui-même les utilisait.
+- **Fichiers modifiés** : `launch_all.ps1`, `Utils/ORCHESTRATION_TRACKING.md`.
+  `preselection/playwright_launcher.py` déjà modifié séparément (hors
+  périmètre de ce patch).
+
+  ---
+
+*Dernière mise à jour de ce fichier : 17/08/2026 (section 19 : retrait du
+fenêtrage déterministe par compte introduit en section 18 — un fenêtrage réduit
+par bot pouvait tomber sous le seuil responsive de certains sites et bloquer des
+clics valides en desktop, cas observé en présélection TopSurveys ;
+`playwright_launcher.py` passe à `--start-maximized` inconditionnel, et
+`launch_all.ps1::Start-Bot` perd le calcul `SURVEYBOT_WINDOW_X/Y/W/H` devenu
+mort, ainsi que les paramètres `-Window*`/`-WindowIndex` et
+`$accountIndexById`/`$winIdx` qui n'existaient que pour l'alimenter.
+L'identification du bon compte en RDP repose désormais sur le dummy plug HDMI
+par machine, pas sur la position/taille de fenêtre). Précédemment : 16/08/2026
+(section 18 : bascule de
 l'orchestration du parc, NSSM (services Session 0) → process PID lancés par
 `launch_all.ps1` en session Windows interactive (compositeur DWM actif, GPU réel) —
 résout l'invisibilité d'un navigateur bloqué en Session 0 et le risque de rendu

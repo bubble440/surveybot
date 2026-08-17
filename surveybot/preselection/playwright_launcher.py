@@ -414,22 +414,20 @@ def launch_browser_playwright(config: dict | None = None):
     # session RDP réels). En non-headless, ça produit un viewport figé incohérent avec
     # window.screen.width/height (signal anti-fraude) et avec la taille de fenêtre réelle.
     # Correction : même approche que launch_browser_playwright_debug() (viewport naturel
-    # + --start-maximized) uniquement pour la fenêtre visible ; le mode headless garde
-    # le viewport fixe existant (pas d'écran réel à faire correspondre).
+    # + --start-maximized) ; le mode headless garde le viewport fixe existant (pas
+    # d'écran réel à faire correspondre).
+    #
+    # Toujours --start-maximized en non-headless, sans positionnement/dimensionnement
+    # personnalisé (décision explicite, cf. Utils/ORCHESTRATION_TRACKING.md) : un
+    # fenêtrage réduit par compte (ex. SURVEYBOT_WINDOW_X/Y/W/H, grille déterministe)
+    # peut tomber sous le seuil responsive de certains sites (layout mobile/tablette,
+    # overlays en position fixe) et bloquer des clics pourtant valides en desktop —
+    # observé en présélection TopSurveys (élément capté par un conteneur fixe,
+    # "outside of viewport" malgré scrollIntoView réussi). Identification du bon
+    # compte en RDP assurée autrement (dummy plug HDMI par machine, cf.
+    # DEPLOIEMENT_BAREMETAL_DECISIONS.md), pas par la taille/position de fenêtre.
     if not headless:
-        # Position/taille deterministe par compte (SURVEYBOT_WINDOW_X/Y/W/H), injectee par
-        # launch_all.ps1 a partir de l'index du compte dans accounts.json - permet a
-        # l'operateur connecte en RDP de reperer immediatement le bon compte parmi
-        # plusieurs fenetres Chrome. Absentes (bot lance via NSSM, mode manuel legacy) :
-        # comportement inchangé (--start-maximized).
-        _wx = os.getenv("SURVEYBOT_WINDOW_X", "").strip()
-        _wy = os.getenv("SURVEYBOT_WINDOW_Y", "").strip()
-        _ww = os.getenv("SURVEYBOT_WINDOW_W", "").strip()
-        _wh = os.getenv("SURVEYBOT_WINDOW_H", "").strip()
-        if _wx and _wy and _ww and _wh:
-            chrome_args += [f"--window-position={_wx},{_wy}", f"--window-size={_ww},{_wh}"]
-        else:
-            chrome_args.append("--start-maximized")
+        chrome_args.append("--start-maximized")
 
     # ── Proxy Playwright natif (pas de relay local) ───────────────────────────
     pw_proxy = None
