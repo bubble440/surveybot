@@ -1828,6 +1828,73 @@ def _consent_screen_stuck_reload_retry(driver) -> bool:
     return False
 
 
+def _detect_phone_verification_screen(driver) -> bool:
+    """
+    Détection en lecture seule (aucun clic/saisie) de l'écran interstitiel de
+    demande de numéro de téléphone sur topsurveys.app : conteneur de
+    vérification de profil ET champ de saisie du numéro conjointement présents
+    dans le DOM. Fonction additive et indépendante de _handle_phone_verification
+    (désactivée) — sert uniquement à déclencher la notification opérateur.
+    """
+    try:
+        current_url = (driver.url or "").lower()
+    except Exception:
+        current_url = ""
+
+    if "topsurveys.app" not in current_url:
+        return False
+
+    try:
+        return bool(driver.evaluate("""() =>
+            !!(document.querySelector('div.phone-verification-container')
+            && document.querySelector('input.phone-number-input'))
+        """))
+    except Exception:
+        return False
+
+
+def notify_phone_verification_screen(driver, account_id) -> bool:
+    """
+    Notifie l'opérateur via Telegram lors de la détection de l'écran de demande
+    de numéro de téléphone (cf. _detect_phone_verification_screen), une seule
+    fois par occurrence : dédupliqué via driver._phone_verif_notified, réarmé
+    dès que l'écran n'est plus détecté. Appelable depuis n'importe quel point de
+    détection existant (boucle de takeover, exécution de page) sans dupliquer la
+    logique de dédoublonnage.
+    """
+    has_screen = _detect_phone_verification_screen(driver)
+
+    if not has_screen:
+        setattr(driver, "_phone_verif_notified", False)
+        return False
+
+    if getattr(driver, "_phone_verif_notified", False):
+        return True
+
+    setattr(driver, "_phone_verif_notified", True)
+    log_info(
+        "[PHONE_VERIF]",
+        f"Écran demande de numéro de téléphone détecté — notification opérateur (account_id={account_id})",
+    )
+
+    tg_token = os.getenv("telegram_bot_token", "").strip()
+    tg_chat = os.getenv("telegram_chat_id", "").strip()
+    if tg_token and tg_chat:
+        try:
+            from Management.notifier import send_telegram
+            send_telegram(
+                f"[PHONE_VERIF] Vérification par numéro de téléphone demandée — account_id : {account_id}",
+                tg_token,
+                tg_chat,
+            )
+        except Exception as e:
+            log_info("[PHONE_VERIF]", f"Notification Telegram échouée: {e}")
+    else:
+        log_info("[PHONE_VERIF]", "Telegram non configuré (telegram_bot_token/telegram_chat_id) — notification console uniquement")
+
+    return True
+
+
 def execute_survey_page(driver, account_id, api_key, ctx=None):
     """
     Orchestration d'une page de survey : DOM analysis → GPT → dispatch actions.
@@ -1872,6 +1939,16 @@ def execute_survey_page(driver, account_id, api_key, ctx=None):
     # _pin_result = _handle_pin_verification(driver)
     # if _pin_result is not None:
         # return _pin_result
+
+    # =========================================================================
+    # PATCH: Notification opérateur écran demande de numéro de téléphone —
+    # détection en lecture seule uniquement (la résolution automatique reste
+    # désactivée ci-dessus). N'interrompt pas le flux d'exécution de la page.
+    # =========================================================================
+    try:
+        notify_phone_verification_screen(driver, account_id)
+    except Exception as _phone_notif_exc:
+        log_debug("[PHONE_VERIF]", f"notify_phone_verification_screen échoué: {_phone_notif_exc}")
 
     # =========================================================================
     # PATCH: Detecter popup TopSurveys

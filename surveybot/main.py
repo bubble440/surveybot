@@ -279,6 +279,15 @@ def run_attach_takeover(driver, *, api_key: str, account_id: str, platform=None)
                         # Écran "Courte pause" (vérification téléphone/PIN) : laisser
                         # execute_survey_page() le traiter via ses handlers dédiés.
                         _has_phone_screen = bool(driver.evaluate("() => !!document.querySelector(\'div.phone-verification-container\')"))
+                        # Notification opérateur (une seule fois par occurrence,
+                        # dédupliquée dans notify_phone_verification_screen) si le
+                        # sous-écran détecté est bien la demande de numéro de
+                        # téléphone (critère DOM précis, distinct du gate ci-dessus
+                        # qui reste inchangé pour couvrir aussi l'écran PIN).
+                        try:
+                            survey_executor.notify_phone_verification_screen(driver, account_id)
+                        except Exception as _phone_notif_exc:
+                            print(f"[ATTACH][PHONE_VERIF] notification échouée: {_phone_notif_exc}")
                         if not _has_phone_screen:
                             _handle_topsurveys_exclusion_popup(driver, account_id)
                             print(f"[ATTACH] Retour TopSurveys détecté step={i} → sortie boucle.")

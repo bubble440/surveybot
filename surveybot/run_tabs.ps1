@@ -15,7 +15,7 @@ param(
   [string]$Platform = "topsurveys"
 )
 
-$ports = 9099
+$ports = 9009
 $projectDir = "C:\projects\Surveys"
 $tabScript  = "C:\projects\Surveys\surveybot\tools\attach_tab.ps1"
 

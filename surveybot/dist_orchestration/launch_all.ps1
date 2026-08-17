@@ -436,7 +436,22 @@ if (-not (Test-Path $MainScript)) {
 }
 
 $raw      = Get-Content -Path $AccountsFile -Raw -Encoding UTF8
-$allAccounts = @($raw | ConvertFrom-Json)
+# IMPORTANT : ne PAS ecrire "@($raw | ConvertFrom-Json)" ici. ConvertFrom-Json emet
+# tout son resultat comme un seul objet de pipeline (pas d'enumeration element par
+# element) ; quand accounts.json est un tableau JSON (cas normal), ce resultat est
+# deja un System.Object[] - @() autour du PIPE le re-emballe alors dans un second
+# tableau (allAccounts[0] devient un System.Object[] au lieu du PSCustomObject du
+# compte). L'acces simple a une propriete (ex. .account_id) "traverse" silencieusement
+# un tableau a un seul element et masque le bug, mais .PSObject.Properties (utilise
+# plus bas pour construire $bot) ne le fait pas : il reflete alors les proprietes du
+# TABLEAU (Length, Rank, IsFixedSize...) au lieu des champs du compte, et plus aucune
+# cle attendue n'existe -> PropertyNotFoundStrict sous Set-StrictMode des le premier
+# compte traite. Correction (confirmee empiriquement) : @() doit envelopper la
+# VARIABLE deja assignee, pas l'appel au pipe - @() ne rajoute alors pas de niveau
+# supplementaire si c'est deja un tableau, et enveloppe correctement un objet JSON
+# unique (accounts.json malforme, un seul compte hors tableau) en tableau a 1 element.
+$allAccounts = $raw | ConvertFrom-Json
+$allAccounts = @($allAccounts)
 
 # Index de chaque compte dans la liste COMPLETE (non filtree) - base du fenetrage
 # deterministe (voir note "FENETRAGE DETERMINISTE" en tete de fichier). Construit avant
