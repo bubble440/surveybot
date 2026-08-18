@@ -1381,9 +1381,23 @@ def _apply_by_target_id(
                         log_debug("[TARGET_DEBUG]", f"target_id='{target_id}' kind='{kind}' itype='{resolved_itype}' value='{value}' -> purespectrum xpath dropdown option introuvable")
                     return False
 
+                def _pw_xpath(raw_xpath: str) -> str:
+                    # Playwright n'auto-détecte le moteur xpath que pour les
+                    # sélecteurs commençant par "//" ou ".." ; un xpath absolu
+                    # "/html/body/..." (format généré par l'extracteur pour ce
+                    # widget) est sinon interprété comme du CSS et lève une
+                    # exception de parsing (cf. diagnostic : query_selector_all
+                    # "Unexpected token /"). Préfixe explicite "xpath=" requis,
+                    # même convention que le reste du fichier (cf. dropdown_block_resolver.py).
+                    s = (raw_xpath or "").strip()
+                    if s and not s.startswith(("xpath=", "//", "..")):
+                        s = "xpath=" + s
+                    return s
+
                 def _click_xpath(xpath: str, label: str = "") -> bool:
                     if not xpath:
                         return False
+                    xpath = _pw_xpath(xpath)
                     node = _find_best_visible(xpath)
                     node_source = "find_best_visible"
                     if node is None:
@@ -1429,9 +1443,10 @@ def _apply_by_target_id(
                     # asservie à l'état réel du dropdown. Budget borné, abandon loggé.
                     _menu_open_max_attempts = 20
                     _menu_open_poll_s = 0.05
+                    _xp_pw = _pw_xpath(xp)
                     menu_open = False
                     for _ in range(_menu_open_max_attempts):
-                        opt_node = _find_best_visible(xp)
+                        opt_node = _find_best_visible(_xp_pw)
                         try:
                             if opt_node is not None and opt_node.is_visible():
                                 menu_open = True
