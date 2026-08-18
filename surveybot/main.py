@@ -964,6 +964,22 @@ def run_attach_preselection_takeover(driver, *, api_key: str, account_id: str, p
             print(f"[ATTACH][PRESEL] abandon contrôlé: reason={reason}")
             return
 
+        # FIX handoff attach : run_preselection_takeover fait le switch de fenêtre
+        # (clic "Participer" -> switch_to_latest_window_and_close_others) sur sa
+        # propre variable locale `driver`, et ne renvoie que (ok, reason) — jamais
+        # la nouvelle Page. `driver` ici continue donc de référencer l'onglet
+        # topsurveys.app fermé par ce switch. Sans resync, la boucle PRESEL->RES
+        # ci-dessous ré-exécute execute_survey_page sur une Page fermée : elle
+        # retombe dans la branche TOPSURVEYS_LISTING (URL topsurveys.app en cache
+        # côté client Playwright même page fermée) à chaque itération, et échoue
+        # systématiquement en TargetClosedError, pendant que le vrai survey
+        # (nouvel onglet externe déjà ouvert) n'est jamais manipulé. Même remède
+        # que la branche non-TopSurveys ci-dessous (réutilisation à l'identique de
+        # _resync_live_page, non modifiée).
+        from preselection.survey_handler import _resync_live_page
+        driver = _resync_live_page(driver)
+        driver._survey_account_id = account_id
+
         print("[ATTACH][PRESEL] présélection terminée -> bascule en résolution survey")
     else:
         # Stratégie additive : pas de moteur de présélection popup pour cette
