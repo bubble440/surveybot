@@ -1381,17 +1381,23 @@ def _apply_by_target_id(
                         log_debug("[TARGET_DEBUG]", f"target_id='{target_id}' kind='{kind}' itype='{resolved_itype}' value='{value}' -> purespectrum xpath dropdown option introuvable")
                     return False
 
-                def _click_xpath(xpath: str) -> bool:
+                def _click_xpath(xpath: str, label: str = "") -> bool:
                     if not xpath:
                         return False
                     node = _find_best_visible(xpath)
+                    node_source = "find_best_visible"
                     if node is None:
                         try:
                             cands = driver.query_selector_all(xpath)
-                            node = cands[0] if cands else None
-                        except Exception:
-                            node = None
+                        except Exception as e_qsa:
+                            cands = []
+                            if debug_target:
+                                log_debug("[TARGET_DEBUG]", f"purespectrum _click_xpath label='{label}' query_selector_all raised {type(e_qsa).__name__}: {e_qsa}")
+                        node = cands[0] if cands else None
+                        node_source = "query_selector_all_fallback"
                     if node is None:
+                        if debug_target:
+                            log_debug("[TARGET_DEBUG]", f"purespectrum _click_xpath label='{label}' no node resolved by xpath (find_best_visible and query_selector_all fallback both empty)")
                         return False
                     try:
                         driver.evaluate("(e) => e.scrollIntoView({block:'center', inline:'center'})",node)
@@ -1400,18 +1406,46 @@ def _apply_by_target_id(
                     try:
                         node.click()
                         return True
-                    except Exception:
+                    except Exception as e_native:
                         try:
                             driver.evaluate("(e) => e.click()",node)
+                            if debug_target:
+                                log_debug("[TARGET_DEBUG]", f"purespectrum _click_xpath label='{label}' native click raised {type(e_native).__name__}: {e_native} -- JS click fallback succeeded (node_source={node_source})")
                             return True
-                        except Exception:
+                        except Exception as e_js:
+                            if debug_target:
+                                log_debug("[TARGET_DEBUG]", f"purespectrum _click_xpath label='{label}' node resolved (node_source={node_source}) but both clicks failed: native={type(e_native).__name__}: {e_native} | js={type(e_js).__name__}: {e_js}")
                             return False
 
                 if toggle_xpath:
-                    _click_xpath(toggle_xpath)
-                    time.sleep(0.1)
+                    if not _click_xpath(toggle_xpath, label="toggle"):
+                        if debug_target:
+                            log_debug("[TARGET_DEBUG]", f"target_id='{target_id}' value='{value}' -> purespectrum dropdown toggle click failed")
+                        return False
 
-                clicked = _click_xpath(xp)
+                    # Le menu ng-bootstrap s'ouvre de façon asynchrone (pas de garantie
+                    # qu'il soit ouvert juste après le clic) : on attend que l'option
+                    # ciblée soit effectivement visible plutôt qu'une pause fixe non
+                    # asservie à l'état réel du dropdown. Budget borné, abandon loggé.
+                    _menu_open_max_attempts = 20
+                    _menu_open_poll_s = 0.05
+                    menu_open = False
+                    for _ in range(_menu_open_max_attempts):
+                        opt_node = _find_best_visible(xp)
+                        try:
+                            if opt_node is not None and opt_node.is_visible():
+                                menu_open = True
+                                break
+                        except Exception:
+                            pass
+                        time.sleep(_menu_open_poll_s)
+
+                    if not menu_open:
+                        if debug_target:
+                            log_debug("[TARGET_DEBUG]", f"target_id='{target_id}' value='{value}' -> purespectrum dropdown menu did not open (budget exhausted)")
+                        return False
+
+                clicked = _click_xpath(xp, label="option")
                 if clicked:
                     return True
 
