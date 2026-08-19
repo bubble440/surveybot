@@ -1,7 +1,7 @@
 ﻿from __future__ import annotations
 import re, unicodedata, os, time, zlib
 import Survey.input_handler
-from Survey.dom_registry import get_target
+from Survey.dom_registry import get_target, get_stable_text_field_locator
 from typing import Optional
 from Survey.log_utils import is_debug, log_debug, log_info
 from config import RUN_ENV, is_cta_intercept_only
@@ -7618,6 +7618,35 @@ def execute_action(
             _field_id = None
             if target_payload:
                 _field_id = (target_payload.get("id") or "").strip() or None
+
+            # --- Registry miss après rescan intra-plan (execute_actions_plan rebuild
+            # le registry entre deux actions text/number, cf. BOT_EVOLUTION_MEMORY.md) ---
+            # make_target_id() (Survey/dom_registry.py) intègre le texte de question dans
+            # son hash. Sur un DOM sans conteneur sémantique identifiable pour ce champ
+            # (pas de classe 'question'/'form-group', pas de <label>), ce texte est résolu
+            # par l'heuristique de proximité géométrique _find_question_text_near_element
+            # (dom_question_extractor.py, non modifiée ici), non garantie stable d'un scan
+            # à l'autre de la même page. target_payload est alors None bien que le champ DOM
+            # (id/name) n'ait pas changé -> _field_id resterait None -> fill_text_input
+            # retomberait sur son sélecteur générique non scopé, qui ne peut correspondre à
+            # aucun input Angular Material (pas d'attribut HTML "type") -> TimeoutError.
+            # Résolution de secours strictement scopée : uniquement quand target_payload
+            # est absent pour ce target_id précis, via le cache id/name capturé lors du tout
+            # premier enregistrement de ce même target_id (get_stable_text_field_locator).
+            if target_payload is None and itype in ("text", "number", "textarea") and target_id:
+                try:
+                    _stable_loc = get_stable_text_field_locator(target_id)
+                except Exception:
+                    _stable_loc = None
+                if _stable_loc:
+                    _field_id = (_stable_loc.get("id") or "").strip() or None
+                    if not _field_id:
+                        _field_id = (_stable_loc.get("name") or "").strip() or None
+                    if _field_id:
+                        log_info(
+                            "[TARGET]",
+                            f"strategy=text_input_stable_id_fallback target_id={target_id!r} field_id={_field_id!r}",
+                        )
 
             # --- Textarea sans id, plusieurs textareas homogènes sur la même page
             # (ex: Askia, 2 questions ouvertes indépendantes <textarea name="S52">/<textarea

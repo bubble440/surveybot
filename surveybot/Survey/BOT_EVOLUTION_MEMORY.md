@@ -3425,13 +3425,39 @@ Patterns exclus :
 Statut : patch anti-crash validé en conditions réelles (log `[TARGET_DEBUG] dropdown
 ps_select_dropdown: dedicated strategy failed, no generic fallback`, plus aucun `AttributeError:
 'ElementHandle' object has no attribute 'tag_name'` ni `execute_actions_plan idx=N crashed`).
-**Non résolu** : la stratégie dédiée elle-même (clic toggle_xpath puis option_xpath_map, ~ligne
-1294-1304) échoue systématiquement sur ce widget (`purespectrum xpath dropdown click failed` pour
-mois ET année, sur DOM desktop de référence confirmé) — cause probable : retour de
-`_click_xpath(toggle_xpath)` non vérifié + `time.sleep(0.1)` fixe non asservi à l'ouverture réelle
-du menu ng-bootstrap (pas de vérification `aria-expanded`/visibilité avant le clic sur l'option).
-Modification de cette stratégie existante en attente de validation explicite (diff proposé, non
-appliqué).
+**Résolu** (patch en 3 étapes, validé en conditions réelles) : la stratégie dédiée (clic
+`toggle_xpath` puis `option_xpath_map`) échouait systématiquement sur ce widget, pour mois ET
+année. Cause racine réelle (établie par logs de diagnostic — différente de l'hypothèse initiale
+`aria-expanded`/timing) : `driver.query_selector_all`/`_find_best_visible` reçoivent les xpaths tels
+que générés par l'extracteur — absolus à slash unique (`/html/body/ps-root/.../button`) — or
+Playwright n'auto-détecte le moteur xpath que pour `//` ou `..` ; un xpath à slash unique est donc
+interprété comme du CSS et lève une exception de parsing (`Unexpected token "/" while parsing css
+selector`), avalée silencieusement par la fonction locale `_click_xpath` → `node` toujours `None` →
+échec identique pour toggle et option (même extracteur, même format de xpath).
+Correction (Survey/action_dispatcher.py, fonction locale `_click_xpath` définie dans le bloc
+`is_ps_select_dropdown`/`is_purespectrum_date_dropdown`, ~ligne 1384-1463) :
+1. Nouvelle fonction locale `_pw_xpath(raw_xpath)` : préfixe `xpath=` si la chaîne ne commence ni
+   par `xpath=`, ni par `//`, ni par `..` — même convention que le reste du fichier
+   (`dropdown_block_resolver.py`, `question_block_resolver.py`, etc.). Appliquée dans `_click_xpath`
+   (couvre toggle ET option, les deux passent par cette fonction) et à l'appel direct de
+   `_find_best_visible` dans la boucle d'attente d'ouverture du menu (point 3).
+2. Le retour du clic sur `toggle_xpath` est désormais vérifié (abandon loggé si échec) au lieu
+   d'être ignoré.
+3. La pause fixe `time.sleep(0.1)` post-toggle est remplacée par un polling borné (20×50ms, budget
+   explicite, abandon loggé) qui attend que le nœud de l'option ciblée soit réellement
+   `is_visible()` avant de tenter le clic — proxy fiable de l'ouverture réelle du menu ng-bootstrap
+   (les `dropdown-item` ne sont visibles que quand `div[ngbdropdownmenu]` a la classe `show`).
+4. Logs de diagnostic ajoutés dans `_click_xpath` (paramètre `label`="toggle"/"option") : distingue
+   nœud introuvable (xpath non résolu, avec exception `query_selector_all` si levée) vs nœud trouvé
+   mais clic natif ET clic JS tous deux en échec (type+message des deux exceptions).
+Zéro modification de `_find_best_visible` (fonction partagée à de nombreux autres blocs — seul
+l'argument passé change) ni du `_click_xpath(driver, xpath)` de portée module (ligne ~586) —
+correction strictement confinée à la fonction locale et à la boucle du bloc
+`is_ps_select_dropdown`/`is_purespectrum_date_dropdown`.
+Statut : validé en conditions réelles — `[TARGET] apply ok=true strategy=target_id reason=applied`
+pour mois (`Juillet`, `group_5d6036b01ebf`) et année (`2001`, `group_73d4417cdad3`) sur le DOM de
+référence (PureSpectrum date de naissance, desktop), plus aucun `purespectrum dropdown toggle click
+failed` ni `purespectrum xpath dropdown click failed`.
 
 ### action_dispatcher.py — guard abandon contrôlé bloc 🟦 RADIO pour purespectrum_mobile_date
 Fichier : Survey/action_dispatcher.py, bloc `if itype == "radio":`, juste après le guard
