@@ -4289,3 +4289,63 @@ Patterns couverts :
 Patterns exclus :
 - `_norm()` lui-même n'est pas modifié (utilisé tel quel ailleurs dans tout le codebase).
 Statut : patch applique, confirme fonctionnel par l'utilisateur en conditions reelles.
+
+---
+
+## CONSENTEMENT COOKIES BLOQUANT (CookieYes) — FERMETURE AVANT CLIC SUR UNE OPTION DE RÉPONSE
+
+Contexte : une bannière de consentement cookies (CookieYes, `div.cky-consent-container`, position
+fixe, ex. coin bas-gauche `cky-box-bottom-left`) peut rester affichée alors que le bot a déjà
+commencé à répondre aux questions de la page — elle n'était jusque-là fermée, si elle l'était, qu'au
+moment du clic sur le CTA de navigation "Suivant" via `try_click_navigation_cta`. Tant qu'elle reste
+ouverte, elle intercepte les clics natifs Playwright sur les cases à cocher situées dans sa zone
+d'affichage : `node.click()` puis `node.hover(); node.click()` échouent chacun après 30 secondes
+("subtree intercepts pointer events"), avec un scroll répété visible induit par l'auto-retry interne
+de Playwright, avant qu'une stratégie de repli (résolution `label[for]` + forçage `checked`) ne finisse
+par appliquer la sélection sans clic réel. Confirmé sur PureSpectrum (`screener.purespectrum.com`,
+question `group_ae4880eda297`), plateforme Angular.
+
+### Appel de _dismiss_blocking_overlays avant les méthodes de clic pointer (_click_candidate)
+Fichier : Survey/action_dispatcher.py, fonction `_click_candidate`.
+`_dismiss_blocking_overlays` (Survey/cta_handler.py) existait déjà, appelée uniquement avant le clic
+du CTA de navigation (`try_click_navigation_cta`) — jamais avant les clics sur les options de réponse
+elles-mêmes. Elle est réutilisée telle quelle (aucune modification de son corps) juste avant les
+méthodes 1 (clic natif) et 2 (hover+clic) de `_click_candidate`, uniquement lors du premier appel pour
+un `target_id` donné (`_first == 1`). Le résultat (nombre d'overlays fermés, ou exception) est
+systématiquement loggé (`[TARGET_DEBUG] _click_candidate: overlay-dismiss dismissed=N|exception=...
+before '<label>'`), y compris en cas d'échec — pas de branche silencieuse.
+Patterns couverts :
+- Tout overlay bloquant détecté et fermé par `_dismiss_blocking_overlays` (voir critères ci-dessous),
+  présent au moment du premier clic tenté sur une nouvelle cible (`target_id`).
+Patterns exclus :
+- Appels suivants pour le même `target_id` une fois une méthode de clic gagnante mise en cache
+  (`_first > 1`) — pas de re-scan à chaque option d'un même groupe de cases à cocher.
+- Aucune modification des méthodes de clic 1 à 4 elles-mêmes, ni de la logique `label[for]` de repli.
+
+### Bug racine dans _dismiss_blocking_overlays — evaluate() ne peut pas renvoyer de handle DOM cliquable
+Fichier : Survey/cta_handler.py, fonction `_dismiss_blocking_overlays`.
+Cause racine confirmée : la fonction récupérait la liste des boutons candidats via `ctx.evaluate(js)`,
+qui ne peut renvoyer que des valeurs sérialisables en JSON — les éléments DOM renvoyés par le script
+(`result.push(chosen)`) étaient donc dépouillés de toute référence exploitable côté Python avant même
+d'atteindre la boucle de clic. Chaque `btn.click()` échouait silencieusement (absorbé par le
+`except: continue` de la boucle), donc `dismissed` restait à `0` en permanence — y compris depuis
+l'appelant d'origine (`try_click_navigation_cta`), sans qu'aucune trace ne le révèle jusqu'à l'ajout du
+log inconditionnel côté `_click_candidate` (cf. entrée ci-dessus). Confirmé reproductible sur
+`.cky-consent-container` malgré des critères de détection (position:fixed, z-index, taille, visibilité)
+satisfaits par cet élément.
+Fix : remplacement de `ctx.evaluate(js)` par `ctx.evaluate_handle(js)` (JSHandle sur le tableau DOM),
+puis extraction de chaque élément individuel via
+`buttons_handle.evaluate_handle("(arr, i) => arr[i]", i).as_element()` pour obtenir un ElementHandle
+réellement cliquable. Aucune modification des critères de détection JS (`JS_FIND_DISMISS_BUTTONS`) ni
+de la logique de choix du bouton (priorité `data-cky-tag` type accept/reject/close).
+Patterns couverts :
+- Tout appelant de `_dismiss_blocking_overlays`, y compris `try_click_navigation_cta` (bénéficie du
+  même correctif sans modification propre).
+Patterns exclus :
+- Aucun changement des sélecteurs CMP existants ailleurs dans le codebase
+  (`CMP_CONTAINER_SELECTORS` de `handle_consent_screen`), non concernés par ce fix.
+Statut : patch appliqué, confirmé fonctionnel par l'utilisateur en conditions réelles (bannière
+CookieYes fermée avant clic sur les options, plus d'échec de clic natif/hover ni de scroll répété
+observé).
+
+---
