@@ -1343,8 +1343,11 @@ def click_primary_cta(driver) -> bool:
 
 def _dismiss_blocking_overlays(driver) -> int:
     """
-    Détecte et ferme les overlays bloquants visibles avant un clic CTA.
-    Critères DOM: position:fixed, z-index >= 1000, contient un bouton visible.
+    Détecte et ferme les overlays de consentement/CMP bloquants visibles avant un clic CTA.
+    Critères DOM: position:fixed, z-index >= 1000, contient un bouton visible, ET porte un
+    indice textuel (aria-label/texte) lié au consentement/vie privée — ce dernier critère
+    exclut les éléments d'UI générique de la page (nav bar, boutons de taille de police, etc.)
+    qui satisferaient sinon les seuls critères de position/taille.
     Budget: max 5 overlays. Retourne le nombre d'overlays fermés.
     """
     JS_FIND_DISMISS_BUTTONS = """
@@ -1352,6 +1355,16 @@ def _dismiss_blocking_overlays(driver) -> int:
       var MIN_ZINDEX = 1000;
       var CLOSE_TAGS = ['accept-button','reject-button','detail-accept-button',
                         'detail-reject-button','detail-close'];
+      // Signal positif obligatoire : position:fixed + z-index élevé ne suffit pas à
+      // distinguer un bandeau de consentement d'un élément d'UI générique de la page
+      // (ex: .ps-navbar, également fixed/z-index>=1000, contenant des boutons "Decrease/
+      // Increase Font Size" qui matchaient par défaut le fallback ci-dessous). On exige
+      // donc un indice textuel lié au consentement/vie privée sur le candidat lui-même,
+      // générique (pas de nom de vendor CMP), multi-langue.
+      var CONSENT_KEYWORDS = [
+        'cookie', 'cookies', 'consent', 'consentement', 'confidentialité',
+        'vie privée', 'privacy', 'gdpr', 'rgpd', 'témoin', 'datenschutz'
+      ];
       var result = [];
       var seenOverlays = [];
       var all = document.querySelectorAll('*');
@@ -1366,6 +1379,12 @@ def _dismiss_blocking_overlays(driver) -> int:
           if (r.width < 20 || r.height < 20) continue;
           if (cs.display === 'none' || cs.visibility === 'hidden' ||
               parseFloat(cs.opacity) < 0.01) continue;
+          var haystack = ((el.getAttribute('aria-label') || '') + ' ' +
+            (el.innerText || el.textContent || '')).toLowerCase();
+          var looksLikeConsent = CONSENT_KEYWORDS.some(function(k) {
+            return haystack.indexOf(k) !== -1;
+          });
+          if (!looksLikeConsent) continue;
           var isDup = false;
           for (var k = 0; k < seenOverlays.length; k++) {
             if (seenOverlays[k].contains(el) || el.contains(seenOverlays[k])) {
