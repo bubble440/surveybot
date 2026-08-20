@@ -188,6 +188,72 @@ def _wait_for_ssi_ciwweb_ready(driver, timeout_s: float = 1.5, poll_s: float = 0
         return
 
 
+def _wait_for_askandanswer_layout_ready(driver, timeout_s: float = 1.5, poll_s: float = 0.1) -> None:
+    """
+    Garde-fou additif, strictement scopé aux pages Ask&Answer/TopSurveys (Angular
+    Material : `app-survey-page` + `div[id^="appQuestionContainer-"]`, cf.
+    _extract_askandanswer_selection_list_questions dans dom_extractors_misc.py) :
+    attend que la géométrie (position/hauteur) des conteneurs de question soit stable
+    entre deux lectures consécutives avant de laisser l'extraction se déclencher.
+
+    Sur ce template, les questions text/textarea sans conteneur sémantique dédié (pas
+    de classe 'question'/'form-group', pas de <label>, pas de <fieldset>/<section>)
+    sont résolues par proximité géométrique (_find_question_text_near_element,
+    dom_question_extractor.py, non modifiée ici). _wait_for_survey_dom() (non modifiée)
+    ne détecte que l'absence de mutation DOM pendant step_s -- même classe de biais que
+    celle déjà documentée pour _wait_for_mriweb_ready : le rendu Angular Material
+    (mat-card, `ng-trigger-animate`) peut continuer à mettre à jour des attributs
+    `style` (opacity/transform) après la fin de l'insertion structurelle des noeuds,
+    avec un budget de stabilité mutation-based (1.2s) parfois insuffisant. Confirmé sur
+    DOM de référence : un scan précédent immédiatement avant l'extraction rapportait 0
+    input détecté, suivi d'une extraction sur une géométrie encore en mouvement (texte
+    de question pollué -- bannière + questions concaténées + compteur de progression --
+    pour un seul des 4 champs texte de la page, celui dont la carte n'avait pas fini de
+    se positionner à l'instant précis de la lecture DOM).
+
+    Garde-fou DOM strict : n'attend QUE si `app-survey-page` ET au moins un
+    `div[id^="appQuestionContainer-"]` sont présents. Sur toute autre plateforme,
+    retour immédiat sans attente ni effet de bord. Budget borné (poll_s, timeout_s)
+    avec abandon contrôlé et log (DOM_CONTEXT_DEBUG) si la géométrie ne se stabilise
+    jamais dans le budget imparti (comportement alors identique à avant ce patch : pas
+    de blocage).
+    """
+    try:
+        current_frame = getattr(driver, "_current_frame", driver)
+        is_askandanswer = bool(
+            current_frame.evaluate(
+                "() => !!(document.querySelector('app-survey-page') "
+                "&& document.querySelector('div[id^=\"appQuestionContainer-\"]'))"
+            )
+        )
+        if not is_askandanswer:
+            return
+
+        snapshot_script = """
+        () => {
+            const nodes = Array.from(document.querySelectorAll('div[id^="appQuestionContainer-"]'));
+            return nodes.map(n => {
+                const r = n.getBoundingClientRect();
+                return n.id + ':' + Math.round(r.top) + ':' + Math.round(r.height);
+            }).join('|');
+        }
+        """
+
+        deadline = time.time() + max(0.0, timeout_s)
+        last_sig = None
+        while time.time() < deadline:
+            sig = current_frame.evaluate(snapshot_script) or ""
+            if sig and sig == last_sig:
+                return
+            last_sig = sig
+            time.sleep(poll_s)
+
+        if _env_truthy("DOM_CONTEXT_DEBUG", "0"):
+            print(f"[DOM_CONTEXT_DEBUG] askandanswer_layout_ready_timeout timeout_s={timeout_s}")
+    except Exception:
+        return
+
+
 # ================================================================================
 # SCORING CONTEXTE DOM
 # ================================================================================

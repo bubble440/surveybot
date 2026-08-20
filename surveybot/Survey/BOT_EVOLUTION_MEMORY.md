@@ -1875,6 +1875,7 @@ Patterns exclus :
 | Decipher/FocusVision card rating | _extract_decipher_cardrating_blocks | button_group générique | `div.sq-cardrating-widget[data-uid]` avec config `rows`/`cardrating:completion` lisible — retour immédiat si match, guard négatif additif sur button_group pour ce widget |
 | Decipher/FocusVision card rating | _extract_decipher_cardrating_blocks | extracteur générique answers-list/matrice (vue QA) | même `data-uid` de widget déjà couvert par `_extract_decipher_cardrating_blocks` → bloc `radio:name:{uid}` de la vue QA cachée supprimé par guard négatif additif |
 | Ipsos/simstore MUI | _extract_image_labelledby_choice_checkbox_blocks | _extract_image_only_choice_checkbox_blocks | inputs SANS `name` + libellé résolu via `aria-labelledby` (vs inputs avec `name` + wrapper label/parent direct) |
+| Ask&Answer/FirstInsight | _extract_askandanswer_ranking_dragdrop_blocks | _extract_askandanswer_selection_list_questions | `data-question-type='RANKING_DRAG_AND_DROP'` + `div.cdk-drop-list`/`div.cdk-drag` (vs `mat-selection-list`/`mat-radio-group`) — les deux sont fusionnés (non exclusifs) par dom_analyzer.py étape 0c, pas de retour anticipé |
 
 ---
 
@@ -4161,4 +4162,130 @@ Patterns exclus :
   locale a la branche generique.
 - Conteneurs `.question` sans `h2.instruction-text` → `instruction_generic=""`,
   `question_generic == question` (comportement inchange).
+
+---
+
+## PLATEFORME : ASK&ANSWER / FIRSTINSIGHT — CLASSEMENT DRAG & DROP (RANKING_DRAG_AND_DROP)
+Signature DOM : `<app-survey-page>` (Angular Material 14 + Angular CDK), conteneurs
+`div[id^='appQuestionContainer-']`. Ce même moteur porte plusieurs patterns déjà couverts
+séparément dans `Survey/dom_extractors_misc.py` : `_extract_askandanswer_mobile_matrix_rows`
+(matrice mobile en panels), `_extract_askandanswer_selection_list_questions`
+(`mat-selection-list` / `mat-radio-group`, listes/radios classiques) — ces deux extracteurs
+existaient avant cette entrée et n'ont pas été modifiés par ce patch.
+
+Bug corrigé : sur une page combinant un `mat-selection-list`/`mat-radio-group` (2 blocs) ET un
+3e bloc `data-question-type="RANKING_DRAG_AND_DROP"` (classement par glisser-déposer, items
+`div.cdk-drag` sans `<mat-list-option>`/`<mat-radio-button>`), le pipeline ne retournait que les
+2 premiers blocs — le 3e disparaissait silencieusement de `blocks_count`/`itypes`, sans
+exception. Confirmé sur snapshot `20260819_012813_after_dom_analyze` (Under Armour, 7 items
+de classement).
+
+### _extract_askandanswer_ranking_dragdrop_blocks
+Fichier : Survey/dom_extractors_misc.py
+Enregistré dans : dom_analyzer.py, `_analyze_dom_current_context`, étape `0c-bis-0` (juste après
+`_extract_askandanswer_selection_list_questions`, avant `_extract_rnw_ionicon_multi_choice_blocks`).
+Guard : `app-survey-page` présent ET `div[id^='appQuestionContainer-'][data-question-type='RANKING_DRAG_AND_DROP']`.
+Patterns couverts :
+- Conteneur : `div cdkDropList` (`div.cdk-drop-list`, `id` du type `cdk-drop-list-N`) contenant
+  N `div.cdk-drag.ranking-option-list` — items ordonnés par position DOM (le rang = la position).
+- Question = `mat-card-title div` ; options = texte de `div.ranking-answer-color` par item
+  (≥2 items requis, dédupliqué par `_norm_key`).
+- Bloc unique `itype=checkbox`, `max_select=len(options)` — même convention que
+  `_extract_confirmit_cf_ranking_blocks` (bloc "full permutation", le texte de la question guide
+  l'ordre attendu, pas de sémantique de sélection classique).
+- `option_xpath_map` : XPath ancré sur le **texte brut** de l'item (whitespace-collapse
+  uniquement, PAS `_norm()`), scopé au `cdkDropList` par `id` — stable après reorder puisque
+  basé sur le contenu, pas la position. Voir bug NFKD ci-dessous : c'est la raison exacte pour
+  laquelle le texte brut est utilisé ici plutôt que `_norm()`.
+- Flag payload `aa_ranking_dragdrop=True` + `aa_ranking_dragdrop_drop_list_xpath` (XPath du
+  conteneur `cdkDropList`, ex. `(//div[@id="cdk-drop-list-0"])[1]`), consommés par la stratégie
+  de dispatch dédiée ci-dessous.
+Patterns exclus :
+- `mat-selection-list`/`mat-radio-group` (mêmes conteneurs `appQuestionContainer-*`) →
+  `_extract_askandanswer_selection_list_questions`, non modifié.
+- Toute page sans `data-question-type='RANKING_DRAG_AND_DROP'` → retour `[]` immédiat.
+
+### dom_analyzer.py — fusion additive `aa_sl_blocks` + `aa_rank_blocks` (étape 0c)
+Fichier : Survey/dom_analyzer.py, `_analyze_dom_current_context`, étape `0c)`.
+Cause racine du bug : `_extract_askandanswer_selection_list_questions` retournait `aa_sl_blocks`
+**immédiatement** dès qu'elle trouvait des blocs (`if aa_sl_blocks: return aa_sl_blocks`),
+empêchant tout extracteur suivant (dont le nouveau `_extract_askandanswer_ranking_dragdrop_blocks`)
+d'être atteint pour cette page.
+Fix : `aa_sl_blocks` n'est plus retourné immédiatement ; `_extract_askandanswer_ranking_dragdrop_blocks`
+est appelé juste après, et `aa_sl_blocks + aa_rank_blocks` est retourné dès que l'un des deux est
+non-vide. Aucune modification du corps des deux extracteurs — uniquement le point d'appel/fusion.
+Patterns couverts :
+- Page avec uniquement `mat-selection-list`/`mat-radio-group` → comportement inchangé
+  (`aa_rank_blocks=[]`, `aa_sl_blocks + [] == aa_sl_blocks`).
+- Page combinant les deux patterns → les 2 (ou plus) blocs `aa_sl_blocks` ET le(s) bloc(s)
+  `aa_rank_blocks` sont tous exposés à l'IA, dans cet ordre.
+Patterns exclus :
+- Aucune autre étape (0a, 0b, 0c-bis...) du pipeline n'est modifiée.
+
+### _aa_ranking_dragdrop_apply / _aa_ranking_dragdrop_locate / _aa_ranking_dragdrop_slot_rect (dispatcher)
+Fichier : Survey/action_dispatcher.py, juste avant `_apply_by_target_id`.
+Emplacement dispatch : dans `_apply_by_target_id → _apply_in_current_context`, guard
+`payload.get("aa_ranking_dragdrop") and resolved_itype == "checkbox"`, placé juste après le bloc
+`alchemer_rank_dragdrop` et avant le chemin générique `opt_map` (comme `alchemer_rank_dragdrop`,
+ce bloc n'a pas d'`option_xpath_map` cliquable exploitable : l'interaction est un drag, pas un clic).
+Différence avec `alchemer_rank_dragdrop`/`decipher_ranksort_dropdown` : pas d'input caché
+exploitable côté DOM — l'ordre est uniquement porté par la position réelle des items `cdkDrag`,
+donc un **drag pointer réellement simulé** est nécessaire (mousedown → mousemove par pas →
+mouseup), même technique déjà validée pour Angular CDK dans `handle_drag_drop_logic._run_drag_attempt`
+(PureSpectrum) plus bas dans ce fichier.
+Patterns couverts :
+- `_aa_ranking_dragdrop_locate` : localise l'item par texte (comparaison NFKD des deux côtés,
+  voir bug ci-dessous), retourne son index courant + son rectangle.
+- `_aa_ranking_dragdrop_slot_rect` : rectangle de l'item actuellement à un index donné (sert de
+  point de dépôt cible).
+- `_aa_ranking_dragdrop_apply` : déplace l'item vers `target_index` (0-based) — dépose au 1er
+  quart de l'item cible en remontant, au 3e quart en descendant (évite les oscillations
+  `cdkDropList` sur un dépôt pile à la frontière). Budget borné : `max_attempts=2`, abandon
+  contrôlé + log `verify_failed`/`item_not_found`/`target_slot_unavailable`/`drag_error` si non
+  atteint après re-vérification (re-localisation par texte, pas de cache d'élément).
+- Ordinal (rang cible = `target_index`) calculé dans `execute_actions_plan`, guard `if
+  _ard_p.get("aa_ranking_dragdrop")`, compteur `driver._aa_ranking_dragdrop_counts` /
+  `driver._aa_ranking_dragdrop_ordinal` réinitialisé à chaque plan — même schéma exact que
+  `alchemer_rank_dragdrop`/`kantar_rowrank`/`decipher_ranksort_dropdown`.
+Patterns exclus :
+- Autres providers ranking (`confirmit_cf_ranking`, `alchemer_rank_dragdrop`,
+  `decipher_ranksort_dropdown`, `askia_ranking_isotope`, `toluna_runtime_ranking`) — non touchés.
+
+### _aa_ranking_dragdrop_suppress_text_selection — sélection de texte native bloquant les drags consécutifs
+Fichier : Survey/action_dispatcher.py, appelée en tête de chaque tentative dans
+`_aa_ranking_dragdrop_apply`.
+Cause racine confirmée (isolée en environnement de test, puis reproduite sur les logs terrain
+fournis par l'utilisateur) : les items de classement sont du texte simple
+(`div.ranking-answer-color`), sans `user-select:none`. Un `mousedown`+`mousemove` simulé dessus
+déclenche la sélection de texte native du navigateur — confirmé directement via
+`window.getSelection().toString()` non vide après un premier drag. Cette sélection résiduelle
+fait que le `mouseup` du drag **suivant** n'a plus aucun effet sur `cdkDropList` : aucune
+exception, aucun déplacement DOM, juste `verify_failed` en boucle. Symptôme observé en prod :
+seul le tout premier item déplacé d'un plan de classement atteignait son rang cible, tous les
+suivants restaient figés à leur position d'avant le plan.
+Fix : `window.getSelection().removeAllRanges()` + `document.body.style.userSelect = 'none'`
+avant chaque tentative de drag. Best-effort (`try/except` silencieux), aucun CTA/side-effect
+métier touché.
+Patterns couverts :
+- Tout drag `aa_ranking_dragdrop` suivant un drag précédent réussi sur la même page.
+Patterns exclus :
+- Hypothèse écartée par test isolé : ce n'est PAS un problème de timing d'animation Angular CDK
+  (une attente supplémentaire seule, sans neutraliser la sélection, ne corrige rien).
+
+### NFKD vs texte DOM — accents dans option_xpath_map (extraction) / needle JS (dispatch)
+Fichier : Survey/dom_extractors_misc.py (`_extract_askandanswer_ranking_dragdrop_blocks`),
+Survey/action_dispatcher.py (`_aa_ranking_dragdrop_locate`).
+Bug corrigé : `Survey.dom_utils._norm()` applique `unicodedata.normalize("NFKD", ...)`, qui
+décompose les caractères accentués (ex. "é" → "e" + accent combinant). Le DOM du navigateur
+(`textContent`/`normalize-space()` XPath) reste en forme composée (NFC, "é" = 1 codepoint).
+Toute comparaison stricte entre un texte `_norm()`-isé et le DOM échouait systématiquement pour
+toute option accentuée (repro confirmé : "Qualités de performance...", "...porté en dehors...").
+Fix : `_extract_askandanswer_ranking_dragdrop_blocks` construit le littéral XPath à partir du
+texte brut (whitespace-collapse seulement, pas de NFKD) ; `_aa_ranking_dragdrop_locate` normalise
+les DEUX côtés (needle Python via `unicodedata.normalize("NFKD", ...)`, texte DOM côté JS via
+`.normalize('NFKD')`) avant comparaison, insensible à la forme d'origine du `value` reçu de l'IA.
+Patterns couverts :
+- Toute option contenant des caractères accentués (é, è, ê, à...) dans ce bloc de classement.
+Patterns exclus :
+- `_norm()` lui-même n'est pas modifié (utilisé tel quel ailleurs dans tout le codebase).
 Statut : patch applique, confirme fonctionnel par l'utilisateur en conditions reelles.

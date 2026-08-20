@@ -999,6 +999,178 @@ def _extract_askandanswer_selection_list_questions(driver, frame_chain: list[int
 
 
 # ================================================================================
+# ASKANDANSWER - RANKING DRAG & DROP QUESTIONS
+# ================================================================================
+
+def _extract_askandanswer_ranking_dragdrop_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
+    """
+    Ask&Answer / FirstInsight (Angular Material + Angular CDK) : question de classement
+    par glisser-déposer (data-question-type="RANKING_DRAG_AND_DROP"), rendue via
+    <div cdkDropList> contenant N <div cdkDrag class="cdk-drag ranking-option-list">.
+
+    Distincte de `_extract_askandanswer_selection_list_questions` (mat-selection-list /
+    mat-radio-group juste au-dessus) : ce pattern n'a ni <mat-list-option> ni
+    <mat-radio-button>, uniquement des items cdkDrag ordonnés par position DOM
+    (le rang = la position dans la liste). Sans ce garde-fou dédié, ce bloc n'est
+    détecté par aucun extracteur existant et disparaît silencieusement du résultat.
+
+    Stratégie DOM-only, stricte et scoped:
+    - ne s'active que si on détecte un <app-survey-page> ET un conteneur
+      appQuestionContainer-* avec data-question-type="RANKING_DRAG_AND_DROP"
+    - retourne 1 bloc checkbox (max_select=nb d'items) par conteneur de classement:
+        - question = mat-card-title
+        - options = texte des items cdkDrag (div.ranking-answer-color), ordre DOM initial
+        - option_xpath_map = XPath par texte d'option, scopé à la cdkDropList (stable après
+          reorder puisque basé sur le texte, pas sur la position)
+        - flag payload `aa_ranking_dragdrop=True` + xpath de la cdkDropList, consommés par
+          la stratégie d'insertion dédiée dans action_dispatcher.py (drag simulé).
+    """
+    frame_chain = list(frame_chain or [])
+
+    # Gate strict : pages Ask&Answer (Angular) uniquement
+    try:
+        if not driver.query_selector_all("app-survey-page"):
+            return []
+    except Exception:
+        return []
+
+    try:
+        containers = driver.query_selector_all(
+            "div[id^='appQuestionContainer-'][data-question-type='RANKING_DRAG_AND_DROP']"
+        )
+    except Exception:
+        containers = []
+
+    if not containers:
+        return []
+
+    blocks: list[dict] = []
+
+    try:
+        max_containers = int(os.getenv("AA_RANKING_DRAGDROP_MAX", "10") or "10")
+        if max_containers <= 0:
+            max_containers = 10
+    except Exception:
+        max_containers = 10
+
+    for container in containers[:max_containers]:
+        try:
+            try:
+                items = container.query_selector_all("div.cdk-drop-list div.cdk-drag.ranking-option-list")
+            except Exception:
+                items = []
+
+            if len(items) < 2:
+                continue
+
+            question = ""
+            try:
+                titles = container.query_selector_all("mat-card-title div")
+                if titles:
+                    question = _norm(titles[0].inner_text() or "")
+            except Exception:
+                question = ""
+
+            if not question:
+                continue
+
+            drop_list_id = ""
+            try:
+                dl = container.query_selector("div.cdk-drop-list")
+                drop_list_id = (dl.get_attribute("id") or "").strip() if dl else ""
+            except Exception:
+                drop_list_id = ""
+
+            options: list[str] = []
+            option_xpath_map: dict[str, str] = {}
+
+            for item in items:
+                try:
+                    raw_text = ""
+                    try:
+                        color_els = item.query_selector_all("div.ranking-answer-color")
+                        if color_els:
+                            raw_text = color_els[0].inner_text() or ""
+                    except Exception:
+                        raw_text = ""
+
+                    label = _norm(raw_text)
+                    if not label:
+                        continue
+
+                    nk = _norm_key(label)
+                    if nk in option_xpath_map:
+                        continue
+
+                    if drop_list_id:
+                        # normalize-space(text()) côté navigateur NE décompose PAS les accents,
+                        # contrairement à _norm() qui applique unicodedata.normalize("NFKD", ...) :
+                        # utiliser le texte brut (whitespace collapse uniquement) pour le littéral
+                        # XPath, sinon toute option accentuée (é/è/ê...) ne matche plus jamais côté
+                        # DOM (repro : "Qualités de performance..." / "...porté en dehors...").
+                        xpath_text = re.sub(r"\s+", " ", raw_text).strip()
+                        xp = (
+                            "(//div[@id=" + _xpath_literal(drop_list_id) + "]"
+                            "//div[contains(concat(' ',normalize-space(@class),' '),' cdk-drag ')]"
+                            "[.//div[contains(concat(' ',normalize-space(@class),' '),' ranking-answer-color ')"
+                            " and normalize-space(text())=" + _xpath_literal(xpath_text) + "]])[1]"
+                        )
+                    else:
+                        xp = _best_xpath_for_element(driver, item)
+
+                    if not xp:
+                        continue
+
+                    option_xpath_map[nk] = xp
+                    options.append(label)
+                except Exception:
+                    continue
+
+            if len(options) < 2 or not option_xpath_map:
+                continue
+
+            cont_id = ""
+            try:
+                cont_id = (container.get_attribute("id") or "").strip()
+            except Exception:
+                cont_id = ""
+
+            group_key = f"aa_ranking_dragdrop:{cont_id}:{drop_list_id}".strip(":")
+            target_id = make_target_id("group", group_key, question)
+
+            drop_list_xpath = f"(//div[@id={_xpath_literal(drop_list_id)}])[1]" if drop_list_id else ""
+
+            register_target(
+                target_id,
+                {
+                    "kind": "group",
+                    "itype": "checkbox",
+                    "group_key": group_key,
+                    "question": question,
+                    "option_xpath_map": option_xpath_map,
+                    "frame_chain": frame_chain,
+                    "aa_ranking_dragdrop": True,
+                    "aa_ranking_dragdrop_drop_list_xpath": drop_list_xpath,
+                },
+            )
+
+            blocks.append(
+                {
+                    "question": question,
+                    "itype": "checkbox",
+                    "options": options,
+                    "max_select": len(options),
+                    "target_id": target_id,
+                    "context": {"kind": "group", "group_key": group_key, "aa_ranking_dragdrop": True},
+                }
+            )
+        except Exception:
+            continue
+
+    return blocks
+
+
+# ================================================================================
 # REACT-NATIVE-WEB - IONICON MULTI-CHOICE
 # ================================================================================
 

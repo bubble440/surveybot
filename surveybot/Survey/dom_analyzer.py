@@ -51,7 +51,8 @@ try:
     # Gestion des frames
     from Survey.dom_frame_selector import (
         _wait_for_survey_dom, _score_dom_context, _select_best_frame_chain,
-        _wait_for_mriweb_ready, _wait_for_ssi_ciwweb_ready
+        _wait_for_mriweb_ready, _wait_for_ssi_ciwweb_ready,
+        _wait_for_askandanswer_layout_ready
     )
 
     # Extracteurs platform-spécifiques
@@ -79,6 +80,7 @@ try:
         _extract_walr_cardsort_block,
         _extract_askandanswer_mobile_matrix_rows,
         _extract_askandanswer_selection_list_questions,
+        _extract_askandanswer_ranking_dragdrop_blocks,
         _extract_rnw_ionicon_multi_choice_blocks,
         _extract_table_matrix_radio_rows,
         _extract_intellisurvey_table_matrix_blocks,
@@ -181,7 +183,8 @@ except ImportError:
     )
     from Survey.dom_frame_selector import (
         _wait_for_survey_dom, _score_dom_context, _select_best_frame_chain,
-        _wait_for_mriweb_ready, _wait_for_ssi_ciwweb_ready
+        _wait_for_mriweb_ready, _wait_for_ssi_ciwweb_ready,
+        _wait_for_askandanswer_layout_ready
     )
     from Survey.dom_extractors_decipher import (
         _extract_focusvision_answers_list_groups,
@@ -205,6 +208,7 @@ except ImportError:
         _extract_walr_cardsort_block,
         _extract_askandanswer_mobile_matrix_rows,
         _extract_askandanswer_selection_list_questions,
+        _extract_askandanswer_ranking_dragdrop_blocks,
         _extract_rnw_ionicon_multi_choice_blocks,
         _extract_table_matrix_radio_rows,
         _extract_intellisurvey_table_matrix_blocks,
@@ -1172,10 +1176,21 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
     # Pattern spécifique
     try:
         aa_sl_blocks = _extract_askandanswer_selection_list_questions(driver, frame_chain)
-        if aa_sl_blocks:
-            return aa_sl_blocks
     except Exception:
-        pass
+        aa_sl_blocks = []
+
+    # --- 0c-bis-0) Ask&Answer / FirstInsight : classement drag & drop (RANKING_DRAG_AND_DROP) ---
+    # Additif : une même page Ask&Answer peut combiner mat-selection-list/mat-radio-group (ci-dessus)
+    # ET un bloc de classement cdkDrag distinct (data-question-type=RANKING_DRAG_AND_DROP).
+    # Sans cette fusion, le early-return historique sur aa_sl_blocks ferait disparaître ce 3e bloc
+    # sans erreur ni exception (cf. BOT_EVOLUTION_MEMORY.md).
+    try:
+        aa_rank_blocks = _extract_askandanswer_ranking_dragdrop_blocks(driver, frame_chain)
+    except Exception:
+        aa_rank_blocks = []
+
+    if aa_sl_blocks or aa_rank_blocks:
+        return aa_sl_blocks + aa_rank_blocks
 
     # --- 0c-bis) React-Native-Web: listes multi avec wrappers tabindex + icône ionicons ---
     # Objectif: extraire les checkboxes custom sans <input> natif.
@@ -4494,6 +4509,11 @@ def analyze_dom(driver) -> List[Dict[str, Any]]:
     # la classe body.element_hidden avant scoring/extraction, cf.
     # _wait_for_ssi_ciwweb_ready. No-op sur toute autre plateforme.
     _wait_for_ssi_ciwweb_ready(driver)
+    # Garde-fou additif scopé Ask&Answer/TopSurveys (Angular Material) : attend la
+    # stabilité géométrique des conteneurs de question (appQuestionContainer-*) avant
+    # scoring/extraction, cf. _wait_for_askandanswer_layout_ready. No-op sur toute
+    # autre plateforme.
+    _wait_for_askandanswer_layout_ready(driver)
 
     # Early exit: Kantar/mrIWeb page with unsupported metaType (e.g. dragndrop)
     _unsupported_meta = _detect_sejson_unsupported_metatype(driver)
@@ -4628,6 +4648,10 @@ def analyze_dom(driver) -> List[Dict[str, Any]]:
         # relecture dans _ctx, no-op strict sur toute page sans signature
         # ssi-form-submit/ciwweb.pl dans ce contexte.
         _wait_for_ssi_ciwweb_ready(driver)
+        # Même logique additive pour le garde-fou Ask&Answer/TopSurveys : relecture
+        # dans _ctx, no-op strict sur tout contexte sans app-survey-page/
+        # appQuestionContainer-*.
+        _wait_for_askandanswer_layout_ready(driver)
 
         # --- FocusVision/Decipher sliderpoints (matrix dropdowns) ---
         sp_blocks = extract_sliderpoints_question_blocks(_ctx)

@@ -983,6 +983,165 @@ def _try_encuesta_matrix_set(driver, row_label: str, col_label: str) -> bool:
     return True
 
 
+# --- Ask&Answer / FirstInsight : classement drag & drop (Angular CDK cdkDropList) ---
+# Bloc posé par _extract_askandanswer_ranking_dragdrop_blocks (dom_extractors_misc.py), flag
+# aa_ranking_dragdrop=True. Pas d'input caché exploitable (contrairement à alchemer_rank_dragdrop) :
+# l'ordre est uniquement porté par la position DOM des items cdkDrag -> il faut un drag pointer
+# réellement simulé (mousedown/mousemove par pas/mouseup), même technique que celle déjà validée
+# pour Angular CDK dans handle_drag_drop_logic._run_drag_attempt plus bas dans ce fichier.
+def _aa_ranking_dragdrop_locate(driver, drop_list_xpath: str, label: str):
+    """
+    Localise, dans la cdkDropList Ask&Answer visée par `drop_list_xpath`, l'item dont le texte
+    (div.ranking-answer-color) correspond à `label` (comparaison normalisée, insensible à la casse).
+    Retourne {"index": int, "count": int, "left"/"top"/"width"/"height": float} ou None.
+    """
+    try:
+        _dl_sel = drop_list_xpath if drop_list_xpath.startswith(("xpath=", "//", "..")) else "xpath=" + drop_list_xpath
+        dl = driver.query_selector(_dl_sel)
+    except Exception:
+        dl = None
+    if not dl:
+        return None
+
+    # NFKD avant comparaison : le texte DOM (normalize-space côté navigateur / textContent brut)
+    # reste en forme composée (NFC, ex: "é" = 1 codepoint) alors que les labels extraits via
+    # Survey.dom_utils._norm() sont NFKD-décomposés (ex: "é" = "e" + accent combinant) ; sans
+    # normaliser les deux côtés vers NFKD ici, toute option accentuée ne matche jamais.
+    needle_norm = unicodedata.normalize("NFKD", re.sub(r"\s+", " ", (label or "").strip())).lower()
+    needle = needle_norm.replace("\\", "\\\\").replace("'", "\\'")
+    try:
+        data = driver.evaluate(
+            f"""(_dl) => {{
+                const needle = '{needle}';
+                const norm = s => (s || '').normalize('NFKD').replace(/\\s+/g, ' ').trim().toLowerCase();
+                const items = Array.from(_dl.querySelectorAll('div.cdk-drag.ranking-option-list'));
+                let idx = -1;
+                for (let i = 0; i < items.length; i++) {{
+                    const t = items[i].querySelector('div.ranking-answer-color');
+                    if (norm(t ? t.textContent : '') === needle) {{ idx = i; break; }}
+                }}
+                if (idx === -1) return null;
+                const r = items[idx].getBoundingClientRect();
+                return {{index: idx, count: items.length, left: r.left, top: r.top, width: r.width, height: r.height}};
+            }}""",
+            dl,
+        )
+    except Exception:
+        data = None
+    return data if isinstance(data, dict) else None
+
+
+def _aa_ranking_dragdrop_slot_rect(driver, drop_list_xpath: str, slot_index: int):
+    """Rectangle de l'item actuellement à l'index `slot_index` dans la cdkDropList, ou None."""
+    try:
+        _dl_sel = drop_list_xpath if drop_list_xpath.startswith(("xpath=", "//", "..")) else "xpath=" + drop_list_xpath
+        dl = driver.query_selector(_dl_sel)
+    except Exception:
+        dl = None
+    if not dl:
+        return None
+    try:
+        data = driver.evaluate(
+            f"""(_dl) => {{
+                const items = Array.from(_dl.querySelectorAll('div.cdk-drag.ranking-option-list'));
+                const it = items[{int(slot_index)}];
+                if (!it) return null;
+                const r = it.getBoundingClientRect();
+                return {{left: r.left, top: r.top, width: r.width, height: r.height}};
+            }}""",
+            dl,
+        )
+    except Exception:
+        data = None
+    return data if isinstance(data, dict) else None
+
+
+def _aa_ranking_dragdrop_suppress_text_selection(driver) -> None:
+    """
+    Neutralise la sélection de texte native avant un drag pointer simulé sur la cdkDropList.
+
+    Cause racine confirmée (repro isolé) : les items de classement sont du texte simple
+    (div.ranking-answer-color) ; un mousedown+move simulé sur du texte déclenche la sélection
+    de texte native du navigateur (window.getSelection() non vide après le 1er drag). Cette
+    sélection résiduelle fait que le mouseup du drag SUIVANT n'a plus aucun effet sur la
+    cdkDropList (aucune exception, aucun déplacement DOM) — reproduit et confirmé en isolant
+    la cause (drag2 fonctionne dès que user-select est désactivé, sans aucun autre changement).
+    Best-effort, jamais bloquant : ne touche à aucun CTA/side-effect métier.
+    """
+    try:
+        driver.evaluate(
+            "() => { try { window.getSelection().removeAllRanges(); } catch (e) {} "
+            "document.body.style.userSelect = 'none'; document.body.style.webkitUserSelect = 'none'; }"
+        )
+    except Exception:
+        pass
+
+
+def _aa_ranking_dragdrop_apply(driver, drop_list_xpath: str, label: str, target_index: int, *, max_attempts: int = 2) -> bool:
+    """
+    Déplace l'item `label` de la cdkDropList Ask&Answer vers l'index cible `target_index` (0-based)
+    via un drag pointer simulé. Budget borné : `max_attempts` tentatives, abandon contrôlé + log
+    si non atteint (pas de fallback empilé).
+    """
+    for attempt in range(1, max_attempts + 1):
+        _aa_ranking_dragdrop_suppress_text_selection(driver)
+        loc = _aa_ranking_dragdrop_locate(driver, drop_list_xpath, label)
+        if not loc:
+            log_debug("[TARGET_DEBUG]", f"aa_ranking_dragdrop: attempt={attempt} item_not_found label={label!r}")
+            return False
+
+        cur_idx = loc["index"]
+        count = loc["count"]
+        if cur_idx == target_index:
+            log_debug("[TARGET_DEBUG]", f"aa_ranking_dragdrop: already_in_place label={label!r} index={cur_idx}")
+            return True
+
+        clamped_target = max(0, min(target_index, count - 1))
+        target_rect = _aa_ranking_dragdrop_slot_rect(driver, drop_list_xpath, clamped_target)
+        if not target_rect:
+            log_debug("[TARGET_DEBUG]", f"aa_ranking_dragdrop: attempt={attempt} target_slot_unavailable index={clamped_target}")
+            continue
+
+        start_x = loc["left"] + loc["width"] / 2
+        start_y = loc["top"] + loc["height"] / 2
+        end_x = target_rect["left"] + target_rect["width"] / 2
+        # Dépose au 1er quart de l'item cible en remontant (avant lui), au 3e quart en descendant
+        # (après lui) : évite les oscillations cdkDropList quand le point de dépôt tombe pile à
+        # la frontière entre deux items.
+        if clamped_target < cur_idx:
+            end_y = target_rect["top"] + target_rect["height"] * 0.25
+        else:
+            end_y = target_rect["top"] + target_rect["height"] * 0.75
+
+        try:
+            driver.mouse.move(int(start_x), int(start_y))
+            driver.mouse.down()
+            steps = 10
+            for step in range(1, steps + 1):
+                ix = int(start_x + ((end_x - start_x) * step) / steps)
+                iy = int(start_y + ((end_y - start_y) * step) / steps)
+                driver.mouse.move(ix, iy)
+                time.sleep(0.02)
+            time.sleep(0.05)
+            driver.mouse.up()
+        except Exception as e:
+            log_debug("[TARGET_DEBUG]", f"aa_ranking_dragdrop: attempt={attempt} drag_error={_short_exc(e)}")
+            continue
+
+        time.sleep(0.2)
+        after = _aa_ranking_dragdrop_locate(driver, drop_list_xpath, label)
+        if after and after["index"] == target_index:
+            log_debug("[TARGET_DEBUG]", f"aa_ranking_dragdrop: attempt={attempt} ok label={label!r} index={after['index']}")
+            return True
+        log_debug(
+            "[TARGET_DEBUG]",
+            f"aa_ranking_dragdrop: attempt={attempt} verify_failed label={label!r} "
+            f"index={(after or {}).get('index')} expected={target_index}",
+        )
+
+    return False
+
+
 def _apply_by_target_id(
     driver,
     target_id: str,
@@ -2094,6 +2253,33 @@ def _apply_by_target_id(
                 )
                 return _ar_ok
 
+            # Guard aa_ranking_dragdrop : 1 bloc checkbox, N items à classer par glisser-déposer
+            # (Angular CDK cdkDropList, Ask&Answer/FirstInsight). Placé avant le bloc opt_map :
+            # l'interaction est un drag pointer, pas un clic sur option_xpath_map.
+            # value = texte de l'item retourné par IA ; ordinal = sa position 1-based dans le plan
+            # (calculé dans execute_actions_plan, comme alchemer_rank_dragdrop ci-dessus).
+            if payload.get("aa_ranking_dragdrop") and resolved_itype == "checkbox":
+                _ard_drop_xp = payload.get("aa_ranking_dragdrop_drop_list_xpath") or ""
+                if not _ard_drop_xp:
+                    log_debug("[TARGET_DEBUG]", "aa_ranking_dragdrop: drop_list_xpath manquant")
+                    return False
+
+                _ard_ordinal = int(getattr(driver, "_aa_ranking_dragdrop_ordinal", 1) or 1)
+                _ard_target_index = max(0, _ard_ordinal - 1)
+
+                _ard_ok = _aa_ranking_dragdrop_apply(driver, _ard_drop_xp, value, _ard_target_index)
+
+                log_debug(
+                    "[TARGET_DEBUG]",
+                    f"aa_ranking_dragdrop: {'ok' if _ard_ok else 'ko'} item={value!r} target_index={_ard_target_index}",
+                )
+                if _ard_ok:
+                    log_info(
+                        "[TARGET]",
+                        f"apply ok=true strategy=aa_ranking_dragdrop item={value!r} target_index={_ard_target_index}",
+                    )
+                return _ard_ok
+
             if opt_map and resolved_itype in ("radio", "checkbox") and not _skip_opt_map_for_cached_checkbox:
 
                 # Toluna Runtime AnswerRow: chemin DOM custom prioritaire et idempotent.
@@ -2609,6 +2795,31 @@ def _apply_by_target_id(
                                 _first = 3
                         except Exception:
                             pass
+
+                    # Overlay bloquant (ex: bannière de consentement cookies jamais fermée en
+                    # amont, position:fixed, toujours au-dessus du point de clic quel que soit le
+                    # scroll) : les méthodes pointer (1 et 2) timeouteront à 30s chacune
+                    # ("subtree intercepts pointer events"), avec scroll répété induit par
+                    # l'auto-retry Playwright.
+                    # _dismiss_blocking_overlays (cta_handler.py) couvre déjà ce cas avant le clic
+                    # CTA de navigation : scan direct de tout élément position:fixed + z-index
+                    # élevé (indépendant de la profondeur d'un point de clic donné, donc insensible
+                    # à la profondeur d'imbrication du DOM sous le conteneur réellement fixe). On
+                    # le réutilise tel quel ici, avant les méthodes pointer, pour ce premier appel
+                    # seulement — aucune modification de son corps.
+                    # Diagnostic: le résultat (y compris échec/exception) est toujours loggé
+                    # (plus de branche silencieuse) pour distinguer un appel non atteint,
+                    # une exception avalée, ou une détection qui ne trouve réellement rien.
+                    if _first == 1:
+                        _overlay_dismiss_outcome = None
+                        try:
+                            from Survey.cta_handler import _dismiss_blocking_overlays
+                            _dismissed_overlays = _dismiss_blocking_overlays(driver)
+                            _overlay_dismiss_outcome = f"dismissed={_dismissed_overlays}"
+                        except Exception as _overlay_exc:
+                            _overlay_dismiss_outcome = f"exception={_short_exc(_overlay_exc)}"
+                        if debug_target:
+                            log_debug("[TARGET_DEBUG]", f"_click_candidate: overlay-dismiss {_overlay_dismiss_outcome} before {label!r}")
 
                     # 1) click webdriver standard
                     if _first <= 1:
@@ -7864,6 +8075,10 @@ def execute_actions_plan(
     driver._alchemer_rank_dragdrop_counts = {}
     driver._alchemer_rank_dragdrop_ordinal = 1
 
+    # Compteurs ordinaux aa_ranking_dragdrop : réinitialisés à chaque plan (par qid)
+    driver._aa_ranking_dragdrop_counts = {}
+    driver._aa_ranking_dragdrop_ordinal = 1
+
     try:
         url_before = driver.url
     except Exception:
@@ -7994,6 +8209,23 @@ def execute_actions_plan(
                         driver._alchemer_rank_dragdrop_ordinal = 1
                 except Exception:
                     driver._alchemer_rank_dragdrop_ordinal = 1
+
+            # AA ranking_dragdrop (Ask&Answer cdkDrag) : rang ordinal (1-based) pour cette action dans le plan
+            if tid:
+                try:
+                    _ard_p = get_target(tid) or {}
+                    if _ard_p.get("aa_ranking_dragdrop"):
+                        _ard_key = qid or tid
+                        if not hasattr(driver, "_aa_ranking_dragdrop_counts"):
+                            driver._aa_ranking_dragdrop_counts = {}
+                        driver._aa_ranking_dragdrop_counts[_ard_key] = (
+                            driver._aa_ranking_dragdrop_counts.get(_ard_key, 0) + 1
+                        )
+                        driver._aa_ranking_dragdrop_ordinal = driver._aa_ranking_dragdrop_counts[_ard_key]
+                    else:
+                        driver._aa_ranking_dragdrop_ordinal = 1
+                except Exception:
+                    driver._aa_ranking_dragdrop_ordinal = 1
 
             if tid and qid:
                 instruction = f"{qid} //// {tid} //// {value} //// {itype} //// {context}"
