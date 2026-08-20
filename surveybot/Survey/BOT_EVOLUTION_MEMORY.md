@@ -4348,4 +4348,39 @@ Statut : patch appliqué, confirmé fonctionnel par l'utilisateur en conditions 
 CookieYes fermée avant clic sur les options, plus d'échec de clic natif/hover ni de scroll répété
 observé).
 
+### Faux positifs sur UI générique (.ps-navbar) + latence — filtre texte consentement obligatoire
+Fichier : Survey/cta_handler.py, fonction `_dismiss_blocking_overlays`.
+Bug corrigé : les seuls critères position:fixed + z-index élevé + taille + visibilité ne
+suffisaient pas à distinguer un bandeau de consentement d'un élément d'UI générique de la page
+partageant les mêmes propriétés CSS. Confirmé sur PureSpectrum : `.ps-navbar` (position:fixed,
+z-index:1030) contient les boutons "Decrease Font Size" / "Increase Font Size", sans
+`data-cky-tag` ni `aria-haspopup="dialog"` — les deux seuls critères d'exclusion du 2e passage
+de sélection (fallback "premier bouton visible non exclu") — donc éligible dès que la bannière
+de consentement elle-même était fermée (`cky-hide`) et ne restait plus candidate prioritaire.
+Symptômes observés en prod : clics involontaires répétés sur "Decrease Font Size" pendant la
+réponse à une question à cases à cocher, et forte latence entre deux sélections d'options une
+fois ce bouton devenu non interactif après un premier clic (nouvelle tentative de clic Playwright
+sur un candidat non actionnable, avec le même comportement d'auto-retry ~30s déjà documenté pour
+d'autres clics dans ce fichier).
+Fix : ajout d'un critère positif obligatoire — un indice textuel lié au consentement/vie privée
+(`aria-label` ou texte visible du candidat lui-même) parmi une liste de mots-clés génériques
+multi-langue (cookie, cookies, consent, consentement, confidentialité, vie privée, privacy, gdpr,
+rgpd, témoin, datenschutz) — en plus des critères géométriques/CSS existants, avant qu'un élément
+ne soit retenu comme overlay candidat. Aucun changement des critères géométriques eux-mêmes, ni
+de la logique de choix du bouton (1er passage `data-cky-tag`, 2e passage fallback générique).
+Patterns couverts :
+- Tout bandeau de consentement dont l'`aria-label` ou le texte visible contient un des mots-clés
+  ci-dessus (couvre CookieYes et, en principe, d'autres CMP génériques utilisant un vocabulaire
+  similaire) — non limité à un vendor nommé.
+- Tout élément d'UI fixe générique de la page (nav bar, barre d'outils, boutons de taille de
+  police, etc.) ne portant aucun de ces mots-clés — désormais explicitement exclu, quels que
+  soient ses position/z-index/taille.
+Patterns exclus :
+- CMP dont le bandeau ne contient aucun des mots-clés listés (ex. vendor avec un texte d'intro
+  entièrement différent, ou langue non couverte) — non détecté par ce filtre, à étendre au
+  besoin par ajout de mots-clés supplémentaires (pas de modification de la structure existante).
+Statut : patch appliqué, confirmé fonctionnel par l'utilisateur en conditions réelles (plus de
+clic sur le bouton de taille de police, plus de latence anormale entre deux sélections
+d'options).
+
 ---
