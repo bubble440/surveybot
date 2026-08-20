@@ -1409,17 +1409,28 @@ def _dismiss_blocking_overlays(driver) -> int:
       return result;
     })();
     """
+    # NOTE: buttons DOM (Element[]) doit être récupéré via evaluate_handle (JSHandle),
+    # jamais via evaluate() qui ne peut renvoyer que des valeurs sérialisables en JSON.
+    # evaluate() sur un retour contenant des noeuds DOM ne produit pas de référence
+    # cliquable côté Python (les .click() échouent silencieusement, absorbés par le
+    # except ci-dessous) : c'est pourquoi cette fonction ne fermait jamais aucun overlay,
+    # y compris depuis son unique appelant d'origine (try_click_navigation_cta).
     try:
-        buttons = _resolve_ctx(driver).evaluate("() => { " + JS_FIND_DISMISS_BUTTONS + " }")
+        ctx = _resolve_ctx(driver)
+        buttons_handle = ctx.evaluate_handle("() => { " + JS_FIND_DISMISS_BUTTONS + " }")
+        count = ctx.evaluate("(arr) => arr.length", buttons_handle)
     except Exception:
         return 0
 
-    if not buttons:
+    if not count:
         return 0
 
     dismissed = 0
-    for btn in buttons[:5]:
+    for i in range(min(count, 5)):
         try:
+            btn = buttons_handle.evaluate_handle("(arr, i) => arr[i]", i).as_element()
+            if btn is None:
+                continue
             btn.click()
             dismissed += 1
             log_debug("[CTA_OVERLAY]", f"overlay_btn_clicked dismissed={dismissed}")
