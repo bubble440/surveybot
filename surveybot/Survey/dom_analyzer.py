@@ -39,6 +39,7 @@ try:
     from Survey.dom_question_extractor import (
         _find_question_text_near_element, _find_associated_label,
         _extract_ssi_confirmit_question, _extract_surveywriter_ssi_question,
+        _extract_confirmit_cf_numeric_isolated_question,
         _nearest_question_container, _nearest_question_container_structural,
         _extract_question_from_container,
         _find_group_heading_text_near_element, _find_heading_tag_near_choice_group,
@@ -173,6 +174,7 @@ except ImportError:
     from Survey.dom_question_extractor import (
         _find_question_text_near_element, _find_associated_label,
         _extract_ssi_confirmit_question, _extract_surveywriter_ssi_question,
+        _extract_confirmit_cf_numeric_isolated_question,
         _nearest_question_container, _nearest_question_container_structural,
         _extract_question_from_container,
         _find_group_heading_text_near_element, _find_heading_tag_near_choice_group,
@@ -3677,6 +3679,26 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
                         question = q_txt
             except Exception:
                 pass
+
+            # Forsta/Confirmit Wix : input type="number" isolé dans .cf-question--numeric
+            # (garde-fou strict, distinct de .cf-question--numeric-list déjà couvert par
+            # _extract_confirmit_cf_numeric_list_blocks). Priorité sur les stratégies
+            # génériques (container/near-element) qui, pour ce pattern, ne récupèrent que
+            # l'instruction générique ("Saisissez votre réponse.") — voir
+            # _extract_confirmit_cf_numeric_isolated_question pour le détail du bug.
+            if (
+                not question
+                and itype == "text"
+                and (el.get_attribute("type") or "").strip().lower() == "number"
+            ):
+                _cf_numeric_q = _extract_confirmit_cf_numeric_isolated_question(driver, el)
+                if _cf_numeric_q:
+                    question = _cf_numeric_q
+                    log_debug(
+                        "[DOM_CONFIRMIT_CF_NUMERIC_ISOLATED]",
+                        f"question_resolved={question[:80]!r}",
+                    )
+
             if not question and itype in ("text", "textarea"):
                 try:
                     _el_id = (el.get_attribute("id") or "").strip()

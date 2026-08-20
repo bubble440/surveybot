@@ -334,6 +334,31 @@ Patterns exclus :
 | Toluna/Confirmit wix | _extract_confirmit_cf_single_image_choice_blocks | _extract_confirmit_cf_single_choice_blocks | `div.cf-image-answer` + `div.cf-image[role='radio']` présents dans le conteneur (vs `div.cf-radio[role='radio']` standard) |
 | Toluna/Confirmit wix | _extract_confirmit_cf_multi_choice_blocks | extracteurs single/numeric/open | class `cf-question--multi` sur le div parent + `div.cf-checkbox[role='checkbox']` présent |
 
+### _extract_confirmit_cf_numeric_isolated_question
+Fichier : Survey/dom_question_extractor.py
+Appelée depuis : Survey/dom_analyzer.py, chemin "singles" (résolution de `question`, juste après le
+check legend `qualification-text`, gate `not question`).
+Guard : `itype == "text"` ET `input[type="number"]` ET `el.closest('.cf-question--numeric')` non nul
+ET `.cf-question__text` non vide dans ce conteneur (match CSS exact par token — ne matche jamais
+`.cf-question--numeric-list`, comparaison de sous-chaîne exclue).
+Bug corrigé : pour un `input[type="number"]` isolé (pas de `div.cf-numeric-list-answer`, ex: question
+âge), `_nearest_question_container` (chemin singles) remonte au conteneur le plus proche portant
+"question" dans sa classe, càd `div.cf-question__content` — qui ne contient PAS les divs frères
+`cf-question__text` / `cf-question__instruction`. `_extract_question_from_container` échoue donc
+(texte vide), et le fallback `_find_question_text_near_element` (proximité visuelle) retient
+`cf-question__instruction` ("Saisissez votre réponse.") car plus proche visuellement de l'input que
+`cf-question__text` ("Quel âge avez-vous ?"). Le garde-fou SSI/Confirmit existant
+(`_extract_ssi_confirmit_question`) ne se déclenche pas non plus : `_is_validation_instruction()` ne
+reconnaît que des patterns anglais, donc `question` reste non-vide et son bloc est sauté.
+Patterns couverts :
+- Lecture directe `.cf-question__text` + `.cf-question__instruction` via `el.closest('.cf-question--numeric')`
+- Concatène question + instruction (ex: "Quel âge avez-vous ? Saisissez votre réponse.")
+Patterns exclus :
+- `div.cf-question--numeric-list` → `_extract_confirmit_cf_numeric_list_blocks` (chemin séparé, non concerné)
+- Tout input non `type="number"`, ou `itype != "text"`
+Validé en conditions réelles (2026-08-20) : survey.rigourresearch.co.uk, question âge S1_input,
+question résolue = "Quel âge avez-vous ? Saisissez votre réponse.", réponse "25" saisie avec succès.
+
 ---
 
 ## PLATEFORME : CONFIRMIT / FORSTA WIX — RANKING

@@ -417,6 +417,44 @@ def _extract_ssi_confirmit_question(driver, el) -> str:
         return ""
 
 
+def _extract_confirmit_cf_numeric_isolated_question(driver, el) -> str:
+    """
+    Forsta/Confirmit Wix : input natif isolé dans un conteneur `.cf-question--numeric`
+    (distinct de `.cf-question--numeric-list`, déjà couvert par
+    _extract_confirmit_cf_numeric_list_blocks — match CSS exact via closest(), qui ne
+    matche pas `.cf-question--numeric-list` car les classes CSS sont comparées par
+    token entier, pas par sous-chaîne).
+
+    Sans ce patch, la question résolue pour ce cas ne contient que l'instruction
+    générique ("Saisissez votre réponse.") : `_nearest_question_container` remonte à
+    `.cf-question__content` (ancêtre le plus proche portant "question" dans sa classe),
+    qui ne contient pas les divs frères `.cf-question__text` / `.cf-question__instruction`,
+    et `_find_question_text_near_element` (recherche par proximité visuelle) retient
+    l'instruction car elle est visuellement plus proche de l'input que le texte de
+    question.
+
+    Garde-fou DOM strict : l'ancêtre `.cf-question--numeric` doit exister ET contenir
+    un `.cf-question__text` non vide.
+    """
+    try:
+        txt = driver.evaluate(
+            """(el) => {
+            const cfq = el.closest('.cf-question--numeric');
+            if (!cfq) return null;
+            const qtext = cfq.querySelector('.cf-question__text');
+            if (!qtext || !qtext.innerText.trim()) return null;
+            const instr = cfq.querySelector('.cf-question__instruction');
+            const parts = [qtext.innerText.trim()];
+            if (instr && instr.innerText.trim()) parts.push(instr.innerText.trim());
+            return parts.join(' ');
+            }""",
+            el,
+        )
+        return _norm(txt) if txt else ""
+    except Exception:
+        return ""
+
+
 def _extract_surveywriter_ssi_question(driver, el) -> str:
     """
     SurveyWriter/SSI: cherche .label-text ou .survey-label proche.
