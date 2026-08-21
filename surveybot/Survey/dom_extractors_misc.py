@@ -13789,3 +13789,185 @@ def _extract_mriweb_grid_num_row_blocks(driver, frame_chain: list[int] | None) -
     return blocks
 
     return blocks
+
+
+# ================================================================================
+# QDTECH / KUAIJUECE — RADIO ICONE SANS INPUT NATIF (qd-radio)
+# ================================================================================
+
+def _extract_qdtech_qdradio_icon_choice_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
+    """Extraction DOM-only pour la plateforme QDTech/KuaiJueCe (Vue, marquage `data-v-*`,
+    pied de page "Support technique fourni par KuaiJueCe").
+
+    Chaque option n'est représentée dans le DOM que par une icône `<i class="qd-radio...">`
+    (aucun input[type=radio/checkbox], aucun role="radio"/"checkbox" sur les options), ce qui
+    fait échouer la détection générique des éléments de choix en amont (dom_analyzer.py) et
+    empêche toute construction de bloc de question pour ce DOM.
+
+    Gate DOM strict (additif, non provider-wide) :
+    - au moins 2 icônes `i[class*='qd-radio']` regroupées sous un même conteneur `.radio-ctn`
+    - un ancêtre commun portant un bloc `.qd-header` avec un span `.qd-title` non vide
+
+    Le texte de question retourné concatène le titre (`.qd-title`) avec les autres spans
+    non vides du même bloc d'en-tête (ex: indicateur de type "Veuillez sélectionner une
+    option"), tous deux visibles dans le même bloc DOM.
+
+    Ne couvre pas : variantes qd-checkbox, ni tout DOM portant un input/role natif (hors
+    scope, chemins existants inchangés).
+    """
+    frame_chain = list(frame_chain or [])
+
+    try:
+        containers = driver.query_selector_all(".radio-ctn")
+    except Exception:
+        return []
+
+    if not containers:
+        return []
+
+    blocks: list[dict] = []
+    seen_group_keys: set[str] = set()
+
+    for container in containers[:20]:
+        try:
+            icons = container.query_selector_all("i[class*='qd-radio']")
+        except Exception:
+            icons = []
+
+        if len(icons) < 2:
+            continue
+
+        option_xpath_map: dict[str, str] = {}
+        options: list[str] = []
+
+        for icon in icons[:50]:
+            row = None
+            label = ""
+            try:
+                row = icon.query_selector("xpath=" + "..")
+            except Exception:
+                row = None
+
+            if row is not None:
+                try:
+                    label = _norm(row.inner_text() or "")
+                except Exception:
+                    label = ""
+
+            if not label:
+                try:
+                    row2 = icon.query_selector("xpath=" + "../..")
+                except Exception:
+                    row2 = None
+                if row2 is not None:
+                    try:
+                        cand = _norm(row2.inner_text() or "")
+                    except Exception:
+                        cand = ""
+                    if cand:
+                        label = cand
+                        row = row2
+
+            if not label:
+                continue
+
+            try:
+                xp = _best_xpath_for_element(driver, row if row is not None else icon)
+            except Exception:
+                xp = ""
+
+            if not xp:
+                continue
+
+            nk = _norm_key(label)
+            if nk in option_xpath_map:
+                continue
+
+            option_xpath_map[nk] = xp
+            options.append(label)
+
+        if len(options) < 2 or len(option_xpath_map) < 2:
+            continue
+
+        question = ""
+        try:
+            question_scope = container.query_selector(
+                "xpath=" + "ancestor::*[.//*[contains(concat(' ', normalize-space(@class), ' '), ' qd-header ')]][1]"
+            )
+        except Exception:
+            question_scope = None
+
+        if question_scope is not None:
+            try:
+                header = question_scope.query_selector(".qd-header")
+            except Exception:
+                header = None
+
+            if header is not None:
+                title_txt = ""
+                try:
+                    title_nodes = header.query_selector_all(".qd-title")
+                except Exception:
+                    title_nodes = []
+                for tn in title_nodes:
+                    try:
+                        cand = _norm(tn.inner_text() or "")
+                    except Exception:
+                        cand = ""
+                    if cand:
+                        title_txt = cand
+                        break
+
+                if title_txt:
+                    extra_parts: list[str] = []
+                    try:
+                        span_nodes = header.query_selector_all("span")
+                    except Exception:
+                        span_nodes = []
+                    for sp in span_nodes:
+                        try:
+                            cand = _norm(sp.inner_text() or "")
+                        except Exception:
+                            cand = ""
+                        if not cand or cand == title_txt or cand in extra_parts:
+                            continue
+                        extra_parts.append(cand)
+                    question = " ".join([title_txt] + extra_parts).strip()
+
+        if not question:
+            continue
+
+        group_key = f"qdtech_qdradio:{_norm_key(question[:120])}:{len(options)}"
+        if group_key in seen_group_keys:
+            continue
+
+        target_id = make_target_id("group", group_key, question)
+        register_target(
+            target_id,
+            {
+                "kind": "group",
+                "itype": "radio",
+                "group_key": group_key,
+                "question": question,
+                "option_xpath_map": option_xpath_map,
+                "frame_chain": frame_chain,
+                "qdtech_qdradio_icon": True,
+            },
+        )
+
+        blocks.append(
+            {
+                "question": question,
+                "itype": "radio",
+                "options": options,
+                "max_select": _compute_max_select("radio", options),
+                "target_id": target_id,
+                "context": {"kind": "group", "group_key": group_key, "qdtech_qdradio_icon": True},
+            }
+        )
+        seen_group_keys.add(group_key)
+
+    if blocks:
+        log_info("[DOM_QDTECH_QDRADIO]", f"blocks_extracted={len(blocks)}")
+
+    return blocks

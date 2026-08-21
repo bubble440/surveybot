@@ -155,6 +155,7 @@ try:
         _extract_image_labelledby_choice_checkbox_blocks,
         _extract_studystream_contenteditable_open_text_blocks,
         _extract_mriweb_grid_num_row_blocks,
+        _extract_qdtech_qdradio_icon_choice_blocks,
     )
 
     # Registre et utilitaires
@@ -285,6 +286,7 @@ except ImportError:
         _extract_image_labelledby_choice_checkbox_blocks,
         _extract_studystream_contenteditable_open_text_blocks,
         _extract_mriweb_grid_num_row_blocks,
+        _extract_qdtech_qdradio_icon_choice_blocks,
     )
 
 
@@ -1980,6 +1982,16 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         studystream_open_text_blocks = _extract_studystream_contenteditable_open_text_blocks(driver, frame_chain)
         if studystream_open_text_blocks:
             return studystream_open_text_blocks
+    except Exception:
+        pass
+
+    # --- 0i-terdecies) QDTech/KuaiJueCe : options radio matérialisées uniquement par
+    # une icône <i class="qd-radio..."> (aucun input/role radio-checkbox natif) ---
+    # Guard DOM strict : .radio-ctn avec >=2 i[class*='qd-radio'] + ancêtre .qd-header/.qd-title.
+    try:
+        qdtech_qdradio_blocks = _extract_qdtech_qdradio_icon_choice_blocks(driver, frame_chain)
+        if qdtech_qdradio_blocks:
+            return qdtech_qdradio_blocks
     except Exception:
         pass
 
