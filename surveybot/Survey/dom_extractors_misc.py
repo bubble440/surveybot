@@ -13971,3 +13971,185 @@ def _extract_qdtech_qdradio_icon_choice_blocks(driver, frame_chain: list[int] | 
         log_info("[DOM_QDTECH_QDRADIO]", f"blocks_extracted={len(blocks)}")
 
     return blocks
+
+
+def _extract_qdtech_qdcheckbox_icon_choice_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
+    """Extraction DOM-only pour la plateforme QDTech/KuaiJueCe (Vue, marquage `data-v-*`),
+    variante case à cocher (choix multiple) du même widget que
+    `_extract_qdtech_qdradio_icon_choice_blocks` (icône `qd-radio`, sélection unique,
+    non modifiée par cette fonction).
+
+    Chaque option n'est représentée dans le DOM que par une icône
+    `<i class="qd-checkbox...">` (aucun input[type=checkbox], aucun role="checkbox") : même
+    absence de détection générique que la variante radio. Sélecteur d'icône disjoint de
+    celui de l'extracteur radio (`i[class*='qd-checkbox']` ne matche jamais
+    `i[class*='qd-radio']`) : aucun recouvrement possible, aucune régression sur le DOM de
+    référence radio.
+
+    Gate DOM strict (additif, non provider-wide) :
+    - au moins 2 icônes `i[class*='qd-checkbox']` regroupées sous un même conteneur
+      `.radio-ctn`
+    - un ancêtre commun portant un bloc `.qd-header` avec un span `.qd-title` non vide
+
+    Résolution du libellé : contrairement à la variante radio (ascendance directe de
+    l'icône : parent, puis grand-parent en repli), ce DOM comporte deux structures
+    d'option différentes sous le même `.radio-ctn` :
+    - options illustrées par une image : l'icône est nichée dans le sous-bloc image
+      (`.option-picture-ctn-img`), le texte vit dans un conteneur frère distinct
+      (`.option-text-ctn`), hors de la chaîne d'ascendance directe de l'icône ;
+    - option texte simple (ex. "Aucune des réponses ci-dessus") : icône et texte
+      partagent un parent commun proche.
+    Les deux structures partagent un même ancêtre borne : `.radio-ctn-body-list-item`
+    (conteneur d'une seule option, image ou texte). On résout donc le libellé via
+    l'`innerText` de cet ancêtre commun plutôt que via un nombre de niveaux fixe.
+
+    Ne couvre pas : variante qd-radio (sélection unique, déjà couverte, extracteur
+    inchangé), ni tout DOM portant un input/role natif (hors scope, chemins existants
+    inchangés).
+    """
+    frame_chain = list(frame_chain or [])
+
+    try:
+        containers = driver.query_selector_all(".radio-ctn")
+    except Exception:
+        return []
+
+    if not containers:
+        return []
+
+    blocks: list[dict] = []
+    seen_group_keys: set[str] = set()
+
+    for container in containers[:20]:
+        try:
+            icons = container.query_selector_all("i[class*='qd-checkbox']")
+        except Exception:
+            icons = []
+
+        if len(icons) < 2:
+            continue
+
+        option_xpath_map: dict[str, str] = {}
+        options: list[str] = []
+
+        for icon in icons[:50]:
+            item = None
+            try:
+                item = icon.query_selector(
+                    "xpath=" + "ancestor::*[contains(concat(' ', normalize-space(@class), ' '), ' radio-ctn-body-list-item ')][1]"
+                )
+            except Exception:
+                item = None
+
+            if item is None:
+                continue
+
+            label = ""
+            try:
+                label = _norm(item.inner_text() or "")
+            except Exception:
+                label = ""
+
+            if not label:
+                continue
+
+            try:
+                xp = _best_xpath_for_element(driver, item)
+            except Exception:
+                xp = ""
+
+            if not xp:
+                continue
+
+            nk = _norm_key(label)
+            if nk in option_xpath_map:
+                continue
+
+            option_xpath_map[nk] = xp
+            options.append(label)
+
+        if len(options) < 2 or len(option_xpath_map) < 2:
+            continue
+
+        question = ""
+        try:
+            question_scope = container.query_selector(
+                "xpath=" + "ancestor::*[.//*[contains(concat(' ', normalize-space(@class), ' '), ' qd-header ')]][1]"
+            )
+        except Exception:
+            question_scope = None
+
+        if question_scope is not None:
+            try:
+                header = question_scope.query_selector(".qd-header")
+            except Exception:
+                header = None
+
+            if header is not None:
+                title_txt = ""
+                try:
+                    title_nodes = header.query_selector_all(".qd-title")
+                except Exception:
+                    title_nodes = []
+                for tn in title_nodes:
+                    try:
+                        cand = _norm(tn.inner_text() or "")
+                    except Exception:
+                        cand = ""
+                    if cand:
+                        title_txt = cand
+                        break
+
+                if title_txt:
+                    extra_parts: list[str] = []
+                    try:
+                        span_nodes = header.query_selector_all("span")
+                    except Exception:
+                        span_nodes = []
+                    for sp in span_nodes:
+                        try:
+                            cand = _norm(sp.inner_text() or "")
+                        except Exception:
+                            cand = ""
+                        if not cand or cand == title_txt or cand in extra_parts:
+                            continue
+                        extra_parts.append(cand)
+                    question = " ".join([title_txt] + extra_parts).strip()
+
+        if not question:
+            continue
+
+        group_key = f"qdtech_qdcheckbox:{_norm_key(question[:120])}:{len(options)}"
+        if group_key in seen_group_keys:
+            continue
+
+        target_id = make_target_id("group", group_key, question)
+        register_target(
+            target_id,
+            {
+                "kind": "group",
+                "itype": "checkbox",
+                "group_key": group_key,
+                "question": question,
+                "option_xpath_map": option_xpath_map,
+                "frame_chain": frame_chain,
+                "qdtech_qdcheckbox_icon": True,
+            },
+        )
+
+        blocks.append(
+            {
+                "question": question,
+                "itype": "checkbox",
+                "options": options,
+                "max_select": _compute_max_select("checkbox", options, question),
+                "target_id": target_id,
+                "context": {"kind": "group", "group_key": group_key, "qdtech_qdcheckbox_icon": True},
+            }
+        )
+        seen_group_keys.add(group_key)
+
+    if blocks:
+        log_info("[DOM_QDTECH_QDCHECKBOX]", f"blocks_extracted={len(blocks)}")
+
+    return blocks

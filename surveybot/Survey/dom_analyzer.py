@@ -156,6 +156,7 @@ try:
         _extract_studystream_contenteditable_open_text_blocks,
         _extract_mriweb_grid_num_row_blocks,
         _extract_qdtech_qdradio_icon_choice_blocks,
+        _extract_qdtech_qdcheckbox_icon_choice_blocks,
     )
 
     # Registre et utilitaires
@@ -287,6 +288,7 @@ except ImportError:
         _extract_studystream_contenteditable_open_text_blocks,
         _extract_mriweb_grid_num_row_blocks,
         _extract_qdtech_qdradio_icon_choice_blocks,
+        _extract_qdtech_qdcheckbox_icon_choice_blocks,
     )
 
 
@@ -1992,6 +1994,18 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         qdtech_qdradio_blocks = _extract_qdtech_qdradio_icon_choice_blocks(driver, frame_chain)
         if qdtech_qdradio_blocks:
             return qdtech_qdradio_blocks
+    except Exception:
+        pass
+
+    # --- 0i-quaterdecies) QDTech\KuaiJueCe : variante case à cocher (choix multiple) du
+    # même widget ci-dessus — icône <i class="qd-checkbox..."> sans input/role natif.
+    # Guard DOM strict : .radio-ctn avec >=2 i[class*='qd-checkbox'] + ancêtre .qd-header/
+    # .qd-title. Sélecteur d'icône disjoint de la variante radio ci-dessus (aucun
+    # recouvrement, aucune régression sur ce DOM de référence).
+    try:
+        qdtech_qdcheckbox_blocks = _extract_qdtech_qdcheckbox_icon_choice_blocks(driver, frame_chain)
+        if qdtech_qdcheckbox_blocks:
+            return qdtech_qdcheckbox_blocks
     except Exception:
         pass
 

@@ -7408,6 +7408,27 @@ def execute_action(
                         return True
                     return False
 
+                # QDTech\KuaiJueCe qd-checkbox icon — variante case à cocher (choix
+                # multiple) du widget qdtech_qdradio_icon ci-dessus (radio, non modifié
+                # par ce bloc). Flag distinct posé par
+                # _extract_qdtech_qdcheckbox_icon_choice_blocks (dom_extractors_misc.py) ;
+                # ce widget n'a ni input natif, ni role, ni label[for], et le XPath
+                # positionnel de option_xpath_map ne résout plus rien après re-rendu Vue
+                # (même limite que qdtech_qdradio_icon) : court-circuit avant
+                # _apply_by_target_id, résolution dédiée par texte normalisé.
+                if _p.get("qdtech_qdcheckbox_icon") and itype == "checkbox":
+                    skip_apply_by_target_id = True
+                    from Survey.input_radio import click_qdtech_qdcheckbox_icon
+                    _qdcb_ok = click_qdtech_qdcheckbox_icon(driver, value)
+                    log_debug(
+                        "[TARGET_DEBUG]",
+                        f"qdtech_qdcheckbox_icon_dispatch: {'ok' if _qdcb_ok else 'ko'} value={value!r}",
+                    )
+                    if _qdcb_ok:
+                        log_info("[TARGET]", "apply ok=true strategy=qdtech_qdcheckbox_icon_direct reason=applied")
+                        return True
+                    return False
+
             except Exception as e:
                 # meme en exception: pas de fallback générique pour sliderpoints
                 continue

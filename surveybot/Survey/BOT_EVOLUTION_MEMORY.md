@@ -1902,6 +1902,7 @@ Patterns exclus :
 | Ipsos/simstore MUI | _extract_image_labelledby_choice_checkbox_blocks | _extract_image_only_choice_checkbox_blocks | inputs SANS `name` + libellé résolu via `aria-labelledby` (vs inputs avec `name` + wrapper label/parent direct) |
 | Ask&Answer/FirstInsight | _extract_askandanswer_ranking_dragdrop_blocks | _extract_askandanswer_selection_list_questions | `data-question-type='RANKING_DRAG_AND_DROP'` + `div.cdk-drop-list`/`div.cdk-drag` (vs `mat-selection-list`/`mat-radio-group`) — les deux sont fusionnés (non exclusifs) par dom_analyzer.py étape 0c, pas de retour anticipé |
 | QDTech/KuaiJueCe | _extract_qdtech_qdradio_icon_choice_blocks | extracteur générique input/role radio-checkbox | `.radio-ctn` + `i[class*='qd-radio']` sans input natif ni role (vs input[type=radio/checkbox]/[role=radio/checkbox] pour le chemin générique) — retour anticipé si match |
+| QDTech/KuaiJueCe | _extract_qdtech_qdcheckbox_icon_choice_blocks | _extract_qdtech_qdradio_icon_choice_blocks | `i[class*='qd-checkbox']` (choix multiple) vs `i[class*='qd-radio']` (sélection unique) sous le même conteneur `.radio-ctn` — sélecteurs d'icône disjoints, aucun recouvrement ; libellé résolu via l'ancêtre commun `.radio-ctn-body-list-item` (vs parent/grand-parent direct pour la variante radio) |
 
 ---
 
@@ -4547,6 +4548,94 @@ Patterns exclus :
 Statut : patch validé — confirmé par l'utilisateur en conditions réelles (log
 `qdtech_qdradio: native_verify=ok`, `apply ok=true strategy=target_id`, capture d'écran
 montrant l'option "25 à 34 ans" effectivement sélectionnée dans l'UI).
+
+---
+
+## PLATEFORME : QDTECH / KUAIJUECE — CHECKBOX ICONE SANS INPUT NATIF (qd-checkbox, choix multiple)
+
+Bug observé : question "Choix multiple" avec options illustrées par une image (7 tuiles)
++ une option texte simple additionnelle ("Aucune des réponses ci-dessus"), sur le même
+provider que la variante radio ci-dessus. Le DOM réutilise le conteneur commun
+`.radio-ctn`, mais les icônes de sélection portent la classe `qd-checkbox` (pas
+`qd-radio`) — hors scope de `_extract_qdtech_qdradio_icon_choice_blocks` (documenté
+"Patterns exclus" ci-dessus), donc `extracted_blocks count=0` puis abandon
+`detector_no_match` (0 input/role natif trouvé, comme pour la variante radio).
+
+### _extract_qdtech_qdcheckbox_icon_choice_blocks
+Fichier : Survey/dom_extractors_misc.py
+Enregistré dans : dom_analyzer.py, juste après
+`_extract_qdtech_qdradio_icon_choice_blocks` (retour anticipé si blocs trouvés).
+Guard DOM strict : `.radio-ctn` avec ≥2 `i[class*='qd-checkbox']` regroupées, plus un
+ancêtre commun portant un bloc `.qd-header` avec un span `.qd-title` non vide (même
+guard structurel que la variante radio — sélecteur d'icône disjoint : `qd-checkbox` ne
+matche jamais `i[class*='qd-radio']`, donc aucun recouvrement ni régression possible sur
+le DOM de référence radio).
+Patterns couverts :
+- Question : même logique de concaténation `.qd-header`/`.qd-title` + spans non vides
+  que la variante radio (code dupliqué intentionnellement, pas de factorisation pour ne
+  pas toucher l'extracteur radio existant).
+- Options : pour chaque icône `i[class*='qd-checkbox']`, libellé résolu via l'`innerText`
+  de l'ancêtre `.radio-ctn-body-list-item` (recherché via xpath `ancestor::*[...]`) — PAS
+  parent/grand-parent direct comme la variante radio. Raison : ce DOM comporte deux
+  structures d'option sous le même `.radio-ctn` :
+  - options illustrées par une image : l'icône est nichée dans le sous-bloc image
+    (`.option-picture-ctn-img`), le texte vit dans un conteneur **frère** distinct
+    (`.option-text-ctn`), hors de la chaîne d'ascendance directe de l'icône (au-delà de
+    2 niveaux) ;
+  - option texte simple : icône et texte partagent un parent commun proche.
+  `.radio-ctn-body-list-item` est l'ancêtre borne commun aux deux structures (une seule
+  option par item, jamais plusieurs — vérifié sur le DOM de référence), d'où son choix
+  plutôt qu'un nombre de niveaux fixe.
+- `option_xpath_map` peuplé via `_best_xpath_for_element` (XPath absolu positionnel) —
+  même limite que la variante radio (Vue re-rend l'icône), corrigée côté dispatcher/clic,
+  pas ici.
+- Flag payload : `qdtech_qdcheckbox_icon=True` ; `itype="checkbox"` uniquement ;
+  `group_key` : `qdtech_qdcheckbox:{question_norm}:{nb_options}`.
+- `max_select` via `_compute_max_select("checkbox", options, question)` (helper partagé
+  existant) — détecte correctement "Aucune des réponses ci-dessus" comme option
+  exclusive (préfixe "aucune").
+Patterns exclus :
+- Variante `qd-radio` (sélection unique) → hors scope, extracteur radio existant
+  inchangé, aucune régression (vérifié : 0 bloc radio sur le DOM checkbox de référence).
+- Tout DOM portant un input/role natif → chemins existants inchangés.
+
+### qdtech_qdcheckbox_icon — guard dispatcher (execute_action, avant _apply_by_target_id)
+Fichier : Survey/action_dispatcher.py
+Emplacement : bloc `_p.get(...)`, juste après le guard
+`mui_dialog_question_checkbox_option` (même famille de widgets checkbox sans input natif
+court-circuités avant `_apply_by_target_id`, ex. `kantar_rowpicker_radio`/checkbox).
+Guard : `_p.get("qdtech_qdcheckbox_icon") and itype == "checkbox"`.
+Patterns couverts :
+- `skip_apply_by_target_id = True` puis appel direct
+  `click_qdtech_qdcheckbox_icon(driver, value)`, retour immédiat (`True`/`False`), aucun
+  fallback générique invoqué (widget sans input natif, ni role, ni label[for]).
+Patterns exclus :
+- Tous les autres itypes et providers.
+
+### click_qdtech_qdcheckbox_icon
+Fichier : Survey/input_radio.py (colocalisé avec `click_qdtech_qdradio_icon`, même
+convention que `click_mui_dialog_question_option`/`click_mui_dialog_question_checkbox_option`
+dans ce même fichier).
+Guard : appelée uniquement depuis le guard `qdtech_qdcheckbox_icon` du dispatcher.
+Patterns couverts :
+- `_JS_FIND` : itère `.radio-ctn i[class*='qd-checkbox']`, résout chaque option via
+  `icon.closest('.radio-ctn-body-list-item')` puis compare l'`innerText` de cet ancêtre
+  en texte normalisé (`toLowerCase().normalize('NFKC')`, espaces collapsés) — retourne
+  l'ancêtre `.radio-ctn-body-list-item` via `evaluate_handle(...).as_element()`, pas
+  `evaluate()` (même convention que `click_qdtech_qdradio_icon`).
+- Clic sur l'ancêtre `.radio-ctn-body-list-item` résolu (pas seulement l'icône) :
+  `item_el.click()`, fallback `item_el.hover(); item_el.click()`.
+- `_JS_VERIFY` : la classe de l'icône `qd-checkbox` correspondante (retrouvée via
+  `item.querySelector("i[class*='qd-checkbox']")`) ne contient plus `unselect` après clic.
+Patterns exclus :
+- Aucun — fonction dédiée à ce seul flag.
+
+Statut : patch validé — confirmé par l'utilisateur en conditions réelles (logs
+`qdtech_qdcheckbox: native_verify=ok`, `apply ok=true strategy=qdtech_qdcheckbox_icon_direct`
+répétés pour plusieurs options du même groupe — "Station électrique portable", "Batterie /
+système de stockage domestique", "Véhicule électrique", "Panneau solaire portable" —,
+capture d'écran montrant la case "Panneau solaire portable" effectivement cochée dans
+l'UI).
 
 ### CTA navigation "Continuer" — motif dédié div[usetype] sans rôle/tabindex
 Fichier : Survey/cta_handler.py, fonction `try_click_navigation_cta`

@@ -1081,6 +1081,111 @@ def click_qdtech_qdradio_icon(driver, label: str) -> bool:
     return ok
 
 
+def click_qdtech_qdcheckbox_icon(driver, label: str) -> bool:
+    """
+    Variante case à cocher (choix multiple) du widget QDTech/KuaiJueCe couvert par
+    click_qdtech_qdradio_icon ci-dessus (non modifiée par cette fonction). Options
+    rendues uniquement par une icône `<i class="qd-checkbox...">` (aucun input natif,
+    aucun role="checkbox") dans un conteneur `.radio-ctn`.
+
+    Guard DOM strict (posé en amont, dom_extractors_misc.py) : flag
+    `qdtech_qdcheckbox_icon` dans le payload de la cible (kind="group",
+    itype="checkbox"), posé par `_extract_qdtech_qdcheckbox_icon_choice_blocks`.
+
+    Résolution du libellé : contrairement à click_qdtech_qdradio_icon (parent puis
+    grand-parent de l'icône), ce DOM comporte des options illustrées par une image où
+    le texte vit dans un conteneur frère distinct de l'icône, hors de sa chaîne
+    d'ascendance directe à 1-2 niveaux. Résolution par l'ancêtre commun borne
+    `.radio-ctn-body-list-item` (conteneur d'une seule option, même sélecteur que
+    l'extracteur), robuste aux deux structures d'option observées sur ce DOM (image ou
+    texte simple).
+
+    Même limite de XPath positionnel après re-rendu Vue que la variante radio :
+    bypass total via résolution JS par texte normalisé sur le conteneur d'option,
+    même mécanisme déjà éprouvé que click_qdtech_qdradio_icon.
+
+    Vérification : après clic, la classe de l'icône correspondante ne contient plus
+    "unselect" (transition `qd-checkbox-unselect` → état sélectionné).
+    """
+    _JS_FIND = r"""
+    const norm = s => (s || '')
+      .toLowerCase().normalize('NFKC')
+      .replace(/\s+/g, ' ').trim();
+    const needle = norm(arg);
+    if (!needle) return null;
+
+    const icons = Array.from(document.querySelectorAll(".radio-ctn i[class*='qd-checkbox']"));
+    for (const icon of icons) {
+      const item = icon.closest('.radio-ctn-body-list-item');
+      if (!item) continue;
+      const txt = norm(item.innerText || item.textContent || '');
+      if (txt !== needle) continue;
+      return item;
+    }
+    return null;
+    """
+
+    _JS_VERIFY = r"""
+    const norm = s => (s || '')
+      .toLowerCase().normalize('NFKC')
+      .replace(/\s+/g, ' ').trim();
+    const needle = norm(arg);
+    const icons = Array.from(document.querySelectorAll(".radio-ctn i[class*='qd-checkbox']"));
+    for (const icon of icons) {
+      const item = icon.closest('.radio-ctn-body-list-item');
+      if (!item) continue;
+      const txt = norm(item.innerText || item.textContent || '');
+      if (txt !== needle) continue;
+      const cur = item.querySelector("i[class*='qd-checkbox']");
+      const cls = (cur && cur.className) || '';
+      return cls.indexOf('unselect') === -1;
+    }
+    return false;
+    """
+
+    _ctx = getattr(driver, "_current_frame", driver)
+
+    try:
+        item_el = _ctx.evaluate_handle("(arg) => {" + _JS_FIND + "}", label).as_element()
+    except Exception as exc:
+        log_debug("[TARGET_DEBUG]", f"qdtech_qdcheckbox: js_find_exception label={label!r} error={type(exc).__name__}: {exc}")
+        return False
+
+    if item_el is None:
+        log_debug("[TARGET_DEBUG]", f"qdtech_qdcheckbox: option_not_found label={label!r}")
+        return False
+
+    try:
+        item_el.scroll_into_view_if_needed()
+    except Exception:
+        pass
+
+    try:
+        item_el.click()
+    except Exception as exc_click:
+        try:
+            item_el.hover()
+            item_el.click()
+        except Exception as exc_hover:
+            log_debug(
+                "[TARGET_DEBUG]",
+                f"qdtech_qdcheckbox: click_failed label={label!r} "
+                f"click_error={type(exc_click).__name__}: {exc_click} "
+                f"hover_click_error={type(exc_hover).__name__}: {exc_hover}",
+            )
+            return False
+
+    time.sleep(0.15)
+
+    try:
+        ok = bool(_ctx.evaluate("(arg) => {" + _JS_VERIFY + "}", label))
+    except Exception:
+        ok = False
+
+    log_debug("[TARGET_DEBUG]", f"qdtech_qdcheckbox: native_verify={'ok' if ok else 'ko'} label={label!r}")
+    return ok
+
+
 # =============================================================================
 # IPSOS/mrIWeb SHARKY "GridProgressive" — WIDGET RADIO DIV-BASED (SANS INPUT NATIF)
 # =============================================================================
