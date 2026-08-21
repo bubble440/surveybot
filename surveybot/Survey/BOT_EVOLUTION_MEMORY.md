@@ -4704,4 +4704,101 @@ Statut : patch validé — confirmé par l'utilisateur en conditions réelles (l
 `vant_picker_column: native_verify=ok`, `apply ok=true strategy=radio_main reason=applied`,
 capture d'écran montrant l'option "Île-de-France" effectivement sélectionnée dans l'UI).
 
+## NAVIGATION POST-CTA — CLASSIFICATION "DOM-only (SPA)" PRÉMATURÉE SUR REDIRECTION CROSS-ORIGIN MULTI-SAUTS
+
+### wait_for_dom_stabilization_after_cta_nav
+Fichier : Management/redirect_watcher.py (nouvelle fonction, appelée uniquement dans
+Survey/survey_executor.py::execute_survey_page, bloc de clic CTA post-dispatch d'actions,
+juste après la classification `_kind = "URL" if changed.url_changed else "DOM-only (SPA)"`).
+Problème résolu : `wait_for_navigation_or_dom_change` (non modifiée) déclare la navigation
+terminée dès la première mutation de signature DOM détectée (poll 0.2s), sans vérifier que
+cette mutation correspond au document final. Sur une redirection cross-origin en plusieurs
+sauts (ex. screener.purespectrum.com → … → nsv.netr.jp), un état transitoire (document
+intermédiaire quasi vide) suffit à produire une signature différente de l'état pré-clic,
+d'où une classification `"DOM-only (SPA)"` prématurée. Le step suivant relançait aussitôt
+`analyze_dom()` sur ce document pas encore final : pipeline générique
+(`choice_groups detected=0`, `extracted_blocks count=0`) ET détecteur de dernier recours
+(`inputs=0/visible_wrappers=0/input_groups=0`) retournaient tous deux zéro simultanément,
+malgré une page cible finale (SC1, `input[type=radio][name="a0001"]`, 23 options) sans
+aucune particularité DOM justifiant un échec d'extraction générique — cause temporelle, pas
+un défaut de couverture d'extracteur.
+Correction : nouvelle fonction additive, appelée uniquement quand `_kind == "DOM-only (SPA)"`,
+qui rejoue la signature DOM (`_dom_signature`, non modifiée) jusqu'à 2 lectures consécutives
+identiques (aucune mutation supplémentaire), budget borné à 5.0s, poll 0.25s. Abandon
+contrôlé (retourne `False`, le flux continue normalement) si le budget est épuisé sans
+stabilisation confirmée.
+Log discriminant : `[CTA_NAV_STABILIZE] dom_stable=true après navigation DOM-only` (debug,
+LOG_LEVEL) si stabilisé dans le budget ; `[CTA_NAV_STABILIZE] dom_stable_timeout après
+navigation DOM-only (5.0s) — poursuite du flux` (info, 1 ligne) sinon.
+Patterns couverts :
+- Uniquement le point d'appel post-dispatch d'actions dans `execute_survey_page`
+  (Survey/survey_executor.py), et uniquement la branche `_kind == "DOM-only (SPA)"` de ce
+  point d'appel précis.
+Patterns exclus :
+- `wait_for_navigation_or_dom_change` : non modifiée, aucun changement de sa classification
+  URL vs DOM-only ni de son budget/poll existant.
+- Les 3 autres points d'appel existants à `wait_for_navigation_or_dom_change`
+  (VIDEO_GATE, DOM_ONLY_ABORT `random_selected`, CF_CAROUSEL_VISION) : non modifiés, patch
+  scopé au seul point d'appel impliqué dans le bug — pas de généralisation non demandée.
+- Branche `_kind == "URL"` (URL déjà changée) : non concernée, comportement inchangé.
+- Aucun CTA ajouté/modifié : le clic existant (`try_click_navigation_cta_any_context`) n'est
+  pas touché, seule l'attente de stabilité post-navigation est renforcée ; `CTA_INTERCEPT_ONLY`
+  non concerné par ce patch.
+
+Diagnostic associé : confirmé en conditions réelles sur screener.purespectrum.com → redirection
+vers nsv.netr.jp/ans/pc/processAnswer.php (question SC1 "Veuillez indiquer votre sexe et votre
+âge."). Avant patch : classification `DOM-only (SPA)` immédiate après clic CTA, puis
+`choice_groups detected=0`/`extracted_blocks count=0` sur le step suivant malgré 23 radios
+natifs visibles → fallback `cta_only_fallback` (pause manuelle). Après patch : confirmation de
+stabilisation DOM avant retour de `execute_survey_page`, laissant le document final se
+rendre avant le prochain `analyze_dom()`.
+
+Statut : patch validé.
+
+## CHAMP INPUT[TYPE=TEL] SANS ID, PARTAGEANT UN PRÉFIXE DE NAME AVEC UN CHAMP FRÈRE CACHÉ (nsv.netr.jp)
+
+### text_input_name_fallback — action_dispatcher.py
+Fichier : Survey/action_dispatcher.py, bloc `itype in ("text", "number", "textarea")`, juste
+après la branche existante `textarea_name_fallback` (tag=="textarea"), avant `native_date_input`.
+Bug corrigé : question ouverte à saisie numérique (nsv.netr.jp, `<input type="tel"
+name="a0065n002">` visible, sans `id`, précédé d'un `<input type="tel" name="a0065n001"
+style="display:none">` caché partageant le préfixe de name). L'extraction exclut déjà
+correctement le champ caché (`[SINGLES_SKIP] not_actionable_visible`) et cible le bon champ
+visible (`context.name="a0065n002"`, `context.id=null`). Côté dispatcher, `_field_id` (résolu
+via `target_payload.get("id")`) restait `None` (pas d'`id` HTML), et la résolution de repli par
+`name` déjà existante (`_name_field_id`) est scopée à `tag=="textarea"` — ce champ, `tag=="input"`,
+n'y matchait pas. `fill_text_input` (Survey/input_text.py) était donc appelé avec
+`element_id=None` ; son sélecteur générique (`input[type='text'], input[type='search'],
+input[type='number'], textarea, [contenteditable='true'], input[type='textarea']`) ne couvre
+pas `input[type='tel']` — alors que sa logique de scoring interne (`_score_input`) bonifie déjà
+ce type (`typ in ("number", "tel")`) pour la voie scopée par `context_hint`, preuve d'une
+couverture visée mais restée incomplète au niveau du sélecteur. Résultat : `TimeoutError`
+systématique sur `driver.wait_for_selector(selector, ...)` malgré un champ visible et
+actionnable.
+Correction : nouvelle branche additive, distincte de `textarea_name_fallback`, guard
+`not _field_id and not _name_field_id and target_payload.get("tag") == "input"` → résout
+`_input_name_field_id = target_payload.get("name")` et appelle `fill_text_input(..., element_id=fid)`.
+Cette résolution passe alors par le fallback `element_id` déjà existant dans `fill_text_input`
+(`driver.query_selector(f'[name="{element_id}"]')`, cf. entrée "input_text.py — fill_text_input,
+résolution element_id via query_selector" plus haut dans ce fichier) — `name` étant unique pour
+ce champ précis (distinct du name du champ caché frère), aucune ambiguïté possible malgré le
+préfixe partagé.
+Aucune modification du sélecteur générique ni de la logique de scoring de `fill_text_input`
+(corps de la fonction non touché) — patch strictement côté dispatcher, résolution directe par
+`name` qui contourne le besoin de couvrir `input[type='tel']` dans le sélecteur générique.
+Log discriminant : `strategy=text_input_name_fallback` (succès) /
+`apply ok=false reason=text_input_name_fallback_failed target_id=...` (échec).
+Patterns couverts :
+- `itype in ("text", "number", "textarea")`, `target_payload.get("tag") == "input"`, `id` HTML
+  absent, `name` HTML présent et non vide, `_field_id`/`_name_field_id` non résolus en amont.
+Patterns exclus :
+- Champs avec `id` HTML résolu (`_field_id` non vide) → chemin existant inchangé.
+- `tag == "textarea"` sans `id` → branche `textarea_name_fallback` existante inchangée, non
+  impactée (guard mutuellement exclusif, ordre additif : `textarea_name_fallback` reste
+  prioritaire et inchangée).
+- Aucun changement à `fill_text_input` (Survey/input_text.py) : ni son sélecteur générique, ni
+  sa logique de scoring `_score_input`, ni son fallback `element_id` existant (réutilisé tel
+  quel).
+Statut : patch validé par l'utilisateur en conditions réelles.
+
 ---

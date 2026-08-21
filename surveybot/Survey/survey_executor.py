@@ -2282,6 +2282,21 @@ def execute_survey_page(driver, account_id, api_key, ctx=None):
                     if changed:
                         _kind = "URL" if changed.url_changed else "DOM-only (SPA)"
                         print(f" Navigation détectée après CTA ({_kind}).")
+                        if _kind == "DOM-only (SPA)":
+                            # Classification "DOM-only" possible sur un état transitoire
+                            # (ex. redirection cross-origin multi-sauts) : confirmer la
+                            # stabilisation avant de laisser le step suivant relancer
+                            # analyze_dom() sur un document pas encore final.
+                            _stabilized = redirect_watcher.wait_for_dom_stabilization_after_cta_nav(
+                                driver, timeout=5.0
+                            )
+                            if _stabilized:
+                                log_debug("[CTA_NAV_STABILIZE]", "dom_stable=true après navigation DOM-only")
+                            else:
+                                log_info(
+                                    "[CTA_NAV_STABILIZE]",
+                                    "dom_stable_timeout après navigation DOM-only (5.0s) — poursuite du flux",
+                                )
             except Exception:
                 pass
 

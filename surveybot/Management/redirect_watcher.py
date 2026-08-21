@@ -211,6 +211,41 @@ def wait_for_navigation_or_dom_change(driver, *, before_url: str, before_sig: st
     return NavResult(changed=False, url_changed=False, dom_changed=False)
 
 
+def wait_for_dom_stabilization_after_cta_nav(
+    driver, *, timeout: float = 5.0, poll_interval: float = 0.25, required_stable_polls: int = 2
+) -> bool:
+    """
+    Confirmation additionnelle, appelée UNIQUEMENT après que
+    wait_for_navigation_or_dom_change ait classifié la navigation post-CTA comme
+    "DOM-only" (dom_changed=True, url_changed=False) : cette classification peut
+    être déclenchée par un état transitoire (ex. document intermédiaire d'une
+    redirection cross-origin en plusieurs sauts) plutôt que par la page finale
+    réellement rendue. Rejoue une signature DOM jusqu'à required_stable_polls
+    lectures consécutives identiques (aucune mutation supplémentaire), avec
+    budget borné. Best-effort, jamais bloquant : ne modifie pas
+    wait_for_navigation_or_dom_change ni son comportement existant.
+    Retourne True si le DOM est confirmé stable dans le budget, False sinon
+    (abandon contrôlé — le flux appelant continue normalement dans les deux cas).
+    """
+    end = time.time() + max(0.5, float(timeout or 5.0))
+    stable_count = 0
+    last_sig = None
+    while time.time() < end:
+        try:
+            sig = _dom_signature(driver)
+        except Exception:
+            sig = None
+        if sig is not None and sig == last_sig:
+            stable_count += 1
+            if stable_count >= max(1, int(required_stable_polls or 2)):
+                return True
+        else:
+            stable_count = 0
+        last_sig = sig
+        time.sleep(max(0.05, float(poll_interval or 0.25)))
+    return False
+
+
 def wait_for_page_load(driver, timeout=30):
     """
     Attend que document.readyState soit 'complete'.

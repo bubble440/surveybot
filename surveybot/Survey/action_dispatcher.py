@@ -7932,6 +7932,33 @@ def execute_action(
                 log_info("[TARGET]", f"apply ok=false reason=textarea_name_fallback_failed target_id={target_id!r}")
                 continue
 
+            # --- Input text/number/tel sans id, plusieurs inputs homogènes partageant le
+            # même préfixe de name (ex: Netrisk/JP survey engine, <input type="tel"
+            # name="a0065n001"> caché display:none + <input type="tel" name="a0065n002">
+            # visible, tous deux sans id) ---
+            # Stratégie dédiée additive, distincte de "textarea_name_fallback" ci-dessus
+            # (même principe : champ sans id HTML, résolution scopée par name unique déjà
+            # discriminé en amont par l'extraction visible/actionnable, cf. target_payload).
+            # Sans cette branche, _field_id reste None (pas d'id HTML) -> fill_text_input
+            # (Survey/input_text.py) retombe sur son sélecteur générique non scopé
+            # (driver.wait_for_selector), qui ne couvre pas input[type='tel'] -> TimeoutError
+            # malgré un champ visible et actionnable (cause racine confirmée, cf.
+            # BOT_EVOLUTION_MEMORY.md). Ne modifie ni le sélecteur ni la logique de scoring
+            # de fill_text_input : résolution directe par name via son fallback element_id
+            # existant (driver.query_selector(f'[name="{element_id}"]')).
+            _input_name_field_id = None
+            if not _field_id and not _name_field_id and target_payload:
+                if (target_payload.get("tag") or "").strip().lower() == "input":
+                    _input_name_field_id = (target_payload.get("name") or "").strip() or None
+
+            if _input_name_field_id:
+                ok = _try(driver, "text_input_name_fallback", lambda fid=_input_name_field_id:
+                    Survey.input_handler.fill_text_input(driver, label, context_hint=ctx, element_id=fid))
+                if ok:
+                    return True
+                log_info("[TARGET]", f"apply ok=false reason=text_input_name_fallback_failed target_id={target_id!r}")
+                continue
+
             # --- Champ date natif (input[type="date"], ex: Confirmit cf-question--date) ---
             # Stratégie dédiée additive : voir BOT_EVOLUTION_MEMORY.md "CHAMP DATE NATIF".
             # target_payload est ici le registre DOM_REGISTRY flat (dom_analyzer.py, boucle
