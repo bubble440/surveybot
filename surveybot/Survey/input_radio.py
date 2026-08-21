@@ -1193,6 +1193,108 @@ def click_ipsos_sharky_grid_progressive_radio(driver, label: str) -> bool:
 
 
 # =============================================================================
+# VANT (Vue) PICKER COLUMN — WIDGET "ROUE" MOBILE SANS INPUT NATIF (QDTech/mini-apps)
+# =============================================================================
+
+def click_vant_picker_column_radio(driver, label: str) -> bool:
+    """
+    Picker roue Vant (liste verticale scrollable positionnée par
+    transform: translate3d, un seul item "sélectionné" à la fois).
+
+    Guard DOM strict : ul.van-picker-column__wrapper > li.van-picker-column__item
+    (libellé dans .van-ellipsis). Aucun id/name/value exploitable — seuls le
+    texte et la classe van-picker-column__item--selected distinguent les items.
+
+    La résolution par xpath positionnel calculé à l'extraction est instable ici
+    (l'item ciblé n'est pas nécessairement visible/monté au même index au moment
+    du clic) : on retrouve l'item par texte normalisé au moment du clic, comme
+    click_kantar_rowpicker_radio/click_qdtech_qdradio_icon.
+
+    Cible du clic : le <li> lui-même, cliqué en natif via el.click() côté page
+    (et non via l'API d'actionabilité Playwright) car l'item ciblé peut être
+    hors de la fenêtre visible du picker (clip via overflow sur le wrapper),
+    sans que la roue dispose d'un scroll natif permettant un scrollIntoView
+    classique.
+
+    Vérification : la classe van-picker-column__item--selected doit avoir migré
+    sur l'item dont le texte correspond au label demandé.
+    """
+    _JS_FIND_AND_CLICK = r"""
+    const norm = s => (s || '')
+      .toLowerCase().normalize('NFKC')
+      .replace(/\s+/g, ' ').trim();
+    const needle = norm(arg);
+    if (!needle) return false;
+
+    const wrappers = Array.from(document.querySelectorAll('ul.van-picker-column__wrapper'));
+    if (!wrappers.length) return false;
+
+    const textOf = (li) => {
+      const el = li.querySelector('.van-ellipsis');
+      return norm(el ? (el.innerText || el.textContent || '') : (li.innerText || li.textContent || ''));
+    };
+
+    for (const wrapper of wrappers) {
+      const items = Array.from(wrapper.querySelectorAll(':scope > li.van-picker-column__item'));
+      if (!items.length) continue;
+
+      let target = items.find(li => textOf(li) === needle);
+      if (!target) {
+        target = items.find(li => {
+          const txt = textOf(li);
+          return txt && (txt.includes(needle) || needle.includes(txt));
+        });
+      }
+      if (!target) continue;
+
+      target.click();
+      return true;
+    }
+    return false;
+    """
+
+    _JS_VERIFY = r"""
+    const norm = s => (s || '')
+      .toLowerCase().normalize('NFKC')
+      .replace(/\s+/g, ' ').trim();
+    const needle = norm(arg);
+    const wrappers = Array.from(document.querySelectorAll('ul.van-picker-column__wrapper'));
+    for (const wrapper of wrappers) {
+      const items = Array.from(wrapper.querySelectorAll(':scope > li.van-picker-column__item'));
+      for (const li of items) {
+        const el = li.querySelector('.van-ellipsis');
+        const txt = norm(el ? (el.innerText || el.textContent || '') : (li.innerText || li.textContent || ''));
+        if (!txt || !(txt === needle || txt.includes(needle) || needle.includes(txt))) continue;
+        return li.classList.contains('van-picker-column__item--selected');
+      }
+    }
+    return false;
+    """
+
+    _ctx = getattr(driver, "_current_frame", driver)
+
+    try:
+        found = bool(_ctx.evaluate("(arg) => {" + _JS_FIND_AND_CLICK + "}", label))
+    except Exception as exc:
+        log_debug("[TARGET_DEBUG]", f"vant_picker_column: js_find_exception label={label!r} error={type(exc).__name__}: {exc}")
+        return False
+
+    if not found:
+        log_debug("[TARGET_DEBUG]", f"vant_picker_column: option_not_found label={label!r}")
+        return False
+
+    time.sleep(0.15)
+
+    try:
+        ok = bool(_ctx.evaluate("(arg) => {" + _JS_VERIFY + "}", label))
+    except Exception:
+        ok = False
+
+    log_debug("[TARGET_DEBUG]", f"vant_picker_column: native_verify={'ok' if ok else 'ko'} label={label!r}")
+    return ok
+
+
+# =============================================================================
 # FONCTION PRINCIPALE CLICK_RADIO_BY_LABEL
 # =============================================================================
 
@@ -1237,6 +1339,14 @@ def click_radio_by_label(driver, label: str, context_hint: str | None = None) ->
     # > div.prog-the-answer-container[role='radio'].
     try:
         if click_ipsos_sharky_grid_progressive_radio(driver, label):
+            return True
+    except Exception:
+        pass
+
+    # Vant (Vue) picker column "roue" mobile (QDTech/mini-apps, sans input natif).
+    # Guard DOM strict : ul.van-picker-column__wrapper > li.van-picker-column__item.
+    try:
+        if click_vant_picker_column_radio(driver, label):
             return True
     except Exception:
         pass

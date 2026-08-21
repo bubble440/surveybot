@@ -4548,4 +4548,71 @@ Statut : patch validé — confirmé par l'utilisateur en conditions réelles (l
 `qdtech_qdradio: native_verify=ok`, `apply ok=true strategy=target_id`, capture d'écran
 montrant l'option "25 à 34 ans" effectivement sélectionnée dans l'UI).
 
+### CTA navigation "Continuer" — motif dédié div[usetype] sans rôle/tabindex
+Fichier : Survey/cta_handler.py, fonction `try_click_navigation_cta`
+Emplacement : nouveau bloc de motif dédié, inséré avant le bloc "MetrixLab / Toluna" et
+avant la boucle générique de scoring des candidats CTA.
+Signature DOM : `<div usetype="...">` englobant un `<div>` texte "Continuer" — aucun
+`<button>`/`<input>`/`<a>`, aucun `role="button"`, aucun `tabindex`. La classe du texte
+change d'état (avant/après sélection d'une réponse sur la question) mais l'attribut
+`usetype` reste le discriminant DOM stable dans les deux états.
+Problème résolu : le scoring générique de candidats CTA ne cible que des éléments
+interactifs natifs ou explicitement marqués (role/tabindex) ; le seul candidat matché par
+le motif texte générique (`nav_xpath_matched count=1`) était systématiquement écarté
+(`not_visible_or_disabled`), aboutissant à `CTA_NOT_FOUND (no candidates)` malgré un bouton
+visible et cliquable dans l'UI.
+Guard DOM strict : `div[usetype]` dont le texte normalisé (`_normalize_lbl`) matche
+`looks_like_nav_label` (réutilise `CTA_SYNONYMS`/liste nav_kw déjà existante, aucune
+modification) + visible (`_is_visible`).
+Patterns couverts :
+- Clic via `_click_with_intercept` (helper partagé existant, inchangé) — respecte déjà
+  `CTA_INTERCEPT_ONLY` automatiquement (armement interceptor si activé, sinon
+  press/click/release réel avec vérification de progression DOM).
+Patterns exclus :
+- Tout `div[usetype]` dont le texte ne matche pas un label de navigation connu → ignoré,
+  chemin générique inchangé pour ces cas.
+Statut : patch validé — confirmé par l'utilisateur en conditions réelles (log
+`CTA_FOUND pattern=qdtech_usetype_div`, `CTA_CLICKED ... PROGRESSED=true`, navigation SPA
+détectée après clic).
+
+## PLATEFORME : QDTECH / KUAIJUECE — PICKER ROUE VANT SANS INPUT NATIF (van-picker-column)
+
+Signature DOM : composant Vant/Vue `.van-picker` / `.van-picker__columns`, chaque colonne
+étant `<ul class="van-picker-column__wrapper">` positionnée via `style="transform:
+translate3d(...)"`. Chaque option est un `<li role="button" tabindex="0"
+class="van-picker-column__item">` (libellé dans un `<div class="van-ellipsis">`), sans
+`id`/`name`/`value`. L'item actuellement sélectionné porte la classe additionnelle
+`van-picker-column__item--selected`. L'extraction générique `button_group`
+(`dom_analyzer.py`) produit correctement le bloc radio (question + 15 options) — non
+concernée par ce patch.
+
+### click_vant_picker_column_radio
+Fichier : Survey/input_radio.py
+Enregistré dans : `click_radio_by_label`, juste après le try `click_ipsos_sharky_grid_progressive_radio`
+(ordre additif, avant Confirmit GridClick).
+Guard DOM strict : `ul.van-picker-column__wrapper > li.van-picker-column__item` présent —
+sinon retour anticipé `False`, chaîne de fallback inchangée pour tout autre widget.
+Problème résolu : la résolution générique par XPath positionnel calculé à l'extraction ne
+retrouve pas l'élément au moment du clic (`element not found for xpath: .../ul/li[9]`), suivi
+d'un fallback infructueux sur deux stratégies d'autres providers (`kantar_rowpicker`,
+`ipsos_sharky_grid_progressive`) puis `reason=no_strategy` — même signature de bug que
+`qdtech_qdradio_icon` ci-dessus, sur un widget DOM différent.
+Patterns couverts :
+- Résolution de l'item par texte normalisé (`toLowerCase().normalize('NFKC')`, espaces
+  collapsés) au moment du clic, texte exact prioritaire puis repli substring — aucune
+  dépendance à l'index/position DOM.
+- Clic natif `target.click()` exécuté côté page (dans le `evaluate()`, pas via l'API
+  d'actionabilité Playwright/CDP) : l'item ciblé peut être hors de la fenêtre visible du
+  picker (clip via overflow sur la colonne), sans scroll natif possible sur cette roue
+  pilotée par `transform` — un clic Playwright classique échouerait sur l'actionabilité.
+- `_JS_VERIFY` (après `time.sleep(0.15)`, même convention que `click_kantar_rowpicker_radio`) :
+  la classe `van-picker-column__item--selected` doit avoir migré sur l'item dont le texte
+  correspond au label demandé.
+Patterns exclus :
+- Tout DOM sans `ul.van-picker-column__wrapper` → chemins existants inchangés (guard le
+  premier retour `False`).
+Statut : patch validé — confirmé par l'utilisateur en conditions réelles (log
+`vant_picker_column: native_verify=ok`, `apply ok=true strategy=radio_main reason=applied`,
+capture d'écran montrant l'option "Île-de-France" effectivement sélectionnée dans l'UI).
+
 ---
