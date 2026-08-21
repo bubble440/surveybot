@@ -11336,6 +11336,200 @@ def _extract_confirmit_cf_multi_choice_blocks(driver, frame_chain: list[int] | N
     return blocks
 
 
+def _extract_confirmit_cf_searchable_multi_choice_blocks(driver, frame_chain: list[int] | None) -> list[dict]:
+    """Forsta/Confirmit "recherche avec liste filtrable" : div.cf-question--searchable-multi.
+
+    Gate DOM strict (additif, distinct de cf-question--single/--multi) :
+    - présence de div.cf-question--searchable-multi
+    - au moins un contient div.cf-searchable-question
+
+    Structure ciblée (exemple id A1) :
+      div.cf-question--searchable-multi#A1
+        div.cf-question__text            ← texte de la question
+        div.cf-question__content
+          div.cf-searchable-question
+            div.cf-searchable-question__answers-column
+              div.cf-searchable-question__filtered-answers
+                input.cf-searchable-question__search   ← filtre la liste, PAS une réponse
+                div...__answer-list-wrapper
+                  div.cf-list
+                    div.cf-list__item
+                      div.cf-checkbox-answer            ← option non-exclusive
+                        div.cf-checkbox-answer__text
+              div.cf-searchable-question__exclusive-answers
+                div...__answer-list-wrapper
+                  div.cf-list
+                    div.cf-list__item
+                      div.cf-radio-answer               ← option exclusive (Autre/JSP/Aucune)
+                        div.cf-radio-answer__text
+            div.cf-searchable-question__selected-answers-column  ← exclu (récap des sélections, pas la source)
+
+    Le DOM initial n'expose qu'un sous-ensemble des options possibles (pagination via
+    "Charger plus..." + champ de recherche) : seules les options effectivement rendues
+    et cliquables au moment de l'extraction sont retournées, conformément au principe
+    DOM-first (pas de simulation d'interaction dans cet extracteur).
+    """
+    frame_chain = list(frame_chain or [])
+
+    # Gate 1 : au moins un div.cf-question--searchable-multi présent
+    try:
+        q_containers = driver.query_selector_all("div.cf-question--searchable-multi")
+    except Exception:
+        return []
+    if not q_containers:
+        return []
+
+    # Gate 2 : au moins un contient div.cf-searchable-question
+    gate_ok = False
+    for qc in q_containers:
+        try:
+            if qc.query_selector_all("div.cf-searchable-question"):
+                gate_ok = True
+                break
+        except Exception:
+            continue
+    if not gate_ok:
+        return []
+
+    blocks: list[dict] = []
+
+    for qc in q_containers[:20]:
+        try:
+            try:
+                widget = qc.query_selector("div.cf-searchable-question")
+            except Exception:
+                widget = None
+            if not widget:
+                continue
+
+            # Texte de la question
+            question = ""
+            try:
+                q_text_el = qc.query_selector("div.cf-question__text")
+                question = _norm(q_text_el.get_attribute("textContent") or q_text_el.inner_text() or "")
+            except Exception:
+                pass
+            if not question:
+                continue
+
+            # Scope strict : answers-column uniquement (exclut selected-answers-column,
+            # qui n'est qu'un récapitulatif dynamique des sélections déjà faites).
+            try:
+                answers_column = widget.query_selector("div.cf-searchable-question__answers-column")
+            except Exception:
+                answers_column = None
+            if not answers_column:
+                continue
+
+            try:
+                list_items = answers_column.query_selector_all("div.cf-list__item")
+            except Exception:
+                list_items = []
+            if not list_items:
+                continue
+
+            options: list[str] = []
+            option_xpath_map: dict[str, str] = {}
+
+            for item in list_items[:200]:
+                try:
+                    opt_text = ""
+                    ctrl = None
+
+                    # Priorité : cf-checkbox-answer (options non-exclusives)
+                    try:
+                        txt_el = item.query_selector("div.cf-checkbox-answer__text")
+                        opt_text = _norm(txt_el.get_attribute("textContent") or txt_el.inner_text() or "")
+                    except Exception:
+                        pass
+                    if opt_text:
+                        try:
+                            ctrl = item.query_selector("div.cf-checkbox-answer div.cf-checkbox")
+                        except Exception:
+                            ctrl = None
+
+                    # Fallback : cf-radio-answer (options exclusives : Autre/JSP/Aucune)
+                    if not opt_text:
+                        try:
+                            txt_el = item.query_selector("div.cf-radio-answer__text")
+                            opt_text = _norm(txt_el.get_attribute("textContent") or txt_el.inner_text() or "")
+                        except Exception:
+                            pass
+                        if opt_text:
+                            try:
+                                ctrl = item.query_selector("div.cf-radio-answer div.cf-radio")
+                            except Exception:
+                                ctrl = None
+
+                    if not opt_text or ctrl is None:
+                        continue
+
+                    nk = _norm_key(opt_text)
+                    if nk in option_xpath_map:
+                        continue
+
+                    ctrl_id = (ctrl.get_attribute("id") or "").strip()
+                    if ctrl_id:
+                        xp = f"//*[@id={_xpath_literal(ctrl_id)}]"
+                    else:
+                        try:
+                            xp = _best_xpath_for_element(ctrl)
+                        except Exception:
+                            xp = None
+                    if not xp:
+                        continue
+
+                    options.append(opt_text)
+                    option_xpath_map[nk] = xp
+                except Exception:
+                    continue
+
+            if len(options) < 2 or not option_xpath_map:
+                continue
+
+            q_id = (qc.get_attribute("id") or "").strip()
+            group_key = f"checkbox:cf-searchable-multi:{q_id}" if q_id else f"checkbox:cf-searchable-multi:{question[:40]}"
+            target_id = make_target_id("group", group_key, question)
+
+            register_target(
+                target_id,
+                {
+                    "kind": "group",
+                    "itype": "checkbox",
+                    "group_key": group_key,
+                    "question": question,
+                    "option_xpath_map": option_xpath_map,
+                    "frame_chain": frame_chain,
+                    "confirmit_cf_searchable_multi": True,
+                },
+            )
+
+            blocks.append(
+                {
+                    "question": question,
+                    "itype": "checkbox",
+                    "options": options,
+                    "max_select": len(options),
+                    "min_select": 1,
+                    "target_id": target_id,
+                    "context": {
+                        "kind": "group",
+                        "group_key": group_key,
+                    },
+                }
+            )
+            log_debug(
+                "[DOM_CONFIRMIT_CF_SEARCHABLE_MULTI]",
+                f"q_id={q_id!r} question={question!r} options={options}",
+            )
+        except Exception:
+            continue
+
+    if blocks:
+        log_info("[DOM_CONFIRMIT_CF_SEARCHABLE_MULTI]", f"blocks_extracted={len(blocks)}")
+    return blocks
+
+
 # ================================================================================
 # ASKIA — QUESTION RADIO / NPS myresponse* (td cliquables + input radio masqué)
 # ================================================================================

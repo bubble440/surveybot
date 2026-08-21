@@ -4409,3 +4409,58 @@ clic sur le bouton de taille de police, plus de latence anormale entre deux sél
 d'options).
 
 ---
+
+## CONFIRMIT/FORSTA CF-QUESTION--SEARCHABLE-MULTI — RÉPONSE OPENAI AU FORMAT 5 CHAMPS INVERSÉ (COLONNE QID CONTENANT LA LISTE DE VALEURS)
+
+Contexte : question checkbox Confirmit/Forsta de type widget recherche-et-sélection
+(`cf-question--searchable-multi`, ex. target_id `group_ed9aefe29b8b`, group_key
+`checkbox:cf-searchable-multi:{qid}`). L'extraction DOM de ce widget fonctionnait déjà
+correctement (question + options bien récupérées).
+
+### parse_batch_response — chemin de récupération additif pour variante 5 champs avec colonnes inversées
+Fichier : Survey/batch_response_parser.py, fonction `parse_batch_response`
+Bug corrigé : sur cette question, la réponse brute d'OpenAI comportait bien 5 segments
+séparés par "////", mais dans un ordre inversé par rapport au format documenté
+(`QID //// target_id //// valeur //// itype //// contexte`) : colonne 1 = liste des
+valeurs sélectionnées (séparées par " | ", au lieu du QID), colonne 2 = target_id correct,
+colonne 3 = la même liste de valeurs sous une autre forme ("|" sans espace), colonne 4 =
+itype, colonne 5 = texte de question. Le mapping positionnel standard (5 champs) traitait
+donc la liste de valeurs comme un QID, qui ne matchait ni `_QID_RE` ni les contraintes
+batch strict (`Q1` introuvable) — la ligne entière était silencieusement écartée.
+Symptôme observé : `received=0 final_count=0 values=[]` malgré une extraction réussie et
+une réponse modèle contenant des valeurs valides parmi les options connues.
+Correction : nouveau chemin de résolution additif, déclenché uniquement si (a) la
+récupération standard existante a échoué (qid absent des contraintes) ET (b) la colonne 2
+correspond exactement à un target_id connu (`target_to_qid`) ET (c) l'itype déclaré en
+colonne 4 correspond à l'itype attendu pour la question ainsi retrouvée (double
+discriminant, pour ne jamais capturer à tort une ligne au format standard dont le QID
+serait simplement inconnu pour une autre raison). Aucune modification des branches 5/4/3
+champs existantes ni de la logique de récupération `target_to_qid` déjà en place.
+Patterns couverts :
+- Réponse à 5 segments "////" où la colonne 1 attendue pour le QID contient en réalité la
+  liste des valeurs sélectionnées, et où la colonne 2 porte le target_id correct.
+Patterns exclus :
+- Toute ligne où la colonne 2 ne correspond à aucun target_id connu, ou où l'itype de la
+  colonne 4 ne correspond pas à celui de la question retrouvée via ce target_id — dans ces
+  cas, comportement inchangé (ligne écartée si non résolue par les chemins existants).
+Statut : patch validé (confirmé par l'utilisateur — sélection appliquée avec succès sur la
+première valeur retournée après correction du parsing).
+
+### Observation associée (non patchée) — multiCount de la question non reflété dans max_select extrait
+Sur cette même question, `max_select` extrait valait 13 (nombre total d'options), alors que
+la configuration JS intégrée à la page porte `"multiCount":{"equal":1,"min":null,"max":null}`
+et une règle de validation "Veuillez sélectionner 1 réponse." : la question n'autorise en
+réalité qu'une seule sélection. Confirmé comportementalement : dès qu'une option est cochée,
+le widget ajoute la classe `cf-checkbox-answer--disabled` à toutes les autres options de la
+liste (seule l'option cochée porte `cf-checkbox-answer--selected`), ce qui explique les
+échecs de clic observés sur les valeurs supplémentaires renvoyées par le modèle (options
+devenues non interactives, pas un défaut de stratégie de clic).
+Non traité pour l'instant (aucune modification appliquée à l'extracteur
+`_extract_confirmit_cf_searchable_multi_choice_blocks`) : à réutiliser comme point de
+diagnostic si une occurrence similaire (question cf-question--searchable-multi avec
+sur-sélection par le modèle et clics suivants systématiquement en échec après le premier)
+est rencontrée à nouveau. Ne pas supposer que la limite est toujours 1 : le widget expose un
+objet `multiCount` générique (`equal`/`min`/`max`), la contrainte réelle peut varier d'une
+question à l'autre.
+
+---

@@ -922,6 +922,35 @@ def parse_batch_response(raw: str, constraints: Optional[Dict[str, int]] = None,
                 target_id = target_id or qid
                 qid = recovered_qid
 
+        # Chemin de résolution distinct (additif) — variante observée où OpenAI inverse
+        # l'ordre des champs du format 5 colonnes : colonne 1 = liste des valeurs
+        # sélectionnées (au lieu du QID), colonne 2 = target_id correct, colonne 3 =
+        # la même liste de valeurs sous une autre forme, colonne 4 = itype, colonne 5 =
+        # texte de question. Ne se déclenche que si la récupération standard ci-dessus a
+        # échoué (qid toujours absent de constraints) ET si la colonne 2 correspond
+        # exactement à un target_id connu ET si l'itype déclaré en colonne 4 correspond à
+        # l'itype attendu pour la question ainsi retrouvée (double discriminant, pour ne
+        # jamais capturer une ligne au format standard dont le QID serait simplement
+        # inconnu). `value` (déjà affecté depuis parts[2] par la branche 5-champs
+        # standard ci-dessus) n'est pas modifié : parts[2] porte la même liste de valeurs
+        # que parts[0] dans cette variante.
+        if (
+            constraints is not None
+            and (not qid or qid not in constraints)
+            and len(parts) >= 5
+            and target_id
+            and target_id in target_to_qid
+        ):
+            _alt_qid = target_to_qid[target_id]
+            _alt_meta = (qid_meta or {}).get(_alt_qid) if isinstance(qid_meta, dict) else None
+            _alt_itype = str((_alt_meta or {}).get("itype") or "").strip().lower() if isinstance(_alt_meta, dict) else ""
+            if _alt_itype and itype and _alt_itype == itype:
+                _debug_log(
+                    f"[swapped_5field_recovery] target_id={target_id!r} -> qid={_alt_qid!r} "
+                    f"(colonne QID initiale={qid!r})"
+                )
+                qid = _alt_qid
+
         # mode batch strict
         if constraints is not None:
             if not qid:
