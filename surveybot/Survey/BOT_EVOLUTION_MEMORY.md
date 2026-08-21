@@ -1901,6 +1901,7 @@ Patterns exclus :
 | Decipher/FocusVision card rating | _extract_decipher_cardrating_blocks | extracteur générique answers-list/matrice (vue QA) | même `data-uid` de widget déjà couvert par `_extract_decipher_cardrating_blocks` → bloc `radio:name:{uid}` de la vue QA cachée supprimé par guard négatif additif |
 | Ipsos/simstore MUI | _extract_image_labelledby_choice_checkbox_blocks | _extract_image_only_choice_checkbox_blocks | inputs SANS `name` + libellé résolu via `aria-labelledby` (vs inputs avec `name` + wrapper label/parent direct) |
 | Ask&Answer/FirstInsight | _extract_askandanswer_ranking_dragdrop_blocks | _extract_askandanswer_selection_list_questions | `data-question-type='RANKING_DRAG_AND_DROP'` + `div.cdk-drop-list`/`div.cdk-drag` (vs `mat-selection-list`/`mat-radio-group`) — les deux sont fusionnés (non exclusifs) par dom_analyzer.py étape 0c, pas de retour anticipé |
+| QDTech/KuaiJueCe | _extract_qdtech_qdradio_icon_choice_blocks | extracteur générique input/role radio-checkbox | `.radio-ctn` + `i[class*='qd-radio']` sans input natif ni role (vs input[type=radio/checkbox]/[role=radio/checkbox] pour le chemin générique) — retour anticipé si match |
 
 ---
 
@@ -4462,5 +4463,89 @@ sur-sélection par le modèle et clics suivants systématiquement en échec apr�
 est rencontrée à nouveau. Ne pas supposer que la limite est toujours 1 : le widget expose un
 objet `multiCount` générique (`equal`/`min`/`max`), la contrainte réelle peut varier d'une
 question à l'autre.
+
+---
+
+## PLATEFORME : QDTECH / KUAIJUECE — RADIO ICONE SANS INPUT NATIF (qd-radio)
+
+Signature DOM : marquage Vue scopé `data-v-*`, conteneurs `.qd-header`/`.qd-title`/
+`.radio-ctn`, pied de page "Support technique fourni par KuaiJueCe". Chaque option est
+matérialisée uniquement par une icône `<i class="qd-radio-unselect qd-radio">` (aucun
+`input[type=radio/checkbox]`, aucun `role="radio"/"checkbox"`) — la détection générique des
+éléments de choix (`dom_analyzer.py`, sélecteur combiné input/role) ne matche donc aucun
+élément sur ce DOM, ce qui empêchait toute construction de bloc de question.
+
+### _extract_qdtech_qdradio_icon_choice_blocks
+Fichier : Survey/dom_extractors_misc.py
+Enregistré dans : dom_analyzer.py, appelée juste après le bloc Studystream contenteditable,
+avant le sélecteur générique input/role radio-checkbox (retour anticipé si blocs trouvés).
+Guard DOM strict : `.radio-ctn` avec ≥2 `i[class*='qd-radio']` regroupées, plus un ancêtre
+commun portant un bloc `.qd-header` avec un span `.qd-title` non vide.
+Patterns couverts :
+- Question : concaténation du titre (`.qd-title`) avec les autres spans non vides du même
+  bloc `.qd-header` (ex. indicateur de type "Veuillez sélectionner une option"), dans l'ordre
+  d'apparition DOM.
+- Options : pour chaque icône `i[class*='qd-radio']`, libellé résolu via `innerText` du
+  parent direct de l'icône, avec repli sur le grand-parent si le parent direct est vide.
+- `option_xpath_map` peuplé via `_best_xpath_for_element` (XPath absolu positionnel) — voir
+  limite ci-dessous, corrigée côté dispatcher/clic, pas ici.
+- Flag payload : `qdtech_qdradio_icon=True` ; `itype="radio"` uniquement ; `group_key` :
+  `qdtech_qdradio:{question_norm}:{nb_options}`.
+Limite connue (non re-patchée dans l'extracteur, corrigée en aval) : le XPath positionnel de
+`option_xpath_map` ne résout plus l'élément au moment du clic dès que Vue re-rend l'icône
+(transition classe unselect/select) — voir `click_qdtech_qdradio_icon` ci-dessous, qui
+bypasse totalement ce XPath par une résolution en JS par texte normalisé.
+Patterns exclus :
+- Variantes `qd-checkbox` (multi-sélection) → hors scope, non couvert.
+- Tout DOM portant un input/role natif → chemins existants inchangés.
+
+### qdtech_qdradio_icon — guard dispatcher (_apply_by_target_id)
+Fichier : Survey/action_dispatcher.py
+Emplacement : bloc opt_map, juste après le guard `mui_dialog_question_option`.
+Guard : `payload.get("qdtech_qdradio_icon") and resolved_itype == "radio"`
+Patterns couverts :
+- Bypass total du chemin XPath/`_find_best_visible` → appel direct
+  `click_qdtech_qdradio_icon(driver, value)`.
+Problème résolu : `option_xpath_map` posé par l'extracteur (XPath positionnel absolu) ne
+résout plus l'icône au moment du clic — log observé `element not found for xpath: /html/...`
+suivi d'un fallback infructueux sur deux stratégies d'autres providers (`kantar_rowpicker`,
+`ipsos_sharky_grid_progressive`) puis `reason=no_strategy`.
+Patterns exclus :
+- Tous les autres itypes et providers.
+
+### click_qdtech_qdradio_icon
+Fichier : Survey/input_radio.py
+Guard : appelée uniquement depuis le guard `qdtech_qdradio_icon` du dispatcher.
+Patterns couverts :
+- `_JS_FIND` : itère `.radio-ctn i[class*='qd-radio']`, résout le libellé par `innerText` du
+  parent (repli grand-parent si vide, même logique que l'extracteur), compare en texte
+  normalisé (`toLowerCase().normalize('NFKC')`, espaces collapsés) — retourne la ligne
+  (ou l'icône si pas de parent) via `evaluate_handle(...).as_element()`, pas `evaluate()`
+  (même convention que `click_kantar_rowpicker_radio`/`click_mui_dialog_question_option`).
+- Clic sur la ligne (pas seulement l'icône) : `row_el.click()`, fallback
+  `row_el.hover(); row_el.click()`.
+- `_JS_VERIFY` : la classe de l'icône correspondante ne contient plus `unselect` après clic
+  (transition `qd-radio-unselect` → état sélectionné).
+Note DOM : le nom de classe exact à l'état sélectionné n'est pas figé dans la vérification —
+seule l'absence du sous-mot `unselect` est testée, pour rester robuste si la classe
+sélectionnée diffère d'un déploiement à l'autre du widget.
+Patterns exclus :
+- Aucun — fonction dédiée à ce seul flag.
+
+### execute_action — bloc radio : pas de fallback générique après échec qdtech_qdradio_icon
+Fichier : Survey/action_dispatcher.py
+Emplacement : section `if itype == "radio":`, juste après le guard `mui_dialog_question_option`.
+Guard : `_tp.get("qdtech_qdradio_icon")` truthy.
+Problème résolu : même risque de faux positif que `kantar_rowpicker_radio`/
+`mui_dialog_question_option` — ce widget n'a ni input natif, ni role, ni label[for], donc les
+stratégies génériques `radio_main`/`radio_buttonish` ne peuvent rien y trouver de pertinent.
+Correction : retour `False` immédiat si la stratégie dédiée a déjà échoué, aucun fallback
+générique invoqué.
+Patterns exclus :
+- Tout bloc radio sans flag `qdtech_qdradio_icon` → séquence générique inchangée.
+
+Statut : patch validé — confirmé par l'utilisateur en conditions réelles (log
+`qdtech_qdradio: native_verify=ok`, `apply ok=true strategy=target_id`, capture d'écran
+montrant l'option "25 à 34 ans" effectivement sélectionnée dans l'UI).
 
 ---

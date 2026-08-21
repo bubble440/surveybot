@@ -1540,6 +1540,42 @@ def try_click_navigation_cta(driver) -> bool:
     except Exception:
         pass
 
+    # --- QDTech/KuaiJueCe: CTA "Continuer" = simple <div> sans rôle/tabindex ---
+    # DOM observé:
+    #   <div usetype="...">
+    #       <div class="...">Continuer</div>
+    #   </div>
+    # Aucun <button>/<input>/<a>, aucun role="button" ni tabindex — le scoring
+    # générique de candidats CTA ne cible que des éléments interactifs natifs ou
+    # explicitement marqués (role/tabindex), donc jamais ce motif. La classe du
+    # texte change d'état (avant/après sélection d'une réponse) mais l'attribut
+    # `usetype` reste le discriminant DOM stable dans les deux états.
+    try:
+        qdtech_cta_wrappers = _ctx.query_selector_all("div[usetype]")
+        for wrapper in qdtech_cta_wrappers[:20]:
+            try:
+                label_txt = _normalize_lbl(wrapper.inner_text() or "")
+                if not label_txt or not looks_like_nav_label(label_txt):
+                    continue
+                if not _is_visible(driver, wrapper):
+                    continue
+                wrapper.evaluate("(el) => el.scrollIntoView({block:'center'})")
+                _nav_log("[CTA_NAV]", "CTA_FOUND pattern=qdtech_usetype_div", driver)
+                clicked = _click_with_intercept(driver, wrapper)
+                _nav_log(
+                    "[CTA_NAV]",
+                    f"CTA_CLICKED pattern=qdtech_usetype_div PROGRESSED={str(bool(clicked)).lower()}",
+                    driver,
+                )
+                if clicked:
+                    if _cta_intercept_enabled():
+                        _nav_log("[CTA_NAV]", "INTERCEPT_OK pattern=qdtech_usetype_div", driver)
+                    return True
+            except Exception:
+                continue
+    except Exception:
+        pass
+
     # --- MetrixLab / Toluna: CTA icon-only <div id="next" class="next ..."> ---
     # DOM observé:
     #   <div class="next arrow_on" id="next" style="display:block !important"> ... </div>

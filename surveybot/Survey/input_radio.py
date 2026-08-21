@@ -972,6 +972,116 @@ def click_kantar_rowpicker_radio(driver, label: str) -> bool:
 
 
 # =============================================================================
+# QDTECH / KUAIJUECE — RADIO ICONE SANS INPUT NATIF (qd-radio)
+# =============================================================================
+
+def click_qdtech_qdradio_icon(driver, label: str) -> bool:
+    """
+    Options QDTech/KuaiJueCe rendues uniquement par une icône `<i class="qd-radio...">`
+    (aucun input natif, aucun role="radio") dans un conteneur `.radio-ctn`.
+
+    Guard DOM strict (posé en amont, dom_extractors_misc.py) : flag
+    `qdtech_qdradio_icon` dans le payload de la cible (kind="group", itype="radio"),
+    posé par `_extract_qdtech_qdradio_icon_choice_blocks`.
+
+    Problème résolu : `option_xpath_map` est peuplé à l'extraction avec un XPath
+    absolu positionnel (`_best_xpath_for_element`) — Vue re-rend l'arborescence
+    (icône unselect/select, wrappers) et ce chemin ne résout plus rien au moment
+    du clic ("element not found for xpath"). Remplacement par une résolution en
+    JS côté page, par comparaison de texte normalisée sur la ligne d'option
+    (icône + libellé), même mécanisme déjà éprouvé que click_kantar_rowpicker_radio /
+    click_mui_dialog_question_option — insensible au ré-rendu positionnel.
+
+    Vérification : après clic, la classe de l'icône correspondante ne contient
+    plus "unselect" (transition `qd-radio-unselect` → état sélectionné).
+    """
+    _JS_FIND = r"""
+    const norm = s => (s || '')
+      .toLowerCase().normalize('NFKC')
+      .replace(/\s+/g, ' ').trim();
+    const needle = norm(arg);
+    if (!needle) return null;
+
+    const icons = Array.from(document.querySelectorAll(".radio-ctn i[class*='qd-radio']"));
+    for (const icon of icons) {
+      let row = icon.parentElement;
+      let txt = norm(row ? (row.innerText || row.textContent || '') : '');
+      if (!txt && row) {
+        const row2 = row.parentElement;
+        const txt2 = norm(row2 ? (row2.innerText || row2.textContent || '') : '');
+        if (txt2) { txt = txt2; row = row2; }
+      }
+      if (txt !== needle) continue;
+      return row || icon;
+    }
+    return null;
+    """
+
+    _JS_VERIFY = r"""
+    const norm = s => (s || '')
+      .toLowerCase().normalize('NFKC')
+      .replace(/\s+/g, ' ').trim();
+    const needle = norm(arg);
+    const icons = Array.from(document.querySelectorAll(".radio-ctn i[class*='qd-radio']"));
+    for (const icon of icons) {
+      let row = icon.parentElement;
+      let txt = norm(row ? (row.innerText || row.textContent || '') : '');
+      if (!txt && row) {
+        const row2 = row.parentElement;
+        const txt2 = norm(row2 ? (row2.innerText || row2.textContent || '') : '');
+        if (txt2) { txt = txt2; row = row2; }
+      }
+      if (txt !== needle) continue;
+      const cls = icon.className || '';
+      return cls.indexOf('unselect') === -1;
+    }
+    return false;
+    """
+
+    _ctx = getattr(driver, "_current_frame", driver)
+
+    try:
+        row_el = _ctx.evaluate_handle("(arg) => {" + _JS_FIND + "}", label).as_element()
+    except Exception as exc:
+        log_debug("[TARGET_DEBUG]", f"qdtech_qdradio: js_find_exception label={label!r} error={type(exc).__name__}: {exc}")
+        return False
+
+    if row_el is None:
+        log_debug("[TARGET_DEBUG]", f"qdtech_qdradio: option_not_found label={label!r}")
+        return False
+
+    try:
+        row_el.scroll_into_view_if_needed()
+    except Exception:
+        pass
+
+    try:
+        row_el.click()
+    except Exception as exc_click:
+        try:
+            row_el.hover()
+            row_el.click()
+        except Exception as exc_hover:
+            log_debug(
+                "[TARGET_DEBUG]",
+                f"qdtech_qdradio: click_failed label={label!r} "
+                f"click_error={type(exc_click).__name__}: {exc_click} "
+                f"hover_click_error={type(exc_hover).__name__}: {exc_hover}",
+            )
+            return False
+
+    time.sleep(0.15)
+
+    try:
+        ok = bool(_ctx.evaluate("(arg) => {" + _JS_VERIFY + "}", label))
+    except Exception:
+        ok = False
+
+    log_debug("[TARGET_DEBUG]", f"qdtech_qdradio: native_verify={'ok' if ok else 'ko'} label={label!r}")
+    return ok
+
+
+# =============================================================================
 # IPSOS/mrIWeb SHARKY "GridProgressive" — WIDGET RADIO DIV-BASED (SANS INPUT NATIF)
 # =============================================================================
 

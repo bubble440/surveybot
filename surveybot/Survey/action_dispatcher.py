@@ -2318,6 +2318,21 @@ def _apply_by_target_id(
                     )
                     return bool(_mdq_ok)
 
+                # QDTech/KuaiJueCe qd-radio icon (sans input natif) : le XPath positionnel
+                # posé dans option_xpath_map par _extract_qdtech_qdradio_icon_choice_blocks
+                # ne résout plus rien au moment du clic (Vue re-rend l'icône unselect/select).
+                # Bypass total du chemin XPath/_find_best_visible : résolution par texte
+                # normalisé en JS (click_qdtech_qdradio_icon), même famille de fix que
+                # kantar_rowpicker_radio/mui_dialog_question_option ci-dessus.
+                if payload.get("qdtech_qdradio_icon") and resolved_itype == "radio":
+                    from Survey.input_radio import click_qdtech_qdradio_icon
+                    _qdr_ok = click_qdtech_qdradio_icon(driver, value)
+                    log_debug(
+                        "[TARGET_DEBUG]",
+                        f"qdtech_qdradio_icon_dispatch: {'ok' if _qdr_ok else 'ko'} value={value!r}",
+                    )
+                    return bool(_qdr_ok)
+
                 # Guard decipher_ranksort_dropdown : 1 bloc checkbox, N items à classer.
                 # value = texte de l'item retourné par GPT ; ordinal = sa position (1-based) dans la réponse.
                 # On set le select de cet item à rank_labels[ordinal-1] via JS (le select est display:none).
@@ -7729,6 +7744,18 @@ def execute_action(
                 log_debug(
                     "[TARGET_DEBUG]",
                     f"radio mui_dialog_question_option: dedicated strategy failed, no generic fallback value={label!r}",
+                )
+                return False
+
+            # QDTech/KuaiJueCe qd-radio icon : même logique défensive que
+            # kantar_rowpicker_radio/mui_dialog_question_option ci-dessus — la stratégie
+            # dédiée (click_qdtech_qdradio_icon) a déjà été tentée via _apply_by_target_id
+            # et a échoué. Ce widget n'a ni input natif, ni role, ni label[for] : les
+            # stratégies génériques radio_main/radio_buttonish ne peuvent rien y trouver.
+            if _tp.get("qdtech_qdradio_icon"):
+                log_debug(
+                    "[TARGET_DEBUG]",
+                    f"radio qdtech_qdradio_icon: dedicated strategy failed, no generic fallback value={label!r}",
                 )
                 return False
 
