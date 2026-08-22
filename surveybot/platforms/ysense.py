@@ -95,10 +95,17 @@ class YSensePlatform(Platform):
         else:
             log_debug(_TAG, "login() — mot de passe injecté via JS")
 
-        # Recaptcha si présent et visible
+        # Recaptcha si présent et visible — détection sur des éléments concrets
+        # (iframe/sitekey réels), pas sur le conteneur englobant div#recaptcha-login.
+        # Ce conteneur n'englobe que des enfants position:fixed (badge grecaptcha +
+        # overlay du challenge, injecté ailleurs dans le DOM au moment de l'exécution)
+        # et n'a donc lui-même aucune boîte englobante propre : son is_visible() ne
+        # reflète pas la présence réelle du challenge à l'écran. On réutilise la
+        # détection déjà validée par le guard de difficulté (iframe/sitekey visibles
+        # + exclusion du badge invisible), cohérente avec ce qui s'affiche réellement.
         try:
-            rc = page.query_selector("div#recaptcha-login")
-            if rc is not None and rc.is_visible():
+            import Management.guards.survey_difficulty_guard as difficulty_guard
+            if difficulty_guard.is_real_recaptcha_present(driver):
                 log_info(_TAG, "login() — recaptcha détecté, résolution en cours…")
                 from captcha import recaptcha_handler
                 recaptcha_handler.solve_recaptcha_v2_auto(driver)
