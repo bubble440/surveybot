@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import time
 from typing import List
 from urllib.parse import urlparse
 from config import is_cta_intercept_only
@@ -95,17 +96,6 @@ class YSensePlatform(Platform):
         else:
             log_debug(_TAG, "login() — mot de passe injecté via JS")
 
-        # Recaptcha si présent et visible
-        try:
-            rc = page.query_selector("div#recaptcha-login")
-            if rc is not None and rc.is_visible():
-                log_info(_TAG, "login() — recaptcha détecté, résolution en cours…")
-                from captcha import recaptcha_handler
-                recaptcha_handler.solve_recaptcha_v2_auto(driver)
-                log_info(_TAG, "login() — recaptcha résolu")
-        except Exception:
-            pass
-
         # Stabilisation anti-hydration : la page charge vendor-react.compiled.js
         # + login.bundle.js après le HTML server-rendered. Une hydration React
         # peut remonter le formulaire après nos fill() (sans exception), vidant
@@ -168,6 +158,61 @@ class YSensePlatform(Platform):
         except Exception as e:
             log_info(_TAG, f"login() — bouton de soumission introuvable : {e}")
             return False
+
+        # Recaptcha : détection + résolution APRÈS le clic de soumission
+        # uniquement. Widget en mode invisible (size=invisible confirmé sur
+        # l'iframe d'ancrage) : le challenge ne se déclenche (grecaptcha.execute())
+        # qu'à la soumission du formulaire — sur le DOM de référence capturé juste
+        # avant le clic, l'iframe du challenge est encore explicitement masquée
+        # (style inline hors-écran/opacité nulle). Un test placé avant ce clic ne
+        # peut donc structurellement jamais le voir, quelle que soit la méthode de
+        # détection. On surveille ici sa possible apparition avec un budget borné,
+        # en réutilisant la détection sur éléments concrets (iframe/sitekey) déjà
+        # validée pour le login (cf. guard de difficulté) — abandon contrôlé et
+        # loggé si rien n'apparaît, la vérification de succès ci-dessous s'applique
+        # ensuite normalement dans tous les cas.
+        _RECAPTCHA_POLL_MAX_ATTEMPTS = 6
+        _RECAPTCHA_POLL_INTERVAL_S = 1
+        try:
+            import Management.guards.survey_difficulty_guard as difficulty_guard
+            _recaptcha_found = False
+            for _attempt in range(_RECAPTCHA_POLL_MAX_ATTEMPTS):
+                if difficulty_guard.is_real_recaptcha_present(driver):
+                    _recaptcha_found = True
+                    break
+                time.sleep(_RECAPTCHA_POLL_INTERVAL_S)
+            if _recaptcha_found:
+                log_info(_TAG, "login() — recaptcha détecté après soumission, résolution en cours…")
+                from captcha import recaptcha_handler
+                _recaptcha_solved = recaptcha_handler.solve_recaptcha_v2_auto(driver)
+                if _recaptcha_solved:
+                    log_info(_TAG, "login() — recaptcha résolu")
+                    # solve_recaptcha_v2_auto délègue volontairement tout clic/navigation
+                    # post-résolution à l'appelant (cf. son propre docstring) : le token
+                    # injecté et le callback exécuté ne soumettent pas le formulaire tout
+                    # seuls, il faut re-déclencher le clic de soumission ici pour que le
+                    # login aboutisse. CTA (Submit) → gated CTA_INTERCEPT_ONLY.
+                    if is_cta_intercept_only():
+                        log_info(
+                            _TAG,
+                            "login() — re-soumission post-recaptcha trouvée — interception OK "
+                            "(CTA_INTERCEPT_ONLY actif), pas de clic réel.",
+                        )
+                    else:
+                        try:
+                            submit_btn.click()
+                            log_info(_TAG, "login() — formulaire re-soumis après résolution recaptcha")
+                        except Exception as e:
+                            log_info(_TAG, f"login() — re-clic soumission post-recaptcha impossible : {e}")
+                else:
+                    log_info(_TAG, "login() — échec résolution recaptcha")
+            else:
+                log_debug(
+                    _TAG,
+                    f"login() — pas de recaptcha détecté après {_RECAPTCHA_POLL_MAX_ATTEMPTS}s, abandon poll",
+                )
+        except Exception:
+            pass
 
         # Vérifier le succès : URL sans /login dans les 15s.
         # Seul signal fiable — cohérent avec is_session_expired() qui définit

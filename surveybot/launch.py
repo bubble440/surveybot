@@ -636,7 +636,12 @@ def init_session_and_enter_surveys(driver, config, account_id: str, notify_fn, p
             capture_and_upload(driver, "survey_account")
     else:
         if platform:
-            platform.login(driver, config)
+            _login_ok = platform.login(driver, config)
+            if not _login_ok:
+                raise RuntimeError(
+                    f"platform.login() a échoué pour {platform.get_platform_name()} "
+                    "(URL toujours sur /login) — abandon du cycle"
+                )
         else:
             email = os.getenv("EMAIL") or config.get("Email")
             password = os.getenv("PASSWORD") or config.get("Password")
