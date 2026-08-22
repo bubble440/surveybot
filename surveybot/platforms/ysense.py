@@ -186,24 +186,18 @@ class YSensePlatform(Platform):
                 from captcha import recaptcha_handler
                 _recaptcha_solved = recaptcha_handler.solve_recaptcha_v2_auto(driver)
                 if _recaptcha_solved:
-                    log_info(_TAG, "login() — recaptcha résolu")
-                    # solve_recaptcha_v2_auto délègue volontairement tout clic/navigation
-                    # post-résolution à l'appelant (cf. son propre docstring) : le token
-                    # injecté et le callback exécuté ne soumettent pas le formulaire tout
-                    # seuls, il faut re-déclencher le clic de soumission ici pour que le
-                    # login aboutisse. CTA (Submit) → gated CTA_INTERCEPT_ONLY.
-                    if is_cta_intercept_only():
-                        log_info(
-                            _TAG,
-                            "login() — re-soumission post-recaptcha trouvée — interception OK "
-                            "(CTA_INTERCEPT_ONLY actif), pas de clic réel.",
-                        )
-                    else:
-                        try:
-                            submit_btn.click()
-                            log_info(_TAG, "login() — formulaire re-soumis après résolution recaptcha")
-                        except Exception as e:
-                            log_info(_TAG, f"login() — re-clic soumission post-recaptcha impossible : {e}")
+                    # Pas de second clic ici (retiré — cf. commit précédent qui l'avait
+                    # ajouté à tort). Le bouton Sign In est le trigger reCAPTCHA v2
+                    # invisible lui-même (sitekey ancré avec sa=login) : son 1er clic
+                    # a déjà déclenché grecaptcha.execute() côté site, dont la promesse
+                    # reste en attente jusqu'à résolution du challenge. Le callback
+                    # interne qu'on vient d'invoquer (cf. solve_recaptcha_v2_auto /
+                    # _fire_recaptcha_callbacks) résout cette promesse toujours pendante
+                    # depuis le 1er clic — la suite (soumission réelle) reprend donc
+                    # d'elle-même côté site. Un second clic redéclenche seulement un
+                    # nouvel execute() sur le même widget, sans soumettre le formulaire
+                    # (confirmé : clic exécuté sans erreur, aucun effet, URL inchangée).
+                    log_info(_TAG, "login() — recaptcha résolu, soumission déléguée au flux JS déjà en attente")
                 else:
                     log_info(_TAG, "login() — échec résolution recaptcha")
             else:
