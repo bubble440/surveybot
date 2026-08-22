@@ -1497,6 +1497,149 @@ def _dismiss_blocking_overlays(driver) -> int:
 
 
 # =============================================================================
+# CLOSED_SHADOW_CONSENT_ACCEPT (Transcend airgap.js — bandeau #transcend-consent-manager)
+# =============================================================================
+# Bandeau CMP Transcend (airgap.js) confirmé sur ySense (prescreener-v2) : injecté comme
+# frère de <body>, tout son contenu (titre, texte, boutons "Tout accepter"/"Tout rejeter"/
+# "Plus de choix") vit dans un <template shadowrootmode="closed">. En mode closed,
+# .shadowRoot est bloqué pour TOUT script exécuté dans le contexte de la page — c'est une
+# restriction du navigateur, pas un manque de sélecteur : ni document.querySelectorAll('*')
+# (_dismiss_blocking_overlays ci-dessus voit l'hôte #transcend-consent-manager via son
+# position:fixed/z-index, mais son garde CONSENT_KEYWORDS lit innerText/textContent qui sont
+# vides côté light DOM, donc le rejette) ni le piercing automatique des sélecteurs Playwright
+# (qui repose sur le même .shadowRoot, fonctionne pour les shadow roots "open" comme
+# #INDShadowRootHost/EqualWeb déjà géré ailleurs, mais pas pour un shadow root "closed") ne
+# peuvent l'atteindre. Seul le protocole CDP (DOM.getDocument avec pierce=true) expose les
+# shadow roots closed, car il opère hors du sandbox JS de la page — même mécanisme déjà
+# utilisé dans ce repo par page_snapshot.py (page.context.new_cdp_session(page)).
+
+_CDP_WALK_NODE_BUDGET = 4000
+
+
+def _cdp_find_node_by_id(node, target_id, budget):
+    if budget[0] <= 0 or node is None:
+        return None
+    budget[0] -= 1
+    attrs = node.get("attributes") or []
+    for i in range(0, len(attrs) - 1, 2):
+        if attrs[i] == "id" and attrs[i + 1] == target_id:
+            return node
+    for child in (node.get("children") or []) + (node.get("shadowRoots") or []):
+        found = _cdp_find_node_by_id(child, target_id, budget)
+        if found is not None:
+            return found
+    return None
+
+
+def _cdp_node_text(node, budget):
+    if budget[0] <= 0 or node is None:
+        return ""
+    budget[0] -= 1
+    if node.get("nodeType") == 3:
+        return node.get("nodeValue") or ""
+    parts = [
+        _cdp_node_text(child, budget)
+        for child in (node.get("children") or []) + (node.get("shadowRoots") or [])
+    ]
+    return " ".join(p for p in parts if p)
+
+
+def _cdp_find_button_by_text(node, accept_words, reject_words, budget):
+    if budget[0] <= 0 or node is None:
+        return None
+    budget[0] -= 1
+    if (node.get("nodeName") or "").upper() == "BUTTON":
+        txt = _cdp_node_text(node, budget).strip().lower()
+        if txt and not any(r in txt for r in reject_words) and any(a in txt for a in accept_words):
+            return node
+    for child in (node.get("children") or []) + (node.get("shadowRoots") or []):
+        found = _cdp_find_button_by_text(child, accept_words, reject_words, budget)
+        if found is not None:
+            return found
+    return None
+
+
+def _click_closed_shadow_consent_accept(driver) -> bool:
+    """
+    Clique le bouton "Tout accepter" du bandeau consentement Transcend quand son contenu
+    est piégé dans un shadow root closed (cf. bloc de commentaire ci-dessus pour la cause
+    racine). Garde-fou DOM strict et scopé au minimum : n'agit que si un élément portant
+    id="transcend-consent-manager" existe en light DOM (id fixe exposé par airgap.js,
+    hors du shadow root donc lisible normalement). Budget de parcours borné
+    (_CDP_WALK_NODE_BUDGET noeuds), abandon silencieux au-delà. Respecte CTA_INTERCEPT_ONLY
+    au même titre que le clic CTA de navigation.
+    """
+    # Vérifié sur le document racine (driver), jamais sur _resolve_ctx : le bandeau Transcend
+    # est injecté par le <head> de la page top-level, pas dans une frame enfant de survey
+    # (frameset Ipsos/mrIWeb etc.) — même portée que le parcours CDP ci-dessous.
+    try:
+        has_banner = driver.evaluate(
+            "() => !!document.getElementById('transcend-consent-manager')"
+        )
+    except Exception:
+        has_banner = False
+    if not has_banner:
+        return False
+
+    intercept_only = (os.environ.get(CTA_INTERCEPT_ENV_VAR, "0") or "0").strip() == "1"
+    ACCEPT_WORDS = ("tout accepter", "accept all")
+    REJECT_WORDS = ("tout refuser", "tout rejeter", "reject all")
+
+    cdp = None
+    try:
+        cdp = driver.context.new_cdp_session(driver)
+        cdp.send("DOM.enable")
+        doc = cdp.send("DOM.getDocument", {"pierce": True, "depth": -1})
+        root = (doc or {}).get("root")
+
+        budget = [_CDP_WALK_NODE_BUDGET]
+        host = _cdp_find_node_by_id(root, "transcend-consent-manager", budget)
+        if host is None:
+            log_debug("[CTA_CONSENT_SHADOW]", "host_node_not_found_via_cdp")
+            return False
+
+        button = _cdp_find_button_by_text(host, ACCEPT_WORDS, REJECT_WORDS, budget)
+        if button is None:
+            log_info("[CTA_CONSENT_SHADOW]", "transcend_banner accept_button introuvable")
+            return False
+
+        box = cdp.send("DOM.getBoxModel", {"nodeId": button.get("nodeId")})
+        content = ((box or {}).get("model") or {}).get("content") or []
+        if len(content) < 8:
+            log_debug("[CTA_CONSENT_SHADOW]", "box_model_unavailable")
+            return False
+        cx = sum(content[0::2]) / 4
+        cy = sum(content[1::2]) / 4
+
+        if intercept_only:
+            log_info(
+                "[CTA_CONSENT_SHADOW]",
+                f"transcend_banner accept_button trouvé x={cx:.0f} y={cy:.0f} — clic intercepté",
+            )
+            return True
+
+        cdp.send("Input.dispatchMouseEvent", {"type": "mouseMoved", "x": cx, "y": cy})
+        cdp.send("Input.dispatchMouseEvent", {
+            "type": "mousePressed", "x": cx, "y": cy, "button": "left", "clickCount": 1
+        })
+        cdp.send("Input.dispatchMouseEvent", {
+            "type": "mouseReleased", "x": cx, "y": cy, "button": "left", "clickCount": 1
+        })
+        log_info("[CTA_CONSENT_SHADOW]", f"transcend_banner accept_button clicked x={cx:.0f} y={cy:.0f}")
+        time.sleep(0.3)
+        return True
+    except Exception as e:
+        log_debug("[CTA_CONSENT_SHADOW]", f"error={e!r}")
+        return False
+    finally:
+        if cdp is not None:
+            try:
+                cdp.detach()
+            except Exception:
+                pass
+
+
+# =============================================================================
 # TRY_CLICK_NAVIGATION_CTA
 # =============================================================================
 
@@ -1515,6 +1658,7 @@ def try_click_navigation_cta(driver) -> bool:
         True si CTA navigation cliqué
     """
     _dismiss_blocking_overlays(driver)
+    _click_closed_shadow_consent_accept(driver)
 
     # Contexte document actif (frame courante lors d'une itération multi-frame
     # via _in_each_frame_recursive, sinon driver racine). Sans ceci, toutes les

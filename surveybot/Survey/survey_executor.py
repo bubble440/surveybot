@@ -1992,6 +1992,22 @@ def execute_survey_page(driver, account_id, api_key, ctx=None):
     except Exception:
         pass
 
+    # =========================================================================
+    # PATCH: Bandeau consentement Transcend (#transcend-consent-manager, shadow root
+    # closed) — fermé dès le chargement de page, avant le premier traitement DOM du
+    # cycle (classify_dom ci-dessous), plutôt que d'attendre try_click_navigation_cta
+    # en fin de cycle (cf. BOT_EVOLUTION_MEMORY.md). Appel additif : le call-site
+    # existant dans try_click_navigation_cta reste inchangé, comme filet de sécurité.
+    # _click_closed_shadow_consent_accept gère déjà son propre garde-fou DOM strict
+    # (no-op si #transcend-consent-manager absent) et CTA_INTERCEPT_ONLY en interne —
+    # non dupliqués ici.
+    # =========================================================================
+    try:
+        import Survey.cta_handler as cta_handler
+        cta_handler._click_closed_shadow_consent_accept(driver)
+    except Exception as _consent_shadow_exc:
+        log_debug("[CTA_CONSENT_SHADOW]", f"early_call_failed: {_consent_shadow_exc}")
+
     # dom_classifier est hors-périmètre → passer driver (= shim)
     classification = dom_classifier.classify_dom(driver)
 
