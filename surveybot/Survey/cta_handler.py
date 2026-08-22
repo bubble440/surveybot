@@ -183,6 +183,40 @@ def _is_mriweb_vue_next_cta(el) -> bool:
     )
 
 
+def _is_cis_command_navigation_cta(el) -> bool:
+    """
+    Détecte le CTA de navigation du moteur "CIS" (endpoint CGI `CISrd.fcg`/`CIScgi.fcg`,
+    ex. iqsn.de) : `input[type=image]` sans alt/title/value/name exploitable, encapsulé
+    dans un wrapper dédié aux commandes de navigation (`div.Command` dont l'id suit la
+    convention `Qxxxx_Idxxxx` propre à ce moteur). Le libellé visible ("Continuer") est
+    intégralement porté par l'image (gif) référencée en `src`, donc invisible au DOM.
+    """
+    try:
+        tag = (el.evaluate("e => e.tagName.toLowerCase()") or "").strip().lower()
+    except Exception:
+        return False
+
+    if tag != "input":
+        return False
+
+    input_type = (el.get_attribute("type") or "").strip().lower()
+    if input_type != "image":
+        return False
+
+    try:
+        wrapper = el.query_selector_all(
+            "xpath=" + "ancestor::div[contains(concat(' ', normalize-space(@class), ' '), ' Command ')][1]"
+        )
+    except Exception:
+        wrapper = []
+
+    if not wrapper:
+        return False
+
+    wrapper_id = (wrapper[0].get_attribute("id") or "").strip()
+    return bool(re.fullmatch(r"Q\d+_Id\d+", wrapper_id))
+
+
 def _is_inline_hidden_cta(el) -> bool:
     """Retourne True si le style inline masque explicitement le CTA (opacity:0 + visibility:hidden)."""
     try:
@@ -2097,12 +2131,14 @@ def try_click_navigation_cta(driver) -> bool:
             has_intellisurvey_structural_submit = _is_intellisurvey_structural_submit_cta(el)
             has_mriweb_structural_submit = _is_mriweb_structural_submit_cta(el)
             has_mriweb_vue_next = _is_mriweb_vue_next_cta(el)
+            has_cis_command_nav = _is_cis_command_navigation_cta(el)
             _diag_step = "no_text_no_nav_keyword_check"
             if (
                 not t
                 and not has_intellisurvey_structural_submit
                 and not has_mriweb_structural_submit
                 and not has_mriweb_vue_next
+                and not has_cis_command_nav
                 and not any(k in signature for k in ["next", "continue", "submit", "suivant", "valider", "confirm", "confirmer", "confirmez"])
             ):
                 _diag_mark("no_text_no_nav_keyword")
@@ -2141,6 +2177,9 @@ def try_click_navigation_cta(driver) -> bool:
 
             if has_mriweb_vue_next:
                 score += 180
+
+            if has_cis_command_nav:
+                score += 200
 
             if any(k in el_name for k in ["submit", "next", "continue", "confirm"]):
                 score += 60
