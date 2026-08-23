@@ -600,6 +600,12 @@ def init_session_and_enter_surveys(driver, config, account_id: str, notify_fn, p
     safe_get(driver, _home_url)
     print("🚀 Brave lancé.")
 
+    # Diagnostic (BUG login ySense / profil persistant) : trace la chronologie
+    # exacte des URLs entre la home page, la vérification de session et
+    # l'appel de login, sans modifier la logique de décision ci-dessous.
+    from Survey.log_utils import log_info as _diag_log_info
+    _diag_log_info("[INIT][DIAG]", f"après safe_get(home={_home_url!r}) — url_actuelle={driver.url!r}")
+
     # Détection de session active gated par plateforme : le sélecteur
     # [data-test-id='surveys-nav'] est spécifique au DOM TopSurveys et n'existe
     # dans aucune page ySense (ni ailleurs) — sur cette dernière, _session_active
@@ -627,6 +633,10 @@ def init_session_and_enter_surveys(driver, config, account_id: str, notify_fn, p
             _session_active = not platform.is_session_expired(driver)
         except Exception:
             _session_active = False
+        _diag_log_info(
+            "[INIT][DIAG]",
+            f"après platform.is_session_expired() — url_actuelle={driver.url!r} session_active={_session_active}",
+        )
 
     if _session_active:
         print("[INIT] session active détectée — login ignoré")
@@ -636,6 +646,7 @@ def init_session_and_enter_surveys(driver, config, account_id: str, notify_fn, p
             capture_and_upload(driver, "survey_account")
     else:
         if platform:
+            _diag_log_info("[INIT][DIAG]", f"avant platform.login() — url_actuelle={driver.url!r}")
             _login_ok = platform.login(driver, config)
             if not _login_ok:
                 raise RuntimeError(

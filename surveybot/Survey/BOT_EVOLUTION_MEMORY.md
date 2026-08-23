@@ -4142,6 +4142,59 @@ Statut : patch valide (confirme par l'utilisateur en conditions reelles).
 
 ---
 
+## PLATEFORME : YSENSE (ysense.com/login) — SOUMISSION EN DEUX PASSES (SIGN IN PUIS CONTINUE MOT DE PASSE SEUL) NON GEREE
+
+### YSensePlatform.login — boucle bornee de re-soumission avec re-detection de la variante password_only_reauth
+Fichier : platforms/ysense.py
+Bug corrige : sur certains comptes/sessions, /login sert un premier ecran complet
+(email + mot de passe, bouton "Sign In"). Apres soumission, le site re-rend en place
+un second ecran sur la MEME URL /login (pas de navigation entre les deux, formulaire
+re-rendu par login.bundle.js) : mot de passe seul, champ #username present mais
+`display:none` ("Please re-enter your password to continue.", bouton "Continue").
+La detection de cette variante (visibilite reelle du champ #username, deja geree pour
+le cas "profil persistant, 1 seul ecran") n'etait evaluee qu'une seule fois, juste
+apres la 1re navigation vers /login — jamais reevaluee apres un 1er clic de soumission
+qui laisse l'URL sur /login avec un nouvel etat de DOM. `login()` retournait donc
+`False` apres une seule soumission valide, quel que soit le contenu du 2e ecran.
+Correction : toute la sequence existante (attente #username, detection
+password_only_reauth, remplissage, stabilisation anti-hydration, clic soumission,
+poll+resolution recaptcha, verification de sortie de /login) est desormais executee
+dans une boucle bornee `_MAX_LOGIN_SUBMIT_PASSES = 2`. La detection
+`password_only_reauth` est reevaluee a chaque passe (pas de valeur figee entre les
+passes). Si l'URL reste sur /login apres soumission ET qu'il reste un budget de passe,
+`continue` vers une 2e passe ; sinon (budget epuise) lecture de `div#errors` et
+`return False` comme avant. Aucune modification du chemin a une seule soumission
+(cas nominal) : il sort de la boucle des la 1re passe via le `return True` de succes,
+inchange.
+Onglet secondaire observe pendant la transition : le formulaire `#loginform` porte
+`target="dummy"` sur les DEUX ecrans (confirme identique sur les 2 DOM de reference,
+Sign In et Continue) — la soumission ouvre une fenetre nommee "dummy" qui recoit la
+reponse brute du POST cote navigateur (page d'erreur HTTP visible a l'ecran). C'est un
+effet de bord du HTML du site, sans lien avec la session/le profil ni avec un echec de
+login. Cette fenetre n'est ni interrogee ni pilotee par le patch : `page` reste la Page
+d'origine du debut a la fin de `login()`, aucune detection/fermeture necessaire.
+Log discriminant :
+`[YSENSE] login() — variante détectée : ré-authentification mot de passe seul ... [passe N]`,
+`[YSENSE] login() — bouton de soumission cliqué [passe N]`,
+`[YSENSE] login() — toujours sur /login après soumission, nouvelle passe (second écran probable)`
+(uniquement si une 2e passe est engagee), succes final inchange :
+`[YSENSE] login() — succès (URL sans /login)`.
+Patterns couverts :
+- Comptes/sessions ySense ou /login sert successivement, sur la meme URL et sans
+  navigation intermediaire, un ecran complet (Sign In) puis un ecran mot de passe seul
+  (Continue) apres une premiere soumission valide.
+Patterns exclus :
+- Cas nominal a une seule soumission (session pleinement expiree → formulaire complet
+  suffit, ou profil persistant → ecran mot de passe seul des la 1re passe) : comportement
+  inchange, la boucle ne fait qu'une iteration.
+- `is_session_expired()` : non modifiee par ce patch (logs de diagnostic deja ajoutes
+  separement, hors de ce correctif).
+- Aucune fermeture/detection de la fenetre `target="dummy"` : volontairement absente,
+  cette fenetre n'affecte pas la Page pilotee.
+Statut : patch valide (confirme par l'utilisateur en conditions reelles).
+
+---
+
 ## PLATEFORME : DECIPHER/FOCUSVISION — ANSWERS-LIST GENERIQUE (GROUPEMENT PAR NAME) : LIMITE DE SELECTION ("SELECTIONNE JUSQU'A N...") NON PRISE EN COMPTE
 
 Signature DOM : `div.question[role='radiogroup'] / div.question.checkbox / div.question.radio`

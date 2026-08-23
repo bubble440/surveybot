@@ -35,205 +35,240 @@ class YSensePlatform(Platform):
         page = driver
         page.goto(_LOGIN_URL)
 
-        # Attendre la présence du champ email (server-rendered, pas de SPA hydration)
-        try:
-            email_input = page.wait_for_selector(
-                "input#username", state="attached", timeout=20000
+        # Certains comptes exigent deux soumissions successives sur /login,
+        # sans navigation entre les deux (le formulaire est re-rendu en place
+        # par login.bundle.js, l'URL reste /login) : un premier écran complet
+        # (email + mot de passe, bouton "Sign In"), puis un second écran —
+        # exactement la variante "ré-authentification mot de passe seul"
+        # ci-dessous, mais réapparue après coup — qui ne redemande que le mot
+        # de passe ("Please re-enter your password to continue.", bouton
+        # "Continue") avant de quitter réellement /login. La détection de
+        # cette variante (visibilité du champ #username) doit donc être
+        # réévaluée à chaque passage, pas seulement à la 1re navigation.
+        # Le formulaire des deux écrans porte target="dummy" (attribut HTML du
+        # site, présent dans les deux DOM de référence) : la soumission ouvre
+        # une fenêtre secondaire nommée "dummy" qui sert de cible de repli au
+        # POST natif du navigateur. C'est un effet de bord du HTML, sans lien
+        # avec la session ni le profil ; cette fenêtre n'est jamais interrogée
+        # ni pilotée ici (page reste la Page d'origine tout du long) et ne
+        # doit pas être confondue avec un échec ou un changement de page.
+        # Budget borné à 2 passes : le cas nominal (un seul écran) réussit dès
+        # la 1re, le cas à deux écrans réussit à la 2e — au-delà, abandon.
+        _MAX_LOGIN_SUBMIT_PASSES = 2
+        for _pass in range(_MAX_LOGIN_SUBMIT_PASSES):
+            # Attendre la présence du champ email (server-rendered au 1er
+            # passage ; ré-rendu en place par le site au 2e passage éventuel).
+            try:
+                email_input = page.wait_for_selector(
+                    "input#username", state="attached", timeout=20000
+                )
+            except Exception:
+                log_info(_TAG, "login() — timeout : input#username introuvable")
+                return False
+
+            log_debug(
+                _TAG,
+                f"login() — champ email présent dans le DOM (passe {_pass + 1}/{_MAX_LOGIN_SUBMIT_PASSES})",
             )
-        except Exception:
-            log_info(_TAG, "login() — timeout : input#username introuvable")
-            return False
 
-        log_debug(_TAG, "login() — champ email présent dans le DOM")
-
-        # Variante additive — "ré-authentification, profil persistant" :
-        # quand le profil Chrome existe déjà et que ySense reconnaît la
-        # session, /login sert une page qui ne redemande que le mot de
-        # passe ("Please re-enter your password to continue."). Le champ
-        # #username reste présent dans le DOM (attaché, donc le
-        # wait_for_selector ci-dessus réussit toujours) mais son
-        # form-group parent porte style="display: none" : il n'est ni
-        # visible ni destiné à être rempli. Sans cette détection, le fill()
-        # sur un champ invisible attend indéfiniment (jusqu'au timeout).
-        # Détection scopée sur la visibilité réelle du champ, sans toucher
-        # au chemin standard (username + password) qui reste inchangé
-        # ci-dessous pour les autres cas (nouveau profil, session inconnue).
-        password_only_reauth = False
-        try:
-            password_only_reauth = not email_input.is_visible()
-        except Exception:
+            # Variante additive — "ré-authentification, profil persistant" :
+            # quand le profil Chrome existe déjà et que ySense reconnaît la
+            # session, /login sert une page qui ne redemande que le mot de
+            # passe ("Please re-enter your password to continue."). Le champ
+            # #username reste présent dans le DOM (attaché, donc le
+            # wait_for_selector ci-dessus réussit toujours) mais son
+            # form-group parent porte style="display: none" : il n'est ni
+            # visible ni destiné à être rempli. Sans cette détection, le fill()
+            # sur un champ invisible attend indéfiniment (jusqu'au timeout).
+            # Détection scopée sur la visibilité réelle du champ, sans toucher
+            # au chemin standard (username + password) qui reste inchangé
+            # ci-dessous pour les autres cas (nouveau profil, session inconnue).
             password_only_reauth = False
+            try:
+                password_only_reauth = not email_input.is_visible()
+            except Exception:
+                password_only_reauth = False
 
-        if password_only_reauth:
-            log_info(
-                _TAG,
-                "login() — variante détectée : ré-authentification mot de passe seul "
-                "(profil persistant, champ username non visible)",
-            )
-        else:
-            email_input.fill(email)
-            log_debug(_TAG, "login() — email saisi")
-
-        try:
-            pwd_input = page.query_selector("input[type='password']")
-            if pwd_input is None:
-                raise RuntimeError("introuvable")
-        except Exception as e:
-            log_info(_TAG, f"login() — champ password introuvable : {e}")
-            return False
-
-        pwd_input.evaluate(
-            "(e, v) => {"
-            " e.value = v;"
-            " e.dispatchEvent(new Event('input',  { bubbles: true }));"
-            " e.dispatchEvent(new Event('change', { bubbles: true }));"
-            "}",
-            password,
-        )
-        if not (pwd_input.input_value() or "").strip():
-            pwd_input.fill(password)
-            log_debug(_TAG, "login() — mot de passe injecté via fallback fill()")
-        else:
-            log_debug(_TAG, "login() — mot de passe injecté via JS")
-
-        # Stabilisation anti-hydration : la page charge vendor-react.compiled.js
-        # + login.bundle.js après le HTML server-rendered. Une hydration React
-        # peut remonter le formulaire après nos fill() (sans exception), vidant
-        # silencieusement les champs avant le clic. On revérifie juste avant de
-        # soumettre et on re-remplit si nécessaire (budget borné).
-        # En variante password_only_reauth, le champ email n'est jamais rempli
-        # ni revérifié (il reste vide/invisible par design de cette page) :
-        # seule la stabilité du mot de passe conditionne la sortie de boucle.
-        _MAX_STABILIZE_ATTEMPTS = 3
-        stabilized = False
-        for attempt in range(_MAX_STABILIZE_ATTEMPTS):
-            email_val = "" if password_only_reauth else (email_input.input_value() or "").strip()
-            pwd_val = (pwd_input.input_value() or "").strip()
-            email_ok = password_only_reauth or (email_val == email)
-            if email_ok and pwd_val == password:
-                stabilized = True
-                break
-            log_debug(
-                _TAG,
-                f"login() — champs vidés avant soumission (tentative {attempt + 1}/"
-                f"{_MAX_STABILIZE_ATTEMPTS}), re-remplissage",
-            )
-            if not password_only_reauth and email_val != email:
-                email_input.fill(email)
-            if pwd_val != password:
-                pwd_input.fill(password)
-        else:
-            email_val = "" if password_only_reauth else (email_input.input_value() or "").strip()
-            pwd_val = (pwd_input.input_value() or "").strip()
-            email_ok = password_only_reauth or (email_val == email)
-            stabilized = email_ok and pwd_val == password
-
-        if not stabilized:
-            log_info(_TAG, "login() — impossible de stabiliser les champs avant soumission, abandon")
-            return False
-
-        # Soumettre via click
-        try:
-            submit_btn = page.query_selector("button.sbutton.large")
-            if submit_btn is None:
-                raise RuntimeError("introuvable")
-
-            # Diagnostic : relecture DOM juste avant le clic (fenêtre restante
-            # après la boucle de stabilisation), pour trancher entre valeur
-            # source incorrecte (cf. log en tête de login()) et réinitialisation
-            # tardive par la page. Mot de passe jamais loggué en clair.
-            final_email_val = "" if password_only_reauth else (email_input.input_value() or "").strip()
-            final_pwd_val = (pwd_input.input_value() or "").strip()
-            log_debug(
-                _TAG,
-                f"login() — juste avant clic soumission : "
-                f"password_only_reauth={password_only_reauth}, "
-                f"email_match={'n/a' if password_only_reauth else (final_email_val == email)}, "
-                f"password_match={final_pwd_val == password} "
-                f"(password_lu={_mask_secret(final_pwd_val)})",
-            )
-
-            submit_btn.click()
-            log_info(_TAG, "login() — bouton de soumission cliqué")
-        except Exception as e:
-            log_info(_TAG, f"login() — bouton de soumission introuvable : {e}")
-            return False
-
-        # Recaptcha : détection + résolution APRÈS le clic de soumission
-        # uniquement. Widget en mode invisible (size=invisible confirmé sur
-        # l'iframe d'ancrage) : le challenge ne se déclenche (grecaptcha.execute())
-        # qu'à la soumission du formulaire — sur le DOM de référence capturé juste
-        # avant le clic, l'iframe du challenge est encore explicitement masquée
-        # (style inline hors-écran/opacité nulle). Un test placé avant ce clic ne
-        # peut donc structurellement jamais le voir, quelle que soit la méthode de
-        # détection. On surveille ici sa possible apparition avec un budget borné,
-        # en réutilisant la détection sur éléments concrets (iframe/sitekey) déjà
-        # validée pour le login (cf. guard de difficulté) — abandon contrôlé et
-        # loggé si rien n'apparaît, la vérification de succès ci-dessous s'applique
-        # ensuite normalement dans tous les cas.
-        _RECAPTCHA_POLL_MAX_ATTEMPTS = 6
-        _RECAPTCHA_POLL_INTERVAL_S = 1
-        try:
-            import Management.guards.survey_difficulty_guard as difficulty_guard
-            _recaptcha_found = False
-            for _attempt in range(_RECAPTCHA_POLL_MAX_ATTEMPTS):
-                if difficulty_guard.is_real_recaptcha_present(driver):
-                    _recaptcha_found = True
-                    break
-                time.sleep(_RECAPTCHA_POLL_INTERVAL_S)
-            if _recaptcha_found:
-                log_info(_TAG, "login() — recaptcha détecté après soumission, résolution en cours…")
-                from captcha import recaptcha_handler
-                _recaptcha_solved = recaptcha_handler.solve_recaptcha_v2_auto(driver)
-                if _recaptcha_solved:
-                    # Pas de second clic ici (retiré — cf. commit précédent qui l'avait
-                    # ajouté à tort). Le bouton Sign In est le trigger reCAPTCHA v2
-                    # invisible lui-même (sitekey ancré avec sa=login) : son 1er clic
-                    # a déjà déclenché grecaptcha.execute() côté site, dont la promesse
-                    # reste en attente jusqu'à résolution du challenge. Le callback
-                    # interne qu'on vient d'invoquer (cf. solve_recaptcha_v2_auto /
-                    # _fire_recaptcha_callbacks) résout cette promesse toujours pendante
-                    # depuis le 1er clic — la suite (soumission réelle) reprend donc
-                    # d'elle-même côté site. Un second clic redéclenche seulement un
-                    # nouvel execute() sur le même widget, sans soumettre le formulaire
-                    # (confirmé : clic exécuté sans erreur, aucun effet, URL inchangée).
-                    log_info(_TAG, "login() — recaptcha résolu, soumission déléguée au flux JS déjà en attente")
-                else:
-                    log_info(_TAG, "login() — échec résolution recaptcha")
+            if password_only_reauth:
+                log_info(
+                    _TAG,
+                    f"login() — variante détectée : ré-authentification mot de passe seul "
+                    f"(profil persistant, champ username non visible) [passe {_pass + 1}]",
+                )
             else:
+                email_input.fill(email)
+                log_debug(_TAG, "login() — email saisi")
+
+            try:
+                pwd_input = page.query_selector("input[type='password']")
+                if pwd_input is None:
+                    raise RuntimeError("introuvable")
+            except Exception as e:
+                log_info(_TAG, f"login() — champ password introuvable : {e}")
+                return False
+
+            pwd_input.evaluate(
+                "(e, v) => {"
+                " e.value = v;"
+                " e.dispatchEvent(new Event('input',  { bubbles: true }));"
+                " e.dispatchEvent(new Event('change', { bubbles: true }));"
+                "}",
+                password,
+            )
+            if not (pwd_input.input_value() or "").strip():
+                pwd_input.fill(password)
+                log_debug(_TAG, "login() — mot de passe injecté via fallback fill()")
+            else:
+                log_debug(_TAG, "login() — mot de passe injecté via JS")
+
+            # Stabilisation anti-hydration : la page charge vendor-react.compiled.js
+            # + login.bundle.js après le HTML server-rendered. Une hydration React
+            # peut remonter le formulaire après nos fill() (sans exception), vidant
+            # silencieusement les champs avant le clic. On revérifie juste avant de
+            # soumettre et on re-remplit si nécessaire (budget borné).
+            # En variante password_only_reauth, le champ email n'est jamais rempli
+            # ni revérifié (il reste vide/invisible par design de cette page) :
+            # seule la stabilité du mot de passe conditionne la sortie de boucle.
+            _MAX_STABILIZE_ATTEMPTS = 3
+            stabilized = False
+            for attempt in range(_MAX_STABILIZE_ATTEMPTS):
+                email_val = "" if password_only_reauth else (email_input.input_value() or "").strip()
+                pwd_val = (pwd_input.input_value() or "").strip()
+                email_ok = password_only_reauth or (email_val == email)
+                if email_ok and pwd_val == password:
+                    stabilized = True
+                    break
                 log_debug(
                     _TAG,
-                    f"login() — pas de recaptcha détecté après {_RECAPTCHA_POLL_MAX_ATTEMPTS}s, abandon poll",
+                    f"login() — champs vidés avant soumission (tentative {attempt + 1}/"
+                    f"{_MAX_STABILIZE_ATTEMPTS}), re-remplissage",
                 )
-        except Exception:
-            pass
+                if not password_only_reauth and email_val != email:
+                    email_input.fill(email)
+                if pwd_val != password:
+                    pwd_input.fill(password)
+            else:
+                email_val = "" if password_only_reauth else (email_input.input_value() or "").strip()
+                pwd_val = (pwd_input.input_value() or "").strip()
+                email_ok = password_only_reauth or (email_val == email)
+                stabilized = email_ok and pwd_val == password
 
-        # Vérifier le succès : URL sans /login dans les 15s.
-        # Seul signal fiable — cohérent avec is_session_expired() qui définit
-        # l'authentification de la même façon. L'ancien fallback "div#errors
-        # vide → succès" produisait un faux positif (le champ peut être vide
-        # avant le rendu async du message d'erreur), ce qui masquait un
-        # échec de connexion réel.
-        try:
-            page.wait_for_function(
-                "() => !window.location.href.includes('/login')", timeout=15000
-            )
-            log_info(_TAG, "login() — succès (URL sans /login)")
+            if not stabilized:
+                log_info(_TAG, "login() — impossible de stabiliser les champs avant soumission, abandon")
+                return False
+
+            # Soumettre via click
             try:
-                from Cash.ysense_balance import check_balance_and_notify_if_needed
-                check_balance_and_notify_if_needed(page, os.getenv("ACCOUNT_ID") or "unknown")
-            except Exception as e:
-                log_debug(_TAG, f"login() — vérification solde post-login échouée (non bloquant) : {e}")
-            return True
-        except Exception:
-            pass
+                submit_btn = page.query_selector("button.sbutton.large")
+                if submit_btn is None:
+                    raise RuntimeError("introuvable")
 
-        try:
-            errors_div = page.query_selector("div#errors")
-            errors_text = (errors_div.inner_text() or "").strip() if errors_div else ""
-        except Exception:
-            errors_text = ""
-        log_debug(_TAG, f"login() — échec : /login toujours dans l'URL, errors={errors_text!r}")
+                # Diagnostic : relecture DOM juste avant le clic (fenêtre restante
+                # après la boucle de stabilisation), pour trancher entre valeur
+                # source incorrecte (cf. log en tête de login()) et réinitialisation
+                # tardive par la page. Mot de passe jamais loggué en clair.
+                final_email_val = "" if password_only_reauth else (email_input.input_value() or "").strip()
+                final_pwd_val = (pwd_input.input_value() or "").strip()
+                log_debug(
+                    _TAG,
+                    f"login() — juste avant clic soumission : "
+                    f"password_only_reauth={password_only_reauth}, "
+                    f"email_match={'n/a' if password_only_reauth else (final_email_val == email)}, "
+                    f"password_match={final_pwd_val == password} "
+                    f"(password_lu={_mask_secret(final_pwd_val)})",
+                )
+
+                submit_btn.click()
+                log_info(_TAG, f"login() — bouton de soumission cliqué [passe {_pass + 1}]")
+            except Exception as e:
+                log_info(_TAG, f"login() — bouton de soumission introuvable : {e}")
+                return False
+
+            # Recaptcha : détection + résolution APRÈS le clic de soumission
+            # uniquement. Widget en mode invisible (size=invisible confirmé sur
+            # l'iframe d'ancrage) : le challenge ne se déclenche (grecaptcha.execute())
+            # qu'à la soumission du formulaire — sur le DOM de référence capturé juste
+            # avant le clic, l'iframe du challenge est encore explicitement masquée
+            # (style inline hors-écran/opacité nulle). Un test placé avant ce clic ne
+            # peut donc structurellement jamais le voir, quelle que soit la méthode de
+            # détection. On surveille ici sa possible apparition avec un budget borné,
+            # en réutilisant la détection sur éléments concrets (iframe/sitekey) déjà
+            # validée pour le login (cf. guard de difficulté) — abandon contrôlé et
+            # loggé si rien n'apparaît, la vérification de succès ci-dessous s'applique
+            # ensuite normalement dans tous les cas.
+            _RECAPTCHA_POLL_MAX_ATTEMPTS = 6
+            _RECAPTCHA_POLL_INTERVAL_S = 1
+            try:
+                import Management.guards.survey_difficulty_guard as difficulty_guard
+                _recaptcha_found = False
+                for _attempt in range(_RECAPTCHA_POLL_MAX_ATTEMPTS):
+                    if difficulty_guard.is_real_recaptcha_present(driver):
+                        _recaptcha_found = True
+                        break
+                    time.sleep(_RECAPTCHA_POLL_INTERVAL_S)
+                if _recaptcha_found:
+                    log_info(_TAG, "login() — recaptcha détecté après soumission, résolution en cours…")
+                    from captcha import recaptcha_handler
+                    _recaptcha_solved = recaptcha_handler.solve_recaptcha_v2_auto(driver)
+                    if _recaptcha_solved:
+                        # Pas de second clic ici (retiré — cf. commit précédent qui l'avait
+                        # ajouté à tort). Le bouton Sign In est le trigger reCAPTCHA v2
+                        # invisible lui-même (sitekey ancré avec sa=login) : son 1er clic
+                        # a déjà déclenché grecaptcha.execute() côté site, dont la promesse
+                        # reste en attente jusqu'à résolution du challenge. Le callback
+                        # interne qu'on vient d'invoquer (cf. solve_recaptcha_v2_auto /
+                        # _fire_recaptcha_callbacks) résout cette promesse toujours pendante
+                        # depuis le 1er clic — la suite (soumission réelle) reprend donc
+                        # d'elle-même côté site. Un second clic redéclenche seulement un
+                        # nouvel execute() sur le même widget, sans soumettre le formulaire
+                        # (confirmé : clic exécuté sans erreur, aucun effet, URL inchangée).
+                        log_info(_TAG, "login() — recaptcha résolu, soumission déléguée au flux JS déjà en attente")
+                    else:
+                        log_info(_TAG, "login() — échec résolution recaptcha")
+                else:
+                    log_debug(
+                        _TAG,
+                        f"login() — pas de recaptcha détecté après {_RECAPTCHA_POLL_MAX_ATTEMPTS}s, abandon poll",
+                    )
+            except Exception:
+                pass
+
+            # Vérifier le succès : URL sans /login dans les 15s.
+            # Seul signal fiable — cohérent avec is_session_expired() qui définit
+            # l'authentification de la même façon. L'ancien fallback "div#errors
+            # vide → succès" produisait un faux positif (le champ peut être vide
+            # avant le rendu async du message d'erreur), ce qui masquait un
+            # échec de connexion réel.
+            try:
+                page.wait_for_function(
+                    "() => !window.location.href.includes('/login')", timeout=15000
+                )
+                log_info(_TAG, "login() — succès (URL sans /login)")
+                try:
+                    from Cash.ysense_balance import check_balance_and_notify_if_needed
+                    check_balance_and_notify_if_needed(page, os.getenv("ACCOUNT_ID") or "unknown")
+                except Exception as e:
+                    log_debug(_TAG, f"login() — vérification solde post-login échouée (non bloquant) : {e}")
+                return True
+            except Exception:
+                pass
+
+            if _pass + 1 < _MAX_LOGIN_SUBMIT_PASSES:
+                log_info(
+                    _TAG,
+                    "login() — toujours sur /login après soumission, nouvelle passe "
+                    "(second écran probable)",
+                )
+                continue
+
+            try:
+                errors_div = page.query_selector("div#errors")
+                errors_text = (errors_div.inner_text() or "").strip() if errors_div else ""
+            except Exception:
+                errors_text = ""
+            log_debug(_TAG, f"login() — échec : /login toujours dans l'URL, errors={errors_text!r}")
+            return False
+
         return False
 
     def select_survey(self, driver) -> bool:
@@ -406,11 +441,19 @@ class YSensePlatform(Platform):
         """
         try:
             page = driver
+            _url_before = page.url
             page.goto(_LOGIN_URL)
             page.wait_for_load_state("domcontentloaded")
             url = page.url or ""
-            return "/login" in url
-        except Exception:
+            _expired = "/login" in url
+            log_info(
+                _TAG,
+                f"is_session_expired() — url_avant={_url_before!r} -> goto({_LOGIN_URL!r}) "
+                f"-> url_apres={url!r} expired={_expired}",
+            )
+            return _expired
+        except Exception as e:
+            log_debug(_TAG, f"is_session_expired() — exception pendant vérification : {e!r} -> considéré comme expiré")
             return True
 
     def get_platform_name(self) -> str:

@@ -467,6 +467,19 @@ def launch_browser_playwright(config: dict | None = None):
         proxy=pw_proxy,
         **_viewport_kwargs,
     )
+    # Diagnostic (BUG login ySense / profil persistant) : nombre d'onglets/pages
+    # déjà présents dans le contexte juste après le lancement, avant toute
+    # navigation applicative — un profil arrêté proprement en aurait un seul
+    # (about:blank), une restauration de session Chrome après arrêt non propre
+    # peut en rouvrir plusieurs sur un domaine donné (ex. ysense.com).
+    try:
+        _pages_urls = [p.url for p in context.pages]
+        log_info(
+            "[LAUNCH][PW][DIAG]",
+            f"context.pages avant navigation applicative : count={len(context.pages)} urls={_pages_urls}",
+        )
+    except Exception as _diag_exc:
+        log_debug("[LAUNCH][PW][DIAG]", f"lecture context.pages échouée : {_diag_exc}")
     # Pas de user_agent forcé, pas d'add_init_script : Chrome desktop natif annonce
     # nativement son propre User-Agent (cohérent avec la version réellement installée)
     # et window.chrome/Intl.DateTimeFormat sont déjà natifs sur ce type de lancement.
