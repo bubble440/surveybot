@@ -103,6 +103,7 @@ try:
         _extract_button_choice_radio_blocks,
         _extract_custom_testid_multi_select_checkbox_blocks,
         _extract_single_consent_checkbox_block,
+        _extract_single_checkbox_no_form_cta_block,
         _extract_consent_modal_radio_block,
         _extract_confirmit_wix_checkbox_grid_blocks,
         _extract_confirmit_wix_fieldset_radio_block,
@@ -235,6 +236,7 @@ except ImportError:
         _extract_button_choice_radio_blocks,
         _extract_custom_testid_multi_select_checkbox_blocks,
         _extract_single_consent_checkbox_block,
+        _extract_single_checkbox_no_form_cta_block,
         _extract_consent_modal_radio_block,
         _extract_confirmit_wix_checkbox_grid_blocks,
         _extract_confirmit_wix_fieldset_radio_block,
@@ -1739,6 +1741,17 @@ def _analyze_dom_current_context(driver, frame_chain=None) -> List[Dict[str, Any
         consent_checkbox_blocks = _extract_single_consent_checkbox_block(driver, frame_chain)
         if consent_checkbox_blocks:
             return consent_checkbox_blocks
+    except Exception:
+        pass
+
+    # --- 0h-quater-bis) Checkbox unique + CTA conditionnel, SANS <form> (SPA div-only) ---
+    # Objectif: couvrir les écrans "checkbox unique + CTA disabled" rendus sans <form>
+    # (ex. ySense "Opt into Survey Mail"), non couverts par 0h-quater (guard form-based).
+    # Additif, essayé uniquement si 0h-quater n'a rien produit.
+    try:
+        no_form_checkbox_blocks = _extract_single_checkbox_no_form_cta_block(driver, frame_chain)
+        if no_form_checkbox_blocks:
+            return no_form_checkbox_blocks
     except Exception:
         pass
 
@@ -4758,6 +4771,8 @@ def analyze_dom(driver) -> List[Dict[str, Any]]:
             with switch_to_frame_chain(driver, [fs_idx]) as ok:
                 if ok:
                     blocks = _extract_single_consent_checkbox_block(driver, [fs_idx])
+                    if not blocks:
+                        blocks = _extract_single_checkbox_no_form_cta_block(driver, [fs_idx])
                     if blocks:
                         log_info("[DOM_ANALYZER]", f"fullscreen_iframe_consent frame_idx={fs_idx} blocks={len(blocks)}")
 

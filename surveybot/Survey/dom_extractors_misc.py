@@ -21,12 +21,12 @@ from config import RUN_ENV
 # Import des utilitaires
 try:
     from Survey.dom_utils import _norm_lc, _xpath_literal, _best_xpath_for_element, _norm, _norm_key, _looks_like_system_field
-    from Survey.dom_question_extractor import _find_question_text_near_element, _compute_max_select
+    from Survey.dom_question_extractor import _find_question_text_near_element, _compute_max_select, _find_heading_tag_near_choice_group
     from Survey.dom_registry import register_target, make_target_id
 except ImportError:
     # Fallback pour tests locaux
     from Survey.dom_utils import _norm_lc, _xpath_literal, _best_xpath_for_element, _norm, _norm_key, _looks_like_system_field
-    from Survey.dom_question_extractor import _find_question_text_near_element, _compute_max_select
+    from Survey.dom_question_extractor import _find_question_text_near_element, _compute_max_select, _find_heading_tag_near_choice_group
     from Survey.dom_registry import register_target, make_target_id
     # dom_registry devra être disponible
 
@@ -3229,6 +3229,176 @@ def _extract_single_consent_checkbox_block(driver, frame_chain: list[int] | None
                 "kind": "group",
                 "group_key": group_key,
                 "single_consent_checkbox": True,
+            },
+        }
+    ]
+
+
+def _extract_single_checkbox_no_form_cta_block(driver, frame_chain: list[int] | None) -> list[dict]:
+    """Extraction ciblée d'un écran checkbox unique + CTA conditionnel, SANS <form>.
+
+    Stratégie nommée distincte de `_extract_single_consent_checkbox_block` (non modifiée) :
+    couvre les écrans SPA (React/Next.js à classes CSS-modules hashées) où le couple
+    <label for="id"><input type="checkbox">...</label> + bouton CTA (disabled tant que la
+    case n'est pas cochée) est rendu dans de simples <div> imbriqués, sans aucun <form>
+    englobant (ex. ySense "Opt into Survey Mail", input#surveyEmailCheckbox).
+
+    Garde-fou DOM strict (budget borné, abandon contrôlé) :
+    - input[type=checkbox] enfant DIRECT d'un <label> (le checkbox a "son propre label")
+    - AUCUN ancêtre <form> pour ce checkbox — sinon le pattern form-based existant
+      (_extract_single_consent_checkbox_block) est seul responsable, pas de chevauchement
+    - un ancêtre commun borné (au plus 4 niveaux depuis le <label>, même budget que
+      _nearest_question_container_structural) contenant : exactement 1 checkbox, 0 radio,
+      et au moins 1 CTA bouton/submit/button disabled — signal structurel de "case à cocher
+      pour débloquer un CTA", pas de dépendance à une classe CSS hashée.
+    """
+
+    frame_chain = list(frame_chain or [])
+    _MAX_ANCESTOR_LEVELS = 4
+
+    try:
+        candidates = driver.query_selector_all("label > input[type='checkbox']")
+    except Exception:
+        candidates = []
+
+    cb = None
+    label = None
+
+    for candidate in candidates:
+        try:
+            if candidate.query_selector_all("xpath=" + "ancestor::form"):
+                continue
+        except Exception:
+            continue
+
+        try:
+            candidate_label = candidate.query_selector("xpath=" + "parent::label[1]")
+        except Exception:
+            candidate_label = None
+        if candidate_label is None:
+            continue
+
+        found_container = None
+        for level in range(1, _MAX_ANCESTOR_LEVELS + 1):
+            try:
+                anc = candidate_label.query_selector("xpath=" + f"ancestor::*[{level}]")
+            except Exception:
+                anc = None
+            if anc is None:
+                break
+            try:
+                cbs_in_anc = anc.query_selector_all("input[type='checkbox']")
+                radios_in_anc = anc.query_selector_all("input[type='radio']")
+                disabled_ctas = anc.query_selector_all(
+                    "button[disabled], input[type='submit'][disabled], input[type='button'][disabled]"
+                )
+            except Exception:
+                continue
+            if len(cbs_in_anc) == 1 and not radios_in_anc and disabled_ctas:
+                found_container = anc
+                break
+
+        if found_container is None:
+            log_debug("[NOFORM_CB]", "container introuvable (budget épuisé) — abandon pour ce candidat")
+            continue
+
+        cb = candidate
+        label = candidate_label
+        break
+
+    if cb is None:
+        return []
+
+    try:
+        label_txt = _norm(label.inner_text() or "")
+    except Exception:
+        label_txt = ""
+
+    if not label_txt:
+        return []
+
+    try:
+        cb_id = (cb.get_attribute("id") or "").strip()
+        cb_name = (cb.get_attribute("name") or "").strip()
+    except Exception:
+        cb_id = ""
+        cb_name = ""
+
+    # Résolution question : heading sémantique (h1-h6) d'abord (le plus précis,
+    # ex. "Opt into Survey Mail"), repli générique proximité géométrique ensuite,
+    # repli final = texte du label lui-même (toujours nécessairement non vide).
+    question = ""
+    try:
+        heading_txt = _norm(_find_heading_tag_near_choice_group(driver, cb, [label_txt]) or "")
+        if heading_txt:
+            question = heading_txt
+    except Exception:
+        question = ""
+
+    if not question:
+        try:
+            inferred = _norm(_find_question_text_near_element(driver, cb) or "")
+            if inferred:
+                question = inferred
+        except Exception:
+            pass
+
+    if not question:
+        question = label_txt
+
+    group_base = cb_name or cb_id
+    if not group_base:
+        try:
+            group_base = _best_xpath_for_element(driver, cb)
+        except Exception:
+            group_base = ""
+    if not group_base:
+        return []
+
+    # Même préfixe "checkbox:name:" que les autres extracteurs génériques par nom
+    # (cf. _extract_single_consent_checkbox_block et consorts, format partagé).
+    # La fonction d'extraction reste distincte et additive ; seul ce FORMAT de
+    # clé, déjà commun à plusieurs extracteurs, est réutilisé tel quel.
+    group_key = f"checkbox:name:{_norm_lc(group_base)}"
+    target_id = make_target_id("group", group_key, question)
+
+    if cb_id:
+        id_lit = _xpath_literal(cb_id)
+        option_xpath = f"(//label[@for={id_lit}] | //*[@id={id_lit}])[1]"
+    elif cb_name:
+        name_lit = _xpath_literal(cb_name)
+        option_xpath = f"(//input[@type='checkbox' and @name={name_lit}]/ancestor::label[1] | //input[@type='checkbox' and @name={name_lit}])[1]"
+    else:
+        option_xpath = _best_xpath_for_element(driver, cb)
+
+    option_xpath_map = {_norm_key(label_txt): option_xpath}
+
+    register_target(
+        target_id,
+        {
+            "kind": "group",
+            "itype": "checkbox",
+            "group_key": group_key,
+            "question": question,
+            "option_xpath_map": option_xpath_map,
+            "frame_chain": frame_chain,
+            "single_checkbox_no_form": True,
+        },
+    )
+
+    log_info("[NOFORM_CB]", f"bloc produit id={cb_id or cb_name or 'n/a'}")
+
+    return [
+        {
+            "question": question,
+            "itype": "checkbox",
+            "options": [label_txt],
+            "max_select": _compute_max_select("checkbox", [label_txt]),
+            "target_id": target_id,
+            "context": {
+                "kind": "group",
+                "group_key": group_key,
+                "single_checkbox_no_form": True,
             },
         }
     ]

@@ -651,6 +651,20 @@ def solve_full_survey(driver, api_key, *, account_id: str, survey_context=None, 
                         resolved = False
                     if resolved:
                         print("[CAPTCHA] ✅ reCAPTCHA résolu — reprise du survey")
+                        # Certains DOM (form HTML standard + bouton submit natif, sans
+                        # data-callback ni callback JS exploitable) n'avancent jamais tout
+                        # seuls après l'injection du token : solve_recaptcha_v2_auto ne clique
+                        # jamais de CTA par contrat (navigation déléguée à l'appelant), donc sans
+                        # ce clic le même captcha déjà résolu est redétecté à l'itération
+                        # suivante → boucle de re-résolutions jusqu'au soft-restart.
+                        # Même stratégie CTA déjà utilisée après normal_captcha.handle_captcha
+                        # (respecte CTA_INTERCEPT_ONLY en interne) ; no-op si aucun CTA trouvé.
+                        try:
+                            from Survey.cta_handler import try_click_navigation_cta_any_context
+                            cta_clicked = try_click_navigation_cta_any_context(page)
+                            log_info("CAPTCHA", f"CTA post-résolution : {'cliqué' if cta_clicked else 'introuvable'}")
+                        except Exception as e:
+                            print(f"[CAPTCHA][WARN] Clic CTA post-résolution échoué (non bloquant) : {e}")
                         continue
                     else:
                         print("[CAPTCHA] ❌ Échec résolution automatique → abandon survey")
