@@ -13,6 +13,7 @@ from State.account_state import load_state, update_state, touch_heartbeat, _ts_a
 from State.daily_target import DAILY_TARGET_EUR
 from Management.pause_policy import PausePolicy, resolve_pause_seconds
 from config import is_cta_intercept_only
+from Management.guards.freeze_gate import freeze_and_wait
 
 
 
@@ -157,6 +158,7 @@ class RuntimeGuard:
     def signal_strict_survey(self, reason: str):
         """Survey trop strict (captcha, drag&drop, etc.) → soft restart direct, sans cooldown."""
         print(f"🔁 Strict survey détecté ({reason}) → soft restart direct")
+        freeze_and_wait(self.account_id, f"signal_strict_survey:{reason}")
         if self.on_soft_restart:
             self.on_soft_restart(reason)
         else:
@@ -181,6 +183,8 @@ class RuntimeGuard:
         if not _is_prod_env():
             print("[RUNTIME_GUARD][LOCAL] restart survey simulé")
             return
+
+        freeze_and_wait(self.account_id, f"request_survey_restart:{reason}")
 
         # 1) CTA best-effort
         cta_clicked = False
@@ -336,6 +340,7 @@ class RuntimeGuard:
         # 2⃣ Trop d’erreurs consécutives → soft restart
         if errors >= self.max_errors_in_row:
             print(f"[WATCHDOG] Trop d’erreurs ({errors}) → soft restart")
+            freeze_and_wait(self.account_id, "check_conditions:too_many_errors")
             with self._lock:
                 self.state.consecutive_errors = 0
             if self.on_soft_restart:
@@ -370,6 +375,13 @@ class RuntimeGuard:
         """
         Applique une PausePolicy au bot et stoppe l'exécution.
         """
+        # Point de gel unique (cf. Management/guards/freeze_gate.py) : couvre à la
+        # fois les appelants explicites (survey_solver.py, launch.py, auth_handler.py,
+        # payout.py, ...) et le thread de supervision périodique (_check_conditions,
+        # daemon _monitor_loop) — pause() est le seul sink commun aux deux. No-op si
+        # FREEZE_ON_TRIGGER désactivé.
+        freeze_and_wait(self.account_id, f"pause:{reason.value}")
+
         from bot_supervisor import (
             EXIT_VOLUNTARY, EXIT_SOFT_RESTART,
             record_exit as _record_exit,

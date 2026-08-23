@@ -51,6 +51,10 @@ def _manual_stop_path(account_id: str) -> str:
     return os.path.join(_pids_dir(), f"bot_{account_id}.manual_stop")
 
 
+def _freeze_resume_path(account_id: str) -> str:
+    return os.path.join(_pids_dir(), f"bot_{account_id}.freeze_resume")
+
+
 # ---------------------------------------------------------------------------
 # Lecture / écriture de l'état JSON
 # ---------------------------------------------------------------------------
@@ -130,6 +134,43 @@ def clear_manual_stop_marker(account_id: str) -> None:
             print(f"[SUPERVISOR] Marqueur d'arrêt manuel levé : {path}")
     except Exception as e:
         print(f"[SUPERVISOR][WARN] Impossible de supprimer {path}: {e}")
+
+
+def purge_freeze_resume_marker(account_id: str) -> None:
+    """
+    Purge un marqueur de reprise du mode gel (FREEZE_ON_TRIGGER, cf.
+    Management/guards/freeze_gate.py) résiduel d'un lancement précédent.
+
+    Appelée une seule fois, tout au début du démarrage réel du bot, AVANT toute
+    boucle de gel — même principe que clear_manual_stop_marker() : un marqueur
+    oublié par l'opérateur (posé pour un point de gel qui n'a jamais été atteint,
+    ou laissé après un arrêt) ne doit jamais débloquer à tort le premier point de
+    gel rencontré par ce nouveau démarrage.
+    """
+    path = _freeze_resume_path(account_id)
+    try:
+        if os.path.isfile(path):
+            os.remove(path)
+            print(f"[SUPERVISOR] Marqueur de reprise gel résiduel purgé : {path}")
+    except Exception as e:
+        print(f"[SUPERVISOR][WARN] Impossible de purger {path}: {e}")
+
+
+def consume_freeze_resume_marker(account_id: str) -> bool:
+    """
+    Marqueur de reprise du mode gel — usage unique : si présent, le supprime et
+    retourne True ; sinon retourne False. Ne jamais laisser un marqueur déjà
+    consommé débloquer un futur point de gel (cf. purge_freeze_resume_marker()
+    pour le résidu d'un lancement précédent).
+    """
+    path = _freeze_resume_path(account_id)
+    try:
+        if os.path.isfile(path):
+            os.remove(path)
+            return True
+    except Exception as e:
+        print(f"[SUPERVISOR][WARN] Impossible de supprimer {path}: {e}")
+    return False
 
 
 def check_and_record_start(

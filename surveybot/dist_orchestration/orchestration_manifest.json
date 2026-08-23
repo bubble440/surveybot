@@ -1,9 +1,9 @@
 {
-    "generated_at":  "2026-08-17T18:12:31Z",
+    "generated_at":  "2026-08-23T17:12:19Z",
     "files":  [
                   {
                       "rel_path":  "launch_all.ps1",
-                      "sha256":  "6c218860785c077dbc6aee8a57078b414ae595309f5658b442fa1844abe18d85",
+                      "sha256":  "0668e20f61e9212335074f688d08757835cb10a5c29c91a97bccb82c27fbb5cb",
                       "url":  "https://pub-565d2bb59d364c1490255c5dddc296aa.r2.dev/orchestration/launch_all.ps1"
                   },
                   {
@@ -30,6 +30,11 @@
                       "rel_path":  "stop_bot_manual.ps1",
                       "sha256":  "850ff264594ab84b88b88f6898f56bbda4c5f807d5146bd434bec894f60b924f",
                       "url":  "https://pub-565d2bb59d364c1490255c5dddc296aa.r2.dev/orchestration/stop_bot_manual.ps1"
+                  },
+                  {
+                      "rel_path":  "resume_bot_freeze.ps1",
+                      "sha256":  "52c57506c9c120bf2353269a2e77f9da0bc9eace22f36a8086ce956ed1347fd1",
+                      "url":  "https://pub-565d2bb59d364c1490255c5dddc296aa.r2.dev/orchestration/resume_bot_freeze.ps1"
                   },
                   {
                       "rel_path":  "decommission_nssm.ps1",

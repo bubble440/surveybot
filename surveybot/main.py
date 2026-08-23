@@ -95,11 +95,18 @@ else:
 # une 2e lecture dans le même run verrait le sentinel EXIT_CRASH que la 1re
 # vient d'écrire et fausserait le compteur.
 if not is_attach_mode():
-    from bot_supervisor import check_and_record_start, record_exit, EXIT_FATAL, clear_manual_stop_marker
+    from bot_supervisor import (
+        check_and_record_start, record_exit, EXIT_FATAL,
+        clear_manual_stop_marker, purge_freeze_resume_marker,
+    )
     from launch import build_notifier
     # Ce démarrage (nssm start explicite ou redémarrage machine) vaut reprise :
     # lève le marqueur posé par stop_bot_manual.ps1, voir clear_manual_stop_marker().
     clear_manual_stop_marker(ACCOUNT_ID)
+    # Purge d'un marqueur de reprise du mode gel (FREEZE_ON_TRIGGER) résiduel d'un
+    # lancement précédent, AVANT toute boucle de gel — cf. Management/guards/
+    # freeze_gate.py et purge_freeze_resume_marker().
+    purge_freeze_resume_marker(ACCOUNT_ID)
     _should_abort, _restart_count = check_and_record_start(ACCOUNT_ID)
     if _should_abort:
         _abort_msg = (
@@ -1297,6 +1304,12 @@ def main():
             # FIX-B4: pas de 'continue' ici — supprime les SystemExit et empêche l'arrêt propre
             try:
                 if driver and (not is_attach_mode()):
+                    # Point de gel (FREEZE_ON_TRIGGER, cf. Management/guards/
+                    # freeze_gate.py) : no-op si désactivé — fermeture/relance du
+                    # navigateur entre deux cycles inchangée par défaut.
+                    from Management.guards.freeze_gate import freeze_and_wait
+                    freeze_and_wait(account_id, f"main_cycle_teardown:cycle={cycle}")
+
                     # Terminer le processus Chrome lancé par subprocess.Popen
                     if hasattr(driver, '_chrome_proc') and driver._chrome_proc:
                         try:

@@ -417,6 +417,11 @@ class YSensePlatform(Platform):
         except Exception as e:
             log_debug(_TAG, f"handle_post_survey() — vérification solde échouée (non bloquant) : {e}")
 
+        # Point de gel (FREEZE_ON_TRIGGER, cf. Management/guards/freeze_gate.py) :
+        # no-op si désactivé — reprise automatique de survey inchangée par défaut.
+        from Management.guards.freeze_gate import freeze_and_wait
+        freeze_and_wait(account_id, "ysense_handle_post_survey:select_next_survey")
+
         self.select_survey(page)
         return True
 

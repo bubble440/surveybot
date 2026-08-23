@@ -120,6 +120,17 @@ def should_pause_before_cta() -> bool:
     return getattr(sys.stdin, "isatty", lambda: False)()
 
 
+def is_freeze_mode_enabled() -> bool:
+    """
+    Retourne True si le mode gel d'observation (FREEZE_ON_TRIGGER=1) est actif.
+    Outil d'observation temporaire (phase de test), pas un paramètre de sécurité
+    figé à la compilation comme CTA_INTERCEPT_ONLY/RUN_ENV — lu directement depuis
+    l'environnement dans tous les modes, jamais depuis global_config.
+    Défaut désactivé : comportement strictement inchangé si absent.
+    """
+    return _env_truthy("FREEZE_ON_TRIGGER", "1")
+
+
 def should_run_guard_monitor() -> bool:
     """Retourne True si le RuntimeGuard doit être activé avec son monitoring."""
     return is_prod_like()

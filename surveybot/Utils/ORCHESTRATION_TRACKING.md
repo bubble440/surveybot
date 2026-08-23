@@ -756,7 +756,128 @@ dérivé une fois avec le chemin en dur dans l'ancienne fonction).
 
   ---
 
-*Dernière mise à jour de ce fichier : 17/08/2026 (section 19 : retrait du
+## 20. Mode gel d'observation prod (`FREEZE_ON_TRIGGER`) — point de contrôle unique dans `RuntimeGuard` — non validé en conditions réelles
+
+- **Problème observé (23/08/2026, test prod ySense)** : en phase de test, les
+  cycles s'enchaînaient de façon incontrôlée (erreurs, arrêts, rechargements en
+  boucle) sans aucune fenêtre stable pour observer le comportement réel du bot.
+  Cause : plusieurs mécanismes automatiques indépendants agissaient sans
+  validation humaine ni coordination entre eux — reprise automatique de survey
+  sur retour plateforme (`platforms/ysense.py::handle_post_survey`), ~20
+  call-sites explicites vers `guard.request_survey_restart()`/
+  `guard.signal_strict_survey()` répartis dans `Survey/survey_solver.py`,
+  `Survey/survey_executor.py`, `Survey/action_dispatcher.py`, la surveillance
+  périodique de `RuntimeGuard._check_conditions()` (thread daemon
+  `_monitor_loop`, indépendant du thread principal de résolution), et la
+  fermeture/relance du navigateur en fin de cycle dans `main.py` (bloc
+  `finally` de `while cycle < max_cycles`).
+- **Analyse** : tous les call-sites explicites convergent exclusivement vers
+  trois méthodes de `RuntimeGuard` (`request_survey_restart`,
+  `signal_strict_survey`, `pause`) — aucun ne contourne le guard pour agir
+  directement. `pause()` est de plus l'unique sink commun à `_check_conditions`
+  (idle / daily target / runtime limit) et à de nombreux appelants externes
+  (`launch.py::soft_restart`, `preselection/auth_handler.py` session/proxy
+  expirés, `Cash/payout.py`, `platforms/primeopinion.py`,
+  `preselection/survey_navigator.py`). Un seul chemin bypassait ces trois
+  méthodes : la branche `too_many_errors` de `_check_conditions()`, qui appelle
+  `self.on_soft_restart(...)` directement.
+- **Décision** : un point de gel unique et cohérent
+  (`Management/guards/freeze_gate.py::freeze_and_wait`), plutôt qu'une
+  condition dupliquée à chaque call-site. Activé par `FREEZE_ON_TRIGGER=1`
+  (variable d'environnement pure, jamais `GLOBAL_CONFIG` — outil d'observation
+  temporaire, pas un paramètre de sécurité figé à la compilation comme
+  `CTA_INTERCEPT_ONLY`/`RUN_ENV`, cf. `config.py::is_freeze_mode_enabled()`).
+  No-op immédiat si désactivé (défaut) — comportement strictement inchangé.
+  `freeze_and_wait()` journalise le déclencheur puis bloque le thread appelant
+  jusqu'à la pose d'un marqueur de reprise à usage unique
+  (`pids\bot_<id>.freeze_resume`), sur le même principe que
+  `bot_<id>.manual_stop` (section 17) : `bot_supervisor.py` porte
+  `purge_freeze_resume_marker()` (résidu d'un lancement précédent, appelée au
+  tout début de `main.py`, avant toute boucle de gel — même emplacement que
+  `clear_manual_stop_marker()`) et `consume_freeze_resume_marker()`
+  (suppression dès détection, avant reprise). Le gel ne annule pas l'action
+  déclenchée, il la retarde jusqu'à validation opérateur explicite : une fois
+  le marqueur consommé, l'appelant reprend exactement l'action qu'il
+  s'apprêtait à effectuer.
+- **Points de gel posés** (5, tous dans le sens "avant l'action, jamais après") :
+  1. `RuntimeGuard.request_survey_restart()` — après le court-circuit non-prod
+     existant, avant toute tentative CTA/soft restart.
+  2. `RuntimeGuard.signal_strict_survey()` — avant la délégation
+     `on_soft_restart`.
+  3. `RuntimeGuard._check_conditions()`, branche `too_many_errors` — seul
+     chemin de ce thread qui n'appelle pas `pause()` (voir Analyse), gelé
+     séparément avant la remise à zéro de `consecutive_errors` et l'appel
+     direct à `on_soft_restart`.
+  4. `RuntimeGuard.pause()` — tout en tête de méthode, avant toute écriture
+     d'état (Postgres, sentinel local) : couvre à la fois les 3 branches
+     restantes de `_check_conditions` (idle, daily target, runtime limit),
+     `signal_fatal_error()`, et tous les appelants externes listés dans
+     Analyse ci-dessus, sans modification de ces derniers.
+  5. `platforms/ysense.py::YSensePlatform.handle_post_survey()` — juste avant
+     `self.select_survey(page)`, hors de toute méthode `RuntimeGuard`
+     (`handle_post_survey` n'appelle pas le guard). Scopé à ySense uniquement,
+     comme demandé — aucune autre plateforme touchée.
+  6. `main.py`, bloc `finally` de la boucle `while cycle < max_cycles` — juste
+     avant `driver._chrome_proc.terminate()`/`driver.context.close()`/
+     `pw.stop()`, à l'intérieur du `if driver and (not is_attach_mode())`
+     existant. S'exécute sur toute sortie du bloc `try` du cycle, y compris
+     après une `Exception` attrapée (le `finally` s'exécute toujours après
+     l'`except`), donc sans duplication de point de gel dans ce dernier.
+- **Conséquence assumée (cascade de gels pour un même événement)** : un
+  `pause()` atteint depuis le thread principal (pas le thread `_monitor_loop`,
+  qui sort via `os._exit()` et ne repasse jamais par le `finally` de
+  `main.py`) peut geler une première fois dans `pause()` lui-même, puis — une
+  fois `SystemExit` propagé jusqu'au `finally` de `main.py` — geler une
+  seconde fois avant la fermeture du navigateur. Ce sont deux décisions
+  distinctes au sens de la demande initiale (le redémarrage applicatif d'un
+  côté, la fermeture/relance du navigateur de l'autre) ; assumé tel quel,
+  cohérent avec la règle "marqueur à usage unique, un point de gel = un
+  marqueur" plutôt qu'un raccourci qui aurait fusionné les deux.
+- **Exception assumée à la règle générale "toute boucle a un budget max N avec
+  abandon contrôlé"** : `freeze_and_wait()` boucle sans limite tant que le
+  marqueur n'est pas posé (poll 5 s, un rappel `log_debug` toutes les ~2 min).
+  Un abandon automatique reproduirait exactement l'enchaînement incontrôlé que
+  ce mécanisme sert à éliminer — le seul déblocage possible est le marqueur de
+  reprise explicite.
+- **Nouveau script `resume_bot_freeze.ps1`** (racine du dépôt, calqué sur
+  `stop_bot_manual.ps1`) : pose `pids\bot_<id>.freeze_resume`. Différence avec
+  `stop_bot_manual.ps1` : ce marqueur est lu directement par le process Python
+  du bot lui-même (pas par un script planifié externe type
+  `wake_scheduler.ps1`) — pas d'appel `nssm` dans ce script. Ajouté à
+  `$TrackedFiles` dans `build_orchestration_release.ps1` (sinon jamais
+  synchronisé sur le parc via `sync_orchestration_scripts.ps1`).
+- **Aucune modification** de `Survey/survey_solver.py`,
+  `Survey/survey_executor.py`, `Survey/action_dispatcher.py` (tous leurs
+  call-sites vérifiés convergents vers les 3 méthodes `RuntimeGuard` gelées,
+  cf. Analyse — aucun besoin de les toucher), des extracteurs/DOM de
+  `platforms/ysense.py` (seul `handle_post_survey` touché, un seul appel
+  ajouté en fin de fonction), de `stop_bot_manual.ps1`/`stop_bot.ps1`/
+  `wake_scheduler.ps1`/`check_zombie_bots.ps1`/`nssm_setup_bot.ps1`/
+  `launch_all.ps1`, ni de la logique de décision existante de `pause()`
+  (`_VOLUNTARY_REASONS`, `_exit_code`, `update_state`, `record_exit`).
+- **Non validé en conditions réelles à ce jour** : vérifié par relecture de
+  code uniquement. Cycle complet à valider par l'opérateur avant utilisation en
+  test prod ySense : déclenchement de chacun des 6 points de gel, marqueur
+  posé via `resume_bot_freeze.ps1` débloquant bien le point concerné et lui
+  seul, non-régression complète (aucun changement de comportement) avec
+  `FREEZE_ON_TRIGGER` absent/à 0 sur ySense et sur les autres plateformes.
+- **Fichiers modifiés/créés** : `config.py`, `bot_supervisor.py`,
+  `Management/guards/runtime_guard.py`, `platforms/ysense.py`, `main.py`,
+  `build_orchestration_release.ps1` (modifiés) ; `Management/guards/
+  freeze_gate.py`, `resume_bot_freeze.ps1` (nouveaux).
+
+  ---
+
+*Dernière mise à jour de ce fichier : 23/08/2026 (section 20 : mode gel
+d'observation prod `FREEZE_ON_TRIGGER` — point de contrôle unique dans
+`RuntimeGuard` couvrant à la fois les call-sites explicites de la boucle de
+résolution et la surveillance périodique `_check_conditions` du thread
+`_monitor_loop`, plus deux points de gel hors `RuntimeGuard` (reprise de
+survey ySense, fermeture/relance navigateur en fin de cycle `main.py`).
+Marqueur de reprise à usage unique `pids\bot_<id>.freeze_resume`, même
+principe que `manual_stop` (section 17), nouveau script `resume_bot_freeze.ps1`.
+Désactivé par défaut, no-op strict. Non validé en conditions réelles).
+Précédemment : 17/08/2026 (section 19 : retrait du
 fenêtrage déterministe par compte introduit en section 18 — un fenêtrage réduit
 par bot pouvait tomber sous le seuil responsive de certains sites et bloquer des
 clics valides en desktop, cas observé en présélection TopSurveys ;
