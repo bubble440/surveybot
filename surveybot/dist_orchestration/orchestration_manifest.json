@@ -1,5 +1,5 @@
 {
-    "generated_at":  "2026-08-25T16:25:39Z",
+    "generated_at":  "2026-08-25T17:29:23Z",
     "files":  [
                   {
                       "rel_path":  "launch_all.ps1",
@@ -48,7 +48,7 @@
                   },
                   {
                       "rel_path":  "set-up.txt",
-                      "sha256":  "64c98fb41f4b7f951297c73c5c6906a1b0efcd9bd7e2d501286be0c1072419c0",
+                      "sha256":  "7835402af880d2ec40c08081c674c295c8da157079360d5d552168c4bb428659",
                       "url":  "https://pub-565d2bb59d364c1490255c5dddc296aa.r2.dev/orchestration/set-up.txt"
                   },
                   {
