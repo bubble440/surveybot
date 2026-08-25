@@ -2457,6 +2457,28 @@ def try_click_navigation_cta_any_context(driver, depth=2) -> bool:
 # CLICK_CTA_STRONG_ANY_CONTEXT (version robuste multi-frame)
 # =============================================================================
 
+# Garde-fou candidats : exclut les éléments de widgets CMP/consentement cookies tiers
+# (id/classes préfixés). Un needle "large" comme "accepter" est un sous-string direct
+# du libellé natif de ces widgets (ex: Evidon "Accepter les cookies") — sans exclusion,
+# is_match() les matche avant même d'atteindre le vrai CTA de la page (cf. BOT_EVOLUTION_MEMORY.md,
+# incident Evidon dkr1.ssisurveys.com).
+_CMP_ID_CLASS_DENYLIST = (
+    "_evh-", "_evidon-", "onetrust", "didomi", "qc-cmp",
+    "truste", "cybotcookiebot", "cky-", "transcend-consent-manager",
+)
+
+
+def _is_cmp_consent_element(el) -> bool:
+    try:
+        for attr in ("id", "class"):
+            v = (el.get_attribute(attr) or "").lower()
+            if any(tok in v for tok in _CMP_ID_CLASS_DENYLIST):
+                return True
+    except Exception:
+        pass
+    return False
+
+
 def click_cta_strong_any_context(driver, text=None, label_hint=None, depth: int = 2, **_kwargs) -> bool:
     """
     Clique un CTA (Suivant / Continuer / Next / Continue / Start...) en scannant
@@ -2528,6 +2550,9 @@ def click_cta_strong_any_context(driver, text=None, label_hint=None, depth: int 
             for el in els:
                 try:
                     if not el.is_visible():
+                        continue
+                    if _is_cmp_consent_element(el):
+                        log_debug("[CTA_STRONG]", "cmp_element_excluded")
                         continue
 
                     raw_val = (el.inner_text() or "") or (el.get_attribute("value") or "")
