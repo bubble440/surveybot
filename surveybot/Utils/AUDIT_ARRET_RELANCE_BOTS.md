@@ -379,6 +379,25 @@ recensement factuel uniquement, conformément au périmètre de cet audit.
    est exactement le scénario que la protection `GLOBAL_CONFIG` était censée exclure pour ces
    variables selon le document de décision.
 
+   **Résolu (25/08/2026) — volet LOG_LEVEL uniquement.** `LOG_LEVEL` retiré de `global_config.py` :
+   la déclaration n'était de toute façon lue par aucun consommateur (`preselection/secret_loader.py`
+   ne produit aucune clé `log_level`, la réinjection conditionnelle dans `os.environ` par
+   `config_loader.py` ne s'exécutait donc jamais). `LOG_LEVEL` reste un `os.getenv` classique,
+   pilotable par bot (`accounts.json`, NSSM, `tools/attach_tab.ps1`) — décision actée par
+   l'utilisateur pour préserver la capacité de débugger un bot isolément sans recompiler tout le
+   parc, conforme à `DEPLOIEMENT_BAREMETAL_DECISIONS.md` §2/§6. Les 4 lecteurs
+   `os.getenv("LOG_LEVEL")` dupliqués et incohérents (`preselection/survey_navigator.py`,
+   `Survey/survey_executor.py` ×2, `Survey/batch_response_parser.py`, `launch.py`) délèguent
+   désormais tous à `Survey/log_utils.py::is_debug()`/`current_log_level()`, seule source de
+   vérité. Voir `Survey/BOT_EVOLUTION_MEMORY.md`, entrée « LOG_LEVEL — centralisation sur
+   is_debug()/current_log_level() ».
+   **Non résolu, toujours ouvert** : `LOG_STEP_SUMMARY` et `CAPTCHA_PROVIDER` restent présents
+   dans `global_config.py` malgré leur exclusion documentée ; `MAX_MAIN_CYCLES`,
+   `ACCOUNT_LOCK_TTL_SEC`, `HEARTBEAT_INTERVAL_SEC`, `HEARTBEAT_JITTER_SEC`, `DOM_FRAME_MAX_DEPTH`,
+   `AA_MATRIX_MAX_ROWS`, `AA_SELECTION_LIST_MAX`, `MAX_ACTIONS_PER_PLAN` restent absents de
+   `global_config.py` malgré leur inclusion documentée — aucun des deux volets n'a été traité par
+   ce patch.
+
 5. **Le compteur de crash-loop (`bot_supervisor.check_and_record_start`) peut ne jamais voir
    passer certains arrêts, ou les compter à tort.** Deux mécanismes distincts et tous deux
    vérifiés dans le code :

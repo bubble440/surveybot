@@ -502,8 +502,9 @@ def _purge_old_session_logs(account_id: str, keep: int = 10) -> None:
         print(f"[LOG_PURGE][WARN] échec purge logs session pour {account_id}: {e}")
 
 def setup_logging(account_id: str | None = None):
-    # 2) niveau depuis l'env (default INFO)
-    _level = os.getenv("LOG_LEVEL", "INFO").upper()
+    # 2) niveau centralisé (log_utils.current_log_level(), même source que log_debug/log_info)
+    from Survey.log_utils import current_log_level
+    _level = current_log_level()
     logging.basicConfig(
         level=getattr(logging, _level, logging.INFO),
         format="%(asctime)s %(levelname)s [%(name)s] %(message)s",

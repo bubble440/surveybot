@@ -1,6 +1,6 @@
 import re, openai, time, unicodedata, os, sys, hashlib, tempfile
 from urllib.parse import urlsplit
-from Survey.log_utils import log_debug, log_info
+from Survey.log_utils import is_debug, log_debug, log_info
 from Survey.functions import _handle_topsurveys_exclusion_popup
 from config import is_cta_intercept_only, is_attach_mode
 
@@ -2192,7 +2192,7 @@ def execute_survey_page(driver, account_id, api_key, ctx=None):
         system_prompt = prompt_builder.build_system_prompt()
         user_prompt = prompt_builder.build_batch_prompt(question_blocks_for_batch, ctx=ctx)
 
-        if (os.getenv("LOG_LEVEL") or "").strip().lower() == "debug":
+        if is_debug():
             print("🧠 [PROMPT→GPT] ===== USER PROMPT =====")
             print(user_prompt[:200000])
             print("[PROMPT→GPT] ===================================")
@@ -2214,7 +2214,7 @@ def execute_survey_page(driver, account_id, api_key, ctx=None):
             )
             for i, b in enumerate(question_blocks_for_batch, start=1)
         }
-        if (os.getenv("LOG_LEVEL") or "").strip().lower() == "debug":
+        if is_debug():
             print(f"[survey_executor][debug] qid_constraints={qid_constraints}")
 
         qid_meta = {

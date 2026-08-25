@@ -1,9 +1,9 @@
 {
-    "generated_at":  "2026-08-25T08:43:56Z",
+    "generated_at":  "2026-08-25T10:00:20Z",
     "files":  [
                   {
                       "rel_path":  "launch_all.ps1",
-                      "sha256":  "0668e20f61e9212335074f688d08757835cb10a5c29c91a97bccb82c27fbb5cb",
+                      "sha256":  "21356597e8ac7fdcfef0bf340d8bd0f9725cd437cd87e750cb24f8dd21b7b744",
                       "url":  "https://pub-565d2bb59d364c1490255c5dddc296aa.r2.dev/orchestration/launch_all.ps1"
                   },
                   {

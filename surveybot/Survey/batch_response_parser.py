@@ -22,11 +22,10 @@ La fonction filter_exclusive_conflicts() élimine ces conflits AVANT exécution.
 from __future__ import annotations
 import re, datetime
 import difflib
-import os
 import math
 import unicodedata
 from typing import Dict, Optional, List, Any
-from .log_utils import log_debug, log_info
+from .log_utils import is_debug, log_debug, log_info
 from .dom_selection_rules import is_sector_activity_question
 _ALLOWED_ITYPES = {"radio", "checkbox", "dropdown", "text", "textarea", "button", "number", "matrix", "cardsort"}
 _QID_RE = re.compile(r"\bQ\d+\b", re.IGNORECASE)
@@ -384,8 +383,7 @@ _MONTHS_FR = {
 
 
 def _debug_enabled() -> bool:
-    lvl = (os.getenv("LOG_LEVEL") or "").strip().lower()
-    return lvl == "debug"
+    return is_debug()
 
 
 def _debug_log(msg: str) -> None:

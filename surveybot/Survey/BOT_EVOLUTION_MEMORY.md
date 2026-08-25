@@ -4854,4 +4854,40 @@ Patterns exclus :
   quel).
 Statut : patch validé par l'utilisateur en conditions réelles.
 
+## MODULE TRANSVERSAL : LOG_LEVEL — CENTRALISATION SUR is_debug()/current_log_level(), RETRAIT DE GLOBAL_CONFIG
+
+### is_debug / current_log_level — Survey/log_utils.py (résolveur canonique, non modifié) + 4 consommateurs migrés
+Fichier : Survey/log_utils.py (inchangé, déjà correct depuis toujours), preselection/survey_navigator.py,
+Survey/survey_executor.py, Survey/batch_response_parser.py, launch.py.
+Bug corrigé : malgré `LOG_LEVEL = "DEBUG"` déclaré dans global_config.py, les `log_debug()` n'apparaissaient
+jamais en sortie (seuls les `log_info()`, plus rares, étaient visibles). Cause racine : rien ne consommait
+cette déclaration — `preselection/secret_loader.py` ne produit aucune clé `log_level`/`LOG_LEVEL` (0
+occurrence, confirmé par grep), donc la réinjection conditionnelle dans `os.environ` par
+`preselection/config_loader.py` (dépendante de `merged.get("log_level")`) ne s'exécutait jamais. Le vrai
+résolveur légitime (`current_log_level()`, lecture `os.getenv("LOG_LEVEL")`) était déjà correct depuis
+toujours, mais 4 autres endroits dupliquaient leur propre check `os.getenv("LOG_LEVEL")` incohérent (pas
+d'escalade `DOM_DEBUG_FRAMES`/`ACTION_DEBUG_TARGET` comme dans log_utils.py) :
+`preselection/survey_navigator.py::_is_debug_enabled()`, `Survey/survey_executor.py` (2 points d'appel,
+lignes ~2195/2217), `Survey/batch_response_parser.py::_debug_enabled()`, `launch.py::setup_logging()`
+(niveau du module `logging` stdlib).
+Décision actée (utilisateur, 25/08/2026) : LOG_LEVEL reste explicitement HORS GLOBAL_CONFIG — une tentative
+antérieure de l'y inclure (`LOG_LEVEL="DEBUG"` ajouté dans global_config.py, jamais consommé) est annulée,
+conformément à `Utils/DEPLOIEMENT_BAREMETAL_DECISIONS.md` §2/§6 (rigidité opérationnelle : impossible de
+débugger un bot isolément sans recompiler tout le parc). Écart précédemment repéré au point 4 de
+`Utils/AUDIT_ARRET_RELANCE_BOTS.md` — résolu pour ce volet par ce patch (LOG_LEVEL retiré de global_config.py).
+Correction : les 4 lecteurs dupliqués délèguent désormais à `is_debug()`/`current_log_level()`
+(Survey/log_utils.py) au lieu de relire `os.getenv("LOG_LEVEL")` indépendamment — source unique de vérité,
+cohérente avec l'escalade DOM_DEBUG_FRAMES/ACTION_DEBUG_TARGET déjà existante dans log_utils.py.
+Patterns couverts :
+- Tout process où LOG_LEVEL est positionné en variable d'environnement avant lancement (accounts.json →
+  injection env par bot, NSSM, tools/attach_tab.ps1) — mécanisme légitime inchangé, désormais effectivement
+  honoré par tous les modules consommateurs.
+Patterns exclus :
+- Aucun changement à preselection/config_loader.py ni preselection/secret_loader.py (chemin de réinjection
+  PAR_BOT laissé disponible, actuellement inutilisé faute de producteur).
+- Aucun CTA touché (patch scopé aux gates de logs uniquement).
+- LOG_STEP_SUMMARY et CAPTCHA_PROVIDER (même écart doc/code documenté au point 4 de l'audit) non traités —
+  hors périmètre de ce patch, restent ouverts.
+Statut : patch validé par l'utilisateur.
+
 ---

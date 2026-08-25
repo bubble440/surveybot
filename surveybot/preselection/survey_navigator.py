@@ -3,7 +3,7 @@ import re
 import time
 
 from preselection.auth_handler import handle_proxy_error_page_if_needed
-from Survey.log_utils import log_debug, log_info
+from Survey.log_utils import is_debug, log_debug, log_info
 from config import is_cta_intercept_only
 
 # SNAP_ENABLED est une variable GLOBAL_CONFIG : en build compilé (Nuitka), elle provient
@@ -88,7 +88,7 @@ def _wait_for_survey_popup(driver, timeout: int = 20) -> None:
 
 
 def _is_debug_enabled() -> bool:
-    return os.getenv("LOG_LEVEL", "INFO").strip().upper() == "DEBUG"
+    return is_debug()
 
 
 def _debug(msg: str):
