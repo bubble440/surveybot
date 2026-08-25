@@ -144,6 +144,14 @@ public static class SurveyBotIsolatedLauncher
     private const uint GENERIC_WRITE = 0x40000000;
     private const uint FILE_SHARE_READ = 0x00000001;
     private const uint FILE_SHARE_WRITE = 0x00000002;
+    // Sans ce flag, la rotation (Move-Item vers .log.1 dans Start-Bot) echoue avec
+    // ERROR_SHARING_VIOLATION tant que ce handle (herite par le process bot pour
+    // stdout/stderr) reste ouvert - meme apres un kill force, l'OS met un instant a le
+    // liberer. Move-Item echouait alors silencieusement (catch + WARN dans Start-Bot)
+    // et le CreateFile suivant (CREATE_ALWAYS) tronquait le log de la session precedente
+    // au lieu de la roter. FILE_SHARE_DELETE autorise le rename pendant que ce handle
+    // est encore ouvert, qui est precisement ce que la rotation suppose deja pouvoir faire.
+    private const uint FILE_SHARE_DELETE = 0x00000004;
     private const uint CREATE_ALWAYS = 2;
     private const uint FILE_ATTRIBUTE_NORMAL = 0x80;
     private const uint STARTF_USESTDHANDLES = 0x00000100;
@@ -172,7 +180,7 @@ public static class SurveyBotIsolatedLauncher
         };
 
         IntPtr logHandle = CreateFile(
-            logPath, GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
+            logPath, GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
             ref fileSa, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, IntPtr.Zero);
 
         if (logHandle == new IntPtr(-1))
