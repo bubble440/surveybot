@@ -79,6 +79,15 @@ $MAX_ACCOUNTS = 200
 # traitement en temps reel du flux cote PowerShell.
 # ---------------------------------------------------------------------------
 
+# Idempotence intra-session : un type C# charge via Add-Type reste resident pour
+# toute la duree de vie du process powershell.exe (CLR/AppDomain unique, pas de
+# redefinition possible). Si ce script est relance dans la meme fenetre sans
+# redemarrer powershell.exe (usage manuel normal), Add-Type echouerait sur ce
+# meme type deja charge (TYPE_ALREADY_EXISTS) - inoffensif dans les faits (le
+# type existant reste utilisable tel quel) mais l'erreur s'affiche quand meme
+# selon la version/build de PowerShell. Ce garde evite l'appel redondant, sans
+# dependre du caractere bloquant ou non de cette erreur.
+if (-not ([System.Management.Automation.PSTypeName]'SurveyBotIsolatedLauncher').Type) {
 Add-Type -Language CSharp -TypeDefinition @"
 using System;
 using System.Runtime.InteropServices;
@@ -230,6 +239,7 @@ public static class SurveyBotIsolatedLauncher
     }
 }
 "@
+}
 
 # ---------------------------------------------------------------------------
 # Helpers
